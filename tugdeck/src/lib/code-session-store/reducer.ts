@@ -109,7 +109,7 @@ import type {
   UserMessage,
   WakeTrigger,
 } from "./types";
-import { compactionNoteText } from "./compaction";
+import { compactionNoteText, isCompactionSubmission } from "./compaction";
 import {
   applyJobAgentStructured,
   applyJobChildResult,
@@ -1139,7 +1139,36 @@ function handleInterrupt(
   // decremented in FIFO order as wire echoes arrive. Late content
   // frames hit their own phase guards and drop with phase `idle` —
   // no scratch leakage.
+  // CASE A's precondition is really "claude has not started, so the turn can
+  // be pulled back whole." The content flags are a PROXY for that, and a
+  // compaction turn is the one place the proxy inverts: `/compact` streams no
+  // answer-channel content for its entire run by design — minutes, on a full
+  // context — so it satisfies every CASE A test while being the least
+  // retractable turn there is. Claude Code is rewriting the session's context
+  // in place; it does not reliably abort mid-run (observed: a canceled
+  // compaction ran on to completion and wrote its boundary 2m39s later); and
+  // the `compact_boundary` + summary it writes land AFTER the prompt record
+  // that CASE A's `retract: true` truncates the JSONL at. Taking CASE A there
+  // erases a turn locally — scratch dropped, wire echo suppressed, draft
+  // stranded back in the composer — while the far end works on, and the
+  // compaction then exists on disk and nowhere in the card until a reload
+  // replays it.
+  //
+  // So a compaction interrupt is CASE B whatever the content flags say. The
+  // turn stays open, the interrupt goes out plain (no retract), and both
+  // resolutions are honest: the boundary lands on the still-open turn and
+  // commits with it, or `turn_complete(error)` commits an interrupted entry.
+  // Nothing is discarded locally while the far end may still be running.
+  const inflightUserMessage = readInflightUserMessage(state);
+  const inflightIsCompaction =
+    inflightUserMessage !== null &&
+    isCompactionSubmission(
+      inflightUserMessage.text,
+      inflightUserMessage.attachments,
+    );
+
   if (
+    !inflightIsCompaction &&
     state.firstAssistantDeltaAt === null &&
     state.firstToolUseAt === null
   ) {
@@ -1150,13 +1179,13 @@ function handleInterrupt(
     // not a wake-specific flag.
     const inflightIsAssistantOrigin =
       state.pendingTurn?.origin === "assistant";
-    // A suppressed turn (the `/compact` summarization prompt) is an
-    // internal detail — never strand its text in the composer on cancel.
+    // A suppressed turn is an internal detail — never strand its text in
+    // the composer on cancel.
     const inflightSuppressed = state.pendingTurn?.suppressed === true;
     const inflightUser =
       inflightIsAssistantOrigin || inflightSuppressed
         ? null
-        : readInflightUserMessage(state);
+        : inflightUserMessage;
     const restore =
       inflightUser !== null
         ? { text: inflightUser.text, atoms: inflightUser.attachments }
@@ -1226,9 +1255,11 @@ function handleInterrupt(
         // silently respawn once the interrupt's echo lands. Without it
         // the SDK keeps the prompt in context (with an
         // `"[Request interrupted by user]"` marker) and a reload replays
-        // it as a phantom user row. Assistant-origin (wake) and
-        // suppressed (`/compact`) turns carry no user submission to
-        // retract — they interrupt plain.
+        // it as a phantom user row. Assistant-origin (wake) and suppressed
+        // turns carry no user submission to retract — they interrupt plain.
+        // A compaction never reaches here at all (it takes CASE B above),
+        // which is what keeps a truncation off a JSONL claude may be
+        // appending a `compact_boundary` to.
         {
           kind: "send-frame",
           msg:

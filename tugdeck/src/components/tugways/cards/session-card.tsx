@@ -3359,8 +3359,9 @@ export function SessionCardBody({
     // visible submission: Claude Code compacts in place under the SAME session
     // id and JSONL, streaming a `compact_boundary` (divider) and a summary
     // event (the carry-forward). A pane-modal, indeterminate "Compacting…"
-    // sheet ([P07]) covers the card for the ~20 s opaque run; Cancel maps to
-    // the turn interrupt.
+    // sheet ([P07]) covers the card for the opaque run — minutes, not seconds,
+    // on a full context (measured: 111 s and 159 s on two 140k/170k-token
+    // compactions); Cancel maps to the turn interrupt.
     //
     // The run settles off `codeSessionStore` snapshots, no timers ([P07]): the
     // `/compact` turn opens, and when it settles we succeed if compaction ink
@@ -3413,7 +3414,19 @@ export function SessionCardBody({
         }
         if (!sawActive) return; // turn hasn't opened yet
         unsubscribe();
-        if (canceled) return; // Cancel button already settled the store
+        if (canceled) {
+          // The Cancel button settles the store (and dismisses the sheet) at
+          // the gesture, but Claude Code does not reliably abort a compaction
+          // mid-run — it can finish anyway, and the interrupt no longer pulls
+          // the turn down locally to hide that. The "canceled" bulletin has
+          // already fired by now, so correct the record when the ink lands.
+          if (sawInk) {
+            paneBulletinRef.current?.caution(
+              "Compaction finished before it could be canceled",
+            );
+          }
+          return;
+        }
         if (sawInk) {
           compactionProgressStore.succeed();
           return;
@@ -3432,21 +3445,34 @@ export function SessionCardBody({
       });
 
       // Open the run, present the modal sheet, then send the visible `/compact`
-      // turn. If the sheet is dismissed (Escape / Cmd-.) while still in flight,
-      // treat that as Cancel.
+      // turn.
+      //
+      // The sheet's LIFETIME is not the run's lifetime. Cancel is the Cancel
+      // button and nothing else: `showSheet`'s promise resolves on every close
+      // path, including ones the user never performed — Escape / Cmd-., and the
+      // host's documented unmount-while-open (a cross-pane card move, a card
+      // remount on window restore). Inferring Cancel from that resolution
+      // canceled compactions nobody canceled, and the cancel is not benign: a
+      // compaction turn streams nothing, so `interrupt()` always takes the CASE A
+      // pull-down, which drops the in-flight turn's scratch — the `/compact` row
+      // vanishes from the transcript while Claude Code compacts on to completion
+      // and writes the boundary to the JSONL. The compaction is then real on disk
+      // and absent from the card until a reload replays it.
+      //
+      // So the run outlives the sheet. The watcher above is subscribed to the
+      // store, not to the sheet, and settles the run wherever it ends: the
+      // divider and summary land in place, and the closing bulletin fires,
+      // whether or not the sheet is still up. A dismissed sheet leaves the card
+      // showing an ordinary in-flight turn, which Stop / Escape can interrupt if
+      // that is what the user actually wants.
       compactionProgressStore.begin(cardId);
-      void cardPickerSheet
-        .showSheet({
-          title: "Compacting",
-          icon: "Archive",
-          content: (close) => (
-            <CompactionProgressSheet close={close} onCancel={onCancel} />
-          ),
-        })
-        .then(() => {
-          const st = compactionProgressStore.getSnapshot();
-          if (st !== null && st.outcome === null) onCancel();
-        });
+      void cardPickerSheet.showSheet({
+        title: "Compacting",
+        icon: "Archive",
+        content: (close) => (
+          <CompactionProgressSheet close={close} onCancel={onCancel} />
+        ),
+      });
       codeSessionStore.send(
         focus.length > 0 ? `/compact ${focus}` : "/compact",
         [],

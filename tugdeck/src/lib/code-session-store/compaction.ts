@@ -1,6 +1,6 @@
 /**
- * `compaction` — pure presentation helper for the transcript's
- * compaction divider.
+ * `compaction` — pure compaction helpers for the reducer: the transcript
+ * divider's text, and recognition of a `/compact` submission.
  *
  * A `compact_boundary` frame (in practice: claude's auto-compaction at
  * capacity) becomes a `system_note` with `source: "compact"` in the
@@ -27,4 +27,36 @@ export function compactionNoteText(preTokens?: number): string {
     return `Session compacted · ${formatTokensApprox(preTokens)}`;
   }
   return "Session compacted";
+}
+
+/**
+ * The editor substrate's atom placeholder (`U+FFFC`). Inlined rather than
+ * imported from `tug-atom-img`, which carries theme + DOM dependencies this
+ * module (and the reducer that consumes it) must stay free of.
+ */
+const ATOM_CHAR = "￼";
+
+/** `/compact`, optionally followed by a focus argument. */
+const COMPACT_TEXT_RE = /^\/compact(?:\s|$)/;
+
+/**
+ * Whether an in-flight user submission is a `/compact` invocation. Pure.
+ *
+ * Recognizes both shapes the composer produces: a leading command ATOM (the
+ * `/compact` chip, which is what the Z2 menu's `compact` action and the
+ * composer's own command completion mint), and plain leading `/compact` text
+ * with an optional focus argument.
+ *
+ * Load-bearing for `handleInterrupt` — see the CASE A gate there for why a
+ * compaction turn cannot be treated as a turn claude has not started.
+ */
+export function isCompactionSubmission(
+  text: string,
+  atoms: ReadonlyArray<{ type: string; value: string }>,
+): boolean {
+  const lead = atoms[0];
+  if (lead !== undefined && lead.type === "command" && text.startsWith(ATOM_CHAR)) {
+    return lead.value === "compact";
+  }
+  return COMPACT_TEXT_RE.test(text);
 }
