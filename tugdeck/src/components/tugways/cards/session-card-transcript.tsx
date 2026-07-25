@@ -105,7 +105,10 @@ import {
   type TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
 import { useDeckManager } from "@/deck-manager-context";
-import { SessionThinkingBlock } from "@/components/tugways/chrome/session-thinking-block";
+import {
+  SessionThinkingBlock,
+  thinkingCollapseKey,
+} from "@/components/tugways/chrome/session-thinking-block";
 import { SessionZ1B } from "@/components/tugways/cards/session-card-z1b";
 import {
   useFootHeightReservation,
@@ -1000,6 +1003,9 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
           <SessionThinkingBlock
             streamingStore={streamingStore}
             streamingPath={path}
+            // Route the fold through the card's expansion state so the
+            // search index can resolve it for an unmounted row.
+            collapseKey={thinkingCollapseKey(path)}
           />
         </StreamedTextGate>,
       );

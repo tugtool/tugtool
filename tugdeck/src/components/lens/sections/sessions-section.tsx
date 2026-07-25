@@ -165,6 +165,21 @@ const PHASE_VISUAL: (key: string) => TugProgressIndicatorPhaseVisual =
 /** Stable no-op subscribe for a card whose services aren't constructed yet. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
+/**
+ * Glyph box for the row's phase dot — the knob for its SIZE. Its vertical
+ * position is the separate `--tugx-lens-sessions-dot-rise` knob in
+ * `sessions-section.css`.
+ *
+ * This is the BOX, not the dot: the `large-pulsing-dot` sheds a ring that
+ * travels out to the box edge, and the dot itself paints at 60% of the box at
+ * the top of its breath (35% at the bottom). So the visible dot is
+ * `0.6 × size` — at 20 that reads as a 12px dot inside a 20px ring.
+ *
+ * Ceiling before the row grows: the two text lines total 38px (a 19px title
+ * over a 19px pulse line), so any size up to ~38 leaves the row height alone.
+ */
+const ROW_PHASE_DOT_SIZE = 20;
+
 /** The per-row phase dot — reads the bound card's `codeSessionStore`. */
 function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
   const services = useSyncExternalStore(cardServicesStore.subscribe, () =>
@@ -186,8 +201,8 @@ function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
       : OFFLINE_PHASE_INPUT;
   return (
     <TugProgressIndicator
-      variant="pulsing-dot"
-      size={12}
+      variant="large-pulsing-dot"
+      size={ROW_PHASE_DOT_SIZE}
       phase={sessionSessionPhaseKey(input)}
       phaseVisual={PHASE_VISUAL}
       aria-hidden

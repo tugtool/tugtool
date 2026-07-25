@@ -60,13 +60,24 @@
   border-bottom-color: var(--tugx-list-view-divider-color) !important;
 }
 
-/* The phase dot aligns to the TITLE line (top), not the two-line row's vertical
-   center — the dot belongs beside the session name. Mirrors the check column:
-   pin to the content top and center within a title-height line box. */
+/* The phase dot centers on the WHOLE two-line row, then rides UP by the rise
+   below. Geometric centering puts the dot between the two text lines, which
+   reads low next to a title that carries the row's identity; the rise pulls it
+   back toward the title without pinning it there (a hard pin to the title's
+   line box would clip the ring's travel, since the glyph is taller than one
+   line).
+
+   `--tugx-lens-sessions-dot-rise` is the knob — the dot's SIZE is
+   `ROW_PHASE_DOT_SIZE` in `sessions-section.tsx`. The lift is a transform, so
+   it never touches layout: the row's height and the text baselines stay put no
+   matter what you set here. Positive rises, negative drops; 0 restores plain
+   centering. Full title alignment is around 9px (half the pulse line). */
 .lens-sessions-list .tug-list-row-leading {
-  align-self: flex-start;
+  --tugx-lens-sessions-dot-rise: 8px;
+
+  align-self: center;
   align-items: center;
-  height: var(--tug-line-height-sm, 1.25rem);
+  transform: translateY(calc(-1 * var(--tugx-lens-sessions-dot-rise)));
 }
 
 /* The reorder grip rides the row's right edge, aligned to the TITLE line the
