@@ -42,6 +42,7 @@ import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-
 import {
   CommitCopyControl,
   CommitIdentityLine,
+  CommitMessage,
   CommitMetaCell,
   commitCopyText,
   formatCommitStamp,
@@ -109,9 +110,7 @@ function CommitDetail({
   return (
     <div className="tug-history-list-commit-detail tugx-commit-detail">
       {body.length > 0 ? (
-        <pre className="tugx-commit-message" data-slot="tug-history-list-message">
-          {body}
-        </pre>
+        <CommitMessage body={body} dataSlot="tug-history-list-message" />
       ) : null}
       {files.length > 0 ? (
         <CommitChangesList root={projectDir} sha={commit.sha} files={files} />

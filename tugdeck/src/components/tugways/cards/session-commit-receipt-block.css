@@ -3,23 +3,29 @@
    subject; the file count and diff stat ride the header's standard trailing
    summaries. Appearance only ([L06]). */
 
+/* The identity is PLAIN INLINE TEXT in the detail column — the same thing every
+   other block header puts there (Bash's command, Read's path). No flex box of
+   its own: a flex container establishes its own vertical alignment, which is
+   what floated the sha and subject off the header's own line box and dropped
+   them below the lifecycle dot. As inline text it rides the header's shared
+   line box exactly like a Bash command does, so the dot, the identity's first
+   line, and the trailing summaries all sit on one line. */
 .commit-receipt-header {
-  flex: 1 1 auto;
+  display: block;
   min-width: 0;
-  display: flex;
-  /* The sha rides the first line of a message that wraps to up to three lines,
-     so it pins to the top rather than centering on the block. */
-  align-items: flex-start;
-  gap: var(--tug-space-sm);
+  /* Wrapped subject lines hang under the subject's first character, the same
+     `<sha> <subject>` skeleton the History shade's rows use — the flex layout
+     used to give this implicitly by making the sha a fixed-width sibling. The
+     column is mono, so the 8-char sha + its single space measure exactly 9ch. */
+  padding-left: 9ch;
+  text-indent: -9ch;
 }
 
 /* The commit subject. It is a `<code>` inside `.tool-call-header-detail`, so it
    inherits the header's own command layout wholesale — the shared line box, the
    wrap behaviour, and the 0.5px optical seat that lands a mono line on the
-   header baseline (the exact treatment the Bash header gives its command). This
-   adds only the identity-row need: grow to fill the row. */
+   header baseline (the exact treatment the Bash header gives its command). */
 .commit-receipt-summary {
-  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -38,9 +44,7 @@
 }
 
 /* Same override for the sha, which would otherwise inherit the header's muted
-   command tone instead of the shared code tint. Never shrinks — the subject
-   beside it is what ellipsizes. */
+   command tone instead of the shared code tint. */
 .commit-receipt-header .commit-sha-text {
-  flex: 0 0 auto;
   color: var(--tug-syntax-code);
 }

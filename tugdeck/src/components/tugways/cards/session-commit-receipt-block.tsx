@@ -21,6 +21,7 @@
 import type React from "react";
 
 import { CommitShaText } from "@/components/tugways/commit-sha-text";
+import { CommitMessage } from "@/components/tugways/commit-presentation";
 import { CommitChangesList } from "@/components/tugways/tug-changes-list";
 import { BlockChrome } from "../blocks/block-chrome";
 import "@/components/tugways/commit-presentation.css";
@@ -156,7 +157,6 @@ function CommitReceipt({
   );
   return (
     <BlockChrome
-      className="tugx-commit"
       rootSlot="commit-receipt-block"
       variant="receipt"
       identity={identity}
@@ -176,9 +176,7 @@ function CommitReceipt({
           durable record, so it states itself in full rather than hiding half
           of itself behind a cue. */}
       {body.length > 0 ? (
-        <pre className="tugx-commit-message" data-slot="commit-receipt-detail">
-          {body}
-        </pre>
+        <CommitMessage body={body} dataSlot="commit-receipt-detail" />
       ) : null}
       {/* The committed files as sha-backed changes rows ([P08]) — the same
           compact rows as the live list, each expanding into the committed

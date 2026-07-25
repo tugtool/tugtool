@@ -161,6 +161,27 @@ export function CommitIdentityLine({
 }
 
 /**
+ * A commit's message body — the literal text of the record, preformatted.
+ * Shared by the History shade's expanded rows and the `/commit` receipt so the
+ * two can't drift.
+ */
+export function CommitMessage({
+  body,
+  dataSlot,
+}: {
+  /** The message body (subject excluded — it leads the identity line). */
+  body: string;
+  /** `data-slot` for the well, so each surface keeps its own test hook. */
+  dataSlot: string;
+}): React.ReactElement {
+  return (
+    <pre className="tugx-commit-message" data-slot={dataSlot}>
+      {body}
+    </pre>
+  );
+}
+
+/**
  * The Copy affordance for a commit — the same icon button the tool-block
  * headers carry, at the fold cue's scale so the two read as a matched pair.
  */

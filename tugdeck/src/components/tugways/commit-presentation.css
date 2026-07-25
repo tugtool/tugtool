@@ -104,9 +104,16 @@
   min-width: 0;
 }
 
+/* The message body — the record's literal text, wrapped but otherwise
+   preformatted. Self-contained type values: the well is used inside hosts that
+   do NOT wear the `.tugx-commit` scope class (the transcript's `/commit`
+   receipt), so it restates the two it needs rather than inheriting them. */
 .tugx-commit-message {
+  --tugx-commit-message-size: var(--tug-font-size-xs);
+  --tugx-commit-message-leading: 1.45;
   margin: 0;
-  font-family: var(--tugx-commit-subject-font);
+  min-width: 0;
+  font-family: var(--tug-font-family-mono);
   font-size: var(--tugx-commit-message-size);
   line-height: var(--tugx-commit-message-leading);
   color: var(--tugx-block-text-color);
