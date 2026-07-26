@@ -155,6 +155,15 @@ body {
      the resting quiet fill would land on the fill it is already wearing. */
   --tugx-list-row-pressed-bg:             var(--tug7-surface-selection-primary-normal-quiet-strong);
   --tugx-list-row-selected-pressed-bg:    var(--tug7-surface-selection-primary-normal-selected-rest);
+  /* The content column's tone while pressed — the selection's, since the press
+     wears the selection's fill. A read-only list repoints this to
+     `currentColor`, which for the `color` property means "keep what you
+     inherited": no flip, because there is no press fill to flip against. */
+  --tugx-list-row-pressed-text:           var(--tugx-list-row-selected-text);
+  /* How long the press takes to LEAVE. Arriving is `-instant`: a press must be
+     under the finger on the frame the button goes down, and only the release
+     is a thing to watch. */
+  --tugx-list-row-press-release-duration: var(--tug-motion-duration-moderate);
   --tugx-list-row-selected-accent-border: var(--tug7-element-tone-border-normal-accent-rest);
   --tugx-list-row-accent-border-width:    1.5px;
   /* Demoted selection — the row stays marked but yields the emphasis while
@@ -178,6 +187,12 @@ body {
   gap: var(--tugx-list-row-gap);
   width: 100%;
   box-sizing: border-box;
+  /* Anchor + stacking context for the press layer (`::after`, below). The
+     `z-index: 0` is the load-bearing half: it keeps that layer's negative
+     z-index local, so it stacks above the row's own fill and below the row's
+     content instead of sinking behind the whole row. */
+  position: relative;
+  z-index: 0;
   /* Rows size to their content by default (`auto`). A consumer that
      wants uniform row heights across a list — e.g. a single-line row
      standing alongside two-line rows — sets `--tugx-list-row-min-height`
@@ -518,39 +533,68 @@ body {
    `:active` and not a `data-` attribute, for the same reason the split-pane
    sash uses it: the pose lasts exactly as long as the button is down, the
    engine already tracks that, and no handler can drop the release. It is
-   appearance-only, so it stays inside CSS ([L06]/[L15] — a color transition).
+   appearance-only, so it stays inside CSS ([L06]/[L15]).
 
-   The `:has()` guard is what keeps the press on the ROW's own hit area.
-   `:active` matches every ancestor of the pressed element, so without it a
-   click on a row's trailing button (a snippet's Copy or ✕) would flash the
-   whole row as though the row itself had been pressed — two signals for one
-   gesture, and the wrong one is the loud one.
+   ## Why a LAYER and not another background-color
+
+   The press has a shape in time the fills do not: it lands the instant the
+   button goes down and lingers on the way out. A shared `background-color`
+   transition cannot say that. The duration in force when a state ends is the
+   one declared by the state being returned TO — release lands back on hover or
+   rest — so a slower release would have to slow every list hover in the app
+   with it, and an instant press would make hover snap. Painting the press as
+   its own overlay gives it its own `opacity` clock: instant in, moderate out,
+   with the hover and selection fills underneath running unchanged.
+
+   The `:has()` guard keeps the press on the ROW's own hit area. `:active`
+   matches every ancestor of the pressed element, so without it a click on a
+   row's trailing button (a snippet's Copy or ✕) or a drag from its grip would
+   flash the whole row as though the row itself had been pressed — two signals
+   for one gesture, and the wrong one is the loud one.
 
    `selectionSurface="control"` opts out along with every other fill rule: in
    that mode the radio / checkbox is the whole selection signal and the row
    paints no fill of its own. */
+
+/* The press layer. Sized to the row, tucked under its content by the row's own
+   `z-index: 0` (see the base rule), and transparent until the button is down.
+   Read-only lists blank it by repointing the two color tokens, so this rule
+   needs no `interactive` arm of its own — see `tug-list-view.css`. */
 /* @tug-renders-on: --tugx-list-row-pressed-bg */
-.tug-list-row[data-variant="flush"]:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)),
-.tug-list-row[data-variant="pill"]:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)) {
+.tug-list-row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
   background-color: var(--tugx-list-row-pressed-bg);
-  color: var(--tugx-list-row-selected-text);
+  opacity: 0;
+  pointer-events: none;
+  /* The way OUT. The way in is overridden to instant below. */
+  transition: opacity var(--tugx-list-row-press-release-duration)
+    var(--tug-motion-easing-exit);
 }
 
-/* Pressing an already-selected row steps to the vibrant ramp — see the token.
-   Placed after the plain press so it wins the specificity tie. */
+/* Pressing an already-selected row steps to the vibrant ramp — see the token. */
 /* @tug-renders-on: --tugx-list-row-selected-pressed-bg */
-.tug-list-row[data-variant="flush"][data-selected="true"]:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)),
-.tug-list-row[data-variant="pill"][data-selected="true"]:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)) {
+.tug-list-row[data-selected="true"]::after {
   background-color: var(--tugx-list-row-selected-pressed-bg);
 }
 
-/* The content column follows the fill, exactly as it does for a selected row:
+.tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active))::after {
+  opacity: 1;
+  transition-duration: var(--tug-motion-duration-instant);
+}
+
+/* The content column follows the layer, exactly as it does for a selected row:
    `TugLabel` paints its own title / muted-subtitle colors, so the row's own
    `color` alone would leave the text standing at its resting tone on a
-   saturated fill. Same selected-text tone for both press rungs. */
+   saturated fill. The flip is instant both ways — it rides the press's arrival
+   and steps aside at the release, leaving the fade to the fill, which is what
+   the eye is following. */
 .tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)) .tug-list-row-content,
 .tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)) .tug-list-row-content .tug-label {
-  color: var(--tugx-list-row-selected-text);
+  color: var(--tugx-list-row-pressed-text);
 }
 
 /* ---- Accent selection border (opt-in via `selectedAccent`) ----

@@ -423,7 +423,10 @@ export function GalleryTugListRow(): React.ReactElement {
           selection&apos;s own hue, a preview of what the click commits, so
           a row whose click acts without selecting still answers the
           finger. A press on an already-selected row steps one ramp
-          further. <code>selected</code> and <code>disabled</code> are
+          further. It arrives on the frame the button goes down and fades
+          out on release: the press is a layer of its own, so its clock is
+          nothing to do with the hover fill underneath it.{" "}
+          <code>selected</code> and <code>disabled</code> are
           inputs the consumer feeds — the row reflects them, it does not
           own them.
         </div>

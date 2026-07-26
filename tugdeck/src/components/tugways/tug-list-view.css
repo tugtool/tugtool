@@ -276,6 +276,12 @@ body {
   position: absolute;
   inset-block: 0;
   inset-inline-start: 0;
+  /* The bar is the top layer of the row, over every fill the row paints —
+     including the press layer. It needs saying now that `TugListRow` is a
+     stacking context of its own (for that layer): the bar is the cell's
+     pseudo-element and generated ahead of the row, so at the default `auto` it
+     would paint UNDER the row and vanish on any filled row. */
+  z-index: 1;
   width: var(--tugx-list-view-cursor-bar-width);
   background: var(--tugx-list-view-cursor-bar-color);
 }
@@ -293,30 +299,22 @@ body {
 }
 
 /* The press pose goes the same way, and for the same reason: an inert row that
-   lights up under the finger promises a click it will not honor. The variant
-   attribute matches the shape of the press rules in `tug-list-row.css` so this
-   outranks them whichever file the bundler emits first — text selection inside
-   a read-only listing drags across rows with the pointer down, and that must
-   stay a quiet gesture. */
-.tug-list-view[data-interactive="false"] .tug-list-row[data-variant="flush"]:active:not([data-disabled="true"]),
-.tug-list-view[data-interactive="false"] .tug-list-row[data-variant="pill"]:active:not([data-disabled="true"]) {
-  background-color: transparent;
-}
+   lights up under the finger promises a click it will not honor — and text
+   selection inside a read-only listing drags across rows with the button down,
+   which must stay a quiet gesture.
 
-/* The fill's companion: the press also recolors the content column, so drop
-   that too or a read-only row's text would flip tone under a fill that is no
-   longer there. `inherit` returns the column to the host surface's color — the
-   resting state of a `flush` row, which paints no foreground of its own. */
-.tug-list-view[data-interactive="false"] .tug-list-row:active:not([data-disabled="true"]) .tug-list-row-content,
-.tug-list-view[data-interactive="false"] .tug-list-row:active:not([data-disabled="true"]) .tug-list-row-content .tug-label {
-  color: inherit;
-}
-
-/* Unless the row is selected — then the selection fill IS still under the text
-   and the selected tone is the resting state to return to. */
-.tug-list-view[data-interactive="false"] .tug-list-row[data-selected="true"]:not([data-selection-surface="control"]):active .tug-list-row-content,
-.tug-list-view[data-interactive="false"] .tug-list-row[data-selected="true"]:not([data-selection-surface="control"]):active .tug-list-row-content .tug-label {
-  color: var(--tugx-list-row-selected-text);
+   Blanking it is done on the row's TOKENS rather than on its rules. A press
+   paints through a layer and a text flip whose selectors carry every guard the
+   press needs; out-ranking that pair from here would mean restating all of it,
+   and restating the resting text color the flip returns to. Repointing the
+   three tokens says the same thing once, at any specificity: no fill, and
+   `currentColor` for the text, which on the `color` property means "keep what
+   you inherited" — so a selected read-only row keeps its selection tone and an
+   ordinary one keeps the host surface's. */
+.tug-list-view[data-interactive="false"] .tug-list-row {
+  --tugx-list-row-pressed-bg: transparent;
+  --tugx-list-row-selected-pressed-bg: transparent;
+  --tugx-list-row-pressed-text: currentColor;
 }
 
 /* ---- Row layout — opt-in via the `rowLayout` prop ----

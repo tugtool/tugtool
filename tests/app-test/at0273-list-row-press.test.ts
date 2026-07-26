@@ -11,16 +11,18 @@
  * only honest test is to hold a real mouse button down over a real row and read
  * back what the engine painted.
  *
- * Three reads, one gesture, on the gallery's own `TugListRow` rows:
- *   - **rest** — pointer away from the row.
- *   - **held** — a native mouseDown parked on the row. Must differ from rest.
- *   - **released** — after the mouseUp, pointer still over the row (so this read
- *     is the HOVER fill). Must differ from held, which is what proves the press
- *     is its own rung and not just the hover wash arriving late.
+ * The press paints through the row's `::after` layer, so that is what this
+ * reads. Three moments, one gesture, on the gallery's own `TugListRow` rows:
+ *   - **rest** — pointer away from the row: the layer is fully transparent.
+ *   - **held** — a native mouseDown parked on the row: the layer is fully
+ *     opaque, and its transition duration is ZERO. The press lands on the frame
+ *     the button goes down; nothing about it eases in.
+ *   - **released** — after the mouseUp: transparent again, and the duration in
+ *     force at rest is non-zero. That asymmetry IS the feature — pop in, fade
+ *     out — and it is the half a screenshot could never catch.
  *
- * Backgrounds are compared as the computed `background-color` string, so the
- * pin survives any retune of the tokens themselves — it asserts that the three
- * poses are distinct, never what color each one is (at0110 owns the hue).
+ * Read as computed values rather than colors, so the pin survives any retune of
+ * the tokens (at0110 owns the hue) or of the fade's length.
  *
  * @covers tugdeck/src/components/tugways/tug-list-row.css
  * @covers tugdeck/src/components/tugways/cards/gallery-tug-list-row.tsx
@@ -38,10 +40,12 @@ const GALLERY = `${CARD} [data-testid="gallery-tug-list-row"]`;
 /** The Variants section's first `flush` row ("Rest row"). */
 const ROW = `${GALLERY} .tug-list-row[data-variant="flush"]`;
 
-const ROW_BG = `(function(){
+/** The press layer's pose: how present it is, and the clock it is under. */
+const PRESS_LAYER = `(function(){
   var el = document.querySelector(${JSON.stringify(ROW)});
   if (el === null) throw new Error("gallery list row not found");
-  return getComputedStyle(el).backgroundColor;
+  var s = getComputedStyle(el, "::after");
+  return { opacity: s.opacity, duration: s.transitionDuration };
 })()`;
 
 function deckShape() {
@@ -98,25 +102,32 @@ describe.skipIf(!SHOULD_RUN)("at0273 — a list row answers the press", () => {
           y: bounds.y + bounds.height / 2,
         };
 
-        const rest = await app.evalJS<string>(ROW_BG);
+        type Pose = { opacity: string; duration: string };
+        const rest = await app.evalJS<Pose>(PRESS_LAYER);
 
         await app.nativeMouseDown(point);
         await settle();
-        const held = await app.evalJS<string>(ROW_BG);
+        const held = await app.evalJS<Pose>(PRESS_LAYER);
 
         await app.nativeMouseUp(point);
         await settle();
-        const released = await app.evalJS<string>(ROW_BG);
+        const released = await app.evalJS<Pose>(PRESS_LAYER);
 
         console.log(
           "[at0273] rest / held / released:",
           JSON.stringify({ rest, held, released }),
         );
 
-        // The press is visible at all…
-        expect(held).not.toBe(rest);
-        // …and it is its own rung, not the hover wash under another name.
-        expect(held).not.toBe(released);
+        // The press is visible at all, and gone again after the release.
+        expect(rest.opacity).toBe("0");
+        expect(held.opacity).toBe("1");
+        expect(released.opacity).toBe("0");
+
+        // Pop in: nothing eases the press onto the row.
+        expect(held.duration).toBe("0s");
+        // Fade out: the release is the part that takes time.
+        expect(parseFloat(released.duration)).toBeGreaterThan(0);
+        expect(released.duration).toBe(rest.duration);
       } finally {
         await app.close();
       }
