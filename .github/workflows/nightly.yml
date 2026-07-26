@@ -108,14 +108,41 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" \
             $(security list-keychains -d user | tr -d '"')
 
+          # `security import` reports every failure as "One or more parameters
+          # were not valid", so the decode is checked separately to tell a
+          # mangled secret apart from a wrong password.
+          #
+          # Validation is deliberately macOS-native. `security export` writes
+          # p12s encrypted with RC2-40-CBC, which OpenSSL 3 (first on the PATH
+          # of a GitHub macOS runner) refuses without the legacy provider — an
+          # openssl-based check rejects perfectly valid certificates.
           CERT="$RUNNER_TEMP/certificate.p12"
-          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT"
-          security import "$CERT" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -T /usr/bin/codesign -T /usr/bin/security
+          if ! printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERT" 2>/dev/null; then
+            echo "::error::APPLE_CERTIFICATE is not valid base64. Re-export the .p12 and set the secret from a file, not the clipboard."
+            exit 1
+          fi
+          echo "Decoded $(wc -c < "$CERT" | tr -d ' ') bytes of certificate data."
+
+          if ! security import "$CERT" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+                 -T /usr/bin/codesign -T /usr/bin/security; then
+            echo "::error::Could not import the certificate. Either APPLE_CERTIFICATE_PASSWORD does not match the .p12, or APPLE_CERTIFICATE decoded to something that is not a PKCS#12 archive."
+            rm -f "$CERT"
+            exit 1
+          fi
           rm -f "$CERT"
           # Let codesign use the private key without an interactive prompt.
           security set-key-partition-list -S apple-tool:,apple: -s \
             -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+
+          # The import can succeed while yielding nothing codesign can use (a
+          # certificate with no private key, or an expired one). Fail here,
+          # where the cause is obvious, rather than an hour later in sign-bundle.
+          if ! security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+               | grep -q "Developer ID Application:"; then
+            echo "::error::No 'Developer ID Application' identity in the keychain after import — the .p12 is missing its private key or the certificate has expired."
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+            exit 1
+          fi
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
       - name: Provision notary profile
