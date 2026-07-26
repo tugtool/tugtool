@@ -1301,20 +1301,21 @@ fn is_empty_session(row: &crate::session_ledger::SessionRow) -> bool {
 ///
 /// Normally the request wins — a rebound-but-not-yet-spawned entry adopts the
 /// request's intent (a card can legitimately open fresh in place). The one
-/// exception: never downgrade to `New` while the entry still holds a persisted
-/// `claude_session_id`. A `new`-mode spawn reuses the id via `--session-id`,
-/// which collides with the existing on-disk transcript ("Session ID … is
-/// already in use") and crash-loops the card to `errored`. The client only
-/// requests `New` for such an entry by mis-classifying a session that has a
-/// JSONL as turn-count-zero on restore; hold the ledger-derived mode instead.
-/// A genuine discard clears `claude_session_id` first (`do_reset`), so this
-/// guard never blocks a real fresh-in-place spawn.
+/// exception: never downgrade to `New` while the entry still has a transcript
+/// worth protecting — a persisted `claude_session_id` whose session is not
+/// content-empty. A `new`-mode spawn reuses the id via `--session-id`, which
+/// collides with the existing on-disk transcript ("Session ID … is already in
+/// use") and crash-loops the card to `errored`. The client only requests `New`
+/// for such an entry by mis-classifying a session that has a JSONL as
+/// turn-count-zero on restore; hold the ledger-derived mode instead. A genuine
+/// discard clears `claude_session_id` first (`do_reset`), so this guard never
+/// blocks a real fresh-in-place spawn.
 fn reconcile_idle_session_mode(
     current: SessionMode,
     requested: SessionMode,
-    has_claude_session_id: bool,
+    has_resumable_transcript: bool,
 ) -> SessionMode {
-    if requested == SessionMode::New && has_claude_session_id {
+    if requested == SessionMode::New && has_resumable_transcript {
         current
     } else {
         requested
@@ -2767,6 +2768,35 @@ impl AgentSupervisor {
         }
     }
 
+    /// Does this session hold nothing at all — nothing in the ledger
+    /// ([`is_empty_session`]) AND no transcript on disk?
+    ///
+    /// Both signals must agree before a spawn is routed away from `resume`.
+    /// The ledger side is the same emptiness the picker filters on; the disk
+    /// side is the exact file a `--resume` would open. Requiring both means a
+    /// path-encoding miss can never route a session that really has a
+    /// transcript into a `--session-id` collision, and a ledger row that
+    /// under-reports its content (turn counts that never flowed through a live
+    /// `turn_complete`) is still protected by the file being there.
+    ///
+    /// `false` when there is no ledger to consult — with no way to tell empty
+    /// from populated, the request's own mode stands.
+    fn session_is_content_empty(&self, tug_session_id: &TugSessionId, project_dir: &str) -> bool {
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            return false;
+        };
+        let Ok(Some(row)) = ledger.get(&tug_session_id.0) else {
+            return false;
+        };
+        if !is_empty_session(&row) {
+            return false;
+        }
+        let (dir, _canonical) =
+            crate::session_ledger::claude_project_dir(ledger.claude_projects_root(), project_dir);
+        let jsonl = dir.join(format!("{}.jsonl", tug_session_id.0));
+        crate::external_sessions::stat_size_mtime(&jsonl).is_none()
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn do_spawn_session(
         &self,
@@ -2814,6 +2844,33 @@ impl AgentSupervisor {
             })?;
         let workspace_key = workspace_entry.workspace_key.clone();
         drop(workspace_entry);
+
+        // An empty session has nothing to resume. Claude writes a session's
+        // JSONL only once a turn lands, so a session abandoned before its
+        // first prompt leaves no transcript at all and `--resume` on its id
+        // exits with "No conversation found" — surfacing a "couldn't resume"
+        // alert for a session that never held a conversation. Those rows are
+        // the same ones `build_listed_union` drops as empty, so spawn them
+        // fresh instead, under the SAME id: the card opens on its project and
+        // the id keeps keying the session's durable non-JSONL content (shell
+        // ledger, `/btw` history, staged context), exactly as the client's own
+        // zero-turn restore path does.
+        //
+        // `spawn_mode` is what the entry gets stamped with; `session_mode`
+        // stays the mode the client asked for, so the ownership gates below
+        // still read a resume request as a resume request.
+        let content_empty = self.session_is_content_empty(&tug_session_id, &project_dir_str);
+        let spawn_mode = if content_empty && session_mode == SessionMode::Resume {
+            tracing::info!(
+                target: "dev::session-lifecycle",
+                event = "spawn.empty_session_spawned_fresh",
+                card_id = card_id,
+                tug_session_id = %tug_session_id,
+            );
+            SessionMode::New
+        } else {
+            session_mode
+        };
 
         // Phase 1: ledger get-or-insert + per-client affinity insert, atomic
         // under the outer ledger lock AND the client_sessions lock. Holding
@@ -2880,7 +2937,7 @@ impl AgentSupervisor {
                         tug_session_id.clone(),
                         workspace_key.clone(),
                         project_dir.clone(),
-                        session_mode,
+                        spawn_mode,
                         CrashBudget::new(3, Duration::from_secs(60)),
                     )))
                 })
@@ -2935,12 +2992,12 @@ impl AgentSupervisor {
             }
             if !inserted
                 && entry.spawn_state == SpawnState::Idle
-                && entry.session_mode != session_mode
+                && entry.session_mode != spawn_mode
             {
                 entry.session_mode = reconcile_idle_session_mode(
                     entry.session_mode,
-                    session_mode,
-                    entry.claude_session_id.is_some(),
+                    spawn_mode,
+                    entry.claude_session_id.is_some() && !content_empty,
                 );
             }
             // Stamp the resolved permission mode onto the entry the same way:
@@ -10831,6 +10888,112 @@ mod tests {
         assert_eq!(
             by_card["card-No"]["has_jsonl"], false,
             "a session with no transcript reports has_jsonl false"
+        );
+    }
+
+    /// [`AgentSupervisor::session_is_content_empty`] — the predicate that
+    /// routes a spawn away from `resume`. It answers `true` only when the
+    /// ledger row holds nothing AND no transcript exists on disk; either
+    /// signal of content keeps the session resumable.
+    #[tokio::test]
+    async fn session_is_content_empty_needs_both_a_blank_row_and_no_transcript() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude_root = tmp.path().join("projects");
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(
+                tmp.path().join("sessions.db"),
+                claude_root.clone(),
+            )
+            .unwrap(),
+        );
+        let (sup, ledger, _rx) = make_supervisor_for_ledger(ledger, None);
+
+        // Never prompted, no transcript — the abandoned session.
+        ledger
+            .record_spawn("blank", "ws-1", "/proj/blank", "card-1", 1_000, None)
+            .unwrap();
+        // Never prompted per the ledger, but claude wrote a transcript.
+        ledger
+            .record_spawn("ondisk", "ws-1", "/proj/ondisk", "card-2", 2_000, None)
+            .unwrap();
+        seed_external_jsonl(&claude_root, "/proj/ondisk", "ondisk", "resume me");
+        // No transcript yet, but the ledger recorded the user's prompt.
+        ledger
+            .record_spawn("prompted", "ws-1", "/proj/prompted", "card-3", 3_000, None)
+            .unwrap();
+        ledger.record_user_prompt("prompted", "hello").unwrap();
+
+        assert!(
+            sup.session_is_content_empty(&TugSessionId("blank".into()), "/proj/blank"),
+            "a blank row with no transcript holds nothing to resume"
+        );
+        assert!(
+            !sup.session_is_content_empty(&TugSessionId("ondisk".into()), "/proj/ondisk"),
+            "an on-disk transcript keeps the session resumable"
+        );
+        assert!(
+            !sup.session_is_content_empty(&TugSessionId("prompted".into()), "/proj/prompted"),
+            "a recorded prompt keeps the session resumable"
+        );
+        assert!(
+            !sup.session_is_content_empty(&TugSessionId("unknown".into()), "/proj/unknown"),
+            "a session the ledger has never seen is left to the request's mode"
+        );
+    }
+
+    /// A `resume` spawn for a session that holds nothing is spawned fresh
+    /// under the same id — the card opens instead of failing into the
+    /// picker's "couldn't resume the previous session" alert. A session with
+    /// content still resumes.
+    #[tokio::test]
+    async fn spawn_session_resume_of_an_empty_session_spawns_fresh() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(
+                tmp.path().join("sessions.db"),
+                tmp.path().join("projects"),
+            )
+            .unwrap(),
+        );
+        let (sup, ledger, _rx) = make_supervisor_for_ledger(ledger, None);
+
+        ledger
+            .record_spawn("empty", "ws-1", test_project_dir(), "card-1", 1_000, None)
+            .unwrap();
+        ledger
+            .record_spawn("full", "ws-1", test_project_dir(), "card-2", 2_000, None)
+            .unwrap();
+        ledger.record_user_prompt("full", "hello").unwrap();
+
+        sup.handle_control("spawn_session", &resume_payload("card-1", "empty"), 10)
+            .await
+            .expect_handled();
+        sup.handle_control("spawn_session", &resume_payload("card-2", "full"), 10)
+            .await
+            .expect_handled();
+
+        let modes = {
+            let live = sup.ledger.lock().await;
+            let mut modes = Vec::new();
+            for id in ["empty", "full"] {
+                let entry = live
+                    .get(&TugSessionId::new(id))
+                    .expect("entry")
+                    .lock()
+                    .await;
+                modes.push(entry.session_mode);
+            }
+            modes
+        };
+        assert_eq!(
+            modes[0],
+            SessionMode::New,
+            "a session with no content and no transcript is spawned fresh"
+        );
+        assert_eq!(
+            modes[1],
+            SessionMode::Resume,
+            "a session with recorded content is still resumed"
         );
     }
 
