@@ -794,6 +794,14 @@ export interface TugPaneProps {
    */
   lensSide?: LensSide;
   /**
+   * Set on the pane hosting the Lens card, pinned or not. Separate from
+   * {@link lensSide}, which says only where a PINNED Lens stands: a Lens
+   * dragged off its pin is an ordinary free pane for geometry purposes but is
+   * still the Lens, and the one thing that stays true either way is that it
+   * hosts a singleton card and never accepts a merge.
+   */
+  isLensPane?: boolean;
+  /**
    * Called when a card drag ends over another card's tab bar ([D45]).
    *
    * Receives the source card id, the target card id, and the insertion index
@@ -855,18 +863,22 @@ export function TugPane({
   onCardCollapsed,
   placement,
   lensSide,
+  isLensPane = false,
 }: TugPaneProps) {
   const { id, position, size } = stackState;
   const collapsed = stackState.collapsed === true;
   // Two derived geometry modes, both placed by `lib/layout-imposer.ts`.
   //
-  // Pinned — the Lens. It holds one side of the canvas at a fixed pin and
-  // keeps its own width, so it is non-draggable, resizable only on its
-  // exposed (deck-facing) edge, and excluded from snap and merge.
+  // Pinned — the Lens, while it is standing at its side. It holds that side
+  // at a fixed pin and keeps its own width, so it exposes only its deck-facing
+  // resize edge and is excluded from merge. It is DRAGGABLE, and dragging it
+  // is exactly how it stops being pinned: the commit releases it, `lensSide`
+  // arrives undefined on the next render, and it becomes a free pane in the
+  // deck like any other.
   //
-  // Imposed — a slotted pane. It derives its position from its place in the
-  // imposition chain and its height from the canvas, instead of from
-  // `position`. Its width is still its own; the imposer never touches it.
+  // Imposed — a slotted pane. It derives its position from its slot's anchor
+  // and its height from the canvas, instead of from `position`. Its width is
+  // still its own; the imposer never touches it.
   //
   // The two are mutually exclusive, which the deck-state invariant already
   // guarantees (the Lens pane never carries a slot); the check here keeps the
@@ -874,10 +886,13 @@ export function TugPane({
   // its stored `position`/`size`. Every mode still owns its geometry [L09].
   const pinned = lensSide !== undefined;
   const imposed = !pinned && placement !== undefined;
-  // Read at gesture time by the drag and resize machines, whose `useCallback`
-  // identities should not churn with the arrangement.
-  const imposedRef = useRef(imposed);
-  imposedRef.current = imposed;
+  // Both modes place the frame by CSS pins rather than by stored pixels, so
+  // both need the same two things at gesture time: a freeze of the live rect
+  // before the first move, and an `evictSlot` on the commit that follows.
+  // Read from a ref so the drag and resize machines' `useCallback` identities
+  // do not churn with the arrangement.
+  const derivedRef = useRef(pinned || imposed);
+  derivedRef.current = pinned || imposed;
   const activeCardId = activeCardIdFromProps ?? stackState.activeCardId;
 
   // Ref to the frame DOM element for appearance-zone style mutations.
@@ -1520,7 +1535,7 @@ export function TugPane({
 
       // Dragging releases an imposed pane from its slot, so it converts to free
       // pixel geometry before the first move (see `releaseImposedFrame`).
-      const startPosition = imposedRef.current
+      const startPosition = derivedRef.current
         ? releaseImposedFrame(frame, dragCanvasBounds.current)
         : { x: position.x, y: position.y };
       dragStartPosition.current = { x: startPosition.x, y: startPosition.y };
@@ -1535,7 +1550,7 @@ export function TugPane({
         if (!paneId || paneId === id) return;
         // The Lens never accepts a merge — skip its tab bar as a drop
         // target.
-        if (el.closest(".tug-pane[data-lens]")) return;
+        if (el.closest(".tug-pane[data-lens-pane]")) return;
         dragTabBarCache.current.push({ paneId, rect: el.getBoundingClientRect(), el });
       });
 
@@ -1709,7 +1724,7 @@ export function TugPane({
           id,
           finalPos,
           { width: frame.offsetWidth, height: committedHeight },
-          imposedRef.current ? { evictSlot: true } : undefined,
+          derivedRef.current ? { evictSlot: true } : undefined,
         );
 
         // Reset all drag state.
@@ -1771,7 +1786,7 @@ export function TugPane({
       // Resizing releases an imposed pane from its slot, exactly as dragging
       // does, so it converts to free pixel geometry first and the machine below
       // seeds from that measurement rather than from stale stored geometry.
-      const released = imposedRef.current
+      const released = derivedRef.current
         ? releaseImposedFrame(frame, resizeCanvasBounds)
         : null;
       const startLeft = released?.x ?? position.x;
@@ -2091,6 +2106,7 @@ export function TugPane({
       data-testid="tug-pane"
       data-pane-id={id}
       data-collapsed={collapsed ? "true" : "false"}
+      {...(isLensPane ? { "data-lens-pane": "" } : {})}
       {...(lensSide !== undefined ? { "data-lens": lensSide } : {})}
       {...(imposed && placement !== undefined
         ? { "data-imposed": String(placement.slot) }
@@ -2173,7 +2189,7 @@ export function TugPane({
             activeCardId={activeCardId}
             onCollapse={handleFrameCollapseToggle}
             onClose={handleTitleBarClose}
-            onDragStart={pinned ? undefined : handleDragStart}
+            onDragStart={handleDragStart}
           />
 
           <div className="tug-pane-body" data-testid="tug-pane-body">

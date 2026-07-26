@@ -1,16 +1,17 @@
 /**
  * layouts-section.tsx — the Lens **Layouts** section: the deck's layout picker.
  *
- * Every layout decision the deck has is made here, on two axes. The side
- * control says which side the Lens holds; the kind rows say how the cards are
- * arranged in what is left. Both write the deck's `imposition` record — one
+ * Every layout decision the deck has is made here, on two axes. The **Lens**
+ * group says which side the Lens holds; the **Layout** group says how the cards
+ * are arranged in what is left. Both write the deck's `imposition` record — one
  * field each — so "where is the Lens" is a layout question answered beside the
  * other layout questions rather than in an app-wide preference somewhere else.
  *
- * Every option is a picture of the result ({@link LayoutMiniature}) rather than
- * a label for it. The pictures read the *live* Lens side, so choosing Lens Left
- * flips all of them at once: a tile is a scale drawing of this deck, not an
- * abstract N-up.
+ * Both groups are the same control at the same scale: a named option is a
+ * picture of the result ({@link LayoutMiniature}) with its name beside it, two
+ * to a row — the gallery card's `P4 · Two-column rows` shape. The pictures read
+ * the *live* Lens side, so choosing Lens Left flips all of them at once: a tile
+ * is a scale drawing of this deck, not an abstract N-up.
  *
  * Choosing a layout is the only thing that happens here; putting a card into
  * one of the kind's numbered slots happens on the rows (see
@@ -21,15 +22,15 @@
  * `useLayoutEffect`; [L06] the miniatures are pure props → CSS; [L11] both
  * controls emit `selectValue` through the responder chain, which this section
  * turns into `set-imposition-lens` / `set-imposition` dispatches; [L19]/[L20]
- * the controls are `TugChoiceGroup` and `TugRadioGroup`, composed rather than
- * hand-rolled.
+ * both controls are `TugRadioGroup`s, composed rather than hand-rolled — the
+ * group's own `label` is what names each axis.
  *
  * @module components/lens/sections/layouts-section
  */
 
 import "./layouts-section.css";
 
-import React, { useLayoutEffect, useMemo, useSyncExternalStore } from "react";
+import React, { useLayoutEffect, useSyncExternalStore } from "react";
 import { Columns3 } from "lucide-react";
 
 import { registerLensSection } from "@/components/lens/lens-section-registry";
@@ -47,8 +48,6 @@ import {
   type ImpositionKind,
   type LensSide,
 } from "@/lib/layout-imposer";
-import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
-import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
@@ -76,8 +75,8 @@ const KIND_LABELS: Record<ImpositionKind, string> = {
 const SIDES: readonly LensSide[] = ["left", "right"];
 
 const SIDE_LABELS: Record<LensSide, string> = {
-  left: "Lens on left",
-  right: "Lens on right",
+  left: "Left",
+  right: "Right",
 };
 
 /** The deck's imposition record — both axes — straight from the store ([L02]). */
@@ -100,18 +99,6 @@ function LayoutsCollapsedSummary(): React.ReactElement {
 
 function LayoutsSectionBody({ host }: { host: LensSectionHost }): React.ReactElement {
   const { kind, lens } = useImposition();
-
-  // Each side segment draws the deck with the Lens on that side and no cards:
-  // the question is only which edge, so the chain would be noise in it.
-  const sideItems: TugChoiceItem[] = useMemo(
-    () =>
-      SIDES.map((side): TugChoiceItem => ({
-        value: side,
-        "aria-label": SIDE_LABELS[side],
-        icon: <LayoutMiniature kind={null} lens={side} selected={side === lens} />,
-      })),
-    [lens],
-  );
 
   // Both controls report selection by dispatching `selectValue` up the
   // responder chain ([L11]) — there are no change callbacks — so the section
@@ -151,25 +138,37 @@ function LayoutsSectionBody({ host }: { host: LensSectionHost }): React.ReactEle
         data-testid="lens-layouts-section"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
-        <TugChoiceGroup
-          items={sideItems}
+        {/* Which edge the Lens holds. Each option draws the deck with the Lens
+            on that side and no cards — the question is only which edge, so the
+            chain would be noise in it. */}
+        <TugRadioGroup
           value={lens}
           senderId={SIDE_SENDER_ID}
           focusGroup={host.focusGroup}
           size="sm"
-          emphasis="ghost"
-          sidePadding="xs"
-          aria-label="Lens side"
+          label="Lens"
+          className="layouts-section-group"
           data-testid="lens-layouts-side"
-        />
+        >
+          {SIDES.map((side) => (
+            <TugRadioItem key={side} value={side}>
+              <span className="layouts-section-option">
+                <LayoutMiniature kind={null} lens={side} selected={side === lens} />
+                <span className="layouts-section-option-label">
+                  {SIDE_LABELS[side]}
+                </span>
+              </span>
+            </TugRadioItem>
+          ))}
+        </TugRadioGroup>
 
         <TugRadioGroup
           value={kind ?? OFF_VALUE}
           senderId={KIND_SENDER_ID}
           focusGroup={host.focusGroup}
           size="sm"
-          className="layouts-section-kinds"
-          aria-label="Layout"
+          label="Layout"
+          className="layouts-section-group"
           data-testid="lens-layouts-kind"
         >
           <TugRadioItem value={OFF_VALUE}>

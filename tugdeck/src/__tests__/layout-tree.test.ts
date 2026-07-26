@@ -293,6 +293,41 @@ describe("serialize and deserialize (v4 wire)", () => {
     }
   });
 
+  test("a blob with no `lensPinned` reads as pinned", () => {
+    // Every blob written before the Lens could be dragged off its pin. Absent
+    // must not mean floating, or an upgrade would scatter every deck's Lens.
+    const json = JSON.stringify(
+      serialize(lensDeck("right", { width: 420, height: 1080 })),
+    );
+    expect(JSON.parse(json).imposition.lensPinned).toBeUndefined();
+    expect(deserialize(json, 1920, 1080).imposition.lensPinned).toBeUndefined();
+  });
+
+  test("round-trips a Lens that has been dragged off its pin", () => {
+    const deck = lensDeck("left", { width: 420, height: 1080 });
+    const floating = {
+      ...deck,
+      imposition: { ...deck.imposition, lensPinned: false },
+    };
+    const restored = deserialize(JSON.stringify(serialize(floating)), 1920, 1080);
+    expect(restored.imposition.lensPinned).toBe(false);
+    // The side survives the float, so re-pinning returns it to the same edge.
+    expect(restored.imposition.lens).toBe("left");
+  });
+
+  test("a floating Lens takes the canvas fit like any other free pane", () => {
+    // Pinned, its geometry is derived and the clamp would be meaningless. Off
+    // the pin it is an ordinary pane in the deck, and a deck restored on a
+    // smaller display must not leave it hanging off the bottom.
+    const deck = lensDeck("right", { width: 500, height: 2000 });
+    const floating = {
+      ...deck,
+      imposition: { ...deck.imposition, lensPinned: false },
+    };
+    const r = deserialize(JSON.stringify(serialize(floating)), 1280, 800).panes[0];
+    expect(r.size.height).toBeLessThanOrEqual(800);
+  });
+
   test("does not fit-clamp the Lens pane (derived geometry survives a smaller canvas)", () => {
     // The Lens saved on a tall display, restored on a shorter one. A free
     // pane would be height-clamped by fitPaneGeometry; the Lens pane must

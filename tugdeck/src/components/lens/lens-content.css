@@ -42,3 +42,21 @@
 }
 
 /* Section + band styling lives in lens-section-band.css. */
+
+/* The reorder handle on every Lens list row, wherever the row is authored.
+   Three things, one rule, so the three sections cannot drift apart:
+
+   - centered on the WHOLE row, not on its first line — a two-line Sessions row
+     and a one-line Snippets row then wear the handle at the same relative spot;
+   - a wider gap before it than the row's own inter-slot gap, so the handle
+     stands apart from whatever trailing control precedes it (the slot picker
+     must never read as ending in a grip);
+   - tucked past the row's inline inset, so the handle sits at the list frame
+     rather than a full row-inset in from it.
+
+   Tune the two margins here; they are the only numbers this rule holds. */
+.lens-content .tug-list-row-grip {
+  align-self: center;
+  margin-inline-start: 7px;
+  margin-inline-end: -5px;
+}

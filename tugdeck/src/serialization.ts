@@ -36,6 +36,7 @@ import {
 import {
   clampSlot,
   isImpositionKind,
+  isLensPinned,
   isLensSide,
   DEFAULT_LENS_SIDE,
   type DeckImposition,
@@ -330,9 +331,13 @@ function parseV4(
   const lens: LensSide = isLensSide(impositionRecord?.["lens"])
     ? (impositionRecord["lens"] as LensSide)
     : (legacyLensAnchor ?? fallbackLensSide);
+  // `lensPinned` is additive-optional too: absent — every blob written before
+  // the Lens could be dragged off its pin — reads as pinned.
+  const lensPinned = impositionRecord?.["lensPinned"];
   const imposition: DeckImposition = {
     ...(kind !== undefined ? { kind } : {}),
     lens,
+    ...(lensPinned === false ? { lensPinned: false } : {}),
   };
 
   const panes: TugPaneState[] = [];
@@ -375,7 +380,10 @@ function parseV4(
         ? clampSlot(kind, rawSlot)
         : undefined;
 
-    const derived = isLensPane || slot !== undefined;
+    // A Lens dragged off its pin is an ordinary free pane, so it takes the fit
+    // clamp like any other; only a Lens standing at its pin derives its frame.
+    const derived =
+      (isLensPane && isLensPinned(imposition)) || slot !== undefined;
     const { x, y, width, height } = derived
       ? { x: pos.x, y: pos.y, width: sz.width, height: sz.height }
       : fitPaneGeometry(pos, sz, canvasWidth, canvasHeight);

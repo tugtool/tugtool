@@ -12,31 +12,39 @@
  * through to the output. When the assigned panes are wider than the canvas,
  * they run off the far edge — an ordinary outcome, not an error.
  *
- * ## Packing
+ * ## Where a slot is
  *
- * The chain starts at the edge **farthest from the Lens** and runs toward it:
- * a right-docked Lens packs the cards left, a left-docked Lens packs them
- * right, and a closed Lens packs left. An empty slot occupies nothing — slot
- * numbers order the chain, they do not reserve space in it.
+ * A slot is an **anchor at a fixed fraction of the band**, and nothing else in
+ * the deck moves it. Numbering runs from the edge farthest from the Lens toward
+ * the Lens: a right-docked Lens numbers left-to-right, a left-docked Lens
+ * numbers right-to-left, and a closed Lens numbers left-to-right.
  *
- * One rule sets the whole strip: the **step** between one card's near edge and
- * the next one's.
+ * Slot 0 hugs the far edge; the last slot hugs the Lens. In between the anchors
+ * space evenly. One rule says all of it — for a pane of width `w` in slot `k`
+ * of an `N`-slot imposition, measured from the packing edge:
  *
  * ```
- *   step = min(gap, (band - totalCardWidth) / (cards - 1))
+ *   offset = k / (N - 1) × max(0, band - w)
  * ```
  *
- * When the cards fit, the step is exactly one **imposition gap** — the same gap
- * an Option-drag snaps to — and every leftover pixel collects in one place,
- * between the last card and the Lens. Slack pooled in one wide margin reads as
- * deliberate; the same slack split into equal wedges between cards reads as
- * drift.
+ * `band - w` is the pane's **travel**: how far it can slide before its far edge
+ * leaves the band. At slot 0 it has travelled none of it and sits on the far
+ * edge; at slot `N-1` it has travelled all of it and its far edge lands exactly
+ * on the Lens. That is what makes "the card in the last slot is the one beside
+ * the Lens" true by construction rather than by arithmetic that happens to work
+ * out.
  *
- * When they do not fit, the step goes negative and the cards **overlap**, by
- * equal amounts, exactly enough that the last card's far edge lands on the
- * band's far edge. Cards overlapping is an ordinary outcome of a narrow deck.
- * Cards sliding under the Lens is not — the band ends where the Lens begins,
- * and the strip always ends with it.
+ * The consequence worth naming: **a pane's position depends on its own width
+ * and nothing else's.** Closing, widening, or adding a card leaves every other
+ * card exactly where it was — a slot is a place in the arrangement, never a
+ * place in a queue. Slack therefore spreads evenly between the cards rather
+ * than pooling beside the Lens; an arrangement that stays still is worth more
+ * than one whose margins collect in one place.
+ *
+ * When the cards are wider than their share, the offsets crowd together and the
+ * cards **overlap** — an ordinary outcome of a narrow deck. A pane wider than
+ * the whole band has no travel at all (`max(0, …)`) and sits on the far edge in
+ * every slot.
  *
  * The Lens is imposed too, by {@link imposeLensStyle}, but it is the strip's
  * fixed end rather than a link in the chain: it holds its pin and its width
@@ -44,12 +52,16 @@
  *
  * ## Where the numbers come from
  *
- * The widths are the deck's own ([L09] — panes own their geometry); the band is
- * the container, which only CSS knows. So the step is written as a CSS `min()`
- * over `100%` and the offsets as `calc()` over it, and the browser resolves the
- * arrangement during its own reflow — no measurement, and no resize
- * observation anywhere on the deck. Widen the window and the overlap eases off
- * on its own.
+ * The width is the pane's own ([L09] — panes own their geometry); the band is
+ * the container, which only CSS knows. So the offset is written as a `calc()`
+ * over `100%` and the browser resolves it during its own reflow — no
+ * measurement, and no resize observation anywhere on the deck. Widen the window
+ * and the crowding eases off on its own.
+ *
+ * Every horizontal pin is emitted as `left`, including the ones measured from
+ * the right edge (as `100% - …`). A frame that is always positioned by the same
+ * property can *transition* between two arrangements; one that switches from
+ * `right` to `left` can only cut.
  *
  * Pure module: no DOM, store, or React runtime imports — the same discipline as
  * `snap.ts`. (`React.CSSProperties` below is a type-only import.)
@@ -76,8 +88,26 @@ export type LensSide = "left" | "right";
 export interface DeckImposition {
   /** The N-up rule, or absent when nothing is imposed. */
   kind?: ImpositionKind;
-  /** The side the Lens holds; the chain packs away from it. */
+  /** The side the Lens holds; the arrangement is numbered away from it. */
   lens: LensSide;
+  /**
+   * Whether the Lens is standing at its pin. Absent reads as pinned.
+   *
+   * Dragging the Lens by its title bar sets this false: it becomes an ordinary
+   * free pane, and the arrangement then spans the whole canvas exactly as it
+   * does when the Lens is closed. Choosing anything in the Layouts section puts
+   * it back — that is the gesture that means "the Lens belongs on this side".
+   *
+   * The side survives the float, so re-pinning returns the Lens to the edge it
+   * came from rather than to a default.
+   */
+  lensPinned?: boolean;
+}
+
+/** Whether the Lens stands at its pin. An absent flag reads as pinned — a Lens
+ *  that has never been dragged has never left its side. */
+export function isLensPinned(imposition: DeckImposition): boolean {
+  return imposition.lensPinned !== false;
 }
 
 /** The side the Lens opens on when nothing has ever said otherwise. */
@@ -119,6 +149,18 @@ export const IMPOSITION_GAP_PX = 5;
  * of air above it, so nothing imposed ever collides with the stamps.
  */
 export const IMPOSITION_GAP_BOTTOM_PX = 32;
+
+/**
+ * How long the deck takes to settle into a new arrangement, in milliseconds.
+ *
+ * Changing the imposition moves every derived frame at once, and they cross to
+ * their new places rather than cutting — see the `data-imposer-settling` rule
+ * in `tug-pane.css`. `deck-canvas.tsx` writes this number onto the frames'
+ * container as `--tugx-imposer-settle-duration` and reads the resolved value
+ * back when timing the settle, so the transition and the timer that ends it
+ * are one number and an override on the container tunes both.
+ */
+export const IMPOSITION_SETTLE_MS = 500;
 
 /** The gaps as CSS lengths, for the calc expressions below. */
 const GAP = `${IMPOSITION_GAP_PX}px`;
@@ -174,118 +216,50 @@ export function packFromForRail(railSide: "left" | "right" | null): PackFrom {
   return railSide === "left" ? "right" : "left";
 }
 
-/** One pane's place in the chain — everything a frame needs to position itself.
+/** One pane's place in the arrangement — everything a frame needs to position
+ *  itself, and no more.
  *
- *  The offset is deliberately not resolved here: it depends on the step, and
- *  the step depends on the band's width, which only the browser knows. What is
- *  resolved is everything the deck *does* know, and {@link imposeStyle} hands
- *  the rest to CSS. */
+ *  There is nothing here about the deck's other panes, because a slot's anchor
+ *  does not depend on them. That is the whole of what makes the arrangement
+ *  hold still: a placement is a pure function of the kind and the pane's own
+ *  slot, so no pane can be resolved only from a vantage point that sees them
+ *  all.
+ *
+ *  The offset is deliberately not resolved here: it depends on the band's
+ *  width, which only the browser knows. {@link imposeStyle} hands that to CSS. */
 export interface ImposedPlacement {
   /** The pane's slot, already clamped to the kind. */
   slot: number;
-  /** Which edge the chain starts from. */
+  /** Which edge slot 0 sits on, and which way the numbering runs. */
   packFrom: PackFrom;
-  /** How many cards are in the chain. */
+  /** How many slots the kind defines. */
   count: number;
-  /** This card's position in the chain, counted from the packing edge. */
-  index: number;
-  /** Total width of every card in the chain. */
-  sumWidths: number;
-  /** Total width of the cards between this one and the packing edge. */
-  widthBefore: number;
 }
 
 /**
- * The step between successive cards, given the band the chain has to fit in.
- * One imposition gap when there is room; negative — an overlap — when there is
- * not, sized so the strip ends exactly on the band's far edge.
+ * Resolve one pane's place from its slot and the deck's arrangement. `slot`
+ * is clamped to the kind, so shrinking four-up to two-up pulls the outer slots
+ * in rather than dropping their panes out of the arrangement.
  */
-export function chainStep(placement: ImposedPlacement, bandWidth: number): number {
+export function resolvePlacement(
+  kind: ImpositionKind,
+  slot: number,
+  lensSide: LensSide | null,
+): ImposedPlacement {
+  return {
+    slot: clampSlot(kind, slot),
+    packFrom: packFromForRail(lensSide),
+    count: slotCount(kind),
+  };
+}
+
+/**
+ * A slot's share of the band's travel: `slot / (slots - 1)`, in `[0, 1]`. Slot
+ * 0 gives 0 (hug the far edge) and the last slot gives 1 (hug the Lens).
+ */
+export function travelFraction(placement: ImposedPlacement): number {
   if (placement.count < 2) return 0;
-  return Math.min(
-    IMPOSITION_GAP_PX,
-    (bandWidth - placement.sumWidths) / (placement.count - 1),
-  );
-}
-
-/** The subset of a pane the imposer needs in order to lay out the chain. */
-export interface ImposerPane {
-  id: string;
-  /** Absent for a free or anchored pane. */
-  slot?: number;
-  /** The pane's own width — a pass-through, never a computed value. */
-  width: number;
-}
-
-/**
- * Width to reserve for each slot: the widest pane holding it, or 0 when the
- * slot is empty. Taking the widest rather than the topmost keeps the chain
- * still when the user switches which card in a shared slot is on top.
- */
-function slotWidths(
-  kind: ImpositionKind,
-  panes: readonly ImposerPane[],
-): number[] {
-  const widths = new Array<number>(slotCount(kind)).fill(0);
-  for (const pane of panes) {
-    if (pane.slot === undefined) continue;
-    const k = clampSlot(kind, pane.slot);
-    if (pane.width > widths[k]) widths[k] = pane.width;
-  }
-  return widths;
-}
-
-/**
- * Resolve every slotted pane's place in the chain, keyed by pane id. Panes with
- * no slot are absent from the result — they are free, and own their geometry
- * outright.
- *
- * Only *occupied* slots take a place in the chain, so a hole in the slot
- * numbering closes up rather than reserving space nobody asked for.
- */
-export function resolvePlacements(
-  kind: ImpositionKind,
-  panes: readonly ImposerPane[],
-  railSide: "left" | "right" | null,
-): Map<string, ImposedPlacement> {
-  const packFrom = packFromForRail(railSide);
-  const widths = slotWidths(kind, panes);
-  const last = slotCount(kind) - 1;
-
-  // Walk the slots from the packing edge inward, numbering the occupied ones
-  // and accumulating the width ahead of each. Packing right means walking the
-  // slot numbers backward.
-  const order = packFrom === "left" ? 1 : -1;
-  const first = packFrom === "left" ? 0 : last;
-  const indexBySlot = new Array<number>(widths.length).fill(0);
-  const beforeBySlot = new Array<number>(widths.length).fill(0);
-  let count = 0;
-  let running = 0;
-  for (let n = 0; n <= last; n += 1) {
-    const k = first + order * n;
-    indexBySlot[k] = count;
-    beforeBySlot[k] = running;
-    if (widths[k] > 0) {
-      count += 1;
-      running += widths[k];
-    }
-  }
-  const sumWidths = running;
-
-  const placements = new Map<string, ImposedPlacement>();
-  for (const pane of panes) {
-    if (pane.slot === undefined) continue;
-    const k = clampSlot(kind, pane.slot);
-    placements.set(pane.id, {
-      slot: k,
-      packFrom,
-      count,
-      index: indexBySlot[k],
-      sumWidths,
-      widthBefore: beforeBySlot[k],
-    });
-  }
-  return placements;
+  return placement.slot / (placement.count - 1);
 }
 
 /* ---------------------------------------------------------------------------
@@ -348,8 +322,8 @@ export function imposeRect(
   span: ImposerSpan,
 ): ImposedRect {
   const bandWidth = span.width - IMPOSITION_GAP_PX * 2;
-  const offset =
-    placement.widthBefore + placement.index * chainStep(placement, bandWidth);
+  const travel = Math.max(0, bandWidth - paneWidth);
+  const offset = travelFraction(placement) * travel;
   const x =
     placement.packFrom === "left"
       ? span.x + IMPOSITION_GAP_PX + offset
@@ -364,20 +338,23 @@ export function imposeRect(
 }
 
 /**
- * The CSS form: inline frame styles that pin the pane to its place in the
- * chain. One horizontal pin, measured from the packing edge: the rail inset,
- * the gap, the width of the cards ahead of this one, and this one's share of
- * the step.
+ * The CSS form: inline frame styles that pin the pane to its slot's anchor. One
+ * horizontal pin, measured from the packing edge: the Lens inset, the gap, and
+ * this slot's share of the pane's travel across the band.
  *
- * The step is a `min()` over the live band, so the browser is the one that
- * decides whether the strip has room to breathe or has to overlap — and it
- * re-decides on every reflow. That is the whole of the deck's response to a
- * window or display resize.
+ * The travel is a `max()` over the live band, so the browser is the one that
+ * decides how much room the arrangement has — and it re-decides on every
+ * reflow. That is the whole of the deck's response to a window or display
+ * resize.
+ *
+ * The pin is emitted as `left` either way. A right-measured anchor becomes
+ * `100% - inset - gap - width - offset`, which describes the same place while
+ * keeping every imposed frame on one property — the requirement for animating
+ * between two arrangements rather than cutting between them.
  *
  * The vertical run is the top gap down to the deeper bottom gap. A collapsed
  * pane keeps its horizontal pin and its top pin but releases the bottom one, so
- * the window-shade bar sits a gap below the canvas top at its place in the
- * chain.
+ * the window-shade bar sits a gap below the canvas top at its slot's anchor.
  */
 export function imposeStyle(
   placement: ImposedPlacement,
@@ -391,24 +368,15 @@ export function imposeStyle(
   };
   if (!collapsed) style.bottom = GAP_BOTTOM;
 
-  const inset = placement.packFrom === "left" ? INSET_LEFT : INSET_RIGHT;
-  // `min(gap, (band - totalCardWidth) / (cards - 1))` — see the module note.
   const band = `(100% - ${INSET_LEFT} - ${INSET_RIGHT} - ${GAP} * 2)`;
-  const step =
-    placement.count < 2
-      ? "0px"
-      : `min(${GAP}, ${band} / ${placement.count - 1} - ${
-          placement.sumWidths / (placement.count - 1)
-        }px)`;
-  const pin =
-    `calc(${inset} + ${GAP} + ${placement.widthBefore}px` +
-    (placement.index > 0 ? ` + ${placement.index} * ${step}` : "") +
-    `)`;
-  if (placement.packFrom === "left") {
-    style.left = pin;
-  } else {
-    style.right = pin;
-  }
+  const fraction = travelFraction(placement);
+  // `k / (N - 1) × max(0, band - width)` — see the module note.
+  const offset =
+    fraction === 0 ? "0px" : `${fraction} * max(0px, ${band} - ${paneWidth}px)`;
+  style.left =
+    placement.packFrom === "left"
+      ? `calc(${INSET_LEFT} + ${GAP} + ${offset})`
+      : `calc(100% - ${INSET_RIGHT} - ${GAP} - ${paneWidth}px - ${offset})`;
   return style;
 }
 
@@ -416,10 +384,14 @@ export function imposeStyle(
  * The Lens's frame: pinned to the side it holds, one gap in on three edges and
  * the deeper gap at the bottom, at the width the pane carries.
  *
- * The Lens is imposed but it is not a link in the chain. A chain link takes a
- * step, and a step can go negative — cards overlap when the deck is crowded.
- * The Lens must never be overlapped, so it holds the strip's far end at a fixed
- * pin and the cards share what is left of the band ({@link resolveSpan}).
+ * The Lens is imposed but it is not a link in the chain. A chain link travels
+ * across the band and can end up overlapped when the deck is crowded. The Lens
+ * must never be overlapped, so it holds the strip's far end at a fixed pin and
+ * the cards share what is left of the band ({@link resolveSpan}).
+ *
+ * Like {@link imposeStyle}, the pin is emitted as `left` on both sides — a
+ * right-held Lens as `100% - width - gap` — so flipping the side is a change of
+ * one property's value and can therefore be animated.
  *
  * A collapsed Lens keeps its side and top pins and releases the bottom one, so
  * the window-shade bar sits a gap below the canvas top — the same treatment
@@ -434,7 +406,7 @@ export function imposeLensStyle(
     width: `${paneWidth}px`,
     height: "auto",
     top: GAP,
-    [side]: GAP,
+    left: side === "left" ? GAP : `calc(100% - ${paneWidth}px - ${GAP})`,
   };
   if (!collapsed) style.bottom = GAP_BOTTOM;
   return style;

@@ -113,6 +113,9 @@ export function registerSettingsCard(): void {
     contentFactory: () => <SettingsCardContent />,
     defaultMeta: { title: "Settings", closable: true },
     hidden: true,
+    // App-wide settings open in the middle of the deck, every time — the one
+    // place the pinned Lens can never be covering, whichever side it holds.
+    placement: "center",
     sizePolicy: {
       min: { width: 420, height: 420 },
       // Tall enough that the "Session Card" tab — Response, Editor, and Assistant

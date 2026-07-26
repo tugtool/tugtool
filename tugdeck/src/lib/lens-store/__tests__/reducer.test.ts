@@ -95,6 +95,7 @@ describe("LensStore reducer — hydrate", () => {
       widthPx: 500,
       sectionOrder: ["log"],
       sessionOrder: [],
+      textFileOrder: [],
       collapsedSections: ["log"],
     };
     expect(reduce(seeded, { type: "hydrate" })).toBe(seeded);
@@ -115,6 +116,7 @@ describe("LensStore reducer — hydrate", () => {
       widthPx: 420,
       sectionOrder: ["log", "telemetry"],
       sessionOrder: [],
+      textFileOrder: [],
       collapsedSections: [],
     };
     const next = reduce(seeded, {
@@ -133,6 +135,7 @@ describe("LensStore reducer — toSnapshot", () => {
       widthPx: 500,
       sectionOrder: ["log", "telemetry"],
       sessionOrder: [],
+      textFileOrder: [],
       collapsedSections: ["log"],
     };
     const snap = toSnapshot(s);

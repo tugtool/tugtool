@@ -24,6 +24,7 @@ export const LENS_KEYS = {
   WIDTH_PX: "widthPx",
   SECTION_ORDER: "sectionOrder",
   SESSION_ORDER: "sessionOrder",
+  TEXT_FILE_ORDER: "textFileOrder",
   COLLAPSED_SECTIONS: "collapsedSections",
 } as const;
 
@@ -56,6 +57,12 @@ export interface LensSnapshot {
    * Stale ids (closed sessions) are tolerated and ignored as sort keys.
    */
   sessionOrder: readonly string[];
+  /**
+   * Persisted user order of Text Files-section rows, by the open Text card's
+   * id. Same rule as {@link LensSnapshot.sessionOrder}: cards absent from the
+   * list sort after the ordered set, stale ids are ignored.
+   */
+  textFileOrder: readonly string[];
   /** Kinds the user has collapsed (band-only). */
   collapsedSections: readonly string[];
 }

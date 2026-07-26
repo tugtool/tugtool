@@ -7,11 +7,11 @@
  * an option is then recognizing the arrangement you want rather than decoding a
  * label for it, the idiom Windows 11's Snap Layouts established.
  *
- * The step between blocks is the imposer's own rule in miniature (see
- * `lib/layout-imposer.ts`): one gap when the cards fit, an even overlap when
- * they do not, sized so the strip ends exactly where the Lens begins. That is
- * what makes a four-up tile *look* crowded — the picture tells the truth about
- * what the deck will do.
+ * The blocks sit at the imposer's own anchors in miniature (see
+ * `lib/layout-imposer.ts`): each one `k / (N − 1)` of the way across its
+ * travel, so the first hugs the far edge, the last meets the Lens, and the
+ * ones between space evenly. That is what makes a four-up tile *look* crowded
+ * — the picture tells the truth about what the deck will do.
  *
  * Purely presentational: props in, CSS out, no store reads and no state ([L06]).
  * The live Lens side is passed down by the section so every miniature flips
@@ -51,7 +51,7 @@ export interface LayoutMiniatureProps {
  * LayoutMiniature — the deck, drawn small.
  *
  * With `lens` set, the Lens is a strip on that side and the cards pack away
- * from it, exactly as {@link packFromForRail} decides for the real deck.
+ * from it, exactly as `packFromForRail` decides for the real deck.
  */
 export function LayoutMiniature({
   kind,
@@ -64,11 +64,13 @@ export function LayoutMiniature({
   // A deck with no arrangement is just a card on a canvas, so Off draws one
   // wide block rather than a chain.
   const cardWidth = kind === null ? FREE_CARD_PCT : CARD_PCT;
-  const step =
-    count < 2
-      ? 0
-      : Math.min(GAP_PCT, (field - GAP_PCT * 2 - cardWidth * count) / (count - 1));
-  // The chain runs away from the Lens, so a left-side Lens packs the blocks
+  // The imposer's rule, in percent: a block's travel is what the band has left
+  // over once it has taken its own width, and slot k has crossed `k / (N − 1)`
+  // of it.
+  const travel = Math.max(0, field - GAP_PCT * 2 - cardWidth);
+  const offsetFor = (k: number): number =>
+    count < 2 ? 0 : (k / (count - 1)) * travel;
+  // Slot 0 is the anchor farthest from the Lens, so a left-side Lens numbers
   // from the right — measured from that edge, the offsets are the same.
   const packFromLeft = lens !== "left";
 
@@ -86,7 +88,7 @@ export function LayoutMiniature({
             key={i}
             className="layout-mini-block"
             style={{
-              [packFromLeft ? "left" : "right"]: `${GAP_PCT + i * (cardWidth + step)}%`,
+              [packFromLeft ? "left" : "right"]: `${GAP_PCT + offsetFor(i)}%`,
               width: `${cardWidth}%`,
             }}
           />

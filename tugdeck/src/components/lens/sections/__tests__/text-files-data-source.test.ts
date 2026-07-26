@@ -77,6 +77,35 @@ describe("buildTextFilesRows", () => {
     expect(rows[0].path).toBeNull();
   });
 
+  it("honours the persisted order and lands unranked cards last", () => {
+    const rows = buildTextFilesRows(
+      {
+        deck: deck([
+          ["c1", "text"],
+          ["c2", "text"],
+          ["c3", "text"],
+        ]),
+        order: ["c3", "c1"],
+      },
+      resolver({}),
+    );
+    expect(rows.map((r) => r.cardId)).toEqual(["c3", "c1", "c2"]);
+  });
+
+  it("ignores stale ids in the persisted order", () => {
+    const rows = buildTextFilesRows(
+      {
+        deck: deck([
+          ["c1", "text"],
+          ["c2", "text"],
+        ]),
+        order: ["gone", "c2"],
+      },
+      resolver({}),
+    );
+    expect(rows.map((r) => r.cardId)).toEqual(["c2", "c1"]);
+  });
+
   it("falls back to the card title when a path-less card has no buffer name", () => {
     const rows = buildTextFilesRows(
       { deck: deck([["c1", "text"]]) },
@@ -92,6 +121,7 @@ describe("LensTextFilesDataSource", () => {
   it("maps id/kind/role and bumps version on input change", () => {
     const ds = new LensTextFilesDataSource({
       deck: deck([["lens-tf-uniq", "text"]]),
+      order: [],
       registryVersion: 0,
       filterQuery: "",
     });
@@ -103,6 +133,7 @@ describe("LensTextFilesDataSource", () => {
     const v0 = ds.getVersion();
     ds.setInputsWithoutNotify({
       deck: deck([["lens-tf-uniq", "text"]]),
+      order: [],
       registryVersion: 1,
       filterQuery: "",
     });
@@ -115,6 +146,7 @@ describe("LensTextFilesDataSource", () => {
         ["lens-tf-uniq", "text"],
         ["lens-tf-other", "text"],
       ]),
+      order: [],
       registryVersion: 0,
     };
     const all = new LensTextFilesDataSource({ ...base, filterQuery: "" });

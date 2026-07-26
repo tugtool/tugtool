@@ -110,6 +110,40 @@ body {
    Window chrome root (.tug-pane-chrome)
    ========================================================================= */
 
+/* ============================================================================
+   Settling into a new arrangement
+   ----------------------------------------------------------------------------
+   Changing the imposition — the Lens's side, the N-up kind, the pin — moves
+   every derived frame at once. `deck-canvas.tsx` marks the frames' container
+   with `data-imposer-settling` for the duration and the frames CROSS to their
+   new places rather than cutting, so the arrangement reads as one thing
+   rearranging itself instead of several things teleporting.
+
+   This is why `layout-imposer.ts` emits every horizontal pin as `left`,
+   including the ones measured from the right edge: a frame that switches
+   between `left` and `right` has nothing to interpolate.
+
+   `--tugx-imposer-settle-duration` is the knob, written onto the container from
+   `IMPOSITION_SETTLE_MS` so the timer that lifts the attribute and the
+   transition that runs under it read one number. Override it on the container
+   to tune.
+
+   A frame mid-gesture is excluded: the drag machine writes `left`/`top` every
+   frame, and a transition on top of that lags the pointer.
+   ========================================================================= */
+
+[data-imposer-settling] .tug-pane:not([data-gesture]) {
+  transition:
+    left var(--tugx-imposer-settle-duration, 500ms)
+      var(--tug-motion-easing-standard, ease),
+    top var(--tugx-imposer-settle-duration, 500ms)
+      var(--tug-motion-easing-standard, ease),
+    bottom var(--tugx-imposer-settle-duration, 500ms)
+      var(--tug-motion-easing-standard, ease),
+    width var(--tugx-imposer-settle-duration, 500ms)
+      var(--tug-motion-easing-standard, ease);
+}
+
 .tug-pane-chrome {
   position: relative;
   /* Establish a stacking context so the scrim, the inactive-dim

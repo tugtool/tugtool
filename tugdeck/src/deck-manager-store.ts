@@ -162,6 +162,15 @@ export interface IDeckManagerStore {
   showSingletonCard: (componentId: string) => string | null;
 
   /**
+   * Re-center the pane hosting `cardId` in the live canvas, at its current
+   * size. What a `placement: "center"` card takes on every show, so a
+   * position saved under an older arrangement can never leave it standing
+   * behind the pinned Lens. A pane whose geometry is derived (slotted, or the
+   * Lens itself) is left alone.
+   */
+  centerPane: (cardId: string) => void;
+
+  /**
    * Show the Lens: activate the existing Lens card if one exists, else
    * create the anchored rail pane hosting a fresh Lens card at the
    * persisted reopen width. Returns the Lens card id, or null when the

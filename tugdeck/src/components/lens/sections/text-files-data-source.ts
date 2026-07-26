@@ -66,6 +66,8 @@ export function displayDir(dir: string): string {
 
 interface TextFilesInputs {
   readonly deck: DeckState | null;
+  /** The user's persisted row order, by card id. Empty → deck-card order. */
+  readonly order: readonly string[];
   /** Bumps when a Text card registers / unregisters / binds its path, so the
    *  rows recompute against the newly-resolved open-card paths. */
   readonly registryVersion: number;
@@ -95,16 +97,22 @@ const registryUnsavedResolver: OpenCardUnsavedResolver = (cardId) =>
   getOpenTextCard(cardId)?.hasUnsavedMark() ?? false;
 
 /**
- * Build the row list from the deck snapshot: one row per open Text card, in
- * deck-card order. Pure over its resolvers — the bound path of each open card
- * comes through `resolvePath`, its untitled name through `resolveDisplayName`,
- * and its unsaved mark through `resolveUnsaved` (defaults: the open registry,
- * re-read on every recompute), so a test can inject its own. A bound card
- * titles from the path basename; an unbound one titles from its buffer name
+ * Build the row list from the deck snapshot: one row per open Text card. Pure
+ * over its resolvers — the bound path of each open card comes through
+ * `resolvePath`, its untitled name through `resolveDisplayName`, and its
+ * unsaved mark through `resolveUnsaved` (defaults: the open registry, re-read
+ * on every recompute), so a test can inject its own. A bound card titles from
+ * the path basename; an unbound one titles from its buffer name
  * (`"Untitled"`).
+ *
+ * Row order: the user's persisted `order` (by card id) first, in that order;
+ * cards absent from it keep deck-card order and follow AFTER the ordered set,
+ * so a newly opened file lands at the bottom without disturbing the
+ * arrangement. Stale ids (closed cards) are never matched. An empty / absent
+ * `order` yields plain deck-card order — the same rule the Sessions rows take.
  */
 export function buildTextFilesRows(
-  inputs: Pick<TextFilesInputs, "deck">,
+  inputs: Pick<TextFilesInputs, "deck"> & { readonly order?: readonly string[] },
   resolvePath: OpenCardPathResolver = registryPathResolver,
   resolveDisplayName: OpenCardDisplayNameResolver = registryDisplayNameResolver,
   resolveUnsaved: OpenCardUnsavedResolver = registryUnsavedResolver,
@@ -126,7 +134,20 @@ export function buildTextFilesRows(
       unsaved: resolveUnsaved(card.id),
     });
   }
-  return rows;
+  const order = inputs.order;
+  if (order === undefined || order.length === 0) return rows;
+  const rank = new Map<string, number>();
+  order.forEach((id, i) => rank.set(id, i));
+  // Stable sort: ranked ids by rank; unranked (newly opened) cards keep their
+  // deck order (their pre-sort index) and sort last.
+  return rows
+    .map((row, i) => ({ row, i }))
+    .sort((a, b) => {
+      const ra = rank.get(a.row.cardId) ?? Number.POSITIVE_INFINITY;
+      const rb = rank.get(b.row.cardId) ?? Number.POSITIVE_INFINITY;
+      return ra !== rb ? ra - rb : a.i - b.i;
+    })
+    .map((x) => x.row);
 }
 
 export class LensTextFilesDataSource implements TugListViewDataSource {
@@ -175,6 +196,7 @@ export class LensTextFilesDataSource implements TugListViewDataSource {
   setInputsWithoutNotify(next: TextFilesInputs): boolean {
     if (
       this.inputs.deck === next.deck &&
+      this.inputs.order === next.order &&
       this.inputs.registryVersion === next.registryVersion &&
       this.inputs.filterQuery === next.filterQuery
     ) {
@@ -187,6 +209,16 @@ export class LensTextFilesDataSource implements TugListViewDataSource {
 
   notifyAll(): void {
     for (const listener of this.listeners) listener();
+  }
+
+  /** Whether a filter is narrowing the list right now. */
+  isFiltering(): boolean {
+    return this.inputs.filterQuery.trim().length > 0;
+  }
+
+  /** The current display order of card ids — the reorder hook's `getVisibleOrder`. */
+  visibleOrder(): string[] {
+    return this.rows.map((r) => r.cardId);
   }
 
   /** How many open Text cards there are, filter or no filter. */
@@ -218,6 +250,7 @@ const NOOP_SUBSCRIBE = (): (() => void) => () => {};
  */
 export function useLensTextFilesDataSource(
   filterQuery: string,
+  order: readonly string[],
 ): LensTextFilesDataSource {
   const deckStore = getDeckStore();
   const deck = useSyncExternalStore(
@@ -234,7 +267,7 @@ export function useLensTextFilesDataSource(
   );
 
   const ref = useRef<LensTextFilesDataSource | null>(null);
-  const inputs = { deck, registryVersion, filterQuery };
+  const inputs = { deck, order, registryVersion, filterQuery };
   if (ref.current === null) {
     ref.current = new LensTextFilesDataSource(inputs);
   }

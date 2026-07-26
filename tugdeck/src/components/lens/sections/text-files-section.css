@@ -18,6 +18,30 @@
   min-block-size: 0;
 }
 
+/* The wrap is the reorder container: the `BlockDropCaret` positions absolutely
+   within it, and it is the list's flex scroller (mirrors `.sessions-list-wrap`). */
+.text-files-list-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-block-size: 0;
+}
+
+/* A filtered list shows only part of the arrangement, so drag-reorder has no
+   coherent drop order to commit — hide the grips while the filter is on rather
+   than offering a gesture that would do the wrong thing. */
+.text-files-list-wrap[data-filter-active="true"] .block-grip {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The reorder-drag lift on the row while it is being dragged. */
+.text-files-row[data-dragging="true"] {
+  opacity: 0.6;
+  z-index: 2;
+}
+
 /* Doubled selector so these overrides beat the base `.tug-list-view`
    rules regardless of bundle order. The list is this section's scroller: it
    fills the section's flex share and scrolls its rows internally, reserving its
@@ -37,6 +61,9 @@
      one vertical line down the Lens. */
   --tugx-list-row-padding-inline: 10px;
   --tugx-list-row-indicator-gutter: 0px;
+  /* Same air between the two lines as the Sessions rows — the two sections are
+     the same kind of two-line row and must read as one rhythm. */
+  --tugx-list-row-content-gap: 5px;
   /* Framed + rounded like the session picker's boxes (see the Sessions list). */
   --tugx-list-view-radius: var(--tug-radius-sm);
   --tugx-list-view-frame-width: 1px;
@@ -54,6 +81,22 @@
    same kind of two-line row and must read as one type scale. */
 .lens-text-files-list .tug-list-row-subtitle {
   font-size: var(--tug-font-size-xs);
+}
+
+/* The row's title line, carrying the slot picker past the filename. Authored by
+   hand for the same reason the Sessions headline is (see `FileRow`): a shared
+   trailing accessory would span both lines and center on the row, sitting at a
+   different height from the Sessions picker. */
+.text-files-row-headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.text-files-row-headline .tug-list-row-title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }
 
 /* The unsaved-changes dot — the same `•` the card's own header wears, set just

@@ -73,8 +73,10 @@ import type {
 } from "./deck-manager-store";
 import {
   clampSlot,
+  isLensPinned,
   isLensSide,
   DEFAULT_LENS_SIDE,
+  type DeckImposition,
   type ImpositionKind,
   type LensSide,
 } from "./lib/layout-imposer";
@@ -963,10 +965,47 @@ export class DeckManager implements IDeckManagerStore {
       (c) => c.componentId === componentId,
     );
     if (existing) {
+      if (getRegistration(componentId)?.placement === "center") {
+        this.centerPane(existing.id);
+      }
       this.activateCard(existing.id);
       return existing.id;
     }
     return this.addCard(componentId);
+  }
+
+  /**
+   * Re-center the pane hosting `cardId` in the live canvas, at the size it
+   * already carries.
+   *
+   * A dialog-like card (registration `placement: "center"`) takes this on
+   * every show, not only at creation. The card is a singleton that survives in
+   * the layout blob, so a position saved from an older arrangement outlives
+   * that arrangement — and the middle of the canvas is the one place the
+   * pinned Lens can never be standing.
+   *
+   * A pane whose geometry is DERIVED is left alone: a slotted pane is placed
+   * by the imposer and the Lens by its pin, so writing a stored position for
+   * either would be writing a number nothing reads.
+   */
+  centerPane(cardId: string): void {
+    const pane = this.deckState.panes.find((p) => p.cardIds.includes(cardId));
+    if (pane === undefined) return;
+    if (pane.slot !== undefined) return;
+    if (findLensPane(this.deckState)?.id === pane.id) return;
+    const canvasWidth = this.container.clientWidth || 800;
+    const canvasHeight = this.container.clientHeight || 600;
+    const x = Math.max(0, Math.floor((canvasWidth - pane.size.width) / 2));
+    const y = Math.max(0, Math.floor((canvasHeight - pane.size.height) / 2));
+    if (pane.position.x === x && pane.position.y === y) return;
+    this.deckState = {
+      ...this.deckState,
+      panes: this.deckState.panes.map((p) =>
+        p.id === pane.id ? { ...p, position: { x, y } } : p,
+      ),
+    };
+    this.notify();
+    this.scheduleSave();
   }
 
   /**
@@ -1015,25 +1054,74 @@ export class DeckManager implements IDeckManagerStore {
    * Set the side of the deck the Lens holds.
    *
    * The side is one of the two axes of the deck's imposition, so this writes
-   * `imposition.lens`. Flipping it flips which edge the chain packs from, so
-   * every slotted pane moves along with the Lens — the ledger below covers
-   * the whole chain, not just the Lens.
+   * `imposition.lens`. Flipping it flips which edge the arrangement is
+   * numbered from, so every slotted pane moves along with the Lens — the
+   * ledger below covers them all, not just the Lens.
+   *
+   * Choosing a side also RE-PINS a Lens that had been dragged loose: naming the
+   * side the Lens holds is the gesture that says it holds one. This is why the
+   * call is not short-circuited on an unchanged side — picking "right" while
+   * a floating Lens already records "right" is a request to put it back.
    */
   setImpositionLens(side: LensSide): void {
-    if (this.deckState.imposition.lens === side) return;
+    const imposition = this.deckState.imposition;
+    if (imposition.lens === side && isLensPinned(imposition)) return;
+    this._reimpose({ ...imposition, lens: side, lensPinned: true });
+  }
 
-    const lensPane = findLensPane(this.deckState);
+  /**
+   * Return the Lens to its pin without changing which side it holds. What the
+   * kind rows ask for: choosing an arrangement is choosing one the Lens is part
+   * of. No-op when it is already pinned.
+   */
+  pinLens(): void {
+    if (isLensPinned(this.deckState.imposition)) return;
+    this._reimpose({ ...this.deckState.imposition, lensPinned: true });
+  }
+
+  /**
+   * Commit a new imposition record, bracketing it with the move ledger for
+   * every pane whose geometry the record derives — the slotted panes and the
+   * Lens. Their frames all move at once and none of them through a gesture, so
+   * the lifecycle has to hear about it from here.
+   */
+  private _reimpose(imposition: DeckImposition): void {
+    const lensPaneId = findLensPane(this.deckState)?.id;
     const moved = this.deckState.panes
-      .filter((p) => p.slot !== undefined || p.id === lensPane?.id)
+      .filter((p) => p.slot !== undefined || p.id === lensPaneId)
       .map((p) => p.activeCardId);
 
     for (const cardId of moved) this.cardLifecycle.notifyCardWillMove(cardId);
-    this.deckState = {
-      ...this.deckState,
-      imposition: { ...this.deckState.imposition, lens: side },
-    };
+    this.deckState = { ...this.deckState, imposition };
     this.notify();
     for (const cardId of moved) this.cardLifecycle.notifyCardDidMove(cardId);
+    this.scheduleSave();
+  }
+
+  /**
+   * Release the Lens from its pin: it becomes an ordinary free pane at
+   * `rect`, and the arrangement spans the whole canvas as it does when the Lens
+   * is closed. Called from the pane's move commit — dragging the Lens by its
+   * title bar is the only way out of the pin, and the Layouts section is the
+   * only way back in.
+   */
+  private _unpinLens(
+    paneId: string,
+    rect: { position: { x: number; y: number }; size: { width: number; height: number } },
+  ): void {
+    const stillSlotted = this.deckState.panes
+      .filter((p) => p.slot !== undefined)
+      .map((p) => p.activeCardId);
+    for (const cardId of stillSlotted) this.cardLifecycle.notifyCardWillMove(cardId);
+    this.deckState = {
+      ...this.deckState,
+      imposition: { ...this.deckState.imposition, lensPinned: false },
+      panes: this.deckState.panes.map((p) =>
+        p.id === paneId ? { ...p, position: rect.position, size: rect.size } : p,
+      ),
+    };
+    this.notify();
+    for (const cardId of stillSlotted) this.cardLifecycle.notifyCardDidMove(cardId);
     this.scheduleSave();
   }
 
@@ -1086,6 +1174,11 @@ export class DeckManager implements IDeckManagerStore {
           cards: [...this.deckState.cards, card],
           panes: [...this.deckState.panes, pane],
           activePaneId: paneId,
+          // A Lens that was dragged loose and then closed comes back at its
+          // pin. Only a drag takes it off the pin, and closing the Lens is not
+          // one — reopening it into the middle of the deck at a nominal (0, 0)
+          // would be the deck inventing a position nobody asked for.
+          imposition: { ...this.deckState.imposition, lensPinned: true },
         };
         this.notify();
         this.scheduleSave();
@@ -1328,12 +1421,14 @@ export class DeckManager implements IDeckManagerStore {
    * the pane (panes, not cards, own position/size — but the active card is
    * the observable subject).
    *
-   * `opts.evictSlot` releases an imposed pane back to free geometry in the
-   * same commit — the title-bar drag path passes it, the resize path does
+   * `opts.evictSlot` releases a pane whose geometry was DERIVED back to free
+   * pixels in the same commit — a slotted pane leaves its slot, and the Lens
+   * leaves its pin. The title-bar drag path passes it, the resize paths do
    * not. It is an explicit option rather than a "position changed" heuristic
    * because a west-edge resize also moves `position.x`, and a resize must
-   * never knock a pane out of its slot: width is the user's even while
-   * imposed.
+   * never knock a pane out of its place: width is the user's either way. That
+   * is what makes widening the Lens by its deck-facing edge keep the
+   * arrangement laid out against it.
    */
   movePane(
     paneId: string,
@@ -1343,6 +1438,15 @@ export class DeckManager implements IDeckManagerStore {
   ): void {
     const existing = this.deckState.panes.find((s) => s.id === paneId);
     if (!existing) return;
+    // The Lens has no slot to evict; the same gesture releases its pin instead.
+    if (
+      opts?.evictSlot === true &&
+      findLensPane(this.deckState)?.id === paneId &&
+      isLensPinned(this.deckState.imposition)
+    ) {
+      this._unpinLens(paneId, { position, size });
+      return;
+    }
     const evictSlot = opts?.evictSlot === true && existing.slot !== undefined;
     const positionChanged =
       existing.position.x !== position.x || existing.position.y !== position.y;
@@ -1431,8 +1535,13 @@ export class DeckManager implements IDeckManagerStore {
    * freeze-on-clear path reads back when the imposition is turned off.
    */
   arrangeCards(mode: "cascade" | "tile"): void {
-    const lensPaneId = findLensPane(this.deckState)?.id;
-    const stacks = this.deckState.panes.filter((s) => s.id !== lensPaneId);
+    // A Lens standing at its pin is not the arrangement's to move — its frame
+    // is derived, so a stored rect written here would be a number nothing
+    // reads. A Lens dragged loose is an ordinary pane and tiles with the rest.
+    const skipPaneId = isLensPinned(this.deckState.imposition)
+      ? findLensPane(this.deckState)?.id
+      : undefined;
+    const stacks = this.deckState.panes.filter((s) => s.id !== skipPaneId);
     if (stacks.length === 0) return;
 
     const canvasWidth = this.container.clientWidth || 800;
@@ -1564,10 +1673,19 @@ export class DeckManager implements IDeckManagerStore {
    * `size.height`: its frame is a window-shade stub, and committing that stub
    * height would leave the card unrestorable (the same rule the drag commit
    * follows in `tug-pane.tsx`).
+   *
+   * Either way the Lens returns to its pin: choosing an arrangement is choosing
+   * one the Lens stands at the end of. A Lens dragged loose and left there is
+   * put back by any choice in the Layouts section, which is why an unchanged
+   * kind is not simply a no-op.
    */
   setImposition(kind: ImpositionKind | null): void {
     const current = this.deckState.imposition.kind;
-    if (current === (kind ?? undefined)) return;
+    if (current === (kind ?? undefined)) {
+      this.pinLens();
+      return;
+    }
+    const lensCardId = findLensPane(this.deckState)?.activeCardId;
 
     if (kind === null) {
       const frozen = this.deckState.panes.map((pane) => {
@@ -1589,14 +1707,19 @@ export class DeckManager implements IDeckManagerStore {
         if (ch.positionChanged) this.cardLifecycle.notifyCardWillMove(ch.id);
         if (ch.sizeChanged) this.cardLifecycle.notifyCardWillResize(ch.id);
       }
-      const imposition = { ...this.deckState.imposition };
+      const imposition: DeckImposition = {
+        ...this.deckState.imposition,
+        lensPinned: true,
+      };
       delete imposition.kind;
+      if (lensCardId !== undefined) this.cardLifecycle.notifyCardWillMove(lensCardId);
       this.deckState = { ...this.deckState, panes: frozen, imposition };
       this.notify();
       for (const ch of changes) {
         if (ch.positionChanged) this.cardLifecycle.notifyCardDidMove(ch.id);
         if (ch.sizeChanged) this.cardLifecycle.notifyCardDidResize(ch.id);
       }
+      if (lensCardId !== undefined) this.cardLifecycle.notifyCardDidMove(lensCardId);
       this.scheduleSave();
       return;
     }
@@ -1610,13 +1733,13 @@ export class DeckManager implements IDeckManagerStore {
     // every pane in it — the move is CSS, so no stored `position` changes and
     // the ledger has to be built from the fact of the chain, not from a diff.
     const moved = panes
-      .filter((pane) => pane.slot !== undefined)
+      .filter((pane) => pane.slot !== undefined || pane.activeCardId === lensCardId)
       .map((pane) => pane.activeCardId);
     for (const cardId of moved) this.cardLifecycle.notifyCardWillMove(cardId);
     this.deckState = {
       ...this.deckState,
       panes,
-      imposition: { ...this.deckState.imposition, kind },
+      imposition: { ...this.deckState.imposition, kind, lensPinned: true },
     };
     this.notify();
     for (const cardId of moved) this.cardLifecycle.notifyCardDidMove(cardId);

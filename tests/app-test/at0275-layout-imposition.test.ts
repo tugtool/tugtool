@@ -66,9 +66,9 @@ const PANE_HEIGHT = 380;
 const LIST = ".lens-text-files-list";
 const SECTION = '[data-testid="lens-layouts-section"]';
 const THREE_UP = `${SECTION} [data-radio-value="three-up"]`;
-/** The Lens-side segments of the two-axis picker. */
+/** The Lens-side options of the two-axis picker. */
 const sideSegment = (side: "left" | "right"): string =>
-  `${SECTION} [data-testid="lens-layouts-side"] [data-choice-value="${side}"]`;
+  `${SECTION} [data-testid="lens-layouts-side"] [data-radio-value="${side}"]`;
 
 /** `IMPOSITION_GAP_PX` — the standoff an imposed left, right, or top edge keeps. */
 const GAP = 5;
@@ -193,7 +193,10 @@ function slotButton(cellIndex: number, position: number): string {
   return `${LIST} [data-tug-list-cell-index="${cellIndex}"] [aria-label="Put at position ${position}"]`;
 }
 
-const settle = (ms = 350): Promise<void> =>
+// Longer than `IMPOSITION_SETTLE_MS` (500) on purpose: every arrangement change
+// now CROSSES its derived frames to their new places, so a measurement taken
+// inside that window reads a frame in flight rather than where it landed.
+const settle = (ms = 750): Promise<void> =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
@@ -266,8 +269,8 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         await app.nativeClickAtElement(slotButton(alphaRow, 1));
         await settle();
 
-        // With one card in the chain, all of the slack is visible and it is all
-        // in one place: between that card and the Lens.
+        // Slot 1 is the anchor farthest from the Lens, so alpha sits a gap in
+        // from the band's near edge with every unused pixel beyond it.
         const lone = await app.evalJS<Scene>(READ_SCENE);
         if (lone.a === null || lone.lens === null) {
           throw new Error("[at0275] expected alpha's pane and the Lens");
@@ -277,9 +280,9 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         const loneSpanLeft = loneSpan.left;
         const loneSpanRight = loneSpan.right;
         expect(lone.a.x).toBeCloseTo(loneSpanLeft + GAP, 0);
-        // The pooled margin is everything the chain did not use, and it is far
-        // wider than the gap on the other three sides — that asymmetry is the
-        // arrangement, not drift.
+        // The margin past it is everything the arrangement did not use, and it
+        // is far wider than the gap on the other three sides — that asymmetry
+        // is the arrangement, not drift.
         const pooled = loneSpanRight - (lone.a.x + lone.a.width);
         expect(pooled).toBeCloseTo(
           loneSpanRight - loneSpanLeft - GAP - lone.a.width,
@@ -319,15 +322,15 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         expect(three.a.imposed).toBe("0");
         expect(three.b.imposed).toBe("2");
 
-        // The Lens holds the right, so the chain packs LEFT: alpha starts a gap
+        // The Lens holds the right, so slot 1 is the LEFT end: alpha sits a gap
         // in from the span's left edge.
         expect(three.a.x).toBeCloseTo(spanLeft + GAP, 0);
 
         // These two cards are each floored at 800px by the text card's size
-        // policy, so two of them do not fit the span. The step goes negative
-        // and they OVERLAP — the deck is narrow, which is ordinary. What is not
-        // ordinary is a card sliding under the Lens, so the strip still ends
-        // exactly on the band's far edge.
+        // policy, so two of them do not fit the span. Their anchors crowd
+        // together and they OVERLAP — the deck is narrow, which is ordinary.
+        // What is not ordinary is a card sliding under the Lens, so the last
+        // slot still lands exactly on the band's far edge.
         const band = spanRight - spanLeft - GAP * 2;
         const overlap = three.a.x + three.a.width - three.b.x;
         expect(overlap).toBeCloseTo(three.a.width + three.b.width - band, 0);
@@ -352,30 +355,34 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         expect(three.a.width).toBe(before.a.width);
         expect(three.b.width).toBe(before.b.width);
 
-        // ---- An empty slot occupies nothing: the chain closes up ----
+        // ---- A slot is a place, not a queue position ----
         //
-        // Bravo moves from slot 3 to slot 2. Nothing about its position
-        // changes: slot numbers order the chain, they do not reserve space, so
-        // the card that follows alpha follows it either way.
-        const spread = { x: three.b.x, width: three.b.width };
+        // Slot 2 is the MIDDLE anchor, halfway across bravo's travel, and it is
+        // a different place from slot 3 — slot numbers name positions in the
+        // arrangement rather than ordering a queue.
+        const lastSlotX = three.b.x;
         await app.nativeClickAtElement(slotButton(bravoRow, 2));
         await settle();
         const middle = await app.evalJS<Scene>(READ_SCENE);
         if (middle.b === null) throw new Error("[at0275] bravo's pane vanished");
         expect(middle.b.imposed).toBe("1");
-        expect(middle.b.x).toBeCloseTo(spread.x, 0);
         expect(middle.b.width).toBe(before.b.width);
+        {
+          const travel = Math.max(0, band - middle.b.width);
+          expect(middle.b.x).toBeCloseTo(spanLeft + GAP + travel / 2, 0);
+        }
+        expect(middle.b.x).not.toBeCloseTo(lastSlotX, 0);
 
-        // ---- Closing the Lens widens the band, and the overlap eases off ----
+
+        // ---- Closing the Lens widens the band, and the crowding eases off ----
         //
-        // The chain is pinned to the edge away from the Lens, so its head never
-        // moves. What the Lens's width buys is room in the band, and the step
-        // rule spends it on the overlap first: with 420px more to work with,
-        // these two cards stop overlapping and stand a clean gap apart.
+        // Slot 1's anchor is the edge away from the Lens, so it never moves.
+        // What the Lens's width buys is travel: every other anchor slides
+        // further out along the wider band, and the two cards overlap less.
         //
         // Nothing observes the change. `deck-canvas.tsx` writes the new inset
-        // custom properties, the browser re-resolves the `min()` in each pin,
-        // and that is the whole mechanism — the same path a window or display
+        // custom properties, the browser re-resolves each pin's `calc()`, and
+        // that is the whole mechanism — the same path a window or display
         // resize takes, and why there is no ResizeObserver anywhere on the deck.
         await app.evalJS<null>(
           `(window.__tug.dispatchControlAction("toggle-lens"), null)`,
@@ -391,14 +398,21 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         }
         console.log("[at0275] railless scene:", JSON.stringify(railless));
         expect(railless.a.imposed).toBe("0");
-        // The head of the chain has not moved.
+        // Slot 1's anchor has not moved.
         expect(railless.a.x).toBeCloseTo(three.a.x, 0);
         expect(railless.a.width).toBe(before.a.width);
-        // The overlap is gone: the two cards now stand one gap apart, which is
-        // as far as the step rule will ever push them.
+        // Bravo holds the middle slot: half its travel in from slot 1's anchor,
+        // measured against the band the whole canvas now offers.
+        const railBand = railless.canvas.width - GAP * 2;
         expect(railless.b.x).toBeCloseTo(
-          railless.a.x + railless.a.width + GAP,
+          railless.canvas.x + GAP + Math.max(0, railBand - railless.b.width) / 2,
           0,
+        );
+        // And the crowding really did ease: the same two cards in the same two
+        // slots overlap less than they did with the Lens taking its width.
+        if (middle.a === null) throw new Error("[at0275] alpha's pane vanished");
+        expect(railless.a.x + railless.a.width - railless.b.x).toBeLessThan(
+          middle.a.x + middle.a.width - middle.b.x,
         );
 
         // Bring the Lens back; the slack gives the width straight back.
@@ -433,18 +447,24 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         console.log("[at0275] flipped scene:", JSON.stringify(flipped));
         // The Lens now stands one gap off the LEFT canvas edge.
         expect(flipped.lens.x - flipped.canvas.x).toBeCloseTo(GAP, 0);
-        // And the chain has crossed to the other end of the band: it packs
-        // right, so its far card is now the one a gap off the Lens.
+        // And the numbering has crossed with it. Slot 1 is always the anchor
+        // FARTHEST from the Lens, so alpha now hugs the right canvas edge…
         const flippedSpan = spanFor(flipped);
-        expect(flipped.b.x + flipped.b.width).toBeCloseTo(flippedSpan.right - GAP, 0);
-        expect(flipped.a.x).toBeCloseTo(
-          flipped.lens.x + flipped.lens.width + GAP,
+        expect(flipped.a.x + flipped.a.width).toBeCloseTo(flippedSpan.right - GAP, 0);
+        // …and bravo, in the middle slot, stands half its travel in from that
+        // end, toward the Lens.
+        const flippedBand = flippedSpan.right - flippedSpan.left - GAP * 2;
+        expect(flipped.b.x).toBeCloseTo(
+          flippedSpan.right -
+            GAP -
+            flipped.b.width -
+            Math.max(0, flippedBand - flipped.b.width) / 2,
           0,
         );
 
         // Every kind option is a picture of THIS deck, so they all flip with
         // it rather than staying abstract diagrams. (The side control's own
-        // two segments keep drawing one side each — that is the choice they
+        // two options keep drawing one side each — that is the choice they
         // offer, not a reading of the deck.)
         const kindMinis = `${SECTION} [data-testid="lens-layouts-kind"] .layout-mini`;
         expect(
@@ -468,8 +488,9 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
 
         // ---- Slots are stacks: alpha joins bravo at slot 2 ----
         //
-        // Alpha vacates slot 1, so the chain closes up behind it and bravo —
-        // which has not been touched — slides to the head of the chain.
+        // Alpha joins bravo in the middle slot. Bravo is not touched and does
+        // not move: a slot is a place, and alpha arriving at it changes
+        // nothing about where that place is.
         await app.nativeClickAtElement(slotButton(alphaRow, 2));
         await settle();
         const stacked = await app.evalJS<Scene>(READ_SCENE);
@@ -479,11 +500,14 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         console.log("[at0275] stacked scene:", JSON.stringify(stacked));
         expect(stacked.a.imposed).toBe("1");
         expect(stacked.b.imposed).toBe("1");
-        // Same slot, so the same place in the chain — and with slot 1 now empty
-        // ahead of them, that place is the head of it.
+        // Same slot and the same width, so exactly the same rect — the middle
+        // anchor, half of bravo's travel in from slot 1's.
         expect(stacked.a.x).toBeCloseTo(stacked.b.x, 0);
         expect(stacked.a.width).toBeCloseTo(stacked.b.width, 0);
-        expect(stacked.a.x).toBeCloseTo(spanLeft + GAP, 0);
+        expect(stacked.a.x).toBeCloseTo(
+          spanLeft + GAP + Math.max(0, band - stacked.a.width) / 2,
+          0,
+        );
         // The later assignment is on top, and is the deck's active card:
         // assigning always raises, which is what makes a shared slot usable.
         expect(stacked.a.z).toBeGreaterThan(stacked.b.z);
@@ -533,7 +557,7 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         // Rightward: the chain's head sits a gap in from the canvas edge, so a
         // leftward drag of any size would leave the viewport.
         await app.nativeDrag(from, { x: from.x + 120, y: from.y + 140 });
-        await settle(600);
+        await settle(900);
 
         const dropped = await app.evalJS<Scene>(READ_SCENE);
         if (dropped.a === null || dropped.b === null) {
@@ -552,6 +576,25 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         // one pane leaving the arrangement does not disturb the rest of it.
         expect(dropped.b.imposed).toBe("1");
         expect(dropped.b.x).toBeCloseTo(stacked.b.x, 0);
+
+        // ---- Closing a card leaves the rest of the arrangement alone ----
+        //
+        // The guarantee the anchor rule exists for. A slot's place is a pure
+        // function of the kind, the slot, the band, and that pane's own width;
+        // no other pane is an input. So the arrangement cannot re-pack when its
+        // membership changes, and the card you were reading does not jump out
+        // from under you when you close the one beside it.
+        await app.evalJS<null>(`(window.__tug.closePane("p1"), null)`);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-card-id="A"]') === null`,
+          { timeoutMs: 8_000 },
+        );
+        await settle();
+        const alone = await app.evalJS<Scene>(READ_SCENE);
+        if (alone.b === null) throw new Error("[at0275] bravo's pane vanished");
+        expect(alone.a).toBeNull();
+        expect(alone.b.imposed).toBe("1");
+        expect(alone.b.x).toBeCloseTo(dropped.b.x, 0);
       } finally {
         await app.close();
       }

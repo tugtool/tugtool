@@ -39,9 +39,15 @@
   box-sizing: border-box;
 }
 
+/* The chosen arrangement's cards fill. Their stroke is the CANVAS colour, not
+   a darker shade of the fill: the step rule goes negative on a crowded deck, so
+   in three- and four-up the blocks genuinely overlap, and same-coloured fills
+   touching read as one solid slab rather than as three cards. A hairline of
+   canvas between them is what makes the overlap legible as an overlap — which
+   is the whole point of drawing it. */
 .layout-mini[data-selected="true"] .layout-mini-block {
   background-color: var(--tug7-surface-control-primary-filled-action-rest);
-  border-color: var(--tug7-element-control-border-filled-action-rest);
+  border-color: var(--tug7-surface-global-primary-normal-default-rest);
 }
 
 .layout-mini-rail {

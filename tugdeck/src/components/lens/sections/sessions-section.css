@@ -42,6 +42,10 @@
      leads the row, so the content hugs closer to the frame (matches Snippets). */
   --tugx-list-row-padding-inline: 10px;
   --tugx-list-row-indicator-gutter: 0px;
+  /* The row's two lines are a headline and a live readout, not a wrapped
+     paragraph — the primitive's 2px stack reads as one crowded block. This is
+     the air between the name line and the pulse + sparkline line. TUNE HERE. */
+  --tugx-list-row-content-gap: 5px;
   /* Frame the list like the session picker's boxes — a hairline border rounded
      at `--tug-radius-sm`. The list clips its rows to the rounded corners; the
      frame width joins the key-view ring (see `tug-list-view.css`), so a focused
@@ -81,14 +85,6 @@
   align-self: center;
   align-items: center;
   transform: translateY(calc(-1 * var(--tugx-lens-sessions-dot-rise)));
-}
-
-/* The reorder grip pins to the row's TITLE line — the phase dot opposite it
-   centers on the whole row instead, since it is tall enough to span both
-   lines. The grip carries its own layout/cursor from block-grip.css. */
-.lens-sessions-list .tug-list-row-grip {
-  align-self: flex-start;
-  height: var(--tug-line-height-sm, 1.25rem);
 }
 
 /* The wrap is the reorder container: the `BlockDropCaret` positions absolutely

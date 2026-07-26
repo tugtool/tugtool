@@ -49,13 +49,13 @@
 .tug-slot-size-sm {
   width: var(--tugx-slot-width-sm, 15px);
   height: var(--tugx-slot-height-sm, 19px);
-  font-size: 10px;
+  font-size: var(--tugx-slot-font-size-sm, 10px);
 }
 
 .tug-slot-size-md {
   width: var(--tugx-slot-width-md, 20px);
   height: var(--tugx-slot-height-md, 26px);
-  font-size: 12px;
+  font-size: var(--tugx-slot-font-size-md, 12px);
 }
 
 /* ---------------------------------------------------------------------------

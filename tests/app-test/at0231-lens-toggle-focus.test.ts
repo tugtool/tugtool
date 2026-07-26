@@ -48,7 +48,9 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const LENS_PANE_SELECTOR = `.tug-pane[data-lens]`;
+// `data-lens-pane` marks the Lens pane whether or not it is standing at its
+// pin; `data-lens` carries the side and is absent once it is dragged loose.
+const LENS_PANE_SELECTOR = `.tug-pane[data-lens-pane]`;
 
 async function lensPaneExists(app: App): Promise<boolean> {
   return app.evalJS<boolean>(

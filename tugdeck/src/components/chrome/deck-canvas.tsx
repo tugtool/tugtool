@@ -41,7 +41,12 @@ import { selectionGuard } from "@/components/tugways/selection-guard";
 import { copySelectionAsPlainText } from "@/lib/copy-as-plain-text";
 import { openFileInCard } from "@/lib/open-file-in-card";
 import { openPathInOS } from "@/lib/os-open";
-import { resolvePlacements, IMPOSITION_GAP_PX } from "@/lib/layout-imposer";
+import {
+  isLensPinned,
+  resolvePlacement,
+  IMPOSITION_GAP_PX,
+  IMPOSITION_SETTLE_MS,
+} from "@/lib/layout-imposer";
 
 // ---- DeckCanvasProps ----
 
@@ -72,6 +77,24 @@ const CARD_ZINDEX_BASE = 1;
  * dev-panel overlay used.
  */
 const LENS_PANE_ZINDEX = 8999;
+
+/**
+ * The settle duration actually in force on `el`, in milliseconds — the resolved
+ * `--tugx-imposer-settle-duration`, so a tuning override anywhere up the tree
+ * retimes the attribute along with the transition it gates. Falls back to
+ * {@link IMPOSITION_SETTLE_MS} for an unresolvable or malformed value.
+ */
+function readSettleMs(el: HTMLElement): number {
+  const raw = getComputedStyle(el)
+    .getPropertyValue("--tugx-imposer-settle-duration")
+    .trim();
+  const seconds = raw.endsWith("ms") ? 0.001 : raw.endsWith("s") ? 1 : 0;
+  if (seconds === 0) return IMPOSITION_SETTLE_MS;
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) && value >= 0
+    ? value * seconds * 1000
+    : IMPOSITION_SETTLE_MS;
+}
 
 // ---- DeckCanvas ----
 
@@ -126,7 +149,14 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // insets, the placements memo, and the `lensSide` prop below.
   const lensPane = findLensPane(deckState);
   const lensPaneId = lensPane?.id;
-  const lensSide = lensPane === undefined ? null : deckState.imposition.lens;
+  // The side the Lens is HOLDING, or null when there is none to hold it —
+  // because the Lens is closed, or because it has been dragged off its pin and
+  // is standing in the deck as an ordinary free pane. Either way the
+  // arrangement spans the whole canvas.
+  const lensSide =
+    lensPane === undefined || !isLensPinned(deckState.imposition)
+      ? null
+      : deckState.imposition.lens;
 
   // ---------------------------------------------------------------------------
   // Stable render order
@@ -339,6 +369,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           ? settingsCard.id
           : store.addCard("settings");
         if (incomingCardId === null) return;
+        // Settings is `placement: "center"`: it lands in the middle of the
+        // canvas on every show, not only the first, so a position saved under
+        // an older arrangement can never leave it hiding behind the Lens. The
+        // menu path gets this from `showSingletonCard`; ⌘, does its own
+        // find-or-create, so it asks for the same thing here.
+        if (settingsCard) store.centerPane(incomingCardId);
         transferFocusForActivation({
           outgoingCardId: store.getFirstResponderCardId(),
           incomingCardId,
@@ -592,7 +628,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // under the Lens's real edge. `resolveSpan` adds the identical gap, so the
   // numeric twin and the CSS agree by construction ([P05]).
   const lensRenderWidth =
-    lensPane === undefined
+    lensPane === undefined || lensSide === null
       ? 0
       : Math.max(
           lensPane.size.width,
@@ -602,7 +638,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
               .map((card) => card.componentId),
           ).min.width,
         );
-  const lensInset = lensPane === undefined ? 0 : lensRenderWidth + IMPOSITION_GAP_PX;
+  const lensInset = lensRenderWidth === 0 ? 0 : lensRenderWidth + IMPOSITION_GAP_PX;
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -616,38 +652,73 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     );
   }, [lensSide, lensInset]);
 
-  // Where each imposed pane sits in the chain. The offsets are cumulative over
-  // the slotted panes' own widths, so this is the one place that has to see all
-  // of them at once — a frame cannot work out its own place from its own state.
+  // ---------------------------------------------------------------------------
+  // Settling into a new arrangement
+  // ---------------------------------------------------------------------------
+  // A change to the ARRANGEMENT moves derived frames without anyone touching
+  // them: the Lens crossing to the other side, an N-up swap, the pin coming
+  // back, a card sent to another slot. The container wears
+  // `data-imposer-settling` for the duration and the frames transition rather
+  // than cut (`tug-pane.css`). Appearance only, written straight to the DOM,
+  // never through React state ([L06]).
   //
-  // The width fed in is the width the frame will actually PAINT at, which is
-  // the stored width raised to the stack's size floor (`TugPane`'s
-  // `renderWidth`). A stored width below the floor is ordinary — a card kind
-  // raised its policy, or a wider sibling joined the stack — and packing on the
-  // stored number would chain the next card underneath this one's real edge.
-  const placements = useMemo(
-    () =>
-      deckState.imposition.kind === undefined
-        ? null
-        : resolvePlacements(
-            deckState.imposition.kind,
-            panes.map((pane) => {
-              const cardIds = new Set(pane.cardIds);
-              const componentIds = cards
-                .filter((card) => cardIds.has(card.id))
-                .map((card) => card.componentId);
-              return {
-                id: pane.id,
-                slot: pane.slot,
-                width: Math.max(
-                  pane.size.width,
-                  getStackSizePolicy(componentIds).min.width,
-                ),
-              };
-            }),
-            lensSide,
-          ),
-    [deckState.imposition.kind, panes, cards, lensSide],
+  // The trigger is a signature over exactly what the imposer reads — the
+  // record, plus which pane holds which slot. Watching the record alone would
+  // make a slot assignment animate or cut depending on whether it happened to
+  // land inside some earlier change's window, and a gesture that sometimes
+  // crosses and sometimes jumps is worse than one that always jumps.
+  //
+  // The duration lives in one place: `IMPOSITION_SETTLE_MS` is written onto the
+  // container as the CSS knob, and the timer reads the RESOLVED value back — so
+  // overriding `--tugx-imposer-settle-duration` on the container retimes the
+  // transition and the attribute together.
+  const arrangement = `${deckState.imposition.kind ?? ""}|${
+    deckState.imposition.lens
+  }|${isLensPinned(deckState.imposition) ? "pinned" : "free"}|${panes
+    .map((pane) => `${pane.id}:${pane.slot ?? ""}`)
+    .join(",")}`;
+  const arrangementRef = useRef(arrangement);
+  const settleTimerRef = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.style.setProperty(
+      "--tugx-imposer-settle-duration",
+      `${IMPOSITION_SETTLE_MS}ms`,
+    );
+    const previous = arrangementRef.current;
+    arrangementRef.current = arrangement;
+    if (previous === arrangement) return;
+    el.setAttribute("data-imposer-settling", "");
+    if (settleTimerRef.current !== null) {
+      window.clearTimeout(settleTimerRef.current);
+    }
+    settleTimerRef.current = window.setTimeout(() => {
+      settleTimerRef.current = null;
+      el.removeAttribute("data-imposer-settling");
+    }, readSettleMs(el));
+  }, [arrangement]);
+  useEffect(
+    () => () => {
+      if (settleTimerRef.current !== null) {
+        window.clearTimeout(settleTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  // Where each imposed pane sits. A slot's anchor is a pure function of the
+  // kind, the slot, and which side the Lens holds — no pane's place depends on
+  // any other's — so this is a per-pane lookup rather than a chain resolved
+  // from a vantage point that sees them all. Resolved here only because the
+  // canvas is where the kind and the Lens side are already in hand.
+  const impositionKind = deckState.imposition.kind;
+  const placementFor = useCallback(
+    (pane: TugPaneState) =>
+      impositionKind === undefined || pane.slot === undefined
+        ? undefined
+        : resolvePlacement(impositionKind, pane.slot, lensSide),
+    [impositionKind, lensSide],
   );
 
   // Merge `deckRootRef` (pane-focus-controller's query scope) and
@@ -752,12 +823,13 @@ export function DeckCanvas(_props: DeckCanvasProps) {
               stackCards.map((c) => c.componentId),
             )}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
-            placement={placements?.get(stackState.id)}
+            placement={placementFor(stackState)}
             lensSide={
               stackState.id === lensPaneId && lensSide !== null
                 ? lensSide
                 : undefined
             }
+            isLensPane={stackState.id === lensPaneId}
             onCardMoved={store.handlePaneMoved}
             onClose={handleClose}
             onCardCollapsed={(id) => store.togglePaneCollapse(id)}

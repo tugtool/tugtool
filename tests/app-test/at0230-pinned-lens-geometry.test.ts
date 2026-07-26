@@ -2,12 +2,16 @@
  * at0230-pinned-lens-geometry.test.ts — the pinned-pane treatment the Lens
  * gets from the imposer.
  *
- * The Lens is imposed, but as the strip's fixed end rather than a link in
- * its chain: it holds the side `imposition.lens` names, one imposition gap
- * in on three edges and the deeper gap at the bottom, takes only its width
- * from the store, and is non-draggable. The pane carries no marker of its
- * own — it is pinned because it hosts the Lens card, which is what
- * `findLensPane` derives and `DeckCanvas` turns into the `lensSide` prop.
+ * The Lens is imposed, but as the arrangement's fixed end rather than one of
+ * its slots: it holds the side `imposition.lens` names, one imposition gap in
+ * on three edges and the deeper gap at the bottom, and takes only its width
+ * from the store. The pane carries no marker of its own — it is pinned because
+ * it hosts the Lens card, which is what `findLensPane` derives and
+ * `DeckCanvas` turns into the `lensSide` prop.
+ *
+ * It is also DRAGGABLE, and the drag is the one gesture that ends the pin: the
+ * Lens becomes an ordinary free pane standing where it was dropped, and any
+ * choice in its own Layouts section puts it back.
  *
  * The serialize → parseV4 round-trip for the side (the R01 fit-clamp /
  * drop-on-read regression) is pinned by the `serialization` unit tests
@@ -20,13 +24,17 @@
  *   1. Seed a deck: one free pane + the Lens pane (width 420).
  *   2. Assert the Lens renders pinned to its side with the imposition gaps
  *      and rounded chrome.
- *   3. Drag the Lens's title bar — assert it does not move (non-draggable).
- *   4. Window ▸ Tile — assert the Lens keeps its geometry while the free
- *      pane is retiled around it.
+ *   3. Window ▸ Tile — assert the pinned Lens keeps its geometry while the
+ *      free pane is retiled around it.
+ *   4. Drag the Lens's title bar — assert it moves, loses `data-lens`, and
+ *      keeps `data-lens-pane`.
+ *   5. Choose the Lens side in the Layouts section — assert it snaps back to
+ *      the pin, gaps and all.
  *
  * @covers tugdeck/src/layout-tree.ts
  * @covers tugdeck/src/lib/layout-imposer.ts
  * @covers tugdeck/src/deck-store-selectors.ts
+ * @covers tugdeck/src/components/lens/sections/layouts-section.tsx
  * @covers tugdeck/src/components/chrome/tug-pane.tsx
  * @covers tugdeck/src/components/chrome/deck-canvas.tsx
  * @covers tugdeck/src/deck-manager.ts
@@ -52,6 +60,9 @@ const GAP_BOTTOM = 32;
 const FREE_SELECTOR = `.tug-pane[data-pane-id="pFree"]`;
 const LENS_SELECTOR = `.tug-pane[data-pane-id="pLens"]`;
 const LENS_TITLE_BAR = `${LENS_SELECTOR} .tug-pane-title-bar`;
+/** The Lens's own Layouts section — the only way back onto the pin. */
+const SIDE_RIGHT =
+  '[data-testid="lens-layouts-side"] [data-radio-value="right"]';
 
 function deckShape() {
   return {
@@ -98,10 +109,10 @@ async function viewport(app: App): Promise<{ w: number; h: number }> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "at0230 — the Lens pins to its side with the imposition gaps and resists drag",
+  "at0230 — the Lens pins to its side, and a drag is what takes it off the pin",
   () => {
     test(
-      "pinned right with gaps on all four sides, rounded chrome, non-draggable",
+      "pinned right with gaps on all four sides and rounded chrome; drag unpins, the picker re-pins",
       async () => {
         const tugbankPath = mkTempTugbank();
         try {
@@ -147,21 +158,10 @@ describe.skipIf(!SHOULD_RUN)(
               expect(radius).toBeGreaterThan(0);
             }
 
-            // Non-draggable: dragging the title bar to the center leaves
-            // the Lens pinned.
-            {
-              const before = await lensBounds(app);
-              await app.nativeDragElement(LENS_TITLE_BAR, { x: 300, y: 400 });
-              const after = await lensBounds(app);
-              expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(2);
-              expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(2);
-              expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(2);
-            }
-
-            // Window ▸ Tile arranges the deck around the Lens rather than
-            // over it. Tiling writes `size`, and the Lens paints at its
-            // stored width, so a Lens caught up in the arrangement would be
-            // visibly resized and would drag the whole band with it.
+            // Window ▸ Tile arranges the deck around a pinned Lens rather
+            // than over it. Tiling writes a stored rect, and a pinned Lens
+            // paints from its pin, so a Lens caught up in the arrangement
+            // would be visibly resized and would drag the whole band with it.
             {
               const before = await lensBounds(app);
               const freeBefore = await app.getElementBounds(FREE_SELECTOR);
@@ -179,6 +179,51 @@ describe.skipIf(!SHOULD_RUN)(
               expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(2);
               expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(2);
               expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(2);
+            }
+
+            // Dragging the title bar takes the Lens OFF the pin: it lands
+            // where it was dropped, stops carrying a side, and is a free pane
+            // in the deck from then on. `data-lens-pane` survives — it is
+            // still the Lens, and still refuses a merge.
+            {
+              const before = await lensBounds(app);
+              await app.nativeDragElement(LENS_TITLE_BAR, { x: 320, y: 420 });
+              await app.waitForCondition<boolean>(
+                `document.querySelector(${JSON.stringify(
+                  `${LENS_SELECTOR}[data-lens]`,
+                )}) === null`,
+                { timeoutMs: 5_000 },
+              );
+              const after = await lensBounds(app);
+              expect(Math.abs(after.x - before.x)).toBeGreaterThan(2);
+              expect(
+                await app.evalJS<boolean>(
+                  `document.querySelector(${JSON.stringify(
+                    `${LENS_SELECTOR}[data-lens-pane]`,
+                  )}) !== null`,
+                ),
+              ).toBe(true);
+              // Width is the user's either way — the release never touches it.
+              expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(2);
+            }
+
+            // Choosing the Lens's side puts it back. The side has not changed,
+            // which is the point: naming the side the Lens holds is the gesture
+            // that says it holds one, so the choice is never a no-op.
+            {
+              await app.nativeClickAtElement(SIDE_RIGHT);
+              await app.waitForCondition<boolean>(
+                `document.querySelector(${JSON.stringify(
+                  `${LENS_SELECTOR}[data-lens="right"]`,
+                )}) !== null`,
+                { timeoutMs: 5_000 },
+              );
+              // Let the settle transition land before measuring.
+              await new Promise<void>((r) => setTimeout(r, 900));
+              const vp = await viewport(app);
+              const b = await lensBounds(app);
+              expect(Math.abs(b.x + b.width - (vp.w - GAP))).toBeLessThanOrEqual(2);
+              expect(Math.abs(b.y - GAP)).toBeLessThanOrEqual(2);
             }
 
           } finally {

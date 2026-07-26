@@ -5,4 +5,10 @@
 .slot-picker {
   font-family: var(--tug-font-family-sans);
   margin-inline-start: auto;
+  /* A step up from the primitive's `sm` default (15×19 at 10px). The slot is
+     the row's one hit target for the arrangement, and at the default size it
+     reads as a badge rather than as something to press. TUNE HERE. */
+  --tugx-slot-width-sm: 18px;
+  --tugx-slot-height-sm: 22px;
+  --tugx-slot-font-size-sm: 11px;
 }
