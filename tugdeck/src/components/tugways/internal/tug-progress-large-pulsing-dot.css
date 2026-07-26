@@ -24,8 +24,11 @@
  * reflows as a session moves through the ladder.
  *
  * Motion: two `@keyframes` loops on ONE shared 2000ms period (scaled by
- * `--tug-timing`), started in the same frame — that is what welds the ring's
- * emission to the dot's breath, with no timer and no scripting.
+ * `--tug-timing`, and by this instance's own
+ * `--tugx-progress-large-pulsing-dot-drift`), started in the same frame — that
+ * is what welds the ring's emission to the dot's breath, with no timer and no
+ * scripting. The drift is per-glyph, so the weld holds while separate glyphs
+ * run at slightly different rates.
  *
  *  - `tugx-progress-large-pulsing-dot-breathe` — the dot. A cosine ease-in-out
  *    baked into `linear` stops (the `tug-progress-wave` idiom): inhale
@@ -78,7 +81,17 @@
   --tugx-progress-large-pulsing-dot-dot-size: calc(
     var(--tugx-progress-large-pulsing-dot-size) * 0.6
   );
-  --tugx-progress-large-pulsing-dot-period: calc(2000ms * var(--tug-timing, 1));
+  /* Per-instance rate, set inline by the component: 1.0 ± 0.04, drawn once at
+     mount. It multiplies the period and nothing else, so both loops in this
+     glyph still share one duration and stay welded; what it changes is how
+     this glyph sits against the OTHERS on screen — a column of running
+     sessions pulls apart over a dozen or so breaths instead of beating as one
+     mechanism. Default 1 keeps a bare stylesheet render nominal. */
+  --tugx-progress-large-pulsing-dot-drift: 1;
+  --tugx-progress-large-pulsing-dot-period: calc(
+    2000ms * var(--tug-timing, 1) *
+      var(--tugx-progress-large-pulsing-dot-drift, 1)
+  );
   /* The ring's stroke scales with the glyph — a hairline that reads at 16px
      disappears at 32px. 1px floor keeps the small end honest. */
   --tugx-progress-large-pulsing-dot-ring-width: max(
@@ -205,27 +218,69 @@
    turn — top dead center; the ring is lit just before it and the exhale runs
    unbroken to 100%. */
 @keyframes tugx-progress-large-pulsing-dot-breathe {
-  0% { transform: translate(-50%, -50%) scale(0.35); }
-  5% { transform: translate(-50%, -50%) scale(0.3659); }
-  10% { transform: translate(-50%, -50%) scale(0.4121); }
-  15% { transform: translate(-50%, -50%) scale(0.4840); }
-  20% { transform: translate(-50%, -50%) scale(0.5746); }
-  25% { transform: translate(-50%, -50%) scale(0.6750); }
-  30% { transform: translate(-50%, -50%) scale(0.7754); }
-  35% { transform: translate(-50%, -50%) scale(0.8660); }
-  40% { transform: translate(-50%, -50%) scale(0.9379); }
-  45% { transform: translate(-50%, -50%) scale(0.9841); }
-  50% { transform: translate(-50%, -50%) scale(1); }
-  55% { transform: translate(-50%, -50%) scale(0.9841); }
-  60% { transform: translate(-50%, -50%) scale(0.9379); }
-  65% { transform: translate(-50%, -50%) scale(0.8660); }
-  70% { transform: translate(-50%, -50%) scale(0.7754); }
-  75% { transform: translate(-50%, -50%) scale(0.6750); }
-  80% { transform: translate(-50%, -50%) scale(0.5746); }
-  85% { transform: translate(-50%, -50%) scale(0.4840); }
-  90% { transform: translate(-50%, -50%) scale(0.4121); }
-  95% { transform: translate(-50%, -50%) scale(0.3659); }
-  100% { transform: translate(-50%, -50%) scale(0.35); }
+  0% {
+    transform: translate(-50%, -50%) scale(0.35);
+  }
+  5% {
+    transform: translate(-50%, -50%) scale(0.3659);
+  }
+  10% {
+    transform: translate(-50%, -50%) scale(0.4121);
+  }
+  15% {
+    transform: translate(-50%, -50%) scale(0.484);
+  }
+  20% {
+    transform: translate(-50%, -50%) scale(0.5746);
+  }
+  25% {
+    transform: translate(-50%, -50%) scale(0.675);
+  }
+  30% {
+    transform: translate(-50%, -50%) scale(0.7754);
+  }
+  35% {
+    transform: translate(-50%, -50%) scale(0.866);
+  }
+  40% {
+    transform: translate(-50%, -50%) scale(0.9379);
+  }
+  45% {
+    transform: translate(-50%, -50%) scale(0.9841);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  55% {
+    transform: translate(-50%, -50%) scale(0.9841);
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(0.9379);
+  }
+  65% {
+    transform: translate(-50%, -50%) scale(0.866);
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(0.7754);
+  }
+  75% {
+    transform: translate(-50%, -50%) scale(0.675);
+  }
+  80% {
+    transform: translate(-50%, -50%) scale(0.5746);
+  }
+  85% {
+    transform: translate(-50%, -50%) scale(0.484);
+  }
+  90% {
+    transform: translate(-50%, -50%) scale(0.4121);
+  }
+  95% {
+    transform: translate(-50%, -50%) scale(0.3659);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(0.35);
+  }
 }
 
 /* The emitted ring: one pulse per cycle. Held hidden at birth scale through
@@ -234,21 +289,63 @@
    it widens. */
 @keyframes tugx-progress-large-pulsing-dot-emit {
   /* Hidden through the inhale, parked at the scale it will be born at. */
-  0% { transform: translate(-50%, -50%) scale(0.597); opacity: 0; }
-  46.99% { transform: translate(-50%, -50%) scale(0.597); opacity: 0; }
+  0% {
+    transform: translate(-50%, -50%) scale(0.597);
+    opacity: 0;
+  }
+  46.99% {
+    transform: translate(-50%, -50%) scale(0.597);
+    opacity: 0;
+  }
   /* Ignition, a few degrees before the turn. Born flush with the dot's edge:
      the dot is at 0.9942 of full size here, so 0.6 × 0.9942 ≈ 0.597 of the
      box — the ring peels off the dot rather than appearing beside it. */
-  47% { transform: translate(-50%, -50%) scale(0.597); opacity: 0.750; }
-  50% { transform: translate(-50%, -50%) scale(0.6616); opacity: 0.708; }
-  55% { transform: translate(-50%, -50%) scale(0.7533); opacity: 0.637; }
-  60% { transform: translate(-50%, -50%) scale(0.8268); opacity: 0.566; }
-  65% { transform: translate(-50%, -50%) scale(0.8839); opacity: 0.495; }
-  70% { transform: translate(-50%, -50%) scale(0.9269); opacity: 0.425; }
-  75% { transform: translate(-50%, -50%) scale(0.9577); opacity: 0.354; }
-  80% { transform: translate(-50%, -50%) scale(0.9784); opacity: 0.283; }
-  85% { transform: translate(-50%, -50%) scale(0.9909); opacity: 0.212; }
-  90% { transform: translate(-50%, -50%) scale(0.9973); opacity: 0.142; }
-  95% { transform: translate(-50%, -50%) scale(0.9997); opacity: 0.071; }
-  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+  47% {
+    transform: translate(-50%, -50%) scale(0.597);
+    opacity: 0.75;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(0.6616);
+    opacity: 0.708;
+  }
+  55% {
+    transform: translate(-50%, -50%) scale(0.7533);
+    opacity: 0.637;
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(0.8268);
+    opacity: 0.566;
+  }
+  65% {
+    transform: translate(-50%, -50%) scale(0.8839);
+    opacity: 0.495;
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(0.9269);
+    opacity: 0.425;
+  }
+  75% {
+    transform: translate(-50%, -50%) scale(0.9577);
+    opacity: 0.354;
+  }
+  80% {
+    transform: translate(-50%, -50%) scale(0.9784);
+    opacity: 0.283;
+  }
+  85% {
+    transform: translate(-50%, -50%) scale(0.9909);
+    opacity: 0.212;
+  }
+  90% {
+    transform: translate(-50%, -50%) scale(0.9973);
+    opacity: 0.142;
+  }
+  95% {
+    transform: translate(-50%, -50%) scale(0.9997);
+    opacity: 0.071;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
 }

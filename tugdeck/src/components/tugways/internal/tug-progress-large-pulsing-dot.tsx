@@ -25,7 +25,9 @@
  * **Phase lock without a clock.** Both elements run CSS `@keyframes` on
  * the same duration, started in the same frame, so the ring's emission
  * stop stays welded to the dot's turn with no timer, no WAAPI chaining,
- * and no per-frame main-thread work. Firing near the turn also keeps the
+ * and no per-frame main-thread work. That duration carries a small
+ * per-instance jitter ({@link DRIFT_SPREAD}) — the weld is within a
+ * glyph, so two of them on screen drift apart rather than beating as one. Firing near the turn also keeps the
  * ring inside a single cycle — lit at 47%, gone by 100% — so the pulse
  * needs no wrap across the cycle boundary.
  *
@@ -97,6 +99,25 @@ export const DOT_SCALE_MIN = 0.35;
  */
 export const EMIT_OFFSET_PCT = 47;
 
+/**
+ * Half-width of the per-instance period jitter, as a fraction of the nominal
+ * 2s cycle. Each mounted glyph picks a multiplier once, uniformly in
+ * `[1 - DRIFT_SPREAD, 1 + DRIFT_SPREAD]`, and runs its whole cycle at that
+ * rate.
+ *
+ * The point is a column of them. Several sessions breathing on one exact
+ * period read as one mechanism with several heads; give each its own rate and
+ * they pull apart over half a minute or so into something that reads as
+ * several things each doing its own work. At ±4% the widest pair differs by
+ * ~160ms per cycle, so neighbors take roughly a dozen breaths to fall out of
+ * step — slow enough that no single glance catches the drift happening.
+ *
+ * It only ever scales the period, so both loops inside one glyph still read
+ * the same duration and stay phase-locked to each other: the ring is still
+ * shed at 10.8° BTDC of that glyph's own breath.
+ */
+const DRIFT_SPREAD = 0.04;
+
 /** Settled states paint a reduced dot; held / canceled keep it full-size. */
 function isQuiet(state: TugProgressIndicatorState): boolean {
   return state === "stopped" || state === "completed";
@@ -167,10 +188,15 @@ export const TugProgressLargePulsingDot = React.forwardRef<
   // of truth — and so it sizes by WIDTH rather than a transform, which keeps
   // the ring's stroke the same weight at every rung of the ladder.
   const presence = presenceScale(state);
+  // Chosen once per mount and never again: this glyph's own rate ([DRIFT_SPREAD]).
+  const [drift] = React.useState(
+    () => 1 + (Math.random() * 2 - 1) * DRIFT_SPREAD,
+  );
   const rootStyle: React.CSSProperties = {
     ["--tugx-progress-large-pulsing-dot-size" as string]: `${size}px`,
     ["--tugx-progress-large-pulsing-dot-dot-size" as string]: `${dotSizePx}px`,
     ["--tugx-progress-large-pulsing-dot-presence" as string]: `${presence}`,
+    ["--tugx-progress-large-pulsing-dot-drift" as string]: `${drift.toFixed(4)}`,
   };
 
   // Seed the static pose inline. It equals the breath's 0% keyframe, so a
