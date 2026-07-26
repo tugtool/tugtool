@@ -50,7 +50,7 @@ export function canonicalModelKey(value: string): string {
 }
 
 /** Whether `a`'s segments are a leading run of `b`'s (`fable` ⊂ `fable-5`). */
-function isKeyPrefix(a: string, b: string): boolean {
+export function isKeyPrefix(a: string, b: string): boolean {
   if (a.length === 0 || a === b) return false;
   const left = a.split("-");
   const right = b.split("-");

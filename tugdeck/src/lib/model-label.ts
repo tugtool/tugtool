@@ -35,6 +35,7 @@
  */
 
 import type { CapabilityModel } from "./session-metadata-store";
+import { canonicalModelKey, isKeyPrefix } from "./model-selector";
 
 /** The vendor prefix every Claude model id carries. */
 const CLAUDE_PREFIX = "claude-";
@@ -121,18 +122,48 @@ export function compressContextPhrase(text: string): string {
 }
 
 /**
+ * A bare context-window annotation as claude's own wording spells it —
+ * `1M`, `200K` — the whole of a `·`-separated segment.
+ */
+const CONTEXT_ANNOTATION = /^\d+(?:\.\d+)?\s*[MK]$/i;
+
+/**
+ * Whether a `·`-separated description segment is nothing but a context-window
+ * annotation ({@link CONTEXT_ANNOTATION}) — the second segment of claude's
+ * newer wording, `Opus 5 · 1M · Best for everyday, complex tasks`.
+ */
+export function isContextAnnotation(segment: string): boolean {
+  return CONTEXT_ANNOTATION.test(segment.trim());
+}
+
+/**
  * The "name with version" title for a capability/catalog row, from claude's
  * own wording: the leading `·`-separated segment of the row's `description`
- * (`"Fable 5 · Most capable…"` → `"Fable 5"`), context phrase compressed
- * (`"Opus 4.8 with 1M context"` → `"Opus 4.8 · 1M"`). A row without a
- * description falls back to its display name, parenthetical stripped.
+ * (`"Fable 5 · Most capable…"` → `"Fable 5"`), plus the context-window
+ * annotation when claude states one.
+ *
+ * Claude has spelled that annotation two ways, and both must survive as the
+ * chip's ` · 1M`: inline in the name segment (`"Opus 4.8 with 1M context ·
+ * Best…"`, compressed by {@link compressContextPhrase}) and as a segment of
+ * its own (`"Opus 5 · 1M · Best…"`, kept here). Taking only the first segment
+ * dropped the window from the newer wording, so a 1M model read as a bare
+ * `Opus 5` — the same staleness that mis-sized the context gauge.
+ *
+ * A row without a description falls back to its display name, parenthetical
+ * stripped.
  */
 export function modelRowTitle(row: CapabilityModel): string {
   if (row.description !== undefined) {
     // Isolate the leading name segment FIRST, then compress — compressing
     // first would introduce the very `·` the split keys on.
-    const segment = compressContextPhrase(row.description.split("·")[0].trim());
-    if (segment.length > 0) return segment;
+    const segments = row.description.split("·").map((s) => s.trim());
+    const name = compressContextPhrase(segments[0]);
+    if (name.length > 0) {
+      const annotation = segments[1];
+      return annotation !== undefined && isContextAnnotation(annotation)
+        ? `${name} · ${annotation}`
+        : name;
+    }
   }
   return stripDisplayNameParenthetical(row.displayName);
 }
@@ -140,9 +171,26 @@ export function modelRowTitle(row: CapabilityModel): string {
 /**
  * The model row a model string belongs to. `model` may be an exact resolved
  * id (`claude-sonnet-4-6`), a picker selector (`sonnet`), or an optimistic
- * display label (`Sonnet 4.6`) — matched first by exact selector value, then
- * by the row's value appearing in the string (the `default` row never
- * containment-matches; a resolved id names a family, not "default").
+ * display label (`Sonnet 4.6`).
+ *
+ * Four tiers, most-certain first. The `default` row is out of play past the
+ * exact tier — it names no particular model, so nothing may drift onto it.
+ *
+ *  1. **Exact selector value.**
+ *  2. **Canonical key** ([model-selector.ts] `canonicalModelKey`) — the same
+ *     model under a different spelling (`claude-fable-5` ↔ the catalog's
+ *     `claude-fable-5[1m]`).
+ *  3. **Token-boundary containment** — the row's value appearing inside the
+ *     string, which is what maps an optimistic display label (`Sonnet 4.6`)
+ *     back to its row.
+ *  4. **Family/version prefix relation** — a short family selector against a
+ *     versioned id (`opus[1m]` ↔ `claude-opus-5`). Claude's catalog spells
+ *     the row `opus[1m]` while the resolved id it reports is `claude-opus-5`,
+ *     and the JSONL a resume replays records the bare `claude-opus-5`; without
+ *     this tier a resumed session matches no row at all and every derived
+ *     value (label, selector, context-window max) falls to its unknown
+ *     default. Same relation `resolveCatalogSelector` uses, so a selector and
+ *     a resolved id resolve to the same row.
  *
  * The containment pass is deliberately narrow, because the rows are untrusted:
  * they come from claude's live capabilities or from the catalog persisted in
@@ -157,8 +205,10 @@ export function modelRowTitle(row: CapabilityModel): string {
  *    the string or against a non-alphanumeric neighbor, so `sonnet` matches
  *    `claude-sonnet-4-6` but `e` never matches inside `sonnet`.
  *
- * Among surviving candidates the LONGEST value wins, so a specific row beats a
- * generic one rather than the match depending on row order.
+ * Among surviving containment candidates the LONGEST value wins, so a specific
+ * row beats a generic one rather than the match depending on row order. The
+ * key tiers break ties by catalog order — claude's own ordering,
+ * most-preferred first.
  */
 function stripVendorPrefix(s: string): string {
   return s.startsWith(CLAUDE_PREFIX) ? s.slice(CLAUDE_PREFIX.length) : s;
@@ -184,15 +234,24 @@ export function findModelRow(
   model: string,
   rows: CapabilityModel[],
 ): CapabilityModel | null {
-  const lower = model.toLowerCase();
-  const exact = rows.find((r) => r.value.toLowerCase() === lower);
+  const lower = model.trim().toLowerCase();
+  const exact = rows.find((r) => r.value.trim().toLowerCase() === lower);
   if (exact !== undefined) return exact;
+
+  const concrete = rows.filter(
+    (r) => r.value !== "default" && r.value.length > 0,
+  );
+  const key = canonicalModelKey(lower);
+
+  if (key.length > 0) {
+    const sameKey = concrete.find((r) => canonicalModelKey(r.value) === key);
+    if (sameKey !== undefined) return sameKey;
+  }
 
   const haystack = stripVendorPrefix(lower);
   let best: CapabilityModel | null = null;
   let bestLength = 0;
-  for (const row of rows) {
-    if (row.value === "default" || row.value.length === 0) continue;
+  for (const row of concrete) {
     const needle = stripVendorPrefix(row.value.toLowerCase());
     if (needle.length === 0) continue;
     if (!containsAtTokenBoundary(haystack, needle)) continue;
@@ -201,7 +260,16 @@ export function findModelRow(
       bestLength = needle.length;
     }
   }
-  return best;
+  if (best !== null) return best;
+
+  if (key.length > 0) {
+    const related = concrete.find((r) => {
+      const rowKey = canonicalModelKey(r.value);
+      return isKeyPrefix(key, rowKey) || isKeyPrefix(rowKey, key);
+    });
+    if (related !== undefined) return related;
+  }
+  return null;
 }
 
 /**

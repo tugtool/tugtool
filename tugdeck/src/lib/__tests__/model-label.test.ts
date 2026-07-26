@@ -102,6 +102,23 @@ describe("modelRowTitle", () => {
     expect(modelRowTitle(ROWS[3])).toBe("Sonnet 5");
   });
 
+  test("keeps the context window when claude states it as its own segment", () => {
+    // Claude's newer wording separates the window with a `·` instead of the
+    // inline "with 1M context" phrase. Taking only the leading segment dropped
+    // it, so a 1M model read as a bare `Opus 5` on the chip.
+    expect(
+      modelRowTitle({
+        value: "opus[1m]",
+        displayName: "Opus (1M context)",
+        description: "Opus 5 · 1M · Best for everyday, complex tasks",
+      }),
+    ).toBe("Opus 5 · 1M");
+  });
+
+  test("a non-annotation second segment is prose, not a window", () => {
+    expect(modelRowTitle(ROWS[3])).toBe("Sonnet 5");
+  });
+
   test("falls back to the stripped display name without a description", () => {
     expect(modelRowTitle(ROWS[4])).toBe("Haiku");
     expect(
@@ -138,6 +155,45 @@ describe("findModelRow", () => {
     expect(findModelRow("claude-opus-4-8", withJunk)?.value).toBe("opus");
     expect(findModelRow("claude-sonnet-4-6", withJunk)?.value).toBe("sonnet");
     expect(findModelRow("gpt-4o", withJunk)).toBeNull();
+  });
+
+  test("relates a family selector to a versioned id neither way contains", () => {
+    // The live catalog spells the row `opus[1m]` while the id claude reports
+    // is `claude-opus-5` — and the JSONL a resume replays records the bare
+    // `claude-opus-5`. Containment relates neither direction, so before the
+    // key tiers a resumed session matched no row at all and its label,
+    // selector, and context-window max all fell to their unknown defaults.
+    const live: CapabilityModel[] = [
+      {
+        value: "default",
+        displayName: "Default (recommended)",
+        description: "Opus 5 · 1M · Best for everyday, complex tasks",
+      },
+      {
+        value: "opus[1m]",
+        displayName: "Opus (1M context)",
+        description: "Opus 5 · 1M · Best for everyday, complex tasks",
+      },
+      {
+        value: "claude-fable-5[1m]",
+        displayName: "Fable",
+        description: "Fable 5 · Most capable for your hardest tasks",
+      },
+      { value: "sonnet", displayName: "Sonnet", description: "Sonnet 5 · Efficient" },
+    ];
+    expect(findModelRow("claude-opus-5", live)?.value).toBe("opus[1m]");
+    expect(findModelRow("claude-opus-5[1m]", live)?.value).toBe("opus[1m]");
+    expect(findModelRow("claude-sonnet-5", live)?.value).toBe("sonnet");
+  });
+
+  test("matches across a respelling of the same model (canonical key)", () => {
+    const live: CapabilityModel[] = [
+      { value: "claude-fable-5[1m]", displayName: "Fable" },
+      { value: "haiku", displayName: "Haiku" },
+    ];
+    expect(findModelRow("claude-fable-5", live)?.value).toBe(
+      "claude-fable-5[1m]",
+    );
   });
 
   test("the most specific row wins regardless of row order", () => {

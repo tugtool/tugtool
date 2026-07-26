@@ -77,10 +77,9 @@ import {
 } from "@/lib/code-session-store/end-state";
 import { useLifecycleTick } from "@/lib/code-session-store/hooks/use-lifecycle-tick";
 import { deriveColdRestoreActive } from "@/components/tugways/cards/session-card-restore-gate";
-import {
-  DEFAULT_CONTEXT_MAX_TOKENS,
-  resolveModelContextMax,
-} from "@/lib/model-context-max";
+import { resolveModelContextMax } from "@/lib/model-context-max";
+import { knownModelRows } from "@/lib/model-label";
+import { readModelCatalog } from "@/lib/model-catalog";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { SideQuestionStore } from "@/lib/side-question-store";
 import type { PendingContextStore } from "@/lib/pending-context-store";
@@ -363,6 +362,41 @@ export interface SessionTelemetryStatusRowHandle {
 }
 
 /**
+ * The context-window denominator for the session's model: the session's
+ * resolved `system_metadata.model` sized against claude's own capability rows
+ * (the live `initialize` list when a session is up, else the persisted
+ * catalog — [model-context-max.ts] reads the window out of the row's wording).
+ *
+ * Both gauges that divide by a window run this one hook, so the CONTEXT cell
+ * and the utilization strip cannot disagree. Nothing known yet → the 200k
+ * unknown default, same as any unrecognized model.
+ *
+ * Law [L02]: the metadata snapshot enters React through `useSyncExternalStore`.
+ */
+function useModelContextMax(store: SessionMetadataStore | undefined): number {
+  const snapshot = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => {
+        if (store === undefined) return () => {};
+        return store.subscribe(listener);
+      },
+      [store],
+    ),
+    useCallback(() => store?.getSnapshot() ?? null, [store]),
+  );
+  const model = snapshot?.model ?? null;
+  const models = snapshot?.models;
+  return useMemo(
+    () =>
+      resolveModelContextMax(
+        model,
+        knownModelRows(models ?? [], readModelCatalog()),
+      ),
+    [model, models],
+  );
+}
+
+/**
  * Window-utilization gauge — the context-window occupancy after the
  * most-recent committed turn (`window(latest)` from the transcript
  * window-walk: the last turn's last-iteration `input + output +
@@ -380,19 +414,7 @@ export const SessionTelemetryWindowUtilization: React.FC<SessionTelemetryProps> 
     codeSessionStore.subscribe,
     codeSessionStore.getSnapshot,
   );
-  const meta = useSyncExternalStore(
-    useCallback(
-      (listener) =>
-        sessionMetadataStore !== undefined
-          ? sessionMetadataStore.subscribe(listener)
-          : () => {},
-      [sessionMetadataStore],
-    ),
-    useCallback(
-      () => sessionMetadataStore?.getSnapshot().model ?? null,
-      [sessionMetadataStore],
-    ),
-  );
+  const max = useModelContextMax(sessionMetadataStore);
   // Resident context after the latest committed turn — the transcript
   // window-walk (carry-forward over any zero-usage turn). `0` for a
   // fresh session before `sessionInitTokens` is captured.
@@ -405,7 +427,6 @@ export const SessionTelemetryWindowUtilization: React.FC<SessionTelemetryProps> 
     windows.length > 0
       ? windows[windows.length - 1].window
       : snap.sessionInitTokens ?? 0;
-  const max = meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
   const maxText = formatTokens(max);
   // Render value as `current / max` so the denominator is visible
   // beneath the arc's proportional sweep. The "tokens" label rides
@@ -701,19 +722,7 @@ export const SessionTelemetryStatusRow = React.forwardRef<
     codeSessionStore.observeLiveTurnUsage,
     codeSessionStore.getLiveTurnUsage,
   );
-  const meta = useSyncExternalStore(
-    useCallback(
-      (listener) =>
-        sessionMetadataStore !== undefined
-          ? sessionMetadataStore.subscribe(listener)
-          : () => {},
-      [sessionMetadataStore],
-    ),
-    useCallback(
-      () => sessionMetadataStore?.getSnapshot().model ?? null,
-      [sessionMetadataStore],
-    ),
-  );
+  const contextMax = useModelContextMax(sessionMetadataStore);
   // Jobs ledger — read early because the TIME cell folds background
   // work into its clock (a request whose agent still runs between
   // turns keeps counting) as well as feeding the JOBS cell below.
@@ -801,8 +810,6 @@ export const SessionTelemetryStatusRow = React.forwardRef<
     : windows.length > 0
       ? windows[windows.length - 1].perTurn
       : 0;
-  const contextMax =
-    meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
   // One breakdown computation feeds BOTH the CONTEXT cell (its
   // `totalUsed`) and the Context popover (its `segments`) — the two
   // surfaces cannot disagree.

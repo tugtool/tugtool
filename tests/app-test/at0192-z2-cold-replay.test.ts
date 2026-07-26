@@ -37,6 +37,7 @@
  * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
  * @covers tugdeck/src/components/tugways/cards/model-chip.tsx
  * @covers tugdeck/src/lib/model-label.ts
+ * @covers tugdeck/src/lib/model-context-max.ts
  * @covers tugdeck/src/components/tugways/cards/session-card-telemetry-renderers.tsx
  */
 
@@ -112,7 +113,7 @@ function buildFixtureJsonl(cwd: string, sessionId: string): string {
         id: "msg-cold-1",
         type: "message",
         role: "assistant",
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         content: [{ type: "text", text: "hi there" }],
         stop_reason: "end_turn",
         stop_sequence: null,
@@ -142,7 +143,7 @@ function buildFixtureJsonl(cwd: string, sessionId: string): string {
         id: "msg-cold-2",
         type: "message",
         role: "assistant",
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         content: [{ type: "text", text: "sure thing" }],
         stop_reason: "end_turn",
         stop_sequence: null,
@@ -282,13 +283,20 @@ describe.skipIf(!SHOULD_RUN)(
           // reconstructed from the replayed cost, so non-zero here.
           expect(/[1-9]/.test(tokensText)).toBe(true);
 
-          // Active-model delivery (#step-7): the replayed `claude-opus-4-8`
+          // Active-model delivery (#step-7): the replayed `claude-opus-5`
           // reaches the metadata store through the SESSION_SIDEBAND feed and
           // survives both the multiplex (the per-kind replay cache stops the
           // later `session_capabilities` frame from shadowing the model frame)
           // and the empty-model live re-init that follows ([P06] no-clobber),
-          // so the CONTEXT denominator resolves to opus-4-8's native 1M window
+          // so the CONTEXT denominator resolves to opus-5's native 1M window
           // — NOT the 200K unknown-model default the pre-fix path showed.
+          //
+          // The fixture names the CURRENT generation on purpose, and names it
+          // BARE: claude's JSONL records `claude-opus-5` with no `[1m]`, and
+          // this cold replay has no catalog to consult, so the denominator
+          // rests entirely on the family/version floor in
+          // [model-context-max.ts]. An exact-id table (what that module used
+          // to be) reads 200K here the day a new model ships.
           const modelText = await app.evalJS<string>(MODEL_JS);
           expect(ctxMax).not.toBe("");
           expect(ctxMax.includes("200")).toBe(false);
