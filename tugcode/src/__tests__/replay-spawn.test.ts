@@ -26,6 +26,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, symlinkSync, rmSync } from "node:fs";
 import { unwrapReplayBatches } from "./capture-ipc.ts";
+import { drainPendingWrites } from "../ipc.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -135,6 +136,11 @@ async function captureIpc(
 
   try {
     await fn();
+    // `writeLine` chains the real `Bun.write` onto a serialized tail, so frames
+    // emitted by `fn` land a microtask later. Without this drain the restore
+    // below can win the race and those frames go to the real stdout instead of
+    // `captured`.
+    await drainPendingWrites();
   } finally {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (Bun as any).write = originalWrite;

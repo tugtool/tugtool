@@ -474,7 +474,7 @@ mod tests {
         std::fs::write(root.join("keep.log"), "keep\n").unwrap();
 
         let pattern = root.join("apptest-*").to_string_lossy().into_owned();
-        let expanded = expand(&[pattern.clone()]);
+        let expanded = expand(std::slice::from_ref(&pattern));
         assert_eq!(expanded.len(), 2, "the verb resolves what the shell would");
 
         run_rm(&[pattern]).unwrap();

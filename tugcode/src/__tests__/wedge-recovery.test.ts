@@ -18,6 +18,7 @@
 
 import { describe, expect, test } from "bun:test";
 
+import { drainPendingWrites } from "../ipc.ts";
 import { ActiveTurn, SessionManager } from "../session.ts";
 import type { OutboundMessage } from "../types.ts";
 
@@ -107,6 +108,11 @@ async function captureIpc(
   };
   try {
     await fn();
+    // `writeLine` is fire-and-forget: it chains the real `Bun.write` onto a
+    // serialized tail, so frames emitted by `fn` land a microtask later. Without
+    // this drain the restore below can win the race, sending those frames to the
+    // real stdout instead of `captured` — the assertion then sees nothing.
+    await drainPendingWrites();
   } finally {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (Bun as any).write = originalWrite;

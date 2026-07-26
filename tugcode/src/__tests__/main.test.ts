@@ -229,16 +229,23 @@ describe("Step R4: main.ts cold-boot resume does not invoke startup replay", () 
     let drainUntil: number | null = null;
     const sawStartup = () =>
       buf.includes('"protocol_ack"') && buf.includes('"session_init"');
+    // The pending read is held across ticks rather than re-issued each pass.
+    // Racing a fresh `reader.read()` against the tick abandons that read when
+    // the tick wins, and the chunk it later resolves with is dropped — which
+    // silently ate whichever frame happened to land inside the first tick.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let pendingRead: Promise<any> | null = null;
     try {
       while (Date.now() < hardDeadline) {
         if (drainUntil !== null && Date.now() >= drainUntil) break;
-        const readPromise = reader.read();
+        if (pendingRead === null) pendingRead = reader.read();
         const timeoutPromise = new Promise<{ timedOut: true }>(
           (resolve) => setTimeout(() => resolve({ timedOut: true }), 100),
         );
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result: any = await Promise.race([readPromise, timeoutPromise]);
+        const result: any = await Promise.race([pendingRead, timeoutPromise]);
         if (result.timedOut) continue; // tick, not subprocess output
+        pendingRead = null; // this read is consumed; the next pass issues a new one
         if (result.done) break; // real EOF: nothing more is coming
         buf += decoder.decode(result.value, { stream: true });
         if (drainUntil === null && sawStartup()) {
