@@ -12,7 +12,9 @@
  *     quiet.
  *   - **Ring** — a thin circle border around the dot. While
  *     `state === "running"` it runs a chain of finite one-shot pulses that
- *     scale + fade the ring outward (`ring.animate(...)`, ease-out, 1600ms).
+ *     scale + fade the ring outward (`ring.animate(...)`, 1600ms, on the
+ *     easing named by `--tugx-progress-pulsing-dot-pulse-easing` —
+ *     {@link DEFAULT_PULSE_EASING}).
  *
  * **Pulse integrity — guaranteed by construction, not CSS timing.** A pulse
  * is a finite WAAPI one-shot; a WAAPI animation runs to its `.finished`
@@ -51,7 +53,10 @@ import "./tug-progress-pulsing-dot.css";
 import React, { useCallback, useEffect, useRef } from "react";
 
 import { cn } from "@/lib/utils";
-import { getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
+import {
+  getTugTiming,
+  isTugMotionEnabled,
+} from "@/components/tugways/scale-timing";
 import type { TugProgressIndicatorState } from "../tug-progress-indicator";
 
 const PULSE_DURATION_MS = 1600;
@@ -60,6 +65,24 @@ const PULSE_KEYFRAMES: Keyframe[] = [
   { transform: "translate(-50%, -50%) scale(0.85)", opacity: 0.7 },
   { transform: "translate(-50%, -50%) scale(1.9)", opacity: 0 },
 ];
+
+/**
+ * The pulse's easing, read from `--tugx-progress-pulsing-dot-pulse-easing` at
+ * the start of each pulse and falling back to this.
+ *
+ * The ring is a one-shot, so its whole shape is front-loading: it wants to be
+ * quick off the dot's edge and slow arriving at nothing — the same asymmetry
+ * the large glyph's breath gets from an early turn, and the same one the colon
+ * blink on a digital watch face uses. `ease-out` is already that; making it a
+ * variable is what lets a caller (or the gallery's timing bench) reach for a
+ * harder cut of it — an expo-out leaves the dot roughly twice as fast and
+ * spends the rest of the pulse fading.
+ *
+ * It is a variable rather than a prop because it is pure appearance ([L06]) —
+ * and because the read is free: each pulse already does one `getComputedStyle`
+ * to snapshot its tone.
+ */
+const DEFAULT_PULSE_EASING = "ease-out";
 
 const IDLE_DOT_SCALE = 0.85;
 
@@ -120,11 +143,16 @@ export const TugProgressPulsingDot = React.forwardRef<
     // so a later change to the live fill variable can't recolor it in flight.
     // Clearing first lets the read see the current live tone.
     ring.style.borderColor = "";
-    ring.style.borderColor = getComputedStyle(ring).borderColor;
+    const computed = getComputedStyle(ring);
+    ring.style.borderColor = computed.borderColor;
+    const easing =
+      computed
+        .getPropertyValue("--tugx-progress-pulsing-dot-pulse-easing")
+        .trim() || DEFAULT_PULSE_EASING;
 
     const pulse = ring.animate(PULSE_KEYFRAMES, {
       duration: PULSE_DURATION_MS * getTugTiming(),
-      easing: "ease-out",
+      easing,
     });
     pulseRef.current = pulse;
 

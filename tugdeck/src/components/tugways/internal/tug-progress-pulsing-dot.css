@@ -17,6 +17,12 @@
  * hides it again when the chain settles. No CSS `@keyframes` — the pulse is
  * programmatic so each one can complete and freeze its tone.
  *
+ * The pulse's SHAPE is still CSS, though: `--…-pulse-easing` below is read at
+ * the start of every pulse and handed to `animate()`. The ring wants to leave
+ * the dot quickly and arrive at nothing slowly — the asymmetry the large
+ * glyph gets from an early turn in its breath — and `ease-out` is the mild cut
+ * of that. Override the variable for a harder one.
+ *
  * Tuglaws cross-check:
  *  - [L06] dot color is a live CSS variable; the ring's display and frozen
  *    tone are set imperatively by the component.
@@ -34,7 +40,12 @@
 
 .tug-progress-pulsing-dot {
   --tugx-progress-pulsing-dot-size: 16px;
-  --tugx-progress-pulsing-dot-dot-size: calc(var(--tugx-progress-pulsing-dot-size) / 2);
+  --tugx-progress-pulsing-dot-dot-size: calc(
+    var(--tugx-progress-pulsing-dot-size) / 2
+  );
+  /* Read per pulse by the component and passed to `animate()`. Any easing
+     value is legal here, `linear()` included. */
+  --tugx-progress-pulsing-dot-pulse-easing: ease-out;
 
   position: relative;
   display: inline-block;
@@ -53,7 +64,7 @@
   transform: translate(-50%, -50%);
   background-color: var(--tugx-progress-indicator-fill, currentColor);
   transition:
-    width  calc(200ms * var(--tug-timing, 1)) ease,
+    width calc(200ms * var(--tug-timing, 1)) ease,
     height calc(200ms * var(--tug-timing, 1)) ease;
 }
 
@@ -105,7 +116,8 @@
    green (e.g. nocturne) where the Key is itself a green. Scoped to the
    action role: a running dot in another role (caution-yellow for
    awaiting/restoring/interrupting, danger, …) keeps its own role tone. */
-.tug-progress-indicator[data-role="action"] .tug-progress-pulsing-dot[data-state="running"] {
+.tug-progress-indicator[data-role="action"]
+  .tug-progress-pulsing-dot[data-state="running"] {
   --tugx-progress-indicator-fill: --tug-color(cobalt, l: 700, c: 320);
 }
 
