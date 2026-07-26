@@ -21,6 +21,16 @@ set -euo pipefail
 FORCE=0
 [ "${1:-}" = "--force" ] && FORCE=1
 
+# stdout carries the product — the single output path — and nothing else.
+# Everything else this script emits is progress. `configure` and `make` write
+# their chatter to stdout, and build-app.sh captures this script through a
+# command substitution, so without this the whole build log ends up spliced
+# into the path. A cache hit runs none of those commands, which is why that
+# only ever surfaced on a cold build.
+#
+# fd 3 keeps a handle on the real stdout; the body's stdout goes to stderr.
+exec 3>&1 1>&2
+
 # Pinned upstream versions.
 TMUX_VER="3.5a"
 LIBEVENT_VER="2.1.12-stable"
@@ -72,7 +82,7 @@ unexpected_dylibs() {  # tmux-path -> prints any disallowed dylib lines
 if [ "$FORCE" = 0 ] && [ -x "$OUT/bin/tmux" ] && [ -d "$OUT/terminfo" ]; then
     if [ -z "$(unexpected_dylibs "$OUT/bin/tmux")" ]; then
         log "cache hit: $OUT"
-        echo "$OUT"
+        echo "$OUT" >&3
         exit 0
     fi
     log "cached binary references non-system dylibs; rebuilding"
@@ -207,4 +217,4 @@ fi
 log "tmux version: $("$OUT/bin/tmux" -V 2>&1 || true)"
 log "build complete: $OUT"
 
-echo "$OUT"
+echo "$OUT" >&3

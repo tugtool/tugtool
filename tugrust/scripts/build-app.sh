@@ -153,6 +153,13 @@ cp -R "$TUGPLUG_DIR" "$STAGING_APP/Contents/Resources/"
 # ProcessManager points TUG_TMUX / TERMINFO_DIRS at these at launch.
 echo "==> Bundling static tmux + terminfo"
 TMUX_OUT="$("$SCRIPT_DIR/fetch-tmux.sh")"
+if [ ! -d "$TMUX_OUT" ]; then
+    # Anything the script leaks on stdout lands in this variable and turns the
+    # copies below into an unreadable `File name too long`. Name it here instead.
+    echo "error: fetch-tmux.sh did not return a directory on stdout" >&2
+    printf 'got %s bytes: %.200s\n' "$(printf '%s' "$TMUX_OUT" | wc -c | tr -d ' ')" "$TMUX_OUT" >&2
+    exit 1
+fi
 mkdir -p "$STAGING_APP/Contents/Resources/bin"
 cp "$TMUX_OUT/bin/tmux" "$STAGING_APP/Contents/Resources/bin/tmux"
 cp -R "$TMUX_OUT/terminfo" "$STAGING_APP/Contents/Resources/terminfo"

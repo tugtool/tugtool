@@ -3310,16 +3310,24 @@ mod tests {
 
     #[tokio::test]
     async fn a_declared_path_spelled_through_an_alt_root_still_joins() {
-        // The macOS tempdir root (`/var/...`) is a symlink to `/private/var/...`,
-        // so the bracket's delta keys are canonical while the command's operands
-        // are spelled the other way — exactly the drift the canonical join at
-        // the intersection exists to absorb.
+        // The bracket's delta keys are canonical while the command's operands are
+        // spelled through an alias — exactly the drift the canonical join at the
+        // intersection exists to absorb.
+        //
+        // The alias is built here rather than inherited from the platform. On
+        // macOS the tempdir root (`/var/...`) is already a symlink to
+        // `/private/var/...` and supplies the drift for free, but on Linux
+        // `/tmp` is a real directory, so leaning on the tempdir made this test
+        // abort on its own precondition off-macOS.
         let repo = init_bracket_repo();
-        let root = repo.path().to_path_buf();
+        let real_root = std::fs::canonicalize(repo.path()).unwrap();
+        let alias_home = tempfile::tempdir().expect("tempdir");
+        let root = alias_home.path().join("alias");
+        std::os::unix::fs::symlink(&real_root, &root).unwrap();
         assert_ne!(
             std::fs::canonicalize(&root).unwrap(),
             root,
-            "this test needs a symlinked tempdir root"
+            "the aliased spelling must differ from the canonical one"
         );
         std::fs::write(root.join("aliased.txt"), "x\n").unwrap();
         let absolute = root.join("aliased.txt");
