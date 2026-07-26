@@ -75,6 +75,11 @@ import {
   type SessionPhaseInput,
 } from "@/lib/code-session-store/session-phase-visual";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
+import {
+  COMPACTING_PULSE_TEXT,
+  compactionProgressStore,
+  isCompactingCard,
+} from "@/lib/compaction-progress-store";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { sessionNameStore } from "@/lib/session-name-store";
 import { sessionTagStore } from "@/lib/session-tag-store";
@@ -287,7 +292,20 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
   const displayName = useSessionLabel(row.projectDir, row.tugSessionId, branch);
   const pulse = usePulse();
   const latest = latestLineForScope(pulse.lines, row.tugSessionId);
-  const pulseText = pulse.enabled && latest !== null ? latest.text : null;
+  // The compaction pin, exactly as the on-card strip wears it: a `/compact`
+  // run streams nothing for minutes, so without it the row keeps showing the
+  // last line from before the submit for the whole run.
+  const compaction = useSyncExternalStore(
+    compactionProgressStore.subscribe,
+    compactionProgressStore.getSnapshot,
+  );
+  const pulseText = !pulse.enabled
+    ? null
+    : isCompactingCard(compaction, row.cardId)
+      ? COMPACTING_PULSE_TEXT
+      : latest !== null
+        ? latest.text
+        : null;
   return (
     <TugListRow
       className="session-row-content"

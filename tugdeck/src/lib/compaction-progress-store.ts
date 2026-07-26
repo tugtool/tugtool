@@ -42,6 +42,26 @@ export interface CompactionProgress {
   readonly failureReason: string | null;
 }
 
+/**
+ * What every pulse surface says for the length of a `/compact` run — the
+ * on-card `session-pulse-strip` and the Lens **Sessions** row read the same
+ * string, so a compacting session says one thing wherever it is shown.
+ */
+export const COMPACTING_PULSE_TEXT = "Compacting context…";
+
+/** Whether `snapshot` is a run still in flight, started from `cardId`. */
+export function isCompactingCard(
+  snapshot: CompactionProgress | null,
+  cardId: string | undefined,
+): boolean {
+  return (
+    cardId !== undefined &&
+    snapshot !== null &&
+    snapshot.cardId === cardId &&
+    snapshot.outcome === null
+  );
+}
+
 class CompactionProgressStore {
   private state: CompactionProgress | null = null;
   private readonly listeners = new Set<() => void>();

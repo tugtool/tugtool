@@ -63,7 +63,11 @@ import {
 } from "@/components/tugways/tug-popup-list";
 import { useFocusable } from "@/components/tugways/use-focusable";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
-import { compactionProgressStore } from "@/lib/compaction-progress-store";
+import {
+  COMPACTING_PULSE_TEXT,
+  compactionProgressStore,
+  isCompactingCard,
+} from "@/lib/compaction-progress-store";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import {
   groupPulseHistory,
@@ -135,7 +139,7 @@ const NONE_ENTRY: DisplayEntry = Object.freeze({
  */
 const COMPACTING_ENTRY: DisplayEntry = Object.freeze({
   key: "__pulse_compacting__",
-  text: "Compacting context…",
+  text: COMPACTING_PULSE_TEXT,
   placeholder: false,
   immediate: true,
 });
@@ -266,11 +270,7 @@ export function SessionPulseStrip({
     compactionProgressStore.subscribe,
     compactionProgressStore.getSnapshot,
   );
-  const compacting =
-    cardId !== undefined &&
-    compaction !== null &&
-    compaction.cardId === cardId &&
-    compaction.outcome === null;
+  const compacting = isCompactingCard(compaction, cardId);
   // Lines cleared by this card's last submit stay hidden; the next
   // turn's voice repopulates the strip.
   const latest = latestLineForScope(
