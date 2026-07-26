@@ -110,20 +110,20 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | Drag machine vs CSS-pinned frames ([R01]) | med | med | convert to free px styles at drag start, before the first drag frame | any visual jump when dragging a slotted pane |
-| Snap reads stale state rects for slotted panes ([R02]) | low | med | snap candidates for slotted panes use live DOM rects | Option-snap guides misaligned near slotted panes |
+| Stale state rects for slotted panes ([R02]) | low | low | snap candidates already read live DOM rects (`snapshotCardRects`); gesture starts re-seed from the DOM | Option-snap guides misaligned near slotted panes |
 | `transform` centering side-effects ([R03]) | low | low | transform only on middle slots; pane frame already carries inline z-index (own stacking context) | popover/overlay misanchoring inside a middle-slot pane |
 
 **Risk R01: Drag machine interplay with CSS-pinned frames** {#r01-drag-vs-pinned}
 
 - **Risk:** `TugPane`'s three-phase drag machine writes per-frame appearance-zone styles against a frame positioned by `left`/`top` px; a slotted frame is positioned by `left: calc(...)` + `top:0/bottom:0` (+ `transform` for middle slots), so naive drag frames would fight the pins.
-- **Mitigation:** at `handleDragStart` on a slotted pane, snapshot `getBoundingClientRect()` relative to the canvas, write free px inline styles (`left`, `top`, `width`, `height`), clear the pin styles and transform, then run the standard free drag; the commit clears `slot` ([P07]) so React re-renders in free mode consistent with the DOM.
+- **Mitigation:** at `handleDragStart` on a slotted pane, snapshot `getBoundingClientRect()` relative to the canvas, write free px inline styles (`left`, `top`, `width`, `height`), clear the pin styles and transform, **and seed the drag machine's start position (`dragStartPosition.current`) from that snapshot** — the machine otherwise seeds it from React-state `position`, which is stale for slotted panes, and the first `applyDragFrame` would teleport the pane to the stale coordinates; then run the standard free drag; the commit clears `slot` ([P07]) so React re-renders in free mode consistent with the DOM.
 - **Residual risk:** one-frame style transitions at drag start; acceptable and testable by eye.
 
 **Risk R02: Snap and detach math read state rects that are stale for slotted panes** {#r02-stale-state-rects}
 
-- **Risk:** `snap.ts` candidates and `_detachCard` clamps read `pane.position`/`pane.size` from state; for slotted panes those fields are last-known values, not the live CSS-derived rect (same class of staleness the anchored rail already has for its derived edge).
-- **Mitigation:** the snap-candidate assembly in `tug-pane.tsx` computes slotted candidates from live DOM rects (the anchored rail's exposed-edge snap already shows the pattern); detach from a slotted pane is not slot-preserving (the detached card mints a free pane, unchanged behavior).
-- **Residual risk:** state rects for slotted panes lag until evict/assign refreshes them; serialization skips the fit clamp for them ([P04]) so nothing downstream misbehaves.
+- **Risk:** code that reads `pane.position`/`pane.size` from state sees last-known values for slotted panes, not the live CSS-derived rect (same class of staleness the anchored rail already has for its derived edge).
+- **Mitigation:** snap candidates are already live — `snapshotCardRects` in `tug-pane.tsx` reads `getBoundingClientRect()` off every `.tug-pane[data-pane-id]` element (its comment notes the rail "needs no special case"), so slotted panes are correct snap candidates with zero new code; the implementation step *verifies* this rather than building it. Detach from a slotted pane is not slot-preserving (the detached card mints a free pane, unchanged behavior). Gesture handlers that seed from state (`handleDragStart`, resize) are handled explicitly ([R01], and the dedicated imposed-resize path in #step-4).
+- **Residual risk:** state rects for slotted panes lag until evict/assign/freeze refreshes them; serialization skips the fit clamp for them ([P04]) so nothing downstream misbehaves.
 
 **Risk R03: `translateX(-50%)` on middle-slot frames** {#r03-transform-centering}
 
@@ -209,13 +209,13 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 
 #### [P08] Kind shrink clamps; imposition-off freezes in place (DECIDED) {#p08-shrink-and-off}
 
-**Decision:** `setImposition` to a smaller kind clamps out-of-range slots to the new last slot (`clampSlot`). `setImposition(null)` freezes every slotted pane at its current on-screen rect (live DOM rect written into `position`/`size`) and clears all `slot` fields.
+**Decision:** `setImposition` to a smaller kind clamps out-of-range slots to the new last slot (`clampSlot`). `setImposition(null)` freezes every slotted pane at its current on-screen rect (live DOM rect written into `position`/`size`) and clears all `slot` fields — except that a **collapsed** slotted pane keeps its stored `size.height` (only `position` and `size.width` come from the live rect), mirroring the drag-commit convention in `tug-pane.tsx` (`committedHeight = collapsed ? size.height : frame.offsetHeight`) so the window-shade stub height is never committed and the card stays restorable.
 
 **Rationale:**
 - Clamping means nothing silently falls out of the arrangement on a kind change.
 - Freezing on "off" honors what the user sees: turning the structure off must not scatter panes back to stale pre-imposition positions.
 
-**Implications:** persisted blobs never carry `slot` without `imposition`; `setImposition(null)` needs live rects, so the DeckCanvas/TugPane layer must expose per-pane frame rects to DeckManager (the frame carries `data-pane-id`, so `container.querySelector('[data-pane-id="…"]').getBoundingClientRect()` suffices).
+**Implications:** persisted blobs never carry `slot` without `imposition`; `setImposition(null)` needs live rects, so the DeckCanvas/TugPane layer must expose per-pane frame rects to DeckManager (the frame carries `data-pane-id`, so `container.querySelector('[data-pane-id="…"]').getBoundingClientRect()` suffices); the freeze consults each pane's `collapsed` flag before writing `size.height`.
 
 #### [P09] Assign uncollapses; a later collapse keeps the slot (DECIDED) {#p09-collapse}
 
@@ -376,7 +376,7 @@ export function imposeStyle(kind: ImpositionKind, slot: number, paneWidth: numbe
 
 DeckManager additions:
 
-- `setImposition(kind: ImpositionKind | null): void` — kind change: set `deckState.imposition`, `clampSlot` every slotted pane ([P08]), notify + save. Null: for each slotted pane read the live frame rect via `[data-pane-id]` lookup, write it into `position`/`size`, delete `slot`; then clear `imposition`, notify + save ([P08]).
+- `setImposition(kind: ImpositionKind | null): void` — kind change: set `deckState.imposition`, `clampSlot` every slotted pane ([P08]), notify + save. Null: for each slotted pane read the live frame rect via `[data-pane-id]` lookup, write it into `position`/`size` — except a collapsed pane keeps its stored `size.height` (write `position` + `size.width` only, per the `committedHeight` convention; [P08]) — delete `slot`; then clear `imposition`, notify + save.
 - `assignCardToSlot(cardId: string, slot: number): void` — per the flow in (#flow-assign). Refuses (warn + return) when `imposition` is null, the card has no host pane, or the host is anchored.
 - `movePane(paneId, position, size, opts?: { evictSlot?: boolean })` — existing signature extended; when `opts.evictSlot` and the pane is slotted, delete `slot` in the same commit ([P07]).
 
@@ -420,7 +420,7 @@ DeckManager additions:
 | `movePane` | method (modify) | `deck-manager.ts` | `opts.evictSlot` ([P07]) |
 | `handlePaneMoved` | binding (modify) | `deck-manager-store.ts` | pass-through of the options arg |
 | inset-property effect | `useLayoutEffect` | `deck-canvas.tsx` | [P12] |
-| imposed style branch, drag-start conversion, resize-edge filter | logic | `components/chrome/tug-pane.tsx` | [P03], [P07], [R01]; slot 0 → `e` handle only, last slot → `w` only, middles → `e`+`w` |
+| imposed style branch, drag-start conversion (DOM-seeded), dedicated imposed-resize path | logic | `components/chrome/tug-pane.tsx` | [P03], [P07], [R01]; resize is width-only à la `handleAnchoredResizeStart`, never the generic handler; slot 0 → `e` handle only, last slot → `w` only, middles → `e`+`w` |
 | `registerLayoutsSection` | fn | `sections/layouts-section.tsx` | registered from `main.tsx` |
 | `SlotPicker` | component | `lens/slot-picker.tsx` | props: `{ cardId: string }`; reads deck store itself |
 | `set-imposition`, `assign-slot` | actions | `action-dispatch.ts` | Spec S04 |
@@ -539,7 +539,7 @@ DeckManager additions:
 
 **Tasks:**
 - [ ] `assignCardToSlot` implements the (#flow-assign) sequence, including the `_detachCard` branch (its `null` return for a single-card pane means "slot the existing host"), the anchored-pane refusal, the `collapsed` clear, and the trailing `activateCard` raise.
-- [ ] `setImposition(kind)` clamps existing slots via `clampSlot`; `setImposition(null)` freezes each slotted pane at its live frame rect (`container.querySelector('[data-pane-id="…"]')?.getBoundingClientRect()`, translated to canvas coordinates) before deleting `slot`, then clears `imposition`.
+- [ ] `setImposition(kind)` clamps existing slots via `clampSlot`; `setImposition(null)` freezes each slotted pane at its live frame rect (`container.querySelector('[data-pane-id="…"]')?.getBoundingClientRect()`, translated to canvas coordinates) before deleting `slot`, then clears `imposition`. A collapsed slotted pane keeps its stored `size.height` in the freeze — never the window-shade stub height ([P08]).
 - [ ] `movePane` deletes `slot` in the same commit when `opts.evictSlot` is set and the pane is slotted; resize commits never pass the option.
 - [ ] Both mutations run the standard `notify()` + `scheduleSave()` choreography and fire the will/did move-resize lifecycle events on affected active cards (follow the `arrangeCards` pattern for the multi-pane clamp case).
 
@@ -562,15 +562,16 @@ DeckManager additions:
 
 **Artifacts:**
 - The imposed style branch in `tugdeck/src/components/chrome/tug-pane.tsx`: when `stackState.slot !== undefined` and the deck's imposition is set, frame style comes from `imposeStyle(kind, slot, size.width, collapsed)` instead of free `left/top/width/height` (and instead of the anchored branch — the three modes are mutually exclusive; the pane needs the current kind, so thread `imposition` to `TugPane` alongside the existing per-pane props from `deck-canvas.tsx`).
-- Drag-start conversion per Risk R01; drag commit calls `onCardMoved` with `{ evictSlot: true }`.
-- Resize-edge filter: slot 0 → `e` only; last slot → `w` only; middles → `e` and `w`; no corners, no `n`/`s`. Resize commit does not evict.
-- Snap: slotted panes participate as candidates using live DOM rects per Risk R02; a slotted pane is never itself snap-dragged (drag converts it to free first, at which point normal snap applies).
+- Drag-start conversion per Risk R01 (free px styles + drag machine re-seeded from the DOM snapshot); drag commit calls `onCardMoved` with `{ evictSlot: true }`.
+- A dedicated imposed-resize path modeled on `handleAnchoredResizeStart` — **width-only, seeded from the live DOM rect, never the generic handler** (the generic `handleResizeStart` seeds `startLeft`/`startW` from React state, stale for slotted panes, and writes `left`/`top` per frame on `w`-edges, fighting the CSS pin — the exact failure the rail's dedicated handler exists to avoid, per its own comment). Permitted handles: slot 0 → `e` only (grows right, left edge pinned); last slot → `w` only (grows left, right edge pinned); middles → `e` and `w` (either edge changes width; the `translateX(-50%)` pin recenters). No corners, no `n`/`s`. Resize commit does not evict.
+- Snap: verify (not build) that slotted panes participate as candidates — `snapshotCardRects` already reads live DOM rects per Risk R02; a slotted pane is never itself snap-dragged (drag converts it to free first, at which point normal snap applies).
 - `data-imposed` attribute on the frame (sibling of the existing `data-anchored`) for tests and CSS hooks.
 
 **Tasks:**
 - [ ] Implement the style branch; verify the collapsed composition (horizontal pin + `top: 0`, bottom released).
-- [ ] Implement drag-start conversion: snapshot canvas-relative rect, write free px inline styles, clear pin styles and transform, proceed with the standard free-drag machine.
-- [ ] Filter `RESIZE_EDGES` for imposed frames; reuse the generic resize handler for the permitted edges.
+- [ ] Implement drag-start conversion: snapshot canvas-relative rect, write free px inline styles, clear pin styles and transform, seed `dragStartPosition.current` (and the clamp inputs) from the snapshot rect — not from state `position` — then proceed with the standard free-drag machine (Risk R01).
+- [ ] Implement the dedicated imposed-resize path (width-only, DOM-seeded, per-anchor-class grow direction as specified in Artifacts); render only the permitted handles for imposed frames.
+- [ ] Verify slotted panes appear correctly as snap candidates via the existing `snapshotCardRects` DOM read (Risk R02).
 
 **Tests:**
 - [ ] (Deferred to the app-test in #step-8 — real-geometry assertions; no jsdom render tests per #test-non-goals.)
