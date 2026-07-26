@@ -44,6 +44,26 @@
  * see {@link BIG_SIZE}. The motion below is common to both; the proportions,
  * the ring's reach, and the PRESENCE ladder are not.
  *
+ * **No state change is a cut.** The glyph's state changes when the work does,
+ * on a frame nobody chose, with the dot somewhere in the middle of a breath and
+ * possibly a ring in mid-flight. Letting CSS gate the loops on `data-state`
+ * made that arrival a tear: the ring vanished wherever it happened to be and
+ * the dot jumped to its resting pose. So the motion is gated on two attributes
+ * this component writes — `data-breathing` and `data-emitting` — and every
+ * arrival is a CROSSING instead:
+ *
+ *   - A lit pulse **always finishes its travel**. It was shed; it is leaving
+ *     under its own momentum, and the work ending is no business of its. The
+ *     emitter is released on the pulse's clock, not the state's ({@link
+ *     releaseEmitter}). A pulse that was never lit is simply not lit.
+ *   - The dot **is caught where it stands**: its live scale is pinned inline,
+ *     the loop is dropped against that pin, and a CSS transition carries it
+ *     from there to the settled pose. Entering `running` is the same idea
+ *     inverted — the loop starts at the phase whose pose the dot already holds
+ *     ({@link breathPhaseFor}), so the breath picks it up mid-stride.
+ *   - The static ring **fades**, and the tint **crosses**, on that same
+ *     duration, so the whole arrival reads as one gesture.
+ *
  * State semantics, each rung also carrying its own PRESENCE — its share of the
  * reserved box ({@link SETTLED_PRESENCE}), so at the big end the glyph's SIZE
  * reads the state before its color or motion does:
@@ -54,12 +74,15 @@
  *   aborted   — full-size dot; static outer ring drawn in, danger tint.
  *
  * Laws: [L02] state arrives via props from the parent indicator;
- *       [L06] tone is a live CSS variable and the motion is gated on
- *       `data-state` — never React state;
- *       [L13] the breath and the ring are continuous loops with no
- *       per-pulse completion requirement, so they are declarative CSS
- *       `@keyframes` (motion-off zeroes them through the global
- *       `body[data-tug-motion="off"]` rule), not programmatic motion.
+ *       [L06] tone is a live CSS variable, and the crossing between states is
+ *       CSS transitions driven by DOM attributes and one inline pose — the
+ *       state currently on screen is a ref, never React state, so a crossing
+ *       renders nothing;
+ *       [L13] the breath and the ring are continuous loops, so they are
+ *       declarative CSS `@keyframes` (motion-off zeroes them through the
+ *       global `body[data-tug-motion="off"]` rule, which zeroes the settle's
+ *       transitions with them). The script here starts and releases those
+ *       loops and hands off between them; it never drives a frame.
  *
  * @module components/tugways/internal/tug-progress-pulsing-dot
  */
@@ -411,6 +434,124 @@ export function dotDriftFor(key: string): React.CSSProperties {
   } as React.CSSProperties;
 }
 
+/**
+ * Cycle position where the ring is lit — the frame a pulse begins to exist.
+ * Before it, the ring is parked and fully faded and there is nothing to finish.
+ */
+const IGNITION = DEFAULT_BREATH_TURN - EMIT_ADVANCE;
+
+/**
+ * Slack on the emitter's release, in ms.
+ *
+ * A late release is free and an early one is not, so the timer is deliberately
+ * generous. The ring reaches opacity 0 at the end of its travel and stays there
+ * for the next 27% of the following cycle, so dropping the animation anywhere in
+ * that window paints identically; cutting it a frame EARLY clips the tail of a
+ * visible pulse, which is the whole thing being avoided.
+ */
+const EMIT_RELEASE_SLACK = 32;
+
+/** The custom property the arming phase is written to. */
+const PHASE_VAR = "--tugx-progress-pulsing-dot-phase";
+
+/** The dot's transform at a given breath scale. */
+function dotPose(scale: number): string {
+  return `translate(-50%, -50%) scale(${scale})`;
+}
+
+/**
+ * The scale the element is painting at RIGHT NOW — the animated value, not the
+ * declared one.
+ *
+ * This is the whole mechanism behind a smooth exit. A state change arrives on
+ * an arbitrary frame, with the dot at an arbitrary point in its breath, and the
+ * only way out that does not jump is to start the settle from the pose actually
+ * on screen. `getComputedStyle` resolves animations, so it reports that pose;
+ * the caller pins it inline before dropping the loop, and the removal becomes a
+ * no-op the eye cannot see.
+ */
+function liveScale(el: HTMLElement): number | null {
+  const value = getComputedStyle(el).transform;
+  if (!value || value === "none") return null;
+  try {
+    return new DOMMatrixReadOnly(value).a;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Where on the breath's RISE leg the dot would be standing at `scale` —
+ * the inverse of {@link breathAt}, restricted to the leg that has one.
+ *
+ * Used to start the loop at the phase that matches the pose already on screen,
+ * as a negative `animation-delay`, so entering `running` picks the settled dot
+ * up rather than snapping it to the trough. The rise is the right leg to invert
+ * on: a glyph that starts working should be on its way up.
+ *
+ * Clamped just short of {@link IGNITION} so the loop never begins inside a
+ * pulse. Only one pose in the ladder reaches that clamp — a `paused` dot at the
+ * small treatment, which sits at full scale — and there the clamp costs about a
+ * thousandth of the dot's diameter. Past it the cost would be a ring appearing
+ * from nowhere at near-full opacity, which is the pop this function exists to
+ * avoid, arriving by another door.
+ */
+function breathPhaseFor(scale: number, scaleMin: number): number {
+  const span = 1 - scaleMin;
+  const value =
+    span <= 0 ? 0 : Math.min(1, Math.max(0, (scale - scaleMin) / span));
+  const phase = (DEFAULT_BREATH_TURN * Math.acos(1 - 2 * value)) / Math.PI;
+  return Math.max(0, Math.min(phase, IGNITION - 0.005));
+}
+
+/**
+ * Stop emitting — but not before the pulse in flight has finished flying.
+ *
+ * **Once a pulse is lit it always completes.** It is a thing the glyph shed: it
+ * left the dot, it is travelling outward under its own momentum, and the work
+ * ending has no bearing on it. Cutting it mid-travel is the most visible tear a
+ * state change can make, because the eye is already tracking a moving object.
+ *
+ * So the emitter is released on the pulse's clock rather than the state's. The
+ * animation keeps running to the end of its current iteration and the attribute
+ * is dropped after it, by which point the ring has faded to nothing and there
+ * is nothing left to see go. A pulse that was never lit — the change landed
+ * during the inhale, before {@link IGNITION} — is dropped immediately; there is
+ * no gesture in progress to honor, and holding the gate open would only let one
+ * more ring out of a glyph that has already stopped working.
+ */
+function releaseEmitter(
+  root: HTMLElement,
+  ring: HTMLElement,
+  timer: React.MutableRefObject<number | null>,
+): void {
+  if (timer.current !== null) {
+    window.clearTimeout(timer.current);
+    timer.current = null;
+  }
+  let remaining = 0;
+  for (const animation of ring.getAnimations()) {
+    // Keyframe loops only. The ring also carries a tint transition during the
+    // settle, and its progress has nothing to do with where the pulse is —
+    // counting it held the emitter open on a glyph that never lit a ring.
+    if (!(animation instanceof CSSAnimation)) continue;
+    const timing = animation.effect?.getComputedTiming();
+    const progress = timing?.progress;
+    const duration = typeof timing?.duration === "number" ? timing.duration : 0;
+    if (typeof progress !== "number" || duration <= 0) continue;
+    if (progress < IGNITION) continue;
+    remaining = Math.max(remaining, (1 - progress) * duration);
+  }
+  if (remaining <= 0) {
+    delete root.dataset.emitting;
+    return;
+  }
+  timer.current = window.setTimeout(() => {
+    timer.current = null;
+    delete root.dataset.emitting;
+  }, remaining + EMIT_RELEASE_SLACK);
+}
+
 /** Settled states paint a reduced dot; held / canceled keep it full-size. */
 function isQuiet(state: TugProgressIndicatorState): boolean {
   return state === "stopped" || state === "completed";
@@ -500,7 +641,7 @@ export const TugProgressPulsingDot = React.forwardRef<
   // the ring's stroke the same weight at every rung of the ladder.
   const presence = presenceScale(state, size);
   // The period jitter is NOT drawn here — it belongs to the item, and one item
-  // can render two glyphs. See [drawDotDrift].
+  // can render two glyphs. See [dotDriftFor].
   const rootStyle: React.CSSProperties = {
     ["--tugx-progress-pulsing-dot-size" as string]: `${size}px`,
     ["--tugx-progress-pulsing-dot-dot-size" as string]: `${dotSizePx}px`,
@@ -510,15 +651,117 @@ export const TugProgressPulsingDot = React.forwardRef<
     ["--tugx-progress-pulsing-dot-emit-birth-auto" as string]: `${birth.toFixed(4)}`,
   };
 
-  // Seed the static pose inline. It equals the breath's 0% keyframe, so a
-  // running glyph starts from the same pose it rests at — no first-frame
-  // jump — and the non-running states simply hold it, drawn in by the
-  // state's presence.
+  // The pose the dot rests at once it has settled, drawn in by the state's
+  // presence. Written to the DOM by the controller below rather than rendered,
+  // because a state change has to CROSS to it from wherever the breath left the
+  // dot — and React cannot see that pose, only this one.
   const staticScale = (isQuiet(state) ? IDLE_DOT_SCALE : 1) * presence;
+
+  const rootRef = React.useRef<HTMLSpanElement | null>(null);
+  const dotRef = React.useRef<HTMLSpanElement | null>(null);
+  const ringRef = React.useRef<HTMLSpanElement | null>(null);
+  // The state currently ON SCREEN, which lags the prop for as long as the
+  // crossing takes. Held in a ref, not state: it is read to decide what the
+  // crossing IS, and it must never provoke a render [L06].
+  const shownRef = React.useRef<TugProgressIndicatorState | null>(null);
+  const emitTimerRef = React.useRef<number | null>(null);
+
+  const setRootRef = React.useCallback(
+    (node: HTMLSpanElement | null) => {
+      rootRef.current = node;
+      if (typeof forwardedRef === "function") forwardedRef(node);
+      else if (forwardedRef)
+        (
+          forwardedRef as React.MutableRefObject<HTMLSpanElement | null>
+        ).current = node;
+    },
+    [forwardedRef],
+  );
+
+  /**
+   * Cross to `state` from whatever is on screen.
+   *
+   * There are three crossings and each is smooth for its own reason:
+   *
+   *   - **into a settled state** — the breath is caught in the act. Its live
+   *     scale is pinned inline, the loop is dropped against that pin so the
+   *     removal changes nothing, and the transition then runs from there.
+   *     Meanwhile the shed pulse finishes on its own clock ({@link
+   *     releaseEmitter}) and the static ring fades in over it.
+   *   - **into `running`** — the loop starts at the phase whose pose the dot is
+   *     already standing at ({@link breathPhaseFor}), as a negative delay. The
+   *     breath picks the dot up mid-stride.
+   *   - **between two settled states** — a plain property change; the dot's
+   *     CSS transition carries it, along with the ring's diameter and the tint.
+   *
+   * A layout effect, so the DOM is correct before the frame is painted: run
+   * after paint and every crossing would show one frame of the wrong pose,
+   * which is the tear in miniature.
+   */
+  React.useLayoutEffect(() => {
+    const root = rootRef.current;
+    const dot = dotRef.current;
+    const ring = ringRef.current;
+    if (!root || !dot || !ring) return;
+
+    const previous = shownRef.current;
+    shownRef.current = state;
+    const isRunning = state === "running";
+
+    const startLoops = (phase: number): void => {
+      if (emitTimerRef.current !== null) {
+        window.clearTimeout(emitTimerRef.current);
+        emitTimerRef.current = null;
+      }
+      root.style.setProperty(PHASE_VAR, `${-phase}`);
+      root.dataset.breathing = "";
+      root.dataset.emitting = "";
+    };
+
+    // First paint. Nothing to cross from, so the pose and the loops are seeded.
+    if (previous === null) {
+      dot.style.transform = dotPose(isRunning ? 1 : staticScale);
+      if (isRunning) startLoops(0);
+      return;
+    }
+
+    if (previous === "running" && !isRunning) {
+      const live = liveScale(dot);
+      if (live !== null) {
+        dot.style.transition = "none";
+        dot.style.transform = dotPose(live);
+      }
+      delete root.dataset.breathing;
+      // Flush the pin while the transition is suppressed, so dropping the loop
+      // resolves to the same pose it was already painting instead of firing a
+      // transition from the keyframe's base value.
+      void dot.offsetWidth;
+      dot.style.transition = "";
+      dot.style.transform = dotPose(staticScale);
+      releaseEmitter(root, ring, emitTimerRef);
+      return;
+    }
+
+    if (previous !== "running" && isRunning) {
+      const live = liveScale(dot);
+      startLoops(live === null ? 0 : breathPhaseFor(live, scaleMin));
+      return;
+    }
+
+    dot.style.transform = dotPose(isRunning ? 1 : staticScale);
+  }, [state, staticScale, scaleMin]);
+
+  React.useEffect(
+    () => () => {
+      if (emitTimerRef.current !== null)
+        window.clearTimeout(emitTimerRef.current);
+    },
+    [],
+  );
 
   return (
     <span
-      ref={forwardedRef}
+      ref={setRootRef}
       data-slot="tug-progress-pulsing-dot"
       data-state={state}
       aria-hidden="true"
@@ -529,11 +772,8 @@ export const TugProgressPulsingDot = React.forwardRef<
         className,
       )}
     >
-      <span
-        className="tug-progress-pulsing-dot-dot"
-        style={{ transform: `translate(-50%, -50%) scale(${staticScale})` }}
-      />
-      <span className="tug-progress-pulsing-dot-ring" />
+      <span ref={dotRef} className="tug-progress-pulsing-dot-dot" />
+      <span ref={ringRef} className="tug-progress-pulsing-dot-ring" />
     </span>
   );
 });

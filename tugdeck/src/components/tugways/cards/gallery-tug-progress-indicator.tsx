@@ -12,6 +12,9 @@
  *  - Size      — the ladder, every size the app actually asks for, 10 → 32.
  *                This is the open bench: the glyph was designed at 32 and now
  *                has to hold at 10.
+ *  - Crossing  — the same ladder under a live state picker. State changes are
+ *                the one thing a still frame cannot show, and the one place
+ *                this glyph used to tear.
  *  - Timing    — two benches left on the pulse: cuts of the breath envelope
  *                (symmetric through severe) and the pulse's stroke weight.
  *                The fade-falloff and ring-easing benches are retired — see
@@ -249,6 +252,8 @@ const PULSE_WEIGHTS: ReadonlyArray<{ weight: number; note?: string }> = [
   { weight: DEFAULT_PULSE_WEIGHT },
 ];
 
+const CROSSING_ITEMS = STATES.map((s) => ({ value: s, label: s }));
+
 const PHASE_ITEMS = DEMO_PHASE_KEYS.map((p) => ({ value: p, label: p }));
 const GLYPH_POSITION_ITEMS = [
   { value: "left", label: "left" },
@@ -262,11 +267,14 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
     "both",
   );
   const [largeDotSize, setLargeDotSize] = useState<number>(32);
+  const [crossingState, setCrossingState] =
+    useState<TugProgressIndicatorState>("running");
 
   const phaseGroupId = useId();
   const layoutPhaseGroupId = useId();
   const glyphPositionGroupId = useId();
   const largeDotSizeGroupId = useId();
+  const crossingGroupId = useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
     selectValue: {
@@ -275,6 +283,8 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
       [glyphPositionGroupId]: (v: string) =>
         setGlyphPosition(v as "left" | "right" | "both"),
       [largeDotSizeGroupId]: (v: string) => setLargeDotSize(Number(v)),
+      [crossingGroupId]: (v: string) =>
+        setCrossingState(v as TugProgressIndicatorState),
     },
   });
 
@@ -444,6 +454,64 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
                   variant="pulsing-dot"
                   size={size}
                   state="completed"
+                />
+              </GalleryCell>
+            ))}
+          </div>
+        </section>
+
+        <TugSeparator />
+
+        {/* Crossing ---------------------------------------------------- */}
+        <section className="cg-section" data-bench="crossing">
+          <TugLabel className="cg-section-title">
+            Crossing — every state change is a transition, never a cut
+          </TugLabel>
+          <TugLabel size="2xs" emphasis="calm">
+            Drive the whole ladder at once. A real state change lands on a frame
+            nobody chose — a tool call finishes mid-breath, with a ring halfway
+            through its travel — and the glyph has to arrive at its new pose
+            without tearing. Watch the same crossing at both treatments: the
+            small cells are the tool-call header and the Z2 status cell, the
+            28px and 32px cells are the Lens row.
+          </TugLabel>
+          <TugChoiceGroup
+            size="sm"
+            value={crossingState}
+            senderId={crossingGroupId}
+            items={CROSSING_ITEMS}
+            aria-label="Crossing state"
+          />
+          <TugLabel size="2xs" emphasis="calm">
+            **A lit pulse always finishes.** The ring was shed — it left the dot
+            and is travelling outward under its own momentum, and the work
+            ending is no business of its. So the emitter is released on the
+            pulse's clock rather than the state's, which is why the motion is
+            gated on `data-emitting` and not on `data-state`. Change the state
+            while a ring is in flight and it flies out and fades as though
+            nothing had happened. A ring that was never lit — the change landed
+            during the inhale — is simply never lit.
+          </TugLabel>
+          <TugLabel size="2xs" emphasis="calm">
+            **The dot is caught where it stands.** Its live scale is pinned, the
+            loop is dropped against that pin so the removal changes nothing, and
+            a transition carries it from there to the settled pose — so the
+            settle starts from the pose that was on screen, not from the
+            keyframe's base. Going back the other way is the same idea inverted:
+            the breath starts at the phase whose pose the dot already holds, as
+            a negative `animation-delay`, and picks it up mid-stride. Neither
+            direction has a frame you could call the jump.
+          </TugLabel>
+          <div className="gpi-grid">
+            {LADDER.map(({ size, where }) => (
+              <GalleryCell
+                key={size}
+                caption={`${size}px · ${where === "—" ? crossingState : where}`}
+              >
+                <TugProgressIndicator
+                  variant="pulsing-dot"
+                  size={size}
+                  state={crossingState}
                 />
               </GalleryCell>
             ))}

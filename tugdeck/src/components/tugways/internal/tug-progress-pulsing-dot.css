@@ -52,6 +52,16 @@
  * scripting. The drift is per-glyph, so the weld holds while separate glyphs
  * run at slightly different rates.
  *
+ * **Nothing here is allowed to cut.** The loops are gated on `data-breathing`
+ * and `data-emitting`, which the component writes, rather than on `data-state`,
+ * which changes the instant the work does. That indirection is what lets a
+ * pulse outlive the state that shed it: a ring caught mid-travel finishes its
+ * travel, and only then is the emitter released. Everything else about a state
+ * change is a transition on `--…-settle` — the dot from its pinned live pose to
+ * its settled one, the static ring's opacity and diameter, and the tint on all
+ * three. A settled glyph is therefore never a pose the eye arrived at
+ * suddenly; it is one it watched the glyph reach.
+ *
  * **The keyframes carry no shape.** Every one of them is two stops — a start
  * pose and an end pose. The entire curve, including the turn and the ring's
  * ignition, lives in the `linear()` easings held in the `--…-ease` variables
@@ -111,11 +121,13 @@
  * Tuglaws cross-check:
  *  - [L06] `data-state` on the root gates the motion; static poses are seeded
  *    inline by the component.
- *  - [L13] all three loops are continuous with no per-pulse completion or tone
- *    freeze to honor (unlike the glyph this one supersedes, whose ring was a
- *    WAAPI one-shot chain), so they are declarative CSS. Motion-off is handled by
- *    the global `body[data-tug-motion="off"]` duration rule, which rests the
- *    dot at the component's seeded pose.
+ *  - [L13] all three loops are continuous, so they are declarative CSS. What
+ *    the component scripts is the CROSSING between states, not a frame: it
+ *    pins the dot's live pose, drops the breath against that pin, and holds
+ *    `data-emitting` until a lit pulse has finished — after which CSS
+ *    transitions carry the pose, the static ring and the tint. Motion-off is
+ *    handled by the global `body[data-tug-motion="off"]` rule, which zeroes
+ *    those transitions along with the loops.
  *  - [L16] the dot's `background-color` and the rings' `border-color` are
  *    self-paired (set in the same rule).
  *  - [L19] file pair, `data-slot="tug-progress-pulsing-dot"`.
@@ -144,6 +156,15 @@
   --tugx-progress-pulsing-dot-period: calc(
     2000ms * var(--tug-timing, 1) * var(--tugx-progress-pulsing-dot-drift, 1)
   );
+
+  /* The settle — how long the glyph takes to cross between two states.
+     Every state change is a transition, never a cut: the dot eases from
+     wherever the breath left it to its settled pose, the static ring fades in
+     or out, and the tint crosses over. All three run on this duration, so the
+     crossing reads as ONE gesture rather than three properties changing at
+     once. Short enough to feel like a response, long enough that the eye
+     follows the dot rather than noticing it has moved. */
+  --tugx-progress-pulsing-dot-settle: calc(260ms * var(--tug-timing, 1));
 
   /* --- The knobs are NOT declared here. -------------------------------------
 
@@ -198,11 +219,25 @@
   border-radius: 999px;
   transform-origin: center center;
   background-color: var(--tugx-progress-indicator-fill, currentColor);
+  /* The settled pose is an inline transform written by the component, so a
+     state change is a plain property change and this carries it. While the
+     breath runs the animation outranks both, and the component hands off by
+     pinning the live scale before it drops the animation — so the transition
+     starts from exactly where the dot was, never from the keyframe's base. */
+  transition:
+    transform var(--tugx-progress-pulsing-dot-settle)
+      var(--tugx-progress-pulsing-dot-settle-ease, cubic-bezier(0.22, 0.61, 0.36, 1)),
+    background-color var(--tugx-progress-pulsing-dot-settle) linear;
 }
 
-/* The emitted ring. Hidden by default: only the running state animates it,
+/* The emitted ring. Hidden by default: only an emitting glyph animates it,
    and every other state shows the static `::after` ring instead — which is why
-   the heavier pulse stroke lives here and nowhere else. */
+   the heavier pulse stroke lives here and nowhere else.
+
+   The tint transition is here because a pulse can outlive the state that shed
+   it (see `data-emitting`): a ring still in flight when the work finishes
+   crosses to the settled tone alongside the dot instead of switching colors
+   in one frame halfway through its travel. */
 .tug-progress-pulsing-dot-ring {
   position: absolute;
   top: 50%;
@@ -215,6 +250,7 @@
   box-sizing: border-box;
   transform: translate(-50%, -50%) scale(1);
   opacity: 0;
+  transition: border-color var(--tugx-progress-pulsing-dot-settle) linear;
 }
 
 /* Static outer ring for the settled / held states — the running state's ring
@@ -242,18 +278,50 @@
     var(--tugx-progress-indicator-fill, currentColor);
   box-sizing: border-box;
   transform: translate(-50%, -50%);
+  transition:
+    opacity var(--tugx-progress-pulsing-dot-settle) linear,
+    width var(--tugx-progress-pulsing-dot-settle)
+      var(--tugx-progress-pulsing-dot-settle-ease, cubic-bezier(0.22, 0.61, 0.36, 1)),
+    height var(--tugx-progress-pulsing-dot-settle)
+      var(--tugx-progress-pulsing-dot-settle-ease, cubic-bezier(0.22, 0.61, 0.36, 1)),
+    border-color var(--tugx-progress-pulsing-dot-settle) linear;
 }
 
+/* Withdrawn — not absent — while the glyph runs. `display: none` would be the
+   cheaper way to hide it and it is the wrong one: a display change cannot be
+   transitioned, so the static ring would materialize in a single frame the
+   instant a tool call finished. At zero opacity it is still there to fade, and
+   the settled ring arrives by fading in while the last shed pulse is still
+   flying out. */
 .tug-progress-pulsing-dot[data-state="running"]::after {
-  display: none;
+  opacity: 0;
 }
 
 /* One period, three loops — started together, phase-locked for as long as they
-   run. `will-change` promotes both elements to compositor layers while
-   running; scoped to `running` so a settled glyph costs zero layers. */
-.tug-progress-pulsing-dot[data-state="running"] .tug-progress-pulsing-dot-dot,
-.tug-progress-pulsing-dot[data-state="running"] .tug-progress-pulsing-dot-ring {
+   run.
+
+   The gate is `data-breathing` / `data-emitting`, written by the component,
+   NOT `data-state`. State is React's to set and it changes the moment the work
+   does; motion has to outlive that by a beat. Gating on state cut the loops
+   dead at whatever frame the change landed on — a ring halfway through its
+   travel simply ceased to exist, which is the pop this pair of attributes
+   exists to prevent. The component drops `data-breathing` in the same frame it
+   pins the dot's live scale, and holds `data-emitting` until a lit pulse has
+   finished its travel.
+
+   `will-change` promotes both elements to compositor layers while they move;
+   scoped to the gates so a settled glyph costs zero layers. */
+.tug-progress-pulsing-dot[data-breathing] .tug-progress-pulsing-dot-dot,
+.tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring {
   animation-duration: var(--tugx-progress-pulsing-dot-period);
+  /* Negative, and written by the component when it starts the breath: the
+     phase whose pose matches where the settled dot was standing, so the loop
+     picks the dot up rather than snapping it to the trough. Zero — a start at
+     the bottom of the breath — is only right on a first mount. */
+  animation-delay: calc(
+    var(--tugx-progress-pulsing-dot-period) *
+      var(--tugx-progress-pulsing-dot-phase, 0)
+  );
   animation-iteration-count: infinite;
   will-change: transform, opacity;
 }
@@ -261,7 +329,7 @@
 /* Turn at 30%: cosine up over the first 600ms, cosine down over the remaining
    1400ms. Runs 0 → 1 → 0, so the two-stop keyframe plays out and back on one
    pass. */
-.tug-progress-pulsing-dot[data-state="running"] .tug-progress-pulsing-dot-dot {
+.tug-progress-pulsing-dot[data-breathing] .tug-progress-pulsing-dot-dot {
   animation-name: tugx-progress-pulsing-dot-breathe;
   animation-timing-function: var(
     --tugx-progress-pulsing-dot-breathe-ease,
@@ -303,7 +371,7 @@
    where it starts, not in how it leaves: born near-solid, an even fall reads
    as a ring travelling outward and thinning. Front-loading the falloff on top
    of that only cut the ring's visible life short. */
-.tug-progress-pulsing-dot[data-state="running"] .tug-progress-pulsing-dot-ring {
+.tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring {
   animation-name:
     tugx-progress-pulsing-dot-emit-expand, tugx-progress-pulsing-dot-emit-fade;
   animation-timing-function:
