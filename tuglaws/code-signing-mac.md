@@ -317,6 +317,10 @@ just notarize        →  build-app.sh           →  sign-bundle.sh    (inside-
 
 Auth uses the `tug-notary` keychain profile (see [#apple-prereqs](../roadmap/tug-multi-instance.md#apple-prereqs) step 5), not inline `APPLE_ID` / `TEAM_ID` / `NOTARY_PASSWORD` env vars. The profile stores the credentials in the user's login keychain once; the script references it by name. Never put the app-specific password in command history, env files, or CI logs.
 
+On CI there is no login keychain, so the nightly workflow creates an ephemeral one, provisions the same `tug-notary` profile into it via `notarytool store-credentials`, and destroys it at the end of the job. `notarize.sh` reads `TUG_NOTARY_KEYCHAIN` to find it; unset — every developer machine — means the login keychain and unchanged behavior. The profile therefore remains the only auth mechanism the script knows about, on every machine.
+
+The one place credentials appear in an environment is that single provisioning step, populated from masked repository secrets. No other step in the job sees them: the build step, which runs cargo, bun, xcodebuild and a from-source tmux build, receives a keychain *path* and nothing else. Widening that exposure — passing the password to the build, or writing it to a file the build can read — is a regression, not a convenience.
+
 ### Failure modes
 
 On notary failure, `notarize.sh` extracts the submission UUID from `notarytool`'s tee log and surfaces an actionable hint:

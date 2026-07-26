@@ -18,6 +18,10 @@ echo "==> Building release Rust binaries"
 (cd "$REPO_ROOT/tugrust" && cargo build --release -p tugcast -p tugutil -p tugexec -p tugrelaunch)
 
 echo "==> Compiling tugcode + tugpulse (bun)"
+# tugcode carries its own package.json/bun.lock; its imports (the agent SDK,
+# tiktoken) resolve from tugcode/node_modules. Installing here rather than
+# assuming a populated tree is what lets this run on a clean checkout.
+(cd "$REPO_ROOT/tugcode" && bun install --frozen-lockfile)
 (
     cd "$REPO_ROOT"
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/release/tugcode

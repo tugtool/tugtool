@@ -71,6 +71,15 @@ TUGPLUG_DIR="$REPO_ROOT/tugplug"
 VERSION=$(grep '^version = ' "$TUGCODE_DIR/Cargo.toml" | head -1 | cut -d'"' -f2)
 echo "    Version: $VERSION"
 
+# TUG_BUILD_NUMBER stamps a distinct, monotonically increasing CFBundleVersion
+# per build. The version in Cargo.toml only moves on release bumps, so without
+# this every nightly would carry identical version metadata and neither the app
+# nor a future updater could tell two of them apart. CI passes the workflow run
+# number; unset (local builds) keeps the plist as-is.
+if [ -n "${TUG_BUILD_NUMBER:-}" ]; then
+    echo "    Build number: $TUG_BUILD_NUMBER"
+fi
+
 # Create build directories
 BUILD_DIR="$REPO_ROOT/build"
 DERIVED_DATA="$BUILD_DIR/derived"
@@ -87,13 +96,32 @@ echo "==> Building release inputs (shared with app-release)"
 bash "$SCRIPT_DIR/build-release-inputs.sh"
 
 # Step 3: Build Mac app with xcodebuild
+#
+# The app icon comes from the asset catalog, so the nightly variant has to be
+# selected at compile time via ASSETCATALOG_COMPILER_APPICON_NAME — actool only
+# compiles the named icon set into an .icns. Overriding CFBundleIconFile in the
+# plist afterwards can't conjure a resource actool never produced.
+#
+# Signing is pinned to ad-hoc here: sign-bundle.sh re-signs the whole bundle
+# inside-out in Step 8, so xcodebuild's signature is throwaway. Left on the
+# project's CODE_SIGN_STYLE = Automatic, a machine with no provisioning profiles
+# (any CI runner) can fail the build resolving a team it doesn't need.
 echo "==> Building Mac app via xcodebuild"
 cd "$TUGAPP_DIR"
-xcodebuild -project Tug.xcodeproj \
-    -scheme Tug \
-    -configuration Release \
-    -derivedDataPath "$DERIVED_DATA" \
-    build
+XCODE_ARGS=(
+    -project Tug.xcodeproj
+    -scheme Tug
+    -configuration Release
+    -derivedDataPath "$DERIVED_DATA"
+    CODE_SIGN_STYLE=Manual
+    CODE_SIGN_IDENTITY=-
+    CODE_SIGNING_REQUIRED=NO
+    DEVELOPMENT_TEAM=
+)
+if [ "$NIGHTLY" = true ]; then
+    XCODE_ARGS+=(ASSETCATALOG_COMPILER_APPICON_NAME="$ICON_NAME")
+fi
+xcodebuild "${XCODE_ARGS[@]}" build
 
 # Step 4: Copy xcodebuild output to staging
 echo "==> Assembling .app bundle"
@@ -132,12 +160,25 @@ mkdir -p "$STAGING_APP/Contents/Resources/third-party-licenses"
 cp "$TMUX_OUT/licenses/"*.txt "$STAGING_APP/Contents/Resources/third-party-licenses/"
 
 # Step 7: Override bundle ID and app name for nightly
+PLIST="$STAGING_APP/Contents/Info.plist"
 if [ "$NIGHTLY" = true ]; then
     echo "==> Configuring nightly bundle ID and icon"
-    PLIST="$STAGING_APP/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$PLIST"
     /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$PLIST"
     /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile $ICON_NAME" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIconName $ICON_NAME" "$PLIST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string $ICON_NAME" "$PLIST"
+fi
+
+# Stamp the per-build version. Done after the nightly overrides so both variants
+# get it, and before signing so it's covered by the seal.
+if [ -n "${TUG_BUILD_NUMBER:-}" ]; then
+    echo "==> Stamping CFBundleVersion $TUG_BUILD_NUMBER"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $TUG_BUILD_NUMBER" "$PLIST"
+    if [ "$NIGHTLY" = true ]; then
+        /usr/libexec/PlistBuddy -c \
+            "Set :CFBundleShortVersionString $VERSION-nightly.$TUG_BUILD_NUMBER" "$PLIST"
+    fi
 fi
 
 # Step 8: Code signing

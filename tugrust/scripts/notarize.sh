@@ -19,6 +19,13 @@ set -euo pipefail
 #     should print "No submission history." (or a prior history),
 #     not an authentication error.
 #
+# Environment:
+#   TUG_NOTARY_KEYCHAIN  Optional path to the keychain holding the
+#     `tug-notary` profile. Unset (the normal case) means the login
+#     keychain. CI sets this to an ephemeral keychain it provisions
+#     and destroys within the job, so credentials never touch the
+#     build step's environment.
+#
 # Postcondition (on success):
 #   - The bundle has Apple's notarization ticket stapled to it (so
 #     end users can launch without an internet round-trip).
@@ -49,12 +56,26 @@ KEYCHAIN_PROFILE="tug-notary"
 TIMEOUT="30m"
 ZIP="${APP%.app}.zip"
 
+# Resolve the keychain holding the profile. The `${arr[@]+...}` form is
+# required on macOS /bin/bash 3.2, where expanding an empty array under
+# `set -u` aborts with "unbound variable".
+KEYCHAIN_ARGS=()
+if [ -n "${TUG_NOTARY_KEYCHAIN:-}" ]; then
+    if [ ! -f "$TUG_NOTARY_KEYCHAIN" ]; then
+        echo "error: TUG_NOTARY_KEYCHAIN set but no keychain at $TUG_NOTARY_KEYCHAIN" >&2
+        exit 1
+    fi
+    KEYCHAIN_ARGS=(--keychain "$TUG_NOTARY_KEYCHAIN")
+    echo "==> Using notary keychain: $TUG_NOTARY_KEYCHAIN"
+fi
+notary() { xcrun notarytool "$@" --keychain-profile "$KEYCHAIN_PROFILE" ${KEYCHAIN_ARGS[@]+"${KEYCHAIN_ARGS[@]}"}; }
+
 # Sanity-check the keychain profile up front. `notarytool history`
 # is the lightest auth-only call; a hard failure here means the
 # profile is missing or the underlying app-specific password was
 # rotated. Surfacing it before the (potentially long) submit avoids
 # burning Apple's rate-limit on a misconfigured run.
-if ! xcrun notarytool history --keychain-profile "$KEYCHAIN_PROFILE" >/dev/null 2>&1; then
+if ! notary history >/dev/null 2>&1; then
     echo "error: notarytool keychain profile '$KEYCHAIN_PROFILE' is missing or invalid" >&2
     echo "       restore via #apple-prereqs step 5:" >&2
     echo "         xcrun notarytool store-credentials $KEYCHAIN_PROFILE \\" >&2
@@ -76,10 +97,7 @@ rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
 echo "==> Submitting to Apple notary service (typical wait: 5-15 min, ceiling: $TIMEOUT)"
-if ! xcrun notarytool submit "$ZIP" \
-        --keychain-profile "$KEYCHAIN_PROFILE" \
-        --wait \
-        --timeout "$TIMEOUT" 2>&1 | tee "$SUBMIT_LOG"; then
+if ! notary submit "$ZIP" --wait --timeout "$TIMEOUT" 2>&1 | tee "$SUBMIT_LOG"; then
     echo "==> Notarization FAILED" >&2
     # notarytool's --wait output includes a line like `id: <uuid>` near
     # the start; grab it for the log-fetch hint regardless of why the
@@ -92,7 +110,7 @@ if ! xcrun notarytool submit "$ZIP" \
         # Best-effort: print the log inline. If this fails (e.g. notary
         # never recorded the submission), the user still has the UUID.
         echo "==> Inline log (best effort):" >&2
-        xcrun notarytool log "$UUID" --keychain-profile "$KEYCHAIN_PROFILE" >&2 || true
+        notary log "$UUID" >&2 || true
     else
         echo "==> No submission UUID found in tee log; check $SUBMIT_LOG" >&2
         cat "$SUBMIT_LOG" >&2
