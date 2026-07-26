@@ -1,5 +1,5 @@
 /**
- * AT0274 — the large-pulsing-dot's breath envelope is asymmetric, and the ring
+ * AT0274 — the pulsing-dot's breath envelope is asymmetric, and the ring
  * is welded to its turn.
  *
  * The glyph's timing carries no shape in its keyframes: each `@keyframes` block
@@ -21,11 +21,22 @@
  * plus the ring's radius and opacity, which are separate animations precisely
  * so they can carry different shapes), all on one duration.
  *
+ * And it pins the two treatments. This is the only dot variant now, so one
+ * component serves both a 10px status cell and a 28px Lens row — and it does
+ * that by carrying two geometries, not by scaling one. The big one is the Lens
+ * figure. The small one is the geometry of the glyph this variant replaced,
+ * kept to the fraction, so that the surfaces adopting it (Z2 STATE, tool-call
+ * headers, setup steps) get the new MOTION and no change of size at all.
+ *
+ * Both are asserted here, off the resolved matrix and the painted box rather
+ * than off the custom properties — a variable that resolves but never reaches
+ * the paint is exactly the failure this file exists to catch.
+ *
  * The gallery card is just a convenient host for a running glyph at a known
  * size; the behavior under test is the component's, not the gallery's.
  *
- * @covers tugdeck/src/components/tugways/internal/tug-progress-large-pulsing-dot.tsx
- * @covers tugdeck/src/components/tugways/internal/tug-progress-large-pulsing-dot.css
+ * @covers tugdeck/src/components/tugways/internal/tug-progress-pulsing-dot.tsx
+ * @covers tugdeck/src/components/tugways/internal/tug-progress-pulsing-dot.css
  * @covers tugdeck/src/components/tugways/cards/gallery-tug-progress-indicator.tsx
  */
 
@@ -36,9 +47,9 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
 const CARD = '[data-card-id="A"]';
-const GLYPH = `${CARD} [data-slot="tug-progress-large-pulsing-dot"][data-state="running"]`;
-const DOT = `${GLYPH} .tug-progress-large-pulsing-dot-dot`;
-const RING = `${GLYPH} .tug-progress-large-pulsing-dot-ring`;
+const GLYPH = `${CARD} [data-slot="tug-progress-pulsing-dot"][data-state="running"]`;
+const DOT = `${GLYPH} .tug-progress-pulsing-dot-dot`;
+const RING = `${GLYPH} .tug-progress-pulsing-dot-ring`;
 
 /** The turn of the shipped envelope, as a fraction of the cycle. */
 const TURN = 0.3;
@@ -49,6 +60,23 @@ const BIRTH_OPACITY = 0.95;
 const FADE_POWER = 1;
 /** The pulse's stroke, as a multiple of the resting ring's. */
 const PULSE_WEIGHT = 1.6;
+
+/** The big treatment's dot ratio; the small treatment keeps the old 0.5. */
+const DOT_RATIO = 0.6;
+const SMALL_DOT_RATIO = 0.5;
+/** The authored trough, before the small-size floor raises it. */
+const TROUGH_RATIO = 0.35;
+/** Smallest mark that still reads as a dot rather than as one going out. */
+const MIN_TROUGH_PX = 3;
+
+/** A size in the big treatment — every size derivation inert here. */
+const BIG_SIZE = 32;
+/** A size in the small treatment, where the previous glyph's geometry holds. */
+const SMALL_SIZE = 12;
+/** How far past the box the ring is let out at {@link SMALL_SIZE} and under. */
+const SMALL_REACH = 1.75;
+/** The settled dot's scale in the quiet states (stopped / completed). */
+const IDLE_DOT_SCALE = 0.85;
 
 /**
  * Seek every animation on the glyph to `fraction` of the cycle and report the
@@ -105,7 +133,7 @@ const strokes = `(function(){
     resting: parseFloat(getComputedStyle(glyph, "::after").borderTopWidth),
     pulse: parseFloat(getComputedStyle(ring).borderTopWidth),
     weight: getComputedStyle(glyph)
-      .getPropertyValue("--tugx-progress-large-pulsing-dot-pulse-weight")
+      .getPropertyValue("--tugx-progress-pulsing-dot-pulse-weight")
       .trim(),
   };
 })()`;
@@ -124,12 +152,85 @@ const distinctWeights = `(function(){
   Array.from(document.querySelectorAll(${JSON.stringify(GLYPH)})).forEach(
     function (g) {
       var w = getComputedStyle(g)
-        .getPropertyValue("--tugx-progress-large-pulsing-dot-pulse-weight")
+        .getPropertyValue("--tugx-progress-pulsing-dot-pulse-weight")
         .trim();
       seen[w || "(unset)"] = true;
     },
   );
   return Object.keys(seen).sort();
+})()`;
+
+/**
+ * The size-derived geometry of the running glyph whose box measures `px`,
+ * read off the element AND off the paint.
+ *
+ * The glyph is one variant serving every size from a 10px status cell to a
+ * 32px Lens row, and two of its numbers cannot be constant across that range:
+ * how far the ring travels, and how deep the breath goes. Both are ratios
+ * against a box, and both stop working when the box gets small — inside a 12px
+ * glyph the ring's whole journey is ~2.5px of radius. So the component derives
+ * them from the size and publishes them as `-auto` variables.
+ *
+ * Seeking to the end of the cycle puts the expand easing at 1, which is exactly
+ * the ring's terminal scale — so `ringEndScale` is the reach as PAINTED, not
+ * merely as declared. A hair short of the end, though: these loops are
+ * infinite, and `currentTime = duration` is the first frame of the NEXT
+ * iteration, which reads back the ring's birth radius instead.
+ */
+const geometryAtSize = (px: number) => `(function(){
+  var glyphs = Array.from(document.querySelectorAll(${JSON.stringify(GLYPH)}));
+  var g = glyphs.filter(function (el) {
+    return Math.round(parseFloat(getComputedStyle(el).width)) === ${px};
+  })[0];
+  if (!g) return null;
+  var ring = g.querySelector(".tug-progress-pulsing-dot-ring");
+  var anims = g.getAnimations({ subtree: true });
+  if (anims.length === 0 || !ring) return null;
+  var duration = anims[0].effect.getTiming().duration;
+  anims.forEach(function (a) { a.pause(); a.currentTime = duration * 0.999; });
+  var cs = getComputedStyle(g);
+  var dot = g.querySelector(".tug-progress-pulsing-dot-dot");
+  return {
+    reach: cs.getPropertyValue("--tugx-progress-pulsing-dot-emit-reach-auto").trim(),
+    trough: cs.getPropertyValue("--tugx-progress-pulsing-dot-dot-scale-min-auto").trim(),
+    dotBox: parseFloat(getComputedStyle(dot).width),
+    ringEndScale: new DOMMatrixReadOnly(getComputedStyle(ring).transform).a,
+  };
+})()`;
+
+/**
+ * The settled pose of the `completed` glyph whose box measures `px`, as painted.
+ *
+ * This is the parity probe. The small treatment is not "the big glyph scaled
+ * down" — it is the geometry of the glyph this variant replaces, kept to the
+ * fraction, so that adopting the new motion in a Z2 status cell or a tool-call
+ * header changes the motion and nothing else. A settled marker in a row of type
+ * has no business changing size because its animation was rewritten.
+ *
+ * `completed` is the right state to probe: it is where most small glyphs spend
+ * most of their life, it is `quiet` (so it exercises the idle dot scale), and
+ * it sits on the lowest rung of the PRESENCE ladder — which is exactly the
+ * thing that must NOT apply down here.
+ */
+const settledPose = (px: number) => `(function(){
+  var glyphs = Array.from(document.querySelectorAll(
+    ${JSON.stringify(CARD)} + ' [data-slot="tug-progress-pulsing-dot"][data-state="completed"]'
+  ));
+  var g = glyphs.filter(function (el) {
+    return Math.round(parseFloat(getComputedStyle(el).width)) === ${px};
+  })[0];
+  if (!g) return null;
+  var dot = g.querySelector(".tug-progress-pulsing-dot-dot");
+  var after = getComputedStyle(g, "::after");
+  return {
+    // The dot's painted diameter: its box times the scale the component seeds
+    // inline for the static pose.
+    dot:
+      parseFloat(getComputedStyle(dot).width) *
+      new DOMMatrixReadOnly(getComputedStyle(dot).transform).a,
+    ring: parseFloat(after.width),
+    border: parseFloat(after.borderTopWidth),
+  };
 })()`;
 
 /** Names + durations of every animation the running glyph is carrying. */
@@ -145,7 +246,7 @@ const animationCensus = `(function(){
   };
 })()`;
 
-describe.skipIf(!SHOULD_RUN)("AT0274: large-pulsing-dot breath envelope", () => {
+describe.skipIf(!SHOULD_RUN)("AT0274: pulsing-dot breath envelope", () => {
   test(
     "the dot peaks at the turn, not the midpoint, and the ring rides the same clock",
     async () => {
@@ -198,9 +299,9 @@ describe.skipIf(!SHOULD_RUN)("AT0274: large-pulsing-dot breath envelope", () => 
           durations: number[];
         }>(animationCensus);
         expect(census.names).toEqual([
-          "tugx-progress-large-pulsing-dot-breathe",
-          "tugx-progress-large-pulsing-dot-emit-expand",
-          "tugx-progress-large-pulsing-dot-emit-fade",
+          "tugx-progress-pulsing-dot-breathe",
+          "tugx-progress-pulsing-dot-emit-expand",
+          "tugx-progress-pulsing-dot-emit-fade",
         ]);
         expect(census.durations).toHaveLength(1);
 
@@ -285,6 +386,63 @@ describe.skipIf(!SHOULD_RUN)("AT0274: large-pulsing-dot breath envelope", () => 
         expect(weights.length).toBeGreaterThan(1);
         expect(weights).toContain("(unset)");
         expect(weights).toContain(String(PULSE_WEIGHT));
+
+        // --- One variant, every size ------------------------------------
+
+        type Geometry = {
+          reach: string;
+          trough: string;
+          dotBox: number;
+          ringEndScale: number;
+        };
+
+        // In the big treatment every derivation is inert: the dot takes 0.6 of
+        // the box, the ring stops at the box edge so the glyph is layout-safe,
+        // and the trough floor never binds (0.35 of a 19.2px dot is 6.7px).
+        const big = await app.evalJS<Geometry>(geometryAtSize(BIG_SIZE));
+        expect(big.dotBox).toBeCloseTo(BIG_SIZE * DOT_RATIO, 1);
+        expect(Number(big.reach)).toBe(1);
+        expect(big.ringEndScale).toBeCloseTo(1, 2);
+        expect(Number(big.trough)).toBeCloseTo(TROUGH_RATIO, 3);
+
+        // In the small treatment the dot drops to the previous glyph's ratio,
+        // the ring is let out past the box — asserted on the resolved matrix,
+        // so this is the scale it is actually painted at, not the variable's
+        // value — and the trough is raised off 0.35 to hold the 3px floor.
+        const small = await app.evalJS<Geometry>(geometryAtSize(SMALL_SIZE));
+        expect(small.dotBox).toBeCloseTo(SMALL_SIZE * SMALL_DOT_RATIO, 1);
+        expect(Number(small.reach)).toBeCloseTo(SMALL_REACH, 2);
+        expect(small.ringEndScale).toBeCloseTo(SMALL_REACH, 2);
+        expect(Number(small.trough)).toBeCloseTo(
+          MIN_TROUGH_PX / (SMALL_SIZE * SMALL_DOT_RATIO),
+          3,
+        );
+        expect(Number(small.trough)).toBeGreaterThan(TROUGH_RATIO);
+
+        // --- Parity: the small treatment IS the previous glyph -----------
+
+        type Pose = { dot: number; ring: number; border: number };
+
+        // The contract for every small call site — a Z2 status cell, a
+        // tool-call header, a setup step. Those surfaces are adopting a new
+        // ANIMATION; their settled pose must not move a pixel. So these are
+        // asserted against the old glyph's formulas written out literally
+        // (`size / 2`, the full box, a hairline) rather than against anything
+        // this component derives, which is the only way the check can catch a
+        // drift in the derivation itself.
+        for (const px of [12, 14, 16]) {
+          const pose = await app.evalJS<Pose>(settledPose(px));
+          expect(pose).not.toBeNull();
+          expect(pose.dot).toBeCloseTo((px / 2) * IDLE_DOT_SCALE, 1);
+          expect(pose.ring).toBeCloseTo(px, 1);
+          expect(pose.border).toBe(1);
+        }
+
+        // …and the ladder is still there at the top, where the pixels to read
+        // it exist. Same state, drawn in to its rung — the Lens behavior this
+        // whole variant was built for.
+        const bigPose = await app.evalJS<Pose>(settledPose(BIG_SIZE));
+        expect(bigPose.ring).toBeLessThan(BIG_SIZE * 0.75);
       } finally {
         await app.close();
       }

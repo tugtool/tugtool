@@ -1,107 +1,440 @@
 /**
- * TugProgressPulsingDot — Internal building block for the dot + pulsing-ring glyph.
+ * TugProgressPulsingDot — Internal building block for the breathing-dot glyph.
  *
  * App code should use {@link TugProgressIndicator} instead.
  *
- * Two visible elements clocked independently:
+ * The glyph **breathes** — the inner dot scales up and down on a continuous
+ * 2s cycle, and the ring is emitted from that breath rather than clocked on
+ * its own. It supersedes an earlier dot of the same name that held a fixed
+ * circle and chained one-shot WAAPI ring pulses around it; that one was a
+ * blinker with a halo, and this one is a thing that inhales and exhales.
  *
- *   - **Dot** — a small solid circle, always visible. Its color resolves
- *     from the parent's live `--tugx-progress-indicator-fill`, so the core
- *     recolors instantly on a state change. Its diameter shrinks while
- *     `state === "stopped"` or `"aborted"` so the resting indicator reads
- *     quiet.
- *   - **Ring** — a thin circle border around the dot. While
- *     `state === "running"` it runs a chain of finite one-shot pulses that
- *     scale + fade the ring outward (`ring.animate(...)`, 1600ms, on the
- *     easing named by `--tugx-progress-pulsing-dot-pulse-easing` —
- *     {@link DEFAULT_PULSE_EASING}).
+ * Two visible elements on ONE shared 2s period:
  *
- * **Pulse integrity — guaranteed by construction, not CSS timing.** A pulse
- * is a finite WAAPI one-shot; a WAAPI animation runs to its `.finished`
- * unless it is explicitly `.cancel()`ed, and the only cancel here is on
- * unmount. So a state change mid-pulse can never truncate it:
- *   - **Never truncated.** Leaving `running` does not touch the in-flight
- *     pulse. When it finishes, the chain reads `latestStateRef` and either
- *     starts the next pulse (still running) or hides the ring (settled) —
- *     so the pulse always completes before the ring goes static.
- *   - **Frozen tone.** `--tugx-progress-indicator-fill` is a live variable,
- *     so a mid-pulse tone change (a role shift, or the `running` cobalt
- *     override dropping) would recolor the pulse in flight. Each pulse
- *     snapshots the resolved ring color to an inline `border-color` at its
- *     start, freezing that pulse's tone; the new tone lands on the next
- *     pulse.
+ *   - **Dot** — a solid circle that rises to full size and sinks back
+ *     over the cycle, traveling the full swing every time. Its color
+ *     resolves from the parent's live `--tugx-progress-indicator-fill`.
+ *   - **Ring** — fired a few degrees before the top of the breath, so it
+ *     is already alive and moving when the dot turns. It is born at the
+ *     dot's own edge and expands outward to the glyph box, fading as it
+ *     goes — so the exhale is one gesture: the dot falls away from the
+ *     ring it just shed. Below 28px it is let out past the box; see
+ *     {@link sizeGeometry}.
  *
- * The pulses are raw `element.animate()` — NOT the TugAnimator wrapper,
- * whose `commitStyles()` on every `.finished` forced a whole-tree
- * compositing recompute per pulse (the lag this glyph caused). Raw one-shots
- * of `transform`/`opacity` run on the compositor with no per-frame main-
- * thread work and no `commitStyles`.
+ * **The envelope is not symmetric.** The dot rises over the first 30% of
+ * the cycle and sinks over the remaining 70% — quick in, slow out, the
+ * shape of the colon blink on an Apple Watch digital time label. A breath
+ * that takes as long going up as coming down reads as a mechanism; this
+ * one reads as something alive. The whole curve, both legs and the ring's
+ * ignition, is authored as `linear()` easings in the stylesheet's
+ * `--…-ease` variables — a knob, not a keyframe block. The gallery's
+ * timing bench overrides those variables to show four cuts of it side by
+ * side.
+ *
+ * **Phase lock without a clock.** Both elements run CSS `@keyframes` on
+ * the same duration, started in the same frame, so the ring's emission
+ * stays welded to the dot's turn with no timer, no WAAPI chaining, and no
+ * per-frame main-thread work. That duration carries a small per-instance
+ * jitter ({@link DRIFT_SPREAD}) — the weld is within a glyph, so two of
+ * them on screen drift apart rather than beating as one. Firing near the
+ * turn also keeps the ring inside a single cycle, so the pulse needs no
+ * wrap across the cycle boundary.
+ *
+ * **Two treatments.** The glyph serves both a 28px Lens row and a 10px status
+ * cell, and it does that by carrying two geometries rather than scaling one —
+ * see {@link BIG_SIZE}. The motion below is common to both; the proportions,
+ * the ring's reach, and the PRESENCE ladder are not.
+ *
+ * State semantics, each rung also carrying its own PRESENCE — its share of the
+ * reserved box ({@link SETTLED_PRESENCE}), so at the big end the glyph's SIZE
+ * reads the state before its color or motion does:
+ *   running   — the dot breathes and emits rings; owns the whole box.
+ *   paused    — dot held at full size; static outer ring, drawn in.
+ *   stopped   — quiet (reduced) dot; small static ring.
+ *   completed — quiet dot; small static ring, success tint from parent.
+ *   aborted   — full-size dot; static outer ring drawn in, danger tint.
  *
  * Laws: [L02] state arrives via props from the parent indicator;
- *       [L06] the dot's tone is a live CSS variable; the ring's display and
- *       frozen tone are driven imperatively (inline style), never React
- *       state;
- *       [L13] the ring pulse needs per-pulse completion + tone snapshotting,
- *       so it is programmatic motion (WAAPI one-shots), not a declarative
- *       CSS loop — but raw `animate()`, without TugAnimator's commit.
+ *       [L06] tone is a live CSS variable and the motion is gated on
+ *       `data-state` — never React state;
+ *       [L13] the breath and the ring are continuous loops with no
+ *       per-pulse completion requirement, so they are declarative CSS
+ *       `@keyframes` (motion-off zeroes them through the global
+ *       `body[data-tug-motion="off"]` rule), not programmatic motion.
  *
  * @module components/tugways/internal/tug-progress-pulsing-dot
  */
 
 import "./tug-progress-pulsing-dot.css";
 
-import React, { useCallback, useEffect, useRef } from "react";
+import React from "react";
 
 import { cn } from "@/lib/utils";
-import {
-  getTugTiming,
-  isTugMotionEnabled,
-} from "@/components/tugways/scale-timing";
 import type { TugProgressIndicatorState } from "../tug-progress-indicator";
 
-const PULSE_DURATION_MS = 1600;
-
-const PULSE_KEYFRAMES: Keyframe[] = [
-  { transform: "translate(-50%, -50%) scale(0.85)", opacity: 0.7 },
-  { transform: "translate(-50%, -50%) scale(1.9)", opacity: 0 },
-];
+/**
+ * Glyph box diameter when the caller names no size. Sized against the Z5
+ * submit button (36px square) — this glyph is meant to be legible across
+ * the room the way that button is. It runs a little under, since motion
+ * carries some of the load that size alone carries for a static control.
+ */
+const DEFAULT_SIZE = 32;
 
 /**
- * The pulse's easing, read from `--tugx-progress-pulsing-dot-pulse-easing` at
- * the start of each pulse and falling back to this.
+ * Dot diameter as a fraction of the glyph box, at the top of the breath.
  *
- * The ring is a one-shot, so its whole shape is front-loading: it wants to be
- * quick off the dot's edge and slow arriving at nothing — the same asymmetry
- * the large glyph's breath gets from an early turn, and the same one the colon
- * blink on a digital watch face uses. `ease-out` is already that; making it a
- * variable is what lets a caller (or the gallery's timing bench) reach for a
- * harder cut of it — an expo-out leaves the dot roughly twice as fast and
- * spends the rest of the pulse fading.
- *
- * It is a variable rather than a prop because it is pure appearance ([L06]) —
- * and because the read is free: each pulse already does one `getComputedStyle`
- * to snapshot its tone.
+ * At the big end the dot IS the object being looked at, so it takes most of the
+ * box and the remainder is the room the emitted ring expands into. At the small
+ * end it is {@link SMALL_DOT_RATIO} instead — the previous glyph's ratio, kept
+ * so a settled marker in a status row is the size it has always been.
  */
-const DEFAULT_PULSE_EASING = "ease-out";
+const DOT_RATIO = 0.6;
 
-const IDLE_DOT_SCALE = 0.85;
+/** The small treatment's dot ratio — the previous glyph's, unchanged. */
+const SMALL_DOT_RATIO = 0.5;
 
-function isAnimating(state: TugProgressIndicatorState): boolean {
-  return state === "running";
+/**
+ * Trough of the breath — the dot's scale at the bottom of the cycle. A
+ * wide swing on purpose: the dot travels the full distance every cycle,
+ * and the ring's emission is a waypoint on the way down, not the end of
+ * the fall. Mirrors `--tugx-progress-pulsing-dot-dot-scale-min`.
+ */
+const DOT_SCALE_MIN = 0.35;
+
+/**
+ * How far before the turn the ring is lit, as a fraction of the cycle —
+ * **ignition advance**, borrowed from a spark engine. The turn is top dead
+ * center; the spark fires a few degrees before it, so the pressure is already
+ * building when the piston turns. Read the cycle as 360°, 3% is **10.8°
+ * BTDC** — a plausible advance for a real engine, and the same reasoning
+ * applies here. The ring needs a few frames to become visible and start
+ * moving; lighting it exactly at the turn means the eye catches it slightly
+ * late, trailing the dot.
+ */
+const EMIT_ADVANCE = 0.03;
+
+/** Turn of the shipped envelope — the CSS defaults are `breathEnvelope(0.3)`. */
+export const DEFAULT_BREATH_TURN = 0.3;
+
+/**
+ * The size band across which this glyph changes what it is trying to be.
+ *
+ * There are two treatments here, not one figure scaled. At {@link BIG_SIZE} and
+ * up — the Lens session row — it is a figure meant to be read across a room:
+ * the dot takes 60% of the box, the ring stays inside it, and the PRESENCE
+ * ladder encodes state as relative size. At {@link SMALL_SIZE} and down — a Z2
+ * status cell, a tool-call header, a setup step — it is a marker in a row of
+ * type, and every one of those choices is wrong for it: relative size is not
+ * legible in 12 pixels, and a bigger dot is just a bigger dot.
+ *
+ * **The small treatment is the previous glyph's geometry, exactly.** Same 0.5
+ * dot ratio, same full-box static ring, same hairline stroke, no ladder — so a
+ * settled dot in a status cell paints the pixels it painted before. What
+ * changes down there is the MOTION and nothing else: the dot breathes and sheds
+ * a ring instead of holding still under a halo. That is the whole point of
+ * unifying the variants, and it is the whole extent of it.
+ *
+ * The band is chosen to sit in the gap between the real call sites: everything
+ * the app asks for is 16px and under or 28px and over, so nothing ships at a
+ * blend. The ramp between exists so the in-between sizes a gallery or a future
+ * caller might pick degrade smoothly rather than snapping at a threshold.
+ */
+const BIG_SIZE = 28;
+const SMALL_SIZE = 16;
+
+/** 0 at {@link BIG_SIZE} and up, 1 at {@link SMALL_SIZE} and down. */
+function smallness(size: number): number {
+  return Math.min(1, Math.max(0, (BIG_SIZE - size) / (BIG_SIZE - SMALL_SIZE)));
 }
 
 /**
- * `stopped` and `completed` paint a reduced-size dot — these are the
- * two "settled" poses (nothing happening, or work finished). `paused`
- * and `aborted` keep the full-size dot so the held / canceled signal
- * reads as prominent.
+ * How far past the glyph box a small ring travels.
+ *
+ * Layout-safety is a luxury of size. Held inside the box, the ring's whole
+ * journey is from the dot's edge to the box edge — at a 32px glyph that is
+ * 6.5px of radius and reads as a pulse; at 12px it is 2.5px and reads as a
+ * twitch, a ring that appears, shivers, and stops. There is no timing fix for
+ * that: the distance simply is not there.
+ *
+ * So below {@link BIG_SIZE} the ring is let out of the box, ramping to
+ * this multiple at {@link SMALL_SIZE} and under. It is not a new idea —
+ * it is what the glyph this one replaces always did (its ring ran to 1.9× the
+ * box), and it is why that glyph read at 12px at all. Overflow is free here:
+ * the ring is absolutely positioned and nothing on the path clips, so a bigger
+ * reach costs paint, never layout.
  */
+const REACH_MAX = 1.75;
+
+/**
+ * Floor on the breath's trough, in CSS px.
+ *
+ * {@link DOT_SCALE_MIN} is a ratio, so the trough shrinks with the glyph: at
+ * 32px the dot sinks to 6.7px and reads as a small dot, at 12px it sinks to
+ * 2.5px and reads as a dot going out. The difference matters because the two
+ * are different statements — this glyph's bottom of breath must still be a dot
+ * that is *there*. Below this size the swing gives up depth to keep it.
+ */
+const MIN_TROUGH_PX = 3;
+
+/**
+ * Everything about the glyph that cannot be one number across a 10px–40px
+ * range, derived from the size in one place.
+ *
+ * The timing is untouched by any of it — the envelope, the ignition advance and
+ * the stroke weights are scale-free and every size gets the same breath. What
+ * changes is geometry, because each of these is a ratio against a box that is
+ * no longer one size:
+ *
+ *   - **ratio** — the dot's share of the box. 0.6 big, 0.5 small (the previous
+ *     glyph's), so a settled small dot is the size it always was.
+ *   - **reach** — where the ring's expansion ends. The box edge at the big end,
+ *     and out past it at the small end, where the box is not far enough away to
+ *     be worth traveling to.
+ *   - **scaleMin** — the trough of the breath, floored so it stays a dot.
+ *   - **birth** — where the dot's edge is when the spark fires. Falls out of
+ *     the other two; it is here so it cannot drift from them.
+ *
+ * All four are published as `-auto` variables so an override from above still
+ * wins (see the stylesheet's note on the knobs), and all four resolve to the
+ * stylesheet's own defaults at {@link BIG_SIZE} and up.
+ */
+export function sizeGeometry(size: number): {
+  ratio: number;
+  reach: number;
+  scaleMin: number;
+  birth: number;
+} {
+  const t = smallness(size);
+  const ratio = DOT_RATIO + (SMALL_DOT_RATIO - DOT_RATIO) * t;
+  const scaleMin = Math.max(DOT_SCALE_MIN, MIN_TROUGH_PX / (size * ratio));
+  const atIgnition = breathAt(
+    DEFAULT_BREATH_TURN,
+    DEFAULT_BREATH_TURN - EMIT_ADVANCE,
+  );
+  return {
+    ratio,
+    reach: 1 + (REACH_MAX - 1) * t,
+    scaleMin,
+    // Where the dot's edge actually is when the spark fires. It moves with the
+    // ratio and the trough, so it is derived here rather than left to the
+    // stylesheet's big-size default — otherwise a small ring is born beside the
+    // dot instead of on it.
+    birth: ratio * (scaleMin + (1 - scaleMin) * atIgnition),
+  };
+}
+
+/**
+ * Exponent of the ring's opacity falloff — 1 is an even fade, and every step
+ * up front-loads it harder.
+ *
+ * Shipped even. The pulse's problem was never the shape of its exit, it was
+ * that it was born at partial strength: a ring that starts pre-faded and then
+ * dims uniformly reads as grey. Fix the birth (see `--…-emit-opacity`) and the
+ * even fall is the one that reads as a ring travelling outward and thinning.
+ * Front-loading on top of that mostly shortens the ring's visible life, which
+ * costs more than the extra snap buys.
+ */
+export const DEFAULT_FADE_POWER = 1;
+
+/**
+ * Shipped pulse stroke weight, mirroring the fallback on
+ * `--tugx-progress-pulsing-dot-pulse-weight`.
+ *
+ * It is over 1 because the ring expands by `transform: scale`, which scales
+ * the border along with the radius: born at ~0.59 of the box, the pulse paints
+ * at ~59% of nominal at ignition — the frame it is most opaque and most worth
+ * seeing — and only reaches full weight as it fades out.
+ *
+ * Read it as an intent rather than a rendered ratio: borders are quantized to
+ * whole CSS px, so at the sizes this glyph runs at (a 28px Lens row, a 32px
+ * bench cell) the resting ring lands on 1–2px and the pulse on 2–3px. Between
+ * neighboring weights the painted difference is often nothing at all.
+ */
+export const DEFAULT_PULSE_WEIGHT = 1.6;
+
+/**
+ * The breath's shape at progress `p`, for a cycle that turns at `turn`.
+ *
+ * Each leg is its own cosine ease-in-out, fitted to its own length rather than
+ * one curve skewed across the turn. That is the part that matters: a cosine
+ * arrives at its endpoint with zero velocity, so however quick the rise, it
+ * settles into a HOLD at the top instead of hitting a corner, and the long
+ * fall then drifts away from that hold. Rise, hover, sink.
+ */
+function breathAt(turn: number, p: number): number {
+  return p <= turn
+    ? (1 - Math.cos(Math.PI * (p / turn))) / 2
+    : (1 + Math.cos(Math.PI * ((p - turn) / (1 - turn)))) / 2;
+}
+
+/** Trim a computed stop to something readable in a stylesheet. */
+function stop(n: number): string {
+  const s = n.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+  return s === "" || s === "-0" ? "0" : s;
+}
+
+/**
+ * The whole envelope for a given turn, as the four custom properties the
+ * stylesheet reads.
+ *
+ * The keyframes over in the CSS carry no shape at all — each is two stops, a
+ * start pose and an end pose. Everything about the timing is in these
+ * `linear()` easings, which is what makes the curve a knob: hand this a
+ * different turn and the dot's legs, the ring's ignition, and the radius the
+ * ring is born at all move together, with nothing to keep in sync by hand.
+ *
+ * The shipped default is `breathEnvelope(DEFAULT_BREATH_TURN)`, written out
+ * literally in the stylesheet so the common case costs no inline style and no
+ * work at render. This function is the source those numbers came from, and the
+ * gallery's timing bench calls it live to put several cuts side by side.
+ *
+ *   - **breathe** — the dot. Runs 0 → 1 → 0 across the cycle, so a two-stop
+ *     keyframe (min → full) plays out and back on a single pass.
+ *   - **expand** — the ring's radius. Flat at 0 until ignition (the ring
+ *     parked, unlit, at the dot's edge), then a cubic ease-out to the box.
+ *   - **fade** — the ring's opacity, on a keyframe that runs lit → 0. Held at
+ *     1 (i.e. invisible) through the inhale, stepped to 0 in a hairline
+ *     between two stops at the same position, then a power falloff back to 1
+ *     ({@link DEFAULT_FADE_POWER}, shipped even). The ring is at nearly full
+ *     strength for the frames it is still on the dot's edge, then thins evenly
+ *     as it travels. Radius and opacity are separate animations because their
+ *     HOLDS are opposite (radius parked at 0, opacity parked at 1) and because
+ *     their shapes are specified independently.
+ *   - **emit-birth** — the dot's own scale at ignition × {@link DOT_RATIO}, so
+ *     the ring peels off the dot's edge rather than appearing beside it.
+ */
+export function breathEnvelope(
+  turn: number,
+  fadePower: number = DEFAULT_FADE_POWER,
+): React.CSSProperties {
+  const RISE_STOPS = 8;
+  const FALL_STOPS = 12;
+  const EXPAND_STOPS = 12;
+  const ignition = turn - EMIT_ADVANCE;
+
+  const breathe: string[] = [];
+  for (let i = 0; i <= RISE_STOPS; i++) {
+    const p = (turn * i) / RISE_STOPS;
+    breathe.push(`${stop(breathAt(turn, p))} ${stop(p * 100)}%`);
+  }
+  for (let i = 1; i <= FALL_STOPS; i++) {
+    const p = turn + ((1 - turn) * i) / FALL_STOPS;
+    breathe.push(`${stop(breathAt(turn, p))} ${stop(p * 100)}%`);
+  }
+
+  const expand: string[] = ["0 0%", `0 ${stop(ignition * 100)}%`];
+  // The hold, then the lit hairline: the last frame of nothing sits at the
+  // stop just under ignition, so the ring turns on between two stops the eye
+  // cannot resolve.
+  const fade: string[] = [
+    "1 0%",
+    `1 ${stop(ignition * 100 - 0.01)}%`,
+    `0 ${stop(ignition * 100)}%`,
+  ];
+  for (let i = 1; i <= EXPAND_STOPS; i++) {
+    const u = i / EXPAND_STOPS;
+    const p = ignition + u * (1 - ignition);
+    expand.push(`${stop(1 - (1 - u) ** 3)} ${stop(p * 100)}%`);
+    fade.push(`${stop(1 - (1 - u) ** fadePower)} ${stop(p * 100)}%`);
+  }
+
+  const birth =
+    DOT_RATIO *
+    (DOT_SCALE_MIN + (1 - DOT_SCALE_MIN) * breathAt(turn, ignition));
+
+  return {
+    ["--tugx-progress-pulsing-dot-breathe-ease" as string]: `linear(${breathe.join(", ")})`,
+    ["--tugx-progress-pulsing-dot-emit-expand-ease" as string]: `linear(${expand.join(", ")})`,
+    ["--tugx-progress-pulsing-dot-emit-fade-ease" as string]: `linear(${fade.join(", ")})`,
+    ["--tugx-progress-pulsing-dot-emit-birth" as string]: stop(birth),
+  };
+}
+
+/**
+ * Half-width of the per-instance period jitter, as a fraction of the nominal
+ * 2s cycle. Each mounted glyph picks a multiplier once, uniformly in
+ * `[1 - DRIFT_SPREAD, 1 + DRIFT_SPREAD]`, and runs its whole cycle at that
+ * rate.
+ *
+ * The point is a column of them. Several sessions breathing on one exact
+ * period read as one mechanism with several heads; give each its own rate and
+ * they pull apart over half a minute or so into something that reads as
+ * several things each doing its own work. At ±4% the widest pair differs by
+ * ~160ms per cycle, so neighbors take roughly a dozen breaths to fall out of
+ * step — slow enough that no single glance catches the drift happening.
+ *
+ * It only ever scales the period, so all three loops inside one glyph still
+ * read the same duration and stay phase-locked to each other: the ring is
+ * still shed at 10.8° BTDC of that glyph's own breath.
+ *
+ * The draw is published as `--…-drift-auto`, which the stylesheet reads only
+ * when no ancestor has pinned `--…-drift` — so a caller that needs the glyph
+ * deterministic can have it.
+ */
+const DRIFT_SPREAD = 0.04;
+
+/** Settled states paint a reduced dot; held / canceled keep it full-size. */
 function isQuiet(state: TugProgressIndicatorState): boolean {
   return state === "stopped" || state === "completed";
 }
 
+const IDLE_DOT_SCALE = 0.85;
+
+/**
+ * The PRESENCE ladder — how much of the reserved glyph box each state
+ * occupies.
+ *
+ * Size is this variant's whole argument: it exists to be read across a room.
+ * But "big" is only legible as a signal if it is *relative*, and the earlier
+ * cut had it backwards — every settled state painted a full-box static ring,
+ * so a finished session drew a bigger figure than a working one. A row of
+ * sessions read as loudest where nothing was happening.
+ *
+ * So presence became a property of the state, not a constant. `running` is
+ * absent from the ladder because it has no static pose to scale: its breath
+ * and its emitted ring are authored against the full box and own it outright
+ * (see {@link presenceScale}). Every other state is a pose the component seeds,
+ * and each one draws in from that edge by the amount below — a held or aborted
+ * session stays substantial because it still wants an answer; a stopped or
+ * completed one recedes to a quiet marker.
+ *
+ * The box itself never changes, so the ladder is pure appearance: rows do not
+ * reflow as a session moves through it, and a caller's `size` still means the
+ * space to reserve.
+ *
+ * These are the values at full strength. Below 28px the ladder compresses
+ * toward 1, and by 16px it is gone — see {@link presenceScale}.
+ */
+const SETTLED_PRESENCE: Record<
+  Exclude<TugProgressIndicatorState, "running">,
+  number
+> = {
+  paused: 0.7,
+  aborted: 0.7,
+  stopped: 0.5,
+  completed: 0.5,
+};
+
+/**
+ * This state's share of the glyph box, at this size.
+ *
+ * The ladder ({@link SETTLED_PRESENCE}) is an affordance of the big treatment,
+ * and only of it. It encodes state as *relative* size, which needs enough
+ * pixels for the relation to be visible — a `completed` 12px glyph on the full
+ * ladder is a 6px ring around a 2.5px dot, which is not a quiet marker but an
+ * illegible one. So the ladder ramps out with {@link smallness}: gone entirely
+ * at 16px and below, where every state owns its box exactly as it did under the
+ * previous glyph, and the difference between states is carried by tone and by
+ * whether the ring is moving. Those two read at 10px. Size does not.
+ */
+function presenceScale(state: TugProgressIndicatorState, size: number): number {
+  if (state === "running") return 1;
+  const base = SETTLED_PRESENCE[state];
+  return base + (1 - base) * smallness(size);
+}
+
 export interface TugProgressPulsingDotProps {
-  /** Glyph box diameter in CSS px. @default 16 */
+  /** Glyph box diameter in CSS px. @default 24 */
   size?: number;
   /** Lifecycle state. @default "running" */
   state?: TugProgressIndicatorState;
@@ -115,102 +448,38 @@ export const TugProgressPulsingDot = React.forwardRef<
   HTMLSpanElement,
   TugProgressPulsingDotProps
 >(function TugProgressPulsingDot(
-  { size = 16, state = "running", disabled = false, className },
+  { size = DEFAULT_SIZE, state = "running", disabled = false, className },
   forwardedRef,
 ) {
-  const ringRef = useRef<HTMLSpanElement | null>(null);
-  const pulseRef = useRef<Animation | null>(null);
-  // Read at each pulse boundary (not closure-captured) so an in-flight chain
-  // sees the latest state without restarting.
-  const latestStateRef = useRef<TugProgressIndicatorState>(state);
-  latestStateRef.current = state;
-
-  const hideRing = useCallback(() => {
-    const ring = ringRef.current;
-    if (ring === null) return;
-    ring.style.display = "none";
-    ring.style.borderColor = "";
-  }, []);
-
-  // Run one finite pulse, then chain from its `.finished`. The pulse is a
-  // raw WAAPI one-shot — it completes on its own clock and is never cut by a
-  // state change (only unmount cancels it).
-  const startPulse = useCallback(() => {
-    const ring = ringRef.current;
-    if (ring === null) return;
-    ring.style.display = "block";
-    // Freeze this pulse's tone: snapshot the resolved ring color to inline,
-    // so a later change to the live fill variable can't recolor it in flight.
-    // Clearing first lets the read see the current live tone.
-    ring.style.borderColor = "";
-    const computed = getComputedStyle(ring);
-    ring.style.borderColor = computed.borderColor;
-    const easing =
-      computed
-        .getPropertyValue("--tugx-progress-pulsing-dot-pulse-easing")
-        .trim() || DEFAULT_PULSE_EASING;
-
-    const pulse = ring.animate(PULSE_KEYFRAMES, {
-      duration: PULSE_DURATION_MS * getTugTiming(),
-      easing,
-    });
-    pulseRef.current = pulse;
-
-    pulse.finished.then(
-      () => {
-        if (pulseRef.current !== pulse) return; // superseded
-        pulseRef.current = null;
-        if (isAnimating(latestStateRef.current) && isTugMotionEnabled()) {
-          startPulse();
-        } else {
-          hideRing();
-        }
-      },
-      () => {
-        if (pulseRef.current === pulse) pulseRef.current = null;
-      },
-    );
-  }, [hideRing]);
-
-  useEffect(() => {
-    const ring = ringRef.current;
-    if (ring === null) return;
-
-    if (isAnimating(state)) {
-      if (!isTugMotionEnabled()) {
-        // Reduced motion: a static ring, no pulse chain.
-        pulseRef.current?.cancel();
-        pulseRef.current = null;
-        ring.style.display = "block";
-        ring.style.borderColor = "";
-        return;
-      }
-      // Start a chain only if none is in flight; an in-flight chain keeps
-      // going via latestStateRef.
-      if (pulseRef.current === null) startPulse();
-    } else if (pulseRef.current === null) {
-      // Not running and nothing pulsing → settle now. When a pulse IS in
-      // flight, leave it: its `.finished` hides the ring so it is never cut.
-      hideRing();
-    }
-  }, [state, startPulse, hideRing]);
-
-  // Unmount: cancel the in-flight pulse so its `.finished` chain does not
-  // fire into a gone element.
-  useEffect(() => {
-    return () => {
-      pulseRef.current?.cancel();
-      pulseRef.current = null;
-    };
-  }, []);
-
-  const quiet = isQuiet(state);
+  // The two treatments and everything derived from the size ([sizeGeometry]).
+  const { ratio, reach, scaleMin, birth } = sizeGeometry(size);
+  // The dot's box is its full-scale diameter; the breath scales it down
+  // from there, so the running glyph never grows past the box.
+  const dotSizePx = size * ratio;
+  // The state's share of the box ([SETTLED_PRESENCE]). Published as a variable
+  // so the static ring can size itself from it in CSS without a second source
+  // of truth — and so it sizes by WIDTH rather than a transform, which keeps
+  // the ring's stroke the same weight at every rung of the ladder.
+  const presence = presenceScale(state, size);
+  // Chosen once per mount and never again: this glyph's own rate ([DRIFT_SPREAD]).
+  const [drift] = React.useState(
+    () => 1 + (Math.random() * 2 - 1) * DRIFT_SPREAD,
+  );
   const rootStyle: React.CSSProperties = {
     ["--tugx-progress-pulsing-dot-size" as string]: `${size}px`,
-    ["--tugx-progress-pulsing-dot-dot-size" as string]: quiet
-      ? `${(size / 2) * IDLE_DOT_SCALE}px`
-      : `${size / 2}px`,
+    ["--tugx-progress-pulsing-dot-dot-size" as string]: `${dotSizePx}px`,
+    ["--tugx-progress-pulsing-dot-presence" as string]: `${presence}`,
+    ["--tugx-progress-pulsing-dot-drift-auto" as string]: `${drift.toFixed(4)}`,
+    ["--tugx-progress-pulsing-dot-emit-reach-auto" as string]: `${reach.toFixed(4)}`,
+    ["--tugx-progress-pulsing-dot-dot-scale-min-auto" as string]: `${scaleMin.toFixed(4)}`,
+    ["--tugx-progress-pulsing-dot-emit-birth-auto" as string]: `${birth.toFixed(4)}`,
   };
+
+  // Seed the static pose inline. It equals the breath's 0% keyframe, so a
+  // running glyph starts from the same pose it rests at — no first-frame
+  // jump — and the non-running states simply hold it, drawn in by the
+  // state's presence.
+  const staticScale = (isQuiet(state) ? IDLE_DOT_SCALE : 1) * presence;
 
   return (
     <span
@@ -225,8 +494,11 @@ export const TugProgressPulsingDot = React.forwardRef<
         className,
       )}
     >
-      <span className="tug-progress-pulsing-dot-dot" />
-      <span ref={ringRef} className="tug-progress-pulsing-dot-ring" />
+      <span
+        className="tug-progress-pulsing-dot-dot"
+        style={{ transform: `translate(-50%, -50%) scale(${staticScale})` }}
+      />
+      <span className="tug-progress-pulsing-dot-ring" />
     </span>
   );
 });
