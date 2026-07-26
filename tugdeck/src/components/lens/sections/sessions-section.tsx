@@ -68,6 +68,7 @@ import {
   TugProgressIndicator,
   type TugProgressIndicatorPhaseVisual,
 } from "@/components/tugways/tug-progress-indicator";
+import { dotDriftFor } from "@/components/tugways/internal/tug-progress-pulsing-dot";
 import {
   sessionSessionPhaseKey,
   sessionSessionPhaseVisual,
@@ -218,6 +219,15 @@ function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
       size={ROW_PHASE_DOT_SIZE}
       phase={sessionSessionPhaseKey(input)}
       phaseVisual={PHASE_VISUAL}
+      // The ONLY place in the app that takes the dot's period jitter. This is
+      // a list of separate sessions, each doing its own work, and on one exact
+      // period a column of them reads as a single mechanism with several
+      // heads; a few percent of spread pulls them apart over a dozen breaths.
+      // Everywhere else — a Z2 STATE cell, a tool-call header — the dots
+      // belong to one thing and must stay locked, so they take the nominal
+      // period. Keyed on the card so a session keeps its rate across a filter,
+      // a reorder, or a scroll out of view and back.
+      style={dotDriftFor(cardId)}
       aria-hidden
     />
   );

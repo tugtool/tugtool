@@ -34,10 +34,9 @@
  * **Phase lock without a clock.** Both elements run CSS `@keyframes` on
  * the same duration, started in the same frame, so the ring's emission
  * stays welded to the dot's turn with no timer, no WAAPI chaining, and no
- * per-frame main-thread work. That duration carries a small jitter drawn by
- * the parent indicator ({@link drawDotDrift}) — per ITEM, so two sessions in
- * the Lens pull apart rather than beating as one, while two glyphs of the same
- * item stay locked together. Firing near the turn also keeps the ring inside a
+ * per-frame main-thread work. Every dot in the app runs that same duration
+ * unless its caller opts into a jitter ({@link dotDriftFor}), which only the
+ * Lens's session list does. Firing near the turn also keeps the ring inside a
  * single cycle, so the pulse needs no wrap across the cycle boundary.
  *
  * **Two treatments.** The glyph serves both a 28px Lens row and a 10px status
@@ -375,26 +374,41 @@ export function breathEnvelope(
 const DRIFT_SPREAD = 0.04;
 
 /**
- * One draw of the period jitter — a multiplier uniform in
- * `[1 - DRIFT_SPREAD, 1 + DRIFT_SPREAD]`.
+ * The jitter for one item, as the style that carries it — spread `key` over
+ * `[1 - DRIFT_SPREAD, 1 + DRIFT_SPREAD]` and pin it.
  *
- * **The draw belongs to the ITEM, not to the glyph**, which is why it is
- * exported rather than made here: {@link TugProgressIndicator} draws it once
- * per indicator and publishes it as `--…-drift-auto` for whatever glyphs that
- * indicator renders. Drawing it per glyph was wrong and looked it — an
- * indicator with `glyphPosition="both"` renders two glyphs of the *same* item,
- * one either side of its label, and two independent draws had that pair sliding
- * out of phase against itself. Two dots that are one status reading at
- * different rates is not organic, it is broken.
+ * **Drift is opt-in, and almost nothing opts in.** It is not a property of the
+ * glyph and not a property of the indicator either; it is a property of a LIST
+ * OF ITEMS, and the only such list is the Lens's session rows. Every other
+ * pulsing dot in the app runs the nominal period, locked — which is what the
+ * Z2 STATE cell needs, since it renders two separate indicators flanking one
+ * label and they have to read as one status. Automatic drift, at either level,
+ * had that pair breathing against each other.
  *
- * The randomness is only ever meant to separate things that are genuinely
- * separate: one session in the Lens from the next.
+ * So the caller names the item and gets its rate:
  *
- * The stylesheet reads `--…-drift-auto` only when no ancestor has pinned
- * `--…-drift`, so a caller that needs the glyph deterministic can have it.
+ *     <TugProgressIndicator variant="pulsing-dot" style={dotDriftFor(cardId)} />
+ *
+ * Keyed rather than drawn, because identity is what the jitter is supposed to
+ * track. A random draw per mount would re-roll a session's rate every time the
+ * Lens filtered, scrolled it out and back, or hot-reloaded; hashing the id
+ * means a session breathes at its own rate for as long as it exists, and two
+ * rows never collide by accident of timing. It also needs no state, so it
+ * survives every remount for free.
  */
-export function drawDotDrift(): number {
-  return 1 + (Math.random() * 2 - 1) * DRIFT_SPREAD;
+export function dotDriftFor(key: string): React.CSSProperties {
+  // FNV-1a, 32-bit. Any cheap avalanche would do — what matters is that
+  // neighboring ids (`card-1`, `card-2`) land far apart rather than adjacent.
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const unit = (hash >>> 0) / 0x100000000;
+  const drift = 1 + (unit * 2 - 1) * DRIFT_SPREAD;
+  return {
+    ["--tugx-progress-pulsing-dot-drift" as string]: drift.toFixed(4),
+  } as React.CSSProperties;
 }
 
 /** Settled states paint a reduced dot; held / canceled keep it full-size. */

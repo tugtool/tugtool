@@ -88,10 +88,7 @@ import { TugProgressRing } from "./internal/tug-progress-ring";
 import { TugProgressBar } from "./internal/tug-progress-bar";
 import { TugProgressPie } from "./internal/tug-progress-pie";
 import { TugProgressSpinner } from "./internal/tug-progress-spinner";
-import {
-  TugProgressPulsingDot,
-  drawDotDrift,
-} from "./internal/tug-progress-pulsing-dot";
+import { TugProgressPulsingDot } from "./internal/tug-progress-pulsing-dot";
 import { TugProgressWave } from "./internal/tug-progress-wave";
 
 // ---------------------------------------------------------------------------
@@ -469,19 +466,14 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
 
     const fillStyle = buildFillStyle(variant, effectiveRole);
 
-    // The pulsing dot's period jitter, drawn once per INDICATOR and published
-    // for whatever glyphs this indicator renders. It belongs here rather than
-    // inside the glyph because it is a property of the ITEM: `glyphPosition`
-    // can put two glyphs on screen for one status, and a pair sliding out of
-    // phase against itself reads as a defect, not as life. Separate indicators
-    // — one per session row in the Lens — are what it is meant to separate.
-    // Drawn unconditionally so the value survives a variant change mid-life.
-    const [dotDrift] = React.useState(drawDotDrift);
-
+    // No period jitter is applied here. The pulsing dot runs the nominal
+    // period unless a caller pins one — see `dotDriftFor`, which only the
+    // Lens's session rows use. An indicator cannot draw its own: the Z2 STATE
+    // cell renders two of them flanking one label, and any per-indicator draw
+    // has that pair breathing against each other.
     const rootStyle: React.CSSProperties = {
       ...fillStyle,
       ["--tugx-progress-indicator-size" as string]: `${size}px`,
-      ["--tugx-progress-pulsing-dot-drift-auto" as string]: dotDrift.toFixed(4),
       ...style,
     };
 

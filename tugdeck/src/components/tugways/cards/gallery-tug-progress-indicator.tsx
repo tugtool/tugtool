@@ -231,16 +231,6 @@ function caption(head: string, note?: string): string {
 }
 
 /**
- * Bench cells pin the per-instance period jitter to 1. The drift is there to
- * pull a column of live sessions apart; here it would just be noise between
- * two things meant to be compared, and every cell mounts in the same frame so
- * they start the cycle together.
- */
-const BENCH_NO_DRIFT: React.CSSProperties = {
-  ["--tugx-progress-pulsing-dot-drift" as string]: "1",
-};
-
-/**
  * Pulse stroke weights, as multiples of the resting ring's.
  *
  * The ring expands by `transform: scale`, so its border is thinnest at
@@ -434,7 +424,6 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
                   variant="pulsing-dot"
                   size={size}
                   state="running"
-                  style={BENCH_NO_DRIFT}
                 />
               </GalleryCell>
             ))}
@@ -484,9 +473,9 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
             at whatever radius the dot's edge measures there. Nothing here is a
             separate keyframe block: each cell overrides the four `linear()`
             easing variables the stylesheet reads, which is the same call
-            (`breathEnvelope`) that produced the shipped defaults. Drift is
-            pinned to 1 in this bench so the only difference between cells is
-            the curve.
+            (`breathEnvelope`) that produced the shipped defaults. Nothing here
+            needs to pin the period: dots run the nominal 2s unless a caller
+            opts into the jitter, and the only caller that does is the Lens.
           </TugLabel>
           <div className="gpi-grid">
             {BREATH_TURNS.map(({ turn, note }) => (
@@ -495,7 +484,7 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
                   variant="pulsing-dot"
                   size={largeDotSize}
                   state="running"
-                  style={{ ...BENCH_NO_DRIFT, ...breathEnvelope(turn) }}
+                  style={breathEnvelope(turn)}
                 />
               </GalleryCell>
             ))}
@@ -529,7 +518,6 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
                   size={largeDotSize}
                   state="running"
                   style={{
-                    ...BENCH_NO_DRIFT,
                     ["--tugx-progress-pulsing-dot-pulse-weight" as string]:
                       String(weight),
                   }}

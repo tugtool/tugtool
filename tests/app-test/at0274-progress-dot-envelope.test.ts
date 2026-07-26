@@ -234,37 +234,32 @@ const settledPose = (px: number) => `(function(){
 })()`;
 
 /**
- * The period every running glyph on the card resolved to, grouped by the
- * indicator that owns it.
+ * Every distinct period the card's running glyphs resolved to.
  *
- * The period carries a small random jitter so that a column of them pulls apart
- * over time instead of beating as one mechanism. That randomness belongs to the
- * ITEM — one session in the Lens against the next — and emphatically not to the
- * glyph, because a single indicator can render two glyphs for one status
- * (`glyphPosition="both"` puts one either side of the label). Drawn per glyph,
- * those two slid out of phase against each other inside a single Z2 STATE cell,
- * which does not read as organic; it reads as a bug.
+ * The dot can carry a small jitter on its period, so that a list of separate
+ * items pulls apart over time instead of beating as one mechanism. It is
+ * strictly OPT-IN and exactly one caller opts in — the Lens's session rows,
+ * via `dotDriftFor`. Nothing on this card does.
  *
- * So: within an indicator, every glyph shares one period. Across indicators,
- * the periods differ.
+ * That matters because "somewhere below, a dot decides its own rate" is the
+ * defect this assertion exists to prevent, and it survived being pushed down a
+ * level once already. Drawn per glyph, the two glyphs of a `glyphPosition=
+ * "both"` indicator drifted apart. Redrawn per indicator, the Z2 STATE cell
+ * still drifted — it renders two SEPARATE indicators flanking one label. Two
+ * dots that are one status reading at different rates is not organic; it is
+ * broken. So the check is not "the pair agrees", it is that the whole card
+ * resolves to a single period: no automatic jitter exists at any level.
  */
 const driftCensus = `(function(){
-  var pairs = [];
   var seen = {};
-  Array.from(
-    document.querySelectorAll(${JSON.stringify(CARD)} + " .tug-progress-indicator")
-  ).forEach(function (ind) {
-    var dots = Array.from(ind.querySelectorAll(
-      '[data-slot="tug-progress-pulsing-dot"][data-state="running"] .tug-progress-pulsing-dot-dot'
-    ));
-    if (dots.length === 0) return;
-    var periods = dots.map(function (d) {
-      return getComputedStyle(d).animationDuration;
-    });
-    periods.forEach(function (p) { seen[p] = true; });
-    if (periods.length > 1) pairs.push(periods);
-  });
-  return { pairs: pairs, distinct: Object.keys(seen) };
+  var count = 0;
+  Array.from(document.querySelectorAll(${JSON.stringify(DOT)})).forEach(
+    function (d) {
+      seen[getComputedStyle(d).animationDuration] = true;
+      count++;
+    },
+  );
+  return { distinct: Object.keys(seen), count: count };
 })()`;
 
 /** Names + durations of every animation the running glyph is carrying. */
@@ -479,21 +474,14 @@ describe.skipIf(!SHOULD_RUN)("AT0274: pulsing-dot breath envelope", () => {
         // --- The jitter separates items, not glyphs --------------------
 
         const drift = await app.evalJS<{
-          pairs: string[][];
           distinct: string[];
+          count: number;
         }>(driftCensus);
 
-        // The card renders at least one paired indicator (`glyphPosition`
-        // defaults to "both" in the Layout demo), and both of its glyphs run
-        // the same period. Two dots that are one status must not slide apart.
-        expect(drift.pairs.length).toBeGreaterThan(0);
-        for (const periods of drift.pairs) {
-          expect(new Set(periods).size).toBe(1);
-        }
-
-        // The jitter is still doing its job between separate indicators —
-        // otherwise this would pass by having removed the randomness outright.
-        expect(drift.distinct.length).toBeGreaterThan(1);
+        // Many running dots on this card — paired indicators, separate
+        // indicators, several sizes — and exactly one period among them.
+        expect(drift.count).toBeGreaterThan(8);
+        expect(drift.distinct).toHaveLength(1);
       } finally {
         await app.close();
       }

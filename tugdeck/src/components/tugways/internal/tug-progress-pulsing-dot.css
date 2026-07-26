@@ -128,23 +128,21 @@
   --tugx-progress-pulsing-dot-dot-size: calc(
     var(--tugx-progress-pulsing-dot-size) * 0.6
   );
-  /* Per-instance rate. `-drift-auto` is set inline on the glyph by the
-     component: 1.0 ± 0.04, drawn once at mount. It multiplies the period and
-     nothing else, so all three loops in this glyph still share one duration
-     and stay welded; what it changes is how this glyph sits against the OTHERS
-     on screen — a column of running sessions pulls apart over a dozen or so
-     breaths instead of beating as one mechanism.
+  /* The period. Unset, `--…-drift` is 1 and every dot in the app runs the same
+     2000ms — which is what almost every surface needs. A Z2 STATE cell renders
+     two separate indicators flanking one label; a tool-call header sits in a
+     column of other headers. Those dots belong to ONE thing and have to read
+     locked together, so nothing here jitters them by default.
 
-     `-drift` is the pin: unset by default, and read first, so any ancestor can
-     override the jitter with a fixed rate. Two things want that — a bench
-     comparing envelopes, where drift is noise between cells, and any capture
-     that needs the glyph deterministic. */
+     The one caller that opts in is the Lens's session list (`dotDriftFor`),
+     where the dots represent genuinely separate items: several sessions on one
+     exact period read as a single mechanism with several heads, and a few
+     percent of spread pulls them apart over a dozen breaths. It multiplies the
+     period and nothing else, so all three loops in a glyph still share one
+     duration and stay welded — the ring is still shed at 10.8° BTDC of that
+     glyph's own breath. */
   --tugx-progress-pulsing-dot-period: calc(
-    2000ms * var(--tug-timing, 1) *
-      var(
-        --tugx-progress-pulsing-dot-drift,
-        var(--tugx-progress-pulsing-dot-drift-auto, 1)
-      )
+    2000ms * var(--tug-timing, 1) * var(--tugx-progress-pulsing-dot-drift, 1)
   );
 
   /* --- The knobs are NOT declared here. -------------------------------------
