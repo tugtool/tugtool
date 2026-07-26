@@ -33,7 +33,9 @@
  * 2.5px dot — a pulse that twitches and a breath that reads as blinking out.
  * So the component ramps `--…-emit-reach` past the box (to 1.75× at 16px and
  * under, near enough the 1.9× the glyph this one replaces always used) and
- * floors the trough at 3px through `--…-dot-scale-min`.
+ * narrows `--…-dot-scale-min` to 0.7 — a shallow modulation rather than a full
+ * breath, since a 6px dot cannot spend half its diameter every cycle and the
+ * shed ring is carrying the motion down there anyway.
  *
  * Presence: `--tugx-progress-pulsing-dot-presence` is the state's share
  * of that box, set by the component from its ladder. `running` is 1 — the

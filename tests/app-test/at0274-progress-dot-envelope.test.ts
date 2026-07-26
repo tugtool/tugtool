@@ -66,8 +66,8 @@ const DOT_RATIO = 0.6;
 const SMALL_DOT_RATIO = 0.5;
 /** The authored trough, before the small-size floor raises it. */
 const TROUGH_RATIO = 0.35;
-/** Smallest mark that still reads as a dot rather than as one going out. */
-const MIN_TROUGH_PX = 3;
+/** The small treatment's trough — a shallow modulation, not a full breath. */
+const SMALL_TROUGH = 0.7;
 
 /** A size in the big treatment — every size derivation inert here. */
 const BIG_SIZE = 32;
@@ -231,6 +231,40 @@ const settledPose = (px: number) => `(function(){
     ring: parseFloat(after.width),
     border: parseFloat(after.borderTopWidth),
   };
+})()`;
+
+/**
+ * The period every running glyph on the card resolved to, grouped by the
+ * indicator that owns it.
+ *
+ * The period carries a small random jitter so that a column of them pulls apart
+ * over time instead of beating as one mechanism. That randomness belongs to the
+ * ITEM — one session in the Lens against the next — and emphatically not to the
+ * glyph, because a single indicator can render two glyphs for one status
+ * (`glyphPosition="both"` puts one either side of the label). Drawn per glyph,
+ * those two slid out of phase against each other inside a single Z2 STATE cell,
+ * which does not read as organic; it reads as a bug.
+ *
+ * So: within an indicator, every glyph shares one period. Across indicators,
+ * the periods differ.
+ */
+const driftCensus = `(function(){
+  var pairs = [];
+  var seen = {};
+  Array.from(
+    document.querySelectorAll(${JSON.stringify(CARD)} + " .tug-progress-indicator")
+  ).forEach(function (ind) {
+    var dots = Array.from(ind.querySelectorAll(
+      '[data-slot="tug-progress-pulsing-dot"][data-state="running"] .tug-progress-pulsing-dot-dot'
+    ));
+    if (dots.length === 0) return;
+    var periods = dots.map(function (d) {
+      return getComputedStyle(d).animationDuration;
+    });
+    periods.forEach(function (p) { seen[p] = true; });
+    if (periods.length > 1) pairs.push(periods);
+  });
+  return { pairs: pairs, distinct: Object.keys(seen) };
 })()`;
 
 /** Names + durations of every animation the running glyph is carrying. */
@@ -408,15 +442,13 @@ describe.skipIf(!SHOULD_RUN)("AT0274: pulsing-dot breath envelope", () => {
         // In the small treatment the dot drops to the previous glyph's ratio,
         // the ring is let out past the box — asserted on the resolved matrix,
         // so this is the scale it is actually painted at, not the variable's
-        // value — and the trough is raised off 0.35 to hold the 3px floor.
+        // value — and the breath narrows to a shallow modulation, since a dot
+        // this size cannot spend half its diameter on every cycle.
         const small = await app.evalJS<Geometry>(geometryAtSize(SMALL_SIZE));
         expect(small.dotBox).toBeCloseTo(SMALL_SIZE * SMALL_DOT_RATIO, 1);
         expect(Number(small.reach)).toBeCloseTo(SMALL_REACH, 2);
         expect(small.ringEndScale).toBeCloseTo(SMALL_REACH, 2);
-        expect(Number(small.trough)).toBeCloseTo(
-          MIN_TROUGH_PX / (SMALL_SIZE * SMALL_DOT_RATIO),
-          3,
-        );
+        expect(Number(small.trough)).toBeCloseTo(SMALL_TROUGH, 3);
         expect(Number(small.trough)).toBeGreaterThan(TROUGH_RATIO);
 
         // --- Parity: the small treatment IS the previous glyph -----------
@@ -443,6 +475,25 @@ describe.skipIf(!SHOULD_RUN)("AT0274: pulsing-dot breath envelope", () => {
         // whole variant was built for.
         const bigPose = await app.evalJS<Pose>(settledPose(BIG_SIZE));
         expect(bigPose.ring).toBeLessThan(BIG_SIZE * 0.75);
+
+        // --- The jitter separates items, not glyphs --------------------
+
+        const drift = await app.evalJS<{
+          pairs: string[][];
+          distinct: string[];
+        }>(driftCensus);
+
+        // The card renders at least one paired indicator (`glyphPosition`
+        // defaults to "both" in the Layout demo), and both of its glyphs run
+        // the same period. Two dots that are one status must not slide apart.
+        expect(drift.pairs.length).toBeGreaterThan(0);
+        for (const periods of drift.pairs) {
+          expect(new Set(periods).size).toBe(1);
+        }
+
+        // The jitter is still doing its job between separate indicators —
+        // otherwise this would pass by having removed the randomness outright.
+        expect(drift.distinct.length).toBeGreaterThan(1);
       } finally {
         await app.close();
       }

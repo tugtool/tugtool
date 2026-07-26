@@ -421,8 +421,11 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
             move on the way down — the ring's reach, since 2.5px of radius reads
             as a twitch rather than a pulse, so below 28px it is let out past
             the box to 1.75× (the old glyph ran to 1.9×); and the breath's
-            trough, floored at 3px so the bottom of the breath stays a dot
-            instead of reading as one going out.
+            depth, which narrows to a 0.7 trough. A deep swing is a luxury of
+            diameter — 0.35 of a 19px dot still reads as a dot, 0.35 of a 6px
+            one reads as a dot going out, and the small glyph is the only mark
+            in a row of type. It cannot afford to half-disappear every cycle,
+            and it does not need to: the shed ring is carrying the motion.
           </TugLabel>
           <div className="gpi-grid">
             {LADDER.map(({ size, where }) => (

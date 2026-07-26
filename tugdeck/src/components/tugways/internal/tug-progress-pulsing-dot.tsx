@@ -34,11 +34,11 @@
  * **Phase lock without a clock.** Both elements run CSS `@keyframes` on
  * the same duration, started in the same frame, so the ring's emission
  * stays welded to the dot's turn with no timer, no WAAPI chaining, and no
- * per-frame main-thread work. That duration carries a small per-instance
- * jitter ({@link DRIFT_SPREAD}) — the weld is within a glyph, so two of
- * them on screen drift apart rather than beating as one. Firing near the
- * turn also keeps the ring inside a single cycle, so the pulse needs no
- * wrap across the cycle boundary.
+ * per-frame main-thread work. That duration carries a small jitter drawn by
+ * the parent indicator ({@link drawDotDrift}) — per ITEM, so two sessions in
+ * the Lens pull apart rather than beating as one, while two glyphs of the same
+ * item stay locked together. Firing near the turn also keeps the ring inside a
+ * single cycle, so the pulse needs no wrap across the cycle boundary.
  *
  * **Two treatments.** The glyph serves both a 28px Lens row and a 10px status
  * cell, and it does that by carrying two geometries rather than scaling one —
@@ -166,15 +166,21 @@ function smallness(size: number): number {
 const REACH_MAX = 1.75;
 
 /**
- * Floor on the breath's trough, in CSS px.
+ * The small treatment's trough — a much shallower breath than the big one's.
  *
- * {@link DOT_SCALE_MIN} is a ratio, so the trough shrinks with the glyph: at
- * 32px the dot sinks to 6.7px and reads as a small dot, at 12px it sinks to
- * 2.5px and reads as a dot going out. The difference matters because the two
- * are different statements — this glyph's bottom of breath must still be a dot
- * that is *there*. Below this size the swing gives up depth to keep it.
+ * Depth of breath does not survive being scaled down, because the bottom of the
+ * swing is where the dot is least able to spare anything. {@link DOT_SCALE_MIN}
+ * takes a 19.2px dot down to 6.7px, which still reads as a dot; the same ratio
+ * takes a 6px dot down to 2.1px, which reads as a dot going out. And unlike the
+ * big glyph, the small one is sitting in a row of type where it is the only
+ * mark: it cannot afford to half-disappear on every cycle.
+ *
+ * So the swing narrows as the glyph shrinks, to this at {@link SMALL_SIZE} and
+ * under — a modulation rather than a full breath. The motion is still legible
+ * down there because the shed ring is carrying most of it; the dot's job at
+ * these sizes is to stay a dot.
  */
-const MIN_TROUGH_PX = 3;
+const SMALL_TROUGH = 0.7;
 
 /**
  * Everything about the glyph that cannot be one number across a 10px–40px
@@ -190,7 +196,9 @@ const MIN_TROUGH_PX = 3;
  *   - **reach** — where the ring's expansion ends. The box edge at the big end,
  *     and out past it at the small end, where the box is not far enough away to
  *     be worth traveling to.
- *   - **scaleMin** — the trough of the breath, floored so it stays a dot.
+ *   - **scaleMin** — the trough of the breath. A deep swing at the big end, a
+ *     shallow modulation at the small one, where the dot cannot spare the
+ *     pixels and the ring is carrying the motion anyway.
  *   - **birth** — where the dot's edge is when the spark fires. Falls out of
  *     the other two; it is here so it cannot drift from them.
  *
@@ -206,7 +214,7 @@ export function sizeGeometry(size: number): {
 } {
   const t = smallness(size);
   const ratio = DOT_RATIO + (SMALL_DOT_RATIO - DOT_RATIO) * t;
-  const scaleMin = Math.max(DOT_SCALE_MIN, MIN_TROUGH_PX / (size * ratio));
+  const scaleMin = DOT_SCALE_MIN + (SMALL_TROUGH - DOT_SCALE_MIN) * t;
   const atIgnition = breathAt(
     DEFAULT_BREATH_TURN,
     DEFAULT_BREATH_TURN - EMIT_ADVANCE,
@@ -351,10 +359,7 @@ export function breathEnvelope(
 }
 
 /**
- * Half-width of the per-instance period jitter, as a fraction of the nominal
- * 2s cycle. Each mounted glyph picks a multiplier once, uniformly in
- * `[1 - DRIFT_SPREAD, 1 + DRIFT_SPREAD]`, and runs its whole cycle at that
- * rate.
+ * Half-width of the period jitter, as a fraction of the nominal 2s cycle.
  *
  * The point is a column of them. Several sessions breathing on one exact
  * period read as one mechanism with several heads; give each its own rate and
@@ -363,15 +368,34 @@ export function breathEnvelope(
  * ~160ms per cycle, so neighbors take roughly a dozen breaths to fall out of
  * step — slow enough that no single glance catches the drift happening.
  *
- * It only ever scales the period, so all three loops inside one glyph still
- * read the same duration and stay phase-locked to each other: the ring is
- * still shed at 10.8° BTDC of that glyph's own breath.
- *
- * The draw is published as `--…-drift-auto`, which the stylesheet reads only
- * when no ancestor has pinned `--…-drift` — so a caller that needs the glyph
- * deterministic can have it.
+ * It only ever scales the period, so all three loops under one draw still read
+ * the same duration and stay phase-locked: the ring is still shed at 10.8° BTDC
+ * of that breath.
  */
 const DRIFT_SPREAD = 0.04;
+
+/**
+ * One draw of the period jitter — a multiplier uniform in
+ * `[1 - DRIFT_SPREAD, 1 + DRIFT_SPREAD]`.
+ *
+ * **The draw belongs to the ITEM, not to the glyph**, which is why it is
+ * exported rather than made here: {@link TugProgressIndicator} draws it once
+ * per indicator and publishes it as `--…-drift-auto` for whatever glyphs that
+ * indicator renders. Drawing it per glyph was wrong and looked it — an
+ * indicator with `glyphPosition="both"` renders two glyphs of the *same* item,
+ * one either side of its label, and two independent draws had that pair sliding
+ * out of phase against itself. Two dots that are one status reading at
+ * different rates is not organic, it is broken.
+ *
+ * The randomness is only ever meant to separate things that are genuinely
+ * separate: one session in the Lens from the next.
+ *
+ * The stylesheet reads `--…-drift-auto` only when no ancestor has pinned
+ * `--…-drift`, so a caller that needs the glyph deterministic can have it.
+ */
+export function drawDotDrift(): number {
+  return 1 + (Math.random() * 2 - 1) * DRIFT_SPREAD;
+}
 
 /** Settled states paint a reduced dot; held / canceled keep it full-size. */
 function isQuiet(state: TugProgressIndicatorState): boolean {
@@ -461,15 +485,12 @@ export const TugProgressPulsingDot = React.forwardRef<
   // of truth — and so it sizes by WIDTH rather than a transform, which keeps
   // the ring's stroke the same weight at every rung of the ladder.
   const presence = presenceScale(state, size);
-  // Chosen once per mount and never again: this glyph's own rate ([DRIFT_SPREAD]).
-  const [drift] = React.useState(
-    () => 1 + (Math.random() * 2 - 1) * DRIFT_SPREAD,
-  );
+  // The period jitter is NOT drawn here — it belongs to the item, and one item
+  // can render two glyphs. See [drawDotDrift].
   const rootStyle: React.CSSProperties = {
     ["--tugx-progress-pulsing-dot-size" as string]: `${size}px`,
     ["--tugx-progress-pulsing-dot-dot-size" as string]: `${dotSizePx}px`,
     ["--tugx-progress-pulsing-dot-presence" as string]: `${presence}`,
-    ["--tugx-progress-pulsing-dot-drift-auto" as string]: `${drift.toFixed(4)}`,
     ["--tugx-progress-pulsing-dot-emit-reach-auto" as string]: `${reach.toFixed(4)}`,
     ["--tugx-progress-pulsing-dot-dot-scale-min-auto" as string]: `${scaleMin.toFixed(4)}`,
     ["--tugx-progress-pulsing-dot-emit-birth-auto" as string]: `${birth.toFixed(4)}`,
