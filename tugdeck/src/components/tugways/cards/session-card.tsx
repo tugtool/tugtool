@@ -71,7 +71,11 @@ import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import { useSessionCardServices } from "./use-session-card-services";
-import { type LocalCommandName } from "@/lib/slash-commands";
+import {
+  buildCommandSubmission,
+  type LocalCommandName,
+  type SlashCommandDraft,
+} from "@/lib/slash-commands";
 import { type BangCommandName, isBangCommand } from "@/lib/bang-commands";
 import { useUsageStore } from "@/lib/usage-context";
 import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
@@ -3282,7 +3286,10 @@ export function SessionCardBody({
     return false;
   };
 
-  const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
+  const slashCommandSurfaces: Record<
+    LocalCommandName,
+    (args: string, draft?: SlashCommandDraft) => void
+  > = {
     permissions: () => permissionRulesSheet.openRulesSheet(),
     model: () => {
       if (guardTurnIdleForSetting("the model")) modelPicker.openModelPicker();
@@ -3369,7 +3376,7 @@ export function SessionCardBody({
     // `source: "compact"` note attached to the turn), else cancel (interrupted)
     // or fail (refused / errored — e.g. "Not enough messages to compact").
     // Reads live ([L07]).
-    compact: (args) => {
+    compact: (args, draft) => {
       const notify = paneBulletinRef.current;
       const snap0 = codeSessionStore.getSnapshot();
       if (!snap0.canSubmit) {
@@ -3473,10 +3480,13 @@ export function SessionCardBody({
           <CompactionProgressSheet close={close} onCancel={onCancel} />
         ),
       });
-      codeSessionStore.send(
-        focus.length > 0 ? `/compact ${focus}` : "/compact",
-        [],
-      );
+      // Sent as a substrate, not a flat line: the command is a leading
+      // `command` atom and the focus keeps whatever atoms the user typed, so
+      // the transcript row reads `/compact` + its file chips — the same ink
+      // a replay reconstructs from claude's `<command-name>` echo. The wire
+      // still carries a clean `/compact …` (see `hasLeadingCommandAtom`).
+      const submission = buildCommandSubmission("compact", focus, draft);
+      codeSessionStore.send(submission.text, submission.atoms);
     },
     // Export the committed transcript ([#step-13c]). The content (both
     // Markdown + JSON Lines renderings) is built client-side from the
@@ -3702,17 +3712,24 @@ export function SessionCardBody({
       // ([#step-1c] / [D23]).
       [TUG_ACTIONS.RUN_SLASH_COMMAND]: (event: ActionEvent) => {
         const payload = event.value as
-          | { name: LocalCommandName | BangCommandName; args: string }
+          | {
+              name: LocalCommandName | BangCommandName;
+              args: string;
+              // Present only on a typed dispatch (the prompt entry attaches
+              // the composer's substrate); absent on a menu dispatch.
+              draft?: SlashCommandDraft;
+            }
           | undefined;
         if (payload === undefined) return;
+        type Surface = (args: string, draft?: SlashCommandDraft) => void;
         const open =
-          (slashCommandSurfaces as Partial<Record<string, (args: string) => void>>)[
+          (slashCommandSurfaces as Partial<Record<string, Surface>>)[
             payload.name
           ] ??
-          (bangCommandSurfaces as Partial<Record<string, (args: string) => void>>)[
+          (bangCommandSurfaces as Partial<Record<string, Surface>>)[
             payload.name
           ];
-        if (open !== undefined) open(payload.args);
+        if (open !== undefined) open(payload.args, payload.draft);
       },
       // ⌃⌘ chord ([P07]): seed the corresponding command chip at the head of
       // the prompt draft, preserving typed text as args.

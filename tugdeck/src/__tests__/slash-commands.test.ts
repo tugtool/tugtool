@@ -9,11 +9,16 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  buildCommandSubmission,
   buildSlashCommandLine,
   matchLocalSlashCommand,
   slashCommandName,
   type CommandLineAtom,
+  type DraftAtom,
+  type SlashCommandDraft,
 } from "@/lib/slash-commands";
+import { hasLeadingCommandAtom } from "@/lib/command-atom";
+import { isCompactionSubmission } from "@/lib/code-session-store/compaction";
 import { isBangCommand, matchBangCommandLine } from "@/lib/bang-commands";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 import type {
@@ -350,5 +355,94 @@ describe("bang routings (matchBangCommandLine)", () => {
       " focus",
     ]);
     expect(buildSlashCommandLine(text, atoms)).toBe("/compact focus");
+  });
+});
+
+// The same substrate builder as `mkDraft`, but with full `AtomSegment`s —
+// what the editor actually holds, and what `buildCommandSubmission` carries
+// through to the transcript.
+function mkSubstrate(
+  pieces: ReadonlyArray<string | { type: string; value: string }>,
+): SlashCommandDraft {
+  let text = "";
+  const atoms: DraftAtom[] = [];
+  for (const piece of pieces) {
+    if (typeof piece === "string") {
+      text += piece;
+      continue;
+    }
+    atoms.push({
+      position: text.length,
+      segment: {
+        kind: "atom",
+        type: piece.type,
+        label: piece.value,
+        value: piece.value,
+      },
+    });
+    text += TUG_ATOM_CHAR;
+  }
+  return { text, atoms };
+}
+
+describe("buildCommandSubmission", () => {
+  test("no draft (a menu dispatch): the command is a chip, args plain text", () => {
+    expect(buildCommandSubmission("compact", "prepare the plan")).toEqual({
+      text: `${TUG_ATOM_CHAR} prepare the plan`,
+      atoms: [{ kind: "atom", type: "command", label: "compact", value: "compact" }],
+    });
+    expect(buildCommandSubmission("compact", "")).toEqual({
+      text: TUG_ATOM_CHAR,
+      atoms: [{ kind: "atom", type: "command", label: "compact", value: "compact" }],
+    });
+  });
+
+  test("a typed /name with no atom still yields a leading command atom", () => {
+    const draft = mkSubstrate(["/compact prepare the plan"]);
+    expect(buildCommandSubmission("compact", "prepare the plan", draft)).toEqual({
+      text: `${TUG_ATOM_CHAR} prepare the plan`,
+      atoms: [{ kind: "atom", type: "command", label: "compact", value: "compact" }],
+    });
+  });
+
+  test("argument atoms survive, in document order, after the command chip", () => {
+    const draft = mkSubstrate([
+      { type: "command", value: "compact" },
+      " prepare ",
+      { type: "file", value: "roadmap/plan.md" },
+      " and ",
+      { type: "file", value: "roadmap/next.md" },
+    ]);
+    const built = buildCommandSubmission("compact", "prepare …", draft);
+    expect(built.text).toBe(
+      `${TUG_ATOM_CHAR} prepare ${TUG_ATOM_CHAR} and ${TUG_ATOM_CHAR}`,
+    );
+    expect(built.atoms.map((a) => a.value)).toEqual([
+      "compact",
+      "roadmap/plan.md",
+      "roadmap/next.md",
+    ]);
+  });
+
+  test("the built substrate reads as a compaction submission", () => {
+    const draft = mkSubstrate([{ type: "command", value: "compact" }, " focus"]);
+    const built = buildCommandSubmission("compact", "focus", draft);
+    expect(isCompactionSubmission(built.text, built.atoms)).toBe(true);
+    expect(hasLeadingCommandAtom(built.text, built.atoms, TUG_ATOM_CHAR)).toBe(true);
+  });
+
+  test("a draft that doesn't lead with the command falls back to args", () => {
+    const draft = mkSubstrate(["please ", { type: "file", value: "x.md" }]);
+    expect(buildCommandSubmission("compact", "please x.md", draft)).toEqual({
+      text: `${TUG_ATOM_CHAR} please x.md`,
+      atoms: [{ kind: "atom", type: "command", label: "compact", value: "compact" }],
+    });
+  });
+
+  test("surrounding whitespace in the draft is trimmed away", () => {
+    const draft = mkSubstrate(["  /compact   prepare the plan   "]);
+    expect(buildCommandSubmission("compact", "prepare the plan", draft).text).toBe(
+      `${TUG_ATOM_CHAR} prepare the plan`,
+    );
   });
 });

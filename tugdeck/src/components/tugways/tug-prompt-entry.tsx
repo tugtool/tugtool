@@ -2268,9 +2268,13 @@ export const TugPromptEntry = React.forwardRef<
         // route (else fall through to send, never silently swallow).
         manager.nodeCanHandle(targetId, TUG_ACTIONS.RUN_SLASH_COMMAND)
       ) {
+        // The draft substrate rides along with the flattened match: a
+        // surface that echoes its command into the transcript as a real
+        // submission (`/compact`) rebuilds the user's chips from it —
+        // `commandLine` alone has already lost them to plain text.
         const handled = manager.sendToTarget(targetId, {
           action: TUG_ACTIONS.RUN_SLASH_COMMAND,
-          value: localCommand,
+          value: { ...localCommand, draft: { text: draftText, atoms: draftAtoms } },
           phase: "discrete",
         });
         if (handled) {

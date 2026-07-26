@@ -32,7 +32,7 @@
  * @module lib/slash-commands
  */
 
-import { TUG_ATOM_CHAR } from "./tug-atom-img";
+import { TUG_ATOM_CHAR, type AtomSegment } from "./tug-atom-img";
 import { isBangCommand } from "./bang-commands";
 
 /** One locally-handled slash command's static descriptor. */
@@ -266,6 +266,106 @@ export function buildSlashCommandLine(
     else out += seg.value;
   }
   return out;
+}
+
+/**
+ * A draft as the prompt entry held it at submit: the substrate text plus its
+ * positioned atoms. Carried on the `RUN_SLASH_COMMAND` payload so a surface
+ * that echoes its command into the transcript can reconstruct the chips the
+ * user typed, instead of only the flattened line
+ * ({@link buildSlashCommandLine}) the matchers run on. `PositionedAtom` from
+ * the editor structurally satisfies the atom entries.
+ */
+export interface SlashCommandDraft {
+  readonly text: string;
+  readonly atoms: readonly DraftAtom[];
+}
+
+/** One positioned atom in a {@link SlashCommandDraft}. */
+export interface DraftAtom {
+  readonly position: number;
+  readonly segment: AtomSegment;
+}
+
+/** An editor substrate ready for `CodeSessionStore.send`. */
+export interface CommandSubmission {
+  readonly text: string;
+  readonly atoms: AtomSegment[];
+}
+
+/** Offset just past the leading `/command` token in `text`, or `null` when
+ *  the text doesn't lead with one. Both shapes count: an accepted command
+ *  atom (a `U+FFFC` placeholder backed by a `command` segment) and a bare
+ *  typed `/name`. */
+function commandHeadEnd(
+  name: string,
+  text: string,
+  atoms: readonly DraftAtom[],
+): number | null {
+  let i = 0;
+  while (i < text.length && /\s/.test(text[i]!)) i++;
+  if (text[i] === TUG_ATOM_CHAR) {
+    const lead = atoms.find((atom) => atom.position === i);
+    return lead?.segment.type === "command" ? i + 1 : null;
+  }
+  const typed = /^\/([a-zA-Z][a-zA-Z0-9-]*)/.exec(text.slice(i));
+  if (typed === null || typed[1] !== name) return null;
+  return i + typed[0].length;
+}
+
+/**
+ * Build the editor substrate for a local command that echoes itself into the
+ * transcript as a real user submission (`/compact`). The command becomes a
+ * leading `command` atom and every argument atom the user typed — an
+ * `@`-completed file, a dropped doc — is carried through in order, so the
+ * transcript row renders the same chips the composer showed.
+ *
+ * `draft` is the composer's substrate when the command was typed; omit it
+ * (a menu dispatch, which carries only `args`) and the argument becomes
+ * plain text after the chip. A draft that doesn't lead with the command
+ * falls back to the same `args`-only shape.
+ *
+ * The leading command atom is also what `send` reads to keep the wire clean
+ * (`/compact …`, no mention marker on the command itself — see
+ * `hasLeadingCommandAtom`) and what `isCompactionSubmission` recognizes.
+ * Pure.
+ */
+export function buildCommandSubmission(
+  name: string,
+  args: string,
+  draft?: SlashCommandDraft,
+): CommandSubmission {
+  const commandAtom: AtomSegment = {
+    kind: "atom",
+    type: "command",
+    label: name,
+    value: name,
+  };
+  const head =
+    draft === undefined ? null : commandHeadEnd(name, draft.text, draft.atoms);
+  if (draft === undefined || head === null) {
+    const tail = args.trim();
+    return {
+      text: TUG_ATOM_CHAR + (tail === "" ? "" : ` ${tail}`),
+      atoms: [commandAtom],
+    };
+  }
+  // Whitespace-only trims on both ends: an atom's placeholder is never
+  // whitespace, so no atom is dropped and the surviving ones stay in
+  // document order — which is the order `send` pairs them with the
+  // `U+FFFC` placeholders in the text.
+  const afterHead = draft.text.slice(head).replace(/^\s+/, "");
+  const tailStart = draft.text.length - afterHead.length;
+  const tailText = afterHead.replace(/\s+$/, "");
+  const tailAtoms = draft.atoms
+    .filter((atom) => atom.position >= tailStart)
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map((atom) => atom.segment);
+  return {
+    text: TUG_ATOM_CHAR + (tailText === "" ? "" : ` ${tailText}`),
+    atoms: [commandAtom, ...tailAtoms],
+  };
 }
 
 /**
