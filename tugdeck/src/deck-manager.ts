@@ -900,6 +900,15 @@ export class DeckManager implements IDeckManagerStore {
       activeCardId: firstCardId,
       title: registration.defaultTitle ?? "",
       acceptsFamilies: registration.acceptsFamilies ?? ["standard"],
+      // With an imposition running, a new card joins the arrangement at the
+      // first slot rather than walking the cascade — the arrangement is the
+      // user's stated intent for the whole deck, and a fresh card landing
+      // askew across it would be the deck ignoring it. Centered dialog cards
+      // stay centered; they are not part of the arrangement.
+      ...(this.deckState.imposition !== undefined &&
+      registration.placement !== "center"
+        ? { slot: 0 }
+        : {}),
     };
 
     // Single-commit flip (transition 4). `_flipFirstResponder` reads
@@ -1574,8 +1583,9 @@ export class DeckManager implements IDeckManagerStore {
       const clamped = clampSlot(kind, pane.slot);
       return clamped === pane.slot ? pane : { ...pane, slot: clamped };
     });
-    // Every imposed pane's anchor fraction changes with the kind, so they all
-    // move even though their stored `position` does not — the move is CSS.
+    // A kind change can clamp slots, which re-orders the chain and shifts
+    // every pane in it — the move is CSS, so no stored `position` changes and
+    // the ledger has to be built from the fact of the chain, not from a diff.
     const moved = panes
       .filter((pane) => pane.slot !== undefined)
       .map((pane) => pane.activeCardId);
@@ -1595,7 +1605,12 @@ export class DeckManager implements IDeckManagerStore {
    *
    * The assignment always raises: slots are stacks, so clicking a number that
    * another pane already holds puts this one on top of it rather than doing
-   * nothing. Slots are full-height by definition, so a collapsed pane expands.
+   * nothing. An imposed pane runs the canvas height, so a collapsed one
+   * expands.
+   *
+   * Because the chain packs tight, a card joining it moves every pane after it
+   * as well — the lifecycle ledger below covers the whole chain, not just the
+   * card that was clicked.
    */
   assignCardToSlot(cardId: string, slot: number): void {
     const kind = this.deckState.imposition;
@@ -1634,16 +1649,18 @@ export class DeckManager implements IDeckManagerStore {
     const updated: TugPaneState = { ...target, slot: clamped };
     delete updated.collapsed;
 
-    const willMove = target.slot !== clamped;
-    if (willMove) this.cardLifecycle.notifyCardWillMove(cardId);
-    this.deckState = {
-      ...this.deckState,
-      panes: this.deckState.panes.map((p) =>
-        p.id === targetPaneId ? updated : p,
-      ),
-    };
+    const panes = this.deckState.panes.map((p) =>
+      p.id === targetPaneId ? updated : p,
+    );
+    // Everything in the chain moves, including the panes that kept their
+    // slots: this card's width is now part of what precedes them.
+    const moved = panes
+      .filter((p) => p.slot !== undefined)
+      .map((p) => p.activeCardId);
+    for (const id of moved) this.cardLifecycle.notifyCardWillMove(id);
+    this.deckState = { ...this.deckState, panes };
     this.notify();
-    if (willMove) this.cardLifecycle.notifyCardDidMove(cardId);
+    for (const id of moved) this.cardLifecycle.notifyCardDidMove(id);
     this.scheduleSave();
 
     this.activateCard(cardId);

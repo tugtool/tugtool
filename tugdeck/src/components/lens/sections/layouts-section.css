@@ -1,30 +1,12 @@
-/* The Lens Layouts section — the imposition picker. The radio chrome comes
-   from `TugRadioGroup`; this file styles only the section shell and the
-   arrangement diagram on each option label. Tokens only ([L06]/[L20]). */
+/* @tug-pairings: none — the section shell sets a text color for inherited
+   content only; the picker's own color comes from `TugChoiceGroup` and the
+   slot exemplars it composes ([L20]). */
 
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .layouts-section {
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-default-rest);
   display: flex;
-  flex-direction: column;
-  padding-block: 2px;
-}
-
-/* Diagram and label share one baseline-neutral row inside the radio label. */
-.layouts-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.layouts-option-label {
-  white-space: nowrap;
-}
-
-/* The columns are drawn in the option's own text color, so they follow the
-   rest, selected, and disabled states without a rule per state. */
-.layouts-diagram {
-  flex: none;
-  fill: currentColor;
-  opacity: 0.55;
+  justify-content: center;
+  padding-block: 4px;
 }

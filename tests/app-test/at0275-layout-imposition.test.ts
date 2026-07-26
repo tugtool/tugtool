@@ -5,30 +5,38 @@
  * ## What this gates (a failure mode, not busywork)
  *
  * An imposed pane's rect exists nowhere in React state. Its horizontal pin and
- * its full canvas height are `calc()` expressions over the span inset custom
- * properties, resolved by the browser — which is the whole point of the design
- * (no resize observation anywhere on the deck) and also the reason no unit test
- * can see it. The only honest reading is `getBoundingClientRect()` on real
- * frames in the real app, against a real Lens rail whose live width defines the
- * span.
+ * its vertical run are `calc()` expressions over the rail inset custom
+ * properties and a chain offset in pixels, resolved by the browser — which is
+ * the whole point of the design (no resize observation anywhere on the deck)
+ * and also the reason no unit test can see it. The only honest reading is
+ * `getBoundingClientRect()` on real frames in the real app, against a real Lens
+ * rail whose live width the arrangement has to answer to.
  *
- * Four claims, all measured:
- *   - **the anchors hold** — slot 1's left edge sits on the span's left edge,
- *     slot 3's right edge on the span's right edge, slot 2's center on the
- *     span's center, and every imposed pane runs the canvas's full height.
+ * Six claims, all measured:
+ *   - **the chain packs** — the cards start a gap in from the edge away from
+ *     the Lens and stand exactly one gap apart, running the canvas's height a
+ *     gap down from the top and the deeper bottom gap up from the bottom.
+ *   - **the slack pools** — every leftover pixel is in one margin, between the
+ *     last card and the Lens, rather than split between the cards.
  *   - **width is untouched** — the pane's width across an assignment is
  *     identical to the pixel. A slot is a position anchor, not a rect; if this
  *     ever drifts, the imposer has started fighting the user for horizontal
  *     space, which is the tab strip's failure being reinvented.
+ *   - **slots order, they do not reserve** — an empty slot occupies nothing, so
+ *     moving a card between two empty positions does not move it.
  *   - **slots are stacks** — two panes assigned to one slot land on the same
  *     rect, with the later assignment on top. That is the tab replacement: many
  *     cards at one position, switched from the Lens list.
+ *   - **a span change moves nothing** — closing the Lens hands the rail's whole
+ *     width to the pooled slack and leaves the cards exactly where they were.
+ *     This is the same reflow a window or display resize triggers, driven by
+ *     the one span change a headless test can actually make.
  *   - **a drag evicts** — dragging an imposed pane's title bar releases it to
  *     free geometry (`data-imposed` gone) while the pane beneath keeps its
- *     slot. The explicit gesture wins.
+ *     slot. Any manual geometry gesture does this; the explicit gesture wins.
  *
  * Driven through the real surfaces: a real click on the Layouts section's
- * "Three Up" radio item, real clicks on the numbered buttons of real Text Files
+ * "Three Up" segment, real clicks on the numbered slots of real Text Files
  * rows, and a real native drag.
  *
  * @covers tugdeck/src/lib/layout-imposer.ts
@@ -37,6 +45,9 @@
  * @covers tugdeck/src/components/chrome/deck-canvas.tsx
  * @covers tugdeck/src/components/lens/sections/layouts-section.tsx
  * @covers tugdeck/src/components/lens/slot-picker.tsx
+ * @covers tugdeck/src/components/lens/sections/sessions-section.tsx
+ * @covers tugdeck/src/components/tugways/tug-slot.tsx
+ * @covers tugdeck/src/components/tugways/tug-slot-layout.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -53,7 +64,13 @@ const PANE_WIDTH = 460;
 const PANE_HEIGHT = 380;
 
 const LIST = ".lens-text-files-list";
-const THREE_UP = '[data-testid="lens-layouts-section"] [data-radio-value="three-up"]';
+const THREE_UP =
+  '[data-testid="lens-layouts-section"] [data-choice-value="three-up"]';
+
+/** `IMPOSITION_GAP_PX` — the standoff an imposed left, right, or top edge keeps. */
+const GAP = 5;
+/** `IMPOSITION_GAP_BOTTOM_PX` — deeper, to clear the host's dev-info strip. */
+const GAP_BOTTOM = 32;
 
 interface Rect {
   x: number;
@@ -156,7 +173,7 @@ const settle = (ms = 350): Promise<void> =>
 
 describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
   test(
-    "imposed panes anchor to their slots at full height, keep their width, stack, and evict on a drag",
+    "imposed panes anchor to their slots a gap in, keep their width, re-impose live, stack, and evict on a drag",
     async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0275-"));
       const alpha = path.join(dir, "alpha.txt");
@@ -208,7 +225,7 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         // ---- Choose Three Up in the Layouts section (a real click) ----
         await app.nativeClickAtElement(THREE_UP);
         await app.waitForCondition<boolean>(
-          `document.querySelector('${THREE_UP}').getAttribute("data-state") === "checked"`,
+          `document.querySelector('${THREE_UP}').getAttribute("data-state") === "active"`,
           { timeoutMs: 8_000 },
         );
         // Three slots means three buttons per row.
@@ -220,9 +237,36 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         const alphaRow = await rowIndexFor(app, "alpha.txt");
         const bravoRow = await rowIndexFor(app, "bravo.txt");
 
-        // ---- Slot 1 for alpha, slot 3 for bravo ----
+        // ---- Slot 1 for alpha ----
         await app.nativeClickAtElement(slotButton(alphaRow, 1));
         await settle();
+
+        // With one card in the chain, all of the slack is visible and it is all
+        // in one place: between that card and the Lens.
+        const lone = await app.evalJS<Scene>(READ_SCENE);
+        if (lone.a === null || lone.rail === null) {
+          throw new Error("[at0275] expected alpha's pane and the Lens rail");
+        }
+        console.log("[at0275] lone scene:", JSON.stringify(lone));
+        const loneRailLeft = lone.rail.x <= lone.canvas.x + 1;
+        const loneSpanLeft = loneRailLeft
+          ? lone.canvas.x + lone.rail.width
+          : lone.canvas.x;
+        const loneSpanRight = loneRailLeft
+          ? lone.canvas.x + lone.canvas.width
+          : lone.canvas.x + lone.canvas.width - lone.rail.width;
+        expect(lone.a.x).toBeCloseTo(loneSpanLeft + GAP, 0);
+        // The pooled margin is everything the chain did not use, and it is far
+        // wider than the gap on the other three sides — that asymmetry is the
+        // arrangement, not drift.
+        const pooled = loneSpanRight - (lone.a.x + lone.a.width);
+        expect(pooled).toBeCloseTo(
+          loneSpanRight - loneSpanLeft - GAP - lone.a.width,
+          0,
+        );
+        expect(pooled).toBeGreaterThan(GAP * 10);
+
+        // ---- Slot 3 for bravo ----
         await app.nativeClickAtElement(slotButton(bravoRow, 3));
         await settle();
 
@@ -244,15 +288,27 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         expect(three.a.imposed).toBe("0");
         expect(three.b.imposed).toBe("2");
 
-        // The first slot pins its LEFT edge; the last pins its RIGHT edge.
-        expect(three.a.x).toBeCloseTo(spanLeft, 0);
-        expect(three.b.x + three.b.width).toBeCloseTo(spanRight, 0);
+        // The rail is docked right, so the chain packs LEFT: alpha starts a gap
+        // in from the span's left edge.
+        expect(three.a.x).toBeCloseTo(spanLeft + GAP, 0);
 
-        // Both run the canvas's full height.
+        // These two cards are each floored at 800px by the text card's size
+        // policy, so two of them do not fit the span. The step goes negative
+        // and they OVERLAP — the deck is narrow, which is ordinary. What is not
+        // ordinary is a card sliding under the Lens, so the strip still ends
+        // exactly on the band's far edge.
+        const band = spanRight - spanLeft - GAP * 2;
+        const overlap = three.a.x + three.a.width - three.b.x;
+        expect(overlap).toBeCloseTo(three.a.width + three.b.width - band, 0);
+        expect(overlap).toBeGreaterThan(0);
+        expect(three.b.x + three.b.width).toBeCloseTo(spanRight - GAP, 0);
+
+        // Both run the canvas's height, a gap down from the top and the deeper
+        // bottom gap up from the bottom.
         for (const frame of [three.a, three.b]) {
-          expect(frame.y).toBeCloseTo(three.canvas.y, 0);
+          expect(frame.y).toBeCloseTo(three.canvas.y + GAP, 0);
           expect(frame.y + frame.height).toBeCloseTo(
-            three.canvas.y + three.canvas.height,
+            three.canvas.y + three.canvas.height - GAP_BOTTOM,
             0,
           );
         }
@@ -261,19 +317,72 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         expect(three.a.width).toBe(before.a.width);
         expect(three.b.width).toBe(before.b.width);
 
-        // ---- The middle slot centers on the span's center ----
+        // ---- An empty slot occupies nothing: the chain closes up ----
+        //
+        // Bravo moves from slot 3 to slot 2. Nothing about its position
+        // changes: slot numbers order the chain, they do not reserve space, so
+        // the card that follows alpha follows it either way.
+        const spread = { x: three.b.x, width: three.b.width };
         await app.nativeClickAtElement(slotButton(bravoRow, 2));
         await settle();
         const middle = await app.evalJS<Scene>(READ_SCENE);
         if (middle.b === null) throw new Error("[at0275] bravo's pane vanished");
         expect(middle.b.imposed).toBe("1");
-        expect(middle.b.x + middle.b.width / 2).toBeCloseTo(
-          (spanLeft + spanRight) / 2,
-          0,
-        );
+        expect(middle.b.x).toBeCloseTo(spread.x, 0);
         expect(middle.b.width).toBe(before.b.width);
 
+        // ---- Closing the Lens widens the band, and the overlap eases off ----
+        //
+        // The chain is pinned to the edge away from the rail, so its head never
+        // moves. What the rail's width buys is room in the band, and the step
+        // rule spends it on the overlap first: with 420px more to work with,
+        // these two cards stop overlapping and stand a clean gap apart.
+        //
+        // Nothing observes the change. `deck-canvas.tsx` writes the new inset
+        // custom properties, the browser re-resolves the `min()` in each pin,
+        // and that is the whole mechanism — the same path a window or display
+        // resize takes, and why there is no ResizeObserver anywhere on the deck.
+        await app.evalJS<null>(
+          `(window.__tug.dispatchControlAction("toggle-lens"), null)`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector(".tug-pane[data-anchored]") === null`,
+          { timeoutMs: 8_000 },
+        );
+        await settle();
+        const railless = await app.evalJS<Scene>(READ_SCENE);
+        if (railless.a === null || railless.b === null) {
+          throw new Error("[at0275] both panes must survive the Lens close");
+        }
+        console.log("[at0275] railless scene:", JSON.stringify(railless));
+        expect(railless.a.imposed).toBe("0");
+        // The head of the chain has not moved.
+        expect(railless.a.x).toBeCloseTo(three.a.x, 0);
+        expect(railless.a.width).toBe(before.a.width);
+        // The overlap is gone: the two cards now stand one gap apart, which is
+        // as far as the step rule will ever push them.
+        expect(railless.b.x).toBeCloseTo(
+          railless.a.x + railless.a.width + GAP,
+          0,
+        );
+
+        // Bring the Lens back; the slack gives the width straight back.
+        await app.evalJS<null>(
+          `(window.__tug.dispatchControlAction("toggle-lens"), null)`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector(".tug-pane[data-anchored]") !== null`,
+          { timeoutMs: 8_000 },
+        );
+        await settle();
+        const relensed = await app.evalJS<Scene>(READ_SCENE);
+        if (relensed.a === null) throw new Error("[at0275] alpha's pane vanished");
+        expect(relensed.a.x).toBeCloseTo(spanLeft + GAP, 0);
+
         // ---- Slots are stacks: alpha joins bravo at slot 2 ----
+        //
+        // Alpha vacates slot 1, so the chain closes up behind it and bravo —
+        // which has not been touched — slides to the head of the chain.
         await app.nativeClickAtElement(slotButton(alphaRow, 2));
         await settle();
         const stacked = await app.evalJS<Scene>(READ_SCENE);
@@ -283,15 +392,40 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         console.log("[at0275] stacked scene:", JSON.stringify(stacked));
         expect(stacked.a.imposed).toBe("1");
         expect(stacked.b.imposed).toBe("1");
-        // Same width, same slot — so the same rect.
+        // Same slot, so the same place in the chain — and with slot 1 now empty
+        // ahead of them, that place is the head of it.
         expect(stacked.a.x).toBeCloseTo(stacked.b.x, 0);
         expect(stacked.a.width).toBeCloseTo(stacked.b.width, 0);
+        expect(stacked.a.x).toBeCloseTo(spanLeft + GAP, 0);
         // The later assignment is on top, and is the deck's active card:
         // assigning always raises, which is what makes a shared slot usable.
         expect(stacked.a.z).toBeGreaterThan(stacked.b.z);
         expect(await app.evalJS<string | null>(`window.__tug.getActiveCardId()`)).toBe(
           "A",
         );
+
+        // ---- The rows say who is on top ----
+        //
+        // Both cards hold slot 2, so both rows light that slot — but only the
+        // one on top reads filled. The row that is buried reads outlined, which
+        // is how the Lens list tells you a click there raises rather than moves.
+        const states = await app.evalJS<{ alpha: string[]; bravo: string[] }>(
+          `(function(){
+            function read(cellIndex) {
+              var cell = document.querySelector(
+                '${LIST} [data-tug-list-cell-index="' + cellIndex + '"]');
+              var slots = cell.querySelectorAll('[data-slot="tug-slot"]');
+              var out = [];
+              for (var i = 0; i < slots.length; i += 1) {
+                out.push(slots[i].getAttribute("data-state"));
+              }
+              return out;
+            }
+            return { alpha: read(${alphaRow}), bravo: read(${bravoRow}) };
+          })()`,
+        );
+        expect(states.alpha).toEqual(["rest", "filled", "rest"]);
+        expect(states.bravo).toEqual(["rest", "outlined", "rest"]);
 
         // ---- Dragging the top pane evicts it; the one beneath keeps its slot ----
         const bar = await app.evalJS<Rect>(
@@ -309,7 +443,9 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
           x: Math.round(bar.x + Math.min(80, bar.width / 3)),
           y: Math.round(bar.y + bar.height / 2),
         };
-        await app.nativeDrag(from, { x: from.x - 120, y: from.y + 140 });
+        // Rightward: the chain's head sits a gap in from the canvas edge, so a
+        // leftward drag of any size would leave the viewport.
+        await app.nativeDrag(from, { x: from.x + 120, y: from.y + 140 });
         await settle(600);
 
         const dropped = await app.evalJS<Scene>(READ_SCENE);
@@ -318,19 +454,17 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         }
         console.log("[at0275] dropped scene:", JSON.stringify(dropped));
         // Alpha is free again — no slot, and standing where it was dropped
-        // rather than back on the middle slot's pin. It keeps the height it
+        // rather than back at its place in the chain. It keeps the height it
         // visibly had: the drop commits the rect the user is looking at, so a
-        // pane dragged out of a full-height slot stays full height.
+        // pane dragged out of a slot keeps the slot's height.
         expect(dropped.a.imposed).toBeNull();
-        expect(dropped.a.x).toBeCloseTo(stacked.a.x - 120, 0);
+        expect(dropped.a.x).toBeCloseTo(stacked.a.x + 120, 0);
         expect(dropped.a.y).toBeCloseTo(stacked.a.y + 140, 0);
         expect(dropped.a.width).toBe(before.a.width);
-        // Bravo is untouched underneath, still centered on the middle slot.
+        // Bravo is untouched underneath, still holding the head of the chain —
+        // one pane leaving the arrangement does not disturb the rest of it.
         expect(dropped.b.imposed).toBe("1");
-        expect(dropped.b.x + dropped.b.width / 2).toBeCloseTo(
-          (spanLeft + spanRight) / 2,
-          0,
-        );
+        expect(dropped.b.x).toBeCloseTo(stacked.b.x, 0);
       } finally {
         await app.close();
       }

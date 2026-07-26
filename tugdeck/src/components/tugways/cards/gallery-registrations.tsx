@@ -58,6 +58,7 @@ import { GalleryPopover } from "./gallery-popover";
 import { GalleryBox } from "./gallery-box";
 import { GalleryTextarea } from "./gallery-textarea";
 import { GallerySeparator } from "./gallery-separator";
+import { GallerySlotLayout } from "./gallery-slot-layout";
 import { GalleryTugClamp } from "./gallery-tug-clamp";
 import { GalleryAccordion } from "./gallery-accordion";
 import { GalleryTooltip } from "./gallery-tooltip";
@@ -1233,6 +1234,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-box",
     contentFactory: (_cardId) => <GalleryBox />,
     defaultMeta: { title: "TugBox", icon: "Box", closable: true },
+    family: "maker",
+    acceptsFamilies: ["maker"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
+  });
+
+  registerCard({
+    componentId: "gallery-slot-layout",
+    contentFactory: (_cardId) => <GallerySlotLayout />,
+    defaultMeta: { title: "Layouts Picker", icon: "Columns3", closable: true },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

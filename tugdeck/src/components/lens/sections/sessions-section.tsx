@@ -2,7 +2,7 @@
  * The Lens **Sessions** section — a read-only session *monitor* rendered as a
  * `TugListView`. One row per open session card, stacked two lines:
  *
- *   [phase dot]  <session name>
+ *   [phase dot]  <session name>            <slot layout>   [grip]
  *                <latest pulse line>      <activity sparkline>
  *
  * The list is authored into the section's focus group (`host.focusGroup`), so
@@ -15,7 +15,9 @@
  *
  * The name is resolved exactly like the Session card's title-bar chip
  * (`sessionCardTitleOverride`); the pulse line + sparkline share the second
- * row and align the same way the on-card `session-pulse-strip` does.
+ * row and align the same way the on-card `session-pulse-strip` does. The slot
+ * layout rides the name line, so the arrangement affordance never crowds the
+ * pulse.
  *
  * Laws: [L02] every store enters React through `useSyncExternalStore`; [L06]
  * appearance (cursor ring, selection, dot/sparkline) is CSS on engine
@@ -57,6 +59,7 @@ import type {
   TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
 import { TugListRow } from "@/components/tugways/tug-list-row";
+import { TugLabel } from "@/components/tugways/tug-label";
 import {
   sparklineCurves,
   TugSparkline,
@@ -256,10 +259,16 @@ function RowSparkline({ tugSessionId }: { tugSessionId: string }): React.ReactEl
 
 /** One monitor row, composed on the shared `TugListRow` chrome (padding,
  *  hover, divider, and the movement-cursor caret come from the row + the
- *  enclosing `TugListView`). The phase dot leads; the name is the title, the
- *  latest pulse line the subtitle, and the activity sparkline the trailing
- *  accessory, with the reorder grip past it on the row's right edge. The
- *  `TugListView` cell wrapper owns cursor / selection / click. */
+ *  enclosing `TugListView`). The phase dot leads and the reorder grip trails;
+ *  in between, the content column is authored by hand as two lines:
+ *
+ *    line 1 — the session name, with the slot layout right-aligned past it
+ *    line 2 — the latest pulse line, with the activity sparkline past it
+ *
+ *  The hand-authored column is what keeps the arrangement affordance off the
+ *  pulse line: on the row's `title`/`subtitle` path a trailing accessory spans
+ *  both lines, so the slots and the pulse text end up competing for the same
+ *  run. The `TugListView` cell wrapper still owns cursor / selection / click. */
 function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
   const ctx = React.useContext(SessionsCellContext);
   const filterQuery = useSessionsFilterQuery();
@@ -274,23 +283,6 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
       className="session-row-content"
       data-session-id={row.tugSessionId}
       leading={<RowPhaseDot cardId={row.cardId} />}
-      title={renderFilterHighlight(displayName, filterQuery)}
-      titleSize="sm"
-      subtitle={
-        pulseText !== null ? (
-          <span className="sessions-monitor-pulse">{pulseText}</span>
-        ) : (
-          <span className="sessions-monitor-pulse sessions-monitor-pulse-none">
-            None
-          </span>
-        )
-      }
-      trailing={
-        <>
-          <SlotPicker cardId={row.cardId} />
-          <RowSparkline tugSessionId={row.tugSessionId} />
-        </>
-      }
       grip={
         ctx !== null ? (
           <BlockGrip
@@ -298,7 +290,24 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
           />
         ) : undefined
       }
-    />
+    >
+      <span className="session-row-headline">
+        <TugLabel className="tug-list-row-title" size="sm" maxLines={1}>
+          {renderFilterHighlight(displayName, filterQuery)}
+        </TugLabel>
+        <SlotPicker cardId={row.cardId} />
+      </span>
+      <span className="session-row-pulse-line">
+        {pulseText !== null ? (
+          <span className="sessions-monitor-pulse">{pulseText}</span>
+        ) : (
+          <span className="sessions-monitor-pulse sessions-monitor-pulse-none">
+            None
+          </span>
+        )}
+        <RowSparkline tugSessionId={row.tugSessionId} />
+      </span>
+    </TugListRow>
   );
 }
 

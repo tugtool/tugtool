@@ -1,0 +1,203 @@
+/* @tug-pairings: none — a design spike. Every rule here paints a mock of a
+   surface that already has its own tokens; nothing in this file ships. */
+
+.gsl-intro,
+.gsl-proposal-note {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  max-inline-size: 420px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.gsl-proposals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+}
+
+.gsl-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gsl-proposal-title {
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+ * The mock Lens band
+ * ---------------------------------------------------------------------------*/
+
+.gsl-lens {
+  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  border-radius: var(--tug-radius-sm);
+  overflow: hidden;
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+}
+
+.gsl-lens-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+}
+
+.gsl-lens-glyph {
+  inline-size: 12px;
+  block-size: 12px;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+  opacity: 0.7;
+}
+
+/* @tug-renders-on: --tug7-surface-global-secondary-normal-default-rest */
+.gsl-lens-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.gsl-lens-body {
+  padding: 10px;
+}
+
+/* ---------------------------------------------------------------------------
+ * The miniature
+ *
+ * A scale picture of the deck canvas. The field holds the card blocks; the rail
+ * is a separate strip so the slack between the last block and the rail is real
+ * space rather than a drawn gap.
+ * ---------------------------------------------------------------------------*/
+
+.gsl-mini {
+  display: flex;
+  gap: 2px;
+  inline-size: 100%;
+  aspect-ratio: 16 / 10;
+  padding: 2px;
+  box-sizing: border-box;
+  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  border-radius: 2px;
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+}
+
+.gsl-mini[data-selected="true"] {
+  border-color: var(--tug7-surface-control-primary-filled-action-rest);
+}
+
+/* The field is the run the cards are drawn across. `position: relative` so a
+   packed miniature can place each card absolutely at the offset the imposer's
+   step rule gives it — including the overlap, which flex cannot express. */
+.gsl-mini-field {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* Unpacked: every block takes an equal share of the field. A packed block is
+   positioned inline instead (see `CanvasMini`). */
+.gsl-mini-block {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  border-radius: 1px;
+  background-color: var(--tug7-surface-control-primary-tinted-action-rest);
+  border: 1px solid var(--tug7-element-control-border-tinted-action-rest);
+}
+
+.gsl-mini[data-selected="true"] .gsl-mini-block {
+  background-color: var(--tug7-surface-control-primary-filled-action-rest);
+  border-color: var(--tug7-element-control-border-filled-action-rest);
+}
+
+.gsl-mini-rail {
+  flex: 0 0 var(--gsl-rail-pct, 18%);
+  border-radius: 1px;
+  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+}
+
+/* ---------------------------------------------------------------------------
+ * Tiles and rows
+ * ---------------------------------------------------------------------------*/
+
+.gsl-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.gsl-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--tug-radius-sm);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.gsl-tile:hover {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+}
+
+.gsl-tile[data-selected="true"] {
+  border-color: var(--tug7-surface-control-primary-filled-action-rest);
+  background-color: var(--tug7-surface-control-primary-tinted-action-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gsl-tile-label,
+.gsl-row-label {
+  font-size: 0.75rem;
+  text-align: center;
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.gsl-numbered-field {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  border-radius: 2px;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gsl-off-mark {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.gsl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--tug-radius-sm);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.gsl-row .gsl-mini {
+  inline-size: 54px;
+  flex: none;
+}
+
+.gsl-row:hover {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+}
+
+.gsl-row[data-selected="true"] {
+  border-color: var(--tug7-surface-control-primary-filled-action-rest);
+  background-color: var(--tug7-surface-control-primary-tinted-action-rest);
+}

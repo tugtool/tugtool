@@ -134,13 +134,25 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* The activity sparkline aligns to the pulse line — the row's SECOND line — not
-   the two-line row's vertical center. The sparkline reads the pulse's liveness,
-   so it belongs beside the pulse text (as on the card, where the line and the
-   sparkline share one row). `align-self: flex-end` drops the trailing accessory
-   from the row's centered rest position down onto the subtitle/pulse line. */
-.lens-sessions-list .tug-list-row-trailing {
-  align-self: flex-end;
+/* The row's two lines. The content column is authored by hand (see
+   `SessionRowContent`) so each line can carry its own trailing accessory: the
+   slot layout rides the name, the sparkline rides the pulse. A shared row
+   `trailing` slot could only span both lines at once, which is exactly the
+   collision this replaces. */
+.session-row-headline,
+.session-row-pulse-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+/* Each line's text takes the slack and truncates; the accessory past it keeps
+   its intrinsic width and pins to the right edge. */
+.session-row-headline .tug-list-row-title,
+.session-row-pulse-line .sessions-monitor-pulse {
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }
 
 .sessions-monitor-spark {

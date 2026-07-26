@@ -40,6 +40,7 @@ import { selectionGuard } from "@/components/tugways/selection-guard";
 import { copySelectionAsPlainText } from "@/lib/copy-as-plain-text";
 import { openFileInCard } from "@/lib/open-file-in-card";
 import { openPathInOS } from "@/lib/os-open";
+import { resolvePlacements } from "@/lib/layout-imposer";
 
 // ---- DeckCanvasProps ----
 
@@ -591,6 +592,40 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     );
   }, [railSide, railWidth]);
 
+  // Where each imposed pane sits in the chain. The offsets are cumulative over
+  // the slotted panes' own widths, so this is the one place that has to see all
+  // of them at once — a frame cannot work out its own place from its own state.
+  //
+  // The width fed in is the width the frame will actually PAINT at, which is
+  // the stored width raised to the stack's size floor (`TugPane`'s
+  // `renderWidth`). A stored width below the floor is ordinary — a card kind
+  // raised its policy, or a wider sibling joined the stack — and packing on the
+  // stored number would chain the next card underneath this one's real edge.
+  const placements = useMemo(
+    () =>
+      deckState.imposition === undefined
+        ? null
+        : resolvePlacements(
+            deckState.imposition,
+            panes.map((pane) => {
+              const cardIds = new Set(pane.cardIds);
+              const componentIds = cards
+                .filter((card) => cardIds.has(card.id))
+                .map((card) => card.componentId);
+              return {
+                id: pane.id,
+                slot: pane.anchor === undefined ? pane.slot : undefined,
+                width: Math.max(
+                  pane.size.width,
+                  getStackSizePolicy(componentIds).min.width,
+                ),
+              };
+            }),
+            railSide ?? null,
+          ),
+    [deckState.imposition, panes, cards, railSide],
+  );
+
   // Merge `deckRootRef` (pane-focus-controller's query scope) and
   // `responderRef` (responder-chain wiring) onto the same element.
   // `useCallback` with `[responderRef]` keeps the callback identity
@@ -693,7 +728,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
               stackCards.map((c) => c.componentId),
             )}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
-            imposition={deckState.imposition}
+            placement={placements?.get(stackState.id)}
             onCardMoved={store.handlePaneMoved}
             onClose={handleClose}
             onCardCollapsed={(id) => store.togglePaneCollapse(id)}

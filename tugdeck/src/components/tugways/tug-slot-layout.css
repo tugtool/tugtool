@@ -1,0 +1,27 @@
+/* @tug-pairings: none — layout only. Every color in a slot layout belongs to
+   the slots it composes ([L20]); this file sets nothing but the run. */
+
+.tug-slot-layout {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.tug-slot-layout-size-sm {
+  gap: var(--tugx-slot-layout-gap-sm, 3px);
+}
+
+.tug-slot-layout-size-md {
+  gap: var(--tugx-slot-layout-gap-md, 4px);
+}
+
+/* A disabled arrangement dims once, as a whole, rather than each slot dimming
+   against its neighbours — so the slots inside drop their own dimming and
+   the run reads as one greyed control. */
+.tug-slot-layout[data-disabled="true"] {
+  opacity: var(--tugx-control-disabled-opacity);
+}
+
+.tug-slot-layout[data-disabled="true"] .tug-slot {
+  opacity: 1;
+}
