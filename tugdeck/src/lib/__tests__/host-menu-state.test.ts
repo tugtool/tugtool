@@ -44,7 +44,7 @@ function pane(
 }
 
 function deck(cards: CardState[], panes: TugPaneState[]): DeckState {
-  return { cards, panes, hasFocus: true };
+  return { cards, panes, imposition: { lens: "right" }, hasFocus: true };
 }
 
 describe("projectDeckState", () => {

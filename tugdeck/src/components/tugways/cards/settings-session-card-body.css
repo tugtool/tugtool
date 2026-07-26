@@ -1,5 +1,5 @@
 /* ----------------------------------------------------------------------------
-   .settings-general — the General settings panel
+   .settings-session-card — the General settings panel
    ----------------------------------------------------------------------------
    Two stacked sections: Response (transcript magnification plus the
    inter-entry margin slider) and Editor (prompt editor typography,
@@ -7,7 +7,7 @@
    General tab.
    ----------------------------------------------------------------------------- */
 
-.settings-general {
+.settings-session-card {
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-2xl);
@@ -22,7 +22,7 @@
    `box-sizing: border-box` and `width: 100%` override `.tug-box`'s
    default `width: fit-content` so each box fills the panel's
    content area. */
-.settings-general-group {
+.settings-session-card-group {
   width: 100%;
   box-sizing: border-box;
   /* The legend is absolutely positioned (below), so its line is reserved
@@ -35,12 +35,12 @@
 
 /* Generous inset. Compound (0,3,0) selector needed to beat TugBox's own
    inset padding rule `.tug-box-inset.tug-box-md` (0,2,0). */
-.settings-general .settings-general-group.tug-box-bordered {
+.settings-session-card .settings-session-card-group.tug-box-bordered {
   padding: var(--tug-space-2xl) var(--tug-space-2xl) var(--tug-space-xl);
 }
 
 /* The legend sits ON the border line, painted over it, out of flow. */
-.settings-general-group > .tug-box-legend {
+.settings-session-card-group > .tug-box-legend {
   position: absolute;
   top: 0;
   left: var(--tug-space-lg);
@@ -51,7 +51,7 @@
 /* Layout lives on the body div, never the fieldset — a flexed fieldset's
    height hops by one gap on style recalc (WebKit legend layout; see
    tug-box.css). */
-.settings-general-group > .tug-box-body {
+.settings-session-card-group > .tug-box-body {
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-lg);
@@ -64,7 +64,7 @@
    max-content` clamps its bounding box to the visible text + padding
    so the fieldset's top border continues normally on both sides of
    the legend label. */
-.settings-general-group > .tug-box-legend {
+.settings-session-card-group > .tug-box-legend {
   inline-size: max-content;
 }
 
@@ -73,7 +73,7 @@
    switch but the boxes-with-legend layout needs a touch more
    breathing room above the switch column so the legend gap and
    the popup row don't crowd the first switch. */
-.settings-general-group .settings-general-switches {
+.settings-session-card-group .settings-session-card-switches {
   margin-top: var(--tug-space-sm);
 }
 
@@ -82,7 +82,7 @@
    (so "Magnification" and "Entry Gap" share one label column);
    the `1fr` second column lets the slider fill the remaining
    width. `column-gap` keeps the label hugging its slider track. */
-.settings-general-slider-grid {
+.settings-session-card-slider-grid {
   display: grid;
   grid-template-columns: auto 1fr;
   column-gap: var(--tug-space-md);
@@ -90,12 +90,12 @@
   align-items: center;
 }
 
-.settings-general-slider-label {
+.settings-session-card-slider-label {
   font-size: var(--tug-font-size-sm, 0.875rem);
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-.settings-general-slider {
+.settings-session-card-slider {
   min-width: 0;
 }
 
@@ -104,7 +104,7 @@
    with the per-popup `min-width` rules below, the row claims the
    width it needs and the host's `overflow-y: auto` handles vertical
    pressure. */
-.settings-general-row {
+.settings-session-card-row {
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
@@ -113,33 +113,33 @@
 }
 
 /* The Assistant chip trio sits centered in its box. */
-.settings-general-assistant-row {
+.settings-session-card-assistant-row {
   justify-content: center;
 }
 
 /* The TugPopupButton applies the className we pass directly to the
-   trigger TugButton, so `.settings-general-popup-*` selects the
+   trigger TugButton, so `.settings-session-card-popup-*` selects the
    button itself (no descendant). We pin a `min-width` per popup so
    toggling between options never reflows the row — the button stays
    at the width of its widest option. Numbers come from the option
    labels: the longest Font label is `IBM Plex Sans` (~13 chars at
    sm size). */
-.settings-general-popup {
+.settings-session-card-popup {
   min-width: 6.5rem;
 }
 
-.settings-general-popup-font {
+.settings-session-card-popup-font {
   min-width: 9.5rem;
 }
 
-.settings-general-popup-size {
+.settings-session-card-popup-size {
   min-width: 6rem;
 }
 
 /* ≤3 switches stretch to fill a single row; 4+ use a strict 3-column
    grid so a partial last row keeps its 1/3 tracks (see
    text-card-controls.css for the rationale). */
-.settings-general-switches {
+.settings-session-card-switches {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
@@ -147,7 +147,7 @@
   align-items: center;
 }
 
-.settings-general-switches:has(> :nth-child(4)) {
+.settings-session-card-switches:has(> :nth-child(4)) {
   grid-auto-flow: row;
   grid-auto-columns: auto;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -157,7 +157,7 @@
 /* Submit-key option groups — a label + choice-group pair per physical
    key, stacked above the live legend. Offset from the switch column
    above so the Editor box reads as one rhythm. */
-.settings-general-keys {
+.settings-session-card-keys {
   display: flex;
   flex-direction: column;
   margin-top: var(--tug-space-lg);
@@ -169,7 +169,7 @@
    `width:auto` override below), so the two components are width-stable
    against each other and every segment is just as wide as the longest of
    the four choices — not the full row. */
-.settings-general-key-grid {
+.settings-session-card-key-grid {
   display: grid;
   grid-template-columns: max-content max-content;
   align-items: center;
@@ -178,7 +178,7 @@
   row-gap: var(--tug-space-md);
 }
 
-.settings-general-key-label {
+.settings-session-card-key-label {
   min-width: 5rem;
   font-size: var(--tug-font-size-sm);
   color: var(--tug7-element-global-text-normal-default-rest);
@@ -186,7 +186,7 @@
 
 /* Override the choice group's intrinsic `fit-content` so the grid cell
    stretches it to the (max-content) control-column width. */
-.settings-general-key-choice.tug-choice-group {
+.settings-session-card-key-choice.tug-choice-group {
   width: auto;
   min-width: 0;
 }
@@ -194,7 +194,7 @@
 /* Live legend — four muted lines, one per key combination, inset to sit
    under the choice groups (past the label column). Outside the grid so
    its longer lines never widen the control column. */
-.settings-general-key-legend {
+.settings-session-card-key-legend {
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-2xs);

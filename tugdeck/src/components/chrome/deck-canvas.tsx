@@ -32,7 +32,8 @@ import { OpenQuicklyOverlay } from "./open-quickly-overlay";
 import { DeckCommitBeacon } from "./deck-commit-beacon";
 import { usePaneFocusController } from "./pane-focus-controller";
 import { getRegistration, getStackSizePolicy } from "@/card-registry";
-import { LENS_CARD_ID } from "@/components/lens/lens-register-card";
+import { LENS_CARD_ID } from "@/lib/lens-card-id";
+import { findLensPane } from "@/deck-store-selectors";
 import type { TugPaneState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { cardDragCoordinator } from "@/card-drag-coordinator";
@@ -40,7 +41,7 @@ import { selectionGuard } from "@/components/tugways/selection-guard";
 import { copySelectionAsPlainText } from "@/lib/copy-as-plain-text";
 import { openFileInCard } from "@/lib/open-file-in-card";
 import { openPathInOS } from "@/lib/os-open";
-import { resolvePlacements } from "@/lib/layout-imposer";
+import { resolvePlacements, IMPOSITION_GAP_PX } from "@/lib/layout-imposer";
 
 // ---- DeckCanvasProps ----
 
@@ -62,15 +63,15 @@ export interface DeckCanvasProps {}
 const CARD_ZINDEX_BASE = 1;
 
 /**
- * Z-index for an anchored rail (the Lens). It must sit ABOVE every free
- * pane (tiny array-order z, 1..N) so the rail is never occluded by a
- * card, yet strictly BELOW the canvas-overlay base
- * (`--tug-z-overlay-base` = 9000) into which every popup/menu/tooltip —
- * including the rail's own `…` menu and section popovers — portals. A
- * naive "always on top" z above 9000 would bury those popups behind the
- * rail. 8999 is the tier the former dev-panel overlay used.
+ * Z-index for the Lens pane. It must sit ABOVE every free pane (tiny
+ * array-order z, 1..N) so the Lens is never occluded by a card, yet
+ * strictly BELOW the canvas-overlay base (`--tug-z-overlay-base` = 9000)
+ * into which every popup/menu/tooltip — including the Lens's own `…` menu
+ * and section popovers — portals. A naive "always on top" z above 9000
+ * would bury those popups behind the Lens. 8999 is the tier the former
+ * dev-panel overlay used.
  */
-const ANCHORED_PANE_ZINDEX = 8999;
+const LENS_PANE_ZINDEX = 8999;
 
 // ---- DeckCanvas ----
 
@@ -120,6 +121,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   const deckState = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const panes = deckState.panes;
   const cards = deckState.cards;
+  // The Lens pane carries no marker of its own — it is the pane hosting the
+  // Lens card ([P04]). Resolved once here and reused by the z-order, the band
+  // insets, the placements memo, and the `lensSide` prop below.
+  const lensPane = findLensPane(deckState);
+  const lensPaneId = lensPane?.id;
+  const lensSide = lensPane === undefined ? null : deckState.imposition.lens;
 
   // ---------------------------------------------------------------------------
   // Stable render order
@@ -139,12 +146,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     panes.forEach((pane, i) =>
       map.set(
         pane.id,
-        pane.anchor !== undefined ? ANCHORED_PANE_ZINDEX : CARD_ZINDEX_BASE + i,
+        pane.id === lensPaneId ? LENS_PANE_ZINDEX : CARD_ZINDEX_BASE + i,
       ),
     );
     const sorted = [...panes].sort((a, b) => a.id.localeCompare(b.id));
     return { sortedStacks: sorted, zIndexMap: map };
-  }, [panes]);
+  }, [panes, lensPaneId]);
 
   // Build a cardId → hostStackId map so `CardHost` can look up its
   // host stack without re-scanning the stacks array on every render.
@@ -569,28 +576,45 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // ---------------------------------------------------------------------------
   // Layout-imposer span insets
   // ---------------------------------------------------------------------------
-  // The band imposed panes are placed across is the canvas minus the Lens rail
-  // on the side it is docked to — slotted positions are never under the rail,
-  // though a free pane may still be dragged there. The two insets reach CSS as
-  // custom properties on the frames' own containing block, so an imposed
-  // frame's `calc()` tracks a window resize or a rail width drag with no
-  // JavaScript at all ([L06]). This is why the deck observes no resizes at
-  // all: the browser does the reflow.
-  const railPane = panes.find((pane) => pane.anchor !== undefined);
-  const railSide = railPane?.anchor;
-  const railWidth = railPane?.size.width ?? 0;
+  // The band imposed panes are placed across is the canvas minus the Lens on
+  // the side it holds — slotted positions are never under it, though a free
+  // pane may still be dragged there. The two insets reach CSS as custom
+  // properties on the frames' own containing block, so an imposed frame's
+  // `calc()` tracks a window resize or a Lens width drag with no JavaScript at
+  // all ([L06]). This is why the deck observes no resizes at all: the browser
+  // does the reflow.
+  //
+  // The inset is the Lens's width plus one gap, because the Lens is itself
+  // imposed a gap off the canvas edge — its near edge is that far in. The
+  // width is the one the frame will actually PAINT at, raised to the stack's
+  // size floor exactly as `TugPane`'s `renderWidth` and the placements memo
+  // below do; packing on a stored width below the floor would run the chain
+  // under the Lens's real edge. `resolveSpan` adds the identical gap, so the
+  // numeric twin and the CSS agree by construction ([P05]).
+  const lensRenderWidth =
+    lensPane === undefined
+      ? 0
+      : Math.max(
+          lensPane.size.width,
+          getStackSizePolicy(
+            cards
+              .filter((card) => lensPane.cardIds.includes(card.id))
+              .map((card) => card.componentId),
+          ).min.width,
+        );
+  const lensInset = lensPane === undefined ? 0 : lensRenderWidth + IMPOSITION_GAP_PX;
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     el.style.setProperty(
       "--tug-imposer-inset-left",
-      railSide === "left" ? `${railWidth}px` : "0px",
+      lensSide === "left" ? `${lensInset}px` : "0px",
     );
     el.style.setProperty(
       "--tug-imposer-inset-right",
-      railSide === "right" ? `${railWidth}px` : "0px",
+      lensSide === "right" ? `${lensInset}px` : "0px",
     );
-  }, [railSide, railWidth]);
+  }, [lensSide, lensInset]);
 
   // Where each imposed pane sits in the chain. The offsets are cumulative over
   // the slotted panes' own widths, so this is the one place that has to see all
@@ -603,10 +627,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // stored number would chain the next card underneath this one's real edge.
   const placements = useMemo(
     () =>
-      deckState.imposition === undefined
+      deckState.imposition.kind === undefined
         ? null
         : resolvePlacements(
-            deckState.imposition,
+            deckState.imposition.kind,
             panes.map((pane) => {
               const cardIds = new Set(pane.cardIds);
               const componentIds = cards
@@ -614,16 +638,16 @@ export function DeckCanvas(_props: DeckCanvasProps) {
                 .map((card) => card.componentId);
               return {
                 id: pane.id,
-                slot: pane.anchor === undefined ? pane.slot : undefined,
+                slot: pane.slot,
                 width: Math.max(
                   pane.size.width,
                   getStackSizePolicy(componentIds).min.width,
                 ),
               };
             }),
-            railSide ?? null,
+            lensSide,
           ),
-    [deckState.imposition, panes, cards, railSide],
+    [deckState.imposition.kind, panes, cards, lensSide],
   );
 
   // Merge `deckRootRef` (pane-focus-controller's query scope) and
@@ -729,6 +753,11 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             )}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
             placement={placements?.get(stackState.id)}
+            lensSide={
+              stackState.id === lensPaneId && lensSide !== null
+                ? lensSide
+                : undefined
+            }
             onCardMoved={store.handlePaneMoved}
             onClose={handleClose}
             onCardCollapsed={(id) => store.togglePaneCollapse(id)}

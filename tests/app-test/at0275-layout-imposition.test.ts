@@ -64,8 +64,11 @@ const PANE_WIDTH = 460;
 const PANE_HEIGHT = 380;
 
 const LIST = ".lens-text-files-list";
-const THREE_UP =
-  '[data-testid="lens-layouts-section"] [data-choice-value="three-up"]';
+const SECTION = '[data-testid="lens-layouts-section"]';
+const THREE_UP = `${SECTION} [data-radio-value="three-up"]`;
+/** The Lens-side segments of the two-axis picker. */
+const sideSegment = (side: "left" | "right"): string =>
+  `${SECTION} [data-testid="lens-layouts-side"] [data-choice-value="${side}"]`;
 
 /** `IMPOSITION_GAP_PX` — the standoff an imposed left, right, or top edge keeps. */
 const GAP = 5;
@@ -86,15 +89,37 @@ interface Frame extends Rect {
 
 interface Scene {
   canvas: Rect;
-  rail: Rect | null;
+  lens: Rect | null;
   a: Frame | null;
   b: Frame | null;
 }
 
+/** Which side the Lens is holding, from its measured box. */
+function lensOnLeft(scene: Scene): boolean {
+  if (scene.lens === null) return false;
+  return scene.lens.x - scene.canvas.x < scene.canvas.width / 2;
+}
+
+/**
+ * The band the chain is laid across, in viewport coordinates.
+ *
+ * The Lens is itself imposed a gap off the canvas edge, so the band ends at
+ * the Lens's near edge — the extra gap between the chain's far card and the
+ * Lens comes from the chain's own gap, not from this span. A closed Lens
+ * leaves the whole canvas.
+ */
+function spanFor(scene: Scene): { left: number; right: number } {
+  const canvasRight = scene.canvas.x + scene.canvas.width;
+  if (scene.lens === null) return { left: scene.canvas.x, right: canvasRight };
+  return lensOnLeft(scene)
+    ? { left: scene.lens.x + scene.lens.width, right: canvasRight }
+    : { left: scene.canvas.x, right: scene.lens.x };
+}
+
 /**
  * Read the live geometry of both cards' pane frames, the canvas they sit in,
- * and the anchored rail — all from the DOM, since an imposed frame's real rect
- * is the browser's answer, not the store's.
+ * and the Lens — all from the DOM, since an imposed frame's real rect is the
+ * browser's answer, not the store's.
  */
 const READ_SCENE = `(function(){
   function frameFor(cardId) {
@@ -118,7 +143,7 @@ const READ_SCENE = `(function(){
   var canvasEl = anyPane === null ? null : anyPane.parentElement;
   return {
     canvas: box(canvasEl),
-    rail: box(document.querySelector(".tug-pane[data-anchored]")),
+    lens: box(document.querySelector(".tug-pane[data-lens]")),
     a: frameFor("A"),
     b: frameFor("B"),
   };
@@ -205,7 +230,7 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
           { timeoutMs: 15_000 },
         );
         await app.waitForCondition<boolean>(
-          `document.querySelector(".tug-pane[data-anchored]") !== null`,
+          `document.querySelector(".tug-pane[data-lens]") !== null`,
           { timeoutMs: 10_000 },
         );
 
@@ -225,7 +250,7 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         // ---- Choose Three Up in the Layouts section (a real click) ----
         await app.nativeClickAtElement(THREE_UP);
         await app.waitForCondition<boolean>(
-          `document.querySelector('${THREE_UP}').getAttribute("data-state") === "active"`,
+          `document.querySelector('${THREE_UP}').getAttribute("data-state") === "checked"`,
           { timeoutMs: 8_000 },
         );
         // Three slots means three buttons per row.
@@ -244,17 +269,13 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         // With one card in the chain, all of the slack is visible and it is all
         // in one place: between that card and the Lens.
         const lone = await app.evalJS<Scene>(READ_SCENE);
-        if (lone.a === null || lone.rail === null) {
-          throw new Error("[at0275] expected alpha's pane and the Lens rail");
+        if (lone.a === null || lone.lens === null) {
+          throw new Error("[at0275] expected alpha's pane and the Lens");
         }
         console.log("[at0275] lone scene:", JSON.stringify(lone));
-        const loneRailLeft = lone.rail.x <= lone.canvas.x + 1;
-        const loneSpanLeft = loneRailLeft
-          ? lone.canvas.x + lone.rail.width
-          : lone.canvas.x;
-        const loneSpanRight = loneRailLeft
-          ? lone.canvas.x + lone.canvas.width
-          : lone.canvas.x + lone.canvas.width - lone.rail.width;
+        const loneSpan = spanFor(lone);
+        const loneSpanLeft = loneSpan.left;
+        const loneSpanRight = loneSpan.right;
         expect(lone.a.x).toBeCloseTo(loneSpanLeft + GAP, 0);
         // The pooled margin is everything the chain did not use, and it is far
         // wider than the gap on the other three sides — that asymmetry is the
@@ -271,24 +292,34 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         await settle();
 
         const three = await app.evalJS<Scene>(READ_SCENE);
-        if (three.a === null || three.b === null || three.rail === null) {
-          throw new Error("[at0275] expected two panes and the Lens rail");
+        if (three.a === null || three.b === null || three.lens === null) {
+          throw new Error("[at0275] expected two panes and the Lens");
         }
         console.log("[at0275] three-up scene:", JSON.stringify(three));
 
-        // The span is the canvas minus the rail on the side it is docked to.
-        const railLeft = three.rail.x <= three.canvas.x + 1;
-        const spanLeft = railLeft
-          ? three.canvas.x + three.rail.width
-          : three.canvas.x;
-        const spanRight = railLeft
-          ? three.canvas.x + three.canvas.width
-          : three.canvas.x + three.canvas.width - three.rail.width;
+        // ---- The Lens is imposed too: gaps on all four sides ----
+        //
+        // It stands off the canvas edges rather than lying flush against
+        // them, which is what lets the band end one gap short of it below.
+        {
+          const onLeft = lensOnLeft(three);
+          const nearCanvasEdge = onLeft
+            ? three.lens.x - three.canvas.x
+            : three.canvas.x + three.canvas.width - (three.lens.x + three.lens.width);
+          expect(nearCanvasEdge).toBeCloseTo(GAP, 0);
+          expect(three.lens.y).toBeCloseTo(three.canvas.y + GAP, 0);
+          expect(three.lens.y + three.lens.height).toBeCloseTo(
+            three.canvas.y + three.canvas.height - GAP_BOTTOM,
+            0,
+          );
+        }
+
+        const { left: spanLeft, right: spanRight } = spanFor(three);
 
         expect(three.a.imposed).toBe("0");
         expect(three.b.imposed).toBe("2");
 
-        // The rail is docked right, so the chain packs LEFT: alpha starts a gap
+        // The Lens holds the right, so the chain packs LEFT: alpha starts a gap
         // in from the span's left edge.
         expect(three.a.x).toBeCloseTo(spanLeft + GAP, 0);
 
@@ -302,6 +333,10 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         expect(overlap).toBeCloseTo(three.a.width + three.b.width - band, 0);
         expect(overlap).toBeGreaterThan(0);
         expect(three.b.x + three.b.width).toBeCloseTo(spanRight - GAP, 0);
+        // Said the other way round, which is the requirement itself: the far
+        // card's edge lands exactly one gap short of the Lens's near edge, so
+        // no card ever slides under the Lens however crowded the deck gets.
+        expect(three.b.x + three.b.width).toBeCloseTo(three.lens.x - GAP, 0);
 
         // Both run the canvas's height, a gap down from the top and the deeper
         // bottom gap up from the bottom.
@@ -333,8 +368,8 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
 
         // ---- Closing the Lens widens the band, and the overlap eases off ----
         //
-        // The chain is pinned to the edge away from the rail, so its head never
-        // moves. What the rail's width buys is room in the band, and the step
+        // The chain is pinned to the edge away from the Lens, so its head never
+        // moves. What the Lens's width buys is room in the band, and the step
         // rule spends it on the overlap first: with 420px more to work with,
         // these two cards stop overlapping and stand a clean gap apart.
         //
@@ -346,7 +381,7 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
           `(window.__tug.dispatchControlAction("toggle-lens"), null)`,
         );
         await app.waitForCondition<boolean>(
-          `document.querySelector(".tug-pane[data-anchored]") === null`,
+          `document.querySelector(".tug-pane[data-lens]") === null`,
           { timeoutMs: 8_000 },
         );
         await settle();
@@ -371,13 +406,65 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
           `(window.__tug.dispatchControlAction("toggle-lens"), null)`,
         );
         await app.waitForCondition<boolean>(
-          `document.querySelector(".tug-pane[data-anchored]") !== null`,
+          `document.querySelector(".tug-pane[data-lens]") !== null`,
           { timeoutMs: 8_000 },
         );
         await settle();
         const relensed = await app.evalJS<Scene>(READ_SCENE);
         if (relensed.a === null) throw new Error("[at0275] alpha's pane vanished");
         expect(relensed.a.x).toBeCloseTo(spanLeft + GAP, 0);
+
+        // ---- The picker's other axis: send the Lens to the left ----
+        //
+        // Driven through the real control, not a raw dispatch: the segment is
+        // what a user touches, so it is what the test touches. Flipping the
+        // side flips which edge the chain packs from, so the whole strip moves
+        // with the Lens — live, with no reload.
+        await app.nativeClickAtElement(sideSegment("left"));
+        await app.waitForCondition<boolean>(
+          `document.querySelector(".tug-pane[data-lens=\\"left\\"]") !== null`,
+          { timeoutMs: 8_000 },
+        );
+        await settle();
+        const flipped = await app.evalJS<Scene>(READ_SCENE);
+        if (flipped.a === null || flipped.b === null || flipped.lens === null) {
+          throw new Error("[at0275] expected both panes and the Lens after the flip");
+        }
+        console.log("[at0275] flipped scene:", JSON.stringify(flipped));
+        // The Lens now stands one gap off the LEFT canvas edge.
+        expect(flipped.lens.x - flipped.canvas.x).toBeCloseTo(GAP, 0);
+        // And the chain has crossed to the other end of the band: it packs
+        // right, so its far card is now the one a gap off the Lens.
+        const flippedSpan = spanFor(flipped);
+        expect(flipped.b.x + flipped.b.width).toBeCloseTo(flippedSpan.right - GAP, 0);
+        expect(flipped.a.x).toBeCloseTo(
+          flipped.lens.x + flipped.lens.width + GAP,
+          0,
+        );
+
+        // Every kind option is a picture of THIS deck, so they all flip with
+        // it rather than staying abstract diagrams. (The side control's own
+        // two segments keep drawing one side each — that is the choice they
+        // offer, not a reading of the deck.)
+        const kindMinis = `${SECTION} [data-testid="lens-layouts-kind"] .layout-mini`;
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll('${kindMinis}[data-lens="left"]').length`,
+          ),
+        ).toBe(4);
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll('${kindMinis}[data-lens="right"]').length`,
+          ),
+        ).toBe(0);
+
+        // Put it back so the rest of the run reads against the right-side deck.
+        await app.nativeClickAtElement(sideSegment("right"));
+        await app.waitForCondition<boolean>(
+          `document.querySelector(".tug-pane[data-lens=\\"right\\"]") !== null`,
+          { timeoutMs: 8_000 },
+        );
+        await settle();
 
         // ---- Slots are stacks: alpha joins bravo at slot 2 ----
         //

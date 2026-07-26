@@ -12,10 +12,8 @@
  */
 
 import {
-  DEFAULT_LENS_ANCHOR_SIDE,
   DEFAULT_LENS_WIDTH_PX,
   MIN_LENS_WIDTH_PX,
-  type LensAnchorSide,
   type LensSnapshot,
 } from "./types";
 
@@ -29,7 +27,6 @@ export interface LensState {
   sectionOrder: readonly string[];
   sessionOrder: readonly string[];
   collapsedSections: readonly string[];
-  anchorSide: LensAnchorSide;
 }
 
 export type LensEvent =
@@ -37,7 +34,6 @@ export type LensEvent =
   | { type: "set_section_order"; order: readonly string[] }
   | { type: "set_session_order"; order: readonly string[] }
   | { type: "set_collapsed"; kind: string; collapsed: boolean }
-  | { type: "set_anchor_side"; side: LensAnchorSide }
   | {
       /**
        * Apply hydrated values from tugbank. Each field is optional — a
@@ -50,7 +46,6 @@ export type LensEvent =
       sectionOrder?: readonly string[];
       sessionOrder?: readonly string[];
       collapsedSections?: readonly string[];
-      anchorSide?: LensAnchorSide;
     };
 
 export function createInitialState(): LensState {
@@ -59,7 +54,6 @@ export function createInitialState(): LensState {
     sectionOrder: [],
     sessionOrder: [],
     collapsedSections: [],
-    anchorSide: DEFAULT_LENS_ANCHOR_SIDE,
   };
 }
 
@@ -130,11 +124,6 @@ export function reduce(state: LensState, event: LensEvent): LensState {
       return { ...state, collapsedSections: next };
     }
 
-    case "set_anchor_side": {
-      if (event.side === state.anchorSide) return state;
-      return { ...state, anchorSide: event.side };
-    }
-
     case "hydrate": {
       let next = state;
       const bump = (): void => {
@@ -167,13 +156,6 @@ export function reduce(state: LensState, event: LensEvent): LensState {
       ) {
         bump();
         next.collapsedSections = [...event.collapsedSections];
-      }
-      if (
-        event.anchorSide !== undefined &&
-        event.anchorSide !== state.anchorSide
-      ) {
-        bump();
-        next.anchorSide = event.anchorSide;
       }
       return next;
     }

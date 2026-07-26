@@ -3,7 +3,7 @@
    ----------------------------------------------------------------------------
    The shared Editing + Display groups (`text-card-controls.css`)
    stacked above the defaults-only "Open Files In" box. Hosted by the
-   Settings card's "Text Card" tab; mirrors settings-general-body.css
+   Settings card's "Text Card" tab; mirrors settings-session-card-body.css
    so the panels read as one system.
    ----------------------------------------------------------------------------- */
 
@@ -16,7 +16,7 @@
 }
 
 /* The "Open Files In" box — a bordered TugBox with the legend painted
-   on the border line (see settings-general-body.css for the WebKit
+   on the border line (see settings-session-card-body.css for the WebKit
    rationale). Generous inset matching the shared controls groups. */
 .settings-text-card-group {
   width: 100%;

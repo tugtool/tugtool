@@ -37,6 +37,7 @@
 
 import type { DeckManager } from "./deck-manager";
 import type { DeckState, CardStateBag } from "./layout-tree";
+import { DEFAULT_LENS_SIDE } from "./lib/layout-imposer";
 import { deckTrace, type DeckTraceEvent } from "./deck-trace";
 import { getFocusManager } from "./components/tugways/focus-manager";
 import { currentGesture } from "./gesture-interpreter";
@@ -929,6 +930,7 @@ function makeEmptyDeckState(): DeckState {
   return {
     cards: [],
     panes: [],
+    imposition: { lens: DEFAULT_LENS_SIDE },
     hasFocus: typeof document !== "undefined" ? document.hasFocus() : false,
   };
 }

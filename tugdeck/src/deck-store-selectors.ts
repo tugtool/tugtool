@@ -25,7 +25,8 @@
  * foundation [A1] establishes for [A3] / [A4] in later steps.
  */
 
-import type { DeckState } from "./layout-tree";
+import type { DeckState, TugPaneState } from "./layout-tree";
+import { LENS_CARD_ID } from "./lib/lens-card-id";
 
 /**
  * `isFocusDestination(cardId, state)` — returns true iff `cardId`
@@ -58,4 +59,22 @@ export function isFocusDestination(
   if (!pane) return false;
   if (state.activePaneId !== pane.id) return false;
   return pane.activeCardId === cardId;
+}
+
+/**
+ * `findLensPane(state)` — the pane hosting the Lens, or `undefined` when the
+ * Lens is closed.
+ *
+ * The Lens pane carries no marker of its own: it is the pane holding the card
+ * registered as {@link LENS_CARD_ID}. That card is a singleton and its pane
+ * hosts nothing else (`acceptsFamilies: []` and an un-mergeable family), so
+ * the derivation is single-valued. This is the one predicate every consumer
+ * that needs "which pane is the Lens" goes through.
+ */
+export function findLensPane(state: DeckState): TugPaneState | undefined {
+  const lensCardIds = new Set(
+    state.cards.filter((c) => c.componentId === LENS_CARD_ID).map((c) => c.id),
+  );
+  if (lensCardIds.size === 0) return undefined;
+  return state.panes.find((p) => p.cardIds.some((cid) => lensCardIds.has(cid)));
 }

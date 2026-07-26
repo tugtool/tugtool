@@ -283,7 +283,7 @@ if (!container) {
   registerSettingsCard();
   registerDevtoolsCard();
   // The Lens card must register unconditionally and before the deck
-  // restores its layout, so the anchored rail survives reload
+  // restores its layout, so the Lens survives reload
   // (`filterRegisteredCards` drops panes whose only card is unregistered).
   registerLensCard();
   // Registration order is the DEFAULT Lens section order — the fallback

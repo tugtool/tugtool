@@ -21,8 +21,7 @@ import { registerCard } from "@/card-registry";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { CardState } from "@/layout-tree";
-import { SettingsGeneralBody } from "./settings-general-body";
-import { SettingsLensBody } from "./settings-lens-body";
+import { SettingsSessionCardBody } from "./settings-session-card-body";
 import { SettingsTextCardBody } from "./settings-text-card-body";
 import { SettingsAppBody } from "./settings-app-body";
 import "./settings-card.css";
@@ -31,7 +30,7 @@ import "./settings-card.css";
 // Tabs — a fixed, non-closable tab set
 // ---------------------------------------------------------------------------
 
-type SettingsTabId = "general" | "sessionCard" | "textCard" | "app";
+type SettingsTabId = "sessionCard" | "textCard" | "app";
 
 interface SettingsTabSpec {
   readonly id: SettingsTabId;
@@ -43,10 +42,8 @@ interface SettingsTabSpec {
 }
 
 const TABS: readonly SettingsTabSpec[] = [
-  // "General" carries app-wide behavior (focus-ring modality); "Session Card"
-  // the session card's own icon; "Text Card" a file icon; "Maker" a tool icon
-  // for the app-maker gate.
-  { id: "general", label: "General", icon: "Settings" },
+  // "Session Card" wears the session card's own icon; "Text Card" a file
+  // icon; "Maker" a tool icon for the app-maker gate.
   { id: "sessionCard", label: "Session Card", icon: "MessageSquareText" },
   { id: "textCard", label: "Text Card", icon: "FileText" },
   { id: "app", label: "Maker", icon: "Wrench" },
@@ -71,7 +68,7 @@ const TAB_CARDS: readonly CardState[] = TABS.map((spec) => ({
 // ---------------------------------------------------------------------------
 
 export function SettingsCardContent() {
-  const [tab, setTab] = useState<SettingsTabId>("general");
+  const [tab, setTab] = useState<SettingsTabId>("sessionCard");
 
   // TugTabBar dispatches `selectTab` through the chain to this responder.
   const tabBarId = useId();
@@ -93,8 +90,7 @@ export function SettingsCardContent() {
           />
         </div>
         <div className="settings-card-panel">
-          {tab === "general" ? <SettingsLensBody /> : null}
-          {tab === "sessionCard" ? <SettingsGeneralBody /> : null}
+          {tab === "sessionCard" ? <SettingsSessionCardBody /> : null}
           {tab === "textCard" ? <SettingsTextCardBody /> : null}
           {tab === "app" ? <SettingsAppBody /> : null}
         </div>

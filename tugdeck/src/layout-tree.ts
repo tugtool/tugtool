@@ -16,13 +16,15 @@
  *      pane closes the pane.
  *   4. Each pane's `activeCardId` is a member of that pane's `cardIds`.
  *   5. `activePaneId`, when set, references a real pane in `panes`.
- *   6. No pane carries both `anchor` and `slot` — a pane derives its
- *      geometry from at most one source.
+ *   6. At most one pane hosts the Lens card, and that pane carries no
+ *      `slot` — the Lens is the imposition's fixed end, not a link in
+ *      its chain.
  *
  *: Canvas Data Model Types
  */
 
-import type { ImpositionKind } from "@/lib/layout-imposer";
+import type { DeckImposition } from "@/lib/layout-imposer";
+import { LENS_CARD_ID } from "@/lib/lens-card-id";
 
 // ---- Types () ----
 
@@ -280,26 +282,15 @@ export interface TugPaneState {
    */
   collapsed?: boolean;
   /**
-   * Anchor edge for a pane whose geometry is *derived* (pinned to a
-   * viewport edge) rather than free. Missing/undefined is a free pane
-   * placed at `position`/`size`. An anchored pane resolves its geometry
-   * from this descriptor at render — the pane still owns geometry per
-   * [L09]; it merely computes it from an anchor instead of a free
-   * position. `"left"` / `"right"` pin the Lens rail to a viewport side;
-   * extensible to other edges later. Additive-optional like `collapsed?`
-   * — no serialization version bump.
-   */
-  anchor?: "left" | "right";
-  /**
    * The numbered position this pane is imposed at, 0-based, within the
-   * deck's active `imposition`. Missing/undefined is a pane the imposer
-   * does not place. A slotted pane is the third member of the derived-
-   * geometry family alongside `anchor`: it pins its horizontal anchor and
-   * its full canvas height at render (see `lib/layout-imposer.ts`) while
-   * still owning its geometry per [L09]. `slot` and `anchor` are mutually
-   * exclusive — two derivers on one pane is incoherent, and
-   * {@link validateDeckState} rejects it. The pane's width is never
-   * touched by the imposer. Additive-optional like `collapsed?` — no
+   * deck's active `imposition.kind`. Missing/undefined is a pane the
+   * imposer does not place. A slotted pane derives its horizontal anchor
+   * and its full canvas height at render (see `lib/layout-imposer.ts`)
+   * while still owning its geometry per [L09]; the pane's width is never
+   * touched by the imposer. The Lens pane is imposed too but never
+   * slotted — it is the strip's fixed end, pinned from
+   * `imposition.lens`, and {@link validateDeckState} rejects a Lens pane
+   * carrying a slot. Additive-optional like `collapsed?` — no
    * serialization version bump.
    */
   slot?: number;
@@ -312,10 +303,10 @@ export interface TugPaneState {
  * - `panes` holds every pane frame; each pane's `cardIds` partitions
  *   `cards`.
  * - `activePaneId` identifies the deck's currently-active pane, if any.
- * - `imposition` is the active N-up rule the imposer places slotted panes
- *   with. Missing/undefined means the feature is off and no pane is
- *   imposed. Additive-optional like `TugPaneState.anchor` — no
- *   serialization version bump.
+ * - `imposition` is the deck's layout imposition: `kind`, the active N-up
+ *   rule the imposer places slotted panes with (absent = nothing imposed),
+ *   and `lens`, the side the Lens holds. Always present; the default is
+ *   `{ lens: "right" }`.
  * - `hasFocus` tracks whether the tugdeck window is the OS-foreground
  *   window. Session-only (never serialized): the deck store seeds it
  *   from `document.hasFocus()` at construction and flips it on window
@@ -333,7 +324,7 @@ export interface DeckState {
   cards: readonly CardState[];
   panes: readonly TugPaneState[];
   activePaneId?: string;
-  imposition?: ImpositionKind;
+  imposition: DeckImposition;
   /**
    * True when the tugdeck window owns OS focus (foreground). Seeded
    * from `document.hasFocus()` at store construction; toggled by
@@ -368,7 +359,7 @@ export class DeckStateInvariantError extends Error {
  *   3. no pane has `cardIds.length === 0`;
  *   4. every `pane.activeCardId` is a member of that pane's `cardIds`;
  *   5. when `state.activePaneId` is set, it references a real pane;
- *   6. no pane carries both `anchor` and `slot`.
+ *   6. at most one pane hosts the Lens card, and it carries no `slot`.
  *
  * Called from `DeckManager.notify` in dev/test builds only — guarded by
  * `isDevEnv()` so production builds pay no cost. Violations surface at the
@@ -376,6 +367,7 @@ export class DeckStateInvariantError extends Error {
  */
 export function validateDeckState(state: DeckState): void {
   const cardIds = new Set<string>();
+  const lensCardIds = new Set<string>();
   for (const card of state.cards) {
     if (cardIds.has(card.id)) {
       throw new DeckStateInvariantError(
@@ -383,7 +375,10 @@ export function validateDeckState(state: DeckState): void {
       );
     }
     cardIds.add(card.id);
+    if (card.componentId === LENS_CARD_ID) lensCardIds.add(card.id);
   }
+
+  let lensPaneId: string | undefined;
 
   const paneIds = new Set<string>();
   const cardToPane = new Map<string, string>();
@@ -420,10 +415,18 @@ export function validateDeckState(state: DeckState): void {
     }
 
     // Invariant 6
-    if (pane.anchor !== undefined && pane.slot !== undefined) {
-      throw new DeckStateInvariantError(
-        `pane "${pane.id}" carries both anchor "${pane.anchor}" and slot ${pane.slot}`,
-      );
+    if (pane.cardIds.some((cid) => lensCardIds.has(cid))) {
+      if (lensPaneId !== undefined) {
+        throw new DeckStateInvariantError(
+          `panes "${lensPaneId}" and "${pane.id}" both host the Lens card`,
+        );
+      }
+      lensPaneId = pane.id;
+      if (pane.slot !== undefined) {
+        throw new DeckStateInvariantError(
+          `Lens pane "${pane.id}" carries slot ${pane.slot}; the Lens is the imposition's fixed end, not a link in its chain`,
+        );
+      }
     }
 
     // Invariant 4

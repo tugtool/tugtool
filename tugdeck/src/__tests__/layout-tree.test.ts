@@ -13,7 +13,7 @@ import { serialize, deserialize, buildDefaultLayout } from "../serialization";
 
 describe("DeckState", () => {
   test("DeckState with empty cards and panes is valid", () => {
-    const state: DeckState = { cards: [], panes: [], hasFocus: true };
+    const state: DeckState = { cards: [], panes: [], imposition: { lens: "right" }, hasFocus: true };
     expect(state.cards.length).toBe(0);
     expect(state.panes.length).toBe(0);
   });
@@ -106,7 +106,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const state: DeckState = { cards: [card], panes: [stack], hasFocus: true };
+    const state: DeckState = { cards: [card], panes: [stack], imposition: { lens: "right" }, hasFocus: true };
 
     const serialized = serialize(state);
     const json = JSON.stringify(serialized);
@@ -139,7 +139,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const state: DeckState = { cards, panes: [stack], hasFocus: true };
+    const state: DeckState = { cards, panes: [stack], imposition: { lens: "right" }, hasFocus: true };
 
     const json = JSON.stringify(serialize(state));
     const restored = deserialize(json, 1920, 1080);
@@ -176,7 +176,7 @@ describe("serialize and deserialize (v4 wire)", () => {
   });
 
   test("serialize emits version: 4", () => {
-    const out = serialize({ cards: [], panes: [], hasFocus: true }) as { version: number };
+    const out = serialize({ cards: [], panes: [], imposition: { lens: "right" }, hasFocus: true }) as { version: number };
     expect(out.version).toBe(4);
   });
 
@@ -202,6 +202,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       cards: [card],
       panes: [pane],
       activePaneId: "w1",
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     const first = serialize(state);
@@ -236,7 +237,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], hasFocus: true }));
+    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], imposition: { lens: "right" }, hasFocus: true }));
     const restored = deserialize(json, 1280, 800);
     const r = restored.panes[0];
     // Width (900) already fits the 1280 canvas; height (1200) is capped to the
@@ -252,7 +253,10 @@ describe("serialize and deserialize (v4 wire)", () => {
     expect(r.position.y + r.size.height).toBeLessThanOrEqual(800 - 8);
   });
 
-  test("round-trips an anchored pane's anchor field (survives serialize→deserialize)", () => {
+  function lensDeck(
+    side: "left" | "right",
+    size: { width: number; height: number },
+  ): DeckState {
     const card: CardState = {
       id: "lens",
       componentId: "lens",
@@ -261,71 +265,42 @@ describe("serialize and deserialize (v4 wire)", () => {
     };
     const pane: TugPaneState = {
       id: "pane-lens",
-      // Geometry a right-anchored rail would carry — width is the live
-      // rail width; position is nominal (derived at render).
+      // Geometry the Lens carries — width is its live width; position is
+      // nominal, since the imposer pins it at render.
       position: { x: 0, y: 0 },
-      size: { width: 420, height: 1080 },
+      size,
       cardIds: ["lens"],
       activeCardId: "lens",
       title: "Lens",
       acceptsFamilies: [],
-      anchor: "right",
     };
-    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], hasFocus: true }));
-    const restored = deserialize(json, 1920, 1080);
-    const r = restored.panes[0];
-    // The anchor field is the exact drop-on-read regression: parseV4
-    // rebuilds panes field-by-field and would drop anything it doesn't
-    // explicitly copy.
-    expect(r.anchor).toBe("right");
-    expect(r.acceptsFamilies).toEqual([]);
+    return {
+      cards: [card],
+      panes: [pane],
+      imposition: { lens: side },
+      hasFocus: true,
+    };
+  }
+
+  test("round-trips the Lens's side through the imposition record", () => {
+    for (const side of ["left", "right"] as const) {
+      const json = JSON.stringify(
+        serialize(lensDeck(side, { width: 420, height: 1080 })),
+      );
+      const restored = deserialize(json, 1920, 1080);
+      expect(restored.imposition.lens).toBe(side);
+      expect(restored.panes[0].acceptsFamilies).toEqual([]);
+    }
   });
 
-  test("round-trips a LEFT-anchored pane's anchor field", () => {
-    const card: CardState = {
-      id: "lens",
-      componentId: "lens",
-      title: "Lens",
-      closable: true,
-    };
-    const pane: TugPaneState = {
-      id: "pane-lens",
-      position: { x: 0, y: 0 },
-      size: { width: 420, height: 1080 },
-      cardIds: ["lens"],
-      activeCardId: "lens",
-      title: "Lens",
-      acceptsFamilies: [],
-      anchor: "left",
-    };
-    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], hasFocus: true }));
-    const restored = deserialize(json, 1920, 1080);
-    expect(restored.panes[0].anchor).toBe("left");
-  });
-
-  test("does not fit-clamp an anchored pane (derived geometry survives a smaller canvas)", () => {
-    const card: CardState = {
-      id: "lens",
-      componentId: "lens",
-      title: "Lens",
-      closable: true,
-    };
-    // A rail saved on a tall display, restored on a shorter one. A free
-    // pane would be height-clamped by fitPaneGeometry; the anchored pane
-    // must carry its stored geometry through untouched.
-    const pane: TugPaneState = {
-      id: "pane-lens",
-      position: { x: 0, y: 0 },
-      size: { width: 500, height: 2000 },
-      cardIds: ["lens"],
-      activeCardId: "lens",
-      title: "Lens",
-      acceptsFamilies: [],
-      anchor: "right",
-    };
-    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], hasFocus: true }));
-    const restored = deserialize(json, 1280, 800);
-    const r = restored.panes[0];
+  test("does not fit-clamp the Lens pane (derived geometry survives a smaller canvas)", () => {
+    // The Lens saved on a tall display, restored on a shorter one. A free
+    // pane would be height-clamped by fitPaneGeometry; the Lens pane must
+    // carry its stored geometry through untouched.
+    const json = JSON.stringify(
+      serialize(lensDeck("right", { width: 500, height: 2000 })),
+    );
+    const r = deserialize(json, 1280, 800).panes[0];
     expect(r.size.width).toBe(500);
     expect(r.size.height).toBe(2000);
   });
@@ -348,7 +323,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], hasFocus: true }));
+    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], imposition: { lens: "right" }, hasFocus: true }));
     const restored = deserialize(json, 1280, 800);
     const r = restored.panes[0];
     expect(r.size.width).toBe(400);
@@ -559,7 +534,7 @@ describe("TugPaneState collapsed field", () => {
       collapsed: true,
     };
     const json = JSON.stringify(
-      serialize({ cards: [card], panes: [stack], hasFocus: true }),
+      serialize({ cards: [card], panes: [stack], imposition: { lens: "right" }, hasFocus: true }),
     );
     const restored = deserialize(json, 1920, 1080);
     expect(restored.panes[0].collapsed).toBe(true);
@@ -580,7 +555,7 @@ describe("CardStateBag type", () => {
 
 describe("DeckState focusedCardId persistence", () => {
   test("serialize does not emit focusedCardId in the layout blob", () => {
-    const state: DeckState = { cards: [], panes: [], hasFocus: true };
+    const state: DeckState = { cards: [], panes: [], imposition: { lens: "right" }, hasFocus: true };
     const blob = serialize(state) as Record<string, unknown>;
     expect("focusedCardId" in blob).toBe(false);
   });
@@ -682,7 +657,7 @@ describe("deserialize edge cases", () => {
       },
     ];
     const json = JSON.stringify(
-      serialize({ cards, panes: paneList, hasFocus: true }),
+      serialize({ cards, panes: paneList, imposition: { lens: "right" }, hasFocus: true }),
     );
     const restored = deserialize(json, 1920, 1080);
     expect(restored.panes.length).toBe(2);
@@ -800,6 +775,7 @@ describe("collapsed field serialization", () => {
     const serialized = serialize({
       cards: [card],
       panes: [stack],
+      imposition: { lens: "right" },
       hasFocus: true,
     }) as {
       panes: Array<{ collapsed?: boolean }>;
@@ -992,13 +968,14 @@ describe("validateDeckState", () => {
   }
 
   test("accepts the empty deck", () => {
-    expect(() => validateDeckState({ cards: [], panes: [], hasFocus: true })).not.toThrow();
+    expect(() => validateDeckState({ cards: [], panes: [], imposition: { lens: "right" }, hasFocus: true })).not.toThrow();
   });
 
   test("accepts a well-formed single-card, single-pane deck", () => {
     const state: DeckState = {
       cards: [makeCard("c1")],
       panes: [makeStack("s1", ["c1"], "c1")],
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).not.toThrow();
@@ -1012,6 +989,7 @@ describe("validateDeckState", () => {
         makeStack("s2", ["c3"], "c3"),
       ],
       activePaneId: "s2",
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).not.toThrow();
@@ -1021,6 +999,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1")],
       panes: [makeStack("s1", ["c1", "ghost"], "c1")],
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1034,6 +1013,7 @@ describe("validateDeckState", () => {
         makeStack("s1", ["c1", "c2"], "c1"),
         makeStack("s2", ["c2"], "c2"),
       ],
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1044,6 +1024,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("orphan")],
       panes: [makeStack("s1", ["c1"], "c1")],
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1057,6 +1038,7 @@ describe("validateDeckState", () => {
         makeStack("s1", ["c1"], "c1"),
         makeStack("s-empty", [], "x"),
       ],
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1067,6 +1049,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("c2")],
       panes: [makeStack("s1", ["c1", "c2"], "ghost")],
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1080,6 +1063,7 @@ describe("validateDeckState", () => {
       cards: [makeCard("c1")],
       panes: [makeStack("s1", ["c1"], "c1")],
       activePaneId: "no-such-stack",
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1092,6 +1076,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("c1", "terminal")],
       panes: [makeStack("s1", ["c1"], "c1")],
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(/duplicate card id "c1"/);
@@ -1104,6 +1089,7 @@ describe("validateDeckState", () => {
         makeStack("s1", ["c1"], "c1"),
         makeStack("s1", ["c2"], "c2"),
       ],
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(/duplicate pane id "s1"/);
@@ -1142,11 +1128,11 @@ describe("imposition wire format", () => {
         impositionPane("p2", "c2", { slot: 1 }),
         impositionPane("p3", "c3", { slot: 2 }),
       ],
-      imposition: "three-up",
+      imposition: { kind: "three-up", lens: "right" },
       hasFocus: true,
     };
     const restored = deserialize(JSON.stringify(serialize(state)), 1920, 1080);
-    expect(restored.imposition).toBe("three-up");
+    expect(restored.imposition).toEqual({ kind: "three-up", lens: "right" });
     expect(restored.panes.map((p) => p.slot)).toEqual([0, 1, 2]);
   });
 
@@ -1163,7 +1149,7 @@ describe("imposition wire format", () => {
           size: { width: 800, height: 2000 },
         }),
       ],
-      imposition: "three-up",
+      imposition: { kind: "three-up", lens: "right" },
       hasFocus: true,
     };
     const r = deserialize(JSON.stringify(serialize(state)), 1280, 800).panes[0];
@@ -1171,16 +1157,17 @@ describe("imposition wire format", () => {
     expect(r.size).toEqual({ width: 800, height: 2000 });
   });
 
-  test("a pre-imposition v4 blob parses with the feature off", () => {
+  test("an imposition with no kind serializes without one and parses back off", () => {
     const state: DeckState = {
       cards: [impositionCard("c1")],
       panes: [impositionPane("p1", "c1")],
+      imposition: { lens: "right" },
       hasFocus: true,
     };
     const blob = serialize(state) as Record<string, unknown>;
-    expect("imposition" in blob).toBe(false);
+    expect(blob["imposition"]).toEqual({ lens: "right" });
     const restored = deserialize(JSON.stringify(blob), 1920, 1080);
-    expect(restored.imposition).toBeUndefined();
+    expect(restored.imposition.kind).toBeUndefined();
     expect(restored.panes[0].slot).toBeUndefined();
   });
 
@@ -1192,7 +1179,7 @@ describe("imposition wire format", () => {
       panes: [impositionPane("p1", "c1", { slot: 1 })],
     };
     const restored = deserialize(JSON.stringify(blob), 1920, 1080);
-    expect(restored.imposition).toBeUndefined();
+    expect(restored.imposition.kind).toBeUndefined();
     expect(restored.panes[0].slot).toBeUndefined();
   });
 
@@ -1228,32 +1215,51 @@ describe("imposition wire format", () => {
     }
   });
 
-  test("a blob carrying both anchor and slot keeps the anchor and drops the slot", () => {
+  test("a blob offering the Lens pane a slot drops it", () => {
     const blob = {
       version: 4,
-      imposition: "three-up",
-      cards: [impositionCard("c1")],
-      panes: [impositionPane("p1", "c1", { anchor: "left", slot: 1 })],
+      imposition: { kind: "three-up", lens: "left" },
+      cards: [
+        { id: "lens", componentId: "lens", title: "Lens", closable: true },
+      ],
+      panes: [impositionPane("p1", "lens", { slot: 1 })],
     };
-    const r = deserialize(JSON.stringify(blob), 1920, 1080).panes[0];
-    expect(r.anchor).toBe("left");
-    expect(r.slot).toBeUndefined();
+    const restored = deserialize(JSON.stringify(blob), 1920, 1080);
+    expect(restored.panes[0].slot).toBeUndefined();
     // Which is exactly what invariant 6 demands of the parsed state.
-    expect(() =>
-      validateDeckState(deserialize(JSON.stringify(blob), 1920, 1080)),
-    ).not.toThrow();
+    expect(() => validateDeckState(restored)).not.toThrow();
   });
 
-  test("validateDeckState rejects a pane that derives from two sources (invariant 6)", () => {
+  test("validateDeckState rejects a slotted Lens pane (invariant 6)", () => {
     const state: DeckState = {
-      cards: [impositionCard("c1")],
-      panes: [impositionPane("p1", "c1", { anchor: "left", slot: 1 })],
-      imposition: "three-up",
+      cards: [
+        { id: "lens", componentId: "lens", title: "Lens", closable: true },
+      ],
+      panes: [impositionPane("p1", "lens", { slot: 1 })],
+      imposition: { kind: "three-up", lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(
-      /pane "p1" carries both anchor "left" and slot 1/,
+      /Lens pane "p1" carries slot 1/,
+    );
+  });
+
+  test("validateDeckState rejects two panes hosting the Lens (invariant 6)", () => {
+    const state: DeckState = {
+      cards: [
+        { id: "lens-a", componentId: "lens", title: "Lens", closable: true },
+        { id: "lens-b", componentId: "lens", title: "Lens", closable: true },
+      ],
+      panes: [
+        impositionPane("p1", "lens-a"),
+        impositionPane("p2", "lens-b"),
+      ],
+      imposition: { lens: "right" },
+      hasFocus: true,
+    };
+    expect(() => validateDeckState(state)).toThrow(
+      /panes "p1" and "p2" both host the Lens card/,
     );
   });
 
@@ -1261,9 +1267,157 @@ describe("imposition wire format", () => {
     const state: DeckState = {
       cards: [impositionCard("c1")],
       panes: [impositionPane("p1", "c1", { slot: 2 })],
-      imposition: "three-up",
+      imposition: { kind: "three-up", lens: "right" },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).not.toThrow();
+  });
+});
+
+// ---- The Lens side: where a parsed `imposition.lens` comes from ----
+
+describe("imposition lens side", () => {
+  function lensCard(): CardState {
+    return { id: "lens-1", componentId: "lens", title: "Lens", closable: true };
+  }
+
+  function lensPane(extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: "lens-pane",
+      position: { x: 0, y: 0 },
+      size: { width: 420, height: 900 },
+      cardIds: ["lens-1"],
+      activeCardId: "lens-1",
+      title: "Lens",
+      acceptsFamilies: [],
+      ...extra,
+    };
+  }
+
+  function blobWith(
+    imposition: unknown,
+    panes: Record<string, unknown>[],
+  ): string {
+    return JSON.stringify({
+      version: 4,
+      ...(imposition !== undefined ? { imposition } : {}),
+      cards: [lensCard()],
+      panes,
+    });
+  }
+
+  test("the record's own side wins", () => {
+    const json = blobWith({ kind: "two-up", lens: "left" }, [lensPane()]);
+    expect(deserialize(json, 1920, 1080).imposition.lens).toBe("left");
+  });
+
+  test("a legacy anchored Lens pane supplies the side", () => {
+    const json = blobWith("two-up", [lensPane({ anchor: "left" })]);
+    const restored = deserialize(json, 1920, 1080);
+    expect(restored.imposition).toEqual({ kind: "two-up", lens: "left" });
+  });
+
+  test("the record shadows a legacy anchor that disagrees", () => {
+    const json = blobWith({ lens: "right" }, [lensPane({ anchor: "left" })]);
+    expect(deserialize(json, 1920, 1080).imposition.lens).toBe("right");
+  });
+
+  test("a non-Lens pane's anchor is not mistaken for the Lens's side", () => {
+    const json = JSON.stringify({
+      version: 4,
+      cards: [
+        { id: "c1", componentId: "terminal", title: "", closable: true },
+      ],
+      panes: [
+        {
+          id: "p1",
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          cardIds: ["c1"],
+          activeCardId: "c1",
+          title: "",
+          acceptsFamilies: ["standard"],
+          anchor: "left",
+        },
+      ],
+    });
+    expect(deserialize(json, 1920, 1080, "right").imposition.lens).toBe("right");
+  });
+
+  test("with no source in the blob, the caller's fallback supplies the side", () => {
+    const json = blobWith(undefined, [lensPane()]);
+    expect(deserialize(json, 1920, 1080, "left").imposition.lens).toBe("left");
+  });
+
+  test("with no source and no fallback, the side defaults to the right", () => {
+    const json = blobWith(undefined, [lensPane()]);
+    expect(deserialize(json, 1920, 1080).imposition.lens).toBe("right");
+  });
+
+  test("an unparseable blob still carries the fallback side", () => {
+    expect(deserialize("{{{", 1920, 1080, "left").imposition.lens).toBe("left");
+  });
+
+  test("a malformed record side falls through to the next source", () => {
+    const json = blobWith({ kind: "two-up", lens: "sideways" }, [
+      lensPane({ anchor: "left" }),
+    ]);
+    expect(deserialize(json, 1920, 1080).imposition.lens).toBe("left");
+  });
+
+  test("a whole pre-record blob migrates: side kept, slots kept, anchor gone", () => {
+    // Exactly what a build before the Lens joined the imposition wrote: a bare
+    // kind string, an anchored Lens pane, and two slotted panes beside it.
+    const legacy = JSON.stringify({
+      version: 4,
+      imposition: "three-up",
+      cards: [
+        lensCard(),
+        { id: "c1", componentId: "terminal", title: "A", closable: true },
+        { id: "c2", componentId: "terminal", title: "B", closable: true },
+      ],
+      panes: [
+        lensPane({ anchor: "left" }),
+        {
+          id: "p1",
+          position: { x: 40, y: 40 },
+          size: { width: 600, height: 900 },
+          cardIds: ["c1"],
+          activeCardId: "c1",
+          title: "",
+          acceptsFamilies: ["standard"],
+          slot: 0,
+        },
+        {
+          id: "p2",
+          position: { x: 700, y: 40 },
+          size: { width: 600, height: 900 },
+          cardIds: ["c2"],
+          activeCardId: "c2",
+          title: "",
+          acceptsFamilies: ["standard"],
+          slot: 2,
+        },
+      ],
+    });
+
+    const restored = deserialize(legacy, 1920, 1080);
+    // The user's Lens stays on the side they left it, and the arrangement
+    // survives intact.
+    expect(restored.imposition).toEqual({ kind: "three-up", lens: "left" });
+    expect(restored.panes.map((p) => p.slot)).toEqual([undefined, 0, 2]);
+
+    // The next save writes the record form and no pane carries `anchor` —
+    // the field is consumed on read, once, and never written again.
+    const saved = serialize(restored) as {
+      imposition: unknown;
+      panes: Record<string, unknown>[];
+    };
+    expect(saved.imposition).toEqual({ kind: "three-up", lens: "left" });
+    for (const pane of saved.panes) expect("anchor" in pane).toBe(false);
+
+    // And that blob round-trips to the same state, so the migration is a
+    // one-way step rather than something re-applied on every load.
+    expect(deserialize(JSON.stringify(saved), 1920, 1080)).toEqual(restored);
   });
 });

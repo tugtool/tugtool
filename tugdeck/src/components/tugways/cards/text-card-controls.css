@@ -15,7 +15,7 @@
 }
 
 /* Bordered group with the legend taken out of flow and painted on the
-   border line (see settings-general-body.css for the WebKit rationale).
+   border line (see settings-session-card-body.css for the WebKit rationale).
    Generous inset on all sides; the extra top clears the overhanging
    legend. */
 .text-card-controls-group {

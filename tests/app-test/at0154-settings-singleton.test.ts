@@ -6,7 +6,7 @@
  *
  *   Boot an empty deck. Dispatch the `show-card` control action the
  *   Swift Settings… (⌘,) menu item sends. Verify the Settings card
- *   appears with its internal tab strip (the fixed "Session Card" tab).
+ *   appears with its internal three-tab strip, opening on "Session Card".
  *   Open a second (hello) card so the Settings pane is no longer top
  *   of z-order, then re-dispatch: no duplicate card is created and the
  *   existing Settings pane is raised to z-top and focused.
@@ -50,16 +50,26 @@ describe.skipIf(!SHOULD_RUN)("at0154: Settings card is a singleton", () => {
       await app.waitForCondition<boolean>(
         `${countByComponent("settings")} === 1`,
       );
-      // The internal TugTabBar renders the card's fixed tab strip. "General"
-      // leads it (`settings-card.tsx` SETTINGS_TABS) and so opens selected.
+      // The internal TugTabBar renders the card's fixed tab strip: three
+      // tabs (`settings-card.tsx` TABS), with "Session Card" leading and so
+      // opening selected. The former "General" tab held nothing but the Lens
+      // side chooser, which is a layout decision and now lives with the other
+      // layout decisions in the Lens Layouts section.
       await app.waitForCondition<boolean>(
         `document.querySelector('[data-testid="settings-card"] [role="tablist"]') !== null`,
       );
       expect(
+        await app.evalJS<string[]>(
+          `Array.from(
+            document.querySelectorAll('[data-testid="settings-card"] [role="tab"]'),
+          ).map((el) => (el.textContent || "").trim())`,
+        ),
+      ).toEqual(["Session Card", "Text Card", "Maker"]);
+      expect(
         await app.getElementText(
           '[data-testid="settings-card"] [role="tab"][aria-selected="true"]',
         ),
-      ).toContain("General");
+      ).toContain("Session Card");
 
       // ---- Put another pane on top so the raise is observable.
       await app.evalJS(

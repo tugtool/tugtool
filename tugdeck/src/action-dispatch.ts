@@ -49,7 +49,7 @@ import { isDiffDescriptor } from "@/lib/git-diff-store";
 import { allocateUntitledNumber } from "@/lib/untitled-naming";
 import { clearRecentDocuments } from "@/lib/recent-documents";
 import { openOpenQuickly } from "@/lib/open-quickly-store";
-import { isImpositionKind } from "@/lib/layout-imposer";
+import { isImpositionKind, isLensSide } from "@/lib/layout-imposer";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
@@ -434,21 +434,9 @@ export function initActionDispatch(
 
   // toggle-lens: Show/hide the Lens rail. Fired by the Swift menu's
   // "Show Lens" item (⌥⌘L) and the browser-dev keybinding. Presence of
-  // the anchored pane is the open state ([P02]).
+  // the Lens pane's presence is the open state ([P02]).
   registerAction("toggle-lens", () => {
     deckManager.toggleLensPane();
-  });
-
-  // set-lens-side: Anchor the Lens rail to the left or right viewport
-  // edge. Fired by the General settings control; persists the preference
-  // and flips an already-open rail in place.
-  registerAction("set-lens-side", (payload) => {
-    const side = payload.side;
-    if (side !== "left" && side !== "right") {
-      console.warn("set-lens-side: invalid side", payload);
-      return;
-    }
-    deckManager.setLensAnchorSide(side);
   });
 
   // focus-lens: Move focus into the Lens (opening it if hidden), or back
@@ -522,6 +510,17 @@ export function initActionDispatch(
       return;
     }
     deckManager.setImposition(kind);
+  });
+
+  // set-imposition-lens: choose the side of the deck the Lens holds — the
+  // other axis of the imposition. Dispatched by the Lens Layouts section.
+  registerAction("set-imposition-lens", (payload) => {
+    const side = payload.side;
+    if (!isLensSide(side)) {
+      console.warn("set-imposition-lens: missing or invalid side", payload);
+      return;
+    }
+    deckManager.setImpositionLens(side);
   });
 
   // assign-slot: put a card's pane at a numbered position in the active

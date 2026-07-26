@@ -69,7 +69,7 @@ function deckWithLensAndEditor() {
         activeCardId: LENS_CARD_ID,
         title: "Lens",
         acceptsFamilies: [],
-        anchor: "right",
+
       },
     ],
     activePaneId: "lens-pane",

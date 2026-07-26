@@ -30,7 +30,7 @@ The top-level canvas. Owns the layout tree: the set of all Panes, the ordered `c
 3. No pane has `cardIds.length === 0` — closing the last card closes the Pane.
 4. Every `pane.activeCardId` is a member of that Pane's `cardIds`.
 5. `state.activePaneId`, when set, references a real Pane.
-6. No Pane carries both `anchor` and `slot` — a Pane derives its geometry from at most one source.
+6. At most one Pane hosts the Lens card, and that Pane carries no `slot` — the Lens is the imposition's fixed end, not a link in its chain.
 
 ### Pane
 
@@ -40,7 +40,7 @@ The visual container. A rectangular frame on the canvas with chrome (title bar, 
 |-------|---------------|
 | `TugPane` (component) | Renders the frame; handles drag, resize, title bar, collapse, snap, tab bar |
 | `TugPaneBanner` (component) | Renders the pane-scoped modal banner (error/status overlays) |
-| `TugPaneState` (type) | `{ id, position, size, cardIds, activeCardId, title, acceptsFamilies, collapsed?, anchor?, slot? }` |
+| `TugPaneState` (type) | `{ id, position, size, cardIds, activeCardId, title, acceptsFamilies, collapsed?, slot? }` |
 
 A Pane is a **responder** (per [L11]) for actions on Pane state: `close`, `find`, `toggleMenu`. A Pane is **not** responsible for Card content — it delegates to the active Card's `CardHost`.
 
@@ -50,13 +50,17 @@ A Pane always owns its geometry ([L09]); what varies is what it *derives* that g
 
 | Mode | Marked by | Horizontal | Vertical | Gestures |
 |------|-----------|------------|----------|----------|
-| **free** | neither `anchor` nor `slot` | `position.x` / `size.width` | `position.y` / `size.height` | drag anywhere; all eight resize handles; snap |
-| **anchored** | `anchor: "left" \| "right"` | pinned to that viewport edge, `size.width` wide | pinned top and bottom | not draggable; deck-facing edge resize only (width) |
-| **imposed** | `slot: number` | pinned to the slot's anchor across the layout span | pinned top and bottom (bottom released while collapsed) | drag evicts it back to free; width-only resize on the edges the slot's pin permits |
+| **free** | no `slot`, not the Lens | `position.x` / `size.width` | `position.y` / `size.height` | drag anywhere; all eight resize handles; snap |
+| **pinned** | hosts the Lens card | held against the side `imposition.lens` names, one gap in, `size.width` wide | one gap below the top, the deeper gap above the bottom | not draggable; deck-facing edge resize only (width) |
+| **imposed** | `slot: number` | pinned to the slot's anchor across the layout span | same vertical run as pinned (bottom released while collapsed) | drag or resize evicts it back to free |
 
-Anchored is the Lens rail. Imposed is the layout imposer: the deck's `imposition` (`"two-up" | "three-up" | "four-up"`) defines numbered slots across the span — the canvas minus the rail on its docked side — and a Pane assigned to slot *k* pins its left edge (first slot), its right edge (last slot), or its horizontal center (any middle slot) to that slot's anchor. **The imposer never touches a Pane's width**: a slot is a position anchor, not a rect, so widths stay the user's and overlap is ordinary geometry rather than a case to handle. Any number of Panes may hold the same slot — a slot is a vertical stack whose top Pane is visible, and the Lens list is the switching surface.
+Both derived modes are the layout imposer's (`lib/layout-imposer.ts`), and the difference between them is what the strip's *end* is versus what its *links* are.
 
-Both derived modes resolve at render, in CSS, from custom properties (`--tug-imposer-inset-left` / `--tug-imposer-inset-right` for the span) rather than from a measured-and-committed rect. The deck installs no resize observation of any kind: the browser reflows derived Panes on a window resize or a rail drag for free ([L06]). A derived Pane's stored `position`/`size` therefore hold last-known values, refreshed when the Pane leaves the mode; anything needing the truth measures the frame.
+**Pinned is the Lens.** It is not marked by a field: the Lens Pane is the one hosting the card with `componentId === LENS_CARD_ID`, derived by `findLensPane`. It holds the strip's fixed end at a constant pin and keeps its own width, so it never overlaps and never moves — which is the point, because a chain link's step can go negative and the Lens must never be slid under. Its side is `imposition.lens`, one of the deck's two layout axes.
+
+**Imposed is a link in the chain.** The deck's `imposition.kind` (`"two-up" | "three-up" | "four-up"`) defines numbered slots across the span — the canvas minus the Lens's width and one gap — and the chain packs *away* from the Lens under the step rule: one gap between cards when they fit, an even overlap when they do not, sized so the strip's far edge lands exactly on the band's, one gap short of the Lens. **The imposer never touches a Pane's width**: a slot is a position anchor, not a rect, so widths stay the user's and overlap is ordinary geometry rather than a case to handle. Any number of Panes may hold the same slot — a slot is a vertical stack whose top Pane is visible, and the Lens list is the switching surface.
+
+Both derived modes resolve at render, in CSS, from custom properties (`--tug-imposer-inset-left` / `--tug-imposer-inset-right` for the span) rather than from a measured-and-committed rect. The deck installs no resize observation of any kind: the browser reflows derived Panes on a window resize or a Lens drag for free ([L06]). A derived Pane's stored `position`/`size` therefore hold last-known values, refreshed when the Pane leaves the mode; anything needing the truth measures the frame.
 
 ### Card
 
@@ -151,7 +155,7 @@ The Deck → Pane → Card vocabulary flows through every serialization surface 
 }
 ```
 
-`imposition` (deck-level) and `slot` (pane-level) are **additive-optional**, like `collapsed?` and `anchor?` before them — absent means "no imposition / Pane not imposed", which is exactly the pre-imposer semantics, so no version bump and no migration. The read path is defensive: an unrecognized kind drops the arrangement and every `slot` with it; a `slot` needs a valid kind, a non-negative integer, and no `anchor` on the same Pane; an out-of-range slot clamps to the kind's last slot. A Pane with a surviving `slot` skips the canvas-fit clamp, exactly as an anchored one does — its geometry derives at render.
+`imposition` is a `{ kind?, lens }` record on the deck and `slot` is additive-optional on the Pane. An absent `kind` means "no imposition / Pane not imposed", which is exactly the pre-imposer semantics. The value widened from a bare kind string to the record without a version bump: both shapes parse, and a Pane's retired `anchor` edge is still read on load — once — to recover the side a pre-record blob left the Lens on. The read path is defensive: an unrecognized kind drops the arrangement and every `slot` with it; a `slot` needs a valid kind, a non-negative integer, and a Pane that is not the Lens; an out-of-range slot clamps to the kind's last slot. A Pane with a surviving `slot`, and the Lens Pane, both skip the canvas-fit clamp — their geometry derives at render.
 
 Pre-v4 blobs used `windows` and `activeWindowId` and a different embedded-card shape. `serialization.ts` migrates on read; writes are always v4. The `focusedCardId` pointer for reload focus restoration is stored in a separate tugbank domain (`dev.tugtool.deck.focused`), not inside the layout blob.
 

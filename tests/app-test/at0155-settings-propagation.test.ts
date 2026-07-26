@@ -31,7 +31,7 @@
  * @covers tugdeck/src/components/tugways/cards/settings-app-body.tsx
  * @covers tugdeck/src/settings-api.ts
  * @covers tugdeck/src/lib/editor-settings-store.ts
- * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
+ * @covers tugdeck/src/components/tugways/cards/settings-session-card-body.tsx
  * @covers tugdeck/src/components/tugways/tug-switch.tsx
  */
 
@@ -42,7 +42,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 const SESSION_CM_CONTENT = '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
 const LINE_WRAP_SWITCH =
-  '[data-testid="settings-general"] [data-slot="tug-switch"]';
+  '[data-testid="settings-session-card"] [data-slot="tug-switch"]';
 
 /** Expression: whether the Dev editor's CodeMirror content wraps lines. */
 const SESSION_WRAP_STATE = `(() => {
@@ -101,7 +101,7 @@ describe.skipIf(!SHOULD_RUN)("at0155: Settings Session Card edits reach open Dev
       // in the Session Card tab's panel, so select it first.
       await app.click('[data-testid="tug-tab-sessionCard"]');
       await app.waitForCondition<boolean>(
-        `document.querySelector('[data-testid="settings-general"]') !== null`,
+        `document.querySelector('[data-testid="settings-session-card"]') !== null`,
       );
       await app.waitForCondition<boolean>(
         `document.querySelector(${JSON.stringify(LINE_WRAP_SWITCH)}) !== null`,

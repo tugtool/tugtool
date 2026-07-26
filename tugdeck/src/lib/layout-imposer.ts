@@ -38,6 +38,10 @@
  * Cards sliding under the Lens is not — the band ends where the Lens begins,
  * and the strip always ends with it.
  *
+ * The Lens is imposed too, by {@link imposeLensStyle}, but it is the strip's
+ * fixed end rather than a link in the chain: it holds its pin and its width
+ * while the cards absorb the crowding.
+ *
  * ## Where the numbers come from
  *
  * The widths are the deck's own ([L09] — panes own their geometry); the band is
@@ -57,6 +61,32 @@ import type React from "react";
 
 /** The active N-up rule. */
 export type ImpositionKind = "two-up" | "three-up" | "four-up";
+
+/** Which side of the deck the Lens holds. */
+export type LensSide = "left" | "right";
+
+/**
+ * The deck's layout imposition: the N-up rule the chain of cards is packed
+ * under, and the side the Lens holds.
+ *
+ * The two axes are independent. `kind` absent means no card is imposed — the
+ * deck is free — while `lens` still says which end of the strip the Lens is,
+ * because the Lens has a side whether or not anything is arranged against it.
+ */
+export interface DeckImposition {
+  /** The N-up rule, or absent when nothing is imposed. */
+  kind?: ImpositionKind;
+  /** The side the Lens holds; the chain packs away from it. */
+  lens: LensSide;
+}
+
+/** The side the Lens opens on when nothing has ever said otherwise. */
+export const DEFAULT_LENS_SIDE: LensSide = "right";
+
+/** Narrow an unknown (a parsed blob field, an action payload) to a side. */
+export function isLensSide(value: unknown): value is LensSide {
+  return value === "left" || value === "right";
+}
 
 /** Every imposition kind, in ascending slot count — the Lens picker's order. */
 export const IMPOSITION_KINDS: readonly ImpositionKind[] = [
@@ -262,12 +292,12 @@ export function resolvePlacements(
  * Geometry
  * ---------------------------------------------------------------------------*/
 
-/** The band the chain is laid across: the canvas minus the Lens rail's inset on
- *  the side it is docked to. Imposed panes are never under the rail.
+/** The band the chain is laid across: the canvas minus the Lens's inset on the
+ *  side it holds. Imposed panes are never under the Lens.
  *
- *  The span is the *raw* band — the imposition gap is not folded in here, so
- *  this stays a plain description of the canvas and the rail. Both
- *  {@link imposeRect} and {@link imposeStyle} inset it by the gap themselves. */
+ *  The span is the *raw* band — the chain's own imposition gap is not folded in
+ *  here, so this stays a plain description of the canvas and the Lens. Both
+ *  {@link imposeRect} and {@link imposeStyle} inset it by that gap themselves. */
 export interface ImposerSpan {
   x: number;
   width: number;
@@ -275,21 +305,27 @@ export interface ImposerSpan {
 }
 
 /**
- * Resolve the span from the canvas box and the anchored rail, if any. A closed
- * Lens (no anchored pane) means `rail === null` and the span is the whole
- * canvas.
+ * Resolve the span from the canvas box and the open Lens, if any. A closed Lens
+ * means `lens === null` and the span is the whole canvas.
+ *
+ * The Lens is itself imposed — it stands one gap off the canvas edge — so its
+ * near edge sits `width + gap` in, and that is the inset the band takes. The
+ * chain's own gap then lands its far card exactly one gap off the Lens. This is
+ * the numeric twin of the `--tug-imposer-inset-*` custom properties
+ * `deck-canvas.tsx` writes; both add the same gap, so they agree by
+ * construction.
  */
 export function resolveSpan(
   canvas: { width: number; height: number },
-  rail: { side: "left" | "right"; width: number } | null,
+  lens: { side: LensSide; width: number } | null,
 ): ImposerSpan {
-  if (rail === null) {
+  if (lens === null) {
     return { x: 0, width: canvas.width, height: canvas.height };
   }
-  const width = canvas.width - rail.width;
+  const inset = lens.width + IMPOSITION_GAP_PX;
   return {
-    x: rail.side === "left" ? rail.width : 0,
-    width,
+    x: lens.side === "left" ? inset : 0,
+    width: canvas.width - inset,
     height: canvas.height,
   };
 }
@@ -373,5 +409,33 @@ export function imposeStyle(
   } else {
     style.right = pin;
   }
+  return style;
+}
+
+/**
+ * The Lens's frame: pinned to the side it holds, one gap in on three edges and
+ * the deeper gap at the bottom, at the width the pane carries.
+ *
+ * The Lens is imposed but it is not a link in the chain. A chain link takes a
+ * step, and a step can go negative — cards overlap when the deck is crowded.
+ * The Lens must never be overlapped, so it holds the strip's far end at a fixed
+ * pin and the cards share what is left of the band ({@link resolveSpan}).
+ *
+ * A collapsed Lens keeps its side and top pins and releases the bottom one, so
+ * the window-shade bar sits a gap below the canvas top — the same treatment
+ * {@link imposeStyle} gives a collapsed chain link.
+ */
+export function imposeLensStyle(
+  side: LensSide,
+  paneWidth: number,
+  collapsed: boolean,
+): React.CSSProperties {
+  const style: React.CSSProperties = {
+    width: `${paneWidth}px`,
+    height: "auto",
+    top: GAP,
+    [side]: GAP,
+  };
+  if (!collapsed) style.bottom = GAP_BOTTOM;
   return style;
 }

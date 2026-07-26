@@ -1,12 +1,50 @@
 /* @tug-pairings: none — the section shell sets a text color for inherited
-   content only; the picker's own color comes from `TugChoiceGroup` and the
-   slot exemplars it composes ([L20]). */
+   content only; the picker's own color comes from `TugChoiceGroup`,
+   `TugRadioGroup`, and the miniatures they compose ([L20]). */
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .layouts-section {
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-default-rest);
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   padding-block: 4px;
+}
+
+/* The kind options run two to a row, so the four of them read as a small
+   gallery of arrangements rather than a list to scan top to bottom. The grid
+   goes on the items container, which is the element `TugRadioGroup` lays its
+   children out in — the group root also holds the label. */
+.layouts-section-kinds .tug-radio-group-items {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+  gap: 6px 8px;
+}
+
+/* Each option fills its grid cell so the pictures line up in a column, rather
+   than shrinking to its caption's width. */
+.layouts-section-kinds [data-slot="tug-radio-item"],
+.layouts-section-kinds .tug-radio-item-text,
+.layouts-section-kinds .tug-button-icon-text {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+/* Picture over label — the miniature is what the option is, and the words
+   under it are the caption. */
+.layouts-section-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.layouts-section-option-label {
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--tug-line-height-tight);
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }

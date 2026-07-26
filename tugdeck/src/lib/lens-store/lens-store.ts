@@ -39,8 +39,6 @@ import {
 import {
   LENS_DOMAIN,
   LENS_KEYS,
-  normalizeLensAnchorSide,
-  type LensAnchorSide,
   type LensSnapshot,
 } from "./types";
 
@@ -81,9 +79,6 @@ class LensStore {
     const collapsedSections = migrateKinds(
       readStringArray(client.get(LENS_DOMAIN, LENS_KEYS.COLLAPSED_SECTIONS)),
     );
-    const anchorSide = readAnchorSide(
-      client.get(LENS_DOMAIN, LENS_KEYS.ANCHOR_SIDE),
-    );
     this._dispatch(
       {
         type: "hydrate",
@@ -91,7 +86,6 @@ class LensStore {
         ...(sectionOrder !== undefined ? { sectionOrder } : {}),
         ...(sessionOrder !== undefined ? { sessionOrder } : {}),
         ...(collapsedSections !== undefined ? { collapsedSections } : {}),
-        ...(anchorSide !== undefined ? { anchorSide } : {}),
       },
       { persist: false },
     );
@@ -129,9 +123,6 @@ class LensStore {
     }
     if (prev.collapsedSections !== next.collapsedSections) {
       putJson(LENS_KEYS.COLLAPSED_SECTIONS, next.collapsedSections);
-    }
-    if (prev.anchorSide !== next.anchorSide) {
-      putString(LENS_KEYS.ANCHOR_SIDE, next.anchorSide);
     }
   }
 
@@ -178,11 +169,6 @@ class LensStore {
     this._dispatch({ type: "set_collapsed", kind, collapsed });
   };
 
-  /** Set the viewport edge the Lens rail pins to. Persists. */
-  setAnchorSide = (side: LensAnchorSide): void => {
-    this._ensureInitialized();
-    this._dispatch({ type: "set_anchor_side", side });
-  };
 
   /**
    * Test seam — dispose tugbank subscription and reset. Production never
@@ -270,15 +256,6 @@ function readStringArray(
  * `undefined` so the reducer keeps the default; any present string is
  * coerced to a valid side.
  */
-function readAnchorSide(
-  entry: TaggedValue | undefined,
-): LensAnchorSide | undefined {
-  if (!entry || entry.kind !== "string" || typeof entry.value !== "string") {
-    return undefined;
-  }
-  return normalizeLensAnchorSide(entry.value);
-}
-
 function putNumber(key: string, value: number): void {
   putRaw(key, { kind: "i64", value: Math.round(value) });
 }

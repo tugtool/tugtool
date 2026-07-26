@@ -118,7 +118,7 @@ function deckWithEntryAndLens() {
         activeCardId: LENS_CARD_ID,
         title: "Lens",
         acceptsFamilies: [],
-        anchor: "right",
+
       },
     ],
     activePaneId: "pA",

@@ -77,16 +77,6 @@ describe("LensStore — persistence", () => {
     expect(put!.body).toEqual({ kind: "json", value: ["telemetry"] });
   });
 
-  it("setAnchorSide PUTs the anchorSide string", async () => {
-    lensStore.setAnchorSide("left");
-    await Promise.resolve();
-    const put = captured.find(
-      (c) => c.method === "PUT" && c.url.endsWith(`/${LENS_KEYS.ANCHOR_SIDE}`),
-    );
-    expect(put).toBeDefined();
-    expect(put!.body).toEqual({ kind: "string", value: "left" });
-  });
-
   it("a no-op mutation issues no PUT", async () => {
     lensStore.setCollapsed("log", false); // never collapsed → no change
     await Promise.resolve();

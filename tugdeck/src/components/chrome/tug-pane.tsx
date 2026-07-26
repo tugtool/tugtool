@@ -47,6 +47,8 @@ import { useDeckManager } from "@/deck-manager-context";
 import type { MovePaneOptions } from "@/deck-manager-store";
 import {
   imposeStyle,
+  imposeLensStyle,
+  type LensSide,
   IMPOSITION_GAP_PX,
   type ImposedPlacement,
 } from "@/lib/layout-imposer";
@@ -642,10 +644,10 @@ function snapshotCardRects(
   zoom = 1,
 ): { id: string; rect: Rect }[] {
   const results: { id: string; rect: Rect }[] = [];
-  // Every pane is a snap candidate — including anchored rails (the Lens). A free
-  // pane dragged with Option snaps its edge to the Lens's edge just as it does to
-  // any other card, so a card can be abutted to the rail. The rail exposes the
-  // same `getBoundingClientRect` as any pane, so its rect needs no special case.
+  // Every pane is a snap candidate — including the pinned Lens. A free pane
+  // dragged with Option snaps its edge to the Lens's edge just as it does to
+  // any other card, so a card can be abutted to it. The Lens exposes the same
+  // `getBoundingClientRect` as any pane, so its rect needs no special case.
   const els = document.querySelectorAll<HTMLElement>(
     ".tug-pane[data-pane-id]",
   );
@@ -779,9 +781,18 @@ export interface TugPaneProps {
    * This pane's place in the imposition chain, when it holds a slot. Resolved
    * by `DeckCanvas`, which is the only vantage point that can see every
    * slotted pane's width at once — a pane cannot work out its own offset down
-   * the chain from its own state. Absent for a free or anchored pane.
+   * the chain from its own state. Absent for a free pane and for the Lens.
    */
   placement?: ImposedPlacement;
+  /**
+   * Set only on the pane hosting the Lens, to the side the Lens holds
+   * (`imposition.lens`). The Lens is imposed as the strip's fixed end rather
+   * than a link in its chain, so it takes a pin instead of a `placement`: it
+   * is non-draggable, resizable only on its deck-facing edge, and excluded
+   * from snap and merge. Resolved by `DeckCanvas` — the pane carries no
+   * marker of its own ([P04]).
+   */
+  lensSide?: LensSide;
   /**
    * Called when a card drag ends over another card's tab bar ([D45]).
    *
@@ -816,10 +827,9 @@ type ResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 
 const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
 
-// Gutter reserved on the deck side so an anchored rail can't be widened
-// to cover the whole viewport. The effective max width is
-// `window.innerWidth - this`.
-const ANCHORED_MIN_GUTTER_PX = 80;
+// Gutter reserved on the deck side so the Lens can't be widened to cover
+// the whole viewport. The effective max width is `window.innerWidth - this`.
+const LENS_MIN_GUTTER_PX = 80;
 
 // ---------------------------------------------------------------------------
 // TugPane
@@ -844,26 +854,26 @@ export function TugPane({
   zIndex,
   onCardCollapsed,
   placement,
+  lensSide,
 }: TugPaneProps) {
   const { id, position, size } = stackState;
   const collapsed = stackState.collapsed === true;
-  // An anchored pane derives its geometry from the anchor edge (a
-  // left- or right-edge rail) instead of a free position: it is
-  // non-draggable, resizable only on its exposed (deck-facing) edge, and
-  // excluded from snap and merge. The pane still owns geometry per [L09];
-  // it merely computes it from `anchor` rather than `position`.
-  const anchorSide =
-    stackState.anchor === "left" || stackState.anchor === "right"
-      ? stackState.anchor
-      : null;
-  const anchored = anchorSide !== null;
-  // An imposed pane is the third geometry mode: it derives its position from
-  // its place in the imposition chain (`lib/layout-imposer.ts`) and its height
-  // from the canvas, instead of from `position`. Its width is still its own —
-  // the imposer never touches it. Mutually exclusive with `anchored`, which the
-  // deck-state invariant already guarantees; the check here keeps the render
-  // honest against a hand-built state.
-  const imposed = !anchored && placement !== undefined;
+  // Two derived geometry modes, both placed by `lib/layout-imposer.ts`.
+  //
+  // Pinned — the Lens. It holds one side of the canvas at a fixed pin and
+  // keeps its own width, so it is non-draggable, resizable only on its
+  // exposed (deck-facing) edge, and excluded from snap and merge.
+  //
+  // Imposed — a slotted pane. It derives its position from its place in the
+  // imposition chain and its height from the canvas, instead of from
+  // `position`. Its width is still its own; the imposer never touches it.
+  //
+  // The two are mutually exclusive, which the deck-state invariant already
+  // guarantees (the Lens pane never carries a slot); the check here keeps the
+  // render honest against a hand-built state. A free pane is neither and uses
+  // its stored `position`/`size`. Every mode still owns its geometry [L09].
+  const pinned = lensSide !== undefined;
+  const imposed = !pinned && placement !== undefined;
   // Read at gesture time by the drag and resize machines, whose `useCallback`
   // identities should not churn with the arrangement.
   const imposedRef = useRef(imposed);
@@ -1523,9 +1533,9 @@ export function TugPane({
       barEls.forEach((el) => {
         const paneId = el.getAttribute("data-pane-id");
         if (!paneId || paneId === id) return;
-        // Anchored rails never accept a merge — skip their tab bar as a
-        // drop target.
-        if (el.closest(".tug-pane[data-anchored]")) return;
+        // The Lens never accepts a merge — skip its tab bar as a drop
+        // target.
+        if (el.closest(".tug-pane[data-lens]")) return;
         dragTabBarCache.current.push({ paneId, rect: el.getBoundingClientRect(), el });
       });
 
@@ -1898,20 +1908,19 @@ export function TugPane({
     [id, onCardMoved, position.x, position.y, size.width, size.height],
   );
 
-  // Deck-facing-edge resize for an anchored rail. The rail stays pinned
-  // to its viewport edge, so only its width changes. For a right-anchored
-  // rail the exposed edge is the west one (dragging left grows it); for a
-  // left-anchored rail it is the east edge (dragging right grows it).
-  // Width-only keeps the derived edge anchoring intact (the generic
-  // handler would set left/top, fighting the anchor). The commit writes
-  // `size.width` to the pane; the anchored reopen-width mirror to
-  // `lensStore` lives in the deck manager's card-moved handler, keeping
-  // this pane lens-agnostic.
+  // Deck-facing-edge resize for the pinned Lens. It stays pinned to its
+  // side, so only its width changes. For a right-side Lens the exposed edge
+  // is the west one (dragging left grows it); for a left-side Lens it is the
+  // east edge (dragging right grows it). Width-only keeps the derived pin
+  // intact (the generic handler would set left/top, fighting it). The commit
+  // writes `size.width` to the pane; the reopen-width mirror to `lensStore`
+  // lives in the deck manager's card-moved handler, keeping this pane
+  // lens-agnostic.
   //
   // The exposed edge snaps with Option held, exactly like any other pane
-  // edge: the rail is the moving side and every other pane is a
-  // stationary snap target. [D01, D03, D04]
-  const handleAnchoredResizeStart = useCallback(
+  // edge: the Lens is the moving side and every other pane is a stationary
+  // snap target. [D01, D03, D04]
+  const handleLensResizeStart = useCallback(
     (event: React.PointerEvent) => {
       event.preventDefault();
       event.stopPropagation();
@@ -1924,23 +1933,23 @@ export function TugPane({
       const minWidth = sizePolicy.min.width;
       const maxWidth = Math.max(
         minWidth,
-        window.innerWidth - ANCHORED_MIN_GUTTER_PX,
+        window.innerWidth - LENS_MIN_GUTTER_PX,
       );
       // A left rail's deck edge faces right (east): rightward motion
       // grows it. A right rail's deck edge faces left (west): leftward
       // motion grows it.
-      const growSign = anchorSide === "left" ? 1 : -1;
+      const growSign = lensSide === "left" ? 1 : -1;
 
       // Snap targets and geometry, snapshotted once at gesture start. The
       // pinned edge is measured rather than derived from `position`, which
-      // an anchored rail does not use.
+      // the pinned Lens does not use.
       const canvasBounds = frame.parentElement?.getBoundingClientRect() ?? null;
       const otherRects = snapshotCardRects(canvasBounds, id, zoom).map((r) => r.rect);
       const guideEdgeOffsets = measureGuideEdgeOffsets(frame, zoom);
       const frameRect = frame.getBoundingClientRect();
       const canvasLeft = canvasBounds ? canvasBounds.left : 0;
       const pinnedEdge =
-        anchorSide === "left"
+        lensSide === "left"
           ? (frameRect.left - canvasLeft) / zoom
           : (frameRect.right - canvasLeft) / zoom;
 
@@ -1970,11 +1979,11 @@ export function TugPane({
         // never moves, so width follows directly from the snapped edge.
         const exposedEdge = pinnedEdge + growSign * next;
         const snapResult = computeResizeSnap(
-          anchorSide === "left" ? { right: exposedEdge } : { left: exposedEdge },
+          lensSide === "left" ? { right: exposedEdge } : { left: exposedEdge },
           otherRects,
           -IMPOSITION_GAP_PX,
         );
-        const snapped = anchorSide === "left" ? snapResult.right : snapResult.left;
+        const snapped = lensSide === "left" ? snapResult.right : snapResult.left;
         if (snapped !== undefined) {
           next = Math.min(
             maxWidth,
@@ -2029,7 +2038,7 @@ export function TugPane({
       size.width,
       size.height,
       sizePolicy.min.width,
-      anchorSide,
+      lensSide,
     ],
   );
 
@@ -2082,26 +2091,24 @@ export function TugPane({
       data-testid="tug-pane"
       data-pane-id={id}
       data-collapsed={collapsed ? "true" : "false"}
-      {...(anchorSide ? { "data-anchored": anchorSide } : {})}
+      {...(lensSide !== undefined ? { "data-lens": lensSide } : {})}
       {...(imposed && placement !== undefined
         ? { "data-imposed": String(placement.slot) }
         : {})}
-      {...(effectiveMeta.squareCorners ? { "data-square-corners": "true" } : {})}
       style={{
         position: "absolute",
-        // Three geometry modes. An anchored rail pins to its viewport edge
-        // (left or right), spans the full height, and takes only its width
-        // from the store. An imposed pane pins to its place in the imposition
-        // chain and runs the canvas height less a gap top and bottom, also
-        // taking only its width from the store — a collapsed one keeps the
-        // window-shade stub height in place of the released bottom pin. A free
-        // pane uses its stored left/top/width/height. [L06]/[L09]
-        ...(anchored
+        // Three geometry modes. The pinned Lens holds one side of the canvas
+        // a gap in, runs the canvas height less a gap top and the deeper gap
+        // at the bottom, and takes only its width from the store. An imposed
+        // pane pins to its place in the imposition chain over the same
+        // vertical run, also taking only its width from the store — a
+        // collapsed one keeps the window-shade stub height in place of the
+        // released bottom pin. A free pane uses its stored
+        // left/top/width/height. [L06]/[L09]
+        ...(lensSide !== undefined
           ? {
-              ...(anchorSide === "left" ? { left: 0 } : { right: 0 }),
-              top: 0,
-              bottom: 0,
-              width: renderWidth,
+              ...imposeLensStyle(lensSide, renderWidth, collapsed),
+              ...(collapsed ? { height: frameHeight } : {}),
             }
           : imposed && placement !== undefined
             ? {
@@ -2125,15 +2132,15 @@ export function TugPane({
       }}
     >
       {/* Resize handles -- hidden when collapsed; drag remains active [D07].
-          An anchored rail exposes only its deck-facing edge (west for a
-          right rail, east for a left rail). Everything else exposes all eight,
-          imposed or not: resizing an imposed pane releases it from its slot,
-          so there is no edge it needs to be protected from. */}
+          The pinned Lens exposes only its deck-facing edge (west for a
+          right-side Lens, east for a left-side one). Everything else exposes
+          all eight, imposed or not: resizing an imposed pane releases it from
+          its slot, so there is no edge it needs to be protected from. */}
       {!collapsed &&
-        (anchored ? (
+        (lensSide !== undefined ? (
           <div
-            className={`tug-pane-resize tug-pane-resize-${anchorSide === "left" ? "e" : "w"}`}
-            onPointerDown={handleAnchoredResizeStart}
+            className={`tug-pane-resize tug-pane-resize-${lensSide === "left" ? "e" : "w"}`}
+            onPointerDown={handleLensResizeStart}
           />
         ) : (
           RESIZE_EDGES.map((edge) => (
@@ -2166,7 +2173,7 @@ export function TugPane({
             activeCardId={activeCardId}
             onCollapse={handleFrameCollapseToggle}
             onClose={handleTitleBarClose}
-            onDragStart={anchored ? undefined : handleDragStart}
+            onDragStart={pinned ? undefined : handleDragStart}
           />
 
           <div className="tug-pane-body" data-testid="tug-pane-body">

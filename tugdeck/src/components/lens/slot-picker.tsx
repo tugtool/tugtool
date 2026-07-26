@@ -36,6 +36,7 @@ import React, { useSyncExternalStore } from "react";
 import { dispatchAction } from "@/action-dispatch";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import { slotCount } from "@/lib/layout-imposer";
+import { findLensPane } from "@/deck-store-selectors";
 import { TugSlotLayout } from "@/components/tugways/tug-slot-layout";
 import type { TugSlotState } from "@/components/tugways/tug-slot";
 
@@ -51,17 +52,16 @@ export function SlotPicker({ cardId }: { cardId: string }): React.ReactElement |
     () => null,
   );
 
-  const imposition = deck?.imposition;
-  if (imposition === undefined || deck === null) return null;
+  const kind = deck?.imposition.kind;
+  if (kind === undefined || deck === null) return null;
 
-  const count = slotCount(imposition);
+  const count = slotCount(kind);
   const hostIndex = deck.panes.findIndex((pane) => pane.cardIds.includes(cardId));
   const host = hostIndex >= 0 ? deck.panes[hostIndex] : undefined;
-  // A card hosted in the anchored rail is not the imposer's to place — the rail
-  // already derives its geometry from its anchor edge. Lens rows never
-  // represent the rail today; the guard keeps the picker honest if one ever
-  // does.
-  const disabled = host === undefined || host.anchor !== undefined;
+  // A card hosted in the Lens is not the chain's to place — the Lens is the
+  // imposition's fixed end. Lens rows never represent the Lens itself today;
+  // the guard keeps the picker honest if one ever does.
+  const disabled = host === undefined || host.id === findLensPane(deck)?.id;
   const held = host?.slot;
 
   // Later in the panes array is higher in the stack, so the last pane holding

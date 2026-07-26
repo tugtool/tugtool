@@ -3,10 +3,10 @@
  * state for the Lens panel (section order, the Sessions-section row order,
  * per-section collapse, and the preferred reopen width).
  *
- * The Lens's live geometry (open/width) belongs to the deck layout blob
- * (anchored-pane presence + `size.width`); this store owns only the
- * *arrangement* preferences and the reopen width — a preference, not
- * live geometry.
+ * The Lens's live geometry belongs to the deck layout blob — pane presence is
+ * open/closed, `size.width` is the live width, and `imposition.lens` is the
+ * side it holds. This store owns only the *arrangement* preferences and the
+ * reopen width, which is a preference rather than live geometry.
  *
  * Conformance:
  *   - [L02] external store; React reads via `useSyncExternalStore`.
@@ -25,19 +25,7 @@ export const LENS_KEYS = {
   SECTION_ORDER: "sectionOrder",
   SESSION_ORDER: "sessionOrder",
   COLLAPSED_SECTIONS: "collapsedSections",
-  ANCHOR_SIDE: "anchorSide",
 } as const;
-
-/** Viewport edge the Lens rail pins to; the deck faces the opposite side. */
-export type LensAnchorSide = "left" | "right";
-
-/** Default anchor side — the rail opens on the right of the deck. */
-export const DEFAULT_LENS_ANCHOR_SIDE: LensAnchorSide = "right";
-
-/** Coerce an arbitrary persisted value to a valid anchor side. */
-export function normalizeLensAnchorSide(value: unknown): LensAnchorSide {
-  return value === "left" ? "left" : "right";
-}
 
 /**
  * Default reopen width in pixels — matches the historical dev-panel
@@ -70,6 +58,4 @@ export interface LensSnapshot {
   sessionOrder: readonly string[];
   /** Kinds the user has collapsed (band-only). */
   collapsedSections: readonly string[];
-  /** Viewport edge the Lens rail pins to. */
-  anchorSide: LensAnchorSide;
 }

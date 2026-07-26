@@ -8,6 +8,7 @@ import {
   clampSlot,
   imposeRect,
   imposeStyle,
+  imposeLensStyle,
   isImpositionKind,
   packFromForRail,
   resolvePlacements,
@@ -22,10 +23,12 @@ const GAP = IMPOSITION_GAP_PX;
 
 /** A 1000×800 canvas with no rail — the simplest span to hand-compute against. */
 const FULL: ImposerSpan = { x: 0, width: 1000, height: 800 };
-/** The same canvas with a 260px Lens docked left. */
-const LEFT_RAIL: ImposerSpan = { x: 260, width: 740, height: 800 };
-/** The same canvas with a 260px Lens docked right. */
-const RIGHT_RAIL: ImposerSpan = { x: 0, width: 740, height: 800 };
+/** The same canvas with a 260px Lens holding the left. The inset is the
+ *  Lens's width plus one gap, because the Lens is itself imposed a gap off
+ *  the canvas edge. */
+const LENS_LEFT: ImposerSpan = { x: 265, width: 735, height: 800 };
+/** The same canvas with a 260px Lens holding the right. */
+const LENS_RIGHT: ImposerSpan = { x: 0, width: 735, height: 800 };
 
 /** Terse pane literal for the packing cases. */
 const pane = (id: string, slot: number | undefined, width: number): ImposerPane =>
@@ -115,12 +118,12 @@ describe("resolveSpan", () => {
     expect(resolveSpan(canvas, null)).toEqual(FULL);
   });
 
-  test("a left-docked rail insets the span's origin", () => {
-    expect(resolveSpan(canvas, { side: "left", width: 260 })).toEqual(LEFT_RAIL);
+  test("a left-side Lens insets the span's origin by its width plus a gap", () => {
+    expect(resolveSpan(canvas, { side: "left", width: 260 })).toEqual(LENS_LEFT);
   });
 
-  test("a right-docked rail insets the span's width only", () => {
-    expect(resolveSpan(canvas, { side: "right", width: 260 })).toEqual(RIGHT_RAIL);
+  test("a right-side Lens insets the span's width only", () => {
+    expect(resolveSpan(canvas, { side: "right", width: 260 })).toEqual(LENS_RIGHT);
   });
 });
 
@@ -273,13 +276,13 @@ describe("imposeRect", () => {
     expect(b.position.x - (a.position.x + a.size.width)).toBe(GAP);
   });
 
-  test("all the slack pools between the last card and the rail", () => {
+  test("all the slack pools between the last card and the Lens", () => {
     const map = chain([260, 180], "right");
-    const b = imposeRect(placementFor(map, "p1"), 180, RIGHT_RAIL);
-    const railInnerEdge = RIGHT_RAIL.x + RIGHT_RAIL.width;
-    const slack = railInnerEdge - (b.position.x + b.size.width);
-    // Span 740, chain 260 + 5 + 180 = 445, one gap in from the left.
-    expect(slack).toBe(740 - GAP - 445);
+    const b = imposeRect(placementFor(map, "p1"), 180, LENS_RIGHT);
+    const bandFarEdge = LENS_RIGHT.x + LENS_RIGHT.width;
+    const slack = bandFarEdge - (b.position.x + b.size.width);
+    // Span 735, chain 260 + 5 + 180 = 445, one gap in from the left.
+    expect(slack).toBe(735 - GAP - 445);
     expect(slack).toBeGreaterThan(GAP);
   });
 
@@ -304,8 +307,8 @@ describe("imposeRect", () => {
 
   test("an overlapping chain never reaches under the rail", () => {
     const map = chain([500, 500, 500], "right");
-    const lastRect = imposeRect(placementFor(map, "p2"), 500, RIGHT_RAIL);
-    const railInnerEdge = RIGHT_RAIL.x + RIGHT_RAIL.width;
+    const lastRect = imposeRect(placementFor(map, "p2"), 500, LENS_RIGHT);
+    const railInnerEdge = LENS_RIGHT.x + LENS_RIGHT.width;
     expect(lastRect.position.x + lastRect.size.width).toBe(railInnerEdge - GAP);
   });
 
@@ -326,22 +329,22 @@ describe("imposeRect", () => {
     );
   });
 
-  test("a left-docked rail collects the slack on its own side", () => {
+  test("a left-side Lens collects the slack on its own side", () => {
     // Packing right: slot 1 leads at the span's right edge, slot 0 chains back
-    // toward the rail, and whatever is left over sits between them and it.
+    // toward the Lens, and whatever is left over sits between them and it.
     const map = chain([300, 300], "left");
-    const a = imposeRect(placementFor(map, "p0"), 300, LEFT_RAIL);
-    const b = imposeRect(placementFor(map, "p1"), 300, LEFT_RAIL);
+    const a = imposeRect(placementFor(map, "p0"), 300, LENS_LEFT);
+    const b = imposeRect(placementFor(map, "p1"), 300, LENS_LEFT);
     expect(b.position.x + b.size.width).toBe(995);
     expect(b.position.x - (a.position.x + a.size.width)).toBe(GAP);
-    expect(a.position.x - LEFT_RAIL.x).toBe(740 - GAP - 300 - GAP - 300);
+    expect(a.position.x - LENS_LEFT.x).toBe(735 - GAP - 300 - GAP - 300);
   });
 
   test("a right-docked rail leaves the left-packed chain where it was", () => {
     // Packing runs away from the rail, so a rail on the right never moves the
     // chain — it only shrinks the slack that pools beside it.
     const map = chain([300, 300], "right");
-    expect(imposeRect(placementFor(map, "p0"), 300, RIGHT_RAIL).position.x).toBe(
+    expect(imposeRect(placementFor(map, "p0"), 300, LENS_RIGHT).position.x).toBe(
       imposeRect(placementFor(map, "p0"), 300, FULL).position.x,
     );
   });
@@ -355,15 +358,15 @@ describe("imposeRect", () => {
 
   test("the run is the span height less the top gap and the deeper bottom", () => {
     const map = chain([321], "right");
-    const rect = imposeRect(placementFor(map, "p0"), 321, LEFT_RAIL);
+    const rect = imposeRect(placementFor(map, "p0"), 321, LENS_LEFT);
     expect(rect.position.y).toBe(IMPOSITION_GAP_PX);
     expect(rect.size.height).toBe(
-      LEFT_RAIL.height - IMPOSITION_GAP_PX - IMPOSITION_GAP_BOTTOM_PX,
+      LENS_LEFT.height - IMPOSITION_GAP_PX - IMPOSITION_GAP_BOTTOM_PX,
     );
   });
 
   test("width is a pass-through for every span", () => {
-    for (const span of [FULL, LEFT_RAIL, RIGHT_RAIL]) {
+    for (const span of [FULL, LENS_LEFT, LENS_RIGHT]) {
       for (const w of [1, 120, 640, 4000]) {
         const map = chain([w], "right");
         expect(imposeRect(placementFor(map, "p0"), w, span).size.width).toBe(w);
@@ -492,6 +495,65 @@ describe("imposeStyle", () => {
   });
 });
 
+describe("imposeLensStyle", () => {
+  test("pins the Lens to its side, a gap in on three edges and deeper below", () => {
+    expect(imposeLensStyle("right", 420, false)).toEqual({
+      width: "420px",
+      height: "auto",
+      top: "5px",
+      right: "5px",
+      bottom: "32px",
+    });
+    expect(imposeLensStyle("left", 420, false)).toEqual({
+      width: "420px",
+      height: "auto",
+      top: "5px",
+      left: "5px",
+      bottom: "32px",
+    });
+  });
+
+  test("a collapsed Lens keeps its side and top pins and releases the bottom", () => {
+    const collapsed = imposeLensStyle("right", 420, true);
+    expect(collapsed.top).toBe("5px");
+    expect(collapsed.right).toBe("5px");
+    expect(collapsed.bottom).toBeUndefined();
+  });
+
+  test("the width is the pane's own, verbatim", () => {
+    expect(imposeLensStyle("left", 987, false).width).toBe("987px");
+  });
+});
+
+describe("the chain clears the Lens by exactly one gap", () => {
+  // The derivation the pinned-Lens geometry rests on: with the Lens on the
+  // right at width W, its near edge sits at `canvasW - GAP - W`, and the
+  // chain's far card must land one gap short of that.
+  const CANVAS = { width: 1000, height: 800 };
+
+  for (const W of [260, 420, 500]) {
+    test(`a ${W}px right-side Lens leaves the chain ending one gap off it`, () => {
+      const span = resolveSpan(CANVAS, { side: "right", width: W });
+      // One card wide enough to fill the band: its far edge is the chain's.
+      const map = resolvePlacements("two-up", [pane("a", 0, 100)], "right");
+      const rect = imposeRect(placementFor(map, "a"), span.width - GAP * 2, span);
+      const chainFarEdge = rect.position.x + rect.size.width;
+      const lensNearEdge = CANVAS.width - GAP - W;
+      expect(chainFarEdge).toBe(lensNearEdge - GAP);
+      expect(rect.position.x).toBe(GAP);
+    });
+
+    test(`a ${W}px left-side Lens leaves the chain starting one gap off it`, () => {
+      const span = resolveSpan(CANVAS, { side: "left", width: W });
+      const map = resolvePlacements("two-up", [pane("a", 0, 100)], "left");
+      const rect = imposeRect(placementFor(map, "a"), span.width - GAP * 2, span);
+      const lensFarEdge = GAP + W;
+      expect(rect.position.x).toBe(lensFarEdge + GAP);
+      expect(rect.position.x + rect.size.width).toBe(CANVAS.width - GAP);
+    });
+  }
+});
+
 describe("the CSS and numeric forms agree", () => {
   // The style's calc is what the browser evaluates. This reproduces it by hand
   // — including the `min()` that decides gap-or-overlap — and checks it lands
@@ -519,8 +581,8 @@ describe("the CSS and numeric forms agree", () => {
 
   const CASES: Array<[ImposerSpan, number, "left" | "right" | null]> = [
     [FULL, 1000, null],
-    [RIGHT_RAIL, 1000, "right"],
-    [LEFT_RAIL, 1000, "left"],
+    [LENS_RIGHT, 1000, "right"],
+    [LENS_LEFT, 1000, "left"],
   ];
 
   test("a chain with room matches imposeRect everywhere", () => {

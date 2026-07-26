@@ -46,7 +46,7 @@
  * @covers tugdeck/src/lib/model-label.ts
  * @covers tugdeck/src/components/tugways/cards/model-picker-sheet.tsx
  * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
- * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
+ * @covers tugdeck/src/components/tugways/cards/settings-session-card-body.tsx
  * @covers tugdeck/src/components/tugways/tug-alert-sheet.tsx
  */
 
@@ -56,7 +56,7 @@ import { launchTugApp, type App } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 180_000;
 
-const SETTINGS = '[data-testid="settings-general"]';
+const SETTINGS = '[data-testid="settings-session-card"]';
 const SETTINGS_MODEL_CHIP = `${SETTINGS} [data-slot="model-chip"]`;
 // The overlay's ACTIVE face only — the width stabilizer also renders hidden
 // sizer alternates whose text would pollute a plain textContent read.
@@ -234,7 +234,7 @@ describe.skipIf(!SHOULD_RUN)(
           }
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector('.settings-general-popup-mode') === null`,
+              `document.querySelector('.settings-session-card-popup-mode') === null`,
             ),
             "no TugPopupButton remains for the permission-mode default",
           ).toBe(true);

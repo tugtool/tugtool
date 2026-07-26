@@ -27,10 +27,13 @@ import {
   DEFAULT_LENS_WIDTH_PX,
   MIN_LENS_WIDTH_PX,
 } from "@/lib/lens-store/types";
+import { LENS_CARD_ID } from "@/lib/lens-card-id";
 import { LensContent } from "./lens-content";
 
-/** The Lens card's componentId — the registered singleton id. */
-export const LENS_CARD_ID = "lens";
+/** The Lens card's componentId — the registered singleton id. Declared in
+ *  `lib/lens-card-id.ts` so non-component code can name it; re-exported here
+ *  because this is where callers expect to find it. */
+export { LENS_CARD_ID };
 
 /** Register the Lens card. `hidden` keeps it out of the type-picker
  *  `[+]` menu: it is reachable only through Cmd-L / Opt-Cmd-L. */
@@ -40,7 +43,7 @@ export function registerLensCard(): void {
     family: "lens",
     acceptsFamilies: [],
     contentFactory: (cardId: string) => <LensContent cardId={cardId} />,
-    defaultMeta: { title: "Lens", closable: true, squareCorners: true },
+    defaultMeta: { title: "Lens", closable: true },
     hidden: true,
     sizePolicy: {
       min: { width: MIN_LENS_WIDTH_PX, height: 240 },

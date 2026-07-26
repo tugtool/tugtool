@@ -1,5 +1,5 @@
 /**
- * settings-general-body.tsx — the Session Card settings panel.
+ * settings-session-card-body.tsx — the Session Card settings panel.
  *
  * The editor/response preferences that previously lived behind the Dev
  * card's title-bar `…` sheet, now hosted by the Settings card's
@@ -29,9 +29,9 @@
  * Laws: store snapshots enter via `useSyncExternalStore` [L02]; the
  * controls dispatch through the chain to this panel's
  * `useResponderForm` responder ([L11]); layout lives in
- * settings-general-body.css [L06].
+ * settings-session-card-body.css [L06].
  *
- * @module components/tugways/cards/settings-general-body
+ * @module components/tugways/cards/settings-session-card-body
  */
 
 import React, { useEffect, useId, useState, useSyncExternalStore } from "react";
@@ -54,7 +54,7 @@ import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { ResponseSettingsStore } from "@/lib/response-settings-store";
 import { DefaultsMetadataAdapter } from "@/lib/defaults-metadata-adapter";
 import { createNumberFormatter } from "@/lib/tug-format";
-import "./settings-general-body.css";
+import "./settings-session-card-body.css";
 
 // ---------------------------------------------------------------------------
 // Option constants
@@ -110,10 +110,10 @@ function submitKeyLegend(
 }
 
 // ---------------------------------------------------------------------------
-// SettingsGeneralBody
+// SettingsSessionCardBody
 // ---------------------------------------------------------------------------
 
-export function SettingsGeneralBody() {
+export function SettingsSessionCardBody() {
   const [editorStore] = useState(() => new EditorSettingsStore());
   const [responseStore] = useState(() => new ResponseSettingsStore());
   // Defaults-shaped metadata store: lets the Z4B chips + picker sheets render
@@ -199,15 +199,15 @@ export function SettingsGeneralBody() {
   return (
     <ResponderScope>
       <div
-        className="settings-general"
-        data-testid="settings-general"
+        className="settings-session-card"
+        data-testid="settings-session-card"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
         <TugBox
           label="Response"
           labelPosition="legend"
           variant="bordered"
-          className="settings-general-group"
+          className="settings-session-card-group"
         >
           {/* 2-column grid (label / slider) so both rows share a single
               label column auto-sized to the longest entry, keeping labels
@@ -216,10 +216,10 @@ export function SettingsGeneralBody() {
               whole transcript subtree (CSS `zoom` on `.session-card-transcript`)
               per card; the macOS app's View menu (`WKWebView.pageZoom`)
               still scales the entire window and composes with this. */}
-          <div className="settings-general-slider-grid">
-            <span className="settings-general-slider-label">Magnification</span>
+          <div className="settings-session-card-slider-grid">
+            <span className="settings-session-card-slider-label">Magnification</span>
             <TugSlider
-              className="settings-general-slider"
+              className="settings-session-card-slider"
               value={responseSettings.magnification}
               min={0.5}
               max={1.5}
@@ -229,9 +229,9 @@ export function SettingsGeneralBody() {
               valueWidth="3.5rem"
               formatter={MAGNIFICATION_FORMATTER}
             />
-            <span className="settings-general-slider-label">Entry Gap</span>
+            <span className="settings-session-card-slider-label">Entry Gap</span>
             <TugSlider
-              className="settings-general-slider"
+              className="settings-session-card-slider"
               value={responseSettings.entryMargin}
               min={0}
               max={48}
@@ -247,11 +247,11 @@ export function SettingsGeneralBody() {
           label="Prompt Editor"
           labelPosition="legend"
           variant="bordered"
-          className="settings-general-group"
+          className="settings-session-card-group"
         >
-          <div className="settings-general-row">
+          <div className="settings-session-card-row">
             <TugPopupButton
-              className="settings-general-popup settings-general-popup-font"
+              className="settings-session-card-popup settings-session-card-popup-font"
               topLabel="Font"
               label={EDITOR_FONT_OPTIONS.find(f => f.value === editorSettings.fontId)?.label ?? "Font"}
               items={EDITOR_FONT_OPTIONS}
@@ -259,7 +259,7 @@ export function SettingsGeneralBody() {
               size="sm"
             />
             <TugPopupButton
-              className="settings-general-popup settings-general-popup-size"
+              className="settings-session-card-popup settings-session-card-popup-size"
               topLabel="Size"
               label={`${editorSettings.fontSize}px`}
               items={FONT_SIZE_OPTIONS}
@@ -268,7 +268,7 @@ export function SettingsGeneralBody() {
             />
           </div>
 
-          <div className="settings-general-switches">
+          <div className="settings-session-card-switches">
             <TugSwitch
               label="Soft wrap text"
               checked={editorSettings.lineWrap}
@@ -293,16 +293,16 @@ export function SettingsGeneralBody() {
               default (today's behavior) is the first option in each.
               `returnKeyAction` / `numpadEnterAction` are the editor's
               `InputAction`s straight through — shift inverts each. */}
-          <div className="settings-general-keys">
+          <div className="settings-session-card-keys">
             {/* Label + choice-group pairs in a 2-column grid. The control
                 column is `max-content` (sized to the widest group), and each
                 group fills it (`width:auto` + grid stretch) — so both groups
                 are equal width and every segment is just as wide as the
                 longest of the four choices, never the whole row. */}
-            <div className="settings-general-key-grid">
-              <span className="settings-general-key-label">Return key</span>
+            <div className="settings-session-card-key-grid">
+              <span className="settings-session-card-key-label">Return key</span>
               <TugChoiceGroup
-                className="settings-general-key-choice"
+                className="settings-session-card-key-choice"
                 size="sm"
                 senderId={returnKeyId}
                 value={editorSettings.returnKeyAction}
@@ -312,9 +312,9 @@ export function SettingsGeneralBody() {
                   { value: "submit", label: "Return submits" },
                 ]}
               />
-              <span className="settings-general-key-label">Enter key</span>
+              <span className="settings-session-card-key-label">Enter key</span>
               <TugChoiceGroup
-                className="settings-general-key-choice"
+                className="settings-session-card-key-choice"
                 size="sm"
                 senderId={enterKeyId}
                 value={editorSettings.numpadEnterAction}
@@ -329,7 +329,7 @@ export function SettingsGeneralBody() {
             {/* Live legend: exactly what each key combination does under the
                 current choices. Updates as the groups change (driven off the
                 same `editorSettings` snapshot). */}
-            <div className="settings-general-key-legend">
+            <div className="settings-session-card-key-legend">
               {submitKeyLegend(
                 editorSettings.returnKeyAction,
                 editorSettings.numpadEnterAction,
@@ -346,14 +346,14 @@ export function SettingsGeneralBody() {
           label="Assistant"
           labelPosition="legend"
           variant="bordered"
-          className="settings-general-group"
+          className="settings-session-card-group"
         >
           {/* Defaults new cards adopt on first open. A card that already
               carries its own remembered value keeps it — changing these only
               affects freshly-spawned cards. All three controls are the same
               chips + sheets as the Z4B row, bound to the deck defaults
               through the adapter — one editor, identical labels. */}
-          <div className="settings-general-row settings-general-assistant-row">
+          <div className="settings-session-card-row settings-session-card-assistant-row">
             <PermissionModeChip
               sessionMetadataStore={defaultsAdapter}
               onOpenSheet={openPermissionSheet}

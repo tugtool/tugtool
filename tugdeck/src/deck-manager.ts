@@ -39,9 +39,10 @@ import {
 } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import { getRegistration, getSizePolicy, getStackSizePolicy } from "./card-registry";
-import { LENS_CARD_ID } from "./components/lens/lens-register-card";
+import { LENS_CARD_ID } from "./lib/lens-card-id";
+import { findLensPane } from "./deck-store-selectors";
+import { getTugbankClient } from "./lib/tugbank-singleton";
 import { lensStore } from "./lib/lens-store/lens-store";
-import type { LensAnchorSide } from "./lib/lens-store/types";
 import { TugConnection } from "./connection";
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -70,7 +71,13 @@ import type {
   IDeckManagerStore,
   MovePaneOptions,
 } from "./deck-manager-store";
-import { clampSlot, type ImpositionKind } from "./lib/layout-imposer";
+import {
+  clampSlot,
+  isLensSide,
+  DEFAULT_LENS_SIDE,
+  type ImpositionKind,
+  type LensSide,
+} from "./lib/layout-imposer";
 import { getTugZoom } from "./components/tugways/scale-timing";
 import { DeckManagerContext } from "./deck-manager-context";
 import { BASE_THEME_NAME } from "./theme-constants";
@@ -905,7 +912,7 @@ export class DeckManager implements IDeckManagerStore {
       // user's stated intent for the whole deck, and a fresh card landing
       // askew across it would be the deck ignoring it. Centered dialog cards
       // stay centered; they are not part of the arrangement.
-      ...(this.deckState.imposition !== undefined &&
+      ...(this.deckState.imposition.kind !== undefined &&
       registration.placement !== "center"
         ? { slot: 0 }
         : {}),
@@ -964,8 +971,8 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * Show the Lens: if the Lens card already exists, raise/activate it;
-   * otherwise create the anchored rail pane hosting a fresh Lens card at
-   * the persisted reopen width. The anchored analogue of
+   * otherwise create the pinned Lens pane hosting a fresh Lens card at
+   * the persisted reopen width. The pinned analogue of
    * {@link showSingletonCard}/{@link addCard} (which only make free
    * panes). Returns the Lens card id, or `null` if the card type is
    * unregistered.
@@ -981,7 +988,7 @@ export class DeckManager implements IDeckManagerStore {
     return this._createLensPane();
   }
 
-  /** Hide the Lens by closing its anchored pane (the presence-is-open
+  /** Hide the Lens by closing its pane (the presence-is-open
    *  model, [P02]). No-op when the Lens is not open. */
   hideLensPane(): void {
     const card = this.deckState.cards.find(
@@ -1005,34 +1012,36 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Set the viewport edge the Lens rail anchors to. Persists the
-   * preference (so the next open honors it) and, when the rail is
-   * already open, flips the live pane's anchor so it moves sides in
-   * place. No-op cost when the side is unchanged.
+   * Set the side of the deck the Lens holds.
+   *
+   * The side is one of the two axes of the deck's imposition, so this writes
+   * `imposition.lens`. Flipping it flips which edge the chain packs from, so
+   * every slotted pane moves along with the Lens — the ledger below covers
+   * the whole chain, not just the Lens.
    */
-  setLensAnchorSide(side: LensAnchorSide): void {
-    lensStore.setAnchorSide(side);
-    const card = this.deckState.cards.find(
-      (c) => c.componentId === LENS_CARD_ID,
-    );
-    if (!card) return;
-    const pane = this.deckState.panes.find((p) => p.cardIds.includes(card.id));
-    if (!pane || pane.anchor === side) return;
+  setImpositionLens(side: LensSide): void {
+    if (this.deckState.imposition.lens === side) return;
+
+    const lensPane = findLensPane(this.deckState);
+    const moved = this.deckState.panes
+      .filter((p) => p.slot !== undefined || p.id === lensPane?.id)
+      .map((p) => p.activeCardId);
+
+    for (const cardId of moved) this.cardLifecycle.notifyCardWillMove(cardId);
     this.deckState = {
       ...this.deckState,
-      panes: this.deckState.panes.map((p) =>
-        p.id === pane.id ? { ...p, anchor: side } : p,
-      ),
+      imposition: { ...this.deckState.imposition, lens: side },
     };
     this.notify();
+    for (const cardId of moved) this.cardLifecycle.notifyCardDidMove(cardId);
     this.scheduleSave();
   }
 
   /**
-   * Create the anchored Lens rail — mirrors {@link addCard} but pins the
-   * pane to the persisted anchor edge (`anchor: "left" | "right"`), spans
-   * full height, takes its width from the persisted reopen width, and
-   * hosts nothing else (`acceptsFamilies: []`).
+   * Create the Lens rail — mirrors {@link addCard} but pins the pane to the
+   * side the imposition records (`imposition.lens`), spans full height, takes
+   * its width from the persisted reopen width, and hosts nothing else
+   * (`acceptsFamilies: []`).
    */
   private _createLensPane(): string | null {
     const registration = getRegistration(LENS_CARD_ID);
@@ -1059,15 +1068,14 @@ export class DeckManager implements IDeckManagerStore {
     };
     const pane: TugPaneState = {
       id: paneId,
-      // Position/height are nominal — geometry is derived from `anchor`
-      // at the pane render layer. Width is the live rail width.
+      // Position/height are nominal — the pane render layer pins the Lens
+      // from `imposition.lens`. Width is the live Lens width.
       position: { x: 0, y: 0 },
       size: { width, height: canvasHeight },
       cardIds: [cardId],
       activeCardId: cardId,
       title: registration.defaultTitle ?? registration.defaultMeta.title,
       acceptsFamilies: registration.acceptsFamilies ?? [],
-      anchor: lensSnapshot.anchorSide,
     };
 
     this._flipFirstResponder(
@@ -1360,11 +1368,10 @@ export class DeckManager implements IDeckManagerStore {
     if (positionChanged) this.cardLifecycle.notifyCardDidMove(activeCardId);
     if (sizeChanged) this.cardLifecycle.notifyCardDidResize(activeCardId);
 
-    // Anchored rail: the live width lives on the pane (persisted in the
-    // layout blob), but a hide→show cycle removes the pane, so mirror the
-    // committed width to the lens store as the preferred *reopen* width
-    // ([P02]).
-    if (existing.anchor !== undefined && sizeChanged) {
+    // The Lens: its live width lives on the pane (persisted in the layout
+    // blob), but a hide→show cycle removes the pane, so mirror the committed
+    // width to the lens store as the preferred *reopen* width ([P02]).
+    if (sizeChanged && findLensPane(this.deckState)?.id === paneId) {
       lensStore.setWidth(size.width);
     }
 
@@ -1413,9 +1420,19 @@ export class DeckManager implements IDeckManagerStore {
    *
    * - `cascade`: diagonal cascade from top-left, each offset by CASCADE_STEP.
    * - `tile`: grid layout filling the canvas.
+   *
+   * The Lens is left where it is. Cascade would only write a position it
+   * never reads, but tile writes `size` — and the Lens paints at its stored
+   * width, so tiling would resize it and shift the whole band with it.
+   *
+   * Slotted panes are deliberately not skipped: their stored geometry is
+   * already ignored while they are imposed, releasing a pane from its slot
+   * stays an explicit gesture ([D121]), and that stored value is what the
+   * freeze-on-clear path reads back when the imposition is turned off.
    */
   arrangeCards(mode: "cascade" | "tile"): void {
-    const stacks = this.deckState.panes;
+    const lensPaneId = findLensPane(this.deckState)?.id;
+    const stacks = this.deckState.panes.filter((s) => s.id !== lensPaneId);
     if (stacks.length === 0) return;
 
     const canvasWidth = this.container.clientWidth || 800;
@@ -1486,7 +1503,13 @@ export class DeckManager implements IDeckManagerStore {
       if (ch.sizeChanged) this.cardLifecycle.notifyCardWillResize(ch.id);
     }
 
-    this.deckState = { ...this.deckState, panes: arranged };
+    // Fold the arranged panes back into the deck's own order, leaving the
+    // skipped Lens pane at its place in the array (z-order is array order).
+    const arrangedById = new Map(arranged.map((s) => [s.id, s]));
+    this.deckState = {
+      ...this.deckState,
+      panes: this.deckState.panes.map((s) => arrangedById.get(s.id) ?? s),
+    };
     this.notify();
 
     for (const ch of changes) {
@@ -1543,7 +1566,7 @@ export class DeckManager implements IDeckManagerStore {
    * follows in `tug-pane.tsx`).
    */
   setImposition(kind: ImpositionKind | null): void {
-    const current = this.deckState.imposition;
+    const current = this.deckState.imposition.kind;
     if (current === (kind ?? undefined)) return;
 
     if (kind === null) {
@@ -1566,9 +1589,9 @@ export class DeckManager implements IDeckManagerStore {
         if (ch.positionChanged) this.cardLifecycle.notifyCardWillMove(ch.id);
         if (ch.sizeChanged) this.cardLifecycle.notifyCardWillResize(ch.id);
       }
-      const next = { ...this.deckState, panes: frozen };
-      delete next.imposition;
-      this.deckState = next;
+      const imposition = { ...this.deckState.imposition };
+      delete imposition.kind;
+      this.deckState = { ...this.deckState, panes: frozen, imposition };
       this.notify();
       for (const ch of changes) {
         if (ch.positionChanged) this.cardLifecycle.notifyCardDidMove(ch.id);
@@ -1590,7 +1613,11 @@ export class DeckManager implements IDeckManagerStore {
       .filter((pane) => pane.slot !== undefined)
       .map((pane) => pane.activeCardId);
     for (const cardId of moved) this.cardLifecycle.notifyCardWillMove(cardId);
-    this.deckState = { ...this.deckState, panes, imposition: kind };
+    this.deckState = {
+      ...this.deckState,
+      panes,
+      imposition: { ...this.deckState.imposition, kind },
+    };
     this.notify();
     for (const cardId of moved) this.cardLifecycle.notifyCardDidMove(cardId);
     this.scheduleSave();
@@ -1613,7 +1640,7 @@ export class DeckManager implements IDeckManagerStore {
    * card that was clicked.
    */
   assignCardToSlot(cardId: string, slot: number): void {
-    const kind = this.deckState.imposition;
+    const kind = this.deckState.imposition.kind;
     if (kind === undefined) {
       console.warn(
         `assignCardToSlot: no active imposition; cannot slot card "${cardId}"`,
@@ -1625,11 +1652,11 @@ export class DeckManager implements IDeckManagerStore {
       console.warn(`assignCardToSlot: no pane holds card "${cardId}"`);
       return;
     }
-    if (host.anchor !== undefined) {
-      // A pane derives its geometry from one source. The rail already derives
-      // from its anchor edge, so it is not the imposer's to place.
+    if (findLensPane(this.deckState)?.id === host.id) {
+      // The Lens is the imposition's fixed end, pinned from `imposition.lens`
+      // — it is not the chain's to place.
       console.warn(
-        `assignCardToSlot: card "${cardId}" is hosted in the anchored pane "${host.id}"`,
+        `assignCardToSlot: card "${cardId}" is hosted in the Lens pane "${host.id}"`,
       );
       return;
     }
@@ -2279,7 +2306,15 @@ export class DeckManager implements IDeckManagerStore {
     // Atomic state replace: one assignment, one notify, one snapshot
     // transition for useSyncExternalStore consumers. hasFocus is
     // session-only — the caller supplies it in `args.state`.
-    this.deckState = args.state;
+    //
+    // The state arrives as JSON across the test bridge, so its type is a
+    // claim rather than a guarantee: a seed that predates `imposition`
+    // omits it. Fill the default rather than letting `undefined` reach the
+    // render, the same posture `deserialize` takes at the wire boundary.
+    this.deckState = {
+      ...args.state,
+      imposition: args.state.imposition ?? { lens: DEFAULT_LENS_SIDE },
+    };
 
     // Re-project the seeded `hasFocus` onto `data-app-active`. The
     // constructor seeds the DOM bit from `document.hasFocus()`, but a
@@ -2960,16 +2995,35 @@ export class DeckManager implements IDeckManagerStore {
     return putCardState(cardId, bag, options);
   }
 
+  /**
+   * The Lens side carried by the retired app-wide preference, or `undefined`
+   * when the user never set one.
+   *
+   * The side lives in the layout blob now. A user who set the old preference
+   * but whose blob predates the record would otherwise have their choice
+   * silently reset, so it is read once here and passed to `deserialize` as
+   * the last-resort fallback. Nothing writes this key any more, and the value
+   * persists into the layout blob on the next save.
+   */
+  private readLegacyLensSide(): LensSide | undefined {
+    const client = getTugbankClient();
+    if (!client) return undefined;
+    const entry = client.get("dev.tugtool.lens", "anchorSide");
+    if (!entry || entry.kind !== "string") return undefined;
+    return isLensSide(entry.value) ? entry.value : undefined;
+  }
+
   private loadLayout(): DeckState {
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
+    const lensSide = this.readLegacyLensSide() ?? DEFAULT_LENS_SIDE;
 
     let state: DeckState | null = null;
 
     if (this.initialLayout !== null) {
       try {
         const json = JSON.stringify(this.initialLayout);
-        state = deserialize(json, canvasWidth, canvasHeight);
+        state = deserialize(json, canvasWidth, canvasHeight, lensSide);
       } catch (e) {
         console.warn("DeckManager: failed to deserialize initialLayout from API, falling back", e);
       }
@@ -2977,7 +3031,7 @@ export class DeckManager implements IDeckManagerStore {
     }
 
     if (state === null) {
-      state = buildDefaultLayout();
+      state = buildDefaultLayout(lensSide);
     }
 
     return this.filterRegisteredCards(state);

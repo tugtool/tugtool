@@ -439,11 +439,11 @@ The section keeps: `registerLensSection` shape, `collapsedSummary` (now "Off" / 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Imposition record: model, wire, migration, manager API | pending | — |
-| #step-2 | The Lens becomes a pinned imposed pane; `anchor` retires | pending | — |
-| #step-3 | The two-axis Layouts picker | pending | — |
-| #step-4 | Delete the app-wide setting, the store limb, and the General tab | pending | — |
-| #step-5 | Tuglaws amendments + integration checkpoint | pending | — |
+| #step-1 | Imposition record: model, wire, migration, manager API | done | `87238f72f` |
+| #step-2 | The Lens becomes a pinned imposed pane; `anchor` retires | done | `c6ad7421c` |
+| #step-3 | The two-axis Layouts picker | done | `419edb15a` |
+| #step-4 | Delete the app-wide setting, the store limb, and the General tab | done | `3306115d9` |
+| #step-5 | Tuglaws amendments + integration checkpoint | done | `6f8dbbbb3` |
 
 #### Step 1: Imposition record — model, wire, migration, manager API {#step-1}
 

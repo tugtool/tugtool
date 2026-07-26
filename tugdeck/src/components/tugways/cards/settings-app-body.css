@@ -14,7 +14,7 @@
   padding: var(--tug-space-lg) 0 var(--tug-space-xs);
 }
 
-/* Matches .settings-general-group: override .tug-box's fit-content so
+/* Matches .settings-session-card-group: override .tug-box's fit-content so
    the box fills the panel's content area. */
 .settings-app-group {
   width: 100%;
@@ -49,7 +49,7 @@
 /* WebKit gives `<legend>` an intrinsic inline-size that can extend past
    its visible text, leaving the fieldset's top border truncated on the
    right of the legend. Clamping the legend to its content restores the
-   border on both sides. (Same fix as .settings-general-group.) */
+   border on both sides. (Same fix as .settings-session-card-group.) */
 .settings-app-group > .tug-box-legend {
   inline-size: max-content;
 }

@@ -48,11 +48,11 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const ANCHORED_SELECTOR = `.tug-pane[data-anchored]`;
+const LENS_PANE_SELECTOR = `.tug-pane[data-lens]`;
 
-async function anchoredPaneExists(app: App): Promise<boolean> {
+async function lensPaneExists(app: App): Promise<boolean> {
   return app.evalJS<boolean>(
-    `document.querySelector(${JSON.stringify(ANCHORED_SELECTOR)}) !== null`,
+    `document.querySelector(${JSON.stringify(LENS_PANE_SELECTOR)}) !== null`,
   );
 }
 
@@ -100,21 +100,21 @@ describe.skipIf(!SHOULD_RUN)(
               `typeof window.__tug !== "undefined"`,
               { timeoutMs: 5_000 },
             );
-            expect(await anchoredPaneExists(app)).toBe(false);
+            expect(await lensPaneExists(app)).toBe(false);
 
             await dispatch(app, "toggle-lens");
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(ANCHORED_SELECTOR)}) !== null`,
+              `document.querySelector(${JSON.stringify(LENS_PANE_SELECTOR)}) !== null`,
               { timeoutMs: 3_000 },
             );
-            expect(await anchoredPaneExists(app)).toBe(true);
+            expect(await lensPaneExists(app)).toBe(true);
 
             await dispatch(app, "toggle-lens");
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(ANCHORED_SELECTOR)}) === null`,
+              `document.querySelector(${JSON.stringify(LENS_PANE_SELECTOR)}) === null`,
               { timeoutMs: 3_000 },
             );
-            expect(await anchoredPaneExists(app)).toBe(false);
+            expect(await lensPaneExists(app)).toBe(false);
           } finally {
             await app.close();
           }
@@ -149,7 +149,7 @@ describe.skipIf(!SHOULD_RUN)(
             // Focus in: the Lens opens and becomes the first responder.
             await dispatch(app, "focus-lens");
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(ANCHORED_SELECTOR)}) !== null`,
+              `document.querySelector(${JSON.stringify(LENS_PANE_SELECTOR)}) !== null`,
               { timeoutMs: 3_000 },
             );
             await app.waitForCondition<boolean>(
