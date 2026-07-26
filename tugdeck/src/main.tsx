@@ -48,6 +48,7 @@ import { registerDevtoolsCard } from "./components/devtools/devtools-card";
 import { registerLensCard } from "./components/lens/lens-register-card";
 import { registerSnippetsSection } from "./components/lens/sections/snippets-section";
 import { registerTextFilesSection } from "./components/lens/sections/text-files-section";
+import { registerLayoutsSection } from "./components/lens/sections/layouts-section";
 import { registerTextCard } from "./components/tugways/cards/text-card-registration";
 import { registerDiffCard } from "./components/tugways/cards/diff-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
@@ -290,6 +291,7 @@ if (!container) {
   registerSessionsSection();
   registerSnippetsSection();
   registerTextFilesSection();
+  registerLayoutsSection();
   registerTextCard();
   registerDiffCard();
   registerGalleryCards();

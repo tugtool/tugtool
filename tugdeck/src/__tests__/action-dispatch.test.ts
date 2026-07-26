@@ -983,3 +983,75 @@ describe("initActionDispatch: manual save verbs", () => {
     });
   }
 });
+
+// ---- imposition verbs ----
+
+describe("initActionDispatch: imposition verbs", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  function wire() {
+    const impositions: (string | null)[] = [];
+    const assignments: { cardId: string; slot: number }[] = [];
+    const conn = createMockConnection();
+    const deck = {
+      ...createMockDeckManager(),
+      setImposition(kind: string | null): void {
+        impositions.push(kind);
+      },
+      assignCardToSlot(cardId: string, slot: number): void {
+        assignments.push({ cardId, slot });
+      },
+    };
+    initActionDispatch(conn as any, deck as any);
+    return { impositions, assignments };
+  }
+
+  it("passes each valid kind through to the deck", () => {
+    const { impositions } = wire();
+    for (const kind of ["two-up", "three-up", "four-up"]) {
+      dispatchAction({ action: "set-imposition", kind });
+    }
+    expect(impositions).toEqual(["two-up", "three-up", "four-up"]);
+  });
+
+  it("passes an explicit null through — that is how the feature turns off", () => {
+    const { impositions } = wire();
+    dispatchAction({ action: "set-imposition", kind: null });
+    expect(impositions).toEqual([null]);
+  });
+
+  it("refuses a kind it does not recognize", () => {
+    const { impositions } = wire();
+    for (const kind of ["five-up", "", undefined, 3, {}]) {
+      dispatchAction({ action: "set-imposition", kind });
+    }
+    expect(impositions).toEqual([]);
+  });
+
+  it("passes a valid slot assignment through", () => {
+    const { assignments } = wire();
+    dispatchAction({ action: "assign-slot", cardId: "card-1", slot: 0 });
+    dispatchAction({ action: "assign-slot", cardId: "card-2", slot: 3 });
+    expect(assignments).toEqual([
+      { cardId: "card-1", slot: 0 },
+      { cardId: "card-2", slot: 3 },
+    ]);
+  });
+
+  it("refuses a missing or non-string cardId", () => {
+    const { assignments } = wire();
+    dispatchAction({ action: "assign-slot", slot: 1 });
+    dispatchAction({ action: "assign-slot", cardId: 7, slot: 1 });
+    expect(assignments).toEqual([]);
+  });
+
+  it("refuses a slot that is not a non-negative integer", () => {
+    const { assignments } = wire();
+    for (const slot of [-1, 1.5, "1", null, undefined, Number.NaN]) {
+      dispatchAction({ action: "assign-slot", cardId: "card-1", slot });
+    }
+    expect(assignments).toEqual([]);
+  });
+});

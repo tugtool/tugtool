@@ -1109,3 +1109,161 @@ describe("validateDeckState", () => {
     expect(() => validateDeckState(state)).toThrow(/duplicate pane id "s1"/);
   });
 });
+
+// ---- Imposition: the additive-optional `imposition` / `slot` wire fields ----
+
+describe("imposition wire format", () => {
+  function impositionCard(id: string): CardState {
+    return { id, componentId: "terminal", title: "Session", closable: true };
+  }
+
+  function impositionPane(
+    id: string,
+    cardId: string,
+    extra: Partial<TugPaneState> = {},
+  ): TugPaneState {
+    return {
+      id,
+      position: { x: 40, y: 40 },
+      size: { width: 600, height: 900 },
+      cardIds: [cardId],
+      activeCardId: cardId,
+      title: "",
+      acceptsFamilies: ["standard"],
+      ...extra,
+    };
+  }
+
+  test("round-trips the kind and every pane's slot", () => {
+    const state: DeckState = {
+      cards: [impositionCard("c1"), impositionCard("c2"), impositionCard("c3")],
+      panes: [
+        impositionPane("p1", "c1", { slot: 0 }),
+        impositionPane("p2", "c2", { slot: 1 }),
+        impositionPane("p3", "c3", { slot: 2 }),
+      ],
+      imposition: "three-up",
+      hasFocus: true,
+    };
+    const restored = deserialize(JSON.stringify(serialize(state)), 1920, 1080);
+    expect(restored.imposition).toBe("three-up");
+    expect(restored.panes.map((p) => p.slot)).toEqual([0, 1, 2]);
+  });
+
+  test("does not fit-clamp a slotted pane (geometry derives at render)", () => {
+    // Saved on a tall display, restored on a short one. A free pane would be
+    // height-clamped and pulled inside the margins; a slotted pane keeps its
+    // stored geometry exactly as an anchored one does.
+    const state: DeckState = {
+      cards: [impositionCard("c1")],
+      panes: [
+        impositionPane("p1", "c1", {
+          slot: 1,
+          position: { x: 900, y: 700 },
+          size: { width: 800, height: 2000 },
+        }),
+      ],
+      imposition: "three-up",
+      hasFocus: true,
+    };
+    const r = deserialize(JSON.stringify(serialize(state)), 1280, 800).panes[0];
+    expect(r.position).toEqual({ x: 900, y: 700 });
+    expect(r.size).toEqual({ width: 800, height: 2000 });
+  });
+
+  test("a pre-imposition v4 blob parses with the feature off", () => {
+    const state: DeckState = {
+      cards: [impositionCard("c1")],
+      panes: [impositionPane("p1", "c1")],
+      hasFocus: true,
+    };
+    const blob = serialize(state) as Record<string, unknown>;
+    expect("imposition" in blob).toBe(false);
+    const restored = deserialize(JSON.stringify(blob), 1920, 1080);
+    expect(restored.imposition).toBeUndefined();
+    expect(restored.panes[0].slot).toBeUndefined();
+  });
+
+  test("an unreadable kind drops the imposition and every slot with it", () => {
+    const blob = {
+      version: 4,
+      imposition: "five-up",
+      cards: [impositionCard("c1")],
+      panes: [impositionPane("p1", "c1", { slot: 1 })],
+    };
+    const restored = deserialize(JSON.stringify(blob), 1920, 1080);
+    expect(restored.imposition).toBeUndefined();
+    expect(restored.panes[0].slot).toBeUndefined();
+  });
+
+  test("a slot without an imposition is dropped", () => {
+    const blob = {
+      version: 4,
+      cards: [impositionCard("c1")],
+      panes: [impositionPane("p1", "c1", { slot: 1 })],
+    };
+    expect(deserialize(JSON.stringify(blob), 1920, 1080).panes[0].slot).toBeUndefined();
+  });
+
+  test("an out-of-range slot clamps to the kind's last slot", () => {
+    const blob = {
+      version: 4,
+      imposition: "two-up",
+      cards: [impositionCard("c1")],
+      panes: [impositionPane("p1", "c1", { slot: 7 })],
+    };
+    expect(deserialize(JSON.stringify(blob), 1920, 1080).panes[0].slot).toBe(1);
+  });
+
+  test("a malformed slot is dropped rather than coerced", () => {
+    for (const bogus of [-1, 1.5, "1", null, Number.NaN]) {
+      const blob = {
+        version: 4,
+        imposition: "three-up",
+        cards: [impositionCard("c1")],
+        panes: [{ ...impositionPane("p1", "c1"), slot: bogus }],
+      };
+      const restored = deserialize(JSON.stringify(blob), 1920, 1080);
+      expect(restored.panes[0].slot).toBeUndefined();
+    }
+  });
+
+  test("a blob carrying both anchor and slot keeps the anchor and drops the slot", () => {
+    const blob = {
+      version: 4,
+      imposition: "three-up",
+      cards: [impositionCard("c1")],
+      panes: [impositionPane("p1", "c1", { anchor: "left", slot: 1 })],
+    };
+    const r = deserialize(JSON.stringify(blob), 1920, 1080).panes[0];
+    expect(r.anchor).toBe("left");
+    expect(r.slot).toBeUndefined();
+    // Which is exactly what invariant 6 demands of the parsed state.
+    expect(() =>
+      validateDeckState(deserialize(JSON.stringify(blob), 1920, 1080)),
+    ).not.toThrow();
+  });
+
+  test("validateDeckState rejects a pane that derives from two sources (invariant 6)", () => {
+    const state: DeckState = {
+      cards: [impositionCard("c1")],
+      panes: [impositionPane("p1", "c1", { anchor: "left", slot: 1 })],
+      imposition: "three-up",
+      hasFocus: true,
+    };
+    expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
+    expect(() => validateDeckState(state)).toThrow(
+      /pane "p1" carries both anchor "left" and slot 1/,
+    );
+  });
+
+  test("a slotted pane on its own passes validation", () => {
+    const state: DeckState = {
+      cards: [impositionCard("c1")],
+      panes: [impositionPane("p1", "c1", { slot: 2 })],
+      imposition: "three-up",
+      hasFocus: true,
+    };
+    expect(() => validateDeckState(state)).not.toThrow();
+  });
+});

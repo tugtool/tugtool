@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | complete |
 | Target branch | main |
 | Last updated | 2026-07-25 |
 
@@ -165,7 +165,7 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 - [L06]: appearance changes go through CSS and DOM, never React state. A JS reflow loop (observe → recompute → commit → re-render) on every resize frame is the anti-pattern this law exists to prevent.
 - It makes "a slotted pane moves with the canvas" true by construction rather than by event plumbing.
 
-**Implications:** the span insets reach CSS as two custom properties on `#deck-container` ([P12]); `pane.position`/`pane.size` for slotted panes hold last-known values refreshed at assign/evict (see [R02]); serialization skips the canvas-fit clamp for slotted panes exactly as it does for anchored ones.
+**Implications:** the span insets reach CSS as two custom properties on the pane frames' own containing block (`DeckCanvas`'s `containerRef` wrapper — the `position: absolute; inset: 0` div inside `#deck-container` that every pane frame is a child of, so the `100%` in an imposed frame's calc resolves against the same box) ([P12]); `pane.position`/`pane.size` for slotted panes hold last-known values refreshed at assign/evict (see [R02]); serialization skips the canvas-fit clamp for slotted panes exactly as it does for anchored ones.
 
 #### [P04] Additive wire format — no version bump (DECIDED) {#p04-additive-wire}
 
@@ -249,7 +249,7 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 
 #### [P12] Span insets are CSS custom properties on the deck container (DECIDED) {#p12-span-css-properties}
 
-**Decision:** The layout span (canvas minus the Lens rail on its docked side) reaches CSS as two custom properties on `#deck-container`: `--tug-imposer-inset-left` and `--tug-imposer-inset-right` (px values; both `0px` when the Lens is closed). `DeckCanvas` maintains them in a `useLayoutEffect` from the deck snapshot's anchored pane (side + width).
+**Decision:** The layout span (canvas minus the Lens rail on its docked side) reaches CSS as two custom properties on the pane frames' own containing block (`DeckCanvas`'s `containerRef` wrapper — the `position: absolute; inset: 0` div inside `#deck-container` that every pane frame is a child of, so the `100%` in an imposed frame's calc resolves against the same box): `--tug-imposer-inset-left` and `--tug-imposer-inset-right` (px values; both `0px` when the Lens is closed). `DeckCanvas` maintains them in a `useLayoutEffect` from the deck snapshot's anchored pane (side + width).
 
 **Rationale:**
 - Slotted positions are *never* under the Lens (the span excludes the rail), while free panes may still be dragged under it — the asymmetry the user confirmed.
@@ -387,7 +387,7 @@ DeckManager additions:
 | `DeckState.imposition` | structure | DeckManager store, React reads via `useSyncExternalStore` | [L02] |
 | `TugPaneState.slot` | structure | DeckManager store (same subscription) | [L02] |
 | Slotted frame pinning (left/right/top/bottom/transform) | appearance | inline CSS from `imposeStyle` at render; per-frame browser reflow, zero React state | [L06], [L09] |
-| `--tug-imposer-inset-left/right` on `#deck-container` | appearance | `useLayoutEffect` DOM write in `DeckCanvas` from the deck snapshot | [L03], [L06] |
+| `--tug-imposer-inset-left/right` on the frames' containing block | appearance | `useLayoutEffect` DOM write in `DeckCanvas` from the deck snapshot | [L03], [L06] |
 | `SlotPicker` filled/active state | derived render | computed from the deck snapshot (host pane's `slot`) | [L02] |
 | Layouts section selection | derived render | `TugRadioGroup` controlled by `deckState.imposition` | [L02], [L11] |
 
@@ -400,12 +400,12 @@ DeckManager additions:
 | File | Purpose |
 |------|---------|
 | `tugdeck/src/lib/layout-imposer.ts` | Pure imposition geometry (Spec S03) |
-| `tugdeck/src/__tests__/layout-imposer.test.ts` | Unit suite for the library |
+| `tugdeck/src/lib/__tests__/layout-imposer.test.ts` | Unit suite for the library |
 | `tugdeck/src/components/lens/sections/layouts-section.tsx` | The Lens `Layouts` section |
 | `tugdeck/src/components/lens/sections/layouts-section.css` | Section styles (kind diagrams) |
 | `tugdeck/src/components/lens/slot-picker.tsx` | Numbered slot-button cluster for list rows |
 | `tugdeck/src/components/lens/slot-picker.css` | SlotPicker styles |
-| `tests/app-test/atNNNN-layout-imposition.test.ts` | App-test (next free at-number at implementation time) |
+| `tests/app-test/at0275-layout-imposition.test.ts` | App-test |
 
 #### Symbols to add / modify {#symbols}
 
@@ -429,8 +429,8 @@ DeckManager additions:
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Amend `tuglaws/pane-model.md`: the three pane geometry modes (free / anchored / imposed), `slot` in the wire-contract example, `layout-imposer.ts` in the Files table.
-- [ ] Add a global design decision to `tuglaws/design-decisions.md` recording the imposition model (next free `[D##]` at implementation time), cross-linking this plan.
+- [x] Amend `tuglaws/pane-model.md`: the three pane geometry modes (free / anchored / imposed), `slot` in the wire-contract example, `layout-imposer.ts` in the Files table.
+- [x] Add a global design decision to `tuglaws/design-decisions.md`: `[D121]` records the imposition model and cross-links this plan.
 
 ---
 
@@ -461,14 +461,14 @@ DeckManager additions:
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | layout-imposer library + unit tests | pending | — |
-| #step-2 | Model + wire format | pending | — |
-| #step-3 | DeckManager imposition API | pending | — |
-| #step-4 | TugPane imposed rendering | pending | — |
-| #step-5 | Lens Layouts section | pending | — |
-| #step-6 | SlotPicker on Sessions + Text Files rows | pending | — |
-| #step-7 | tuglaws amendment | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | layout-imposer library + unit tests | done | `1dba17f99` |
+| #step-2 | Model + wire format | done | `11f1a0a75` |
+| #step-3 | DeckManager imposition API | done | `a6368222e` |
+| #step-4 | TugPane imposed rendering | done | `36bd6cec0` |
+| #step-5 | Lens Layouts section | done | `b6b93831d` |
+| #step-6 | SlotPicker on Sessions + Text Files rows | done | `bf7ebcfe0` |
+| #step-7 | tuglaws amendment | done | `b3b61d2b0` |
+| #step-8 | Integration checkpoint | done | `efce133d9` |
 
 #### Step 1: layout-imposer library + unit tests {#step-1}
 
@@ -478,7 +478,7 @@ DeckManager additions:
 
 **Artifacts:**
 - `tugdeck/src/lib/layout-imposer.ts` implementing Spec S03 exactly.
-- `tugdeck/src/__tests__/layout-imposer.test.ts`.
+- `tugdeck/src/lib/__tests__/layout-imposer.test.ts`.
 
 **Tasks:**
 - [ ] Implement every Spec S03 symbol; module docstring states the printing-imposition vocabulary and the pure-no-DOM discipline (cite `snap.ts` as the sibling).
@@ -492,7 +492,7 @@ DeckManager additions:
 - [ ] `imposeStyle` string-snapshot for each anchor class (edge-left, edge-right, middle, collapsed-middle).
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test src/__tests__/layout-imposer.test.ts`
+- [ ] `cd tugdeck && bun test src/lib/__tests__/layout-imposer.test.ts`
 
 ---
 
@@ -535,7 +535,7 @@ DeckManager additions:
 **Artifacts:**
 - `setImposition` / `assignCardToSlot` on `DeckManager` (`tugdeck/src/deck-manager.ts`) per Spec S04.
 - `movePane` options arg (`{ evictSlot?: boolean }`) threaded through `handlePaneMoved` in `tugdeck/src/deck-manager-store.ts`.
-- The inset-property `useLayoutEffect` in `tugdeck/src/deck-canvas.tsx` writing `--tug-imposer-inset-left/right` on `#deck-container` from the anchored pane's side + width (both `0px` when no anchored pane exists).
+- The inset-property `useLayoutEffect` in `tugdeck/src/deck-canvas.tsx` writing `--tug-imposer-inset-left/right` on the `containerRef` wrapper (the frames' containing block) from the anchored pane's side + width (both `0px` when no anchored pane exists).
 
 **Tasks:**
 - [ ] `assignCardToSlot` implements the (#flow-assign) sequence, including the `_detachCard` branch (its `null` return for a single-card pane means "slot the existing host"), the anchored-pane refusal, the `collapsed` clear, and the trailing `activateCard` raise.
@@ -544,7 +544,7 @@ DeckManager additions:
 - [ ] Both mutations run the standard `notify()` + `scheduleSave()` choreography and fire the will/did move-resize lifecycle events on affected active cards (follow the `arrangeCards` pattern for the multi-pane clamp case).
 
 **Tests:**
-- [ ] Unit (store-level, real DeckManager against a real container div — not a mock store): assign to a slot from a two-card pane detaches then slots; assign from a single-card pane slots in place; assign raises (`activePaneId` becomes the host); anchored-host refusal warns and mutates nothing; kind shrink clamps; imposition-off leaves no `slot` fields and a serializable state.
+- [x] **Not unit-testable at this layer, by design.** A store-level test would have to construct a real `DeckManager`, whose constructor calls `createRoot(container)` and writes `container.style` — it needs a live DOM. tugdeck has no in-process DOM substrate (happy-dom is deleted; `jsdom` is a dependency only for DOMPurify's sanitizer parity, never a test environment), and a fake-DOM render test is a banned pattern (#test-non-goals). The mutation semantics — detach-then-slot, slot-in-place, assign-raises, anchored refusal, kind clamp, imposition-off freeze — are therefore covered by the real-app test in #step-8, which is where they can be asserted against real geometry anyway. The pure parts (`clampSlot`, the rect math) are already unit-tested in #step-1.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
@@ -579,7 +579,7 @@ DeckManager additions:
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
 - [ ] `cd tugdeck && bunx vite build`
-- [ ] Manual smoke in the debug app: assign via console dispatch (`window` action dispatch or dev panel), drag a slotted pane out, resize its permitted edges, collapse/expand it.
+- [ ] Manual smoke in the debug app: assign via console dispatch (`window` action dispatch or dev panel), drag a slotted pane out, resize its permitted edges, collapse/expand it. **Deferred to the interactive phase** — the gestures need a human at the pointer; the assign / stack / width-preservation / evict path is asserted mechanically by the #step-8 app-test.
 
 ---
 
@@ -668,7 +668,7 @@ DeckManager additions:
 **References:** [P02], [P05], [P07], Spec S01, (#success-criteria, #test-non-goals)
 
 **Artifacts:**
-- `tests/app-test/atNNNN-layout-imposition.test.ts` (next free at-number), with `@covers` lines for `tugdeck/src/lib/layout-imposer.ts`, `tugdeck/src/deck-manager.ts`, `tugdeck/src/components/chrome/tug-pane.tsx`, `tugdeck/src/components/lens/sections/layouts-section.tsx`, `tugdeck/src/components/lens/slot-picker.tsx`.
+- `tests/app-test/at0275-layout-imposition.test.ts`, with `@covers` lines for `tugdeck/src/lib/layout-imposer.ts`, `tugdeck/src/deck-manager.ts`, `tugdeck/src/components/chrome/tug-pane.tsx`, `tugdeck/src/components/lens/sections/layouts-section.tsx`, `tugdeck/src/components/lens/slot-picker.tsx`.
 
 **Tasks:**
 - [ ] Test flow against the real app: open the Lens; select Three Up in the Layouts section (real click); open/replay session + text-file cards; click slot numbers on their rows; assert the (#success-criteria) rect invariants from live `getBoundingClientRect()` (span edges from the rail's live rect); assert width-preservation across assignment; assign two cards to one slot and assert coincident rects with the later assignment on top; drag the top pane off and assert it is free (rect no longer slot-derived, `data-imposed` absent) while the pane beneath remains.
@@ -680,8 +680,8 @@ DeckManager additions:
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
 - [ ] `cd tugdeck && bunx vite build`
-- [ ] `just app-test tests/app-test/atNNNN-layout-imposition.test.ts`
-- [ ] `just app-test-changed` (selection derived from the working diff)
+- [ ] `just app-test tests/app-test/at0275-layout-imposition.test.ts`
+- [x] `just app-test-changed --allow-large <dash diff>` — the derived selection over the whole change is 60 files (above the default 20-file budget, hence the explicit opt-in); 60/60 green, 124/124 tests, 6m31s. `main.tsx` also trips the SWEEP ADVISED advisory, since a section registration sits under every Lens test — those Lens tests are in the 60 and all pass; a full `app-test-all` is the user's call.
 
 ---
 
@@ -698,7 +698,7 @@ DeckManager additions:
 **Acceptance tests:**
 - [ ] `cd tugdeck && bun test`
 - [ ] `cd tugdeck && bunx vite build`
-- [ ] `just app-test tests/app-test/atNNNN-layout-imposition.test.ts`
+- [ ] `just app-test tests/app-test/at0275-layout-imposition.test.ts`
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -708,7 +708,7 @@ DeckManager additions:
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Geometry math correct | `bun test src/__tests__/layout-imposer.test.ts` |
+| Geometry math correct | `bun test src/lib/__tests__/layout-imposer.test.ts` |
 | Wire contract stable | serialization round-trip + defensive-read unit tests |
-| Real-app behavior | `just app-test tests/app-test/atNNNN-layout-imposition.test.ts` |
+| Real-app behavior | `just app-test tests/app-test/at0275-layout-imposition.test.ts` |
 | Production bundle intact | `cd tugdeck && bunx vite build` |

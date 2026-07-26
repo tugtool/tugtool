@@ -565,6 +565,32 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // the lifecycle's wildcard observer + initial-sync covers every
   // activation path without a coupled react-side effect.
 
+  // ---------------------------------------------------------------------------
+  // Layout-imposer span insets
+  // ---------------------------------------------------------------------------
+  // The band imposed panes are placed across is the canvas minus the Lens rail
+  // on the side it is docked to — slotted positions are never under the rail,
+  // though a free pane may still be dragged there. The two insets reach CSS as
+  // custom properties on the frames' own containing block, so an imposed
+  // frame's `calc()` tracks a window resize or a rail width drag with no
+  // JavaScript at all ([L06]). This is why the deck observes no resizes at
+  // all: the browser does the reflow.
+  const railPane = panes.find((pane) => pane.anchor !== undefined);
+  const railSide = railPane?.anchor;
+  const railWidth = railPane?.size.width ?? 0;
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.style.setProperty(
+      "--tug-imposer-inset-left",
+      railSide === "left" ? `${railWidth}px` : "0px",
+    );
+    el.style.setProperty(
+      "--tug-imposer-inset-right",
+      railSide === "right" ? `${railWidth}px` : "0px",
+    );
+  }, [railSide, railWidth]);
+
   // Merge `deckRootRef` (pane-focus-controller's query scope) and
   // `responderRef` (responder-chain wiring) onto the same element.
   // `useCallback` with `[responderRef]` keeps the callback identity
@@ -667,6 +693,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
               stackCards.map((c) => c.componentId),
             )}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
+            imposition={deckState.imposition}
             onCardMoved={store.handlePaneMoved}
             onClose={handleClose}
             onCardCollapsed={(id) => store.togglePaneCollapse(id)}

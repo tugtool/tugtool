@@ -2,7 +2,8 @@
  * Serialization, deserialization, and default layout for DeckState.
  *
  * **Current wire format:** `version: 4` with on-disk keys
- * `{ version: 4, cards, panes, activePaneId? }`. `focusedCardId` is persisted
+ * `{ version: 4, cards, panes, activePaneId?, imposition? }`, with `panes[]`
+ * carrying the additive-optional `slot?`. `focusedCardId` is persisted
  * separately via `putFocusedCardId` and is not part of the layout blob.
  *
  * **Pre-v4 on-disk shape (migrated on load):** `version: 3` used `windows` and
@@ -29,6 +30,7 @@ import {
   type CardState,
   type TugPaneState,
 } from "./layout-tree";
+import { clampSlot, isImpositionKind } from "@/lib/layout-imposer";
 
 // ---- Constants ----
 
@@ -120,6 +122,9 @@ export function serialize(deckState: DeckState): object {
     panes: deckState.panes,
     ...(deckState.activePaneId !== undefined
       ? { activePaneId: deckState.activePaneId }
+      : {}),
+    ...(deckState.imposition !== undefined
+      ? { imposition: deckState.imposition }
       : {}),
   };
 }
@@ -243,6 +248,13 @@ function parseV4(
     cardIdSet.add(id);
   }
 
+  // The active imposition gates every pane's `slot`: a slot without a kind to
+  // interpret it means nothing, so an unreadable kind drops the whole
+  // arrangement rather than leaving panes pinned to positions that no longer
+  // exist.
+  const rawImposition = raw["imposition"];
+  const imposition = isImpositionKind(rawImposition) ? rawImposition : undefined;
+
   const panes: TugPaneState[] = [];
   for (const w of rawPanes) {
     if (!w || typeof w !== "object") continue;
@@ -265,18 +277,30 @@ function parseV4(
     );
     if (cardIds.length === 0) continue;
 
-    // Anchored panes (Lens rail) derive their geometry from the anchor
-    // edge at render, not from a free position; the canvas-fit clamp
-    // would floor/cap the derived rail against the canvas, so skip it and
-    // carry the stored geometry through untouched.
+    // Anchored panes (Lens rail) and imposed panes (a slot in the active
+    // imposition) both derive their geometry at render, not from a free
+    // position; the canvas-fit clamp would floor/cap the derived rect
+    // against the canvas, so skip it and carry the stored geometry through
+    // untouched. A pane derives from at most one source, so `anchor` wins
+    // and `slot` is dropped when a blob carries both.
     const rawAnchor = win["anchor"];
     const anchor: "left" | "right" | undefined =
       rawAnchor === "right" || rawAnchor === "left" ? rawAnchor : undefined;
 
-    const { x, y, width, height } =
-      anchor !== undefined
-        ? { x: pos.x, y: pos.y, width: sz.width, height: sz.height }
-        : fitPaneGeometry(pos, sz, canvasWidth, canvasHeight);
+    const rawSlot = win["slot"];
+    const slot: number | undefined =
+      imposition !== undefined &&
+      anchor === undefined &&
+      typeof rawSlot === "number" &&
+      Number.isInteger(rawSlot) &&
+      rawSlot >= 0
+        ? clampSlot(imposition, rawSlot)
+        : undefined;
+
+    const derived = anchor !== undefined || slot !== undefined;
+    const { x, y, width, height } = derived
+      ? { x: pos.x, y: pos.y, width: sz.width, height: sz.height }
+      : fitPaneGeometry(pos, sz, canvasWidth, canvasHeight);
 
     const rawActiveCardId = win["activeCardId"];
     const activeCardId: string =
@@ -303,6 +327,7 @@ function parseV4(
       acceptsFamilies,
       ...(collapsed === true ? { collapsed } : {}),
       ...(anchor !== undefined ? { anchor } : {}),
+      ...(slot !== undefined ? { slot } : {}),
     });
   }
 
@@ -323,6 +348,7 @@ function parseV4(
     cards: filteredCards,
     panes,
     ...(activePaneId !== undefined ? { activePaneId } : {}),
+    ...(imposition !== undefined ? { imposition } : {}),
     // Session-only; deserialize always seeds true and DeckManager overrides
     // with the live `document.hasFocus()` reading at construction. Not
     // persisted to disk.

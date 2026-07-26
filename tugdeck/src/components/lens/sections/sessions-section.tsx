@@ -45,6 +45,7 @@ import {
   subscribeFilterQuery,
 } from "@/components/lens/lens-filter-store";
 import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
+import { SlotPicker } from "@/components/lens/slot-picker";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { useBlockReorder } from "@/components/lens/block-reorder";
 import { lensStore } from "@/lib/lens-store/lens-store";
@@ -284,7 +285,12 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
           </span>
         )
       }
-      trailing={<RowSparkline tugSessionId={row.tugSessionId} />}
+      trailing={
+        <>
+          <SlotPicker cardId={row.cardId} />
+          <RowSparkline tugSessionId={row.tugSessionId} />
+        </>
+      }
       grip={
         ctx !== null ? (
           <BlockGrip

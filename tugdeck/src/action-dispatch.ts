@@ -49,6 +49,7 @@ import { isDiffDescriptor } from "@/lib/git-diff-store";
 import { allocateUntitledNumber } from "@/lib/untitled-naming";
 import { clearRecentDocuments } from "@/lib/recent-documents";
 import { openOpenQuickly } from "@/lib/open-quickly-store";
+import { isImpositionKind } from "@/lib/layout-imposer";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
@@ -509,6 +510,35 @@ export function initActionDispatch(
       store: deckManager,
       commitMutation: () => deckManager.activateCard(incomingCardId),
     });
+  });
+
+  // set-imposition: choose the deck's N-up arrangement, or turn it off.
+  // Dispatched by the Lens Layouts section's kind picker. `kind: null` clears
+  // it, freezing every imposed pane where the user last saw it.
+  registerAction("set-imposition", (payload) => {
+    const kind = payload.kind;
+    if (kind !== null && !isImpositionKind(kind)) {
+      console.warn("set-imposition: missing or invalid kind", payload);
+      return;
+    }
+    deckManager.setImposition(kind);
+  });
+
+  // assign-slot: put a card's pane at a numbered position in the active
+  // imposition. Dispatched by the `SlotPicker` cluster on Lens Sessions and
+  // Text Files rows. `slot` is 0-based (the buttons render 1-based).
+  registerAction("assign-slot", (payload) => {
+    const cardId = payload.cardId;
+    if (typeof cardId !== "string") {
+      console.warn("assign-slot: missing or invalid cardId", payload);
+      return;
+    }
+    const slot = payload.slot;
+    if (typeof slot !== "number" || !Number.isInteger(slot) || slot < 0) {
+      console.warn("assign-slot: missing or invalid slot", payload);
+      return;
+    }
+    deckManager.assignCardToSlot(cardId, slot);
   });
 
   // focus-session-card: activate a specific card (front its pane + promote the

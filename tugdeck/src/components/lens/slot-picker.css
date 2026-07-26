@@ -1,0 +1,17 @@
+/* The numbered slot cluster on a Lens list row. The buttons are `TugIconButton`s
+   and own their own chrome; this file only lays them out and sets the digit's
+   type, keeping the row's height unchanged. Tokens only ([L06]/[L20]). */
+
+.slot-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+}
+
+.slot-picker-button {
+  font-family: var(--tug-font-family-sans);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}

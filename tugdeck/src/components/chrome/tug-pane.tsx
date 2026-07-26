@@ -44,6 +44,13 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useDeckManager } from "@/deck-manager-context";
+import type { MovePaneOptions } from "@/deck-manager-store";
+import {
+  clampSlot,
+  imposeStyle,
+  slotCount,
+  type ImpositionKind,
+} from "@/lib/layout-imposer";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { cardTitleStore } from "@/lib/card-title-store";
@@ -740,7 +747,14 @@ export interface TugPaneProps {
     id: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
+    opts?: MovePaneOptions,
   ) => void;
+  /**
+   * The deck's active imposition, when one is set. A pane carrying a `slot`
+   * needs the kind to resolve that slot into an anchor, so the kind rides down
+   * from `DeckCanvas` beside the per-pane props.
+   */
+  imposition?: ImpositionKind;
   /**
    * Called when a card drag ends over another card's tab bar ([D45]).
    *
@@ -802,6 +816,7 @@ export function TugPane({
   onCardMerged,
   zIndex,
   onCardCollapsed,
+  imposition,
 }: TugPaneProps) {
   const { id, position, size } = stackState;
   const collapsed = stackState.collapsed === true;
@@ -815,6 +830,22 @@ export function TugPane({
       ? stackState.anchor
       : null;
   const anchored = anchorSide !== null;
+  // An imposed pane is the third geometry mode: it derives its horizontal
+  // anchor and its full canvas height from its slot in the active imposition
+  // (`lib/layout-imposer.ts`) instead of from `position`. Its width is still
+  // its own — the imposer never touches it. Mutually exclusive with
+  // `anchored`, which the deck-state invariant already guarantees; the check
+  // here keeps the render honest against a hand-built state.
+  const slot =
+    !anchored && imposition !== undefined && stackState.slot !== undefined
+      ? clampSlot(imposition, stackState.slot)
+      : null;
+  const imposed = slot !== null && imposition !== undefined;
+  const lastSlot = imposition !== undefined ? slotCount(imposition) - 1 : 0;
+  // Read at gesture time by the drag machine, which is a `useCallback` whose
+  // identity should not churn with the arrangement.
+  const imposedRef = useRef(imposed);
+  imposedRef.current = imposed;
   const activeCardId = activeCardIdFromProps ?? stackState.activeCardId;
 
   // Ref to the frame DOM element for appearance-zone style mutations.
@@ -1454,7 +1485,32 @@ export function TugPane({
       dragCanvasBounds.current = frame.parentElement?.getBoundingClientRect() ?? null;
       dragActive.current = true;
       dragStartPointer.current = { x: event.clientX, y: event.clientY };
-      dragStartPosition.current = { x: position.x, y: position.y };
+
+      // An imposed frame is positioned by CSS pins (`left: calc(...)` or
+      // `right`, `top`/`bottom`, and a centering `transform` on a middle
+      // slot), which the free-drag machine's per-frame `left`/`top` writes
+      // would fight. Convert it to free px geometry here, at its current
+      // on-screen rect, and seed the machine's start position from that same
+      // measurement: `position` holds last-known values for an imposed pane,
+      // so seeding from state would teleport the frame on the first drag
+      // frame. Dropping it commits with `evictSlot`, so React re-renders in
+      // free mode consistent with what the DOM already shows.
+      const startPosition = { x: position.x, y: position.y };
+      if (imposedRef.current) {
+        const canvas = dragCanvasBounds.current;
+        const zoom = getTugZoom() || 1;
+        const rect = frame.getBoundingClientRect();
+        startPosition.x = (rect.left - (canvas ? canvas.left : 0)) / zoom;
+        startPosition.y = (rect.top - (canvas ? canvas.top : 0)) / zoom;
+        frame.style.transform = "";
+        frame.style.right = "";
+        frame.style.bottom = "";
+        frame.style.left = `${startPosition.x}px`;
+        frame.style.top = `${startPosition.y}px`;
+        frame.style.width = `${rect.width / zoom}px`;
+        frame.style.height = `${rect.height / zoom}px`;
+      }
+      dragStartPosition.current = startPosition;
       latestDragPointer.current = { x: event.clientX, y: event.clientY };
 
       // Build tab bar cache for merge hit-testing. [D45]
@@ -1634,7 +1690,14 @@ export function TugPane({
         // the collapsed stub, so the card could never be restored. Preserve the
         // stored `size.height` for a collapsed drag; only the position changes.
         const committedHeight = collapsed ? size.height : frame.offsetHeight;
-        onCardMoved(id, finalPos, { width: frame.offsetWidth, height: committedHeight });
+        // A dragged pane leaves its slot: the explicit gesture wins, and the
+        // dropped rect becomes its free geometry. Resize never passes this.
+        onCardMoved(
+          id,
+          finalPos,
+          { width: frame.offsetWidth, height: committedHeight },
+          imposedRef.current ? { evictSlot: true } : undefined,
+        );
 
         // Reset all drag state.
         dragOtherRects.current = [];
@@ -1952,6 +2015,88 @@ export function TugPane({
     ],
   );
 
+  // Width-only resize for an imposed pane. Its horizontal pin and its full
+  // canvas height are CSS-derived, so only the width is the user's to change —
+  // and changing it must not evict the pane from its slot.
+  //
+  // This is a dedicated path rather than the generic eight-handle resize for
+  // the same reason `handleAnchoredResizeStart` is: the generic handler seeds
+  // its start values from React state (`position.x`, `size.width`), which an
+  // imposed pane's state does not authoritatively hold, and it writes
+  // `left`/`top` per frame on a `w`-edge drag — fighting the pin. Everything
+  // here is seeded from the live frame rect instead.
+  //
+  // Which edge grows the pane depends on which one the slot pins: the first
+  // slot pins its left edge and exposes only `e`; the last pins its right edge
+  // and exposes only `w`; a middle slot is pinned at its center and exposes
+  // both, growing symmetrically — so the width has to change by twice the
+  // pointer delta for the dragged edge to stay under the pointer.
+  // Option-snap is not offered on an imposed edge.
+  const handleImposedResizeStart = useCallback(
+    (edge: "e" | "w", event: React.PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!frameRef.current) return;
+      const frame: HTMLDivElement = frameRef.current;
+
+      const zoom = getTugZoom() || 1;
+      const startClientX = event.clientX;
+      const startWidth = frame.getBoundingClientRect().width / zoom;
+      const minWidth = minSizeRef.current.width;
+      const maxWidth = maxSizeRef.current?.width ?? Number.POSITIVE_INFINITY;
+      const growSign = edge === "e" ? 1 : -1;
+      const centerPinned = slot !== 0 && slot !== lastSlot;
+      const gain = centerPinned ? 2 : 1;
+
+      frame.setPointerCapture(event.pointerId);
+      frame.setAttribute("data-gesture", "resize");
+
+      let width = startWidth;
+      let latestX = startClientX;
+      let rafId: number | null = null;
+
+      const computeWidth = (): number => {
+        const deltaLayout = (latestX - startClientX) / zoom;
+        return Math.min(
+          maxWidth,
+          Math.max(minWidth, startWidth + gain * growSign * deltaLayout),
+        );
+      };
+
+      const apply = (): void => {
+        rafId = null;
+        width = computeWidth();
+        frame.style.width = `${width}px`;
+      };
+
+      const onPointerMove = (e: PointerEvent): void => {
+        latestX = e.clientX;
+        if (rafId === null) rafId = requestAnimationFrame(apply);
+      };
+
+      const onPointerUp = (e: PointerEvent): void => {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        frame.removeEventListener("pointermove", onPointerMove);
+        frame.removeEventListener("pointerup", onPointerUp);
+        frame.releasePointerCapture(e.pointerId);
+        frame.removeAttribute("data-gesture");
+        latestX = e.clientX;
+        width = computeWidth();
+        frame.style.width = `${width}px`;
+        // No `evictSlot`: the pane keeps its slot, and its height stays the
+        // stored one — the live frame height is the canvas, not the card's.
+        onCardMoved(id, position, { width, height: size.height });
+      };
+
+      frame.addEventListener("pointermove", onPointerMove);
+      frame.addEventListener("pointerup", onPointerUp);
+    },
+    [id, onCardMoved, position, size.height, slot, lastSlot],
+  );
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -2002,12 +2147,17 @@ export function TugPane({
       data-pane-id={id}
       data-collapsed={collapsed ? "true" : "false"}
       {...(anchorSide ? { "data-anchored": anchorSide } : {})}
+      {...(imposed ? { "data-imposed": String(slot) } : {})}
       {...(effectiveMeta.squareCorners ? { "data-square-corners": "true" } : {})}
       style={{
         position: "absolute",
-        // An anchored rail pins to its viewport edge (left or right),
-        // spans the full height, and takes only its width from the store.
-        // A free pane uses its stored left/top/width/height. [L06]/[L09]
+        // Three geometry modes. An anchored rail pins to its viewport edge
+        // (left or right), spans the full height, and takes only its width
+        // from the store. An imposed pane pins to its slot's anchor across the
+        // span and spans the full height, also taking only its width from the
+        // store — a collapsed one keeps the window-shade stub height in place
+        // of the released bottom pin. A free pane uses its stored
+        // left/top/width/height. [L06]/[L09]
         ...(anchored
           ? {
               ...(anchorSide === "left" ? { left: 0 } : { right: 0 }),
@@ -2015,12 +2165,17 @@ export function TugPane({
               bottom: 0,
               width: renderWidth,
             }
-          : {
-              left: position.x,
-              top: position.y,
-              width: renderWidth,
-              height: frameHeight,
-            }),
+          : imposed && imposition !== undefined && slot !== null
+            ? {
+                ...imposeStyle(imposition, slot, renderWidth, collapsed),
+                ...(collapsed ? { height: frameHeight } : {}),
+              }
+            : {
+                left: position.x,
+                top: position.y,
+                width: renderWidth,
+                height: frameHeight,
+              }),
         zIndex,
         boxSizing: "border-box",
         // Expose the pane's minimum width to descendants via CSS custom
@@ -2033,13 +2188,28 @@ export function TugPane({
     >
       {/* Resize handles -- hidden when collapsed; drag remains active [D07].
           An anchored rail exposes only its deck-facing edge (west for a
-          right rail, east for a left rail); a free pane exposes all eight. */}
+          right rail, east for a left rail). An imposed pane exposes only the
+          edges that can change its width without moving its pin: `e` at the
+          first slot, `w` at the last, both at a center-pinned middle. A free
+          pane exposes all eight. */}
       {!collapsed &&
         (anchored ? (
           <div
             className={`tug-pane-resize tug-pane-resize-${anchorSide === "left" ? "e" : "w"}`}
             onPointerDown={handleAnchoredResizeStart}
           />
+        ) : imposed ? (
+          (slot === 0 ? ["e"] : slot === lastSlot ? ["w"] : ["e", "w"]).map(
+            (edge) => (
+              <div
+                key={edge}
+                className={`tug-pane-resize tug-pane-resize-${edge}`}
+                onPointerDown={(e) =>
+                  handleImposedResizeStart(edge as "e" | "w", e)
+                }
+              />
+            ),
+          )
         ) : (
           RESIZE_EDGES.map((edge) => (
             <div

@@ -16,13 +16,13 @@ Everything else in this document explains how that rule manifests in code.
 
 ### Deck
 
-The top-level canvas. Owns the layout tree: the set of all Panes, the ordered `cardIds` inside each Pane, and the currently-active Pane. A Deck is a flat state: `{ cards: Card[], panes: Pane[], activePaneId?: string }` — not a tree. Cards and Panes live in two flat arrays, and every card belongs to exactly one Pane's `cardIds` list.
+The top-level canvas. Owns the layout tree: the set of all Panes, the ordered `cardIds` inside each Pane, and the currently-active Pane. A Deck is a flat state: `{ cards: Card[], panes: Pane[], activePaneId?: string, imposition? }` — not a tree. Cards and Panes live in two flat arrays, and every card belongs to exactly one Pane's `cardIds` list.
 
 | Owner | Responsibility |
 |-------|---------------|
 | `DeckManager` | Mutations on the layout tree, invariant validation, subscription surface (`useSyncExternalStore`) |
 | `DeckCanvas` | Renders the Panes, promotes the active Pane's active Card as first responder on mount |
-| `DeckState` (type) | `{ cards, panes, activePaneId? }` — the full shape of the tree |
+| `DeckState` (type) | `{ cards, panes, activePaneId?, imposition? }` — the full shape of the tree |
 
 **Deck invariants** (enforced by `validateDeckState`):
 1. Every `pane.cardIds` entry references a real `state.cards[].id`.
@@ -30,6 +30,7 @@ The top-level canvas. Owns the layout tree: the set of all Panes, the ordered `c
 3. No pane has `cardIds.length === 0` — closing the last card closes the Pane.
 4. Every `pane.activeCardId` is a member of that Pane's `cardIds`.
 5. `state.activePaneId`, when set, references a real Pane.
+6. No Pane carries both `anchor` and `slot` — a Pane derives its geometry from at most one source.
 
 ### Pane
 
@@ -39,9 +40,23 @@ The visual container. A rectangular frame on the canvas with chrome (title bar, 
 |-------|---------------|
 | `TugPane` (component) | Renders the frame; handles drag, resize, title bar, collapse, snap, tab bar |
 | `TugPaneBanner` (component) | Renders the pane-scoped modal banner (error/status overlays) |
-| `TugPaneState` (type) | `{ id, position, size, cardIds, activeCardId, title, acceptsFamilies, collapsed? }` |
+| `TugPaneState` (type) | `{ id, position, size, cardIds, activeCardId, title, acceptsFamilies, collapsed?, anchor?, slot? }` |
 
 A Pane is a **responder** (per [L11]) for actions on Pane state: `close`, `find`, `toggleMenu`. A Pane is **not** responsible for Card content — it delegates to the active Card's `CardHost`.
+
+#### Three geometry modes
+
+A Pane always owns its geometry ([L09]); what varies is what it *derives* that geometry from. There are three modes, and they are mutually exclusive:
+
+| Mode | Marked by | Horizontal | Vertical | Gestures |
+|------|-----------|------------|----------|----------|
+| **free** | neither `anchor` nor `slot` | `position.x` / `size.width` | `position.y` / `size.height` | drag anywhere; all eight resize handles; snap |
+| **anchored** | `anchor: "left" \| "right"` | pinned to that viewport edge, `size.width` wide | pinned top and bottom | not draggable; deck-facing edge resize only (width) |
+| **imposed** | `slot: number` | pinned to the slot's anchor across the layout span | pinned top and bottom (bottom released while collapsed) | drag evicts it back to free; width-only resize on the edges the slot's pin permits |
+
+Anchored is the Lens rail. Imposed is the layout imposer: the deck's `imposition` (`"two-up" | "three-up" | "four-up"`) defines numbered slots across the span — the canvas minus the rail on its docked side — and a Pane assigned to slot *k* pins its left edge (first slot), its right edge (last slot), or its horizontal center (any middle slot) to that slot's anchor. **The imposer never touches a Pane's width**: a slot is a position anchor, not a rect, so widths stay the user's and overlap is ordinary geometry rather than a case to handle. Any number of Panes may hold the same slot — a slot is a vertical stack whose top Pane is visible, and the Lens list is the switching surface.
+
+Both derived modes resolve at render, in CSS, from custom properties (`--tug-imposer-inset-left` / `--tug-imposer-inset-right` for the span) rather than from a measured-and-committed rect. The deck installs no resize observation of any kind: the browser reflows derived Panes on a window resize or a rail drag for free ([L06]). A derived Pane's stored `position`/`size` therefore hold last-known values, refreshed when the Pane leaves the mode; anything needing the truth measures the frame.
 
 ### Card
 
@@ -127,12 +142,16 @@ The Deck → Pane → Card vocabulary flows through every serialization surface 
       "cardIds":       ["card-abc"],
       "activeCardId":  "card-abc",
       "title":         "",
-      "acceptsFamilies": ["standard"]
+      "acceptsFamilies": ["standard"],
+      "slot": 1
     }
   ],
-  "activePaneId": "pane-xyz"
+  "activePaneId": "pane-xyz",
+  "imposition": "three-up"
 }
 ```
+
+`imposition` (deck-level) and `slot` (pane-level) are **additive-optional**, like `collapsed?` and `anchor?` before them — absent means "no imposition / Pane not imposed", which is exactly the pre-imposer semantics, so no version bump and no migration. The read path is defensive: an unrecognized kind drops the arrangement and every `slot` with it; a `slot` needs a valid kind, a non-negative integer, and no `anchor` on the same Pane; an out-of-range slot clamps to the kind's last slot. A Pane with a surviving `slot` skips the canvas-fit clamp, exactly as an anchored one does — its geometry derives at render.
 
 Pre-v4 blobs used `windows` and `activeWindowId` and a different embedded-card shape. `serialization.ts` migrates on read; writes are always v4. The `focusedCardId` pointer for reload focus restoration is stored in a separate tugbank domain (`dev.tugtool.deck.focused`), not inside the layout blob.
 
@@ -208,6 +227,9 @@ Modal scope is the Pane stacking context, not the canvas-overlay tier — pickin
 | `tugdeck/src/components/tugways/use-card-state-preservation.tsx` | `useCardStatePreservation`, `CardStatePreservationContext`, `CardStatePreservationCallbacks` |
 | `tugdeck/src/card-registry.ts` | `registerCard`, `CardMeta`, `CardRegistration` |
 | `tugdeck/src/serialization.ts` | v4 ⇄ v3 migration on read; v4 only on write |
+| `tugdeck/src/lib/layout-imposer.ts` | Pure imposition geometry: `ImpositionKind`, `slotCount`, `clampSlot`, `slotFraction`, `resolveSpan`, `imposeRect`, `imposeStyle` |
+| `tugdeck/src/components/lens/sections/layouts-section.tsx` | The Lens **Layouts** section — the imposition kind picker |
+| `tugdeck/src/components/lens/slot-picker.tsx` | `SlotPicker` — the numbered slot buttons on a Lens list row |
 | `tugdeck/src/components/tugways/action-vocabulary.ts` | `FOCUS_PANE`, `ADD_CARD_TO_ACTIVE_PANE`, `CLOSE`, ... |
 | `tugapp/Sources/AppDelegate.swift` | Swift menu definitions and IPC senders |
 | `tugdeck/src/components/tugways/tug-pane.css` | `--tugx-pane-*` token aliases + chrome CSS |
@@ -225,4 +247,4 @@ Modal scope is the Pane stacking context, not the canvas-overlay tier — pickin
 - [lifecycle-delegates.md](lifecycle-delegates.md) — the deck-level `TugCardDelegate` event pipe (`cardWillMove`, `cardDidMove`, `cardWillResize`, `cardDidResize`, `cardWillActivate`, etc.) through which Pane geometry and activation events reach cards
 - [responder-chain.md](responder-chain.md) — the chain-walk that makes Pane-state and Card-content actions route to the right layer
 - [action-naming.md](action-naming.md) — Pane / Card naming in action vocabulary
-- [design-decisions.md](design-decisions.md) — D15, D16, D17, D27, D30, D31, D49, D50, D51, D52
+- [design-decisions.md](design-decisions.md) — D15, D16, D17, D27, D30, D31, D49, D50, D51, D52, D121 (layout imposition)

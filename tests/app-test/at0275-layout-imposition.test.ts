@@ -1,0 +1,340 @@
+/**
+ * at0275-layout-imposition.test.ts — the layout imposer places panes and never
+ * sizes them.
+ *
+ * ## What this gates (a failure mode, not busywork)
+ *
+ * An imposed pane's rect exists nowhere in React state. Its horizontal pin and
+ * its full canvas height are `calc()` expressions over the span inset custom
+ * properties, resolved by the browser — which is the whole point of the design
+ * (no resize observation anywhere on the deck) and also the reason no unit test
+ * can see it. The only honest reading is `getBoundingClientRect()` on real
+ * frames in the real app, against a real Lens rail whose live width defines the
+ * span.
+ *
+ * Four claims, all measured:
+ *   - **the anchors hold** — slot 1's left edge sits on the span's left edge,
+ *     slot 3's right edge on the span's right edge, slot 2's center on the
+ *     span's center, and every imposed pane runs the canvas's full height.
+ *   - **width is untouched** — the pane's width across an assignment is
+ *     identical to the pixel. A slot is a position anchor, not a rect; if this
+ *     ever drifts, the imposer has started fighting the user for horizontal
+ *     space, which is the tab strip's failure being reinvented.
+ *   - **slots are stacks** — two panes assigned to one slot land on the same
+ *     rect, with the later assignment on top. That is the tab replacement: many
+ *     cards at one position, switched from the Lens list.
+ *   - **a drag evicts** — dragging an imposed pane's title bar releases it to
+ *     free geometry (`data-imposed` gone) while the pane beneath keeps its
+ *     slot. The explicit gesture wins.
+ *
+ * Driven through the real surfaces: a real click on the Layouts section's
+ * "Three Up" radio item, real clicks on the numbered buttons of real Text Files
+ * rows, and a real native drag.
+ *
+ * @covers tugdeck/src/lib/layout-imposer.ts
+ * @covers tugdeck/src/deck-manager.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/components/chrome/deck-canvas.tsx
+ * @covers tugdeck/src/components/lens/sections/layouts-section.tsx
+ * @covers tugdeck/src/components/lens/slot-picker.tsx
+ */
+
+import { describe, expect, test } from "bun:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { launchTugApp, type App } from "./_harness";
+
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
+const TEST_TIMEOUT_MS = 180_000;
+
+/** Both panes start the same size, so a shared slot is a shared rect. */
+const PANE_WIDTH = 460;
+const PANE_HEIGHT = 380;
+
+const LIST = ".lens-text-files-list";
+const THREE_UP = '[data-testid="lens-layouts-section"] [data-radio-value="three-up"]';
+
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface Frame extends Rect {
+  imposed: string | null;
+  z: number;
+}
+
+interface Scene {
+  canvas: Rect;
+  rail: Rect | null;
+  a: Frame | null;
+  b: Frame | null;
+}
+
+/**
+ * Read the live geometry of both cards' pane frames, the canvas they sit in,
+ * and the anchored rail — all from the DOM, since an imposed frame's real rect
+ * is the browser's answer, not the store's.
+ */
+const READ_SCENE = `(function(){
+  function frameFor(cardId) {
+    var host = document.querySelector('[data-card-id="' + cardId + '"]');
+    if (host === null) return null;
+    var frame = host.closest(".tug-pane");
+    if (frame === null) return null;
+    var r = frame.getBoundingClientRect();
+    return {
+      x: r.left, y: r.top, width: r.width, height: r.height,
+      imposed: frame.getAttribute("data-imposed"),
+      z: parseInt(getComputedStyle(frame).zIndex || "0", 10),
+    };
+  }
+  function box(el) {
+    if (el === null) return null;
+    var r = el.getBoundingClientRect();
+    return { x: r.left, y: r.top, width: r.width, height: r.height };
+  }
+  var anyPane = document.querySelector(".tug-pane");
+  var canvasEl = anyPane === null ? null : anyPane.parentElement;
+  return {
+    canvas: box(canvasEl),
+    rail: box(document.querySelector(".tug-pane[data-anchored]")),
+    a: frameFor("A"),
+    b: frameFor("B"),
+  };
+})()`;
+
+function deckShape() {
+  const pane = (id: string, cardId: string, x: number) => ({
+    id,
+    position: { x, y: 60 },
+    size: { width: PANE_WIDTH, height: PANE_HEIGHT },
+    cardIds: [cardId],
+    activeCardId: cardId,
+    title: "",
+    acceptsFamilies: ["standard"],
+  });
+  return {
+    cards: [
+      { id: "A", componentId: "text", title: "Alpha", closable: true },
+      { id: "B", componentId: "text", title: "Bravo", closable: true },
+    ],
+    panes: [pane("p1", "A", 40), pane("p2", "B", 560)],
+    activePaneId: "p1",
+    hasFocus: true,
+  };
+}
+
+/** The `[data-tug-list-cell-index]` of the Text Files row for `filename`. */
+async function rowIndexFor(app: App, filename: string): Promise<number> {
+  const index = await app.evalJS<number>(
+    `(function(){
+      var cells = document.querySelectorAll('${LIST} [data-tug-list-cell-index]');
+      for (var i = 0; i < cells.length; i += 1) {
+        var title = cells[i].querySelector(".tug-list-row-title");
+        if (title !== null && title.innerText.indexOf(${JSON.stringify(filename)}) !== -1) {
+          return parseInt(cells[i].getAttribute("data-tug-list-cell-index"), 10);
+        }
+      }
+      return -1;
+    })()`,
+  );
+  if (index < 0) throw new Error(`[at0275] no Text Files row for ${filename}`);
+  return index;
+}
+
+/** Selector for the 1-based numbered button on the row at `cellIndex`. */
+function slotButton(cellIndex: number, position: number): string {
+  return `${LIST} [data-tug-list-cell-index="${cellIndex}"] [aria-label="Put at position ${position}"]`;
+}
+
+const settle = (ms = 350): Promise<void> =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
+  test(
+    "imposed panes anchor to their slots at full height, keep their width, stack, and evict on a drag",
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0275-"));
+      const alpha = path.join(dir, "alpha.txt");
+      const bravo = path.join(dir, "bravo.txt");
+      fs.writeFileSync(alpha, "alpha\n", "utf8");
+      fs.writeFileSync(bravo, "bravo\n", "utf8");
+
+      const app = await launchTugApp({ testName: "at0275-layout-imposition" });
+      try {
+        await app.seedDeckState({
+          state: deckShape(),
+          cardStates: {
+            A: { content: { path: alpha, anchor: { line: 1, ch: 0 }, scrollTop: 0 } },
+            B: { content: { path: bravo, anchor: { line: 1, ch: 0 }, scrollTop: 0 } },
+          },
+          focusCardId: "A",
+        });
+        await app.waitForCondition<boolean>(
+          `window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("B")`,
+          { timeoutMs: 15_000 },
+        );
+
+        await app.evalJS<null>(
+          `(window.__tug.dispatchControlAction("toggle-lens"), null)`,
+        );
+        // Both open files reach the Lens list once their cards bind their paths.
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll('${LIST} [data-tug-list-cell-index]').length >= 2`,
+          { timeoutMs: 15_000 },
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector(".tug-pane[data-anchored]") !== null`,
+          { timeoutMs: 10_000 },
+        );
+
+        const before = await app.evalJS<Scene>(READ_SCENE);
+        if (before.a === null || before.b === null) {
+          throw new Error("[at0275] both panes must be on the canvas to start");
+        }
+        // No imposition yet: nothing is imposed, and no slot buttons exist —
+        // the cluster is the arrangement's affordance, not a row fixture.
+        expect(before.a.imposed).toBeNull();
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll('[data-testid="lens-slot-picker"] button').length`,
+          ),
+        ).toBe(0);
+
+        // ---- Choose Three Up in the Layouts section (a real click) ----
+        await app.nativeClickAtElement(THREE_UP);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${THREE_UP}').getAttribute("data-state") === "checked"`,
+          { timeoutMs: 8_000 },
+        );
+        // Three slots means three buttons per row.
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll('${LIST} [data-testid="lens-slot-picker"] button').length === 6`,
+          { timeoutMs: 8_000 },
+        );
+
+        const alphaRow = await rowIndexFor(app, "alpha.txt");
+        const bravoRow = await rowIndexFor(app, "bravo.txt");
+
+        // ---- Slot 1 for alpha, slot 3 for bravo ----
+        await app.nativeClickAtElement(slotButton(alphaRow, 1));
+        await settle();
+        await app.nativeClickAtElement(slotButton(bravoRow, 3));
+        await settle();
+
+        const three = await app.evalJS<Scene>(READ_SCENE);
+        if (three.a === null || three.b === null || three.rail === null) {
+          throw new Error("[at0275] expected two panes and the Lens rail");
+        }
+        console.log("[at0275] three-up scene:", JSON.stringify(three));
+
+        // The span is the canvas minus the rail on the side it is docked to.
+        const railLeft = three.rail.x <= three.canvas.x + 1;
+        const spanLeft = railLeft
+          ? three.canvas.x + three.rail.width
+          : three.canvas.x;
+        const spanRight = railLeft
+          ? three.canvas.x + three.canvas.width
+          : three.canvas.x + three.canvas.width - three.rail.width;
+
+        expect(three.a.imposed).toBe("0");
+        expect(three.b.imposed).toBe("2");
+
+        // The first slot pins its LEFT edge; the last pins its RIGHT edge.
+        expect(three.a.x).toBeCloseTo(spanLeft, 0);
+        expect(three.b.x + three.b.width).toBeCloseTo(spanRight, 0);
+
+        // Both run the canvas's full height.
+        for (const frame of [three.a, three.b]) {
+          expect(frame.y).toBeCloseTo(three.canvas.y, 0);
+          expect(frame.y + frame.height).toBeCloseTo(
+            three.canvas.y + three.canvas.height,
+            0,
+          );
+        }
+
+        // Width is untouched by the imposer, to the pixel.
+        expect(three.a.width).toBe(before.a.width);
+        expect(three.b.width).toBe(before.b.width);
+
+        // ---- The middle slot centers on the span's center ----
+        await app.nativeClickAtElement(slotButton(bravoRow, 2));
+        await settle();
+        const middle = await app.evalJS<Scene>(READ_SCENE);
+        if (middle.b === null) throw new Error("[at0275] bravo's pane vanished");
+        expect(middle.b.imposed).toBe("1");
+        expect(middle.b.x + middle.b.width / 2).toBeCloseTo(
+          (spanLeft + spanRight) / 2,
+          0,
+        );
+        expect(middle.b.width).toBe(before.b.width);
+
+        // ---- Slots are stacks: alpha joins bravo at slot 2 ----
+        await app.nativeClickAtElement(slotButton(alphaRow, 2));
+        await settle();
+        const stacked = await app.evalJS<Scene>(READ_SCENE);
+        if (stacked.a === null || stacked.b === null) {
+          throw new Error("[at0275] both panes must survive the stack");
+        }
+        console.log("[at0275] stacked scene:", JSON.stringify(stacked));
+        expect(stacked.a.imposed).toBe("1");
+        expect(stacked.b.imposed).toBe("1");
+        // Same width, same slot — so the same rect.
+        expect(stacked.a.x).toBeCloseTo(stacked.b.x, 0);
+        expect(stacked.a.width).toBeCloseTo(stacked.b.width, 0);
+        // The later assignment is on top, and is the deck's active card:
+        // assigning always raises, which is what makes a shared slot usable.
+        expect(stacked.a.z).toBeGreaterThan(stacked.b.z);
+        expect(await app.evalJS<string | null>(`window.__tug.getActiveCardId()`)).toBe(
+          "A",
+        );
+
+        // ---- Dragging the top pane evicts it; the one beneath keeps its slot ----
+        const bar = await app.evalJS<Rect>(
+          `(function(){
+            var host = document.querySelector('[data-card-id="A"]');
+            var frame = host.closest(".tug-pane");
+            var el = frame.querySelector('[data-testid="tug-pane-title-bar"]');
+            if (el === null) throw new Error("no title bar on alpha's pane");
+            var r = el.getBoundingClientRect();
+            return { x: r.left, y: r.top, width: r.width, height: r.height };
+          })()`,
+        );
+        // Left of the controls cluster, on the bar's own drag surface.
+        const from = {
+          x: Math.round(bar.x + Math.min(80, bar.width / 3)),
+          y: Math.round(bar.y + bar.height / 2),
+        };
+        await app.nativeDrag(from, { x: from.x - 120, y: from.y + 140 });
+        await settle(600);
+
+        const dropped = await app.evalJS<Scene>(READ_SCENE);
+        if (dropped.a === null || dropped.b === null) {
+          throw new Error("[at0275] both panes must survive the drag");
+        }
+        console.log("[at0275] dropped scene:", JSON.stringify(dropped));
+        // Alpha is free again — no slot, and standing where it was dropped
+        // rather than back on the middle slot's pin. It keeps the height it
+        // visibly had: the drop commits the rect the user is looking at, so a
+        // pane dragged out of a full-height slot stays full height.
+        expect(dropped.a.imposed).toBeNull();
+        expect(dropped.a.x).toBeCloseTo(stacked.a.x - 120, 0);
+        expect(dropped.a.y).toBeCloseTo(stacked.a.y + 140, 0);
+        expect(dropped.a.width).toBe(before.a.width);
+        // Bravo is untouched underneath, still centered on the middle slot.
+        expect(dropped.b.imposed).toBe("1");
+        expect(dropped.b.x + dropped.b.width / 2).toBeCloseTo(
+          (spanLeft + spanRight) / 2,
+          0,
+        );
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+});

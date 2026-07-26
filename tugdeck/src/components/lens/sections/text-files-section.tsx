@@ -41,6 +41,7 @@ import type {
   TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
 import { TugListRow } from "@/components/tugways/tug-list-row";
+import { SlotPicker } from "@/components/lens/slot-picker";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugPopupMenu } from "@/components/tugways/internal/tug-popup-menu";
 import type { TugPopupMenuEntry } from "@/components/tugways/internal/tug-popup-menu";
@@ -89,10 +90,12 @@ function useTextFilesFilterQuery(): string {
  *  card's own header wears (`text-card.tsx` sets it on `cardTitleStore`), so
  *  the dirty bit reads identically wherever the file appears. */
 function FileRow({
+  cardId,
   name,
   dir,
   unsaved,
 }: {
+  cardId: string;
   name: string;
   dir: string;
   unsaved: boolean;
@@ -123,6 +126,7 @@ function FileRow({
           ? renderFilterHighlight(shownDir, filterQuery)
           : undefined
       }
+      trailing={<SlotPicker cardId={cardId} />}
     />
   );
 }
@@ -134,6 +138,7 @@ const TextFilesCell: TugListViewCellRenderer<LensTextFilesDataSource> = ({
   const row = dataSource.rowAt(index);
   return (
     <FileRow
+      cardId={row.cardId}
       name={row.title}
       dir={row.path !== null ? dirname(row.path) : ""}
       unsaved={row.unsaved}

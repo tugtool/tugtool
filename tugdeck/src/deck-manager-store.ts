@@ -18,6 +18,15 @@ import type { CardAssembler } from "./card-state-orchestrator";
 import type { SaveCallbackSource } from "./deck-trace";
 
 /**
+ * Options on a pane-geometry commit. `evictSlot` releases an imposed pane
+ * back to free geometry as part of the same commit — set by the title-bar
+ * drag path only, never by resize.
+ */
+export interface MovePaneOptions {
+  evictSlot?: boolean;
+}
+
+/**
  * Subscribable store interface for DeckManager.
  * Conforms to the useSyncExternalStore contract.
  */
@@ -50,6 +59,7 @@ export interface IDeckManagerStore {
     paneId: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
+    opts?: MovePaneOptions,
   ) => void;
 
   /** Stable bound callback: close a pane (and all of its cards). */

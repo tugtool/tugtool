@@ -65,7 +65,13 @@ import { TugBulletinProvider } from "./components/tugways/tug-bulletin";
 import { putLayout, putCardState, putFocusedCardId } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import { composeProviders } from "./lib/compose-providers";
-import type { EngineHooks, IDeckManagerStore } from "./deck-manager-store";
+import type {
+  EngineHooks,
+  IDeckManagerStore,
+  MovePaneOptions,
+} from "./deck-manager-store";
+import { clampSlot, type ImpositionKind } from "./lib/layout-imposer";
+import { getTugZoom } from "./components/tugways/scale-timing";
 import { DeckManagerContext } from "./deck-manager-context";
 import { BASE_THEME_NAME } from "./theme-constants";
 import {
@@ -430,6 +436,7 @@ export class DeckManager implements IDeckManagerStore {
     paneId: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
+    opts?: MovePaneOptions,
   ) => void;
 
   public handlePaneClosed: (paneId: string) => void;
@@ -1303,14 +1310,23 @@ export class DeckManager implements IDeckManagerStore {
    * Fires will/did lifecycle events for move/resize on the **active card** of
    * the pane (panes, not cards, own position/size — but the active card is
    * the observable subject).
+   *
+   * `opts.evictSlot` releases an imposed pane back to free geometry in the
+   * same commit — the title-bar drag path passes it, the resize path does
+   * not. It is an explicit option rather than a "position changed" heuristic
+   * because a west-edge resize also moves `position.x`, and a resize must
+   * never knock a pane out of its slot: width is the user's even while
+   * imposed.
    */
   movePane(
     paneId: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
+    opts?: MovePaneOptions,
   ): void {
     const existing = this.deckState.panes.find((s) => s.id === paneId);
     if (!existing) return;
+    const evictSlot = opts?.evictSlot === true && existing.slot !== undefined;
     const positionChanged =
       existing.position.x !== position.x || existing.position.y !== position.y;
     const sizeChanged =
@@ -1323,9 +1339,12 @@ export class DeckManager implements IDeckManagerStore {
 
     this.deckState = {
       ...this.deckState,
-      panes: this.deckState.panes.map((s) =>
-        s.id === paneId ? { ...s, position, size } : s,
-      ),
+      panes: this.deckState.panes.map((s) => {
+        if (s.id !== paneId) return s;
+        const moved: TugPaneState = { ...s, position, size };
+        if (evictSlot) delete moved.slot;
+        return moved;
+      }),
     };
     this.notify();
 
@@ -1467,6 +1486,192 @@ export class DeckManager implements IDeckManagerStore {
     }
 
     this.scheduleSave();
+  }
+
+  // ---- Layout imposition ----
+
+  /**
+   * Read a pane frame's live on-screen rect in canvas coordinates, or `null`
+   * when the frame is not in the DOM. An imposed pane's `position`/`size` hold
+   * last-known values while its real rect is derived by CSS, so any code that
+   * needs the truth has to measure the frame. Layout space, not visual: the
+   * measurements are divided by `body { zoom }` the same way `snapshotCardRects`
+   * does, so the result is directly comparable with stored geometry.
+   */
+  private _readPaneFrameRect(
+    paneId: string,
+  ): { x: number; y: number; width: number; height: number } | null {
+    if (typeof document === "undefined") return null;
+    const escaped = paneId.replace(/["\\]/g, "\\$&");
+    const frame = document.querySelector<HTMLElement>(
+      `.tug-pane[data-pane-id="${escaped}"]`,
+    );
+    if (!frame) return null;
+    const canvas = frame.parentElement?.getBoundingClientRect() ?? null;
+    const zoom = getTugZoom() || 1;
+    const rect = frame.getBoundingClientRect();
+    return {
+      x: (rect.left - (canvas ? canvas.left : 0)) / zoom,
+      y: (rect.top - (canvas ? canvas.top : 0)) / zoom,
+      width: rect.width / zoom,
+      height: rect.height / zoom,
+    };
+  }
+
+  /**
+   * Set the deck's active imposition, or clear it.
+   *
+   * A kind change keeps every assignment: a slot the new kind does not have is
+   * clamped to its last slot rather than dropped, so nothing silently falls out
+   * of the arrangement when the user goes from four-up to two-up.
+   *
+   * Clearing freezes each imposed pane where the user last saw it — the live
+   * frame rect is written into `position`/`size` before `slot` goes away, so
+   * turning the structure off does not scatter panes back to stale
+   * pre-imposition coordinates. A collapsed pane keeps its stored
+   * `size.height`: its frame is a window-shade stub, and committing that stub
+   * height would leave the card unrestorable (the same rule the drag commit
+   * follows in `tug-pane.tsx`).
+   */
+  setImposition(kind: ImpositionKind | null): void {
+    const current = this.deckState.imposition;
+    if (current === (kind ?? undefined)) return;
+
+    if (kind === null) {
+      const frozen = this.deckState.panes.map((pane) => {
+        if (pane.slot === undefined) return pane;
+        const next: TugPaneState = { ...pane };
+        delete next.slot;
+        const rect = this._readPaneFrameRect(pane.id);
+        if (rect !== null) {
+          next.position = { x: rect.x, y: rect.y };
+          next.size = {
+            width: rect.width,
+            height: pane.collapsed === true ? pane.size.height : rect.height,
+          };
+        }
+        return next;
+      });
+      const changes = this._geometryChanges(this.deckState.panes, frozen);
+      for (const ch of changes) {
+        if (ch.positionChanged) this.cardLifecycle.notifyCardWillMove(ch.id);
+        if (ch.sizeChanged) this.cardLifecycle.notifyCardWillResize(ch.id);
+      }
+      const next = { ...this.deckState, panes: frozen };
+      delete next.imposition;
+      this.deckState = next;
+      this.notify();
+      for (const ch of changes) {
+        if (ch.positionChanged) this.cardLifecycle.notifyCardDidMove(ch.id);
+        if (ch.sizeChanged) this.cardLifecycle.notifyCardDidResize(ch.id);
+      }
+      this.scheduleSave();
+      return;
+    }
+
+    const panes = this.deckState.panes.map((pane) => {
+      if (pane.slot === undefined) return pane;
+      const clamped = clampSlot(kind, pane.slot);
+      return clamped === pane.slot ? pane : { ...pane, slot: clamped };
+    });
+    // Every imposed pane's anchor fraction changes with the kind, so they all
+    // move even though their stored `position` does not — the move is CSS.
+    const moved = panes
+      .filter((pane) => pane.slot !== undefined)
+      .map((pane) => pane.activeCardId);
+    for (const cardId of moved) this.cardLifecycle.notifyCardWillMove(cardId);
+    this.deckState = { ...this.deckState, panes, imposition: kind };
+    this.notify();
+    for (const cardId of moved) this.cardLifecycle.notifyCardDidMove(cardId);
+    this.scheduleSave();
+  }
+
+  /**
+   * Assign a card to a numbered slot in the active imposition.
+   *
+   * A card sharing a pane with others is pulled out of that tab strip first —
+   * the imposer exists to replace tab strips, so it slots cards, never whole
+   * tab groups. A card already alone in its pane slots that pane in place.
+   *
+   * The assignment always raises: slots are stacks, so clicking a number that
+   * another pane already holds puts this one on top of it rather than doing
+   * nothing. Slots are full-height by definition, so a collapsed pane expands.
+   */
+  assignCardToSlot(cardId: string, slot: number): void {
+    const kind = this.deckState.imposition;
+    if (kind === undefined) {
+      console.warn(
+        `assignCardToSlot: no active imposition; cannot slot card "${cardId}"`,
+      );
+      return;
+    }
+    const host = this.deckState.panes.find((p) => p.cardIds.includes(cardId));
+    if (!host) {
+      console.warn(`assignCardToSlot: no pane holds card "${cardId}"`);
+      return;
+    }
+    if (host.anchor !== undefined) {
+      // A pane derives its geometry from one source. The rail already derives
+      // from its anchor edge, so it is not the imposer's to place.
+      console.warn(
+        `assignCardToSlot: card "${cardId}" is hosted in the anchored pane "${host.id}"`,
+      );
+      return;
+    }
+
+    // `_detachCard` returns null when the card is alone in its pane — that is
+    // exactly the "slot the existing host" branch, no detach needed.
+    const detachedPaneId =
+      host.cardIds.length > 1
+        ? this._detachCard(host.id, cardId, host.position)
+        : null;
+    const targetPaneId = detachedPaneId ?? host.id;
+
+    const target = this.deckState.panes.find((p) => p.id === targetPaneId);
+    if (!target) return;
+
+    const clamped = clampSlot(kind, slot);
+    const updated: TugPaneState = { ...target, slot: clamped };
+    delete updated.collapsed;
+
+    const willMove = target.slot !== clamped;
+    if (willMove) this.cardLifecycle.notifyCardWillMove(cardId);
+    this.deckState = {
+      ...this.deckState,
+      panes: this.deckState.panes.map((p) =>
+        p.id === targetPaneId ? updated : p,
+      ),
+    };
+    this.notify();
+    if (willMove) this.cardLifecycle.notifyCardDidMove(cardId);
+    this.scheduleSave();
+
+    this.activateCard(cardId);
+  }
+
+  /** Per-pane position/size deltas between two pane arrays of the same shape,
+   *  keyed by active card — the lifecycle-event ledger `arrangeCards` builds. */
+  private _geometryChanges(
+    before: readonly TugPaneState[],
+    after: readonly TugPaneState[],
+  ): { id: string; positionChanged: boolean; sizeChanged: boolean }[] {
+    const changes: {
+      id: string;
+      positionChanged: boolean;
+      sizeChanged: boolean;
+    }[] = [];
+    for (let i = 0; i < before.length; i += 1) {
+      const b = before[i];
+      const a = after[i];
+      const positionChanged =
+        b.position.x !== a.position.x || b.position.y !== a.position.y;
+      const sizeChanged =
+        b.size.width !== a.size.width || b.size.height !== a.size.height;
+      if (positionChanged || sizeChanged) {
+        changes.push({ id: a.activeCardId, positionChanged, sizeChanged });
+      }
+    }
+    return changes;
   }
 
   // ---- Per-card state cache API ([D01], [D06]) ----
