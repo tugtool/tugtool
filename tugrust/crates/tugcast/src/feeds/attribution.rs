@@ -18,7 +18,10 @@
 //!   `tool_use` time and consumed at `tool_result` time.
 //! - **Bash** — the one opaque mutator; handled by the working-tree
 //!   fingerprint bracket ([`OpenBracket`]), held relay-local by the relay
-//!   loop.
+//!   loop. A Bash command's *text* is read too ([`declared_ops_for_command`]):
+//!   the paths it literally names are proof, exactly as an exact tool's
+//!   `file_path` is, so a delta row for a named path is promoted from
+//!   correlation to `origin: "cmd"`.
 //!
 //! The pending map is size-capped with oldest-entry eviction and is
 //! deliberately **not** cleared on `turn_complete`: a background agent's
@@ -37,6 +40,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use serde::Deserialize;
+use tugchanges_core::shell_ops::{DeclaredKind, DeclaredOp, ParseOutcome, parse_shell_ops};
 
 use crate::path_resolver::CanonicalPath;
 use crate::session_ledger::FileEventRow;
@@ -91,9 +95,29 @@ pub struct InspectedToolResult {
     /// carry `is_error: true` and must not be attributed ([P04]).
     #[serde(default)]
     pub is_error: bool,
+    /// The tool's output. Read for `tugutil file` receipts — a verb's own
+    /// testimony of what it did, which is how a glob or variable operand
+    /// becomes proof. Defaulted when absent and emptied when it arrives as
+    /// something other than a string: an unexpected output shape must cost the
+    /// receipt only, never the whole frame's attribution.
+    #[serde(default, deserialize_with = "string_or_empty")]
+    pub output: String,
     /// Original JSONL entry time (epoch ms); replay-only, live omits.
     #[serde(default)]
     pub timestamp: Option<i64>,
+}
+
+/// Accept any JSON for a field the wire declares as a string, yielding the
+/// empty string for anything else — partial-shape tolerance, the same
+/// principle the rest of these views follow.
+fn string_or_empty<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::String(s) => s,
+        _ => String::new(),
+    })
 }
 
 impl InspectedToolResult {
@@ -356,12 +380,21 @@ impl OpenBracket {
     ///
     /// `file_path` is stored repo-relative (stripped against the bracket's
     /// `repo_root`), matching the exact-tool path's capture-time projection.
+    ///
+    /// `declared` holds the canonical absolute paths the command literally
+    /// named. A delta path **equal to or beneath** one of them was both named
+    /// by the tool input and observed to change, which is proof — that row is
+    /// promoted to `origin: "cmd"`. (Equal-or-*under* is what lets `rm -rf dir/`
+    /// promote the per-file rows `-uall` expands the directory into.) Everything
+    /// else keeps the caller's correlation origin; the turn bracket passes an
+    /// empty set.
     pub fn into_delta_rows(
         self,
         post: &HashMap<PathBuf, FileState>,
         project_dir: &CanonicalPath,
         tool_name: &str,
         origin: &str,
+        declared: &HashSet<PathBuf>,
         at: i64,
     ) -> Vec<FileEventRow> {
         let mut paths: HashSet<&PathBuf> = HashSet::new();
@@ -370,7 +403,13 @@ impl OpenBracket {
 
         let mut rows = Vec::new();
         for path in paths {
-            let op = match classify_op(self.pre.get(path), post.get(path)) {
+            let post_state = post.get(path);
+            // A path that left the dirty set is ambiguous on the status axis
+            // alone — committed/reverted and *deleted while untracked* both
+            // read as "gone". Disk existence is the discriminator, and it is
+            // probed only for that case.
+            let still_on_disk = post_state.is_some() || path.exists();
+            let op = match classify_op(self.pre.get(path), post_state, still_on_disk) {
                 Some(op) => op,
                 None => continue,
             };
@@ -380,13 +419,18 @@ impl OpenBracket {
                 .strip_prefix(&self.repo_root)
                 .map(|rel| rel.to_string_lossy().into_owned())
                 .unwrap_or_else(|_| path.to_string_lossy().into_owned());
+            let row_origin = if declared_covers(declared, path) {
+                CMD_ORIGIN
+            } else {
+                origin
+            };
             rows.push(FileEventRow {
                 tug_session_id: self.tug_session_id.clone(),
                 tool_use_id: self.tool_use_id.clone(),
                 file_path,
                 tool_name: tool_name.to_owned(),
                 op: op.to_owned(),
-                origin: origin.to_owned(),
+                origin: row_origin.to_owned(),
                 ambiguous: false,
                 parent_tool_use_id: self.parent_tool_use_id.clone(),
                 project_dir: project_dir.as_str().to_owned(),
@@ -397,15 +441,226 @@ impl OpenBracket {
     }
 }
 
+/// The origin of a row whose file the command itself named — proof class, on
+/// the same footing as an exact tool's `file_path`.
+pub const CMD_ORIGIN: &str = "cmd";
+
+/// Whether a declared (canonical, absolute) path names `path` — equal to it, or
+/// an ancestor directory of it. A recursive operation declares the directory
+/// while the status universe reports the files inside it.
+pub fn declared_covers(declared: &HashSet<PathBuf>, path: &Path) -> bool {
+    declared
+        .iter()
+        .any(|d| path == d.as_path() || path.starts_with(d))
+}
+
+/// Canonicalize the paths a parse declared, so they join against delta keys —
+/// which live in canonical space (the bracket's `repo_root` comes through the
+/// `CanonicalPath` gateway). An operand spelled through a firmlink or symlinked
+/// checkout root would otherwise silently miss.
+pub fn canonical_declared_paths<'a>(paths: impl Iterator<Item = &'a Path>) -> HashSet<PathBuf> {
+    paths.map(canonicalize_declared).collect()
+}
+
+/// Canonicalize a declared path that may no longer exist. The gateway resolves
+/// symlinks by asking the filesystem, which a deleted or moved-away path cannot
+/// answer — and a delete is precisely the case this join exists for. So resolve
+/// the nearest ancestor that *does* still exist and re-attach the tail.
+pub fn canonicalize_declared(path: &Path) -> PathBuf {
+    let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
+    let mut cursor = path;
+    loop {
+        if cursor.exists() {
+            let mut resolved = CanonicalPath::from_raw(cursor).as_path().to_path_buf();
+            for part in tail.iter().rev() {
+                resolved.push(part);
+            }
+            return resolved;
+        }
+        match (cursor.parent(), cursor.file_name()) {
+            (Some(parent), Some(name)) => {
+                tail.push(name);
+                cursor = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// A parsed Bash command's declared operations, held from its `tool_use` frame
+/// until the paired `tool_result` — the command-text half of the parse∩delta
+/// rule, and the whole of the replay rule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingCmd {
+    pub ops: Vec<DeclaredOp>,
+    pub parent_tool_use_id: Option<String>,
+    /// The `tool_use` frame's historical `timestamp` (replay only).
+    pub timestamp: Option<i64>,
+}
+
+/// Relay-local map of parsed Bash commands keyed by `tool_use_id`, with the
+/// same oldest-first eviction discipline as [`PendingCalls`].
+#[derive(Debug)]
+pub struct PendingCmds {
+    map: HashMap<String, PendingCmd>,
+    order: VecDeque<String>,
+    cap: usize,
+}
+
+impl Default for PendingCmds {
+    fn default() -> Self {
+        Self::with_cap(PENDING_CALLS_CAP)
+    }
+}
+
+impl PendingCmds {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_cap(cap: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            order: VecDeque::new(),
+            cap: cap.max(1),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    pub fn insert(&mut self, tool_use_id: String, cmd: PendingCmd) {
+        if self.map.insert(tool_use_id.clone(), cmd).is_none() {
+            self.order.push_back(tool_use_id);
+            while self.map.len() > self.cap {
+                match self.order.pop_front() {
+                    Some(oldest) => {
+                        self.map.remove(&oldest);
+                    }
+                    None => break,
+                }
+            }
+        }
+    }
+
+    pub fn take(&mut self, tool_use_id: &str) -> Option<PendingCmd> {
+        self.map.remove(tool_use_id)
+    }
+}
+
+/// The declared operations a Bash command's text yields, or `None` when the
+/// grammar reads no file operation in it (including its refusals — a refusal
+/// mints nothing and the paths stay bracket hints).
+pub fn declared_ops_for_command(command: &str, base_dir: &Path) -> Option<Vec<DeclaredOp>> {
+    match parse_shell_ops(command, base_dir) {
+        ParseOutcome::Ops(ops) => Some(ops),
+        ParseOutcome::NoFileOps | ParseOutcome::Unparseable { .. } => None,
+    }
+}
+
+/// The `command` string of a Bash `tool_use` frame's input.
+pub fn bash_command_for_tool(tool_name: &str, input: &serde_json::Value) -> Option<String> {
+    if tool_name != "Bash" {
+        return None;
+    }
+    input
+        .get("command")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_owned())
+}
+
+/// The `op` a declared operation records when there is no delta to read it
+/// from (the replay path): advisory precision only — git status decides how the
+/// file actually renders at read time.
+pub fn op_for_declared_kind(kind: &DeclaredKind) -> &'static str {
+    match kind {
+        DeclaredKind::Remove => "deleted",
+        DeclaredKind::Move { .. } => "renamed",
+        DeclaredKind::Copy => "created",
+        DeclaredKind::EditInPlace | DeclaredKind::WriteTarget | DeclaredKind::Touch => "modified",
+    }
+}
+
+/// The stdout marker a `tugutil file` verb prints to report what it did.
+pub const RECEIPT_MARKER: &str = "TUG-FILE-RECEIPT: ";
+
+/// One operation a verb receipt reports, with absolute paths.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ReceiptOp {
+    pub op: String,
+    pub path: String,
+    #[serde(default)]
+    pub orig_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Receipt {
+    #[serde(default)]
+    ops: Vec<ReceiptOp>,
+}
+
+/// The result of scanning a tool result's output for receipts.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ReceiptScan {
+    pub ops: Vec<ReceiptOp>,
+    /// A line carried the marker but its JSON did not parse. Capture failure is
+    /// loud (invariant 12) — the caller warns rather than dropping it silently.
+    pub malformed: bool,
+}
+
+/// Scan a Bash `tool_result`'s output for `tugutil file` receipts. The verb
+/// performed the expansion a glob or variable hid from the grammar and reports
+/// exactly which files it touched — testimony from a tool we own, which is what
+/// makes those operations provable at all. Unknown JSON fields are ignored, so
+/// the receipt can grow additively.
+pub fn parse_receipt_line(output: &str) -> ReceiptScan {
+    let mut scan = ReceiptScan::default();
+    for line in output.lines() {
+        let Some(payload) = line.trim_start().strip_prefix(RECEIPT_MARKER) else {
+            continue;
+        };
+        match serde_json::from_str::<Receipt>(payload.trim()) {
+            Ok(receipt) => scan.ops.extend(receipt.ops),
+            Err(_) => scan.malformed = true,
+        }
+    }
+    scan
+}
+
+/// The row `op` a receipt op records, or `None` for a verb this relay does not
+/// know — an unknown op is ignored rather than guessed at.
+pub fn op_for_receipt(op: &str) -> Option<&'static str> {
+    match op {
+        "deleted" => Some("deleted"),
+        "renamed" => Some("renamed"),
+        "created" => Some("created"),
+        "modified" => Some("modified"),
+        _ => None,
+    }
+}
+
 /// Classify the working-tree transition of one path across the bracket
 /// window, or `None` when its state is unchanged (identical status AND
-/// mtime — no attribution).
-fn classify_op(pre: Option<&FileState>, post: Option<&FileState>) -> Option<&'static str> {
+/// mtime — no attribution). `still_on_disk` disambiguates the disappearance
+/// case and is only consulted there.
+fn classify_op(
+    pre: Option<&FileState>,
+    post: Option<&FileState>,
+    still_on_disk: bool,
+) -> Option<&'static str> {
     match (pre, post) {
         (Some(a), Some(b)) if a == b => None,
         (_, Some(b)) => Some(op_from_status(&b.status)),
-        // Fell out of the dirty set (reverted / committed by the command):
-        // the working state at that path changed, recorded as a modify.
+        // Fell out of the dirty set. An untracked file that was deleted leaves
+        // no ` D` status behind — it simply stops being listed — so without the
+        // disk check the row would claim a file still exists.
+        (Some(_), None) if !still_on_disk => Some("deleted"),
+        // Still on disk: the command committed or reverted it.
         (Some(_), None) => Some("modified"),
         (None, None) => None,
     }
@@ -427,13 +682,14 @@ fn op_from_status(status: &str) -> &'static str {
 }
 
 /// Whether a row's `origin` is **proof** of authorship — the tool input named
-/// the file (`exact` live, `replay` backfill of the same), or a session
+/// the file (`exact` live, `replay` backfill of the same, `cmd` for a Bash
+/// command whose literal operands or verb receipt named it), or a session
 /// **`claim`**ed it outright (the explicit, intentional promotion of a file
 /// the session touched but never proof-edited — e.g. a `perl`/`sed` edit that
 /// only left a bracket hint). `bash`/`turn` bracket rows are correlation (a
 /// whole-tree fingerprint delta), never proof.
 pub fn origin_is_proof(origin: &str) -> bool {
-    matches!(origin, "exact" | "replay" | "claim")
+    matches!(origin, "exact" | "replay" | "claim" | "cmd")
 }
 
 /// The canonical repo root **of the file itself** — resolved by walking up
@@ -577,6 +833,7 @@ mod tests {
         assert!(origin_is_proof("exact"));
         assert!(origin_is_proof("replay"));
         assert!(origin_is_proof("claim"));
+        assert!(origin_is_proof(CMD_ORIGIN));
         assert!(!origin_is_proof("bash"));
         assert!(!origin_is_proof("turn"));
     }
@@ -750,6 +1007,12 @@ mod tests {
         }
     }
 
+    /// A bracket whose command named nothing this grammar reads — every row
+    /// stays correlation.
+    fn nothing_declared() -> HashSet<PathBuf> {
+        HashSet::new()
+    }
+
     #[test]
     fn op_from_status_maps_transitions() {
         assert_eq!(op_from_status("?"), "created");
@@ -763,12 +1026,24 @@ mod tests {
     #[test]
     fn classify_op_detects_appear_disappear_and_no_change() {
         // Appeared in the dirty set.
-        assert_eq!(classify_op(None, Some(&state("?"))), Some("created"));
-        assert_eq!(classify_op(None, Some(&state(".M"))), Some("modified"));
-        // Fell out of the dirty set (reverted / committed).
-        assert_eq!(classify_op(Some(&state(".M")), None), Some("modified"));
+        assert_eq!(classify_op(None, Some(&state("?")), true), Some("created"));
+        assert_eq!(
+            classify_op(None, Some(&state(".M")), true),
+            Some("modified")
+        );
+        // Fell out of the dirty set but still on disk (reverted / committed).
+        assert_eq!(
+            classify_op(Some(&state(".M")), None, true),
+            Some("modified")
+        );
+        // Fell out of the dirty set and off the disk: an untracked file the
+        // command deleted, which never earns a ` D` status.
+        assert_eq!(classify_op(Some(&state("?")), None, false), Some("deleted"));
         // Unchanged status AND mtime → no attribution.
-        assert_eq!(classify_op(Some(&state(".M")), Some(&state(".M"))), None);
+        assert_eq!(
+            classify_op(Some(&state(".M")), Some(&state(".M")), true),
+            None
+        );
     }
 
     #[test]
@@ -783,14 +1058,14 @@ mod tests {
             status: ".M".to_owned(),
             mtime: Some(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1)),
         };
-        assert_eq!(classify_op(Some(&pre), Some(&post)), Some("modified"));
+        assert_eq!(classify_op(Some(&pre), Some(&post), true), Some("modified"));
     }
 
     #[test]
     fn into_delta_rows_covers_create_modify_delete_rename() {
         let mut pre = HashMap::new();
         pre.insert(PathBuf::from("/r/mod.rs"), state(".M")); // stays, mtime same → no row
-        pre.insert(PathBuf::from("/r/gone.rs"), state(".M")); // disappears → modified
+        pre.insert(PathBuf::from("/r/gone.rs"), state(".M")); // disappears, no disk file → deleted
         let mut post = HashMap::new();
         post.insert(PathBuf::from("/r/mod.rs"), state(".M"));
         post.insert(PathBuf::from("/r/new.rs"), state("?")); // created
@@ -806,7 +1081,8 @@ mod tests {
             pre,
         };
         let project_dir = CanonicalPath::from_test_str("/proj");
-        let mut rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", 99);
+        let mut rows =
+            bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", &nothing_declared(), 99);
         rows.sort_by(|a, b| a.file_path.cmp(&b.file_path));
 
         // file_path is repo-relative (stripped against the bracket's repo_root).
@@ -817,7 +1093,7 @@ mod tests {
         assert_eq!(by_path.get("new.rs"), Some(&"created"));
         assert_eq!(by_path.get("del.rs"), Some(&"deleted"));
         assert_eq!(by_path.get("ren.rs"), Some(&"renamed"));
-        assert_eq!(by_path.get("gone.rs"), Some(&"modified"));
+        assert_eq!(by_path.get("gone.rs"), Some(&"deleted"));
         assert!(!by_path.contains_key("mod.rs"), "unchanged path has no row");
         // Every row carries Bash/bash provenance, the parent id, and the
         // owning session's project_dir. `ambiguous` is always false: a
@@ -830,6 +1106,147 @@ mod tests {
             assert_eq!(r.project_dir, "/proj");
             assert!(!r.ambiguous);
         }
+    }
+
+    #[test]
+    fn a_declared_path_promotes_its_delta_row_to_proof() {
+        let mut post = HashMap::new();
+        post.insert(PathBuf::from("/r/named.rs"), state(".D"));
+        post.insert(PathBuf::from("/r/swept.rs"), state(".M"));
+        let bracket = OpenBracket {
+            tug_session_id: "tug-1".to_owned(),
+            tool_use_id: "tu-bash".to_owned(),
+            parent_tool_use_id: None,
+            opened_at: 0,
+            repo_root: PathBuf::from("/r"),
+            pre: HashMap::new(),
+        };
+        let declared: HashSet<PathBuf> = [PathBuf::from("/r/named.rs")].into_iter().collect();
+        let project_dir = CanonicalPath::from_test_str("/r");
+        let rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", &declared, 1);
+        let by_path: HashMap<&str, &str> = rows
+            .iter()
+            .map(|r| (r.file_path.as_str(), r.origin.as_str()))
+            .collect();
+        // The command named this one: proof.
+        assert_eq!(by_path.get("named.rs"), Some(&"cmd"));
+        // This one only moved during the window — it could as easily be a build
+        // or the user's own save, so it stays a hint.
+        assert_eq!(by_path.get("swept.rs"), Some(&"bash"));
+    }
+
+    #[test]
+    fn a_declared_directory_promotes_the_files_beneath_it() {
+        // `rm -rf out/` names the directory; `-uall` reports the files inside.
+        let mut post = HashMap::new();
+        post.insert(PathBuf::from("/r/out/a.rs"), state(".D"));
+        post.insert(PathBuf::from("/r/out/nested/b.rs"), state(".D"));
+        post.insert(PathBuf::from("/r/outside.rs"), state(".M"));
+        let bracket = OpenBracket {
+            tug_session_id: "tug-1".to_owned(),
+            tool_use_id: "tu-bash".to_owned(),
+            parent_tool_use_id: None,
+            opened_at: 0,
+            repo_root: PathBuf::from("/r"),
+            pre: HashMap::new(),
+        };
+        let declared: HashSet<PathBuf> = [PathBuf::from("/r/out")].into_iter().collect();
+        let project_dir = CanonicalPath::from_test_str("/r");
+        let rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", &declared, 1);
+        let by_path: HashMap<&str, &str> = rows
+            .iter()
+            .map(|r| (r.file_path.as_str(), r.origin.as_str()))
+            .collect();
+        assert_eq!(by_path.get("out/a.rs"), Some(&"cmd"));
+        assert_eq!(by_path.get("out/nested/b.rs"), Some(&"cmd"));
+        // A sibling whose name merely shares the prefix is not beneath it.
+        assert_eq!(by_path.get("outside.rs"), Some(&"bash"));
+    }
+
+    #[test]
+    fn declared_ops_come_only_from_readable_commands() {
+        let base = Path::new("/repo");
+        assert!(declared_ops_for_command("rm a.ts", base).is_some());
+        // A refusal mints nothing — the paths stay bracket hints.
+        assert!(declared_ops_for_command("rm -rf apptest-*", base).is_none());
+        assert!(declared_ops_for_command("cargo build", base).is_none());
+    }
+
+    #[test]
+    fn tool_result_output_survives_absence_and_wrong_shapes() {
+        let with_output = InspectedToolResult::from_slice(
+            br#"{"tool_use_id":"tu-1","is_error":false,"output":"TUG-FILE-RECEIPT: {}"}"#,
+        )
+        .expect("parses");
+        assert_eq!(with_output.output, "TUG-FILE-RECEIPT: {}");
+
+        let legacy = InspectedToolResult::from_slice(br#"{"tool_use_id":"tu-1"}"#).expect("parses");
+        assert_eq!(legacy.output, "");
+
+        // A structured output costs the receipt, never the frame.
+        let structured =
+            InspectedToolResult::from_slice(br#"{"tool_use_id":"tu-1","output":{"a":1}}"#)
+                .expect("parses");
+        assert_eq!(structured.output, "");
+    }
+
+    #[test]
+    fn a_receipt_is_read_out_of_the_surrounding_output() {
+        let output = "removing 2 files\nTUG-FILE-RECEIPT: {\"ops\":[{\"op\":\"deleted\",\"path\":\"/abs/a.ts\"},{\"op\":\"renamed\",\"path\":\"/abs/new.ts\",\"orig_path\":\"/abs/old.ts\"}]}\ndone\n";
+        let scan = parse_receipt_line(output);
+        assert!(!scan.malformed);
+        assert_eq!(
+            scan.ops,
+            vec![
+                ReceiptOp {
+                    op: "deleted".to_owned(),
+                    path: "/abs/a.ts".to_owned(),
+                    orig_path: None,
+                },
+                ReceiptOp {
+                    op: "renamed".to_owned(),
+                    path: "/abs/new.ts".to_owned(),
+                    orig_path: Some("/abs/old.ts".to_owned()),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn receipt_scanning_tolerates_absence_and_growth_but_flags_malformed_json() {
+        assert_eq!(
+            parse_receipt_line("just some output"),
+            ReceiptScan::default()
+        );
+
+        // Unknown fields are ignored, so the receipt can grow additively.
+        let future = "TUG-FILE-RECEIPT: {\"ops\":[{\"op\":\"deleted\",\"path\":\"/abs/a.ts\",\"mode\":\"100644\"}],\"emitted_by\":\"v2\"}";
+        let scan = parse_receipt_line(future);
+        assert_eq!(scan.ops.len(), 1);
+        assert!(!scan.malformed);
+
+        // Broken JSON is loud, not silent (invariant 12).
+        let broken = parse_receipt_line("TUG-FILE-RECEIPT: {\"ops\":[");
+        assert!(broken.ops.is_empty());
+        assert!(broken.malformed);
+    }
+
+    #[test]
+    fn only_known_receipt_ops_record() {
+        assert_eq!(op_for_receipt("deleted"), Some("deleted"));
+        assert_eq!(op_for_receipt("renamed"), Some("renamed"));
+        assert_eq!(op_for_receipt("created"), Some("created"));
+        assert_eq!(op_for_receipt("teleported"), None);
+    }
+
+    #[test]
+    fn the_bash_command_is_read_from_the_tool_input() {
+        let input = serde_json::json!({ "command": "rm a.ts" });
+        assert_eq!(
+            bash_command_for_tool("Bash", &input).as_deref(),
+            Some("rm a.ts")
+        );
+        assert_eq!(bash_command_for_tool("Write", &input), None);
     }
 
     #[test]
@@ -905,7 +1322,8 @@ u UU N... 0 0 0 0 unmerged.rs
             pre,
         };
         let project_dir = CanonicalPath::from_test_str(root.to_str().unwrap());
-        let rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", 5);
+        let rows =
+            bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", &nothing_declared(), 5);
         let by_path: HashMap<String, String> = rows
             .iter()
             .map(|r| (r.file_path.clone(), r.op.clone()))
@@ -913,6 +1331,50 @@ u UU N... 0 0 0 0 unmerged.rs
         // Repo-relative paths, stripped against the bracket's repo_root.
         assert_eq!(by_path.get("a.txt"), Some(&"modified".to_owned()));
         assert_eq!(by_path.get("b.txt"), Some(&"created".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn a_deleted_untracked_file_is_deleted_and_a_committed_one_is_modified() {
+        let repo = init_repo();
+        let root = repo.path().to_path_buf();
+        let run = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&root)
+                .output()
+                .expect("git");
+        };
+
+        // Both paths are dirty pre-command: one untracked, one modified.
+        std::fs::write(root.join("scratch.txt"), "temp\n").expect("write scratch");
+        std::fs::write(root.join("a.txt"), "one\ntwo\n").expect("modify a.txt");
+        let pre = snapshot_worktree(&root).await;
+        assert!(pre.contains_key(&root.join("scratch.txt")));
+
+        // The command deletes the untracked file and commits the tracked one —
+        // both leave the dirty set, only one leaves the disk.
+        std::fs::remove_file(root.join("scratch.txt")).expect("rm scratch");
+        run(&["add", "a.txt"]);
+        run(&["commit", "-q", "-m", "landed"]);
+
+        let post = snapshot_worktree(&root).await;
+        let bracket = OpenBracket {
+            tug_session_id: "tug-1".to_owned(),
+            tool_use_id: "tu-bash".to_owned(),
+            parent_tool_use_id: None,
+            opened_at: 0,
+            repo_root: root.clone(),
+            pre,
+        };
+        let project_dir = CanonicalPath::from_test_str(root.to_str().unwrap());
+        let rows =
+            bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", &nothing_declared(), 5);
+        let by_path: HashMap<String, String> = rows
+            .iter()
+            .map(|r| (r.file_path.clone(), r.op.clone()))
+            .collect();
+        assert_eq!(by_path.get("scratch.txt"), Some(&"deleted".to_owned()));
+        assert_eq!(by_path.get("a.txt"), Some(&"modified".to_owned()));
     }
 
     #[tokio::test]
@@ -945,7 +1407,8 @@ u UU N... 0 0 0 0 unmerged.rs
             pre: HashMap::new(),
         };
         let project_dir = CanonicalPath::from_test_str("/proj");
-        let rows = bracket.into_delta_rows(&post, &project_dir, "Turn", "turn", 7);
+        let rows =
+            bracket.into_delta_rows(&post, &project_dir, "Turn", "turn", &nothing_declared(), 7);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].tool_name, "Turn");
         assert_eq!(rows[0].origin, "turn");
@@ -1018,9 +1481,23 @@ u UU N... 0 0 0 0 unmerged.rs
 
         let project_dir = CanonicalPath::from_test_str(root.to_str().unwrap());
         let post_a = snapshot_worktree(&root).await;
-        let rows_a = a.into_delta_rows(&post_a, &project_dir, "Bash", "bash", 2);
+        let rows_a = a.into_delta_rows(
+            &post_a,
+            &project_dir,
+            "Bash",
+            "bash",
+            &nothing_declared(),
+            2,
+        );
         let post_b = snapshot_worktree(&root).await;
-        let rows_b = b.into_delta_rows(&post_b, &project_dir, "Bash", "bash", 3);
+        let rows_b = b.into_delta_rows(
+            &post_b,
+            &project_dir,
+            "Bash",
+            "bash",
+            &nothing_declared(),
+            3,
+        );
 
         assert!(!rows_a.is_empty() && !rows_b.is_empty());
         assert!(

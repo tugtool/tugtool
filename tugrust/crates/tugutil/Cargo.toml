@@ -19,6 +19,7 @@ toml.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 regex.workspace = true
+glob.workspace = true
 chrono.workspace = true
 tugcore.workspace = true
 tugutil-core.workspace = true

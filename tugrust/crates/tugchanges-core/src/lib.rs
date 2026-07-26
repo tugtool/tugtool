@@ -11,6 +11,7 @@ pub mod commit;
 pub mod git;
 mod ledger;
 pub mod preflight;
+pub mod shell_ops;
 pub mod trailer;
 
 pub use changes::{Change, ChangesError, ChangesOptions, ChangesReport, ForeignChange, changes};
@@ -24,4 +25,5 @@ pub use preflight::{
     DiffOptions, DiffReport, LogEntry, LogOptions, LogReport, PreflightOptions, PreflightReport,
     diff, log, preflight,
 };
+pub use shell_ops::{DeclaredKind, DeclaredOp, ParseOutcome, parse_shell_ops};
 pub use trailer::append_trailers;

@@ -28,7 +28,7 @@ Classifying a dirty file consumes exactly five identities, and each must be deri
 | Identity | Axiom | Derived from | Ambient shortcut it forbids (and the incident it caused) |
 |---|---|---|---|
 | **Who** (session) | A row's session is the relay that recorded it | `$TUG_SESSION_ID` at the recording relay | — (never broken; capture is relay-local by construction) |
-| **What** (evidence) | Only **proof** decides ownership — for *any* session, including the recording one. Correlation may only *suggest* | The tool frame: `exact`/`replay` name the file in the tool input (proof); `bash`/`turn` are a whole-tree fingerprint delta (correlation) | "any row = authorship" — bracket sweeps claimed other sessions' saves (meek-sheep), and self-brackets claimed the user's own hand-saves |
+| **What** (evidence) | Only **proof** decides ownership — for *any* session, including the recording one. Correlation may only *suggest* | The tool frame: `exact`/`replay`/`claim`/`cmd` name the file in the tool input (proof); `bash`/`turn` are a whole-tree fingerprint delta (correlation) | "any row = authorship" — bracket sweeps claimed other sessions' saves (meek-sheep), and self-brackets claimed the user's own hand-saves |
 | **Where** (repo + path) | Repo membership is a **per-file** fact: the row's repo root is resolved by walking up from the file's own directory (worktree-aware), and the path is stored relative to *that* root | The file's own path at capture time (`file_repo_root`) | projecting against the *session's* project dir — a dash session's worktree files were keyed `.tug/worktrees/…` under the main checkout, invisible to every reader |
 | **When** (liveness) | A claim lives only until its path's next commit; the commit spends it | The path's own git history (`git log -1 --format=%ct`) | immortal rows — any re-dirty resurrected every fossil claim (G6) |
 | **Scope** (which ledger) | One machine-global ledger; the working tree is machine-global so the truth about it must be too | `changes.db` under the shared data dir, keyed by canonical repo root | per-instance ledgers — a second app instance saw the first's work as ownerless (fluent-light) |
@@ -50,9 +50,9 @@ The record is the `file_events` table in the **machine-global `changes.db`** (`~
 
 ---
 
-## Capture: the four origins
+## Capture: the origins
 
-All capture happens at one supervised point — tugcast's stdout relay loop (`agent_bridge.rs::relay_session_io`), which every tool frame already traverses. Four source rules, distinguished by the row's `origin` — and split into two **evidence classes** (the What axiom, `origin_is_proof`): `exact`/`replay` are **proof** (the tool input names the file), `bash`/`turn` are **correlation** (a whole-tree delta; at read time it can only *hint*, never decide):
+All capture happens at one supervised point — tugcast's stdout relay loop (`agent_bridge.rs::relay_session_io`), which every tool frame already traverses. The source rules are distinguished by the row's `origin` and split into two **evidence classes** (the What axiom, `origin_is_proof`): `exact`/`replay`/`claim`/`cmd` are **proof** (the tool input names the file), `bash`/`turn` are **correlation** (a whole-tree delta; at read time it can only *hint*, never decide):
 
 | `origin` | Class | `tool_name` | Mechanism | When |
 |---|---|---|---|---|
@@ -60,6 +60,8 @@ All capture happens at one supervised point — tugcast's stdout relay loop (`ag
 | `bash` | correlation | `Bash` | Per-call working-tree fingerprint bracket | Snapshot on `tool_use`, delta on `tool_result` |
 | `turn` | correlation | `Turn` | Turn-scoped fallback bracket | Snapshot on the `user_message` forward, delta on the turn's non-replayed `turn_complete` |
 | `replay` | proof | (as original) | Exact-tool backfill during JSONL replay | Historical `timestamp` used as `at`; PK collapses re-streams |
+| `claim` | proof | `Claim` | A session explicitly claims paths (`tugutil changes claim` → `changeset_claim`) | On the claim request |
+| `cmd` | proof | `Bash` | The Bash command **literally names** the file (parsed operands) or a `tugutil file` receipt reports it | Live: parsed operands ∩ the bracket delta. Replay: parsed operands on a successful result. Receipt: any successful result whose output carries one |
 
 ### Exact tools
 
@@ -68,6 +70,33 @@ The relay holds a `PendingCalls` map (size-capped, oldest-evicted, **not** clear
 ### The Bash bracket
 
 Bash is the one opaque mutator, so it is bracketed: on the Bash `tool_use` the relay snapshots the working tree (`snapshot_worktree`: `git status --porcelain=v2 --untracked-files=all`, plus mtime per listed path — status catches category changes, mtime catches a same-status re-write), and on the `tool_result` it snapshots again and attributes the delta (`OpenBracket::into_delta_rows`). The delta is attributed regardless of the result's `is_error` — a failing command can have mutated files before it failed.
+
+A path that was dirty pre-command and absent from the post-snapshot is disambiguated **by disk existence**, not by assumption: still on disk → `modified` (the command committed or reverted it); gone → `deleted`. Deleting an *untracked* file removes it from the dirty set entirely — it never earns a ` D` status — so without the existence check the row would read `modified` about a file that no longer exists.
+
+### Parsed commands — the `cmd` origin
+
+A bracket delta is correlation because it is a whole-tree fingerprint: it cannot tell this session's write from a build's churn or the user's hand-save. But a Bash command that says `rm src/a.ts` **names its file in the tool input**, exactly as `Write`'s `file_path` does — the same epistemic standing, with none of the bracket's contamination. So the relay parses Bash commands through one conservative grammar (`tugchanges-core::shell_ops`) and mints proof-class `cmd` rows for what the command literally declares.
+
+The grammar reads only what it can read with certainty. It tokenizes quote-aware (so a `git mv` mentioned inside a commit message never matches), strips heredoc bodies, splits on `&&`/`||`/`;`/`|`, applies a leading literal `cd`, and recognizes `rm`, `mv`, `cp`, `git rm`, `git mv`, `git restore`, `git checkout --`, `sed -i`, `tee`, `touch`, and redirection targets. **Any operand carrying a variable, a substitution, a glob, or a brace expansion refuses the whole simple command** — refusal costs nothing (the path degrades to exactly today's bracket hint), a wrong proof row costs everything.
+
+Two mint rules, because the two paths have different evidence available:
+
+- **Live: parse ∩ delta.** The parse invents no rows — it *upgrades* the origin of bracket-delta rows whose path the command literally named (`bash` → `cmd`). The parse supplies per-file naming, the delta supplies observed outcome; neither alone is proof. A declared path matches a delta path **equal to it or beneath it**, which is what lets a recursive `rm -r dir/` elevate the per-file rows the `-uall` status expands it into. Declared paths pass through the `CanonicalPath` gateway before the join, or an alt spelling of the repo root would silently miss.
+- **Replay: parse + success.** No fingerprint survives a restart, but the command text replays. A replayed Bash `tool_use` whose paired `tool_result` succeeded mints `cmd` rows directly at the frames' historical timestamps. This is the first capture path that recovers shell mutations from history — it heals the thick head of G1.
+
+**Renames record two rows** under one `tool_use_id` — the new path and the old path, both `op='renamed'`. The old-path row documents the takeoff point, which the delta alone can never supply (a clean file that gets moved simply leaves the dirty set under its old name).
+
+### Verb receipts
+
+Globs and shell variables are unreadable by construction — but a tool we own can testify to its own outcome. The `tugutil file rm|mv|cp` verbs perform the expansion themselves and print one stdout line naming exactly what happened:
+
+```
+TUG-FILE-RECEIPT: {"ops":[{"op":"deleted","path":"/abs/a.ts"},{"op":"renamed","path":"/abs/new.ts","orig_path":"/abs/old.ts"}]}
+```
+
+The relay scans **every** successful Bash `tool_result` output for that sentinel and mints `cmd` rows for each op (a rename → two rows, per above). Receipt ops name **files, never directories** — the read side's universe is per-file, so a directory op could never join; a recursive verb enumerates the affected files before acting. Forgery is a non-risk: rows are relay-local (the Who axiom), so a session echoing the sentinel can only attribute files to *itself* — the same trust class as calling the verb.
+
+**The gate denies only the unparseable.** A tugplug PreToolUse hook (`tugplug/hooks/gate-file-ops.sh`) asks the same grammar, through `tugutil file gate`, whether a Bash command contains an rm/mv-class operation with non-literal operands — and denies only that, steering to the verb. Literal commands pass untouched because the parser already proves them; everything else falls through to the normal permission flow. Friction lands exactly where correlation would otherwise have been the ceiling, and the gate fails **open** (missing binary or unreadable output → allow).
 
 ### The turn-scoped fallback bracket
 
@@ -79,7 +108,7 @@ The per-call Bash bracket has structural holes (G2/G3 below), so the relay also 
 
 ### Replay
 
-On resume/restore, exact tool frames re-stream from JSONL and backfill rows with `origin='replay'` at their historical timestamps. Bash deltas are **never** reconstructed at replay — the pre-command fingerprint no longer exists (G1). This is accepted, not fought: the read side makes it harmless.
+On resume/restore, exact tool frames re-stream from JSONL and backfill rows with `origin='replay'` at their historical timestamps. Bash *deltas* are **never** reconstructed at replay — the pre-command fingerprint no longer exists (G1) — but a Bash command's *text* does replay, so the parse-and-receipt paths above backfill `cmd` rows for what those commands declared. What remains unreconstructable is the opaque residue (inline scripts, builds), and the read side makes that harmless as before.
 
 Two transport facts keep the backfill honest (both learned from the 07-25 blackout, G7/G8): replayed frames travel **batched** — tugcode flushes committed-turn content as `replay_batch` wire lines of up to 256 inner frames — and the relay unwraps the envelope and runs the same exact intercept per inner frame, so attribution sees every frame the deck does. And the `replay_started`/`replay_complete` bracket is **guaranteed to close**: tugcode emits the close on every exit including the exception path (`error.kind = "replay_exception"`), and the relay backstops it with a 120 s watchdog that forces live capture back on and warns — a latched `in_replay` suppresses Bash and turn capture, so an open bracket is a standing outage, never left to one process's good behavior.
 
@@ -109,7 +138,7 @@ The known ways attribution can be missing or wrong — and why each is safe now:
 
 | Gap | What happens | Disposition |
 |---|---|---|
-| **G1 — replay never brackets Bash** | Historical Bash deltas are unreconstructable after restart/reload | Unfixable at capture; file surfaces as `unattributed` |
+| **G1 — replay never brackets Bash** | Historical Bash deltas are unreconstructable after restart/reload | Narrowed by the `cmd` backfill: a replayed command's *declared* operands and verb receipts mint proof rows at historical timestamps. The opaque residue (inline scripts, builds) stays unreconstructable and surfaces as `unattributed` |
 | **G2 — pre-snapshot races a fast command** | Claude Code executes Bash regardless of the relay; a fast `perl -i` can finish before the pre-snapshot's `git status` returns → pre == post, zero rows | Caught by the **turn bracket** (its pre-snapshot precedes the whole turn) — as a *hint* on the unattributed entry, per the evidence axiom |
 | **G3 — relay crash mid-Bash** | The open bracket is dropped with the relay | Mid-Bash within a live turn: turn-bracket hint. Mid-turn crash: `unattributed`, unhinted |
 | **G4 — shell route (`$` commands)** | Shell commands never traverse the relay's tool frames ([D111]) | Deliberately uncaptured; visible as `unattributed` |
@@ -134,6 +163,8 @@ The pattern: G5/G6 were read-side defects, G7–G9 transport defects, and all ar
 | `files` (attributed) | This session has live **proof** rows for the path | `Change` — `{path, op, origin, shared, sessions, git_status, diff}`; latest live *proof* row wins op/origin; `shared` + claimant `sessions` when other sessions also hold live proof rows |
 | `foreign` | Only *other* sessions hold live proof rows, and their `project_dir` canonicalizes to this repo root | `ForeignChange` — `{path, git_status, sessions[], diff}` |
 | `unattributed` | No live proof rows anywhere (including all-claims-spent) | `Change` — sentinel `op:"unknown"`, `origin:"none"`, except when this session's own live bracket row hints (op/origin carried through, e.g. `modified`/`bash`; the plain read-out renders `likely this session's (bash bracket)`) |
+
+**A rename carries its attribution across the move.** For a dirty path git reports as renamed, the classification also looks up rows under the entry's `orig_path` (straight from `git status --porcelain=v2`, which already knows the old name) — each name's rows filtered by **its own** liveness cut. Without this, `git mv A B` severed a file's entire history: every proof row earned under `A` was stranded and `B` landed in `unattributed` with no owner. Lineage needs no ledger column and no migration — the uncommitted rename's old name comes from git itself, and once the rename commits, liveness spends both names' rows anyway. (A column would be actively unsafe: `changes.db` is machine-global with concurrent writers at potentially different binary versions, and the schema drift guard resolves drift by DROP-and-recreate, so each version would see the other's shape as drift and destroy the table in turn.) The join is deliberately **one hop** — git reports a single `orig_path` per uncommitted rename, so a second move inside one uncommitted window degrades to a bracket hint.
 
 All three are diffed in `context` (an untracked file gets a synthesized add-diff via `git diff --no-index -- /dev/null <path>` — never an empty string). The per-path session query (`ledger.rs::sessions_for_path` / `foreign_sessions_for_path`: canonicalized repo match + the liveness cut) is advisory classification: a row that fails to match degrades to `unattributed`, visible either way.
 
@@ -191,6 +222,9 @@ The workflow layer over the soundness axioms above ([D116]): every change lands 
 | The draft skill | `tugplug/skills/draft/SKILL.md` | Runs plain `tugutil preflight` (no `--json`, no jq/python/grep glue), must dispose of every `unattributed` file — the `likely this session's (bash bracket)` hint informs the election — and writes the landing draft via `tugutil draft set`; it never commits |
 | Session card commit button | `tugcast feeds/changeset.rs::run_changeset_commit` | Calls `commit()` with an explicit `paths` set → bypasses bucketing, can never hit the refusal; maps `CommitError` back to its `String` error |
 | Changeset card / feed | `feeds/changeset.rs`, `feeds/changeset_all.rs` ([D113]) | Composes live ledger rows per project (same liveness rule); marks per-file multi-owner paths `shared`; the card's default selection is `!shared` for session files and **OFF for unattributed** (inclusion is an explicit per-file election — the card mirror of the exit-3 refusal) |
+| `tugutil file rm\|mv\|cp` | `tugutil/src/commands/file.rs` | Git-aware file lifecycle verbs that print a `TUG-FILE-RECEIPT` line; the way a glob or variable-driven operation becomes proof instead of a hint |
+| `tugutil file gate` | `tugutil/src/commands/file.rs` → `tugchanges-core::shell_ops` | The single grammar, shared with the relay so the two can't fork; prints an allow/deny decision as JSON and always exits 0 |
+| The gate hook | `tugplug/hooks/gate-file-ops.sh` (Bash matcher in `hooks.json`) | Denies only rm/mv-class commands the grammar cannot read; fails open; composes with `auto-approve-tug.sh` (deny wins over allow) |
 | Dash commits | tugdash-core (`tugutil dash commit`) | A **separate** file-selection path on an isolated single-writer worktree; not governed by the bucket contract (auditing it for the same narrowing shape is a recorded follow-on) |
 
 ---
@@ -202,7 +236,7 @@ The workflow layer over the soundness axioms above ([D116]): every change lands 
 3. **Capture never gates delivery.** Every relay intercept is best-effort: log, forward unchanged.
 4. **Every capture source is upsert-idempotent** under the `(session, tool_use_id, file_path)` PK.
 5. **Capture records provenance, never judgments.** All brackets are relay-local; no capture path observes or marks another session, and no row carries a cross-session flag.
-6. **Proof decides; correlation only suggests — for every session, including the recording one.** A file is owned (attributed/foreign) or contended (`shared`) only through live **proof** rows (`exact`/`replay`). A `bash`/`turn` bracket row (a contaminated whole-tree delta that can equally be the user's own hand-save) never decides any bucket — at most it *hints* on an `unattributed` entry, and inclusion stays an explicit disposition. Wall-clock overlap is never evidence.
+6. **Proof decides; correlation only suggests — for every session, including the recording one.** A file is owned (attributed/foreign) or contended (`shared`) only through live **proof** rows (`exact`/`replay`/`claim`/`cmd` — every one of them names the file in the tool input; a parsed command's literal operand and a verb receipt's path qualify, a fingerprint delta never does). A `bash`/`turn` bracket row (a contaminated whole-tree delta that can equally be the user's own hand-save) never decides any bucket — at most it *hints* on an `unattributed` entry, and inclusion stays an explicit disposition. Wall-clock overlap is never evidence.
 7. **A ledger row is live only until its path's next commit.** A commit spends the rows it absorbs; spent rows neither attribute nor contend, and ties degrade toward `unattributed` — visible, never falsely claimed.
 8. **Shared and foreign files are opt-in only.** No default set includes them; `foreign` never blocks.
 9. **The ledger is machine-global.** One `changes.db` regardless of app instance, keyed by canonical repo root — attribution truth is never split across instances that share a working tree.

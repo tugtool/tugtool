@@ -19,6 +19,7 @@ use crate::output::print_ok;
 /// `commit` refusal ([P03], unattributed files with no disposition); exit 1 is a
 /// real error. Keeping the code with the message lets `main` map cleanly instead
 /// of collapsing them the way a bare `String` would.
+#[derive(Debug)]
 pub enum AppError {
     Exit1(String),
     Exit2(String),

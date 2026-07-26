@@ -88,13 +88,13 @@ pub(crate) fn sessions_for_path(
     exclude: &str,
 ) -> Result<Vec<PathClaim>, String> {
     let mut stmt = conn
-        .prepare(
+        .prepare(&format!(
             "SELECT tug_session_id, project_dir,
-                    MAX(CASE WHEN origin IN ('exact', 'replay') THEN at END)
+                    MAX(CASE WHEN origin IN {PROOF_ORIGINS_SQL} THEN at END)
              FROM file_events
              WHERE file_path = ?1 AND tug_session_id != ?2
              GROUP BY tug_session_id, project_dir",
-        )
+        ))
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map(rusqlite::params![file_path, exclude], |r| {
@@ -150,14 +150,22 @@ pub(crate) fn foreign_proof_sessions_for_path(
 }
 
 /// Whether a row's `origin` is **proof** of authorship — the tool input named
-/// the file (`exact` live, `replay` backfill of the same), or a session
+/// the file (`exact` live, `replay` backfill of the same, `cmd` for a Bash
+/// command's literal operands or a `tugutil file` receipt), or a session
 /// **`claim`**ed it outright (the explicit promotion of a hinted-but-unproven
 /// file). `bash`/`turn` bracket rows are correlation (a whole-tree fingerprint
 /// delta), never proof. Mirrors `tugcast::feeds::attribution::origin_is_proof`
 /// (the writer side).
 pub(crate) fn origin_is_proof(origin: &str) -> bool {
-    matches!(origin, "exact" | "replay" | "claim")
+    PROOF_ORIGINS.contains(&origin)
 }
+
+/// The proof origins, in one place: [`origin_is_proof`] tests membership and
+/// [`PROOF_ORIGINS_SQL`] is the same set as a SQL tuple, so the row-level rule
+/// and the query-level rule cannot drift apart.
+pub(crate) const PROOF_ORIGINS: [&str; 4] = ["exact", "replay", "claim", "cmd"];
+
+const PROOF_ORIGINS_SQL: &str = "('exact', 'replay', 'claim', 'cmd')";
 
 /// Whether a `sessions` row exists for `session` — the "known vs unknown" test
 /// that separates a valid session with no changes (exit 0, empty list) from a
@@ -323,6 +331,36 @@ mod tests {
                 .unwrap()
                 .is_empty(),
             "a spent exact row never contends"
+        );
+    }
+
+    #[test]
+    fn the_proof_origin_set_is_the_same_at_the_row_and_query_levels() {
+        for origin in PROOF_ORIGINS {
+            assert!(origin_is_proof(origin));
+            assert!(
+                PROOF_ORIGINS_SQL.contains(&format!("'{origin}'")),
+                "`{origin}` is proof at the row level but not in the query predicate"
+            );
+        }
+        for origin in ["bash", "turn"] {
+            assert!(!origin_is_proof(origin));
+            assert!(!PROOF_ORIGINS_SQL.contains(&format!("'{origin}'")));
+        }
+    }
+
+    #[test]
+    fn a_cmd_claim_is_visible_to_the_foreign_query() {
+        // The SQL predicate and `origin_is_proof` must admit `cmd` together —
+        // a proof origin the query omits is an owner the read side can't see.
+        let repo = tempfile::tempdir().unwrap();
+        let repo_dir = repo.path().to_string_lossy().into_owned();
+        let db = seed(&[("shell", "foo.rs", "cmd", &repo_dir, 5)]);
+        let conn = open_readonly(&db.path().join("sessions.db")).unwrap();
+
+        assert_eq!(
+            foreign_proof_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 0).unwrap(),
+            vec!["shell".to_string()]
         );
     }
 }

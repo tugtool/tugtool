@@ -30,12 +30,15 @@ use super::agent_supervisor::{
     LedgerEntry, SessionRecord, SessionsRecorder, SpawnState, build_session_state_frame,
 };
 use super::attribution::{
-    InspectedReplayBatch, InspectedToolResult, InspectedToolUse, OpenBracket, PendingCalls,
-    exact_op_for_tool, file_path_for_tool, file_repo_root, repo_root_for, snapshot_worktree,
-    top_level_type,
+    CMD_ORIGIN, InspectedReplayBatch, InspectedToolResult, InspectedToolUse, OpenBracket,
+    PendingCalls, PendingCmd, PendingCmds, RECEIPT_MARKER, bash_command_for_tool,
+    canonical_declared_paths, canonicalize_declared, declared_ops_for_command, exact_op_for_tool,
+    file_path_for_tool, file_repo_root, op_for_declared_kind, op_for_receipt, parse_receipt_line,
+    repo_root_for, snapshot_worktree, top_level_type,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
 use crate::path_resolver::CanonicalPath;
+use tugchanges_core::shell_ops::DeclaredKind;
 
 // ---------------------------------------------------------------------------
 // CrashBudget
@@ -911,6 +914,183 @@ async fn record_exact_pending(
     }
 }
 
+/// Record one proof-class `cmd` row for an absolute path a Bash command named —
+/// a parsed operand the delta confirmed, a rename's old name, a replayed
+/// command's declared operation, or a verb receipt's op. Shares
+/// [`record_exact_pending`]'s per-file repo resolution: the row's `project_dir`
+/// is the *file's* own repo root, so a path in a nested worktree keys to that
+/// worktree (the Where axiom).
+#[allow(clippy::too_many_arguments)]
+async fn record_cmd_event(
+    file_path: &Path,
+    op: &str,
+    tool_use_id: &str,
+    parent_tool_use_id: Option<String>,
+    at: i64,
+    tug_session_id: &TugSessionId,
+    canonical_project_dir: &CanonicalPath,
+    repo_root_cache: &mut Option<CanonicalPath>,
+    project_dir: &str,
+    ledger: &crate::session_ledger::SessionLedger,
+) -> Option<String> {
+    let absolute = file_path.to_string_lossy().into_owned();
+    let file_root = file_repo_root(&absolute).await;
+    let (row_project_dir, row_repo_root) = match file_root {
+        Some(root) => (root.clone(), Some(root)),
+        None => (
+            canonical_project_dir.clone(),
+            ensure_repo_root(repo_root_cache, project_dir).await,
+        ),
+    };
+    // A deleted or moved-away path cannot canonicalize itself — resolve through
+    // its nearest surviving ancestor so the row's key lands in the same space
+    // git's status output does.
+    let canonical = canonicalize_declared(file_path);
+    let projected = match row_repo_root.as_ref() {
+        Some(root) => canonical
+            .strip_prefix(root.as_path())
+            .map(|rel| rel.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| canonical.to_string_lossy().into_owned()),
+        None => canonical.to_string_lossy().into_owned(),
+    };
+    let row = crate::session_ledger::FileEventRow {
+        tug_session_id: tug_session_id.as_str().to_owned(),
+        tool_use_id: tool_use_id.to_owned(),
+        file_path: projected,
+        tool_name: "Bash".to_owned(),
+        op: op.to_owned(),
+        origin: CMD_ORIGIN.to_owned(),
+        ambiguous: false,
+        parent_tool_use_id,
+        project_dir: row_project_dir.as_str().to_owned(),
+        at,
+    };
+    match ledger.record_file_event(&row) {
+        Ok(()) => Some(row.file_path),
+        Err(err) => {
+            warn!(
+                session = %tug_session_id,
+                error = %err,
+                "record_file_event (cmd) failed; frame forwarded unchanged"
+            );
+            None
+        }
+    }
+}
+
+/// Mint `cmd` rows straight from a replayed command's declared operations —
+/// the replay half of the rule, where no fingerprint survives to intersect
+/// with. The command text replays even though the pre-command tree state is
+/// gone (G1), so what the command *named* is still proof; the paired
+/// successful result supplies the outcome half. Rows carry the frames'
+/// historical times, and the PK collapses re-streamed batches.
+#[allow(clippy::too_many_arguments)]
+async fn mint_replayed_cmd_rows(
+    cmd: crate::feeds::attribution::PendingCmd,
+    tool_use_id: &str,
+    result_timestamp: Option<i64>,
+    tug_session_id: &TugSessionId,
+    canonical_project_dir: &CanonicalPath,
+    repo_root_cache: &mut Option<CanonicalPath>,
+    project_dir: &str,
+    ledger: &crate::session_ledger::SessionLedger,
+) -> bool {
+    let at = cmd
+        .timestamp
+        .or(result_timestamp)
+        .unwrap_or_else(crate::session_ledger::now_millis);
+    let mut recorded = false;
+    for op in &cmd.ops {
+        // A rename records both names under one tool_use_id: the destination,
+        // and the takeoff point the file left.
+        let mut targets: Vec<(&Path, &str)> =
+            vec![(op.path.as_path(), op_for_declared_kind(&op.kind))];
+        if let DeclaredKind::Move { orig } = &op.kind {
+            targets.push((orig.as_path(), "renamed"));
+        }
+        for (path, row_op) in targets {
+            if record_cmd_event(
+                path,
+                row_op,
+                tool_use_id,
+                cmd.parent_tool_use_id.clone(),
+                at,
+                tug_session_id,
+                canonical_project_dir,
+                repo_root_cache,
+                project_dir,
+                ledger,
+            )
+            .await
+            .is_some()
+            {
+                recorded = true;
+            }
+        }
+    }
+    recorded
+}
+
+/// Mint `cmd` rows from any `tugutil file` receipt a successful Bash result
+/// carries. Every Bash result is scanned rather than only parsed `tugutil file`
+/// invocations, so the receipt still counts when the verb runs through a
+/// wrapper the grammar can't read. Forgery is not a risk: rows are relay-local,
+/// so a session echoing the marker can only attribute files to itself.
+#[allow(clippy::too_many_arguments)]
+async fn mint_receipt_rows(
+    output: &str,
+    tool_use_id: &str,
+    at: i64,
+    tug_session_id: &TugSessionId,
+    canonical_project_dir: &CanonicalPath,
+    repo_root_cache: &mut Option<CanonicalPath>,
+    project_dir: &str,
+    ledger: &crate::session_ledger::SessionLedger,
+) -> Vec<String> {
+    let scan = parse_receipt_line(output);
+    if scan.malformed {
+        warn!(
+            session = %tug_session_id,
+            "a tugutil file receipt failed to parse; its operations are unattributed"
+        );
+    }
+    let mut recorded = Vec::new();
+    for receipt_op in &scan.ops {
+        let Some(op) = op_for_receipt(&receipt_op.op) else {
+            warn!(
+                session = %tug_session_id,
+                op = %receipt_op.op,
+                "unknown receipt op; skipped"
+            );
+            continue;
+        };
+        // A rename names both ends, same as a parsed one.
+        let mut targets: Vec<&str> = vec![receipt_op.path.as_str()];
+        if let Some(orig) = receipt_op.orig_path.as_deref() {
+            targets.push(orig);
+        }
+        for target in targets {
+            if let Some(path) = record_cmd_event(
+                Path::new(target),
+                op,
+                tool_use_id,
+                None,
+                at,
+                tug_session_id,
+                canonical_project_dir,
+                repo_root_cache,
+                project_dir,
+                ledger,
+            )
+            .await
+            {
+                recorded.push(path);
+            }
+        }
+    }
+    recorded
+}
+
 // ---------------------------------------------------------------------------
 // relay_session_io — generic, testable inner relay
 // ---------------------------------------------------------------------------
@@ -1019,6 +1199,10 @@ pub async fn relay_session_io(
     // brackets, and the read side's bucket surfacing covers the residual gap.
     let mut open_bash: HashMap<String, OpenBracket> = HashMap::new();
     let mut open_turn: Option<OpenBracket> = None;
+    // The command-text half of the parse∩delta rule: what each in-flight Bash
+    // call literally declared, keyed by `tool_use_id`. Populated on the
+    // `tool_use` frame (live and replayed alike), consumed at its result.
+    let mut pending_cmds = PendingCmds::new();
     let mut turn_recorded_paths: std::collections::HashSet<String> =
         std::collections::HashSet::new();
 
@@ -1491,6 +1675,10 @@ pub async fn relay_session_io(
                                         &canonical_project_dir,
                                         "Turn",
                                         "turn",
+                                        // A turn spans arbitrarily many commands;
+                                        // no single command's operands can speak
+                                        // for its delta.
+                                        &std::collections::HashSet::new(),
                                         at,
                                     ) {
                                         if turn_recorded_paths.contains(&row.file_path) {
@@ -1629,10 +1817,69 @@ pub async fn relay_session_io(
                                                             timestamp: tu.timestamp,
                                                         },
                                                     );
+                                                } else if let Some(command) =
+                                                    bash_command_for_tool(&tu.tool_name, &tu.input)
+                                                {
+                                                    // No bracket replays (G1),
+                                                    // but the command text does
+                                                    // — and what it named is
+                                                    // proof on its own.
+                                                    if let Some(ops) = declared_ops_for_command(
+                                                        &command,
+                                                        Path::new(project_dir),
+                                                    ) {
+                                                        pending_cmds.insert(
+                                                            tu.tool_use_id.clone(),
+                                                            PendingCmd {
+                                                                ops,
+                                                                parent_tool_use_id: tu
+                                                                    .parent_tool_use_id,
+                                                                timestamp: tu.timestamp,
+                                                            },
+                                                        );
+                                                    }
                                                 }
                                             } else if let Some(tr) =
                                                 InspectedToolResult::from_slice(bytes)
                                             {
+                                                if let Some(cmd) =
+                                                    pending_cmds.take(&tr.tool_use_id)
+                                                {
+                                                    if !tr.is_error
+                                                        && mint_replayed_cmd_rows(
+                                                            cmd,
+                                                            &tr.tool_use_id,
+                                                            tr.timestamp,
+                                                            tug_session_id,
+                                                            &canonical_project_dir,
+                                                            &mut repo_root_cache,
+                                                            project_dir,
+                                                            ledger,
+                                                        )
+                                                        .await
+                                                    {
+                                                        recorded_any = true;
+                                                    }
+                                                }
+                                                if !tr.is_error
+                                                    && tr.output.contains(RECEIPT_MARKER)
+                                                    && !mint_receipt_rows(
+                                                        &tr.output,
+                                                        &tr.tool_use_id,
+                                                        tr.timestamp.unwrap_or_else(
+                                                            crate::session_ledger::now_millis,
+                                                        ),
+                                                        tug_session_id,
+                                                        &canonical_project_dir,
+                                                        &mut repo_root_cache,
+                                                        project_dir,
+                                                        ledger,
+                                                    )
+                                                    .await
+                                                    .is_empty()
+                                                {
+                                                    recorded_any = true;
+                                                }
                                                 if let Some(pending) =
                                                     pending_calls.take(&tr.tool_use_id)
                                                 {
@@ -1693,18 +1940,49 @@ pub async fn relay_session_io(
                                                 timestamp: tu.timestamp,
                                             },
                                         );
-                                    } else if tu.tool_name == "Bash" && !in_replay {
-                                        // Bash is the one opaque mutator: open
-                                        // a working-tree bracket now (before
-                                        // the command runs — the tool_use
-                                        // frame precedes execution, [R01]).
-                                        // Never in replay ([P06]: no
+                                    } else if tu.tool_name == "Bash" {
+                                        // The command text is evidence in its
+                                        // own right: the operands it literally
+                                        // names are proof, the same way an
+                                        // exact tool's `file_path` is. Read it
+                                        // on every Bash call, replayed or live
+                                        // — the live path intersects it with
+                                        // the bracket delta, the replay path
+                                        // (which has no fingerprint) mints from
+                                        // it directly. Operands resolve against
+                                        // the session's project dir: that is
+                                        // the command's working directory.
+                                        if let Some(command) =
+                                            bash_command_for_tool(&tu.tool_name, &tu.input)
+                                        {
+                                            if let Some(ops) = declared_ops_for_command(
+                                                &command,
+                                                Path::new(project_dir),
+                                            ) {
+                                                pending_cmds.insert(
+                                                    tu.tool_use_id.clone(),
+                                                    PendingCmd {
+                                                        ops,
+                                                        parent_tool_use_id: tu
+                                                            .parent_tool_use_id
+                                                            .clone(),
+                                                        timestamp: tu.timestamp,
+                                                    },
+                                                );
+                                            }
+                                        }
+                                        // Open a working-tree bracket now
+                                        // (before the command runs — the
+                                        // tool_use frame precedes execution,
+                                        // [R01]). Never in replay ([P06]: no
                                         // fingerprint is reconstructable after
                                         // the fact). Non-repo dirs open no
                                         // bracket.
-                                        if let Some(repo_root) =
+                                        if let Some(repo_root) = if in_replay {
+                                            None
+                                        } else {
                                             ensure_repo_root(&mut repo_root_cache, project_dir).await
-                                        {
+                                        } {
                                             let root = repo_root.as_path().to_path_buf();
                                             let pre = snapshot_worktree(&root).await;
                                             open_bash.insert(
@@ -1752,9 +2030,15 @@ pub async fn relay_session_io(
                                                 changeset_bumper.bump(Path::new(project_dir));
                                             }
                                         }
-                                    } else if let Some(bracket) =
-                                        open_bash.remove(&tr.tool_use_id)
-                                    {
+                                    } else {
+                                        // A Bash result. Three things can
+                                        // attribute here: the bracket delta
+                                        // (live), the declared operations
+                                        // (replay, where no fingerprint
+                                        // exists), and any `tugutil file`
+                                        // receipt the output carries.
+                                        let mut recorded = false;
+                                        if let Some(bracket) = open_bash.remove(&tr.tool_use_id) {
                                         // Bash call: close the bracket and
                                         // attribute the delta — regardless of
                                         // is_error, since a failing command
@@ -1764,12 +2048,28 @@ pub async fn relay_session_io(
                                         // and exact events share a bucket).
                                         let post = snapshot_worktree(&bracket.repo_root).await;
                                         let at = crate::session_ledger::now_millis();
-                                        let mut recorded = false;
+                                        // parse ∩ delta: a path the command
+                                        // named AND the tree observed change is
+                                        // proof, and its row is minted `cmd`
+                                        // instead of `bash`. Canonicalize first
+                                        // — the delta keys live in canonical
+                                        // space, so an alt spelling of the repo
+                                        // root would otherwise miss.
+                                        let declared_cmd = pending_cmds.take(&tr.tool_use_id);
+                                        let declared = declared_cmd
+                                            .as_ref()
+                                            .map(|cmd| {
+                                                canonical_declared_paths(
+                                                    cmd.ops.iter().map(|op| op.path.as_path()),
+                                                )
+                                            })
+                                            .unwrap_or_default();
                                         for row in bracket.into_delta_rows(
                                             &post,
                                             &canonical_project_dir,
                                             "Bash",
                                             "bash",
+                                            &declared,
                                             at,
                                         ) {
                                             if let Err(err) = ledger.record_file_event(&row) {
@@ -1781,6 +2081,101 @@ pub async fn relay_session_io(
                                             } else {
                                                 if open_turn.is_some() {
                                                     turn_recorded_paths.insert(row.file_path.clone());
+                                                }
+                                                recorded = true;
+                                            }
+                                        }
+                                        // A rename's old name never shows in the
+                                        // post-delta — the file left the dirty
+                                        // set under it — so the takeoff row is
+                                        // synthesized from the parse, paired
+                                        // with the new-path row under one
+                                        // tool_use_id.
+                                        if let Some(cmd) = declared_cmd.as_ref() {
+                                            for op in &cmd.ops {
+                                                let DeclaredKind::Move { orig } = &op.kind else {
+                                                    continue;
+                                                };
+                                                let landed = CanonicalPath::from_raw(&op.path);
+                                                if !post.contains_key(landed.as_path()) {
+                                                    continue;
+                                                }
+                                                if let Some(path) = record_cmd_event(
+                                                    orig,
+                                                    "renamed",
+                                                    &tr.tool_use_id,
+                                                    cmd.parent_tool_use_id.clone(),
+                                                    at,
+                                                    tug_session_id,
+                                                    &canonical_project_dir,
+                                                    &mut repo_root_cache,
+                                                    project_dir,
+                                                    ledger,
+                                                )
+                                                .await
+                                                {
+                                                    if open_turn.is_some() {
+                                                        turn_recorded_paths.insert(path);
+                                                    }
+                                                    recorded = true;
+                                                }
+                                            }
+                                        }
+                                        } else if let Some(cmd) =
+                                            pending_cmds.take(&tr.tool_use_id)
+                                        {
+                                            // A parsed Bash call that closed no
+                                            // bracket: replayed history (no
+                                            // fingerprint exists to intersect
+                                            // with), where the declared
+                                            // operations mint directly. Outside
+                                            // replay this means the project dir
+                                            // is in no repo, and the take is
+                                            // only cleanup.
+                                            if in_replay
+                                                && !tr.is_error
+                                                && mint_replayed_cmd_rows(
+                                                    cmd,
+                                                    &tr.tool_use_id,
+                                                    tr.timestamp,
+                                                    tug_session_id,
+                                                    &canonical_project_dir,
+                                                    &mut repo_root_cache,
+                                                    project_dir,
+                                                    ledger,
+                                                )
+                                                .await
+                                            {
+                                                recorded = true;
+                                            }
+                                        }
+                                        // A verb receipt is read from any
+                                        // successful Bash result, whatever ran
+                                        // it — the verb expanded what the
+                                        // grammar could not and says exactly
+                                        // which files it touched.
+                                        if !tr.is_error && tr.output.contains(RECEIPT_MARKER) {
+                                            let at = if in_replay {
+                                                tr.timestamp.unwrap_or_else(
+                                                    crate::session_ledger::now_millis,
+                                                )
+                                            } else {
+                                                crate::session_ledger::now_millis()
+                                            };
+                                            for path in mint_receipt_rows(
+                                                &tr.output,
+                                                &tr.tool_use_id,
+                                                at,
+                                                tug_session_id,
+                                                &canonical_project_dir,
+                                                &mut repo_root_cache,
+                                                project_dir,
+                                                ledger,
+                                            )
+                                            .await
+                                            {
+                                                if open_turn.is_some() {
+                                                    turn_recorded_paths.insert(path);
                                                 }
                                                 recorded = true;
                                             }
@@ -2368,6 +2763,89 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn replayed_bash_commands_backfill_cmd_rows_at_historical_times() {
+        // The fingerprint is gone (G1) but the command text replays, and what
+        // it literally named is proof on its own.
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let batch = r#"{"type":"replay_batch","frames":[{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-rm","input":{"command":"rm a.rs"},"timestamp":1753460000000},{"type":"tool_result","tool_use_id":"tu-rm","output":"","is_error":false,"timestamp":1753460000500}],"ipc_version":2}"#;
+
+        drive_relay(ledger.clone(), "tug-replay-rm", "/proj", &[batch]).await;
+
+        let rows = ledger.file_events_for_session("tug-replay-rm").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].file_path, "/proj/a.rs");
+        assert_eq!(rows[0].op, "deleted");
+        assert_eq!(rows[0].origin, "cmd");
+        assert_eq!(rows[0].tool_name, "Bash");
+        assert_eq!(
+            rows[0].at, 1753460000000,
+            "a backfilled row keeps its historical frame time"
+        );
+
+        // Re-streaming the same batch converges under the PK.
+        drive_relay(ledger.clone(), "tug-replay-rm", "/proj", &[batch]).await;
+        assert_eq!(
+            ledger
+                .file_events_for_session("tug-replay-rm")
+                .unwrap()
+                .len(),
+            1,
+            "a re-streamed batch does not duplicate"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_replayed_rename_backfills_both_names() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let batch = r#"{"type":"replay_batch","frames":[{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-mv","input":{"command":"git mv old.rs new.rs"},"timestamp":1753460000000},{"type":"tool_result","tool_use_id":"tu-mv","output":"","is_error":false,"timestamp":1753460000500}],"ipc_version":2}"#;
+
+        drive_relay(ledger.clone(), "tug-replay-mv", "/proj", &[batch]).await;
+
+        let rows = ledger.file_events_for_session("tug-replay-mv").unwrap();
+        let paths: std::collections::HashSet<&str> =
+            rows.iter().map(|r| r.file_path.as_str()).collect();
+        assert!(paths.contains("/proj/new.rs"));
+        assert!(paths.contains("/proj/old.rs"));
+        for r in &rows {
+            assert_eq!(r.op, "renamed");
+            assert_eq!(r.origin, "cmd");
+            assert_eq!(r.tool_use_id, "tu-mv", "both names are one operation");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_replayed_command_backfills_nothing() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let batch = r#"{"type":"replay_batch","frames":[{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-bad","input":{"command":"rm a.rs"},"timestamp":1753460000000},{"type":"tool_result","tool_use_id":"tu-bad","output":"No such file","is_error":true,"timestamp":1753460000500}],"ipc_version":2}"#;
+
+        drive_relay(ledger.clone(), "tug-replay-bad", "/proj", &[batch]).await;
+
+        assert!(
+            ledger
+                .file_events_for_session("tug-replay-bad")
+                .unwrap()
+                .is_empty(),
+            "intent without a successful outcome is not proof"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_replayed_command_backfills_nothing() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let batch = r#"{"type":"replay_batch","frames":[{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-glob","input":{"command":"rm -rf apptest-*"},"timestamp":1753460000000},{"type":"tool_result","tool_use_id":"tu-glob","output":"","is_error":false,"timestamp":1753460000500}],"ipc_version":2}"#;
+
+        drive_relay(ledger.clone(), "tug-replay-glob", "/proj", &[batch]).await;
+
+        assert!(
+            ledger
+                .file_events_for_session("tug-replay-glob")
+                .unwrap()
+                .is_empty(),
+            "a glob operand names nothing the grammar can prove"
+        );
+    }
+
     /// Regression pin, half two: a `tool_result` whose structured `output`
     /// OBJECT embeds a raw `"type":"tool_use"` member (string payloads
     /// escape their quotes; nested objects do not) used to be routed down
@@ -2459,6 +2937,112 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_receipt_in_the_output_mints_rows_without_any_delta() {
+        // The glob path: the verb expanded what the grammar refused and says
+        // which files it touched. No bracket, no fingerprint — the receipt is
+        // the evidence.
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let receipt = r#"TUG-FILE-RECEIPT: {\"ops\":[{\"op\":\"deleted\",\"path\":\"/proj/gone.rs\"},{\"op\":\"renamed\",\"path\":\"/proj/new.rs\",\"orig_path\":\"/proj/old.rs\"}]}"#;
+        let tool_use = r#"{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-verb","input":{"command":"tugutil file rm 'x*'"}}"#;
+        let tool_result = format!(
+            r#"{{"type":"tool_result","tool_use_id":"tu-verb","output":"{receipt}","is_error":false}}"#
+        );
+
+        drive_relay(
+            ledger.clone(),
+            "tug-receipt",
+            "/proj",
+            &[tool_use, &tool_result],
+        )
+        .await;
+
+        let rows = ledger.file_events_for_session("tug-receipt").unwrap();
+        let by_path: std::collections::HashMap<&str, (&str, &str)> = rows
+            .iter()
+            .map(|r| (r.file_path.as_str(), (r.op.as_str(), r.origin.as_str())))
+            .collect();
+        assert_eq!(by_path.get("/proj/gone.rs"), Some(&("deleted", "cmd")));
+        assert_eq!(by_path.get("/proj/new.rs"), Some(&("renamed", "cmd")));
+        assert_eq!(
+            by_path.get("/proj/old.rs"),
+            Some(&("renamed", "cmd")),
+            "a receipt rename names both ends"
+        );
+        assert!(rows.iter().all(|r| r.tool_use_id == "tu-verb"));
+    }
+
+    #[tokio::test]
+    async fn a_receipt_on_a_failed_result_mints_nothing() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let receipt =
+            r#"TUG-FILE-RECEIPT: {\"ops\":[{\"op\":\"deleted\",\"path\":\"/proj/gone.rs\"}]}"#;
+        let tool_use = r#"{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-fail","input":{"command":"tugutil file rm 'x*'"}}"#;
+        let tool_result = format!(
+            r#"{{"type":"tool_result","tool_use_id":"tu-fail","output":"{receipt}","is_error":true}}"#
+        );
+
+        drive_relay(
+            ledger.clone(),
+            "tug-receipt-fail",
+            "/proj",
+            &[tool_use, &tool_result],
+        )
+        .await;
+
+        assert!(
+            ledger
+                .file_events_for_session("tug-receipt-fail")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_malformed_receipt_mints_nothing() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tool_use = r#"{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-bad","input":{"command":"tugutil file rm 'x*'"}}"#;
+        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-bad","output":"TUG-FILE-RECEIPT: {not json","is_error":false}"#;
+
+        drive_relay(
+            ledger.clone(),
+            "tug-receipt-bad",
+            "/proj",
+            &[tool_use, tool_result],
+        )
+        .await;
+
+        assert!(
+            ledger
+                .file_events_for_session("tug-receipt-bad")
+                .unwrap()
+                .is_empty(),
+            "a receipt that cannot be read attributes nothing (and warns)"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_flat_replayed_bash_frame_backfills_a_cmd_row() {
+        // The same backfill on the unbatched replay path: frames arriving one
+        // per line inside a replay bracket, where no Bash bracket ever opens.
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let script = &[
+            r#"{"type":"replay_started"}"#,
+            r#"{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-rm","input":{"command":"rm doomed.rs"},"timestamp":1700000000123}"#,
+            r#"{"type":"tool_result","tool_use_id":"tu-rm","output":"","is_error":false,"timestamp":1700000000456}"#,
+            r#"{"type":"replay_complete"}"#,
+        ];
+
+        drive_relay(ledger.clone(), "tug-flat", "/proj", script).await;
+
+        let rows = ledger.file_events_for_session("tug-flat").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].file_path, "/proj/doomed.rs");
+        assert_eq!(rows[0].origin, "cmd");
+        assert_eq!(rows[0].op, "deleted");
+        assert_eq!(rows[0].at, 1_700_000_000_123);
+    }
+
+    #[tokio::test]
     async fn attribution_records_subagent_parent_id() {
         let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
         let tool_use = r#"{"type":"tool_use","tool_name":"Write","tool_use_id":"tu-child","input":{"file_path":"/proj/sub.rs"},"parent_tool_use_id":"agent-1"}"#;
@@ -2497,6 +3081,283 @@ mod tests {
             1,
             "the tool_use/tool_result pair straddling turn_complete still records"
         );
+    }
+
+    /// A real git repo with one committed file, so a bracket's pre-snapshot
+    /// starts from a clean tree.
+    fn init_bracket_repo() -> tempfile::TempDir {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let root = repo.path().to_path_buf();
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .args(args)
+                    .current_dir(&root)
+                    .output()
+                    .expect("git")
+                    .status
+                    .success(),
+                "git {args:?}"
+            );
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@t.test"]);
+        git(&["config", "user.name", "t"]);
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        git(&["add", "a.txt"]);
+        git(&["commit", "-q", "-m", "init"]);
+        repo
+    }
+
+    /// Drive one real Bash bracket through the relay: the `tool_use` frame
+    /// opens it, `mutate` performs what the command would have done to the real
+    /// repo, and the `tool_result` frame closes it. Returns every row the
+    /// session recorded.
+    async fn bash_bracket_rows(
+        root: &Path,
+        session: &str,
+        command: &str,
+        mutate: impl FnOnce(),
+    ) -> Vec<crate::session_ledger::FileEventRow> {
+        use crate::feeds::agent_supervisor::NoopSessionsRecorder;
+        use crate::feeds::workspace_registry::WorkspaceKey;
+        use tokio::io::AsyncWriteExt;
+
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let project_dir = root.to_str().unwrap().to_string();
+        let tug_session_id = TugSessionId::new(session.to_string());
+        let ledger_entry = Arc::new(Mutex::new(
+            crate::feeds::agent_supervisor::LedgerEntry::new(
+                tug_session_id.clone(),
+                WorkspaceKey::from_test_str("ws-test"),
+                PathBuf::from(&project_dir),
+                SessionMode::New,
+                CrashBudget::new(3, Duration::from_secs(60)),
+            ),
+        ));
+        let (_input_tx, mut input_rx) = mpsc::channel::<Frame>(16);
+        let (merger_tx, mut _merger_rx) = mpsc::channel::<Frame>(256);
+        let (state_tx, _state_rx) = broadcast::channel::<Frame>(64);
+        let cancel = CancellationToken::new();
+        let (relay_stdin_w, _tugcode_stdin_r) = tokio::io::duplex(64 * 1024);
+        let (relay_stdout_r, mut feed_w) = tokio::io::duplex(256 * 1024);
+        let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(relay_stdout_r);
+        let lines = BufReader::new(reader).lines();
+
+        let ledger_for_relay = ledger.clone();
+        let relay = tokio::spawn(async move {
+            let recorder = NoopSessionsRecorder;
+            relay_session_io(
+                &tug_session_id,
+                &ledger_entry,
+                &mut input_rx,
+                &merger_tx,
+                &state_tx,
+                Box::new(relay_stdin_w),
+                lines,
+                &project_dir,
+                &recorder,
+                Some(ledger_for_relay.as_ref()),
+                &crate::feeds::changeset::ChangesetBumper::disconnected(),
+                &cancel,
+            )
+            .await
+        });
+
+        feed_w
+            .write_all(b"{\"type\":\"protocol_ack\"}\n")
+            .await
+            .unwrap();
+        let use_frame = serde_json::json!({
+            "type": "tool_use",
+            "tool_name": "Bash",
+            "tool_use_id": "tu-b",
+            "input": { "command": command },
+        });
+        feed_w
+            .write_all(format!("{use_frame}\n").as_bytes())
+            .await
+            .unwrap();
+        // Let the pre-snapshot land before the command's effect.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        mutate();
+        feed_w
+            .write_all(
+                b"{\"type\":\"tool_result\",\"tool_use_id\":\"tu-b\",\"output\":\"\",\"is_error\":false}\n",
+            )
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        drop(feed_w);
+        let _ = relay.await.expect("relay task");
+        ledger.file_events_for_session(session).unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_literal_rm_is_proof_and_a_glob_rm_is_only_a_hint() {
+        let repo = init_bracket_repo();
+        let root = repo.path().to_path_buf();
+        std::fs::write(root.join("doomed.txt"), "bye\n").unwrap();
+
+        let target = root.join("doomed.txt");
+        let rows = bash_bracket_rows(&root, "tug-rm", "rm doomed.txt", move || {
+            std::fs::remove_file(&target).unwrap();
+        })
+        .await;
+        let row = rows
+            .iter()
+            .find(|r| r.file_path == "doomed.txt")
+            .expect("the removed path is recorded");
+        assert_eq!(row.origin, "cmd", "the command named the file: proof");
+        assert_eq!(row.op, "deleted");
+        assert_eq!(row.tool_name, "Bash");
+
+        // The same deletion through a glob is unreadable, so it stays a hint.
+        std::fs::write(root.join("doomed.txt"), "bye again\n").unwrap();
+        let target = root.join("doomed.txt");
+        let rows = bash_bracket_rows(&root, "tug-glob", "rm doomed.*", move || {
+            std::fs::remove_file(&target).unwrap();
+        })
+        .await;
+        let row = rows
+            .iter()
+            .find(|r| r.file_path == "doomed.txt")
+            .expect("the removed path is still recorded");
+        assert_eq!(row.origin, "bash", "a glob operand proves nothing");
+    }
+
+    #[tokio::test]
+    async fn a_hand_save_the_command_never_named_stays_correlation() {
+        let repo = init_bracket_repo();
+        let root = repo.path().to_path_buf();
+        let named = root.join("named.txt");
+        let unnamed = root.join("a.txt");
+        let rows = bash_bracket_rows(&root, "tug-mixed", "echo hi > named.txt", move || {
+            std::fs::write(&named, "hi\n").unwrap();
+            // The user saves their own file while the command runs.
+            std::fs::write(&unnamed, "one\nhand-edited\n").unwrap();
+        })
+        .await;
+        let by_path: std::collections::HashMap<&str, &str> = rows
+            .iter()
+            .map(|r| (r.file_path.as_str(), r.origin.as_str()))
+            .collect();
+        assert_eq!(by_path.get("named.txt"), Some(&"cmd"));
+        assert_eq!(
+            by_path.get("a.txt"),
+            Some(&"bash"),
+            "a file the command never named can never be proved by the delta"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_recursive_rm_proves_every_file_beneath_the_named_directory() {
+        let repo = init_bracket_repo();
+        let root = repo.path().to_path_buf();
+        std::fs::create_dir_all(root.join("out/nested")).unwrap();
+        std::fs::write(root.join("out/one.txt"), "1\n").unwrap();
+        std::fs::write(root.join("out/nested/two.txt"), "2\n").unwrap();
+
+        let dir = root.join("out");
+        let rows = bash_bracket_rows(&root, "tug-rmr", "rm -rf out", move || {
+            std::fs::remove_dir_all(&dir).unwrap();
+        })
+        .await;
+        let by_path: std::collections::HashMap<&str, &str> = rows
+            .iter()
+            .map(|r| (r.file_path.as_str(), r.origin.as_str()))
+            .collect();
+        assert_eq!(by_path.get("out/one.txt"), Some(&"cmd"));
+        assert_eq!(by_path.get("out/nested/two.txt"), Some(&"cmd"));
+    }
+
+    #[tokio::test]
+    async fn a_git_mv_records_both_names_under_one_tool_use_id() {
+        let repo = init_bracket_repo();
+        let root = repo.path().to_path_buf();
+        let moved_root = root.clone();
+        let rows = bash_bracket_rows(&root, "tug-mv", "git mv a.txt b.txt", move || {
+            assert!(
+                std::process::Command::new("git")
+                    .args(["mv", "a.txt", "b.txt"])
+                    .current_dir(&moved_root)
+                    .output()
+                    .expect("git mv")
+                    .status
+                    .success()
+            );
+        })
+        .await;
+        let by_path: std::collections::HashMap<&str, (&str, &str)> = rows
+            .iter()
+            .map(|r| (r.file_path.as_str(), (r.op.as_str(), r.origin.as_str())))
+            .collect();
+        assert_eq!(
+            by_path.get("b.txt"),
+            Some(&("renamed", "cmd")),
+            "the destination is proved by the parse and the delta"
+        );
+        assert_eq!(
+            by_path.get("a.txt"),
+            Some(&("renamed", "cmd")),
+            "the takeoff row is synthesized from the parse — the old name left the dirty set"
+        );
+        assert!(
+            rows.iter().all(|r| r.tool_use_id == "tu-b"),
+            "both names are one operation"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_declared_path_spelled_through_an_alt_root_still_joins() {
+        // The macOS tempdir root (`/var/...`) is a symlink to `/private/var/...`,
+        // so the bracket's delta keys are canonical while the command's operands
+        // are spelled the other way — exactly the drift the canonical join at
+        // the intersection exists to absorb.
+        let repo = init_bracket_repo();
+        let root = repo.path().to_path_buf();
+        assert_ne!(
+            std::fs::canonicalize(&root).unwrap(),
+            root,
+            "this test needs a symlinked tempdir root"
+        );
+        std::fs::write(root.join("aliased.txt"), "x\n").unwrap();
+        let absolute = root.join("aliased.txt");
+        let command = format!("rm {}", absolute.display());
+        let target = absolute.clone();
+        let rows = bash_bracket_rows(&root, "tug-alt", &command, move || {
+            std::fs::remove_file(&target).unwrap();
+        })
+        .await;
+        let row = rows
+            .iter()
+            .find(|r| r.file_path == "aliased.txt")
+            .expect("the removed path is recorded");
+        assert_eq!(row.origin, "cmd");
+    }
+
+    #[tokio::test]
+    async fn git_rm_cached_records_one_sane_row() {
+        // `--cached` leaves the file on disk but drops the index entry, so
+        // porcelain reports the path twice (`1 D.` and `? path`) — last wins.
+        let repo = init_bracket_repo();
+        let root = repo.path().to_path_buf();
+        let cached_root = root.clone();
+        let rows = bash_bracket_rows(&root, "tug-cached", "git rm --cached a.txt", move || {
+            assert!(
+                std::process::Command::new("git")
+                    .args(["rm", "-q", "--cached", "a.txt"])
+                    .current_dir(&cached_root)
+                    .output()
+                    .expect("git rm")
+                    .status
+                    .success()
+            );
+        })
+        .await;
+        let for_path: Vec<_> = rows.iter().filter(|r| r.file_path == "a.txt").collect();
+        assert_eq!(for_path.len(), 1, "one row per path per call");
+        assert_eq!(for_path[0].origin, "cmd");
     }
 
     #[tokio::test]
@@ -2611,8 +3472,16 @@ mod tests {
             Some(&"created".to_owned()),
             "the Bash-created file is attributed"
         );
+        let by_origin: std::collections::HashMap<String, String> = rows
+            .iter()
+            .map(|r| (r.file_path.clone(), r.origin.clone()))
+            .collect();
+        // The command's redirect names a.txt, and the delta confirms it moved:
+        // named AND observed is proof.
+        assert_eq!(by_origin.get("a.txt"), Some(&"cmd".to_owned()));
+        // c.txt only moved during the window — correlation, a hint at most.
+        assert_eq!(by_origin.get("c.txt"), Some(&"bash".to_owned()));
         for r in &rows {
-            assert_eq!(r.origin, "bash");
             assert_eq!(r.tool_name, "Bash");
             assert!(!r.ambiguous);
         }

@@ -2415,6 +2415,7 @@ dependencies = [
  "assert_cmd",
  "chrono",
  "clap",
+ "glob",
  "libc",
  "regex",
  "rusqlite",

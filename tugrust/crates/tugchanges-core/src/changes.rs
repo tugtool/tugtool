@@ -280,7 +280,19 @@ fn compute_changes(
     all: bool,
 ) -> Result<Buckets, String> {
     let events = ledger::query_events(conn, session)?;
-    let status_map = git::parse_status_porcelain_v2(&status_output(repo_root)).v1_status_map();
+    let status = git::parse_status_porcelain_v2(&status_output(repo_root));
+    let status_map = status.v1_status_map();
+    // A renamed path's former name, straight from git. Rows earned under the
+    // old name are the file's own history — without this join a `git mv`
+    // severs every proof row a session ever wrote for the file, and it lands in
+    // `unattributed` under its new name. One hop only: git reports a single
+    // `orig_path` per uncommitted rename, and a commit spends both names' rows.
+    let orig_by_path: HashMap<&str, &str> = status
+        .entries
+        .iter()
+        .filter(|e| e.renamed)
+        .filter_map(|e| e.orig_path.as_deref().map(|orig| (e.path.as_str(), orig)))
+        .collect();
 
     // This session's events grouped per repo-relative path, oldest-first.
     let mut events_by_path: HashMap<String, Vec<ledger::EventRow>> = HashMap::new();
@@ -300,24 +312,47 @@ fn compute_changes(
     for path in &dirty_paths {
         let git_status = status_map.get(path).cloned().unwrap_or_default();
         let self_events = events_by_path.remove(path).unwrap_or_default();
+        let orig = orig_by_path.get(path.as_str()).copied();
+        let orig_events = orig
+            .and_then(|o| events_by_path.remove(o))
+            .unwrap_or_default();
 
         // Cheap SQL probe first; the liveness cut (one `git log` per path)
         // runs only when some row actually claims the path.
-        let has_any_claim =
-            !self_events.is_empty() || !ledger::sessions_for_path(conn, path, session)?.is_empty();
+        let has_any_claim = !self_events.is_empty()
+            || !orig_events.is_empty()
+            || !ledger::sessions_for_path(conn, path, session)?.is_empty()
+            || match orig {
+                Some(o) => !ledger::sessions_for_path(conn, o, session)?.is_empty(),
+                None => false,
+            };
         if !has_any_claim {
             unattributed.push(unattributed_change(path, git_status));
             continue;
         }
 
         let min_live = min_live_at_ms(repo_root, path);
-        let live_self: Vec<&ledger::EventRow> =
+        let mut live_self: Vec<&ledger::EventRow> =
             self_events.iter().filter(|ev| ev.at >= min_live).collect();
+        let mut foreign_proof =
+            ledger::foreign_proof_sessions_for_path(conn, path, session, repo_root, min_live)?;
+        if let Some(o) = orig {
+            // Each name carries its own liveness cut — the old name's history
+            // ends where the file stopped being called that.
+            let min_live_orig = min_live_at_ms(repo_root, o);
+            live_self.extend(orig_events.iter().filter(|ev| ev.at >= min_live_orig));
+            live_self.sort_by_key(|ev| ev.at);
+            for claimant in
+                ledger::foreign_proof_sessions_for_path(conn, o, session, repo_root, min_live_orig)?
+            {
+                if !foreign_proof.contains(&claimant) {
+                    foreign_proof.push(claimant);
+                }
+            }
+        }
         let latest_self_proof = live_self
             .iter()
             .rfind(|ev| ledger::origin_is_proof(&ev.origin));
-        let foreign_proof =
-            ledger::foreign_proof_sessions_for_path(conn, path, session, repo_root, min_live)?;
 
         if let Some(latest) = latest_self_proof {
             // This session provably edited the file. Contention requires
@@ -778,6 +813,129 @@ mod tests {
 
     /// Like [`seed_sessions`] but with an explicit `origin` per row — the
     /// fixture the exact-vs-bracket authorship tests need.
+    /// `seed_sessions_origin` with an explicit `at` per row — needed whenever
+    /// the path has commit history, since the liveness cut then sits at the
+    /// commit's wall-clock second rather than at zero.
+    fn seed_sessions_origin_at(rows: &[(&str, &str, &str, &str, i64)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = Connection::open(dir.path().join("sessions.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
+             CREATE TABLE file_events (
+                tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
+                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
+        )
+        .unwrap();
+        let mut seen: Vec<String> = Vec::new();
+        for (i, (session, file_path, origin, project_dir, at)) in rows.iter().enumerate() {
+            if !seen.iter().any(|s| s == session) {
+                conn.execute("INSERT INTO sessions (session_id) VALUES (?1)", [session])
+                    .unwrap();
+                seen.push(session.to_string());
+            }
+            conn.execute(
+                "INSERT INTO file_events
+                    (tug_session_id, tool_use_id, file_path, tool_name, op, origin, ambiguous, project_dir, at)
+                 VALUES (?1, ?2, ?3, 'Write', 'edit', ?4, 0, ?5, ?6)",
+                rusqlite::params![session, format!("tu-{i}"), file_path, origin, project_dir, at],
+            )
+            .unwrap();
+        }
+        dir
+    }
+
+    /// Wall clock in epoch ms, a few seconds ahead — past the liveness cut of a
+    /// commit made during the test.
+    fn just_now_ms() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+            + 5_000
+    }
+
+    /// A repo with `tracked.rs` committed, then renamed to `moved.rs` — an
+    /// uncommitted rename, which is when the old name's rows still matter.
+    fn init_renamed_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .args(args)
+                    .current_dir(root)
+                    .output()
+                    .expect("git")
+                    .status
+                    .success(),
+                "git {args:?}"
+            );
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@t.test"]);
+        git(&["config", "user.name", "t"]);
+        std::fs::write(root.join("tracked.rs"), "body\n").unwrap();
+        git(&["add", "tracked.rs"]);
+        git(&["commit", "-q", "-m", "init"]);
+        git(&["mv", "tracked.rs", "moved.rs"]);
+        dir
+    }
+
+    #[test]
+    fn a_renamed_path_inherits_proof_written_under_its_old_name() {
+        let repo = init_renamed_repo();
+        let root = repo.path();
+        let rootstr = root.to_string_lossy().into_owned();
+        // The session proof-edited the file before moving it: no row names
+        // `moved.rs` at all.
+        let db = seed_sessions_origin_at(&[("me", "tracked.rs", "exact", &rootstr, just_now_ms())]);
+        let buckets = compute_changes(&open(&db), root, "me", false).unwrap();
+
+        assert!(
+            buckets.unattributed.is_empty(),
+            "the rename must not strand the file: {:?}",
+            buckets.unattributed
+        );
+        assert_eq!(buckets.attributed.len(), 1);
+        assert_eq!(buckets.attributed[0].path, "moved.rs");
+        assert_eq!(buckets.attributed[0].origin, "exact");
+    }
+
+    #[test]
+    fn a_renamed_path_is_foreign_when_the_old_name_was_another_sessions() {
+        let repo = init_renamed_repo();
+        let root = repo.path();
+        let rootstr = root.to_string_lossy().into_owned();
+        let db =
+            seed_sessions_origin_at(&[("theirs", "tracked.rs", "exact", &rootstr, just_now_ms())]);
+        let buckets = compute_changes(&open(&db), root, "me", false).unwrap();
+
+        assert!(buckets.attributed.is_empty());
+        assert_eq!(buckets.foreign.len(), 1);
+        assert_eq!(buckets.foreign[0].path, "moved.rs");
+        assert_eq!(buckets.foreign[0].sessions, vec!["theirs".to_string()]);
+    }
+
+    #[test]
+    fn a_spent_old_name_row_does_not_survive_the_rename() {
+        // The old name's rows carry the old name's own liveness cut: a row from
+        // before the commit that created `tracked.rs` was already spent, and
+        // the rename must not resurrect it.
+        let repo = init_renamed_repo();
+        let root = repo.path();
+        let rootstr = root.to_string_lossy().into_owned();
+        let db = seed_sessions_origin_at(&[("me", "tracked.rs", "exact", &rootstr, 1)]);
+        let buckets = compute_changes(&open(&db), root, "me", false).unwrap();
+
+        assert!(
+            buckets.attributed.is_empty(),
+            "a spent row never attributes"
+        );
+        assert_eq!(buckets.unattributed.len(), 1);
+        assert_eq!(buckets.unattributed[0].path, "moved.rs");
+    }
+
     fn seed_sessions_origin(rows: &[(&str, &str, &str, &str)]) -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("tempdir");
         let conn = Connection::open(dir.path().join("sessions.db")).unwrap();
@@ -986,6 +1144,26 @@ mod tests {
         assert_eq!(buckets.attributed.len(), 1);
         assert_eq!(buckets.attributed[0].path, "resumed.rs");
         assert_eq!(buckets.attributed[0].origin, "replay");
+    }
+
+    #[test]
+    fn a_cmd_row_attributes_and_makes_another_session_foreign() {
+        // A command that literally named the file is proof, on the same footing
+        // as an exact edit — for its own session and, seen from elsewhere, for
+        // the other one.
+        let repo = init_repo(&["named.rs"]);
+        let root = repo.path();
+        let rootstr = root.to_string_lossy().into_owned();
+        let db = seed_sessions_origin(&[("me", "named.rs", "cmd", &rootstr)]);
+        let buckets = compute_changes(&open(&db), root, "me", false).unwrap();
+        assert_eq!(buckets.attributed.len(), 1);
+        assert_eq!(buckets.attributed[0].path, "named.rs");
+        assert_eq!(buckets.attributed[0].origin, "cmd");
+
+        let theirs = compute_changes(&open(&db), root, "other", false).unwrap();
+        assert!(theirs.attributed.is_empty());
+        assert_eq!(theirs.foreign.len(), 1, "a cmd row owns the path");
+        assert_eq!(theirs.foreign[0].sessions, vec!["me".to_string()]);
     }
 
     #[test]

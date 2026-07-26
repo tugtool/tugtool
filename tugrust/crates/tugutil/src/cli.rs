@@ -14,6 +14,43 @@ use tugdash_core::JoinStrategy;
 
 use crate::commands::{GateCommands, InstanceCommands};
 
+/// `tugutil file` — the git-aware file lifecycle verbs. Each mutating verb
+/// prints a `TUG-FILE-RECEIPT` line naming exactly the files it touched, which
+/// is what makes a glob or variable-driven operation attributable at all.
+#[derive(clap::Subcommand, Debug)]
+pub enum FileCommands {
+    /// Delete files (globs expanded here, `git rm` for tracked paths).
+    Rm {
+        /// Paths or globs to remove.
+        #[arg(required = true)]
+        paths: Vec<String>,
+    },
+    /// Move or rename a file or directory (`git mv` when tracked).
+    Mv {
+        /// Source path.
+        src: String,
+        /// Destination path (an existing directory receives the source under its own name).
+        dst: String,
+    },
+    /// Copy a file or directory.
+    Cp {
+        /// Source path.
+        src: String,
+        /// Destination path.
+        dst: String,
+    },
+    /// Decide whether a Bash command's file operations are readable — the
+    /// PreToolUse hook's allow/deny, printed as JSON. Always exits 0.
+    Gate {
+        /// The Bash command to judge.
+        #[arg(long)]
+        command: String,
+        /// Directory relative operands resolve against (default: cwd).
+        #[arg(long)]
+        base_dir: Option<PathBuf>,
+    },
+}
+
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("TUG_COMMIT"), ")");
 
 /// tugutil — the unified Tug developer CLI.
@@ -139,6 +176,15 @@ pub enum Commands {
         #[arg(long)]
         project: Option<PathBuf>,
     },
+
+    /// Git-aware file lifecycle verbs that report what they touched.
+    ///
+    /// `rm`/`mv`/`cp` expand their own operands and print a
+    /// `TUG-FILE-RECEIPT` line naming every file affected, so an operation the
+    /// shell grammar could never read (a glob, a variable) still lands as
+    /// proof-class attribution. `gate` answers the PreToolUse hook.
+    #[command(subcommand)]
+    File(FileCommands),
 
     /// The maintained landing draft (set/show/clear) — Spec S02.
     #[command(subcommand)]

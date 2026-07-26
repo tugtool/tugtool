@@ -43,7 +43,7 @@ recent commits:
 
 The buckets — **decide a disposition for every one of them:**
 
-- **`attributed`** — files this session **provably** edited (proof rows: `exact` for Write/Edit/NotebookEdit, `replay` for the same backfilled on resume). The default selection; non-shared attributed files are in the landing unless you exclude one.
+- **`attributed`** — files this session **provably** edited (proof rows: `exact` for Write/Edit/NotebookEdit, `replay` for the same backfilled on resume, `cmd` for a Bash command that literally named the file or a `tugutil file` receipt, `claim` for an explicit claim). The default selection; non-shared attributed files are in the landing unless you exclude one.
 - **`unattributed`** — dirty with **no proof row anywhere**. The `likely this session's (bash bracket)` tag (or `turn bracket`) means this session's own Bash/turn window saw the path change — likely yours, not proven (a hand-save the user made mid-command lands here too). The hint plus the diff decides: an edit you recognize as your own Bash work → elect it into the draft's selection with `--include`; anything you don't recognize → the user's inflight work, leave it out and name it in your report. To see a file's contents, read the file or run `tugutil diff` — never raw git.
 - **`foreign`** — another session's work (its owner is named). Report it, never include it.
 - **`shared`** (marked on an attributed row) — another session **also** provably edited this file, so ownership is contended; excluded from the default selection. Call it out; elect it with `--include` only when it is clearly this session's work.

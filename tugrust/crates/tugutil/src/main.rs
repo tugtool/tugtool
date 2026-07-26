@@ -86,6 +86,9 @@ fn main() -> ExitCode {
             cli::DraftCommands::Clear { owner, project } => draft::run_clear(owner, project, json),
         }),
 
+        // File lifecycle verbs — receipts are the attribution surface.
+        Some(Commands::File(cmd)) => changes::finish(commands::run_file(cmd)),
+
         // Dashes (tugdash_core) and host plumbing (command modules).
         Some(Commands::Dash(cmd)) => dash::dispatch(cmd, json, quiet),
         Some(Commands::Host(cmd)) => host::dispatch(cmd, json, quiet),

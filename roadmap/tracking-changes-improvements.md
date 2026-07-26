@@ -9,7 +9,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented (all steps done on the `tracking-changes` dash; awaiting the user's `/join`) |
 | Target branch | main (built on a `tugutil dash` worktree via `/tugplug:implement`) |
 | Last updated | 2026-07-25 |
 
@@ -368,16 +368,16 @@ Non-frontend plan — no tugdeck state; omitted per skeleton.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Law amendment: the `cmd` origin doctrine | pending | — |
-| #step-2 | `shell_ops` grammar module | pending | — |
-| #step-3 | Untracked-delete op fix | pending | — |
-| #step-4 | Live `cmd` minting (parse∩delta) + proof-set extension | pending | — |
-| #step-5 | Replay `cmd` minting | pending | — |
-| #step-6 | Read-side rename lineage join | pending | — |
-| #step-7 | `tugutil file` verb family | pending | — |
-| #step-8 | Receipt minting in the relay | pending | — |
-| #step-9 | tugplug gate hook | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
+| #step-1 | Law amendment: the `cmd` origin doctrine | done | `fc57c9cd9` |
+| #step-2 | `shell_ops` grammar module | done | `c4f5c15c4` |
+| #step-3 | Untracked-delete op fix | done | `66b988891` |
+| #step-4 | Live `cmd` minting (parse∩delta) + proof-set extension | done | `e70c9559c` |
+| #step-5 | Replay `cmd` minting | done | `827e014a3` |
+| #step-6 | Read-side rename lineage join | done | `7fefa9cf3` |
+| #step-7 | `tugutil file` verb family | done | `a6b0d753d` |
+| #step-8 | Receipt minting in the relay | done | `c6b3ae335` |
+| #step-9 | tugplug gate hook | done | `2e966a39f` |
+| #step-10 | Integration checkpoint | done | (verification only) |
 
 #### Step 1: Law amendment: the `cmd` origin doctrine {#step-1}
 
