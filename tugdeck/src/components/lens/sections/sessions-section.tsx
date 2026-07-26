@@ -171,7 +171,7 @@ const NOOP_SUBSCRIBE = (): (() => void) => () => {};
  * position is the separate `--tugx-lens-sessions-dot-rise` knob in
  * `sessions-section.css`.
  *
- * This is the BOX, not the dot: the `large-pulsing-dot` sheds a ring that
+ * This is the BOX, not the dot: the `pulsing-dot` sheds a ring that
  * travels out to the box edge, and the dot itself paints at 60% of the box at
  * the top of its breath (35% at the bottom). So a running row reads as a
  * `0.6 × size` dot throwing a ring the full width of the box — at 32, a 19px
@@ -211,7 +211,7 @@ function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
       : OFFLINE_PHASE_INPUT;
   return (
     <TugProgressIndicator
-      variant="large-pulsing-dot"
+      variant="pulsing-dot"
       size={ROW_PHASE_DOT_SIZE}
       phase={sessionSessionPhaseKey(input)}
       phaseVisual={PHASE_VISUAL}

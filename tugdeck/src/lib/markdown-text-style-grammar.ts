@@ -48,6 +48,7 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { LanguageDescription, LanguageSupport } from "@codemirror/language";
 import type { Language } from "@codemirror/language";
 import { styleTags } from "@lezer/highlight";
+import type { BlockContext, Line } from "@lezer/markdown";
 
 import {
   extForLangId,
@@ -137,6 +138,48 @@ function resolveFenceLanguage(info: string): LanguageDescription | null {
   return desc;
 }
 
+// --- The lone-dash line ---------------------------------------------------
+//
+// A line holding nothing but `-` under a paragraph is, per CommonMark, a
+// setext underline: the paragraph above it becomes a level-2 heading. That is
+// exactly the keystroke that starts a list, so typing `- ` at the end of a
+// paragraph repaints the whole paragraph above as a heading until the item's
+// first character arrives.
+//
+// The grammar's own list check declines the line for the same reason: with
+// `breaking` set, a bullet only interrupts a paragraph when content follows
+// the marker. So the paragraph is ended here instead, by an `endLeaf` rule
+// that fires before the leaf-block parsers get their look. The block parse
+// that follows sees the bare marker with `breaking` unset and takes it as an
+// empty list item.
+//
+// Only a single dash: `--` and longer stay setext underlines, as does `=`.
+
+const DASH = 45;
+const SPACE = 32;
+const TAB = 9;
+
+// `Line.depth` and `BlockContext.stack` are real at runtime but absent from
+// @lezer/markdown's published types. The nesting check reads them through this
+// shape rather than widening either type to `any`.
+interface NestingDepth {
+  depth: number;
+}
+interface NestingStack {
+  stack: readonly unknown[];
+}
+
+function isLoneDashLine(cx: BlockContext, line: Line): boolean {
+  const depth = (line as unknown as NestingDepth).depth;
+  const stack = (cx as unknown as NestingStack).stack;
+  if (line.next !== DASH || depth < stack.length) return false;
+  for (let pos = line.pos + 1; pos < line.text.length; pos++) {
+    const ch = line.text.charCodeAt(pos);
+    if (ch !== SPACE && ch !== TAB) return false;
+  }
+  return true;
+}
+
 /**
  * The scheme's configured markdown support — the grammar plus the HTML and
  * fenced-code sub-parsing that `markdown()` wires in, with every editing
@@ -154,7 +197,10 @@ export const markdownTextStyleSupport = markdown({
   // foreground color on whitespace paints nothing. Note this REPLACES the
   // node's marker tag rather than adding to it, so the tint is the entire
   // treatment.
-  extensions: [{ props: [styleTags({ HardBreak: tugHardBreakTag })] }],
+  extensions: [
+    { props: [styleTags({ HardBreak: tugHardBreakTag })] },
+    { parseBlock: [{ name: "TugLoneDashList", endLeaf: isLoneDashLine }] },
+  ],
 });
 
 /**
