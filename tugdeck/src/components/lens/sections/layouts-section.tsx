@@ -186,6 +186,7 @@ function LayoutsSectionBody({
                   <LayoutMiniature
                     kind={null}
                     lens={side}
+                    cards={false}
                     selected={side === lens}
                   />
                   <span className="layouts-section-option-label">

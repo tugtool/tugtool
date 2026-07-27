@@ -7,16 +7,12 @@
  * an option is then recognizing the arrangement you want rather than decoding a
  * label for it, the idiom Windows 11's Snap Layouts established.
  *
- * The blocks sit at the imposer's own anchors in miniature (see
- * `lib/layout-imposer.ts`): each one `k / (N − 1)` of the way across its
- * travel, so the first hugs the far edge, the last meets the Lens, and the
- * ones between space evenly. That is what makes a four-up tile *look* crowded
- * — the picture tells the truth about what the deck will do.
- *
- * Every card is drawn at ONE width, in every tile. Choosing four-up does not
- * make the deck's cards narrower — it packs four anchors into the same band,
- * and the cards overlap. A picture that shrank its blocks as the count rose
- * would be telling the opposite story about the rule it illustrates.
+ * The blocks divide the field evenly and never overlap: N cards share the band
+ * the imposer packs them into, each one slot wide, with the gap between them.
+ * This is the imposer's own anchor rule (see `lib/layout-imposer.ts`) at the
+ * width that makes the slots meet edge to edge — the arrangement a deck settles
+ * into when every card takes its share. Overlapping blocks were legible as
+ * neither cards nor slots, so the picture states the count instead.
  *
  * Purely presentational: props in, CSS out, no store reads and no state ([L06]).
  * The live Lens side is passed down by the section so every miniature flips
@@ -34,17 +30,24 @@ import { slotCount, type ImpositionKind, type LensSide } from "@/lib/layout-impo
 /** The Lens's share of the miniature's width, in percent. */
 const RAIL_PCT = 18;
 
-/** A card's width, in percent of the miniature. One number for every tile. */
-const CARD_PCT = 40;
+/** A lone free card's width, in percent of the field it stands in. */
+const FREE_CARD_PCT = 46;
 
 /** The imposition gap, in percent of the miniature. */
 const GAP_PCT = 2;
+
+/** The space between two cards, in percent of the miniature. Wider than the
+ *  imposition gap: at this scale the seam has to survive a device pixel. */
+const CARD_GAP_PCT = 3.5;
 
 export interface LayoutMiniatureProps {
   /** The N-up rule to draw, or `null` for no imposition (one free card). */
   kind: ImpositionKind | null;
   /** The side the Lens holds, or `null` to draw the deck without it. */
   lens: LensSide | null;
+  /** Draw the cards. `false` draws the deck's frame and Lens alone — the
+   *  picture for a question that is only about which edge the Lens holds. */
+  cards?: boolean;
   /** Draw the arrangement as the chosen one. */
   selected?: boolean;
 }
@@ -58,19 +61,22 @@ export interface LayoutMiniatureProps {
 export function LayoutMiniature({
   kind,
   lens,
+  cards = true,
   selected = false,
 }: LayoutMiniatureProps): React.ReactElement {
-  const count = kind === null ? 1 : slotCount(kind);
+  const count = !cards ? 0 : kind === null ? 1 : slotCount(kind);
   // What is left of the miniature once the Lens has taken its strip.
   const field = lens === null ? 100 : 100 - RAIL_PCT - GAP_PCT;
-  // The imposer's rule, in percent: a block's travel is what the band has left
-  // over once it has taken its own width, and slot k has crossed `k / (N − 1)`
-  // of it.
-  const travel = Math.max(0, field - GAP_PCT * 2 - CARD_PCT);
+  // The band the blocks share: the field less the gap outside each end.
+  const band = Math.max(0, field - GAP_PCT * 2);
   // A deck with no arrangement is one free card, so Off draws a single block
-  // standing in the middle of the field rather than pinned to an anchor.
+  // standing in the middle of the field rather than filling it.
+  const cardPct =
+    count < 2
+      ? (band * FREE_CARD_PCT) / 100
+      : (band - CARD_GAP_PCT * (count - 1)) / count;
   const offsetFor = (k: number): number =>
-    count < 2 ? travel / 2 : (k / (count - 1)) * travel;
+    count < 2 ? (band - cardPct) / 2 : k * (cardPct + CARD_GAP_PCT);
   // Slot 0 is the anchor farthest from the Lens, so a left-side Lens numbers
   // from the right — measured from that edge, the offsets are the same.
   const packFromLeft = lens !== "left";
@@ -90,7 +96,7 @@ export function LayoutMiniature({
             className="layout-mini-block"
             style={{
               [packFromLeft ? "left" : "right"]: `${GAP_PCT + offsetFor(i)}%`,
-              width: `${CARD_PCT}%`,
+              width: `${cardPct}%`,
             }}
           />
         ))}
