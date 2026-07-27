@@ -260,7 +260,7 @@ The strategic unlock over the parked FM plan: the MLX backend runs on Apple Sili
 - Multi-GB residency is fine transiently, not permanently, in an all-day app; no current tenant needs two models at once ([Q06]).
 
 **Implications:**
-- First call after idle pays the load; the classify tenant's 250 ms submit budget simply lapses to Code (correct per Spec S07); a `prewarm` request exists for surfaces that can anticipate use (prompt-entry focus).
+- First call after idle pays the load; the classify tenant's 250 ms submit budget simply lapses to Code (correct per Spec S07); a `prewarm` request exists for surfaces that can anticipate use — triggered on demonstrated intent (e.g. the first unsure-band debounce, Step 12), never on mere focus, so residency isn't paid speculatively.
 
 #### [P10] TugSetup offers the catalog; management stays verb-level (DECIDED) {#p10-tugsetup}
 
@@ -334,15 +334,15 @@ The validated prompts live in the harness: classify in `~/bonsai-eval/classify_8
 
 **Spec S01: Catalog schema (compiled into tugcast)** {#s01-catalog}
 
-`tugrust/crates/tugcast/src/local_model.rs` declares `CATALOG: &[CatalogEntry]` where `CatalogEntry { id, display_name, recommended: bool, hf_repo, hf_revision /* full commit hash */, files: &[ModelFile], total_bytes, context_window, notes }` and `ModelFile { name, sha256, bytes }`. Download URL per file: `https://huggingface.co/<hf_repo>/resolve/<hf_revision>/<name>`. Entries and the recommended default are filled from Step 1 ([Q01]); admission rule: loads unchanged under stock MLXLLM. The FM pseudo-model is *not* in this catalog (nothing to acquire); it is a Swift-side backend fact.
+`tugrust/crates/tugcast/src/local_model.rs` declares `CATALOG: &[CatalogEntry]` where `CatalogEntry { id, display_name, recommended: bool, hf_repo, hf_revision /* full commit hash */, files: &[ModelFile], total_bytes, context_window, notes }` and `ModelFile { name, sha256, bytes }`. Download URL per file: `https://huggingface.co/<hf_repo>/resolve/<hf_revision>/<name>`. Entries and the recommended default are filled from Step 1 ([Q01]); admission rules: (a) loads unchanged under stock MLXLLM, and (b) clears the Step 1 quality bars with the **same canonical instruction text** as every other entry — per-model chat-template *wrapping* is fine (MLXLMCommon applies each pack's own template from its tokenizer config) but the instruction content is shared, because the service ships one set of frozen prompt constants and the user can switch models (Step 11); a model that only passes with its own tuned prompt text is not admitted. The FM pseudo-model is *not* in this catalog (nothing to acquire); it is a Swift-side backend fact.
 
 **Spec S02: Store layout, stamp, and lock** {#s02-store}
 
-Root: `~/Library/Application Support/Tug/models/` (the `dirs::home_dir().join("Library/Application Support/Tug/…")` pattern from `tugrust/crates/tugcast/src/fs_write.rs`). Installed model: `models/<id>/` holding the pack files plus `tug-manifest.json` — `{v: 1, id, hf_repo, hf_revision, files: [{name, sha256, bytes}], backend: "mlx", context_window, verified_at}` — written only after every file sha-verifies; **stamp existence is the presence probe** for both tugcast and Swift ([P04]). Staging: `models/.staging/<id>/<name>.part`. **Cross-process lock:** acquire `models/.staging/<id>.lock` via `O_EXCL` + own pid; on `EEXIST` read pid — dead ⇒ remove stale lock, retry once; live ⇒ answer `local_model_download_result {ok:false, error:"download in progress in another Tug instance"}`; after acquiring, **re-check the stamp** (the other instance may have finalized) before touching `.part` files; remove the lock on finalize/failure/cancel and via a `Drop` guard. Delete: refuse while locked/downloading; remove dir + stamp, broadcast inventory.
+Root: `~/Library/Application Support/Tug/models/` (the `dirs::home_dir().join("Library/Application Support/Tug/…")` pattern from `tugrust/crates/tugcast/src/fs_write.rs`). Installed model: `models/<id>/` holding the pack files plus `tug-manifest.json` — `{v: 1, id, hf_repo, hf_revision, files: [{name, sha256, bytes}], backend: "mlx", context_window, catalog_rank, verified_at}` — written only after every file sha-verifies; **stamp existence is the presence probe** for both tugcast and Swift ([P04]). `catalog_rank` is copied from the catalog entry's position at finalize time (0 = recommended default) — it exists so the Swift service can order installed models for `auto` resolution *without* seeing the catalog, preserving [P04]'s ownership split. Staging: `models/.staging/<id>/<name>.part`. **Cross-process lock:** acquire `models/.staging/<id>.lock` via `O_EXCL` + own pid; on `EEXIST` read pid — dead ⇒ remove stale lock, retry once; live ⇒ answer `local_model_download_result {ok:false, error:"download in progress in another Tug instance"}`; after acquiring, **re-check the stamp** (the other instance may have finalized) before touching `.part` files; remove the lock on finalize/failure/cancel and via a `Drop` guard. Delete: refuse while locked/downloading; remove dir + stamp, broadcast inventory.
 
 **Spec S03: CONTROL vocabulary (deck ⇄ tugcast)** {#s03-control-vocabulary}
 
-Actions (new arms in `tugrust/crates/tugcast/src/actions.rs::dispatch_action`, the `install_claude` spawn-and-broadcast pattern): `local_model_download {model}` (idempotent: installed ⇒ immediate ok; running ⇒ no-op), `local_model_download_cancel`, `local_model_delete {model}`, `local_model_list`. Broadcasts on `FeedId::CONTROL`: `local_model_download_progress {model, file, fileIndex, fileCount, receivedBytes, totalBytes}` (≤ 4 Hz, bytes aggregated pack-wide); `local_model_download_result {model, ok, error}`; `local_model_inventory {models: [{id, displayName, recommended, totalBytes, state: "installed"|"downloading"|"available", receivedBytes?}]}` (answer to `local_model_list`, also broadcast unsolicited on any state change). Startup auto-resume: if `dev.tugtool.local-model/model` names a catalog id that is neither installed nor downloading, spawn the download exactly as if the action arrived.
+Actions (new arms in `tugrust/crates/tugcast/src/actions.rs::dispatch_action`, the `install_claude` spawn-and-broadcast pattern): `local_model_download {model}` (idempotent: installed ⇒ immediate ok; running ⇒ no-op), `local_model_download_cancel`, `local_model_delete {model}`, `local_model_list`. Broadcasts on `FeedId::CONTROL`: `local_model_download_progress {model, file, fileIndex, fileCount, receivedBytes, totalBytes}` (≤ 4 Hz, bytes aggregated pack-wide); `local_model_download_result {model, ok, error}`; `local_model_inventory {models: [{id, displayName, recommended, totalBytes, state: "installed"|"downloading"|"available", receivedBytes?}]}` (answer to `local_model_list`, also broadcast unsolicited on any state change). Startup auto-resume: if `dev.tugtool.local-model/model` names a catalog id that is neither installed nor downloading, spawn the download exactly as if the action arrived. **Delete-vs-resident:** `local_model_delete` refuses while that model is downloading but proceeds even if the Swift service has it loaded — unlinking mmap'd weights is safe on macOS (the resident model keeps working until unload), and the service's per-request stamp re-stat (Step 11) unloads it and answers unavailable on the next request, so a delete degrades cleanly rather than leaving a ghost model answering indefinitely.
 
 **Spec S04: Bridge vocabulary (deck ⇄ Swift)** {#s04-bridge-vocabulary}
 
@@ -354,7 +354,7 @@ tugcast→app: `{"type":"local_model_request","v":1,"id":string,"task":"summariz
 
 **Spec S06: Configuration keys** {#s06-config-keys}
 
-Domain `dev.tugtool.local-model`. Keys: `model` (`Value::Str`: a catalog id, `"auto"`, or `""` = declined; absent ⇒ `"auto"`); `shell-routing`, `pulse-overview` (`Value::Bool`, absent ⇒ true — [Q05]). Rust consts beside the catalog; TS consts in `local-model-store.ts`; Swift reads `model` via `TugbankClient` when resolving assignments. `auto` = the installed model highest in catalog preference order (recommended first); an explicit id that isn't installed ⇒ treated as absent (degrade).
+Domain `dev.tugtool.local-model`. Keys: `model` (`Value::String`: a catalog id, `"auto"`, or `""` = declined; absent ⇒ `"auto"`); `shell-routing`, `pulse-overview` (`Value::Bool`, absent ⇒ true — [Q05]). Rust consts beside the catalog; TS consts in `local-model-store.ts`; Swift reads `model` via `TugbankClient` when resolving assignments. `auto` resolution (performed by the Swift service, which ranks by **stamp `catalog_rank`**, never by catalog knowledge — Spec S02): the installed model with the lowest `catalog_rank`; the FM pseudo-model participates in `auto` *after* all installed MLX models until its Golden-Gate live verification passes (Step 13), at which point the owner may promote it. An explicit id that isn't installed ⇒ treated as absent (degrade, never error).
 
 **Spec S07: Shell-routing bands** {#s07-shell-bands}
 
@@ -487,7 +487,7 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 
 **Tasks:**
 - [ ] Assemble candidates (manually downloaded packs): 2–3 current-generation small instruct MLX packs + `Ternary-Bonsai-8B-mlx-2bit` (already local).
-- [ ] Adapt the harness prompts (#task-prompts) per candidate chat template; one tightening round allowed on the headline task.
+- [ ] Adapt the harness prompts (#task-prompts) into **one canonical instruction text per task**, applied to every candidate through its own chat template (MLXLMCommon handles the wrapping); one tightening round allowed on the headline task, applied to all candidates alike. Per-candidate prompt tuning is disallowed — it would violate Spec S01's admission rule (b), since the service ships one frozen prompt set across a switchable catalog.
 - [ ] Record `sha256sum` + byte sizes of every chosen pack file (they become Spec S01 data).
 
 **Tests:**
@@ -712,7 +712,8 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 **References:** [P07], [P08], Spec S06, (#success-criteria)
 
 **Artifacts:**
-- `LocalModelService` re-reads the `model` selection per request (cheap `TugbankClient` read; the DB is per-instance and local) and applies Spec S06 semantics (`auto` = catalog-preference-ordered first installed; unknown/uninstalled id ⇒ unavailable); an assignment change triggers unload-before-load per [P09].
+- `LocalModelService` re-reads the `model` selection per request (cheap `TugbankClient` read; the DB is per-instance and local) and applies Spec S06 semantics (`auto` = installed model with the lowest stamp `catalog_rank`; unknown/uninstalled id ⇒ unavailable); an assignment change triggers unload-before-load per [P09].
+- Delete-vs-resident contract (Spec S03): resolution re-stats the model's `tug-manifest.json` on every request; a vanished stamp unloads the resident model and answers unavailable.
 
 **Tasks:**
 - [ ] Implement; verify a tugbank write flips the answering model without app relaunch.
@@ -727,7 +728,7 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 
 #### Step 12: Tenant — shell disambiguation {#step-12}
 
-**Depends on:** #step-7, #step-8
+**Depends on:** #step-7, #step-8, #step-9
 
 **Commit:** `tugways(shell-routing): heuristic bands + async local-model tiebreak, un-parked behind readiness`
 
@@ -735,7 +736,7 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 
 **Artifacts:**
 - `shell-line-classifier.ts`: `bandShellLine` per Spec S07; `classifyShellLine` as wrapper; `AUTO_SHELL_DETECTION_ENABLED` deleted; entry points take caller-supplied readiness.
-- `tug-prompt-entry.tsx`: 300 ms debounce pre-consult (existing pre-gates reused), verdict cache (cap 32, cleared on submit/clear), submit band logic with ≤ 250 ms unsure-await falling back to Code, `prewarm` on prompt-entry focus; live-typing chip gate flipped from the deleted constant to `shellRoutingReady` via ref plumbing (the `pathCommandsStoreRef` pattern); auto-routed history push and `origin:"auto"` attribution byte-identical.
+- `tug-prompt-entry.tsx`: 300 ms debounce pre-consult (existing pre-gates reused), verdict cache (cap 32, cleared on submit/clear), submit band logic with ≤ 250 ms unsure-await falling back to Code; `prewarm` fires on the **first unsure-band debounce** of a session, not on prompt-entry focus — focus-triggered prewarm would load multi-GB weights on every session focus and thrash against the 5-minute idle unload for users who rarely type ambiguous lines, whereas the first unsure debounce is the moment intent is demonstrated (that first verdict may miss its window and lapse to Code, which is correct per Spec S07); live-typing chip gate flipped from the deleted constant to `shellRoutingReady` via ref plumbing (the `pathCommandsStoreRef` pattern); auto-routed history push and `origin:"auto"` attribution byte-identical.
 
 **Tasks:**
 - [ ] Implement; honor [Q05]'s decided default (one constant).
