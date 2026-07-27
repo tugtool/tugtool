@@ -757,6 +757,33 @@ function capabilitiesVirtualModulePlugin(): VitePlugin {
 // in theme-provider.tsx targets these paths. [D08]
 // ---------------------------------------------------------------------------
 
+/**
+ * Force every dev response to be a full 200 — never a 304.
+ *
+ * The WKWebView revalidates each module script against Vite's content-hash
+ * etag. When the validator matches, Vite answers 304 and WebKit must supply
+ * the body from its own disk cache — but the debug app is force-quit on
+ * every rebuild/relaunch, which can tear that cache: the metadata survives
+ * (so the conditional request still goes out) while the body blob is gone
+ * or corrupt. The 304 then resolves to an empty module script, `main.tsx`
+ * never executes, `frontendReady` never fires, and the app hangs at the
+ * native splash. Stripping the conditional headers before Vite's etag
+ * check makes every load a full-body 200, taking WebKit's cache out of the
+ * boot path entirely (~200KB over loopback, irrelevant).
+ */
+function noConditionalRequestsPlugin(): VitePlugin {
+  return {
+    name: "tug-no-conditional-requests",
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        delete req.headers["if-none-match"];
+        delete req.headers["if-modified-since"];
+        next();
+      });
+    },
+  };
+}
+
 function discoverThemeCssInputs(): Record<string, string> {
   const themesDir = path.resolve(__dirname, "styles", "themes");
   const inputs: Record<string, string> = {};
@@ -786,6 +813,7 @@ export default (defineConfig as any)(() => {
 
   return {
     plugins: [
+      noConditionalRequestsPlugin(),
       react(),
       activeThemeVirtualPlugin(),
       paletteHotReload(),
