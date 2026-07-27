@@ -20,6 +20,15 @@
  * so opening the first session — which closes the wizard — leaves it running,
  * and tugcast's startup auto-resume covers a quit mid-download.
  *
+ * Two ways in. The wizard opens itself when setup isn't done (the steps above),
+ * and the Tug-menu "Set Up Tug…" item opens it on demand on an app that is
+ * already set up — `TugSetupRequest` stops any live turns first, then flips
+ * `setup-request-store`. The on-demand wizard differs in three ways: it is
+ * dismissible (a Done button, and Escape), it shows the on-device AI row
+ * outside a first run (that row is usually why the user came), and it drops
+ * the "open your first session" step. When setup is genuinely incomplete the
+ * required claim wins and no exit is offered.
+ *
  * ("Installed" and "reachable" collapse into one step: Tug resolves `claude`
  * via PATH then `~/.local/bin` — see `resolveClaudePath`/`claude_executable` —
  * so a binary the installer drops in `~/.local/bin` is reachable without any
@@ -65,6 +74,10 @@ import {
   useLocalModel,
   MODEL_DECLINED,
 } from "@/lib/local-model-store";
+import {
+  useSetupOnDemand,
+  closeSetupOnDemand,
+} from "@/lib/setup-request-store";
 import { useDeckManager } from "@/deck-manager-context";
 import { countWorkCards } from "@/deck-store-selectors";
 import {
@@ -195,6 +208,10 @@ export function TugSetup(): ReactElement {
   const cardCount = countWorkCards(deckState);
   const [openedFirstSession, setOpenedFirstSession] = useState(false);
   const localModel = useLocalModel();
+  // The Tug-menu "Set Up Tug…" route: the wizard opened by request on an app that
+  // is already set up. TugSetupRequest has already stopped any live turns by
+  // the time this flips.
+  const onDemand = useSetupOnDemand();
   // Declining on-device AI is remembered the same way as opening the first
   // session: a local latch for this wizard's lifetime. The durable record is
   // the `""` selection written to tugbank.
@@ -243,6 +260,13 @@ export function TugSetup(): ReactElement {
     if (firstRun) putSetupSeen(true);
   }, [firstRun]);
 
+  // Each on-demand visit starts fresh: a Skip from a previous visit is a
+  // durable tugbank selection, not a latch that should outlive the wizard it
+  // was clicked in.
+  useEffect(() => {
+    if (onDemand) setDeclinedLocalAi(false);
+  }, [onDemand]);
+
   // Sign-in safety net: the CLI's `claude auth login` blocks on its own browser
   // OAuth callback with no backend timeout, so a user who abandons the browser
   // would otherwise leave the wizard stuck on "Waiting…" forever. Bound the
@@ -264,10 +288,24 @@ export function TugSetup(): ReactElement {
   // The version gate takes precedence: while it is open, TugSetup suppresses
   // itself so the two app-modals never stack (Spec S02).
   const gateOpen = useVersionGateOpen();
-  const open = deriveTugSetupOpen(
-    gateOpen,
-    !suppressed && (forced !== false || notReady || needsFirstSession || probing),
-  );
+  // Two ways in, with different exits. `required` is the wizard's own claim on
+  // the app — setup isn't done, so there is nothing to dismiss to. On demand
+  // the app IS set up and the user asked to look, so the wizard is theirs to
+  // close. When both are true the required claim wins and Done stays hidden.
+  const required =
+    !suppressed && (forced !== false || notReady || needsFirstSession || probing);
+  const open = deriveTugSetupOpen(gateOpen, required || onDemand);
+
+  // Which wizard the user is looking at, latched for as long as the panel is on
+  // screen. Radix keeps the content mounted through its close animation, so
+  // reading `onDemand` live would re-shape the steps under the fade: Done
+  // clears the flag, and the dismissible layout would visibly turn back into
+  // the required one on the way out. Latching while closed holds the picture
+  // still. The adjust-during-render form (not an effect) means the shape is
+  // right on the first painted frame of an open, with no flash either.
+  const [showingOnDemand, setShowingOnDemand] = useState(false);
+  if (open && showingOnDemand !== onDemand) setShowingOnDemand(onDemand);
+  const dismissible = showingOnDemand && !required;
 
   const handleInstall = (): void => {
     authStore.setInstalling(true);
@@ -384,7 +422,14 @@ export function TugSetup(): ReactElement {
     if (offer.state === "installed") {
       return { key, status: "done", label: "On-device AI ready", detail: offer.displayName };
     }
-    if (declinedLocalAi || localModel.selection === MODEL_DECLINED) {
+    // A declined offer reads "Skipped." — except when the user opened the
+    // wizard themselves, which is exactly the gesture for changing that
+    // answer. Skipping again during this visit (`declinedLocalAi`) still
+    // settles the row, so the Skip button has visible effect either way.
+    if (
+      declinedLocalAi ||
+      (localModel.selection === MODEL_DECLINED && !showingOnDemand)
+    ) {
       return { key, status: "done", label: "On-device AI", detail: "Skipped." };
     }
     if (!effectiveLoggedIn) {
@@ -474,8 +519,14 @@ export function TugSetup(): ReactElement {
       : [
           claudeStep,
           signInStep,
-          ...(firstRun && localAiStep !== null ? [localAiStep] : []),
-          openStep,
+          // On demand the on-device-AI row is the point of the visit, so it
+          // shows outside a first run too.
+          ...((firstRun || showingOnDemand) && localAiStep !== null
+            ? [localAiStep]
+            : []),
+          // …and the "open your first session" row is dead weight on a deck
+          // that already has work in it; Done takes its place.
+          ...(dismissible ? [] : [openStep]),
         ];
 
   return (
@@ -486,7 +537,12 @@ export function TugSetup(): ReactElement {
           className="tug-alert-content tug-setup"
           data-slot="tug-setup"
           aria-describedby={undefined}
-          onEscapeKeyDown={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => {
+            // Required setup has no exit. A wizard the user opened themselves
+            // does — Escape is the same act as Done.
+            e.preventDefault();
+            if (dismissible) closeSetupOnDemand();
+          }}
         >
           {/* In-jail key sink ([P13]): AlertDialog.Content's FocusScope is
               always trapped — it yanks focus back from anywhere outside the
@@ -526,6 +582,20 @@ export function TugSetup(): ReactElement {
               />
             ))}
           </ol>
+
+          {dismissible && (
+            <div className="tug-alert-actions">
+              <TugPushButton
+                size="sm"
+                emphasis="primary"
+                role="action"
+                persistentDefaultRing
+                onClick={closeSetupOnDemand}
+              >
+                Done
+              </TugPushButton>
+            </div>
+          )}
         </AlertDialog.Content>
       </AlertDialog.Portal>
     </AlertDialog.Root>

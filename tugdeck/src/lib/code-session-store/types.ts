@@ -316,6 +316,15 @@ export type TurnEndReason =
   | "transport_lost";
 
 /**
+ * Why an interrupt fired when it wasn't a plain user Stop. Both values name an
+ * app-level flow that stops every turn before it changes app-wide state:
+ * `"logout"` before `claude auth logout`, `"setup"` before the setup wizard
+ * takes the whole app modal. The end-state badge names the flow so a turn the
+ * user didn't personally stop doesn't read as an anonymous "Interrupted".
+ */
+export type InterruptReason = "logout" | "setup";
+
+/**
  * Immutable transcript entry appended once per completed turn.
  * `result === "interrupted"` covers both user-initiated stop
  * (`turn_complete(error)`) and any preserved-text interrupt path.
@@ -393,13 +402,13 @@ export interface TurnEntry {
   result: "success" | "interrupted";
   /**
    * Why an interrupted turn was stopped, when it wasn't a plain user Stop.
-   * `"logout"` marks a turn stopped by the app-level logout flow so its
-   * Z1B end-state reads "Stopped — logged out" rather than a bare
+   * See {@link InterruptReason} — the marker refines the Z1B end-state so it
+   * names the app-level flow that stopped the turn rather than reading a bare
    * "Interrupted". Absent for a normal interrupt and for every non-
    * interrupted turn. Live-only: the replay path never revives it (the
    * marker is not persisted to JSONL).
    */
-  interruptReason?: "logout";
+  interruptReason?: InterruptReason;
   endedAt: number;
 
   /**

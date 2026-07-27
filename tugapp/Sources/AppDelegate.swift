@@ -740,19 +740,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         self.checkForUpdatesMenuItem = checkForUpdatesItem
         appMenu.addItem(checkForUpdatesItem)
         appMenu.addItem(NSMenuItem.separator())
+        // Set Up Tug… — reopens the setup wizard on an app that is already set up,
+        // so install / log-in / on-device-AI stay reachable instead of being a
+        // first-launch-only surface. Sends the app-level `setup` control frame;
+        // tugdeck's TugSetupRequest stops any in-flight turns (with a confirm)
+        // before the app-modal wizard opens. Ordered above Log Out because it
+        // is the everyday one of the three.
+        let setupItem = NSMenuItem(title: "Set Up Tug...", action: #selector(showSetup(_:)), keyEquivalent: "")
+        setupItem.identifier = NSUserInterfaceItemIdentifier("app.setup")
+        appMenu.addItem(setupItem)
+        // Log Out… — app-level account action. Sends the app-level `logout`
+        // control frame (not a per-card command), so it works even with no card
+        // open; tugdeck's TugLogout runs the confirm → logout flow. Enabled
+        // always (validateMenuItem default); a no-op when already logged out
+        // (TugLogout guards on the auth state).
+        let logoutItem = NSMenuItem(title: "Log Out...", action: #selector(logOut(_:)), keyEquivalent: "")
+        logoutItem.identifier = NSUserInterfaceItemIdentifier("app.logout")
+        appMenu.addItem(logoutItem)
         let settingsItem = NSMenuItem(title: "Settings...", action: #selector(showSettings(_:)), keyEquivalent: ",")
         settingsItem.isEnabled = false
         settingsItem.identifier = NSUserInterfaceItemIdentifier("app.settings")
         self.settingsMenuItem = settingsItem
         appMenu.addItem(settingsItem)
-        // Log Out… — app-level account action, right below Settings. Sends the
-        // app-level `logout` control frame (not a per-card command), so it works
-        // even with no card open; tugdeck's TugLogout runs the confirm → logout
-        // flow. Enabled always (validateMenuItem default); a no-op when already
-        // logged out (TugLogout guards on the auth state).
-        let logoutItem = NSMenuItem(title: "Log Out...", action: #selector(logOut(_:)), keyEquivalent: "")
-        logoutItem.identifier = NSUserInterfaceItemIdentifier("app.logout")
-        appMenu.addItem(logoutItem)
         appMenu.addItem(NSMenuItem.separator())
 
         // Services submenu
@@ -1128,6 +1137,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func showSettings(_ sender: Any?) {
         sendControl("show-card", params: ["component": "settings"])
+    }
+
+    @objc func showSetup(_ sender: Any?) {
+        sendControl("setup")
     }
 
     @objc func logOut(_ sender: Any?) {

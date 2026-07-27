@@ -44,6 +44,8 @@ const MOD = {
 const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> = [
   // Tug (app) menu
   { id: "app.about" },
+  { id: "app.setup", key: "" },
+  { id: "app.logout", key: "" },
   { id: "app.settings", key: ",", mods: MOD.command },
   // File
   { id: "file.newSessionCard", key: "n", mods: MOD.command },

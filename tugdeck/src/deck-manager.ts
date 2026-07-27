@@ -51,6 +51,7 @@ import { flushSync } from "react-dom";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { TugSetup } from "./components/tugways/tug-setup";
 import { TugLogout } from "./components/tugways/tug-logout";
+import { TugSetupRequest } from "./components/tugways/tug-setup-request";
 import { TugVersionGate } from "./components/tugways/tug-version-gate";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { TugBannerProvider } from "./components/chrome/tug-banner-bridge";
@@ -801,6 +802,11 @@ export class DeckManager implements IDeckManagerStore {
           // "couldn't log out" alert on failure). Sibling of TugSetup so it
           // shares the TugAlert singleton and the deck context.
           React.createElement(TugLogout, {}),
+          // Gate in front of the Tug-menu "Set Up Tug…" item (renders nothing).
+          // Watches the setup-request nonce; opens the wizard outright when
+          // nothing is running, otherwise confirms → interrupts every turn
+          // first, so the app-modal never lands on top of live work.
+          React.createElement(TugSetupRequest, {}),
         ),
       ),
     );

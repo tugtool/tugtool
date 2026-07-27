@@ -16,7 +16,7 @@
  * `useMemo` / render bodies.
  */
 
-import type { LiveMessageUsage, TurnEndReason } from "./types";
+import type { InterruptReason, LiveMessageUsage, TurnEndReason } from "./types";
 
 /**
  * The roles a terminal-state badge can take. Subset of
@@ -48,6 +48,7 @@ export interface EndStateBadge {
  * | `complete`        | —               | "OK"                 | inherit  |
  * | `interrupted`     | (none)          | "Interrupted"        | caution  |
  * | `interrupted`     | `logout`        | "Stopped — logged out" | caution  |
+ * | `interrupted`     | `setup`         | "Stopped — setup"    | caution  |
  * | `error`           | —               | "Error"              | danger   |
  * | `transport_lost`  | —               | "Lost"               | caution  |
  *
@@ -61,23 +62,28 @@ export interface EndStateBadge {
  * also `caution` because the user initiated the stop; it isn't a
  * system error.
  *
- * `interruptReason` refines the `interrupted` label: a turn stopped by
- * the app-level logout flow (`"logout"`) reads "Stopped — logged out"
- * instead of a bare "Interrupted", keeping the same `caution` tone. It
+ * `interruptReason` refines the `interrupted` label: a turn stopped by an
+ * app-level flow reads "Stopped — logged out" / "Stopped — setup" instead
+ * of a bare "Interrupted", keeping the same `caution` tone. It
  * is the one helper both the Z1B footer and the telemetry popover call,
  * so both surfaces stay in sync ([D19]).
  */
 export function endStateBadgeFor(
   reason: TurnEndReason,
-  interruptReason?: "logout",
+  interruptReason?: InterruptReason,
 ): EndStateBadge {
   switch (reason) {
     case "complete":
       return { text: "OK", role: "inherit" };
     case "interrupted":
-      return interruptReason === "logout"
-        ? { text: "Stopped — logged out", role: "caution" }
-        : { text: "Interrupted", role: "caution" };
+      switch (interruptReason) {
+        case "logout":
+          return { text: "Stopped — logged out", role: "caution" };
+        case "setup":
+          return { text: "Stopped — setup", role: "caution" };
+        default:
+          return { text: "Interrupted", role: "caution" };
+      }
     case "error":
       return { text: "Error", role: "danger" };
     case "transport_lost":

@@ -91,6 +91,7 @@ import type {
   ContextBreakdownSnapshot,
   ControlRequestForward,
   CostSnapshot,
+  InterruptReason,
   LastReplayResult,
   ReplayWindowMeta,
   LiveMessageUsage,
@@ -738,15 +739,15 @@ export interface CodeSessionState {
   interruptInFlight: boolean;
   /**
    * Why the in-flight CASE B interrupt fired, when it wasn't a plain
-   * user Stop. `"logout"` is stashed by `handleInterrupt` when the
-   * app-level logout flow stops turns, and read by `buildTurnEntry` so
-   * the committed turn's end-state reads "Stopped — logged out";
+   * user Stop. Stashed by `handleInterrupt` when an app-level flow stops
+   * turns, and read by `buildTurnEntry` so the committed turn's end-state
+   * names that flow (see {@link InterruptReason});
    * `handleTurnComplete` clears it alongside {@link interruptInFlight}.
    * `null` for an ordinary user-initiated stop. The interrupted
    * `TurnEntry` is committed at `turn_complete`, not at interrupt, so
    * the reason must bridge across the round-trip on state.
    */
-  pendingInterruptReason: "logout" | null;
+  pendingInterruptReason: InterruptReason | null;
   /**
    * Wall-clock ms when `handleInterrupt` opened the current
    * CASE B interrupt round-trip; `null` while no interrupt is in
@@ -1098,7 +1099,7 @@ function withoutPendingTurnScratch(
 
 function handleInterrupt(
   state: CodeSessionState,
-  reason?: "logout",
+  reason?: InterruptReason,
 ): { state: CodeSessionState; effects: Effect[] } {
   // Idle / errored: no in-flight turn to interrupt. Drop silently so
   // accidental calls from stale UI state don't spam the server with
@@ -2731,9 +2732,10 @@ function buildTurnEntry(
       : {}),
     messages,
     result: effectiveReason === "complete" ? "success" : "interrupted",
-    // Logout sidecar: a turn stopped by the app-level logout flow carries
-    // `interruptReason: "logout"` so its end-state reads "Stopped — logged
-    // out". Only on a live interrupt (the replay path leaves
+    // App-flow sidecar: a turn stopped by logout or by the setup wizard
+    // carries the flow's `interruptReason` so its end-state names it rather
+    // than reading a bare "Interrupted". Only on a live interrupt (the replay
+    // path leaves
     // `pendingInterruptReason` null, so JSONL never revives the marker).
     ...(effectiveReason === "interrupted" && state.pendingInterruptReason !== null
       ? { interruptReason: state.pendingInterruptReason }

@@ -13,7 +13,7 @@
 import type { AtomSegment } from "../tug-atom-img";
 import type { ContentBlock } from "../../protocol";
 import type { PermissionMode } from "@tugproto/inbound";
-import type { ControlRequestForward } from "./types";
+import type { ControlRequestForward, InterruptReason } from "./types";
 
 /** Internal `send` action injected by `CodeSessionStore.send`. */
 /**
@@ -340,15 +340,14 @@ export interface RespondQuestionActionEvent {
  * event — never decoded from a frame. The reducer emits an `interrupt`
  * SendFrame effect and clears `queuedSends` per [D05].
  *
- * `reason` marks WHY the interrupt fired when it isn't a plain user Stop.
- * `"logout"` is set when the app-level logout flow stops turns before
- * running `claude auth logout`; the reducer stashes it (CASE B) so the
- * committed turn's end-state can read "Stopped — logged out" rather than a
- * bare "Interrupted". Absent for an ordinary user-initiated stop.
+ * `reason` marks WHY the interrupt fired when it isn't a plain user Stop —
+ * see {@link InterruptReason}. The reducer stashes it (CASE B) so the
+ * committed turn's end-state can name the flow that stopped it rather than
+ * reading a bare "Interrupted". Absent for an ordinary user-initiated stop.
  */
 export interface InterruptActionEvent {
   type: "interrupt_action";
-  reason?: "logout";
+  reason?: InterruptReason;
 }
 
 /**

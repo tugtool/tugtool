@@ -56,6 +56,7 @@ import { sessionNameStore } from "./lib/session-name-store";
 import { sessionTagStore } from "./lib/session-tag-store";
 import { applyAuthResultPayload, applyInstallResultPayload, applyLogoutResultPayload } from "./lib/auth-store";
 import { requestLogout } from "./lib/logout-store";
+import { requestSetup } from "./lib/setup-request-store";
 import { sessionSpawnErrorStore } from "./lib/session-spawn-error-store";
 import { notifySpawnRejected } from "./lib/session-restore";
 import { appInfoStore } from "./lib/app-info-store";
@@ -336,6 +337,13 @@ export function initActionDispatch(
   // Bumps the logout-request nonce; TugLogout runs the confirm → logout flow.
   registerAction("logout", () => {
     requestLogout();
+  });
+
+  // setup: app-level "Set Up Tug…" trigger from the Tug menu. Bumps the
+  // setup-request nonce; TugSetupRequest stops any live turns and then opens
+  // the wizard on demand.
+  registerAction("setup", () => {
+    requestSetup();
   });
 
   // reload: Reload page with dedup guard.

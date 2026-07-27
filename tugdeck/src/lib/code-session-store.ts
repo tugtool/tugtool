@@ -80,6 +80,7 @@ import { publishLocalSessionStateChange } from "./session-state-changes-local-ev
 import type {
   CardSessionMode,
   CodeSessionSnapshot,
+  InterruptReason,
   LiveMessageUsage,
   TurnEntry,
   SystemNote,
@@ -1102,7 +1103,7 @@ export class CodeSessionStore {
    *     wire's `turn_complete(error)` commits a `TurnEntry` carrying
    *     whatever scratch has accumulated with `result: "interrupted"`.
    */
-  interrupt(reason?: "logout"): void {
+  interrupt(reason?: InterruptReason): void {
     if (this._disposed) return;
     this.dispatch({ type: "interrupt_action", reason });
   }

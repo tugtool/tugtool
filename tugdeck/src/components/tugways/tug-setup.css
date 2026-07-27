@@ -108,3 +108,10 @@
   display: block;
   color: var(--tug7-element-tone-text-normal-success-rest);
 }
+
+/* The Done row, only on a wizard the user opened themselves. The step list
+ * ends flush against the panel padding, so the actions row carries the gap —
+ * the same header rhythm the title uses above the list. */
+.tug-setup .tug-alert-actions {
+  margin-top: var(--tugx-header-margin);
+}
