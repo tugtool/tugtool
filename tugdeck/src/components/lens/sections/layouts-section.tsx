@@ -164,7 +164,7 @@ function LayoutsSectionBody({
         <div className="layouts-section-axis">
           <TugLabel
             id={SIDE_CAPTION_ID}
-            size="3xs"
+            size="md"
             emphasis="proposal"
             className="layouts-section-caption"
           >
@@ -200,7 +200,7 @@ function LayoutsSectionBody({
         <div className="layouts-section-axis">
           <TugLabel
             id={KIND_CAPTION_ID}
-            size="3xs"
+            size="md"
             emphasis="proposal"
             className="layouts-section-caption"
           >

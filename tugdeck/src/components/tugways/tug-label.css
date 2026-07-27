@@ -50,6 +50,16 @@
   letter-spacing: 0.01em;
   color: var(--tug7-element-field-text-normal-label-rest);
   cursor: default;
+  /* The `size` prop and an emphasis's own scaling MULTIPLY, and they have to
+     go through two properties to do it. Both used to declare `font-size` on
+     this one element, so the later rule simply won and the earlier one was
+     dead — which made `size` a no-op under any emphasis that scales (see
+     `proposal`). Size sets the term, emphasis sets the factor, and the product
+     is resolved here, once. The `1em` fallback is the no-size-class case:
+     inherit, exactly as before there was a size at all. */
+  font-size: calc(
+    var(--tugx-label-font-size, 1em) * var(--tugx-label-font-scale, 1)
+  );
 }
 
 /* When associated with a form control, use pointer cursor */
@@ -61,25 +71,25 @@
    Size Variants
    ========================================================================= */
 
-.tug-label-size-8xs { font-size: var(--tug-font-size-8xs); }
-.tug-label-size-7xs { font-size: var(--tug-font-size-7xs); }
-.tug-label-size-6xs { font-size: var(--tug-font-size-6xs); }
-.tug-label-size-5xs { font-size: var(--tug-font-size-5xs); }
-.tug-label-size-4xs { font-size: var(--tug-font-size-4xs); }
-.tug-label-size-3xs { font-size: var(--tug-font-size-3xs); }
-.tug-label-size-2xs { font-size: var(--tug-font-size-2xs); }
-.tug-label-size-xs  { font-size: var(--tug-font-size-xs); }
-.tug-label-size-sm  { font-size: var(--tug-font-size-sm); }
-.tug-label-size-md  { font-size: var(--tug-font-size-md); }
-.tug-label-size-lg  { font-size: var(--tug-font-size-lg); }
-.tug-label-size-xl  { font-size: var(--tug-font-size-xl); }
-.tug-label-size-2xl { font-size: var(--tug-font-size-2xl); }
-.tug-label-size-3xl { font-size: var(--tug-font-size-3xl); }
-.tug-label-size-4xl { font-size: var(--tug-font-size-4xl); }
-.tug-label-size-5xl { font-size: var(--tug-font-size-5xl); }
-.tug-label-size-6xl { font-size: var(--tug-font-size-6xl); }
-.tug-label-size-7xl { font-size: var(--tug-font-size-7xl); }
-.tug-label-size-8xl { font-size: var(--tug-font-size-8xl); }
+.tug-label-size-8xs { --tugx-label-font-size: var(--tug-font-size-8xs); }
+.tug-label-size-7xs { --tugx-label-font-size: var(--tug-font-size-7xs); }
+.tug-label-size-6xs { --tugx-label-font-size: var(--tug-font-size-6xs); }
+.tug-label-size-5xs { --tugx-label-font-size: var(--tug-font-size-5xs); }
+.tug-label-size-4xs { --tugx-label-font-size: var(--tug-font-size-4xs); }
+.tug-label-size-3xs { --tugx-label-font-size: var(--tug-font-size-3xs); }
+.tug-label-size-2xs { --tugx-label-font-size: var(--tug-font-size-2xs); }
+.tug-label-size-xs  { --tugx-label-font-size: var(--tug-font-size-xs); }
+.tug-label-size-sm  { --tugx-label-font-size: var(--tug-font-size-sm); }
+.tug-label-size-md  { --tugx-label-font-size: var(--tug-font-size-md); }
+.tug-label-size-lg  { --tugx-label-font-size: var(--tug-font-size-lg); }
+.tug-label-size-xl  { --tugx-label-font-size: var(--tug-font-size-xl); }
+.tug-label-size-2xl { --tugx-label-font-size: var(--tug-font-size-2xl); }
+.tug-label-size-3xl { --tugx-label-font-size: var(--tug-font-size-3xl); }
+.tug-label-size-4xl { --tugx-label-font-size: var(--tug-font-size-4xl); }
+.tug-label-size-5xl { --tugx-label-font-size: var(--tug-font-size-5xl); }
+.tug-label-size-6xl { --tugx-label-font-size: var(--tug-font-size-6xl); }
+.tug-label-size-7xl { --tugx-label-font-size: var(--tug-font-size-7xl); }
+.tug-label-size-8xl { --tugx-label-font-size: var(--tug-font-size-8xl); }
 
 /* ============================================================================
    Role tones — `--tug7-element-tone-text-normal-<suffix>-rest`. The
@@ -133,11 +143,13 @@
 }
 
 /* `proposal`: a muted small-caps caption. True small caps (via
-   `font-variant-caps`) render at roughly x-height, so a small bump in
-   `font-size` (relative `em`, so it still composes with the `size` prop)
-   lands the caps at a comfortable caption height — smaller than `shout`'s
-   full uppercase, but not as tiny as raw x-height small caps. Painted at
-   the `calm` muted color. For descriptive captions beside an action.
+   `font-variant-caps`) render at roughly x-height, so a small bump lands the
+   caps at a comfortable caption height — smaller than `shout`'s full
+   uppercase, but not as tiny as raw x-height small caps. The bump is a
+   FACTOR (`--tugx-label-font-scale`), multiplied against whatever the `size`
+   prop asked for; declaring a `font-size` here instead would silently beat the
+   size class and make `size` a no-op under this emphasis. Painted at the
+   `calm` muted color. For descriptive captions beside an action.
 
    `font-synthesis: small-caps` re-enables the browser-synthesized small
    caps here: the global `body { font-synthesis: none }` (which stops fake
@@ -150,7 +162,7 @@
   font-weight: var(--tug-font-weight-semibold);
   font-synthesis: small-caps;
   font-variant-caps: all-small-caps;
-  font-size: 1.05em;
+  --tugx-label-font-scale: 1.05;
   letter-spacing: 0.06em;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
