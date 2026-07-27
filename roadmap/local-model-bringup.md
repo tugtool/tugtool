@@ -1,8 +1,8 @@
 <!-- devise-skeleton v4 -->
 
-## Local-Model Bring-Up — On-Device Ternary Bonsai for Shell Routing and Pulse Overviews {#local-model-bringup}
+## Local-Model Bring-Up — Apple Foundation Models for Shell Routing and Pulse Overviews {#local-model-bringup}
 
-**Purpose:** Ship an opt-in on-device model (Ternary-Bonsai-8B, 2-bit, on stock MLX via `mlx-swift` in Tug.app) that powers two features for users who opt in during TugSetup: model-assisted shell/prompt disambiguation in the Session card's prompt entry, and a new high-level "overview" line in the Pulse strip. Users who opt out get neither feature and lose nothing that exists today.
+**Purpose:** Power two features with Apple's on-device Foundation Models framework (macOS 26+): model-assisted shell/prompt disambiguation in the Session card's prompt entry, and a high-level "overview" line in the Pulse strip. Zero model acquisition — the OS ships and maintains the model; on machines below macOS 26 or without Apple Intelligence, both surfaces behave exactly as today.
 
 ---
 
@@ -11,8 +11,8 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
-| Target branch | dash worktree (mlx-swift work explicitly dash-first; release the dash if the SPM dependency proves unacceptable) |
+| Status | draft — **deferred until Golden Gate adoption** (see #timing) |
+| Target branch | dash worktree |
 | Last updated | 2026-07-26 |
 
 ---
@@ -21,123 +21,123 @@
 
 #### Context {#context}
 
-The Bonsai evaluation (`roadmap/local-model-investigations.md`, the durable record; harness at `~/bonsai-eval/`) established that a small local model is excellent at short-context bounded work and poor at long-context comprehension. Scribe therefore stays on Sonnet, but two jobs fit: **shell-line classification** (the 1-bit 8B scored 26/26 on real typed lines at ~198 ms) and a **Pulse "part one" overview headline** (accurate synthesized session summaries in <1.5 s from a compact digest). The heuristic shell classifier already on main is parked off (`AUTO_SHELL_DETECTION_ENABLED = false` in `tugdeck/src/lib/shell-line-classifier.ts`) precisely because a first-word/PATH heuristic misfires on prose openers that are also executables (`write …`, `apply …`) — the code comment says detection stays off "until a model classifier can judge intent." This plan is that model classifier.
+The Bonsai evaluation (`roadmap/local-model-investigations.md`) established the through-line: small local models excel at short-context bounded work (classification, digest→headline) and fail at long-context comprehension (scribe stays Sonnet, untouchable). Two features fit the strength zone: **shell-line disambiguation** — the heuristic classifier on main is parked off (`AUTO_SHELL_DETECTION_ENABLED = false` in `tugdeck/src/lib/shell-line-classifier.ts`) explicitly "until a model classifier can judge intent" — and a **Pulse part-one overview** line above the existing verbatim beat.
 
-The eval's 26/26 and pulse results belong to the **1-bit** Bonsai-8B, whose kernels live only in the PrismML MLX fork (upstream tracking: `ml-explore/mlx#3161`). The shipping choice is the **ternary 2-bit 8B on stock MLX**, which dodges the fork entirely — but ternary has only ever been measured on scribe (where it was weak-but-format-clean). The whole plan is therefore gated on a front-loaded spike ([P01]): re-validate this specific model on these two specific tasks, and prove `mlx-swift` can actually run the pack. If the spike fails its bar, we stop before any integration legwork.
+An earlier revision of this plan brought those features up on a third-party model (Ternary-Bonsai-8B via mlx-swift). That approach was **rejected on cost**: ~80% of it was acquisition infrastructure — a 2 GB resumable download, a TugSetup step, tugapp's first SPM dependency, a 2–3 GB resident service with lifecycle management, model-upgrade plumbing — carrying two marginal features. Cloud (Haiku) was also rejected: too slow for the ~250 ms classify budget, and continuous pulse-cadence calls burn the user's Claude-subscription quota on ambience.
+
+**Apple's Foundation Models framework deletes the entire acquisition problem.** Since macOS 26, `import FoundationModels` exposes the system's on-device ~3B language model behind a Swift API: no download, no weights to host or verify, no SPM dependency (it's a system framework), no resident RAM Tug owns, no upgrade treadmill — and it is private and offline by construction, with **guided generation** (`@Generable` types with constrained decoding) that makes malformed classify output structurally impossible. Both tasks sit squarely in a 3B's strength zone per the eval's own conclusion; whether *this* 3B clears the quality bars is the plan's front-loaded spike, with a STOP rule.
+
+#### Timing — why this plan is parked {#timing}
+
+Adopting FoundationModels ties these two features (not Tug generally — the deployment target stays 13.0) to **macOS 26+**. The owner skipped the Tahoe (26) release deliberately and intends to evaluate **Golden Gate** (the successor release) before moving. This plan is written to be implementable *then*, with today's facts baked in:
+
+- The build machine already runs **Xcode 26.3 on Sequoia 15.6** — the macOS 26 SDK and `FoundationModels` headers are compilable *now*. All code in this plan is written under `#if canImport(FoundationModels)` + `@available(macOS 26.0, *)` guards, so it builds with the current toolchain and is inert at runtime below 26.
+- The **spike (Step 1) requires real macOS 26+ hardware with Apple Intelligence enabled**. Apple Intelligence does not function inside virtual machines — the Tart VM lab (`/Volumes/Lab-A`) **cannot** run it. Until a physical machine runs 26+, Step 1 cannot execute, and Step 1 gates everything.
+- Nothing else in the plan decays while parked: every cited file/symbol is on main today; re-verify anchors against the tree before implementing (standard practice for a shelved plan).
 
 #### Strategy {#strategy}
 
-- **Spike first, everything else second.** Steps 1–2 validate the exact shipping model on the exact two tasks and prove the exact runtime, with explicit STOP criteria ([P01]). Both tasks must come out *fast, solid, reliable, and a real improvement* or the plan halts.
-- **Never bundle the weights.** ~2 GB downloads post-install, opt-in, from HuggingFace at a pinned revision with per-file sha256 ([P03], [P04]). No Tug CDN yet — that is a follow-on.
-- **The downloader must be boringly robust.** Resumable, checksummed, cancellable, atomic, and self-healing across relaunches — TugSetup must never strand a half-downloaded user ([P04], Risk R03).
-- **One opt-in flag drives everything.** `dev.tugtool.local-model/enabled` (default OFF) is the single source of user intent; disk presence is probed, never trusted from a flag ([P05]). Every consumer degrades gracefully when the flag is off or the model is absent ([P11]).
-- **Inference lives in the Swift host** (`mlx-swift`, runtime option A from the investigation doc), reached over the two IPC channels that already exist: the WKWebView script-message bridge for deck-originated classify calls ([P07]) and the UDS control socket for tugcast-originated summarize calls ([P08]).
-- **The Session card never blocks on inference.** The heuristic stays the fast path for shell routing; the model is consulted asynchronously only for the ambiguous middle band ([P09], Spec S06).
-- **PulseVoice (part two) is untouched.** The overview line is a new tugcast-side component emitting a new `kind: "overview"` pulse frame; the tugpulse daemon and its wire tap are not modified ([P10]).
-- **mlx-swift lands on a dash.** It is tugapp's first SPM dependency ever (the pbxproj has zero `XCRemoteSwiftPackageReference` entries today); if it proves truly awful, release the dash and reconsider.
+- **Spike first, with a STOP rule.** Step 1 runs the eval's 26-line classify corpus and six pulse-digest fixtures against the system model on real 26+ hardware. Below bar ⇒ halt; the features stay parked and the Bonsai record remains the fallback reference.
+- **Availability is the gate; flags are kill switches.** `SystemLanguageModel.default.availability` (Swift-side) is the single truth for "can we infer"; per-feature tugbank flags default ON because there is no acquisition cost and the OS-level Apple Intelligence switch is the real consent surface ([P04] — default flagged for owner review, [Q05]).
+- **No TugSetup involvement, no downloads, no control-frame vocabulary for acquisition.** The deck learns availability by asking the host over the existing WKWebView bridge; tugcast learns it by asking and being refused (back-off). `actions.rs::dispatch_action` is untouched.
+- **The Session card never blocks on inference.** Heuristic bands route the certain cases instantly; the model decides only the ambiguous middle, pre-consulted on a typing debounce with a hard 250 ms submit budget ([P08], Spec S05).
+- **PulseVoice (part two) is untouched.** The overview is a new tugcast emitter broadcasting `kind:"overview"` pulse frames; the tugpulse daemon and its wire tap are not modified ([P09]).
+- **Strict enhancement.** macOS < 26, Apple Intelligence off, model not ready, flag off, headless tugcast, browser deck, app-tests — in every such state both surfaces are byte-identical to today's main ([P10]).
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- Spike: ternary-2bit-8B scores ≥ 25/26 on the classify corpus and produces accurate, preamble-free headlines on all six pulse digest fixtures, each classify ≤ 400 ms and each summarize ≤ 3 s on the dev machine (measured by the `~/bonsai-eval/` harness, Step 1).
-- Spike: the same pack loads and generates under `mlx-swift`/MLXLLM with classify ≤ 500 ms warm and RAM ≤ 3 GB resident (measured by the scratch runner, Step 2).
-- A fresh instance with `enabled=true` and no model directory downloads, verifies, and finalizes the pack; killing tugcast mid-download and relaunching resumes and completes without re-downloading finished files (verified by Rust integration test against a local HTTP server + manual kill test).
-- TugSetup shows the optional step on first run; Skip leaves the flag off and every existing behavior identical; opting in shows determinate progress and lands on "done" (manual verification in the debug app; `bunx vite build` green).
-- With the model installed and enabled: typing `make the button bigger` routes to Claude, `make test` routes to shell, submit latency for unambiguous lines is unchanged (heuristic path — no model call issued, assertable in unit tests of the band logic).
-- With the model installed and enabled: an active session's Pulse strip shows a stable overview line above the live beat line within ~30 s of turn activity; with the flag off or model absent, the strip renders exactly as today (app-test assertable for the absent case; manual for the live case).
-- `cd tugrust && cargo nextest run` green, `just test-ts` green, `bunx vite build` green, `just app-test-changed` green at every step boundary.
+- Spike: ≥ 25/26 on the classify corpus with guided-generation output, each call ≤ 400 ms warm; all six pulse digests produce accurate, preamble-free headlines ≤ 3 s each; no framework throttling observed at the planned cadences (Step 1 harness, real hardware).
+- With the model available and flags on: typing `make the button bigger` routes to Claude, `make test` routes to shell; unambiguous lines never issue a model call (assertable in unit tests of the band logic).
+- With the model available: an active session's Pulse strip shows a stable overview line above the live beat within ~30 s of turn activity.
+- On this Sequoia machine (model structurally unavailable): both surfaces render and behave exactly as current main — pinned by the Step 8 app-test.
+- `cd tugrust && cargo nextest run`, `just test-ts`, `cd tugdeck && bunx vite build`, `just app-debug`, `just app-test-changed` green at every step boundary.
 
 #### Scope {#scope}
 
-1. Spike: re-validate ternary-2bit-8B on classify + pulse-headline tasks; prove `mlx-swift` runs the pack; capture the pinned HF manifest.
-2. tugcast: model store (paths, manifest, verify, presence probe) + robust downloader (control actions, progress frames, resume, cancel, startup auto-resume).
-3. tugdeck: local-model store + TugSetup opt-in step with determinate download progress.
-4. Tug.app: `mlx-swift`/MLXLLM SPM dependency + `LocalModelService` (lazy load, warm-while-active, idle unload) + both IPC endpoints.
-5. tugdeck: shell disambiguation — heuristic bands + async model tiebreak, un-parking the feature for opted-in users.
-6. tugcast + tugdeck: Pulse part-one overview (digest builder, cadence, summarize round-trip, `kind:"overview"` frame, two-line strip).
+1. Spike: system-model quality + latency + throttling on the two tasks (real 26+ hardware).
+2. Tug.app: `LocalModelService` on FoundationModels (availability, guided classify, summarize) + the `localModel` WKWebView bridge endpoint.
+3. tugdeck: local-model store (flags + availability) + bridge client.
+4. tugdeck: shell disambiguation — heuristic bands + async model tiebreak, un-parking the feature.
+5. tugcast + Tug.app: summarize round-trip over the control socket.
+6. tugcast + tugdeck: Pulse part-one overview (digest, cadence, `kind:"overview"` frame, two-line strip).
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
-- Scribe changes of any kind — commit drafting stays on Sonnet, and no code path may silently route it locally (Risk R05).
-- The 1-bit model, the PrismML MLX fork, the 27B, llama.cpp, or any Python runtime in the product.
-- A Tug CDN for weights (HuggingFace pinned-revision is the v1 source; CDN is a follow-on).
-- A general settings surface for the opt-in toggle (deferred, [Q04]) — v1 re-entry for already-set-up users is the tugbank flag itself ([P05]).
-- Ledger persistence for overview lines (deferred, [Q05]) — v1 overviews are broadcast-only and re-emitted on cadence.
-- The larger Pulse redesign (multi-session Lens awareness etc.) — this plan lands only the part-one overview line that redesign will build on.
-- SC/TC CJK, IndexedDB, or any other adjacent deck infra.
+- Scribe changes of any kind — commit drafting stays on Sonnet; no code path may silently route it locally.
+- Third-party models, model downloads, mlx-swift, llama.cpp, Python — the entire acquisition problem is out.
+- Raising Tug's deployment target (stays 13.0) or requiring macOS 26 for anything outside these two features.
+- TugSetup changes of any kind.
+- A settings surface for the flags ([Q03] deferred — the `tugbank` CLI / defaults PUT is the v1 writer).
+- Ledger persistence for overview lines ([Q04] deferred).
+- The larger Pulse/Lens multi-session redesign — this plan lands only the overview line it will build on.
+- Apple's server-tier Private Cloud Compute model — on-device only.
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- `~/bonsai-eval/` harness intact (Python `.venv` with the PrismML fork for reference runs; `classify_8b.py`, `pulse_8b.py`, `eval_mlx.py`; `Ternary-Bonsai-8B-mlx-2bit` pack under `Bonsai-demo/models/`). Note: the *stock-MLX* re-validation in Step 1 must run the ternary pack on **stock** `mlx-lm`, not the fork — the ternary pack was chosen precisely because it needs no fork.
-- Network access to `huggingface.co` for the pinned-revision download.
-- Xcode toolchain able to resolve SPM packages (`ml-explore/mlx-swift`, `ml-explore/mlx-swift-examples`).
-- A dash worktree for the tugapp/SPM steps (user creates the dash; this plan never creates one on its own).
+- **Hard:** a physical Mac on macOS 26+ (Golden Gate) with Apple Intelligence enabled, for the spike and all live verification. Not satisfiable in the Tart VM lab (Apple Intelligence is unavailable in VMs).
+- Xcode with the macOS 26+ SDK — **already satisfied** (Xcode 26.3 on the build machine).
+- A dash worktree (user-created) for implementation.
 
 #### Constraints {#constraints}
 
 - **WARNINGS ARE ERRORS** across the Rust workspace (`tugrust/.cargo/config.toml`).
-- No >1 GB blob in the install package — weights are download-only (product decision, restated from the investigation doc).
-- No localStorage/sessionStorage/IndexedDB — persistent deck state goes through tugbank `/api/defaults/<domain>/<key>`.
-- Deck work obeys tuglaws ([L01], [L02], [L03], [L06]); the State Zone Mapping below is normative.
-- App-tests run selectively (`just app-test-changed`); every new test carries `@covers`.
-- bun, never npm; tugdeck HMR is live; `bunx vite build` before declaring any tugdeck change done.
-- Only the user commits on main; implementation happens on a dash via `tugutil dash commit`.
+- All FoundationModels code behind `#if canImport(FoundationModels)` + `@available(macOS 26.0, *)`; the app must keep building and running on macOS 13–15 unchanged.
+- The on-device model's context window is small (~4 K tokens) — the overview digest budget must respect it (Spec S04 caps well under).
+- No localStorage/sessionStorage/IndexedDB; persistent deck state via tugbank `/api/defaults/<domain>/<key>`.
+- Deck work obeys tuglaws ([L01], [L02], [L06], [L07], [L24]); the State Zone Mapping below is normative.
+- App-tests selective (`just app-test-changed`); every new test carries `@covers`. bun, never npm; `bunx vite build` before declaring tugdeck work done.
+- Only the user commits on main; implementation commits on the dash via `tugutil dash commit`.
 
 #### Assumptions {#assumptions}
 
-- The Ternary-Bonsai-8B 2-bit pack is redistributable (Bonsai is Apache-2.0) and remains available on HuggingFace at a pinnable revision.
-- The pack's architecture is loadable by MLXLLM's model factory (llama-family config) — verified, not assumed, by Step 2; if it needs a small custom model definition in Swift, Step 2 sizes that work before the gate decision.
-- ~2 GB disk and ~2–3 GB transient RAM while warm are acceptable costs for an opt-in feature.
-- The `session_capabilities`/CONTROL plumbing and tugbank DEFAULTS-frame subscriptions behave as they do today (no protocol rework needed).
+- FoundationModels needs no special entitlement and works from a signed GUI app (verify in spike; the framework is public API).
+- Guided generation with a two-case `@Generable` enum yields deterministic SHELL/PROMPT labels at temperature 0 (constrained decoding guarantees well-formedness; the spike measures accuracy).
+- Foreground app usage at our cadences (a few classify calls while typing; ≤ 4 summaries/min across sessions) stays under any framework rate limiting — the spike observes this explicitly ([Q02]).
+- The control socket, CONTROL plumbing, and tugbank DEFAULTS subscriptions behave as they do on main today.
 
 ---
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Does ternary-2bit-8B hold the 1-bit's quality on the two shipping tasks? (OPEN) {#q01-ternary-quality}
+#### [Q01] Does the system model clear the quality bars on the two tasks? (OPEN) {#q01-system-model-quality}
 
-**Question:** The 26/26 classify and the six good pulse headlines were measured on the fork-only 1-bit model. Does the ternary 2-bit pack — on stock MLX — match them within the Success Criteria bars?
+**Question:** The eval's 26/26 classify and clean headlines were measured on Bonsai-8B variants; the Apple on-device model (~3B, quantized) has never run these tasks.
 
-**Why it matters:** If ternary underperforms, the runtime decision reopens (fork vs wait for `mlx#3161`) and the whole plan halts per the user's gate: if the two features aren't fast, solid, reliable, and a true improvement, the bring-up legwork isn't worth doing.
+**Why it matters:** Below bar ⇒ the features stay parked; there is no cheaper engine left (Bonsai rejected on infrastructure cost, Haiku on latency/quota).
 
-**Plan to resolve:** Step 1 (Spike A) runs `classify_8b.py` and `pulse_8b.py` against the ternary pack on stock `mlx-lm`, records scores and latencies into this document.
+**Plan to resolve:** Step 1 spike on real hardware; guided generation for classify; the frozen prompts from `~/bonsai-eval/classify_8b.py` / `pulse_8b.py` adapted to `LanguageModelSession` instructions.
 
-**Resolution:** OPEN — Step 1 is the gate. STOP rule: classify < 25/26 or any headline hallucinated/preambled after one round of prompt tightening → halt and report.
+**Resolution:** OPEN — Step 1 is the gate. STOP rule: classify < 25/26 or hallucinated/preambled headlines after one round of prompt tightening ⇒ halt and report.
 
-#### [Q02] Can mlx-swift/MLXLLM load and run the ternary pack? (OPEN) {#q02-mlx-swift-loads}
+#### [Q02] Framework throttling / rate limits at our cadences (OPEN) {#q02-framework-throttling}
 
-**Question:** Does the stock `mlx-swift` stack (MLXLLM model factory + swift-transformers tokenizer) load the ternary 2-bit safetensors pack from a local directory and generate at acceptable speed, or does the architecture/quant format need custom Swift-side support?
+**Question:** Does FoundationModels throttle sustained foreground use (typing-debounce classify bursts; up to ~4 summarize calls/min across active sessions)?
 
-**Why it matters:** [P02] rests on it. If MLXLLM cannot load the pack, the fallback is writing a model definition in Swift (sized in Step 2) or abandoning option A.
+**Why it matters:** Silent throttling would degrade both features unpredictably; we need the envelope before wiring cadences.
 
-**Plan to resolve:** Step 2 (Spike B) — a scratch SwiftPM executable outside the repo that loads the local pack and runs both task prompts.
+**Plan to resolve:** Step 1 includes a sustained-cadence soak (30 min of mixed classify+summarize at planned rates) and records observed behavior.
 
-**Resolution:** OPEN — Step 2 resolves; findings recorded here.
+**Resolution:** OPEN — resolved by Step 1; cadence constants in Spec S04 adjust to findings.
 
-#### [Q03] Exact HF repo, revision, file manifest, and sha256 set (OPEN) {#q03-model-manifest}
+#### [Q03] Settings surface for the feature flags (DEFERRED) {#q03-settings-reentry}
 
-**Question:** The pack exists locally at `~/bonsai-eval/Bonsai-demo/models/Ternary-Bonsai-8B-mlx-2bit/`; what is its canonical HuggingFace repo id, which git revision do we pin, which files constitute the pack, and what are their sha256 digests?
+**Resolution:** DEFERRED. Flags default ON ([P04]) and the OS's Apple Intelligence switch is the primary consent; a Tug-side toggle rides the future settings/Lens work. V1 writer is the `tugbank` CLI or a PUT to `/api/defaults/dev.tugtool.local-model/<key>`.
 
-**Why it matters:** Spec S01 (the manifest compiled into tugcast) cannot be filled without it; pinning exact bytes is the download-integrity story.
+#### [Q04] Overview lines in the pulse ledger (DEFERRED) {#q04-overview-ledger}
 
-**Plan to resolve:** During Step 2, identify the repo (check the local pack's provenance/README, or PrismML's HF org), pin the revision, `sha256sum` every file, and fill Spec S01 in this document.
+**Resolution:** DEFERRED — v1 overviews are broadcast-only; a freshly connected deck waits ≤ one cadence tick (~30 s of activity) for its first overview. Revisit with the Pulse redesign, which will want overview history anyway.
 
-**Resolution:** OPEN — resolved by Step 2.
+#### [Q05] Default-ON shell routing (OPEN — owner review) {#q05-default-on-shell}
 
-#### [Q04] Post-setup opt-in surface for already-set-up users (DEFERRED) {#q04-settings-reentry}
+**Question:** [P04] defaults `shell-routing` to ON (lighting up wherever Apple Intelligence is available). The Bonsai revision made the whole feature opt-in via TugSetup because opting in meant a 2 GB download; that cost is gone, but auto-routing still changes typing behavior the user didn't explicitly request.
 
-**Question:** TugSetup shows steps only on first run (or while logged out); where does an existing user opt in from the UI?
+**Why it matters:** Wrong default = either a surprising behavior change (ON) or a feature nobody discovers (OFF, with no settings surface yet).
 
-**Why it matters:** Without re-entry, only fresh installs get the feature from the UI.
+**Options:**
+- ON — the visible `→ shell` attribution + one-click "send to Claude instead" make it discoverable and undoable.
+- OFF until a settings surface exists.
 
-**Resolution:** DEFERRED. Per [P05], all consumers key off the tugbank flag and the auto-resume downloader, so opting in today is one CLI write (`tugbank` CLI or a PUT to `/api/defaults/dev.tugtool.local-model/enabled`) and the next tugcast launch (or an immediate `local_model_download` control frame) does the rest. A proper settings surface rides the future settings/Lens work. Revisit when the Pulse/Lens redesign lands.
-
-#### [Q05] Should overview lines persist in the pulse ledger? (DEFERRED) {#q05-overview-ledger}
-
-**Question:** Beat lines are ledgered (`PULSE_LEDGER_CAP` rows, tail-seeded on daemon respawn and served via `list_pulse_lines`); should overview lines persist too?
-
-**Why it matters:** Without persistence, a freshly connected deck has no overview until the next cadence tick (≤ ~30 s of activity).
-
-**Resolution:** DEFERRED — acceptable v1 gap; the cadence re-emit covers it. Revisit with the larger Pulse redesign, which will want overview history anyway.
+**Resolution:** OPEN — decided by the owner at implementation time; the plan is written default-ON and flipping is a one-constant change in Step 4.
 
 ---
 
@@ -145,173 +145,145 @@ The eval's 26/26 and pulse results belong to the **1-bit** Bonsai-8B, whose kern
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Ternary quality below bar (R01) | high | med | Spike gate with STOP rule | Step 1 results |
-| MLXLLM can't load the pack (R02) | high | med | Spike B before any tugapp work; size custom-model fallback | Step 2 results |
-| Download frustration in TugSetup (R03) | high | med | Resume + checksum + atomic finalize + startup auto-resume + honest error/retry UI | any failed-download bug report |
-| First SPM dep destabilizes app build/signing (R04) | med | med | Dash-first; release the dash if awful | Step 8 experience |
-| Local path silently takes over scribe (R05) | high | low | No scribe code touched; service API is task-shaped (`classify`/`summarize` only) | any scribe diff in review |
-| Misroute prose to shell (R06) | med | low | Asymmetric bands (Spec S06): unsure+no-verdict → Code; auto-routed rows keep the visible "send to Claude instead" attribution | user misroute reports |
+| System model below quality bar (R01) | high | med | Spike gate with STOP rule | Step 1 results |
+| Framework throttling at cadence (R02) | med | low–med | Spike soak; cadence constants adjustable; refusal back-off already designed | Step 1 soak |
+| macOS-26 tie / Golden Gate never adopted (R03) | high | — | Deliberate: the plan is parked until adoption; nothing is built speculatively | owner's OS decision |
+| Apple changes model behavior across OS updates (R04) | med | med | Guided generation pins output *shape*; keep the spike harness re-runnable as a regression check after OS updates | any post-update misbehavior |
+| Misroute prose to shell (R05) | med | low | Asymmetric bands (Spec S05): unsure+no-verdict ⇒ Code; visible auto-route attribution with one-click undo | user misroute reports |
 
-**Risk R01: Ternary model quality** {#r01-ternary-quality}
+**Risk R04: OS-update model drift** {#r04-model-drift}
 
-- **Risk:** The shipping model underperforms the 1-bit results that motivated the plan.
-- **Mitigation:** Step 1 gate; one round of prompt tightening allowed (the eval showed the pulse preamble wart fixes with one line); otherwise halt.
-- **Residual risk:** The 26-line classify corpus is small; real-world lines may surface new failure shapes. The band design (Spec S06) bounds the blast radius — the model only ever decides lines the heuristic already refused to auto-route.
-
-**Risk R03: Download robustness** {#r03-download-robustness}
-
-- **Risk:** A flaky network or mid-download quit leaves the user stuck or restarts 2 GB from zero, souring TugSetup.
-- **Mitigation:** HTTP Range resume against `.part` staging files; per-file sha256 before finalize; atomic directory rename; tugcast re-runs an incomplete opted-in download at startup with no user action; cancel is instant and clean; a pid-stamped `O_EXCL` staging lockfile with post-acquire stamp re-check serializes concurrent tugcast instances over the shared models dir (Spec S02).
-- **Residual risk:** HuggingFace availability/rate limits — accepted for v1 (no Tug CDN yet); the error row in TugSetup offers Retry and Skip.
+- **Risk:** The system model is Apple's to update; a macOS point release could shift classify accuracy or headline style under us.
+- **Mitigation:** the spike harness (Step 1 artifact, kept in `~/bonsai-eval/` beside the Bonsai harnesses) re-runs in minutes after any OS update; guided generation makes output *format* drift impossible — only accuracy can move, and the bands bound its blast radius.
+- **Residual risk:** a genuine accuracy regression would need prompt re-tuning or temporarily flipping the flags off — both cheap.
 
 ---
 
 ### Design Decisions {#design-decisions}
 
-#### [P01] The spike is a hard gate (DECIDED) {#p01-spike-gate}
+#### [P01] The spike is a hard gate, on real hardware (DECIDED) {#p01-spike-gate}
 
-**Decision:** Steps 1–2 run before any integration work, and the plan halts if either misses its Success Criteria bar.
-
-**Rationale:**
-- Every measured result for the two tasks belongs to a different model (1-bit, fork-only); the shipping model has never run them.
-- The user's explicit gate: both features must be fast, solid, reliable, and truly an improvement, or the legwork isn't worth it.
-
-**Implications:**
-- Steps 3+ carry `Depends on: #step-2` transitively; the Step Status Ledger makes the gate visible to `/tugplug:implement`.
-- Spike findings (scores, latencies, manifest) are written back into this document (Q01–Q03 resolutions) so later steps and later sessions inherit them.
-
-#### [P02] Runtime is mlx-swift in Tug.app (DECIDED) {#p02-runtime-mlx-swift}
-
-**Decision:** Inference runs in-process in the Swift host via `mlx-swift` + MLXLLM (option A from the investigation doc); no Python, no subprocess server, no fork.
+**Decision:** Step 1 runs before any integration work, on a physical macOS 26+ machine with Apple Intelligence enabled, and the plan halts if quality or latency misses the bar.
 
 **Rationale:**
-- Metal-backed, native, zero interpreter shipping burden; the rejected option B (supervised `mlx_lm.server`) means bundling a Python venv.
-- The ternary pack runs on stock MLX, which is exactly what `mlx-swift` wraps.
+- The system model has never run these tasks; "3B-class task shape fits" is an inference, not a measurement.
+- Apple Intelligence does not run in VMs — the Tart lab cannot substitute, so the spike also defines the plan's earliest possible start date.
 
 **Implications:**
-- tugapp gains its first SPM dependencies (`ml-explore/mlx-swift`, `ml-explore/mlx-swift-examples` products MLXLLM/MLXLMCommon), added to `tugapp/Tug.xcodeproj/project.pbxproj` on a dash.
-- Both feature callers reach Swift over existing IPC ([P07], [P08]).
+- Steps 2+ depend on #step-1 transitively; the Step Status Ledger makes the gate visible to `/tugplug:implement`.
+- Spike findings (scores, latencies, throttling, final prompts) are written back into this document ([Q01]/[Q02] resolutions).
 
-#### [P03] Model = Ternary-Bonsai-8B-mlx-2bit, pinned, downloaded (DECIDED) {#p03-model-choice}
+#### [P02] Runtime = FoundationModels system framework, availability-gated (DECIDED) {#p02-runtime-foundation-models}
 
-**Decision:** The one shipping model is the ternary 2-bit 8B pack at a pinned HuggingFace revision, downloaded post-install into `~/Library/Application Support/Tug/models/`, never bundled.
+**Decision:** Inference runs in Tug.app via `import FoundationModels` (`SystemLanguageModel.default` + `LanguageModelSession`), wrapped in `#if canImport(FoundationModels)` + `@available(macOS 26.0, *)`; the deployment target stays **13.0**.
 
 **Rationale:**
-- No fork dependency (1-bit kernels are fork-only; `mlx#3161` untracked-timeline).
-- Hard product constraint: no >1 GB blob in the installer.
-- HuggingFace-pinned is the v1 source per the user's call; a Tug CDN is follow-on infra.
+- Zero acquisition infrastructure: no download, no SPM dependency (system framework — at most a weak-linked framework reference in the pbxproj, not a package), no resident memory Tug owns, no upgrade plumbing; private and offline by construction.
+- Xcode 26.3 is already the build toolchain, so this compiles today and is inert below macOS 26.
 
 **Implications:**
-- Spec S01 manifest (repo, revision, files, sha256s, total bytes) is compiled into tugcast; upgrading the model is a manifest bump.
-- The models tree is instance-independent (shared across tugcast instances, like `Tug/Drafts` — see `tugrust/crates/tugcast/src/fs_write.rs` for the `dirs::home_dir()`-based Application Support pattern).
+- `SystemLanguageModel.default.availability` is the single availability truth (`.available` / `.unavailable(reason:)` — device ineligible, Apple Intelligence not enabled, model assets not ready).
+- Below-26 builds of the service compile to a stub that always reports unavailable (the `#if canImport` else-branch), so all callers exercise the degradation path on today's machines.
 
-#### [P04] The downloader lives in tugcast (DECIDED) {#p04-downloader-in-tugcast}
+#### [P03] No third-party weights; the Bonsai path is shelved, not deleted (DECIDED) {#p03-no-third-party}
 
-**Decision:** tugcast owns acquisition: a `local_model_download` control action drives a resumable, checksummed, cancellable download task that broadcasts progress on CONTROL, and tugcast auto-resumes an incomplete opted-in download at startup.
+**Decision:** Tug ships no model weights. The Bonsai/mlx-swift approach (previous revision of this plan) is superseded; its durable record stays in `roadmap/local-model-investigations.md` and this file's history.
 
 **Rationale:**
-- The deck→tugcast control-frame round trip is the exact precedent TugSetup already uses for long native operations (`install_claude` in `tugrust/crates/tugcast/src/actions.rs` → `claude_install_result` on CONTROL).
-- Rust gives us sha2 (already a dep), tokio, and easy integration testing against a local HTTP server; Swift needs only the finished files.
-- Startup auto-resume makes the flag the single lever ([P05]) and is the robustness backstop (R03).
+- The acquisition infrastructure (downloader, TugSetup step, first SPM dep, RAM lifecycle) was ~80% of that plan's weight, carried by two marginal features — rejected by the owner on cost.
+- If Apple's model fails the spike, reopening Bonsai is a deliberate decision, not a fallback this plan performs.
 
 **Implications:**
-- `reqwest` joins the workspace deps (tugcast has no HTTP client today; axum is server-only).
-- New tugcast module `local_model.rs` (Spec S01, S02); new action arms in `dispatch_action`.
+- No manifest, no models directory, no download control vocabulary, no `reqwest`, no TugSetup changes; `actions.rs::dispatch_action` is untouched.
 
-#### [P05] One opt-in flag, default OFF; disk is truth for presence (DECIDED) {#p05-optin-flag}
+#### [P04] Per-feature tugbank kill switches, default ON (DECIDED — default flagged [Q05]) {#p04-feature-flags}
 
-**Decision:** User intent is `dev.tugtool.local-model` / `enabled` (`Value::Bool`), read default-**OFF** when absent; model availability is always a filesystem probe of the finalized pack, never a flag.
+**Decision:** Domain `dev.tugtool.local-model`, keys `shell-routing` and `pulse-overview` (`Value::Bool`), read default-**ON** when absent — the repo's standard kill-switch shape (the `dev.tugtool.pulse`/`enabled` pattern: absent ⇒ enabled, live-flipped via DEFAULTS-frame subscription).
 
 **Rationale:**
-- Opt-in must invert the repo's default-ON flag convention (contrast `PULSE_ENABLED_DOMAIN` in `feeds/pulse.rs`, absent ⇒ enabled) — absent here means "never asked / declined."
-- Flag-driven means TugSetup, a future settings surface, and the `tugbank` CLI are all equivalent writers ([Q04]).
+- With zero acquisition cost, the OS-level Apple Intelligence switch is the real consent gate; Tug-side flags exist to turn a misbehaving feature off, not to gate an investment.
+- Default-ON for `shell-routing` is the one contestable call — recorded as [Q05] for owner review; flipping the default is one constant.
 
 **Implications:**
-- Constants declared in parallel Rust + TS (the `pulse/enabled` pattern): `LOCAL_MODEL_DOMAIN = "dev.tugtool.local-model"`, `LOCAL_MODEL_ENABLED_KEY = "enabled"`.
-- Swift reads the same key natively via `tugapp/Sources/TugbankClient.swift` when deciding whether the service may load.
+- Constants declared in parallel Rust + TS: `LOCAL_MODEL_DOMAIN = "dev.tugtool.local-model"`, `SHELL_ROUTING_KEY = "shell-routing"`, `PULSE_OVERVIEW_KEY = "pulse-overview"`.
+- No settings UI in scope ([Q03]); the `tugbank` CLI / defaults PUT is the writer.
 
-#### [P06] TugSetup grows one optional step; Skip is first-class (DECIDED) {#p06-tugsetup-step}
+#### [P05] Availability flows from Swift; tugcast learns by refusal (DECIDED) {#p05-availability-flow}
 
-**Decision:** A fourth step, "Set up on-device AI (optional)", appears in `TugSetup` after sign-in: **Download** writes `enabled=true` and sends `local_model_download`; **Skip** marks the step done-without-model and never nags again. Declining costs nothing; the step never blocks the "Start a Claude Code session" step.
+**Decision:** The deck queries availability over the bridge (`task:"availability"`, cached in the local-model store, re-queried on window focus and after any classify error); tugcast never tracks availability — its summarize requests are simply refused (`ok:false, error:"unavailable"`) and the overview emitter backs off (60 s, doubling to 10 min while refusals continue, reset on success).
 
 **Rationale:**
-- The wizard's `Step` objects (`tugdeck/src/components/tugways/tug-setup.tsx`) are plain data — adding a step is additive; unhappy paths are first-class designed states there by precedent.
-- Per the user: opting out simply means not getting the two features.
+- One source of truth (the Swift host, the only process that can ask the framework); no new push channels or probe vocabulary.
+- The refusal/back-off shape costs nothing and covers headless tugcast for free.
 
 **Implications:**
-- The `StepRow` gains an optional secondary CTA (Skip) — today it renders a single `cta`; extend the `Step` type with `secondaryCta`.
-- The busy state renders determinate progress (`TugProgressIndicator` variant `bar` with `value`/`max` — the primitive already supports it; today's install step is indeterminate only because `install_claude` reports no progress).
-- "Skip asked-and-declined" is recorded as `enabled=false` written explicitly (distinguishable from absent only if we care later; v1 does not).
+- `useLocalModelReady()` in the deck = flag ON && availability `available`; below-26 hosts and browser-dev answer unavailable via the stub/absent-handler paths with no special cases.
 
-#### [P07] Classify IPC = WKWebView script-message bridge (DECIDED) {#p07-classify-ipc}
+#### [P06] Classify IPC = WKWebView script-message bridge (DECIDED) {#p06-classify-ipc}
 
-**Decision:** The deck calls the Swift service through a new `localModel` script-message handler in `tugapp/Sources/MainWindow.swift`, correlated by `requestId`, replied via `window.__tugBridge?.onLocalModelResult?.(…)`.
+**Decision:** A new `localModel` script-message handler in `tugapp/Sources/MainWindow.swift` (registered beside `clipboardRead` etc.), request/reply correlated by `requestId`, replies via `window.__tugBridge?.onLocalModelResult?.(…)`.
 
 **Rationale:**
-- The classify caller is deck code (`tug-prompt-entry.tsx`); the bridge is the direct channel (handlers registered in `MainWindow.swift`, dispatch switch + `evaluateJavaScript` replies — the `clipboardRead`/`getSettings` pattern).
-- No tugcast hop for a ~200 ms interactive call.
+- The classify caller is deck code; the bridge is the direct channel, and `(w.__tugBridge ??= {})` request/reply is the established deck-side pattern (`native-path-picker.ts`, `os-export.ts`, `maker-mode-bridge.ts`).
 
 **Implications:**
-- New deck module `tugdeck/src/lib/local-model-bridge.ts` (Spec S03): pending-request map, timeout (unavailable ⇒ null verdict), graceful no-op when the handler is absent (browser dev, app-tests).
+- New deck module `tugdeck/src/lib/local-model-bridge.ts` (Spec S02): pending map, 1500 ms timeouts, hard null-path when `window.webkit?.messageHandlers?.localModel` is absent (browser dev, app-tests).
 
-#### [P08] Summarize IPC = UDS control socket (DECIDED) {#p08-summarize-ipc}
+#### [P07] Summarize IPC = UDS control socket, supervisor-sourced identity (DECIDED) {#p07-summarize-ipc}
 
-**Decision:** tugcast requests overview summaries from the host over the existing control socket: a new tugcast→app `local_model_request` message and a new app→tugcast `ControlMessage::LocalModelResult` variant, correlated by id.
+**Decision:** tugcast requests overview summaries over the existing control socket: a tugcast→app `local_model_request` line via the app-bound drain channel, answered by a new `ControlMessage::LocalModelResult` variant (Spec S03). The overview emitter receives session identity from the supervisor at wiring time.
 
 **Rationale:**
-- The digest inputs (session JSONL prompts, CODE_OUTPUT tool frames) are tugcast-side; the model is Swift-side; the socket already connects exactly these two (`tugrust/crates/tugcast/src/control.rs` ↔ `tugapp/Sources/ControlSocket.swift` / `ProcessManager.handleControlMessage`).
-- Routing through the deck would put a background job on a UI surface.
+- The digest inputs are tugcast-side; the model is Swift-side; the socket already connects exactly these two (`tugrust/crates/tugcast/src/control.rs` ↔ `tugapp/Sources/ControlSocket.swift` / `ProcessManager.handleControlMessage`).
+- The app-bound drain channel already exists: `main.rs` creates `mpsc::channel::<String>(4)` over `writer.into_inner()` and clones its sender into `run_recv_loop` — a summarize requester takes another clone.
+- **Identity (load-bearing):** the tug-session→claude-session mapping lives in `AgentSupervisor`'s **in-memory** session map; the `SessionResolver` closure `draft_engine.rs` uses is built inline over it (the `try_lock` closure in the draft-request handler) and is unreachable from a bare `main.rs` task. The emitter is constructed with (a) a `SessionResolver` over an `Arc` clone of that map (same `try_lock`-degrade shape) and (b) `SessionRow.project_dir` from the SQLite `SessionLedger`. Unresolvable identity ⇒ skip the tick.
 
 **Implications:**
-- tugcast writes app-bound messages via the response channel that feeds the control-socket draining task (`main.rs` — the `writer.into_inner()` drain around the shutdown path); a pending-map of oneshot senders resolves replies.
-- Headless tugcast (no Tug.app parent, e.g. `just dev`) has no socket: summarize requests fail fast and the overview feature is silently absent — same graceful-degradation shape as [P11].
+- Headless tugcast (no socket, e.g. `just dev`) answers unavailable immediately — overview silently absent, per [P10].
+- 10 s request timeout tugcast-side; pending map of oneshot senders resolved in `run_recv_loop`.
 
-#### [P09] Shell routing: heuristic bands + async model tiebreak, never blocking (DECIDED) {#p09-shell-bands}
+#### [P08] Shell routing: heuristic bands + async model tiebreak, never blocking (DECIDED) {#p08-shell-bands}
 
-**Decision:** Refactor the submit-time classifier into three bands (Spec S06): **shell** (heuristic-certain command) routes instantly; **prompt** (heuristic-certain prose) routes instantly; **unsure** (first token is a PATH executable but the heuristic refuses) is decided by a cached/awaited model verdict with a hard 250 ms submit budget — no verdict in time ⇒ Code. The model is pre-consulted on a 300 ms typing debounce so the verdict is usually ready before Enter. The whole feature is live only when opted-in AND the model is installed AND the service answers; otherwise behavior is exactly today's (parked off).
+**Decision:** Refactor the submit-time classifier into three bands (Spec S05): **shell** and **prompt** route instantly on heuristic certainty; **unsure** (first token is a PATH executable but the heuristic refuses) is decided by a cached/awaited model verdict with a hard 250 ms submit budget — no verdict in time ⇒ Code. Pre-consult on a 300 ms typing debounce. Live only when `useLocalModelReady()` holds; otherwise byte-identical to today's parked behavior.
 
 **Rationale:**
-- Preserves the asymmetric-cost doctrine already written into `shell-line-classifier.ts` (prose at the shell error-barfs; a command at Claude degrades gracefully) — the model can only *add* shell routes to lines the heuristic already declined, and only when confident.
-- ~200 ms model latency is acceptable on a debounce, unacceptable on the submit critical path.
+- Preserves the asymmetric-cost doctrine written into `shell-line-classifier.ts` (prose at the shell error-barfs; a command at Claude degrades gracefully) — the model only ever *adds* shell routes to lines the heuristic declined.
+- Guided generation (a `@Generable` two-case enum) makes the verdict structurally well-formed; only accuracy is at stake, and the spike measures that.
 
 **Implications:**
-- `AUTO_SHELL_DETECTION_ENABLED` (the parked constant) is replaced by a live gate on local-model availability; the live-typing chip (`autoShellOpener`) un-parks for unambiguous openers under the same gate, unchanged in logic.
-- New pure function `bandShellLine(text, commands): "shell" | "prompt" | "unsure"` derived from the existing `classifyShellLine` internals (Spec S06 defines the mapping); existing exported signatures kept for tests.
+- `AUTO_SHELL_DETECTION_ENABLED` is deleted; both entry points gate on caller-supplied availability (read via refs/singletons per [L07], never per-keystroke React state).
+- New pure export `bandShellLine(text, commands): "shell" | "prompt" | "unsure"`; `classifyShellLine` becomes the compatibility wrapper (`band === "shell"`).
 
-#### [P10] Pulse part-one is a new tugcast component emitting `kind:"overview"` (DECIDED) {#p10-overview-component}
+#### [P09] Pulse part-one is a new tugcast emitter; `kind:"overview"` frames (DECIDED) {#p09-overview-component}
 
-**Decision:** A new tugcast module (`feeds/session_overview.rs`) taps the same CODE_OUTPUT broadcast the pulse bridge taps, builds per-session digests, requests summaries over [P08] on a cadence, and broadcasts PulseLine-shaped frames with a new optional `kind: "overview"` field on the PULSE feed. The tugpulse daemon, `PulseVoice`, and the forward allowlist are untouched.
+**Decision:** New module `feeds/session_overview.rs` taps the CODE_OUTPUT broadcast (own replay-mute brackets mirroring `forwardable_session` in `feeds/pulse.rs`), builds per-session digests, requests summaries over [P07] on a cadence, and broadcasts PulseLine-shaped frames with optional `kind:"overview"` on the PULSE feed. The tugpulse daemon, `PulseVoice`, and the forward allowlist are untouched.
 
 **Rationale:**
-- Part two is deliberately not model-driven (verbatim `assistant_text`); bolting the overview into the daemon would put user-prompt data through a pipe that deliberately mutes user messages.
-- The pulse wire tap mutes user messages, so goal prompts must come from the session JSONL — exactly the `scribe::session_prompts_since` path, with JSONL resolution copied from `feeds/draft_engine.rs::session_user_prompts` (ledger `claude_projects_root()` + `encode_claude_project_name(project_dir)` + `<claude_id>.jsonl`).
-- **Session-identity source (load-bearing):** the tug-session→claude-session mapping lives in `AgentSupervisor`'s **in-memory** session map — the `SessionResolver` closure `draft_engine.rs` uses is built inline over it (`agent_supervisor.rs`, the `try_lock` closure in the draft-request handler) and is not reachable from a free-standing `main.rs` task. The overview emitter therefore receives its identity access **from the supervisor at wiring time**: main.rs constructs the emitter with (a) a `SessionResolver` built over an `Arc` clone of the supervisor's in-mem ledger (the exact closure shape from the draft path — `try_lock`, degrade to "no claude id" under contention), and (b) a `project_dir` lookup via the SQLite `SessionLedger` (`SessionRow.project_dir`). A session whose claude id or project dir can't be resolved simply skips its cadence tick — same degrade-to-nothing posture as the draft prompt path.
+- The pulse wire tap deliberately mutes user messages; goal prompts must come from the session JSONL — the `scribe::session_prompts_since` path (JSONL = ledger `claude_projects_root()` + `encode_claude_project_name(project_dir)` + `<claude_id>.jsonl`, per `draft_engine.rs::session_user_prompts`).
 
 **Implications:**
-- `parsePulseFrame` (`tugdeck/src/protocol.ts`) and `PulseLine` (`tugcode/src/pulse/types.ts`) gain the optional `kind` field; absent ⇒ beat (backward compatible).
-- `pulse-store.ts` tracks latest overview per scope; `session-pulse-strip.tsx` renders it as a first line above the existing beat line.
-- Overview frames are not ledgered in v1 ([Q05]).
+- `parsePulseFrame` (`tugdeck/src/protocol.ts`) and `PulseLine` (`tugcode/src/pulse/types.ts`) gain optional `kind`; absent ⇒ beat (backward compatible; tugcode never emits it).
+- `pulse-store.ts` tracks latest overview per scope, separate from beat history; `session-pulse-strip.tsx` renders it as a first line.
+- Overviews are not ledgered in v1 ([Q04]).
 
-#### [P11] Strict enhancement: every consumer degrades to today (DECIDED) {#p11-graceful-degradation}
+#### [P10] Strict enhancement: every consumer degrades to today (DECIDED) {#p10-graceful-degradation}
 
-**Decision:** Flag off, model absent, download incomplete, service unloaded/dead, headless tugcast, browser deck, app-test runs — in every one of these states, shell routing behaves exactly as current main (parked off) and the Pulse strip renders exactly as current main (one line). No error surfaces to the user from a missing model; only TugSetup and logs know.
+**Decision:** macOS < 26, Apple Intelligence disabled, model not ready, flag off, headless tugcast, browser deck, app-test runs — in every such state, shell routing and the Pulse strip behave byte-identically to current main. No user-facing error ever originates from model unavailability.
+
+**Implications:**
+- The below-26 stub service, the absent-bridge null path, and the socket refusal back-off are the three degradation legs; the Step 8 app-test pins the deck-visible outcome on this (Sequoia) machine, where the model is structurally unavailable — the degradation path is the *only* path testable before Golden Gate, which is exactly why it gets the automated pin.
+
+#### [P11] Session and generation discipline (DECIDED) {#p11-generation-discipline}
+
+**Decision:** `LocalModelService` uses short-lived, single-purpose `LanguageModelSession`s (fresh session per request, task-specific `instructions`), temperature 0, guided generation for classify (`@Generable enum ShellVerdict { case shell, prompt }` via `respond(to:generating:)`), plain-text with a small `maximumResponseTokens` for summarize, and `prewarm()` on the classify path when the prompt entry gains focus.
 
 **Rationale:**
-- The investigation doc calls this load-bearing; it is also what makes the feature safely land incrementally behind the flag.
+- Fresh sessions avoid context accumulation toward the ~4 K window and cross-request bleed; the framework manages model residency itself — no lazy-load/idle-unload machinery for Tug to own (a whole decision from the Bonsai revision deleted).
+- Constrained decoding eliminates output-parsing failure modes entirely for classify.
 
 **Implications:**
-- Availability is a single derived signal (deck: `useLocalModelReady()` in the new store; tugcast: presence probe + socket liveness; Swift: flag + presence before load) — consumers never half-enable.
-
-#### [P12] Service lifecycle: lazy load, warm while active, idle unload (DECIDED) {#p12-service-lifecycle}
-
-**Decision:** `LocalModelService` (new `tugapp/Sources/LocalModelService.swift`) loads the pack on first request, serializes requests single-flight, keeps the model resident while requests keep arriving, and unloads after 5 idle minutes to reclaim the ~2–3 GB.
-
-**Rationale:**
-- The eval's memory numbers (1.5–2.25 GB resident) are fine transiently, not permanently, on an app users leave open all day.
-
-**Implications:**
-- First classify after idle pays the load cost — the deck's 250 ms submit budget simply lapses to Code (correct per [P09]); the debounce pre-consult is what warms it.
-- Generation defaults: temperature 0, small max-token caps per task (classify ~8, summarize ~32).
+- The frozen prompts port from the Step 1 spike as Swift string constants with a source comment naming the harness file.
+- Digest budget (Spec S04) caps well under the context window.
 
 ---
 
@@ -319,70 +291,69 @@ The eval's 26/26 and pulse results belong to the **1-bit** Bonsai-8B, whose kern
 
 #### End-to-end flows {#e2e-flows}
 
-**Opt-in + download (first run):** TugSetup step CTA → deck writes `dev.tugtool.local-model/enabled=true` (tugbank PUT via `settings-api.ts` helper) → deck sends control frame `local_model_download` → tugcast `dispatch_action` spawns the download task → progress frames on CONTROL (~4 Hz) → deck `local-model-store` folds them → step row shows a determinate bar → `local_model_download_result {ok:true}` → store probes status → step flips done. Quit mid-download: next tugcast startup sees `enabled=true` + incomplete staging → auto-resumes silently; the deck learns state via `local_model_probe` at connect.
+**Classify (typing):** prompt-entry updateListener detects an unsure-band draft on a 300 ms debounce (reusing the existing cheap pre-gates: single line, ≤ 256 chars, atom-free) → `requestClassify(text)` → `postMessage` on `localModel` → `MainWindow` dispatch → `LocalModelService.classify` (guided enum, temp 0) → `onLocalModelResult` → verdict cached keyed on exact draft text. Submit: band `shell` ⇒ existing auto-route path (`shellStore.exec(text, {origin:"auto"})` + history push, unchanged); `prompt` ⇒ Code; `unsure` ⇒ cached verdict, else await in-flight ≤ 250 ms, else Code.
 
-**Classify (typing):** prompt-entry updateListener detects an unsure-band draft on a 300 ms debounce → `requestClassify(text)` in `local-model-bridge.ts` → `window.webkit.messageHandlers.localModel.postMessage({requestId, task:"classify", text})` → `MainWindow` dispatch → `LocalModelService.classify` → `evaluateJavaScript("window.__tugBridge?.onLocalModelResult?.({requestId, ok, verdict})")` → verdict cached keyed on exact draft text. Submit: band = shell → shell; prompt → Code; unsure → cached verdict, else await in-flight ≤ 250 ms, else Code.
+**Availability:** deck store queries `task:"availability"` at bridge attach, on window focus, and after any classify error; Swift answers from `SystemLanguageModel.default.availability` (stubbed unavailable below 26). tugcast never asks — its requests get refused and the emitter backs off.
 
-**Overview (session activity):** `session_overview` task subscribes `code_tx` → accumulates per-session `tool_use` digests (allowlist-independent; it filters `tool_use` itself and respects replay mute brackets exactly like `forwardable_session` in `feeds/pulse.rs`) → cadence fires (Spec S05) → reads goal prompts from session JSONL → composes the digest prompt → `local_model_request` over the control socket → `LocalModelResult` → broadcasts `{type:"pulse", kind:"overview", text, scopes:[session], beat, at}` on PULSE → `pulse-store` records latest overview per scope → strip renders it above the beat line.
+**Overview (session activity):** `session_overview` accumulates per-session `tool_use` digests from its own `code_tx` subscription → cadence fires (Spec S04) → goal prompts from session JSONL via supervisor-provided identity ([P07]) → digest prompt → `local_model_request` over the socket → `LocalModelResult` → PULSE broadcast `{type:"pulse", kind:"overview", text, scopes:[tug_session_id], beat, at}` → `pulse-store` latest-overview-per-scope → strip renders it above the beat line.
 
-#### tugcast control-socket extension details {#control-socket-extension}
+#### Control-socket extension details {#control-socket-extension}
 
-Today: app→tugcast messages deserialize as `ControlMessage` (`control.rs`, serde `tag="type"`, snake_case: `Tell`/`Shutdown`/`DevMode`); tugcast→app messages are hand-built JSON lines (`send_ready`, `make_dev_mode_result`, `make_shutdown_message`) written by a draining task fed from an mpsc channel created in `main.rs` (search `writer.into_inner()`). Swift side: `ControlSocketConnection.send(_ dict:)` writes newline JSON; `ProcessManager.handleControlMessage` switches on `type` (`ready`, `dev_mode_result`, `shutdown`, `tell`). The extension: (1) tugcast exposes a cloneable sender for the app-bound channel plus a `PendingLocalModel` map (`HashMap<String, oneshot::Sender<LocalModelReply>>`); (2) new `ControlMessage::LocalModelResult { id, ok, text: Option<String>, error: Option<String> }` routed in `run_recv_loop` to the pending map; (3) Swift adds `case "local_model_request"` in `handleControlMessage`, calls the service off-main, replies with `connection.send(["type": "local_model_result", "id": id, …])`. Timeout tugcast-side: 10 s per request, then the oneshot is dropped and the tick skipped.
+Today: app→tugcast deserializes as `ControlMessage` (`control.rs`, serde `tag="type"`, snake_case: `Tell`/`Shutdown`/`DevMode`); tugcast→app lines are hand-built JSON written by the drain task fed from the `mpsc::channel::<String>(4)` in `main.rs`. Swift: `ControlSocketConnection.send(_ dict:)` writes newline JSON; `ProcessManager.handleControlMessage` switches on `type` (`ready`, `dev_mode_result`, `shutdown`, `tell`). Extension: (1) a small handle struct in tugcast holding a clone of the drain sender + `Arc<Mutex<HashMap<String, oneshot::Sender<LocalModelReply>>>>`; (2) `ControlMessage::LocalModelResult { id, ok, text: Option<String>, error: Option<String> }` routed in `run_recv_loop` to the pending map; (3) Swift `case "local_model_request"` → service call off-main (`Task { … }`) → `connection.send(["type":"local_model_result", "id": id, …])`.
 
-#### mlx-swift dependency notes {#mlx-swift-notes}
+#### FoundationModels integration notes {#foundation-models-notes}
 
-`tugapp` is a plain Xcode project (`tugapp/Tug.xcodeproj/project.pbxproj`) with zero SPM references; the app builds via `just app-debug` / `just app-release` (xcodebuild). Add `XCRemoteSwiftPackageReference`s for `https://github.com/ml-explore/mlx-swift` and `https://github.com/ml-explore/mlx-swift-examples` (products: `MLXLLM`, `MLXLMCommon` — the LLM loading/generation layer; tokenizers come transitively via swift-transformers), pinned to exact versions recorded during Step 2. Expect first-build package resolution to need network; verify `scripts/sign-bundle.sh` still signs the app with the new framework payloads, and that `just app-debug` from a clean checkout resolves packages non-interactively. Model loading: MLXLLM's factory from a local directory URL (`~/Library/Application Support/Tug/models/<slug>/…`) — confirmed loadable in Step 2, including any `ModelConfiguration` overrides the pack needs.
+- Availability: `SystemLanguageModel.default.availability` — switch `.available` / `.unavailable(let reason)`; reasons include device ineligibility, Apple Intelligence not enabled, and model assets not ready (transient after enablement/updates — treat as unavailable, re-query later).
+- Classify: `let session = LanguageModelSession(instructions: CLASSIFY_INSTRUCTIONS)`; `try await session.respond(to: line, generating: ShellVerdict.self, options: .init(temperature: 0))` — constrained decoding guarantees one of the two enum cases.
+- Summarize: plain `respond(to:)` with `GenerationOptions(temperature: 0, maximumResponseTokens: ~48)`; clip to 110 chars deck-side regardless.
+- `prewarm()` hides first-call model-load latency; call it when the prompt entry focuses (classify path) — cheap, idempotent.
+- All of the above lives inside `#if canImport(FoundationModels)` with an `@available(macOS 26.0, *)` implementation class; the `#else` / below-26 branch is a stub whose every call answers unavailable. `MainWindow`/`ProcessManager` call through a thin protocol so call sites carry no availability annotations.
+- Errors worth distinct handling: context-window-exceeded (should be impossible at our budgets — log loudly if seen) and guardrail refusals (the framework can decline content — treat as null verdict / skipped tick, never surfaced to the user).
 
 #### Task prompts {#task-prompts}
 
-The validated prompts live in the harness: classify prompt in `~/bonsai-eval/classify_8b.py` (SHELL/PROMPT label task over one line), overview prompt in `~/bonsai-eval/pulse_8b.py` (compact digest → one headline; the +1 tightening line: demand a terse headline ≤ ~10 words, forbid preamble). Step 1 freezes the exact final prompt strings after re-validation; Step 8 ports them verbatim into `LocalModelService` as Swift string constants with a source comment naming the harness file. Classify output contract: the model must answer with exactly `SHELL` or `PROMPT` (first token wins, case-insensitive, anything else ⇒ null verdict ⇒ Code).
+The validated Bonsai-era prompts live in `~/bonsai-eval/classify_8b.py` (SHELL/PROMPT over one line) and `~/bonsai-eval/pulse_8b.py` (compact digest → one headline; tightening line: terse headline ≤ ~10 words, no preamble). Step 1 adapts them to `instructions:`-style phrasing for `LanguageModelSession`, re-validates, and freezes the final strings into this document's [Q01] resolution; Step 2 ports them verbatim into `LocalModelService`.
 
 ---
 
 ### Specification {#specification}
 
-**Spec S01: Model manifest (compiled into tugcast)** {#s01-model-manifest}
+**Spec S01: Feature flags** {#s01-feature-flags}
 
-`tugrust/crates/tugcast/src/local_model.rs` declares the pack as consts/struct: `MODEL_SLUG` (e.g. `ternary-bonsai-8b-2bit`), `HF_REPO`, `HF_REVISION` (full commit hash), and `MODEL_FILES: &[ModelFile]` where `ModelFile { name, sha256, bytes }`. Download URL per file: `https://huggingface.co/<HF_REPO>/resolve/<HF_REVISION>/<name>`. Install layout: `~/Library/Application Support/Tug/models/<MODEL_SLUG>/` containing the files plus a `tug-manifest.json` stamp `{slug, repo, revision, files:[{name, sha256, bytes}], verified_at}` written only after every file verifies — **the stamp's existence is the presence probe**. Staging: `…/models/.staging/<MODEL_SLUG>/<name>.part`; finalize = verify each staged file's sha256 → move files into place → write stamp → remove staging. Values for repo/revision/files/sha256s are filled by Step 2 ([Q03]) before Step 3 compiles them in.
+Domain `dev.tugtool.local-model`; keys `shell-routing`, `pulse-overview`; `Value::Bool`; absent/unreadable ⇒ **true** (kill-switch convention, matching the `PULSE_ENABLED_DOMAIN` reader shape in `feeds/pulse.rs` / `main.rs`). Rust consts in `feeds/session_overview.rs`; TS consts in `local-model-store.ts`; deck subscribes to DEFAULTS frames filtered on the domain for live flips (the `pulse-store.ts` pattern).
 
-**Spec S02: Download control vocabulary** {#s02-download-control}
+**Spec S02: Bridge messages** {#s02-bridge-messages}
 
-Deck→tugcast actions (control frames, handled in `actions.rs::dispatch_action`): `local_model_download` (idempotent: already-installed ⇒ immediate ok result; already-running ⇒ no-op), `local_model_download_cancel`, `local_model_probe`. tugcast→deck CONTROL broadcasts: `{"action":"local_model_download_progress","file":name,"fileIndex":i,"fileCount":n,"receivedBytes":r,"totalBytes":t}` throttled to ≤ 4 Hz with `receivedBytes`/`totalBytes` aggregated across the whole pack; `{"action":"local_model_download_result","ok":bool,"error":string|null}`; `{"action":"local_model_status","installed":bool,"downloading":bool}` (answer to probe, also broadcast unsolicited on install-state change). Startup auto-resume ([P04]): during tugcast init, if `enabled=true` (tugbank read, absent ⇒ false per [P05]) and stamp absent, spawn the download task exactly as if `local_model_download` arrived. Resume mechanics: existing `.part` ⇒ `Range: bytes=<len>-` request; 200-instead-of-206 ⇒ restart that file from zero; per-file retry ×3 with backoff before failing the run. **Cross-process lock (load-bearing):** the models dir is instance-shared while the opt-in flag and auto-resume are per-instance tugcast — concurrent debug + release Tug.app instances are the *normal* dev condition, so two tugcasts can race the same staging tree. The download task must first acquire `…/models/.staging/<MODEL_SLUG>.lock` (create with `O_EXCL`, write own pid; on `EEXIST` read the pid — dead process ⇒ remove stale lock and retry once, live process ⇒ report `local_model_download_result {ok:false, error:"download in progress in another Tug instance"}` and let that instance finish), then **re-check the stamp after acquiring** (the other instance may have finalized while we waited) before touching any `.part` file. The lock is removed on finalize, failure, and cancel; `Drop` on the task guard removes it on abnormal exit.
+Deck→Swift on handler `localModel`: `{requestId: string, task: "classify", text: string}` or `{requestId, task: "availability"}`. Swift→deck: `window.__tugBridge?.onLocalModelResult?.({requestId, ok: bool, verdict?: "shell"|"prompt", availability?: "available"|"unavailable", error?: string})`. Deck client `local-model-bridge.ts`: `requestClassify(text) => Promise<"shell"|"prompt"|null>` (null on 1500 ms timeout / missing handler / `ok:false`), `requestAvailability() => Promise<boolean>`; module-scope pending map; `(w.__tugBridge ??= {})` sink registration at module init.
 
-**Spec S03: Bridge classify messages** {#s03-bridge-classify}
+**Spec S03: Control-socket summarize messages** {#s03-socket-summarize}
 
-Deck→Swift: `window.webkit.messageHandlers.localModel.postMessage({requestId: string, task: "classify", text: string})`. Swift→deck: `window.__tugBridge?.onLocalModelResult?.({requestId, ok: bool, verdict: "shell"|"prompt"|null, error?: string})`. Deck helper `tugdeck/src/lib/local-model-bridge.ts`: `requestClassify(text: string): Promise<"shell"|"prompt"|null>` — resolves null on 1500 ms timeout, missing handler, or `ok:false`; module-scope pending map; no store, no React.
+tugcast→app: `{"type":"local_model_request","id":string,"task":"summarize","prompt":string}`. app→tugcast: `{"type":"local_model_result","id":string,"ok":bool,"text":string|null,"error":string|null}` as `ControlMessage::LocalModelResult`. tugcast timeout 10 s. Swift answers `ok:false, error:"unavailable"` when availability fails (including the below-26 stub); tugcast treats refusal as absence and backs off (60 s doubling to 10 min while refusals continue, reset on success).
 
-**Spec S04: Control-socket summarize messages** {#s04-socket-summarize}
+**Spec S04: Overview emission** {#s04-overview-emission}
 
-tugcast→app (JSON line via the app-bound drain channel): `{"type":"local_model_request","id":string,"task":"summarize","prompt":string}`. app→tugcast: `{"type":"local_model_result","id":string,"ok":bool,"text":string|null,"error":string|null}` deserialized as `ControlMessage::LocalModelResult`. tugcast timeout 10 s. Swift refuses (ok:false, error:"unavailable") when the flag is off or the pack is absent — tugcast treats refusal as [P11] absence and backs off cadence ticks for 60 s.
+Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_id],"beat":n,"at":ms}` on `FeedId::PULSE`. Cadence per session: ≥ 8 forwarded `tool_use` frames since last emit OR 30 s elapsed with ≥ 1 new frame; hard floor 15 s; skip when digest unchanged or headline identical. Gating: `pulse-overview` flag (S01) AND `dev.tugtool.pulse`/`enabled` (the strip hides entirely when pulse is off — never spend inference on invisible lines) AND not in refusal back-off. Digest: up to 10 user prompts (≤ 1500 chars) via `scribe::session_prompts_since(&jsonl, 0, 10, 1_500)` with identity per [P07]; plus last ≤ 40 `tool_use` entries as `name(short-target)` lines (target = the input's path/command field, ~60 chars); total budget deliberately ≪ the model's ~4 K context. Unresolvable identity ⇒ skip tick. Headline clipped to 110 chars (PulseLine doctrine).
 
-**Spec S05: Overview emission** {#s05-overview-emission}
+**Spec S05: Shell-routing bands** {#s05-shell-bands}
 
-Frame: PulseLine JSON with `kind:"overview"` — `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_id],"beat":n,"at":ms}` broadcast on `FeedId::PULSE`. Cadence per session: fire when ≥ 8 forwarded `tool_use` frames accumulated since last emit OR 30 s elapsed since last emit with ≥ 1 new frame; hard floor 15 s between emits; skip when the digest is unchanged or the headline equals the previous one. Gating: cadence runs only while **all three** flags hold — `dev.tugtool.local-model/enabled` (default OFF), model `is_installed()`, AND `dev.tugtool.pulse/enabled` (default ON — reuse the existing enabled-closure shape from `main.rs`); the strip hides entirely when pulse is off, so inference for invisible lines is never spent. Digest inputs: up to 10 user prompts (≤ 1500 chars total) via `scribe::session_prompts_since(&jsonl, 0, 10, 1_500)`, with the JSONL path built from the supervisor-provided `SessionResolver` (tug→claude id) + `SessionRow.project_dir` per the [P10] identity-source note; plus the last ≤ 40 `tool_use` entries as `name(short-target)` lines (target = the tool input's path/command field when present, truncated ~60 chars). Unresolvable identity ⇒ skip the tick. Replay-bracketed frames are muted exactly like the pulse bridge. Headline clipped to 110 chars defensively (matching `PulseLine.text` doctrine).
-
-**Spec S06: Shell-routing bands** {#s06-shell-bands}
-
-New pure export in `shell-line-classifier.ts`: `bandShellLine(text, commands): "shell" | "prompt" | "unsure"`, refactored from `classifyShellLine`'s body (which becomes a thin `bandShellLine(...) === "shell"` for compatibility): after the existing shape gates and env-assign skip — first token not a PATH executable and not path-shaped ⇒ `"prompt"`; trailing `?` ⇒ `"prompt"`; current-logic-true (all vetoes passed) ⇒ `"shell"`; PATH-executable first token but vetoed (bare ambiguous opener, stopword without strong signal, ≥ 8 tokens without strong signal) ⇒ `"unsure"`. Model verdict applies only to `"unsure"`. Gating: a new `localModelShellGate` (deck store read, [P11]) replaces the `AUTO_SHELL_DETECTION_ENABLED` constant at both entry points; the constant itself is deleted. Live-typing `autoShellOpener` logic is unchanged (unambiguous openers only) behind the same gate. Submit semantics in `tug-prompt-entry.tsx`: band `"shell"` ⇒ existing auto-route path (`shellStore.exec(text, {origin:"auto"})` + history push, unchanged); `"prompt"` ⇒ Code; `"unsure"` ⇒ cached verdict for the exact submitted text, else await the in-flight classify ≤ 250 ms, else Code. Debounce pre-consult: on updateListener, single-line atom-free drafts ≤ 256 chars in the unsure band trigger `requestClassify` after 300 ms idle; cache is a plain `Map<string, "shell"|"prompt">` capped at 32 entries, cleared on submit/clear.
+`bandShellLine(text, commands): "shell" | "prompt" | "unsure"` refactored from `classifyShellLine`'s body: after the existing shape gates (length ≤ 400, no leading `/`/`#`) and env-assign skip — first token neither a PATH executable nor path-shaped ⇒ `"prompt"`; trailing `?` ⇒ `"prompt"`; all vetoes passed (current-logic true) ⇒ `"shell"`; PATH-executable first token but vetoed (bare ambiguous opener; stopword without strong signal; ≥ 8 tokens without strong signal) ⇒ `"unsure"`. `classifyShellLine` = wrapper (`band === "shell"`). Both entry points take caller-supplied availability (from `useLocalModelReady()` via the existing ref plumbing in `tug-prompt-entry.tsx`); `autoShellOpener`'s logic is unchanged (unambiguous openers only) behind the same gate. Verdict cache: plain `Map<string, "shell"|"prompt">`, cap 32, cleared on submit/clear.
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
 | State | Zone (appearance / local-data / structure) | Mechanism | Law |
 |-------|--------------------------------------------|-----------|-----|
-| local-model install/download state (installed, downloading, progress bytes) | external state | new `local-model-store.ts` (module singleton) + `useSyncExternalStore` hook, fed by CONTROL frames + tugbank DEFAULTS subscription | [L02] |
-| opt-in flag `dev.tugtool.local-model/enabled` | external persistent | tugbank read + DEFAULTS-frame subscription inside `local-model-store` (the `pulse-store` pattern); writes via `settings-api.ts` PUT | [L02], no-localStorage |
-| classify verdict cache + pending request map | local-data (non-render) | module-scope `Map` in `local-model-bridge.ts` / controller refs in `tug-prompt-entry.tsx` — never React state (it must not re-render per keystroke) | [L06] |
-| TugSetup step status (new step) | derived | computed inline from `useLocalModel()` snapshot in `TugSetup` render, like `claudeStep`/`signInStep` | [L02] |
-| overview line per scope | external state | `pulse-store.ts` extension (`latestOverviewForScope`), same store/subscription | [L02] |
-| download progress bar fill | appearance | `TugProgressIndicator` `value`/`max` props (component-internal CSS) | [L06] |
+| flags + availability snapshot | external state | new `local-model-store.ts` (module singleton) + `useSyncExternalStore`; tugbank DEFAULTS subscription + bridge availability queries | [L02], [L24] |
+| classify verdict cache + pending map | local-data (non-render) | module-scope `Map` in `local-model-bridge.ts` / refs in `tug-prompt-entry.tsx` — never React state (must not re-render per keystroke) | [L06], [L07] |
+| overview line per scope | external state | `pulse-store.ts` extension (`latestOverviewForScope`) | [L02] |
+| two-line strip layout | appearance | CSS in `session-pulse-strip` (no reserved empty row when overview absent) | [L06] |
 
 ---
 
 ### Compatibility / Migration / Rollout {#rollout}
 
-- **Compatibility policy:** the `kind` field on pulse frames is optional and ignored by older parsers (`parsePulseFrame` accepts unknown fields); control-socket and CONTROL vocabularies are purely additive; the tugcode inbound allowlist is untouched (no new client→tugcode messages anywhere in this plan).
-- **Rollout:** everything behind `dev.tugtool.local-model/enabled` default OFF; opted-out installs run zero new code paths beyond the presence probe. Rollback = flip the flag off (service refuses, features degrade per [P11]); full rollback = delete the models directory.
-- **Model upgrades (future):** bump Spec S01 revision + shas; the presence probe fails against the new slug/manifest and the auto-resume re-downloads. Old packs are removed on successful finalize of a new one.
+- **Compatibility:** deployment target unchanged (13.0); `kind` on pulse frames is optional and ignored by older parsers; control-socket and bridge vocabularies purely additive; tugcode inbound allowlist untouched (no new client→tugcode messages).
+- **Rollout:** features light up only where Apple Intelligence is available; per-feature kill switches (S01) flip live without relaunch. Rollback = flip flags off; full rollback = revert the dash.
+- **OS updates:** after any macOS update on the host, re-run the spike harness as a regression check (Risk R04).
 
 ---
 
@@ -392,36 +363,31 @@ New pure export in `shell-line-classifier.ts`: `bandShellLine(text, commands): "
 
 | File | Purpose |
 |------|---------|
-| `tugrust/crates/tugcast/src/local_model.rs` | Spec S01 manifest, paths, presence probe, verify, downloader task, startup auto-resume |
-| `tugrust/crates/tugcast/src/feeds/session_overview.rs` | Pulse part-one: digest accumulation, cadence, summarize round-trip, PULSE broadcasts |
-| `tugdeck/src/lib/local-model-store.ts` | Deck store: flag + install/download snapshot, `useLocalModel()`, `useLocalModelReady()` |
-| `tugdeck/src/lib/local-model-bridge.ts` | Spec S03 client: `requestClassify`, pending map, `onLocalModelResult` sink registration |
-| `tugapp/Sources/LocalModelService.swift` | [P12] service: load/unload, single-flight queue, `classify`/`summarize`, prompt constants |
-| `tests/app-test/at0xxx-local-model-absent.test.ts` | Degradation pin: flag off / model absent ⇒ single-line strip + no auto-chip while typing, exactly as main; typing-level only, never submits a turn (`@covers` the touched deck files) |
+| `tugapp/Sources/LocalModelService.swift` | [P11] service: availability, guided classify, summarize, prewarm; `#if canImport` stub below macOS 26 |
+| `tugdeck/src/lib/local-model-store.ts` | flags + availability snapshot, `useLocalModel()`, `useLocalModelReady()` |
+| `tugdeck/src/lib/local-model-bridge.ts` | Spec S02 client: `requestClassify`, `requestAvailability`, pending map, sink |
+| `tugrust/crates/tugcast/src/feeds/session_overview.rs` | [P09] emitter: digest, cadence, summarize round-trip, PULSE broadcasts |
+| `tests/app-test/at0xxx-local-model-absent.test.ts` | degradation pin (typing-level; never submits a turn) |
 
 #### Symbols to add / modify {#symbols}
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `LOCAL_MODEL_DOMAIN` / `LOCAL_MODEL_ENABLED_KEY` | const | `local_model.rs` + `local-model-store.ts` (parallel decl) | [P05]; absent ⇒ **false** |
-| `ModelFile`, `MODEL_FILES`, `models_dir()`, `is_installed()`, `download_task()` | struct/fn | `local_model.rs` | Spec S01/S02 |
-| `local_model_download` / `_cancel` / `_probe` arms | match arms | `tugrust/crates/tugcast/src/actions.rs::dispatch_action` | `install_claude` pattern |
-| `ControlMessage::LocalModelResult` | enum variant | `tugrust/crates/tugcast/src/control.rs` | Spec S04; routed to pending map in `run_recv_loop` |
-| `bandShellLine` | fn | `tugdeck/src/lib/shell-line-classifier.ts` | Spec S06; `AUTO_SHELL_DETECTION_ENABLED` deleted |
-| `PulseLine.kind?: "overview"` | field | `tugcode/src/pulse/types.ts`, `tugdeck/src/protocol.ts` (`parsePulseFrame`), `pulse-store.ts` | [P10]; absent ⇒ beat |
+| `LOCAL_MODEL_DOMAIN` / `SHELL_ROUTING_KEY` / `PULSE_OVERVIEW_KEY` | const | `session_overview.rs` + `local-model-store.ts` (parallel decl) | S01; absent ⇒ true |
+| `ShellVerdict` | `@Generable` enum | `LocalModelService.swift` | two cases; constrained decoding |
+| `case "localModel"` + reply | handler | `tugapp/Sources/MainWindow.swift` | S02; registered beside `clipboardRead` |
+| `case "local_model_request"` | handler | `tugapp/Sources/ProcessManager.swift::handleControlMessage` | S03 |
+| `ControlMessage::LocalModelResult` | enum variant | `tugrust/crates/tugcast/src/control.rs` | S03; pending-map routing in `run_recv_loop` |
+| `bandShellLine` | fn | `tugdeck/src/lib/shell-line-classifier.ts` | S05; `AUTO_SHELL_DETECTION_ENABLED` deleted |
+| `PulseLine.kind?: "overview"` | field | `tugcode/src/pulse/types.ts`, `tugdeck/src/protocol.ts` (`parsePulseFrame`), `pulse-store.ts` | [P09]; absent ⇒ beat |
 | `latestOverviewForScope` | fn/selector | `tugdeck/src/lib/pulse-store.ts` | strip's first line |
-| `case "localModel"` + reply | handler | `tugapp/Sources/MainWindow.swift` | Spec S03; registered beside `clipboardRead` etc. |
-| `case "local_model_request"` | handler | `tugapp/Sources/ProcessManager.swift::handleControlMessage` | Spec S04 |
-| `Step.secondaryCta` + new step | type + data | `tugdeck/src/components/tugways/tug-setup.tsx` | [P06] |
-| `reqwest` | dep | `tugrust/Cargo.toml` (workspace) + tugcast | rustls features; no openssl |
 
 ---
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Update `roadmap/local-model-investigations.md` status line to point here once implementation starts.
-- [ ] Record spike results ([Q01]–[Q03] resolutions) in this document as part of Steps 1–2.
-- [ ] If the dash survives and lands: a short tuglaws design-decision entry for the opt-in-flag-default-OFF inversion is the user's call, not this plan's.
+- [ ] Update `roadmap/local-model-investigations.md` status line to note the Apple-runtime pivot and point here.
+- [ ] Record spike results ([Q01]/[Q02] resolutions, frozen prompts) in this document during Step 1.
 
 ---
 
@@ -431,399 +397,271 @@ New pure export in `shell-line-classifier.ts`: `bandShellLine(text, commands): "
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit (Rust, nextest)** | manifest/paths/verify logic; resume math; band-independent digest + cadence logic; control-message serde | Steps 3, 4, 10, 12 |
-| **Integration (Rust, nextest)** | downloader against a local axum test server: happy path, kill+resume, corrupt-file sha reject, cancel | Step 4 |
-| **Unit (TS, bun test)** | `bandShellLine` band table incl. the eval's 26-line corpus as fixtures; store frame-folding; `parsePulseFrame` kind passthrough | Steps 5, 11, 13 |
-| **App-test (selective)** | degradation pin: model-absent instance renders strip + routing exactly as main | Step 14 |
-| **Spike harness (not CI)** | model *quality* (scores, headlines, latency) | Steps 1–2, re-runnable manually |
+| **Unit (Rust, nextest)** | control-message serde; cadence/digest logic (identity injected as closures); gate truth table; refusal back-off | Steps 5–6 |
+| **Unit (TS, bun test)** | band table (26-line corpus + parked-off motivating cases); wrapper equivalence; bridge timeout/absent-handler null paths; store frame folding; `parsePulseFrame` kind passthrough; overview/beat store separation | Steps 3–4, 7 |
+| **App-test (selective)** | degradation pin on this (model-unavailable) machine | Step 8 |
+| **Spike harness (not CI)** | model quality, latency, throttling; re-run after OS updates | Step 1, then regression |
 
 #### What stays out of tests {#test-non-goals}
 
-- Model output quality in CI — quality is spike-validated in `~/bonsai-eval/`; CI never runs inference (no 2 GB download in test, no flaky-LLM assertions).
-- Mocked-LLM UI flows — no fake model answers driving deck assertions (banned real-not-fake pattern); the deck's unsure-band logic is tested purely (verdict injected as a function argument in unit tests of the pure band/decision helpers).
-- TugSetup happy-path download as an app-test — app-tests suppress TugSetup by harness design and a real 2 GB network pull is out; covered by the Rust integration tests + manual debug-app pass.
-- Swift service internals — no XCTest scaffolding exists in tugapp; the service is exercised end-to-end manually in Step 9/12 checkpoints and structurally by the build.
+- Model output quality in CI — spike-validated on real hardware; CI never runs inference (and CI machines may lack Apple Intelligence entirely).
+- Mocked-LLM UI flows — banned; the deck's decision logic is tested as pure functions with verdicts injected as arguments.
+- Live two-line strip behavior — requires an available model; manual verification on Golden Gate hardware (Step 9), while the *absent* rendering gets the automated pin.
+- Swift service internals — no XCTest scaffolding in tugapp; exercised end-to-end in Step 9 and structurally by the build.
 
 ---
 
 ### Execution Steps {#execution-steps}
 
-> **Commit after all checkpoints pass.** Steps 1–2 are the [P01] gate: if either fails its bar, stop and report — do not proceed to Step 3.
+> **Commit after all checkpoints pass.** Step 1 is the [P01] gate — it requires physical macOS 26+ hardware with Apple Intelligence enabled and cannot run before then. Below bar ⇒ STOP and report; do not proceed to Step 2.
 
 #### Step Status Ledger {#step-status-ledger}
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Spike A — ternary quality on the two tasks | pending | — |
-| #step-2 | Spike B — mlx-swift runs the pack + manifest capture | pending | — |
-| #step-3 | tugcast model store + flag constants | pending | — |
-| #step-4 | tugcast downloader + control vocabulary + auto-resume | pending | — |
-| #step-5 | deck local-model store + bridge client | pending | — |
-| #step-6 | TugSetup opt-in step | pending | — |
-| #step-7 | Integration checkpoint — opt-in + download | pending | — |
-| #step-8 | tugapp SPM deps + LocalModelService | pending | — |
-| #step-9 | Bridge classify endpoint (Swift + deck round-trip) | pending | — |
-| #step-10 | Control-socket summarize round-trip | pending | — |
-| #step-11 | Shell disambiguation integration | pending | — |
-| #step-12 | Pulse part-one emitter (tugcast) | pending | — |
-| #step-13 | Pulse overview rendering (deck) | pending | — |
-| #step-14 | Integration checkpoint — full feature + degradation pin | pending | — |
+| #step-1 | Spike — system-model quality, latency, throttling | pending (blocked on macOS 26+ hardware) | — |
+| #step-2 | LocalModelService + bridge endpoint (tugapp) | pending | — |
+| #step-3 | Deck local-model store + bridge client | pending | — |
+| #step-4 | Shell disambiguation integration | pending | — |
+| #step-5 | Control-socket summarize round-trip | pending | — |
+| #step-6 | Overview emitter (tugcast) | pending | — |
+| #step-7 | Overview rendering (deck) | pending | — |
+| #step-8 | Degradation pin app-test | pending | — |
+| #step-9 | Integration checkpoint — full feature matrix | pending | — |
 
-#### Step 1: Spike A — ternary quality on the two tasks {#step-1}
+#### Step 1: Spike — system-model quality, latency, throttling {#step-1}
 
-**Commit:** `plan(local-model): record ternary-2bit spike results (Q01)`
+**Commit:** `plan(local-model): record FoundationModels spike results (Q01, Q02)`
 
-**References:** [P01] Spike gate, [P03] Model choice, [Q01], (#task-prompts, #success-criteria)
+**References:** [P01], [P11], [Q01], [Q02], (#task-prompts, #foundation-models-notes, #success-criteria)
 
 **Artifacts:**
-- [Q01] resolution written into this document: classify score /26, per-line latency, six headline verdicts, summarize latency, peak RAM, the frozen final prompt strings.
+- A small Swift CLI harness added to `~/bonsai-eval/` (outside the repo, beside the Bonsai harnesses) running: the 26-line classify corpus via guided `ShellVerdict` generation; the six pulse digests; a 30-minute mixed-cadence soak.
+- [Q01]/[Q02] resolutions in this document: scores, per-call latencies, load/prewarm behavior, any throttling, the frozen `instructions` strings.
 
 **Tasks:**
-- [ ] In `~/bonsai-eval/`, run the classify corpus (`classify_8b.py`) and the pulse fixtures (`pulse_8b.py`) against `Bonsai-demo/models/Ternary-Bonsai-8B-mlx-2bit` on **stock** `mlx-lm` (a fresh venv with upstream `mlx`, not the fork's editable install — the fork venv is only a reference point).
-- [ ] If the headline wart appears, apply exactly one round of prompt tightening (per the eval precedent) and re-run; freeze the final prompts.
-- [ ] Record everything under [Q01] in this document; flip its Resolution.
+- [ ] Build and run on physical macOS 26+ hardware with Apple Intelligence enabled (NOT the Tart lab — Apple Intelligence is unavailable in VMs).
+- [ ] Adapt the Bonsai-era prompts (#task-prompts); one round of prompt tightening allowed on the headline task per eval precedent; freeze finals.
+- [ ] Record everything under [Q01]/[Q02]; flip their Resolutions.
 
 **Tests:**
-- [ ] The harness scripts themselves are the test; record raw outputs alongside scores in the [Q01] resolution.
+- [ ] The harness is the test; raw outputs recorded with the scores.
 
 **Checkpoint:**
-- [ ] Classify ≥ 25/26 at ≤ 400 ms/line; all six headlines accurate and preamble-free at ≤ 3 s. **Below bar ⇒ STOP the plan and report.**
+- [ ] Classify ≥ 25/26 at ≤ 400 ms warm; six accurate preamble-free headlines ≤ 3 s; no throttling at planned cadences. **Below bar ⇒ STOP the plan and report.**
 
 ---
 
-#### Step 2: Spike B — mlx-swift runs the pack + manifest capture {#step-2}
+#### Step 2: LocalModelService + bridge endpoint (tugapp) {#step-2}
 
 **Depends on:** #step-1
 
-**Commit:** `plan(local-model): record mlx-swift spike + pinned model manifest (Q02, Q03)`
+**Commit:** `tugapp(local-model): FoundationModels service + localModel bridge endpoint`
 
-**References:** [P01] Spike gate, [P02] Runtime, [Q02], [Q03], Spec S01, (#mlx-swift-notes)
+**References:** [P02], [P05], [P06], [P11], Spec S02, (#foundation-models-notes)
 
 **Artifacts:**
-- [Q02] resolution: MLXLLM load path (factory config used), warm classify latency, load time, RAM; [Q03] resolution: HF repo id, pinned revision hash, file list with sha256 + byte sizes filled into Spec S01's prose.
+- `tugapp/Sources/LocalModelService.swift`: protocol + `@available(macOS 26.0, *)` implementation (`#if canImport(FoundationModels)`) + always-unavailable stub; availability, `classify` (guided enum, temp 0), `summarize` (temp 0, capped tokens), `prewarm`; frozen Step 1 prompts as constants with harness-source comments.
+- `MainWindow.swift`: `contentController.add(self, name: "localModel")` beside existing registrations; dispatch case calling the service off-main; JSON-escaped reply via `evaluateJavaScript("window.__tugBridge?.onLocalModelResult?.(…)")` (follow the existing reply helpers' escaping pattern); malformed payloads answer `ok:false`.
 
 **Tasks:**
-- [ ] Create a scratch SwiftPM executable **outside the repo** depending on pinned `mlx-swift` + `mlx-swift-examples` (MLXLLM); load the local ternary pack by directory URL; run the frozen classify prompt and one summarize prompt.
-- [ ] Record the exact package versions that worked (they become the pins in Step 8).
-- [ ] Identify the pack's canonical HF repo + revision; `sha256sum` every pack file; fill Spec S01 values into this document.
+- [ ] Implement; verify the app still builds and runs identically on this Sequoia machine (stub path).
 
 **Tests:**
-- [ ] Scratch runner output captured into the [Q02] resolution (load time, latencies, RAM from Activity Monitor / `mlx.metal` stats).
+- [ ] Build is the structural test (no XCTest in tugapp); the sub-26 bridge answer (`availability:"unavailable"`) is verifiable here and now from the debug-app console.
 
 **Checkpoint:**
-- [ ] Pack loads on stock MLXLLM (or the custom-definition cost is sized and explicitly accepted by the user); warm classify ≤ 500 ms. **Below bar or unsized ⇒ STOP and report.**
+- [ ] `just app-debug` green from clean; debug-app console: `availability` query answers `unavailable` on this machine; on 26+ hardware, `classify("make test")` ⇒ `shell`.
 
 ---
 
-#### Step 3: tugcast model store + flag constants {#step-3}
+#### Step 3: Deck local-model store + bridge client {#step-3}
 
 **Depends on:** #step-2
 
-**Commit:** `tugcast(local-model): model manifest, store paths, presence probe, opt-in flag`
+**Commit:** `tugways(local-model): flags + availability store and host bridge client`
 
-**References:** [P03], [P05], Spec S01, (#symbols)
+**References:** [P04], [P05], [P10], Spec S01, Spec S02, (#state-zone-mapping)
 
 **Artifacts:**
-- `tugrust/crates/tugcast/src/local_model.rs` with Spec S01 consts (real values from Step 2), `models_dir()`, `staging_dir()`, `is_installed()` (stamp probe), `verify_file()` (sha2 streaming), `write_stamp()`; `LOCAL_MODEL_DOMAIN`/`LOCAL_MODEL_ENABLED_KEY` consts + an `enabled(bank_client) -> bool` reader that answers **false** on absent/unreadable (deliberate inversion of the `pulse/enabled` default-ON reader in `main.rs` — copy that closure shape, flip the default).
+- `local-model-bridge.ts` per Spec S02 (pending map, timeouts, `(w.__tugBridge ??= {})` sink, absent-handler null path).
+- `local-model-store.ts`: S01 flag reads with live DEFAULTS-subscription flips (the `pulse-store.ts` pattern, default ON); availability queried at attach / window focus / after classify errors; `useLocalModel()`, per-feature ready selectors (`shellRoutingReady`, `pulseOverviewEnabled`); store attach wired where `attachPulseStore` is wired in deck bootstrap.
 
 **Tasks:**
-- [ ] Module + wiring (`mod local_model;` in `main.rs`).
-- [ ] Path layout per Spec S01 using the `dirs::home_dir().join("Library/Application Support/Tug/…")` pattern from `fs_write.rs`.
+- [ ] Implement both modules.
 
 **Tests:**
-- [ ] Unit: stamp round-trip; `is_installed` false on missing/partial dir; `verify_file` rejects a corrupted temp file; enabled-reader defaults false.
+- [ ] bun test: default-ON flag reads; availability folding; bridge timeout ⇒ null; absent handler ⇒ null (no throw).
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast`
+- [ ] `just test-ts` && `cd tugdeck && bunx vite build`
 
 ---
 
-#### Step 4: tugcast downloader + control vocabulary + auto-resume {#step-4}
+#### Step 4: Shell disambiguation integration {#step-4}
 
 **Depends on:** #step-3
 
-**Commit:** `tugcast(local-model): resumable checksummed downloader with control-frame progress`
+**Commit:** `tugways(shell-routing): heuristic bands + async on-device tiebreak, un-parked behind availability`
 
-**References:** [P04], [P11], Spec S02, Risk R03, (#e2e-flows, #control-socket-extension)
-
-**Artifacts:**
-- `reqwest` (rustls) in workspace + tugcast deps; `download_task()` in `local_model.rs` (Range resume, ×3 backoff, sha verify, atomic finalize, cancel token, ≤ 4 Hz aggregated progress broadcasts); `local_model_download`/`_cancel`/`_probe` arms in `actions.rs::dispatch_action` (the `install_claude` spawn-and-broadcast pattern); startup auto-resume hook in `main.rs` init (enabled && !installed ⇒ spawn task); unsolicited `local_model_status` broadcast on state change.
-
-**Tasks:**
-- [ ] Implement per Spec S02, base URL injectable for tests (default the HF resolve prefix from Spec S01).
-- [ ] In-process single-flight guard (an `Arc<Mutex<Option<CancellationToken>>>` alongside the other shared state handed to `dispatch_action` — three call sites: `control.rs::run_recv_loop`, `server.rs`, `router.rs`).
-- [ ] Cross-process staging lockfile per Spec S02 (O_EXCL + pid, stale-lock recovery, post-acquire stamp re-check, removal on finalize/failure/cancel/drop).
-
-**Tests:**
-- [ ] Integration (nextest, local axum server serving fixture "pack" files with Range support): happy path finalizes + stamps; kill/resume via a mid-stream abort then re-run resumes from `.part`; wrong sha rejects and deletes the staged file; cancel stops promptly and leaves resumable staging; progress frames arrive aggregated and terminal result frame is correct.
-- [ ] Unit: lockfile contention (held-by-live-pid ⇒ polite failure result; stale pid ⇒ reclaimed; stamp appears while waiting ⇒ task exits ok-without-downloading).
-
-**Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast`
-
----
-
-#### Step 5: deck local-model store + bridge client {#step-5}
-
-**Depends on:** #step-4
-
-**Commit:** `tugways(local-model): deck store for opt-in/install state + host bridge client`
-
-**References:** [P05], [P07], [P11], Spec S02, Spec S03, (#state-zone-mapping)
+**References:** [P08], [P10], [Q05], Spec S05, Risk R05, (#e2e-flows, #state-zone-mapping)
 
 **Artifacts:**
-- `tugdeck/src/lib/local-model-store.ts`: parallel-declared flag consts; snapshot `{enabled, installed, downloading, progress: {receivedBytes, totalBytes} | null}`; folds `local_model_*` CONTROL frames; tugbank DEFAULTS subscription for live flag flips (the `pulse-store.ts` pattern, default OFF); sends `local_model_probe` at connection attach; hooks `useLocalModel()`, `useLocalModelReady()` (enabled && installed); `setLocalModelEnabled(bool)` writer in `settings-api.ts` (PUT, like `putSetupSeen`).
-- `tugdeck/src/lib/local-model-bridge.ts` per Spec S03: `requestClassify`, pending map with 1500 ms timeouts, `window.__tugBridge.onLocalModelResult` sink installed at module init, hard null-path when `window.webkit?.messageHandlers?.localModel` is absent.
+- `shell-line-classifier.ts`: `bandShellLine` per Spec S05; `classifyShellLine` as wrapper; `AUTO_SHELL_DETECTION_ENABLED` deleted; entry points take caller-supplied availability.
+- `tug-prompt-entry.tsx`: 300 ms debounce pre-consult (existing pre-gates reused: single line, ≤ 256 chars, atom-free), verdict cache (cap 32, cleared on submit/clear), submit band logic with ≤ 250 ms unsure-await falling back to Code; live-typing chip gate flipped from the deleted constant to `shellRoutingReady` via ref plumbing (the `pathCommandsStoreRef` pattern); auto-routed history push and `origin:"auto"` attribution byte-identical.
 
 **Tasks:**
-- [ ] Implement both modules; wire store attach where `attachPulseStore` is wired (find its call site in deck bootstrap and mirror it).
+- [ ] Implement; honor [Q05]'s decided default at implementation time (one constant).
 
 **Tests:**
-- [ ] bun test: frame folding (progress → snapshot, result → probe refresh), default-OFF flag read, bridge timeout ⇒ null, absent handler ⇒ null (no throw).
+- [ ] bun test: band table over the eval's 26-line corpus + the parked-off motivating cases (`write a poem`, `apply the patch` ⇒ unsure — never shell without a verdict); wrapper equivalence; cache cap/clear semantics as pure-helper tests.
 
 **Checkpoint:**
 - [ ] `just test-ts` && `cd tugdeck && bunx vite build`
+- [ ] On this machine (unavailable): typing/submitting behaves exactly as main. On 26+ hardware: `make test` ⇒ shell, `make the button bigger` ⇒ Claude.
 
 ---
 
-#### Step 6: TugSetup opt-in step {#step-6}
-
-**Depends on:** #step-5
-
-**Commit:** `tugways(tug-setup): optional on-device AI step with determinate download progress`
-
-**References:** [P06], [P11], Spec S02, Risk R03, (#e2e-flows, #state-zone-mapping)
-
-**Artifacts:**
-- In `tug-setup.tsx`: `Step.secondaryCta?` + `StepRow` rendering for it; a fourth `localAiStep` between `signInStep` and `openStep` derived from `useLocalModel()`: active (Download / Skip CTAs, copy per `tug-setup-copy.ts` conventions), busy (determinate `TugProgressIndicator` `variant="bar"` with aggregated bytes + `formatValue` percent — extend `StepRow` to render an optional progress node in the detail slot), error (`local_model_download_result` error + Retry / Skip), done ("On-device AI ready" or "Skipped" as a done-state detail). Download CTA = `setLocalModelEnabled(true)` + control frame `local_model_download`; Skip = `setLocalModelEnabled(false)` + local done-latch (a `useState` like `openedFirstSession`).
-- Step visibility: only on genuine first run (`firstRun`), so existing set-up users are never modally interrupted ([Q04] covers their path).
-- Two behaviors are by design, not bugs: (a) the optional step and `openStep` may be **simultaneously active** — the optional step must never gate "Start a Claude Code session", so a logged-in first-run user sees both CTAs at once; (b) opening the first session closes the wizard even mid-download (`needsFirstSession` flips false at `cardCount > 0`) — the download continues in tugcast and the startup auto-resume ([P04]) backstops an app quit, so the wizard's progress row is a courtesy view, not the owner of the operation.
-
-**Tasks:**
-- [ ] Implement step + CSS touch-ups in `tug-setup.css`; keep the wizard's step order and jail semantics untouched.
-- [ ] Extend `gallery-tug-setup.tsx` with the new step's states for HMR iteration.
-
-**Tests:**
-- [ ] bun test in `tug-setup-copy.test.ts` style for any new copy helpers.
-
-**Checkpoint:**
-- [ ] `just test-ts` && `cd tugdeck && bunx vite build`
-- [ ] Manual: gallery states render; debug app with `SESSION_FORCE_SETUP` shows the step; Skip leaves flag off.
-
----
-
-#### Step 7: Integration checkpoint — opt-in + download {#step-7}
-
-**Depends on:** #step-4, #step-6
-
-**Commit:** `N/A (verification only)`
-
-**References:** [P04], [P06], Spec S01, Spec S02, Risk R03, (#success-criteria)
-
-**Tasks:**
-- [ ] On a fresh instance (or after deleting the models dir + flag): opt in via the wizard, watch real HF download to completion, verify stamp + file shas on disk.
-- [ ] Kill tugcast mid-download; relaunch; confirm silent resume and completion.
-- [ ] Cancel mid-download; confirm clean stop and Retry works.
-
-**Tests:**
-- [ ] `just app-test-changed` (setup-suppressed corpus unaffected).
-
-**Checkpoint:**
-- [ ] All three manual flows pass; `cd tugrust && cargo nextest run` green.
-
----
-
-#### Step 8: tugapp SPM deps + LocalModelService {#step-8}
+#### Step 5: Control-socket summarize round-trip {#step-5}
 
 **Depends on:** #step-2
 
-**Commit:** `tugapp(local-model): mlx-swift dependency + lazy LocalModelService`
-
-**References:** [P02], [P12], [Q02], Spec S01, Risk R04, (#mlx-swift-notes, #task-prompts)
-
-**Artifacts:**
-- Pinned `XCRemoteSwiftPackageReference`s (versions from Step 2) in `Tug.xcodeproj`; `tugapp/Sources/LocalModelService.swift`: pack-directory discovery (same path as Spec S01), tugbank-flag check via `TugbankClient`, lazy load, single-flight serial queue, 5-min idle unload timer, `classify(text:) -> String?` and `summarize(prompt:) -> String?` using the frozen prompts (temp 0, max tokens 8/32), refusal when flag off or pack absent.
-
-**Tasks:**
-- [ ] Add packages; confirm `just app-debug` resolves and builds from clean; confirm `scripts/sign-bundle.sh` output launches.
-- [ ] Implement the service; log through the app's existing logging so failures are observable.
-
-**Tests:**
-- [ ] Build is the structural test (no XCTest in tugapp); a temporary debug hook is acceptable during development but must not land.
-
-**Checkpoint:**
-- [ ] `just app-debug` green from clean; app launches; with pack installed, a wired temporary call answers classify correctly (removed before commit if hooky — the Step 9 bridge is the durable exerciser).
-
----
-
-#### Step 9: Bridge classify endpoint (Swift + deck round-trip) {#step-9}
-
-**Depends on:** #step-8, #step-5
-
-**Commit:** `tugapp(local-model): localModel bridge handler; deck round-trip live`
-
-**References:** [P07], [P11], Spec S03, (#e2e-flows)
-
-**Artifacts:**
-- `MainWindow.swift`: `contentController.add(self, name: "localModel")` beside the existing registrations; dispatch case that calls `LocalModelService` off-main and replies via `evaluateJavaScript("window.__tugBridge?.onLocalModelResult?.(…)")` with proper JSON escaping (follow the existing reply helpers' pattern).
-
-**Tasks:**
-- [ ] Implement handler + reply; malformed payloads answer `ok:false`.
-
-**Tests:**
-- [ ] Manual in debug app console: `await requestClassify("make test")` ⇒ `"shell"`, `await requestClassify("make the button bigger")` ⇒ `"prompt"`; with flag off ⇒ `null` fast.
-
-**Checkpoint:**
-- [ ] `just app-debug` green; both console probes answer per spec; `cd tugdeck && bunx vite build` green.
-
----
-
-#### Step 10: Control-socket summarize round-trip {#step-10}
-
-**Depends on:** #step-8
-
 **Commit:** `tugcast+tugapp(local-model): summarize request/reply over the control socket`
 
-**References:** [P08], Spec S04, (#control-socket-extension)
+**References:** [P07], Spec S03, (#control-socket-extension)
 
 **Artifacts:**
-- `control.rs`: `ControlMessage::LocalModelResult` variant + serde test; pending-map plumbing and a `request_local_model_summary(prompt) -> oneshot` helper hung off the app-bound drain channel (exposed from `main.rs` wiring as a small handle struct passed to feeds); 10 s timeout.
-- `ProcessManager.swift`: `case "local_model_request"` → service call off-main → `connection.send(["type":"local_model_result", …])`.
+- `control.rs`: `ControlMessage::LocalModelResult` + serde test (the `test_control_message_tell_deserialization` pattern); pending-map handle struct + `request_local_model_summary(prompt) -> oneshot` over a clone of the `main.rs` drain sender; 10 s timeout; headless (no socket) ⇒ immediate unavailable.
+- `ProcessManager.swift`: `case "local_model_request"` → service off-main → `connection.send(["type":"local_model_result", …])`.
 
 **Tasks:**
-- [ ] Implement both sides; headless tugcast (no socket) makes the helper answer unavailable immediately.
+- [ ] Implement both sides.
 
 **Tests:**
-- [ ] Unit (nextest): `LocalModelResult` deserialization (the `test_control_message_tell_deserialization` pattern); pending-map resolve/timeout logic with a stubbed channel.
+- [ ] nextest: `LocalModelResult` deserialization; pending-map resolve/timeout with a stubbed channel.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast`; `just app-debug` green.
 
 ---
 
-#### Step 11: Shell disambiguation integration {#step-11}
+#### Step 6: Overview emitter (tugcast) {#step-6}
 
-**Depends on:** #step-9
+**Depends on:** #step-5
 
-**Commit:** `tugways(shell-routing): heuristic bands + async local-model tiebreak, un-parked behind opt-in`
+**Commit:** `tugcast(pulse): session overview emitter — digest, cadence, on-device summarize`
 
-**References:** [P09], [P11], Spec S06, Risk R06, (#state-zone-mapping, #e2e-flows)
-
-**Artifacts:**
-- `shell-line-classifier.ts`: `bandShellLine` per Spec S06; `classifyShellLine` reduced to the compatibility wrapper; `AUTO_SHELL_DETECTION_ENABLED` deleted; both entry points gated on a caller-supplied `enabled: boolean` (the pure module stays store-free — callers pass `useLocalModelReady()`-derived state via the existing ref plumbing in `tug-prompt-entry.tsx`).
-- `tug-prompt-entry.tsx`: debounce pre-consult in the updateListener (reusing the existing cheap pre-gates: single line, ≤ 256 chars, atom-free), verdict cache Map (cap 32, cleared on submit/clear), submit-path band logic with the ≤ 250 ms await (unsure + in-flight) falling back to Code; live-typing chip gate flipped from the deleted constant to the availability signal.
-
-**Tasks:**
-- [ ] Implement; keep the auto-routed history push and `origin:"auto"` attribution path byte-identical.
-
-**Tests:**
-- [ ] bun test: band table over the eval's 26-line corpus + the parked-off motivating cases (`write a poem`, `apply the patch` ⇒ unsure, never shell without a verdict); wrapper equivalence (`classifyShellLine === (band === "shell")`); cache cap + clear semantics as pure-helper tests.
-
-**Checkpoint:**
-- [ ] `just test-ts` && `cd tugdeck && bunx vite build`
-- [ ] Manual (model installed + enabled): `make test` ⇒ shell; `make the button bigger` ⇒ Claude; flag off ⇒ everything routes to Claude exactly as main.
-
----
-
-#### Step 12: Pulse part-one emitter (tugcast) {#step-12}
-
-**Depends on:** #step-3, #step-10
-
-**Commit:** `tugcast(pulse): session overview emitter — digest, cadence, local-model summarize`
-
-**References:** [P10], [P11], Spec S04, Spec S05, (#e2e-flows)
+**References:** [P07], [P09], [P10], Spec S01, Spec S03, Spec S04, (#e2e-flows)
 
 **Artifacts:**
-- `feeds/session_overview.rs`: per-session accumulator over a `code_tx` subscription (own replay-mute bracket handling mirroring `forwardable_session`), cadence per Spec S05, digest composer (JSONL prompts via `scribe::session_prompts_since`, path built per Spec S05's identity rules), summarize via the Step 10 handle, PULSE broadcast of `kind:"overview"` frames, 60 s back-off on unavailable, triple-gated per Spec S05 (local-model enabled from Step 3's reader + `is_installed()` + `pulse/enabled`).
-- Wiring in `main.rs` beside the pulse bridge task, constructed with the identity handles per the [P10] identity-source note: a `SessionResolver` closure over an `Arc` clone of the supervisor's in-mem session map (the `try_lock` shape from the draft path) and the SQLite `SessionLedger` handle for `SessionRow.project_dir`.
+- `feeds/session_overview.rs`: per-session accumulator over its own `code_tx` subscription (replay-mute brackets mirroring `forwardable_session`); cadence + gates per Spec S04 (`pulse-overview` flag reader per S01 + the `pulse/enabled` reader shape reused from `main.rs` + refusal back-off); digest composer; summarize via the Step 5 handle; PULSE broadcasts; module one-way (outputs = broadcast + tracing only, the pulse bridge's isolation doctrine).
+- `main.rs` wiring beside the pulse bridge task, constructed with identity handles per [P07]: `SessionResolver` over an `Arc` clone of the supervisor's in-mem session map (the `try_lock` shape) + the SQLite `SessionLedger` handle for `SessionRow.project_dir`; unresolvable identity skips the tick silently.
 
 **Tasks:**
-- [ ] Implement; keep the module one-way (outputs = PULSE broadcast + tracing only, matching the pulse bridge's isolation doctrine).
-- [ ] Unresolvable identity (no claude id yet, no project dir) skips the tick silently — never an error surface.
+- [ ] Implement per specs.
 
 **Tests:**
-- [ ] Unit: cadence trigger table (8-frames / 30 s / 15 s floor / unchanged-skip); digest composition from fixture frames + a fixture JSONL (resolver + project-dir injected as test closures); replay-bracket muting; frame JSON shape (`kind:"overview"`, single scope, clipped text); triple-gate truth table.
+- [ ] nextest: cadence trigger table (8-frames / 30 s / 15 s floor / unchanged-skip); digest composition from fixture frames + fixture JSONL (resolver + project-dir injected as test closures); replay-bracket muting; frame shape (`kind:"overview"`, single scope, clipped text); gate truth table; back-off doubling/reset.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast`
 
 ---
 
-#### Step 13: Pulse overview rendering (deck) {#step-13}
+#### Step 7: Overview rendering (deck) {#step-7}
 
-**Depends on:** #step-12
+**Depends on:** #step-6
 
 **Commit:** `tugways(pulse): render the overview line above the live beat`
 
-**References:** [P10], [P11], Spec S05, (#state-zone-mapping)
+**References:** [P09], [P10], Spec S04, (#state-zone-mapping)
 
 **Artifacts:**
-- `protocol.ts::parsePulseFrame` + `PulseFramePayload`: optional `kind` passthrough; `tugcode/src/pulse/types.ts::PulseLine` gains the documented optional field (tugcode never emits it; the type is the wire contract).
-- `pulse-store.ts`: overview lines stored separately (latest per scope; never entering the beat `lines`/history/cleared-watermark machinery), `latestOverviewForScope`, hook.
-- `session-pulse-strip.tsx` + CSS: overview as a first line above the existing stage line; absent ⇒ single-line layout identical to today (no reserved empty row).
+- `protocol.ts::parsePulseFrame` + payload type: optional `kind` passthrough; `tugcode/src/pulse/types.ts::PulseLine` documents the field (tugcode never emits it; the type is the wire contract).
+- `pulse-store.ts`: overviews stored separately (latest per scope; never entering beat `lines`/history/cleared-watermark machinery); `latestOverviewForScope` + hook.
+- `session-pulse-strip.tsx` + CSS: overview as first line above the stage line; absent ⇒ single-line layout identical to today (no reserved empty row); beat-line min-dwell/queue design untouched; overview swaps instant.
 
 **Tasks:**
-- [ ] Implement; respect the strip's min-dwell/queue design for the beat line untouched; overview swaps are instant (it is stable by construction).
+- [ ] Implement.
 
 **Tests:**
-- [ ] bun test: `parsePulseFrame` kind passthrough + absent-default; store separation (overview never pollutes beat history/groups); selector scope rules match `latestLineForScope` semantics.
+- [ ] bun test: `parsePulseFrame` kind passthrough + absent default; store separation; selector scope rules matching `latestLineForScope` semantics (session's own + `"app"`-wide + unscoped).
 
 **Checkpoint:**
 - [ ] `just test-ts` && `cd tugdeck && bunx vite build`
 
 ---
 
-#### Step 14: Integration checkpoint — full feature + degradation pin {#step-14}
+#### Step 8: Degradation pin app-test {#step-8}
 
-**Depends on:** #step-7, #step-11, #step-13
+**Depends on:** #step-4, #step-7
 
-**Commit:** `test(app-test): pin model-absent degradation for local-model surfaces`
+**Commit:** `test(app-test): pin model-unavailable degradation for local-model surfaces`
 
-**References:** [P11], Spec S05, Spec S06, (#success-criteria, #test-non-goals)
+**References:** [P10], Spec S04, Spec S05, (#test-non-goals)
 
 **Artifacts:**
-- `tests/app-test/at0xxx-local-model-absent.test.ts` with `@covers` lines for `local-model-store.ts`, `session-pulse-strip.tsx`, and `tug-prompt-entry.tsx`: on a model-absent instance, the strip renders single-line and typing `make ` / `git ` into the prompt entry never auto-inserts the `!shell` chip (today's parked behavior, pinned). **Typing-level only — the test never submits a turn** (a real send into a replay-backed harness session is out of bounds; real-claude flows are on-demand only). The submit-time band/verdict semantics are covered by Step 11's pure-function unit suite instead.
+- `tests/app-test/at0xxx-local-model-absent.test.ts` with `@covers` for `local-model-store.ts`, `session-pulse-strip.tsx`, `tug-prompt-entry.tsx`: on a model-unavailable instance (any pre-26 machine, and CI), the strip renders single-line and typing `make ` / `git ` never auto-inserts the `!shell` chip. **Typing-level only — never submits a turn** (a real send into a replay-backed harness session is out of bounds; submit-time semantics live in Step 4's pure-function suite).
 
 **Tasks:**
-- [ ] Write the app-test; `just app-test-covers-check` green.
-- [ ] Full manual pass with model installed: live session shows overview within ~30 s of activity; shell disambiguation behaves per Step 11's manual matrix; toggling the flag off returns both surfaces to main behavior without relaunch (store DEFAULTS subscription).
+- [ ] Write the test; `just app-test-covers-check` green.
 
 **Tests:**
 - [ ] `just app-test-changed`
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run` && `just test-ts` && `cd tugdeck && bunx vite build` && `just app-test-changed` all green; manual matrix passes.
+- [ ] Suite green on this (Sequoia) machine — which exercises the exact degradation path shipping to every pre-Golden-Gate user.
+
+---
+
+#### Step 9: Integration checkpoint — full feature matrix {#step-9}
+
+**Depends on:** #step-8
+
+**Commit:** `N/A (verification only)`
+
+**References:** [P10], (#success-criteria)
+
+**Tasks:**
+- [ ] On 26+ hardware with Apple Intelligence: live session shows an overview within ~30 s of activity; shell matrix (`make test` ⇒ shell, `make the button bigger` ⇒ Claude, `git status` instant-shell with no model call); flags flip both features off live without relaunch (DEFAULTS subscription); Apple Intelligence toggled off at OS level ⇒ both surfaces degrade to main behavior on next availability re-query.
+- [ ] On this Sequoia machine: everything byte-identical to main.
+
+**Tests:**
+- [ ] `cd tugrust && cargo nextest run` && `just test-ts` && `cd tugdeck && bunx vite build` && `just app-test-changed`
+
+**Checkpoint:**
+- [ ] Full matrix passes on both machines.
 
 ---
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** An opt-in, download-on-demand on-device model in Tug.app powering model-assisted shell routing and a Pulse overview line, degrading to exactly today's behavior in every opted-out or model-absent state.
+**Deliverable:** Shell disambiguation and a Pulse overview line powered by the OS's on-device model — zero acquisition infrastructure, private and offline, lighting up automatically where Apple Intelligence is available and invisible everywhere else.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Spike results recorded and above bar ([Q01], [Q02] resolved in this document).
-- [ ] Fresh opt-in downloads, resumes across a kill, verifies, and finalizes (Step 7 flows).
-- [ ] Both features work live with the model installed; both surfaces are byte-identical to main when it isn't (Step 14 matrix + app-test pin).
-- [ ] `cargo nextest run`, `just test-ts`, `bunx vite build`, `just app-test-changed` green.
+- [ ] Spike recorded and above bar ([Q01]/[Q02] resolved here).
+- [ ] Both features live on Golden Gate hardware; both surfaces byte-identical to main wherever the model is unavailable (Step 9 matrix + Step 8 pin).
+- [ ] Deployment target still 13.0; app builds and runs unchanged on macOS 13–15.
 - [ ] Scribe untouched (no diff under `scribe.rs` or its callers).
+- [ ] `cargo nextest run`, `just test-ts`, `bunx vite build`, `just app-debug`, `just app-test-changed` green.
 
 **Acceptance tests:**
-- [ ] Step 4 downloader integration suite.
-- [ ] Step 11 band-table unit suite (26-line corpus + parked-off motivating cases).
-- [ ] Step 14 app-test degradation pin.
+- [ ] Step 4 band-table unit suite.
+- [ ] Step 6 cadence/digest/gate unit suite.
+- [ ] Step 8 app-test degradation pin.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Settings surface for the opt-in toggle ([Q04]).
-- [ ] Overview persistence in the pulse ledger + history integration ([Q05]).
-- [ ] Tug CDN self-hosting of the weights (replaces the HF dependency).
-- [ ] The larger Pulse/Lens multi-session redesign that builds on the overview line.
-- [ ] Model-version upgrade UX (manifest bump flow exists; no UI for it yet).
+- [ ] Settings surface for the flags ([Q03]).
+- [ ] Overview persistence + history ([Q04]).
+- [ ] The larger Pulse/Lens multi-session redesign building on the overview line.
+- [ ] Further on-device tenants (session titles, lens ranking, dedup) — the task-shaped service API is ready for them.
+- [ ] Re-run the spike harness after each macOS update (Risk R04) — cheap, manual, worth ritualizing.
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Spike gate | Step 1–2 recorded results vs Success Criteria bars |
-| Download robustness | Step 4 integration tests + Step 7 kill/resume manual |
-| Feature parity when absent | Step 14 app-test + manual flag-off matrix |
-| Workspace health | `cargo nextest run` / `just test-ts` / `bunx vite build` / `just app-test-changed` |
+| Spike gate | Step 1 recorded results vs Success Criteria bars |
+| Degradation parity | Step 8 app-test + Step 9 Sequoia-side matrix |
+| Live behavior | Step 9 Golden-Gate-side matrix |
+| Workspace health | `cargo nextest run` / `just test-ts` / `bunx vite build` / `just app-debug` / `just app-test-changed` |
