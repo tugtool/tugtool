@@ -808,6 +808,55 @@ export class FocusContext {
   }
 
   /**
+   * Re-assert this context's key view as a KEYBOARD destination — the landing
+   * half of a keyboard-driven activation (Cmd-L, pane cycling) on a card whose
+   * retained key view may have been left by a pointer. The position does not
+   * move: the key view (and any descended scope) stays exactly where the card
+   * remembers it; only the modality is asserted, so the ring paints, the
+   * engine reveals it, and the keyboard lands. A keyboard gesture that
+   * activates a card must SHOW where the keyboard went — a retained pointer
+   * key view replayed as-is is an invisible focus mark, and an invisible mark
+   * reads as drift.
+   *
+   * Stale state heals first, so a ring is never asserted over a destination
+   * that is not there: a non-trapped descended scope whose key view no longer
+   * resolves (its row re-rendered away while the card was in the background)
+   * ascends level by level until a live view is found, and a dead key view at
+   * the bottom clears to `null`. Trapped modes are never popped — a dialog
+   * owns itself, even while its focusable mounts late.
+   *
+   * Returns whether a live key view holds the keyboard after the pass; on
+   * `false` the caller's resolution (saved snapshot, default walk) should land
+   * a destination of its own.
+   */
+  assertKeyboardDestination(): boolean {
+    while (this.keyViewId !== null && this.keyViewElement() === null) {
+      const top = this.modeStack[this.modeStack.length - 1];
+      if (top !== undefined && !top.trapped) {
+        this.popFocusMode(top.scopeId, { moveDomFocus: false });
+        continue;
+      }
+      if (top === undefined) {
+        this.setKeyView(null);
+      }
+      break;
+    }
+    if (this.keyViewId === null || this.keyViewElement() === null) return false;
+    // Assert the modality directly rather than through `setKeyView`, whose
+    // unchanged-pair early return would skip the reveal: a Cmd-L return must
+    // show the ring even when the key view was already keyboard-flavored.
+    this.keyViewKeyboard = true;
+    this.reproject();
+    if (!this.revealSuppressed && this.isActive()) {
+      const el = this.keyViewElement();
+      if (el !== null) revealFocusTarget(el);
+    }
+    this.focusKeyView();
+    this.notify();
+    return true;
+  }
+
+  /**
    * Land the KEYBOARD for the current key view, per its route ([P01]/[P04]):
    * a dom-granted key view (a responder with a focus contract — a text
    * surface) is GRANTED real DOM focus via {@link grantTextSurface}; an
@@ -2053,15 +2102,30 @@ export class FocusManager {
    *     subscription already did, but it also performs the [P20] focus restore and
    *     covers cold-boot ordering where the focus claim can precede the store
    *     notify. Don't "simplify" the `setKeyCard` out of here.
+   *
+   * `opts.modality: "keyboard"` declares the activation a keyboard gesture
+   * (Cmd-L, pane cycling): the adopted card's retained key view is re-asserted
+   * as a keyboard destination — ring, reveal, keyboard landing, stale-descend
+   * healing — via {@link FocusContext.assertKeyboardDestination}. A `true`
+   * return then also covers that landing, so the activation channel skips its
+   * framework/engine claim exactly as it does for a restored dialog.
    */
-  adoptKeyCard(cardId: string): boolean {
+  adoptKeyCard(cardId: string, opts?: { modality?: FocusModality }): boolean {
     this.setKeyCard(cardId);
     const ctx = this.activeContext();
-    const hasDialog = ctx.hasPushedKeyDestination();
-    if (hasDialog) ctx.focusKeyView();
     // (The first-responder axis is restored in `setKeyCard` above — the universal
     // activation signal — so it covers pane-frontmost promotion too, not just the
     // card-level focus claim this method performs.)
+    if (opts?.modality === "keyboard") {
+      this.lastInputSource = "keyboard";
+      const landed = ctx.assertKeyboardDestination();
+      // The pushed-destination truth is re-read AFTER the assert: the heal
+      // may have popped a stale descend that would otherwise have counted as
+      // a pending destination and silently swallowed the landing.
+      return landed || ctx.hasPushedKeyDestination();
+    }
+    const hasDialog = ctx.hasPushedKeyDestination();
+    if (hasDialog) ctx.focusKeyView();
     return hasDialog;
   }
 

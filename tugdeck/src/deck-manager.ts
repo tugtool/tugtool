@@ -1837,7 +1837,19 @@ export class DeckManager implements IDeckManagerStore {
     for (const id of moved) this.cardLifecycle.notifyCardDidMove(id);
     this.scheduleSave();
 
-    this.activateCard(cardId);
+    // Assigning always raises: the slotted card becomes the active one, as a
+    // first-class activation. A raw `activateCard` here would flip the first
+    // responder but skip the focus transfer — the outgoing card (the Lens,
+    // whose list dispatched the assign) would never save its bag, and the
+    // slotted card would never receive its focus claim (no caret until the
+    // user clicks into it).
+    const outgoing = this.getFirstResponderCardId();
+    transferFocusForActivation({
+      outgoingCardId: outgoing,
+      incomingCardId: cardId,
+      store: this,
+      commitMutation: () => this.activateCard(cardId),
+    });
   }
 
   /** Per-pane position/size deltas between two pane arrays of the same shape,

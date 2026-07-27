@@ -452,6 +452,16 @@ export interface ApplyBagFocusOptions {
    * view ([L23] — preserve user-visible scroll).
    */
   preventScroll?: boolean;
+  /**
+   * The input modality of the activation gesture itself. `"keyboard"`
+   * declares a keyboard-driven activation (Cmd-L, pane cycling): the
+   * adopted card's retained key view is re-asserted as a keyboard
+   * destination (ring + reveal + keyboard landing), and any placement
+   * this dispatch performs asserts keyboard modality — a keyboard
+   * gesture must SHOW where the keyboard landed. Omitted, every branch
+   * keeps its historical modality (pointer restores never ring).
+   */
+  modality?: FocusModality;
 }
 
 /**
@@ -484,6 +494,7 @@ export function applyBagFocus(
   options?: ApplyBagFocusOptions,
 ): "applied" | "deferred" {
   const site = options?.site ?? "apply-bag-focus";
+  const keyboardGesture = options?.modality === "keyboard";
 
   // [P21] activation drives the key card. This is THE focus-activation channel
   // (click / tab switch / pane activation / cross-pane move / window blur→focus /
@@ -493,12 +504,20 @@ export function applyBagFocus(
   // card-modal dialog's trap, a mid-flow focus-cycle, a descended scope), THAT is
   // the card's focus destination, not the resting editor: `adoptKeyCard` lands
   // focus on it and reports `true`, and we skip the framework/engine claim below.
-  // A resting card (base mode) reports `false` and falls through unchanged.
-  if (getFocusManager()?.adoptKeyCard(cardId) === true) {
+  // A resting card (base mode) reports `false` and falls through unchanged. A
+  // keyboard-modality activation additionally re-asserts the adopted card's
+  // retained key view as a keyboard destination (ring + reveal), so a `true`
+  // also means "the keyboard landed somewhere visible".
+  if (
+    getFocusManager()?.adoptKeyCard(
+      cardId,
+      keyboardGesture ? { modality: "keyboard" } : undefined,
+    ) === true
+  ) {
     return "applied";
   }
 
-  const resolution = resolveBagFocus(cardId, store);
+  let resolution = resolveBagFocus(cardId, store);
 
   if (resolution.kind === "none") return "applied";
   if (
@@ -511,7 +530,10 @@ export function applyBagFocus(
     // engine's declarative late-mount realization — the placement re-runs
     // when a matching focusable registers. Focus itself is not retried for
     // pointer restores (the one-shot contract).
-    if (resolution.kind === "deferred-dom" && resolution.keyboard === true) {
+    if (
+      resolution.kind === "deferred-dom" &&
+      (resolution.keyboard === true || keyboardGesture)
+    ) {
       getFocusManager()?.place(
         cardId,
         resolution.focusKind === "dom"
@@ -520,7 +542,28 @@ export function applyBagFocus(
         { modality: "keyboard" },
       );
     }
-    return "deferred";
+    // A keyboard activation must not end with the keyboard nowhere: when the
+    // named target is simply GONE (the card's content changed while it was in
+    // the background — a slotted row whose card closed), the armed placement
+    // is a ghost that may never realize. Fall through to the default walk so
+    // the keyboard lands a live, ringed destination now; the walk's placement
+    // supersedes the ghost through the same primitive. Pointer restores keep
+    // the one-shot "deferred is a graceful no-focus outcome" contract.
+    const fm = getFocusManager();
+    const cardRoot = store.peekCardHostRoot(cardId);
+    if (
+      keyboardGesture &&
+      resolution.kind === "deferred-dom" &&
+      cardRoot !== null &&
+      cardRoot.isConnected &&
+      fm !== null &&
+      fm.keyCard() === cardId &&
+      fm.keyView() === null
+    ) {
+      resolution = { kind: "default-focus", cardRoot };
+    } else {
+      return "deferred";
+    }
   }
 
   if (resolution.kind === "framework") {
@@ -553,7 +596,10 @@ export function applyBagFocus(
     if (fm !== null && target !== null) {
       measureFocusClaim(`${site}:framework`, cardId, doc, () => {
         fm.place(cardId, target, {
-          modality: resolution.keyboard === true ? "keyboard" : "pointer",
+          modality:
+            resolution.keyboard === true || keyboardGesture
+              ? "keyboard"
+              : "pointer",
           preventScroll: options?.preventScroll,
         });
       });
@@ -619,6 +665,13 @@ export function applyBagFocus(
   // at the engine; Tab and clicks reach the stops. The raw `.focus()`
   // inside `traceApplyDefaultFocus` survives only for engine-less
   // bootstraps (gallery previews, headless).
+  // A keyboard-driven activation asserts its own modality on the default
+  // placement — the walk's landing must wear the ring and be revealed, or the
+  // gesture ends with the keyboard somewhere invisible. Pointer/lifecycle
+  // activations keep the historical quiet restore (`pointer`, no scroll).
+  const walkOpts = keyboardGesture
+    ? ({ modality: "keyboard" } as const)
+    : ({ modality: "pointer", preventScroll: true } as const);
   traceApplyDefaultFocus(`${site}-default`, cardId, resolution.cardRoot, {
     ...(options?.preventScroll === true ? { preventScroll: true } : {}),
     placeViaEngine: (target) => {
@@ -626,18 +679,12 @@ export function applyBagFocus(
       if (fm === null) return false;
       const focusKey = target.getAttribute("data-tug-focus-key");
       if (focusKey !== null && focusKey !== "") {
-        fm.place(cardId, { kind: "focus-key", focusKey }, {
-          modality: "pointer",
-          preventScroll: true,
-        });
+        fm.place(cardId, { kind: "focus-key", focusKey }, walkOpts);
         return true;
       }
       const stateKey = target.getAttribute("data-tug-state-key");
       if (stateKey !== null && stateKey !== "") {
-        fm.place(cardId, { kind: "state-key", key: stateKey }, {
-          modality: "pointer",
-          preventScroll: true,
-        });
+        fm.place(cardId, { kind: "state-key", key: stateKey }, walkOpts);
         return true;
       }
       const responderId = target
@@ -648,10 +695,7 @@ export function applyBagFocus(
         responderId !== null &&
         fm.responderHasFocusContract(responderId)
       ) {
-        fm.place(cardId, { kind: "responder", responderId }, {
-          modality: "pointer",
-          preventScroll: true,
-        });
+        fm.place(cardId, { kind: "responder", responderId }, walkOpts);
         return true;
       }
       // Unnameable engine-routed stop: no DOM focus claim — but the raw
@@ -713,6 +757,14 @@ export interface TransferFocusForActivationOptions {
    * layer after the id is gone.
    */
   outgoingWillBeDestroyed?: boolean;
+  /**
+   * The input modality of the activation gesture. `"keyboard"` marks a
+   * keyboard-driven activation (Cmd-L): the incoming card's restored
+   * key view is asserted as a keyboard destination — ring visible,
+   * revealed — instead of replaying whatever modality it was left
+   * with. See {@link ApplyBagFocusOptions.modality}.
+   */
+  modality?: FocusModality;
 }
 
 /**
@@ -734,6 +786,7 @@ export function transferFocusForActivation(
     store,
     commitMutation,
     outgoingWillBeDestroyed,
+    modality,
   } = options;
 
   // Step 1 — Save outgoing + hand its selection over to the
@@ -803,6 +856,7 @@ export function transferFocusForActivation(
   // channel.
   const result = applyBagFocus(incomingCardId, store, {
     site: "focus-transfer",
+    ...(modality !== undefined ? { modality } : {}),
   });
 
   // Step 5 — Post-dispatch follow-ups (selection / form-control).

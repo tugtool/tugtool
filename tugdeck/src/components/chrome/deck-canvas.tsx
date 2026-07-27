@@ -23,7 +23,7 @@ import { useResponder } from "@/components/tugways/use-responder";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { transferFocusForActivation } from "@/focus-transfer";
+import { applyBagFocus, transferFocusForActivation } from "@/focus-transfer";
 import { CANVAS_BACKGROUND_ATTRIBUTE } from "@/gesture-interpreter";
 import { TugPane } from "./tug-pane";
 import { CardHost } from "./card-host";
@@ -445,11 +445,25 @@ export function DeckCanvas(_props: DeckCanvasProps) {
               store,
               commitMutation: () => store.activateCard(prior),
             });
+          } else {
+            // No live prior to return to (never stashed, or that card has
+            // closed). ⌘L must never be a silent no-op: re-dispatch the
+            // Lens's own focus claim with keyboard modality, so the key
+            // view is re-asserted visibly — healing any stale descend the
+            // closed card left behind.
+            applyBagFocus(lensCard.id, store, {
+              site: "focus-lens",
+              modality: "keyboard",
+            });
           }
           return;
         }
 
         // Focus in: stash the current card, open/raise the Lens, activate it.
+        // ⌘L is a keyboard gesture, so the transfer asserts keyboard modality:
+        // the Lens's remembered key view comes back RINGED and revealed, not
+        // replayed with whatever modality a pointer interaction left it —
+        // Cmd-L must always visibly show where the keyboard landed.
         lensPriorFocusRef.current = currentFR;
         const incomingCardId = store.showLensPane();
         if (incomingCardId === null) return;
@@ -458,6 +472,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           incomingCardId,
           store,
           commitMutation: () => store.activateCard(incomingCardId),
+          modality: "keyboard",
         });
       },
       /**
