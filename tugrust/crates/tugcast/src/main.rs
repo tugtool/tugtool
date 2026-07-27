@@ -1,5 +1,6 @@
 mod actions;
 mod auth;
+mod changes_journal;
 mod cli;
 mod control;
 mod defaults;
@@ -11,6 +12,7 @@ mod fs_read;
 mod fs_stat;
 mod fs_write;
 mod host;
+mod ledger_integrity;
 mod local_model;
 /// Crate-root path utilities (firmlink/synthetic/symlink resolution). Lives
 /// at the root, not under `feeds/`, because both `feeds` (file watching) and
@@ -40,7 +42,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use tugbank_core::TugbankClient;
 use tugbank_core::notify as tugbank_notify;
 use tugcast_core::{FeedId, Frame};
@@ -400,6 +402,77 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    // Checkpoint-health watchdog. A WAL that keeps growing while
+    // checkpoints move nothing is the silent precursor of ledger
+    // corruption (sessions.db sat three days un-checkpointed before the
+    // 2026-07-27 incident, with nothing logged). Passive-checkpoint both
+    // databases periodically and alarm on two consecutive stalls or any
+    // pragma failure.
+    {
+        let ledger = Arc::clone(&ledger);
+        let sessions_db_path = ledger_path.clone();
+        let changes_db_path = tugcore::instance::changes_db_path();
+        tokio::spawn(async move {
+            const WATCHDOG_PERIOD: std::time::Duration = std::time::Duration::from_secs(300);
+            // A healthy busy checkpoint leaves a short WAL; alarm only when
+            // the backlog is real (~4 MB of 4 KB pages).
+            const STALL_FRAMES: i64 = 1000;
+            // Snapshot backups (`VACUUM INTO`, retained 5-deep beside each
+            // db) on startup and every 6 hours of watchdog ticks.
+            const BACKUP_EVERY_TICKS: u64 = 72;
+            let backup_targets = |ledger: &session_ledger::SessionLedger| {
+                ledger_integrity::snapshot_backups(
+                    ledger,
+                    &[
+                        ("main", sessions_db_path.as_path()),
+                        ("changes", changes_db_path.as_path()),
+                    ],
+                );
+            };
+            backup_targets(&ledger);
+            let mut strikes: std::collections::HashMap<&'static str, u32> =
+                std::collections::HashMap::new();
+            let mut tick: u64 = 0;
+            loop {
+                tokio::time::sleep(WATCHDOG_PERIOD).await;
+                tick += 1;
+                if tick % BACKUP_EVERY_TICKS == 0 {
+                    backup_targets(&ledger);
+                }
+                for health in ledger.checkpoint_health() {
+                    if let Some(err) = &health.error {
+                        error!(
+                            db = health.db,
+                            error = %err,
+                            "ledger WAL checkpoint pragma failed — database may be corrupt or locked out"
+                        );
+                        continue;
+                    }
+                    let stalled = health.log_frames >= STALL_FRAMES
+                        && health.checkpointed_frames < health.log_frames;
+                    let count = strikes.entry(health.db).or_insert(0);
+                    if stalled {
+                        *count += 1;
+                        if *count >= 2 {
+                            error!(
+                                db = health.db,
+                                log_frames = health.log_frames,
+                                checkpointed_frames = health.checkpointed_frames,
+                                busy = health.busy,
+                                "ledger WAL checkpoint stalled — WAL growing without being applied"
+                            );
+                        }
+                    } else {
+                        if *count >= 2 {
+                            info!(db = health.db, "ledger WAL checkpointing recovered");
+                        }
+                        *count = 0;
+                    }
+                }
+            }
+        });
+    }
 
     // Demote any rows still marked `live` from a previous run that didn't
     // shut down cleanly. The subprocesses they pointed at are gone; their
@@ -1578,6 +1651,12 @@ async fn main() {
             .args(["-L", &label, "kill-server"])
             .status();
     }
+
+    // Final ledger flush (graceful-termination protocol, tuglaws
+    // ledger-reliability [LR3]): checkpoint the WALs down to the main
+    // files so a subsequent open — possibly by a different build — starts
+    // from a clean, WAL-less state instead of running recovery.
+    ledger.final_flush();
 
     // Kill our entire process group (tugcast + tugcode + children).
     // `std::process::exit` doesn't run destructors, so `kill_on_drop`

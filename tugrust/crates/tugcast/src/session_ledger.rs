@@ -81,6 +81,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::ledger_integrity;
 use crate::path_resolver::resolve_to_claude_form;
 
 /// Maximum non-live rows per workspace before cap eviction kicks in on spawn.
@@ -103,6 +104,32 @@ pub const USER_PROMPT_MAX_CHARS: usize = 256;
 /// hit; this cap only guards a pathological cascade before falling back to a
 /// NULL tag rather than failing the spawn ([P03], Spec S02).
 const TAG_SUFFIX_CAP: u32 = 50;
+
+/// Version stamp of the **shared** `changes.db` schema (`PRAGMA
+/// changes.user_version`). Bumping this constant REQUIRES a registered
+/// entry in [`CHANGES_MIGRATIONS`] and human review of the migration SQL —
+/// an individual instance must never reshape the machine-global schema on
+/// its own ([D112]). Builds seeing a *newer* on-disk version refuse to
+/// write the shared tables entirely.
+pub const CHANGES_SCHEMA_VERSION: i64 = 1;
+
+/// Registered, human-approved migrations for the shared changes schema:
+/// `(from_version, sql)` applied in order to reach `from_version + 1`.
+/// Empty today — version 1 is the first stamped shape.
+const CHANGES_MIGRATIONS: &[(i64, &str)] = &[];
+
+/// One database's `PRAGMA wal_checkpoint(PASSIVE)` verdict — see
+/// [`SessionLedger::checkpoint_health`]. `log_frames == -1` means the
+/// pragma itself failed (`error` carries the message), which on a WAL db
+/// is itself an alarm.
+#[derive(Debug, Clone)]
+pub struct CheckpointHealth {
+    pub db: &'static str,
+    pub busy: bool,
+    pub log_frames: i64,
+    pub checkpointed_frames: i64,
+    pub error: Option<String>,
+}
 
 /// Errors emitted by ledger operations.
 #[derive(Debug, Error)]
@@ -520,7 +547,7 @@ pub struct ProjectFileEvent {
 /// One legacy-row rewrite for [`SessionLedger::backfill_file_events_repo_relative`]:
 /// the row identified by `(tug_session_id, tool_use_id, old_file_path)` becomes
 /// `new_file_path` (repo-relative) under the canonical project dir.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileEventRewrite {
     pub tug_session_id: String,
     pub tool_use_id: String,
@@ -588,6 +615,15 @@ pub struct SessionLedger {
     /// generically (the ledger names no consumer) at the end of every
     /// session-row mutation — see [`notify_sessions_changed`].
     sessions_changed: OnceLock<Arc<Notify>>,
+    /// Verdict of the shared-schema `user_version` gate at open: false
+    /// when the on-disk `changes.db` schema is newer than this build, in
+    /// which case row INSERT/UPDATEs to the shared tables are refused
+    /// (see [`guard_changes_write`]). Row DELETEs stay allowed.
+    changes_write_ok: bool,
+    /// Append-only durable record of every shared-table mutation — the
+    /// disaster-recovery source of truth ([`crate::changes_journal`]).
+    /// `None` for in-memory ledgers or when the journal file cannot open.
+    changes_journal: Option<crate::changes_journal::ChangesJournal>,
 }
 
 impl SessionLedger {
@@ -630,14 +666,64 @@ impl SessionLedger {
         changes_db: Option<PathBuf>,
         claude_projects_root: PathBuf,
     ) -> Result<Self, LedgerError> {
-        let conn = Connection::open(path)?;
+        // Integrity gate before the real open: a database that fails
+        // quick_check is quarantined (renamed aside with its WAL/shm) so
+        // no writer ever compounds damage in a corrupt tree; readable
+        // rows are salvaged back in after the fresh schema bootstrap.
+        let sessions_gate = ledger_integrity::integrity_gate(path.as_ref(), "sessions");
+        let changes_gate = changes_db
+            .as_deref()
+            .map(|p| ledger_integrity::integrity_gate(p, "changes"));
+        let conn = tugcore::ledger_db::open(path)?;
         Self::attach_changes(&conn, changes_db.as_deref())?;
-        Self::configure(&conn)?;
-        Ok(Self {
+        let changes_write_ok = Self::configure(&conn)?;
+        if let ledger_integrity::GateOutcome::Quarantined { corrupt_path } = &sessions_gate {
+            ledger_integrity::salvage_into(
+                &conn,
+                "main",
+                corrupt_path,
+                &["sessions", "session_metadata", "session_capabilities"],
+                "sessions",
+            );
+        }
+        let changes_quarantined = matches!(
+            &changes_gate,
+            Some(ledger_integrity::GateOutcome::Quarantined { .. })
+        );
+        if let Some(ledger_integrity::GateOutcome::Quarantined { corrupt_path }) = &changes_gate {
+            ledger_integrity::salvage_into(
+                &conn,
+                "changes",
+                corrupt_path,
+                &["file_events", "changeset_drafts"],
+                "changes",
+            );
+        }
+        let changes_journal = if changes_write_ok {
+            changes_db
+                .as_deref()
+                .and_then(crate::changes_journal::ChangesJournal::open)
+        } else {
+            None
+        };
+        let ledger = Self {
             db: Mutex::new(conn),
             claude_projects_root,
             sessions_changed: OnceLock::new(),
-        })
+            changes_write_ok,
+            changes_journal,
+        };
+        // Journal replay completes a post-quarantine rebuild: salvage
+        // recovered what was readable; the journal re-applies everything
+        // else (idempotently), including deletes salvage resurrected.
+        if changes_quarantined {
+            if let Some(changes_path) = changes_db.as_deref() {
+                ledger.replay_changes_journal(&crate::changes_journal::journal_path_for(
+                    changes_path,
+                ));
+            }
+        }
+        Ok(ledger)
     }
 
     /// Open an in-memory ledger (with an in-memory changes attach).
@@ -647,12 +733,89 @@ impl SessionLedger {
     pub fn open_in_memory() -> Result<Self, LedgerError> {
         let conn = Connection::open_in_memory()?;
         Self::attach_changes(&conn, None)?;
-        Self::configure(&conn)?;
+        let changes_write_ok = Self::configure(&conn)?;
         Ok(Self {
             db: Mutex::new(conn),
             claude_projects_root: PathBuf::from("/tmp/tugcast-tests-no-trash"),
             sessions_changed: OnceLock::new(),
+            changes_write_ok,
+            changes_journal: None,
         })
+    }
+
+    /// Replay a changes journal into the (freshly rebuilt) database. All
+    /// records are idempotent; a replay over rows salvage already restored
+    /// is a no-op, and deletes salvage resurrected are re-applied.
+    fn replay_changes_journal(&self, journal_path: &Path) {
+        let records = crate::changes_journal::ChangesJournal::read_records(journal_path);
+        if records.is_empty() {
+            return;
+        }
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut applied = 0usize;
+        let mut failed = 0usize;
+        for record in &records {
+            match Self::apply_journal_record(&conn, record) {
+                Ok(()) => applied += 1,
+                Err(err) => {
+                    failed += 1;
+                    tracing::warn!(error = %err, "journal record failed to re-apply");
+                }
+            }
+        }
+        tracing::error!(
+            journal = %journal_path.display(),
+            applied,
+            failed,
+            "changes journal replayed after quarantine rebuild"
+        );
+    }
+
+    /// Apply one journal record without re-journaling it.
+    fn apply_journal_record(
+        conn: &Connection,
+        record: &crate::changes_journal::Record,
+    ) -> Result<(), LedgerError> {
+        use crate::changes_journal::Record;
+        match record {
+            Record::FileEvent { row } => {
+                Self::insert_file_event(conn, row)?;
+            }
+            Record::DeleteSession { session } => {
+                conn.execute(
+                    "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
+                    params![session],
+                )?;
+            }
+            Record::Sever {
+                project_dir,
+                paths,
+                keep_session,
+            } => {
+                Self::sever_file_ownership_sql(conn, project_dir, paths, keep_session)?;
+            }
+            Record::Rewrite {
+                canonical_project_dir,
+                rewrite,
+            } => {
+                Self::apply_file_event_rewrite(conn, canonical_project_dir, rewrite)?;
+            }
+            Record::Draft { row } => {
+                Self::upsert_changeset_draft_sql(conn, row)?;
+            }
+            Record::DraftDelete {
+                owner_kind,
+                owner_id,
+                project_dir,
+            } => {
+                conn.execute(
+                    "DELETE FROM changes.changeset_drafts
+                     WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
+                    params![owner_kind, owner_id, project_dir],
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// Attach the shared changes ledger as schema `changes` ([D112]: one
@@ -664,16 +827,7 @@ impl SessionLedger {
     fn attach_changes(conn: &Connection, changes_db: Option<&Path>) -> Result<(), LedgerError> {
         match changes_db {
             Some(path) => {
-                if let Some(dir) = path.parent() {
-                    let _ = std::fs::create_dir_all(dir);
-                }
-                conn.execute(
-                    "ATTACH DATABASE ?1 AS changes",
-                    params![path.to_string_lossy()],
-                )?;
-                let db = rusqlite::DatabaseName::Attached("changes");
-                conn.pragma_update(Some(db), "journal_mode", "WAL")?;
-                conn.pragma_update(Some(db), "synchronous", "NORMAL")?;
+                tugcore::ledger_db::attach(conn, "changes", path)?;
             }
             None => {
                 conn.execute("ATTACH DATABASE ':memory:' AS changes", [])?;
@@ -730,12 +884,55 @@ impl SessionLedger {
         }
     }
 
-    fn configure(conn: &Connection) -> Result<(), LedgerError> {
-        conn.execute_batch("PRAGMA journal_mode = WAL;")?;
-        conn.pragma_update(None, "busy_timeout", 5000i64)?;
-        conn.pragma_update(None, "synchronous", "NORMAL")?;
-        Self::bootstrap_schema(conn)?;
-        Ok(())
+    /// Apply pragmas and bootstrap both schemas. Returns whether this
+    /// build may write the shared changes tables (the `user_version` gate
+    /// verdict from [`bootstrap_changes_schema`]).
+    fn configure(conn: &Connection) -> Result<bool, LedgerError> {
+        // Unified pragma set from the chokepoint ([tugcore::ledger_db]);
+        // idempotent when the connection came from `ledger_db::open`, and
+        // the only pragma application for injected in-memory connections.
+        tugcore::ledger_db::apply_pragmas(conn)?;
+        Self::bootstrap_schema(conn)
+    }
+
+    /// One database's WAL-checkpoint verdict from
+    /// [`checkpoint_health`]: the `PRAGMA wal_checkpoint(PASSIVE)`
+    /// triple. `log_frames` is the WAL length in frames; a WAL that keeps
+    /// growing while `checkpointed_frames` stays behind means checkpoints
+    /// are failing — the silent precursor signature of the 2026-07-27
+    /// corruption incident (a 4 MB WAL, a main file three days stale, and
+    /// nothing logged).
+    pub fn checkpoint_health(&self) -> Vec<CheckpointHealth> {
+        let conn = self.db.lock().expect("ledger mutex poisoned");
+        ["main", "changes"]
+            .iter()
+            .map(|db| {
+                let result =
+                    conn.query_row(&format!("PRAGMA {db}.wal_checkpoint(PASSIVE)"), [], |r| {
+                        Ok((
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, i64>(1)?,
+                            r.get::<_, i64>(2)?,
+                        ))
+                    });
+                match result {
+                    Ok((busy, log_frames, checkpointed_frames)) => CheckpointHealth {
+                        db,
+                        busy: busy != 0,
+                        log_frames,
+                        checkpointed_frames,
+                        error: None,
+                    },
+                    Err(e) => CheckpointHealth {
+                        db,
+                        busy: false,
+                        log_frames: -1,
+                        checkpointed_frames: -1,
+                        error: Some(e.to_string()),
+                    },
+                }
+            })
+            .collect()
     }
 
     /// The `(name, declared-type)` columns the current `turn_telemetry`
@@ -811,7 +1008,7 @@ impl SessionLedger {
         ("updated_at", "INTEGER"),
     ];
 
-    fn bootstrap_schema(conn: &Connection) -> Result<(), LedgerError> {
+    fn bootstrap_schema(conn: &Connection) -> Result<bool, LedgerError> {
         // Self-healing schema guard. `CREATE TABLE IF NOT EXISTS` does
         // not alter a table that already exists, so when a typed
         // table's column set changes, an on-disk DB created before the
@@ -835,24 +1032,22 @@ impl SessionLedger {
         Self::rebuild_table_if_schema_drifted(conn, "turn_telemetry", Self::TURN_TELEMETRY_SCHEMA)?;
         // Legacy per-instance file_events (pre-shared-ledger): guard its
         // shape before the migration below copies it into `changes`.
-        Self::rebuild_table_if_schema_drifted(conn, "file_events", Self::FILE_EVENTS_SCHEMA)?;
-        Self::rebuild_table_if_schema_drifted(
-            conn,
-            "changes.file_events",
-            Self::FILE_EVENTS_SCHEMA,
-        )?;
+        // MUST be `main.`-qualified: an unqualified name here resolves
+        // into the attached shared db when the legacy table is absent
+        // (every post-migration ledger), letting this guard DROP the
+        // machine-global `changes.file_events` on any shape mismatch.
+        Self::rebuild_table_if_schema_drifted(conn, "main.file_events", Self::FILE_EVENTS_SCHEMA)?;
         // Legacy per-instance changeset_drafts (pre-machine-global): guard
         // its shape before the migration below copies it into `changes`.
         Self::rebuild_table_if_schema_drifted(
             conn,
-            "changeset_drafts",
+            "main.changeset_drafts",
             Self::LEGACY_CHANGESET_DRAFTS_SCHEMA,
         )?;
-        Self::rebuild_table_if_schema_drifted(
-            conn,
-            "changes.changeset_drafts",
-            Self::CHANGESET_DRAFTS_SCHEMA,
-        )?;
+        // The SHARED changes.* tables are deliberately NOT drift-rebuilt:
+        // drop-and-recreate on a machine-global database lets any stray
+        // build destroy the shared truth. Their schema is governed by the
+        // `user_version` gate in `bootstrap_changes_schema`.
         Self::migrate_sessions_first_to_last_user_prompt(conn)?;
         Self::migrate_sessions_add_name(conn)?;
         Self::migrate_sessions_add_name_user_set(conn)?;
@@ -1152,6 +1347,59 @@ impl SessionLedger {
             CREATE INDEX IF NOT EXISTS external_scan_cache_project
                 ON external_scan_cache(project_dir);
 
+            -- Legacy cascade trigger from the per-instance file_events era:
+            -- a trigger cannot reach across databases, so eviction now
+            -- deletes changes.file_events rows explicitly.
+            DROP TRIGGER IF EXISTS file_events_cascade_delete_on_session;
+            ",
+        )?;
+        let changes_write_ok = Self::bootstrap_changes_schema(conn)?;
+        if changes_write_ok {
+            Self::migrate_instance_file_events_to_changes(conn)?;
+            Self::migrate_instance_changeset_drafts_to_changes(conn)?;
+        }
+        Ok(changes_write_ok)
+    }
+
+    /// Bootstrap the **shared** `changes` schema under the `user_version`
+    /// gate. Returns whether this build may write the changes tables.
+    ///
+    /// The shared database's schema is versioned; an instance may only:
+    /// - create the current schema on a fresh (version 0) database,
+    /// - stamp a pre-versioning database that predates the gate, or
+    /// - apply a *registered* migration ([`CHANGES_MIGRATIONS`]).
+    ///
+    /// An on-disk version **newer** than this build means another, newer
+    /// instance owns the schema: this build must not touch it and gets no
+    /// write access — never the old drop-and-recreate "self-healing",
+    /// which let any stray build reshape the machine-global truth
+    /// (2026-07-27 incident). Row DELETEs (session eviction, ownership
+    /// severing) stay allowed: removing rows is shape-safe; creating or
+    /// updating rows against an unknown shape is not.
+    fn bootstrap_changes_schema(conn: &Connection) -> Result<bool, LedgerError> {
+        let on_disk: i64 = conn.query_row("PRAGMA changes.user_version", [], |r| r.get(0))?;
+        if on_disk > CHANGES_SCHEMA_VERSION {
+            tracing::error!(
+                on_disk,
+                supported = CHANGES_SCHEMA_VERSION,
+                "shared changes.db schema is newer than this build — refusing schema \
+                 and row writes to the shared tables; upgrade this instance"
+            );
+            return Ok(false);
+        }
+        if on_disk > 0 && on_disk < CHANGES_SCHEMA_VERSION {
+            for (from, sql) in CHANGES_MIGRATIONS {
+                if *from >= on_disk {
+                    conn.execute_batch(sql)?;
+                }
+            }
+        }
+        // Fresh (0) or current: idempotent creation of the current shape.
+        // A pre-versioning database with a *drifted* shape is left intact —
+        // never dropped — and its insert failures surface through the
+        // corruption/write tripwires for a human-reviewed migration.
+        conn.execute_batch(
+            "
             -- Authoritative per-session file attribution — one row per
             -- (tug_session_id, tool_use_id, file_path). Written from the
             -- agent-bridge relay loop at the moment a tool call that
@@ -1189,11 +1437,6 @@ impl SessionLedger {
             CREATE INDEX IF NOT EXISTS changes.file_events_project
                 ON file_events(project_dir, at);
 
-            -- Legacy cascade trigger from the per-instance file_events era:
-            -- a trigger cannot reach across databases, so eviction now
-            -- deletes changes.file_events rows explicitly.
-            DROP TRIGGER IF EXISTS file_events_cascade_delete_on_session;
-
             -- Maintained changeset drafts — machine-global like file_events
             -- ([D112]): the working tree is machine-global, so the truth
             -- about its proposed landing must be too. Two app instances on
@@ -1211,9 +1454,12 @@ impl SessionLedger {
             );
             ",
         )?;
-        Self::migrate_instance_file_events_to_changes(conn)?;
-        Self::migrate_instance_changeset_drafts_to_changes(conn)?;
-        Ok(())
+        conn.pragma_update(
+            Some(rusqlite::DatabaseName::Attached("changes")),
+            "user_version",
+            CHANGES_SCHEMA_VERSION,
+        )?;
+        Ok(true)
     }
 
     /// One-shot migration to the shared changes ledger ([D112]): copy any
@@ -1868,6 +2114,7 @@ impl SessionLedger {
         )?;
         tx.commit()?;
         drop(conn);
+        self.journal_delete_sessions([session_id]);
 
         let trash_path = move_jsonl_to_trash(
             &self.claude_projects_root,
@@ -1910,6 +2157,7 @@ impl SessionLedger {
         }
         tx.commit()?;
         drop(conn);
+        self.journal_delete_sessions(doomed.iter().map(String::as_str));
 
         let now = now_millis();
         for id in &doomed {
@@ -2018,6 +2266,7 @@ impl SessionLedger {
             )?;
         }
         tx.commit()?;
+        self.journal_delete_sessions(doomed.iter().map(String::as_str));
         Ok(doomed)
     }
 
@@ -2063,6 +2312,7 @@ impl SessionLedger {
             )?;
         }
         tx.commit()?;
+        self.journal_delete_sessions(doomed.iter().map(String::as_str));
         if !doomed.is_empty() {
             self.notify_sessions_changed();
         }
@@ -2396,8 +2646,24 @@ impl SessionLedger {
     /// already-recorded `origin='replay'` back to `exact`, or vice
     /// versa) — the point of change is recorded once.
     pub fn record_file_event(&self, row: &FileEventRow) -> Result<(), LedgerError> {
-        let conn = self.db.lock().expect("ledger mutex");
-        conn.execute(
+        self.guard_changes_write()?;
+        let inserted = {
+            let conn = self.db.lock().expect("ledger mutex");
+            Self::insert_file_event(&conn, row)?
+        };
+        // Journal only rows that actually landed — replayed frames hit the
+        // PK's DO NOTHING and must not bloat the durable record.
+        if inserted > 0 {
+            if let Some(journal) = &self.changes_journal {
+                journal.append(&crate::changes_journal::Record::FileEvent { row: row.clone() });
+            }
+        }
+        Ok(())
+    }
+
+    /// The bare insert — shared by the live path and journal replay.
+    fn insert_file_event(conn: &Connection, row: &FileEventRow) -> Result<usize, LedgerError> {
+        Ok(conn.execute(
             "INSERT INTO changes.file_events (
                 tug_session_id, tool_use_id, file_path,
                 tool_name, op, origin, ambiguous,
@@ -2416,8 +2682,7 @@ impl SessionLedger {
                 row.project_dir,
                 row.at,
             ],
-        )?;
-        Ok(())
+        )?)
     }
 
     /// Sever every other session's ownership of the given repo-relative paths
@@ -2436,7 +2701,29 @@ impl SessionLedger {
         if paths.is_empty() {
             return Ok(0);
         }
-        let conn = self.db.lock().expect("ledger mutex");
+        let deleted = {
+            let conn = self.db.lock().expect("ledger mutex");
+            Self::sever_file_ownership_sql(&conn, project_dir, paths, keep_session_id)?
+        };
+        if deleted > 0 {
+            if let Some(journal) = &self.changes_journal {
+                journal.append(&crate::changes_journal::Record::Sever {
+                    project_dir: project_dir.to_string(),
+                    paths: paths.to_vec(),
+                    keep_session: keep_session_id.to_string(),
+                });
+            }
+        }
+        Ok(deleted)
+    }
+
+    /// The bare severing delete — shared with journal replay.
+    fn sever_file_ownership_sql(
+        conn: &Connection,
+        project_dir: &str,
+        paths: &[String],
+        keep_session_id: &str,
+    ) -> Result<usize, LedgerError> {
         let placeholders = std::iter::repeat_n("?", paths.len())
             .collect::<Vec<_>>()
             .join(", ");
@@ -2450,8 +2737,66 @@ impl SessionLedger {
         for p in paths {
             params.push(p);
         }
-        let deleted = conn.execute(&sql, params.as_slice())?;
-        Ok(deleted)
+        Ok(conn.execute(&sql, params.as_slice())?)
+    }
+
+    /// Shutdown flush: checkpoint both WALs down to the main files
+    /// (`TRUNCATE`) so the next open — possibly by a different build —
+    /// starts from a clean, WAL-less state instead of running recovery.
+    /// Best-effort; failures are logged and shutdown proceeds.
+    pub fn final_flush(&self) {
+        let conn = self.db.lock().expect("ledger mutex");
+        for db in ["main", "changes"] {
+            let result = conn.query_row(
+                &format!("PRAGMA {db}.wal_checkpoint(TRUNCATE)"),
+                [],
+                |_| Ok(()),
+            );
+            if let Err(err) = result {
+                tracing::warn!(db, error = %err, "final WAL checkpoint failed at shutdown");
+            }
+        }
+    }
+
+    /// Online snapshot backup: `VACUUM <db> INTO dest` — a transactional,
+    /// compacted copy taken without blocking concurrent writers. `db` is
+    /// `"main"` (sessions) or `"changes"` (the attached shared ledger).
+    /// Fails if `dest` already exists (SQLite semantics); callers use
+    /// timestamped names.
+    pub fn snapshot_into(&self, db: &str, dest: &Path) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            &format!("VACUUM {db} INTO ?1"),
+            params![dest.to_string_lossy()],
+        )?;
+        Ok(())
+    }
+
+    /// Journal per-session attribution deletes (eviction/trash flows) —
+    /// called after the enclosing transaction commits so a rollback never
+    /// leaves phantom deletes in the durable record.
+    fn journal_delete_sessions<'a>(&self, ids: impl IntoIterator<Item = &'a str>) {
+        if let Some(journal) = &self.changes_journal {
+            for id in ids {
+                journal.append(&crate::changes_journal::Record::DeleteSession {
+                    session: id.to_string(),
+                });
+            }
+        }
+    }
+
+    /// Refuse row INSERT/UPDATEs to the shared changes tables when the
+    /// on-disk schema is newer than this build ([`CHANGES_SCHEMA_VERSION`]
+    /// gate) — creating or reshaping rows against an unknown shape is how
+    /// an old instance silently violates a newer schema's invariants.
+    fn guard_changes_write(&self) -> Result<(), LedgerError> {
+        if self.changes_write_ok {
+            Ok(())
+        } else {
+            Err(LedgerError::InvalidState(
+                "shared changes.db schema is newer than this build; write refused".to_string(),
+            ))
+        }
     }
 
     /// Rewrite a batch of legacy `file_events` rows to their canonical
@@ -2476,73 +2821,98 @@ impl SessionLedger {
         if rewrites.is_empty() {
             return Ok(0);
         }
-        let mut conn = self.db.lock().expect("ledger mutex");
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let mut changed = 0usize;
-        for rw in rewrites {
-            let legacy: Option<(i64, i64)> = tx
-                .query_row(
-                    "SELECT ambiguous, at FROM changes.file_events
-                     WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
-                    params![rw.tug_session_id, rw.tool_use_id, rw.old_file_path],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .optional()?;
-            let Some((legacy_ambiguous, legacy_at)) = legacy else {
-                continue;
-            };
-
-            let survivor: Option<(i64, i64)> = tx
-                .query_row(
-                    "SELECT ambiguous, at FROM changes.file_events
-                     WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
-                    params![rw.tug_session_id, rw.tool_use_id, rw.new_file_path],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .optional()?;
-
-            match survivor {
-                Some((surv_ambiguous, surv_at)) => {
-                    // Target PK exists (replay duplicate): merge into it and drop
-                    // the legacy row.
-                    let merged_ambiguous = i64::from(surv_ambiguous != 0 || legacy_ambiguous != 0);
-                    tx.execute(
-                        "UPDATE changes.file_events SET ambiguous = ?4, at = ?5, project_dir = ?6
-                         WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
-                        params![
-                            rw.tug_session_id,
-                            rw.tool_use_id,
-                            rw.new_file_path,
-                            merged_ambiguous,
-                            surv_at.max(legacy_at),
-                            canonical_project_dir,
-                        ],
-                    )?;
-                    tx.execute(
-                        "DELETE FROM changes.file_events
-                         WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
-                        params![rw.tug_session_id, rw.tool_use_id, rw.old_file_path],
-                    )?;
-                    changed += 1;
-                }
-                None => {
-                    tx.execute(
-                        "UPDATE changes.file_events SET file_path = ?4, project_dir = ?5
-                         WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
-                        params![
-                            rw.tug_session_id,
-                            rw.tool_use_id,
-                            rw.old_file_path,
-                            rw.new_file_path,
-                            canonical_project_dir,
-                        ],
-                    )?;
-                    changed += 1;
+        self.guard_changes_write()?;
+        let mut applied: Vec<FileEventRewrite> = Vec::new();
+        {
+            let mut conn = self.db.lock().expect("ledger mutex");
+            let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            for rw in rewrites {
+                if Self::apply_file_event_rewrite(&tx, canonical_project_dir, rw)? {
+                    applied.push(rw.clone());
                 }
             }
+            tx.commit()?;
         }
-        tx.commit()?;
-        Ok(changed)
+        // Journal after commit so a rolled-back transaction never leaves
+        // phantom rewrites in the durable record.
+        if let Some(journal) = &self.changes_journal {
+            for rw in &applied {
+                journal.append(&crate::changes_journal::Record::Rewrite {
+                    canonical_project_dir: canonical_project_dir.to_string(),
+                    rewrite: rw.clone(),
+                });
+            }
+        }
+        Ok(applied.len())
+    }
+
+    /// Apply one canonicalization rewrite (see
+    /// [`backfill_file_events_repo_relative`] for the collision rules).
+    /// Returns whether a row changed. Also the journal-replay applier.
+    fn apply_file_event_rewrite(
+        conn: &Connection,
+        canonical_project_dir: &str,
+        rw: &FileEventRewrite,
+    ) -> Result<bool, LedgerError> {
+        let legacy: Option<(i64, i64)> = conn
+            .query_row(
+                "SELECT ambiguous, at FROM changes.file_events
+                 WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                params![rw.tug_session_id, rw.tool_use_id, rw.old_file_path],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((legacy_ambiguous, legacy_at)) = legacy else {
+            return Ok(false);
+        };
+
+        let survivor: Option<(i64, i64)> = conn
+            .query_row(
+                "SELECT ambiguous, at FROM changes.file_events
+                 WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                params![rw.tug_session_id, rw.tool_use_id, rw.new_file_path],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+
+        match survivor {
+            Some((surv_ambiguous, surv_at)) => {
+                // Target PK exists (replay duplicate): merge into it and drop
+                // the legacy row.
+                let merged_ambiguous = i64::from(surv_ambiguous != 0 || legacy_ambiguous != 0);
+                conn.execute(
+                    "UPDATE changes.file_events SET ambiguous = ?4, at = ?5, project_dir = ?6
+                     WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                    params![
+                        rw.tug_session_id,
+                        rw.tool_use_id,
+                        rw.new_file_path,
+                        merged_ambiguous,
+                        surv_at.max(legacy_at),
+                        canonical_project_dir,
+                    ],
+                )?;
+                conn.execute(
+                    "DELETE FROM changes.file_events
+                     WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                    params![rw.tug_session_id, rw.tool_use_id, rw.old_file_path],
+                )?;
+            }
+            None => {
+                conn.execute(
+                    "UPDATE changes.file_events SET file_path = ?4, project_dir = ?5
+                     WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                    params![
+                        rw.tug_session_id,
+                        rw.tool_use_id,
+                        rw.old_file_path,
+                        rw.new_file_path,
+                        canonical_project_dir,
+                    ],
+                )?;
+            }
+        }
+        Ok(true)
     }
 
     /// Every `file_events` row owned by `tug_session_id`, oldest-first by
@@ -2617,7 +2987,22 @@ impl SessionLedger {
     /// on the `(owner_kind, owner_id, project_dir)` key — the draft engine
     /// writes the latest message for an entry, superseding any prior draft.
     pub fn upsert_changeset_draft(&self, row: &ChangesetDraftRow) -> Result<(), LedgerError> {
-        let conn = self.db.lock().expect("ledger mutex");
+        self.guard_changes_write()?;
+        {
+            let conn = self.db.lock().expect("ledger mutex");
+            Self::upsert_changeset_draft_sql(&conn, row)?;
+        }
+        if let Some(journal) = &self.changes_journal {
+            journal.append(&crate::changes_journal::Record::Draft { row: row.clone() });
+        }
+        Ok(())
+    }
+
+    /// The bare draft upsert — shared with journal replay.
+    fn upsert_changeset_draft_sql(
+        conn: &Connection,
+        row: &ChangesetDraftRow,
+    ) -> Result<(), LedgerError> {
         conn.execute(
             "INSERT OR REPLACE INTO changes.changeset_drafts (
                 owner_kind, owner_id, project_dir, fingerprint, message, updated_at,
@@ -2682,12 +3067,23 @@ impl SessionLedger {
         owner_id: &str,
         project_dir: &str,
     ) -> Result<(), LedgerError> {
-        let conn = self.db.lock().expect("ledger mutex");
-        conn.execute(
-            "DELETE FROM changes.changeset_drafts
-             WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
-            params![owner_kind, owner_id, project_dir],
-        )?;
+        let deleted = {
+            let conn = self.db.lock().expect("ledger mutex");
+            conn.execute(
+                "DELETE FROM changes.changeset_drafts
+                 WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
+                params![owner_kind, owner_id, project_dir],
+            )?
+        };
+        if deleted > 0 {
+            if let Some(journal) = &self.changes_journal {
+                journal.append(&crate::changes_journal::Record::DraftDelete {
+                    owner_kind: owner_kind.to_string(),
+                    owner_id: owner_id.to_string(),
+                    project_dir: project_dir.to_string(),
+                });
+            }
+        }
         Ok(())
     }
 
@@ -4465,6 +4861,190 @@ mod tests {
     }
 
     #[test]
+    fn newer_changes_schema_locks_out_writes_without_mutation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.db");
+        let changes_sibling = dir.path().join("sessions.db.changes");
+        // A changes db stamped by a hypothetical future build, with a
+        // future-shaped table this build knows nothing about.
+        {
+            let conn = Connection::open(&changes_sibling).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE file_events (future_shape TEXT PRIMARY KEY);
+                 INSERT INTO file_events VALUES ('precious');",
+            )
+            .unwrap();
+            conn.pragma_update(None, "user_version", CHANGES_SCHEMA_VERSION + 1)
+                .unwrap();
+        }
+        let ledger = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
+        // Row writes to the shared tables are refused...
+        let err = ledger
+            .record_file_event(&FileEventRow {
+                tug_session_id: "s1".into(),
+                tool_use_id: "t1".into(),
+                file_path: "a.rs".into(),
+                tool_name: "Write".into(),
+                op: "modified".into(),
+                origin: "exact".into(),
+                ambiguous: false,
+                parent_tool_use_id: None,
+                project_dir: "/proj".into(),
+                at: 1,
+            })
+            .unwrap_err();
+        assert!(matches!(err, LedgerError::InvalidState(_)), "{err:?}");
+        // ...and the future schema was not reshaped or stamped down.
+        drop(ledger);
+        let conn = Connection::open(&changes_sibling).unwrap();
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            v,
+            CHANGES_SCHEMA_VERSION + 1,
+            "version must not be stamped down"
+        );
+        let body: String = conn
+            .query_row("SELECT future_shape FROM file_events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(body, "precious", "future table left untouched");
+    }
+
+    #[test]
+    fn fresh_changes_schema_is_stamped_and_writable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.db");
+        let ledger = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
+        ledger
+            .record_file_event(&FileEventRow {
+                tug_session_id: "s1".into(),
+                tool_use_id: "t1".into(),
+                file_path: "a.rs".into(),
+                tool_name: "Write".into(),
+                op: "modified".into(),
+                origin: "exact".into(),
+                ambiguous: false,
+                parent_tool_use_id: None,
+                project_dir: "/proj".into(),
+                at: 1,
+            })
+            .unwrap();
+        drop(ledger);
+        let conn = Connection::open(dir.path().join("sessions.db.changes")).unwrap();
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, CHANGES_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn journal_rebuilds_changes_after_total_destruction() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.db");
+        let root = PathBuf::from("/tmp/tugcast-tests-no-trash");
+        let event = |tool: &str, file: &str, at: i64| FileEventRow {
+            tug_session_id: "s1".into(),
+            tool_use_id: tool.into(),
+            file_path: file.into(),
+            tool_name: "Write".into(),
+            op: "modified".into(),
+            origin: "exact".into(),
+            ambiguous: false,
+            parent_tool_use_id: None,
+            project_dir: "/proj".into(),
+            at,
+        };
+        {
+            let l = SessionLedger::open_with_claude_root(&path, root.clone()).unwrap();
+            l.record_file_event(&event("t1", "a.rs", 1)).unwrap();
+            l.record_file_event(&event("t2", "b.rs", 2)).unwrap();
+            // A replayed duplicate must not double-journal.
+            l.record_file_event(&event("t1", "a.rs", 1)).unwrap();
+            l.upsert_changeset_draft(&ChangesetDraftRow {
+                owner_kind: "session".into(),
+                owner_id: "s1".into(),
+                project_dir: "/proj".into(),
+                fingerprint: "fp".into(),
+                message: "draft msg".into(),
+                updated_at: 9,
+                edited: false,
+                selection: None,
+            })
+            .unwrap();
+        }
+        // Total destruction: the changes sibling becomes garbage — nothing
+        // for salvage to recover; only the journal can restore.
+        let changes_sibling = dir.path().join("sessions.db.changes");
+        std::fs::write(&changes_sibling, b"utterly destroyed").unwrap();
+
+        let l = SessionLedger::open_with_claude_root(&path, root).unwrap();
+        let rows = l.file_events_for_session("s1").unwrap();
+        assert_eq!(rows.len(), 2, "journal replay restored both events");
+        assert_eq!(rows[0].file_path, "a.rs");
+        assert_eq!(rows[1].file_path, "b.rs");
+        let draft = l
+            .changeset_draft("session", "s1", "/proj")
+            .unwrap()
+            .expect("draft restored");
+        assert_eq!(draft.message, "draft msg");
+    }
+
+    #[test]
+    fn corrupt_db_files_are_quarantined_at_open() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.db");
+        let l1 = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
+        l1.record_spawn("s1", WS_A, "/proj", "c1", millis(0), None)
+            .unwrap();
+        drop(l1);
+        // Trash both the main db and the attached changes sibling.
+        std::fs::write(&path, b"garbage, not a database").unwrap();
+        let changes_sibling = dir.path().join("sessions.db.changes");
+        std::fs::write(&changes_sibling, b"also garbage").unwrap();
+        // Reopen: both files are quarantined and the ledger comes up fresh
+        // and writable instead of erroring or compounding damage.
+        let l2 = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
+        l2.record_spawn("s2", WS_A, "/proj", "c2", millis(1), None)
+            .unwrap();
+        assert!(l2.get("s2").unwrap().is_some());
+        let quarantined: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains(".corrupt-"))
+            .collect();
+        assert!(
+            quarantined
+                .iter()
+                .any(|n| n.starts_with("sessions.db.corrupt-")),
+            "main db quarantined: {quarantined:?}"
+        );
+        assert!(
+            quarantined
+                .iter()
+                .any(|n| n.starts_with("sessions.db.changes.corrupt-")),
+            "changes sibling quarantined: {quarantined:?}"
+        );
+    }
+
+    #[test]
     fn distinct_workspaces_returns_unique_keys_sorted() {
         let l = fresh();
         seed_live(&l, "a1", WS_A, "c", millis(0));
@@ -4522,11 +5102,13 @@ mod tests {
         // Use an in-memory db (in-memory changes attach) but explicit claude root.
         let conn = Connection::open_in_memory().expect("open_in_memory");
         SessionLedger::attach_changes(&conn, None).expect("attach");
-        SessionLedger::configure(&conn).expect("configure");
+        let changes_write_ok = SessionLedger::configure(&conn).expect("configure");
         SessionLedger {
             db: Mutex::new(conn),
             claude_projects_root: root.to_path_buf(),
             sessions_changed: OnceLock::new(),
+            changes_write_ok,
+            changes_journal: None,
         }
     }
 

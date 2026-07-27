@@ -87,8 +87,22 @@ impl ShellLedger {
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ShellLedgerError> {
-        let conn = Connection::open(path)?;
-        Self::from_conn(conn)
+        // Integrity gate: quarantine a corrupt file and salvage readable
+        // rows into the fresh one (see `ledger_integrity`).
+        let gate = crate::ledger_integrity::integrity_gate(path.as_ref(), "shell");
+        let conn = tugcore::ledger_db::open(path)?;
+        let ledger = Self::from_conn(conn)?;
+        if let crate::ledger_integrity::GateOutcome::Quarantined { corrupt_path } = &gate {
+            let db = ledger.db.lock().expect("shell ledger poisoned");
+            crate::ledger_integrity::salvage_into(
+                &db,
+                "main",
+                corrupt_path,
+                &["shell_exchanges"],
+                "shell",
+            );
+        }
+        Ok(ledger)
     }
 
     /// In-memory ledger for tests.
@@ -99,7 +113,7 @@ impl ShellLedger {
     }
 
     fn from_conn(conn: Connection) -> Result<Self, ShellLedgerError> {
-        conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+        tugcore::ledger_db::apply_pragmas(&conn)?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS shell_exchanges (

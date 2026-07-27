@@ -1,12 +1,15 @@
 //! The `draft` namespace — `tugutil draft set|show|clear` (Spec S02).
 //!
-//! Writes the maintained landing draft straight into the machine-global
-//! changes ledger (`tugcore::instance::changes_db_path()`, `TUG_CHANGES_DB`
-//! overridable) as a WAL co-writer — the same contract multiple tugcast
-//! instances already rely on ([D112]). A skill-authored draft is an authored
-//! draft: every `set` writes `edited=1`, so the draft engine never clobbers
-//! it. `--project` is canonicalized on write (Spec S05); reads query the
-//! canonical spelling and union the raw one when it differs.
+//! Writes go through the running tugcast's `POST /api/draft` (port via the
+//! [D09] CLI discovery order), so a short-lived CLI process never opens the
+//! machine-global changes ledger read-write — one writer surface, one
+//! journal, one pragma set. With `TUG_CHANGES_DB` set (test-harness
+//! isolation), writes fall back to the direct local path against that
+//! private file. Reads (`show`) open the ledger read-only. A skill-authored
+//! draft is an authored draft: every `set` writes `edited=1`, so the draft
+//! engine never clobbers it. `--project` is canonicalized on write
+//! (Spec S05); reads query the canonical spelling and union the raw one
+//! when it differs.
 
 use std::path::PathBuf;
 
@@ -70,19 +73,84 @@ fn resolve_project(project: Option<PathBuf>) -> Result<(String, String), AppErro
     ))
 }
 
+/// The test-isolation escape: when `TUG_CHANGES_DB` points at a private
+/// file, writes stay local instead of routing through tugcast. Production
+/// never sets it, so production CLI writes always go through the server.
+fn isolated_changes_db() -> bool {
+    std::env::var_os(tugcore::instance::ENV_CHANGES_DB).is_some_and(|v| !v.is_empty())
+}
+
+/// Read-only open of the changes ledger for `show` and pre-write reads.
+/// `None` when the file doesn't exist yet (no drafts on file).
+fn open_changes_db_readonly() -> Option<Connection> {
+    let path = tugcore::instance::changes_db_path();
+    Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()
+}
+
+/// POST one request to the running tugcast's `/api/draft`, discovering the
+/// port per [D09]. Errors are actionable: no reachable tugcast means the
+/// draft was NOT written.
+fn post_draft_api(body: serde_json::Value) -> Result<serde_json::Value, AppError> {
+    let port = crate::commands::tell::resolve_port(None, None).map_err(|e| {
+        AppError::Exit1(format!(
+            "draft writes go through the running Tug instance, but none was found ({e})"
+        ))
+    })?;
+    let url = format!("http://127.0.0.1:{port}/api/draft");
+    let response = ureq::post(&url)
+        .send_json(body)
+        .map_err(|e| AppError::Exit1(format!("cannot reach tugcast at {url}: {e}")))?;
+    let value: serde_json::Value = response
+        .into_body()
+        .read_json()
+        .map_err(|e| AppError::Exit1(format!("bad response from tugcast: {e}")))?;
+    if value.get("status").and_then(|s| s.as_str()) != Some("ok") {
+        let message = value
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("unknown error");
+        return Err(AppError::Exit1(format!("draft request failed: {message}")));
+    }
+    Ok(value)
+}
+
+/// Decode the server's draft row into the CLI's output shape.
+fn draft_row_from_api(row: &serde_json::Value) -> Result<DraftRow, AppError> {
+    let s = |key: &str| {
+        row.get(key)
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| AppError::Exit1(format!("malformed draft row: missing {key}")))
+    };
+    Ok(DraftRow {
+        owner_kind: s("owner_kind")?,
+        owner_id: s("owner_id")?,
+        project_dir: s("project_dir")?,
+        fingerprint: s("fingerprint")?,
+        message: s("message")?,
+        updated_at: row.get("updated_at").and_then(|v| v.as_i64()).unwrap_or(0),
+        edited: row.get("edited").and_then(|v| v.as_bool()).unwrap_or(true),
+        selection: row
+            .get("selection")
+            .and_then(|v| v.as_str())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()),
+    })
+}
+
 /// Open the machine-global changes ledger as a WAL co-writer, creating the
-/// `changeset_drafts` table when this CLI is the first writer.
+/// `changeset_drafts` table when this CLI is the first writer. Reached only
+/// under `TUG_CHANGES_DB` isolation (see [`isolated_changes_db`]).
 fn open_changes_db() -> Result<Connection, AppError> {
     let path = tugcore::instance::changes_db_path();
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let conn = Connection::open(&path)
+    let conn = tugcore::ledger_db::open(&path)
         .map_err(|e| AppError::Exit1(format!("cannot open changes ledger: {e}")))?;
-    conn.pragma_update(None, "journal_mode", "WAL")
-        .and_then(|_| conn.pragma_update(None, "busy_timeout", 5000i64))
-        .and_then(|_| conn.pragma_update(None, "synchronous", "NORMAL"))
-        .map_err(|e| AppError::Exit1(format!("cannot configure changes ledger: {e}")))?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS changeset_drafts (
             owner_kind   TEXT NOT NULL,
@@ -153,6 +221,36 @@ pub fn run_set(
 ) -> Result<(), AppError> {
     let (owner_kind, owner_id) = parse_owner(&owner)?;
     let (canonical, raw) = resolve_project(project)?;
+
+    if !isolated_changes_db() {
+        let selection = (!include.is_empty() || !exclude.is_empty())
+            .then(|| serde_json::json!({"include": include, "exclude": exclude}).to_string());
+        let mut body = serde_json::json!({
+            "op": "set",
+            "owner_kind": owner_kind,
+            "owner_id": owner_id,
+            "project_dir": canonical,
+            "raw_project_dir": raw,
+        });
+        if let Some(m) = &message {
+            body["message"] = serde_json::json!(m);
+        }
+        if let Some(sel) = &selection {
+            body["selection"] = serde_json::json!(sel);
+        }
+        let response = post_draft_api(body)?;
+        let row = response
+            .get("row")
+            .ok_or_else(|| AppError::Exit1("malformed response: missing row".to_string()))
+            .and_then(draft_row_from_api)?;
+        if json {
+            print_ok("draft set", &row);
+        } else {
+            println!("draft set for {owner} ({})", row.project_dir);
+        }
+        return Ok(());
+    }
+
     let conn = open_changes_db()?;
 
     let existing = read_row(&conn, &owner_kind, &owner_id, &canonical, &raw);
@@ -218,8 +316,11 @@ pub fn run_set(
 pub fn run_show(owner: String, project: Option<PathBuf>, json: bool) -> Result<(), AppError> {
     let (owner_kind, owner_id) = parse_owner(&owner)?;
     let (canonical, raw) = resolve_project(project)?;
-    let conn = open_changes_db()?;
-    let Some(row) = read_row(&conn, &owner_kind, &owner_id, &canonical, &raw) else {
+    // Reads never need a writable ledger open; a missing file just means
+    // no drafts exist yet.
+    let Some(row) = open_changes_db_readonly()
+        .and_then(|conn| read_row(&conn, &owner_kind, &owner_id, &canonical, &raw))
+    else {
         return Err(AppError::Exit1(format!("no draft on file for {owner}")));
     };
     if json {
@@ -251,9 +352,42 @@ pub fn run_show(owner: String, project: Option<PathBuf>, json: bool) -> Result<(
     Ok(())
 }
 
+#[derive(Serialize)]
+struct ClearData {
+    owner: String,
+    deleted: bool,
+}
+
+fn print_clear(owner: String, deleted: bool, json: bool) {
+    if json {
+        print_ok("draft clear", ClearData { owner, deleted });
+    } else if deleted {
+        println!("draft cleared for {owner}");
+    } else {
+        println!("no draft on file for {owner}");
+    }
+}
+
 pub fn run_clear(owner: String, project: Option<PathBuf>, json: bool) -> Result<(), AppError> {
     let (owner_kind, owner_id) = parse_owner(&owner)?;
     let (canonical, raw) = resolve_project(project)?;
+
+    if !isolated_changes_db() {
+        let response = post_draft_api(serde_json::json!({
+            "op": "clear",
+            "owner_kind": owner_kind,
+            "owner_id": owner_id,
+            "project_dir": canonical,
+            "raw_project_dir": raw,
+        }))?;
+        let deleted = response
+            .get("deleted")
+            .and_then(|d| d.as_bool())
+            .unwrap_or(false);
+        print_clear(owner, deleted, json);
+        return Ok(());
+    }
+
     let conn = open_changes_db()?;
     let mut deleted = conn
         .execute(
@@ -271,23 +405,6 @@ pub fn run_clear(owner: String, project: Option<PathBuf>, json: bool) -> Result<
             )
             .unwrap_or(0);
     }
-    #[derive(Serialize)]
-    struct ClearData {
-        owner: String,
-        deleted: bool,
-    }
-    if json {
-        print_ok(
-            "draft clear",
-            ClearData {
-                owner,
-                deleted: deleted > 0,
-            },
-        );
-    } else if deleted > 0 {
-        println!("draft cleared for {owner}");
-    } else {
-        println!("no draft on file for {owner}");
-    }
+    print_clear(owner, deleted > 0, json);
     Ok(())
 }

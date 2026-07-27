@@ -28,8 +28,8 @@ use tracing::{info, warn};
 
 use crate::feeds::draft_engine::SessionResolver;
 use crate::feeds::pulse::forwardable_session;
-use tugcast_core::{FeedId, Frame};
 use crate::local_model::SharedLocalModelState;
+use tugcast_core::{FeedId, Frame};
 
 /// Tool-use frames since the last emit that on their own justify a new
 /// overview: enough has happened that the last sentence is probably stale.
@@ -202,9 +202,16 @@ pub fn tool_line(payload: &serde_json::Value) -> Option<String> {
     let target = payload
         .get("input")
         .and_then(|input| {
-            ["command", "file_path", "path", "notebook_path", "pattern", "url"]
-                .iter()
-                .find_map(|field| input.get(*field).and_then(|v| v.as_str()))
+            [
+                "command",
+                "file_path",
+                "path",
+                "notebook_path",
+                "pattern",
+                "url",
+            ]
+            .iter()
+            .find_map(|field| input.get(*field).and_then(|v| v.as_str()))
         })
         .map(|target| clip(target.trim(), MAX_TARGET_CHARS))
         .unwrap_or_default();
@@ -271,19 +278,19 @@ pub fn overview_frame(session_id: &str, headline: &str, beat: i64, at_ms: i64) -
         "beat": beat,
         "at": at_ms,
     });
-    Frame::new(
-        FeedId::PULSE,
-        serde_json::to_vec(&body).unwrap_or_default(),
-    )
+    Frame::new(FeedId::PULSE, serde_json::to_vec(&body).unwrap_or_default())
 }
 
 /// How the emitter resolves a `tug_session_id` into the claude JSONL that holds
 /// the user's prompts. Both halves live in the supervisor and the ledger, which
 /// a bare task can't reach, so they are handed in at wiring time.
+/// Resolves a `tug_session_id` to its project dir, when known.
+pub type ProjectDirResolver = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
 #[derive(Clone)]
 pub struct SessionIdentity {
     pub resolver: SessionResolver,
-    pub project_dir: Arc<dyn Fn(&str) -> Option<String> + Send + Sync>,
+    pub project_dir: ProjectDirResolver,
     pub claude_projects_root: PathBuf,
 }
 
@@ -389,7 +396,8 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
         let Some(jsonl) = config.identity.jsonl_path(&session_id) else {
             continue;
         };
-        let prompts = crate::scribe::session_prompts_since(&jsonl, 0, MAX_PROMPTS, MAX_PROMPT_CHARS);
+        let prompts =
+            crate::scribe::session_prompts_since(&jsonl, 0, MAX_PROMPTS, MAX_PROMPT_CHARS);
         let tools: Vec<String> = state.tools.iter().cloned().collect();
         let Some(digest) = compose_digest(&prompts, &tools) else {
             continue;
@@ -552,7 +560,10 @@ mod tests {
     fn a_digest_carries_both_halves() {
         let digest = compose_digest(
             &["make the watch loop resilient".to_string()],
-            &["Bash(cargo build)".to_string(), "Edit(watch.rs)".to_string()],
+            &[
+                "Bash(cargo build)".to_string(),
+                "Edit(watch.rs)".to_string(),
+            ],
         )
         .expect("both halves present");
         assert!(digest.contains("make the watch loop resilient"));
@@ -706,7 +717,9 @@ mod tests {
     /// A claude JSONL holding one user prompt, at the path the identity below
     /// resolves to.
     fn seed_jsonl(root: &std::path::Path, project_dir: &str, claude_id: &str, prompt: &str) {
-        let dir = root.join(crate::session_ledger::encode_claude_project_name(project_dir));
+        let dir = root.join(crate::session_ledger::encode_claude_project_name(
+            project_dir,
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let mut file = std::fs::File::create(dir.join(format!("{claude_id}.jsonl"))).unwrap();
         let line = serde_json::json!({
@@ -757,7 +770,12 @@ mod tests {
         ));
         let projects = tmp.join("projects");
         std::fs::create_dir_all(&projects).unwrap();
-        seed_jsonl(&projects, "/tmp/project", "claude-1", "make the watch loop resilient");
+        seed_jsonl(
+            &projects,
+            "/tmp/project",
+            "claude-1",
+            "make the watch loop resilient",
+        );
 
         let (code_tx, _) = broadcast::channel(64);
         let (pulse_tx, pulse_rx) = broadcast::channel(64);

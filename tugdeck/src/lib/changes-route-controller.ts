@@ -73,6 +73,11 @@ export interface ChangesRouteSnapshot {
   composed: boolean;
   /** Repo-relative paths this session's commit lands — its full attributed set. */
   committedPaths: ReadonlySet<string>;
+  /**
+   * True when the serving tugcast has hit ledger corruption — attribution
+   * is unavailable, not empty, and the view must say so honestly.
+   */
+  ledgerDegraded: boolean;
 }
 
 /**
@@ -149,6 +154,7 @@ export function deriveChangesRouteSnapshot(
     project,
     composed,
     committedPaths,
+    ledgerDegraded: data.ledger_degraded === true,
   };
 }
 

@@ -43,7 +43,7 @@ impl DefaultsStore {
     /// `busy_timeout=5000`, `synchronous=NORMAL`) and bootstraps or
     /// migrates the schema. Safe to call on an already-open database.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
-        let conn = Connection::open(path)?;
+        let conn = tugcore::ledger_db::open(path)?;
         apply_pragmas(&conn)?;
         migrate_schema(&conn)?;
         Ok(Self {

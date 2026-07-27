@@ -4838,6 +4838,7 @@ impl AgentSupervisor {
             session_init_tokens: parsed.session_init_tokens,
         };
         if let Err(err) = ledger.record_turn_telemetry(&row) {
+            crate::ledger_integrity::health::note_error("sessions", &err);
             tracing::warn!(
                 target: "dev::telemetry",
                 error = %err,
@@ -7202,6 +7203,7 @@ mod tests {
             draft: None,
         };
         WorkspacesChangesetSnapshot {
+            ledger_degraded: false,
             projects: vec![ProjectChangeset {
                 project_dir: project_dir.to_string(),
                 display_name: "proj".to_string(),
@@ -7325,7 +7327,10 @@ mod tests {
         });
 
         // An empty snapshot surfaces no eligible entry for the requested owner.
-        let empty = tugcast_core::types::WorkspacesChangesetSnapshot { projects: vec![] };
+        let empty = tugcast_core::types::WorkspacesChangesetSnapshot {
+            projects: vec![],
+            ledger_degraded: false,
+        };
         let (_wtx, wrx) = watch::channel(Frame::new(
             FeedId::CHANGESET_ALL,
             serde_json::to_vec(&empty).unwrap(),

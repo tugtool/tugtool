@@ -121,15 +121,24 @@ pub(crate) async fn compose_snapshot(
     // written before canonicalization carry the raw spelling; union them in
     // (when it differs) so pre-upgrade attribution still scopes in until the
     // backfill converts them.
+    // A read error must never masquerade as "no events" — that renders as
+    // "no session claims these" while the truth is "the ledger is
+    // damaged". Note the error (latches the degraded tripwire on
+    // corruption) and log it at warn.
+    let read_events = |ledger: &crate::session_ledger::SessionLedger, project: &str| {
+        ledger.file_events_for_project(project).unwrap_or_else(|err| {
+            crate::ledger_integrity::health::note_error("changes", &err);
+            tracing::warn!(project, error = %err, "file_events read failed; claims unavailable this cycle");
+            Vec::new()
+        })
+    };
     let events = match ledger {
         Some(ledger) => {
             let raw = project_dir.to_string_lossy();
             let canonical = CanonicalPath::from_raw(project_dir);
-            let mut events = ledger
-                .file_events_for_project(canonical.as_str())
-                .unwrap_or_default();
+            let mut events = read_events(ledger, canonical.as_str());
             if canonical.as_str() != raw {
-                events.extend(ledger.file_events_for_project(&raw).unwrap_or_default());
+                events.extend(read_events(ledger, &raw));
             }
             events
         }

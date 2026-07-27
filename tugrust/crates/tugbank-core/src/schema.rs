@@ -12,11 +12,10 @@ const CURRENT_SCHEMA_VERSION: u64 = 1;
 /// Sets `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`,
 /// and `synchronous=NORMAL`. Called unconditionally on every database open.
 pub(crate) fn apply_pragmas(conn: &Connection) -> Result<(), Error> {
-    // WAL mode must be set with execute_batch; the others can use pragma_update.
-    conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+    // The unified ledger pragma set (WAL, busy_timeout, synchronous,
+    // cell_size_check) from the chokepoint, plus tugbank's foreign keys.
+    tugcore::ledger_db::apply_pragmas(conn)?;
     conn.pragma_update(None, "foreign_keys", 1i64)?;
-    conn.pragma_update(None, "busy_timeout", 5000i64)?;
-    conn.pragma_update(None, "synchronous", "NORMAL")?;
     Ok(())
 }
 

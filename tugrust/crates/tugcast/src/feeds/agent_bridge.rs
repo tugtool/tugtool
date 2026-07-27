@@ -904,6 +904,7 @@ async fn record_exact_pending(
     match ledger.record_file_event(&row) {
         Ok(()) => Some(row.file_path),
         Err(err) => {
+            crate::ledger_integrity::health::note_error("changes", &err);
             warn!(
                 session = %tug_session_id,
                 error = %err,
@@ -968,6 +969,7 @@ async fn record_cmd_event(
     match ledger.record_file_event(&row) {
         Ok(()) => Some(row.file_path),
         Err(err) => {
+            crate::ledger_integrity::health::note_error("changes", &err);
             warn!(
                 session = %tug_session_id,
                 error = %err,
@@ -1697,6 +1699,9 @@ pub async fn relay_session_io(
                                             continue;
                                         }
                                         if let Err(err) = ledger.record_file_event(&row) {
+                                            crate::ledger_integrity::health::note_error(
+                                                "changes", &err,
+                                            );
                                             warn!(
                                                 session = %tug_session_id,
                                                 error = %err,
@@ -2085,6 +2090,9 @@ pub async fn relay_session_io(
                                             at,
                                         ) {
                                             if let Err(err) = ledger.record_file_event(&row) {
+                                                crate::ledger_integrity::health::note_error(
+                                                    "changes", &err,
+                                                );
                                                 warn!(
                                                     session = %tug_session_id,
                                                     error = %err,
@@ -2590,6 +2598,7 @@ fn merge_and_persist_system_metadata(
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
     if let Err(e) = ledger.record_session_metadata(claude_session_id, &merged_bytes, captured_at) {
+        crate::ledger_integrity::health::note_error("sessions", &e);
         warn!(
             session = %tug_session_id,
             error = %e,

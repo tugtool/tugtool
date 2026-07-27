@@ -241,13 +241,27 @@ export function SessionChangesView({
           Waiting for project scan…
         </div>
       ) : null}
+      {snap.ledgerDegraded ? (
+        <div
+          className="session-changes-scanning"
+          role="alert"
+          data-testid="session-changes-ledger-degraded"
+        >
+          Attribution ledger damaged — claims are unavailable, not empty.
+          Restart Tug to rebuild it.
+        </div>
+      ) : null}
       {headEntries.length > 0 ? (
         <TugChangesList
           entries={headEntries}
           ownSessionId={changesController.tugSessionId}
           expandedKeys={expandedKeys}
           onToggleFile={onToggleFile}
-          unattributedLabel="unattributed — no session claims these"
+          unattributedLabel={
+            snap.ledgerDegraded
+              ? "unattributed — ledger damaged, claims unavailable"
+              : "unattributed — no session claims these"
+          }
           onClaimUnattributed={(path) => changesController.claim([path])}
           onClaimAllUnattributed={(paths) => changesController.claim(paths)}
           orphanedLabel="orphaned — claim to bring into this session"

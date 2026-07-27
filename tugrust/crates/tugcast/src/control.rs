@@ -81,6 +81,7 @@ pub struct ControlReader {
 
 impl ControlReader {
     /// Run receive loop, reading messages from parent and dispatching actions
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_recv_loop(
         mut self,
         shutdown_tx: mpsc::Sender<u8>,

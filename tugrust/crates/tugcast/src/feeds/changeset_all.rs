@@ -180,7 +180,10 @@ pub(crate) async fn compose_aggregate(
         if let Some(ledger) = ledger {
             match ledger.list_for_workspace(&snapshot.workspace_key) {
                 Ok(rows) => apply_session_rows(&mut snapshot, &rows),
-                Err(err) => debug!(error = %err, "session-row join skipped"),
+                Err(err) => {
+                    crate::ledger_integrity::health::note_error("sessions", &err);
+                    tracing::warn!(error = %err, "session-row join failed; session titles unavailable this cycle");
+                }
             }
         }
 
@@ -230,7 +233,10 @@ pub(crate) async fn compose_aggregate(
         });
     }
 
-    WorkspacesChangesetSnapshot { projects }
+    WorkspacesChangesetSnapshot {
+        projects,
+        ledger_degraded: crate::ledger_integrity::health::is_degraded(),
+    }
 }
 
 /// The empty per-project payload for a non-repo (or transiently-degraded)

@@ -754,6 +754,7 @@ mod tests {
             draft: None,
         };
         WorkspacesChangesetSnapshot {
+            ledger_degraded: false,
             projects: vec![ProjectChangeset {
                 project_dir: project_dir.to_string(),
                 display_name: "proj".to_string(),
@@ -783,6 +784,7 @@ mod tests {
             draft: None,
         };
         WorkspacesChangesetSnapshot {
+            ledger_degraded: false,
             projects: vec![ProjectChangeset {
                 project_dir: project_dir.to_string(),
                 display_name: "proj".to_string(),

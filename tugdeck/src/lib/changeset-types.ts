@@ -271,6 +271,13 @@ export interface ProjectChangeset extends ChangesetSnapshot {
 export interface WorkspacesChangesetSnapshot {
   /** One entry per open project, in registry-enumeration order. */
   projects: ProjectChangeset[];
+  /**
+   * True once any ledger statement in the serving tugcast has hit database
+   * corruption. Claims must render as *unavailable*, never as an empty
+   * "no session claims these" result. Optional for frames from older
+   * tugcasts.
+   */
+  ledger_degraded?: boolean;
 }
 
 export function isProjectChangeset(value: unknown): value is ProjectChangeset {

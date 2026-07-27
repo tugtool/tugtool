@@ -194,6 +194,140 @@ async fn changesets_handler(
     }
 }
 
+/// Request payload for POST /api/draft — the CLI's landing-draft write
+/// path (`tugutil draft set|clear`). Routing these writes through the
+/// server keeps short-lived CLI processes out of the shared changes
+/// ledger entirely: one writer surface, one journal, one pragma set.
+#[derive(serde::Deserialize)]
+struct DraftApiRequest {
+    /// `set` | `clear`.
+    op: String,
+    owner_kind: String,
+    owner_id: String,
+    /// Canonical project spelling (Spec S05) — the row key written.
+    project_dir: String,
+    /// Raw (pre-canonicalization) spelling; a differing raw row is
+    /// superseded on set and swept on clear.
+    #[serde(default)]
+    raw_project_dir: Option<String>,
+    /// New message; on set, `None` keeps the existing draft's message.
+    #[serde(default)]
+    message: Option<String>,
+    /// New selection JSON string; `None` keeps the existing selection.
+    #[serde(default)]
+    selection: Option<String>,
+}
+
+/// Handle POST /api/draft — ledger-backed draft set/clear with the CLI's
+/// read-merge semantics (Spec S02/S05): a set preserves the existing
+/// fingerprint and selection unless replaced, always writes `edited=1`
+/// (a skill-authored draft is an authored draft), and supersedes a
+/// raw-spelling sibling row. Loopback only.
+async fn draft_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(router): State<FeedRouter>,
+    body: Bytes,
+) -> Response {
+    fn err(status: StatusCode, message: &str) -> Response {
+        (
+            status,
+            axum::Json(serde_json::json!({ "status": "error", "message": message })),
+        )
+            .into_response()
+    }
+    if !addr.ip().is_loopback() {
+        return err(StatusCode::FORBIDDEN, "forbidden");
+    }
+    let Some(ledger) = router
+        .supervisor
+        .as_ref()
+        .and_then(|s| s.session_ledger.clone())
+    else {
+        return err(StatusCode::SERVICE_UNAVAILABLE, "no session ledger");
+    };
+    let req: DraftApiRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid JSON: {e}")),
+    };
+    let raw = req.raw_project_dir.clone().filter(|r| *r != req.project_dir);
+    let read_existing = || {
+        ledger
+            .changeset_draft(&req.owner_kind, &req.owner_id, &req.project_dir)
+            .ok()
+            .flatten()
+            .or_else(|| {
+                raw.as_ref().and_then(|r| {
+                    ledger
+                        .changeset_draft(&req.owner_kind, &req.owner_id, r)
+                        .ok()
+                        .flatten()
+                })
+            })
+    };
+    match req.op.as_str() {
+        "set" => {
+            let existing = read_existing();
+            let message = match req
+                .message
+                .clone()
+                .or_else(|| existing.as_ref().map(|e| e.message.clone()))
+            {
+                Some(m) if !m.trim().is_empty() => m,
+                _ => {
+                    return err(
+                        StatusCode::BAD_REQUEST,
+                        "nothing to set: no message given and no draft on file",
+                    );
+                }
+            };
+            let row = crate::session_ledger::ChangesetDraftRow {
+                owner_kind: req.owner_kind.clone(),
+                owner_id: req.owner_id.clone(),
+                project_dir: req.project_dir.clone(),
+                fingerprint: existing
+                    .as_ref()
+                    .map(|e| e.fingerprint.clone())
+                    .unwrap_or_default(),
+                message,
+                updated_at: crate::session_ledger::now_millis(),
+                edited: true,
+                selection: req
+                    .selection
+                    .clone()
+                    .or_else(|| existing.as_ref().and_then(|e| e.selection.clone())),
+            };
+            if let Err(e) = ledger.upsert_changeset_draft(&row) {
+                return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
+            }
+            if let Some(r) = &raw {
+                let _ = ledger.delete_changeset_draft(&req.owner_kind, &req.owner_id, r);
+            }
+            (
+                StatusCode::OK,
+                axum::Json(serde_json::json!({ "status": "ok", "row": row })),
+            )
+                .into_response()
+        }
+        "clear" => {
+            let existed = read_existing().is_some();
+            if let Err(e) =
+                ledger.delete_changeset_draft(&req.owner_kind, &req.owner_id, &req.project_dir)
+            {
+                return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
+            }
+            if let Some(r) = &raw {
+                let _ = ledger.delete_changeset_draft(&req.owner_kind, &req.owner_id, r);
+            }
+            (
+                StatusCode::OK,
+                axum::Json(serde_json::json!({ "status": "ok", "deleted": existed })),
+            )
+                .into_response()
+        }
+        other => err(StatusCode::BAD_REQUEST, &format!("unknown op '{other}'")),
+    }
+}
+
 /// Handle POST /api/eval requests for evaluating JavaScript in the browser.
 ///
 /// Sends an eval request to the browser via CONTROL frame and waits for the
@@ -334,6 +468,7 @@ pub(crate) fn build_app(
         .route("/api/eval", post(eval_handler))
         .route("/api/host", get(crate::host::get_host))
         .route("/api/changesets", get(changesets_handler))
+        .route("/api/draft", post(draft_handler))
         .route("/api/permissions", get(crate::permissions::get_permissions))
         .route("/api/permissions/rule", post(crate::permissions::post_rule))
         .route("/api/fs/complete", get(crate::fs_complete::get_fs_complete))

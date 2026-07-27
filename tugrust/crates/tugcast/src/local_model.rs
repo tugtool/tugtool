@@ -192,7 +192,10 @@ pub const CATALOG: &[CatalogEntry] = &[
 
 /// Look up a catalog entry and its rank (position, 0 = recommended default).
 pub fn catalog_entry(id: &str) -> Option<(usize, &'static CatalogEntry)> {
-    CATALOG.iter().position(|e| e.id == id).map(|i| (i, &CATALOG[i]))
+    CATALOG
+        .iter()
+        .position(|e| e.id == id)
+        .map(|i| (i, &CATALOG[i]))
 }
 
 // MARK: - Store layout
@@ -335,10 +338,12 @@ pub fn verify_file(path: &Path, expected_sha256: &str) -> io::Result<bool> {
 
 fn hex_lower(bytes: &[u8]) -> String {
     use std::fmt::Write;
-    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut acc, b| {
-        let _ = write!(acc, "{b:02x}");
-        acc
-    })
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut acc, b| {
+            let _ = write!(acc, "{b:02x}");
+            acc
+        })
 }
 
 // MARK: - Cross-process lock
@@ -378,7 +383,10 @@ fn process_alive(pid: i32) -> bool {
         return false;
     }
     // Signal 0 tests for existence without delivering anything.
-    unsafe { libc::kill(pid, 0) == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM) }
+    unsafe {
+        libc::kill(pid, 0) == 0
+            || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
 }
 
 pub fn acquire_download_lock(root: &Path, id: &str) -> Result<DownloadLock, LockError> {
@@ -776,7 +784,8 @@ impl LocalModelRequester {
     }
 
     pub async fn summarize(&self, prompt: String) -> Result<String, String> {
-        self.request("summarize", prompt, None, REQUEST_TIMEOUT).await
+        self.request("summarize", prompt, None, REQUEST_TIMEOUT)
+            .await
     }
 
     async fn request(
@@ -824,10 +833,7 @@ impl LocalModelRequester {
 ///
 /// Broadcast as the answer to `local_model_list` and, unsolicited, on every
 /// state change — so a deck that missed a result frame still converges.
-pub fn broadcast_inventory(
-    state: &SharedLocalModelState,
-    cat: Option<&broadcast::Sender<Frame>>,
-) {
+pub fn broadcast_inventory(state: &SharedLocalModelState, cat: Option<&broadcast::Sender<Frame>>) {
     let Some(cat) = cat else { return };
     let models: Vec<serde_json::Value> = CATALOG
         .iter()
@@ -865,7 +871,12 @@ fn send_control(cat: &broadcast::Sender<Frame>, body: serde_json::Value) {
     }
 }
 
-fn broadcast_result(cat: Option<&broadcast::Sender<Frame>>, model: &str, ok: bool, error: Option<String>) {
+fn broadcast_result(
+    cat: Option<&broadcast::Sender<Frame>>,
+    model: &str,
+    ok: bool,
+    error: Option<String>,
+) {
     let Some(cat) = cat else { return };
     send_control(
         cat,
@@ -1189,7 +1200,10 @@ mod tests {
         assert!(is_installed(&root, &TEST_ENTRY), "stamped and complete");
 
         fs::remove_file(model_dir(&root, TEST_ENTRY.id).join("weights.safetensors")).unwrap();
-        assert!(!is_installed(&root, &TEST_ENTRY), "stamped but a file is gone");
+        assert!(
+            !is_installed(&root, &TEST_ENTRY),
+            "stamped but a file is gone"
+        );
         fs::remove_dir_all(&root).ok();
     }
 
@@ -1201,7 +1215,10 @@ mod tests {
 
         let mut bumped = TEST_ENTRY;
         bumped.hf_revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-        assert!(!is_installed(&root, &bumped), "old stamp for a new revision");
+        assert!(
+            !is_installed(&root, &bumped),
+            "old stamp for a new revision"
+        );
         fs::remove_dir_all(&root).ok();
     }
 
@@ -1210,7 +1227,11 @@ mod tests {
         let root = temp_root();
         place_files(&root, &TEST_ENTRY);
         write_stamp(&root, &TEST_ENTRY, 0).unwrap();
-        fs::write(model_dir(&root, TEST_ENTRY.id).join("config.json"), b"short").unwrap();
+        fs::write(
+            model_dir(&root, TEST_ENTRY.id).join("config.json"),
+            b"short",
+        )
+        .unwrap();
         assert!(!is_installed(&root, &TEST_ENTRY));
         fs::remove_dir_all(&root).ok();
     }

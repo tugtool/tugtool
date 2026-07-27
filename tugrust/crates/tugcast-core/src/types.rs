@@ -515,6 +515,11 @@ pub struct ProjectChangeset {
 pub struct WorkspacesChangesetSnapshot {
     /// One entry per open project, in registry-enumeration order.
     pub projects: Vec<ProjectChangeset>,
+    /// True once any ledger statement in this process has hit database
+    /// corruption — the deck must present claims as *unavailable*, never
+    /// as an empty "no session claims these" result.
+    #[serde(default)]
+    pub ledger_degraded: bool,
 }
 
 /// A single-shot subscription-usage payload, delivered on the USAGE feed

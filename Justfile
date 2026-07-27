@@ -186,6 +186,33 @@ capture-capabilities:
     echo "---- committed ----"
     git --no-pager log -1 --oneline
 
+# Inspect a Tug ledger database SAFELY: copies db + WAL/shm to a temp dir
+# and opens sqlite3 there. NEVER point sqlite3 (Apple's build) at the live
+# files — a foreign SQLite participating in WAL recovery/checkpointing on
+# a live ledger is a corruption vector (2026-07-27 incident). Pass a name
+# (changes / sessions / shell_exchanges) or an absolute .db path; any
+# extra args go to sqlite3 (e.g. a quoted SQL string).
+db-inspect DB *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{DB}}" in
+        /*) src="{{DB}}" ;;
+        *)  src="$HOME/Library/Application Support/Tug/{{DB}}.db" ;;
+    esac
+    [ -f "$src" ] || { echo "no such database: $src" >&2; exit 1; }
+    tmp="$(mktemp -d /tmp/tug-db-inspect.XXXXXX)"
+    cp -p "$src" "$tmp/"
+    for ext in -wal -shm; do
+        [ -f "$src$ext" ] && cp -p "$src$ext" "$tmp/"
+    done
+    db="$tmp/$(basename "$src")"
+    echo "inspecting COPY at $db (live files untouched)" >&2
+    if [ -n {{ quote(ARGS) }} ]; then
+        sqlite3 "$db" {{ quote(ARGS) }}
+    else
+        sqlite3 "$db"
+    fi
+
 # Format Rust code
 fmt:
     cd tugrust && cargo fmt --all
