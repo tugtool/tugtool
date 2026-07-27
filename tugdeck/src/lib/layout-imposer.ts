@@ -34,6 +34,10 @@
  * the Lens" true by construction rather than by arithmetic that happens to work
  * out.
  *
+ * **One-up is the one exception.** A single anchor has no ends to space against
+ * the edges — the rule reads `0 / 0` — so its slot takes half the travel and
+ * the card stands centered in the band. See {@link travelFraction}.
+ *
  * The consequence worth naming: **a pane's position depends on its own width
  * and nothing else's.** Closing, widening, or adding a card leaves every other
  * card exactly where it was — a slot is a place in the arrangement, never a
@@ -295,12 +299,16 @@ export function resolvePlacement(
  * A slot's share of the band's travel: `slot / (slots - 1)`, in `[0, 1]`. Slot
  * 0 gives 0 (hug the far edge) and the last slot gives 1 (hug the Lens).
  *
- * One-up has a single anchor and therefore no travel to share — its one slot is
- * slot 0, so the card hugs the far edge exactly as slot 0 does under every
- * other kind. Narrowing an arrangement to one-up leaves that card where it was.
+ * **One-up is the special case.** With a single anchor there is no chain to
+ * number, so the rule that spaces the ends against the edges has nothing to
+ * space: `0 / 0`. Its one slot takes HALF the travel instead — the card stands
+ * centered in the band, with the slack split evenly on both sides. A lone card
+ * shoved against the far edge would read as a two-up arrangement missing its
+ * partner; centered, it reads as the one thing on the deck, which is what
+ * one-up means.
  */
 export function travelFraction(placement: ImposedPlacement): number {
-  if (placement.count < 2) return 0;
+  if (placement.count < 2) return 0.5;
   return placement.slot / (placement.count - 1);
 }
 

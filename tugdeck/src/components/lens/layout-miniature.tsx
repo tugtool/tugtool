@@ -75,11 +75,11 @@ export function LayoutMiniature({
     count < 2
       ? (band * FREE_CARD_PCT) / 100
       : (band - CARD_GAP_PCT * (count - 1)) / count;
-  // One-up's single slot is slot 0, so its block hugs the far edge exactly as
-  // slot 0 does under every other kind. A deck drawn with no imposition at all
-  // (`kind: null`) has no slot to hug and stands in the middle of the field.
+  // One card stands in the middle of the field — the imposer's own one-up
+  // special case (`travelFraction` gives its single slot half the travel), and
+  // equally the picture for a deck drawn with no imposition at all.
   const offsetFor = (k: number): number =>
-    count < 2 ? (kind === null ? (band - cardPct) / 2 : 0) : k * (cardPct + CARD_GAP_PCT);
+    count < 2 ? (band - cardPct) / 2 : k * (cardPct + CARD_GAP_PCT);
   // Slot 0 is the anchor farthest from the Lens, so a left-side Lens numbers
   // from the right — measured from that edge, the offsets are the same.
   const packFromLeft = lens !== "left";

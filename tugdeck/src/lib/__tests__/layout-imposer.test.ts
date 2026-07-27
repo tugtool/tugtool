@@ -151,8 +151,8 @@ describe("travelFraction", () => {
     expect(travelFraction(at(3, "left", 4))).toBe(1);
   });
 
-  test("one-up's single slot has no travel to share", () => {
-    expect(travelFraction(at(0, "left", 1))).toBe(0);
+  test("one-up's single slot takes half the travel — the card centers", () => {
+    expect(travelFraction(at(0, "left", 1))).toBe(0.5);
     expect(resolvePlacement("one-up", 3, "right")).toEqual({
       slot: 0,
       packFrom: "left",
@@ -191,6 +191,13 @@ describe("imposeRect", () => {
     );
     // Two-up, 990 of band, a 400 card: 590 of travel.
     expect(imposeRect(slotOne, 400, FULL).position.x).toBe(GAP + 590);
+  });
+
+  test("one-up centers the card, with the slack split evenly", () => {
+    // 990 of band, a 400 card: 590 of travel, half of it on each side.
+    const r = imposeRect(resolvePlacement("one-up", 0, "right"), 400, FULL);
+    expect(r.position.x).toBe(GAP + 295);
+    expect(r.position.x - GAP).toBe(FULL.width - GAP - (r.position.x + r.size.width));
   });
 
   test("slots with room space evenly across the band", () => {
