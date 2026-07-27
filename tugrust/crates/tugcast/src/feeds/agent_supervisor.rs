@@ -3794,6 +3794,22 @@ impl AgentSupervisor {
     /// (tests without the draft path). When no eligible entry matches, replies
     /// `changeset_draft_state { state: "error", detail: "nothing to generate" }`
     /// ([Q02]).
+    /// A `tug_session_id` → `claude_session_id` lookup over the in-memory
+    /// ledger, for anything that needs to find a session's JSONL.
+    ///
+    /// Sync over the tokio async mutex: `try_lock` never blocks — under rare
+    /// contention it degrades to "no claude id", which callers treat as missing
+    /// context rather than as an error.
+    pub fn session_resolver(&self) -> crate::feeds::draft_engine::SessionResolver {
+        let inmem = Arc::clone(&self.ledger);
+        Arc::new(move |tug_id: &str| {
+            let map = inmem.try_lock().ok()?;
+            let entry = map.get(&TugSessionId(tug_id.to_string()))?;
+            let entry = entry.try_lock().ok()?;
+            entry.claude_session_id.clone()
+        })
+    }
+
     fn do_changeset_draft_request(&self, request: &ChangesetDraftRequestPayload) {
         let Some(scribe) = self.scribe.clone() else {
             return;
@@ -3811,17 +3827,7 @@ impl AgentSupervisor {
             return; // the initial empty frame, or a decode miss
         };
 
-        // Sync resolver over the tokio async mutex: `try_lock` never blocks —
-        // under rare contention it degrades to "no claude id" (the draft prompt
-        // then drops the session-prompt context, never fails).
-        let inmem = Arc::clone(&self.ledger);
-        let resolver: crate::feeds::draft_engine::SessionResolver =
-            Arc::new(move |tug_id: &str| {
-                let map = inmem.try_lock().ok()?;
-                let entry = map.get(&TugSessionId(tug_id.to_string()))?;
-                let entry = entry.try_lock().ok()?;
-                entry.claude_session_id.clone()
-            });
+        let resolver = self.session_resolver();
 
         let matched = crate::feeds::draft_engine::spawn_on_demand_draft(
             self.control_tx.clone(),

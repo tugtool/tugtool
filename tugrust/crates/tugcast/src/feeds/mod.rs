@@ -25,6 +25,7 @@ pub mod payload_inspector;
 pub mod pulse;
 pub mod secret_filter;
 pub mod session_metadata;
+pub mod session_overview;
 pub mod session_scoped;
 pub mod shell;
 pub mod snippets;

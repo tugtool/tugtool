@@ -46,7 +46,7 @@ The strategic unlock over the parked FM plan: the MLX backend runs on Apple Sili
 #### Scope {#scope}
 
 1. Spike: candidate stock-MLX models vs. the quality bars; catalog seeding; version pinning (M01).
-2. Tug.app: first SPM dependency (mlx-swift + MLXLLM), `LocalModelBackend` protocol, MLX backend, `LocalModelService` with the availability matrix (M01).
+2. Tug.app: the mlx-swift-examples SPM dependency (MLXLLM + MLXLMCommon), `LocalModelBackend` protocol, MLX backend, `LocalModelService` with the availability matrix (M01).
 3. API endpoints on both transports: `localModel` bridge handler; generalized `local_model_request`/`LocalModelResult` on the control socket (M01).
 4. tugcast: compiled-in catalog, model store (`~/Library/Application Support/Tug/models/`), downloader with resume/verify/cancel/list/delete, cross-process lock, startup auto-resume, CONTROL vocabulary (M02).
 5. tugdeck: local-model store (flags + backend availability + model inventory) and bridge client (M03).
@@ -98,7 +98,7 @@ The strategic unlock over the parked FM plan: the MLX backend runs on Apple Sili
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Which MLX models seed the catalog? (OPEN — Step 1 resolves) {#q01-catalog-seed}
+#### [Q01] Which MLX models seed the catalog? (RESOLVED — Step 1) {#q01-catalog-seed}
 
 **Question:** Which 2–3 stock-MLX packs go into the v1 catalog, and which is the recommended default?
 
@@ -106,15 +106,68 @@ The strategic unlock over the parked FM plan: the MLX backend runs on Apple Sili
 
 **Options (candidates for the spike):** current-generation small instruct models with community MLX 4-bit packs (Qwen, Llama, Gemma class, ~4–8B), plus `Ternary-Bonsai-8B-mlx-2bit` (already proven to load on stock MLX; pack present at `~/bonsai-eval/Bonsai-demo/models/`). Decide on measured classify/summarize quality, latency, and disk/RAM — not reputation.
 
-**Resolution:** OPEN — Step 1 records scores and fills Spec S01's entries.
+**Resolution:** RESOLVED by Step 1. Five candidates were scored on this Sequoia machine through a stock-MLXLLM Swift harness; two clear the bars and seed the catalog.
 
-#### [Q02] mlx-swift pinned versions and platform floor (OPEN — Step 1 resolves) {#q02-mlx-swift-floor}
+| pack | classify | avg warm | max warm | disk | peak RAM | load |
+|---|---|---|---|---|---|---|
+| `Qwen3-4B-Instruct-2507-4bit` | **26/26** | 101 ms | 105 ms | 2.28 GB | 3.24 GB | 1.0 s |
+| `Ternary-Bonsai-8B-mlx-2bit` | **25/26** | 149 ms | 152 ms | 2.32 GB | 3.29 GB | 1.3 s |
+| `Qwen2.5-1.5B-Instruct-4bit` | 18/26 | 47 ms | 50 ms | 0.88 GB | 1.74 GB | 0.8 s |
+| `Qwen3-1.7B-4bit` | 18/26 | 47 ms | 49 ms | 0.98 GB | 1.86 GB | 0.8 s |
+| `Llama-3.2-3B-Instruct-4bit` | 17/26 | 77 ms | 100 ms | 1.82 GB | 2.65 GB | 1.5 s |
+
+**Both admitted models clear the bars**, and both are Apache-2.0 at ~2.3 GB:
+- **`ternary-bonsai-8b-2bit`** — 25/26 at 149 ms. 8B comprehension at a 4B footprint; loads *unchanged* under stock MLXLLM because the pack is Qwen3-architecture at 2-bit (`architectures: ["Qwen3ForCausalLM"]`). Its single miss is `make test` → PROMPT, which fails **safe**: the unsure band routes to Claude rather than executing a shell command.
+- **`qwen3-4b-instruct-2507-4bit`** — 26/26 at 101 ms. Perfect on the corpus, every headline preamble-free, accurate, and grounded (every specific term in all six headlines appears verbatim in its digest — checked, no invention).
+
+**Owner's ruling on which ships (both are blessed; only one is offered):** `ternary-bonsai-8b-2bit` is `recommended` / `offered` / `catalog_rank: 0` — the sole choice presented in TugSetup and what `auto` resolves to. `qwen3-4b-instruct-2507-4bit` stays a full catalog entry at `catalog_rank: 1` but `offered: false` — the back-pocket alternative, acquirable and selectable by explicit configuration (Spec S01) without widening the first-run decision. The two are effectively equivalent on the evidence: a 26-case corpus separates them by a single item, and both warm latencies sit far inside the 400 ms bar. The ordering is a choice among equals, not a ranking. Flipping the pair is a two-field change in Spec S01 with no other code impact.
+
+**Rejected, with the reason (all three fail admission rule (b) — no per-model prompt tuning is permitted to rescue them):**
+- `Llama-3.2-3B-Instruct-4bit` is strongly SHELL-biased: 14/14 on shell lines but 3/12 on prompts, and it emits neither label on four of them.
+- `Qwen2.5-1.5B-Instruct-4bit` is scattered in both directions (misses `git status` *and* `build the project`).
+- `Qwen3-1.7B-4bit` is a hybrid-reasoning model: it opens every answer with `<think>` and the token cap truncates before any label, scoring 3/26. With `enable_thinking: false` passed through the chat template it recovers to 18/26 — still far under the bar. **No small tier is admissible**; the catalog's cheapest entry is 2.28 GB.
+
+**Frozen prompt constants** (ported verbatim into Swift by Step 3; source `~/bonsai-eval/mlxspike/Sources/mlxspike/main.swift`):
+
+```
+classify: You classify what a developer typed into a dev tool. Reply with exactly one
+          word and nothing else: SHELL if the line is a command to run in a terminal
+          shell, or PROMPT if it is a natural-language request to an AI assistant.
+
+summarize: You are the status strip for a live coding session. In ONE short line of at
+           most 12 words, describe what the session is working on overall — the
+           high-level goal, not the latest single action. Output only that line: no
+           preamble, no quotes, no explanation.
+```
+
+Both are sent as the `.system` message with the subject line (classify) or digest (summarize) as the sole `.user` message, at `temperature: 0`, `maxTokens` 8 / 48. `additionalContext: ["enable_thinking": false]` is passed uniformly to every model's chat template — templates that don't declare the variable ignore it, so this is template wrapping, not per-model tuning.
+
+#### [Q02] mlx-swift pinned versions and platform floor (RESOLVED — Step 1) {#q02-mlx-swift-floor}
 
 **Question:** Exact versions of `ml-explore/mlx-swift` and `ml-explore/mlx-swift-examples` (products MLXLLM/MLXLMCommon) to pin, and the true minimum macOS they demand.
 
 **Why it matters:** The floor bounds where the MLX backend can report available; the pins go into the pbxproj in Step 2.
 
-**Resolution:** OPEN — Step 1's scratch harness discovers both; recorded here.
+**Resolution:** RESOLVED. Pin `ml-explore/mlx-swift-examples` at **2.29.1** and let it carry `ml-explore/mlx-swift`, which it constrains to `.upToNextMinor(from: "0.29.1")` — resolving to **0.29.1**. Pinning mlx-swift directly at its newest tag (0.31.6) is **not** an option: examples 2.29.1 refuses it, and 0.31.6 declares `swift-tools-version: 6.3;(experimentalCGen)`, which this machine's Swift 6.2.4 toolchain cannot even parse.
+
+**The dependency is not one package — it is seven.** Resolved graph, verified by a clean `swift package resolve`:
+
+| package | version |
+|---|---|
+| `mlx-swift-examples` | 2.29.1 |
+| `mlx-swift` | 0.29.1 |
+| `swift-transformers` | 1.0.0 |
+| `swift-jinja` | 2.4.2 |
+| `swift-numerics` | 1.1.1 |
+| `swift-collections` | 1.6.0 |
+| `GzipSwift` | 6.0.1 (MLXMNIST only; unavoidable, unused) |
+
+**Platform floor: macOS 14.0 — above Tug's current target.** `mlx-swift` itself declares `.macOS("13.3")` and `swift-transformers` `.macOS(.v13)`, but `mlx-swift-examples` declares `.macOS(.v14)`, and that is the binding constraint. `tugapp/Tug.xcodeproj/project.pbxproj` currently sets `MACOSX_DEPLOYMENT_TARGET = 13.0`, so **Step 2 must raise it to 14.0**, dropping Ventura. This is a genuine product decision and is called out as a checkpoint in Step 2 rather than assumed. It does not touch the Sequoia-vs-Tahoe question that motivates this plan — 14.0 is still far below the FoundationModels floor of 26.0.
+
+**Two integration gotchas discovered by the spike, both load-bearing for Step 3:**
+
+1. **SwiftPM on the command line cannot build MLX's Metal shaders.** `swift build` links and produces a binary that dies at first use with `Failed to load the default metallib`; mlx-swift's own README states the limitation and directs you to Xcode. `xcodebuild -scheme … -destination 'platform=OS X'` compiles the shaders correctly. Tug.app is an Xcode target, so the app build is unaffected — but any future SwiftPM-CLI test target over MLX will hit this, and CI must use `xcodebuild`.
+2. **`ChatSession` silently discards its `instructions`.** In MLXLMCommon 2.29.1, `ChatSession.init` stores `[.system(instructions)]` in `generator.messages`, and then `respond(to:images:videos:)` **assigns** `generator.messages = [.user(...)]`, overwriting it. The system prompt never reaches the model. This is not cosmetic: with `instructions` dropped, the recommended model scored **0/26** (answering `git status` with "The `git status` command is used") and produced multi-sentence preamble on every headline. Step 3 must therefore **not** use `ChatSession`; it should build `UserInput(chat: [.system(…), .user(…)])` and call `MLXLMCommon.generate` directly with a fresh `KVCache` per request — which is the correct shape for one-shot tasks anyway ([P09] wants no cross-request chat context).
 
 #### [Q03] Post-setup model management surface (DEFERRED) {#q03-management-surface}
 
@@ -143,7 +196,7 @@ The strategic unlock over the parked FM plan: the MLX backend runs on Apple Sili
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | No candidate model clears the bar (R01) | high | low–med | Spike gate with STOP rule; multiple candidates; corpus is the arbiter | Step 1 results |
-| First SPM dep destabilizes build/signing (R02) | med | med | Dash-first; clean-checkout resolution + `sign-bundle.sh` verification; release the dash if unacceptable | Step 2 experience |
+| MLX SPM dep destabilizes build/signing (R02) | med | med | Dash-first; clean-checkout resolution + `sign-bundle.sh` verification; release the dash if unacceptable | RETIRED — Step 2 landed clean; core app-test tier 20/20 |
 | Download frustration (R03) | high | med | Resume + sha256 + atomic finalize + auto-resume + cross-process lock + honest error/retry UI | any failed-download report |
 | Misroute prose to shell (R04) | med | low | Asymmetric bands (Spec S07): unsure+no-verdict ⇒ Code; visible auto-route attribution with one-click undo | user misroute reports |
 | MLX classify output drifts from the first-token contract (R05) | med | low–med | Temperature 0 + spike-validated prompt; null-verdict fallback is always safe; FM backend later adds the structural guarantee | Step 1 / tenant QA |
@@ -155,10 +208,12 @@ The strategic unlock over the parked FM plan: the MLX backend runs on Apple Sili
 - **Mitigation:** HTTP Range resume against `.part` staging; per-file sha256 before finalize; atomic finalize + stamp; tugcast auto-resumes an incomplete selected download at startup; cancel is instant and clean; the pid-stamped `O_EXCL` staging lock serializes concurrent debug+release instances over the shared models dir.
 - **Residual risk:** HuggingFace availability/rate limits — accepted for v1; the TugSetup error row offers Retry and Skip.
 
-**Risk R02: First SPM dependency** {#r02-first-spm}
+**Risk R02: MLX SPM dependency** {#r02-first-spm}
 
-- **Risk:** tugapp has zero package references today; adding mlx-swift touches pbxproj structure, package resolution in CI-less builds, and signing of new framework payloads.
+- **Risk:** adding mlx-swift touches pbxproj structure, package resolution in CI-less builds, and signing of new framework payloads. (The premise that "tugapp has zero package references" was already stale when written — Sparkle landed with the quit-hardening work, so the SPM machinery was proven here before MLX arrived.)
 - **Mitigation:** Land it as its own step with explicit clean-checkout and `scripts/sign-bundle.sh` verification; the work happens on a dash — if it proves truly bad, release the dash and reconsider.
+- **Outcome (Step 2): retired.** The dependency landed and the clean build, signing, and launch all pass; the core app-test tier is 20/20. Signing needed no change — `sign-bundle.sh` seals the two new SPM resource bundles as ordinary app resources.
+- **What it did break, and the fix:** going from one package to two exposed a latent conflict in the repo's own build recipe. `just app-debug` passed `PRODUCT_NAME=` as an **xcodebuild command-line build setting**, which applies to *every* target in the graph — so `mlx-swift_Cmlx` and `swift-transformers_Hub` both tried to emit a resource bundle named after the app variant and collided (`error: Multiple commands produce …Tug-debug-….bundle`). One package never collided with itself, which is why Sparkle never surfaced this. The override is now scoped to the Tug target: the target's `PRODUCT_NAME` reads `$(TUG_PRODUCT_NAME:default=$(TARGET_NAME))`, and the justfile exports `TUG_PRODUCT_NAME` as an environment variable instead of passing a global setting. **Any future xcodebuild invocation must not reintroduce a command-line `PRODUCT_NAME=`.**
 - **Residual risk:** Xcode-version coupling on future machines; recorded pins ([Q02]) keep it reproducible.
 
 ---
@@ -189,7 +244,7 @@ The strategic unlock over the parked FM plan: the MLX backend runs on Apple Sili
 
 #### [P03] Two backends behind one protocol; Sequoia floor kept (DECIDED) {#p03-two-backends}
 
-**Decision:** A `LocalModelBackend` Swift protocol with two implementations: **MLX** (stock `mlx-swift` + MLXLLM, tugapp's first SPM dependency, loads packs from the models dir) and **FoundationModels** (`#if canImport` + `@available(macOS 26.0, *)`, always-unavailable stub below 26). Deployment target stays 13.0; minimum supported OS stays Sequoia.
+**Decision:** A `LocalModelBackend` Swift protocol with two implementations: **MLX** (stock `mlx-swift` + MLXLLM, loads packs from the models dir) and **FoundationModels** (`#if canImport` + `@available(macOS 26.0, *)`, always-unavailable stub below 26). Deployment target moves 13.0 → 14.0 (the mlx-swift-examples floor, [Q02]); minimum supported OS stays Sequoia.
 
 **Rationale:**
 - MLX makes the whole system live on Sequoia today — the strategic unlock over the parked FM plan.
@@ -197,7 +252,7 @@ The strategic unlock over the parked FM plan: the MLX backend runs on Apple Sili
 - Swift is the only language that needs OS guards; Rust/TS are guarded *by the API* ([P08]).
 
 **Implications:**
-- Step 2 is the SPM landing with first-time verification (R02); Step 13 is the FM backend, compiling now, live-verifying on Golden Gate hardware only.
+- Step 2 is the SPM landing with clean-build verification (R02); Step 13 is the FM backend, compiling now, live-verifying on Golden Gate hardware only.
 
 #### [P04] The catalog lives in tugcast; Swift discovers models from disk stamps (DECIDED) {#p04-catalog-ownership}
 
@@ -322,7 +377,28 @@ The tug-session→claude-session mapping lives in `AgentSupervisor`'s **in-memor
 
 #### MLX integration notes (for M01) {#mlx-notes}
 
-MLXLLM's factory loads a model from a local directory URL (safetensors + `config.json` + tokenizer files — the standard community MLX pack layout). Generation via MLXLMCommon's generate APIs at temperature 0 with small token caps (classify ~8, summarize ~48). No GBNF/logit-constraint machinery is assumed — the classify contract is prompt+parse ([P06]); if the Step 1 spike finds the chosen model needs a logits processor to hold the contract, that finding gates catalog admission rather than adding machinery. Residency per [P09]. Exact package products, versions, and platform floor recorded by Step 1 ([Q02]).
+MLXLLM's factory loads a model from a local directory URL (safetensors + `config.json` + tokenizer files — the standard community MLX pack layout). Generation via MLXLMCommon's generate APIs at temperature 0 with small token caps (classify ~8, summarize ~48). No GBNF/logit-constraint machinery is assumed — the classify contract is prompt+parse ([P06]); the Step 1 spike confirmed **no logits processor is needed**: both admitted models answer the corpus with a bare `SHELL`/`PROMPT` token under an 8-token cap. Residency per [P09]. Package versions and the macOS 14.0 platform floor are recorded in [Q02].
+
+Concrete API shape, as proven by the spike harness (`~/bonsai-eval/mlxspike/Sources/mlxspike/main.swift`):
+
+```swift
+let container = try await loadModelContainer(directory: packDirectory)   // local dir, no Hub
+try await container.perform { context in
+    let input = try await context.processor.prepare(
+        input: UserInput(chat: [.system(instructions), .user(text)],
+                         additionalContext: ["enable_thinking": false]))
+    let cache = context.model.newCache(parameters: parameters)
+    var output = ""
+    for await item in try MLXLMCommon.generate(
+        input: input, cache: cache, parameters: parameters, context: context) {
+        if let chunk = item.chunk { output += chunk }
+    }
+    Stream.gpu.synchronize()
+    return output
+}
+```
+
+**Do not use `ChatSession`** — [Q02] records why (it overwrites its own system message, which silently drops the instructions and collapses classify accuracy to 0/26). The one-shot shape above is also what [P09] wants: a fresh `KVCache` per request and no chat context carried between tasks. Pass `additionalContext: ["enable_thinking": false]` on every request regardless of model; templates that don't declare the variable ignore it, and it is what keeps a hybrid-reasoning pack from burning its whole token cap inside `<think>`.
 
 #### Prompt sources {#task-prompts}
 
@@ -334,7 +410,42 @@ The validated prompts live in the harness: classify in `~/bonsai-eval/classify_8
 
 **Spec S01: Catalog schema (compiled into tugcast)** {#s01-catalog}
 
-`tugrust/crates/tugcast/src/local_model.rs` declares `CATALOG: &[CatalogEntry]` where `CatalogEntry { id, display_name, recommended: bool, hf_repo, hf_revision /* full commit hash */, files: &[ModelFile], total_bytes, context_window, notes }` and `ModelFile { name, sha256, bytes }`. Download URL per file: `https://huggingface.co/<hf_repo>/resolve/<hf_revision>/<name>`. Entries and the recommended default are filled from Step 1 ([Q01]); admission rules: (a) loads unchanged under stock MLXLLM, and (b) clears the Step 1 quality bars with the **same canonical instruction text** as every other entry — per-model chat-template *wrapping* is fine (MLXLMCommon applies each pack's own template from its tokenizer config) but the instruction content is shared, because the service ships one set of frozen prompt constants and the user can switch models (Step 11); a model that only passes with its own tuned prompt text is not admitted. The FM pseudo-model is *not* in this catalog (nothing to acquire); it is a Swift-side backend fact.
+`tugrust/crates/tugcast/src/local_model.rs` declares `CATALOG: &[CatalogEntry]` where `CatalogEntry { id, display_name, recommended: bool, offered: bool, hf_repo, hf_revision /* full commit hash */, files: &[ModelFile], total_bytes, context_window, notes }` and `ModelFile { name, sha256, bytes }`.
+
+**`offered` vs. catalog membership.** Being in the catalog and being shown during setup are deliberately different things. `offered: false` entries are fully supported — acquirable via `local_model_download`, selectable by setting `dev.tugtool.local-model/model` to their id, and eligible for `auto` once installed — they simply are not surfaced in the TugSetup picker (Step 10) or in `local_model_inventory`'s setup-facing list. This is the "back pocket" mechanism: it lets the catalog carry a vetted alternative without widening the choice a first-run user has to make. Only `offered` entries may be `recommended`.
+
+Download URL per file: `https://huggingface.co/<hf_repo>/resolve/<hf_revision>/<name>`. Entries and the recommended default are filled from Step 1 ([Q01]); admission rules: (a) loads unchanged under stock MLXLLM, and (b) clears the Step 1 quality bars with the **same canonical instruction text** as every other entry — per-model chat-template *wrapping* is fine (MLXLMCommon applies each pack's own template from its tokenizer config) but the instruction content is shared, because the service ships one set of frozen prompt constants and the user can switch models (Step 11); a model that only passes with its own tuned prompt text is not admitted. The FM pseudo-model is *not* in this catalog (nothing to acquire); it is a Swift-side backend fact.
+
+**The v1 catalog, verified by Step 1.** Every `sha256` below was computed from the exact bytes that produced the [Q01] scores, and each pack was confirmed byte-identical to its pinned upstream revision (the Bonsai pack's local copy was checked file-by-file against the published LFS oids at revision `9260b24…`, all matching). Repo furniture — `.gitattributes`, `README.md`, `LICENSE`, `NOTICE.txt`, `assets/`, `.eval_results/` — is deliberately **not** listed and must not be downloaded; MLX never reads it.
+
+Entry 0 (`recommended: true`, `offered: true`, `catalog_rank: 0`) — `id: "ternary-bonsai-8b-2bit"`, `display_name: "Ternary Bonsai 8B"`, `hf_repo: "prism-ml/Ternary-Bonsai-8B-mlx-2bit"`, `hf_revision: "9260b24298e4211e804663e9f519962cf59f34be"`, `total_bytes: 2315155948`, `context_window: 65536`:
+
+| name | bytes | sha256 |
+|---|---|---|
+| `chat_template.jinja` | 4063 | `30a75d10e60b57e2f260420163dd59720dacf9f63b9a8de070d65dd80a7b30f7` |
+| `config.json` | 3118 | `c9a8bbb4b2b682d0e2d2bf4f537d699e1a569d757b2918c480e82a0c77b060ba` |
+| `model.safetensors` | 2303661704 | `f43270cbae86830b7eecb25bb8a0a0a005a81f180b68868dc39c755cebfff362` |
+| `model.safetensors.index.json` | 64065 | `178ab2bf39b603d669f730e569045e69886e117a392f4c75cd148f1733add0b4` |
+| `tokenizer.json` | 11422650 | `be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506` |
+| `tokenizer_config.json` | 348 | `579073f506a3f85caed232bb91617cfb93028408d1f43ffaf66f3fc1aee9a9af` |
+
+Entry 1 (`recommended: false`, `offered: false`, `catalog_rank: 1`) — `id: "qwen3-4b-instruct-2507-4bit"`, `display_name: "Qwen3 4B Instruct"`, `hf_repo: "mlx-community/Qwen3-4B-Instruct-2507-4bit"`, `hf_revision: "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b"`, `total_bytes: 2278969697`, `context_window: 262144`:
+
+| name | bytes | sha256 |
+|---|---|---|
+| `added_tokens.json` | 707 | `c0284b582e14987fbd3d5a2cb2bd139084371ed9acbae488829a1c900833c680` |
+| `chat_template.jinja` | 4040 | `40c21f34cf67d8c760ef72f8ad3ae5afad514299d4b06e91dd9a8d705af7b541` |
+| `config.json` | 938 | `574349e5a343236546fda55e4744a76e181f534182d7dc60ff1bad7e7a502849` |
+| `generation_config.json` | 238 | `835fffe355c9438e7a25be099b3fccaa98350b83451f9fd2d99512e74f1ade48` |
+| `merges.txt` | 1671853 | `8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5` |
+| `model.safetensors` | 2263022417 | `2a73c6c248601ab904e035548abd8e6abb65ea27dcb5f342fb0a8910eb44173f` |
+| `model.safetensors.index.json` | 63964 | `388d811b8b7c2608dd04cce1bcb04a8bf715d19b42790894e6d3427ff429a777` |
+| `special_tokens_map.json` | 613 | `76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd` |
+| `tokenizer.json` | 11422654 | `aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4` |
+| `tokenizer_config.json` | 5440 | `4397cc477eb6d79715ccd2000accd6b3531928f30029665832fa1b255f24d2b9` |
+| `vocab.json` | 2776833 | `ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910` |
+
+Both `hf_revision` values are full commit hashes, so the `resolve/<rev>/<name>` URLs are immutable — a later upstream push cannot change what a stamp claims to hold. `context_window` is `max_position_embeddings` from each pack's `config.json`; neither task approaches it (the largest digest fed in Step 1 was ~3.6 KB).
 
 **Spec S02: Store layout, stamp, and lock** {#s02-store}
 
@@ -342,7 +453,7 @@ Root: `~/Library/Application Support/Tug/models/` (the `dirs::home_dir().join("L
 
 **Spec S03: CONTROL vocabulary (deck ⇄ tugcast)** {#s03-control-vocabulary}
 
-Actions (new arms in `tugrust/crates/tugcast/src/actions.rs::dispatch_action`, the `install_claude` spawn-and-broadcast pattern): `local_model_download {model}` (idempotent: installed ⇒ immediate ok; running ⇒ no-op), `local_model_download_cancel`, `local_model_delete {model}`, `local_model_list`. Broadcasts on `FeedId::CONTROL`: `local_model_download_progress {model, file, fileIndex, fileCount, receivedBytes, totalBytes}` (≤ 4 Hz, bytes aggregated pack-wide); `local_model_download_result {model, ok, error}`; `local_model_inventory {models: [{id, displayName, recommended, totalBytes, state: "installed"|"downloading"|"available", receivedBytes?}]}` (answer to `local_model_list`, also broadcast unsolicited on any state change). Startup auto-resume: if `dev.tugtool.local-model/model` names a catalog id that is neither installed nor downloading, spawn the download exactly as if the action arrived. **Delete-vs-resident:** `local_model_delete` refuses while that model is downloading but proceeds even if the Swift service has it loaded — unlinking mmap'd weights is safe on macOS (the resident model keeps working until unload), and the service's per-request stamp re-stat (Step 11) unloads it and answers unavailable on the next request, so a delete degrades cleanly rather than leaving a ghost model answering indefinitely.
+Actions (new arms in `tugrust/crates/tugcast/src/actions.rs::dispatch_action`, the `install_claude` spawn-and-broadcast pattern): `local_model_download {model}` (idempotent: installed ⇒ immediate ok; running ⇒ no-op), `local_model_download_cancel`, `local_model_delete {model}`, `local_model_list`, and `local_model_summarize {prompt}` → `local_model_summarize_result {ok, text, error}`. The last one was added during Step 6: it is tugcast's own use of the socket API, and making it a real verb rather than a throwaway test hook is what lets the request path land with a live consumer (the build treats dead code as an error) and gives the Step 9 checkpoint its tugcast-side round trip. Broadcasts on `FeedId::CONTROL`: `local_model_download_progress {model, file, fileIndex, fileCount, receivedBytes, totalBytes}` (≤ 4 Hz, bytes aggregated pack-wide); `local_model_download_result {model, ok, error}`; `local_model_inventory {models: [{id, displayName, recommended, totalBytes, state: "installed"|"downloading"|"available", receivedBytes?}]}` (answer to `local_model_list`, also broadcast unsolicited on any state change). Startup auto-resume: if `dev.tugtool.local-model/model` names a catalog id that is neither installed nor downloading, spawn the download exactly as if the action arrived. **Delete-vs-resident:** `local_model_delete` refuses while that model is downloading but proceeds even if the Swift service has it loaded — unlinking mmap'd weights is safe on macOS (the resident model keeps working until unload), and the service's per-request stamp re-stat (Step 11) unloads it and answers unavailable on the next request, so a delete degrades cleanly rather than leaving a ghost model answering indefinitely.
 
 **Spec S04: Bridge vocabulary (deck ⇄ Swift)** {#s04-bridge-vocabulary}
 
@@ -354,7 +465,7 @@ tugcast→app: `{"type":"local_model_request","v":1,"id":string,"task":"summariz
 
 **Spec S06: Configuration keys** {#s06-config-keys}
 
-Domain `dev.tugtool.local-model`. Keys: `model` (`Value::String`: a catalog id, `"auto"`, or `""` = declined; absent ⇒ `"auto"`); `shell-routing`, `pulse-overview` (`Value::Bool`, absent ⇒ true — [Q05]). Rust consts beside the catalog; TS consts in `local-model-store.ts`; Swift reads `model` via `TugbankClient` when resolving assignments. `auto` resolution (performed by the Swift service, which ranks by **stamp `catalog_rank`**, never by catalog knowledge — Spec S02): the installed model with the lowest `catalog_rank`; the FM pseudo-model participates in `auto` *after* all installed MLX models until its Golden-Gate live verification passes (Step 13), at which point the owner may promote it. An explicit id that isn't installed ⇒ treated as absent (degrade, never error).
+Domain `dev.tugtool.local-model`. Keys: `model` (`Value::String`: a catalog id, `"auto"`, or `""` = declined; absent ⇒ `"auto"`); `shell-routing`, `pulse-overview` (`Value::Bool`, absent ⇒ true — [Q05]). Rust consts beside the catalog; TS consts in `local-model-store.ts`; Swift reads `model` via `TugbankClient` when resolving assignments. `auto` resolution (performed by the Swift service, which ranks by **stamp `catalog_rank`**, never by catalog knowledge — Spec S02): the installed model with the lowest `catalog_rank`; the FM pseudo-model participates in `auto` *after* all installed MLX models until its Golden-Gate live verification passes (Step 13), at which point the owner may promote it. An explicit id that isn't installed ⇒ **unavailable**, not a fall-through to `auto` (settled in Step 11): degrading to silence is always safe under [P12], whereas answering with a model the user did not choose is a surprise the UI cannot explain. It is never an *error* — the reply is a clean not-ready, and it self-heals the moment that pack finishes downloading.
 
 **Spec S07: Shell-routing bands** {#s07-shell-bands}
 
@@ -378,7 +489,7 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 
 ### Compatibility / Migration / Rollout {#rollout}
 
-- **Compatibility:** deployment target unchanged (13.0); minimum OS unchanged (Sequoia); `kind` on pulse frames optional and ignored by older parsers; CONTROL, bridge, and socket vocabularies purely additive and versioned (`v: 1`); tugcode inbound allowlist untouched (no new client→tugcode messages anywhere).
+- **Compatibility:** deployment target raised to 14.0 by the MLX dependency ([Q02]); minimum OS unchanged (Sequoia); `kind` on pulse frames optional and ignored by older parsers; CONTROL, bridge, and socket vocabularies purely additive and versioned (`v: 1`); tugcode inbound allowlist untouched (no new client→tugcode messages anywhere).
 - **Rollout:** nothing changes for a user who never selects a model (`model` absent ⇒ `auto` ⇒ nothing installed ⇒ everything degrades). Kill switches flip live. Rollback = flip flags / delete the model; full rollback = revert the dash.
 - **Model upgrades (future):** a catalog revision bump changes the entry's `hf_revision` + shas; the stamp mismatch makes the model read as not-installed for the new catalog, and the normal download path acquires it; the old directory is removed on successful finalize.
 
@@ -457,23 +568,23 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Spike — MLX candidates vs. the quality bars | pending | — |
-| #step-2 | tugapp SPM dependency landing | pending | — |
-| #step-3 | Backend protocol + MLX backend + service core | pending | — |
-| #step-4 | tugcast catalog + model store | pending | — |
-| #step-5 | tugcast downloader + CONTROL vocabulary | pending | — |
-| #step-6 | Socket request/reply plumbing | pending | — |
-| #step-7 | Deck local-model store + bridge client | pending | — |
-| #step-8 | Bridge endpoint in MainWindow | pending | — |
-| #step-9 | Integration checkpoint — download → load → answer (Sequoia) | pending | — |
-| #step-10 | TugSetup on-device-AI step | pending | — |
-| #step-11 | Task→model assignment resolution | pending | — |
-| #step-12 | Tenant: shell disambiguation | pending | — |
-| #step-13 | FoundationModels backend | pending | — |
-| #step-14 | Tenant: overview emitter (tugcast) | pending | — |
-| #step-15 | Tenant: overview rendering (deck) | pending | — |
-| #step-16 | Degradation pin app-test | pending | — |
-| #step-17 | Integration checkpoint — full matrix | pending | — |
+| #step-1 | Spike — MLX candidates vs. the quality bars | done | `28e878837` |
+| #step-2 | tugapp SPM dependency landing | done | `8205a2373` |
+| #step-3 | Backend protocol + MLX backend + service core | done | `a8c98c2f8` |
+| #step-4 | tugcast catalog + model store | done | `13eaf8fb0` |
+| #step-5 | tugcast downloader + CONTROL vocabulary | done | `13eaf8fb0` (folded with Step 4) |
+| #step-6 | Socket request/reply plumbing | done | `86fe2df95` |
+| #step-7 | Deck local-model store + bridge client | done | `d794fa1a0` |
+| #step-8 | Bridge endpoint in MainWindow | done | `8db488adc` |
+| #step-9 | Integration checkpoint — download → load → answer (Sequoia) | done | verification only |
+| #step-10 | TugSetup on-device-AI step | done | `5f300245e` |
+| #step-11 | Task→model assignment resolution | done | `523b75c8a` |
+| #step-12 | Tenant: shell disambiguation | done | `6138218b2` |
+| #step-13 | FoundationModels backend | done | `0c8ef1089` |
+| #step-14 | Tenant: overview emitter (tugcast) | done | `ad44bfe3c` |
+| #step-15 | Tenant: overview rendering (deck) | done | `84d2fbc6e` |
+| #step-16 | Degradation pin app-test | done | `0bd17638d` |
+| #step-17 | Integration checkpoint — full matrix | automated half green; live matrix with the owner | verification only |
 
 #### Step 1: Spike — MLX candidates vs. the quality bars {#step-1}
 
@@ -486,15 +597,15 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 - [Q01] resolution: per-candidate scores/latencies/footprints, the chosen catalog entries + recommended default, frozen prompt strings. [Q02] resolution: pinned package versions + platform floor. Spec S01 values filled.
 
 **Tasks:**
-- [ ] Assemble candidates (manually downloaded packs): 2–3 current-generation small instruct MLX packs + `Ternary-Bonsai-8B-mlx-2bit` (already local).
-- [ ] Adapt the harness prompts (#task-prompts) into **one canonical instruction text per task**, applied to every candidate through its own chat template (MLXLMCommon handles the wrapping); one tightening round allowed on the headline task, applied to all candidates alike. Per-candidate prompt tuning is disallowed — it would violate Spec S01's admission rule (b), since the service ships one frozen prompt set across a switchable catalog.
-- [ ] Record `sha256sum` + byte sizes of every chosen pack file (they become Spec S01 data).
+- [x] Assemble candidates (manually downloaded packs): 2–3 current-generation small instruct MLX packs + `Ternary-Bonsai-8B-mlx-2bit` (already local). — five scored, listed in [Q01].
+- [x] Adapt the harness prompts (#task-prompts) into **one canonical instruction text per task**, applied to every candidate through its own chat template (MLXLMCommon handles the wrapping); one tightening round allowed on the headline task, applied to all candidates alike. Per-candidate prompt tuning is disallowed — it would violate Spec S01's admission rule (b), since the service ships one frozen prompt set across a switchable catalog. — the one tightening round was spent on the headline task's "no preamble, no quotes, no explanation" clause; frozen text in [Q01].
+- [x] Record `sha256sum` + byte sizes of every chosen pack file (they become Spec S01 data). — in Spec S01, cross-checked against upstream LFS oids.
 
 **Tests:**
-- [ ] The harness is the test; raw outputs recorded with scores.
+- [x] The harness is the test; raw outputs recorded with scores. — per-case JSON in `~/bonsai-eval/results/*.json`; harness at `~/bonsai-eval/mlxspike/` (built with `xcodebuild`, not `swift build` — [Q02]).
 
 **Checkpoint:**
-- [ ] At least one candidate: classify ≥ 25/26 at ≤ 400 ms warm; six accurate preamble-free headlines ≤ 3 s; acceptable disk/RAM. **No candidate clears ⇒ STOP the plan and report.**
+- [x] At least one candidate: classify ≥ 25/26 at ≤ 400 ms warm; six accurate preamble-free headlines ≤ 3 s; acceptable disk/RAM. **No candidate clears ⇒ STOP the plan and report.** — **two candidates cleared.** `Qwen3-4B-Instruct-2507-4bit` at 26/26 / 101 ms / 2.28 GB and `Ternary-Bonsai-8B-mlx-2bit` at 25/26 / 149 ms / 2.32 GB; all six headlines preamble-free and grounded in ≤ 1.1 s. The plan proceeds.
 
 ---
 
@@ -502,22 +613,26 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 
 **Depends on:** #step-1
 
-**Commit:** `tugapp(local-model): first SPM dependency — mlx-swift + MLXLLM, pinned`
+**Commit:** `tugapp(local-model): add mlx-swift-examples, raise deployment target to 14.0`
 
 **References:** [P03], [Q02], Risk R02, (#mlx-notes)
 
 **Artifacts:**
-- `XCRemoteSwiftPackageReference` entries in `tugapp/Tug.xcodeproj/project.pbxproj` for `ml-explore/mlx-swift` and `ml-explore/mlx-swift-examples` (products MLXLLM, MLXLMCommon), pinned to Step 1's versions. No other code.
+- One `XCRemoteSwiftPackageReference` in `tugapp/Tug.xcodeproj/project.pbxproj` for `ml-explore/mlx-swift-examples` pinned at **2.29.1** (products MLXLLM, MLXLMCommon). Do **not** add a second reference for `ml-explore/mlx-swift` — examples constrains it to `.upToNextMinor(from: "0.29.1")` and resolves it to 0.29.1 transitively; a direct pin at a newer tag makes the graph unsatisfiable ([Q02]). Six further packages arrive transitively; `Package.resolved` should list seven in total.
+- `MACOSX_DEPLOYMENT_TARGET` raised from `13.0` to `14.0` in both configurations.
+- No other code.
 
 **Tasks:**
-- [ ] Add packages; verify `just app-debug` resolves and builds **from a clean checkout** without interaction.
-- [ ] Verify `scripts/sign-bundle.sh` signs the app with the new framework payloads and the result launches.
+- [x] **Confirm the floor raise with the owner before landing.** `mlx-swift-examples` 2.29.1 declares `.macOS(.v14)`, so linking it into a 13.0 target cannot work; shipping MLX means dropping Ventura. This is a product decision, not a build detail — [Q02] has the evidence. (It is unrelated to the Sequoia/Tahoe question: 14.0 is far below FoundationModels' 26.0.)
+- [x] Add the package; verify `just app-debug` resolves and builds **from a clean checkout** without interaction. — verified with DerivedData wiped.
+- [x] Verify `scripts/sign-bundle.sh` signs the app with the new framework payloads and the result launches. — signature valid and Designated Requirement satisfied; instance launched.
+- [x] Note for any future SwiftPM-CLI target over MLX: `swift build` links but produces a binary that dies with `Failed to load the default metallib`, because SwiftPM cannot compile Metal shaders. Only `xcodebuild` can ([Q02]). Tug.app is an Xcode target, so this step is unaffected — but do not add a `swift build` path over MLX to CI.
 
 **Tests:**
-- [ ] Build + launch are the tests.
+- [x] Build + launch are the tests. — plus the core app-test tier (20/20 files, 39/39 tests), because the fix touched justfile build plumbing that sits underneath every app-test and no `@covers` line can scope it.
 
 **Checkpoint:**
-- [ ] `just app-debug` green from clean; signed app launches; `git diff` shows pbxproj-only changes.
+- [x] `just app-debug` green from clean; signed app launches; `Package.resolved` pins `mlx-swift-examples` 2.29.1 and `mlx-swift` 0.29.1. **The "pbxproj-only changes" expectation did not survive contact** — the justfile also changed, necessarily: see R02's `PRODUCT_NAME` finding. `Contents/Resources/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib` is present inside the built `.app`, so MLX finds its Metal kernels at runtime and the SwiftPM-CLI metallib limitation ([Q02]) never reaches the app.
 
 ---
 
@@ -534,13 +649,13 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 - `LocalModelService.swift`: the internal request type both transports decode into; task→model→backend resolution (model selection read via `TugbankClient`, Spec S06 semantics); classify first-token parse against supplied labels; the availability matrix ([P08]); frozen Step 1 prompts as constants with harness-source comments.
 
 **Tasks:**
-- [ ] Implement; a manually-placed pack (copied from the spike, stamp hand-written per Spec S02) is the test vehicle until M02 lands.
+- [x] Implement; a manually-placed pack (copied from the spike, stamp hand-written per Spec S02) is the test vehicle until M02 lands. The placed pack's six sha256 values match the [Q01] catalog table exactly, so Spec S01's entry 0 is independently confirmed.
 
 **Tests:**
-- [ ] Build structural; a temporary debug hook may drive it during development but must not land — Step 8's bridge is the durable exerciser.
+- [x] Build structural. No debug hook was written: this run walks through Step 8 in the same pass, so the functional check runs through the bridge — the durable exerciser — rather than through a throwaway.
 
 **Checkpoint:**
-- [ ] `just app-debug` green; with the manually-placed pack, an in-app invocation answers `classify("make test") == shell`.
+- [x] `just app-debug` green (build + sign + launch, zero warnings in the new files). The `classify("make test") == shell` half is deferred to Step 8's console probe, which exercises the identical service path.
 
 ---
 
@@ -648,13 +763,15 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 - `MainWindow.swift`: `contentController.add(self, name: "localModel")` beside the existing registrations; dispatch case decoding Spec S04 requests, calling the service off-main, replying via `evaluateJavaScript("window.__tugBridge?.onLocalModelResult?.(…)")` with proper JSON escaping (follow the existing reply helpers); malformed payloads answer `ok:false`.
 
 **Tasks:**
-- [ ] Implement handler + reply.
+- [x] Implement handler + reply.
 
 **Tests:**
-- [ ] Manual from the debug-app console: `availability` answers; with the Step 3 manual pack, `requestClassify("make test")` ⇒ `"shell"`, `requestClassify("make the button bigger")` ⇒ `"prompt"`.
+- [x] Driven against the real app (the `/api/eval` route the plan assumed is dead — the deck no longer implements the `eval` action — so the probe went through the app-test harness's `evalJS` instead, then was deleted). `availability` answered `{ready: true, backend: "mlx"}`; classify returned `shell` for `git status` and `cargo nextest run`, `prompt` for `make the button bigger` and `why is the build failing?`. `make test` returns `prompt` — the Bonsai's single known miss from [Q01], reproduced exactly, and safe in that direction.
 
 **Checkpoint:**
-- [ ] `just app-debug` green; console probes answer per spec; `cd tugdeck && bunx vite build` green.
+- [x] `just app-debug` green; probes answer per spec. The `vite build` half rides with Step 7, the step that changes TypeScript.
+
+**Harness note (cost a rebuild to find):** `just app-test` launches its own `Tug-apptest` bundle out of a separate DerivedData, and only builds it when absent. A Swift change is invisible to app-tests until `just app-test-build` runs. The core tier was re-run that way and is green against this code.
 
 ---
 
@@ -667,16 +784,16 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 **References:** [P05], [P08], Spec S02–S05, Risk R03, (#success-criteria)
 
 **Tasks:**
-- [ ] Remove the manual pack; via a control-frame tell (or temporary console call), drive `local_model_download` for the recommended model; watch real HF download to completion; verify stamp + shas on disk.
-- [ ] Kill tugcast mid-download; relaunch; confirm silent resume and completion. Cancel mid-download; confirm clean stop and retry.
-- [ ] With the downloaded model: deck-console classify round-trip AND a tugcast-side summarize round-trip (temporary test tell) both answer.
-- [ ] `local_model_delete`; confirm inventory broadcast and that classify now answers null.
+- [x] Manual pack removed; `local_model_download` driven through `/api/tell` on the live instance; the real HuggingFace download ran to completion. All six `sha256` values match the catalog and the byte total is exactly `2315155948` — the pack on disk is the pack the catalog names.
+- [x] tugcast killed at 752 MB; the respawned process resumed silently from the `.part` files and reclaimed the crashed owner's lock (the lock file's pid became the new tugcast's), then finished. Cancel stopped a later run at 257 MB, released the lock, and left staging intact; re-requesting resumed from there and finalized with staging swept clean. A `local_model_download` for an installed model answers ok without fetching anything.
+- [x] Both directions answer on the downloaded pack. Bridge classify: `git status` ⇒ `shell`, `why is the build failing?` ⇒ `prompt`. Socket summarize, driven by `local_model_summarize` and read back from the tugcast log: "Adding error handling to the watch loop and debugging build failures." — grounded in the digest, no preamble.
+- [x] `local_model_delete` removed the pack; classify then answers `{ok: false, error: "no local model installed"}`, which the deck bridge maps to `null`, and availability answers `{ready: false, reason: "no local model available"}`.
 
 **Tests:**
-- [ ] `just app-test-changed` (existing corpus unaffected).
+- [x] `just app-test-changed` — 8 files derived from the diff, 8/8 green.
 
 **Checkpoint:**
-- [ ] All flows pass; `cd tugrust && cargo nextest run` green. **This checkpoint is the infrastructure's proof-of-life on Sequoia.**
+- [x] All flows pass; `cargo nextest run` green at 1521 tests. **The infrastructure has proof-of-life on Sequoia.**
 
 ---
 
@@ -689,17 +806,19 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 **References:** [P10], [P12], Spec S03, Spec S06, Risk R03, (#state-zone-mapping)
 
 **Artifacts:**
-- `tug-setup.tsx`: `Step.secondaryCta?` + `Step.body?` and their `StepRow` rendering; the `localAiStep` between `signInStep` and `openStep`, derived from `useLocalModel()`: active (catalog picker as a composed `TugRadioGroup` — recommended default preselected, sizes shown — with Download / Skip CTAs), busy (determinate `TugProgressIndicator` `variant="bar"` fed by aggregated bytes, `formatValue` percent), error (result error + Retry / Skip), done ("On-device AI ready" / "Skipped"). Download = `setLocalModelSelection(id)` + control frame `local_model_download {model: id}`; Skip = `setLocalModelSelection("")` + local done-latch (`useState`, the `openedFirstSession` pattern). Step visible on genuine first run (`firstRun`) only; never gates `openStep`; two behaviors by design: the optional step and `openStep` may be simultaneously active, and opening the first session may close the wizard mid-download (tugcast owns the operation; auto-resume backstops).
+- `tug-setup.tsx`: `Step.secondaryCta?` + `Step.body?` and their `StepRow` rendering; the `localAiStep` between `signInStep` and `openStep`, derived from `useLocalModel()`: active (the `offered` entries with Download / Skip CTAs — with the v1 catalog that is exactly one, `ternary-bonsai-8b-2bit`, so render it as a single named offer with its size and **no** picker chrome; compose `TugRadioGroup` only if a second entry is ever marked `offered`, in which case the `recommended` one preselects), busy (determinate `TugProgressIndicator` `variant="bar"` fed by aggregated bytes, `formatValue` percent), error (result error + Retry / Skip), done ("On-device AI ready" / "Skipped"). Download = `setLocalModelSelection(id)` + control frame `local_model_download {model: id}`; Skip = `setLocalModelSelection("")` + local done-latch (`useState`, the `openedFirstSession` pattern). Step visible on genuine first run (`firstRun`) only; never gates `openStep`; two behaviors by design: the optional step and `openStep` may be simultaneously active, and opening the first session may close the wizard mid-download (tugcast owns the operation; auto-resume backstops).
 - Gallery states in `gallery-tug-setup.tsx` for HMR iteration; copy helpers in `tug-setup-copy.ts` as needed.
 
 **Tasks:**
-- [ ] Implement; compose `TugRadioGroup` and `TugProgressIndicator` — never hand-rolled equivalents.
+- [x] Implemented; `TugProgressIndicator` `variant="bar"` composed for the busy state. With one `offered` entry the row names the model outright, so no picker exists to compose `TugRadioGroup` into yet.
+- [x] The step filters `offered` **deck-side** from the inventory, which already carries the flag per entry. `local_model_inventory` stays the full list — one payload serving setup and any future management surface — rather than growing a second setup-only projection; the back-pocket entry is equally invisible to first-run setup either way, so Spec S01's intent holds and `offered_entries()` was not needed after all.
+- [x] The recommended entry's catalog `notes` was rewritten from an architecture descriptor to user-facing copy ("Runs command routing and session summaries on this Mac, offline."), since Step 10 is what puts that string in front of a first-run user.
 
 **Tests:**
-- [ ] bun test for new copy helpers (the `tug-setup-copy.test.ts` pattern).
+- [x] `tug-setup-copy.test.ts` extended: `formatModelSize`, `localAiOfferDetail`, `localAiProgressDetail` — 14 pass.
 
 **Checkpoint:**
-- [ ] `just test-ts` && `cd tugdeck && bunx vite build`; gallery renders all states; debug app with `SESSION_FORCE_SETUP` shows the step; Skip leaves `model=""` and nothing downloads.
+- [x] `just test-ts` green (tugdeck 4988, tugcode 790); `bunx tsc --noEmit` and `bunx vite build` clean; `cargo nextest -p tugcast` 1076 pass. Gallery carries four new scenarios (offer / downloading / failed / skipped) plus the isolated row states.
 
 ---
 
@@ -716,13 +835,16 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 - Delete-vs-resident contract (Spec S03): resolution re-stats the model's `tug-manifest.json` on every request; a vanished stamp unloads the resident model and answers unavailable.
 
 **Tasks:**
-- [ ] Implement; verify a tugbank write flips the answering model without app relaunch.
+- [x] Implemented. `TugbankClient.get` is a live SQL read per call, so the selection needed no subscription machinery to be live; what the step actually added is (a) honoring an explicit pick literally and (b) releasing weights on every path that resolves to no pack.
+- [x] **Spec conflict resolved.** Spec S06 said an explicit-but-uninstalled id is "treated as absent (degrade, never error)" — i.e. fall through to `auto` — while this step said "unknown/uninstalled id ⇒ unavailable". Settled in favor of **unavailable**: under strict enhancement ([P12]) answering nothing is always safe, whereas answering with a model the user did not choose is a surprise the UI has no way to explain. S06's sentence above was rewritten to match.
+- [x] Residency correctness: `resolveRoute` releases the resident pack on decline, on an explicit pick that isn't installed, and on `auto` with nothing installed — a delete no longer strands gigabytes until the 5-minute idle timer. `unload()` returns early when nothing is loaded, so per-request eviction costs nothing. The MLX backend's `availability()` re-reads disk rather than reporting ready off a resident model whose stamp is gone.
+- [x] `prewarm` loads the **assigned** pack rather than the rank-0 one, so a user on the second model doesn't pay the load twice.
 
 **Tests:**
-- [ ] Manual: with two models installed (spike leftovers qualify), flip `model` between them and observe the switch; set an uninstalled id and observe clean unavailability.
+- [x] Live, through the real bridge against the real downloaded pack (only one model is installed on this machine, so the two-model flip was exercised as installed ↔ uninstalled rather than installed ↔ installed): `auto` ⇒ `{ready: true, backend: "mlx"}` and `git status` ⇒ `shell`; explicit installed id ⇒ ready; explicit **uninstalled** id ⇒ `{ready: false, reason: "no local model available"}` with classify failing cleanly as `no local model installed`; `""` ⇒ `on-device inference declined`; back to `auto` ⇒ ready again, `why is the build failing?` ⇒ `prompt`. Each flip was a tugbank PUT that took effect on the very next request, no relaunch.
 
 **Checkpoint:**
-- [ ] `just app-debug` green; the flip works live.
+- [x] `just app-debug` green; `just app-test-build` core tier 20/20 files, 39/39 tests.
 
 ---
 
@@ -739,14 +861,16 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 - `tug-prompt-entry.tsx`: 300 ms debounce pre-consult (existing pre-gates reused), verdict cache (cap 32, cleared on submit/clear), submit band logic with ≤ 250 ms unsure-await falling back to Code; `prewarm` fires on the **first unsure-band debounce** of a session, not on prompt-entry focus — focus-triggered prewarm would load multi-GB weights on every session focus and thrash against the 5-minute idle unload for users who rarely type ambiguous lines, whereas the first unsure debounce is the moment intent is demonstrated (that first verdict may miss its window and lapse to Code, which is correct per Spec S07); live-typing chip gate flipped from the deleted constant to `shellRoutingReady` via ref plumbing (the `pathCommandsStoreRef` pattern); auto-routed history push and `origin:"auto"` attribution byte-identical.
 
 **Tasks:**
-- [ ] Implement; honor [Q05]'s decided default (one constant).
+- [x] Implemented. [Q05] stands at its written default (ON, absent ⇒ enabled) — the deck store already read it that way, so no constant changed. The owner can still flip it per-tenant from tugbank without a rebuild.
+- [x] The verdict cache landed as `ShellVerdictCache` in the classifier module rather than as loose `Map` handling inside the component, so its capacity and eviction are testable as pure logic; the component holds one in a ref.
+- [x] Cache clearing hangs off the editor going empty (clear, select-all-delete, and the teardown at the end of every submit all land there) rather than being re-asserted at each exit — one mechanism, no path that can forget.
 
 **Tests:**
-- [ ] bun test: band table over the 26-line corpus + parked-off motivating cases (`write a poem`, `apply the patch` ⇒ unsure — never shell without a verdict); wrapper equivalence; cache cap/clear as pure-helper tests.
+- [x] 98 tests: the `MUST_SHELL` corpus all banding `shell`; the full 35-line prose corpus under a `never shell` gate; the previously-parking cases (`write a poem`, `apply the patch`, `make the button bigger`) banding **unsure**; `prompt`-vs-`unsure` separation (a line not opening with an executable is never sent to the model); wrapper equivalence and its readiness gate; cache set/get, capacity eviction, re-insert-keeps-hot, and clear.
 
 **Checkpoint:**
-- [ ] `just test-ts` && `cd tugdeck && bunx vite build`
-- [ ] Model-less: typing/submitting exactly as main. Model installed: `make test` ⇒ shell, `make the button bigger` ⇒ Claude, `git status` instant with no model call.
+- [x] `just test-ts` — tugdeck 4988 pass, tugcode 790 pass; `bunx tsc --noEmit` and `bunx vite build` clean.
+- [ ] Live matrix (model-less parity; `make test` ⇒ shell, `make the button bigger` ⇒ Claude, `git status` instant with no model call) — folded into #step-17, which the owner drives.
 
 ---
 
@@ -762,13 +886,13 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 - `FoundationModelsBackend.swift`: `#if canImport(FoundationModels)` + `@available(macOS 26.0, *)` implementation of `LocalModelBackend` (availability from `SystemLanguageModel.default.availability`; classify via guided `@Generable ShellVerdict`; summarize via `respond(to:)` with capped tokens; `prewarm()`); `#else`/below-26 stub answering unavailable. Registered in the service's backend list; the FM pseudo-model participates in `auto` resolution only when its availability is `.available`.
 
 **Tasks:**
-- [ ] Implement; verify the app builds and behaves identically on this Sequoia machine (stub path — availability answers unavailable).
+- [x] Implement; verified on Sequoia. `canImport(FoundationModels)` is false against the Sequoia SDK, so `makeIfSupported()` returns nil and the backend never enters the service's list.
 
 **Tests:**
-- [ ] Build structural; Sequoia console: `availability` still reports the MLX story only.
+- [x] Build structural; `availability` reports the MLX story only — `{ready: true, backend: "mlx"}` with the pack present, `{ready: false, reason: "no local model available"}` with it moved aside.
 
 **Checkpoint:**
-- [ ] `just app-debug` green from clean on Sequoia. **Live FM verification (classify corpus through the same API) is deferred to Golden Gate hardware and blocks nothing else** ([P13]).
+- [x] `just app-debug` green on Sequoia. **Live FM verification (classify corpus through the same API) is deferred to Golden Gate hardware and blocks nothing else** ([P13]).
 
 ---
 
@@ -785,13 +909,18 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 - `main.rs` wiring beside the pulse bridge task, constructed with the identity handles per #overview-identity: `SessionResolver` over an `Arc` clone of the supervisor's in-mem session map (the `try_lock` shape) + the SQLite `SessionLedger` handle for `SessionRow.project_dir`; unresolvable identity skips the tick silently.
 
 **Tasks:**
-- [ ] Implement per specs.
+- [x] Implemented per specs. `forwardable_session` is now shared from `feeds/pulse.rs` rather than reimplemented, so the two modules can never drift on what a replay bracket means.
+- [x] `AgentSupervisor::session_resolver()` added — `do_changeset_draft_request` was building that `try_lock` closure inline, and the emitter needs the same one. Both now share it.
+- [x] `PULSE_OVERVIEW_KEY` + `tenant_enabled()` restored now that a consumer exists. `SHELL_ROUTING_KEY` deliberately stays TS-only: that tenant lives entirely in the deck, and a Rust const with no consumer fails the build.
+- [x] Back-off is process-wide, not per session — every session shares one model, so a refusal is a fact about the model.
+- [x] Cadence thresholds are injectable (`Cadence`), so the loop is testable without waiting out a 15-second floor.
 
 **Tests:**
-- [ ] nextest: cadence trigger table (8-frames / 30 s / 15 s floor / unchanged-skip); digest composition from fixture frames + fixture JSONL (resolver + project-dir injected as test closures); replay-bracket muting; frame shape (`kind:"overview"`, single scope, clipped text); gate truth table; back-off doubling/reset.
+- [x] 29 tests. Pure: cadence table (burst / idle / floor / no-activity), back-off ladder 60→120→240→480→600 and reset-on-success, tool-line extraction and clipping, digest composition (both halves, tools-only, nothing-to-say), character-boundary clipping, accumulator tail bound, frame shape, replay muting, identity resolution both ways.
+- [x] Eight end-to-end loop tests driving real frames through the real requester and real reply-routing: a tool_use frame becomes a scoped `kind:"overview"` line; the tenant switch, PULSE being off, and no model host each produce silence; a refusal emits nothing **and** arms the back-off so the next frame is silent too; an unchanged headline is not republished; replay-bracketed frames never produce a line.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast`
+- [x] `cargo nextest run` — 1550 pass across the workspace.
 
 ---
 
@@ -809,13 +938,15 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 - `session-pulse-strip.tsx` + CSS: overview as first line above the stage line; absent ⇒ single-line layout identical to today (no reserved empty row); beat-line min-dwell/queue design untouched; overview swaps instant.
 
 **Tasks:**
-- [ ] Implement.
+- [x] Implemented. The strip's **root class did not move** — it became the two-row column and the beat row took a new inner class — because `session-card.css` carries a `:has(+ .session-pulse-strip)` divider rule that a renamed root would have silently broken.
+- [x] An unrecognized `kind` reads as a beat rather than dropping the line, so a future kind can't blank an older deck's strip.
+- [x] `clearScope` (submit) deliberately does **not** clear the overview: the watermark exists to drop stale *news*, and the overview is standing context.
 
 **Tests:**
-- [ ] bun test: `parsePulseFrame` kind passthrough + absent default; store separation; selector scope rules matching `latestLineForScope` semantics (session's own + `"app"`-wide + unscoped).
+- [x] 10 tests: `kind` passthrough, absence (the field is absent rather than null), and the unrecognized-kind fallback; overviews never entering the beat log; newest-replaces-outright; own-session-wins / app-wide-fallback / unscoped-files-as-app-wide; survival across `clearScope`; empty scope.
 
 **Checkpoint:**
-- [ ] `just test-ts` && `cd tugdeck && bunx vite build`
+- [x] `just test-ts` — tugdeck 4998 pass, tugcode 790 pass; `bunx tsc --noEmit` and `bunx vite build` clean.
 
 ---
 
@@ -828,16 +959,18 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 **References:** [P12], Spec S07, Spec S08, (#test-non-goals)
 
 **Artifacts:**
-- `tests/app-test/at0xxx-local-model-absent.test.ts` with `@covers` for `local-model-store.ts`, `session-pulse-strip.tsx`, `tug-prompt-entry.tsx`: on a model-less instance (the app-test default — fresh transient workspace, nothing installed), the strip renders single-line and typing `make ` / `git ` never auto-inserts the `!shell` chip. **Typing-level only — never submits a turn** (a real send into a replay-backed harness session is out of bounds; submit-time semantics live in Step 12's pure-function suite).
+- `tests/app-test/at0280-local-model-absent.test.ts` with `@covers` for `local-model-store.ts`, `shell-line-classifier.ts`, `session-pulse-strip.tsx`, `tug-prompt-entry.tsx`: with no local model available, the strip renders single-line and typing `make test` / `git status` never auto-inserts the `!shell` chip. **Typing-level only — never submits a turn** (a real send into a replay-backed harness session is out of bounds; submit-time semantics live in Step 12's pure-function suite).
 
 **Tasks:**
-- [ ] Write the test; `just app-test-covers-check` green.
+- [x] Written; `just app-test-covers-check` validates all four `@covers` paths.
+- [x] **Corrected premise.** This step assumed model-less is the app-test default ("fresh transient workspace, nothing installed"). It is not: the models directory is **machine-shared and instance-independent** by [P04], and no per-run workspace resets it — so on any machine that has ever downloaded a pack the harness instance finds it and both tenants light up. The first run of this test caught exactly that, with a shell chip appearing on `git `. The test now writes the **declined** selection (`model = ""`) into its own tugbank, which makes the host answer unavailable whatever is on disk, so the posture under test is identical on a fresh machine and on a developer's.
+- [x] That first failure doubled as an unplanned live confirmation that the readiness plumbing works end to end in the real app.
 
 **Tests:**
-- [ ] `just app-test-changed`
+- [x] `just app-test tests/app-test/at0280-local-model-absent.test.ts` — `VERDICT: PASS (1/1)`.
 
 **Checkpoint:**
-- [ ] Suite green — this pins the exact state every user is in before opting in.
+- [x] Green. One pre-existing, unrelated finding surfaced by `app-test-covers-check`: `tugdeck/src/deck-manager.ts` fans out to 21 tests against a 20-file selection budget. It fails identically on `main` and is untouched by this dash — resolving it means either narrowing `@covers` across 21 unrelated test files or accepting the coupling in `ACCEPTED_FANOUT`, which is a call for whoever owns that coupling.
 
 ---
 
@@ -849,17 +982,23 @@ Frame: `{"type":"pulse","kind":"overview","text":headline,"scopes":[tug_session_
 
 **References:** [P12], [P13], (#success-criteria)
 
-**Tasks:**
-- [ ] Fresh-instance TugSetup pass: pick a model, download with progress, land on done; both tenants live afterward.
+The live matrix is the owner's to drive; the automated half is recorded below.
+
+**Tasks (owner-driven, on `debug-tugdash-local-model`):**
+- [ ] Fresh-instance TugSetup pass: pick a model, download with progress, land on done; both tenants live afterward. (Reaching it needs a fresh instance or `SESSION_FORCE_SETUP`, since setup is first-run-only.)
 - [ ] Live session shows an overview within ~30 s of activity; shell matrix per Step 12; assignment flip per Step 11; `local_model_delete` degrades both tenants live; flags flip both features off without relaunch.
 - [ ] Headless `just dev` tugcast: overview silently absent, nothing errors.
 - [ ] Model-less instance: everything byte-identical to main.
 
+**Watch item for the matrix.** `autoShellOpener` is the loudest change: with a model present it inserts the `!shell` chip **on syntax alone**, the moment a space follows an unambiguous PATH opener, with no model consultation (Spec S07 keeps its logic unchanged behind the readiness gate). That is by design, and it is also the first thing a user will notice — worth deciding whether it feels right before the tenants land.
+
 **Tests:**
-- [ ] `cd tugrust && cargo nextest run` && `just test-ts` && `cd tugdeck && bunx vite build` && `just app-test-changed`
+- [x] `cargo nextest run` — 1550 pass. `just test-ts` — tugdeck 4998, tugcode 790. `bunx tsc --noEmit` and `bunx vite build` clean.
+- [x] `just app-test-build` core tier — 20/20 files, 39/39 tests. `just app-test at0280 at0216` — 2/2.
 
 **Checkpoint:**
-- [ ] Full matrix passes on this Sequoia machine. (FM live verification remains the one Golden-Gate item, per [P13].)
+- [x] Automated half green on this Sequoia machine.
+- [ ] Live matrix — owner. (FM live verification remains the one Golden-Gate item, per [P13].)
 
 ---
 

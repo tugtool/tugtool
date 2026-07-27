@@ -286,6 +286,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "openPath")
         contentController.add(self, name: "exportSession")
         contentController.add(self, name: "checkForUpdates")
+        contentController.add(self, name: "localModel")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -687,6 +688,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "openPath")
         contentController.removeScriptMessageHandler(forName: "exportSession")
         contentController.removeScriptMessageHandler(forName: "checkForUpdates")
+        contentController.removeScriptMessageHandler(forName: "localModel")
         bridgeCleaned = true
     }
 
@@ -695,6 +697,46 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     }
 
     /// Escape a string for safe embedding in JavaScript
+    /// Hand a local-model answer back to the web layer.
+    ///
+    /// Model output is arbitrary text, so the payload goes through JSON twice
+    /// — once for the object, once to make it a valid JS string literal — the
+    /// same shape the clipboard bridge uses for the same reason.
+    private func replyLocalModel(requestId: String, reply: LocalModelReply) {
+        var payload: [String: Any] = [
+            "requestId": requestId,
+            "ok": reply.ok,
+            "done": true,
+        ]
+        if let verdict = reply.verdict { payload["verdict"] = verdict }
+        if let text = reply.text { payload["text"] = text }
+        if let error = reply.error { payload["error"] = error }
+        if let availability = reply.availability {
+            var value: [String: Any] = ["ready": availability.ready]
+            if let backend = availability.backend { value["backend"] = backend }
+            if let reason = availability.reason { value["reason"] = reason }
+            payload["availability"] = value
+        }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []),
+              let jsonString = String(data: jsonData, encoding: .utf8),
+              let quotedData = try? JSONSerialization.data(
+                withJSONObject: jsonString, options: [.fragmentsAllowed]),
+              let quoted = String(data: quotedData, encoding: .utf8) else {
+            NSLog("MainWindow: JSON serialization failed for localModel")
+            return
+        }
+        webView.evaluateJavaScript(
+            "window.__tugBridge?.onLocalModelResult?.(JSON.parse(\(quoted)))"
+        ) { _, error in
+            if let error = error {
+                NSLog(
+                    "MainWindow: evaluateJavaScript failed for localModel: %@",
+                    error.localizedDescription
+                )
+            }
+        }
+    }
+
     private func escapeForJS(_ str: String) -> String {
         str.replacingOccurrences(of: "\\", with: "\\\\")
            .replacingOccurrences(of: "'", with: "\\'")
@@ -1167,6 +1209,49 @@ extension MainWindow: WKScriptMessageHandler {
             let backend = body["backend"] as? Bool ?? false
             let app = body["app"] as? Bool ?? false
             bridgeDelegate?.bridgeDevBadge(backend: backend, app: app)
+        case "localModel":
+            // On-device inference for the web layer. Every task is
+            // request/reply keyed by `requestId`: the deck posts here and
+            // resolves its promise when onLocalModelResult fires, so several
+            // requests can be in flight without ordering constraints.
+            //
+            // A malformed payload still answers — a caller waiting on a
+            // requestId must never be left hanging.
+            guard let body = message.body as? [String: Any],
+                  let requestId = body["requestId"] as? String else {
+                NSLog("MainWindow: localModel request missing requestId")
+                return
+            }
+            let task = (body["task"] as? String) ?? ""
+            let kind: LocalModelRequest.Kind?
+            switch task {
+            case "classify":
+                let labels = (body["labels"] as? [String]) ?? ["shell", "prompt"]
+                kind = (body["text"] as? String).map { .classify(text: $0, labels: labels) }
+            case "summarize":
+                kind = (body["prompt"] as? String).map { .summarize(prompt: $0) }
+            case "generate":
+                kind = (body["prompt"] as? String).map {
+                    .generate(prompt: $0, maxTokens: body["maxTokens"] as? Int)
+                }
+            case "availability":
+                kind = .availability
+            case "prewarm":
+                kind = .prewarm
+            default:
+                kind = nil
+            }
+            guard let kind = kind else {
+                replyLocalModel(requestId: requestId, reply: .failure("malformed \(task) request"))
+                return
+            }
+            Task { [weak self] in
+                let reply = await LocalModelService.shared.handle(
+                    LocalModelRequest(requestId: requestId, kind: kind))
+                await MainActor.run {
+                    self?.replyLocalModel(requestId: requestId, reply: reply)
+                }
+            }
         case "clipboardRead":
             // Native clipboard bridge. Read NSPasteboard directly and call
             // back to JavaScript with the contents. This exists because

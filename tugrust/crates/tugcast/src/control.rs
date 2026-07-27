@@ -19,6 +19,16 @@ pub enum ControlMessage {
         payload: serde_json::Value,
     },
     Shutdown,
+    /// The app's answer to a `local_model_request` this process sent up the
+    /// socket. Routed to the waiting oneshot by id, never broadcast.
+    LocalModelResult {
+        id: String,
+        ok: bool,
+        #[serde(default)]
+        text: Option<String>,
+        #[serde(default)]
+        error: Option<String>,
+    },
     DevMode {
         enabled: bool,
         #[serde(default)]
@@ -82,6 +92,7 @@ impl ControlReader {
         response_tx: mpsc::Sender<String>,
         auth: crate::auth::SharedAuthState,
         pending_evals: crate::router::PendingEvals,
+        local_model: crate::local_model::SharedLocalModelState,
     ) {
         // Extract the CONTROL broadcast sender for use throughout the recv loop.
         let client_action_tx = stream_outputs
@@ -124,6 +135,7 @@ impl ControlReader {
                                         &stream_outputs,
                                         &shared_dev_state,
                                         &pending_evals,
+                                        &local_model,
                                     )
                                     .await;
                                 }
@@ -187,6 +199,19 @@ impl ControlReader {
                                 // the origin allowlist only permits the tugcast port.
                                 auth.lock().unwrap().set_dev_port(None);
                                 let _ = response_tx.send(make_dev_mode_result(true, None)).await;
+                            }
+                        }
+                        Ok(ControlMessage::LocalModelResult {
+                            id,
+                            ok,
+                            text,
+                            error,
+                        }) => {
+                            if let Some(requester) = local_model.requester() {
+                                requester.resolve(
+                                    &id,
+                                    crate::local_model::LocalModelReply { ok, text, error },
+                                );
                             }
                         }
                         Ok(ControlMessage::Shutdown) => {
@@ -471,6 +496,37 @@ mod tests {
         let json = r#"{"type":"shutdown"}"#;
         let msg: ControlMessage = serde_json::from_str(json).unwrap();
         assert!(matches!(msg, ControlMessage::Shutdown));
+    }
+
+    #[test]
+    fn test_local_model_result_deserialization() {
+        // The app always sends `done`; tugcast has no use for it and must not
+        // choke on it.
+        let json = r#"{"type":"local_model_result","id":"lm-7","ok":true,"done":true,"text":"a headline","error":null}"#;
+        let msg: ControlMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ControlMessage::LocalModelResult {
+                id,
+                ok,
+                text,
+                error,
+            } => {
+                assert_eq!(id, "lm-7");
+                assert!(ok);
+                assert_eq!(text.as_deref(), Some("a headline"));
+                assert!(error.is_none());
+            }
+            other => panic!("expected LocalModelResult, got {other:?}"),
+        }
+
+        let failed = r#"{"type":"local_model_result","id":"lm-8","ok":false,"done":true,"error":"no local model installed"}"#;
+        match serde_json::from_str::<ControlMessage>(failed).unwrap() {
+            ControlMessage::LocalModelResult { ok, error, .. } => {
+                assert!(!ok);
+                assert_eq!(error.as_deref(), Some("no local model installed"));
+            }
+            other => panic!("expected LocalModelResult, got {other:?}"),
+        }
     }
 
     #[test]

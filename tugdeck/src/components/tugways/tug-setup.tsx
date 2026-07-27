@@ -10,8 +10,15 @@
  * status` probe surfaced via `check_auth`) plus the deck's card count:
  *   1. Claude Code installed & reachable — Tug-managed install + recheck.
  *   2. Logged in to Claude — browser OAuth shell-out.
- *   3. Open your first session — pops the first Session card. First-run only:
+ *   3. Add on-device AI — optional, first-run only, and the one step the user
+ *      may decline. Offers what the catalog marks `offered`; Download writes
+ *      the selection and hands the acquisition to tugcast, Skip writes `""`.
+ *   4. Open your first session — pops the first Session card. First-run only:
  *      a set-up user whose deck goes empty mid-life is left alone with it.
+ *
+ * The on-device AI step gates nothing below it. Its download lives in tugcast,
+ * so opening the first session — which closes the wizard — leaves it running,
+ * and tugcast's startup auto-resume covers a quit mid-download.
  *
  * ("Installed" and "reachable" collapse into one step: Tug resolves `claude`
  * via PATH then `~/.local/bin` — see `resolveClaudePath`/`claude_executable` —
@@ -47,10 +54,25 @@ import { useVersionGateOpen, deriveTugSetupOpen } from "@/lib/macos-support";
 import { useAppTransportState } from "@/lib/transport-state-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
-import { readSetupSeen, readSetupSuppressed, putSetupSeen } from "@/settings-api";
+import {
+  readSetupSeen,
+  readSetupSuppressed,
+  putSetupSeen,
+  putLocalModelSelection,
+} from "@/settings-api";
+import {
+  getLocalModelStore,
+  useLocalModel,
+  MODEL_DECLINED,
+} from "@/lib/local-model-store";
 import { useDeckManager } from "@/deck-manager-context";
 import { countWorkCards } from "@/deck-store-selectors";
-import { subscriptionLabel, pendingOpenStepCopy } from "./tug-setup-copy";
+import {
+  subscriptionLabel,
+  pendingOpenStepCopy,
+  localAiOfferDetail,
+  localAiProgressDetail,
+} from "./tug-setup-copy";
 import { TugPushButton } from "./tug-push-button";
 import {
   TugProgressIndicator,
@@ -105,12 +127,16 @@ function StepRow({
   status,
   label,
   detail,
+  body,
   cta,
+  secondaryCta,
 }: {
   status: StepStatus;
   label: string;
   detail?: string;
+  body?: ReactElement;
   cta?: { label: string; onClick: () => void };
+  secondaryCta?: { label: string; onClick: () => void };
 }): ReactElement {
   const { role, state } = dotVisual(status);
   return (
@@ -128,22 +154,30 @@ function StepRow({
           <span className="tug-setup-step-label">{label}</span>
         </div>
         {detail && <span className="tug-setup-step-detail">{detail}</span>}
+        {body && <div className="tug-setup-step-body">{body}</div>}
       </div>
       {status === "done" ? (
         <div className="tug-setup-step-action">
           <CircleCheck className="tug-setup-step-check" size={28} aria-hidden="true" />
         </div>
-      ) : cta ? (
+      ) : cta || secondaryCta ? (
         <div className="tug-setup-step-action">
-          <TugPushButton
-            size="sm"
-            emphasis={status === "error" ? "outlined" : "filled"}
-            role={status === "error" ? "danger" : "action"}
-            disabled={status === "busy"}
-            onClick={cta.onClick}
-          >
-            {cta.label}
-          </TugPushButton>
+          {secondaryCta && (
+            <TugPushButton size="sm" emphasis="ghost" onClick={secondaryCta.onClick}>
+              {secondaryCta.label}
+            </TugPushButton>
+          )}
+          {cta && (
+            <TugPushButton
+              size="sm"
+              emphasis={status === "error" ? "outlined" : "filled"}
+              role={status === "error" ? "danger" : "action"}
+              disabled={status === "busy"}
+              onClick={cta.onClick}
+            >
+              {cta.label}
+            </TugPushButton>
+          )}
         </div>
       ) : null}
     </li>
@@ -160,6 +194,11 @@ export function TugSetup(): ReactElement {
   // already holds work" — count everything but the Lens.
   const cardCount = countWorkCards(deckState);
   const [openedFirstSession, setOpenedFirstSession] = useState(false);
+  const localModel = useLocalModel();
+  // Declining on-device AI is remembered the same way as opening the first
+  // session: a local latch for this wizard's lifetime. The durable record is
+  // the `""` selection written to tugbank.
+  const [declinedLocalAi, setDeclinedLocalAi] = useState(false);
 
   const forced = import.meta.env.DEV ? SESSION_FORCE_SETUP : false;
   const forcedLoggedIn = forced === "open_session";
@@ -238,6 +277,17 @@ export function TugSetup(): ReactElement {
     authStore.setSigningIn(true);
     getConnection()?.sendControlFrame("claude_sign_in");
   };
+  const handleAddLocalAi = (modelId: string): void => {
+    putLocalModelSelection(modelId);
+    getLocalModelStore()?.download(modelId);
+  };
+  const handleCancelLocalAi = (): void => {
+    getLocalModelStore()?.cancelDownload();
+  };
+  const handleSkipLocalAi = (): void => {
+    putLocalModelSelection(MODEL_DECLINED);
+    setDeclinedLocalAi(true);
+  };
   const handleOpenSession = (): void => {
     deck.addCard("session");
     setOpenedFirstSession(true);
@@ -253,7 +303,11 @@ export function TugSetup(): ReactElement {
     status: StepStatus;
     label: string;
     detail?: string;
+    /** Extra content under the detail line — the download's progress bar. */
+    body?: ReactElement;
     cta?: { label: string; onClick: () => void };
+    /** A quieter alternative to the primary CTA, e.g. declining an offer. */
+    secondaryCta?: { label: string; onClick: () => void };
   };
 
   const claudeStep: Step = installing || verifyingInstall
@@ -315,6 +369,70 @@ export function TugSetup(): ReactElement {
               cta: { label: "Log In", onClick: handleSignIn },
             };
 
+  // On-device AI: the one optional step. It offers what the catalog marks as
+  // `offered` — with the v1 catalog that is a single entry, so the row names it
+  // outright rather than putting a picker in front of a first-run user. It
+  // never gates the step below it: a download runs in tugcast, so opening the
+  // first session (and closing the wizard) leaves it running, and tugcast's
+  // startup auto-resume backstops a quit mid-download.
+  const offeredModels = localModel.models.filter((entry) => entry.offered);
+  const offer =
+    offeredModels.find((entry) => entry.recommended) ?? offeredModels[0] ?? null;
+  const localAiStep: Step | null = (() => {
+    if (offer === null) return null;
+    const key = "local-ai";
+    if (offer.state === "installed") {
+      return { key, status: "done", label: "On-device AI ready", detail: offer.displayName };
+    }
+    if (declinedLocalAi || localModel.selection === MODEL_DECLINED) {
+      return { key, status: "done", label: "On-device AI", detail: "Skipped." };
+    }
+    if (!effectiveLoggedIn) {
+      return { key, status: "pending", label: "Add on-device AI" };
+    }
+    const inFlight =
+      localModel.download?.model === offer.id ? localModel.download : null;
+    if (inFlight !== null || offer.state === "downloading") {
+      const received = inFlight?.receivedBytes ?? offer.receivedBytes ?? 0;
+      const total = inFlight?.totalBytes || offer.totalBytes;
+      return {
+        key,
+        status: "busy",
+        label: "Adding on-device AI",
+        detail: localAiProgressDetail(received, total),
+        body: (
+          <TugProgressIndicator
+            variant="bar"
+            role="agent"
+            state="running"
+            value={received}
+            max={total}
+            showValue
+          />
+        ),
+        secondaryCta: { label: "Cancel", onClick: handleCancelLocalAi },
+      };
+    }
+    if (localModel.lastError !== null) {
+      return {
+        key,
+        status: "error",
+        label: "Add on-device AI",
+        detail: `Download failed: ${localModel.lastError}`,
+        cta: { label: "Retry", onClick: () => handleAddLocalAi(offer.id) },
+        secondaryCta: { label: "Skip", onClick: handleSkipLocalAi },
+      };
+    }
+    return {
+      key,
+      status: "active",
+      label: "Add on-device AI (optional)",
+      detail: localAiOfferDetail(offer.displayName, offer.totalBytes, offer.notes),
+      cta: { label: "Download", onClick: () => handleAddLocalAi(offer.id) },
+      secondaryCta: { label: "Skip", onClick: handleSkipLocalAi },
+    };
+  })();
+
   const openStep: Step = effectiveLoggedIn
     ? {
         key: "open",
@@ -353,7 +471,12 @@ export function TugSetup(): ReactElement {
     ? reconnectingSteps
     : probing
       ? probingSteps
-      : [claudeStep, signInStep, openStep];
+      : [
+          claudeStep,
+          signInStep,
+          ...(firstRun && localAiStep !== null ? [localAiStep] : []),
+          openStep,
+        ];
 
   return (
     <AlertDialog.Root open={open}>
@@ -397,7 +520,9 @@ export function TugSetup(): ReactElement {
                 status={step.status}
                 label={step.label}
                 detail={step.detail}
+                body={step.body}
                 cta={step.cta}
+                secondaryCta={step.secondaryCta}
               />
             ))}
           </ol>

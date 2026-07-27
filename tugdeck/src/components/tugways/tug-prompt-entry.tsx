@@ -143,7 +143,13 @@ import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 import { DEFAULT_ROUTE } from "@/lib/route-constants";
 import type { PathCommandsStore } from "@/lib/path-commands-store";
-import { autoShellOpener, classifyShellLine } from "@/lib/shell-line-classifier";
+import {
+  autoShellOpener,
+  bandShellLine,
+  ShellVerdictCache,
+} from "@/lib/shell-line-classifier";
+import { useLocalModelReady } from "@/lib/local-model-store";
+import { prewarm as prewarmLocalModel, requestClassify } from "@/lib/local-model-bridge";
 import { BANG_COMMANDS, matchBangCommandLine } from "@/lib/bang-commands";
 import type { FindSession } from "@/lib/find-session";
 import type { CommitModeController } from "@/lib/commit-mode-controller";
@@ -227,6 +233,22 @@ const ESCAPE_REPEAT_FLOOR_MS = 60;
  * into a settled write, not one CONTROL frame per key.
  */
 const COMMIT_PERSIST_DEBOUNCE_MS = 500;
+
+/**
+ * Quiet time, in milliseconds, before an ambiguous draft line is put to the
+ * local model (Spec S07). Long enough that ordinary typing doesn't fire a
+ * request per keystroke; short enough that the answer is usually back before
+ * the user reaches for Return.
+ */
+const VERDICT_DEBOUNCE_MS = 300;
+
+/**
+ * How long a submit will wait on a verdict already on the wire before giving
+ * up and sending the line to Claude. A submit is a gesture, not a query — past
+ * this bound the delay reads as the app hanging, and Claude is the safe
+ * direction for an unanswered ambiguity anyway.
+ */
+const VERDICT_SUBMIT_WAIT_MS = 250;
 
 // ---------------------------------------------------------------------------
 // Preserved state shape + migration
@@ -1900,6 +1922,30 @@ export const TugPromptEntry = React.forwardRef<
   // the editor empties (clear / submit / select-all-delete).
   const autoShellFlagsRef = useRef({ inserted: false, declined: false });
 
+  // Shell routing is live only when the local-model store says a model can
+  // answer AND the tenant's kill switch is on. Mirrored to a ref because the
+  // extension closures below run per keystroke and must never re-render for
+  // this ([L07]); when it is false every entry point short-circuits and the
+  // surface behaves exactly as a build with no model at all ([P12]).
+  const shellRoutingReady = useLocalModelReady("shell-routing");
+  const shellRoutingReadyRef = useRef(shellRoutingReady);
+  shellRoutingReadyRef.current = shellRoutingReady;
+
+  // Verdicts for `unsure` lines, plus the request currently on the wire.
+  // Non-render state by construction: a verdict arriving must not repaint the
+  // composer, it only settles where the next submit goes ([L06]).
+  const verdictCacheRef = useRef(new ShellVerdictCache());
+  const pendingVerdictRef = useRef<{
+    text: string;
+    promise: Promise<"shell" | "prompt" | null>;
+  } | null>(null);
+  const verdictDebounceRef = useRef<number | null>(null);
+  // Weights load lazily, so the first ambiguous line of a session would
+  // otherwise pay the whole load. Prewarm on that first line — the moment
+  // ambiguity is demonstrated — rather than on focus, which would drag
+  // gigabytes in for every session a user opens and never types into.
+  const prewarmedRef = useRef(false);
+
   // Substrate-level extensions installed at mount time. The
   // data-empty sync writes through a ref-tracked root element —
   // stable across renders. Extension array is captured by the
@@ -1981,6 +2027,11 @@ export const TugPromptEntry = React.forwardRef<
           if (doc.length === 0) {
             flags.inserted = false;
             flags.declined = false;
+            // Verdicts belong to the draft being composed, not to the session:
+            // an emptied editor (clear, select-all-delete, or the teardown at
+            // the end of a submit) is where they go.
+            verdictCacheRef.current.clear();
+            pendingVerdictRef.current = null;
           } else if (
             flags.inserted &&
             (positioned.length === 0 ||
@@ -2008,6 +2059,7 @@ export const TugPromptEntry = React.forwardRef<
               doc.sliceString(0),
               update.state.selection.main.head,
               pathCommandsStoreRef.current?.getSnapshot() ?? null,
+              shellRoutingReadyRef.current,
             ) !== null
           ) {
             flags.inserted = true;
@@ -2033,6 +2085,52 @@ export const TugPromptEntry = React.forwardRef<
                 userEvent: "input.tug-atom",
               });
             });
+          }
+        }
+
+        // Pre-consult the local model on `unsure` lines while the user types,
+        // so a verdict is usually already cached by the time Return arrives —
+        // submit-time is far too late to start a multi-hundred-millisecond
+        // round trip. Debounced: a verdict is only worth asking for once the
+        // line has stopped changing.
+        if (update.docChanged) {
+          if (verdictDebounceRef.current !== null) {
+            window.clearTimeout(verdictDebounceRef.current);
+            verdictDebounceRef.current = null;
+          }
+          const doc = update.state.doc;
+          if (
+            shellRoutingReadyRef.current &&
+            positioned.length === 0 &&
+            doc.lines === 1 &&
+            doc.length > 0 &&
+            doc.length <= 256
+          ) {
+            const text = doc.sliceString(0).trim();
+            if (
+              text.length > 0 &&
+              verdictCacheRef.current.get(text) === undefined &&
+              bandShellLine(
+                text,
+                pathCommandsStoreRef.current?.getSnapshot() ?? null,
+              ) === "unsure"
+            ) {
+              verdictDebounceRef.current = window.setTimeout(() => {
+                verdictDebounceRef.current = null;
+                if (!prewarmedRef.current) {
+                  prewarmedRef.current = true;
+                  prewarmLocalModel();
+                }
+                const promise = requestClassify(text);
+                pendingVerdictRef.current = { text, promise };
+                void promise.then((verdict) => {
+                  if (verdict !== null) verdictCacheRef.current.set(text, verdict);
+                  if (pendingVerdictRef.current?.text === text) {
+                    pendingVerdictRef.current = null;
+                  }
+                });
+              }, VERDICT_DEBOUNCE_MS);
+            }
           }
         }
       }),
@@ -2187,7 +2285,10 @@ export const TugPromptEntry = React.forwardRef<
   // Stable identity (`useCallback` with deps that are themselves
   // stable — `codeSessionStore` is a prop reference); policy is read
   // through refs so the closure never goes stale [L07].
-  const performSubmit = useCallback(() => {
+  // Async only for the one branch that can wait on a local-model verdict; an
+  // async function body runs synchronously up to its first `await`, so every
+  // other path through this callback settles in the same tick it always did.
+  const performSubmit = useCallback(async (): Promise<void> => {
     const editor = textEditorRef.current;
     const view = editor?.view() ?? null;
     const snap = snapRef.current;
@@ -2433,21 +2534,16 @@ export const TugPromptEntry = React.forwardRef<
     // the empty-input guard and don't send a blank turn.
     if (submitText.length === 0 && sendAtoms.length === 0) return;
 
-    // PATH classifier ([P09]): a command-shaped, atom-free, single-line draft
-    // silently routes to the shell instead of Claude — runs after the
-    // slash-command intercepts, before `send`. The auto-routed row renders a
+    // PATH classifier ([P09], Spec S07): a command-shaped, atom-free,
+    // single-line draft silently routes to the shell instead of Claude — after
+    // the slash-command intercepts, before `send`. The auto-routed row renders a
     // visible `→ shell` attribution with a one-click "send to Claude instead",
-    // so a rare misroute is undoable. A null command set (not yet loaded) makes
-    // the classifier answer Code — the safety net keeps the first line of a
-    // session from misrouting while the set warms.
+    // so a rare misroute is undoable. A null command set (not yet loaded) bands
+    // as prose — the safety net keeps the first line of a session from
+    // misrouting while the set warms.
     const shellStore = shellSessionStoreRef.current;
-    if (
-      shellStore !== undefined &&
-      sendAtoms.length === 0 &&
-      !submitText.includes("\n") &&
-      classifyShellLine(submitText, pathCommandsStoreRef.current?.getSnapshot() ?? null)
-    ) {
-      shellStore.exec(submitText, { origin: "auto" });
+    const routeToShell = (): void => {
+      shellStore?.exec(submitText, { origin: "auto" });
       // Auto-routed submissions were typed as Code input, so record the raw
       // line under the Code route ([P11]).
       const sessionId = snapRef.current.tugSessionId;
@@ -2465,7 +2561,44 @@ export const TugPromptEntry = React.forwardRef<
       onAfterSubmitRef.current?.();
       currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
       persistClearedDraft();
-      return;
+    };
+
+    if (
+      shellStore !== undefined &&
+      sendAtoms.length === 0 &&
+      !submitText.includes("\n")
+    ) {
+      // Readiness off ⇒ band as prose without even looking, which is exactly
+      // the behavior of a build with no local model ([P12]).
+      const band = shellRoutingReadyRef.current
+        ? bandShellLine(submitText, pathCommandsStoreRef.current?.getSnapshot() ?? null)
+        : "prompt";
+
+      if (band === "shell") {
+        routeToShell();
+        return;
+      }
+
+      if (band === "unsure") {
+        let verdict = verdictCacheRef.current.get(submitText) ?? null;
+        const inFlight = pendingVerdictRef.current;
+        if (verdict === null && inFlight !== null && inFlight.text === submitText) {
+          // The typing debounce asked, and the model hasn't answered yet. Hold
+          // the gesture for a bounded moment rather than discarding an answer
+          // that is milliseconds away — past the bound the line goes to Claude,
+          // which is the safe direction and what an unanswered `unsure` means.
+          verdict = await Promise.race([
+            inFlight.promise,
+            new Promise<null>((resolve) => {
+              window.setTimeout(() => resolve(null), VERDICT_SUBMIT_WAIT_MS);
+            }),
+          ]);
+        }
+        if (verdict === "shell") {
+          routeToShell();
+          return;
+        }
+      }
     }
 
     // Canonicalize a lone plugin command to its qualified `/<plugin>:<leaf>`
@@ -2558,7 +2691,7 @@ export const TugPromptEntry = React.forwardRef<
     if (!snap.canSubmit) return;
     if (!pendingSubmitRef.current) return;
     pendingSubmitRef.current = false;
-    performSubmit();
+    void performSubmit();
   }, [snap.canSubmit, performSubmit]);
 
   // [L07] Register the responder node.
@@ -2641,7 +2774,7 @@ export const TugPromptEntry = React.forwardRef<
         if (submitButtonModeRef.current.kind === "stop") {
           codeSessionStore.popInteractive();
         } else {
-          performSubmit();
+          void performSubmit();
         }
       },
       ...(snap.canInterrupt && !snap.interruptInFlight

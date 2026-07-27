@@ -11,6 +11,7 @@ mod fs_read;
 mod fs_stat;
 mod fs_write;
 mod host;
+mod local_model;
 /// Crate-root path utilities (firmlink/synthetic/symlink resolution). Lives
 /// at the root, not under `feeds/`, because both `feeds` (file watching) and
 /// `session_ledger` (storage) depend on it — keeping it a leaf avoids a
@@ -1157,7 +1158,7 @@ async fn main() {
     };
     let pulse_bridge = feeds::pulse::PulseBridge::new(feeds::pulse::PulseBridgeConfig {
         spawner: Arc::new(feeds::pulse::TugpulseSpawner { tugpulse_path }),
-        enabled: pulse_enabled,
+        enabled: Arc::clone(&pulse_enabled),
         ledger: Some(Arc::clone(&ledger)),
         code_tx: code_output_feed.sender(),
     });
@@ -1234,7 +1235,45 @@ async fn main() {
     // PULSE commentary lines fan out to every connected deck; the tail
     // a reconnecting deck needs comes from the `list_pulse_lines`
     // CONTROL read, not feed replay ([P09]).
-    feed_router.register_stream_feed(Box::new(pulse_bridge), cancel.clone());
+    let pulse_tx = feed_router.register_stream_feed(Box::new(pulse_bridge), cancel.clone());
+
+    // Session overview ([P11]) — the local model's second tenant: one sentence
+    // per session saying what it is working on, published on PULSE above the
+    // beat line. Its own tap on CODE_OUTPUT, its own cadence, and no path back
+    // into anything — the digest and the sentence are the whole feature. Every
+    // missing precondition (no model, tenant off, PULSE off, an unresolvable
+    // session identity) ends the tick silently.
+    {
+        let overview_tenant: Arc<dyn Fn() -> bool + Send + Sync> = {
+            let bank = bank_client.clone();
+            Arc::new(move || {
+                local_model::tenant_enabled(bank.as_deref(), local_model::PULSE_OVERVIEW_KEY)
+            })
+        };
+        let identity = feeds::session_overview::SessionIdentity {
+            resolver: supervisor.session_resolver(),
+            project_dir: {
+                let ledger = Arc::clone(&ledger);
+                Arc::new(move |tug_id: &str| {
+                    ledger.get(tug_id).ok().flatten().map(|row| row.project_dir)
+                })
+            },
+            claude_projects_root: ledger.claude_projects_root().to_path_buf(),
+        };
+        let overview_config = feeds::session_overview::SessionOverviewConfig {
+            code_tx: code_output_feed.sender(),
+            pulse_tx,
+            tenant_enabled: overview_tenant,
+            pulse_enabled: Arc::clone(&pulse_enabled),
+            local_model: Arc::clone(&feed_router.local_model),
+            identity,
+            cadence: feeds::session_overview::Cadence::default(),
+        };
+        let overview_cancel = cancel.clone();
+        tokio::spawn(async move {
+            feeds::session_overview::session_overview_task(overview_config, overview_cancel).await;
+        });
+    }
 
     feed_router.register_session_feed(&code_output_feed);
     // SHELL_OUTPUT — session-scoped exchange frames; the reconnect tail comes
@@ -1402,6 +1441,26 @@ async fn main() {
         None
     };
 
+    // Task requests ride the same drain channel the rest of the app→tugcast
+    // traffic uses. Without a control socket there is no host to ask, and the
+    // requester stays absent so every task answers unavailable at once.
+    if let Some(tx) = response_tx.clone() {
+        feed_router
+            .local_model
+            .set_requester(local_model::LocalModelRequester::new(tx));
+    }
+
+    // Pick up a local-model download the last run didn't finish. Silent when
+    // there is nothing to resume, which is the common case.
+    {
+        let selection = local_model::selected_model(bank_client.as_deref());
+        let cat = feed_router
+            .stream_outputs
+            .get(&FeedId::CONTROL)
+            .map(|(tx, _)| tx.clone());
+        local_model::resume_selected_download(&feed_router.local_model, cat, &selection);
+    }
+
     // Spawn control socket receive loop
     if let Some(reader) = control_reader {
         let dev_state = shared_dev_state.clone();
@@ -1410,6 +1469,7 @@ async fn main() {
             .clone()
             .expect("response_tx must exist when control_reader exists");
         let ctl_pending_evals = feed_router.pending_evals.clone();
+        let ctl_local_model = std::sync::Arc::clone(&feed_router.local_model);
         tokio::spawn(reader.run_recv_loop(
             ctl_shutdown_tx,
             ctl_stream_outputs,
@@ -1417,6 +1477,7 @@ async fn main() {
             tx,
             auth.clone(),
             ctl_pending_evals,
+            ctl_local_model,
         ));
     }
 

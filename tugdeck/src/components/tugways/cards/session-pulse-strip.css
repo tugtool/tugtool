@@ -45,14 +45,16 @@
   /* How tightly the keyboard focus ring hugs the PULSE label pill (smaller =
    * tighter). The global default is 2px; this label wears a snugger ring. */
   --session-pulse-strip-legend-ring-offset: 0px;
+  /* Height of the overview line, when there is one. */
+  --session-pulse-strip-overview-height: 22px;
+  --session-pulse-strip-overview-font-size: 0.6875rem;
+  /* A column of at most two rows: the standing overview (only when one
+   * exists — no reserved empty row) over the live beat. With no overview the
+   * column is exactly the beat row, so the strip is the same single fixed-height
+   * line it has always been. */
   display: flex;
-  /* Optically center the small label against the larger line text (NOT
-   * baseline-aligned — that drops the small label low). */
-  align-items: center;
-  gap: var(--tug-space-sm);
+  flex-direction: column;
   flex: 0 0 auto;
-  height: var(--session-pulse-strip-height);
-  line-height: var(--session-pulse-strip-height);
   box-sizing: border-box;
   padding-block: 0;
   padding-inline: var(--tug-space-md);
@@ -64,6 +66,47 @@
   background-color: var(--tugx-pane-bg);
   color: var(--tug7-element-global-text-normal-muted-rest);
   overflow: hidden;
+}
+
+/* The live beat: the row this component has always been. Every geometry rule
+ * that used to sit on the root lives here, so a strip with no overview above it
+ * is byte-identical to the single-line strip. */
+.session-pulse-strip-beat {
+  display: flex;
+  /* Optically center the small label against the larger line text (NOT
+   * baseline-aligned — that drops the small label low). */
+  align-items: center;
+  gap: var(--tug-space-sm);
+  flex: 0 0 auto;
+  height: var(--session-pulse-strip-height);
+  line-height: var(--session-pulse-strip-height);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* The standing overview: what the session is FOR, above the beat's what just
+ * happened. Quieter and smaller than the beat — it is context, not news, and it
+ * must not compete with the line that actually changes. */
+.session-pulse-strip-overview {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: var(--session-pulse-strip-overview-height);
+  line-height: var(--session-pulse-strip-overview-height);
+  box-sizing: border-box;
+  /* Indent to the beat text's start, so the two lines share a left edge
+   * rather than the overview hanging under the PULSE pill. */
+  padding-inline-start: calc(24px + var(--tug-space-sm) + 14px);
+  overflow: hidden;
+}
+
+.session-pulse-strip-overview-text {
+  font-size: var(--session-pulse-strip-overview-font-size);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */

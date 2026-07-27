@@ -122,6 +122,8 @@ pub struct FeedRouter {
     pub(crate) dev_state: crate::dev::SharedDevState,
     /// Pending eval requests awaiting browser responses.
     pub(crate) pending_evals: PendingEvals,
+    /// Catalog + model store for the local-model CONTROL verbs.
+    pub(crate) local_model: crate::local_model::SharedLocalModelState,
 }
 
 /// Pending eval requests awaiting responses from the browser.
@@ -149,6 +151,7 @@ impl FeedRouter {
             shutdown_tx,
             dev_state,
             pending_evals: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            local_model: crate::local_model::LocalModelState::shared_default(),
         }
     }
 
@@ -970,6 +973,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                                                 &router.stream_outputs,
                                                                 &router.dev_state,
                                                                 &router.pending_evals,
+                                                                &router.local_model,
                                                             ).await;
                                                         }
                                                     }

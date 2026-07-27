@@ -118,6 +118,15 @@ enum InstanceConfig {
         dataDir.appendingPathComponent(bundlePathMarkerName)
     }
 
+    /// Instance-independent data root: `<base>/Tug/`.
+    ///
+    /// Content under here is shared by every instance on the machine —
+    /// downloaded local-model packs, for one, which are large and identical
+    /// whoever asked for them. Per-instance state belongs in `dataDir`.
+    static var sharedDataDir: URL {
+        baseDataDir
+    }
+
     /// Short, stable, fixed-width token derived from `instanceId`
     /// (FNV-1a 32-bit, hex). For keying fixed-length resource names that
     /// must stay under the Unix-domain socket path limit

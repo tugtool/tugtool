@@ -49,6 +49,7 @@ base64 = { workspace = true }
 dirs = { workspace = true }
 tokio-stream = { workspace = true }
 rusqlite = { workspace = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 tower = { workspace = true }

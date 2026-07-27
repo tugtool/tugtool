@@ -45,6 +45,15 @@ fn broadcast_auth_result(
     }
 }
 
+/// Pull the `model` field out of a local-model action payload.
+fn model_id_from(raw_payload: &[u8]) -> Option<String> {
+    serde_json::from_slice::<serde_json::Value>(raw_payload)
+        .ok()?
+        .get("model")?
+        .as_str()
+        .map(str::to_owned)
+}
+
 /// Dispatch an action received from any ingress path (HTTP tell, WebSocket control frame, UDS tell).
 ///
 /// Classifies the action and routes it to the appropriate channel(s).
@@ -62,6 +71,7 @@ pub async fn dispatch_action(
     stream_outputs: &HashMap<FeedId, (broadcast::Sender<Frame>, LagPolicy)>,
     shared_dev_state: &crate::dev::SharedDevState,
     pending_evals: &crate::router::PendingEvals,
+    local_model: &crate::local_model::SharedLocalModelState,
 ) {
     match action {
         "relaunch" => {
@@ -183,6 +193,52 @@ pub async fn dispatch_action(
                 broadcast_auth_result(cat, state, None);
             });
         }
+        "local_model_download" => {
+            let cat = stream_outputs
+                .get(&FeedId::CONTROL)
+                .map(|(tx, _)| tx.clone());
+            match model_id_from(raw_payload) {
+                Some(id) => {
+                    info!("dispatch_action: local model download requested: {}", id);
+                    crate::local_model::start_download(local_model, cat, &id);
+                }
+                None => info!("dispatch_action: local_model_download missing model"),
+            }
+        }
+        "local_model_download_cancel" => {
+            info!("dispatch_action: local model download cancel requested");
+            local_model.cancel_all();
+        }
+        "local_model_delete" => {
+            let cat = stream_outputs
+                .get(&FeedId::CONTROL)
+                .map(|(tx, _)| tx.clone());
+            match model_id_from(raw_payload) {
+                Some(id) => {
+                    info!("dispatch_action: local model delete requested: {}", id);
+                    crate::local_model::delete_model(local_model, cat, &id);
+                }
+                None => info!("dispatch_action: local_model_delete missing model"),
+            }
+        }
+        "local_model_summarize" => {
+            let cat = stream_outputs
+                .get(&FeedId::CONTROL)
+                .map(|(tx, _)| tx.clone());
+            let prompt = serde_json::from_slice::<serde_json::Value>(raw_payload)
+                .ok()
+                .and_then(|v| v.get("prompt")?.as_str().map(str::to_owned));
+            match prompt {
+                Some(prompt) => crate::local_model::request_summary(local_model, cat, prompt),
+                None => info!("dispatch_action: local_model_summarize missing prompt"),
+            }
+        }
+        "local_model_list" => {
+            let cat = stream_outputs
+                .get(&FeedId::CONTROL)
+                .map(|(tx, _)| tx.clone());
+            crate::local_model::broadcast_inventory(local_model, cat.as_ref());
+        }
         other => {
             info!("dispatch_action: broadcasting client action: {}", other);
             if let Some((tx, _)) = stream_outputs.get(&FeedId::CONTROL) {
@@ -215,6 +271,10 @@ mod tests {
             &stream_outputs,
             &dev_state,
             &pending_evals,
+            &crate::local_model::LocalModelState::new(
+                std::env::temp_dir().join("tugcast-dispatch-test-models"),
+                crate::local_model::DEFAULT_BASE_URL.to_string(),
+            ),
         )
         .await;
 

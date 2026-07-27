@@ -226,7 +226,10 @@ enum DaemonEvent {
 /// replay-mute set as brackets pass (even while the daemon is
 /// unspawned or PULSE is disabled — mute state must track the wire,
 /// not the toggle).
-fn forwardable_session(payload: &[u8], muted: &mut HashSet<String>) -> Option<String> {
+pub(crate) fn forwardable_session(
+    payload: &[u8],
+    muted: &mut HashSet<String>,
+) -> Option<String> {
     let inspected = InspectedPayload::from_slice(payload)?;
     let msg_type = inspected.msg_type.as_deref()?;
     let session = inspected.tug_session_id.clone();

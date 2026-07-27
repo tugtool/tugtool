@@ -318,6 +318,23 @@ export function putSetupSeen(seen: boolean): void {
 }
 
 /**
+ * Persist the on-device model choice under `dev.tugtool.local-model` /
+ * `model`. The value is a catalog id, `"auto"`, or `""` for declined —
+ * absent reads as `"auto"`, so "declined" has to be written explicitly to be
+ * distinguishable from never having been asked. Fire-and-forget, mirroring
+ * {@link putSetupSeen}.
+ */
+export function putLocalModelSelection(modelId: string): void {
+  fetch("/api/defaults/dev.tugtool.local-model/model", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "string", value: modelId }),
+  }).catch((err) => {
+    console.warn("[settings] PUT local-model selection failed:", err);
+  });
+}
+
+/**
  * PUT a single per-card state bag to tugbank under `dev.tugtool.deck.cardstate/{cardId}`.
  *
  * Resolves `true` when tugbank accepted the write and `false` when it failed

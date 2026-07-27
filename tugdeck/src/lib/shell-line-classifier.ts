@@ -1,19 +1,26 @@
 /**
- * shell-line-classifier — the high-precision, submit-time PATH classifier
- * (Spec S03, [P09]).
+ * shell-line-classifier — the high-precision PATH heuristic for deciding
+ * whether an unprefixed, atom-free, single-line draft means the shell or means
+ * Claude (Spec S03, [P09]).
  *
- * `classifyShellLine(text, commands)` decides whether an unprefixed, atom-free,
- * single-line draft should silently route to the shell instead of Claude. The
- * wrong-way costs are asymmetric — prose at the shell error-barfs, but a
+ * The heuristic answers in **three bands**, not two ({@link bandShellLine}).
+ * `shell` and `prompt` are the cases syntax alone settles: a flagged, piped, or
+ * pathful command line on one side, a line whose first word isn't an executable
+ * at all on the other. `unsure` is the honest middle — `make the button bigger`
+ * and `make test` open identically, and no amount of token inspection separates
+ * them. That band is what a local model is for; without one the caller treats it
+ * as Claude, which is exactly today's behavior.
+ *
+ * The wrong-way costs are asymmetric — prose at the shell error-barfs, but a
  * command at Claude just gets answered — so the heuristic is tuned for
- * near-zero *false-shell*: everything ambiguous stays on Code, where a stray
- * `ls` degrades gracefully. Every auto-routed exchange is visibly attributed
- * with a one-click "send to Claude instead", so a rare misroute is undoable.
+ * near-zero *false-shell*: nothing reaches `shell` on a maybe. Every auto-routed
+ * exchange is visibly attributed with a one-click "send to Claude instead", so a
+ * rare misroute is undoable.
  *
  * Pure — no side effects, no store reads. The caller enforces the precondition
- * (the draft has no atoms; `text` is trimmed and single-line) and supplies the
+ * (the draft has no atoms; `text` is trimmed and single-line), supplies the
  * login-PATH command set (null until it loads, which answers Code — the safety
- * net, not the steady state).
+ * net, not the steady state), and supplies its own readiness.
  *
  * @module lib/shell-line-classifier
  */
@@ -43,17 +50,6 @@ const STOPWORDS: ReadonlySet<string> = new Set([
   "any", "all", "more", "most", "other", "than", "then", "if", "else", "so",
   "just", "like", "want", "need", "make", "sure",
 ]);
-
-/**
- * Master switch for auto `!shell` detection — both the live-typing chip insert
- * ({@link autoShellOpener}) and the submit-time silent route
- * ({@link classifyShellLine}). Parked off: a first-word/PATH heuristic misfires
- * on prose openers that are also executables (`write …`, `apply …`). Detection
- * stays off until a model classifier can judge intent. The functions below keep
- * their full logic as the hook — gate the classifier's verdict here, or flip
- * this back to `true`, to re-enable.
- */
-export const AUTO_SHELL_DETECTION_ENABLED = false;
 
 /** A leading `NAME=value` environment-assignment token (skipped to find the command). */
 const ENV_ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/;
@@ -102,15 +98,18 @@ function hasStrongSignal(text: string, tokens: readonly string[]): boolean {
  *    those wait for the full-line classifier at submit.
  *
  * Returns the opener token when the chip should be inserted, else `null`.
- * Pure; the caller enforces the atom-free precondition and its own
- * once-per-draft / declined latches.
+ * Pure; the caller enforces the atom-free precondition, its own
+ * once-per-draft / declined latches, and `ready` — which is false whenever
+ * on-device routing is unavailable or switched off, restoring the surface to
+ * the behavior of a build with no local model at all.
  */
 export function autoShellOpener(
   docText: string,
   caret: number,
   commands: ReadonlySet<string> | null,
+  ready: boolean,
 ): string | null {
-  if (!AUTO_SHELL_DETECTION_ENABLED) return null;
+  if (!ready) return null;
   if (commands === null) return null;
   if (docText.includes("\n")) return null;
   if (caret !== docText.length) return null;
@@ -127,55 +126,128 @@ export function autoShellOpener(
 }
 
 /**
- * Classify a trimmed, single-line, atom-free draft as shell (`true`) or Code
- * (`false`) per Spec S03. Returns `false` for a null command set (the set is
- * still loading — answer Code).
+ * The three answers syntax can give about a draft line.
+ *
+ * - `shell` — the line is a command by construction; route it, no model needed.
+ * - `prompt` — the line isn't a command at all; send it to Claude.
+ * - `unsure` — it opens like a command but reads like prose. Only intent
+ *   separates these, so this is the band a local model is asked about; with no
+ *   model the caller treats it as `prompt`.
  */
-export function classifyShellLine(
+export type ShellBand = "shell" | "prompt" | "unsure";
+
+/**
+ * Band a trimmed, single-line, atom-free draft per Spec S07.
+ *
+ * Unconditional and readiness-free: this is the syntax half of the decision,
+ * and it answers the same way whether or not a model exists. Gating belongs to
+ * the caller.
+ *
+ * A null command set (still loading) answers `prompt` rather than `unsure` — a
+ * line we can't even check the first word of isn't worth spending inference on.
+ */
+export function bandShellLine(
   text: string,
   commands: ReadonlySet<string> | null,
-): boolean {
-  if (!AUTO_SHELL_DETECTION_ENABLED) return false;
-  if (commands === null) return false;
+): ShellBand {
+  if (commands === null) return "prompt";
 
   // 1. Length + shape gate. Slash commands are already intercepted; `#` leads a
   //    comment / prose aside.
-  if (text.length === 0 || text.length > 400) return false;
-  if (text.startsWith("/") || text.startsWith("#")) return false;
+  if (text.length === 0 || text.length > 400) return "prompt";
+  if (text.startsWith("/") || text.startsWith("#")) return "prompt";
 
   const tokens = text.split(/\s+/).filter((t) => t.length > 0);
-  if (tokens.length === 0) return false;
+  if (tokens.length === 0) return "prompt";
 
   // Skip a leading `NAME=value` env-assignment prefix (`FOO=1 make test`) so the
   // real command token is examined. The assignment itself is a strong signal.
   let cmdStart = 0;
   while (cmdStart < tokens.length && ENV_ASSIGN.test(tokens[cmdStart]!)) cmdStart += 1;
   const commandTokens = tokens.slice(cmdStart);
-  if (commandTokens.length === 0) return false;
+  if (commandTokens.length === 0) return "prompt";
   const first = commandTokens[0]!;
 
   // 2. The command token must be a known PATH executable OR a path-shaped
-  //    executable (`./…`, `~/…`, `/…`; tokens never contain spaces).
+  //    executable (`./…`, `~/…`, `/…`; tokens never contain spaces). A line that
+  //    doesn't even open with an executable is prose outright — no model needed.
   const pathShaped =
     first.startsWith("./") || first.startsWith("~/") || first.startsWith("/");
-  if (!commands.has(first) && !pathShaped) return false;
+  if (!commands.has(first) && !pathShaped) return "prompt";
+
+  // A trailing `?` is a question whatever it opens with.
+  if (text.endsWith("?")) return "prompt";
 
   const strong = hasStrongSignal(text, tokens);
 
-  // 3. Prose vetoes.
-  // A trailing `?` is a question, not a command.
-  if (text.endsWith("?")) return false;
-  // A bare ambiguous opener (nothing command-shaped after it) is prose-adjacent.
+  // 3. Prose vetoes. Past this point the line DOES open with an executable, so a
+  //    veto means "reads like prose", not "is prose" — hence `unsure` rather
+  //    than `prompt`. These are precisely the lines worth asking a model about.
   if (
     AMBIGUOUS_OPENERS.has(first) &&
     !commandTokens.slice(1).some(looksLikeCommandTarget)
   ) {
-    return false;
+    return "unsure";
   }
-  // A subsequent bare stopword marks prose, unless a strong signal outweighs it.
-  if (!strong && commandTokens.slice(1).some((t) => STOPWORDS.has(t))) return false;
+  if (!strong && commandTokens.slice(1).some((t) => STOPWORDS.has(t))) return "unsure";
   // A long run of tokens with no shell punctuation reads as a sentence.
-  if (!strong && tokens.length >= 8) return false;
+  if (!strong && tokens.length >= 8) return "unsure";
 
-  return true;
+  return "shell";
+}
+
+/**
+ * Whether a draft should route to the shell on syntax alone — the `shell` band,
+ * and only when the caller says routing is live.
+ *
+ * `unsure` deliberately answers `false` here: this is the no-model answer, and
+ * without a verdict the safe direction is Claude.
+ */
+export function classifyShellLine(
+  text: string,
+  commands: ReadonlySet<string> | null,
+  ready: boolean,
+): boolean {
+  if (!ready) return false;
+  return bandShellLine(text, commands) === "shell";
+}
+
+/**
+ * Verdicts already obtained for `unsure` lines, keyed by the exact draft text.
+ *
+ * A model round trip costs hundreds of milliseconds, and a user editing the tail
+ * of a line re-presents earlier prefixes constantly — so the same question would
+ * otherwise be asked over and over. Bounded because a draft's history is
+ * unbounded; cleared on submit/clear because verdicts belong to the draft being
+ * composed, not to the session.
+ */
+export class ShellVerdictCache {
+  /** Distinct drafts remembered before the oldest is dropped. */
+  static readonly capacity = 32;
+
+  private readonly entries = new Map<string, "shell" | "prompt">();
+
+  get(text: string): "shell" | "prompt" | undefined {
+    return this.entries.get(text);
+  }
+
+  set(text: string, verdict: "shell" | "prompt"): void {
+    // Re-insert so a repeatedly-consulted draft stays hot rather than aging out
+    // behind drafts that were asked about once.
+    this.entries.delete(text);
+    this.entries.set(text, verdict);
+    while (this.entries.size > ShellVerdictCache.capacity) {
+      const oldest = this.entries.keys().next();
+      if (oldest.done === true) break;
+      this.entries.delete(oldest.value);
+    }
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
 }

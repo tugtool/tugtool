@@ -855,6 +855,14 @@ export interface PulseFramePayload {
   /** Retained high-level thought behind a low-level `text` beat;
    *  absent when `text` is itself the monologue or a turn marker. */
   intent?: string;
+  /**
+   * What kind of line this is. Absent means a beat — the live "what just
+   * happened" commentary tugpulse emits, which is every frame that existed
+   * before overviews. `"overview"` marks the local model's standing answer to
+   * "what is this session working on", which the strip pins above the beat
+   * instead of threading into the beat stream.
+   */
+  kind?: "overview";
   scopes: string[];
   beat: number;
   at: number;
@@ -874,6 +882,7 @@ export function parsePulseFrame(payload: Uint8Array): PulseFramePayload | null {
       ...(typeof p.intent === "string" && p.intent.length > 0
         ? { intent: p.intent }
         : {}),
+      ...(p.kind === "overview" ? { kind: "overview" as const } : {}),
       scopes: Array.isArray(p.scopes)
         ? p.scopes.filter((s): s is string => typeof s === "string")
         : [],

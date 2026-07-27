@@ -87,8 +87,19 @@
   opacity: 0.8;
 }
 
+/* Extra content under the detail line — today the on-device AI download's
+ * progress bar, which spans the main block's full width. This is the one row
+ * that grows past `--tug-setup-row-h`, and only while a download runs. */
+.tug-setup-step-body {
+  padding-left: calc(var(--tug-setup-dot) + var(--tug-setup-headline-gap));
+  padding-top: 4px;
+}
+
 .tug-setup-step-action {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-md);
 }
 
 /* Big green success check that takes the button's place on a completed step,

@@ -8,7 +8,10 @@
  *  - hidden entirely while the `pulse/enabled` tugbank default is off
  *    (the snapshot carries the toggle);
  *  - fixed single-line height once shown — a new line never moves
- *    layout;
+ *    layout. A session that has a standing OVERVIEW (the local model's
+ *    answer to "what is this session working on") wears it as a second,
+ *    quieter line above the beat; with no overview there is no reserved
+ *    row and the strip is exactly the single line it has always been;
  *  - every line DWELLS at least {@link MIN_DWELL_MS} before the next
  *    replaces it (rapid thoughts coalesce — the newest pending line
  *    wins when the dwell expires), except the user's own clear
@@ -23,8 +26,9 @@
  *    started from this card — the one stretch the voice cannot narrate,
  *    since the wire streams nothing between the submit and the boundary.
  *
- * Laws: [L02] every store via `useSyncExternalStore` (`usePulse`, the
- *       session-id selector, and `compactionProgressStore`);
+ * Laws: [L02] every store via `useSyncExternalStore` (`usePulse`,
+ *       `usePulseOverview`, the session-id selector, and
+ *       `compactionProgressStore`);
  *       [L06] the dwell queue is local presentation data
  *       (`useState`/`useRef`), which changes WHAT text exists, not how it
  *       looks — no appearance passes through React state;
@@ -72,6 +76,7 @@ import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import {
   groupPulseHistory,
   latestLineForScope,
+  usePulseOverview,
   linesForScope,
   usePulse,
   type PulseLineEntry,
@@ -278,6 +283,10 @@ export function SessionPulseStrip({
     tugSessionId,
     pulse.cleared.get(tugSessionId),
   );
+  // The session's standing overview. Separate from the beat entirely: it never
+  // enters the dwell queue (it is not news, so it has nothing to pace against)
+  // and never enters the history.
+  const overview = usePulseOverview(tugSessionId);
   const target: DisplayEntry = compacting
     ? COMPACTING_ENTRY
     : latest !== null
@@ -329,6 +338,22 @@ export function SessionPulseStrip({
   if (!pulse.enabled) return null;
   return (
     <div className="session-pulse-strip" data-slot="session-pulse-strip">
+      {/*
+        The standing overview, when the local model has produced one for this
+        session. Rendered only when present — no reserved empty row — so a
+        model-less deck sees the exact single-line strip it always has.
+      */}
+      {overview !== null && (
+        <div
+          className="session-pulse-strip-overview"
+          data-slot="session-pulse-overview"
+        >
+          <span className="session-pulse-strip-overview-text">
+            {overview.text}
+          </span>
+        </div>
+      )}
+      <div className="session-pulse-strip-beat">
       {/*
         dismissOnChainActivity=false: a row's right-click → Copy dispatches the
         `copy` action through the responder chain, which would otherwise read as
@@ -407,6 +432,7 @@ export function SessionPulseStrip({
         </TugPopoverContent>
       </TugPopover>
       {copyLine.contextMenu}
+      </div>
     </div>
   );
 }

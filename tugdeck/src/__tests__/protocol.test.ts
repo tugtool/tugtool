@@ -18,6 +18,7 @@ import {
   isControlFrame,
   normalizeSessionRow,
   parseActivityFrame,
+  parsePulseFrame,
 } from "../protocol";
 
 const encode = (obj: unknown): Uint8Array =>
@@ -438,5 +439,42 @@ describe("session ledger CONTROL encoders / decoders", () => {
     expect(decodeSessionUpdated({ session_id: "sess-abc" })).toBeNull();
     expect(decodeSessionUpdated(null)).toBeNull();
     expect(decodeSessionUpdated({ action: "session_updated" })).toBeNull();
+  });
+});
+
+describe("parsePulseFrame — the overview kind", () => {
+  const encode = (body: Record<string, unknown>): Uint8Array =>
+    new TextEncoder().encode(JSON.stringify(body));
+
+  test("a beat carries no kind at all — the field is absent, not null", () => {
+    const line = parsePulseFrame(
+      encode({ type: "pulse", text: "reading files", scopes: ["s1"], beat: 3, at: 9 }),
+    );
+    expect(line?.text).toBe("reading files");
+    expect(line && "kind" in line).toBe(false);
+  });
+
+  test("an overview frame carries its kind through", () => {
+    const line = parsePulseFrame(
+      encode({
+        type: "pulse",
+        kind: "overview",
+        text: "Hardening the watch loop.",
+        scopes: ["s1"],
+        beat: 1,
+        at: 9,
+      }),
+    );
+    expect(line?.kind).toBe("overview");
+    expect(line?.text).toBe("Hardening the watch loop.");
+    expect(line?.scopes).toEqual(["s1"]);
+  });
+
+  test("an unrecognized kind reads as a beat rather than being dropped", () => {
+    const line = parsePulseFrame(
+      encode({ type: "pulse", kind: "prophecy", text: "hm", scopes: [], beat: 0, at: 0 }),
+    );
+    expect(line?.text).toBe("hm");
+    expect(line && "kind" in line).toBe(false);
   });
 });

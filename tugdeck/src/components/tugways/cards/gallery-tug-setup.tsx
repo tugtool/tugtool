@@ -33,7 +33,16 @@ import {
   type TugProgressIndicatorRole,
   type TugProgressIndicatorState,
 } from "@/components/tugways/tug-progress-indicator";
-import { pendingOpenStepCopy } from "@/components/tugways/tug-setup-copy";
+import {
+  pendingOpenStepCopy,
+  localAiOfferDetail,
+  localAiProgressDetail,
+} from "@/components/tugways/tug-setup-copy";
+
+/** The v1 catalog's one `offered` entry, for the on-device AI scenarios. */
+const OFFER_NAME = "Ternary Bonsai 8B";
+const OFFER_BYTES = 2_315_155_948;
+const OFFER_NOTES = "Runs command routing and session summaries on this Mac, offline.";
 import "./gallery.css";
 import "./gallery-tug-setup.css";
 
@@ -62,8 +71,12 @@ interface SetupStepModel {
   label: string;
   /** State / progress / completion message under the label. */
   detail?: string;
+  /** Extra content under the detail line — a download's progress bar. */
+  body?: React.ReactElement;
   status: StepStatus;
   cta?: StepCta;
+  /** A quieter alternative to the primary CTA, e.g. declining an offer. */
+  secondaryCta?: StepCta;
 }
 
 /** Map a step status onto the left-hand `pulsing-dot`'s role + state. */
@@ -110,22 +123,30 @@ function SetupStepRow({ step }: { step: SetupStepModel }): React.ReactElement {
         {step.detail && (
           <span className="cg-setup-step-detail">{step.detail}</span>
         )}
+        {step.body && <div className="cg-setup-step-body">{step.body}</div>}
       </div>
       {step.status === "done" ? (
         <div className="cg-setup-step-action">
           <CircleCheck className="cg-setup-step-check" size={28} aria-hidden />
         </div>
-      ) : step.cta ? (
+      ) : step.cta || step.secondaryCta ? (
         <div className="cg-setup-step-action">
-          <TugPushButton
-            size="sm"
-            emphasis={step.status === "error" ? "outlined" : "filled"}
-            role={step.status === "error" ? "danger" : "action"}
-            disabled={step.status === "busy"}
-            onClick={step.cta.onClick}
-          >
-            {step.cta.label}
-          </TugPushButton>
+          {step.secondaryCta && (
+            <TugPushButton size="sm" emphasis="ghost" onClick={step.secondaryCta.onClick}>
+              {step.secondaryCta.label}
+            </TugPushButton>
+          )}
+          {step.cta && (
+            <TugPushButton
+              size="sm"
+              emphasis={step.status === "error" ? "outlined" : "filled"}
+              role={step.status === "error" ? "danger" : "action"}
+              disabled={step.status === "busy"}
+              onClick={step.cta.onClick}
+            >
+              {step.cta.label}
+            </TugPushButton>
+          )}
         </div>
       ) : null}
     </li>
@@ -184,6 +205,10 @@ type Scenario =
   | "signed_out"
   | "signing_in"
   | "signin_failed"
+  | "local_ai_offer"
+  | "local_ai_downloading"
+  | "local_ai_failed"
+  | "local_ai_skipped"
   | "ready_to_open"
   | "continue_working"
   | "complete"
@@ -197,6 +222,10 @@ const SCENARIOS: { key: Scenario; label: string }[] = [
   { key: "signed_out", label: "Signed out" },
   { key: "signing_in", label: "Logging in" },
   { key: "signin_failed", label: "Log-in failed" },
+  { key: "local_ai_offer", label: "On-device AI offer" },
+  { key: "local_ai_downloading", label: "On-device AI downloading" },
+  { key: "local_ai_failed", label: "On-device AI failed" },
+  { key: "local_ai_skipped", label: "On-device AI skipped" },
   { key: "ready_to_open", label: "Ready to open" },
   { key: "continue_working", label: "Continue working" },
   { key: "complete", label: "Complete" },
@@ -220,6 +249,12 @@ function buildFlow(
   const signin = (overrides: Partial<SetupStepModel>): SetupStepModel => ({
     key: "signin",
     label: "Log in to Claude",
+    status: "pending",
+    ...overrides,
+  });
+  const localAi = (overrides: Partial<SetupStepModel>): SetupStepModel => ({
+    key: "local-ai",
+    label: "Add on-device AI (optional)",
     status: "pending",
     ...overrides,
   });
@@ -309,6 +344,69 @@ function buildFlow(
             cta: { label: "Try Again", onClick: () => go("signing_in") },
           }),
           open({}),
+        ],
+      };
+    case "local_ai_offer":
+      return {
+        steps: [
+          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
+          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
+          localAi({
+            status: "active",
+            label: "Add on-device AI (optional)",
+            detail: localAiOfferDetail(OFFER_NAME, OFFER_BYTES, OFFER_NOTES),
+            cta: { label: "Download", onClick: () => go("local_ai_downloading") },
+            secondaryCta: { label: "Skip", onClick: () => go("local_ai_skipped") },
+          }),
+          open({ status: "active", detail: "Open a Session card to get started", cta: { label: "Open a Session Card" } }),
+        ],
+      };
+    case "local_ai_downloading":
+      return {
+        steps: [
+          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
+          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
+          localAi({
+            status: "busy",
+            label: "Adding on-device AI",
+            detail: localAiProgressDetail(OFFER_BYTES * 0.42, OFFER_BYTES),
+            body: (
+              <TugProgressIndicator
+                variant="bar"
+                role="agent"
+                state="running"
+                value={OFFER_BYTES * 0.42}
+                max={OFFER_BYTES}
+                showValue
+              />
+            ),
+            secondaryCta: { label: "Cancel", onClick: () => go("local_ai_offer") },
+          }),
+          open({ status: "active", detail: "Open a Session card to get started", cta: { label: "Open a Session Card" } }),
+        ],
+      };
+    case "local_ai_failed":
+      return {
+        steps: [
+          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
+          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
+          localAi({
+            status: "error",
+            label: "Add on-device AI",
+            detail: "Download failed: checksum mismatch for model.safetensors.",
+            cta: { label: "Retry", onClick: () => go("local_ai_downloading") },
+            secondaryCta: { label: "Skip", onClick: () => go("local_ai_skipped") },
+          }),
+          open({ status: "active", detail: "Open a Session card to get started", cta: { label: "Open a Session Card" } }),
+        ],
+      };
+    case "local_ai_skipped":
+      return {
+        steps: [
+          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
+          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
+          localAi({ status: "done", label: "On-device AI", detail: "Skipped." }),
+          open({ status: "active", detail: "Open a Session card to get started", cta: { label: "Open a Session Card" } }),
         ],
       };
     case "ready_to_open":

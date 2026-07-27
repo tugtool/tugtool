@@ -144,6 +144,7 @@ async fn tell_handler(
         &router.stream_outputs,
         &router.dev_state,
         &router.pending_evals,
+        &router.local_model,
     )
     .await;
 

@@ -1,9 +1,10 @@
 import { describe, it, expect } from "bun:test";
 
 import {
-  AUTO_SHELL_DETECTION_ENABLED,
   autoShellOpener,
+  bandShellLine,
   classifyShellLine,
+  ShellVerdictCache,
 } from "../shell-line-classifier";
 
 // A representative login-PATH set. The classifier keys the first command token
@@ -13,7 +14,7 @@ const COMMANDS: ReadonlySet<string> = new Set([
   "cp", "mv", "rm", "mkdir", "touch", "find", "man", "time", "test", "sort",
   "head", "tail", "less", "more", "which", "open", "npm", "bun", "node",
   "python", "python3", "docker", "kubectl", "ssh", "curl", "tar", "chmod",
-  "sed", "awk", "kill", "ps", "top", "df", "du", "cat", "tmux",
+  "sed", "awk", "kill", "ps", "top", "df", "du", "cat", "tmux", "write", "apply",
 ]);
 
 // ≥30 command lines that MUST classify shell. A single miss here is a
@@ -97,95 +98,167 @@ const MUST_CODE: readonly string[] = [
   "do you think this is thread safe",
 ];
 
-// Auto-detection is parked off (`AUTO_SHELL_DETECTION_ENABLED = false`): both
-// entry points short-circuit to Code / null. The corpora below document the
-// intended verdicts as the hook — gate each positive-detection assertion on the
-// flag so the suite stays correct in both states.
 
-describe("classifyShellLine — MUST classify shell", () => {
+// Prose openers that are also real executables — the exact cases that kept
+// auto-detection parked before there was a model to ask. They must never reach
+// `shell` on syntax alone; `unsure` is the whole point of the band.
+const MUST_BE_UNSURE: readonly string[] = [
+  "write a poem",
+  "apply the patch",
+  "make the button bigger",
+  "find where the memory grows",
+  "test the hypothesis that it leaks",
+  "sort out this mess for me",
+];
+
+describe("bandShellLine — MUST band shell", () => {
   it("has at least 30 command lines", () => {
     expect(MUST_SHELL.length).toBeGreaterThanOrEqual(30);
   });
   for (const line of MUST_SHELL) {
     it(`shell: ${line}`, () => {
-      expect(classifyShellLine(line, COMMANDS)).toBe(AUTO_SHELL_DETECTION_ENABLED);
+      expect(bandShellLine(line, COMMANDS)).toBe("shell");
     });
   }
 });
 
-describe("classifyShellLine — MUST classify Code (zero-false-shell gate)", () => {
+describe("bandShellLine — the zero-false-shell gate", () => {
   it("has at least 30 prose lines", () => {
     expect(MUST_CODE.length).toBeGreaterThanOrEqual(30);
   });
   for (const line of MUST_CODE) {
-    it(`code: ${line}`, () => {
-      expect(classifyShellLine(line, COMMANDS)).toBe(false);
+    it(`never shell: ${line}`, () => {
+      expect(bandShellLine(line, COMMANDS)).not.toBe("shell");
     });
   }
 });
 
-describe("classifyShellLine — gates", () => {
-  it("answers Code while the command set is null (loading)", () => {
-    expect(classifyShellLine("ls -la", null)).toBe(false);
+describe("bandShellLine — the ambiguous middle", () => {
+  for (const line of MUST_BE_UNSURE) {
+    it(`unsure: ${line}`, () => {
+      expect(bandShellLine(line, COMMANDS)).toBe("unsure");
+    });
+  }
+
+  it("a line that doesn't open with an executable is prose, not a question for the model", () => {
+    expect(bandShellLine("why is this so slow?", COMMANDS)).toBe("prompt");
+    expect(bandShellLine("frobnicate the widget", COMMANDS)).toBe("prompt");
+    expect(bandShellLine("we should refactor the store layer", COMMANDS)).toBe("prompt");
+  });
+
+  it("a trailing question mark settles it without the model", () => {
+    expect(bandShellLine("git status?", COMMANDS)).toBe("prompt");
+  });
+});
+
+describe("bandShellLine — gates", () => {
+  it("bands prose while the command set is null (loading)", () => {
+    expect(bandShellLine("ls -la", null)).toBe("prompt");
   });
 
   it("never routes a slash command (already intercepted)", () => {
-    expect(classifyShellLine("/shell ls", COMMANDS)).toBe(false);
+    expect(bandShellLine("/shell ls", COMMANDS)).toBe("prompt");
   });
 
   it("never routes a `#` comment / aside", () => {
-    expect(classifyShellLine("# note to self", COMMANDS)).toBe(false);
-  });
-
-  it("rejects an unknown, non-path first token", () => {
-    expect(classifyShellLine("frobnicate the widget", COMMANDS)).toBe(false);
+    expect(bandShellLine("# note to self", COMMANDS)).toBe("prompt");
   });
 
   it("rejects an over-long line", () => {
-    expect(classifyShellLine(`ls ${"x".repeat(401)}`, COMMANDS)).toBe(false);
+    expect(bandShellLine(`ls ${"x".repeat(401)}`, COMMANDS)).toBe("prompt");
   });
 
   it("routes a path-shaped executable not in the set", () => {
-    expect(classifyShellLine("./bin/tool --run", COMMANDS)).toBe(
-      AUTO_SHELL_DETECTION_ENABLED,
-    );
+    expect(bandShellLine("./bin/tool --run", COMMANDS)).toBe("shell");
+  });
+});
+
+describe("classifyShellLine — the compatibility wrapper", () => {
+  it("is the `shell` band, and only when the caller says routing is live", () => {
+    expect(classifyShellLine("git status", COMMANDS, true)).toBe(true);
+    expect(classifyShellLine("git status", COMMANDS, false)).toBe(false);
+  });
+
+  it("answers Code for the unsure band — no verdict means Claude", () => {
+    expect(bandShellLine("make the button bigger", COMMANDS)).toBe("unsure");
+    expect(classifyShellLine("make the button bigger", COMMANDS, true)).toBe(false);
   });
 });
 
 describe("autoShellOpener — live `!shell` chip insert gate", () => {
-  // The opener token when detection is on, else null (parked off).
-  const opened = (token: string): string | null =>
-    AUTO_SHELL_DETECTION_ENABLED ? token : null;
-
   it("fires on an unambiguous PATH command + trailing space, caret at end", () => {
-    expect(autoShellOpener("git ", 4, COMMANDS)).toBe(opened("git"));
-    expect(autoShellOpener("ls ", 3, COMMANDS)).toBe(opened("ls"));
-    expect(autoShellOpener("cargo ", 6, COMMANDS)).toBe(opened("cargo"));
+    expect(autoShellOpener("git ", 4, COMMANDS, true)).toBe("git");
+    expect(autoShellOpener("ls ", 3, COMMANDS, true)).toBe("ls");
+    expect(autoShellOpener("cargo ", 6, COMMANDS, true)).toBe("cargo");
+  });
+
+  it("never fires when the caller says routing is not live", () => {
+    expect(autoShellOpener("git ", 4, COMMANDS, false)).toBeNull();
+    expect(autoShellOpener("./run.sh ", 9, COMMANDS, false)).toBeNull();
   });
 
   it("fires on a path-shaped executable", () => {
-    expect(autoShellOpener("./run.sh ", 9, COMMANDS)).toBe(opened("./run.sh"));
-    expect(autoShellOpener("~/bin/tool ", 11, COMMANDS)).toBe(opened("~/bin/tool"));
+    expect(autoShellOpener("./run.sh ", 9, COMMANDS, true)).toBe("./run.sh");
+    expect(autoShellOpener("~/bin/tool ", 11, COMMANDS, true)).toBe("~/bin/tool");
   });
 
   it("never fires on ambiguous openers or stopword-ish commands", () => {
     for (const doc of ["cat ", "find ", "make ", "test ", "open ", "which "]) {
-      expect(autoShellOpener(doc, doc.length, COMMANDS)).toBeNull();
+      expect(autoShellOpener(doc, doc.length, COMMANDS, true)).toBeNull();
     }
   });
 
   it("never fires on an unknown token, sigil leads, or a null set", () => {
-    expect(autoShellOpener("frobnicate ", 11, COMMANDS)).toBeNull();
-    expect(autoShellOpener("/shell ", 7, COMMANDS)).toBeNull();
-    expect(autoShellOpener("!shell ", 7, COMMANDS)).toBeNull();
-    expect(autoShellOpener("# note ", 7, COMMANDS)).toBeNull();
-    expect(autoShellOpener("git ", 4, null)).toBeNull();
+    expect(autoShellOpener("frobnicate ", 11, COMMANDS, true)).toBeNull();
+    expect(autoShellOpener("/shell ", 7, COMMANDS, true)).toBeNull();
+    expect(autoShellOpener("!shell ", 7, COMMANDS, true)).toBeNull();
+    expect(autoShellOpener("# note ", 7, COMMANDS, true)).toBeNull();
+    expect(autoShellOpener("git ", 4, null, true)).toBeNull();
   });
 
   it("requires exactly one token + one space with the caret at the end", () => {
-    expect(autoShellOpener("git", 3, COMMANDS)).toBeNull();
-    expect(autoShellOpener("git status ", 11, COMMANDS)).toBeNull();
-    expect(autoShellOpener("git ", 2, COMMANDS)).toBeNull();
-    expect(autoShellOpener("git \n", 5, COMMANDS)).toBeNull();
+    expect(autoShellOpener("git", 3, COMMANDS, true)).toBeNull();
+    expect(autoShellOpener("git status ", 11, COMMANDS, true)).toBeNull();
+    expect(autoShellOpener("git ", 2, COMMANDS, true)).toBeNull();
+    expect(autoShellOpener("git \n", 5, COMMANDS, true)).toBeNull();
+  });
+});
+
+describe("ShellVerdictCache", () => {
+  it("remembers a verdict by exact draft text", () => {
+    const cache = new ShellVerdictCache();
+    cache.set("make test", "shell");
+    expect(cache.get("make test")).toBe("shell");
+    expect(cache.get("make tests")).toBeUndefined();
+  });
+
+  it("drops the oldest entry past its capacity", () => {
+    const cache = new ShellVerdictCache();
+    for (let i = 0; i <= ShellVerdictCache.capacity; i += 1) {
+      cache.set(`line ${i}`, "prompt");
+    }
+    expect(cache.size).toBe(ShellVerdictCache.capacity);
+    expect(cache.get("line 0")).toBeUndefined();
+    expect(cache.get(`line ${ShellVerdictCache.capacity}`)).toBe("prompt");
+  });
+
+  it("keeps a repeatedly-consulted draft hot rather than aging it out", () => {
+    const cache = new ShellVerdictCache();
+    cache.set("keep me", "shell");
+    for (let i = 0; i < ShellVerdictCache.capacity - 1; i += 1) {
+      cache.set(`filler ${i}`, "prompt");
+    }
+    cache.set("keep me", "shell");
+    cache.set("one more", "prompt");
+    expect(cache.get("keep me")).toBe("shell");
+    expect(cache.get("filler 0")).toBeUndefined();
+  });
+
+  it("clears wholesale", () => {
+    const cache = new ShellVerdictCache();
+    cache.set("make test", "shell");
+    cache.clear();
+    expect(cache.size).toBe(0);
+    expect(cache.get("make test")).toBeUndefined();
   });
 });

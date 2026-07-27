@@ -254,7 +254,8 @@ app-debug: build wasm
     unset TUG_FORCE_BUNDLE_ID
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh debug)"
     BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh debug)"
-    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    export TUG_PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    PRODUCT_NAME="$TUG_PRODUCT_NAME"
     echo "==> Quitting prior $INSTANCE_ID, if running"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     # Debug bundles serve the frontend via Vite HMR — no `bun run build`
@@ -263,14 +264,19 @@ app-debug: build wasm
     # build before xcodebuild.
     # Touch Swift sources so xcodebuild detects changes on this mount.
     find tugapp/Sources -name '*.swift' -exec touch {} +
-    # PRODUCT_NAME gives each variant its own `.app` (Tug-debug.app /
+    # TUG_PRODUCT_NAME gives each variant its own `.app` (Tug-debug.app /
     # Tug-worktree.app) AND `-derivedDataPath` gives it its own build
     # directory, so build outputs are fully isolated — building the
     # app-test bundle never clobbers this debug bundle, and vice-versa.
     # The default DerivedData is shared per-project, so without this every
     # variant overwrites the same target product. See derived-data-path.sh.
+    # It travels as an environment variable that the Tug target's PRODUCT_NAME
+    # setting reads, NOT as an xcodebuild command-line setting: a command-line
+    # setting applies to every target in the graph, so the SPM packages'
+    # resource-bundle targets would all take the same name and collide
+    # ("Multiple commands produce ....bundle").
     DERIVED="$(bash tugrust/scripts/derived-data-path.sh debug)"
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" PRODUCT_NAME="$PRODUCT_NAME" build
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" build
     APP_DIR="$DERIVED/Build/Products/Debug/${PRODUCT_NAME}.app"
     echo "==> Re-signing with Developer ID for stable AX grant"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
@@ -301,7 +307,8 @@ app-release: build wasm
     unset TUG_FORCE_BUNDLE_ID
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh release)"
     BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh release)"
-    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh release)"
+    export TUG_PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh release)"
+    PRODUCT_NAME="$TUG_PRODUCT_NAME"
     echo "==> Quitting prior $INSTANCE_ID, if running"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     # Compile the shared release inputs (Rust binaries, tugcode/tugpulse,
@@ -311,7 +318,7 @@ app-release: build wasm
     bash tugrust/scripts/build-release-inputs.sh
     find tugapp/Sources -name '*.swift' -exec touch {} +
     DERIVED="$(bash tugrust/scripts/derived-data-path.sh release)"
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" PRODUCT_NAME="$PRODUCT_NAME" build
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" build
     APP_DIR="$DERIVED/Build/Products/Release/${PRODUCT_NAME}.app"
     echo "==> Re-signing with Developer ID"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
@@ -333,7 +340,8 @@ launch-debug:
     set -euo pipefail
     # Dev loop = cwd-derived identity; the forced bundle id is app-test-only.
     unset TUG_FORCE_BUNDLE_ID
-    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    export TUG_PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    PRODUCT_NAME="$TUG_PRODUCT_NAME"
     APP_DIR="$(bash tugrust/scripts/derived-data-path.sh debug)/Build/Products/Debug/${PRODUCT_NAME}.app"
     if [ ! -d "$APP_DIR" ]; then
         echo "error: ${PRODUCT_NAME}.app not built at $APP_DIR" >&2
@@ -354,7 +362,8 @@ launch-release:
     set -euo pipefail
     # Dev loop = cwd-derived identity; the forced bundle id is app-test-only.
     unset TUG_FORCE_BUNDLE_ID
-    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh release)"
+    export TUG_PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh release)"
+    PRODUCT_NAME="$TUG_PRODUCT_NAME"
     APP_DIR="$(bash tugrust/scripts/derived-data-path.sh release)/Build/Products/Release/${PRODUCT_NAME}.app"
     if [ ! -d "$APP_DIR" ]; then
         echo "error: ${PRODUCT_NAME}.app not built at $APP_DIR" >&2
@@ -878,7 +887,8 @@ build-app:
     # PRODUCT_NAME names the built `.app` per variant (Tug-apptest under
     # TUG_FORCE_BUNDLE_ID=…apptest) so each variant is its own bundle file
     # that never clobbers or re-signs another. Matches bundle-id-from-cwd.sh.
-    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    export TUG_PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    PRODUCT_NAME="$TUG_PRODUCT_NAME"
     # Per-variant derivedDataPath isolates this build from the interactive
     # app-debug build (and every other variant): they no longer share one
     # DerivedData and so never clobber each other's `.app`.
@@ -893,7 +903,7 @@ build-app:
     XCODE_LOG="$(mktemp -t tugapp-xcode.XXXX.log)"
     if xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
         -configuration Debug -destination 'platform=macOS,arch=arm64' \
-        -derivedDataPath "$DERIVED" PRODUCT_NAME="$PRODUCT_NAME" build \
+        -derivedDataPath "$DERIVED" build \
         > "$XCODE_LOG" 2>&1; then
         grep -E '^\*\*|warning:|error:|^ld: |^clang: |^Undefined' "$XCODE_LOG" || true
         grep -q '^\*\* BUILD' "$XCODE_LOG" || echo "** BUILD SUCCEEDED **"
@@ -1034,7 +1044,8 @@ app-test *FILES:
     fi
     echo "==> app-test instance prefix: $TUG_APPTEST_ID_PREFIX"
 
-    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    export TUG_PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    PRODUCT_NAME="$TUG_PRODUCT_NAME"
     APP_DIR="$(bash tugrust/scripts/derived-data-path.sh debug)/Build/Products/Debug/${PRODUCT_NAME}.app"
     APP_BIN="$APP_DIR/Contents/MacOS/${PRODUCT_NAME}"
     # Build-if-missing: one command does the whole thing. Only builds when
@@ -1432,7 +1443,8 @@ app-test-grant:
     #!/usr/bin/env bash
     set -euo pipefail
     export TUG_FORCE_BUNDLE_ID="${TUG_FORCE_BUNDLE_ID:-dev.tugtool.app.apptest}"
-    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    export TUG_PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    PRODUCT_NAME="$TUG_PRODUCT_NAME"
     echo "==> Building ${PRODUCT_NAME}.app pinned to $TUG_FORCE_BUNDLE_ID"
     just build-app
     APP_DIR="$(bash tugrust/scripts/derived-data-path.sh debug)/Build/Products/Debug/${PRODUCT_NAME}.app"

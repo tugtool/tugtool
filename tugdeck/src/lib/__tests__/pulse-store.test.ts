@@ -16,6 +16,7 @@ import {
   PulseStore,
   groupPulseHistory,
   latestLineForScope,
+  latestOverviewForScope,
   publishListPulseLinesOk,
   type PulseLineEntry,
 } from "@/lib/pulse-store";
@@ -294,5 +295,91 @@ describe("clearScope", () => {
     expect(
       latestLineForScope(snap.lines, "s2", snap.cleared.get("s2"))?.text,
     ).toBe("s2 line");
+  });
+});
+
+describe("PulseStore — overviews", () => {
+  function overviewFrame(
+    text: string,
+    scopes: string[] = ["s1"],
+    beat = 1,
+  ): Record<string, unknown> {
+    return { type: "pulse", kind: "overview", text, scopes, beat, at: 2_000 + beat };
+  }
+
+  it("an overview never enters the beat log", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    conn.pushPulseFrame(liveLine(1, "a beat"));
+    conn.pushPulseFrame(overviewFrame("Hardening the watch loop."));
+    const snap = store.getSnapshot();
+    expect(snap.lines.length).toBe(1);
+    expect(snap.lines[0].text).toBe("a beat");
+    expect(snap.latest?.text).toBe("a beat");
+    expect(latestOverviewForScope(snap.overviews, "s1")?.text).toBe(
+      "Hardening the watch loop.",
+    );
+  });
+
+  it("a newer overview replaces the older one outright", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    conn.pushPulseFrame(overviewFrame("First goal.", ["s1"], 1));
+    conn.pushPulseFrame(overviewFrame("Second goal.", ["s1"], 2));
+    const snap = store.getSnapshot();
+    expect(snap.overviews.size).toBe(1);
+    expect(latestOverviewForScope(snap.overviews, "s1")?.text).toBe("Second goal.");
+  });
+
+  it("a card only sees its own session's overview", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    conn.pushPulseFrame(overviewFrame("s1 goal.", ["s1"]));
+    const snap = store.getSnapshot();
+    expect(latestOverviewForScope(snap.overviews, "s1")?.text).toBe("s1 goal.");
+    expect(latestOverviewForScope(snap.overviews, "s2")).toBeNull();
+  });
+
+  it("an app-wide overview shows everywhere the session has none", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    conn.pushPulseFrame(overviewFrame("app-wide.", ["app"]));
+    let snap = store.getSnapshot();
+    expect(latestOverviewForScope(snap.overviews, "s2")?.text).toBe("app-wide.");
+    // The session's own always wins over the app-wide fallback.
+    conn.pushPulseFrame(overviewFrame("s2 goal.", ["s2"]));
+    snap = store.getSnapshot();
+    expect(latestOverviewForScope(snap.overviews, "s2")?.text).toBe("s2 goal.");
+  });
+
+  it("an unscoped overview files as app-wide", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    conn.pushPulseFrame(overviewFrame("unscoped.", []));
+    const snap = store.getSnapshot();
+    expect(latestOverviewForScope(snap.overviews, "anything")?.text).toBe("unscoped.");
+  });
+
+  it("clearing a scope does not clear its overview — it is not news", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    conn.pushPulseFrame(overviewFrame("Standing goal."));
+    store.clearScope("s1");
+    const snap = store.getSnapshot();
+    expect(latestOverviewForScope(snap.overviews, "s1")?.text).toBe("Standing goal.");
+  });
+
+  it("an empty scope has no overview", () => {
+    const { store } = makeStore();
+    stores.push(store);
+    const snap = store.getSnapshot();
+    expect(latestOverviewForScope(snap.overviews, "")).toBeNull();
+    expect(snap.overviews.size).toBe(0);
   });
 });

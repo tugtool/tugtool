@@ -47,6 +47,22 @@ export interface PulseLineEntry {
   atMs: number;
 }
 
+/**
+ * One session's standing overview — the local model's answer to "what is this
+ * session working on", as opposed to a beat's "what just happened".
+ *
+ * Deliberately NOT a {@link PulseLineEntry}: overviews never enter the rolling
+ * log, the history popover, or the cleared-watermark machinery. They are a
+ * latest-per-scope fact that the strip pins above the beat, and they replace
+ * each other rather than accumulating.
+ */
+export interface PulseOverviewEntry {
+  text: string;
+  scopes: readonly string[];
+  beat: number;
+  atMs: number;
+}
+
 export interface PulseSnapshot {
   /** The `pulse/enabled` toggle; the strip hides entirely when false. */
   enabled: boolean;
@@ -63,7 +79,27 @@ export interface PulseSnapshot {
    * arriving afterwards show normally.
    */
   cleared: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Latest overview per scope. Empty until a local model produces one. */
+  overviews: ReadonlyMap<string, PulseOverviewEntry>;
 }
+
+/**
+ * The newest overview about `scope`, or null.
+ *
+ * Same scope rule as {@link latestLineForScope}: a card shows its own session's
+ * overview, and an `"app"`-scoped one (which is also where an unscoped frame
+ * files) shows everywhere. The session's own always wins.
+ */
+export function latestOverviewForScope(
+  overviews: ReadonlyMap<string, PulseOverviewEntry>,
+  scope: string,
+): PulseOverviewEntry | null {
+  if (scope.length === 0) return null;
+  return overviews.get(scope) ?? overviews.get(OVERVIEW_APP_SCOPE) ?? null;
+}
+
+/** Where an unscoped or explicitly app-wide overview files. */
+const OVERVIEW_APP_SCOPE = "app";
 
 /**
  * The newest line about `scope` — a card's strip shows commentary
@@ -151,12 +187,14 @@ export function groupPulseHistory(
 
 const EMPTY_LINES: readonly PulseLineEntry[] = Object.freeze([]);
 const EMPTY_CLEARED: ReadonlyMap<string, ReadonlySet<string>> = new Map();
+const EMPTY_OVERVIEWS: ReadonlyMap<string, PulseOverviewEntry> = new Map();
 const IDLE_SNAPSHOT: PulseSnapshot = Object.freeze({
   enabled: true,
   status: "idle",
   lines: EMPTY_LINES,
   latest: null,
   cleared: EMPTY_CLEARED,
+  overviews: EMPTY_OVERVIEWS,
 });
 
 // ---------------------------------------------------------------------------
@@ -199,6 +237,10 @@ export class PulseStore {
       this.conn.onFrame(FeedId.PULSE, (payload) => {
         const line = parsePulseFrame(payload);
         if (line === null) return;
+        if (line.kind === "overview") {
+          this.foldOverview(line);
+          return;
+        }
         this.fold([
           {
             key: lineKey(line.at, line.beat),
@@ -300,6 +342,30 @@ export class PulseStore {
     this.commit(merged, "ready");
   }
 
+  /**
+   * Replace the overview for every scope the frame names. An overview is a
+   * standing statement, so the newest one wins outright — there is no log to
+   * append to and nothing to dedupe against.
+   */
+  private foldOverview(line: {
+    text: string;
+    scopes: string[];
+    beat: number;
+    at: number;
+  }): void {
+    const entry: PulseOverviewEntry = Object.freeze({
+      text: line.text,
+      scopes: Object.freeze([...line.scopes]) as readonly string[],
+      beat: line.beat,
+      atMs: line.at,
+    });
+    const scopes = line.scopes.length > 0 ? line.scopes : [OVERVIEW_APP_SCOPE];
+    const overviews = new Map(this.snapshot.overviews);
+    for (const scope of scopes) overviews.set(scope, entry);
+    this.snapshot = Object.freeze({ ...this.snapshot, overviews });
+    this.tick();
+  }
+
   private fold(incoming: PulseLineEntry[]): void {
     const seen = new Set(this.snapshot.lines.map((l) => l.key));
     const fresh = incoming.filter((l) => !seen.has(l.key));
@@ -319,6 +385,7 @@ export class PulseStore {
       lines: Object.freeze(capped) as readonly PulseLineEntry[],
       latest: capped.length > 0 ? capped[capped.length - 1] : null,
       cleared: this.snapshot.cleared,
+      overviews: this.snapshot.overviews,
     });
     this.tick();
   }
@@ -381,6 +448,28 @@ export function usePulse(): PulseSnapshot {
  * flips, not on every new line — the session card reads this to decide whether
  * the PULSE strip occupies a row in its keyboard-focus cycle.
  */
+/**
+ * React hook: the standing overview for one scope, or null.
+ *
+ * A narrow selector — a card re-renders on its own overview changing, not on
+ * every beat that crosses the strip.
+ */
+export function usePulseOverview(scope: string): PulseOverviewEntry | null {
+  return useSyncExternalStore(
+    (listener) => {
+      const store = _activeStore;
+      if (store === null) return () => {};
+      return store.subscribe(listener);
+    },
+    () =>
+      latestOverviewForScope(
+        _activeStore?.getSnapshot().overviews ?? EMPTY_OVERVIEWS,
+        scope,
+      ),
+    () => null,
+  );
+}
+
 export function usePulseEnabled(): boolean {
   return useSyncExternalStore(
     (listener) => {
