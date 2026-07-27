@@ -42,6 +42,8 @@ This phase locks the version model — `tugrust/Cargo.toml` `[workspace.package]
 - A Debug or Release build's *built* `Info.plist` carries `CFBundleShortVersionString` equal to `version.sh show` and `CFBundleVersion` equal to `major*10000 + minor*100 + patch` (verified by `tests/build-info/test-info-plist.sh`).
 - `build-app.sh` aborts if the staged bundle's `CFBundleShortVersionString` is empty or differs from the workspace version.
 - `release.yml` triggered by tag `v0.9.9` against a tree whose version is `0.8.1` fails at the guard step before any build work (verifiable by reading the workflow logic; live-fire is the user's first release).
+- A tag-triggered run restores branch identity before building: the workflow's rebrand step precedes the build step, and the local detached→`main` transition is proven in a throwaway clone (Step 6). A tag that is not an ancestor of `origin/main` fails the guard before any build work.
+- `update-rig.sh` contains no hardcoded bundle id (`grep -c 'dev\.tugtool\.app'` → `0`) and prints the domain it clears.
 - `just release` refuses when: the tree is dirty, HEAD ≠ `origin/main`, `version.sh check` fails, or the tag already exists — each with a distinct message.
 - `git tag -l 'v*'` lists nothing locally after tag hygiene (84 stale unpushed `v0.7.*`-era tags deleted); `origin` still has only tags pushed deliberately.
 - `just update-rig` takes a built DMG to a live localhost Sparkle feed and a launched app pointed at it in one command.
@@ -115,6 +117,7 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | Missing/empty xcconfig yields a blank-version bundle | high | low | `build-app.sh` staged-plist guard ([P05]); `test-info-plist.sh` asserts | any bundle with empty `CFBundleShortVersionString` |
+| Tag checkout ships a `detached-<sha8>` bundle identity | high | high without the fix | ancestor guard + `git checkout -B main` before the build (Spec S07 rung 4, #build-identity-on-tag-checkout); Step 6 asserts the built id | any change to `capture-build-info.sh` / `assign-bundle-id.sh` branch handling |
 | Stale local tags fire 84 releases on a `git push --tags` | high | low | delete them (Step 6); `just release` pushes exactly one tag by name, never `--tags` ([P07]) | any accidental multi-tag push |
 | `plugin.json` sed misses a format drift | med | low | `version.sh check` verifies the value after every write, so a silent miss becomes a loud failure | plugin.json reformatted |
 | CI gate lengthens release runs (~10 min extra) | low | high | accepted — a stable release is rare and must not ship red ([P08]) | release cadence increases sharply |
@@ -128,9 +131,9 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 
 **Risk R02: update-rig collides with the user's real installed Tug** {#r02-rig-collision}
 
-- **Risk:** The rig app is `dev.tugtool.app` (distribution bundle id) — running it touches that id's defaults domain and could confuse a real installed copy's Sparkle state.
-- **Mitigation:** The rig prints what it clears (`SULastCheckTime`, `SUHasLaunchedBefore`) before doing so and requires an interactive terminal; this is a developer rehearsal tool, not automation.
-- **Residual risk:** Sparkle defaults for `dev.tugtool.app` are reset by a rig run — acceptable; they regenerate on next launch.
+- **Risk:** The rig clears Sparkle defaults for whatever bundle id its extracted app carries. Built from `main`, that id **is** `dev.tugtool.app` — the same domain a real installed Tug uses.
+- **Mitigation:** The rig derives the domain from the extracted app's plist and prints it before clearing (Spec S06 rung 9), so the developer always sees which identity is affected; it requires an interactive terminal and is a rehearsal tool, not automation. Run from a dash worktree, the id is `dev.tugtool.app.release-<slug>` and a real installed copy is untouched.
+- **Residual risk:** A rig run from a `main` checkout resets `SULastCheckTime` / `SUHasLaunchedBefore` for a real installed Tug — acceptable; both regenerate on its next launch and neither carries user data.
 
 ---
 
@@ -195,15 +198,18 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 
 #### [P06] Files are truth; the tag is the trigger (DECIDED) {#p06-tag-trigger}
 
-**Decision:** `release.yml` gains `on: push: tags: ['v*']` (keeping `workflow_dispatch` as an escape hatch). The first guard: on tag-triggered runs, the tag must equal `v$(version.sh show)` at that SHA, or nothing builds.
+**Decision:** `release.yml` gains `on: push: tags: ['v*']` (keeping `workflow_dispatch` as an escape hatch). The first guard: on tag-triggered runs, the tag must equal `v$(version.sh show)` at that SHA, or nothing builds. Releases are **main-ancestor-only**: the tag commit must be an ancestor of `origin/main`, and the tag checkout is rebranded to local `main` before the build so the bundle-identity build phases resolve `(release, main)` (see #build-identity-on-tag-checkout).
 
 **Rationale:**
 - Tag-as-truth would require CI to rewrite `Cargo.toml`, making `git checkout v0.8.1` describe itself as 0.8.0. Files-as-truth keeps every checkout honest; the guard keeps the tag honest.
 - The tag pins exactly which bytes shipped, and re-releasing identical code under a new number (marketing renumber) is one mechanical bump commit + one tag.
+- A tag checkout is a detached HEAD, and this repo derives its `CFBundleIdentifier` from the build-time branch ([D10]/[D19]). Rebranding is what keeps the shipped identity `dev.tugtool.app`; the ancestor guard is what makes the rebrand truthful rather than a spoof.
 
 **Implications:**
-- `workflow_dispatch` runs skip the tag guard (no tag ref) but keep the existing already-published rejection.
+- `workflow_dispatch` runs skip both tag guards (no tag ref) but keep the existing already-published rejection.
 - A failed run re-runs from the Actions UI at the same tag.
+- **Stable releases can only be cut from commits that are on `main`.** A tag on a side branch fails the ancestor guard before any build work.
+- The checkout step needs full history (`fetch-depth: 0`) — the default shallow clone cannot answer `git merge-base --is-ancestor`.
 
 #### [P07] `just release` pushes exactly one tag, by name (DECIDED) {#p07-single-tag}
 
@@ -271,6 +277,24 @@ Readers verified this session: `build-app.sh` reads `VERSION` from `tugrust/Carg
 | user | `just release-status` | latest runs, published releases, and what the live appcast advertises |
 
 The existing `release.yml` safety net stays: the "Reject an already-published version" step (checks `Tug-$VERSION.zip` against the `updates` release assets) remains the last line of defense for both trigger paths.
+
+#### Build identity on a tag checkout {#build-identity-on-tag-checkout}
+
+This repo derives the shipped `CFBundleIdentifier` from the **branch present at build time**, so a detached checkout silently changes the product's identity. The chain, all of it real code that runs inside `xcodebuild`:
+
+1. `actions/checkout` on a tag ref leaves a **detached HEAD**. (A `workflow_dispatch` run checks out branch `main`, which is why today's dispatch-only workflow never hits this.)
+2. `tugrust/scripts/capture-build-info.sh` runs `git rev-parse --abbrev-ref HEAD`; on detached HEAD that returns `HEAD`, and the script substitutes `BuildBranch = detached-<sha8>`.
+3. `tugrust/scripts/assign-bundle-id.sh` maps `(BuildProfile, BuildBranch)` per [D10]/[D19]. Only `(release, main)` yields `dev.tugtool.app`; anything else falls to the slug branch → `dev.tugtool.app.release-detached-<sha8>`.
+4. `tugrust/scripts/sign-bundle.sh` signs with that id, baking it into the designated requirement.
+
+Shipping that would hand every installed copy an "update" to a **different bundle identity** — breaking designated-requirement continuity and the TCC/Accessibility grant the whole identity scheme exists to preserve (`tuglaws/code-signing-mac.md`).
+
+**The fix is `git checkout -B main HEAD` before the build**, guarded by an ancestor check so the local branch name is true rather than a spoof (Spec S07 rung 4). Two things this deliberately does *not* do:
+
+- **Not `TUG_FORCE_BUNDLE_ID`.** That env var is the app-test path's hook; `capture-build-info.sh` keys `BuildProfile` off it (`${TUG_FORCE_BUNDLE_ID##*.}`), so forcing `dev.tugtool.app` would set `BuildProfile = "app"` and corrupt every downstream identity that reads the profile.
+- **Not a `ref:` pin on `actions/checkout`.** Checking out `main` by name would build whatever `main` points at *now*, not the tagged commit — the tag would stop pinning the bytes, which is the entire point of [P06].
+
+The same identity chain is why `update-rig.sh` must read its defaults domain from the extracted bundle (Spec S06 rung 9) instead of assuming `dev.tugtool.app`.
 
 #### The update-rig lineage {#update-rig-lineage}
 
@@ -359,7 +383,14 @@ New file `tugrust/scripts/update-rig.sh`, wrapped by `just update-rig [fresh]`. 
 6. `tugrust/scripts/make-appcast.sh <zip> <feed-dir>/appcast.xml` — no `SPARKLE_ED_PRIVATE_KEY` in the environment, so it signs from the login Keychain (its documented local mode).
 7. `sed` the appcast's download URL prefix (`https://github.com/tugtool/tugtool/releases/download/updates/`) → `http://localhost:8000/`.
 8. Serve the feed dir: `python3 -m http.server 8000` (background, PID recorded; killed on exit trap).
-9. Print then clear Sparkle state: `defaults delete dev.tugtool.app SULastCheckTime` and `SUHasLaunchedBefore` (ignore missing-key errors).
+9. Print then clear Sparkle state. The defaults domain is **read from the extracted app**, never hardcoded:
+   ```bash
+   RIG_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$RIG_OLD_APP/Contents/Info.plist")"
+   echo "==> clearing Sparkle state for $RIG_BUNDLE_ID"
+   defaults delete "$RIG_BUNDLE_ID" SULastCheckTime 2>/dev/null || true
+   defaults delete "$RIG_BUNDLE_ID" SUHasLaunchedBefore 2>/dev/null || true
+   ```
+   A DMG built from a dash worktree carries `(release, <branch>)` → `dev.tugtool.app.release-<slug>` per [D10]/[D19], **not** `dev.tugtool.app` — and implement runs on a dash worktree, so the literal would silently clear the wrong domain (see #build-identity-on-tag-checkout for the same identity chain on the CI side).
 10. Launch the **old** app's binary directly with the override: `TUG_SPARKLE_FEED=http://localhost:8000/appcast.xml <rig>/old/Tug.app/Contents/MacOS/Tug`, foreground. The developer watches the update flow; Ctrl-C tears down (kills the server; rig dir left for inspection, removed on the next run).
 
 The `NSAppTransportSecurity` localhost exception already in `Info.plist` permits the http:// feed.
@@ -367,10 +398,21 @@ The `NSAppTransportSecurity` localhost exception already in `Info.plist` permits
 **Spec S07: `release.yml` changes** {#s07-release-yml}
 
 1. Trigger: add `push: tags: ['v*']` alongside the existing `workflow_dispatch`.
-2. New step after "Read release version": **Verify the tag matches the tree** — if `github.ref_type == 'tag'`, assert `github.ref_name == "v$VERSION"`, else `::error` naming both and exit 1 ([P06]). Dispatch runs skip this.
-3. New step: run `tugrust/scripts/version.sh check` (the runner has no `just`; call the script directly).
-4. Gate steps in the same job (cache reuse), after the bun cache and before the keychain step: install `cargo-nextest` (`taiki-e/install-action@v2` with `tool: nextest`); `bun install --frozen-lockfile` in `tugdeck/` and `tugcode/`; then `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, `cargo nextest run --workspace` (all in `tugrust/`), `bun test` in `tugdeck/` and `tugcode/` — mirroring the `just ci` recipe ([P08]).
-5. Everything from the keychain step on is unchanged, including the already-published rejection.
+2. Checkout step: add `fetch-depth: 0`. The default shallow clone cannot answer `git merge-base --is-ancestor` (rung 4).
+3. New step after "Read release version": **Verify the tag matches the tree** — if `github.ref_type == 'tag'`, assert `github.ref_name == "v$VERSION"`, else `::error` naming both and exit 1 ([P06]). Dispatch runs skip this.
+4. New step, tag-triggered runs only: **Verify the tag is on main, and restore the branch identity** ([P06], #build-identity-on-tag-checkout):
+   ```bash
+   git fetch --no-tags origin main
+   if ! git merge-base --is-ancestor HEAD origin/main; then
+     echo "::error::Tag ${{ github.ref_name }} is not an ancestor of origin/main. Stable releases are cut from main only."
+     exit 1
+   fi
+   git checkout -B main HEAD
+   ```
+   The rebrand must run **before** the build step, because `capture-build-info.sh` reads the branch at build time. Without it the detached checkout yields `BuildBranch = detached-<sha8>` and `assign-bundle-id.sh` stamps `dev.tugtool.app.release-detached-<sha8>`. Do **not** use `TUG_FORCE_BUNDLE_ID` for this — `capture-build-info.sh` would then derive `BuildProfile` from the forced id's last component (`"app"`) instead of `"release"`.
+5. New step: run `tugrust/scripts/version.sh check` (the runner has no `just`; call the script directly).
+6. Gate steps in the same job (cache reuse), after the bun cache and before the keychain step: install `cargo-nextest` (`taiki-e/install-action@v2` with `tool: nextest`); `bun install --frozen-lockfile` in `tugdeck/` and `tugcode/`; then `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, `cargo nextest run --workspace` (all in `tugrust/`), `bun test` in `tugdeck/` and `tugcode/` — mirroring the `just ci` recipe ([P08]).
+7. Everything from the keychain step on is unchanged, including the already-published rejection.
 
 **Spec S08: Justfile version recipes** {#s08-just-version}
 
@@ -574,16 +616,18 @@ The `NSAppTransportSecurity` localhost exception already in `Info.plist` permits
 - Modified `.github/workflows/release.yml`; deleted stale local tags
 
 **Tasks:**
-- [ ] Apply the five Spec S07 changes.
+- [ ] Apply the seven Spec S07 changes, including `fetch-depth: 0` and the ancestor-guard + `git checkout -B main HEAD` step placed **before** the build step.
 - [ ] **Tag hygiene (repo-global; flagged in #constraints — user may veto):** delete all local `v*` tags (`git tag -l 'v*' | xargs git tag -d`; ~84, all unpushed — verified `git ls-remote --tags origin` shows only `nightly`). Do **not** touch the `nightly` tag or anything on origin.
-- [ ] Update the `release.yml` header comment to document the tag trigger and files-are-truth rule.
+- [ ] Update the `release.yml` header comment to document the tag trigger, the files-are-truth rule, and the main-ancestor-only + rebrand requirement (cite #build-identity-on-tag-checkout).
 
 **Tests:**
 - [ ] `actionlint` (if installed) or `gh workflow view` parses the workflow; otherwise a YAML parse via `python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/release.yml'))"`.
-- [ ] Read-through: the tag guard step references `github.ref_type`/`github.ref_name` and the gate steps mirror `just ci`'s commands exactly (`lint` + `test-rust` + `test-ts` recipe bodies).
+- [ ] **Identity-trap proof, in a throwaway clone so no live worktree is touched:** `git clone --no-hardlinks . /tmp/tug-tagcheck` → `git -C /tmp/tug-tagcheck checkout --detach HEAD` → assert `git rev-parse --abbrev-ref HEAD` prints `HEAD` (the trap: `capture-build-info.sh` would derive `detached-<sha8>`) → `git -C /tmp/tug-tagcheck checkout -B main HEAD` → assert it now prints `main` (the fix). Remove `/tmp/tug-tagcheck` (literal path).
+- [ ] Ancestor guard: in that same clone, `git merge-base --is-ancestor HEAD origin/main` exits 0 for the cloned HEAD; a commit made on a scratch branch off an older base exits non-zero.
+- [ ] Read-through: the tag guard step references `github.ref_type`/`github.ref_name`; the rebrand step precedes "Build signed DMG and update archive"; the gate steps mirror `just ci`'s commands exactly (`lint` + `test-rust` + `test-ts` recipe bodies).
 
 **Checkpoint:**
-- [ ] Workflow file parses; `git tag -l 'v*'` prints nothing; `git ls-remote --tags origin` still shows only `nightly`.
+- [ ] Workflow file parses; both identity-trap assertions above hold; `git tag -l 'v*'` prints nothing; `git ls-remote --tags origin` still shows only `nightly`.
 
 ---
 
@@ -600,13 +644,16 @@ The `NSAppTransportSecurity` localhost exception already in `Info.plist` permits
 
 **Tasks:**
 - [ ] Implement Spec S06 end-to-end, exit trap killing the feed server, literal `/tmp/tug-update-rig` paths for cleanup.
-- [ ] Recipe comment documents prerequisites (login-Keychain Sparkle key, Developer ID for the initial DMG build) and the R02 caveat (clears `dev.tugtool.app` Sparkle defaults).
+- [ ] Rung 9 reads `CFBundleIdentifier` from the extracted app and echoes it before clearing — no hardcoded `dev.tugtool.app` anywhere in the script (Risk R02, #build-identity-on-tag-checkout).
+- [ ] Recipe comment documents prerequisites (login-Keychain Sparkle key, Developer ID for the initial DMG build) and the R02 caveat, stating that the domain cleared depends on the branch the DMG was built from.
 
 **Tests:**
 - [ ] Interactive run: `just update-rig` from an existing `products/Tug.dmg` (or a fresh `--skip-notarize` build) reaches a running old-version app; the served `appcast.xml` advertises the bumped version with an `edSignature`; the app's update check hits `GET /appcast.xml` in the server log.
+- [ ] The bundle id the rig prints matches `plutil -extract CFBundleIdentifier raw` on the extracted app — and, when run from a dash worktree, is the `dev.tugtool.app.release-<slug>` form rather than the bare distribution id.
 
 **Checkpoint:**
 - [ ] The interactive run above: app launches, feed serves, update offer appears (or the gentle-reminder bulletin path engages, matching the quit-hardening [Q02] observations).
+- [ ] `grep -c 'dev\.tugtool\.app' tugrust/scripts/update-rig.sh` → `0`.
 
 ---
 
@@ -655,4 +702,5 @@ The `NSAppTransportSecurity` localhost exception already in `Info.plist` permits
 | Version model locked | `version.sh check`; pbxproj grep = 0; scratch-bump diff = exactly six files |
 | Builds guarded | `test-info-plist.sh`; `build-app.sh` guard present before stamping |
 | Release gesture complete | Step 8 dress rehearsal |
+| Shipped identity preserved on tag builds | Step 6 throwaway-clone detached→`main` proof; rebrand step precedes the build step |
 | Rig captured | `just update-rig` interactive run |
