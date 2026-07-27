@@ -39,12 +39,14 @@
    Turn-address links (Time / Tokens / Jobs meta lines)
    ========================================================================= */
 
-/* The `#uN · #aN` entry-number pair occupying a per-turn row's label
-   cell — two click targets plus a muted separator dot. */
+/* The `#uN/#aN` entry-number pair occupying a per-turn row's label
+   cell — two click targets around a muted slash. The slash reads as
+   one address token at a 2px gap and buys the preview column the width
+   a spaced separator spent. */
 .session-popover-turn-pair {
   display: inline-flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 2px;
   white-space: nowrap;
 }
 
@@ -89,10 +91,17 @@
 
 /* The preview TugLabel — match the popup's mono row rhythm rather
    than the label primitive's default size token ([L20] cascade-
-   scoped override; the `muted` color + `mono` props carry the rest). */
+   scoped override; the `muted` color + `mono` props carry the rest).
+   One line, ellipsized at whatever width the flexing preview column
+   ends up with: the row's height is the grid's rhythm, so a long
+   prompt must clip rather than wrap into a second line. */
 .tug-popup-list-row .session-popover-row-request {
   font-size: inherit;
   line-height: inherit;
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* ============================================================================

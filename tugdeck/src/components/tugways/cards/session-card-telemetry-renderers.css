@@ -123,9 +123,12 @@
    `.session-card-status-bar`, so `bottom: 100%` sits it right on top of the
    strip; `left` is written imperatively by TugPlacard from the trigger
    cell's offset. Width follows the composed TugPopupList's own per-kind
-   caps (the placard is a shrink-to-fit absolute box). */
+   caps (the placard is a shrink-to-fit absolute box), bounded by the
+   status strip so a wide log popup in a narrow card clips its preview
+   column instead of painting past the card edge. */
 .tug-placard.session-telemetry-status-placard {
   bottom: calc(100% + var(--tug-space-sm));
+  max-width: 100%;
 }
 
 .session-telemetry-status-row {

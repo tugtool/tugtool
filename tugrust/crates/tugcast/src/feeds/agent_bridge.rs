@@ -1164,6 +1164,13 @@ pub async fn relay_session_io(
     // separately at the router's lag-recovery branch.
     let mut replay_forward_started: Option<std::time::Instant> = None;
     let mut replay_frames_forwarded: u64 = 0;
+    // Turns whose persisted multi-clock timing was overlaid onto the
+    // replayed `turn_complete` inside this window. Reported alongside
+    // the forwarded-frame count: the overlay is a silent best-effort
+    // path, and `injected=0` against a non-empty row index is exactly
+    // the shape of a lost-timings regression (every replayed turn's
+    // TIME then reads `—`).
+    let mut replay_telemetry_injected: u64 = 0;
 
     // Attribution pending map ([P04]). Populated on each exact-tool
     // `tool_use`, consumed on its successful `tool_result`. Relay-local
@@ -1558,9 +1565,11 @@ pub async fn relay_session_io(
                                     event = "perf.replay_forward",
                                     tug_session_id = %tug_session_id,
                                     frames = replay_frames_forwarded,
+                                    telemetry_injected = replay_telemetry_injected,
                                     ms = t0.elapsed().as_millis() as u64,
                                 );
                             }
+                            replay_telemetry_injected = 0;
                             // Reconcile + validate-and-stamp to the single count
                             // authority `engine(file)` ([P08], [Q01]). The ledger
                             // count is `engine(file)` — read it (the
@@ -1646,7 +1655,10 @@ pub async fn relay_session_io(
                                     );
                                 }
                                 if let Some(ref map) = replay_telemetry {
-                                    inject_replay_telemetry(line.as_bytes(), map)
+                                    let (bytes, injected) =
+                                        inject_replay_telemetry(line.as_bytes(), map);
+                                    replay_telemetry_injected += injected as u64;
+                                    bytes
                                 } else {
                                     line.as_bytes().to_vec()
                                 }
@@ -2392,14 +2404,26 @@ fn parse_resume_failed_reason(line: &[u8]) -> Option<String> {
 }
 
 /// Inline the per-turn telemetry payload onto a replayed
-/// `turn_complete` stream-json line. Looks up the line's `msg_id`
+/// `turn_complete` stream-json line. Looks up the frame's `msg_id`
 /// against the per-replay-window `HashMap<msg_id, TurnTelemetryRow>`
 /// built at `replay_started`; on hit, **overlays only the multi-clock
-/// timing fields** from the row onto the line's existing `telemetry`
+/// timing fields** from the row onto the frame's existing `telemetry`
 /// object, re-serializes. On miss (no persisted row for this turn —
 /// pre-persistence-feature historical turns, see plan `#step-20-3-4`
 /// "no retroactive backfill" caveat) or on a parse error, returns the
-/// line bytes unchanged.
+/// line bytes unchanged. The second return value is how many turns
+/// were overlaid, which the relay sums per replay window into the
+/// `perf.replay_forward` trace.
+///
+/// Handles BOTH wire shapes a replayed `turn_complete` arrives in: a
+/// raw one-frame line, and a `replay_batch` envelope of up to 256
+/// inner frames — the shape cold replay actually emits for all but the
+/// smallest transcripts. A batch line matches the relay's
+/// `"type":"turn_complete"` substring gate (the string is right there
+/// in a nested frame) but carries no top-level `msg_id`, so treating
+/// it as a single frame silently overlays nothing: every batched turn
+/// reaches the client with the zero-timing block and its TIME reads
+/// `—`. Same `replay_batch` opacity the attribution intercept unwraps.
 ///
 /// **The JSONL is authoritative for cost and model.** tugcode's replay
 /// translator reconstructs each turn's `cost` (and `sessionInitTokens`)
@@ -2424,15 +2448,53 @@ fn inject_replay_telemetry(
         String,
         crate::session_ledger::TurnTelemetryRow,
     >,
-) -> Vec<u8> {
+) -> (Vec<u8>, usize) {
     let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(line) else {
-        return line.to_vec();
+        return (line.to_vec(), 0);
     };
-    let Some(msg_id) = value.get("msg_id").and_then(|v| v.as_str()) else {
-        return line.to_vec();
+    let is_batch = value.get("type").and_then(|v| v.as_str()) == Some("replay_batch");
+    let injected = if is_batch {
+        match value.get_mut("frames") {
+            Some(serde_json::Value::Array(frames)) => frames
+                .iter_mut()
+                .map(|frame| usize::from(inject_turn_timing(frame, telemetry_by_msg_id)))
+                .sum(),
+            _ => 0,
+        }
+    } else {
+        usize::from(inject_turn_timing(&mut value, telemetry_by_msg_id))
+    };
+    if injected == 0 {
+        return (line.to_vec(), 0);
+    }
+    (
+        serde_json::to_vec(&value).unwrap_or_else(|_| line.to_vec()),
+        injected,
+    )
+}
+
+/// Overlay one `turn_complete` frame's persisted timing keys in place.
+/// Returns whether anything was written — the caller re-serializes only
+/// on a hit, so a miss forwards the original bytes untouched.
+///
+/// Non-`turn_complete` frames (a batch carries assistant text, tool
+/// calls, everything) are skipped by type, so a frame that merely
+/// happens to carry a `msg_id` is never rewritten.
+fn inject_turn_timing(
+    frame: &mut serde_json::Value,
+    telemetry_by_msg_id: &std::collections::HashMap<
+        String,
+        crate::session_ledger::TurnTelemetryRow,
+    >,
+) -> bool {
+    if frame.get("type").and_then(|v| v.as_str()) != Some("turn_complete") {
+        return false;
+    }
+    let Some(msg_id) = frame.get("msg_id").and_then(|v| v.as_str()) else {
+        return false;
     };
     let Some(row) = telemetry_by_msg_id.get(msg_id) else {
-        return line.to_vec();
+        return false;
     };
 
     // The timing keys this overlay owns — and ONLY these. `cost` /
@@ -2455,12 +2517,12 @@ fn inject_replay_telemetry(
         ("maxStreamGapMs", serde_json::json!(row.max_stream_gap_ms)),
     ];
 
-    let serde_json::Value::Object(ref mut obj) = value else {
-        return line.to_vec();
+    let serde_json::Value::Object(obj) = frame else {
+        return false;
     };
     // Overlay onto the existing telemetry object (tugcode attached it
     // with the JSONL-authoritative cost); create a timing-only object
-    // if the line is a legacy telemetry-free turn_complete.
+    // if the frame is a legacy telemetry-free turn_complete.
     let telemetry = obj
         .entry("telemetry")
         .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
@@ -2472,7 +2534,7 @@ fn inject_replay_telemetry(
             tel.insert(key.to_string(), val);
         }
     }
-    serde_json::to_vec(&value).unwrap_or_else(|_| line.to_vec())
+    true
 }
 
 /// Merge a `system_metadata` line against the persisted
@@ -4403,7 +4465,8 @@ mod tests {
         let before: serde_json::Value = serde_json::from_slice(&line).unwrap();
         let mut map = std::collections::HashMap::new();
         map.insert("msg-A".to_string(), sample_telemetry_row("msg-A"));
-        let out = inject_replay_telemetry(&line, &map);
+        let (out, injected) = inject_replay_telemetry(&line, &map);
+        assert_eq!(injected, 1);
         let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
         let telemetry = parsed.get("telemetry").expect("telemetry present");
 
@@ -4439,7 +4502,8 @@ mod tests {
         let line = br#"{"type":"turn_complete","msg_id":"msg-A","seq":1,"result":"success","ipc_version":2}"#;
         let mut map = std::collections::HashMap::new();
         map.insert("msg-A".to_string(), sample_telemetry_row("msg-A"));
-        let out = inject_replay_telemetry(line, &map);
+        let (out, injected) = inject_replay_telemetry(line, &map);
+        assert_eq!(injected, 1);
         let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
         let telemetry = parsed
             .get("telemetry")
@@ -4459,7 +4523,7 @@ mod tests {
         row.ttftc_ms = None;
         let mut map = std::collections::HashMap::new();
         map.insert("msg-A".to_string(), row);
-        let out = inject_replay_telemetry(&line, &map);
+        let (out, _) = inject_replay_telemetry(&line, &map);
         let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert!(parsed["telemetry"]["ttftMs"].is_null());
         assert!(parsed["telemetry"]["ttftcMs"].is_null());
@@ -4473,8 +4537,9 @@ mod tests {
         let line = br#"{"type":"turn_complete","msg_id":"unknown","seq":1,"result":"success","ipc_version":2}"#;
         let map: std::collections::HashMap<String, crate::session_ledger::TurnTelemetryRow> =
             std::collections::HashMap::new();
-        let out = inject_replay_telemetry(line, &map);
+        let (out, injected) = inject_replay_telemetry(line, &map);
         assert_eq!(out, line.to_vec());
+        assert_eq!(injected, 0);
     }
 
     #[test]
@@ -4484,8 +4549,61 @@ mod tests {
         let line = br#"{"type":"turn_complete","seq":1,"result":"success","ipc_version":2}"#;
         let mut map = std::collections::HashMap::new();
         map.insert("msg-A".to_string(), sample_telemetry_row("msg-A"));
-        let out = inject_replay_telemetry(line, &map);
+        let (out, injected) = inject_replay_telemetry(line, &map);
         assert_eq!(out, line.to_vec());
+        assert_eq!(injected, 0);
+    }
+
+    #[test]
+    fn inject_replay_telemetry_overlays_every_turn_in_a_replay_batch() {
+        // The shape cold replay actually emits: committed-turn frames
+        // flushed as one `replay_batch` wire line. Each inner
+        // `turn_complete` with a persisted row gets its timing; the
+        // non-turn frames ride along untouched.
+        let batch = serde_json::json!({
+            "type": "replay_batch",
+            "frames": [
+                { "type": "assistant_text", "msg_id": "msg-A", "text": "hello" },
+                { "type": "turn_complete", "msg_id": "msg-A", "seq": 1, "result": "success" },
+                { "type": "turn_complete", "msg_id": "msg-B", "seq": 2, "result": "success" },
+                { "type": "turn_complete", "msg_id": "msg-none", "seq": 3, "result": "success" },
+            ],
+            "ipc_version": 2,
+        })
+        .to_string()
+        .into_bytes();
+        let mut map = std::collections::HashMap::new();
+        map.insert("msg-A".to_string(), sample_telemetry_row("msg-A"));
+        let mut row_b = sample_telemetry_row("msg-B");
+        row_b.active_ms = 11_000;
+        map.insert("msg-B".to_string(), row_b);
+
+        let (out, injected) = inject_replay_telemetry(&batch, &map);
+        assert_eq!(injected, 2);
+        let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let frames = parsed["frames"].as_array().expect("frames array");
+
+        // The `assistant_text` frame shares msg-A's id but is not a
+        // turn boundary — no telemetry is attached to it.
+        assert!(frames[0].get("telemetry").is_none());
+        assert_eq!(frames[1]["telemetry"]["activeMs"], 3_700);
+        assert_eq!(frames[1]["telemetry"]["wallClockMs"], 4_000);
+        assert_eq!(frames[2]["telemetry"]["activeMs"], 11_000);
+        // No row for msg-none — that frame is left as it arrived.
+        assert!(frames[3].get("telemetry").is_none());
+        assert_eq!(parsed["ipc_version"], 2);
+    }
+
+    #[test]
+    fn inject_replay_telemetry_passes_through_a_batch_with_no_matching_turn() {
+        // Nothing to overlay — the original bytes forward untouched
+        // rather than round-tripping through serde.
+        let batch = br#"{"type":"replay_batch","frames":[{"type":"turn_complete","msg_id":"msg-unknown","seq":1}],"ipc_version":2}"#;
+        let mut map = std::collections::HashMap::new();
+        map.insert("msg-A".to_string(), sample_telemetry_row("msg-A"));
+        let (out, injected) = inject_replay_telemetry(batch, &map);
+        assert_eq!(out, batch.to_vec());
+        assert_eq!(injected, 0);
     }
 
     #[test]
@@ -4493,8 +4611,9 @@ mod tests {
         let line = b"not json at all";
         let map: std::collections::HashMap<String, crate::session_ledger::TurnTelemetryRow> =
             std::collections::HashMap::new();
-        let out = inject_replay_telemetry(line, &map);
+        let (out, injected) = inject_replay_telemetry(line, &map);
         assert_eq!(out, line.to_vec());
+        assert_eq!(injected, 0);
     }
 
     // ---- merge_and_persist_system_metadata ----------------------------

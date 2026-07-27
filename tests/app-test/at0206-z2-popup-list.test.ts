@@ -35,6 +35,7 @@
  * and this test asserts DOM geometry.
  *
  * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
+ * @covers tugdeck/src/components/tugways/tug-popup-list.css
  * @covers tugdeck/src/components/tugways/cards/session-card-telemetry-popovers.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card-telemetry-renderers.tsx
@@ -134,7 +135,12 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
 
         // ---- Turn 2: TaskCreates (the task-list gate reads the LATEST
         // turn's Task* activity) + a second committed turn for TIME/TOKENS.
-        await app.driveSession("A", { op: "send", text: "and a second turn please" });
+        // A prompt longer than any popup width, so the TIME log's
+        // preview column has something to ellipsize.
+        await app.driveSession("A", {
+          op: "send",
+          text: "and a second turn please, this one with a request line far longer than the popup is wide so the preview column has to clip it",
+        });
         await app.driveSession("A", f({
           type: "assistant_text", msg_id: "m2", text: "Done.",
           is_partial: true, rev: 0, seq: 0,
@@ -269,11 +275,21 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
         const timeProbe = await app.evalJS<string>(`JSON.stringify((() => {
           const popup = document.querySelector('${POPUP}');
           const footer = popup.querySelector('[data-slot="tug-popup-list-footer"]');
+          const rows = Array.from(popup.querySelectorAll('.tug-popup-list-grid-scroller [data-slot="tug-popup-list-row"]'));
+          // The long-prompt row: its preview must stay on ONE line and
+          // clip, and its value must keep the full figure unwrapped.
+          const last = rows[rows.length - 1];
+          const preview = last ? last.querySelector('.session-popover-row-request') : null;
+          const value = last ? last.querySelector('.tug-popup-list-row-value') : null;
           return {
             kind: popup.getAttribute('data-kind'),
-            rows: popup.querySelectorAll('.tug-popup-list-grid-scroller [data-slot="tug-popup-list-row"]').length,
+            rows: rows.length,
             summaryRows: popup.querySelectorAll('[data-slot="tug-popup-list-grid-summary"] [data-slot="tug-popup-list-row"]').length,
             copy: footer ? !!footer.querySelector('[data-slot="block-copy"]') : false,
+            popupWidth: popup.getBoundingClientRect().width,
+            previewHeight: preview ? preview.getBoundingClientRect().height : 0,
+            previewClipped: preview ? preview.scrollWidth > preview.clientWidth : false,
+            valueHeight: value ? value.getBoundingClientRect().height : 0,
           };
         })())`);
         const time = JSON.parse(timeProbe);
@@ -281,6 +297,15 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
         expect(time.rows).toBe(2);
         expect(time.summaryRows).toBeGreaterThanOrEqual(3);
         expect(time.copy).toBe(true);
+        // The log frame runs wide enough to be worth the preview column
+        // (its per-kind min), and never past its cap.
+        expect(time.popupWidth).toBeGreaterThanOrEqual(440);
+        expect(time.popupWidth).toBeLessThanOrEqual(760);
+        // Preview: one line, ellipsized — never a second line that would
+        // break the grid's row rhythm.
+        expect(time.previewClipped).toBe(true);
+        expect(time.previewHeight).toBeGreaterThan(0);
+        expect(time.previewHeight).toBeLessThanOrEqual(time.valueHeight * 1.5);
         await closePopup("time");
 
         // ---- STATE -----------------------------------------------------

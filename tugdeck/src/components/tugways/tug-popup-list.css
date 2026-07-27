@@ -42,6 +42,9 @@
   --tugx-popup-list-scroll-gutter: 12px;
 
   padding: var(--tug-space-md);
+  /* The per-kind min/max caps below are the popup's VISIBLE width —
+     without this the frame's padding rides outside them. */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -74,12 +77,14 @@
 }
 
 /* Per-kind width caps + row rhythm. `log` fits the four-column
-   per-entry row (address pair, capped preview, badge, non-wrapping
-   value) — narrower caps squeeze the value's `auto` track until a
-   "0h 0m 02s" wraps. */
+   per-entry row (address pair, flexing preview, badge, non-wrapping
+   value). The preview is the only elastic track, so the max cap is
+   what decides how much of each request line the reader gets before
+   the ellipsis; the min keeps a short-prompt session from collapsing
+   into a sliver. */
 .tug-popup-list[data-kind="log"] {
-  min-width: 380px;
-  max-width: 560px;
+  min-width: 440px;
+  max-width: 760px;
 }
 
 .tug-popup-list[data-kind="state"] {
@@ -180,7 +185,13 @@
 
 .tug-popup-list-grid {
   display: grid;
-  grid-template-columns: max-content max-content max-content auto;
+  /* The preview is the elastic track: address pair, badge, and value
+     each take exactly the width their content needs, and everything
+     left over goes to the preview, which ellipsizes into it. `1fr`
+     still contributes its max-content width to the frame's intrinsic
+     sizing, so a short log shrinks toward the min cap instead of
+     always painting at full width. */
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
   row-gap: 0;
   /* Under the frame's viewport guard the grid clips rather than
      painting past the popup edge (its scroller row already caps the
@@ -233,6 +244,9 @@
 
 .tug-popup-list-row-preview {
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */

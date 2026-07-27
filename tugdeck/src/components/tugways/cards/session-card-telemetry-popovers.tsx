@@ -142,10 +142,13 @@ export type ScrollToRowHandler = (rowIndex: number) => void;
 
 /**
  * Per-turn request-preview cap. The user-half prompt is collapsed to a
- * single line and end-truncated to this many characters so the popup
- * row stays compact.
+ * single line and end-truncated to this many characters. The VISIBLE
+ * truncation is the preview column's CSS ellipsis, which cuts at
+ * whatever width the popup actually has; this cap only bounds the
+ * string handed to the row (and to COPY) so a pathological prompt
+ * never carries a paragraph through the grid.
  */
-const REQUEST_PREVIEW_MAX_CHARS = 24;
+const REQUEST_PREVIEW_MAX_CHARS = 96;
 
 /**
  * One-line, end-truncated preview of a turn's user prompt. Drops the
@@ -211,7 +214,7 @@ function composeTurnLogCopyText(
     const n = turnNumberBase + i + 1;
     const badge = endStateBadgeFor(turn.turnEndReason, turn.interruptReason);
     const preview = requestPreviewText(turn);
-    return [`#u${n} · #a${n}`, preview, badge.text, valueFor(turn, i)]
+    return [`#u${n}/#a${n}`, preview, badge.text, valueFor(turn, i)]
       .filter((part) => part.length > 0)
       .join("\t");
   });
@@ -304,7 +307,7 @@ function TurnNumberButton({
  *
  * Wake turns ([D06]) have NO user row — `userRowIndexForTurn` returns
  * `-1` for them, and we render only the assistant-half `#a{turn}` (no
- * `·` separator). The single-address rendering is the popup's visual
+ * separator). The single-address rendering is the popup's visual
  * cue that the turn doesn't have a user submission to scroll to.
  */
 function TurnEntryPair({
@@ -343,7 +346,7 @@ function TurnEntryPair({
         onScrollToRow={onScrollToRow}
       />
       <span className="session-popover-turn-pair-sep" aria-hidden>
-        ·
+        /
       </span>
       <TurnNumberButton
         address={{ speaker: "assistant", turn: turnNumber }}
