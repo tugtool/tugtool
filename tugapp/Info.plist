@@ -22,6 +22,12 @@
 	<string>800</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>15.0</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/tugtool/tugtool/releases/download/updates/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>q1ZnWaJQvmQgBTgfqGaN/GamMadfQ0K4U48E3kCse48=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>CFBundleDocumentTypes</key>

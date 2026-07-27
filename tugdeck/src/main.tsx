@@ -12,6 +12,7 @@ import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { initHostMenuState } from "./lib/host-menu-state";
 import { initRecentDocuments } from "./lib/recent-documents";
+import { installUpdateBridge } from "./lib/update-bridge";
 import { cardServicesStore } from "./lib/card-services-store";
 import { restoreSessions } from "./lib/session-restore";
 import { attachSessionLedgerStore } from "./lib/session-ledger-store";
@@ -383,6 +384,11 @@ if (!container) {
   // ready (its cache is populated), so the first push carries the
   // persisted MRU.
   initRecentDocuments();
+
+  // Receive the host's "an update is available" push and announce it as a
+  // bulletin. Installed after the provider tree is mounted so the first
+  // push has a Toaster to land in. See `lib/update-bridge.ts`.
+  installUpdateBridge();
 
   // Install `window.__tug` test-harness surface when
   // `window.__tugTestMode === true`. The attach is a no-op otherwise;

@@ -150,11 +150,46 @@ if [ -x "$TMUX_BIN" ]; then
         --sign "$IDENTITY" "$TMUX_BIN"
 fi
 
-# (4) Reserved slot for nested frameworks. Sign them HERE, before
-# the outer seal in (5). Adding one without updating this script
-# will fail notarization (the outer seal won't cover the framework's
-# binaries unambiguously, or codesign will report nested signature
-# mismatches).
+# (4) Nested frameworks. Sign them HERE, before the outer seal in (5).
+# Adding one without updating this script will fail notarization (the
+# outer seal won't cover the framework's binaries unambiguously, or
+# codesign will report nested signature mismatches).
+#
+# Sparkle.framework (the self-updater, embedded by SwiftPM) arrives
+# ad-hoc-signed. Beyond notarization, dyld refuses to load it into a
+# Developer-ID-signed process at all — "mapping process and mapped file
+# (non-platform) have different Team IDs" — the same rule that forces
+# the debug-dylib re-sign in (2). So this runs on debug bundles too.
+#
+# Order is inside-out within the framework: the nested executables
+# first, then the framework wrapper, per Sparkle's signing guidance.
+# The XPC services keep their own entitlements (they are built for
+# sandboxed hosts; Tug is not sandboxed and does not use them, but a
+# stripped entitlement set would leave them inconsistent with their
+# own Info.plists).
+SPARKLE_FW="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE_FW" ]; then
+    for xpc in "$SPARKLE_FW/Versions/B/XPCServices"/*.xpc; do
+        if [ -d "$xpc" ]; then
+            echo "    signing Sparkle XPC:   $(basename "$xpc")"
+            codesign --force --options runtime --timestamp \
+                --preserve-metadata=entitlements \
+                --sign "$IDENTITY" "$xpc"
+        fi
+    done
+    for nested in \
+        "$SPARKLE_FW/Versions/B/Autoupdate" \
+        "$SPARKLE_FW/Versions/B/Updater.app"; do
+        if [ -e "$nested" ]; then
+            echo "    signing Sparkle helper: $(basename "$nested")"
+            codesign --force --options runtime --timestamp \
+                --sign "$IDENTITY" "$nested"
+        fi
+    done
+    echo "    sealing Sparkle.framework"
+    codesign --force --options runtime --timestamp \
+        --sign "$IDENTITY" "$SPARKLE_FW"
+fi
 
 # (5) Outer Tug binary + bundle wrapper. Minimal entitlements; this
 # seal records every signed item beneath.

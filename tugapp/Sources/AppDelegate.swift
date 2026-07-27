@@ -64,6 +64,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
 
+    /// Sparkle self-update. Inactive for every identity but the stable
+    /// release build (or a `TUG_SPARKLE_FEED` override), in which case the
+    /// "Check for Updates…" menu item stays hidden.
+    private let updateController = UpdateController()
+    private var checkForUpdatesMenuItem: NSMenuItem?
+    /// An update found before the deck was live. Flushed to the bulletin
+    /// bridge once `bridgeFrontendReady` fires, like `pendingOpenPaths`.
+    private var pendingUpdateNotice: (version: String, build: String)?
+
     #if DEBUG
     /// In-app test harness bridge, active only when
     /// `TUGAPP_TEST_SOCKET` env var is set. DEBUG-only.
@@ -184,6 +193,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             lap("testHarnessBridge started")
         }
         #endif
+
+        updateController.onScheduledUpdateFound = { [weak self] version, build in
+            self?.announceUpdate(version: version, build: build)
+        }
+        updateController.startIfEligible()
+        lap("updateController")
 
         buildMenuBar()
         lap("buildMenuBar")
@@ -479,6 +494,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
+    /// Announce an update found by a scheduled Sparkle check, queueing it
+    /// when the deck has not mounted yet. Called from the gentle-reminder
+    /// delegate, which may fire long before or long after first paint.
+    private func announceUpdate(version: String, build: String) {
+        guard frontendHasLoadedOnce, let window = window else {
+            pendingUpdateNotice = (version, build)
+            return
+        }
+        window.bridgeUpdateAvailable(version: version, build: build)
+    }
+
+    /// Flush a queued update notice once the deck is live. Called from
+    /// `bridgeFrontendReady`, beside `flushPendingOpenPaths`.
+    func flushPendingUpdateNotice() {
+        guard let notice = pendingUpdateNotice, let window = window else { return }
+        pendingUpdateNotice = nil
+        window.bridgeUpdateAvailable(version: notice.version, build: notice.build)
+    }
+
     /// Whether `url` is a text file a Text card can edit — a regular file
     /// whose UTI conforms to one of {@link editableContentTypes}. Guards
     /// the OS open path so a folder or binary handed to the app is ignored.
@@ -586,6 +620,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         aboutItem.identifier = NSUserInterfaceItemIdentifier("app.about")
         self.aboutMenuItem = aboutItem
         appMenu.addItem(aboutItem)
+        // Hidden rather than disabled when the updater is inactive — a
+        // bundle that cannot replace itself should not advertise the
+        // command at all (the Maker-menu pattern).
+        let checkForUpdatesItem = NSMenuItem(
+            title: "Check for Updates...",
+            action: #selector(checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        checkForUpdatesItem.identifier = NSUserInterfaceItemIdentifier("app.checkForUpdates")
+        checkForUpdatesItem.isHidden = !updateController.isActive
+        self.checkForUpdatesMenuItem = checkForUpdatesItem
+        appMenu.addItem(checkForUpdatesItem)
         appMenu.addItem(NSMenuItem.separator())
         let settingsItem = NSMenuItem(title: "Settings...", action: #selector(showSettings(_:)), keyEquivalent: ",")
         settingsItem.isEnabled = false
@@ -979,6 +1025,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func logOut(_ sender: Any?) {
         sendControl("logout")
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) {
+        updateController.checkForUpdates()
     }
 
     @objc func showAbout(_ sender: Any?) {
@@ -1838,6 +1888,10 @@ extension AppDelegate: BridgeDelegate {
             // (cold launch by dropping a file on the icon). Control frames
             // reach the renderer now that frontendReady has fired.
             self.flushPendingOpenPaths()
+
+            // An update Sparkle found before the deck was live — the
+            // scheduled check can land during launch.
+            self.flushPendingUpdateNotice()
 
             // Current VoiceOver state, on mount and on every reconnect —
             // the frontend's keyboard-access mode converges without

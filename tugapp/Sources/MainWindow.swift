@@ -285,6 +285,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "hmrUpdate")
         contentController.add(self, name: "openPath")
         contentController.add(self, name: "exportSession")
+        contentController.add(self, name: "checkForUpdates")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -664,6 +665,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "hmrUpdate")
         contentController.removeScriptMessageHandler(forName: "openPath")
         contentController.removeScriptMessageHandler(forName: "exportSession")
+        contentController.removeScriptMessageHandler(forName: "checkForUpdates")
         bridgeCleaned = true
     }
 
@@ -676,6 +678,24 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         str.replacingOccurrences(of: "\\", with: "\\\\")
            .replacingOccurrences(of: "'", with: "\\'")
            .replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    /// Tell the deck that a scheduled Sparkle check found a new version, so
+    /// it can announce it as a bulletin instead of Sparkle's alert window.
+    /// The bulletin's action posts back to the `checkForUpdates` handler.
+    func bridgeUpdateAvailable(version: String, build: String) {
+        let versionArg = escapeForJS(version)
+        let buildArg = escapeForJS(build)
+        webView.evaluateJavaScript(
+            "window.__tugBridge?.onUpdateAvailable?.({version: '\(versionArg)', build: '\(buildArg)'})"
+        ) { _, error in
+            if let error = error {
+                NSLog(
+                    "MainWindow: evaluateJavaScript failed for onUpdateAvailable: %@",
+                    error.localizedDescription
+                )
+            }
+        }
     }
 
     /// Present the `/export` save panel ([#step-13c]) as a sheet on this
@@ -1091,6 +1111,14 @@ extension MainWindow: WKScriptMessageHandler {
                 }
                 NSWorkspace.shared.open(url)
             }
+        case "checkForUpdates":
+            // The update bulletin's action. Brings Sparkle's standard update
+            // flow into focus; a no-op when the updater never started (debug
+            // and branch identities, and the app-test harness).
+            if let appDelegate = NSApp.delegate as? AppDelegate {
+                appDelegate.checkForUpdates(nil)
+            }
+
         case "exportSession":
             // `/export` ([#step-13c]) — save the session transcript to a
             // user-chosen file. The web layer builds BOTH renderings

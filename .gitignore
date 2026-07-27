@@ -53,9 +53,12 @@ tugdeck/dist/
 
 # Distribution artifacts produced by tugrust/scripts/build-app.sh land in
 # products/ (tracked via products/.gitkeep so the dir persists). The DMGs
-# themselves are ignored — ~90MB per build, useless in git.
+# themselves are ignored — ~90MB per build, useless in git. Same for the
+# versioned Sparkle update archives and the appcast generated from them.
 /products/Tug.dmg
 /products/TugNightly.dmg
+/products/Tug-*.zip
+/products/appcast.xml
 /build/
 
 # Static tmux build cache (tugrust/scripts/fetch-tmux.sh).

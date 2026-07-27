@@ -1,0 +1,218 @@
+name: Stable Release
+
+# Publishes a stable release and the Sparkle update feed it is served from.
+#
+# Two tags come out of one run:
+#   v<version> — the human-facing release carrying Tug.dmg, the first-install
+#                download.
+#   updates    — a rolling tag holding every Tug-<version>.zip plus the
+#                appcast.xml that installed apps poll. SUFeedURL points at it,
+#                so the URL baked into every build never changes.
+#
+# Credential handling mirrors nightly.yml: one ephemeral keychain holds the
+# signing certificate and the `tug-notary` profile, and is destroyed however
+# the job ends. The build step gets a keychain path, never a password.
+#
+# Unlike nightly, TUG_BUILD_NUMBER is deliberately not set. Sparkle compares
+# CFBundleVersion, and the version.sh-computed value (major*10000 + minor*100
+# + patch) is monotonic across semver bumps and derivable from the tag alone —
+# a CI run number would make update ordering depend on CI history.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Read release version
+        id: version
+        run: |
+          VERSION=$(grep '^version = ' tugrust/Cargo.toml | head -1 | cut -d'"' -f2)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read the workspace version from tugrust/Cargo.toml."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $VERSION"
+
+      # Re-publishing a version that installed apps have already seen would
+      # either be ignored (same CFBundleVersion) or serve different bytes under
+      # a URL some clients have cached. Bump the version instead.
+      - name: Reject an already-published version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ! gh release view updates --json assets > assets.json 2>/dev/null; then
+            echo "No 'updates' release yet — this run seeds it."
+            exit 0
+          fi
+          if grep -q "\"Tug-$VERSION.zip\"" assets.json; then
+            echo "::error::Tug-$VERSION.zip is already published on the 'updates' release. Bump the version with tugrust/scripts/version.sh first."
+            exit 1
+          fi
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            tugrust/target/
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-release-
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.x
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            tugdeck/node_modules
+            tugcode/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('tugdeck/bun.lock', 'tugcode/bun.lock') }}
+
+      - name: Cache build tools (tmux, dmgbuild)
+        uses: actions/cache@v4
+        with:
+          path: |
+            .tmux-build
+            .build-tools
+          key: ${{ runner.os }}-buildtools-${{ hashFiles('tugrust/scripts/fetch-tmux.sh', 'tugrust/scripts/dmg/ensure-dmgbuild.sh') }}
+
+      # Creating the keychain and importing the cert are one step so the
+      # keychain password stays in step scope. Split across two steps it would
+      # have to travel via GITHUB_ENV and would then be readable by every
+      # subsequent step, including the build.
+      - name: Create keychain and import signing certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::error::APPLE_CERTIFICATE is empty — the repository secret is unset."
+            exit 1
+          fi
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" \
+            $(security list-keychains -d user | tr -d '"')
+
+          CERT="$RUNNER_TEMP/certificate.p12"
+          if ! printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERT" 2>/dev/null; then
+            echo "::error::APPLE_CERTIFICATE is not valid base64. Re-export the .p12 and set the secret from a file, not the clipboard."
+            exit 1
+          fi
+          echo "Decoded $(wc -c < "$CERT" | tr -d ' ') bytes of certificate data."
+
+          if ! security import "$CERT" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+                 -T /usr/bin/codesign -T /usr/bin/security; then
+            echo "::error::Could not import the certificate. Either APPLE_CERTIFICATE_PASSWORD does not match the .p12, or APPLE_CERTIFICATE decoded to something that is not a PKCS#12 archive."
+            rm -f "$CERT"
+            exit 1
+          fi
+          rm -f "$CERT"
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+
+          if ! security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+               | grep -q "Developer ID Application:"; then
+            echo "::error::No 'Developer ID Application' identity in the keychain after import — the .p12 is missing its private key or the certificate has expired."
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+            exit 1
+          fi
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Provision notary profile
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials tug-notary \
+            --apple-id "$APPLE_ID" \
+            --team-id "$TEAM_ID" \
+            --password "$NOTARY_PASSWORD" \
+            --keychain "$KEYCHAIN_PATH"
+
+      # From here on, no Apple secrets are in scope — only the keychain path.
+      - name: Build signed DMG and update archive
+        env:
+          DEVELOPER_ID_NAME: ${{ secrets.DEVELOPER_ID_NAME }}
+          TUG_NOTARY_KEYCHAIN: ${{ env.KEYCHAIN_PATH }}
+        run: tugrust/scripts/build-app.sh
+
+      - name: Destroy keychain
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN_PATH:-}" ] && [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
+
+      # The Sparkle tooling matches the framework version pinned in
+      # Package.resolved, so resolve the package before generating the feed.
+      - name: Generate the appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -z "$SPARKLE_ED_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_ED_PRIVATE_KEY is unset — the appcast would be unsigned and every installed app would reject the update."
+            exit 1
+          fi
+          xcodebuild -resolvePackageDependencies -project tugapp/Tug.xcodeproj -scheme Tug
+          tugrust/scripts/make-appcast.sh "products/Tug-$VERSION.zip"
+
+      - name: Publish the versioned release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Tug ${{ steps.version.outputs.version }}
+          files: products/Tug.dmg
+          body: |
+            Tug ${{ steps.version.outputs.version }}
+
+            Download `Tug.dmg` and drag Tug to Applications. Installed copies
+            update themselves from here on.
+
+            Built from commit ${{ github.sha }}.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the update feed
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: updates
+          name: Update Feed
+          prerelease: true
+          files: |
+            products/Tug-${{ steps.version.outputs.version }}.zip
+            products/appcast.xml
+          body: |
+            Sparkle update feed for Tug. This release is machinery, not a
+            download — see the `v*` releases for installers.
+
+            `appcast.xml` always describes the newest version; the archives
+            are kept so previously issued feed URLs keep resolving.
+          token: ${{ secrets.GITHUB_TOKEN }}

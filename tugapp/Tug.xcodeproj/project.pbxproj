@@ -27,6 +27,8 @@
 		AA0000010000000000000015 /* BranchSlug.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000015 /* BranchSlug.swift */; };
 		AA0000010000000000000016 /* BuildInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000016 /* BuildInfo.swift */; };
 		AA0000010000000000000017 /* InstanceConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000017 /* InstanceConfig.swift */; };
+		AA0000010000000000000018 /* UpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000018 /* UpdateController.swift */; };
+		AA0000010000000000000019 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000140000000000000001 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -52,6 +54,7 @@
 		AA0000020000000000000015 /* BranchSlug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BranchSlug.swift; sourceTree = "<group>"; };
 		AA0000020000000000000016 /* BuildInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildInfo.swift; sourceTree = "<group>"; };
 		AA0000020000000000000017 /* InstanceConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstanceConfig.swift; sourceTree = "<group>"; };
+		AA0000020000000000000018 /* UpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateController.swift; sourceTree = "<group>"; };
 		AA0000030000000000000001 /* Tug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -60,6 +63,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA0000010000000000000019 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -90,6 +94,7 @@
 				AA0000020000000000000016 /* BuildInfo.swift */,
 				AA0000020000000000000015 /* BranchSlug.swift */,
 				AA0000020000000000000017 /* InstanceConfig.swift */,
+				AA0000020000000000000018 /* UpdateController.swift */,
 				AA0000060000000000000002 /* TestHarness */,
 			);
 			path = Sources;
@@ -138,6 +143,9 @@
 			dependencies = (
 			);
 			name = Tug;
+			packageProductDependencies = (
+				AA0000140000000000000001 /* Sparkle */,
+			);
 			productName = Tug;
 			productReference = AA0000030000000000000001 /* Tug.app */;
 			productType = "com.apple.product-type.application";
@@ -161,6 +169,9 @@
 				Base,
 			);
 			mainGroup = AA0000050000000000000001;
+			packageReferences = (
+				AA0000130000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			productRefGroup = AA0000070000000000000001 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -205,6 +216,7 @@
 				AA0000010000000000000016 /* BuildInfo.swift in Sources */,
 				AA0000010000000000000015 /* BranchSlug.swift in Sources */,
 				AA0000010000000000000017 /* InstanceConfig.swift in Sources */,
+				AA0000010000000000000018 /* UpdateController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -459,6 +471,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AA0000130000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AA0000140000000000000001 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000130000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AA00000C0000000000000001 /* Project object */;
 }

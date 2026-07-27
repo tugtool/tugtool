@@ -243,6 +243,28 @@ else
     echo "==> Skipping notarization"
 fi
 
+# Step 9b: Preserve the distribution zip as the Sparkle update archive.
+#
+# notarize.sh leaves a zip of the *stapled* bundle beside the staging app;
+# without this copy it dies with $BUILD_DIR in the cleanup below. Sparkle
+# serves this zip — the DMG is only the first-install vehicle. Versioned so
+# multiple releases coexist under the rolling `updates` release tag.
+#
+# Stable signed+notarized builds only: unsigned and --skip-notarize builds
+# have no stapled zip, and the nightly channel has no feed yet.
+UPDATE_ZIP=""
+if [ "$NIGHTLY" = false ] && [ "$SKIP_SIGN" = false ] && [ "$SKIP_NOTARIZE" = false ]; then
+    STAPLED_ZIP="${STAGING_APP%.app}.zip"
+    if [ ! -f "$STAPLED_ZIP" ]; then
+        echo "error: expected notarized distribution zip at $STAPLED_ZIP" >&2
+        exit 1
+    fi
+    mkdir -p "$REPO_ROOT/products"
+    UPDATE_ZIP="$REPO_ROOT/products/Tug-$VERSION.zip"
+    cp "$STAPLED_ZIP" "$UPDATE_ZIP"
+    echo "==> Update archive: $UPDATE_ZIP"
+fi
+
 # Step 10: Create DMG
 #
 # Branded drag-to-Applications image built with dmgbuild (Python). dmgbuild
@@ -289,6 +311,9 @@ else
 fi
 
 echo "==> Build complete: $OUTPUT_DMG"
+if [ -n "$UPDATE_ZIP" ]; then
+    echo "==>                 $UPDATE_ZIP"
+fi
 
 # Cleanup
 echo "==> Cleaning up build artifacts"

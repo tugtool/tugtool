@@ -95,6 +95,21 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 
 **Resolution:** DEFERRED. The stable channel is the essential feature; nightly identity (`CFBundleVersion` = workflow run number, `CFBundleShortVersionString` = `<version>-nightly.<build>`) needs its own version-comparison thinking. Revisit after the stable channel ships; the gating guard in [P06] already keys on bundle ID so nightly is cleanly excluded until then.
 
+#### [Q02] A release build installed the update without consent (MUST RESOLVE) {#q02-unconsented-install}
+
+**Question:** Why does a *release-configuration* bundle download and install a scheduled update with no consent step, when the same code in a *debug* bundle correctly defers to the delegate and downloads nothing?
+
+**What was observed** during #integration-verification, against a local feed offering 0.8.1 to an installed 0.8.0:
+
+- **Debug bundle — correct.** `standardUserDriverShouldHandleShowingScheduledUpdate` returned `false`, `standardUserDriverWillHandleShowingUpdate` fired with `handles: no, userInitiated: no`, the deck was handed the notice, and Sparkle then **did not fetch the archive** — it waited for the delegate to bring the update into focus, exactly as [P07] intends.
+- **Release bundle — wrong.** Same code, same feed: Sparkle fetched the appcast, fetched `Tug-0.8.1.zip` within seconds, and replaced the bundle in place **while the app was still running**, with no bulletin click and no Sparkle window. Repeated on a freshly extracted bundle with Sparkle's user defaults cleared, and again with `SUAutomaticallyUpdate` explicitly written `false` into the app's defaults domain — the silent install happened all three times.
+
+**Why it matters:** an app that replaces itself under the user is the one behavior this feature must never have. It contradicts [P07] (the bulletin is the consent surface) and [P09] (no silent installs).
+
+**Not yet ruled out:** a `Release` build-setting difference (optimization / `SWIFT_COMPILATION_MODE = wholemodule`) changing how the `SPUStandardUserDriverDelegate` conformance is witnessed; the delegate being deallocated or not seen at all in the release binary (the release runs carried no delegate `NSLog` output to confirm the callbacks even fired — the logging landed after those runs); or a genuine Sparkle policy difference keyed on something in the release configuration.
+
+**Next diagnostic:** re-run the release build now that `UpdateController` logs both delegate callbacks. If the log lines are absent in release, the conformance is not being seen and the fix is in how the delegate is declared/retained; if they are present and the download still happens, the question is Sparkle's, and `SPUUpdaterDelegate.updater(_:shouldPostponeRelaunchForUpdate:)` / an explicit `automaticallyDownloadsUpdates = false` on the updater becomes the lever.
+
 ---
 
 ### Risks and Mitigations {#risks}
@@ -402,12 +417,12 @@ No web-persistent state of any kind is introduced (no tugbank keys, no localStor
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Sparkle SPM dependency + UpdateController + menu item | pending | — |
-| #step-2 | EdDSA keypair + Info.plist feed configuration | pending | — |
-| #step-3 | Signing slot (4) + zip preservation in build-app.sh | pending | — |
-| #step-4 | Appcast script + stable release workflow | pending | — |
-| #step-5 | Deck bulletin bridge + gentle reminders | pending | — |
-| #step-6 | Integration checkpoint (local end-to-end update) | pending | — |
+| #step-1 | Sparkle SPM dependency + UpdateController + menu item | done | `68d6f325f` (also carries the slot-(4) signing from #step-3 — the app will not launch without it) |
+| #step-2 | EdDSA keypair + Info.plist feed configuration | done | `2154e1912` (public key `q1ZnWaJ…se48=`; private key in the login Keychain, awaiting the user's GitHub secret) |
+| #step-3 | Signing slot (4) + zip preservation in build-app.sh | done | `fce42d2f0` (slot (4) itself landed in `68d6f325f`) |
+| #step-4 | Appcast script + stable release workflow | done | `fce42d2f0` (same commit as #step-3 — `dash commit` stages the whole worktree) |
+| #step-5 | Deck bulletin bridge + gentle reminders | done | `9d2bc73e5` (test named `at0278-update-bulletin.test.ts`, following the corpus numbering) |
+| #step-6 | Integration checkpoint (local end-to-end update) | blocked | N/A (verification only) — mechanics verified, consent behavior failed; see [Q02] |
 
 #### Step 1: Sparkle SPM dependency + UpdateController + menu item {#step-1}
 
