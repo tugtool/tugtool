@@ -11,8 +11,7 @@
  *   1. Claude Code installed & reachable — Tug-managed install + recheck.
  *   2. Logged in to Claude — browser OAuth shell-out.
  *   3. Open your first session — pops the first Session card. First-run only:
- *      a set-up user whose deck goes empty mid-life gets the lightweight
- *      TugCreateSessionCard sibling, not the wizard.
+ *      a set-up user whose deck goes empty mid-life is left alone with it.
  *
  * ("Installed" and "reachable" collapse into one step: Tug resolves `claude`
  * via PATH then `~/.local/bin` — see `resolveClaudePath`/`claude_executable` —
@@ -50,6 +49,7 @@ import { getConnection } from "@/lib/connection-singleton";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { readSetupSeen, readSetupSuppressed, putSetupSeen } from "@/settings-api";
 import { useDeckManager } from "@/deck-manager-context";
+import { countWorkCards } from "@/deck-store-selectors";
 import { subscriptionLabel, pendingOpenStepCopy } from "./tug-setup-copy";
 import { TugPushButton } from "./tug-push-button";
 import {
@@ -156,7 +156,9 @@ export function TugSetup(): ReactElement {
   const transport = useAppTransportState();
   const deck = useDeckManager();
   const deckState = useSyncExternalStore(deck.subscribe, deck.getSnapshot);
-  const cardCount = deckState.cards.length;
+  // The Lens is open by factory default, so it must not read as "this deck
+  // already holds work" — count everything but the Lens.
+  const cardCount = countWorkCards(deckState);
   const [openedFirstSession, setOpenedFirstSession] = useState(false);
 
   const forced = import.meta.env.DEV ? SESSION_FORCE_SETUP : false;
@@ -185,9 +187,8 @@ export function TugSetup(): ReactElement {
   });
 
   // The "open your first session" step claims the empty deck only on a
-  // genuine first run. A set-up user whose deck goes empty mid-life (last
-  // card closed, or a relaunch with an empty layout) gets TugCreateSessionCard —
-  // the lightweight sibling app-modal — not the full wizard.
+  // genuine first run. A set-up user whose deck goes empty mid-life (last card
+  // closed, or a relaunch with an empty layout) is left alone with it.
   const needsFirstSession =
     firstRun && effectiveLoggedIn && cardCount === 0 && !openedFirstSession;
 

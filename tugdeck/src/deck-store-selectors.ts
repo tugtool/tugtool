@@ -78,3 +78,14 @@ export function findLensPane(state: DeckState): TugPaneState | undefined {
   if (lensCardIds.size === 0) return undefined;
   return state.panes.find((p) => p.cardIds.some((cid) => lensCardIds.has(cid)));
 }
+
+/**
+ * `countWorkCards(state)` — how many cards the user is working in, i.e. every
+ * card but the Lens. The Lens is app furniture (it opens by factory default),
+ * so anything asking "does this deck hold work yet" — the setup wizard's
+ * "start a session" step, the copy that reads a deck as busy — counts through
+ * here rather than off `state.cards.length`.
+ */
+export function countWorkCards(state: DeckState): number {
+  return state.cards.filter((c) => c.componentId !== LENS_CARD_ID).length;
+}

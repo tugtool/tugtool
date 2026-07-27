@@ -50,7 +50,6 @@ import type { Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { TugSetup } from "./components/tugways/tug-setup";
-import { TugCreateSessionCard } from "./components/tugways/tug-create-session-card";
 import { TugLogout } from "./components/tugways/tug-logout";
 import { TugVersionGate } from "./components/tugways/tug-version-gate";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
@@ -593,6 +592,22 @@ export class DeckManager implements IDeckManagerStore {
    */
   private readonly testMode: boolean;
 
+  /**
+   * True when the boot honored the persisted boot state and found no layout
+   * at all — a factory-fresh install. The factory deck is not empty: it
+   * stands with the Lens open at its pin on {@link DEFAULT_LENS_SIDE}. Stays
+   * false under the ordinary test-mode boot, which discards the boot state
+   * and starts empty for the harness to seed.
+   */
+  private factoryFresh = false;
+
+  /**
+   * Whether the constructor honored the tugbank-sourced boot arguments. False
+   * only under the ordinary test-mode boot. {@link loadLayout} reads it to
+   * tell a factory-fresh install from a deliberately-emptied test deck.
+   */
+  private bootStateHonored = true;
+
   constructor(
     container: HTMLElement,
     connection: TugConnection,
@@ -617,6 +632,7 @@ export class DeckManager implements IDeckManagerStore {
     // `__tugPersistInTestMode` — there the persisted state is the
     // test's own, and the constructor restore IS the code under test.
     const dropBootState = this.testMode && !shouldRestoreInTestMode();
+    this.bootStateHonored = !dropBootState;
     this.initialLayout = dropBootState ? null : (initialLayout ?? null);
     this.initialTheme = initialTheme ?? BASE_THEME_NAME;
 
@@ -685,6 +701,14 @@ export class DeckManager implements IDeckManagerStore {
       this.cardLifecycle.notifyCardDidFinishConstruction(card.id);
     }
 
+    // Factory default: a deck with no persisted layout opens with the Lens
+    // standing at its pin. Runs after the restore loop so it is the only card
+    // in the fresh deck, and before the first render so the Lens is there on
+    // the first paint rather than appearing a frame later.
+    if (this.factoryFresh) {
+      this._createLensPane();
+    }
+
     this.reactRoot.render(
       composeProviders(
         [
@@ -720,11 +744,6 @@ export class DeckManager implements IDeckManagerStore {
           // is installed, signed in, and the first session is opened — auth is
           // strictly required for an AI IDE. Renders nothing once set up.
           React.createElement(TugSetup, {}),
-          // App-modal empty-deck affordance: a set-up, logged-in user with
-          // zero cards gets a one-Return-press "Create Session Card" alert, not
-          // the full wizard. Last in the Spec S02 precedence chain
-          // (gate > setup > create-session-card). Renders nothing otherwise.
-          React.createElement(TugCreateSessionCard, {}),
           // App-level logout orchestrator (renders nothing). Watches the
           // logout-request nonce; on request runs confirm → interrupt every
           // turn → `claude_logout`, then TugSetup reopens for re-login (or a
@@ -3155,6 +3174,7 @@ export class DeckManager implements IDeckManagerStore {
 
     if (state === null) {
       state = buildDefaultLayout(lensSide);
+      this.factoryFresh = this.bootStateHonored;
     }
 
     return this.filterRegisteredCards(state);

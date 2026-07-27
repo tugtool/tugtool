@@ -40,7 +40,7 @@ function GalleryAlertInner() {
   const [dangerResult, setDangerResult] = React.useState("none");
   const [cautionResult, setCautionResult] = React.useState("none");
   const [okOnlyResult, setOkOnlyResult] = React.useState("none");
-  const [createSessionCardResult, setCreateSessionCardResult] = React.useState("none");
+  const [chooserResult, setChooserResult] = React.useState("none");
 
   // Ref-based section
   const alertRef = React.useRef<TugAlertHandle>(null);
@@ -130,7 +130,7 @@ function GalleryAlertInner() {
     setCautionResult(confirmed ? "confirmed" : "cancelled");
   }
 
-  async function handleCreateSessionCardPreview() {
+  async function handleChooserPreview() {
     if (!chooseRef.current) return;
     const choice = await chooseRef.current.choose({
       title: "What's next?",
@@ -151,7 +151,7 @@ function GalleryAlertInner() {
         },
       ],
     });
-    setCreateSessionCardResult(choice ?? "cancelled");
+    setChooserResult(choice ?? "cancelled");
   }
 
   async function handleOkOnlyAlert() {
@@ -243,12 +243,10 @@ function GalleryAlertInner() {
 
       {/* ---- What's next? chooser preview (multi-action choose()) ---- */}
       <div className="cg-section">
-        <TugLabel className="cg-section-title">What's Next? (Empty-Deck Chooser)</TugLabel>
+        <TugLabel className="cg-section-title">What's Next? (Multi-Action Chooser)</TugLabel>
         <div style={labelStyle}>
-          The TugCreateSessionCard empty-deck app-modal, previewed through the same
-          chrome — the multi-action `choose()` form as rich rows (leading icon +
-          title + description) plus Cancel, in one closed arrow ring. The real
-          one only opens with zero cards.
+          The multi-action `choose()` form: rich rows (leading icon + title +
+          description) plus Cancel, in one closed arrow ring.
         </div>
         {/* Standalone TugAlert instance for the choose() preview */}
         <TugAlert ref={chooseRef} title="What's next?" />
@@ -256,14 +254,14 @@ function GalleryAlertInner() {
           <TugPushButton
             emphasis="outlined"
             size="sm"
-            onClick={handleCreateSessionCardPreview}
+            onClick={handleChooserPreview}
             data-testid="gallery-preview-whats-next"
           >
             Preview What's Next
           </TugPushButton>
         </div>
         <div style={resultStyle} data-testid="whats-next-result">
-          Result: <strong>{createSessionCardResult}</strong>
+          Result: <strong>{chooserResult}</strong>
         </div>
       </div>
 

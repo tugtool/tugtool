@@ -15,8 +15,16 @@
  * retired pane `anchor` — not a blob this build wrote. This test closes that
  * gap end to end, against the real app and the real control.
  *
+ * The head of that path is the factory default: a launch that finds no layout
+ * at all builds the default one and opens the Lens at its pin. Phase 0 pins
+ * it, because it is the same `_createLensPane`-from-a-persisted-record path
+ * read from its starting end — and because it is the deck a user meets on a
+ * first launch, right after setup hands them the empty canvas.
+ *
  * | Phase | Action                                          | Assertion                        |
  * |-------|-------------------------------------------------|----------------------------------|
+ * | 0     | launch with `restoreInTestMode` against a bank | the Lens mounts on the right,    |
+ * |       | holding no layout — the factory state          | alone on the deck                |
  * | A     | open the Lens, click "Lens on left" in Layouts, | the layout blob on disk carries  |
  * |       | let the save debounce land, quit gracefully     | `imposition.lens === "left"`     |
  * | B     | relaunch with `restoreInTestMode` — no seeding, | the Lens mounts on the left      |
@@ -66,6 +74,34 @@ describe.skipIf(!SHOULD_RUN)("at0276 — the Lens side survives a relaunch", () 
       const tugbankPath = mkTempTugbank();
       try {
         seedTugbankForLaunch(tugbankPath);
+
+        // ── Phase 0: the factory deck. The bank holds the minimum-boot keys
+        //    and no layout, and this launch honors the boot state, so the
+        //    constructor takes the default-layout path. Writes stay off
+        //    (`persistInTestMode` unset) — this phase must leave the bank as
+        //    it found it for Phase A. ──
+        {
+          const app = await launchTugApp({
+            testName: "at0276-lens-side-persists-0",
+            env: { TUGBANK_PATH: tugbankPath },
+            restoreInTestMode: true,
+          });
+          try {
+            await waitForLensOn(app, "right");
+            // The Lens is the whole factory deck — nothing else is opened
+            // for the user, and nothing stands over it.
+            expect(
+              await app.evalJS<number>(`document.querySelectorAll('.tug-pane').length`),
+            ).toBe(1);
+            expect(
+              await app.evalJS<number>(
+                `document.querySelectorAll('[data-slot="tug-alert"]').length`,
+              ),
+            ).toBe(0);
+          } finally {
+            await app.close();
+          }
+        }
 
         // ── Phase A: choose the side through the real control, then quit. ──
         {

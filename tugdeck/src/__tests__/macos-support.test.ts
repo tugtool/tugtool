@@ -6,8 +6,6 @@
  * - isHostBelowFloor across below / at / above floor, unknown old + future
  *   lines, and unknown/unparseable host (fail-open).
  * - deriveTugSetupOpen precedence: false whenever the gate is open.
- * - deriveCreateSessionCardOpen: the empty-deck affordance's precedence and
- *   first-run handoff.
  * - Drift: SUPPORTED_MACOS matches scripts/lab/matrix.json min_version.
  */
 
@@ -19,7 +17,6 @@ import {
   compareMacosVersion,
   isHostBelowFloor,
   deriveTugSetupOpen,
-  deriveCreateSessionCardOpen,
   requiredMinimumLabel,
   SUPPORTED_MACOS,
 } from "../lib/macos-support";
@@ -89,37 +86,6 @@ describe("deriveTugSetupOpen (gate precedence, Spec S02)", () => {
   test("gate closed passes setup's own would-open through", () => {
     expect(deriveTugSetupOpen(false, true)).toBe(true);
     expect(deriveTugSetupOpen(false, false)).toBe(false);
-  });
-});
-
-describe("deriveCreateSessionCardOpen (empty-deck affordance, Spec S02)", () => {
-  const base = {
-    gateOpen: false,
-    suppressed: false,
-    loggedIn: true as boolean | null,
-    cardCount: 0,
-    firstRun: false,
-    deckEverHadCard: false,
-  };
-  test("set-up, logged-in user with an empty deck → open", () => {
-    expect(deriveCreateSessionCardOpen(base)).toBe(true);
-  });
-  test("gate or app-test suppression closes it", () => {
-    expect(deriveCreateSessionCardOpen({ ...base, gateOpen: true })).toBe(false);
-    expect(deriveCreateSessionCardOpen({ ...base, suppressed: true })).toBe(false);
-  });
-  test("logged out or probe unanswered → closed (setup owns those)", () => {
-    expect(deriveCreateSessionCardOpen({ ...base, loggedIn: false })).toBe(false);
-    expect(deriveCreateSessionCardOpen({ ...base, loggedIn: null })).toBe(false);
-  });
-  test("any card on the deck → closed", () => {
-    expect(deriveCreateSessionCardOpen({ ...base, cardCount: 1 })).toBe(false);
-  });
-  test("first run: setup wizard owns the empty deck until a card has existed", () => {
-    expect(deriveCreateSessionCardOpen({ ...base, firstRun: true })).toBe(false);
-    expect(
-      deriveCreateSessionCardOpen({ ...base, firstRun: true, deckEverHadCard: true }),
-    ).toBe(true);
   });
 });
 

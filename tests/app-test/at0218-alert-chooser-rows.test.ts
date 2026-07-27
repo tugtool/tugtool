@@ -2,10 +2,9 @@
  * at0218-alert-chooser-rows.test.ts — TugAlert's multi-action `choose()` form
  * renders rich rows as a SELECTABLE LIST plus an OK / Cancel action bar.
  *
- * The empty-deck "What's next?" chooser (TugCreateSessionCard) is a `choose()` call
- * with per-choice icon + description. This drives the same form through the
- * gallery ("Preview What's Next"), which the real modal mirrors, and pins the
- * select-then-commit model:
+ * The "What's next?" chooser is a `choose()` call with per-choice icon +
+ * description. This drives it through the gallery ("Preview What's Next") and
+ * pins the select-then-commit model:
  *   - the choices render as a vertical stack of `.tug-alert-choice` rows in the
  *     order they were passed (Create Session Card, then Open Text Card);
  *   - the LIST holds the key-view ring on open (the default row highlighted +
@@ -20,7 +19,6 @@
  *
  * @covers tugdeck/src/components/tugways/tug-alert.tsx
  * @covers tugdeck/src/components/tugways/tug-alert-sheet.tsx
- * @covers tugdeck/src/components/tugways/tug-create-session-card.tsx
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/tugways/cards/gallery-alert.tsx
  * @covers tugdeck/src/components/tugways/tug-push-button.tsx
