@@ -5,7 +5,11 @@
  *
  * The list is authored into the section's focus group (`host.focusGroup`), so
  * it is one Tab stop in the Lens. The grammar (Spec S01):
- *  - **Arrows** rove the cursor; **Enter** opens the cursor row's editor
+ *  - **Arrows** rove the cursor and carry the selection with it
+ *    (`selectionFollowsCursor`) — the green fill is always on the row the
+ *    keyboard is on, which is also the row the section verbs act on;
+ *    **ArrowRight** descends onto the row's Copy / ✕, which the horizontal
+ *    arrows then walk; **Enter** opens the cursor row's editor
  *    (`onActivate` → `beginEdit`), which mounts a `TugMessageEditor` (the
  *    `TugTextEditor` CM6 substrate, markdown-styled) inside a focusable
  *    wrapper authored into the row's descend scope; the row claims the CM6
@@ -994,6 +998,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
                 commitOnEnter="act"
                 activateOnDoubleClick
                 selectionRequired
+                selectionFollowsCursor
                 captureKeys={SNIPPETS_CAPTURE_KEYS}
                 onKeyViewKey={onSectionKeyViewKey}
                 onSelectionChange={onSelectionChange}

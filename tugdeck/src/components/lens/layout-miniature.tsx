@@ -69,14 +69,17 @@ export function LayoutMiniature({
   const field = lens === null ? 100 : 100 - RAIL_PCT - GAP_PCT;
   // The band the blocks share: the field less the gap outside each end.
   const band = Math.max(0, field - GAP_PCT * 2);
-  // A deck with no arrangement is one free card, so Off draws a single block
-  // standing in the middle of the field rather than filling it.
+  // One card has no share to compute — it keeps its own width, which the
+  // picture states as a lone block rather than a block filling the band.
   const cardPct =
     count < 2
       ? (band * FREE_CARD_PCT) / 100
       : (band - CARD_GAP_PCT * (count - 1)) / count;
+  // One-up's single slot is slot 0, so its block hugs the far edge exactly as
+  // slot 0 does under every other kind. A deck drawn with no imposition at all
+  // (`kind: null`) has no slot to hug and stands in the middle of the field.
   const offsetFor = (k: number): number =>
-    count < 2 ? (band - cardPct) / 2 : k * (cardPct + CARD_GAP_PCT);
+    count < 2 ? (kind === null ? (band - cardPct) / 2 : 0) : k * (cardPct + CARD_GAP_PCT);
   // Slot 0 is the anchor farthest from the Lens, so a left-side Lens numbers
   // from the right — measured from that edge, the offsets are the same.
   const packFromLeft = lens !== "left";

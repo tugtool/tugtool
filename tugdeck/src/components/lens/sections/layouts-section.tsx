@@ -7,6 +7,11 @@
  * field each — so "where is the Lens" is a layout question answered beside the
  * other layout questions rather than in an app-wide preference somewhere else.
  *
+ * The Cards axis has no *off*. One-up is the quietest arrangement rather than
+ * the absence of one — a single anchor, which a card occupies only by being put
+ * there — so the deck always stands under an imposition and every row's slot
+ * picker is live from the first frame.
+ *
  * Both groups are the same control at the same scale: a named option is a
  * picture of the result ({@link LayoutMiniature}) with its name beside it, two
  * to a row — the gallery card's `P4 · Two-column rows` shape. Each option is a
@@ -46,6 +51,7 @@ import {
   IMPOSITION_KINDS,
   isImpositionKind,
   isLensSide,
+  DEFAULT_IMPOSITION_KIND,
   DEFAULT_LENS_SIDE,
   type DeckImposition,
   type ImpositionKind,
@@ -63,9 +69,6 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 /** This section's kind — its key in the section registry and section order. */
 const SECTION_KIND = "layouts";
 
-/** The choice value standing for "no imposition". */
-const OFF_VALUE = "off";
-
 /** Stable `event.sender` per group, so the section's one `selectValue` handler
  *  can tell the two axes apart. */
 const SIDE_SENDER_ID = "lens-layouts-side";
@@ -78,6 +81,7 @@ const KIND_CAPTION_ID = "lens-layouts-kind-caption";
 
 /** User-facing label for each kind. */
 const KIND_LABELS: Record<ImpositionKind, string> = {
+  "one-up": "One Up",
   "two-up": "Two Up",
   "three-up": "Three Up",
   "four-up": "Four Up",
@@ -102,11 +106,11 @@ function useImposition(): DeckImposition {
   return deck?.imposition ?? { lens: DEFAULT_LENS_SIDE };
 }
 
-/** Live collapsed summary: the active kind's label, or "Off". The side is not
- *  summarized — the band has room for one fact and the arrangement is it. */
+/** Live collapsed summary: the active kind's label. The side is not summarized
+ *  — the band has room for one fact and the arrangement is it. */
 function LayoutsCollapsedSummary(): React.ReactElement {
   const { kind } = useImposition();
-  return <>{kind === undefined ? "Off" : KIND_LABELS[kind]}</>;
+  return <>{KIND_LABELS[kind ?? DEFAULT_IMPOSITION_KIND]}</>;
 }
 
 function LayoutsSectionBody({
@@ -130,11 +134,8 @@ function LayoutsSectionBody({
             dispatchAction({ action: "set-imposition-lens", side: value });
           return;
         }
-        if (event.sender === KIND_SENDER_ID) {
-          dispatchAction({
-            action: "set-imposition",
-            kind: isImpositionKind(value) ? value : null,
-          });
+        if (event.sender === KIND_SENDER_ID && isImpositionKind(value)) {
+          dispatchAction({ action: "set-imposition", kind: value });
         }
       },
     },
@@ -209,7 +210,7 @@ function LayoutsSectionBody({
             Cards
           </TugLabel>
           <TugRadioGroup
-            value={kind ?? OFF_VALUE}
+            value={kind ?? DEFAULT_IMPOSITION_KIND}
             senderId={KIND_SENDER_ID}
             focusGroup={host.focusGroup}
             size="sm"
@@ -219,20 +220,14 @@ function LayoutsSectionBody({
             className="layouts-section-group"
             data-testid="lens-layouts-kind"
           >
-            <TugRadioItem value={OFF_VALUE}>
-              <span className="layouts-section-option">
-                <LayoutMiniature
-                  kind={null}
-                  lens={lens}
-                  selected={kind === undefined}
-                />
-                <span className="layouts-section-option-label">Off</span>
-              </span>
-            </TugRadioItem>
             {IMPOSITION_KINDS.map((k) => (
               <TugRadioItem key={k} value={k}>
                 <span className="layouts-section-option">
-                  <LayoutMiniature kind={k} lens={lens} selected={k === kind} />
+                  <LayoutMiniature
+                    kind={k}
+                    lens={lens}
+                    selected={k === (kind ?? DEFAULT_IMPOSITION_KIND)}
+                  />
                   <span className="layouts-section-option-label">
                     {KIND_LABELS[k]}
                   </span>

@@ -3,7 +3,7 @@
  *
  * In printing, *imposition* is the arrangement of pages onto the press sheet so
  * that each one lands at its correct position. The imposer does the same for
- * deck panes: an **imposition** (two-up / three-up / four-up) defines numbered
+ * deck panes: an **imposition** (one-up / two-up / three-up / four-up) defines numbered
  * **slots**, and a pane assigned to a slot is placed at that slot's position in
  * a chain of cards running across the canvas.
  *
@@ -74,7 +74,7 @@ import type React from "react";
 import { cssEasing, dampedSpring } from "@/lib/unit-functions";
 
 /** The active N-up rule. */
-export type ImpositionKind = "two-up" | "three-up" | "four-up";
+export type ImpositionKind = "one-up" | "two-up" | "three-up" | "four-up";
 
 /** Which side of the deck the Lens holds. */
 export type LensSide = "left" | "right";
@@ -122,10 +122,21 @@ export function isLensSide(value: unknown): value is LensSide {
 
 /** Every imposition kind, in ascending slot count — the Lens picker's order. */
 export const IMPOSITION_KINDS: readonly ImpositionKind[] = [
+  "one-up",
   "two-up",
   "three-up",
   "four-up",
 ];
+
+/**
+ * The arrangement a deck stands under when nothing has said otherwise.
+ *
+ * One-up is the quietest thing the imposer can do — a single anchor, which a
+ * card only ever occupies by being put there — so it is the resting state
+ * rather than a state the deck has to be switched into. An imposition is
+ * always active; there is no off.
+ */
+export const DEFAULT_IMPOSITION_KIND: ImpositionKind = "one-up";
 
 /**
  * The **imposition gap**: the space an imposed pane keeps from the canvas
@@ -205,9 +216,11 @@ export function isImpositionKind(value: unknown): value is ImpositionKind {
   );
 }
 
-/** How many slots the kind defines: 2, 3, or 4. */
+/** How many slots the kind defines: 1, 2, 3, or 4. */
 export function slotCount(kind: ImpositionKind): number {
   switch (kind) {
+    case "one-up":
+      return 1;
     case "two-up":
       return 2;
     case "three-up":
@@ -281,6 +294,10 @@ export function resolvePlacement(
 /**
  * A slot's share of the band's travel: `slot / (slots - 1)`, in `[0, 1]`. Slot
  * 0 gives 0 (hug the far edge) and the last slot gives 1 (hug the Lens).
+ *
+ * One-up has a single anchor and therefore no travel to share — its one slot is
+ * slot 0, so the card hugs the far edge exactly as slot 0 does under every
+ * other kind. Narrowing an arrangement to one-up leaves that card where it was.
  */
 export function travelFraction(placement: ImposedPlacement): number {
   if (placement.count < 2) return 0;

@@ -1030,6 +1030,27 @@ export interface TugListViewProps<
   singleSelect?: boolean;
 
   /**
+   * Carry the selection with the movement cursor on a `selectionRequired` list
+   * — the arrow / Home / End / Page keys commit the landed row exactly as they
+   * do under {@link singleSelect}, so the fill and the cursor bar are never on
+   * two different rows.
+   *
+   * The two modes differ in what the list does with Enter and Space, not in how
+   * selection moves: a `singleSelect` list is a picker whose cursor IS its
+   * selection, while a `selectionRequired` list keeps its own Enter (open) and
+   * Space (the consumer's reserved key) and merely wants its one owned selected
+   * row to follow the keyboard. Without this the cursor roves ahead of a fill
+   * left behind on the last clicked row, and the section verbs — which act on
+   * the CURSOR — read as acting on some other row than the one lit.
+   *
+   * Ignored unless {@link selectionRequired} is set; a `singleSelect` list
+   * already behaves this way.
+   *
+   * @default false
+   */
+  selectionFollowsCursor?: boolean;
+
+  /**
    * The row the movement cursor seeds onto when the list first gains the key view
    * — the currently-active choice. Honored for ANY authored list (not only
    * `singleSelect`): a consumer whose selection lives outside the list points the
@@ -1321,6 +1342,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       focusPolicy,
       keyboardSubordinate = false,
       singleSelect = false,
+      selectionFollowsCursor = false,
       initialSelectedIndex,
       seedSelection = false,
       commitOnEnter,
@@ -3038,6 +3060,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // Live single-select props for the gain-seed / movement closures ([L07]).
     const singleSelectRef = React.useRef(singleSelect);
     singleSelectRef.current = singleSelect;
+    // Whether a cursor move commits the row it lands on. True for a
+    // single-select list by definition, and for a `selectionRequired` list that
+    // asked its selection to follow ([L07] live ref, same as the props above).
+    const commitOnMoveRef = React.useRef(false);
+    commitOnMoveRef.current =
+      singleSelect || (selectionRequired && selectionFollowsCursor);
     const initialSelectedIndexRef = React.useRef(initialSelectedIndex);
     initialSelectedIndexRef.current = initialSelectedIndex;
     const seedSelectionRef = React.useRef(seedSelection);
@@ -3177,6 +3205,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const inner = el?.querySelector("[data-tug-focusable]") ?? null;
       return inner?.getAttribute("data-tug-focusable") ?? null;
     }, []);
+    // Every engine focusable the row holds, in DOM order — the run the
+    // horizontal arrows walk once the key view has descended into the row.
+    const rowFocusableIds = React.useCallback((i: number): string[] => {
+      const el = cellElementMapRef.current.get(i);
+      if (el === undefined) return [];
+      return Array.from(el.querySelectorAll("[data-tug-focusable]"))
+        .map((n) => n.getAttribute("data-tug-focusable"))
+        .filter((id): id is string => id !== null);
+    }, []);
     const rowScopeId = React.useCallback(
       (i: number): string => `${focusableId}-row-${i}`,
       [focusableId],
@@ -3307,7 +3344,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const landing = total > 0 ? cursorableNear(rec.index, -1) : -1;
       if (landing >= 0) {
         moveCursorTo(landing, true);
-        if (singleSelectRef.current) selectCursorRow();
+        if (commitOnMoveRef.current) selectCursorRow();
       } else {
         cursorIndexRef.current = -1;
         clearCursorVisual();
@@ -3361,7 +3398,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     const behavior = React.useCallback(
       (): KeyViewBehavior => ({
         container: "item",
-        commit: singleSelect ? "live" : "deferred",
+        commit:
+          singleSelect || (selectionRequired && selectionFollowsCursor)
+            ? "live"
+            : "deferred",
         ...(captureKeySet !== null
           ? { captures: (k: FocusKey) => captureKeySet.has(k.key) }
           : {}),
@@ -3394,6 +3434,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }),
       [
         singleSelect,
+        selectionRequired,
+        selectionFollowsCursor,
         enterActs,
         captureKeySet,
         rowFirstFocusableId,
@@ -3481,8 +3523,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
               : nav.stepCursorableRow(cur, dir);
           if (next >= 0 && next !== cur) {
             nav.moveCursorTo(next, true);
-            // Single-select: selection follows the cursor (the picker shape).
-            if (singleSelectRef.current) nav.selectCursorRow();
+            // Selection follows the cursor (the picker shape).
+            if (commitOnMoveRef.current) nav.selectCursorRow();
           }
         },
         tryDescendRight: () => {
@@ -3600,23 +3642,42 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       if (e.metaKey || e.ctrlKey) return false;
       const scrollEl = scrollContainerRef.current;
       if (scrollEl === null) return false;
-      // Tree-style ascend: while descended into one of THIS list's row
-      // scopes (the container is no longer the key view; the key view is an
-      // in-row focusable), a bare ArrowLeft pops the scope back to the
-      // container — the symmetric exit to Right's descend. The spatial
-      // navigator provably yields this arrow in a row scope (no declared
-      // order, no cursor handle), so this delegate is its owner. Gated on
-      // the TOP mode being one of our row scopes: with a popover or other
-      // surface above it, Left belongs to that surface, not the list.
-      if (
-        e.key === "ArrowLeft" &&
-        !e.altKey &&
-        !e.shiftKey &&
+      // While descended into one of THIS list's row scopes (the container is no
+      // longer the key view; the key view is an in-row focusable), the
+      // horizontal arrows walk the row itself: Right steps to the next
+      // accessory, Left to the previous, and Left off the first ASCENDS — the
+      // symmetric exit to Right's descend. A row is a run of buttons laid out
+      // left to right, so the arrow that entered it is the arrow that walks it;
+      // Tab walks the same run (the row scope is the walk's bound), and either
+      // plane reaches every accessory. The spatial navigator provably yields
+      // these arrows in a row scope (no declared order, no cursor handle), so
+      // this delegate is their owner. Gated on the TOP mode being one of our row
+      // scopes: with a popover or other surface above it, the arrows belong to
+      // that surface, not the list.
+      const inRowScope =
         manager !== null &&
         !scrollEl.hasAttribute("data-key-view-kbd") &&
-        manager.currentFocusMode().startsWith(`${focusableId}-row-`)
+        manager.currentFocusMode().startsWith(`${focusableId}-row-`);
+      if (
+        inRowScope &&
+        manager !== null &&
+        !e.altKey &&
+        !e.shiftKey &&
+        (e.key === "ArrowLeft" || e.key === "ArrowRight")
       ) {
-        manager.ascend();
+        const ids = rowFocusableIds(descendedRowRef.current?.index ?? -1);
+        const at = ids.indexOf(manager.keyView() ?? "");
+        const next = at + (e.key === "ArrowRight" ? 1 : -1);
+        if (next < 0) {
+          manager.ascend();
+        } else if (at >= 0 && next < ids.length) {
+          manager.place(null, { kind: "focusable", id: ids[next] }, {
+            modality: "keyboard",
+          });
+        }
+        // Off the last accessory the key view stays where it is: there is
+        // nothing further right in the row, and the list's own cursor is not
+        // what Right means from inside a row.
         return true;
       }
       // Move the cursor only while the container itself holds the keyboard key
@@ -3670,9 +3731,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
       if (next >= 0 && next !== cur) {
         moveCursorTo(next, true);
-        // Single-select: selection follows the cursor — commit the landed row
-        // so there is no separate Space step ([P12] picker shape).
-        if (singleSelectRef.current) selectCursorRow();
+        // Selection follows the cursor — commit the landed row so there is no
+        // separate Space step ([P12] picker shape).
+        if (commitOnMoveRef.current) selectCursorRow();
       } else if (next >= 0) scrollIndexIntoView(next, "nearest");
       return true;
     };

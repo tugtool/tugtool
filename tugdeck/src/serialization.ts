@@ -38,6 +38,7 @@ import {
   isImpositionKind,
   isLensPinned,
   isLensSide,
+  DEFAULT_IMPOSITION_KIND,
   DEFAULT_LENS_SIDE,
   type DeckImposition,
   type ImpositionKind,
@@ -304,10 +305,11 @@ function parseV4(
     cardIdSet.add(id);
   }
 
-  // The active imposition gates every pane's `slot`: a slot without a kind to
-  // interpret it means nothing, so an unreadable kind drops the whole
-  // arrangement rather than leaving panes pinned to positions that no longer
-  // exist.
+  // A deck always stands under an imposition, so an absent or unreadable kind
+  // reads as the default (one-up) rather than as "no arrangement". Every
+  // pre-imposition blob restores under one anchor, which no pane occupies until
+  // one is assigned a slot — the deck looks exactly as it did, and the slot
+  // pickers on the Lens rows are live from the first frame.
   //
   // `imposition` widened from a bare kind string to a `{ kind?, lens }` record
   // without a version bump, so both shapes parse. The Lens's side comes from
@@ -318,11 +320,11 @@ function parseV4(
     rawImposition !== null && typeof rawImposition === "object"
       ? (rawImposition as Record<string, unknown>)
       : undefined;
-  const kind: ImpositionKind | undefined = isImpositionKind(rawImposition)
+  const kind: ImpositionKind = isImpositionKind(rawImposition)
     ? rawImposition
     : isImpositionKind(impositionRecord?.["kind"])
       ? (impositionRecord["kind"] as ImpositionKind)
-      : undefined;
+      : DEFAULT_IMPOSITION_KIND;
 
   const lensCardIds = new Set(
     cards.filter((c) => c.componentId === LENS_CARD_ID).map((c) => c.id),
@@ -335,7 +337,7 @@ function parseV4(
   // the Lens could be dragged off its pin — reads as pinned.
   const lensPinned = impositionRecord?.["lensPinned"];
   const imposition: DeckImposition = {
-    ...(kind !== undefined ? { kind } : {}),
+    kind,
     lens,
     ...(lensPinned === false ? { lensPinned: false } : {}),
   };
@@ -372,7 +374,6 @@ function parseV4(
 
     const rawSlot = win["slot"];
     const slot: number | undefined =
-      kind !== undefined &&
       !isLensPane &&
       typeof rawSlot === "number" &&
       Number.isInteger(rawSlot) &&
@@ -596,7 +597,7 @@ export function buildDefaultLayout(
   return {
     cards: [],
     panes: [],
-    imposition: { lens: lensSide },
+    imposition: { kind: DEFAULT_IMPOSITION_KIND, lens: lensSide },
     hasFocus: true,
   };
 }

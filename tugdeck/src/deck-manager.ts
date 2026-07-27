@@ -72,8 +72,10 @@ import type {
 } from "./deck-manager-store";
 import {
   clampSlot,
+  slotCount,
   isLensPinned,
   isLensSide,
+  DEFAULT_IMPOSITION_KIND,
   DEFAULT_LENS_SIDE,
   type DeckImposition,
   type ImpositionKind,
@@ -928,12 +930,15 @@ export class DeckManager implements IDeckManagerStore {
       activeCardId: firstCardId,
       title: registration.defaultTitle ?? "",
       acceptsFamilies: registration.acceptsFamilies ?? ["standard"],
-      // With an imposition running, a new card joins the arrangement at the
-      // first slot rather than walking the cascade — the arrangement is the
-      // user's stated intent for the whole deck, and a fresh card landing
-      // askew across it would be the deck ignoring it. Centered dialog cards
-      // stay centered; they are not part of the arrangement.
-      ...(this.deckState.imposition.kind !== undefined &&
+      // Under a multi-slot arrangement a new card joins it at the first slot
+      // rather than walking the cascade — the arrangement is the user's stated
+      // intent for the whole deck, and a fresh card landing askew across it
+      // would be the deck ignoring it. One-up is the deck's resting state
+      // rather than a chosen arrangement, so it claims nothing: a new card
+      // cascades as it always did and takes the single slot only by being put
+      // there. Centered dialog cards stay centered under every kind; they are
+      // not part of the arrangement.
+      ...(slotCount(this.deckState.imposition.kind ?? DEFAULT_IMPOSITION_KIND) > 1 &&
       registration.placement !== "center"
         ? { slot: 0 }
         : {}),
@@ -2455,7 +2460,10 @@ export class DeckManager implements IDeckManagerStore {
     // render, the same posture `deserialize` takes at the wire boundary.
     this.deckState = {
       ...args.state,
-      imposition: args.state.imposition ?? { lens: DEFAULT_LENS_SIDE },
+      imposition: args.state.imposition ?? {
+        kind: DEFAULT_IMPOSITION_KIND,
+        lens: DEFAULT_LENS_SIDE,
+      },
     };
 
     // Re-project the seeded `hasFocus` onto `data-app-active`. The

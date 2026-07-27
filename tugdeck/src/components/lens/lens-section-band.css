@@ -41,6 +41,14 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .lens-section > .tool-call-header {
   border-block-start: 1px solid var(--tug7-element-global-border-normal-strong-rest);
+  /* Band height. The shared `section` altitude gives its header `sm` block
+     padding, which is right for the Session card's Changes / History shades but
+     leaves a Lens band reading as one more line in the stack rather than as the
+     thing that divides it. The extra depth is the band's alone — the knob is
+     scoped to `.lens-section`, so the shared altitude is untouched.
+     TUNE the block value here. */
+  --tugx-block-strip-padding: var(--tugx-lens-band-padding-block, 10px)
+    var(--tug-space-md);
 }
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .lens-sections > .lens-section:last-child {
@@ -151,7 +159,14 @@
   border: var(--tugx-list-key-ring-width) solid var(--tugx-focus-ring);
 }
 
+/* A band's content sits in a WELL — the same recessed surface a tool block's
+   expanded body and a commit's detail stand on, a step darker than the card it
+   is cut into. Edge-to-edge rows have no frame of their own, so the surface is
+   what says where a band's content begins and its header ends: the headers ride
+   the Lens's own surface and the content sinks below them. */
+/* @tug-renders-on: --tug7-surface-card-primary-normal-well-rest */
 .lens-section-body {
+  background: var(--tug7-surface-card-primary-normal-well-rest);
   /* Anchor for the container-focus ring above. */
   position: relative;
   display: flex;

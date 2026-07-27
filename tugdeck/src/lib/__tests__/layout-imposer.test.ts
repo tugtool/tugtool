@@ -38,16 +38,17 @@ const at = (
 
 describe("kinds", () => {
   test("slotCount matches the name", () => {
+    expect(slotCount("one-up")).toBe(1);
     expect(slotCount("two-up")).toBe(2);
     expect(slotCount("three-up")).toBe(3);
     expect(slotCount("four-up")).toBe(4);
   });
 
   test("IMPOSITION_KINDS ascends by slot count", () => {
-    expect(IMPOSITION_KINDS.map(slotCount)).toEqual([2, 3, 4]);
+    expect(IMPOSITION_KINDS.map(slotCount)).toEqual([1, 2, 3, 4]);
   });
 
-  test("isImpositionKind narrows only the three kinds", () => {
+  test("isImpositionKind narrows only the four kinds", () => {
     for (const kind of IMPOSITION_KINDS) expect(isImpositionKind(kind)).toBe(true);
     for (const bogus of ["five-up", "", "TWO-UP", null, undefined, 2, {}]) {
       expect(isImpositionKind(bogus)).toBe(false);
@@ -148,6 +149,15 @@ describe("travelFraction", () => {
   test("the last slot has travelled all of it — that is why it meets the Lens", () => {
     expect(travelFraction(at(1, "left", 2))).toBe(1);
     expect(travelFraction(at(3, "left", 4))).toBe(1);
+  });
+
+  test("one-up's single slot has no travel to share", () => {
+    expect(travelFraction(at(0, "left", 1))).toBe(0);
+    expect(resolvePlacement("one-up", 3, "right")).toEqual({
+      slot: 0,
+      packFrom: "left",
+      count: 1,
+    });
   });
 
   test("the slots in between space evenly", () => {

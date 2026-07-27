@@ -13,19 +13,27 @@
  *    already reveals itself for the keyboard cursor, so the affordance is on
  *    screen before the descend arrives.
  *  - **A row's slot picker.** Same authoring, on the Sessions / Text Files rows'
- *    numbered slots — but only while an imposition is on, since the picker is
- *    the arrangement's affordance and renders nothing without one.
+ *    numbered slots. The deck always stands under an arrangement, so the picker
+ *    is always there; a multi-slot kind is what gives it more than one position.
  *  - **The Layouts tiles.** The CARDS axis lays four options out two to a row.
  *    A group whose cursor is a 1D run walks them in DOM order, so Down from
- *    "Off" landed on "Two Up" — the tile to its RIGHT. Down must mean down.
+ *    "One Up" landed on "Two Up" — the tile to its RIGHT. Down must mean down.
  *
  * The first two also pin a boundary the accessories created: the snippets list
  * declares `commitOnEnter="act"` (Enter opens the snippet), and a row that
  * gains a focusable must not let the generic Enter-descends-a-navigable-row
  * default quietly take Enter over. Right descends; Enter still opens.
  *
+ * Two more rules ride the same drive, both about the marks staying honest:
+ * the snippets list's SELECTION follows its cursor (`selectionFollowsCursor`),
+ * so the fill and the cursor bar are never on two different rows; and once the
+ * key view has descended into a row, Right / Left walk the row's accessories
+ * and Left off the first one ascends — the arrow that entered walks.
+ *
  * @covers tugdeck/src/components/lens/slot-picker.tsx
  * @covers tugdeck/src/components/lens/sections/layouts-section.tsx
+ * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/tugways/spatial-order.ts
  * @covers tugdeck/src/components/tugways/tug-slot-layout.tsx
  * @covers tugdeck/src/components/tugways/tug-slot.tsx
@@ -146,6 +154,26 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             { timeoutMs: 3_000 },
           );
 
+          // ---- A0. Selection follows the cursor: arrowing down carries the
+          // fill with it, so the lit row and the row the section verbs act on
+          // are never two different rows.
+          await app.nativeKey("ArrowDown");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(
+              `${SNIPPETS_LIST} [data-key-cursor][data-selected="true"]`,
+            )}) !== null`,
+            { timeoutMs: 3_000 },
+          );
+          // Exactly one row wears the fill — the selection MOVED with the
+          // cursor rather than a second row lighting up beside the first.
+          expect(
+            await app.evalJS<number>(
+              `document.querySelectorAll(${JSON.stringify(
+                `${SNIPPETS_LIST} .tug-list-view-cell[data-selected="true"]`,
+              )}).length`,
+            ),
+          ).toBe(1);
+
           // ---- A. ArrowRight descends onto the cursor row's Copy button.
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
@@ -164,8 +192,41 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             ),
           ).toBeGreaterThan(0);
 
-          // ---- B. Escape ascends back to the list, and Enter still OPENS the
-          // snippet rather than descending onto the accessory.
+          // ---- A1. Inside the row the horizontal arrows walk the accessories:
+          // the arrow that entered the row is the arrow that walks it, and Left
+          // off the first one is the exit.
+          await app.nativeKey("ArrowRight");
+          await app.waitForCondition<boolean>(
+            `(function(){
+              var el = document.querySelector('.lens-content [data-key-view-kbd]');
+              return el !== null && el.getAttribute('aria-label') === 'Delete snippet';
+            })()`,
+            { timeoutMs: 3_000 },
+          );
+          await app.nativeKey("ArrowLeft");
+          await app.waitForCondition<boolean>(
+            `(function(){
+              var el = document.querySelector('.lens-content [data-key-view-kbd]');
+              return el !== null && el.getAttribute('aria-label') === 'Copy snippet';
+            })()`,
+            { timeoutMs: 3_000 },
+          );
+          await app.nativeKey("ArrowLeft");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+            { timeoutMs: 3_000 },
+          );
+
+          // ---- B. Escape also ascends, and Enter still OPENS the snippet
+          // rather than descending onto the accessory.
+          await app.nativeKey("ArrowRight");
+          await app.waitForCondition<boolean>(
+            `(function(){
+              var el = document.querySelector('.lens-content [data-key-view-kbd]');
+              return el !== null && el.getAttribute('aria-label') === 'Copy snippet';
+            })()`,
+            { timeoutMs: 3_000 },
+          );
           await app.nativeKey("Escape");
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
@@ -189,7 +250,7 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             return el === null ? null : el.getAttribute('data-radio-value');
           })()`;
           await app.waitForCondition<boolean>(
-            `(${cursorValue}) === 'off'`,
+            `(${cursorValue}) === 'one-up'`,
             { timeoutMs: 3_000 },
           );
           // Right is the neighbor ACROSS the row; Down is the tile BELOW it —
@@ -201,7 +262,7 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
           );
           await app.nativeKey("ArrowLeft");
           await app.waitForCondition<boolean>(
-            `(${cursorValue}) === 'off'`,
+            `(${cursorValue}) === 'one-up'`,
             { timeoutMs: 3_000 },
           );
           await app.nativeKey("ArrowDown");
@@ -211,12 +272,13 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
           );
           await app.nativeKey("ArrowUp");
           await app.waitForCondition<boolean>(
-            `(${cursorValue}) === 'off'`,
+            `(${cursorValue}) === 'one-up'`,
             { timeoutMs: 3_000 },
           );
 
-          // ---- D. Commit "Two Up" — that turns the imposition on, which is
-          // what makes a row's slot picker exist at all.
+          // ---- D. Commit "Two Up". The deck always stands under an
+          // arrangement, so the picker is already there; committing a second
+          // slot is what gives the row two positions to walk between.
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(${cursorValue}) === 'two-up'`,
@@ -238,12 +300,20 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             })()`,
             { timeoutMs: 3_000 },
           );
-          // Inside the row's scope the slots are ordinary Tab stops, walked
-          // left→right in the order the arrangement draws them — the slots are
-          // separate buttons, not an item-group, so Tab is their plane.
-          await app.nativeKey("Tab");
+          // Inside the row's scope the slots are a run walked left→right in the
+          // order the arrangement draws them. Right walks it, and so does Tab —
+          // the row scope bounds both planes, so either reaches every slot.
+          await app.nativeKey("ArrowRight");
+          await app.waitForCondition<boolean>(
+            `(function(){
+              var el = document.querySelector('.lens-content [data-key-view-kbd]');
+              return el !== null && el.getAttribute('aria-label') === 'Put at position 2';
+            })()`,
+            { timeoutMs: 3_000 },
+          );
+          await app.nativeKey("ArrowLeft");
           await new Promise<void>((r) => setTimeout(r, 200));
-          expect(await kbdLabel(app)).toBe("Put at position 2");
+          expect(await kbdLabel(app)).toBe("Put at position 1");
         } finally {
           await app.close();
         }

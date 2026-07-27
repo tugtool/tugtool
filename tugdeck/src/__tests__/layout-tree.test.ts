@@ -202,7 +202,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       cards: [card],
       panes: [pane],
       activePaneId: "w1",
-      imposition: { lens: "right" },
+      imposition: { kind: "one-up", lens: "right" },
       hasFocus: true,
     };
     const first = serialize(state);
@@ -1192,7 +1192,7 @@ describe("imposition wire format", () => {
     expect(r.size).toEqual({ width: 800, height: 2000 });
   });
 
-  test("an imposition with no kind serializes without one and parses back off", () => {
+  test("a blob with no kind restores under the default one-up", () => {
     const state: DeckState = {
       cards: [impositionCard("c1")],
       panes: [impositionPane("p1", "c1")],
@@ -1202,11 +1202,11 @@ describe("imposition wire format", () => {
     const blob = serialize(state) as Record<string, unknown>;
     expect(blob["imposition"]).toEqual({ lens: "right" });
     const restored = deserialize(JSON.stringify(blob), 1920, 1080);
-    expect(restored.imposition.kind).toBeUndefined();
+    expect(restored.imposition.kind).toBe("one-up");
     expect(restored.panes[0].slot).toBeUndefined();
   });
 
-  test("an unreadable kind drops the imposition and every slot with it", () => {
+  test("an unreadable kind restores under the default one-up", () => {
     const blob = {
       version: 4,
       imposition: "five-up",
@@ -1214,17 +1214,10 @@ describe("imposition wire format", () => {
       panes: [impositionPane("p1", "c1", { slot: 1 })],
     };
     const restored = deserialize(JSON.stringify(blob), 1920, 1080);
-    expect(restored.imposition.kind).toBeUndefined();
-    expect(restored.panes[0].slot).toBeUndefined();
-  });
-
-  test("a slot without an imposition is dropped", () => {
-    const blob = {
-      version: 4,
-      cards: [impositionCard("c1")],
-      panes: [impositionPane("p1", "c1", { slot: 1 })],
-    };
-    expect(deserialize(JSON.stringify(blob), 1920, 1080).panes[0].slot).toBeUndefined();
+    expect(restored.imposition.kind).toBe("one-up");
+    // One-up has a single slot, so the stored slot clamps into it rather than
+    // being dropped: a deck always stands under an arrangement.
+    expect(restored.panes[0].slot).toBe(0);
   });
 
   test("an out-of-range slot clamps to the kind's last slot", () => {
