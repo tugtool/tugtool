@@ -21,6 +21,8 @@ use tracing::{debug, info, warn};
 use tugcast_core::types::{FsEvent, ScoredResult};
 use tugcast_core::{FeedId, FileTreeSnapshot, Frame, SnapshotFeed};
 
+use crate::path_resolver::CanonicalPath;
+
 use super::code::splice_workspace_key;
 use super::fuzzy_scorer::score_file_path;
 use super::secret_filter::{SecretFilter, TUGATTACHIGNORE_FILENAME};
@@ -37,9 +39,17 @@ pub struct FileTreeQuery {
 
 /// File tree feed that maintains an index and responds to scored queries.
 pub struct FileTreeFeed {
-    /// The original root (for watcher_aligned checks).
-    original_root: PathBuf,
-    /// The current indexed root.
+    /// Canonical identity of the root the FileWatcher observes — the
+    /// comparand for `watcher_aligned`. [L29]
+    original_key: CanonicalPath,
+    /// Canonical identity of the currently indexed root. Retarget
+    /// decisions compare against this, never against a raw spelling:
+    /// `--source-tree /u/src/tugtool` and the card's canonical
+    /// `/Users/…/Mounts/u/src/tugtool` name one directory, and a raw
+    /// comparison reads them as two. [L29]
+    current_key: CanonicalPath,
+    /// The current indexed root, as a path to hand to the walker and the
+    /// `SecretFilter`. Identity lives in `current_key`.
     current_root: PathBuf,
     /// The file index.
     files: BTreeSet<String>,
@@ -95,8 +105,10 @@ impl FileTreeFeed {
         // in `@`-completion.
         let secret_filter = SecretFilter::new(&root);
         let files = Self::sweep_secrets(initial_files, &secret_filter);
+        let key = CanonicalPath::from_raw(&root);
         Self {
-            original_root: root.clone(),
+            original_key: key.clone(),
+            current_key: key,
             current_root: root,
             files,
             truncated,
@@ -287,10 +299,15 @@ impl FileTreeFeed {
 
     /// Handle a query and produce a response.
     fn handle_query(&mut self, ftq: &FileTreeQuery) -> FileTreeSnapshot {
-        // Retarget if requested [D09].
+        // Retarget if requested [D09]. The client's `root` is a raw
+        // spelling — canonicalize before comparing, or a card whose
+        // project dir reaches us under a different spelling than the one
+        // the workspace was created with retargets on its first
+        // keystroke and never re-aligns. [L29]
         if let Some(ref new_root) = ftq.root {
-            if *new_root != self.current_root {
-                self.retarget(new_root);
+            let new_key = CanonicalPath::from_raw(new_root);
+            if new_key != self.current_key {
+                self.retarget(new_root, new_key);
             }
         }
         self.dispatch_query(&ftq.query)
@@ -316,16 +333,17 @@ impl FileTreeFeed {
     /// filter from the new root's `.tugattachignore` (or just the
     /// built-in denylist if no file is present) before sweeping the
     /// fresh walk through it.
-    fn retarget(&mut self, new_root: &Path) {
+    fn retarget(&mut self, new_root: &Path, new_key: CanonicalPath) {
         let (files, truncated) = super::file_watcher::walk_directory(new_root);
         self.secret_filter = SecretFilter::new(new_root);
         self.files = Self::sweep_secrets(files, &self.secret_filter);
         self.truncated = truncated;
         self.current_root = new_root.to_path_buf();
-        self.watcher_aligned = self.current_root == self.original_root;
-        debug!(
-            "FileTreeFeed: retargeted to {:?} ({} files, aligned={})",
-            self.current_root,
+        self.watcher_aligned = new_key == self.original_key;
+        self.current_key = new_key;
+        info!(
+            "FileTreeFeed: retargeted to {} ({} files, aligned={})",
+            self.current_key.as_str(),
             self.files.len(),
             self.watcher_aligned,
         );
@@ -869,6 +887,66 @@ mod tests {
             .find(|r| r.path == "newdir/")
             .expect("created dir should index in trailing-slash form");
         assert!(dir.is_dir);
+    }
+
+    /// [L29]: a query naming the workspace root under a different spelling
+    /// (here a symlinked parent, the shape `/u` → `/Users/…/Mounts/u` takes
+    /// on a real machine) must not read as a new root. A raw comparison
+    /// retargets, drops `watcher_aligned`, and freezes the index at that
+    /// instant — every file created afterwards silently stops completing.
+    #[test]
+    fn symlinked_spelling_of_the_same_root_does_not_retarget() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        // Root the feed at the symlinked spelling, the way a tugcast
+        // launched with `--source-tree /u/src/tugtool` is rooted.
+        let mut feed = test_feed_rooted(link.clone(), BTreeSet::new());
+        feed.files.insert("roadmap/plan.md".to_string());
+        assert!(feed.watcher_aligned);
+
+        // The card sends the canonical spelling the server handed it.
+        feed.handle_query(&FileTreeQuery {
+            query: "plan.md".to_string(),
+            root: Some(real.clone()),
+        });
+
+        assert!(
+            feed.watcher_aligned,
+            "same directory under two spellings must stay watcher-aligned",
+        );
+        assert!(
+            feed.files.contains("roadmap/plan.md"),
+            "index must survive — a retarget would re-walk the empty dir",
+        );
+    }
+
+    /// The retarget path still fires for a genuinely different directory:
+    /// canonicalizing the comparison must not disable [D09].
+    #[test]
+    fn genuinely_different_root_still_retargets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a");
+        let b = tmp.path().join("b");
+        std::fs::create_dir(&a).unwrap();
+        std::fs::create_dir(&b).unwrap();
+        std::fs::write(b.join("beta.txt"), "").unwrap();
+
+        let mut feed = test_feed_rooted(a, BTreeSet::new());
+        let response = feed.handle_query(&FileTreeQuery {
+            query: "beta".to_string(),
+            root: Some(b),
+        });
+
+        assert!(!feed.watcher_aligned, "a foreign root unaligns the watcher");
+        assert_eq!(
+            response.results.first().map(|r| r.path.as_str()),
+            Some("beta.txt"),
+            "retarget must re-walk into the new root",
+        );
     }
 
     /// W1: FileTreeFeed splices `workspace_key` as the first field of every
