@@ -62,6 +62,7 @@ Self-update via Sparkle landed on main (`1128c1fe4`), which makes the app an *in
 - Crash recovery and transcript reconstruction — [L23] governs *known* transitions; force-quit/SIGKILL/panic recovery is a different phase.
 - Any redesign of the composer, prompt entry, or Session card beyond what draft durability requires.
 - Changing the steady-state debounce constants (`SAVE_DEBOUNCE_MS`, `CARD_STATE_FLUSH_DEBOUNCE_MS`) — see [P09].
+- Interrupting running Shell-route commands at quit — a live `$` command still dies with the process group. Promise 2 is scoped to Claude turns; shell exchange rows are durable server-side (ShellLedger), and a shell command killed at quit behaves like any terminal closing. A deliberate scoping, not an oversight.
 - The rest of the self-update feature (appcast, signing, release workflow) — already landed.
 
 #### Dependencies / Prerequisites {#dependencies}
@@ -176,15 +177,17 @@ Self-update via Sparkle landed on main (`1128c1fe4`), which makes the app an *in
 
 #### [P03] Live turns are explicitly interrupted and awaited before any teardown (DECIDED) {#p03-interrupt-first}
 
-**Decision:** The pipeline enumerates live code sessions through `cardServicesStore` (`tugdeck/src/lib/card-services-store.ts`), calls `codeSessionStore.interrupt()` on every store whose phase is not `idle`/`errored`, and awaits each store leaving the in-flight phases (via `subscribe` + snapshot polling of `phase` / `interruptInFlight`) under a 5 s deadline.
+**Decision:** The pipeline enumerates live code sessions through `cardServicesStore` (`tugdeck/src/lib/card-services-store.ts`) and calls `codeSessionStore.interrupt()` on every store whose **published snapshot reports `canInterrupt: true`** — never a raw phase test. It then awaits each interrupted store reaching `phase ∈ {idle, errored}` (via `subscribe` + snapshot reads) under a 5 s deadline. Stores in `replaying` are **skipped entirely**: nothing durable is at risk (replay re-runs on next boot), and `canInterrupt` deliberately excludes it.
 
 **Rationale:**
 - The interrupt protocol (`interrupt` CODE_INPUT frame; CASE A/B semantics documented at `CodeSessionStore.interrupt`, `tugdeck/src/lib/code-session-store.ts`) already exists and works — termination just never invoked it (brief F2).
+- `canInterrupt` (the snapshot projection at `code-session-store.ts`, `getSnapshot`) enumerates exactly `submitting | awaiting_first_token | streaming | tool_work | awaiting_approval | waking` and excludes `replaying` — "the bracket window owns the card; the user can only watch." A raw `phase ∉ {idle, errored}` test would send `interrupt` into a replaying store; `handleInterrupt` has no `replaying` early-return, so CASE A logic would reset the store to `idle` mid-replay and corrupt the bracket. Acting on the *published* projection instead of reimplementing the phase test is [L28] ([D01]'s source→delegate doctrine).
 - 5 s comfortably contains tugcode's own ladder: `INTERRUPT_ACK_GRACE_MS` (2 s) + `FORCE_TERMINATE_SIGINT_GRACE_MS` (1.5 s) + margin.
 
 **Implications:**
 - CASE A interrupts route the un-answered submission into `pendingDraftRestore`, which the capture phase must then persist — see [P10].
-- The verdict distinguishes `interrupted` (acknowledged) from `unacknowledged` (bound expired) sessions.
+- The verdict distinguishes `interrupted` (acknowledged) from `unacknowledged` (bound expired) sessions; skipped `replaying` stores appear in neither list.
+- Every `subscribe` taken for the await is unsubscribed on acknowledgment *and* on deadline expiry — release paired with acquisition, [L27].
 
 #### [P04] Bounded everywhere: quit may be slow, never hung (DECIDED) {#p04-bounded-quit}
 
@@ -257,7 +260,8 @@ Self-update via Sparkle landed on main (`1128c1fe4`), which makes the app an *in
 - A CASE A interrupt (from [P03]) parks the submission in `pendingDraftRestore`; if React hasn't consumed it into the editor before the save callback runs, the capture must read it from the store directly rather than depend on a render tick.
 
 **Implications:**
-- `SaveCallbackSource` (deck-manager vocabulary) gains a `"termination"` member; `invokeSaveCallback` call sites are untouched (source already threads through).
+- `SaveCallbackSource` (defined in `tugdeck/src/deck-trace.ts`) gains a `"termination"` member.
+- **The source does not reach `onSave` today** — `invokeSaveCallback(id, source)` uses `source` only for the deck-trace tag; the registered callback is `() => void`. Threading it requires extending four signatures along the capture chain, all backward-compatibly (optional parameter): the callback type in `DeckManager.registerSaveCallback` (`tugdeck/src/deck-manager.ts`), the registered wrapper in `tugdeck/src/components/chrome/card-host.tsx`, `CardStateOrchestrator.captureCardState` + `CardAssembler.capture` (`tugdeck/src/card-state-orchestrator.ts`), and `onSave: (source?) => T` in `tugdeck/src/components/tugways/use-card-state-preservation.tsx`. The deck reaching into bag internals instead would violate [L10]; threading keeps capture in the cards.
 
 #### [P11] One teardown-save core behind the four entry points (DECIDED) {#p11-unified-teardown-save}
 
@@ -361,7 +365,11 @@ No new React-observed state is introduced anywhere in this plan.
 | `flushDirtyCardStates` | method (modify) | `tugdeck/src/deck-manager.ts` | returns per-card `{cardId, ok}` results |
 | `teardownSave` | method (new, private) | `tugdeck/src/deck-manager.ts` | [P11] core; wrappers delegate |
 | `prepareForTermination` | method (new) | `tugdeck/src/deck-manager.ts` | [P01] pipeline; exposed on `window.tugdeck` in `main.tsx` |
-| `SaveCallbackSource` | type (modify) | `tugdeck/src/deck-manager.ts` (or its home module) | add `"termination"` |
+| `SaveCallbackSource` | type (modify) | `tugdeck/src/deck-trace.ts` | add `"termination"` |
+| `registerSaveCallback` callback type | type (modify) | `tugdeck/src/deck-manager.ts` | `(source?: SaveCallbackSource) => void`; `invokeSaveCallback` passes it |
+| save-callback wrapper | fn (modify) | `tugdeck/src/components/chrome/card-host.tsx` | forwards `source` into the orchestrator |
+| `captureCardState` / `CardAssembler.capture` | fn/type (modify) | `tugdeck/src/card-state-orchestrator.ts` | optional `source` parameter threaded to the assembler |
+| `onSave` option type | type (modify) | `tugdeck/src/components/tugways/use-card-state-preservation.tsx` | `onSave: (source?: SaveCallbackSource) => T` |
 | `captureUnsentText` | method (new) | `tugdeck/src/lib/code-session-store.ts` | [P10]; reads `pendingDraftRestore` + `queuedSends` |
 | `forEachServices` (or equivalent iterator) | method (new) | `tugdeck/src/lib/card-services-store.ts` | pipeline enumerates live sessions; `getByTugSessionId` shows the existing iteration idiom |
 | `onSave` termination-source branch | fn (modify) | `tugdeck/src/components/tugways/tug-prompt-entry.tsx` | append `captureUnsentText()` on `"termination"` only |
@@ -488,14 +496,16 @@ No new React-observed state is introduced anywhere in this plan.
 - A live-session iterator on `cardServicesStore`.
 
 **Tasks:**
-- [ ] Interrupt phase: enumerate services, `interrupt()` non-idle stores, await `phase ∈ {idle, errored}` per store via `subscribe`, 5 s shared deadline; collect `interrupted` / `unacknowledged` by `tugSessionId`.
+- [ ] Interrupt phase: enumerate services, `interrupt()` every store whose snapshot reports `canInterrupt: true` (skip `replaying` — [P03]), await `phase ∈ {idle, errored}` per store via `subscribe`, 5 s shared deadline, unsubscribing on ack *and* on expiry ([L27]); collect `interrupted` / `unacknowledged` by `tugSessionId`.
+- [ ] Thread `source` through the capture chain ([P10] implications): `registerSaveCallback` callback type in `deck-manager.ts`, the wrapper in `components/chrome/card-host.tsx`, `captureCardState`/`CardAssembler.capture` in `card-state-orchestrator.ts`, and the `onSave` option type in `components/tugways/use-card-state-preservation.tsx` — all as optional parameters so existing callers are untouched.
 - [ ] Capture phase: `teardownSave("termination", …)` — runs after interrupts so CASE A `pendingDraftRestore` and queued text are present for `captureUnsentText()`.
 - [ ] Flush-retry phase: awaited fetch flush (no sync XHR needed here — the WebView outlives the call, [P01]); retry failed cards at 250 ms up to 5 s.
 - [ ] Assemble and return the Spec S01 verdict; guard re-entry with `terminationInProgress`.
+- [ ] Add `prepareForTermination` to the `window.tugdeck` interface declaration in `tugdeck/src/main.tsx`.
 
 **Tests:**
 - [ ] bun unit (real `CodeSessionStore`, scripted wire): a CASE A interrupt's pulled-back text and two queued sends all appear in the termination-source capture; a steady-state (`"manual"`) save does *not* include queued text.
-- [ ] bun unit: verdict shape — an unacknowledged store lands in `unacknowledged` after the (shortened-for-test) deadline; idle stores produce no interrupt frames.
+- [ ] bun unit: verdict shape — an unacknowledged store lands in `unacknowledged` after the (shortened-for-test) deadline; idle stores produce no interrupt frames; a `replaying` store is skipped (no interrupt frame, appears in neither verdict list, replay state untouched).
 - [ ] bun unit: flush retry succeeds on the Nth stubbed attempt and reports `failedCards: []`.
 
 **Checkpoint:**
@@ -522,7 +532,7 @@ No new React-observed state is introduced anywhere in this plan.
 - [ ] Add the plist guard (log + `assertionFailure` in DEBUG).
 
 **Tests:**
-- [ ] Build-level: `just app-debug` builds clean (warnings are errors in Swift too under the project settings).
+- [ ] Build-level: `just app-debug` builds clean with no new warnings (the Xcode project does not enforce warnings-as-errors — hold the line by inspection).
 
 **Checkpoint:**
 - [ ] Launch the debug app, type into a composer, ⌘Q; console shows the verdict line with `ok: true` before "shutdown"; relaunch restores the draft.
