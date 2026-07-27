@@ -100,6 +100,7 @@ import { GalleryDevChrome } from "./gallery-dev-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
+import { GalleryPulseDisplay } from "./gallery-pulse-display";
 import { GalleryTugSetup } from "./gallery-tug-setup";
 import { GalleryModalHeaders } from "./gallery-modal-headers";
 import { GalleryBlockHeader } from "./gallery-tool-call-header";
@@ -1100,6 +1101,19 @@ export function registerGalleryCards(): void {
     componentId: "gallery-tug-progress-indicator",
     contentFactory: (_cardId) => <GalleryTugProgressIndicator />,
     defaultMeta: { title: "TugProgressIndicator", icon: "Activity", closable: true },
+    family: "maker",
+    acceptsFamilies: ["maker"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  // Pulse display — design spike for the PULSE's two-level grammar
+  // (intent headline over live activity), on the session-card strip and
+  // the Lens Sessions row (including the new two-line budget).
+  registerCard({
+    componentId: "gallery-pulse-display",
+    contentFactory: (_cardId) => <GalleryPulseDisplay />,
+    defaultMeta: { title: "Pulse Display", icon: "Activity", closable: true },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
