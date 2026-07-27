@@ -119,7 +119,7 @@ import {
   type TugListViewRowSeparator,
 } from "./internal/list-view-separator";
 import { useFocusable, useFocusManager } from "./use-focusable";
-import { FocusModeContext } from "./focus-manager";
+import { FocusModeContext, KEY_WITHIN_ATTRIBUTE } from "./focus-manager";
 import type {
   FocusPolicy,
   KeyViewBehavior,
@@ -136,6 +136,20 @@ export type {
   TugListViewRowSeparatorConfig,
   TugListViewSeparatorThickness,
 } from "./internal/list-view-separator";
+
+/** Where the container focus ring is drawn — see {@link TugListViewProps.ringPlacement}. */
+export type TugListViewRingPlacement = "outset" | "inset";
+
+/**
+ * The scrollport's height, published by the component onto the scroll container
+ * so the inset ring's overlay can be exactly as tall as the visible list.
+ *
+ * A sticky child cannot ask CSS for the scrollport's height: a percentage
+ * resolves against the scroll container's content box, which for a scroller is
+ * the SCROLLED length, not the window onto it. So the component measures what
+ * only it can see and hands the number to its own stylesheet.
+ */
+const RING_HEIGHT_PROPERTY = "--tugx-list-view-ring-block-size";
 
 // ---------------------------------------------------------------------------
 // Row roles — structural classification of an item in the list
@@ -872,6 +886,34 @@ export interface TugListViewProps<
   rowSeparator?: TugListViewRowSeparator;
 
   /**
+   * Where the container focus ring is drawn.
+   *
+   *  - `"outset"` (default) — an `outline` just outside the list's box. Right
+   *    for any list with room around it: the ring lights nothing the list owns.
+   *  - `"inset"` — an overlay ring drawn INSIDE the list's own box, over the
+   *    finished rows. For an **edge-to-edge list in a clipping host** — a Lens
+   *    band, a rail — where there is nothing outside the list to paint into and
+   *    an outset ring is simply clipped away.
+   *
+   * The inset ring is an overlay rather than an inset outline or a border, and
+   * both alternatives are ruled out by the same box: a `TugListRow` is a
+   * stacking context (it owns its press layer), so it paints AFTER the
+   * container's outline and a row with an opaque fill punches a hole in the
+   * ring exactly where it sits; and a real border would take layout space,
+   * holding the rows off the host's edge, which is the whole point of an
+   * edge-to-edge list. The overlay is a zero-height sticky child pinned to the
+   * scrollport, so it neither scrolls away nor lengthens the scroll.
+   *
+   * Inset mode also insets the cursor bar by the ring's width, so the two marks
+   * stack — ring at the edge, bar just inboard of it — rather than the ring
+   * covering the bar outright.
+   *
+   * @selector [data-ring-placement="inset"]
+   * @default "outset"
+   */
+  ringPlacement?: TugListViewRingPlacement;
+
+  /**
    * Draw an accent-colored border around the selected row(s). Published
    * to descendant `TugListRow`s through `TugListRowLayoutContext`, so a
    * cell renderer's row picks it up without repeating it. A row may
@@ -1231,6 +1273,24 @@ const DEFAULT_CELL_ROLE: TugListViewCellRole = "cell";
  * empty-list state. Pure: no DOM, no side effects, just a read of the
  * data source.
  */
+/**
+ * Whether the keyboard is inside this list at all — holding the key view on the
+ * container, or descended into one of its rows (which the engine marks on the
+ * container as `data-key-within`, since the container it descended FROM is
+ * still an ancestor of the active accessory).
+ *
+ * The list's focus language is keyed off this rather than off the key view
+ * alone: a descend goes deeper into the list, so the container keeps its ring
+ * and the cursor row keeps its bar. Only leaving the list entirely puts them
+ * out.
+ */
+function keyboardIsInList(el: HTMLElement | null): boolean {
+  return (
+    el !== null &&
+    (el.hasAttribute("data-key-view-kbd") || el.hasAttribute(KEY_WITHIN_ATTRIBUTE))
+  );
+}
+
 function resolveSelectionIndex(
   current: number | null,
   dataSource: TugListViewDataSource,
@@ -1329,6 +1389,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       rowLayout,
       rowDensity,
       rowSeparator,
+      ringPlacement = "outset",
       selectedAccent = false,
       selectionSurface,
       pageByEntry,
@@ -2124,6 +2185,29 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       widthObserver.observe(scroller);
       return () => widthObserver.disconnect();
     }, [inline, offscreenSkip]);
+
+    // Publish the scrollport's height for the inset ring ([L06] — straight to
+    // the DOM, never React state). Only the component can see this number: the
+    // ring is a sticky child, and a percentage height inside a scroller
+    // resolves against the scrolled length rather than the window onto it.
+    React.useLayoutEffect(() => {
+      if (ringPlacement !== "inset") return;
+      const scroller = scrollContainerRef.current;
+      if (scroller === null) return;
+      const publish = (): void => {
+        scroller.style.setProperty(
+          RING_HEIGHT_PROPERTY,
+          `${scroller.clientHeight}px`,
+        );
+      };
+      publish();
+      const observer = new ResizeObserver(publish);
+      observer.observe(scroller);
+      return () => {
+        observer.disconnect();
+        scroller.style.removeProperty(RING_HEIGHT_PROPERTY);
+      };
+    }, [ringPlacement]);
 
     // Instantiate `SmartScroll` against the scroll container ([D07]).
     // SmartScroll owns every programmatic scroll-position write the
@@ -3141,15 +3225,19 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // ([L06]/[L22]) — mirrors `useFocusCursor`'s projection, but index-keyed off
     // `cellElementMapRef` so it composes with windowing (a cursor row scrolled
     // into view mounts, then the per-commit re-projection effect below stamps it).
-    // The bar is a KEYBOARD mark: it paints only while the container holds the
-    // keyboard key view (`data-key-view-kbd`). A pointer click parks the cursor
-    // index without painting — otherwise a clicked list keeps a bar the kbd-loss
-    // clear can never reach (it never held the key view), and a later keyboard
-    // entry into a sibling list shows two bars at once.
+    // The bar is a KEYBOARD mark: it paints only while the keyboard is IN this
+    // list — holding the key view (`data-key-view-kbd`), or descended into one
+    // of its rows, which the engine marks on the container as `data-key-within`.
+    // Descending is going deeper into the cursor row, not leaving it, so the bar
+    // stays: it is what says which row the accessory under the cursor belongs
+    // to. A pointer click parks the cursor index without painting either mark —
+    // otherwise a clicked list keeps a bar the kbd-loss clear can never reach
+    // (it never held the key view), and a later keyboard entry into a sibling
+    // list shows two bars at once.
     const projectCursor = React.useCallback((): void => {
-      const kbd =
-        scrollContainerRef.current?.hasAttribute("data-key-view-kbd") === true;
-      const target = kbd ? cursorIndexRef.current : -1;
+      const target = keyboardIsInList(scrollContainerRef.current)
+        ? cursorIndexRef.current
+        : -1;
       for (const [i, el] of cellElementMapRef.current) {
         if (i === target) el.setAttribute(KEY_CURSOR_ATTRIBUTE, "");
         else el.removeAttribute(KEY_CURSOR_ATTRIBUTE);
@@ -3554,7 +3642,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const onChange = (): void => {
         const el = scrollContainerRef.current;
         if (el === null) return;
-        const kbd = el.hasAttribute("data-key-view-kbd");
+        // "In the list" rather than "holds the key view", so a descend into a
+        // row is not a loss: the cursor keeps its place AND its bar, and the
+        // ascend back out is not a re-entry that re-seeds it.
+        const kbd = keyboardIsInList(el);
         if (kbd && !wasKbdRef.current) {
           if (cursorIndexRef.current < 0) {
             // Seed the cursor on the active row. The surface-supplied active row
@@ -3619,7 +3710,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       if (cur >= 0 && !isCursorableRow(cur)) {
         cursorIndexRef.current = cursorableNear(cur, -1);
       }
-      if (el.hasAttribute("data-key-view-kbd") && cursorIndexRef.current >= 0) {
+      if (keyboardIsInList(el) && cursorIndexRef.current >= 0) {
         projectCursor();
       } else {
         clearCursorVisual();
@@ -3978,6 +4069,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         data-tug-scroll-key={scrollKey ?? "tug-list-view"}
         data-row-layout={rowLayout}
         data-row-separator={rowSeparatorMode}
+        data-ring-placement={ringPlacement === "inset" ? "inset" : undefined}
         data-selection-surface={
           selectionSurface === "control" ? "control" : undefined
         }
@@ -4007,6 +4099,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             : 0
         }
       >
+        {/* The inset container-focus ring: a zero-height sticky child pinned to
+            the scrollport, whose overlay paints over the finished rows. First
+            in the box so nothing above it can be scrolled between it and the
+            top edge it holds. */}
+        {ringPlacement === "inset" ? (
+          <div className="tug-list-view-ring" aria-hidden="true" />
+        ) : null}
         <div
           ref={topSpacerRef}
           className="tug-list-view-spacer tug-list-view-spacer--top"

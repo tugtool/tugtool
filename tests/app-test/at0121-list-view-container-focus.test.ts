@@ -21,6 +21,7 @@
  *     (its ring) while the container holds the key view.
  *
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/components/tugways/tug-list-view.css
  * @covers tugdeck/src/components/tugways/tug-list-row.tsx
  * @covers tugdeck/src/components/tugways/tug-list-row.css
  * @covers tugdeck/src/components/tugways/focus-manager.ts

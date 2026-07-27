@@ -129,35 +129,11 @@
 }
 
 /* ---- Container focus on an edge-to-edge list ----
-   The list runs the full width of the rail, so `TugListView`'s own perimeter
-   ring — an `outline` just outside the list's box — falls in the Lens's clipped
-   overflow and never paints. The ring has to come inside, and an inset outline
-   cannot: a `TugListRow` is a stacking context (it owns the press layer), and a
-   layer's outline is painted BEFORE its positioned children, so the ring
-   disappeared behind any row carrying an opaque fill — a selected row punched a
-   hole in the ring exactly where it sat. So the band draws the ring itself, as
-   an overlay over the finished list, where no paint order is left to lose.
-
-   The bar the cursor row wears would be under that ring's leading edge, both
-   being one ring-width at the same x. `--tugx-list-view-cursor-bar-inset` slides
-   the bar inboard by the ring's width so the two marks stack: the ring says the
-   list is focused, the bar just inside it says which row. */
-.lens-section-body .tug-list-view {
-  --tugx-list-view-cursor-bar-inset: var(--tugx-list-key-ring-width);
-}
-.lens-section-body .tug-list-view[data-key-view-kbd] {
-  outline: none;
-}
-/* Above the snippet card's pinned header (2) and the reorder drop caret (2);
-   below the dragged band's lift (3), which is on the section, not in the body. */
-.lens-section-body:has(.tug-list-view[data-key-view-kbd])::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  border: var(--tugx-list-key-ring-width) solid var(--tugx-focus-ring);
-}
+   A Lens band's list runs the full width of the rail inside clipped overflow,
+   so its ring has to be drawn inside its own box. That is `TugListView`'s
+   `ringPlacement="inset"`, which the three list sections pass — the component
+   owns the ring, the cursor-bar inset that stacks under it, and holding both
+   through a descend into a row. Nothing here. */
 
 /* A band's content sits in a WELL — the same recessed surface a tool block's
    expanded body and a commit's detail stand on, a step darker than the card it
@@ -167,7 +143,7 @@
 /* @tug-renders-on: --tug7-surface-card-primary-normal-well-rest */
 .lens-section-body {
   background: var(--tug7-surface-card-primary-normal-well-rest);
-  /* Anchor for the container-focus ring above. */
+  /* Anchor for the drag lift and the section's own overlays. */
   position: relative;
   display: flex;
   flex-direction: column;

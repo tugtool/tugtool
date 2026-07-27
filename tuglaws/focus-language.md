@@ -116,6 +116,9 @@ For any focusable, the engine projects these attributes; CSS reads them ([L06]).
 | `data-default-ring` | a button | the recommended-default ring (engine-owned; one per scope) |
 | `data-key-within` | a container | the quiet "contains the active control" mark |
 
+**A descend goes deeper into a container, not out of it.** When the keyboard descends from an item-group onto a control inside one of its items — a list row's accessories, an accordion section's content — the container drops the key view and wears `data-key-within`. The quiet mark is right for a container the keyboard has genuinely left the surface of (a sheet holding an open popover), but a group whose own item is the descend's destination should keep its **full** marks: the container ring says which group the control belongs to, and the item cursor says which item. `TugListView` does exactly that — the container ring and the cursor bar both hold through a descend, and only leaving the list puts them out. A lone ring on an accessory with nothing lit around it is a control with no address.
+
+
 Role resolves from a prop (or a validation class) to the matching `--tug7-…-filled-{role}-*` family; default `action`. The geometry/color knobs are the `--tugx-focus-*` tokens.
 
 ---
@@ -202,6 +205,7 @@ Building a control or surface that participates in the language:
 - **Never focus the resting editor directly from a lifecycle trigger.** Any reclaim that can fire while a card-modal dialog is pending must resolve the card's focus destination through the [P20] gate (`adoptKeyCard`, or the session card's `reclaimFocusDestination`) — see "The card's focus destination — one rule."
 - **Declare the arrow order** with `useSpatialOrder(rowGridOrder([...]))` (or a hand-built `SpatialOrder`). For a **dialog/sheet/alert**, the `useSpatialOrder` call must run **inside** the trap's `FocusModeScope` — mount a small null-rendering registrar there (see `AlertSpatialOrder` / `ConfirmPopoverSpatialOrder`); calling it in the component body binds the order to the mode *above* the trap ([L03]).
 - **The engine is structure** ([L22]). Key view, cursor, scope stack, and cycling-mode push/pop are the `FocusManager`'s; never mirror them in `useState`.
+- **A container's ring is the container's to draw.** If a surface's shape defeats a component's default ring — an edge-to-edge list in a clipping host, where an outset outline falls outside the overflow and never paints — the fix is a mode ON THE COMPONENT (`TugListView`'s `ringPlacement="inset"`), not a ring hand-rolled in the host's stylesheet against the component's internal attributes. A host that draws another component's focus marks owns a copy of the language, and the copy is what goes stale when the language moves.
 
 Reference implementations: `TugConfirmPopover` and `TugAlert` (dialog button rows), the session-card pickers and `gallery-sheet` bodies (field + buttons), `TugListView` (item-group + cursor).
 

@@ -15,24 +15,25 @@
  * ## Where a slot is
  *
  * A slot is an **anchor at a fixed fraction of the band**, and nothing else in
- * the deck moves it. Numbering runs from the edge farthest from the Lens toward
- * the Lens: a right-docked Lens numbers left-to-right, a left-docked Lens
- * numbers right-to-left, and a closed Lens numbers left-to-right.
+ * the deck moves it. **Numbering always runs left to right** — slot 1 is the
+ * leftmost position on the deck, whatever side the Lens holds and whether or
+ * not it is open. A number that means "left" on one deck and "right" on another
+ * is a number you have to think about before you can use it.
  *
- * Slot 0 hugs the far edge; the last slot hugs the Lens. In between the anchors
- * space evenly. One rule says all of it — for a pane of width `w` in slot `k`
- * of an `N`-slot imposition, measured from the packing edge:
+ * Slot 0 hugs the band's left edge; the last slot hugs its right. In between
+ * the anchors space evenly. One rule says all of it — for a pane of width `w`
+ * in slot `k` of an `N`-slot imposition, measured from the band's left edge:
  *
  * ```
  *   offset = k / (N - 1) × max(0, band - w)
  * ```
  *
- * `band - w` is the pane's **travel**: how far it can slide before its far edge
- * leaves the band. At slot 0 it has travelled none of it and sits on the far
- * edge; at slot `N-1` it has travelled all of it and its far edge lands exactly
- * on the Lens. That is what makes "the card in the last slot is the one beside
- * the Lens" true by construction rather than by arithmetic that happens to work
- * out.
+ * `band - w` is the pane's **travel**: how far it can slide before its right
+ * edge leaves the band. At slot 0 it has travelled none of it and sits on the
+ * band's left edge; at slot `N-1` it has travelled all of it and its right edge
+ * lands exactly on the band's right edge. That is what makes "the card in the
+ * last slot is the one at the far end" true by construction rather than by
+ * arithmetic that happens to work out.
  *
  * **One-up is the one exception.** A single anchor has no ends to space against
  * the edges — the rule reads `0 / 0` — so its slot takes half the travel and
@@ -247,16 +248,8 @@ export function clampSlot(kind: ImpositionKind, slot: number): number {
 }
 
 /* ---------------------------------------------------------------------------
- * Packing
+ * Placement
  * ---------------------------------------------------------------------------*/
-
-/** Which edge the chain of cards starts from. */
-export type PackFrom = "left" | "right";
-
-/** The chain runs away from the Lens, so the rail's side picks the edge. */
-export function packFromForRail(railSide: "left" | "right" | null): PackFrom {
-  return railSide === "left" ? "right" : "left";
-}
 
 /** One pane's place in the arrangement — everything a frame needs to position
  *  itself, and no more.
@@ -272,8 +265,6 @@ export function packFromForRail(railSide: "left" | "right" | null): PackFrom {
 export interface ImposedPlacement {
   /** The pane's slot, already clamped to the kind. */
   slot: number;
-  /** Which edge slot 0 sits on, and which way the numbering runs. */
-  packFrom: PackFrom;
   /** How many slots the kind defines. */
   count: number;
 }
@@ -282,28 +273,28 @@ export interface ImposedPlacement {
  * Resolve one pane's place from its slot and the deck's arrangement. `slot`
  * is clamped to the kind, so shrinking four-up to two-up pulls the outer slots
  * in rather than dropping their panes out of the arrangement.
+ *
+ * The Lens's side is not an input. It moves the band's edges — which is the
+ * insets' job, not the numbering's — and slot 1 is the leftmost position on
+ * either deck.
  */
 export function resolvePlacement(
   kind: ImpositionKind,
   slot: number,
-  lensSide: LensSide | null,
 ): ImposedPlacement {
-  return {
-    slot: clampSlot(kind, slot),
-    packFrom: packFromForRail(lensSide),
-    count: slotCount(kind),
-  };
+  return { slot: clampSlot(kind, slot), count: slotCount(kind) };
 }
 
 /**
  * A slot's share of the band's travel: `slot / (slots - 1)`, in `[0, 1]`. Slot
- * 0 gives 0 (hug the far edge) and the last slot gives 1 (hug the Lens).
+ * 0 gives 0 (hug the band's left edge) and the last slot gives 1 (hug its
+ * right).
  *
  * **One-up is the special case.** With a single anchor there is no chain to
  * number, so the rule that spaces the ends against the edges has nothing to
  * space: `0 / 0`. Its one slot takes HALF the travel instead — the card stands
  * centered in the band, with the slack split evenly on both sides. A lone card
- * shoved against the far edge would read as a two-up arrangement missing its
+ * shoved against the left edge would read as a two-up arrangement missing its
  * partner; centered, it reads as the one thing on the deck, which is what
  * one-up means.
  */
@@ -374,10 +365,7 @@ export function imposeRect(
   const bandWidth = span.width - IMPOSITION_GAP_PX * 2;
   const travel = Math.max(0, bandWidth - paneWidth);
   const offset = travelFraction(placement) * travel;
-  const x =
-    placement.packFrom === "left"
-      ? span.x + IMPOSITION_GAP_PX + offset
-      : span.x + span.width - IMPOSITION_GAP_PX - offset - paneWidth;
+  const x = span.x + IMPOSITION_GAP_PX + offset;
   return {
     position: { x, y: IMPOSITION_GAP_PX },
     size: {
@@ -389,7 +377,7 @@ export function imposeRect(
 
 /**
  * The CSS form: inline frame styles that pin the pane to its slot's anchor. One
- * horizontal pin, measured from the packing edge: the Lens inset, the gap, and
+ * horizontal pin, always measured from the left: the left inset, the gap, and
  * this slot's share of the pane's travel across the band.
  *
  * The travel is a `max()` over the live band, so the browser is the one that
@@ -397,13 +385,12 @@ export function imposeRect(
  * reflow. That is the whole of the deck's response to a window or display
  * resize.
  *
- * The pin is emitted as `left` either way. A right-measured anchor becomes
- * `100% - inset - gap - width - offset`, which describes the same place while
- * keeping every imposed frame on one property — the requirement for animating
- * between two arrangements rather than cutting between them. Both forms carry
- * a percentage term — the left-measured one an explicit `0%` — so the two are
- * the same kind of value and a flip has something to interpolate; a bare length
- * on one side and a percentage on the other cuts.
+ * Because the numbering never turns around, the pin's *shape* is the same on
+ * every deck — only the two inset terms change when the Lens crosses. That is
+ * what a flip has to interpolate: one expression, same form on both sides. (An
+ * arrangement that measured from the right when the Lens was left would be
+ * swapping a bare length for a percentage, which is not the same kind of value
+ * and cuts instead of crossing.)
  *
  * The vertical run is the top gap down to the deeper bottom gap. A collapsed
  * pane keeps its horizontal pin and its top pin but releases the bottom one, so
@@ -426,10 +413,7 @@ export function imposeStyle(
   // `k / (N - 1) × max(0, band - width)` — see the module note.
   const offset =
     fraction === 0 ? "0px" : `${fraction} * max(0px, ${band} - ${paneWidth}px)`;
-  style.left =
-    placement.packFrom === "left"
-      ? `calc(0% + ${INSET_LEFT} + ${GAP} + ${offset})`
-      : `calc(100% - ${INSET_RIGHT} - ${GAP} - ${paneWidth}px - ${offset})`;
+  style.left = `calc(0% + ${INSET_LEFT} + ${GAP} + ${offset})`;
   return style;
 }
 

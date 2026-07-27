@@ -9,7 +9,6 @@ import {
   imposeStyle,
   imposeLensStyle,
   isImpositionKind,
-  packFromForRail,
   resolvePlacement,
   resolveSpan,
   slotCount,
@@ -30,11 +29,7 @@ const LENS_LEFT: ImposerSpan = { x: 265, width: 735, height: 800 };
 const LENS_RIGHT: ImposerSpan = { x: 0, width: 735, height: 800 };
 
 /** Terse placement literal for the geometry cases. */
-const at = (
-  slot: number,
-  packFrom: "left" | "right",
-  count: number,
-): ImposedPlacement => ({ slot, packFrom, count });
+const at = (slot: number, count: number): ImposedPlacement => ({ slot, count });
 
 describe("kinds", () => {
   test("slotCount matches the name", () => {
@@ -93,17 +88,6 @@ describe("clampSlot", () => {
   });
 });
 
-describe("packFromForRail", () => {
-  test("the chain runs away from the rail", () => {
-    expect(packFromForRail("right")).toBe("left");
-    expect(packFromForRail("left")).toBe("right");
-  });
-
-  test("a closed Lens packs left", () => {
-    expect(packFromForRail(null)).toBe("left");
-  });
-});
-
 describe("resolveSpan", () => {
   const canvas = { width: 1000, height: 800 };
 
@@ -122,60 +106,54 @@ describe("resolveSpan", () => {
 
 describe("resolvePlacement", () => {
   test("the count is the kind's, whatever the deck holds", () => {
-    expect(resolvePlacement("two-up", 0, "right").count).toBe(2);
-    expect(resolvePlacement("three-up", 0, "right").count).toBe(3);
-    expect(resolvePlacement("four-up", 0, "right").count).toBe(4);
+    expect(resolvePlacement("two-up", 0).count).toBe(2);
+    expect(resolvePlacement("three-up", 0).count).toBe(3);
+    expect(resolvePlacement("four-up", 0).count).toBe(4);
   });
 
-  test("the numbering runs away from the Lens", () => {
-    expect(resolvePlacement("three-up", 1, "right").packFrom).toBe("left");
-    expect(resolvePlacement("three-up", 1, "left").packFrom).toBe("right");
-    expect(resolvePlacement("three-up", 1, null).packFrom).toBe("left");
+  test("a placement is the slot and the count, and nothing about the Lens", () => {
+    expect(resolvePlacement("three-up", 1)).toEqual({ slot: 1, count: 3 });
   });
 
   test("an out-of-range slot clamps to the kind", () => {
-    expect(resolvePlacement("two-up", 9, "right").slot).toBe(1);
-    expect(resolvePlacement("two-up", -4, "right").slot).toBe(0);
-    expect(resolvePlacement("four-up", 2.9, "right").slot).toBe(2);
+    expect(resolvePlacement("two-up", 9).slot).toBe(1);
+    expect(resolvePlacement("two-up", -4).slot).toBe(0);
+    expect(resolvePlacement("four-up", 2.9).slot).toBe(2);
   });
 });
 
 describe("travelFraction", () => {
   test("slot 0 has travelled none of the band", () => {
-    expect(travelFraction(at(0, "left", 2))).toBe(0);
-    expect(travelFraction(at(0, "left", 4))).toBe(0);
+    expect(travelFraction(at(0, 2))).toBe(0);
+    expect(travelFraction(at(0, 4))).toBe(0);
   });
 
   test("the last slot has travelled all of it — that is why it meets the Lens", () => {
-    expect(travelFraction(at(1, "left", 2))).toBe(1);
-    expect(travelFraction(at(3, "left", 4))).toBe(1);
+    expect(travelFraction(at(1, 2))).toBe(1);
+    expect(travelFraction(at(3, 4))).toBe(1);
   });
 
   test("one-up's single slot takes half the travel — the card centers", () => {
-    expect(travelFraction(at(0, "left", 1))).toBe(0.5);
-    expect(resolvePlacement("one-up", 3, "right")).toEqual({
-      slot: 0,
-      packFrom: "left",
-      count: 1,
-    });
+    expect(travelFraction(at(0, 1))).toBe(0.5);
+    expect(resolvePlacement("one-up", 3)).toEqual({ slot: 0, count: 1 });
   });
 
   test("the slots in between space evenly", () => {
-    expect(travelFraction(at(1, "left", 3))).toBeCloseTo(0.5, 9);
-    expect(travelFraction(at(1, "left", 4))).toBeCloseTo(1 / 3, 9);
-    expect(travelFraction(at(2, "left", 4))).toBeCloseTo(2 / 3, 9);
+    expect(travelFraction(at(1, 3))).toBeCloseTo(0.5, 9);
+    expect(travelFraction(at(1, 4))).toBeCloseTo(1 / 3, 9);
+    expect(travelFraction(at(2, 4))).toBeCloseTo(2 / 3, 9);
   });
 });
 
 describe("imposeRect", () => {
   test("slot 0 sits a gap in from the span's near edge", () => {
-    expect(imposeRect(at(0, "left", 2), 400, FULL).position.x).toBe(GAP);
-    expect(imposeRect(at(0, "left", 4), 400, FULL).position.x).toBe(GAP);
+    expect(imposeRect(at(0, 2), 400, FULL).position.x).toBe(GAP);
+    expect(imposeRect(at(0, 4), 400, FULL).position.x).toBe(GAP);
   });
 
   test("the last slot's far edge lands a gap short of the band's", () => {
     for (const [count, width] of [[2, 400], [3, 300], [4, 220]] as const) {
-      const r = imposeRect(at(count - 1, "left", count), width, FULL);
+      const r = imposeRect(at(count - 1, count), width, FULL);
       expect(r.position.x + r.size.width).toBe(FULL.width - GAP);
     }
   });
@@ -185,9 +163,9 @@ describe("imposeRect", () => {
     // here for a sibling opening, closing, or resizing to arrive through. This
     // is the property the whole model rests on: a slot is a place in the
     // arrangement, never a place in a queue.
-    const slotOne = at(1, "left", 2);
+    const slotOne = at(1, 2);
     expect(imposeRect(slotOne, 400, FULL).position.x).toBe(
-      imposeRect(resolvePlacement("two-up", 1, "right"), 400, FULL).position.x,
+      imposeRect(resolvePlacement("two-up", 1), 400, FULL).position.x,
     );
     // Two-up, 990 of band, a 400 card: 590 of travel.
     expect(imposeRect(slotOne, 400, FULL).position.x).toBe(GAP + 590);
@@ -195,14 +173,14 @@ describe("imposeRect", () => {
 
   test("one-up centers the card, with the slack split evenly", () => {
     // 990 of band, a 400 card: 590 of travel, half of it on each side.
-    const r = imposeRect(resolvePlacement("one-up", 0, "right"), 400, FULL);
+    const r = imposeRect(resolvePlacement("one-up", 0), 400, FULL);
     expect(r.position.x).toBe(GAP + 295);
     expect(r.position.x - GAP).toBe(FULL.width - GAP - (r.position.x + r.size.width));
   });
 
   test("slots with room space evenly across the band", () => {
     const xs = [0, 1, 2].map(
-      (k) => imposeRect(at(k, "left", 3), 300, FULL).position.x,
+      (k) => imposeRect(at(k, 3), 300, FULL).position.x,
     );
     expect(xs).toEqual([5, 350, 695]);
     // Equal air between neighbours, rather than pooled at one end.
@@ -211,7 +189,7 @@ describe("imposeRect", () => {
 
   test("a crowded band overlaps instead of running past it", () => {
     // Three 500s in a 990 band: 510 too many, shared over two intervals.
-    const rects = [0, 1, 2].map((k) => imposeRect(at(k, "left", 3), 500, FULL));
+    const rects = [0, 1, 2].map((k) => imposeRect(at(k, 3), 500, FULL));
     expect(rects.map((r) => r.position.x)).toEqual([5, 250, 495]);
     const overlaps = [0, 1].map(
       (i) => rects[i].position.x + rects[i].size.width - rects[i + 1].position.x,
@@ -223,7 +201,7 @@ describe("imposeRect", () => {
   });
 
   test("four-up shares the crowding three ways", () => {
-    const rects = [0, 1, 2, 3].map((k) => imposeRect(at(k, "left", 4), 500, FULL));
+    const rects = [0, 1, 2, 3].map((k) => imposeRect(at(k, 4), 500, FULL));
     const overlaps = [0, 1, 2].map(
       (i) => rects[i].position.x + rects[i].size.width - rects[i + 1].position.x,
     );
@@ -234,36 +212,37 @@ describe("imposeRect", () => {
   });
 
   test("an overlapping arrangement never reaches under the Lens", () => {
-    const last = imposeRect(at(2, "left", 3), 500, LENS_RIGHT);
+    const last = imposeRect(at(2, 3), 500, LENS_RIGHT);
     const lensNearEdge = LENS_RIGHT.x + LENS_RIGHT.width;
     expect(last.position.x + last.size.width).toBe(lensNearEdge - GAP);
   });
 
-  test("a left-side Lens numbers from the right, and slot 0 hugs the far edge", () => {
-    const a = imposeRect(at(0, "right", 2), 300, LENS_LEFT);
-    const b = imposeRect(at(1, "right", 2), 300, LENS_LEFT);
-    // Slot 0 sits on the canvas's right edge, a gap in.
-    expect(a.position.x + a.size.width).toBe(995);
-    // Slot 1 — the last — meets the Lens.
-    expect(b.position.x).toBe(LENS_LEFT.x + GAP);
+  test("a left-side Lens numbers left to right too — slot 0 is beside it", () => {
+    const a = imposeRect(at(0, 2), 300, LENS_LEFT);
+    const b = imposeRect(at(1, 2), 300, LENS_LEFT);
+    // Slot 1 is the leftmost position on this deck, which is the one against
+    // the Lens. The Lens's side moves the band, never the numbering.
+    expect(a.position.x).toBe(LENS_LEFT.x + GAP);
+    // The last slot's right edge lands a gap short of the canvas's right.
+    expect(b.position.x + b.size.width).toBe(995);
   });
 
   test("a right-docked Lens leaves slot 0 exactly where a closed one does", () => {
-    expect(imposeRect(at(0, "left", 2), 300, LENS_RIGHT).position.x).toBe(
-      imposeRect(at(0, "left", 2), 300, FULL).position.x,
+    expect(imposeRect(at(0, 2), 300, LENS_RIGHT).position.x).toBe(
+      imposeRect(at(0, 2), 300, FULL).position.x,
     );
   });
 
   test("a card wider than the band has no travel, so every slot is the far edge", () => {
     for (const k of [0, 1]) {
-      const rect = imposeRect(at(k, "left", 2), 1400, FULL);
+      const rect = imposeRect(at(k, 2), 1400, FULL);
       expect(rect.position.x).toBe(GAP);
       expect(rect.size.width).toBe(1400);
     }
   });
 
   test("the run is the span height less the top gap and the deeper bottom", () => {
-    const rect = imposeRect(at(0, "left", 2), 321, LENS_LEFT);
+    const rect = imposeRect(at(0, 2), 321, LENS_LEFT);
     expect(rect.position.y).toBe(IMPOSITION_GAP_PX);
     expect(rect.size.height).toBe(
       LENS_LEFT.height - IMPOSITION_GAP_PX - IMPOSITION_GAP_BOTTOM_PX,
@@ -273,7 +252,7 @@ describe("imposeRect", () => {
   test("width is a pass-through for every span", () => {
     for (const span of [FULL, LENS_LEFT, LENS_RIGHT]) {
       for (const w of [1, 120, 640, 4000]) {
-        expect(imposeRect(at(0, "left", 2), w, span).size.width).toBe(w);
+        expect(imposeRect(at(0, 2), w, span).size.width).toBe(w);
       }
     }
   });
@@ -285,7 +264,7 @@ describe("imposeStyle", () => {
     " - var(--tug-imposer-inset-right, 0px) - 5px * 2)";
 
   test("a left-numbered pane pins its left edge against the left inset", () => {
-    expect(imposeStyle(at(1, "left", 2), 300, false)).toEqual({
+    expect(imposeStyle(at(1, 2), 300, false)).toEqual({
       width: "300px",
       height: "auto",
       top: "5px",
@@ -296,48 +275,29 @@ describe("imposeStyle", () => {
     });
   });
 
-  test("a right-numbered pane still pins with `left`, measured from 100%", () => {
-    const style = imposeStyle(at(1, "right", 2), 400, false);
-    expect(style.right).toBeUndefined();
-    expect(style.left).toBe(
-      "calc(100% - var(--tug-imposer-inset-right, 0px) - 5px - 400px - " +
-        `1 * max(0px, ${BAND} - 400px))`,
-    );
-  });
-
   test("slot 0 has travelled nothing, so it carries no max() at all", () => {
-    const style = imposeStyle(at(0, "left", 3), 400, false);
+    const style = imposeStyle(at(0, 3), 400, false);
     expect(style.left).toBe("calc(0% + var(--tug-imposer-inset-left, 0px) + 5px + 0px)");
     expect(style.left).not.toContain("max(");
   });
 
-  // Slot 0 packed left is the one pin with no percentage of its own; without
-  // the explicit `0%` it computes to a bare length, and a flip to the
-  // right-measured form has two kinds of value to cross between and cuts.
-  test("both packing directions are percentage-bearing calcs", () => {
-    for (const from of ["left", "right"] as const) {
-      expect(String(imposeStyle(at(0, from, 3), 400, false).left)).toMatch(
-        /^calc\(.*%/,
+  // The pin's SHAPE is the same on every deck and in every slot — only the
+  // inset terms and the fraction differ. That is what a Lens flip has to
+  // interpolate; a pin that turned around and measured from `100%` would be
+  // swapping a percentage for a bare length, which has nothing to cross.
+  test("every pin has the same shape: `left`, from the left inset", () => {
+    for (const slot of [0, 1, 2]) {
+      const style = imposeStyle(at(slot, 3), 400, false);
+      expect(style.transform).toBeUndefined();
+      expect(style.right).toBeUndefined();
+      expect(String(style.left)).toStartWith(
+        "calc(0% + var(--tug-imposer-inset-left, 0px) + 5px + ",
       );
     }
   });
 
-  test("every pane pins with `left` alone — never `right`, never a transform", () => {
-    // One property carries the whole horizontal position on both sides, which
-    // is what lets a frame TRANSITION between two arrangements instead of
-    // cutting between them.
-    for (const packFrom of ["left", "right"] as const) {
-      for (const slot of [0, 1]) {
-        const style = imposeStyle(at(slot, packFrom, 2), 300, false);
-        expect(style.transform).toBeUndefined();
-        expect(style.right).toBeUndefined();
-        expect(typeof style.left).toBe("string");
-      }
-    }
-  });
-
   test("collapsed releases the bottom pin and nothing else", () => {
-    const collapsed = imposeStyle(at(0, "left", 2), 640, true);
+    const collapsed = imposeStyle(at(0, 2), 640, true);
     expect(collapsed).toEqual({
       width: "640px",
       height: "auto",
@@ -348,7 +308,7 @@ describe("imposeStyle", () => {
   });
 
   test("the width is always the pane's own, verbatim", () => {
-    expect(imposeStyle(at(0, "left", 2), 987, false).width).toBe("987px");
+    expect(imposeStyle(at(0, 2), 987, false).width).toBe("987px");
   });
 });
 
@@ -422,18 +382,18 @@ describe("the arrangement clears the Lens by exactly one gap", () => {
   for (const W of [260, 420, 500]) {
     test(`a ${W}px right-side Lens leaves the last slot one gap off it`, () => {
       const span = resolveSpan(CANVAS, { side: "right", width: W });
-      const rect = imposeRect(at(1, "left", 2), 240, span);
+      const rect = imposeRect(at(1, 2), 240, span);
       expect(rect.position.x + rect.size.width).toBe(CANVAS.width - GAP - W - GAP);
-      expect(imposeRect(at(0, "left", 2), 240, span).position.x).toBe(GAP);
+      expect(imposeRect(at(0, 2), 240, span).position.x).toBe(GAP);
     });
 
-    test(`a ${W}px left-side Lens leaves the last slot one gap off it`, () => {
+    test(`a ${W}px left-side Lens leaves slot 1 one gap off it`, () => {
       const span = resolveSpan(CANVAS, { side: "left", width: W });
-      const rect = imposeRect(at(1, "right", 2), 240, span);
-      expect(rect.position.x).toBe(GAP + W + GAP);
-      expect(
-        imposeRect(at(0, "right", 2), 240, span).position.x + 240,
-      ).toBe(CANVAS.width - GAP);
+      // Slot 1 is the leftmost position, so on this deck it is the one against
+      // the Lens; the last slot runs to the canvas's right edge.
+      expect(imposeRect(at(0, 2), 240, span).position.x).toBe(GAP + W + GAP);
+      const last = imposeRect(at(1, 2), 240, span);
+      expect(last.position.x + last.size.width).toBe(CANVAS.width - GAP);
     });
   }
 });
@@ -452,14 +412,13 @@ describe("the CSS and numeric forms agree", () => {
     const insetRight = canvasWidth - span.x - span.width;
     const band = canvasWidth - insetLeft - insetRight - GAP * 2;
     const offset = travelFraction(placement) * Math.max(0, band - paneWidth);
-    if (placement.packFrom === "left") return insetLeft + GAP + offset;
-    return canvasWidth - insetRight - GAP - paneWidth - offset;
+    return insetLeft + GAP + offset;
   }
 
-  const CASES: Array<[ImposerSpan, number, "left" | "right" | null]> = [
-    [FULL, 1000, null],
-    [LENS_RIGHT, 1000, "right"],
-    [LENS_LEFT, 1000, "left"],
+  const CASES: Array<[ImposerSpan, number]> = [
+    [FULL, 1000],
+    [LENS_RIGHT, 1000],
+    [LENS_LEFT, 1000],
   ];
 
   for (const [name, widths] of [
@@ -467,9 +426,9 @@ describe("the CSS and numeric forms agree", () => {
     ["a crowded arrangement", [500, 500, 500]],
   ] as const) {
     test(`${name} matches imposeRect everywhere`, () => {
-      for (const [span, canvasWidth, lensSide] of CASES) {
+      for (const [span, canvasWidth] of CASES) {
         widths.forEach((width, slot) => {
-          const placement = resolvePlacement("three-up", slot, lensSide);
+          const placement = resolvePlacement("three-up", slot);
           expect(evaluatePin(placement, width, span, canvasWidth)).toBeCloseTo(
             imposeRect(placement, width, span).position.x,
             9,

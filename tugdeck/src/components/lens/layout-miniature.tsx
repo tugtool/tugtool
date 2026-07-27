@@ -55,8 +55,8 @@ export interface LayoutMiniatureProps {
 /**
  * LayoutMiniature — the deck, drawn small.
  *
- * With `lens` set, the Lens is a strip on that side and the cards pack away
- * from it, exactly as `packFromForRail` decides for the real deck.
+ * With `lens` set, the Lens is a strip on that side and the cards fill what is
+ * left of the frame, numbered left to right as the real deck numbers them.
  */
 export function LayoutMiniature({
   kind,
@@ -80,10 +80,6 @@ export function LayoutMiniature({
   // equally the picture for a deck drawn with no imposition at all.
   const offsetFor = (k: number): number =>
     count < 2 ? (band - cardPct) / 2 : k * (cardPct + CARD_GAP_PCT);
-  // Slot 0 is the anchor farthest from the Lens, so a left-side Lens numbers
-  // from the right — measured from that edge, the offsets are the same.
-  const packFromLeft = lens !== "left";
-
   return (
     <span
       className="layout-mini"
@@ -98,7 +94,7 @@ export function LayoutMiniature({
             key={i}
             className="layout-mini-block"
             style={{
-              [packFromLeft ? "left" : "right"]: `${GAP_PCT + offsetFor(i)}%`,
+              left: `${GAP_PCT + offsetFor(i)}%`,
               width: `${cardPct}%`,
             }}
           />

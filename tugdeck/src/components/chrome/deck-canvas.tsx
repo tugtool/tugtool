@@ -34,7 +34,7 @@ import { usePaneFocusController } from "./pane-focus-controller";
 import { getRegistration, getStackSizePolicy } from "@/card-registry";
 import { LENS_CARD_ID } from "@/lib/lens-card-id";
 import { findLensPane } from "@/deck-store-selectors";
-import type { TugPaneState } from "@/layout-tree";
+import type { DeckState, TugPaneState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { cardDragCoordinator } from "@/card-drag-coordinator";
 import { selectionGuard } from "@/components/tugways/selection-guard";
@@ -78,6 +78,18 @@ const CARD_ZINDEX_BASE = 1;
  * dev-panel overlay used.
  */
 const LENS_PANE_ZINDEX = 8999;
+
+/**
+ * Everything the imposer reads, as one string: the imposition record and which
+ * pane holds which slot. Two decks with the same signature put every derived
+ * frame in the same place, so a change to it is exactly the set of moments the
+ * deck should cross to a new arrangement rather than cut.
+ */
+function arrangementSignature(state: DeckState): string {
+  return `${state.imposition.kind ?? ""}|${state.imposition.lens}|${
+    isLensPinned(state.imposition) ? "pinned" : "free"
+  }|${state.panes.map((pane) => `${pane.id}:${pane.slot ?? ""}`).join(",")}`;
+}
 
 /**
  * The settle duration actually in force on `el`, in milliseconds — the resolved
@@ -669,63 +681,75 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // land inside some earlier change's window, and a gesture that sometimes
   // crosses and sometimes jumps is worse than one that always jumps.
   //
+  // The arming is driven off the STORE, not off a render, and that is
+  // load-bearing. WebKit will not start a transition on a property whose
+  // covering `transition-property` arrives in the same style change as the
+  // value — and a layout effect runs after React has already written the new
+  // `left`, so arming there puts both in one change and the frame cuts. A store
+  // subscriber runs before the re-render it causes, so the attribute lands, the
+  // read below flushes it as a style change of its own, and the geometry
+  // arrives into a transition that is already in force. (This is why the
+  // pointer path used to work and the keyboard path did not: a pointer-down
+  // activates a pane, which armed the settle one style change early by
+  // accident.)
+  //
   // The timing lives in one place: `IMPOSITION_SETTLE_MS` and
   // `IMPOSITION_SETTLE_EASING` are written onto the container as the two CSS
   // knobs, and the timer reads the RESOLVED duration back — so overriding
   // `--tugx-imposer-settle-duration` on the container retimes the transition
   // and the attribute together, and overriding
   // `--tugx-imposer-settle-easing` reshapes it.
-  const arrangement = `${deckState.imposition.kind ?? ""}|${
-    deckState.imposition.lens
-  }|${isLensPinned(deckState.imposition) ? "pinned" : "free"}|${panes
-    .map((pane) => `${pane.id}:${pane.slot ?? ""}`)
-    .join(",")}`;
-  const arrangementRef = useRef(arrangement);
+  const arrangementRef = useRef(arrangementSignature(deckState));
   const settleTimerRef = useRef<number | null>(null);
-  useLayoutEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    el.style.setProperty(
-      "--tugx-imposer-settle-duration",
-      `${IMPOSITION_SETTLE_MS}ms`,
-    );
-    el.style.setProperty(
-      "--tugx-imposer-settle-easing",
-      IMPOSITION_SETTLE_EASING,
-    );
-    const previous = arrangementRef.current;
-    arrangementRef.current = arrangement;
-    if (previous === arrangement) return;
-    el.setAttribute("data-imposer-settling", "");
-    if (settleTimerRef.current !== null) {
-      window.clearTimeout(settleTimerRef.current);
-    }
-    settleTimerRef.current = window.setTimeout(() => {
-      settleTimerRef.current = null;
-      el.removeAttribute("data-imposer-settling");
-    }, readSettleMs(el));
-  }, [arrangement]);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const arm = (): void => {
+      const el = containerRef.current;
+      if (el === null) return;
+      const next = arrangementSignature(store.getSnapshot());
+      if (next === arrangementRef.current) return;
+      arrangementRef.current = next;
+      el.style.setProperty(
+        "--tugx-imposer-settle-duration",
+        `${IMPOSITION_SETTLE_MS}ms`,
+      );
+      el.style.setProperty(
+        "--tugx-imposer-settle-easing",
+        IMPOSITION_SETTLE_EASING,
+      );
+      el.setAttribute("data-imposer-settling", "");
+      // Reading the resolved duration back flushes the style change the
+      // attribute just made — which is the point, not a side effect.
+      const duration = readSettleMs(el);
       if (settleTimerRef.current !== null) {
         window.clearTimeout(settleTimerRef.current);
       }
-    },
-    [],
-  );
+      settleTimerRef.current = window.setTimeout(() => {
+        settleTimerRef.current = null;
+        el.removeAttribute("data-imposer-settling");
+      }, duration);
+    };
+    const unsubscribe = store.subscribe(arm);
+    return () => {
+      unsubscribe();
+      if (settleTimerRef.current !== null) {
+        window.clearTimeout(settleTimerRef.current);
+      }
+    };
+  }, [store]);
 
   // Where each imposed pane sits. A slot's anchor is a pure function of the
-  // kind, the slot, and which side the Lens holds — no pane's place depends on
-  // any other's — so this is a per-pane lookup rather than a chain resolved
-  // from a vantage point that sees them all. Resolved here only because the
-  // canvas is where the kind and the Lens side are already in hand.
+  // kind and the slot — no pane's place depends on any other's, and the Lens's
+  // side moves the band's edges rather than the numbering — so this is a
+  // per-pane lookup rather than a chain resolved from a vantage point that sees
+  // them all. Resolved here only because the canvas is where the kind is
+  // already in hand.
   const impositionKind = deckState.imposition.kind;
   const placementFor = useCallback(
     (pane: TugPaneState) =>
       impositionKind === undefined || pane.slot === undefined
         ? undefined
-        : resolvePlacement(impositionKind, pane.slot, lensSide),
-    [impositionKind, lensSide],
+        : resolvePlacement(impositionKind, pane.slot),
+    [impositionKind],
   );
 
   // Merge `deckRootRef` (pane-focus-controller's query scope) and

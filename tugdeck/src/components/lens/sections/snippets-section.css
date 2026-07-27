@@ -117,13 +117,21 @@
 }
 
 /* While the caret is the carrier (keyboard genuinely inside the well), the ring
-   language goes fully quiet: the engine already moved the key view off the list
-   (no perimeter ring); additionally silence the quiet within-mark and the
-   movement-cursor bar so no accent ink competes with the caret. Keyed on real
+   language goes fully quiet: silence the list's container ring — both the quiet
+   within-mark and the inset ring the list draws for a descend — and the
+   movement-cursor bar, so no accent ink competes with the caret. Keyed on real
    focus, not mere presence — an open-but-unfocused editor leaves the ring
-   language alone (the "navigating with an open card" state). */
+   language alone (the "navigating with an open card" state).
+
+   A descend into an editor is the one descend that does NOT want the list's
+   container ring up: every other descend lands on an accessory the row owns and
+   the ring says which list it belongs to, but a caret is its own affordance and
+   answers the question already. */
 .lens-content:has(.snippet-editor:focus-within) [data-key-within] {
   outline: none;
+}
+.lens-snippets-list:has(.snippet-editor:focus-within) .tug-list-view-ring::before {
+  border-color: transparent;
 }
 .lens-snippets-list:has(.snippet-editor:focus-within)
   .tug-list-view-cell[data-key-cursor]::before {

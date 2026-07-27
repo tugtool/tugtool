@@ -192,6 +192,33 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             ),
           ).toBeGreaterThan(0);
 
+          // The list does not go dark behind the descend. Both marks say where
+          // the accessory came from — the container ring says which list, the
+          // cursor bar says which row — and losing them left the ring on a lone
+          // button with nothing around it to say what it belonged to. The ring
+          // is the list's own inset overlay (`ringPlacement="inset"`), lit by
+          // the engine's `data-key-within` on the container it descended from.
+          const descended = await app.evalJS<{
+            within: boolean;
+            ring: number;
+            cursorRows: number;
+          }>(
+            `(function(){
+              var list = document.querySelector(${JSON.stringify(SNIPPETS_LIST)});
+              var ring = list === null ? null : list.querySelector('.tug-list-view-ring');
+              return {
+                within: list !== null && list.hasAttribute('data-key-within'),
+                ring: ring === null
+                  ? 0
+                  : parseFloat(getComputedStyle(ring, '::before').borderTopWidth),
+                cursorRows: document.querySelectorAll(${JSON.stringify(CURSOR_ROW)}).length,
+              };
+            })()`,
+          );
+          expect(descended.within).toBe(true);
+          expect(descended.ring).toBeGreaterThan(0);
+          expect(descended.cursorRows).toBe(1);
+
           // ---- A1. Inside the row the horizontal arrows walk the accessories:
           // the arrow that entered the row is the arrow that walks it, and Left
           // off the first one is the exit.

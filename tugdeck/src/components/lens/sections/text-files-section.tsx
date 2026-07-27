@@ -372,6 +372,7 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
               delegate={delegate}
               cellRenderers={TEXT_FILES_CELL_RENDERERS}
               scrollKey="lens-text-files"
+              ringPlacement="inset"
               inline
               rowLayout="flush"
               focusGroup={hasContent ? host.focusGroup : undefined}

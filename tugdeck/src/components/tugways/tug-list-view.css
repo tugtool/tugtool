@@ -158,13 +158,20 @@ body {
    frame. On a SELF-FRAMED list (the dev picker boxes) the frame border joins the
    ring: the frame recolors to the ring hue and the outline makes up the rest, so
    the total ring equals the cursor-caret width (`--tugx-list-key-ring-width`)
-   whether or not the list wears a frame. On Enter-descend the container drops the
-   key view and wears the quiet `[data-key-within]` mark (the global rule).
-   Role-resolved via `--tugx-focus-ring`. */
+   whether or not the list wears a frame. Role-resolved via `--tugx-focus-ring`.
+
+   On Enter-descend the container drops the key view for an accessory inside one
+   of its rows and the engine marks it `[data-key-within]`. The list keeps the
+   FULL ring for that, not the global quiet within-mark: a descend goes deeper
+   into this list rather than out of it, and the ring is what says which list the
+   accessory under the cursor belongs to. (The quiet mark is right for a
+   container the keyboard has genuinely left the surface of — a sheet holding an
+   open popover. A list row is still the list.) */
 .tug-list-view {
   outline: none;
 }
-.tug-list-view[data-key-view-kbd] {
+.tug-list-view[data-key-view-kbd],
+.tug-list-view[data-key-within] {
   /* Frame + outline together total the caret width: on a framed list the 1px
      frame carries part of the ring, so the outline is the remainder; unframed
      (frame-width 0) the outline carries the whole width and the border-color
@@ -173,6 +180,70 @@ body {
     solid var(--tugx-focus-ring);
   outline-offset: 0;
   border-color: var(--tugx-focus-ring);
+}
+
+/* ---- The inset ring (`ringPlacement="inset"`) ----
+   For an edge-to-edge list in a clipping host — a Lens band, a rail — where an
+   outset outline falls outside the host's overflow and never paints. The ring
+   comes inside, as an OVERLAY over the finished rows.
+
+   It cannot be an inset outline or a box-shadow: a `TugListRow` is a stacking
+   context (it owns its press layer), so it paints after the container's own
+   border/outline phase and a row with an opaque fill punches a hole in the ring
+   exactly where it sits. Nor can it be a real border, which would take layout
+   space and hold the rows off the host's edge — the one thing an edge-to-edge
+   list must not do.
+
+   So: a zero-height sticky child holding the scrollport's top edge, with the
+   ring painted by an absolutely-positioned pseudo hung off it at the scrollport's
+   measured height (`--tugx-list-view-ring-block-size`, published by the
+   component — CSS cannot ask a scroller for the size of the window onto it).
+   Zero height means it adds nothing to the scroll length; sticky means it does
+   not scroll away.
+
+   The ring lights while the keyboard is IN the list — holding the key view, or
+   descended into one of its rows (`[data-key-within]`). A descend goes deeper
+   into the list rather than out of it, so the ring stays up and keeps saying
+   which list the accessory under the cursor belongs to. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-list-view-ring {
+  position: sticky;
+  inset-block-start: 0;
+  block-size: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.tug-list-view-ring::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: var(--tugx-list-view-ring-block-size, 0px);
+  border: var(--tugx-list-key-ring-width) solid transparent;
+  border-radius: var(--tugx-list-view-radius);
+  box-sizing: border-box;
+}
+.tug-list-view[data-ring-placement="inset"]:is(
+    [data-key-view-kbd],
+    [data-key-within]
+  )
+  .tug-list-view-ring::before {
+  border-color: var(--tugx-focus-ring);
+}
+
+/* The list's own perimeter ring is the OTHER placement's ring — never both. */
+.tug-list-view[data-ring-placement="inset"]:is(
+    [data-key-view-kbd],
+    [data-key-within]
+  ) {
+  outline: none;
+}
+
+/* The cursor bar would sit under the inset ring's leading edge, both being one
+   ring-width at the same x. Slide the bar inboard by that width so the two
+   marks stack: ring at the edge, bar just inside it. */
+.tug-list-view[data-ring-placement="inset"] {
+  --tugx-list-view-cursor-bar-inset: var(--tugx-list-key-ring-width);
 }
 
 /* Block-axis breathing room — implemented as scroll-flow children
@@ -293,7 +364,8 @@ body {
   width: var(--tugx-list-view-cursor-bar-width);
   background: var(--tugx-list-view-cursor-bar-color);
 }
-.tug-list-view[data-key-view-kbd] .tug-list-view-cell[data-key-cursor]::before {
+.tug-list-view[data-key-view-kbd] .tug-list-view-cell[data-key-cursor]::before,
+.tug-list-view[data-key-within] .tug-list-view-cell[data-key-cursor]::before {
   inset-inline-start: var(--tugx-list-view-cursor-bar-inset);
 }
 

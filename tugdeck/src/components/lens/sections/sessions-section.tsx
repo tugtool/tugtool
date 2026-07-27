@@ -482,6 +482,7 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
               delegate={delegate}
               cellRenderers={SESSIONS_CELL_RENDERERS}
               scrollKey="lens-sessions"
+              ringPlacement="inset"
               inline
               rowLayout="flush"
               focusGroup={hasContent ? host.focusGroup : undefined}
