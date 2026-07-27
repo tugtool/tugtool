@@ -274,7 +274,7 @@ describe("imposeStyle", () => {
       top: "5px",
       bottom: "32px",
       left:
-        "calc(var(--tug-imposer-inset-left, 0px) + 5px + " +
+        "calc(0% + var(--tug-imposer-inset-left, 0px) + 5px + " +
         `1 * max(0px, ${BAND} - 300px))`,
     });
   });
@@ -290,8 +290,19 @@ describe("imposeStyle", () => {
 
   test("slot 0 has travelled nothing, so it carries no max() at all", () => {
     const style = imposeStyle(at(0, "left", 3), 400, false);
-    expect(style.left).toBe("calc(var(--tug-imposer-inset-left, 0px) + 5px + 0px)");
+    expect(style.left).toBe("calc(0% + var(--tug-imposer-inset-left, 0px) + 5px + 0px)");
     expect(style.left).not.toContain("max(");
+  });
+
+  // Slot 0 packed left is the one pin with no percentage of its own; without
+  // the explicit `0%` it computes to a bare length, and a flip to the
+  // right-measured form has two kinds of value to cross between and cuts.
+  test("both packing directions are percentage-bearing calcs", () => {
+    for (const from of ["left", "right"] as const) {
+      expect(String(imposeStyle(at(0, from, 3), 400, false).left)).toMatch(
+        /^calc\(.*%/,
+      );
+    }
   });
 
   test("every pane pins with `left` alone — never `right`, never a transform", () => {
@@ -314,7 +325,7 @@ describe("imposeStyle", () => {
       width: "640px",
       height: "auto",
       top: "5px",
-      left: "calc(var(--tug-imposer-inset-left, 0px) + 5px + 0px)",
+      left: "calc(0% + var(--tug-imposer-inset-left, 0px) + 5px + 0px)",
     });
     expect(collapsed.bottom).toBeUndefined();
   });
@@ -325,19 +336,25 @@ describe("imposeStyle", () => {
 });
 
 describe("imposeLensStyle", () => {
+  const PIN =
+    "calc(var(--tugx-lens-rail) * (100% - 420px - 5px)" +
+    " + (1 - var(--tugx-lens-rail)) * 5px)";
+
   test("pins the Lens to its side, a gap in on three edges and deeper below", () => {
-    expect(imposeLensStyle("left", 420, false)).toEqual({
+    expect(imposeLensStyle("left", 420, false) as Record<string, unknown>).toEqual({
       width: "420px",
       height: "auto",
       top: "5px",
-      left: "5px",
+      "--tugx-lens-rail": 0,
+      left: PIN,
       bottom: "32px",
     });
-    expect(imposeLensStyle("right", 420, false)).toEqual({
+    expect(imposeLensStyle("right", 420, false) as Record<string, unknown>).toEqual({
       width: "420px",
       height: "auto",
       top: "5px",
-      left: "calc(100% - 420px - 5px)",
+      "--tugx-lens-rail": 1,
+      left: PIN,
       bottom: "32px",
     });
   });
@@ -350,10 +367,27 @@ describe("imposeLensStyle", () => {
     }
   });
 
+  // The side is carried by an animatable number, and `left` is ONE expression
+  // that reads it, identical on both sides. Emitting the two anchors as two
+  // values of `left` instead gives a bare length against a percentage, which
+  // has nothing to interpolate, so the flip cuts.
+  test("the flip changes only the rail number, never the pin's shape", () => {
+    const left = imposeLensStyle("left", 420, false);
+    const right = imposeLensStyle("right", 420, false);
+    expect(left.left).toBe(right.left);
+    expect(String(left.left)).toContain("var(--tugx-lens-rail)");
+    expect(
+      (left as Record<string, unknown>)["--tugx-lens-rail"],
+    ).toBe(0);
+    expect(
+      (right as Record<string, unknown>)["--tugx-lens-rail"],
+    ).toBe(1);
+  });
+
   test("a collapsed Lens keeps its side and top pins and releases the bottom", () => {
     const collapsed = imposeLensStyle("right", 420, true);
     expect(collapsed.top).toBe("5px");
-    expect(collapsed.left).toBe("calc(100% - 420px - 5px)");
+    expect(collapsed.left).toBe(PIN);
     expect(collapsed.bottom).toBeUndefined();
   });
 

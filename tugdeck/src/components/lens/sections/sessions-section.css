@@ -22,15 +22,13 @@
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
    rules regardless of bundle order. The list is this section's scroller: it
-   fills the section's flex share and scrolls its rows internally, reserving its
-   own right-edge scrollbar gutter. TugListRow owns the inner inline padding; a
-   small equal margin insets the framed container so its keyboard focus ring
-   paints on all four sides. */
+   fills the section's flex share and scrolls its rows internally. TugListRow
+   owns the inner inline padding; a small equal margin insets the framed
+   container so its keyboard focus ring paints on all four sides. */
 .tug-list-view.lens-sessions-list {
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  scrollbar-gutter: stable;
   /* Equal margin on all four sides so the framed list sits evenly inside its
      section (matches the other two Lens lists). */
   margin: 6px;

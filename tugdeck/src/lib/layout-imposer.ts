@@ -71,6 +71,8 @@
 
 import type React from "react";
 
+import { cssEasing, dampedSpring } from "@/lib/unit-functions";
+
 /** The active N-up rule. */
 export type ImpositionKind = "two-up" | "three-up" | "four-up";
 
@@ -160,7 +162,30 @@ export const IMPOSITION_GAP_BOTTOM_PX = 32;
  * back when timing the settle, so the transition and the timer that ends it
  * are one number and an override on the container tunes both.
  */
-export const IMPOSITION_SETTLE_MS = 500;
+export const IMPOSITION_SETTLE_MS = 300;
+
+/**
+ * The curve the deck settles on, as a CSS easing.
+ *
+ * A critically damped spring: the frames accelerate away, decelerate onto their
+ * places, and stop there. Nothing overshoots — an arrangement that ran past
+ * itself and came back would be a second piece of motion to read on top of the
+ * one that matters.
+ *
+ * Swapping the curve is swapping the function named here; see
+ * `lib/unit-functions.ts` for the catalogue. `deck-canvas.tsx` writes the
+ * result onto the frames' container as `--tugx-imposer-settle-easing`, so
+ * overriding that property tunes it live without a rebuild.
+ */
+export const IMPOSITION_SETTLE_EASING = cssEasing(dampedSpring());
+
+/**
+ * Which side the pinned Lens holds, as a number the browser can animate: 0 is
+ * the left edge, 1 the right. Registered as a `<number>` custom property in
+ * `tug-pane.css`, which is what lets the flip be a transition rather than a
+ * cut — see {@link imposeLensStyle}.
+ */
+export const LENS_RAIL_PROPERTY = "--tugx-lens-rail";
 
 /** The gaps as CSS lengths, for the calc expressions below. */
 const GAP = `${IMPOSITION_GAP_PX}px`;
@@ -350,7 +375,10 @@ export function imposeRect(
  * The pin is emitted as `left` either way. A right-measured anchor becomes
  * `100% - inset - gap - width - offset`, which describes the same place while
  * keeping every imposed frame on one property — the requirement for animating
- * between two arrangements rather than cutting between them.
+ * between two arrangements rather than cutting between them. Both forms carry
+ * a percentage term — the left-measured one an explicit `0%` — so the two are
+ * the same kind of value and a flip has something to interpolate; a bare length
+ * on one side and a percentage on the other cuts.
  *
  * The vertical run is the top gap down to the deeper bottom gap. A collapsed
  * pane keeps its horizontal pin and its top pin but releases the bottom one, so
@@ -375,7 +403,7 @@ export function imposeStyle(
     fraction === 0 ? "0px" : `${fraction} * max(0px, ${band} - ${paneWidth}px)`;
   style.left =
     placement.packFrom === "left"
-      ? `calc(${INSET_LEFT} + ${GAP} + ${offset})`
+      ? `calc(0% + ${INSET_LEFT} + ${GAP} + ${offset})`
       : `calc(100% - ${INSET_RIGHT} - ${GAP} - ${paneWidth}px - ${offset})`;
   return style;
 }
@@ -389,9 +417,24 @@ export function imposeStyle(
  * must never be overlapped, so it holds the strip's far end at a fixed pin and
  * the cards share what is left of the band ({@link resolveSpan}).
  *
- * Like {@link imposeStyle}, the pin is emitted as `left` on both sides — a
- * right-held Lens as `100% - width - gap` — so flipping the side is a change of
- * one property's value and can therefore be animated.
+ * The side is emitted as a **number**, not as a pin, and the pin is one
+ * expression that reads it: {@link LENS_RAIL_PROPERTY} is 0 on the left and 1
+ * on the right, and `left` mixes the two anchors by it. This is what makes the
+ * flip animatable.
+ *
+ * Emitting the two anchors as two values of `left` does not work, and the
+ * reason is worth keeping: the left anchor is `5px` and the right one is
+ * `100% - width - gap`, and a bare length and a percentage are not the same
+ * kind of value, so there is nothing to interpolate and the frame cuts. Nor can
+ * the left anchor be dressed as a percentage — a `calc(0% + 5px)` is simplified
+ * straight back to `5px` at computed-value time. Since a *registered* custom
+ * property of `<number>` type animates, the fix is to move the change onto the
+ * number: the browser walks the rail from 1 to 0 and re-resolves `left` on
+ * every frame of it. The registration lives in `tug-pane.css` beside the
+ * transition that drives it.
+ *
+ * The cards need none of this: their pin's shape never changes across a flip
+ * (only which inset is nonzero does), so `left` interpolates on its own.
  *
  * A collapsed Lens keeps its side and top pins and releases the bottom one, so
  * the window-shade bar sits a gap below the canvas top — the same treatment
@@ -402,12 +445,16 @@ export function imposeLensStyle(
   paneWidth: number,
   collapsed: boolean,
 ): React.CSSProperties {
-  const style: React.CSSProperties = {
+  const rail = side === "right" ? 1 : 0;
+  const style: Record<string, string | number> = {
     width: `${paneWidth}px`,
     height: "auto",
     top: GAP,
-    left: side === "left" ? GAP : `calc(100% - ${paneWidth}px - ${GAP})`,
+    [LENS_RAIL_PROPERTY]: rail,
+    left:
+      `calc(var(${LENS_RAIL_PROPERTY}) * (100% - ${paneWidth}px - ${GAP})` +
+      ` + (1 - var(${LENS_RAIL_PROPERTY})) * ${GAP})`,
   };
   if (!collapsed) style.bottom = GAP_BOTTOM;
-  return style;
+  return style as React.CSSProperties;
 }

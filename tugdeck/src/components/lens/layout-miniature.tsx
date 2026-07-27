@@ -13,6 +13,11 @@
  * ones between space evenly. That is what makes a four-up tile *look* crowded
  * — the picture tells the truth about what the deck will do.
  *
+ * Every card is drawn at ONE width, in every tile. Choosing four-up does not
+ * make the deck's cards narrower — it packs four anchors into the same band,
+ * and the cards overlap. A picture that shrank its blocks as the count rose
+ * would be telling the opposite story about the rule it illustrates.
+ *
  * Purely presentational: props in, CSS out, no store reads and no state ([L06]).
  * The live Lens side is passed down by the section so every miniature flips
  * together when the side changes.
@@ -29,14 +34,11 @@ import { slotCount, type ImpositionKind, type LensSide } from "@/lib/layout-impo
 /** The Lens's share of the miniature's width, in percent. */
 const RAIL_PCT = 18;
 
-/** One card's width in the chain, in percent of the miniature. */
-const CARD_PCT = 26;
+/** A card's width, in percent of the miniature. One number for every tile. */
+const CARD_PCT = 40;
 
 /** The imposition gap, in percent of the miniature. */
 const GAP_PCT = 2;
-
-/** The width of the single block drawn for "no imposition", in percent. */
-const FREE_CARD_PCT = 60;
 
 export interface LayoutMiniatureProps {
   /** The N-up rule to draw, or `null` for no imposition (one free card). */
@@ -61,15 +63,14 @@ export function LayoutMiniature({
   const count = kind === null ? 1 : slotCount(kind);
   // What is left of the miniature once the Lens has taken its strip.
   const field = lens === null ? 100 : 100 - RAIL_PCT - GAP_PCT;
-  // A deck with no arrangement is just a card on a canvas, so Off draws one
-  // wide block rather than a chain.
-  const cardWidth = kind === null ? FREE_CARD_PCT : CARD_PCT;
   // The imposer's rule, in percent: a block's travel is what the band has left
   // over once it has taken its own width, and slot k has crossed `k / (N − 1)`
   // of it.
-  const travel = Math.max(0, field - GAP_PCT * 2 - cardWidth);
+  const travel = Math.max(0, field - GAP_PCT * 2 - CARD_PCT);
+  // A deck with no arrangement is one free card, so Off draws a single block
+  // standing in the middle of the field rather than pinned to an anchor.
   const offsetFor = (k: number): number =>
-    count < 2 ? 0 : (k / (count - 1)) * travel;
+    count < 2 ? travel / 2 : (k / (count - 1)) * travel;
   // Slot 0 is the anchor farthest from the Lens, so a left-side Lens numbers
   // from the right — measured from that edge, the offsets are the same.
   const packFromLeft = lens !== "left";
@@ -89,7 +90,7 @@ export function LayoutMiniature({
             className="layout-mini-block"
             style={{
               [packFromLeft ? "left" : "right"]: `${GAP_PCT + offsetFor(i)}%`,
-              width: `${cardWidth}%`,
+              width: `${CARD_PCT}%`,
             }}
           />
         ))}

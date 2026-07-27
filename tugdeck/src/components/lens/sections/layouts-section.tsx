@@ -1,17 +1,20 @@
 /**
  * layouts-section.tsx — the Lens **Layouts** section: the deck's layout picker.
  *
- * Every layout decision the deck has is made here, on two axes. The **Lens**
- * group says which side the Lens holds; the **Layout** group says how the cards
- * are arranged in what is left. Both write the deck's `imposition` record — one
+ * Every layout decision the deck has is made here, on two axes. **Lens
+ * Position** says which side the Lens holds; **Cards** says how the cards are
+ * arranged in what is left. Both write the deck's `imposition` record — one
  * field each — so "where is the Lens" is a layout question answered beside the
  * other layout questions rather than in an app-wide preference somewhere else.
  *
  * Both groups are the same control at the same scale: a named option is a
  * picture of the result ({@link LayoutMiniature}) with its name beside it, two
- * to a row — the gallery card's `P4 · Two-column rows` shape. The pictures read
- * the *live* Lens side, so choosing Lens Left flips all of them at once: a tile
- * is a scale drawing of this deck, not an abstract N-up.
+ * to a row — the gallery card's `P4 · Two-column rows` shape. Each option is a
+ * framed tile rather than a dotted row (`TugRadioGroup emphasis="tile"`): the
+ * picture is already the answer, so a dot beside it would be a second mark for
+ * the same fact. The pictures read the *live* Lens side, so choosing Lens Left
+ * flips all of them at once: a tile is a scale drawing of this deck, not an
+ * abstract N-up.
  *
  * Choosing a layout is the only thing that happens here; putting a card into
  * one of the kind's numbered slots happens on the rows (see
@@ -22,8 +25,8 @@
  * `useLayoutEffect`; [L06] the miniatures are pure props → CSS; [L11] both
  * controls emit `selectValue` through the responder chain, which this section
  * turns into `set-imposition-lens` / `set-imposition` dispatches; [L19]/[L20]
- * both controls are `TugRadioGroup`s, composed rather than hand-rolled — the
- * group's own `label` is what names each axis.
+ * both controls are `TugRadioGroup`s and both captions are `TugLabel`s,
+ * composed rather than hand-rolled.
  *
  * @module components/lens/sections/layouts-section
  */
@@ -48,7 +51,11 @@ import {
   type ImpositionKind,
   type LensSide,
 } from "@/lib/layout-imposer";
-import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
+import { TugLabel } from "@/components/tugways/tug-label";
+import {
+  TugRadioGroup,
+  TugRadioItem,
+} from "@/components/tugways/tug-radio-group";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -63,6 +70,11 @@ const OFF_VALUE = "off";
  *  can tell the two axes apart. */
 const SIDE_SENDER_ID = "lens-layouts-side";
 const KIND_SENDER_ID = "lens-layouts-kind";
+
+/** Ids of the two captions, so each group can point `aria-labelledby` at its
+ *  own `TugLabel`. */
+const SIDE_CAPTION_ID = "lens-layouts-side-caption";
+const KIND_CAPTION_ID = "lens-layouts-kind-caption";
 
 /** User-facing label for each kind. */
 const KIND_LABELS: Record<ImpositionKind, string> = {
@@ -97,7 +109,11 @@ function LayoutsCollapsedSummary(): React.ReactElement {
   return <>{kind === undefined ? "Off" : KIND_LABELS[kind]}</>;
 }
 
-function LayoutsSectionBody({ host }: { host: LensSectionHost }): React.ReactElement {
+function LayoutsSectionBody({
+  host,
+}: {
+  host: LensSectionHost;
+}): React.ReactElement {
   const { kind, lens } = useImposition();
 
   // Both controls report selection by dispatching `selectValue` up the
@@ -110,7 +126,8 @@ function LayoutsSectionBody({ host }: { host: LensSectionHost }): React.ReactEle
         const value = event.value;
         if (typeof value !== "string") return;
         if (event.sender === SIDE_SENDER_ID) {
-          if (isLensSide(value)) dispatchAction({ action: "set-imposition-lens", side: value });
+          if (isLensSide(value))
+            dispatchAction({ action: "set-imposition-lens", side: value });
           return;
         }
         if (event.sender === KIND_SENDER_ID) {
@@ -128,7 +145,10 @@ function LayoutsSectionBody({ host }: { host: LensSectionHost }): React.ReactEle
   useLayoutEffect(() => {
     setSectionContent(host.focusGroup, { navigable: true, populated: true });
     return () =>
-      setSectionContent(host.focusGroup, { navigable: false, populated: false });
+      setSectionContent(host.focusGroup, {
+        navigable: false,
+        populated: false,
+      });
   }, [host.focusGroup]);
 
   return (
@@ -141,51 +161,83 @@ function LayoutsSectionBody({ host }: { host: LensSectionHost }): React.ReactEle
         {/* Which edge the Lens holds. Each option draws the deck with the Lens
             on that side and no cards — the question is only which edge, so the
             chain would be noise in it. */}
-        <TugRadioGroup
-          value={lens}
-          senderId={SIDE_SENDER_ID}
-          focusGroup={host.focusGroup}
-          size="sm"
-          label="Lens"
-          className="layouts-section-group"
-          data-testid="lens-layouts-side"
-        >
-          {SIDES.map((side) => (
-            <TugRadioItem key={side} value={side}>
-              <span className="layouts-section-option">
-                <LayoutMiniature kind={null} lens={side} selected={side === lens} />
-                <span className="layouts-section-option-label">
-                  {SIDE_LABELS[side]}
+        <div className="layouts-section-axis">
+          <TugLabel
+            id={SIDE_CAPTION_ID}
+            size="3xs"
+            emphasis="proposal"
+            className="layouts-section-caption"
+          >
+            Lens Position
+          </TugLabel>
+          <TugRadioGroup
+            value={lens}
+            senderId={SIDE_SENDER_ID}
+            focusGroup={host.focusGroup}
+            size="sm"
+            emphasis="tile"
+            aria-labelledby={SIDE_CAPTION_ID}
+            className="layouts-section-group"
+            data-testid="lens-layouts-side"
+          >
+            {SIDES.map((side) => (
+              <TugRadioItem key={side} value={side}>
+                <span className="layouts-section-option">
+                  <LayoutMiniature
+                    kind={null}
+                    lens={side}
+                    selected={side === lens}
+                  />
+                  <span className="layouts-section-option-label">
+                    {SIDE_LABELS[side]}
+                  </span>
                 </span>
-              </span>
-            </TugRadioItem>
-          ))}
-        </TugRadioGroup>
+              </TugRadioItem>
+            ))}
+          </TugRadioGroup>
+        </div>
 
-        <TugRadioGroup
-          value={kind ?? OFF_VALUE}
-          senderId={KIND_SENDER_ID}
-          focusGroup={host.focusGroup}
-          size="sm"
-          label="Layout"
-          className="layouts-section-group"
-          data-testid="lens-layouts-kind"
-        >
-          <TugRadioItem value={OFF_VALUE}>
-            <span className="layouts-section-option">
-              <LayoutMiniature kind={null} lens={lens} selected={kind === undefined} />
-              <span className="layouts-section-option-label">Off</span>
-            </span>
-          </TugRadioItem>
-          {IMPOSITION_KINDS.map((k) => (
-            <TugRadioItem key={k} value={k}>
+        <div className="layouts-section-axis">
+          <TugLabel
+            id={KIND_CAPTION_ID}
+            size="3xs"
+            emphasis="proposal"
+            className="layouts-section-caption"
+          >
+            Cards
+          </TugLabel>
+          <TugRadioGroup
+            value={kind ?? OFF_VALUE}
+            senderId={KIND_SENDER_ID}
+            focusGroup={host.focusGroup}
+            size="sm"
+            emphasis="tile"
+            aria-labelledby={KIND_CAPTION_ID}
+            className="layouts-section-group"
+            data-testid="lens-layouts-kind"
+          >
+            <TugRadioItem value={OFF_VALUE}>
               <span className="layouts-section-option">
-                <LayoutMiniature kind={k} lens={lens} selected={k === kind} />
-                <span className="layouts-section-option-label">{KIND_LABELS[k]}</span>
+                <LayoutMiniature
+                  kind={null}
+                  lens={lens}
+                  selected={kind === undefined}
+                />
+                <span className="layouts-section-option-label">Off</span>
               </span>
             </TugRadioItem>
-          ))}
-        </TugRadioGroup>
+            {IMPOSITION_KINDS.map((k) => (
+              <TugRadioItem key={k} value={k}>
+                <span className="layouts-section-option">
+                  <LayoutMiniature kind={k} lens={lens} selected={k === kind} />
+                  <span className="layouts-section-option-label">
+                    {KIND_LABELS[k]}
+                  </span>
+                </span>
+              </TugRadioItem>
+            ))}
+          </TugRadioGroup>
+        </div>
       </div>
     </ResponderScope>
   );

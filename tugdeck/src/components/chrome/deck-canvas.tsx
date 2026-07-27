@@ -45,6 +45,7 @@ import {
   isLensPinned,
   resolvePlacement,
   IMPOSITION_GAP_PX,
+  IMPOSITION_SETTLE_EASING,
   IMPOSITION_SETTLE_MS,
 } from "@/lib/layout-imposer";
 
@@ -668,10 +669,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // land inside some earlier change's window, and a gesture that sometimes
   // crosses and sometimes jumps is worse than one that always jumps.
   //
-  // The duration lives in one place: `IMPOSITION_SETTLE_MS` is written onto the
-  // container as the CSS knob, and the timer reads the RESOLVED value back — so
-  // overriding `--tugx-imposer-settle-duration` on the container retimes the
-  // transition and the attribute together.
+  // The timing lives in one place: `IMPOSITION_SETTLE_MS` and
+  // `IMPOSITION_SETTLE_EASING` are written onto the container as the two CSS
+  // knobs, and the timer reads the RESOLVED duration back — so overriding
+  // `--tugx-imposer-settle-duration` on the container retimes the transition
+  // and the attribute together, and overriding
+  // `--tugx-imposer-settle-easing` reshapes it.
   const arrangement = `${deckState.imposition.kind ?? ""}|${
     deckState.imposition.lens
   }|${isLensPinned(deckState.imposition) ? "pinned" : "free"}|${panes
@@ -685,6 +688,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     el.style.setProperty(
       "--tugx-imposer-settle-duration",
       `${IMPOSITION_SETTLE_MS}ms`,
+    );
+    el.style.setProperty(
+      "--tugx-imposer-settle-easing",
+      IMPOSITION_SETTLE_EASING,
     );
     const previous = arrangementRef.current;
     arrangementRef.current = arrangement;

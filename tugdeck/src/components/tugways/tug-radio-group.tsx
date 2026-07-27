@@ -64,10 +64,26 @@ export type TugRadioGroupSize = "sm" | "md" | "lg";
  */
 export type TugRadioRole = TugGroupRole;
 
+/**
+ * Visual emphasis. Selects the *paint* of the items; the *scale* stays with
+ * `size`, and the two compose.
+ *
+ *  - `"default"` — a dot beside a label, the ordinary radio row.
+ *  - `"tile"` — a framed button holding whatever the item renders, with no
+ *    dot: at rest a transparent outline, when checked the accent outline over
+ *    a tinted fill. For items whose content *is* the answer — a picture of the
+ *    thing being chosen — where a dot would be a second, redundant mark.
+ *
+ * @selector [data-emphasis="<emphasis>"]
+ * @default "default"
+ */
+export type TugRadioGroupEmphasis = "default" | "tile";
+
 // ---- Context ----
 
 interface TugRadioGroupContextValue {
   size: TugRadioGroupSize;
+  emphasis: TugRadioGroupEmphasis;
   disabled: boolean;
   /** The currently selected value (drives each item's checked indicator). */
   selectedValue: string;
@@ -77,6 +93,7 @@ interface TugRadioGroupContextValue {
 
 const TugRadioGroupContext = React.createContext<TugRadioGroupContextValue>({
   size: "md",
+  emphasis: "default",
   disabled: false,
   selectedValue: "",
   onSelect: () => {},
@@ -117,6 +134,13 @@ export interface TugRadioGroupProps
    * @default "md"
    */
   size?: TugRadioGroupSize;
+  /**
+   * Visual emphasis — dotted rows (`default`) or framed, dot-less tiles
+   * (`tile`).
+   * @selector [data-emphasis="<emphasis>"]
+   * @default "default"
+   */
+  emphasis?: TugRadioGroupEmphasis;
   /**
    * Semantic role color for the selected indicator.
    * @selector [data-role="<role>"]
@@ -188,6 +212,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       label,
       orientation = "vertical",
       size = "md",
+      emphasis = "default",
       role,
       name,
       disabled = false,
@@ -326,6 +351,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
 
     const ctx: TugRadioGroupContextValue = {
       size,
+      emphasis,
       disabled: effectiveDisabled,
       selectedValue: effectiveValue ?? "",
       onSelect,
@@ -343,6 +369,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
           aria-labelledby={label ? labelId : undefined}
           aria-disabled={effectiveDisabled || undefined}
           data-role={role}
+          data-emphasis={emphasis}
           className={cn(
             "tug-radio-group",
             `tug-radio-group-${size}`,
@@ -394,7 +421,7 @@ export interface TugRadioItemProps {
 
 export const TugRadioItem = React.forwardRef<HTMLButtonElement, TugRadioItemProps>(
   function TugRadioItem({ value, children, description, disabled }, ref) {
-    const { size, disabled: groupDisabled, selectedValue, onSelect } =
+    const { size, emphasis, disabled: groupDisabled, selectedValue, onSelect } =
       React.useContext(TugRadioGroupContext);
 
     const isDisabled = disabled ?? groupDisabled;
@@ -430,10 +457,14 @@ export const TugRadioItem = React.forwardRef<HTMLButtonElement, TugRadioItemProp
         onClick={() => {
           if (!isDisabled) onSelect(value);
         }}
+        // A tile carries no dot: the checked state is the tile's own frame and
+        // fill, and the item's content is the picture being chosen.
         icon={
-          <span className="tug-radio-indicator" aria-hidden="true">
-            <span className="tug-radio-dot" />
-          </span>
+          emphasis === "tile" ? undefined : (
+            <span className="tug-radio-indicator" aria-hidden="true">
+              <span className="tug-radio-dot" />
+            </span>
+          )
         }
       >
         {description !== undefined ? (

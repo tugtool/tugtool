@@ -44,14 +44,13 @@
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
    rules regardless of bundle order. The list is this section's scroller: it
-   fills the section's flex share and scrolls its rows internally, reserving its
-   own right-edge scrollbar gutter. TugListRow owns the inner inline padding; a
-   small equal margin insets the frame so the keyboard focus ring paints uncut. */
+   fills the section's flex share and scrolls its rows internally. TugListRow
+   owns the inner inline padding; a small equal margin insets the frame so the
+   keyboard focus ring paints uncut. */
 .tug-list-view.lens-text-files-list {
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  scrollbar-gutter: stable;
   /* Equal margin on all four sides; no list-owned block/inline padding (see the
      Sessions list) so all three Lens lists frame identically. */
   margin: 6px;

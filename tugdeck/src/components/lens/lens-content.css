@@ -10,8 +10,13 @@
  * Lens) do the sections share the height, the tallest giving first and
  * scrolling its own rows. Because a section header lives OUTSIDE its
  * scroller, no section can ever push another section's header out of view.
- * Each section list owns its own scrollbar gutter (see the section CSS
- * files); the rail reserves none.
+ * No Lens list reserves a scrollbar gutter. `scrollbar-gutter: stable` keeps
+ * content from shifting when a classic scrollbar appears — but it reserves the
+ * strip permanently, and on this platform the scrollbar is an overlay that
+ * never occupies it. What it bought was a blank band down the right edge that
+ * held every row's cell off the frame, so every row divider stopped short at
+ * one end and only one end, which reads as a mistake rather than as a rule
+ * between two rows. The scrollbar floats over the rows instead.
  */
 
 .lens-content {
@@ -51,12 +56,14 @@
    - a wider gap before it than the row's own inter-slot gap, so the handle
      stands apart from whatever trailing control precedes it (the slot picker
      must never read as ending in a grip);
-   - tucked past the row's inline inset, so the handle sits at the list frame
-     rather than a full row-inset in from it.
+   - tucked back out through the row's whole inline inset and then in by the
+     margin below, so the handle sits at the list frame rather than a row-inset
+     in from it — and sits at the SAME place whatever inset the row carries,
+     since the compact rows use a smaller one.
 
    Tune the two margins here; they are the only numbers this rule holds. */
 .lens-content .tug-list-row-grip {
   align-self: center;
   margin-inline-start: 7px;
-  margin-inline-end: -5px;
+  margin-inline-end: calc(4px - var(--tugx-list-row-padding-inline));
 }

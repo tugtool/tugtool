@@ -734,6 +734,16 @@ function releaseImposedFrame(
   return released;
 }
 
+/**
+ * How far the pointer must travel before a title-bar press is a move.
+ *
+ * Under this, the press is a click: it focuses the pane and commits nothing.
+ * The distinction matters most for a pane whose geometry is derived — a slotted
+ * card, or the pinned Lens — because committing a move is what releases it from
+ * the arrangement, and that should take an actual drag.
+ */
+const DRAG_MOVE_THRESHOLD_PX = 3;
+
 /** Height of the title bar chrome inside `.tug-pane-body` (below the outer frame). */
 const HEADER_HEIGHT_PX = 28;
 const DEFAULT_MIN_CONTENT: { width: number; height: number } = { width: 100, height: 60 };
@@ -1370,6 +1380,9 @@ export function TugPane({
   const dragStartPointer = useRef({ x: 0, y: 0 });
   // Canvas-relative card position captured at pointer-down.
   const dragStartPosition = useRef({ x: 0, y: 0 });
+  // Whether the pointer has travelled far enough to make this a move rather
+  // than a click. Until it has, the gesture commits nothing.
+  const dragMoved = useRef(false);
   // Canvas bounding rect snapshotted at drag-start; used for all clamping.
   const dragCanvasBounds = useRef<DOMRect | null>(null);
   // Most recent client-space pointer coordinates from onPointerMove.
@@ -1533,12 +1546,15 @@ export function TugPane({
       dragActive.current = true;
       dragStartPointer.current = { x: event.clientX, y: event.clientY };
 
-      // Dragging releases an imposed pane from its slot, so it converts to free
-      // pixel geometry before the first move (see `releaseImposedFrame`).
-      const startPosition = derivedRef.current
-        ? releaseImposedFrame(frame, dragCanvasBounds.current)
-        : { x: position.x, y: position.y };
-      dragStartPosition.current = { x: startPosition.x, y: startPosition.y };
+      // A derived pane (pinned Lens, imposed card) is released from whatever
+      // was deriving its geometry by MOVING it, not by being touched: the
+      // release waits for the pointer to travel (see `releaseImposedFrame`,
+      // called from the first frame past the threshold). Until then the pane
+      // still belongs to the arrangement, so a click on the Lens's title bar —
+      // to focus it, or to start a gesture and think better of it — leaves it
+      // pinned where it was.
+      dragMoved.current = false;
+      dragStartPosition.current = { x: position.x, y: position.y };
       latestDragPointer.current = { x: event.clientX, y: event.clientY };
 
       // Build tab bar cache for merge hit-testing. [D45]
@@ -1574,6 +1590,23 @@ export function TugPane({
       function applyDragFrame() {
         dragRafId.current = null;
         if (!dragActive.current) return;
+
+        // Below the threshold this is still a click, and a click moves nothing.
+        if (!dragMoved.current) {
+          const start = dragStartPointer.current;
+          const travelled = Math.hypot(
+            latestDragPointer.current.x - start.x,
+            latestDragPointer.current.y - start.y,
+          );
+          if (travelled < DRAG_MOVE_THRESHOLD_PX) return;
+          dragMoved.current = true;
+          // Now it is a move. A derived pane converts to free pixel geometry
+          // here, at the moment the gesture becomes one.
+          if (derivedRef.current) {
+            const released = releaseImposedFrame(frame, dragCanvasBounds.current);
+            dragStartPosition.current = { x: released.x, y: released.y };
+          }
+        }
 
         // Always solo card clamping.
         const pos = clampedPosition(
@@ -1669,6 +1702,16 @@ export function TugPane({
         // Belt-and-suspenders: clear attribute on all cached bar elements.
         for (const entry of dragTabBarCache.current) {
           entry.el.removeAttribute("data-card-drag-target");
+        }
+
+        // The pointer never travelled, so this was a click on the title bar.
+        // Nothing was moved, nothing merges, and nothing is committed — in
+        // particular a derived pane keeps the slot or the pin it started with.
+        if (!dragMoved.current) {
+          dragOtherRects.current = [];
+          latestAltKey.current = false;
+          lastSnapResult.current = null;
+          return;
         }
 
         // Hit-test tab bars for merge on drop. [D45]

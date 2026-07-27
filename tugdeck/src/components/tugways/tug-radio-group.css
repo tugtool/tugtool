@@ -15,6 +15,7 @@
  * | --tug7-element-radio-border-normal-off-hover       | --tug7-surface-control-primary-ghost-action-rest            | control       | .tug-radio-indicator (border-color) on hover                         |
  * | --tug7-element-radio-border-normal-off-disabled    | --tug7-surface-control-primary-ghost-action-rest            | informational | .tug-radio-indicator (border-color) when disabled                    |
  * | --tug7-element-field-text-normal-label-rest        | --tug7-surface-global-primary-normal-default-rest           | content       | .tug-radio-group-label (color)                                       |
+ * | --tug7-element-global-text-normal-default-rest     | --tug7-surface-control-primary-tinted-action-rest           | content       | a checked tile's label ([data-emphasis="tile"])                      |
  *
  * Note: Item label text pairings are declared in tug-button.css — TugButton owns its own styling.
  * The radio indicator renders on a ghost-action button surface (transparent bg, shared with TugButton).
@@ -159,6 +160,38 @@
   font-size: var(--tug-font-size-md);
 }
 
+
+/* ============================================================================
+   Tile emphasis ([data-emphasis="tile"])
+   ----------------------------------------------------------------------------
+   A tile has no dot — the item's own content is the picture being chosen, and
+   the checked mark is the tile itself: an accent outline over a tinted fill.
+   At rest it carries a transparent border of the same width, so checking one
+   changes its colour rather than its size and the row never shifts.
+   ========================================================================= */
+
+.tug-radio-group[data-emphasis="tile"] [data-slot="tug-radio-item"] {
+  border: 1px solid transparent;
+  border-radius: var(--tug-radius-sm);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-radio-group[data-emphasis="tile"]
+  [data-slot="tug-radio-item"][data-state="checked"] {
+  border-color: var(--tugx-radio-on-color);
+  background-color: var(--tug7-surface-control-primary-tinted-action-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* The keyboard-cursor rule above holds every item at its resting ghost surface
+   so the ring reads alone. On a tile the checked fill IS the selection, so it
+   has to survive the cursor landing on it — restate it one level more
+   specific. */
+.tug-radio-group[data-emphasis="tile"]
+  [data-slot="tug-radio-item"][data-state="checked"][data-key-cursor] {
+  border-color: var(--tugx-radio-on-color);
+  background-color: var(--tug7-surface-control-primary-tinted-action-rest);
+}
 
 /* ============================================================================
    Radio Indicator (.tug-radio-indicator)

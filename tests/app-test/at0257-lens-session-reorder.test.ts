@@ -15,7 +15,14 @@
  *      leaving the reordered set intact.
  *   3. Drag a grip far BELOW the list; assert the dragged row stays clamped
  *      within the list container instead of following the pointer out of it.
+ *   4. Measure a row cell against the list's frame: it must reach it at both
+ *      ends, with the grip standing a hair inside the trailing one. The row
+ *      divider is the cell's bottom border, so anything holding the cell off
+ *      the frame — list padding, a reserved scrollbar gutter — is a divider
+ *      that stops short at one end, and nothing about the end state says which.
  *
+ * @covers tugdeck/src/components/lens/lens-content.css
+ * @covers tugdeck/src/components/lens/sections/sessions-section.css
  * @covers tugdeck/src/components/lens/sections/sessions-section.tsx
  * @covers tugdeck/src/components/lens/block-reorder.ts
  * @covers tugdeck/src/lib/lens-store/
@@ -234,6 +241,74 @@ describe.skipIf(!SHOULD_RUN)("at0257 — Lens Sessions reorder + bottom-append",
             x: Math.round(wrap.x + wrap.width / 2),
             y: Math.round(wrap.y + wrap.height + 400),
           });
+        } finally {
+          await app.close();
+        }
+      } finally {
+        rmTempTugbank(tugbankPath);
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "rows run to the list frame at both ends, and the grip sits at the trailing one",
+    async () => {
+      const tugbankPath = mkTempTugbank();
+      try {
+        seedTugbankForLaunch(tugbankPath);
+        const app = await launchTugApp({
+          testName: "at0257-lens-session-row-edges",
+          env: { TUGBANK_PATH: tugbankPath },
+          persistInTestMode: true,
+        });
+        try {
+          await app.seedDeckState({ state: sessionDeck(), focusCardId: "A" });
+          await app.waitForCondition<boolean>(
+            `window.__tug.assertHostRootRegistered("A")`,
+            { timeoutMs: 5_000 },
+          );
+          await app.bindSession("A");
+          await app.bindSession("B");
+
+          await app.dispatchControlAction("toggle-lens");
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(${JSON.stringify(ROWS)}).length === 2`,
+            { timeoutMs: 5_000 },
+          );
+
+          // Measured against the list's own frame, INSIDE its border. A cell
+          // carries the row divider on its bottom edge, so a cell held off the
+          // frame is a divider that stops short — and it can be held off by
+          // list padding or by a reserved scrollbar gutter, neither of which
+          // any end-state screenshot distinguishes from the other.
+          const edges = await app.evalJS<{
+            leading: number;
+            trailing: number;
+            gripInset: number;
+          }>(
+            `(function(){
+              var list = document.querySelector(${JSON.stringify(LIST)});
+              var cell = list.querySelector(".tug-list-view-cell");
+              var grip = cell.querySelector('[data-slot="block-grip"]');
+              var cs = getComputedStyle(list);
+              var lr = list.getBoundingClientRect();
+              var cr = cell.getBoundingClientRect();
+              var gr = grip.getBoundingClientRect();
+              return {
+                leading: cr.left - (lr.left + parseFloat(cs.borderLeftWidth)),
+                trailing: (lr.right - parseFloat(cs.borderRightWidth)) - cr.right,
+                gripInset: cr.right - gr.right,
+              };
+            })()`,
+          );
+          console.log("[at0257] row edges:", JSON.stringify(edges));
+          expect(edges.leading).toBeCloseTo(0, 0);
+          expect(edges.trailing).toBeCloseTo(0, 0);
+          // The grip stands at the trailing frame, a hair in — not a whole row
+          // inset in from it, and not out past it.
+          expect(edges.gripInset).toBeGreaterThan(0);
+          expect(edges.gripInset).toBeLessThanOrEqual(6);
         } finally {
           await app.close();
         }

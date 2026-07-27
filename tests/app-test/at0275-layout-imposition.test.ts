@@ -31,6 +31,13 @@
  *     width to the pooled slack and leaves the cards exactly where they were.
  *     This is the same reflow a window or display resize triggers, driven by
  *     the one span change a headless test can actually make.
+ *   - **the flip crosses** — sending the Lens to the other side starts a real
+ *     transition on the rail number its pin is an expression of. The Lens
+ *     lands in exactly the right place whether or not anything animates, so
+ *     no end-state assertion can see this failing; and it has failed twice,
+ *     for two unrelated reasons (a bare length against a percentage has
+ *     nothing to interpolate; a registered custom property will not start a
+ *     transition that arrives in the same style change as its own value).
  *   - **a drag evicts** — dragging an imposed pane's title bar releases it to
  *     free geometry (`data-imposed` gone) while the pane beneath keeps its
  *     slot. Any manual geometry gesture does this; the explicit gesture wins.
@@ -435,6 +442,23 @@ describe.skipIf(!SHOULD_RUN)("at0275 — the layout imposer", () => {
         // side flips which edge the chain packs from, so the whole strip moves
         // with the Lens — live, with no reload.
         await app.nativeClickAtElement(sideSegment("left"));
+        // The Lens CROSSES to the other side rather than cutting to it. The
+        // reading is the running transition on `--tugx-lens-rail`, the number
+        // the Lens's pin is an expression of (`imposeLensStyle`): the frame
+        // lands in the right place either way, so the only thing that
+        // distinguishes a cross from a cut is whether this exists.
+        expect(
+          await app.waitForCondition<boolean>(
+            `(() => {
+              const lens = document.querySelector(".tug-pane[data-lens-pane]");
+              if (!lens) return false;
+              return lens
+                .getAnimations()
+                .some((a) => a.transitionProperty === "--tugx-lens-rail");
+            })()`,
+            { timeoutMs: 4_000 },
+          ),
+        ).toBe(true);
         await app.waitForCondition<boolean>(
           `document.querySelector(".tug-pane[data-lens=\\"left\\"]") !== null`,
           { timeoutMs: 8_000 },

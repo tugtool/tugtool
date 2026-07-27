@@ -13,6 +13,23 @@
   padding: 4px 6px 6px;
 }
 
+/* One axis: its caption and its tiles, held closer to each other than the two
+   axes are held apart, so the caption reads as belonging to the group under
+   it. */
+.layouts-section-axis {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+
+/* The caption lines up with the group's inner edge — the group carries a
+   focus-stop inset of its own (`tug-radio-group.css`), and a caption flush to
+   the section instead would sit outboard of everything it names. */
+.layouts-section-caption {
+  padding-inline-start: var(--tug-space-sm);
+}
+
 /* Both axes are the same control at the same scale, so they take one rule.
    Options run two to a row — the gallery card's `P4 · Two-column rows` shape:
    a picture and its name on one line, big enough to hit, with the name always
@@ -61,5 +78,5 @@
   text-align: start;
   font-size: var(--tug-font-size-xs);
   line-height: var(--tug-line-height-tight);
-  color: var(--tug7-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
 }

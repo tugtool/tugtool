@@ -248,7 +248,7 @@
   border: var(--tugx-progress-pulsing-dot-pulse-width) solid
     var(--tugx-progress-indicator-fill, currentColor);
   box-sizing: border-box;
-  transform: translate(-50%, -50%) scale(1);
+  transform: translate3d(-50%, -50%, 0) scale(1);
   opacity: 0;
   transition: border-color var(--tugx-progress-pulsing-dot-settle) linear;
 }
@@ -310,7 +310,17 @@
    finished its travel.
 
    `will-change` promotes both elements to compositor layers while they move;
-   scoped to the gates so a settled glyph costs zero layers. */
+   scoped to the gates so a settled glyph costs zero layers.
+
+   `will-change` is a hint, and a hint is not enough here. Every pose in this
+   file — the keyframes, the ring's base, and the settled pose the component
+   writes inline — is a `translate3d`, which is not a hint: a 3D transform gets
+   the element a layer of its own and the animation runs off the main thread.
+   That is the whole point. A column of these sits beside a live transcript, a
+   sparkline, and a telemetry feed; on the main thread the breath stutters
+   whenever any of them does work, and the stutter is far more legible than the
+   breath. The `z` is always 0 — nothing is being moved in depth, only made
+   independent of what else the page is busy with. */
 .tug-progress-pulsing-dot[data-breathing] .tug-progress-pulsing-dot-dot,
 .tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring {
   animation-duration: var(--tugx-progress-pulsing-dot-period);
@@ -436,7 +446,7 @@
    not the end of the fall. */
 @keyframes tugx-progress-pulsing-dot-breathe {
   from {
-    transform: translate(-50%, -50%)
+    transform: translate3d(-50%, -50%, 0)
       scale(
         var(
           --tugx-progress-pulsing-dot-dot-scale-min,
@@ -445,7 +455,7 @@
       );
   }
   to {
-    transform: translate(-50%, -50%) scale(1);
+    transform: translate3d(-50%, -50%, 0) scale(1);
   }
 }
 
@@ -459,7 +469,7 @@
    the box stops being far enough away to be worth traveling to. */
 @keyframes tugx-progress-pulsing-dot-emit-expand {
   from {
-    transform: translate(-50%, -50%)
+    transform: translate3d(-50%, -50%, 0)
       scale(
         var(
           --tugx-progress-pulsing-dot-emit-birth,
@@ -468,7 +478,7 @@
       );
   }
   to {
-    transform: translate(-50%, -50%)
+    transform: translate3d(-50%, -50%, 0)
       scale(
         var(
           --tugx-progress-pulsing-dot-emit-reach,

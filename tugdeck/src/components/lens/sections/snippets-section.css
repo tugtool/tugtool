@@ -42,14 +42,11 @@
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
    rules regardless of bundle order. The list is this section's scroller: it
-   fills the section's flex share and scrolls its rows internally, reserving its
-   own right-edge scrollbar gutter (so a long snippet editor at the tail stays
-   reachable without moving any other section). */
+   fills the section's flex share and scrolls its rows internally. */
 .tug-list-view.lens-snippets-list {
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  scrollbar-gutter: stable;
   /* Equal margin on all four sides — identical to the Sessions / Text Files
      lists so all three frame the same way and share one width. */
   margin: 6px;

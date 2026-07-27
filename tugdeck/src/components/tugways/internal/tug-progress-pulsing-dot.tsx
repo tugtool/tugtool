@@ -456,7 +456,11 @@ const PHASE_VAR = "--tugx-progress-pulsing-dot-phase";
 
 /** The dot's transform at a given breath scale. */
 function dotPose(scale: number): string {
-  return `translate(-50%, -50%) scale(${scale})`;
+  // 3D, like the keyframes — see the compositing note in the stylesheet. The
+  // settled pose has to be on the same footing as the animated one, or handing
+  // the dot from the loop to the transition tears its layer down and rebuilds
+  // it at exactly the frame the handoff is trying to hide.
+  return `translate3d(-50%, -50%, 0) scale(${scale})`;
 }
 
 /**

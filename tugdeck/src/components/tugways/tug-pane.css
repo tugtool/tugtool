@@ -121,27 +121,85 @@ body {
 
    This is why `layout-imposer.ts` emits every horizontal pin as `left`,
    including the ones measured from the right edge: a frame that switches
-   between `left` and `right` has nothing to interpolate.
+   between `left` and `right` has nothing to interpolate. The Lens is the one
+   exception and travels by a number instead — see the rail rule below.
 
-   `--tugx-imposer-settle-duration` is the knob, written onto the container from
-   `IMPOSITION_SETTLE_MS` so the timer that lifts the attribute and the
-   transition that runs under it read one number. Override it on the container
-   to tune.
+   Two knobs, both written onto the container by `deck-canvas.tsx` and both
+   overridable there to tune:
+
+   `--tugx-imposer-settle-duration` — from `IMPOSITION_SETTLE_MS`, so the timer
+   that lifts the attribute and the transition that runs under it read one
+   number.
+
+   `--tugx-imposer-settle-easing` — from `IMPOSITION_SETTLE_EASING`, a unit
+   function sampled into a CSS `linear()` (see `lib/unit-functions.ts`). The
+   curve is chosen there, in one place, in terms of the math rather than in
+   terms of Bézier control points. The `ease-out` in the fallbacks below is a
+   bare safety net for the frame before the script writes the real curve — it
+   is not the curve, and changing it changes nothing.
 
    A frame mid-gesture is excluded: the drag machine writes `left`/`top` every
    frame, and a transition on top of that lags the pointer.
    ========================================================================= */
 
+/* The pinned Lens's side, as a number: 0 on the left edge, 1 on the right.
+   Registering it makes it an animatable value, which is the only way the flip
+   crosses — the two anchors it selects between are a bare length and a
+   percentage, and those do not interpolate as two values of `left`. The
+   expression that reads it is `imposeLensStyle` in `lib/layout-imposer.ts`. */
+@property --tugx-lens-rail {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
+}
+
+.tug-pane {
+  /* The pair every settle transition below is timed by. Composed here so the
+     list of properties reads as a list of properties; both halves stay
+     var()-resolved, so an override on the container still reaches them. */
+  --tugx-imposer-settle-timing: var(--tugx-imposer-settle-duration, 300ms)
+    var(--tugx-imposer-settle-easing, ease-out);
+}
+
 [data-imposer-settling] .tug-pane:not([data-gesture]) {
   transition:
-    left var(--tugx-imposer-settle-duration, 500ms)
-      var(--tug-motion-easing-standard, ease),
-    top var(--tugx-imposer-settle-duration, 500ms)
-      var(--tug-motion-easing-standard, ease),
-    bottom var(--tugx-imposer-settle-duration, 500ms)
-      var(--tug-motion-easing-standard, ease),
-    width var(--tugx-imposer-settle-duration, 500ms)
-      var(--tug-motion-easing-standard, ease);
+    left var(--tugx-imposer-settle-timing),
+    top var(--tugx-imposer-settle-timing),
+    bottom var(--tugx-imposer-settle-timing),
+    width var(--tugx-imposer-settle-timing);
+}
+
+/* The Lens crosses by its RAIL, and `left` is an expression that reads it — so
+   `left` must not be in the Lens's own transition list. Two mechanisms driving
+   one property means every frame of the rail's walk restarts a `left`
+   transition toward wherever the rail has reached, and the two fight. The rail
+   is the single driver; `left` follows it for free.
+
+   The rail's transition is NOT gated on `data-imposer-settling`, and it is the
+   one thing here that is not. Two reasons, and both matter:
+
+   Gating it does not work. WebKit will not start a transition on a registered
+   custom property when the value and the `transition-property` that covers it
+   arrive in the same style change — which is exactly what the gate does, since
+   the attribute lands in the same frame as the new rail. (It has no such
+   trouble with `left`, which is why every other property here can be gated.)
+   With the declaration standing, the rail's change is the only news in the
+   frame and the transition starts.
+
+   Gating it is also unnecessary. Nothing writes the rail but a re-imposition —
+   a side change, or the pin coming back — so every change it can ever see is
+   one that should animate. There is no drag to protect it from: dragging the
+   Lens releases the pin instead of moving the rail. */
+.tug-pane[data-lens-pane] {
+  transition: --tugx-lens-rail var(--tugx-imposer-settle-timing);
+}
+
+[data-imposer-settling] .tug-pane[data-lens-pane]:not([data-gesture]) {
+  transition:
+    --tugx-lens-rail var(--tugx-imposer-settle-timing),
+    top var(--tugx-imposer-settle-timing),
+    bottom var(--tugx-imposer-settle-timing),
+    width var(--tugx-imposer-settle-timing);
 }
 
 .tug-pane-chrome {
