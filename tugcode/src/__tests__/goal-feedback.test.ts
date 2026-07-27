@@ -17,7 +17,7 @@ import { describe, test, expect } from "bun:test";
 
 import { routeTopLevelEvent, parseGoalFeedbackText } from "../session.ts";
 
-const CTX = { msgId: "m1", seq: 1, rev: 0 };
+const CTX = { msgId: "m1", openerId: "t-1", seq: 1, rev: 0 };
 
 /** Verbatim from capture-goal-2026-07-08T14-58-18-964Z (condensed reason). */
 const CAPTURED_FEEDBACK_TEXT =

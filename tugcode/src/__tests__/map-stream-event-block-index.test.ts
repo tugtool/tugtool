@@ -11,7 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapStreamEvent } from "../session.ts";
 
-const baseCtx = { msgId: "msg_x", seq: 0, rev: 0 };
+const baseCtx = { msgId: "msg_x", openerId: "t-0", seq: 0, rev: 0 };
 
 describe("mapStreamEvent — block_index + content_block_start", () => {
   test("content_block_start for a text block emits ContentBlockStart with kind=text + correct index", () => {

@@ -2852,9 +2852,11 @@ function handleTurnComplete(
 ): { state: CodeSessionState; effects: Effect[] } {
   // CASE A wire-echo suppression gate. When the user cancelled a
   // turn while `phase === "submitting"`, the wire eventually echoes
-  // a `turn_complete(result: "error", msg_id: "")` for the aborted
-  // cycle (verified via `tugcode/probe-case-a.ts`). Suppress it so
-  // no phantom transcript entry lands.
+  // a `turn_complete(result: "error")` for the aborted cycle
+  // (verified via `tugcode/probe-case-a.ts`; its msg_id is the turn's
+  // synthesized `t-<seq>` opener id — claude never revealed a message
+  // id before the abort). Suppress it so no phantom transcript entry
+  // lands.
   //
   // The triple-clause gate is what makes this correct under all
   // observed user-action races:
@@ -2964,7 +2966,13 @@ function handleTurnComplete(
   // with `canInterrupt=true` and a Stop button that can't reach the
   // wire. Clear the stale pending state so duplicate turn_complete
   // events are inert beyond the no-op transcript commit.
-  if (state.committedMsgIds.has(msgId)) {
+  // An empty msg_id is NOT an identity — it was the shared key every
+  // no-content turn (`/compact`, `/model`, any local-echo command) used
+  // to carry before tugcode stamped opener-id fallbacks, and deduping on
+  // it swallowed the second such turn's commit: scratch dropped (the
+  // `/compact` row vanished until a reload replayed it) and phase left
+  // stranded in-flight ("Waiting" forever). Dedupe only real identities.
+  if (msgId !== "" && state.committedMsgIds.has(msgId)) {
     tugDevLogStore.warn(
       "code-session-store",
       "dropping duplicate turn_complete",
@@ -2973,6 +2981,14 @@ function handleTurnComplete(
     return {
       state: {
         ...state,
+        // A phantom cycle can have advanced the live phase ladder (e.g.
+        // its stdout echo streamed a text delta) — dropping the commit
+        // must not strand an in-flight phase with no turn behind it.
+        // Replay/wake brackets own their own exits; leave them alone.
+        phase:
+          state.phase === "replaying" || state.phase === "waking"
+            ? state.phase
+            : "idle",
         pendingTurn: null,
         activeMsgId: state.activeMsgId === msgId ? null : state.activeMsgId,
         scratch: withoutPendingTurnScratch(state),
@@ -3033,7 +3049,12 @@ function handleTurnComplete(
 
   const scratch = withoutPendingTurnScratch(state);
   const committedMsgIds = new Set(state.committedMsgIds);
-  committedMsgIds.add(msgId);
+  // Never record "" as a committed identity (see the dedupe gate above):
+  // one legacy no-content commit would poison the set and swallow every
+  // later no-content turn.
+  if (msgId !== "") {
+    committedMsgIds.add(msgId);
+  }
 
   // While replaying, turn_complete commits a transcript entry but
   // stays in `replaying` — the bracket's terminal `replay_complete`

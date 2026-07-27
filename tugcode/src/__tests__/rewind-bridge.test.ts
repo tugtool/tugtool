@@ -72,7 +72,7 @@ function mockProcessWithStdinSpy(): { manager: SessionManager; written: string[]
   return { manager, written };
 }
 
-const CTX: EventMappingContext = { msgId: "", seq: 0, rev: 0 };
+const CTX: EventMappingContext = { msgId: "", openerId: "t-0", seq: 0, rev: 0 };
 
 // A mock manager whose JSONL reader returns a fixed session log — for the
 // conversation-rewindability ([#step-7-3]) preview checks.

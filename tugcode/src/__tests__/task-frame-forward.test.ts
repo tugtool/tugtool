@@ -35,7 +35,7 @@ function fixtureEvents(): Array<Record<string, unknown>> {
     .map((l) => JSON.parse(l) as Record<string, unknown>);
 }
 
-const baseCtx: EventMappingContext = { msgId: "m1", seq: 1, rev: 0 };
+const baseCtx: EventMappingContext = { msgId: "m1", openerId: "t-1", seq: 1, rev: 0 };
 
 describe("buildTaskStartedMessage", () => {
   test("forwards every captured task_started line (bash and agent kinds)", () => {

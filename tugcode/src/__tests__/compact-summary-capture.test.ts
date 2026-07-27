@@ -18,7 +18,7 @@ import { describe, test, expect } from "bun:test";
 import { routeTopLevelEvent } from "../session.ts";
 import type { EventMappingContext } from "../session.ts";
 
-const baseCtx = (): EventMappingContext => ({ msgId: "m1", seq: 1, rev: 0 });
+const baseCtx = (): EventMappingContext => ({ msgId: "m1", openerId: "t-1", seq: 1, rev: 0 });
 
 /** Verbatim-shaped live summary string (Claude Code's continuation framing). */
 const SUMMARY =

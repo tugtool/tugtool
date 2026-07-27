@@ -336,7 +336,7 @@ describe("stdin message format", () => {
 // routeTopLevelEvent tests (Step 1)
 // ---------------------------------------------------------------------------
 
-const baseCtx: EventMappingContext = { msgId: "msg-1", seq: 0, rev: 0 };
+const baseCtx: EventMappingContext = { msgId: "msg-1", openerId: "t-0", seq: 0, rev: 0 };
 
 describe("payloadHexPreview", () => {
   test("encodes a short payload in full", () => {
@@ -4954,5 +4954,102 @@ describe("overlapping-turn routing", () => {
     // active turn on `result`.
     expect((manager as any).pendingTurnInputs.length).toBe(0);
     expect((manager as any).activeTurn).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No-content turn terminal identity (the /compact-after-/model failure)
+// ---------------------------------------------------------------------------
+
+describe("no-content turn terminal frames carry the opener id", () => {
+  test("ActiveTurn mints t-<seq> as its opener id", () => {
+    const turn = new ActiveTurn(7, []);
+    expect(turn.openerId).toBe("t-7");
+    expect(turn.currentMessageId).toBeNull();
+  });
+
+  test("a local-command-only turn's turn_complete and stdout echo share a non-empty t- msg_id", async () => {
+    // The live /compact / /model shape: claude never opens an assistant
+    // message, only echoes <local-command-stdout> and ends with result.
+    // The terminal frames must NOT ride msg_id "" — the reducer dedupes
+    // commits by msg_id, and a shared "" key made the second no-content
+    // turn's commit vanish (dropped /compact row, phase stuck "Waiting").
+    const manager = new SessionManager(
+      "/tmp/tugcode-opener-id-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "user",
+        isReplay: true,
+        message: {
+          role: "user",
+          content: "<local-command-stdout>Compacted </local-command-stdout>",
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = {
+      type: "user_message" as const,
+      content: [{ type: "text" as const, text: "/compact" }],
+    };
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage(userMsg),
+    );
+
+    const turnCompletes = ipcMessages.filter(
+      (m: any) => m.type === "turn_complete",
+    );
+    expect(turnCompletes.length).toBe(1);
+    const terminalMsgId = (turnCompletes[0] as any).msg_id as string;
+    expect(terminalMsgId).toMatch(/^t-\d+$/);
+
+    // The synthesized stdout-echo block rides the same key, so the
+    // reducer's activeMsgId matches the terminal frame.
+    const echoes = ipcMessages.filter((m: any) => m.type === "assistant_text");
+    expect(echoes.length).toBeGreaterThan(0);
+    for (const echo of echoes) {
+      expect((echo as any).msg_id).toBe(terminalMsgId);
+    }
+    const starts = ipcMessages.filter(
+      (m: any) => m.type === "content_block_start",
+    );
+    for (const start of starts) {
+      expect((start as any).msg_id).toBe(terminalMsgId);
+    }
+  });
+
+  test("a content-bearing turn keeps claude's real message id on turn_complete", async () => {
+    const manager = new SessionManager(
+      "/tmp/tugcode-real-id-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: { id: "msg_real_1", usage: { input_tokens: 1 } },
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = {
+      type: "user_message" as const,
+      content: [{ type: "text" as const, text: "hello" }],
+    };
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage(userMsg),
+    );
+
+    const turnCompletes = ipcMessages.filter(
+      (m: any) => m.type === "turn_complete",
+    );
+    expect(turnCompletes.length).toBe(1);
+    expect((turnCompletes[0] as any).msg_id).toBe("msg_real_1");
   });
 });

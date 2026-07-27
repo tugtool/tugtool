@@ -911,6 +911,14 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
  */
 export interface EventMappingContext {
   msgId: string;
+  /**
+   * The owning turn's synthesized opener id ({@link ActiveTurn.openerId}).
+   * The `msg_id` fallback for frames synthesized while claude has not
+   * revealed a `message.id` (`msgId === ""`) — e.g. the local-command
+   * stdout echo of a `/compact` or `/model` turn. Empty string when no
+   * turn context applies.
+   */
+  openerId: string;
   seq: number;
   rev: number;
   /**
@@ -1700,20 +1708,26 @@ export function routeTopLevelEvent(
       // Slash commands return content as a plain string (not an array).
       // Per §13c: {"type":"user","isReplay":true,"message":{"role":"user",
       //   "content":"<local-command-stdout>...</local-command-stdout>"}}
+      //
+      // A local-command-only turn never reveals a claude `message.id`, so
+      // `ctx.msgId` is still "" when the stdout echo arrives — key the
+      // synthesized block on the turn's opener id so the frames (and the
+      // reducer's `activeMsgId`) match the terminal `turn_complete`.
+      const localEchoMsgId = ctx.msgId !== "" ? ctx.msgId : ctx.openerId;
       if (event.isReplay === true && typeof rawContent === "string") {
         const stdoutMatch = rawContent.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
         if (stdoutMatch) {
           // Slash-command stdout: synthesize a single text block.
           messages.push({
             type: "content_block_start",
-            msg_id: ctx.msgId,
+            msg_id: localEchoMsgId,
             block_index: 0,
             kind: "text",
             ipc_version: 2,
           });
           messages.push({
             type: "assistant_text",
-            msg_id: ctx.msgId,
+            msg_id: localEchoMsgId,
             block_index: 0,
             seq: ctx.seq,
             rev: ctx.rev,
@@ -1797,14 +1811,14 @@ export function routeTopLevelEvent(
                 // block pattern as the user-content path above.
                 messages.push({
                   type: "content_block_start",
-                  msg_id: ctx.msgId,
+                  msg_id: localEchoMsgId,
                   block_index: 0,
                   kind: "text",
                   ipc_version: 2,
                 });
                 messages.push({
                   type: "assistant_text",
-                  msg_id: ctx.msgId,
+                  msg_id: localEchoMsgId,
                   block_index: 0,
                   seq: ctx.seq,
                   rev: ctx.rev,
@@ -2571,6 +2585,19 @@ export class ActiveTurn {
   /** Outbound `seq` for the user-message half of this turn. */
   readonly seq: number;
   /**
+   * Synthesized per-turn opener id (`t-<seq>`), the terminal frames'
+   * `msg_id` fallback when claude never revealed a `message.id` this
+   * turn. A local-command turn (`/compact`, `/model`, …) streams no
+   * assistant message, so {@link currentMessageId} stays null for its
+   * whole run; stamping its `turn_complete` with `""` made every such
+   * turn share one dedupe key in the reducer's `committedMsgIds` — the
+   * second no-content turn's commit was swallowed as a duplicate (the
+   * `/compact`-row-vanishes / stuck-Waiting failure). The `t-` prefix
+   * is disjoint from claude's real `msg_*` ids and from the replay
+   * translator's `u-` / `w-` / `a-` opener namespaces.
+   */
+  readonly openerId: string;
+  /**
    * The user's submitted content blocks, captured by
    * `handleUserMessage` from the inbound `UserMessage`. Source-of-truth
    * for the in-flight turn's synthetic `add_user_message` payload
@@ -2698,6 +2725,7 @@ export class ActiveTurn {
     userContent: ReadonlyArray<ContentBlock>,
   ) {
     this.seq = seq;
+    this.openerId = `t-${seq}`;
     this.userContent = userContent;
     let resolve: () => void = () => {};
     this.completion = new Promise<void>((r) => {
@@ -5906,6 +5934,7 @@ export class SessionManager {
 
     const ctx: EventMappingContext = {
       msgId: lane.msgId ?? "",
+      openerId: turn.openerId,
       seq: turn.seq,
       rev: lane.rev,
       pendingCompactSummary: turn.pendingCompactSummary,
@@ -6253,7 +6282,11 @@ export class SessionManager {
       if (!turn.suppressEmit) {
         writeLine({
           type: "turn_complete",
-          msg_id: turn.currentMessageId ?? "",
+          // Fall back to the turn's opener id, never "": a no-content
+          // turn (`/compact`, `/model`) has no claude message id, and an
+          // empty msg_id collides in the reducer's `committedMsgIds`
+          // dedupe with every other no-content turn's commit.
+          msg_id: turn.currentMessageId ?? turn.openerId,
           seq: turnSeq,
           result: resultValue,
           ipc_version: 2,
@@ -6307,7 +6340,7 @@ export class SessionManager {
    * deliver a complete TurnEntry even when the drain dies mid-replay.
    */
   private emitInflightTurnFromActiveTurn(turn: ActiveTurn): void {
-    const msgId = turn.currentMessageId ?? "";
+    const msgId = turn.currentMessageId ?? turn.openerId;
     // 1. add_user_message — synthetic. Carries the turn's content
     //    blocks (Anthropic API shape) as-submitted. No `msg_id` on
     //    this frame ([D14]): the reducer's `activeMsgId` is set by
@@ -6602,7 +6635,7 @@ export class SessionManager {
       if (!turn.suppressEmit) {
         writeLine({
           type: "turn_cancelled",
-          msg_id: turn.currentMessageId ?? "",
+          msg_id: turn.currentMessageId ?? turn.openerId,
           seq: turn.seq,
           partial_result: turn.partialText || "User interrupted",
           ipc_version: 2,
