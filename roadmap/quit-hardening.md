@@ -110,7 +110,21 @@ Self-update via Sparkle landed on main (`1128c1fe4`), which makes the app an *in
 
 **Plan to resolve:** Step 7 re-runs the release build with the now-landed delegate logging; the branch taken depends on whether the callback logs appear. Either way, `automaticallyDownloadsUpdates = false` is set explicitly on the updater as a hard backstop — consent must not depend on a heuristic.
 
-**Resolution:** OPEN — resolved by #step-7.
+**Resolution:** RESOLVED — the release-configuration divergence does not reproduce, and the delegate hypothesis is refuted by direct evidence.
+
+A release-configuration bundle (`Tug-release-tugdash-quit-hardening.app`, Sparkle framework embedded) was run twice against a locally served, EdDSA-signed appcast advertising 0.8.1 to its own 0.8.0, with the bundle's Sparkle defaults cleared between runs. Both runs logged:
+
+```
+UpdateController: started (automaticallyDownloadsUpdates=no, automaticallyChecksForUpdates=yes)
+UpdateController: scheduled update 0.8.1 — sparkle shows it: no
+UpdateController: will show update 0.8.1 (sparkle handles: no, userInitiated: no)
+```
+
+and the feed server recorded **only** `GET /appcast.xml` — never `GET /Tug-0.8.1.zip`. So in a release build: the `SPUStandardUserDriverDelegate` conformance *is* witnessed (both callbacks fire), the scheduled update *is* handed to the deck bulletin rather than Sparkle, and nothing is downloaded before consent. The "conformance dropped in release" option is out.
+
+That leaves the policy explanation, which [P07] now forecloses regardless of cause: `automaticallyDownloadsUpdates = false` is set explicitly on the started updater, and both automatic-update flags are NSLogged at launch so a release bundle's real policy is readable without a debugger.
+
+**Caveat on the evidence:** this bundle is ad-hoc signed with a branch-rewritten identity, reaching Sparkle through the `TUG_SPARKLE_FEED` override rather than the stable-identity gate; the original incident was on a notarized, DMG-installed `dev.tugtool.app`. The behavioral acceptance test on that exact path stays a user pass (it needs notarization credentials), and the observed evidence here is what the fix is gated on.
 
 ---
 
@@ -260,6 +274,7 @@ Self-update via Sparkle landed on main (`1128c1fe4`), which makes the app an *in
 - A CASE A interrupt (from [P03]) parks the submission in `pendingDraftRestore`; if React hasn't consumed it into the editor before the save callback runs, the capture must read it from the store directly rather than depend on a render tick.
 
 **Implications:**
+- **Ordering defect found during implementation:** a CASE A interrupt sets `queuedSends: []` in the reducer (`handleInterrupt`, `tugdeck/src/lib/code-session-store/reducer.ts`) — correct for a user pulling a turn back, fatal for this plan, because [P03] interrupts *before* the capture phase runs. The pipeline would have interrupted the turn and then found an empty queue, losing exactly the queued text [P10] exists to save. Resolved with `CodeSessionStore.stashUnsentText()`: the pipeline calls it on every live session immediately before `interrupt()`, and `captureUnsentText()` returns the deduplicated union of the live slots and the stash, oldest first. Pinned by `code-session-store.unsent-text.test.ts`.
 - `SaveCallbackSource` (defined in `tugdeck/src/deck-trace.ts`) gains a `"termination"` member.
 - **The source does not reach `onSave` today** — `invokeSaveCallback(id, source)` uses `source` only for the deck-trace tag; the registered callback is `() => void`. Threading it requires extending four signatures along the capture chain, all backward-compatibly (optional parameter): the callback type in `DeckManager.registerSaveCallback` (`tugdeck/src/deck-manager.ts`), the registered wrapper in `tugdeck/src/components/chrome/card-host.tsx`, `CardStateOrchestrator.captureCardState` + `CardAssembler.capture` (`tugdeck/src/card-state-orchestrator.ts`), and `onSave: (source?) => T` in `tugdeck/src/components/tugways/use-card-state-preservation.tsx`. The deck reaching into bag internals instead would violate [L10]; threading keeps capture in the cards.
 
@@ -272,6 +287,7 @@ Self-update via Sparkle landed on main (`1128c1fe4`), which makes the app an *in
 
 **Implications:**
 - The F4 defect is fixed as a property of the shape, not a patch; a regression test pins layout-save-on-quit.
+- **Implementation note (landed):** the core takes `layoutSave: "if-pending" | "always"`. `"if-pending"` (default) writes the layout when a debounced save was in flight — exactly the F4 loss window — and is what the frequent teardown signals (HMR, `visibilitychange`, `beforeunload`) use, so a layout that never changed is not re-written on every HMR update. `"always"` is for the once-per-exit callers (`prepareForReload`, the termination pipeline), where the extra write costs nothing and makes the verdict's `layoutSaved` mean "the current layout is on disk". `handleVisibilityChange` — a fifth entry point the plan did not enumerate — carried the same partial copy and now runs through the core too.
 
 ---
 
@@ -384,7 +400,7 @@ No new React-observed state is introduced anywhere in this plan.
 
 | File | Purpose |
 |------|---------|
-| `tests/app-test/at02xx-quit-draft-survival.test.ts` | draft survives the saveState/prepareForTermination RPC round-trip (number assigned at implementation; `@covers` deck-manager + settings-api + prompt entry) |
+| `tests/app-test/at0279-quit-draft-survival.test.ts` | typed text and the layout survive the `prepareForTermination` RPC, asserted against the real tugbank file; verdict shape checked (`@covers` deck-manager, settings-api, main.tsx, AppDelegate) |
 
 ---
 
@@ -421,15 +437,15 @@ No new React-observed state is introduced anywhere in this plan.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Verified writes in settings-api + flush results | pending | — |
-| #step-2 | Unified teardown-save core in DeckManager | pending | — |
-| #step-3 | prepareForTermination pipeline (interrupt + capture + retry + verdict) | pending | — |
-| #step-4 | Swift rewire: callAsyncJavaScript, deadline, fallback, plist guard | pending | — |
-| #step-5 | ProcessManager polled teardown grace | pending | — |
-| #step-6 | Sparkle postpone-relaunch integration | pending | — |
-| #step-7 | [Q02] diagnosis + consent backstop | pending | — |
-| #step-8 | App-test: draft survival through the termination RPC | pending | — |
-| #step-9 | Integration checkpoint: end-to-end quit + update passes | pending | — |
+| #step-1 | Verified writes in settings-api + flush results | done | `2019f58d7` |
+| #step-2 | Unified teardown-save core in DeckManager | done | `762de4b46` |
+| #step-3 | prepareForTermination pipeline (interrupt + capture + retry + verdict) | done | `c9520b8c0` |
+| #step-4 | Swift rewire: callAsyncJavaScript, deadline, fallback, plist guard | done | `1e777e1e7` |
+| #step-5 | ProcessManager polled teardown grace | done | `2e49b52fe` |
+| #step-6 | Sparkle postpone-relaunch integration | done | `e756c2564` |
+| #step-7 | [Q02] diagnosis + consent backstop | done | `e756c2564` (backstop; diagnosis run recorded in [Q02]) |
+| #step-8 | App-test: draft survival through the termination RPC | done | `592b9150e` |
+| #step-9 | Integration checkpoint: end-to-end quit + update passes | partial | `N/A` (two of four passes run; live-turn passes are the user's) |
 
 #### Step 1: Verified writes in settings-api + flush results {#step-1}
 
@@ -474,8 +490,7 @@ No new React-observed state is introduced anywhere in this plan.
 - [ ] Verify the HMR wrappers still perform zero data reload (constraint; `tugdeck/src/hmr-bridge.ts` call sites unchanged).
 
 **Tests:**
-- [ ] bun unit: `saveAndFlushSync` with a pending `saveTimer` saves layout exactly once (the F4 regression pin).
-- [ ] bun unit: double teardown signals (`hmr` then `beforeunload`) still single-save via the guards.
+- [x] `src/__tests__/teardown-save-core.test.ts` — shape guard: every teardown entry point delegates to the core and keeps no private copy of the save sequence; the core retires the layout timer, saves the layout, invokes the callbacks, and flushes. **`DeckManager` cannot be constructed without a live container element and there is no fake-DOM substrate in this suite**, so the behavioral F4 pin (a pending layout change persisted on quit) lives in the app-test at #step-8; the source guard is the cheap regression pin for the shape, on the `boot-faithful-restore.test.ts` precedent.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test deck-manager` passes; `bunx vite build` succeeds.
@@ -504,9 +519,8 @@ No new React-observed state is introduced anywhere in this plan.
 - [ ] Add `prepareForTermination` to the `window.tugdeck` interface declaration in `tugdeck/src/main.tsx`.
 
 **Tests:**
-- [ ] bun unit (real `CodeSessionStore`, scripted wire): a CASE A interrupt's pulled-back text and two queued sends all appear in the termination-source capture; a steady-state (`"manual"`) save does *not* include queued text.
-- [ ] bun unit: verdict shape — an unacknowledged store lands in `unacknowledged` after the (shortened-for-test) deadline; idle stores produce no interrupt frames; a `replaying` store is skipped (no interrupt frame, appears in neither verdict list, replay state untouched).
-- [ ] bun unit: flush retry succeeds on the Nth stubbed attempt and reports `failedCards: []`.
+- [x] `src/lib/code-session-store/__tests__/code-session-store.unsent-text.test.ts` (real `CodeSessionStore`, scripted wire): a CASE A interrupt's pulled-back text and two queued sends all appear in `captureUnsentText()`, in order, *after* the interrupt has cleared the queue; no duplication when the queue survived; `canInterrupt` published true for a running turn and false when idle; CASE A settles synchronously (no wait on the idle-ish path) while CASE B stays open until the wire commits (the case the bound exists for).
+- [ ] **Deferred to #step-8 (app-test):** verdict shape, the unacknowledged-after-deadline path, and the flush-retry loop. These are `DeckManager` behavior and `DeckManager` needs a live container element — there is no fake-DOM substrate in the bun suite, and hand-rolling a store to assert call counts is a banned pattern. The real app exercises them through `window.tugdeck.prepareForTermination()`.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test` for the touched suites passes; `bunx vite build` succeeds.
@@ -535,8 +549,9 @@ No new React-observed state is introduced anywhere in this plan.
 - [ ] Build-level: `just app-debug` builds clean with no new warnings (the Xcode project does not enforce warnings-as-errors — hold the line by inspection).
 
 **Checkpoint:**
-- [ ] Launch the debug app, type into a composer, ⌘Q; console shows the verdict line with `ok: true` before "shutdown"; relaunch restores the draft.
-- [ ] ⌘Q with no cards dirty is subjectively as fast as before (no added waits on the idle path).
+- [x] Debug app launched and quit: `AppDelegate: applicationShouldTerminate — running the deck termination pipeline` → `AppDelegate: termination verdict — ok=true interrupted=none unacknowledged=none flushedCards=2 failedCards=none layoutSaved=true elapsedMs=4` → teardown. Verdict precedes teardown, both cards' writes confirmed by tugbank, layout saved.
+- [x] Idle-path cost measured, not estimated: **4 ms** (Risk R01 closed). Every phase early-exited — no live turn, no failed write.
+- [ ] Typed-draft survival across a real relaunch — folded into #step-9's manual passes.
 
 ---
 
@@ -555,10 +570,11 @@ No new React-observed state is introduced anywhere in this plan.
 - [ ] Implement the poll; keep the pre-existing 5 s UDS wait and the always-SIGTERM-the-group behavior (tugcast's `std::process::exit` rationale in the existing comment stands).
 
 **Tests:**
-- [ ] Manual: quit with an idle session — log shows group exit well under the bound, no SIGKILL line.
+- [x] Quit with an idle session: `ProcessManager: process group 78728 exited gracefully after 0.0s` — the poll saw ESRCH on its first check and no SIGKILL line was emitted.
 
 **Checkpoint:**
-- [ ] After ⌘Q, `pgrep -f tugcast; pgrep -f tugcode` for this instance returns nothing; the dev/release tmux server *remains* (deliberate persistence, #context F3).
+- [x] After the quit, `pgrep -fl "tugcast|tugcode"` shows no survivor for this instance (the only tugcode left belongs to the separate `release-main` instance).
+- [ ] The tmux-server-survives assertion was not exercised: no tmux server was running on this machine during the pass (`no server running on /private/tmp/tmux-501/default`), so there was nothing to preserve. Re-check during #step-9 with a live Shell route.
 
 ---
 
@@ -597,15 +613,16 @@ No new React-observed state is introduced anywhere in this plan.
 - The release-configuration divergence root-caused and fixed (delegate-conformance fix if the release run shows no delegate NSLog output; otherwise the policy backstop carries it), recorded in this plan's [Q02] resolution.
 
 **Tasks:**
-- [ ] Build a release-configuration bundle with the existing delegate logging; run against the local feed; capture whether `standardUserDriverShouldHandleShowingScheduledUpdate` / `standardUserDriverWillHandleShowingUpdate` log lines appear.
-- [ ] Apply the indicated fix; set the [P07] backstop either way.
-- [ ] Update [Q02]'s **Resolution** line here with the root cause.
+- [x] Built a release-configuration bundle and ran it against a locally served signed appcast (0.8.1 offered to 0.8.0). Both delegate callbacks log in release — the conformance-not-witnessed hypothesis is refuted.
+- [x] `automaticallyDownloadsUpdates = false` set explicitly, plus a launch-time NSLog of both automatic-update flags.
+- [x] [Q02] **Resolution** recorded above, with the evidence and its caveat.
 
 **Tests:**
-- [ ] Acceptance (behavioral): release bundle + local feed offering a newer version → no archive download and no bundle replacement occurs before consent; after clicking the bulletin's Update action, the normal flow proceeds.
+- [x] Acceptance (behavioral): the feed server logged only `GET /appcast.xml` across both runs — no archive download, no bundle replacement, deferral to the deck bulletin.
 
 **Checkpoint:**
-- [ ] The acceptance run repeated twice (fresh extract, defaults cleared) shows deferral both times — the exact scenario that failed three times pre-fix.
+- [x] Run repeated twice with Sparkle defaults cleared between: deferral both times, zero zip requests.
+- [ ] The same pass on a notarized, DMG-installed stable-identity bundle — needs notarization credentials, so it stays a user pass.
 
 ---
 
@@ -621,15 +638,15 @@ No new React-observed state is introduced anywhere in this plan.
 - `tests/app-test/at02xx-quit-draft-survival.test.ts` (next free number; `@covers` lines for `tugdeck/src/deck-manager.ts`, `tugdeck/src/settings-api.ts`, `tugdeck/src/components/tugways/tug-prompt-entry.tsx`): type into the real composer via the harness, invoke `window.tugdeck.prepareForTermination()` through `app.evalJS`, assert the verdict shape (Spec S01) and that the card-state bag in tugbank now holds the typed text.
 
 **Tasks:**
-- [ ] Author the test on the at0017 saveState-RPC-parity precedent; keep it fast and exiting (no real Claude turn — interrupt phases with zero live sessions are the app-test scope; live-turn interrupt is Step 9's manual pass).
-- [ ] `just app-test-covers-check` passes for the new file.
+- [x] Authored `at0279-quit-draft-survival.test.ts` on the at0017 precedent, with a per-test `TUGBANK_PATH` + `persistInTestMode` so the assertions read the **file the app wrote**, not the in-memory cache — the cache would pass even if every write were dropped, which is the exact failure this plan closes. Runs in ~2 s, no Claude turn.
+- [x] `just app-test-covers-check` passes (238 files, all `@covers` resolving).
 
 **Tests:**
-- [ ] The new app-test itself.
+- [x] The new app-test: 13 assertions, green. Verdict `ok: true`, nothing interrupted, no failed cards, `layoutSaved: true`; the typed text is in the durable card-state bag and the layout blob is on disk.
 
 **Checkpoint:**
-- [ ] `just app-test tests/app-test/at02xx-quit-draft-survival.test.ts` green.
-- [ ] `just app-test-changed` selection runs green.
+- [x] `just app-test tests/app-test/at0279-quit-draft-survival.test.ts` green.
+- [x] `just app-test-changed` — the plan's earlier deck-manager selection ran 19/19 green; after this step the working diff is the new test file alone, which resolves to no additional coverage.
 
 ---
 
@@ -642,13 +659,13 @@ No new React-observed state is introduced anywhere in this plan.
 **References:** [P03] Interrupt-first, [P04] Bounded, [P06] Postpone relaunch, Spec S01, (#success-criteria)
 
 **Tasks:**
-- [ ] **Live-turn quit:** start a real session turn, ⌘Q mid-stream; verify from logs: interrupt sent → acknowledgment (or bounded expiry) → verdict → shutdown → group exit; relaunch and confirm the interrupted turn shows `result: "interrupted"` (CASE B) or the pulled-back draft (CASE A), and the composer draft survived.
-- [ ] **Quit during tugcast outage:** `kill` the instance's tugcast, ⌘Q inside the supervisor backoff window; verify the retry path lands the writes (verdict `ok: true`) or reports `failedCards` honestly.
-- [ ] **Update with a live turn:** local-feed update while a turn streams; verify the full sequence ends in the new version running with the draft intact.
-- [ ] **Idle-path timing:** quit with nothing dirty; confirm no added latency.
+- [ ] **Live-turn quit:** start a real session turn, ⌘Q mid-stream; verify from logs: interrupt sent → acknowledgment (or bounded expiry) → verdict → shutdown → group exit; relaunch and confirm the interrupted turn shows `result: "interrupted"` (CASE B) or the pulled-back draft (CASE A), and the composer draft survived. **Not run** — it needs a real Claude turn driven by hand in the running app; the store-level contract it rests on is pinned by `code-session-store.unsent-text.test.ts` (canInterrupt gating, CASE A settling synchronously, CASE B staying open until the wire commits).
+- [x] **Quit during tugcast outage:** tugcast SIGKILLed, then quit immediately. Verdict: `ok=false interrupted=none unacknowledged=none flushedCards=0 failedCards=a56b524b…,45694c20… layoutSaved=false elapsedMs=5092` — the full 5 s retry budget spent, then teardown proceeded with every casualty named. Quit was delayed by exactly the bound and never hung. **This pass found a real gap and it was fixed here:** the first run reported `layoutSaved=false elapsedMs=253`, because the retry loop covered card bags but not the layout — the layout write failed once and was never re-attempted. `retryFailedWrites` now retries both.
+- [ ] **Update with a live turn:** local-feed update while a turn streams. **Not run** — needs both a real Claude turn and the notarized update path.
+- [x] **Idle-path timing:** quit with nothing live and nothing failing: `ok=true … flushedCards=2 layoutSaved=true elapsedMs=4`. Four milliseconds — every phase early-exited (Risk R01 closed with a measurement, not an estimate).
 
 **Checkpoint:**
-- [ ] All four passes recorded (log excerpts) against the success criteria in #success-criteria.
+- [x] The two passes above recorded with log excerpts. The other two are the user's: both need a live Claude turn, and the update pass additionally needs notarization credentials.
 
 ---
 

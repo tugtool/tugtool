@@ -685,15 +685,51 @@ class ProcessManager {
         if let proc = process {
             let pgid = proc.processIdentifier
             kill(-pgid, SIGTERM)
-            // Brief wait, then force-kill any stragglers.
-            usleep(200_000)
-            kill(-pgid, SIGKILL)
+            waitForProcessGroupToExit(pgid: pgid)
         }
         process = nil
 
         // Close control connection but keep listener (for potential restart)
         controlConnection?.close()
         controlConnection = nil
+    }
+
+    /// How long the process group gets to exit on its own after SIGTERM,
+    /// and how often we check. tugcode's SIGTERM handler runs a graceful
+    /// `sessionManager.shutdown()` — an stdin-EOF drain plus, for a session
+    /// that was mid-turn, its own SIGINT ladder — which takes seconds, not
+    /// milliseconds. A fixed 200 ms wait guaranteed the SIGKILL landed
+    /// mid-shutdown every time.
+    private static let processGroupExitGrace: TimeInterval = 5.0
+    private static let processGroupPollInterval: TimeInterval = 0.1
+
+    /// Wait for the process group to drain, then SIGKILL whatever is left.
+    ///
+    /// `kill(-pgid, 0)` sends no signal — it only asks whether the group
+    /// still exists. ESRCH means every child is gone, and that, not a
+    /// timer, is what lets teardown move on. Costs nothing when the
+    /// children exit fast, which is the normal case now that the deck has
+    /// already interrupted and idled the sessions.
+    private func waitForProcessGroupToExit(pgid: pid_t) {
+        let startedAt = Date()
+        let deadline = startedAt.addingTimeInterval(Self.processGroupExitGrace)
+        while Date() < deadline {
+            if kill(-pgid, 0) != 0 && errno == ESRCH {
+                NSLog(
+                    "ProcessManager: process group %d exited gracefully after %.1fs",
+                    pgid,
+                    Date().timeIntervalSince(startedAt)
+                )
+                return
+            }
+            Thread.sleep(forTimeInterval: Self.processGroupPollInterval)
+        }
+        NSLog(
+            "ProcessManager: process group %d still alive after %.1fs — SIGKILL",
+            pgid,
+            Self.processGroupExitGrace
+        )
+        kill(-pgid, SIGKILL)
     }
 
     /// Full teardown for app termination.

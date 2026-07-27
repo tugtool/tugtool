@@ -110,7 +110,7 @@ import * as paneContentRegistry from "./pane-content-registry";
 import * as paneFrameRegistry from "./pane-frame-registry";
 import * as paneRootRegistry from "./pane-root-registry";
 import { CardPortal } from "./card-portal";
-import { deckTrace } from "../../deck-trace";
+import { deckTrace, type SaveCallbackSource } from "../../deck-trace";
 import { applyBagFocus } from "../../focus-transfer";
 import { CardIdContext } from "@/lib/card-id-context";
 
@@ -1215,8 +1215,10 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // capture. This is the "assembler" the CardStateOrchestrator invokes
   // on every save trigger ([A9c]); the orchestrator layers
   // `bag.components` on top of whatever this returns.
-  const assembleFrameworkBagRef = useRef<() => CardStateBag>(() => ({}));
-  assembleFrameworkBagRef.current = () => {
+  const assembleFrameworkBagRef = useRef<(source?: SaveCallbackSource) => CardStateBag>(
+    () => ({}),
+  );
+  assembleFrameworkBagRef.current = (source?: SaveCallbackSource) => {
     // Content not mounted (the `feedsReady` gate below is still showing
     // "Loading..."): nothing user-visible can have changed, and a fresh
     // capture would assemble a bag with NO `content` axis — replacing the
@@ -1242,7 +1244,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // editor ever restores it. Per [L23], an internal save must not
     // drop an axis it cannot currently capture.
     const content =
-      cardStatePreservationCallbacksRef.current?.onSave() ??
+      cardStatePreservationCallbacksRef.current?.onSave(source) ??
       store.getCardState(cardId)?.content;
     // Scope form-control capture to THIS card's subtree so sibling cards in
     // the same pane (tab-group) never contaminate each other's values.
@@ -1385,9 +1387,9 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // and app will-phase triggers). Routes through `captureCardState` so
   // every save trigger picks up both framework axes and opt-in
   // component state in one call ([A9c] / [AT0017]).
-  const saveCurrentCardStateRef = useRef<() => void>(() => {});
-  saveCurrentCardStateRef.current = () => {
-    store.setCardState(cardId, store.captureCardState(cardId));
+  const saveCurrentCardStateRef = useRef<(source?: SaveCallbackSource) => void>(() => {});
+  saveCurrentCardStateRef.current = (source?: SaveCallbackSource) => {
+    store.setCardState(cardId, store.captureCardState(cardId, source));
   };
 
   useLayoutEffect(() => {
@@ -1397,9 +1399,9 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // is built once here); its underlying closure reads the latest
     // render's state via `assembleFrameworkBagRef.current`.
     const unregisterAssembler = store.registerCardAssembler(cardId, {
-      capture: () => assembleFrameworkBagRef.current(),
+      capture: (source) => assembleFrameworkBagRef.current(source),
     });
-    store.registerSaveCallback(cardId, () => saveCurrentCardStateRef.current());
+    store.registerSaveCallback(cardId, (source) => saveCurrentCardStateRef.current(source));
     return () => {
       store.unregisterSaveCallback(cardId);
       unregisterAssembler();

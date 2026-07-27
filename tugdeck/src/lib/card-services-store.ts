@@ -699,6 +699,17 @@ class CardServicesStore {
    * session-scoped CONTROL response (e.g. `list_shell_exchanges_ok`) back to
    * the owning card's stores. Returns null if no live card holds that session.
    */
+  /**
+   * Every live card's services bag, in insertion order. Used by the
+   * deck's termination pipeline, which has to reach every session that
+   * might be mid-turn — it has no card id to look one up by, and asking
+   * for "all of them" is exactly what it means.
+   */
+  allServices = (): CardServices[] => {
+    this._ensureInitialized();
+    return Array.from(this._services.values());
+  };
+
   getByTugSessionId = (tugSessionId: string): CardServices | null => {
     this._ensureInitialized();
     for (const services of this._services.values()) {

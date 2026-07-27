@@ -409,6 +409,27 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         webView.evaluateJavaScript(script, completionHandler: completionHandler)
     }
 
+    /// Run `body` as an async JavaScript function and call back with the
+    /// value its promise resolves to.
+    ///
+    /// Unlike `evaluateJavaScript`, WebKit awaits the returned promise
+    /// natively, so the deck can do genuinely asynchronous work — awaited
+    /// `fetch` with a status check, a bounded wait on a session — and the
+    /// host still learns the outcome. The quit path is the reason this
+    /// exists: it needs the deck's verdict, not just "the call returned".
+    func callAsyncJavaScript(
+        _ body: String,
+        completionHandler: @escaping @MainActor @Sendable (Result<Any, Error>) -> Void
+    ) {
+        webView.callAsyncJavaScript(
+            body,
+            arguments: [:],
+            in: nil,
+            in: .page,
+            completionHandler: completionHandler
+        )
+    }
+
     /// Make the WKWebView the window's first responder so keyboard focus lands
     /// inside the web content. A menu key equivalent (⌘L) fires even when the
     /// native title bar — not the web view — holds focus; a DOM focus change

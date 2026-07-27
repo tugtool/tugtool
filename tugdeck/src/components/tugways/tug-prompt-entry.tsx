@@ -2824,7 +2824,7 @@ export const TugPromptEntry = React.forwardRef<
       }
       editor?.paintMirrorAsInactive(publishToSelectionGuard);
     },
-    onSave: () => {
+    onSave: (source) => {
       const editor = textEditorRef.current;
       // No live substrate: forward the last draft this entry saw rather
       // than writing `draft: null` over a good persisted draft. [L23]
@@ -2855,6 +2855,27 @@ export const TugPromptEntry = React.forwardRef<
       const attachmentBytes = Object.keys(bytesSnap).length > 0
         ? bytesSnap
         : undefined;
+      // The app is exiting: text the user committed but that is not in
+      // the composer — a pulled-back submission still sitting in the
+      // restore slot, and every queued send — has no other durable home,
+      // so it is appended to the draft rather than dropped with the
+      // process. Steady-state saves must not do this: the queue is still
+      // on screen as ghost rows and the restore slot is about to seed the
+      // editor, so folding it in would duplicate the text. [L23].
+      if (source === "termination") {
+        const unsent = codeSessionStore.captureUnsentText();
+        if (unsent.length > 0) {
+          const existing = draft?.text ?? "";
+          // Appended at the end so every atom position in the draft
+          // (indices into `text`) and the saved selection stay valid.
+          const text = existing.length > 0
+            ? `${existing}\n\n${unsent.join("\n\n")}`
+            : unsent.join("\n\n");
+          draft = draft !== null
+            ? { ...draft, text }
+            : { text, atoms: [], selection: null };
+        }
+      }
       lastKnownDraftRef.current = draft;
       return {
         route,

@@ -3,6 +3,8 @@
  *
  * Tests cover:
  * - putCardState sends correct URL and body format (mock fetch)
+ * - putCardState / putLayout report write success honestly on both the fetch
+ *   and synchronous-XHR branches
  * - readDeckState returns null when not cached
  * - readDeckState returns the string value from cache
  * - putFocusedCardId sends correct URL and body format (mock fetch)
@@ -13,6 +15,7 @@
 import { describe, test, expect, mock, afterEach } from "bun:test";
 import {
   putCardState,
+  putLayout,
   readDeckState,
   putFocusedCardId,
   readCardStates,
@@ -117,6 +120,81 @@ describe("putCardState", () => {
     expect(calls[0].url).toBe(
       `/api/defaults/dev.tugtool.deck.cardstate/${encodeURIComponent(cardId)}`
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Write acknowledgment
+//
+// A card-state write that never landed used to resolve exactly like one that
+// did, so a quit taken while tugbank was restarting dropped the user's typing
+// while the host logged success. Both branches now answer honestly.
+// ---------------------------------------------------------------------------
+
+/** Install a synchronous XMLHttpRequest stub that answers with `status`. */
+function stubSyncXhr(status: number): void {
+  globalThis.XMLHttpRequest = class {
+    status = 0;
+    open(): void {}
+    setRequestHeader(): void {}
+    send(): void {
+      this.status = status;
+    }
+  } as unknown as typeof XMLHttpRequest;
+}
+
+describe("write acknowledgment", () => {
+  afterEach(() => {
+    mock.restore();
+  });
+
+  test("putCardState resolves true on 2xx and false on a rejected status", async () => {
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
+    expect(await putCardState("card-ok", {})).toBe(true);
+
+    globalThis.fetch = (async () => makeResponse(500, {})) as unknown as typeof fetch;
+    expect(await putCardState("card-bad", {})).toBe(false);
+  });
+
+  test("putCardState resolves false when the request itself throws", async () => {
+    globalThis.fetch = (async () => {
+      throw new Error("connection refused");
+    }) as unknown as typeof fetch;
+    expect(await putCardState("card-down", {})).toBe(false);
+  });
+
+  test("putCardState sync branch reports the XHR status, not just exceptions", async () => {
+    stubSyncXhr(200);
+    expect(await putCardState("card-ok", {}, { sync: true })).toBe(true);
+
+    stubSyncXhr(503);
+    expect(await putCardState("card-bad", {}, { sync: true })).toBe(false);
+  });
+
+  test("putCardState sync branch resolves false when send throws", async () => {
+    globalThis.XMLHttpRequest = class {
+      status = 0;
+      open(): void {}
+      setRequestHeader(): void {}
+      send(): never {
+        throw new Error("network error");
+      }
+    } as unknown as typeof XMLHttpRequest;
+
+    expect(await putCardState("card-thrown", {}, { sync: true })).toBe(false);
+  });
+
+  test("putLayout resolves true on 2xx, false on a rejected status or throw", async () => {
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
+    expect(await putLayout({})).toBe(true);
+
+    globalThis.fetch = (async () => makeResponse(404, {})) as unknown as typeof fetch;
+    expect(await putLayout({})).toBe(false);
+
+    globalThis.fetch = (async () => {
+      throw new Error("connection refused");
+    }) as unknown as typeof fetch;
+    expect(await putLayout({})).toBe(false);
   });
 });
 

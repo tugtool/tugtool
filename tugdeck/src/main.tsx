@@ -8,7 +8,7 @@ import { TugConnection } from "./connection";
 import { setConnection } from "./lib/connection-singleton";
 import { TugbankClient } from "./lib/tugbank-client";
 import { setTugbankClient } from "./lib/tugbank-singleton";
-import { DeckManager } from "./deck-manager";
+import { DeckManager, type TerminationVerdict } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { initHostMenuState } from "./lib/host-menu-state";
 import { initRecentDocuments } from "./lib/recent-documents";
@@ -75,7 +75,9 @@ installDevErrorOverlay();
 
 /**
  * `window.tugdeck` — the single namespace the native Swift host uses
- * for synchronous `evaluateJavaScript` entry points. Only the two
+ * for its direct JavaScript entry points: the synchronous
+ * `evaluateJavaScript` ones and the awaited `prepareForTermination`,
+ * which the host calls through `callAsyncJavaScript` at quit. Only the
  * methods installed below live here. Typed via `declare global` so
  * consumers get IDE autocomplete and so the assignment below is a
  * straightforward `window.tugdeck = { ... }` rather than a cast
@@ -85,6 +87,17 @@ declare global {
   interface Window {
     tugdeck?: {
       saveState(): void;
+      /**
+       * The deck's half of an application quit: interrupt live turns and
+       * wait for them, capture and persist every card (including text held
+       * outside the composer), retry rejected writes, and resolve a verdict
+       * describing what actually landed. The host awaits this before it
+       * signals any child process, and logs the verdict.
+       *
+       * `saveState` remains as the degraded fallback for a host that
+       * cannot make this call.
+       */
+      prepareForTermination(): Promise<TerminationVerdict>;
       reconnect(): void;
       /**
        * Diagnostic surface — always available, no test-mode gate. Lets
@@ -567,6 +580,7 @@ if (!container) {
   // timing.
   window.tugdeck = {
     saveState: () => deck.saveAndFlushSync(),
+    prepareForTermination: () => deck.prepareForTermination(),
     reconnect: () => connection.forceReconnect(),
 
     /**

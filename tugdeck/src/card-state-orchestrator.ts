@@ -34,6 +34,7 @@
 
 import type { CardStateBag } from "./layout-tree";
 import type { ComponentStatePreservationRegistry } from "./components/tugways/component-state-preservation-registry";
+import type { SaveCallbackSource } from "./deck-trace";
 import { isDevEnv } from "./lib/dev-env";
 
 /**
@@ -42,7 +43,12 @@ import { isDevEnv } from "./lib/dev-env";
  * axis except `components`, which the orchestrator layers on top).
  */
 export interface CardAssembler {
-  capture: () => CardStateBag;
+  /**
+   * `source` is the triggering save path, forwarded from
+   * `invokeSaveCallback`. Optional so an assembler that captures the
+   * same way for every trigger can ignore it entirely.
+   */
+  capture: (source?: SaveCallbackSource) => CardStateBag;
 }
 
 /**
@@ -123,9 +129,9 @@ export class CardStateOrchestrator {
    * no components are registered either). Callers that care about the
    * "card not known" case should check the registry themselves.
    */
-  captureCardState(cardId: string): CardStateBag {
+  captureCardState(cardId: string, source?: SaveCallbackSource): CardStateBag {
     const assembler = this.assemblers.get(cardId);
-    const base: CardStateBag = assembler ? assembler.capture() : {};
+    const base: CardStateBag = assembler ? assembler.capture(source) : {};
     const components = harvestComponents(this.getRegistry(cardId));
     if (components === undefined) return base;
     return { ...base, components };

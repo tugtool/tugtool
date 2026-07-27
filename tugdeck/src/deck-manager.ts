@@ -118,6 +118,7 @@ import {
   type CardAssembler,
 } from "./card-state-orchestrator";
 import { deckTrace, type SaveCallbackSource } from "./deck-trace";
+import type { CodeSessionStore } from "./lib/code-session-store";
 import {
   reactivateCurrentFocusDestination,
   transferFocusAfterMove,
@@ -126,6 +127,63 @@ import {
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
+
+/**
+ * Outcome of one card-state write attempt, reported by
+ * `flushDirtyCardStates` so teardown-class callers can retry the
+ * failures and name the survivors instead of assuming success.
+ */
+export interface CardFlushResult {
+  cardId: string;
+  ok: boolean;
+}
+
+/** What one run of the teardown-save core actually persisted. */
+export interface TeardownSaveResult {
+  layoutSaved: boolean;
+  cards: CardFlushResult[];
+}
+
+/**
+ * What the deck actually managed to do before the host tore the process
+ * down — the resolved value of {@link DeckManager.prepareForTermination},
+ * returned across the bridge and logged verbatim by the host.
+ *
+ * `ok: false` never blocks or delays the quit; it makes the failure named
+ * instead of silent, which is the whole point of the pipeline.
+ */
+export interface TerminationVerdict {
+  /** True when every phase below came back clean. */
+  ok: boolean;
+  /** `tug_session_id`s interrupted and observed to settle. */
+  interrupted: string[];
+  /** Interrupt sent, but the session had not settled when the bound expired. */
+  unacknowledged: string[];
+  /** Card bags written and confirmed by tugbank. */
+  flushedCards: number;
+  /** Card ids whose writes still failed after the retry budget. */
+  failedCards: string[];
+  layoutSaved: boolean;
+  elapsedMs: number;
+}
+
+/**
+ * How long the termination pipeline waits for interrupted sessions to
+ * settle. Sized to contain tugcode's own ladder — a 2 s in-band ack grace
+ * plus a 1.5 s SIGINT grace — with margin. A session that has not settled
+ * by then is reported unacknowledged and the quit proceeds ([P04]: a quit
+ * may be slow, never hung).
+ */
+const TERMINATION_INTERRUPT_AWAIT_MS = 5000;
+
+/**
+ * Total time the pipeline will spend re-attempting card-state writes that
+ * tugbank rejected, and the gap between attempts. Covers the supervisor's
+ * first restart-backoff steps, which is the realistic reason a write fails
+ * at quit time.
+ */
+const TERMINATION_FLUSH_RETRY_BUDGET_MS = 5000;
+const TERMINATION_FLUSH_RETRY_INTERVAL_MS = 250;
 
 /**
  * Debounce delay for flushing dirty per-card state bags (ms). Kept
@@ -368,7 +426,7 @@ export class DeckManager implements IDeckManagerStore {
    * visibilitychange (hidden) and beforeunload so each active card can
    * capture its current state before the page is discarded.
    */
-  private saveCallbacks: Map<string, () => void> = new Map();
+  private saveCallbacks: Map<string, (source?: SaveCallbackSource) => void> = new Map();
 
   /**
    * Per-card Component State Preservation Protocol registries ([D13],
@@ -398,16 +456,7 @@ export class DeckManager implements IDeckManagerStore {
   private readonly handleVisibilityChange = (): void => {
     if (document.hidden) {
       if (this.stateFlushed) return;
-      // Route each save through `invokeSaveCallback` (not a direct
-      // `forEach((cb) => cb())`) so the deck-trace picks up a
-      // `save-callback` event with `source: "visibilitychange"` per
-      // List [#l01-recording-sites]. Snapshot the keys first so a
-      // callback that unregisters another card mid-iteration does
-      // not confuse the Map iterator.
-      for (const cardId of Array.from(this.saveCallbacks.keys())) {
-        this.invokeSaveCallback(cardId, "visibilitychange");
-      }
-      this.flushDirtyCardStates();
+      void this.teardownSave("visibilitychange");
     }
   };
 
@@ -1973,7 +2022,16 @@ export class DeckManager implements IDeckManagerStore {
     };
   };
 
-  private flushDirtyCardStates(options?: { keepalive?: boolean; sync?: boolean; force?: boolean }): Promise<void> {
+  /**
+   * Write all dirty per-card state bags to tugbank, clear the dirty set,
+   * and resolve one {@link CardFlushResult} per attempted write.
+   *
+   * A card whose write failed is re-marked dirty before the promise
+   * resolves, so the next flush — the debounced one, or the termination
+   * pipeline's retry — picks it up again. Silently dropping the bag was
+   * the loss path this replaces ([L23]).
+   */
+  private flushDirtyCardStates(options?: { keepalive?: boolean; sync?: boolean; force?: boolean }): Promise<CardFlushResult[]> {
     // Deferred while a batch load holds the save gate — the dirty set is
     // retained and saved on a later ungated trigger. A `sync` flush
     // (will-phase / unload) must always run, so it bypasses; `force` is
@@ -1981,22 +2039,27 @@ export class DeckManager implements IDeckManagerStore {
     // the writes (prepareForReload) — "no fetch mid-load" is moot when
     // the page is about to be torn down.
     if (this.cardSaveSuspendDepth > 0 && options?.sync !== true && options?.force !== true) {
-      return Promise.resolve();
+      return Promise.resolve([]);
     }
-    const promises: Promise<void>[] = [];
+    const promises: Promise<CardFlushResult>[] = [];
     for (const cardId of this.dirtyCardIds) {
       const bag = this.cardStateCache.get(cardId);
       if (bag !== undefined) {
-        promises.push(this.putCardStateGuarded(cardId, bag, options));
+        promises.push(
+          this.putCardStateGuarded(cardId, bag, options).then((ok) => {
+            if (!ok) this.dirtyCardIds.add(cardId);
+            return { cardId, ok };
+          }),
+        );
       }
     }
     this.dirtyCardIds.clear();
-    return Promise.all(promises).then(() => {});
+    return Promise.all(promises);
   }
 
   // ---- Save callback registration ([D01]) ----
 
-  registerSaveCallback(id: string, callback: () => void): void {
+  registerSaveCallback(id: string, callback: (source?: SaveCallbackSource) => void): void {
     this.saveCallbacks.set(id, callback);
   }
 
@@ -2012,6 +2075,11 @@ export class DeckManager implements IDeckManagerStore {
    * the one-arg shape and still type-check); live callers always pass
    * an explicit tag so the trace preserves the triggering path.
    *
+   * The tag is also handed to the callback itself, which forwards it
+   * down the capture chain: a card can then capture differently for a
+   * save it will never get a render after (`"termination"`) than for a
+   * steady-state one.
+   *
    * See `deck-trace` for the `save-callback` event shape
    * and the recording-sites list for per-source wiring.
    */
@@ -2022,7 +2090,7 @@ export class DeckManager implements IDeckManagerStore {
       cardId: id,
       source: tag,
     });
-    this.saveCallbacks.get(id)?.();
+    this.saveCallbacks.get(id)?.(tag);
   }
 
   // ---- Focus-transfer channels (focus-transfer.ts seam) ----
@@ -2303,8 +2371,8 @@ export class DeckManager implements IDeckManagerStore {
    * save trigger; guarantees `bag.components` lands with every save by
    * construction ([D13], [AT0017]).
    */
-  captureCardState(cardId: string): CardStateBag {
-    return this.cardStateOrchestrator.captureCardState(cardId);
+  captureCardState(cardId: string, source?: SaveCallbackSource): CardStateBag {
+    return this.cardStateOrchestrator.captureCardState(cardId, source);
   }
 
   /**
@@ -2375,48 +2443,286 @@ export class DeckManager implements IDeckManagerStore {
    */
   captureAllForTeardown(reason: SaveCallbackSource): void {
     if (this.reloadPending || this.stateFlushed) return;
+    void this.teardownSave(reason, { sync: true });
+  }
+
+  /**
+   * The teardown-save core every teardown-class path runs through.
+   *
+   * Always, in this order: retire the pending debounced layout save
+   * (writing it when one was in flight, or unconditionally when the
+   * caller asks), invoke every registered save callback tagged with
+   * `source`, then flush the dirty card-state bags. The wrappers add
+   * only their own guard semantics — the *guarantee* lives here, once,
+   * so no entry point can hold a partial version of it. `saveAndFlushSync`
+   * used to skip the layout half entirely, which dropped any layout
+   * change still inside its debounce window on ⌘Q.
+   *
+   * `layoutSave: "always"` is for callers that own a whole termination
+   * (reload, quit): the extra write costs nothing on a once-per-exit path
+   * and makes the reported `layoutSaved` mean "the current layout is on
+   * disk". The default `"if-pending"` keeps the frequent teardown signals
+   * (HMR, visibilitychange) from writing a layout that never changed.
+   *
+   * Everything imperative happens synchronously before the first await, so
+   * a `sync` caller on the unload path still gets its XHR writes issued
+   * inline. [L23]; [L10] — per-card capture is dispatched through
+   * `invokeSaveCallback`, never by reaching into card internals.
+   */
+  private teardownSave(
+    source: SaveCallbackSource,
+    options?: { layoutSave?: "if-pending" | "always"; sync?: boolean; force?: boolean },
+  ): Promise<TeardownSaveResult> {
+    const layoutPending = this.saveTimer !== null;
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
-      this.saveLayout();
     }
+    const layoutPromise =
+      layoutPending || options?.layoutSave === "always"
+        ? this.saveLayout()
+        : Promise.resolve(true);
+
+    // Snapshot the keys first so a callback that unregisters another
+    // card mid-iteration does not confuse the Map iterator.
     for (const cardId of Array.from(this.saveCallbacks.keys())) {
-      this.invokeSaveCallback(cardId, reason);
+      this.invokeSaveCallback(cardId, source);
     }
-    this.flushDirtyCardStates({ sync: true });
+
+    const cardsPromise = this.flushDirtyCardStates({
+      sync: options?.sync,
+      force: options?.force,
+    });
+
+    return Promise.all([layoutPromise, cardsPromise]).then(([layoutSaved, cards]) => ({
+      layoutSaved,
+      cards,
+    }));
+  }
+
+  /**
+   * The deck's half of an application quit, run to completion before the
+   * host signals any child process.
+   *
+   * Four ordered phases:
+   *
+   *   1. **Interrupt** every session that reports `canInterrupt`, and wait
+   *      for each to settle (bounded). Nothing else may run first: a turn
+   *      that is still streaming when the process group dies is a rug pull,
+   *      and a CASE A interrupt parks the user's un-answered submission in
+   *      `pendingDraftRestore` — which only exists for the capture phase to
+   *      find if the interrupt happened first.
+   *   2. **Capture** through the teardown-save core with source
+   *      `"termination"`, which is the tag that tells a card to fold in
+   *      text it holds outside its visible surface (queued sends, the
+   *      pulled-back submission from phase 1).
+   *   3. **Retry** any card write tugbank rejected, within a bounded
+   *      budget — quit routinely races the supervisor restarting tugcast.
+   *   4. **Report** what actually happened. The host logs the verdict; it
+   *      does not act on it.
+   *
+   * Never rejects and never blocks indefinitely: every wait is bounded and
+   * early-exits, so a quit with nothing live and nothing dirty pays for
+   * none of them. Re-entrant calls join the first run's promise.
+   *
+   * [L23] — this is the transition the whole plan exists to make safe.
+   */
+  prepareForTermination(): Promise<TerminationVerdict> {
+    if (this.terminationRun !== null) return this.terminationRun;
+    this.terminationRun = this.runTerminationPipeline();
+    return this.terminationRun;
+  }
+
+  private terminationRun: Promise<TerminationVerdict> | null = null;
+
+  private async runTerminationPipeline(): Promise<TerminationVerdict> {
+    const startedAt = Date.now();
+
+    const { interrupted, unacknowledged } = await this.interruptLiveSessions();
+
+    const attempted = new Set<string>();
+    const first = await this.teardownSave("termination", {
+      layoutSave: "always",
+      force: true,
+    });
+    for (const result of first.cards) attempted.add(result.cardId);
+
+    let failedCards = first.cards.filter((r) => !r.ok).map((r) => r.cardId);
+    let layoutSaved = first.layoutSaved;
+    if (failedCards.length > 0 || !layoutSaved) {
+      const retried = await this.retryFailedWrites(attempted, layoutSaved);
+      failedCards = retried.failedCards;
+      layoutSaved = retried.layoutSaved;
+    }
+
+    // Lock the framework against further saves the way `saveAndFlushSync`
+    // does — a late `beforeunload` must not re-open the bags this run
+    // just closed.
+    this.stateFlushed = true;
+
+    return {
+      ok: unacknowledged.length === 0 && failedCards.length === 0 && layoutSaved,
+      interrupted,
+      unacknowledged,
+      flushedCards: attempted.size - failedCards.length,
+      failedCards,
+      layoutSaved,
+      elapsedMs: Date.now() - startedAt,
+    };
+  }
+
+  /**
+   * Interrupt every live session and wait for each to settle, up to
+   * {@link TERMINATION_INTERRUPT_AWAIT_MS}.
+   *
+   * "Live" is the session's own published `canInterrupt` — [L28]: the
+   * lifecycle owner decides what can be interrupted, and a caller that
+   * re-derived the phase test would drift from it. In particular a
+   * `replaying` session is deliberately excluded: the bracket window owns
+   * the card, nothing durable is at risk (replay re-runs on the next boot),
+   * and `handleInterrupt` has no `replaying` guard — an interrupt sent
+   * there would reset the store to idle mid-replay.
+   *
+   * Settled is `phase ∈ {idle, errored}`: a CASE A interrupt reaches it
+   * synchronously; a CASE B turn reaches it when the wire's
+   * `turn_complete(error)` commits the interrupted entry. Every
+   * subscription is released on acknowledgment *and* on expiry ([L27]).
+   */
+  private async interruptLiveSessions(): Promise<{
+    interrupted: string[];
+    unacknowledged: string[];
+  }> {
+    // Imported at call time, not at module scope: `card-services-store`
+    // pulls in the whole session-services graph, and importing it from here
+    // would move that graph's evaluation ahead of the deck's own — an
+    // ordering change no consumer of `DeckManager` asked for. By the time a
+    // quit runs, the module is long since loaded.
+    const { cardServicesStore } = await import("./lib/card-services-store");
+    const live = cardServicesStore
+      .allServices()
+      .map((services) => services.codeSessionStore)
+      .filter((store) => store.getSnapshot().canInterrupt);
+
+    if (live.length === 0) {
+      return Promise.resolve({ interrupted: [], unacknowledged: [] });
+    }
+
+    return new Promise((resolve) => {
+      const interrupted: string[] = [];
+      const pending = new Map<CodeSessionStore, () => void>();
+      let timer: number | null = null;
+
+      const settled = (store: CodeSessionStore): boolean => {
+        const phase = store.getSnapshot().phase;
+        return phase === "idle" || phase === "errored";
+      };
+
+      const finish = (): void => {
+        if (timer !== null) {
+          window.clearTimeout(timer);
+          timer = null;
+        }
+        const unacknowledged: string[] = [];
+        for (const [store, unsubscribe] of pending) {
+          unsubscribe();
+          unacknowledged.push(store.getSnapshot().tugSessionId);
+        }
+        pending.clear();
+        resolve({ interrupted, unacknowledged });
+      };
+
+      const acknowledge = (store: CodeSessionStore): void => {
+        const unsubscribe = pending.get(store);
+        if (unsubscribe === undefined) return;
+        unsubscribe();
+        pending.delete(store);
+        interrupted.push(store.getSnapshot().tugSessionId);
+        if (pending.size === 0) finish();
+      };
+
+      // Subscribe to every store before interrupting any of them: a CASE A
+      // interrupt settles synchronously inside `interrupt()`, so a
+      // subscribe-then-interrupt-per-store loop would let the first store's
+      // acknowledgment see an incomplete pending set and finish early.
+      for (const store of live) {
+        pending.set(
+          store,
+          store.subscribe(() => {
+            if (settled(store)) acknowledge(store);
+          }),
+        );
+      }
+
+      // Preserve each session's queued text before interrupting: a CASE A
+      // interrupt clears `queuedSends`, so the capture phase would
+      // otherwise find an empty queue for exactly the sessions that had
+      // one.
+      for (const store of live) {
+        store.stashUnsentText();
+        store.interrupt();
+      }
+
+      // Sweep for anything that settled without notifying us in a way we
+      // observed (a synchronous settle during `interrupt()` is handled by
+      // the subscription; this covers the rest).
+      for (const store of Array.from(pending.keys())) {
+        if (settled(store)) acknowledge(store);
+      }
+
+      if (pending.size === 0) return;
+      timer = window.setTimeout(finish, TERMINATION_INTERRUPT_AWAIT_MS);
+    });
+  }
+
+  /**
+   * Re-attempt whatever tugbank rejected — card bags and the layout alike —
+   * until it all lands or the budget runs out.
+   *
+   * The realistic reason a write fails at quit is that tugcast is
+   * mid-restart (the supervisor's first backoff step is a second), so the
+   * same outage takes down every write in the run and one retry pass
+   * recovers all of them. `flushDirtyCardStates` re-marks a failed card
+   * dirty, so each pass naturally targets exactly the outstanding cards;
+   * the layout has no dirty bit, so it is simply re-sent until it sticks.
+   *
+   * Returns what is still failing when the budget expired, for the verdict
+   * to report by name.
+   */
+  private async retryFailedWrites(
+    attempted: Set<string>,
+    layoutAlreadySaved: boolean,
+  ): Promise<{ layoutSaved: boolean; failedCards: string[] }> {
+    const deadline = Date.now() + TERMINATION_FLUSH_RETRY_BUDGET_MS;
+    let layoutSaved = layoutAlreadySaved;
+    let failed: string[] = [];
+    while (Date.now() < deadline) {
+      await new Promise<void>((r) =>
+        window.setTimeout(() => r(), TERMINATION_FLUSH_RETRY_INTERVAL_MS),
+      );
+      if (!layoutSaved) layoutSaved = await this.saveLayout();
+      const results = await this.flushDirtyCardStates({ force: true });
+      for (const result of results) attempted.add(result.cardId);
+      failed = results.filter((r) => !r.ok).map((r) => r.cardId);
+      if (layoutSaved && failed.length === 0) return { layoutSaved, failedCards: [] };
+    }
+    return { layoutSaved, failedCards: failed };
   }
 
   saveAndFlushSync(): void {
-    // Route through `invokeSaveCallback` so the trace records one
-    // `save-callback` event per card with `source: "manual"`.
-    for (const cardId of Array.from(this.saveCallbacks.keys())) {
-      this.invokeSaveCallback(cardId, "manual");
-    }
-    this.flushDirtyCardStates({ sync: true });
+    void this.teardownSave("manual", { sync: true });
     this.stateFlushed = true;
   }
 
   saveAndFlush(): void {
-    for (const cardId of Array.from(this.saveCallbacks.keys())) {
-      this.invokeSaveCallback(cardId, "manual");
-    }
-    this.flushDirtyCardStates();
+    void this.teardownSave("manual");
   }
 
   async prepareForReload(): Promise<void> {
-    if (this.saveTimer !== null) {
-      window.clearTimeout(this.saveTimer);
-      this.saveTimer = null;
-    }
-    await this.saveLayout();
-    for (const cardId of Array.from(this.saveCallbacks.keys())) {
-      this.invokeSaveCallback(cardId, "manual");
-    }
     // `force` bypasses the save-suspend gate: a transcript load in
     // flight must not turn this flush into a no-op — `reloadPending`
     // below makes the beforeunload backstop skip, so this is the last
     // write before the page tears down. [L23]
-    await this.flushDirtyCardStates({ force: true });
+    await this.teardownSave("manual", { layoutSave: "always", force: true });
     this.reloadPending = true;
   }
 
@@ -3130,30 +3436,30 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Fire-and-forget `putLayout` with a test-mode bypass. Returns a
-   * `Promise<void>` so `prepareForReload` (the sole awaiter) still
-   * sees a resolved Promise under test mode — no behavioral change
-   * for callers, no network I/O. See {@link putFocusedCardIdGuarded}
-   * for the `__tugPersistInTestMode` escape hatch.
+   * `putLayout` with a test-mode bypass. Resolves the write's success
+   * flag, or `true` under the bypass — a suppressed write is not a
+   * failed one, and teardown callers read this to decide whether the
+   * layout actually landed. See {@link putFocusedCardIdGuarded} for
+   * the `__tugPersistInTestMode` escape hatch.
    */
-  private putLayoutGuarded(layout: object): Promise<void> {
-    if (this.testMode && !shouldPersistInTestMode()) return Promise.resolve();
+  private putLayoutGuarded(layout: object): Promise<boolean> {
+    if (this.testMode && !shouldPersistInTestMode()) return Promise.resolve(true);
     return putLayout(layout);
   }
 
   /**
-   * Fire-and-forget `putCardState` with a test-mode bypass. Returns a
-   * resolved `Promise<void>` under test mode so `flushDirtyCardStates`
-   * can still `Promise.all` the batch without special-casing the
-   * empty-network branch. See {@link putFocusedCardIdGuarded} for
-   * the `__tugPersistInTestMode` escape hatch.
+   * `putCardState` with a test-mode bypass. Resolves the write's
+   * success flag, or `true` under the bypass so `flushDirtyCardStates`
+   * can gather the batch without special-casing the empty-network
+   * branch. See {@link putFocusedCardIdGuarded} for the
+   * `__tugPersistInTestMode` escape hatch.
    */
   private putCardStateGuarded(
     cardId: string,
     bag: CardStateBag,
     options?: { keepalive?: boolean; sync?: boolean },
-  ): Promise<void> {
-    if (this.testMode && !shouldPersistInTestMode()) return Promise.resolve();
+  ): Promise<boolean> {
+    if (this.testMode && !shouldPersistInTestMode()) return Promise.resolve(true);
     return putCardState(cardId, bag, options);
   }
 
@@ -3200,7 +3506,7 @@ export class DeckManager implements IDeckManagerStore {
     return this.filterRegisteredCards(state);
   }
 
-  private saveLayout(): Promise<void> {
+  private saveLayout(): Promise<boolean> {
     const serialized = serialize(this.deckState);
     return this.putLayoutGuarded(serialized);
   }

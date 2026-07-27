@@ -22,6 +22,11 @@ final class UpdateController: NSObject {
 
     private var updaterController: SPUStandardUpdaterController?
 
+    /// Sparkle's relaunch handler, held while Tug tears itself down.
+    /// Non-nil only between `shouldPostponeRelaunchForUpdate` and
+    /// `resumePostponedRelaunch`.
+    private var pendingRelaunchBlock: (() -> Void)?
+
     /// Called with an update's `(displayVersion, build)` when a scheduled
     /// check finds one and the delegate — not Sparkle — is showing it.
     var onScheduledUpdateFound: ((String, String) -> Void)?
@@ -58,11 +63,44 @@ final class UpdateController: NSObject {
             }
         }
 
-        updaterController = SPUStandardUpdaterController(
+        let controller = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: self,
             userDriverDelegate: self
         )
+
+        // Consent is not negotiable, and it must not rest on the
+        // driver-delegate handoff alone: a release-configuration bundle was
+        // observed downloading and installing a scheduled update in place,
+        // with no bulletin and no Sparkle window, while the identical code
+        // in a debug bundle correctly deferred. Whatever explains that
+        // divergence, an updater that is explicitly forbidden from
+        // downloading unattended cannot reach the install path. Set after
+        // the updater has started so it survives Sparkle's own defaults
+        // reading, and logged so the state is observable in a release
+        // bundle without a debugger.
+        controller.updater.automaticallyDownloadsUpdates = false
+        NSLog(
+            "UpdateController: started (automaticallyDownloadsUpdates=%@, automaticallyChecksForUpdates=%@)",
+            controller.updater.automaticallyDownloadsUpdates ? "yes" : "no",
+            controller.updater.automaticallyChecksForUpdates ? "yes" : "no"
+        )
+
+        updaterController = controller
+    }
+
+    /// Let Sparkle relaunch the freshly installed app. Called by
+    /// `AppDelegate` at the very end of termination, immediately before it
+    /// replies to `applicationShouldTerminate` — so the new instance never
+    /// boots while the old one's children still hold sockets and ports.
+    ///
+    /// Invokes the handler exactly once (it is cleared first), and is a
+    /// no-op on every quit that is not an update install.
+    func resumePostponedRelaunch() {
+        guard let block = pendingRelaunchBlock else { return }
+        pendingRelaunchBlock = nil
+        NSLog("UpdateController: teardown complete — releasing the postponed relaunch")
+        block()
     }
 
     /// Bring Sparkle's standard update flow into focus. Safe to call when
@@ -95,6 +133,26 @@ extension UpdateController: SPUUpdaterDelegate {
     /// sanctioned way to override the feed (`setFeedURL` is discouraged).
     func feedURLString(for updater: SPUUpdater) -> String? {
         feedOverride
+    }
+
+    /// Hold the relaunch until Tug's own termination has finished.
+    ///
+    /// Sparkle quits the app through the normal `NSApp.terminate` path, so
+    /// the termination pipeline already runs — but without this the
+    /// relaunched instance can start booting while the outgoing one is
+    /// still shutting down its children, racing them for the instance's
+    /// control socket and port.
+    func updater(
+        _ updater: SPUUpdater,
+        shouldPostponeRelaunchForUpdate item: SUAppcastItem,
+        untilInvokingBlock installHandler: @escaping () -> Void
+    ) -> Bool {
+        NSLog(
+            "UpdateController: postponing relaunch for %@ until teardown completes",
+            item.displayVersionString
+        )
+        pendingRelaunchBlock = installHandler
+        return true
     }
 }
 

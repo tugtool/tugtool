@@ -1338,6 +1338,58 @@ export class CodeSessionStore {
   }
 
   /**
+   * Text stashed by {@link stashUnsentText} before an interrupt could
+   * clear it. Empty outside a termination.
+   */
+  private _stashedUnsentText: string[] = [];
+
+  /**
+   * Take a copy of the session's unsent text *now*, before anything
+   * clears it.
+   *
+   * A CASE A interrupt resets `queuedSends` to empty — correctly, for a
+   * user pulling a turn back, since the queue belonged to a turn that no
+   * longer exists. But the termination pipeline interrupts before it
+   * captures, so without this stash a quit taken with sends queued behind
+   * a live turn would interrupt the turn and *then* find an empty queue.
+   * The pipeline calls this on every live session before interrupting it.
+   */
+  stashUnsentText(): void {
+    if (this._disposed) return;
+    this._stashedUnsentText = this.captureUnsentText();
+  }
+
+  /**
+   * Every piece of text the user has committed to this session that is
+   * not on screen in the composer and not yet on the wire, oldest first:
+   * an unconsumed `pendingDraftRestore` (a CASE A interrupt's pulled-back
+   * submission, or a cancelled queued send), then each queued send, then
+   * anything {@link stashUnsentText} preserved from before an interrupt.
+   * Deduplicated by text, so a stash that survived the interrupt intact
+   * contributes nothing twice.
+   *
+   * `queuedSends` lives only in memory, and `pendingDraftRestore` is
+   * consumed by a render that may never come, so at app exit both are one
+   * `process::exit` away from being lost. The prompt entry folds this into
+   * the draft it persists — but only for a `"termination"` save, since in
+   * steady state the queue is still visible as ghost rows and the restore
+   * slot is about to be seeded into the editor. [L23].
+   */
+  captureUnsentText(): string[] {
+    const snap = this.getSnapshot();
+    const unsent: string[] = [];
+    const add = (text: string | undefined): void => {
+      if (text === undefined || text.length === 0) return;
+      if (unsent.includes(text)) return;
+      unsent.push(text);
+    };
+    add(snap.pendingDraftRestore?.text);
+    for (const queued of snap.queuedSends) add(queued.text);
+    for (const stashed of this._stashedUnsentText) add(stashed);
+    return unsent;
+  }
+
+  /**
    * Park a clicked transcript slash command on `pendingCommandInsert` for
    * the prompt entry to seed as a ready-to-run draft. `name` is the bare
    * command name (no leading slash — the value an editor command atom

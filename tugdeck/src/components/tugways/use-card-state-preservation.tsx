@@ -18,6 +18,7 @@
 import React, { createContext, useContext, useLayoutEffect, useRef } from "react";
 
 import { DeckManagerContext } from "../../deck-manager-context";
+import type { SaveCallbackSource } from "../../deck-trace";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,8 +53,16 @@ export interface CardRestoreOptions {
 }
 
 export interface UseCardStatePreservationOptions<T> {
-  /** Called by CardHost on tab deactivation. Must return JSON-serializable state. */
-  onSave: () => T;
+  /**
+   * Called by CardHost on tab deactivation and on every save trigger. Must
+   * return JSON-serializable state.
+   *
+   * `source` names the triggering path. It matters for one case: on
+   * `"termination"` the app is exiting and there is no next render, so a
+   * card that holds user text outside its visible surface (queued sends, a
+   * pulled-back submission) must fold it into what it returns here.
+   */
+  onSave: (source?: SaveCallbackSource) => T;
   /**
    * Called by CardHost on cold-mount restore (and on tab activation
    * for content-owning cards). The `opts.isActive` flag tells the
@@ -121,7 +130,7 @@ export interface UseCardStatePreservationOptions<T> {
  * ([D02], [D01], [D03])
  */
 export interface CardStatePreservationCallbacks {
-  onSave: () => unknown;
+  onSave: (source?: SaveCallbackSource) => unknown;
   /**
    * Called by CardHost on cold-mount restore (and on tab activation
    * for content-owning cards). `opts.isActive` is the deck-level
@@ -263,7 +272,7 @@ export function useCardStatePreservation<T>(options: UseCardStatePreservationOpt
 
   // Store the caller's options in refs so the registered wrappers never go
   // stale when options change on re-renders (Rule 5).
-  const onSaveRef = useRef<(() => T) | undefined>(undefined);
+  const onSaveRef = useRef<((source?: SaveCallbackSource) => T) | undefined>(undefined);
   const onRestoreRef = useRef<
     ((state: T, opts: CardRestoreOptions) => void) | undefined
   >(undefined);
@@ -296,7 +305,7 @@ export function useCardStatePreservation<T>(options: UseCardStatePreservationOpt
     if (!register) return;
 
     const callbacks: CardStatePreservationCallbacks = {
-      onSave: () => onSaveRef.current?.() as unknown,
+      onSave: (source) => onSaveRef.current?.(source) as unknown,
       onRestore: (state: unknown, opts: CardRestoreOptions) =>
         onRestoreRef.current?.(state as T, opts),
       // Forward through a stable ref-reading wrapper so the latest

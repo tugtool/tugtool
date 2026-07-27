@@ -132,6 +132,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // to New Window, and Merge All Windows items into the Window menu.
         NSWindow.allowsAutomaticWindowTabbing = false
 
+        assertQuitPathIsReachable()
+
         // Per-instance tugbank DB at `InstanceConfig.tugbankDbPath`.
         // TUGBANK_PATH still takes precedence as a harness override so
         // app-tests can point at a temp DB without rebuilding.
@@ -311,35 +313,140 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         lap("processManager.start returned")
     }
 
+    /// Fail loudly if the bundle ever declares support for sudden or
+    /// automatic termination.
+    ///
+    /// Neither key is in Info.plist, which is what makes everything below
+    /// work: with sudden termination disabled, macOS runs
+    /// `applicationShouldTerminate` on every exit including logout and
+    /// restart, so the deck always gets to save. Adding either key would
+    /// let the OS kill the process outright, silently taking the whole
+    /// termination pipeline out of the picture — a change whose damage is
+    /// invisible until someone loses work. This catches it at first launch
+    /// instead.
+    private func assertQuitPathIsReachable() {
+        for key in ["NSSupportsSuddenTermination", "NSSupportsAutomaticTermination"] {
+            guard Bundle.main.object(forInfoDictionaryKey: key) != nil else { continue }
+            NSLog(
+                "AppDelegate: FATAL CONFIGURATION — Info.plist declares %@; the OS may terminate "
+                    + "the app without running applicationShouldTerminate, so unsaved work will be lost. "
+                    + "Remove the key.",
+                key
+            )
+            assertionFailure("Info.plist must not declare \(key) — it bypasses the termination pipeline")
+        }
+    }
+
+    /// Outer bound on the deck's termination pipeline. The deck's own
+    /// phases are bounded well inside this (a 5 s interrupt await and a 5 s
+    /// flush-retry budget); this covers the bridge itself going wrong — a
+    /// dead WebView, a JS exception, a promise that never settles. On expiry
+    /// the host degrades to the old synchronous `saveState` and tears down.
+    /// A quit may be slow; it may never hang.
+    private static let terminationPipelineDeadline: TimeInterval = 12.0
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Freeze the WebView with a snapshot overlay so the user never sees
         // teardown artifacts (disconnect banners, theme flashes, blank screens).
         // The snapshot covers the WebView while save + cleanup run underneath.
         window.freezeForShutdown { [weak self] in
             guard let self = self else { return }
-
-            // Tell the WebView to save all card states (scroll, selection, content)
-            // to tugbank before we tear down. WKWebView does not fire visibilitychange
-            // or beforeunload on app quit, so this is the only save trigger on exit.
-            NSLog("AppDelegate: applicationShouldTerminate — calling window.tugdeck.saveState")
-            self.window.evaluateJavaScript("window.tugdeck?.saveState?.()") { result, error in
-                if let error = error {
-                    NSLog("AppDelegate: tugdeck.saveState error: %@", error.localizedDescription)
-                } else {
-                    NSLog("AppDelegate: tugdeck.saveState completed successfully")
-                }
-                // JS used synchronous XHR, so all writes to tugbank are confirmed
-                // by the time this completion handler runs. Safe to tear down.
-                self.window.cleanupBridge()
-                self.processManager.shutdown()
-                #if DEBUG
-                self.testHarnessBridge?.close()
-                self.testHarnessBridge = nil
-                #endif
-                NSApp.reply(toApplicationShouldTerminate: true)
+            self.runDeckTerminationPipeline {
+                self.tearDownAndReplyToTerminate()
             }
         }
         return .terminateLater
+    }
+
+    /// Run the deck's half of the quit — interrupt live turns, capture and
+    /// persist every card, retry rejected writes — and call `completion`
+    /// once, whatever happens.
+    ///
+    /// WKWebView fires no `visibilitychange` and no `beforeunload` on app
+    /// quit, so this is the only save trigger on exit. It is called before
+    /// any child process is signalled: a turn still streaming when the
+    /// process group dies is a rug pull.
+    private func runDeckTerminationPipeline(completion: @escaping () -> Void) {
+        var settled = false
+        func settle() {
+            guard !settled else { return }
+            settled = true
+            completion()
+        }
+
+        // Degraded path: the old synchronous save. Strictly no worse than
+        // what shipped before the pipeline, and the only thing left when
+        // the bridge itself is broken.
+        func fallbackSave() {
+            self.window.evaluateJavaScript("window.tugdeck?.saveState?.()")
+        }
+
+        let deadline = DispatchWorkItem {
+            NSLog(
+                "AppDelegate: termination pipeline did not answer within %.0fs — saving synchronously and tearing down",
+                Self.terminationPipelineDeadline
+            )
+            fallbackSave()
+            settle()
+        }
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.terminationPipelineDeadline,
+            execute: deadline
+        )
+
+        NSLog("AppDelegate: applicationShouldTerminate — running the deck termination pipeline")
+        window.callAsyncJavaScript("return await window.tugdeck.prepareForTermination();") { result in
+            deadline.cancel()
+            switch result {
+            case .success(let value):
+                NSLog("AppDelegate: termination verdict — %@", Self.describeVerdict(value))
+            case .failure(let error):
+                NSLog(
+                    "AppDelegate: termination pipeline failed (%@) — saving synchronously instead",
+                    error.localizedDescription
+                )
+                fallbackSave()
+            }
+            settle()
+        }
+    }
+
+    /// Render the deck's verdict as one log line. Unknown or malformed
+    /// shapes are logged verbatim rather than dropped — the point of the
+    /// verdict is that a bad quit leaves a named trace.
+    private static func describeVerdict(_ value: Any?) -> String {
+        guard let verdict = value as? [String: Any] else {
+            return "unreadable: \(String(describing: value))"
+        }
+        func ids(_ key: String) -> String {
+            let list = verdict[key] as? [String] ?? []
+            return list.isEmpty ? "none" : list.joined(separator: ",")
+        }
+        let ok = verdict["ok"] as? Bool ?? false
+        let flushed = verdict["flushedCards"] as? Int ?? -1
+        let layoutSaved = verdict["layoutSaved"] as? Bool ?? false
+        let elapsed = verdict["elapsedMs"] as? Int ?? -1
+        return "ok=\(ok) interrupted=\(ids("interrupted")) unacknowledged=\(ids("unacknowledged")) "
+            + "flushedCards=\(flushed) failedCards=\(ids("failedCards")) "
+            + "layoutSaved=\(layoutSaved) elapsedMs=\(elapsed)"
+    }
+
+    /// Tear down the bridge and the child processes, then let AppKit finish
+    /// the quit. Reached from exactly one place — the pipeline's single
+    /// settle — so the reply is sent once.
+    private func tearDownAndReplyToTerminate() {
+        window.cleanupBridge()
+        processManager.shutdown()
+        #if DEBUG
+        testHarnessBridge?.close()
+        testHarnessBridge = nil
+        #endif
+        // An update-driven quit holds Sparkle's relaunch here, so the new
+        // version starts only once this instance's children are gone. A
+        // no-op on every other quit — and reached from every completion
+        // path, including the degraded one, so an update can never stall.
+        updateController.resumePostponedRelaunch()
+        NSApp.reply(toApplicationShouldTerminate: true)
     }
 
     // MARK: - App lifecycle (NSApplicationDelegate)

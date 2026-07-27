@@ -88,6 +88,12 @@ import { isFocusDestination } from "./deck-store-selectors";
  * app hide), page unload (`"beforeunload"`), window blur
  * (`"window-blur"`), and explicit manual saves (`"manual"`).
  *
+ * `"termination"` is the app's own exit — the deck's termination
+ * pipeline running before the host tears the process down. It is the
+ * one source a card may capture *more* under: text that is queued or
+ * pulled back but not visibly in the composer is folded into the saved
+ * draft, because there is no next render to put it there.
+ *
  * Dev-only tags (`"hmr"`, `"hmr-full-reload"`) fire from the Vite
  * HMR pipeline so the trace ring records HMR-driven save passes
  * with a distinct source for observability. They are dead code in
@@ -101,6 +107,7 @@ export type SaveCallbackSource =
   | "beforeunload"
   | "window-blur"
   | "manual"
+  | "termination"
   | "hmr"
   | "hmr-full-reload";
 

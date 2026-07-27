@@ -18,6 +18,7 @@ import type { CardStateBag, RegionScrollSnapshot } from "./layout-tree";
 import type { TugbankClient, TaggedValue } from "./lib/tugbank-client";
 import type { HistoryEntry } from "./lib/prompt-history-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
+import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { PERMISSION_MODE_DOMAIN } from "./lib/permission-mode";
 import { MODEL_DOMAIN } from "./lib/model-domains";
 import type { FindOptions } from "./lib/transcript-search";
@@ -208,18 +209,29 @@ function coerceFocusSnapshotOnRead(bag: CardStateBag): CardStateBag {
 /**
  * PUT the deck layout to tugbank.
  *
- * Returns the fetch Promise so callers can await it when needed (e.g. before
- * page reload). Normal saves are fire-and-forget — the Promise is ignored.
+ * Resolves `true` when tugbank accepted the write and `false` when the request
+ * failed or came back non-2xx. Normal saves ignore the result; teardown-class
+ * callers read it, because a write that never landed must be reported rather
+ * than assumed ([L23]).
  */
-export function putLayout(layout: object): Promise<void> {
+export function putLayout(layout: object): Promise<boolean> {
   return fetch("/api/defaults/dev.tugtool.deck.layout/layout", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "json", value: layout }),
   })
-    .then(() => {})
+    .then((response) => {
+      if (!response.ok) {
+        tugDevLogStore.warn("settings", "PUT layout rejected", {
+          status: response.status,
+        });
+        return false;
+      }
+      return true;
+    })
     .catch((err) => {
-      console.warn("[settings] PUT layout failed:", err);
+      tugDevLogStore.warn("settings", "PUT layout failed", { error: String(err) });
+      return false;
     });
 }
 
@@ -308,11 +320,13 @@ export function putSetupSeen(seen: boolean): void {
 /**
  * PUT a single per-card state bag to tugbank under `dev.tugtool.deck.cardstate/{cardId}`.
  *
- * Returns a Promise that resolves when the write completes. Callers that
- * need to wait (e.g. prepareForReload) can await it; fire-and-forget
- * callers can ignore the return value.
+ * Resolves `true` when tugbank accepted the write and `false` when it failed
+ * or answered non-2xx — on both the synchronous XHR branch and the fetch
+ * branch. The result is the only evidence a card's typed state actually
+ * reached disk: tugbank can be mid-restart at quit time, and an unreported
+ * failure there is silent data loss ([L23]).
  */
-export function putCardState(cardId: string, bag: CardStateBag, options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
+export function putCardState(cardId: string, bag: CardStateBag, options?: { keepalive?: boolean; sync?: boolean }): Promise<boolean> {
   const url = `/api/defaults/${CARDSTATE_DOMAIN}/${encodeURIComponent(cardId)}`;
   // Durable copy only — an over-cap cellHeights seed is dropped so the
   // store stays bounded; the in-memory cache keeps the full bag.
@@ -324,10 +338,21 @@ export function putCardState(cardId: string, bag: CardStateBag, options?: { keep
       xhr.open("PUT", url, false);
       xhr.setRequestHeader("Content-Type", "application/json");
       xhr.send(body);
+      if (xhr.status < 200 || xhr.status >= 300) {
+        tugDevLogStore.warn("settings", "PUT cardState (sync) rejected", {
+          cardId,
+          status: xhr.status,
+        });
+        return Promise.resolve(false);
+      }
+      return Promise.resolve(true);
     } catch (err) {
-      console.warn("[settings] PUT cardState (sync) failed for card", cardId, err);
+      tugDevLogStore.warn("settings", "PUT cardState (sync) failed", {
+        cardId,
+        error: String(err),
+      });
+      return Promise.resolve(false);
     }
-    return Promise.resolve();
   }
 
   return fetch(url, {
@@ -335,9 +360,24 @@ export function putCardState(cardId: string, bag: CardStateBag, options?: { keep
     headers: { "Content-Type": "application/json" },
     body,
     keepalive: options?.keepalive,
-  }).then(() => {}).catch((err) => {
-    console.warn("[settings] PUT cardState failed for card", cardId, err);
-  });
+  })
+    .then((response) => {
+      if (!response.ok) {
+        tugDevLogStore.warn("settings", "PUT cardState rejected", {
+          cardId,
+          status: response.status,
+        });
+        return false;
+      }
+      return true;
+    })
+    .catch((err) => {
+      tugDevLogStore.warn("settings", "PUT cardState failed", {
+        cardId,
+        error: String(err),
+      });
+      return false;
+    });
 }
 
 /**

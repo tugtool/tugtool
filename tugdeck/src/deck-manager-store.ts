@@ -300,7 +300,10 @@ export interface IDeckManagerStore {
    * Tugways #3) so the callback is registered before any events that
    * may depend on it fire.
    */
-  registerSaveCallback: (id: string, callback: () => void) => void;
+  registerSaveCallback: (
+    id: string,
+    callback: (source?: SaveCallbackSource) => void,
+  ) => void;
 
   /**
    * Unregister the save callback for the given ID.
@@ -369,8 +372,12 @@ export interface IDeckManagerStore {
    * trigger (debounced save callback, close-before-destroy flush,
    * `saveState` RPC) flows through this entry point so `bag.components`
    * lands alongside framework-owned axes by construction.
+   *
+   * `source` names the triggering path and is forwarded to the card's
+   * assembler, so a card can capture differently for the app's own
+   * termination than for a steady-state save.
    */
-  captureCardState: (cardId: string) => CardStateBag;
+  captureCardState: (cardId: string, source?: SaveCallbackSource) => CardStateBag;
 
   /**
    * Flip the session-only `DeckState.hasFocus` slice ([A1]). Wired up
