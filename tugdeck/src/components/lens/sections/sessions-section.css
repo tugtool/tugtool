@@ -22,35 +22,34 @@
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
    rules regardless of bundle order. The list is this section's scroller: it
-   fills the section's flex share and scrolls its rows internally. TugListRow
-   owns the inner inline padding; a small equal margin insets the framed
-   container so its keyboard focus ring paints on all four sides. */
+   fills the section's flex share and scrolls its rows internally.
+
+   EDGE-TO-EDGE. The list carries no margin, no frame, and no
+   radius: its rows run the full width of the Lens rail and are separated by the
+   `flush` layout's hairlines alone. A rounded, inset box inside a section that
+   is itself a bordered band drew a second rectangle around the same content —
+   the rail already says where the section starts and ends, so the list saying it
+   again read as an accordion nested in an accordion. The row inset does the
+   whole job of holding the text off the edge, and it matches the header's, so a
+   band's title and its rows start on ONE vertical line. Matches the other two
+   Lens lists. */
 .tug-list-view.lens-sessions-list {
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  /* Equal margin on all four sides so the framed list sits evenly inside its
-     section (matches the other two Lens lists). */
-  margin: 6px;
   /* TugListRow owns the row's own inset; the list adds none block or inline, so
-     the first/last rows hug the frame evenly (no excess top/bottom padding). */
+     the first/last rows sit flush against the header above and the section's
+     own rule below. */
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
-  /* Tighter left/right inset than the default 14px + gutter — the grip already
-     leads the row, so the content hugs closer to the frame (matches Snippets). */
-  --tugx-list-row-padding-inline: 10px;
+  /* The band header's inline padding, so the row content and the section title
+     share a leading edge. */
+  --tugx-list-row-padding-inline: var(--tug-space-md);
   --tugx-list-row-indicator-gutter: 0px;
   /* The row's two lines are a headline and a live readout, not a wrapped
      paragraph — the primitive's 2px stack reads as one crowded block. This is
      the air between the name line and the pulse + sparkline line. TUNE HERE. */
   --tugx-list-row-content-gap: 5px;
-  /* Frame the list like the session picker's boxes — a hairline border rounded
-     at `--tug-radius-sm`. The list clips its rows to the rounded corners; the
-     frame width joins the key-view ring (see `tug-list-view.css`), so a focused
-     list still totals the caret ring width. */
-  --tugx-list-view-radius: var(--tug-radius-sm);
-  --tugx-list-view-frame-width: 1px;
-  --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
 }
 
 /* Row dividers ALWAYS show in the Lens lists — re-assert the hairline the

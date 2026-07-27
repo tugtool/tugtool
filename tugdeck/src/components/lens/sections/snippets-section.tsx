@@ -174,6 +174,17 @@ function SnippetsHeaderActions(): React.ReactElement {
   );
 }
 
+/**
+ * Focus group for a display row's copy / delete accessories. The rows render
+ * inside `TugListView`'s per-row `FocusModeContext`, so the buttons register
+ * into their own row's descend scope — the mode scopes the walk, this constant
+ * is only the within-row ordering. ArrowRight on the cursor row lands on Copy;
+ * the trailing cluster is already revealed by the row's keyboard cursor, so the
+ * affordance is on screen before the descend reaches it. Same authoring as the
+ * session picker's row trash button.
+ */
+const ROW_ACTION_FOCUS_GROUP = "lens-snippet-row-actions";
+
 /** The display row on the shared `TugListRow` chrome: the reorder grip leads,
  *  the draggable incipit is the content column, and a hover-reveal delete is
  *  the trailing accessory. Row padding / hover / divider / caret come from the
@@ -220,6 +231,8 @@ function SnippetDisplayRow({
               size="xs"
               aria-label="Copy snippet"
               title="Copy snippet"
+              focusGroup={ROW_ACTION_FOCUS_GROUP}
+              focusOrder={0}
               onClick={(e) => {
                 // A copy is not a row activation — stop it reaching the cell.
                 e?.stopPropagation();
@@ -233,6 +246,8 @@ function SnippetDisplayRow({
               tone="danger"
               aria-label="Delete snippet"
               title="Delete snippet"
+              focusGroup={ROW_ACTION_FOCUS_GROUP}
+              focusOrder={1}
               onClick={(e) => {
                 // Never let the delete read as a row activation (open) on the
                 // cell wrapper above; open the confirm popover anchored to ✕.

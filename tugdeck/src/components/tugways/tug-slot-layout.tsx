@@ -72,6 +72,13 @@ export interface TugSlotLayoutProps
    * the control form, where each slot is a button that needs a name.
    */
   slotLabel?: (slot: number) => string;
+  /**
+   * Focus group the control form's slots are authored into ([P02]). Each slot
+   * registers at its own index, so the arrangement walks left to right. Omit it
+   * on the exemplar form, and on any control form the keyboard is not meant to
+   * reach.
+   */
+  focusGroup?: string;
 }
 
 /* ---------------------------------------------------------------------------
@@ -87,6 +94,7 @@ export const TugSlotLayout = React.forwardRef<HTMLSpanElement, TugSlotLayoutProp
       disabled = false,
       size = "sm",
       slotLabel,
+      focusGroup,
       className,
       ...rest
     },
@@ -110,6 +118,8 @@ export const TugSlotLayout = React.forwardRef<HTMLSpanElement, TugSlotLayoutProp
               state={states?.[slot] ?? "rest"}
               size={size}
               disabled={disabled}
+              focusGroup={onSelectSlot !== undefined ? focusGroup : undefined}
+              focusOrder={slot}
               aria-label={onSelectSlot !== undefined ? label : undefined}
               title={onSelectSlot !== undefined ? label : undefined}
               onSelect={

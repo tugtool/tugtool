@@ -93,6 +93,15 @@ export interface TugSlotProps
   disabled?: boolean;
   /** Accessible label. Required on the interactive form. */
   "aria-label"?: string;
+  /**
+   * Focus group the interactive slot is authored into ([P02]). A slot inside a
+   * list row registers into the row's descend scope, so ArrowRight onto the row
+   * reaches it; without a group the slot is pointer-only and the keyboard cannot
+   * see it at all. Ignored on the exemplar form, which is not a control.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0. */
+  focusOrder?: number;
 }
 
 /* ---------------------------------------------------------------------------
@@ -107,6 +116,8 @@ export const TugSlot = React.forwardRef<HTMLElement, TugSlotProps>(
       size = "sm",
       onSelect,
       disabled = false,
+      focusGroup,
+      focusOrder = 0,
       className,
       ...rest
     },
@@ -139,6 +150,8 @@ export const TugSlot = React.forwardRef<HTMLElement, TugSlotProps>(
         size="2xs"
         rounded="none"
         disabled={disabled}
+        focusGroup={focusGroup}
+        focusOrder={focusOrder}
         onClick={(event) => onSelect(event)}
         data-slot="tug-slot"
         data-state={state}

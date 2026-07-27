@@ -41,6 +41,16 @@ import { TugSlotLayout } from "@/components/tugways/tug-slot-layout";
 import type { TugSlotState } from "@/components/tugways/tug-slot";
 
 /**
+ * Focus group for a row's slots. The picker renders inside `TugListView`'s
+ * per-row `FocusModeContext`, so the slots register into their own row's descend
+ * scope — the mode scopes the walk, and this shared constant is only the
+ * within-row ordering. They are reachable by descending (ArrowRight) onto the
+ * row, never from the Lens's Tab cycle. Same authoring as the session picker's
+ * row trash button.
+ */
+const ROW_SLOT_FOCUS_GROUP = "lens-row-slots";
+
+/**
  * The slot layout for the row that represents `cardId`. Renders `null` when the
  * deck has no active imposition.
  */
@@ -86,6 +96,7 @@ export function SlotPicker({ cardId }: { cardId: string }): React.ReactElement |
       count={count}
       states={states}
       disabled={disabled}
+      focusGroup={ROW_SLOT_FOCUS_GROUP}
       slotLabel={(slot) => `Put at position ${slot + 1}`}
       onSelectSlot={(slot, event) => {
         // Assigning is not a row activation — stop it reaching the cell.

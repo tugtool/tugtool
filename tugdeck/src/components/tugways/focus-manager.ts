@@ -99,8 +99,14 @@ export interface SpatialCursorHandle {
   length: () => number;
   /** Current cursor index (live), or `-1` when empty. */
   cursorIndex: () => number;
-  /** Move the 1D cursor by ±1 (clamped) and fire the group's live commit, if any. */
-  moveCursor: (delta: 1 | -1) => void;
+  /** Move the cursor by the resolver's delta (clamped) and fire the group's live commit, if any. */
+  moveCursor: (delta: number) => void;
+  /**
+   * How many items the group puts on a row, when it is laid out as a grid. The
+   * resolver reads it to make a vertical arrow step a whole row instead of one
+   * item. Absent — the common case — means a 1D run.
+   */
+  columns?: () => number;
   /**
    * If `ArrowRight` should descend the current item (tree disclosure — an open
    * accordion section / a list row with navigable content), descend and return
@@ -1687,7 +1693,10 @@ export class FocusContext {
       rings: order?.rings ?? [],
       seams: order?.seams,
       overrides: order?.overrides,
-      groups: handle !== undefined ? [{ node, length: handle.length() }] : order?.groups,
+      groups:
+        handle !== undefined
+          ? [{ node, length: handle.length(), columns: handle.columns?.() ?? 1 }]
+          : order?.groups,
     };
     const cursorIndex = handle !== undefined ? handle.cursorIndex() : null;
     const resolution = resolveSpatial(effective, node, direction, cursorIndex);

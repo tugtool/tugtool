@@ -44,29 +44,22 @@
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
    rules regardless of bundle order. The list is this section's scroller: it
-   fills the section's flex share and scrolls its rows internally. TugListRow
-   owns the inner inline padding; a small equal margin insets the frame so the
-   keyboard focus ring paints uncut. */
+   fills the section's flex share and scrolls its rows internally. Edge-to-edge:
+   no margin, no frame, no radius — see the Sessions list for the reasoning. */
 .tug-list-view.lens-text-files-list {
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  /* Equal margin on all four sides; no list-owned block/inline padding (see the
-     Sessions list) so all three Lens lists frame identically. */
-  margin: 6px;
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
-  /* Same row inset as the Sessions list, so the two sections' text starts on
-     one vertical line down the Lens. */
-  --tugx-list-row-padding-inline: 10px;
+  /* One step in from the band header's own inline padding, so the filenames read
+     as sitting UNDER the section's icon and title rather than starting at the
+     same hard edge the header does. Matches the Snippets list. */
+  --tugx-list-row-padding-inline: var(--tug-space-lg);
   --tugx-list-row-indicator-gutter: 0px;
   /* Same air between the two lines as the Sessions rows — the two sections are
      the same kind of two-line row and must read as one rhythm. */
   --tugx-list-row-content-gap: 5px;
-  /* Framed + rounded like the session picker's boxes (see the Sessions list). */
-  --tugx-list-view-radius: var(--tug-radius-sm);
-  --tugx-list-view-frame-width: 1px;
-  --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
 }
 
 /* Row dividers always show (see the Sessions list for the rationale). */

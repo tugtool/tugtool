@@ -29,7 +29,22 @@
      gives first and the others hold at content, which is exactly the desired
      "biggest gives, headers stay" behavior — no explicit floor needed. */
   flex: 0 1 auto;
-  border-block-end: 1px solid var(--tug-border-subtle, rgba(128, 128, 128, 0.2));
+}
+
+/* The seam between two bands, drawn on the HEADER's leading edge so there is
+   exactly one line per seam (the section used to close itself with a hairline of
+   its own, which would double up against this one). Now that a band's list runs
+   edge to edge, a row's full-width fill can end directly against the next band's
+   header — a faint rule reads as an accident of the fill there, so the seam
+   takes the `strong` border tone and is the most contrasting line in the stack.
+   The last band closes the stack against the Lens's slack with the same line. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.lens-section > .tool-call-header {
+  border-block-start: 1px solid var(--tug7-element-global-border-normal-strong-rest);
+}
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.lens-sections > .lens-section:last-child {
+  border-block-end: 1px solid var(--tug7-element-global-border-normal-strong-rest);
 }
 
 /* A section holding a scrolling list flattens its own min-content to 0 so it can
@@ -105,7 +120,40 @@
   flex: 0 0 auto;
 }
 
+/* ---- Container focus on an edge-to-edge list ----
+   The list runs the full width of the rail, so `TugListView`'s own perimeter
+   ring — an `outline` just outside the list's box — falls in the Lens's clipped
+   overflow and never paints. The ring has to come inside, and an inset outline
+   cannot: a `TugListRow` is a stacking context (it owns the press layer), and a
+   layer's outline is painted BEFORE its positioned children, so the ring
+   disappeared behind any row carrying an opaque fill — a selected row punched a
+   hole in the ring exactly where it sat. So the band draws the ring itself, as
+   an overlay over the finished list, where no paint order is left to lose.
+
+   The bar the cursor row wears would be under that ring's leading edge, both
+   being one ring-width at the same x. `--tugx-list-view-cursor-bar-inset` slides
+   the bar inboard by the ring's width so the two marks stack: the ring says the
+   list is focused, the bar just inside it says which row. */
+.lens-section-body .tug-list-view {
+  --tugx-list-view-cursor-bar-inset: var(--tugx-list-key-ring-width);
+}
+.lens-section-body .tug-list-view[data-key-view-kbd] {
+  outline: none;
+}
+/* Above the snippet card's pinned header (2) and the reorder drop caret (2);
+   below the dragged band's lift (3), which is on the section, not in the body. */
+.lens-section-body:has(.tug-list-view[data-key-view-kbd])::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  border: var(--tugx-list-key-ring-width) solid var(--tugx-focus-ring);
+}
+
 .lens-section-body {
+  /* Anchor for the container-focus ring above. */
+  position: relative;
   display: flex;
   flex-direction: column;
   /* Fills the section below its header. Its `min-block-size` stays `auto` so an

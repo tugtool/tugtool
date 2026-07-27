@@ -64,6 +64,16 @@ export interface SpatialOverride {
 export interface SpatialGroup {
   readonly node: string;
   readonly length: number;
+  /**
+   * How many items the group puts on a row. `1` — the default — is the 1D run
+   * described above: every arrow steps one item, on either axis. Greater than
+   * one makes the cursor a GRID, and the arrows mean what the layout shows: a
+   * vertical arrow steps a whole row, a horizontal arrow steps one item and
+   * stops at the row's ends instead of spilling into the next row. A group laid
+   * out in columns and navigated as a 1D run reads as broken — Down from the
+   * first item lands on the item to its RIGHT.
+   */
+  readonly columns?: number;
 }
 
 /** The declared spatial order for one bounded scope (a card or a dialog). */
@@ -77,8 +87,9 @@ export interface SpatialOrder {
 export type SpatialResolution =
   /** Move the ring to another key view. */
   | { readonly kind: "ring"; readonly target: string }
-  /** Delegate to the ringed group's internal cursor (stay in the node). */
-  | { readonly kind: "cursor"; readonly delta: 1 | -1 }
+  /** Delegate to the ringed group's internal cursor (stay in the node). ±1 on a
+   *  1D group; ± the column count for a vertical move across a grid group. */
+  | { readonly kind: "cursor"; readonly delta: number }
   /** Undeclared arrow — the dead-arrow case; the navigator warns at dev time and falls back to the linear walk. */
   | { readonly kind: "none" };
 
@@ -193,9 +204,19 @@ export function resolveSpatial(
   //    group boundary to the next key view).
   const group = order.groups?.find((g) => g.node === node);
   if (group && cursorIndex !== null) {
-    const next = cursorIndex + SIGN_OF[direction];
-    if (next >= 0 && next < group.length) {
-      return { kind: "cursor", delta: SIGN_OF[direction] };
+    const columns = Math.max(1, Math.trunc(group.columns ?? 1));
+    const step =
+      AXIS_OF[direction] === "vertical" ? SIGN_OF[direction] * columns : SIGN_OF[direction];
+    const next = cursorIndex + step;
+    // A horizontal step in a GRID may not leave its row — the item across the
+    // row's end is a different column of a different row, not this one's
+    // neighbor. A 1D group has no rows to stay inside, so it never checks.
+    const staysInRow =
+      columns === 1 ||
+      AXIS_OF[direction] === "vertical" ||
+      Math.floor(next / columns) === Math.floor(cursorIndex / columns);
+    if (next >= 0 && next < group.length && staysInRow) {
+      return { kind: "cursor", delta: step };
     }
     // at the group edge → fall through to seam / ring
   }

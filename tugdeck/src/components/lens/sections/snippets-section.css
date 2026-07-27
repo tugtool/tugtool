@@ -42,27 +42,22 @@
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
    rules regardless of bundle order. The list is this section's scroller: it
-   fills the section's flex share and scrolls its rows internally. */
+   fills the section's flex share and scrolls its rows internally. Edge-to-edge:
+   no margin, no frame, no radius — see the Sessions list for the reasoning. */
 .tug-list-view.lens-snippets-list {
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  /* Equal margin on all four sides — identical to the Sessions / Text Files
-     lists so all three frame the same way and share one width. */
-  margin: 6px;
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
   /* Tighter rows than the default 8px — the snippet list is a dense index of
      one-line handles, so it spends less vertical space per row. TUNE HERE. */
   --tugx-list-row-padding-block: 5px;
-  /* Tighter left/right inset than the default 14px + gutter — the grip already
-     leads the row, so the content hugs closer to the frame. TUNE HERE. */
-  --tugx-list-row-padding-inline: 10px;
+  /* One step in from the band header's own inline padding, so the incipits read
+     as sitting UNDER the section's icon and title rather than starting at the
+     same hard edge the header does. */
+  --tugx-list-row-padding-inline: var(--tug-space-lg);
   --tugx-list-row-indicator-gutter: 0px;
-  /* Framed + rounded like the session picker's boxes (see the Sessions list). */
-  --tugx-list-view-radius: var(--tug-radius-sm);
-  --tugx-list-view-frame-width: 1px;
-  --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
 }
 
 /* Row dividers always show (see the Sessions list for the rationale). */
@@ -98,7 +93,7 @@
 /* The OPEN CARD — the editing snippet's row stays as the card HEADER (the
    selection fill, rendered by `TugListRow` inside the editor cell) and the
    editor is the WELL beneath it. The card spans the full list width and draws
-   NO frame of its own: its side edges are the list frame, its top and bottom
+   NO frame of its own: its side edges are the Lens rail's, its top and bottom
    edges are the list's existing dividers — nested rectangles are impossible by
    construction.
 

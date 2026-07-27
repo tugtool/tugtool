@@ -76,6 +76,12 @@ export interface ItemGroupKeyboardOptions {
    * usually the selected item's index among {@link collectItems}, else 0.
    */
   initialIndex: () => number;
+  /**
+   * How many items the group puts on a row, when its items are laid out as a
+   * grid rather than a single run. The spatial resolver reads it so a vertical
+   * arrow steps a whole row. Absent (or 1) keeps the 1D run.
+   */
+  columns?: () => number;
   /** Whether the current item descends on Enter (accordion section / list row). */
   currentItemDescendable?: () => boolean;
   /**
@@ -222,6 +228,7 @@ export function useItemGroupKeyboard(
   if (handleRef.current === null) {
     handleRef.current = {
       length: () => optionsRef.current.collectItems().length,
+      columns: () => optionsRef.current.columns?.() ?? 1,
       cursorIndex: () => cursor.cursorIndex(),
       moveCursor: (delta) => {
         liveCommit(cursor.moveCursor(delta));

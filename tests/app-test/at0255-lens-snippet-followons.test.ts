@@ -122,24 +122,29 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           );
           const click = await app.evalJS<{
             listHasKbd: boolean;
-            listOutline: string;
+            ringWidth: string;
             cursorSnippetId: string | null;
             selectedCount: number;
           }>(
             `(() => {
               const list = document.querySelector('.lens-snippets-list');
+              const body = list?.closest('.lens-section-body') ?? null;
               const cursor = document.querySelector('.lens-snippets-list [data-key-cursor]');
               return {
                 listHasKbd: list?.hasAttribute('data-key-view-kbd') ?? false,
-                listOutline: list ? getComputedStyle(list).outlineStyle : 'none',
+                ringWidth: body ? getComputedStyle(body, '::after').borderTopWidth : '0px',
                 cursorSnippetId: cursor?.querySelector('[data-snippet-id]')?.getAttribute('data-snippet-id') ?? null,
                 selectedCount: document.querySelectorAll('.lens-snippets-list .tug-list-view-cell[data-selected="true"]').length,
               };
             })()`,
           );
-          // The list wears the perimeter ring, and the cursor sits on the clicked row.
+          // The list wears the perimeter ring, and the cursor sits on the clicked
+          // row. The ring is the BAND's overlay, not the list's own outline: an
+          // edge-to-edge list has no room outside itself to paint an outline in,
+          // and an inset one is painted before the rows and lost behind any row
+          // carrying a fill. See `lens-section-band.css`.
           expect(click.listHasKbd).toBe(true);
-          expect(click.listOutline).not.toBe("none");
+          expect(parseFloat(click.ringWidth)).toBeGreaterThan(0);
           expect(click.cursorSnippetId).toBe("s2");
           expect(click.selectedCount).toBe(1);
 

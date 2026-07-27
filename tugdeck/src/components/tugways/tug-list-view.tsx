@@ -3373,8 +3373,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // the surface default. A multi/descendable list moves a cursor only; Enter
         // descends a navigable row, else (when `commitOnEnter: "act"`) acts on the
         // cursor row via `onAct`, else bubbles to the scope default ([P24]).
+        // `commitOnEnter: "act"` is the author saying what Enter means on THIS
+        // list, so it outranks the descend default: the Lens snippets list opens
+        // the snippet on Enter, and adding a focusable accessory to its rows
+        // must not quietly turn Enter into "descend onto the copy button".
+        // Right still descends (the movement-key listener and the cursor
+        // handle's `tryDescendRight` read the row's focusables directly), so the
+        // accessory stays reachable.
         currentItemDescendable:
-          !singleSelect && rowFirstFocusableId(cursorIndexRef.current) !== null,
+          !singleSelect &&
+          !enterActs &&
+          rowFirstFocusableId(cursorIndexRef.current) !== null,
         commitOnEnter: enterActs ? "act" : undefined,
         onSelect: selectCursorRow,
         onAct: enterActs ? actCursorRow : selectCursorRow,
@@ -3461,12 +3470,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         moveCursor: (delta) => {
           const nav = cursorNavRef.current;
           const cur = cursorIndexRef.current;
+          // A list is one column, so it declares no `columns` and the resolver
+          // only ever hands it a single step — the sign is all there is to read.
+          const dir: 1 | -1 = delta > 0 ? 1 : -1;
           const next =
             cur < 0
-              ? delta > 0
+              ? dir > 0
                 ? nav.firstCursorableRow()
                 : nav.lastCursorableRow()
-              : nav.stepCursorableRow(cur, delta);
+              : nav.stepCursorableRow(cur, dir);
           if (next >= 0 && next !== cur) {
             nav.moveCursorTo(next, true);
             // Single-select: selection follows the cursor (the picker shape).

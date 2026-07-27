@@ -186,6 +186,16 @@ export interface TugRadioGroupProps
    */
   focusPolicy?: FocusPolicy;
   /**
+   * How many options the group's layout puts on a row. The default `1` is a
+   * single run — every arrow steps one option, on either axis. Set it to match a
+   * multi-column layout (a CSS grid of tiles) and the arrows follow what the
+   * user sees: Down / Up step a whole row, Left / Right step one option and stop
+   * at the row's ends. The component cannot read this off the layout, so the
+   * surface that authored the columns declares them.
+   * @default 1
+   */
+  columns?: number;
+  /**
    * Commit the ringed option on **Enter** as well as Space ([P24] opt-out). Use
    * only for a commit-advances primary group with no separate scope default to
    * bubble Enter to — the question wizard's single-select options, where Return
@@ -225,6 +235,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       focusGroup,
       focusOrder = 0,
       focusPolicy,
+      columns = 1,
       commitOnEnter = false,
       ...rest
     },
@@ -307,6 +318,9 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
         register: focusGroup !== undefined,
         commitOnEnter,
         collectItems: enabledItems,
+        // The layout's column count, so a vertical arrow steps a row of tiles
+        // rather than the next tile along.
+        columns: () => columns,
         // Land on the checked item when Tab enters; else the first enabled item.
         initialIndex: () => {
           const enabled = enabledItems();

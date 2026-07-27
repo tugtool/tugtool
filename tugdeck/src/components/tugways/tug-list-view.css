@@ -73,6 +73,14 @@ body {
      overlays while sharing the affordance hue with the focus ring. */
   --tugx-list-view-cursor-bar-width:   var(--tugx-list-key-ring-width);
   --tugx-list-view-cursor-bar-color:   var(--tug7-element-global-fill-normal-accent-rest);
+  /* How far in from the row's leading edge the bar starts. Zero for a list with
+     room around it: the container ring sits outside the list, so the edge is the
+     bar's alone. A host that draws the container ring INSIDE the list's box
+     instead (an edge-to-edge list, with nothing outside it to paint into) sets
+     this to the ring's width, so the two marks stack — ring at the edge, bar
+     just inboard of it — rather than the ring covering the bar outright. Applied
+     only while the list holds the key view, which is exactly when a ring is up. */
+  --tugx-list-view-cursor-bar-inset:   0px;
 
   /* Row-layout slots — consumed only when `rowLayout` is set. */
   --tugx-list-view-pill-row-gap:       var(--tug-space-sm);
@@ -284,6 +292,9 @@ body {
   z-index: 1;
   width: var(--tugx-list-view-cursor-bar-width);
   background: var(--tugx-list-view-cursor-bar-color);
+}
+.tug-list-view[data-key-view-kbd] .tug-list-view-cell[data-key-cursor]::before {
+  inset-inline-start: var(--tugx-list-view-cursor-bar-inset);
 }
 
 /* ---- Read-only mode (`interactive={false}`) ----

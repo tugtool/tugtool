@@ -176,6 +176,7 @@ function LayoutsSectionBody({
             focusGroup={host.focusGroup}
             size="sm"
             emphasis="tile"
+            columns={2}
             aria-labelledby={SIDE_CAPTION_ID}
             className="layouts-section-group"
             data-testid="lens-layouts-side"
@@ -213,6 +214,7 @@ function LayoutsSectionBody({
             focusGroup={host.focusGroup}
             size="sm"
             emphasis="tile"
+            columns={2}
             aria-labelledby={KIND_CAPTION_ID}
             className="layouts-section-group"
             data-testid="lens-layouts-kind"
