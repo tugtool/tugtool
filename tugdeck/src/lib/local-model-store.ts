@@ -77,6 +77,8 @@ export interface LocalModelSnapshot {
   download: LocalModelDownload | null;
   /** The last terminal download outcome, for surfacing an error. */
   lastError: string | null;
+  /** Whether that outcome was the user stopping the download themselves. */
+  lastCanceled: boolean;
   availability: LocalModelAvailability;
 }
 
@@ -93,6 +95,7 @@ export const IDLE_LOCAL_MODEL_SNAPSHOT: LocalModelSnapshot = Object.freeze({
   models: EMPTY_MODELS,
   download: null,
   lastError: null,
+  lastCanceled: false,
   availability: NOT_READY,
 });
 
@@ -239,10 +242,12 @@ export class LocalModelStore {
       }
       case "local_model_download_result": {
         const ok = body.ok === true;
+        const canceled = body.canceled === true;
         this.commit({
           ...this.snapshot,
           download: null,
-          lastError: ok ? null : str(body.error, "download failed"),
+          lastError: ok || canceled ? null : str(body.error, "download failed"),
+          lastCanceled: canceled,
         });
         // A finished download changes what the host can do.
         void this.refreshAvailability();
@@ -255,7 +260,7 @@ export class LocalModelStore {
 
   /** Ask tugcast to acquire a model. Progress arrives on CONTROL. */
   download(modelId: string): void {
-    this.commit({ ...this.snapshot, lastError: null });
+    this.commit({ ...this.snapshot, lastError: null, lastCanceled: false });
     this.conn.sendControlFrame("local_model_download", { model: modelId });
   }
 

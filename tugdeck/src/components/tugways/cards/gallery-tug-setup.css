@@ -64,7 +64,7 @@
   /* Mirrors tug-setup.css: every row the same fixed height so the dialog never
    * hops as a step grows. */
   --tug-setup-row-h: 60px;
-  --tug-setup-row-offer-h: 84px;
+  --tug-setup-row-offer-h: 96px;
   --tug-setup-dot: 14px;
   --tug-setup-headline-gap: 10px;
 }
@@ -139,6 +139,13 @@
 
 .cg-setup-step-body .tug-progress-indicator-value .tug-label {
   font-size: var(--tug-font-size-2xs);
+}
+
+/* Mirrors tug-setup.css: the cancel ✕ seats on the readout's optical center,
+ * a pixel above the line box's center. */
+.cg-setup-step-body [data-slot="tug-icon-button"] {
+  position: relative;
+  top: -1px;
 }
 
 .cg-setup-step-action {

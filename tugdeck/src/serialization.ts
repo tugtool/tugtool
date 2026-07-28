@@ -306,10 +306,10 @@ function parseV4(
   }
 
   // A deck always stands under an imposition, so an absent or unreadable kind
-  // reads as the default (one-up) rather than as "no arrangement". Every
-  // pre-imposition blob restores under one anchor, which no pane occupies until
-  // one is assigned a slot — the deck looks exactly as it did, and the slot
-  // pickers on the Lens rows are live from the first frame.
+  // reads as DEFAULT_IMPOSITION_KIND rather than as "no arrangement". A
+  // pre-imposition blob restores under those anchors, which no pane occupies
+  // until one is assigned a slot — the deck looks exactly as it did, and the
+  // slot pickers on the Lens rows are live from the first frame.
   //
   // `imposition` widened from a bare kind string to a `{ kind?, lens }` record
   // without a version bump, so both shapes parse. The Lens's side comes from

@@ -211,6 +211,7 @@ type Scenario =
   | "signin_failed"
   | "local_ai_offer"
   | "local_ai_downloading"
+  | "local_ai_canceled"
   | "local_ai_failed"
   | "local_ai_skipped"
   | "ready_to_open"
@@ -228,6 +229,7 @@ const SCENARIOS: { key: Scenario; label: string }[] = [
   { key: "signin_failed", label: "Log-in failed" },
   { key: "local_ai_offer", label: "On-device AI offer" },
   { key: "local_ai_downloading", label: "On-device AI downloading" },
+  { key: "local_ai_canceled", label: "On-device AI canceled" },
   { key: "local_ai_failed", label: "On-device AI failed" },
   { key: "local_ai_skipped", label: "On-device AI skipped" },
   { key: "ready_to_open", label: "Ready to open" },
@@ -362,7 +364,7 @@ function buildFlow(
             cta: { label: "Download", onClick: () => go("local_ai_downloading") },
             secondaryCta: { label: "Skip", onClick: () => go("local_ai_skipped") },
           }),
-          open({ status: "pending", detail: "Add or skip on-device AI first." }),
+          open({ status: "pending", detail: "Add or skip on-device AI." }),
         ],
       };
     case "local_ai_downloading":
@@ -395,7 +397,22 @@ function buildFlow(
               </>
             ),
           }),
-          open({ status: "pending", detail: "Add or skip on-device AI first." }),
+          open({ status: "pending", detail: "Add or skip on-device AI." }),
+        ],
+      };
+    case "local_ai_canceled":
+      return {
+        steps: [
+          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
+          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
+          localAi({
+            status: "active",
+            label: "Add on-device AI (optional)",
+            detail: "Download canceled",
+            cta: { label: "Download", onClick: () => go("local_ai_downloading") },
+            secondaryCta: { label: "Skip", onClick: () => go("local_ai_skipped") },
+          }),
+          open({ status: "pending", detail: "Add or skip on-device AI." }),
         ],
       };
     case "local_ai_failed":
@@ -410,7 +427,7 @@ function buildFlow(
             cta: { label: "Retry", onClick: () => go("local_ai_downloading") },
             secondaryCta: { label: "Skip", onClick: () => go("local_ai_skipped") },
           }),
-          open({ status: "pending", detail: "Add or skip on-device AI first." }),
+          open({ status: "pending", detail: "Add or skip on-device AI." }),
         ],
       };
     case "local_ai_skipped":

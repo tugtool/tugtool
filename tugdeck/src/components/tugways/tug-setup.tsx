@@ -493,6 +493,18 @@ export function TugSetup(): ReactElement {
         ),
       };
     }
+    // A download the user stopped is not a failure — the row stays the live
+    // offer it was, with the cancel reported and the same two ways forward.
+    if (localModel.lastCanceled) {
+      return {
+        key,
+        status: "active",
+        label: "Add on-device AI (optional)",
+        detail: "Download canceled",
+        cta: { label: "Download", onClick: () => handleAddLocalAi(offer.id) },
+        secondaryCta: { label: "Skip", onClick: handleSkipLocalAi },
+      };
+    }
     if (localModel.lastError !== null) {
       return {
         key,
@@ -530,7 +542,7 @@ export function TugSetup(): ReactElement {
           key: "open",
           status: "pending",
           label: "Start a Claude Code session",
-          detail: "Add or skip on-device AI first.",
+          detail: "Add or skip on-device AI.",
         }
       : {
           key: "open",

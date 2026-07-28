@@ -120,6 +120,22 @@ describe("frame folding", () => {
     expect(store.getSnapshot().lastError).toBe("disk full");
   });
 
+  test("a canceled result reads as canceled, not as an error", () => {
+    const store = attachLocalModelStore(fakeConn);
+    feed({ action: "local_model_download_progress", model: ENTRY.id, receivedBytes: 5 });
+    feed({ action: "local_model_download_result", model: ENTRY.id, ok: false, canceled: true });
+    expect(store.getSnapshot().download).toBeNull();
+    expect(store.getSnapshot().lastError).toBeNull();
+    expect(store.getSnapshot().lastCanceled).toBe(true);
+  });
+
+  test("starting a download clears a prior cancel", () => {
+    const store = attachLocalModelStore(fakeConn);
+    feed({ action: "local_model_download_result", model: ENTRY.id, ok: false, canceled: true });
+    store.download(ENTRY.id);
+    expect(store.getSnapshot().lastCanceled).toBe(false);
+  });
+
   test("a successful result clears both progress and any prior error", () => {
     const store = attachLocalModelStore(fakeConn);
     feed({ action: "local_model_download_result", model: ENTRY.id, ok: false, error: "network" });

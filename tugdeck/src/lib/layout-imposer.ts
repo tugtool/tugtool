@@ -134,14 +134,11 @@ export const IMPOSITION_KINDS: readonly ImpositionKind[] = [
 ];
 
 /**
- * The arrangement a deck stands under when nothing has said otherwise.
- *
- * One-up is the quietest thing the imposer can do — a single anchor, which a
- * card only ever occupies by being put there — so it is the resting state
- * rather than a state the deck has to be switched into. An imposition is
- * always active; there is no off.
+ * The arrangement a deck stands under when nothing has said otherwise — the
+ * factory default on a fresh install, and the fallback an absent or unreadable
+ * blob kind restores under. An imposition is always active; there is no off.
  */
-export const DEFAULT_IMPOSITION_KIND: ImpositionKind = "one-up";
+export const DEFAULT_IMPOSITION_KIND: ImpositionKind = "three-up";
 
 /**
  * The **imposition gap**: the space an imposed pane keeps from the canvas

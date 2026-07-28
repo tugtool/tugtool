@@ -893,6 +893,23 @@ fn broadcast_result(
     ok: bool,
     error: Option<String>,
 ) {
+    broadcast_outcome(cat, model, ok, false, error);
+}
+
+/// Report a download the user stopped. A cancel is not a failure, so it
+/// carries its own flag rather than an error string the deck would have to
+/// recognize by its wording.
+fn broadcast_canceled(cat: Option<&broadcast::Sender<Frame>>, model: &str) {
+    broadcast_outcome(cat, model, false, true, None);
+}
+
+fn broadcast_outcome(
+    cat: Option<&broadcast::Sender<Frame>>,
+    model: &str,
+    ok: bool,
+    canceled: bool,
+    error: Option<String>,
+) {
     let Some(cat) = cat else { return };
     send_control(
         cat,
@@ -900,6 +917,7 @@ fn broadcast_result(
             "action": "local_model_download_result",
             "model": model,
             "ok": ok,
+            "canceled": canceled,
             "error": error,
         }),
     );
@@ -956,8 +974,8 @@ pub fn start_download(
                 broadcast_result(cat.as_ref(), entry.id, true, None);
             }
             DownloadOutcome::Cancelled => {
-                info!(model = entry.id, "local model download cancelled");
-                broadcast_result(cat.as_ref(), entry.id, false, Some("cancelled".to_string()));
+                info!(model = entry.id, "local model download canceled");
+                broadcast_canceled(cat.as_ref(), entry.id);
             }
             DownloadOutcome::Failed(error) => {
                 warn!(model = entry.id, %error, "local model download failed");
