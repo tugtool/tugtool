@@ -20,6 +20,9 @@ The doctrine for Tug's SQLite ledgers — the machine-global `changes.db` (attri
 
 **[LR8] Exactly one process writes the shared ledger.** Write ownership of `changes.db` is a first-come `flock` claim on `changes.db.writer-lock` (`tugcore::ledger_db::claim_writer`), held for the owner's lifetime and released by the kernel when it dies — no handoff protocol, no stale-lock scanning. An instance that loses the claim attaches the shared database **read-only** (so a mutation that escapes the route fails loudly instead of becoming a second writer) and forwards every mutation to the owner's `POST /api/changes-write`; the body is one `changes_journal::Record`, so the wire format, the durable format, and the replay applier are the same code. Owner-only duties follow the claim: quarantine/salvage, schema bootstrap, journaling, checkpointing, snapshot backups. Failover is the same path as crash recovery — a failed forward triggers a re-claim, the winner drains the forwarder's bounded queue (256 records; overflow drops the oldest, loudly, and latches `ledger_degraded`).
 
+
+**[LR9] Every Tug service gets its flush window — `tug-quiesce`.** Shutdown is one ladder with one set of numbers (`tugcore::quiesce`, mirrored into Swift and TypeScript under a build-failing drift test). A service asked to stop (control-channel `shutdown`, or SIGTERM — both funnel into the same path) stops accepting work, checkpoints its WALs, fsyncs journals, closes its connections, and exits 0 within a **2 s budget it enforces on itself**; a hung flush must never wedge shutdown, so the budget expiring means exit anyway, loudly. The conductor (Tug.app) waits **4 s** for the group to drain before escalating, and records every SIGKILL it had to fire into `quiesce-report.json` beside the instance's data. A SIGKILL that actually fires is a **defect signal**, not routine — `at0282-quiesce-no-sigkill` asserts a normal teardown fires none. Reclaiming a stale process is the same ladder, never kill-first: SIGTERM, a 1 s grace, then the hammer.
+
 ## Recovery runbook
 
 0. Only the owning instance ([LR8]) gates, rebuilds, or checkpoints the shared database; a forwarding instance recovers by taking the claim when the owner exits.
@@ -27,7 +30,3 @@ The doctrine for Tug's SQLite ledgers — the machine-global `changes.db` (attri
 2. Restart the instance: the [LR3] gate quarantines, salvages, and replays the journal automatically. Nothing else is usually required.
 3. If the automatic rebuild is suspected short (pre-journal history), recover from the newest `backups/` snapshot: verify it (`quick_check`), then re-apply the journal on top.
 4. Keep the quarantined `<name>.corrupt-*` files; they are the forensic record.
-
-## Pending extensions
-
-- **Graceful termination protocol** — design at `roadmap/graceful-termination-plan.md`; retires SIGKILL-first process management so ledgers always close cleanly.

@@ -98,6 +98,9 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     "tugdeck/src/components/tugways/tug-text-editor/drop-extension.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/state-preservation.ts": 30,
     "tugdeck/src/card-state-orchestrator.ts": 21,
+    // The deck's card/pane model: lens, tab, drag, and save-on-quit tests all
+    // route through it because it is where a card's placement actually lives.
+    "tugdeck/src/deck-manager.ts": 21,
 };
 
 interface TestCoverage {

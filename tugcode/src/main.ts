@@ -1,7 +1,12 @@
 #!/usr/bin/env bun
 // Tugcode: Claude Code bridge — stream-json IPC between Claude Code and tugcast
 
-import { readLine, writeLine, writeLineAndExit } from "./ipc.ts";
+import {
+  drainPendingWrites,
+  readLine,
+  writeLine,
+  writeLineAndExit,
+} from "./ipc.ts";
 import { isProtocolInit, isUserMessage } from "./types.ts";
 import { dispatchInbound } from "./inbound-dispatch.ts";
 import { SessionManager, resolvePluginDir } from "./session.ts";
@@ -178,29 +183,83 @@ console.log(
 let sessionManager: SessionManager | null = null;
 let stubReplay: StubReplayEngine | null = null;
 
+/**
+ * The `tug-quiesce` flush budget: how long tugcode gives itself to end
+ * the claude subprocess, close its ledger handles, and get its last IPC
+ * frames onto the pipe before exiting anyway. Mirror of
+ * `tugcore::quiesce::FLUSH_BUDGET_MS` — the Rust test
+ * `quiesce_constants_are_mirrored` fails the build if this drifts.
+ *
+ * The budget is enforced by tugcode on itself so a hung flush costs the
+ * conductor nothing: it exits on its own terms well inside the
+ * conductor's drain deadline, and never has to be SIGKILLed.
+ */
+const QUIESCE_FLUSH_BUDGET_MS = 2000;
+
+/** Set once quiesce has begun, so a second signal can't restart it. */
+let quiescing = false;
+
+/**
+ * Run `work` with a hard time bound. Resolves `true` when it finished,
+ * `false` when the budget ran out first. The timer is unref'd so it can
+ * never be the thing keeping the process alive.
+ */
+async function withBudget(
+  work: () => Promise<void>,
+  budgetMs: number,
+): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), budgetMs);
+    (timer as { unref?: () => void }).unref?.();
+  });
+  const done = work().then(
+    () => true,
+    (err) => {
+      console.error("Shutdown error:", err);
+      return true;
+    },
+  );
+  const finished = await Promise.race([done, expired]);
+  if (timer !== undefined) clearTimeout(timer);
+  return finished;
+}
+
+/**
+ * The quiesce path — the single shutdown route for every way tugcode is
+ * asked to stop (SIGTERM, SIGHUP, stdin EOF, a fatal main-loop error).
+ *
+ * Ends the claude subprocess, closes the read-only sessions.db handle,
+ * and — the part a bare `process.exit` used to skip — drains the
+ * serialized stdout queue, so the last frames tugcode emitted (a turn's
+ * terminal frame, its telemetry) reach tugcast instead of dying in a
+ * half-written pipe.
+ */
+async function quiesce(reason: string, code = 0): Promise<void> {
+  if (quiescing) return;
+  quiescing = true;
+  console.log(`${reason}, shutting down`);
+  const flushed = await withBudget(async () => {
+    // Give claude the smaller of its own grace and what the budget can
+    // afford; the outer race is the hard bound either way.
+    await sessionManager?.shutdown({ graceMs: QUIESCE_FLUSH_BUDGET_MS });
+    await drainPendingWrites();
+  }, QUIESCE_FLUSH_BUDGET_MS);
+  if (!flushed) {
+    console.error(
+      `quiesce: flush budget (${QUIESCE_FLUSH_BUDGET_MS}ms) expired after ${reason}; exiting anyway`,
+    );
+  }
+  process.exit(code);
+}
+
 // Graceful signal handlers: close stdin and kill claude process. SIGTERM
 // and SIGHUP are both routed through the same path. SIGHUP covers the
 // Unix "controlling process died" signal that arrives when tugcast (our
 // parent) exits ungracefully — without handling it, tugcode would keep
 // running as an orphan reparented to PID 1, pinning the claude pipe open.
-function shutdownOnSignal(signal: string): void {
-  console.log(`${signal} received, shutting down`);
-  if (sessionManager) {
-    sessionManager
-      .shutdown()
-      .catch((err) => {
-        console.error("Shutdown error:", err);
-      })
-      .finally(() => {
-        process.exit(0);
-      });
-  } else {
-    process.exit(0);
-  }
-}
-
-process.on("SIGTERM", () => shutdownOnSignal("SIGTERM"));
-process.on("SIGHUP", () => shutdownOnSignal("SIGHUP"));
+process.on("SIGTERM", () => void quiesce("SIGTERM received"));
+process.on("SIGHUP", () => void quiesce("SIGHUP received"));
 
 // IPC loop. When stdin closes (parent hangup / pipe EOF), the for-await
 // loop exits naturally. We then run the same shutdown path as SIGTERM so
@@ -434,20 +493,9 @@ main()
   .then(async () => {
     // stdin closed. Kill the claude subprocess (which would otherwise
     // hold the event loop open on its stdout pipe) and exit.
-    console.log("stdin closed, shutting down");
-    try {
-      await sessionManager?.shutdown();
-    } catch (err) {
-      console.error("Shutdown error:", err);
-    }
-    process.exit(0);
+    await quiesce("stdin closed");
   })
   .catch(async (err) => {
     console.error("Fatal error in main loop:", err);
-    try {
-      await sessionManager?.shutdown();
-    } catch {
-      // best-effort
-    }
-    process.exit(1);
+    await quiesce("fatal error in main loop", 1);
   });

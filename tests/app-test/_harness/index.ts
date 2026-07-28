@@ -29,7 +29,7 @@ import {
   writeFileSync,
   type WriteStream,
 } from "node:fs";
-import { dirname, resolve as pathResolve } from "node:path";
+import { dirname, join, resolve as pathResolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import {
@@ -228,6 +228,39 @@ interface ResolvedLaunch {
 }
 
 /**
+ * The `tug-quiesce` teardown deadline: how long the harness gives a whole
+ * Tug.app teardown before it escalates to SIGKILL. Mirror of
+ * `tugcore::quiesce::TEARDOWN_DEADLINE_MS` (the source of truth; its
+ * `quiesce_constants_are_mirrored` test fails the Rust build if this
+ * drifts). It sits above the app's own 4 s process-group drain deadline,
+ * which in turn sits above each service's 2 s self-enforced flush budget
+ * — so in a healthy teardown nothing here ever fires.
+ */
+const QUIESCE_TEARDOWN_DEADLINE_MS = 8000;
+
+/**
+ * Filename of the per-shutdown quiesce report Tug.app writes into its
+ * instance data dir. Mirror of
+ * `tugcore::quiesce::QUIESCE_REPORT_FILENAME`.
+ */
+export const QUIESCE_REPORT_NAME = "quiesce-report.json";
+
+/** One forced kill the app had to fire during teardown. */
+export interface QuiesceEscalation {
+  target: string;
+  pid: number;
+  afterMs: number;
+}
+
+/** The app's report on its own shutdown. */
+export interface QuiesceReport {
+  at: string;
+  drainDeadlineMs: number;
+  /** Empty in a healthy teardown — anything here is a defect. */
+  sigkills: QuiesceEscalation[];
+}
+
+/**
  * A live connection to a launched Tug.app. Returned by
  * `launchTugApp`; tests interact with this object only.
  */
@@ -254,6 +287,8 @@ export class App {
    * away, and unlike the registry it has no registration race.
    */
   private readonly hostPid: number;
+  /** Per-instance identity this launch ran under (`TUG_INSTANCE_ID`). */
+  readonly instanceId: string;
   private closed = false;
 
   constructor(args: {
@@ -266,6 +301,7 @@ export class App {
     logStream: WriteStream | null;
     detachSignals: () => void;
     hostPid?: number;
+    instanceId: string;
   }) {
     this.rpc = args.rpc;
     this.version = args.version;
@@ -276,6 +312,30 @@ export class App {
     this.logStream = args.logStream;
     this.detachSignals = args.detachSignals;
     this.hostPid = args.hostPid ?? 0;
+    this.instanceId = args.instanceId;
+  }
+
+  /**
+   * Read this instance's quiesce report — the app's own account of its
+   * last shutdown, written by `ProcessManager.stop()`. Returns `null`
+   * when the app has not torn down yet (no report on disk).
+   *
+   * The assertion worth making on it is `sigkills.length === 0`: every
+   * Tug service flushes and exits inside its own budget, so a healthy
+   * teardown never escalates.
+   */
+  quiesceReport(): QuiesceReport | null {
+    const path = join(
+      homedir(),
+      "Library/Application Support/Tug/instances",
+      this.instanceId,
+      QUIESCE_REPORT_NAME,
+    );
+    try {
+      return JSON.parse(readFileSync(path, "utf8")) as QuiesceReport;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -1185,9 +1245,10 @@ export class App {
   }
 
   /**
-   * SIGTERM the subprocess, wait up to 5s for exit, SIGKILL on
-   * timeout. Unlinks the socket file, flushes the log stream, and
-   * detaches process-level signal handlers. Idempotent.
+   * SIGTERM the subprocess, wait out the shared `tug-quiesce` teardown
+   * deadline for exit, SIGKILL on timeout. Unlinks the socket file,
+   * flushes the log stream, and detaches process-level signal handlers.
+   * Idempotent.
    */
   async close(): Promise<void> {
     if (this.closed) return;
@@ -1217,7 +1278,7 @@ export class App {
     }
     const exitPromise = this.subprocess.exited.catch(() => 0);
     const timeout = new Promise<"timeout">((resolve) =>
-      setTimeoutNative(() => resolve("timeout"), 5000),
+      setTimeoutNative(() => resolve("timeout"), QUIESCE_TEARDOWN_DEADLINE_MS),
     );
     const winner = await Promise.race([exitPromise, timeout]);
     if (winner === "timeout") {
@@ -1524,6 +1585,7 @@ export async function launchTugApp(
     logStream,
     detachSignals,
     hostPid,
+    instanceId: resolved.instanceId,
   });
 }
 

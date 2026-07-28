@@ -84,6 +84,32 @@ enum InstanceConfig {
             .appendingPathComponent(instanceId, isDirectory: true)
     }
 
+    // ── tug-quiesce ladder ───────────────────────────────────────────
+    //
+    // Swift mirror of `tugcore::quiesce`, which is the source of truth.
+    // Its `quiesce_constants_are_mirrored` test reads these exact lines
+    // and fails the Rust build if they drift. Tug.app is the conductor:
+    // it asks each service to stop, gives the group its drain deadline,
+    // and only then escalates — recording any escalation as a defect.
+
+    /// How long the tugcast process group gets to exit on its own after
+    /// SIGTERM before the conductor escalates to SIGKILL. Each service
+    /// enforces a 2 s flush budget on itself, so a healthy group is
+    /// always gone well inside this.
+    static let quiesceDrainDeadline: TimeInterval = 4.0
+
+    /// Grace between SIGTERM and SIGKILL when reclaiming a stale
+    /// process holding a port we need — enough for its own flush.
+    static let quiesceStaleReclaimGrace: TimeInterval = 1.0
+
+    /// Filename of the per-shutdown quiesce report in `dataDir`.
+    static let quiesceReportName = "quiesce-report.json"
+
+    /// Absolute path of this instance's quiesce report.
+    static var quiesceReportPath: URL {
+        dataDir.appendingPathComponent(quiesceReportName, isDirectory: false)
+    }
+
     /// Per-instance log directory: `<data-dir>/Logs/`.
     static var logDir: URL {
         dataDir.appendingPathComponent("Logs", isDirectory: true)

@@ -2504,6 +2504,15 @@ const RESULT_WATCHDOG_MS = 12000;
 const FORCE_TERMINATE_SIGINT_GRACE_MS = 1500;
 
 /**
+ * Default grace for the graceful teardown: how long a healthy claude gets
+ * to finish and exit after its stdin is closed (EOF). Used by respawn /
+ * fork / truncate, where nothing is waiting on the process. Shutdown
+ * passes a smaller grace — see {@link SessionManager.shutdown} — because
+ * there the `tug-quiesce` budget is what claude's exit has to fit inside.
+ */
+const CLAUDE_EOF_GRACE_MS = 5000;
+
+/**
  * The `message_delta.delta.stop_reason` values that close an assistant message
  * for good — the turn's `result` must follow. `tool_use` is deliberately
  * excluded: it opens another tool-loop iteration, not the turn's end, so it
@@ -3683,8 +3692,12 @@ export class SessionManager {
    * `claudeStdoutEofObserved`; without the await the two race and a fresh
    * spawn can inherit a stale "EOF observed" flag.
    */
-  private async killAndCleanup(opts?: { escalate?: boolean }): Promise<void> {
+  private async killAndCleanup(opts?: {
+    escalate?: boolean;
+    graceMs?: number;
+  }): Promise<void> {
     const escalate = opts?.escalate === true;
+    const graceMs = opts?.graceMs ?? CLAUDE_EOF_GRACE_MS;
     // Mark shutdown so the early-exit watcher ignores the exit code
     // from our kill rather than surfacing a phantom resume_failed.
     this.isShuttingDown = true;
@@ -3730,10 +3743,10 @@ export class SessionManager {
         try {
           // Close stdin to signal EOF (graceful shutdown).
           child.stdin.end();
-          // Wait for process to exit or timeout after 5s.
+          // Wait for the process to exit, bounded by the caller's grace.
           await Promise.race([
             child.exited,
-            new Promise<void>((res) => setTimeout(res, 5000)),
+            new Promise<void>((res) => setTimeout(res, graceMs)),
           ]);
         } catch {
           // Process may already be gone.
@@ -7756,13 +7769,18 @@ export class SessionManager {
 
   /**
    * Public shutdown: close stdin and kill the process gracefully.
-   * Called by main.ts SIGTERM handler. Also closes the read-only
+   * Called from `main.ts`'s quiesce path. Also closes the read-only
    * sessions.db handle so the file lock is released before any temp
    * teardown the OS / test fixtures may run.
+   *
+   * `graceMs` bounds how long a healthy claude gets to exit on its own
+   * after EOF. Shutdown passes the `tug-quiesce` flush budget: waiting
+   * out the full respawn-sized grace is what used to push tugcode past
+   * the conductor's drain deadline and earn it a SIGKILL.
    */
-  async shutdown(): Promise<void> {
+  async shutdown(opts?: { graceMs?: number }): Promise<void> {
     this.closeSessionsDb();
-    await this.killAndCleanup();
+    await this.killAndCleanup({ graceMs: opts?.graceMs });
   }
 
   /**

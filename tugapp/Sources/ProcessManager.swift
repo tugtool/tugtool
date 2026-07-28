@@ -431,12 +431,22 @@ class ProcessManager {
             guard let output = String(data: data, encoding: .utf8) else { return }
             for line in output.split(separator: "\n") {
                 if let pid = Int32(line.trimmingCharacters(in: .whitespaces)), pid > 0 {
-                    NSLog("ProcessManager: killing orphaned process on port %d (pid %d)", port, pid)
+                    NSLog("ProcessManager: reclaiming port %d from orphan (pid %d)", port, pid)
                     kill(pid, SIGTERM)
-                    // Brief wait for graceful exit
-                    usleep(200_000)
-                    // Force-kill if still alive
+                    // A leftover Tug service gets its flush window before
+                    // the hammer: poll for the shared stale-reclaim grace.
+                    let deadline = Date().addingTimeInterval(InstanceConfig.quiesceStaleReclaimGrace)
+                    while Date() < deadline, kill(pid, 0) == 0 {
+                        usleep(25_000)
+                    }
+                    // Force-kill if still alive.
                     if kill(pid, 0) == 0 {
+                        NSLog("ProcessManager: orphan (pid %d) ignored SIGTERM — SIGKILL", pid)
+                        noteSigkill(
+                            target: "port-orphan",
+                            pid: pid,
+                            after: InstanceConfig.quiesceStaleReclaimGrace
+                        )
                         kill(pid, SIGKILL)
                         usleep(100_000)
                     }
@@ -738,16 +748,59 @@ class ProcessManager {
         // Close control connection but keep listener (for potential restart)
         controlConnection?.close()
         controlConnection = nil
+
+        writeQuiesceReport()
     }
 
     /// How long the process group gets to exit on its own after SIGTERM,
-    /// and how often we check. tugcode's SIGTERM handler runs a graceful
-    /// `sessionManager.shutdown()` — an stdin-EOF drain plus, for a session
-    /// that was mid-turn, its own SIGINT ladder — which takes seconds, not
-    /// milliseconds. A fixed 200 ms wait guaranteed the SIGKILL landed
+    /// and how often we check. Each Tug service enforces its own 2 s
+    /// `tug-quiesce` flush budget (stop accepting work → flush ledgers →
+    /// exit), so a healthy group is gone well inside the shared drain
+    /// deadline; a fixed 200 ms wait used to guarantee the SIGKILL landed
     /// mid-shutdown every time.
-    private static let processGroupExitGrace: TimeInterval = 5.0
+    private static let processGroupExitGrace: TimeInterval = InstanceConfig.quiesceDrainDeadline
     private static let processGroupPollInterval: TimeInterval = 0.1
+
+    /// SIGKILLs this teardown had to fire. A quiesce that works leaves
+    /// this empty; anything in it is a defect, reported to
+    /// `InstanceConfig.quiesceReportPath` and asserted on by the
+    /// app-test canary.
+    private var quiesceEscalations: [[String: Any]] = []
+
+    /// Record one forced kill for the shutdown report.
+    private func noteSigkill(target: String, pid: pid_t, after: TimeInterval) {
+        quiesceEscalations.append([
+            "target": target,
+            "pid": Int(pid),
+            "afterMs": Int((after * 1000).rounded()),
+        ])
+    }
+
+    /// Write the quiesce report at the end of every `stop()`, overwriting
+    /// the previous one. `sigkills` covers every escalation this app
+    /// process has had to fire since launch — a normal run leaves it
+    /// empty, which is what the app-test canary asserts.
+    private func writeQuiesceReport() {
+        let report: [String: Any] = [
+            "at": ISO8601DateFormatter().string(from: Date()),
+            "drainDeadlineMs": Int(Self.processGroupExitGrace * 1000),
+            "sigkills": quiesceEscalations,
+        ]
+        let path = InstanceConfig.quiesceReportPath
+        do {
+            try FileManager.default.createDirectory(
+                at: path.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONSerialization.data(
+                withJSONObject: report,
+                options: [.prettyPrinted, .sortedKeys]
+            )
+            try data.write(to: path, options: .atomic)
+        } catch {
+            NSLog("ProcessManager: cannot write quiesce report: %@", error.localizedDescription)
+        }
+    }
 
     /// Wait for the process group to drain, then SIGKILL whatever is left.
     ///
@@ -775,6 +828,7 @@ class ProcessManager {
             pgid,
             Self.processGroupExitGrace
         )
+        noteSigkill(target: "tugcast-process-group", pid: pgid, after: Self.processGroupExitGrace)
         kill(-pgid, SIGKILL)
     }
 

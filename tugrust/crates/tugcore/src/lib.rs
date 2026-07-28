@@ -11,6 +11,7 @@
 pub mod instance;
 pub mod ledger_db;
 pub mod ports;
+pub mod quiesce;
 pub mod registry;
 
 /// Resolve the per-instance data directory for `instance_id` without

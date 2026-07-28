@@ -1855,9 +1855,7 @@ fn force_kill_port_holder(port: u16) {
             eprintln!(
                 "tugcast: --force: reclaiming port {port} from our stale instance (PID {pid})"
             );
-            unsafe {
-                libc::kill(pid, libc::SIGKILL);
-            }
+            reclaim_stale_process(pid);
         } else {
             warn!(
                 pid,
@@ -1870,6 +1868,34 @@ fn force_kill_port_holder(port: u16) {
 
     // Brief wait for the port to be released.
     std::thread::sleep(Duration::from_millis(100));
+}
+
+/// Reclaim a stale same-instance tugcast on the `tug-quiesce` ladder:
+/// SIGTERM first so it runs its own shutdown (the ledger flush in
+/// particular), then SIGKILL only what is still alive after
+/// [`tugcore::quiesce::STALE_RECLAIM_GRACE_MS`]. Kill-first was the last
+/// place in tugcast that denied a Tug service its flush window.
+fn reclaim_stale_process(pid: i32) {
+    unsafe {
+        libc::kill(pid, libc::SIGTERM);
+    }
+    let deadline =
+        std::time::Instant::now() + Duration::from_millis(tugcore::quiesce::STALE_RECLAIM_GRACE_MS);
+    while std::time::Instant::now() < deadline {
+        // `kill(pid, 0)` sends no signal; ESRCH means it is gone.
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            eprintln!("tugcast: --force: stale instance (PID {pid}) exited on SIGTERM");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    eprintln!(
+        "tugcast: --force: stale instance (PID {pid}) still alive after {}ms — SIGKILL",
+        tugcore::quiesce::STALE_RECLAIM_GRACE_MS
+    );
+    unsafe {
+        libc::kill(pid, libc::SIGKILL);
+    }
 }
 
 /// Map exit code to shutdown reason string
