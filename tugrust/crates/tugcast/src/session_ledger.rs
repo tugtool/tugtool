@@ -459,7 +459,13 @@ pub struct PulseLineRow {
 /// excluded, matching what the transcript renders. It also introduces
 /// `frontier_leaf_uuid`, which epoch-2 rows lack; failing the gate is what
 /// makes those rows re-stream once and record a real leaf.
-pub(crate) const CURRENT_RULE_EPOCH: i64 = 3;
+///
+/// Epoch `4` introduces `effective_uuids` — the effective chain uuid set at
+/// the frontier — which is what lets a session that has compacted resume
+/// incrementally instead of re-streaming in full on every change (a
+/// straddled re-append tail is detectable against the set). Epoch-3 rows
+/// carry no set, so they fail the gate and re-stream once to record one.
+pub(crate) const CURRENT_RULE_EPOCH: i64 = 4;
 
 /// One row of the `external_scan_cache` table — the persisted result
 /// of scanning one on-disk session JSONL, keyed by session id and
@@ -512,6 +518,16 @@ pub struct ScanCacheRow {
     /// branch, which it must re-stream in full rather than segment
     /// incrementally.
     pub frontier_leaf_uuid: Option<String>,
+    /// The effective chain uuid set at the frontier, encoded as
+    /// concatenated 16-byte binary uuids. A tail-resume suppresses any
+    /// appended record whose uuid is in this set — the shape a compaction
+    /// re-append block leaves when it straddles a scan boundary. `None`
+    /// means no resumable set (the next change re-streams in full).
+    pub effective_uuids: Option<Vec<u8>>,
+    /// Comma-joined foreign session ids this file's records carry — the
+    /// pre-rotation lineage embedded in a resumed session's file. The scan
+    /// uses these to suppress superseded ancestor files from the listing.
+    pub lineage_ancestors: Option<String>,
 }
 
 /// One row of the `file_events` table — an authoritative record that a
@@ -1518,7 +1534,9 @@ impl SessionLedger {
                 frontier_open                  INTEGER NOT NULL DEFAULT 0,
                 frontier_pending_close         INTEGER NOT NULL DEFAULT 0,
                 frontier_pending_close_msg_id  TEXT,
-                frontier_leaf_uuid             TEXT
+                frontier_leaf_uuid             TEXT,
+                effective_uuids                BLOB,
+                lineage_ancestors              TEXT
             );
 
             CREATE INDEX IF NOT EXISTS external_scan_cache_project
@@ -1865,6 +1883,10 @@ impl SessionLedger {
             ("frontier_pending_close_msg_id", "TEXT"),
             // Epoch 3: the chain leaf uuid at the frontier.
             ("frontier_leaf_uuid", "TEXT"),
+            // Epoch 4: the effective chain uuid set at the frontier, and
+            // the embedded pre-rotation lineage.
+            ("effective_uuids", "BLOB"),
+            ("lineage_ancestors", "TEXT"),
         ] {
             if !cols.iter().any(|(n, _)| n == name) {
                 conn.execute(
@@ -2557,7 +2579,7 @@ impl SessionLedger {
                     turn_count, last_user_prompt, name, created_at, last_used_at,
                     parse_offset, tail_hash, cwd_checked, created_at_found,
                     frontier_open, frontier_pending_close, frontier_pending_close_msg_id,
-                    frontier_leaf_uuid
+                    frontier_leaf_uuid, effective_uuids, lineage_ancestors
              FROM external_scan_cache
              WHERE session_id = ?1 AND rule_epoch = ?2
              LIMIT 1",
@@ -2580,9 +2602,9 @@ impl SessionLedger {
                 turn_count, last_user_prompt, name, created_at, last_used_at,
                 parse_offset, tail_hash, cwd_checked, created_at_found, rule_epoch,
                 frontier_open, frontier_pending_close, frontier_pending_close_msg_id,
-                frontier_leaf_uuid
+                frontier_leaf_uuid, effective_uuids, lineage_ancestors
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                       ?16, ?17, ?18, ?19)",
+                       ?16, ?17, ?18, ?19, ?20, ?21)",
             params![
                 row.session_id,
                 row.project_dir,
@@ -2606,6 +2628,8 @@ impl SessionLedger {
                 row.frontier_pending_close as i64,
                 row.frontier_pending_close_msg_id,
                 row.frontier_leaf_uuid,
+                row.effective_uuids,
+                row.lineage_ancestors,
             ],
         )?;
         Ok(())
@@ -3862,6 +3886,8 @@ fn scan_cache_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScanCa
         frontier_pending_close: row.get::<_, i64>(15)? != 0,
         frontier_pending_close_msg_id: row.get(16)?,
         frontier_leaf_uuid: row.get(17)?,
+        effective_uuids: row.get(18)?,
+        lineage_ancestors: row.get(19)?,
     })
 }
 
@@ -4452,6 +4478,8 @@ mod tests {
             frontier_pending_close: false,
             frontier_pending_close_msg_id: None,
             frontier_leaf_uuid: None,
+            effective_uuids: None,
+            lineage_ancestors: None,
         })
         .unwrap();
 
@@ -4497,6 +4525,8 @@ mod tests {
             frontier_pending_close: false,
             frontier_pending_close_msg_id: None,
             frontier_leaf_uuid: None,
+            effective_uuids: None,
+            lineage_ancestors: None,
         })
         .unwrap();
 
@@ -4568,6 +4598,8 @@ mod tests {
             frontier_pending_close: false,
             frontier_pending_close_msg_id: None,
             frontier_leaf_uuid: None,
+            effective_uuids: None,
+            lineage_ancestors: None,
         })
         .unwrap();
 
@@ -4612,6 +4644,8 @@ mod tests {
             frontier_pending_close: false,
             frontier_pending_close_msg_id: None,
             frontier_leaf_uuid: None,
+            effective_uuids: None,
+            lineage_ancestors: None,
         })
         .unwrap();
         let now = millis(10);
@@ -4792,6 +4826,8 @@ mod tests {
             frontier_pending_close: false,
             frontier_pending_close_msg_id: None,
             frontier_leaf_uuid: None,
+            effective_uuids: None,
+            lineage_ancestors: None,
         })
         .unwrap();
         l.record_spawn("ext", WS_A, "/proj/alpha", "card-1", millis(10), None)

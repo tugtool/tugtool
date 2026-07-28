@@ -178,10 +178,24 @@ actor MLXLocalModelBackend: LocalModelBackend {
     /// are released.
     private static let idleUnloadSeconds: TimeInterval = 300
 
+    /// Upper bound on MLX's freed-buffer cache. MLX's cache limit defaults to
+    /// the device memory limit, so without an explicit bound every buffer MLX
+    /// frees — including the outgoing pack's full weights on a model swap —
+    /// stays resident in the process indefinitely.
+    private static let gpuCacheLimitBytes = 256 * 1024 * 1024
+
     private var container: ModelContainer?
     private var residentModel: InstalledModel?
     private var lastUse = Date.distantPast
     private var idleTimer: Task<Void, Never>?
+    /// The in-flight generation, if any. `unload()` drains it: the running
+    /// generation holds a strong reference to the outgoing container, and
+    /// swapping models under it would keep two packs' weights alive at once.
+    private var inflight: Task<String, Error>?
+
+    init() {
+        MLX.GPU.set(cacheLimit: Self.gpuCacheLimitBytes)
+    }
 
     /// Disk is the authority, even when a model is already resident: a pack
     /// deleted under a loaded container must read as gone immediately, not stay
@@ -220,6 +234,7 @@ actor MLXLocalModelBackend: LocalModelBackend {
             container = try await loadModelContainer(directory: model.directory)
             residentModel = model
             lastUse = Date()
+            Self.logGpu("loaded \(model.id)")
         } catch {
             container = nil
             residentModel = nil
@@ -233,20 +248,28 @@ actor MLXLocalModelBackend: LocalModelBackend {
     func unload() async {
         idleTimer?.cancel()
         idleTimer = nil
+        // Drain any in-flight generation before releasing: it holds the
+        // outgoing container, so unloading under it would let a subsequent
+        // load bring a second pack's weights up while the first is still
+        // alive. Draining also means the weights actually deallocate before
+        // `clearCache()` runs, instead of landing in the cache after it.
+        if let inflight = inflight {
+            _ = try? await inflight.value
+        }
         guard container != nil || residentModel != nil else { return }
         container = nil
         residentModel = nil
         MLX.GPU.clearCache()
+        Self.logGpu("unload")
     }
 
     func generate(_ job: LocalModelJob) async throws -> String {
         guard let container = container else { throw LocalModelError.noModelInstalled }
         let parameters = GenerateParameters(maxTokens: job.maxTokens, temperature: job.temperature)
         lastUse = Date()
-        defer { scheduleIdleUnload() }
 
-        do {
-            return try await container.perform { context in
+        let work = Task {
+            try await container.perform { context in
                 // `enable_thinking` goes to every pack's chat template, not
                 // just the hybrid-reasoning ones — templates that don't
                 // declare it ignore it, and it is what stops a reasoning pack
@@ -265,9 +288,28 @@ actor MLXLocalModelBackend: LocalModelBackend {
                 Stream.gpu.synchronize()
                 return output
             }
+        }
+        inflight = work
+        defer {
+            if inflight == work { inflight = nil }
+            scheduleIdleUnload()
+        }
+        do {
+            return try await work.value
         } catch {
             throw LocalModelError.generationFailed(String(describing: error))
         }
+    }
+
+    /// One-line GPU memory report, for attributing host footprint.
+    private static func logGpu(_ label: String) {
+        let s = MLX.GPU.snapshot()
+        NSLog(
+            "MLXLocalModelBackend: %@ — active %.1f MB, cache %.1f MB, peak %.1f MB",
+            label,
+            Double(s.activeMemory) / 1_048_576,
+            Double(s.cacheMemory) / 1_048_576,
+            Double(s.peakMemory) / 1_048_576)
     }
 
     /// Release the weights once the model has gone unused for long enough.

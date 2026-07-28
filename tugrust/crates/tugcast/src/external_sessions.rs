@@ -114,6 +114,81 @@ pub struct ResumeSeed {
     /// The engine's open-turn state at `offset`. Carried so the resumed
     /// tail parse continues segmentation rather than re-deriving it.
     pub frontier: Frontier,
+    /// The effective chain uuid set for `[0, offset)` — every uuid whose
+    /// earliest non-dead occurrence lies in the prefix. An appended record
+    /// whose uuid is in this set is a compaction re-append and is
+    /// suppressed inline, which is what makes compacted sessions
+    /// incrementally resumable at all: a re-append block that straddles the
+    /// scan boundary arrives looking linear, and only this set can tell
+    /// its records from genuinely new ones.
+    pub effective_uuids: std::collections::HashSet<[u8; 16]>,
+    /// Foreign session ids seen in `[0, offset)` — the pre-rotation
+    /// lineage a resumed session's file opens with. Carried so a resumed
+    /// slice accumulates onto the full-file set rather than forgetting the
+    /// prefix's ancestors.
+    pub lineage_ancestors: Vec<String>,
+}
+
+/// The 16-byte set key for a record uuid: FNV-1a-128 over the raw string.
+/// Hashing rather than parsing keeps the key total over any uuid shape a
+/// file might carry; the only comparison that must hold exactly — a
+/// re-appended record against its original, byte-identical uuid — always
+/// does, and a cross-collision between distinct uuids is a 2^-128 event.
+/// The constants are FNV's published 128-bit offset basis and prime, so
+/// persisted blobs stay stable across releases.
+fn uuid_key(s: &str) -> [u8; 16] {
+    const OFFSET: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
+    const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;
+    let mut hash = OFFSET;
+    for &b in s.as_bytes() {
+        hash ^= u128::from(b);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash.to_le_bytes()
+}
+
+/// Encode an effective-uuid set as the cache blob: concatenated 16-byte
+/// uuids, sorted for deterministic bytes.
+fn encode_uuid_set(set: &std::collections::HashSet<[u8; 16]>) -> Vec<u8> {
+    let mut keys: Vec<&[u8; 16]> = set.iter().collect();
+    keys.sort_unstable();
+    let mut out = Vec::with_capacity(keys.len() * 16);
+    for key in keys {
+        out.extend_from_slice(key);
+    }
+    out
+}
+
+/// Comma-join lineage ancestor sids for the cache column, and back.
+fn encode_lineage(ancestors: &[String]) -> Option<String> {
+    (!ancestors.is_empty()).then(|| ancestors.join(","))
+}
+
+fn decode_lineage(column: Option<&str>) -> Vec<String> {
+    column
+        .map(|s| {
+            s.split(',')
+                .filter(|p| !p.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Decode the cache blob back into the set. `None` on a malformed blob.
+fn decode_uuid_set(blob: &[u8]) -> Option<std::collections::HashSet<[u8; 16]>> {
+    if blob.len() % 16 != 0 {
+        return None;
+    }
+    Some(
+        blob.chunks_exact(16)
+            .map(|c| {
+                let mut key = [0u8; 16];
+                key.copy_from_slice(c);
+                key
+            })
+            .collect(),
+    )
 }
 
 /// Build a resume seed from a non-excluded cache row. `None` when the
@@ -123,7 +198,10 @@ pub fn resume_seed_from_cache(row: &ScanCacheRow) -> Option<ResumeSeed> {
     if row.excluded || row.parse_offset <= 0 {
         return None;
     }
+    let effective_uuids = decode_uuid_set(row.effective_uuids.as_deref()?)?;
     Some(ResumeSeed {
+        effective_uuids,
+        lineage_ancestors: decode_lineage(row.lineage_ancestors.as_deref()),
         offset: row.parse_offset,
         tail_hash: row.tail_hash,
         cwd_checked: row.cwd_checked,
@@ -152,6 +230,10 @@ pub struct ResumeMark {
     /// The engine's open-turn state at `parse_offset`, persisted for the
     /// next incremental resume.
     pub frontier: Frontier,
+    /// The encoded effective chain uuid set at `parse_offset`
+    /// (see [`ResumeSeed::effective_uuids`]), or `None` when the parse
+    /// recorded no resumable frontier.
+    pub effective_uuids: Option<Vec<u8>>,
 }
 
 /// A parsed session: the picker-facing meta plus the resume frontier.
@@ -167,6 +249,10 @@ pub struct ParsedSession {
     /// streamed count stand. Observable so tests can pin which path a
     /// given file takes.
     pub recounted: bool,
+    /// Foreign session ids this file's records carry — the pre-rotation
+    /// lineage embedded in a resumed session's file. The scan uses these
+    /// to suppress superseded ancestor files from the listing.
+    pub lineage_ancestors: Vec<String>,
 }
 
 /// True when `stem` looks like a claude session UUID
@@ -484,21 +570,24 @@ fn try_resume(
 /// be done in a single forward pass, because the live chain walk starts at
 /// the newest leaf, which a forward stream does not know until EOF.
 ///
-/// So the stream buffers what a second pass would need and decides at EOF:
+/// So the parse runs unbuffered and watches for the shapes that make the
+/// effective sequence diverge from the raw one — a compaction marker, a
+/// repeated uuid, a record that doesn't parent to the carried leaf:
 ///
-/// - Buffer each line's chain record and significant record, and watch for
-///   a compaction marker and a repeated uuid.
-/// - **Neither seen** → the streamed count stands, the buffer is dropped,
-///   and the cost is exactly today's single pass. This is the common
-///   session.
-/// - **Either seen** → re-derive the effective indices over the buffer and
-///   re-run segmentation across them. No second disk read: the buffered
-///   records carry everything both computations need.
+/// - **None seen** → the streamed count stands, and the cost is exactly a
+///   single allocation-free pass. This is the common session.
+/// - **Any seen** → restart once as a buffered full stream; at EOF,
+///   re-derive the effective indices over the buffer and re-run
+///   segmentation across them.
 ///
-/// On an incremental resume the buffer covers only the appended tail, so
-/// the recount is not available. [`AppendTriggers`] decides that case: an
-/// appended compaction marker or a rewind branch forces one full
-/// re-stream, which then takes the path above.
+/// On an incremental resume, the seed's effective-uuid set absorbs the one
+/// append shape that is invisible to the slice-local triggers: a
+/// compaction re-append block straddling the scan boundary, whose tail
+/// arrives looking perfectly linear. Records whose uuid is already in the
+/// set are suppressed inline; the shapes the set cannot absorb (a new
+/// compaction boundary, a rewind branch) restart as the buffered full
+/// stream above — once, after which the fresh seed resumes incrementally
+/// again.
 fn parse_session_file(
     path: &Path,
     project_dir: &str,
@@ -507,13 +596,41 @@ fn parse_session_file(
     file_mtime: i64,
     resume: Option<&ResumeSeed>,
 ) -> std::io::Result<Option<ParsedSession>> {
+    // First pass runs unbuffered: the common session is linear and
+    // duplicate-free, and for it the second-pass buffers are pure wasted
+    // allocation. The first trigger restarts buffered.
+    parse_session_file_inner(
+        path,
+        project_dir,
+        expected_stem,
+        file_size,
+        file_mtime,
+        resume,
+        false,
+    )
+}
+
+fn parse_session_file_inner(
+    path: &Path,
+    project_dir: &str,
+    expected_stem: &str,
+    file_size: i64,
+    file_mtime: i64,
+    resume: Option<&ResumeSeed>,
+    buffering: bool,
+) -> std::io::Result<Option<ParsedSession>> {
     let mut file = fs::File::open(path)?;
 
     // The second-pass buffer, index-aligned: one slot per line read in this
-    // stream. Dropped at EOF unless a trigger fires.
+    // stream. Only populated when `buffering` (a prior pass hit a trigger);
+    // dropped at EOF unless the recount runs.
     let mut chain_buf: Vec<Option<crate::dead_branch::ChainRecord>> = Vec::new();
     let mut sig_buf: Vec<Option<SigRecord>> = Vec::new();
     let mut seen_uuids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // The effective chain uuid set: seeded from the cache on a resume,
+    // accumulated as records stream, rebuilt from the recount when one
+    // runs. Persisted with the resume mark.
+    let mut effective_seen: std::collections::HashSet<[u8; 16]> = std::collections::HashSet::new();
     let mut saw_compaction = false;
     let mut saw_duplicate_uuid = false;
     // A chain record whose parent is not the leaf we carried in — the
@@ -525,6 +642,12 @@ fn parse_session_file(
     let mut name: Option<String> = None;
     let mut created_at: Option<i64> = None;
     let mut cwd_checked = false;
+    // Session-id accounting. A resumed session's file legitimately opens
+    // with records stamped with the pre-rotation session id (the embedded
+    // lineage), so a foreign sid is not grounds for exclusion on sight —
+    // the file is foreign only if the stem NEVER appears (decided at EOF).
+    let mut saw_expected_sid = false;
+    let mut lineage_ancestors: Vec<String> = Vec::new();
     let mut consumed: u64 = 0;
     let mut window: Vec<u8> = Vec::with_capacity(TAIL_FINGERPRINT_BYTES);
     let mut resumed = false;
@@ -546,6 +669,11 @@ fn parse_session_file(
             window = verified_window;
             resumed = true;
             frontier = seed.frontier.clone();
+            effective_seen = seed.effective_uuids.clone();
+            lineage_ancestors = seed.lineage_ancestors.clone();
+            // The prefix was accepted when the seed's row was written, so
+            // the stem is known to appear; the slice need not see it again.
+            saw_expected_sid = true;
         } else {
             file.seek(SeekFrom::Start(0))?;
         }
@@ -590,13 +718,10 @@ fn parse_session_file(
         };
 
         if let Some(sid) = rec.session_id.as_deref() {
-            if sid != expected_stem {
-                tracing::debug!(
-                    path = %path.display(),
-                    record_session_id = sid,
-                    "external scan: sessionId/filename mismatch, excluded",
-                );
-                return Ok(None);
+            if sid == expected_stem {
+                saw_expected_sid = true;
+            } else if !lineage_ancestors.iter().any(|s| s == sid) {
+                lineage_ancestors.push(sid.to_owned());
             }
         }
         if !cwd_checked {
@@ -625,51 +750,105 @@ fn parse_session_file(
         // assistant-originated openers (wakes, `/compact` continuations,
         // leading orphans) the prior user-record-only rule could not.
         let chain_rec = crate::dead_branch::parse_chain_record(trimmed);
+        // Inline suppression, the resumed case only: an appended record
+        // whose uuid is already effective is a compaction re-append — the
+        // straddle shape the seed's uuid set exists to catch. It re-states
+        // history the seed already counted, so it feeds neither the engine
+        // nor the triggers; it does become the raw chain leaf, because its
+        // successors parent to it.
+        let mut suppressed = false;
         if let Some(chain) = chain_rec.as_ref() {
-            if chain.is_compaction {
-                saw_compaction = true;
-            }
-            if let Some(uuid) = chain.uuid.as_deref() {
-                if !chain.is_sidechain {
-                    if !seen_uuids.insert(uuid.to_owned()) {
-                        saw_duplicate_uuid = true;
-                    }
-                    // Trigger (b): this record's parent is not the chain leaf
-                    // we were carrying. Conservative by design — a benign
-                    // mid-turn spur (a hook attachment, a `tool_result` whose
-                    // sibling carried the chain forward, an abandoned
-                    // API-retry branch) trips it too, and a needless full
-                    // re-stream is sound where a missed rewind is not. Do not
-                    // narrow it; every narrowing is a correctness bet.
-                    match chain.parent_uuid.as_deref() {
-                        Some(parent) => {
-                            if frontier.leaf_uuid.as_deref() != Some(parent) {
-                                saw_branch = true;
+            let known = resumed
+                && !chain.is_sidechain
+                && chain
+                    .uuid
+                    .as_deref()
+                    .is_some_and(|uuid| effective_seen.contains(&uuid_key(uuid)));
+            if known {
+                suppressed = true;
+                frontier.leaf_uuid = chain.uuid.clone();
+            } else {
+                if chain.is_compaction {
+                    saw_compaction = true;
+                }
+                if let Some(uuid) = chain.uuid.as_deref() {
+                    if !chain.is_sidechain {
+                        if !seen_uuids.insert(uuid.to_owned()) {
+                            saw_duplicate_uuid = true;
+                        }
+                        // Trigger (b): this record's parent is not the chain leaf
+                        // we were carrying. Conservative by design — a benign
+                        // mid-turn spur (a hook attachment, a `tool_result` whose
+                        // sibling carried the chain forward, an abandoned
+                        // API-retry branch) trips it too, and a needless full
+                        // re-stream is sound where a missed rewind is not. Do not
+                        // narrow it; every narrowing is a correctness bet.
+                        match chain.parent_uuid.as_deref() {
+                            Some(parent) => {
+                                if frontier.leaf_uuid.as_deref() != Some(parent) {
+                                    saw_branch = true;
+                                }
+                            }
+                            // A null parent mid-file roots a new segment — a
+                            // restart, or the record right after a compaction
+                            // boundary. Only the very first chain record of a
+                            // file legitimately has no leaf before it.
+                            None => {
+                                if frontier.leaf_uuid.is_some() {
+                                    saw_branch = true;
+                                }
                             }
                         }
-                        // A null parent mid-file roots a new segment — a
-                        // restart, or the record right after a compaction
-                        // boundary. Only the very first chain record of a
-                        // file legitimately has no leaf before it.
-                        None => {
-                            if frontier.leaf_uuid.is_some() {
-                                saw_branch = true;
-                            }
-                        }
+                        frontier.leaf_uuid = Some(uuid.to_owned());
+                        effective_seen.insert(uuid_key(uuid));
                     }
-                    frontier.leaf_uuid = Some(uuid.to_owned());
                 }
             }
         }
 
-        let sig = parse_significant(trimmed);
+        // A trigger on an unbuffered pass: restart as a buffered full
+        // stream, so the EOF recount has the records it needs. For a full
+        // stream this re-reads the file once, which only sessions that
+        // actually carry a compaction, duplicate, or branch ever pay. For a
+        // resumed slice it is the append shapes inline suppression cannot
+        // absorb — a NEW compaction boundary, a rewind branch — which can
+        // rewrite the prefix's effective membership and so genuinely need
+        // the whole file (once; the buffered pass records a fresh seed).
+        if !buffering && (saw_compaction || saw_duplicate_uuid || saw_branch) {
+            if resumed {
+                tracing::debug!(
+                    path = %path.display(),
+                    saw_compaction,
+                    saw_duplicate_uuid,
+                    saw_branch,
+                    "external scan: appended slice needs a full re-segment",
+                );
+            }
+            return parse_session_file_inner(
+                path,
+                project_dir,
+                expected_stem,
+                file_size,
+                file_mtime,
+                None,
+                true,
+            );
+        }
+
+        let sig = if suppressed {
+            None
+        } else {
+            parse_significant(trimmed)
+        };
         if let Some(sig) = sig.as_ref() {
             if step_record(&mut frontier, sig).is_some() {
                 turn_count += 1;
             }
         }
-        chain_buf.push(chain_rec);
-        sig_buf.push(sig);
+        if buffering {
+            chain_buf.push(chain_rec);
+            sig_buf.push(sig);
+        }
 
         match rec.kind.as_deref() {
             Some("user") => {
@@ -711,38 +890,45 @@ fn parse_session_file(
         }
     }
 
+    // The foreign-file verdict, deferred from the per-record gate: a file
+    // whose records claim session ids but never the stem is another
+    // session's content under this filename (an encoding collision or a
+    // stray copy). A resumed-lineage file — foreign ids first, the stem's
+    // own records later — is the stem's newest file and must be listed.
+    if !saw_expected_sid && !lineage_ancestors.is_empty() {
+        tracing::debug!(
+            path = %path.display(),
+            foreign = %lineage_ancestors.join(","),
+            "external scan: no record carries the filename's sessionId, excluded",
+        );
+        return Ok(None);
+    }
+
     // The effective sequence can only differ from the raw one when the file
     // holds a compaction (which breaks the chain and re-appends duplicates)
     // or a chain record that does not parent to its predecessor (the branch
     // shape a rewind leaves). A stream that saw neither is provably linear
     // and duplicate-free, so its streamed count is already the effective
-    // count and the buffer is discarded untouched.
+    // count. Only a buffered pass can reach EOF with a trigger set — the
+    // unbuffered passes restart the moment one fires.
     let needs_effective_recount = saw_compaction || saw_duplicate_uuid || saw_branch;
-
-    if needs_effective_recount && resumed {
-        // The buffer covers only the appended tail, so the recount is not
-        // available here — and a rewind append can even *reduce* the
-        // previously-counted turns, which no incremental step can express.
-        // Re-stream the whole file once; that pass takes the branch below.
-        tracing::debug!(
-            path = %path.display(),
-            saw_compaction,
-            saw_duplicate_uuid,
-            saw_branch,
-            "external scan: appended slice needs a full re-segment",
-        );
-        return parse_session_file(
-            path,
-            project_dir,
-            expected_stem,
-            file_size,
-            file_mtime,
-            None,
-        );
-    }
 
     if needs_effective_recount {
         let effective = crate::dead_branch::effective_indices(&chain_buf);
+        // The streamed uuid set was accumulated raw; the recount knows
+        // which occurrences are actually effective, so rebuild from it.
+        effective_seen.clear();
+        for &i in &effective {
+            let Some(Some(chain)) = chain_buf.get(i) else {
+                continue;
+            };
+            if chain.is_sidechain {
+                continue;
+            }
+            if let Some(uuid) = chain.uuid.as_deref() {
+                effective_seen.insert(uuid_key(uuid));
+            }
+        }
         let records = effective
             .into_iter()
             .filter_map(|i| sig_buf.get(i).and_then(|s| s.clone()));
@@ -754,26 +940,10 @@ fn parse_session_file(
         };
     }
 
-    // A file that needed the recount cannot hand out a resumable seed.
-    //
-    // The triggers above are computed from the appended slice alone, and a
-    // compaction re-append block can straddle a scan boundary: its tail
-    // arrives looking perfectly linear (each record parenting to the one
-    // before it), with the duplicated originals sitting back in the
-    // already-consumed prefix where no trigger can see them. Segmenting
-    // that tail incrementally would count those preserved turns a second
-    // time — the exact defect the effective sequence exists to remove.
-    //
-    // So a session carrying a compaction or a branch re-streams in full on
-    // every change. That is a real cost on precisely the largest files, and
-    // it is not an accident of this implementation: computing the live
-    // chain requires the whole file, since the walk starts at the newest
-    // leaf. Incremental resume survives for linear, compaction-free
-    // sessions, which is where it was already doing the most good.
-    if needs_effective_recount {
-        resumable = false;
-    }
-
+    // A recounted file hands out a resumable seed like any other: the
+    // persisted effective-uuid set is what makes the next append's
+    // re-append records (including a straddled block's tail, which arrives
+    // looking perfectly linear) detectable without the prefix.
     let resume = if resumable && consumed > 0 {
         ResumeMark {
             parse_offset: consumed as i64,
@@ -784,6 +954,7 @@ fn parse_session_file(
             // in `[0, consumed)`; `resumable` is false if any final line was
             // unterminated, so this is the open-turn state at the offset.
             frontier: frontier.clone(),
+            effective_uuids: Some(encode_uuid_set(&effective_seen)),
         }
     } else {
         ResumeMark {
@@ -794,10 +965,12 @@ fn parse_session_file(
             // No resumable frontier (offset 0 means a full re-stream next
             // time); the value is unused but the struct must be complete.
             frontier: Frontier::default(),
+            effective_uuids: None,
         }
     };
     Ok(Some(ParsedSession {
         recounted: needs_effective_recount,
+        lineage_ancestors,
         meta: ExternalSessionMeta {
             session_id: expected_stem.to_owned(),
             turn_count,
@@ -907,10 +1080,17 @@ pub fn scan_external_sessions(
     project_dir: &str,
 ) -> Vec<ExternalSessionMeta> {
     let (candidates, canonical) = list_session_file_candidates(claude_projects_root, project_dir);
-    candidates
+    let parsed: Vec<ParsedSession> = candidates
         .into_iter()
-        .filter_map(|c| parse_candidate(&c, &canonical, None).map(|p| p.meta))
-        .collect()
+        .filter_map(|c| parse_candidate(&c, &canonical, None))
+        .collect();
+    let claims: Vec<(i64, Vec<String>)> = parsed
+        .iter()
+        .map(|p| (p.meta.file_mtime, p.lineage_ancestors.clone()))
+        .collect();
+    let mut metas: Vec<ExternalSessionMeta> = parsed.into_iter().map(|p| p.meta).collect();
+    suppress_superseded_lineage(&mut metas, &claims);
+    metas
 }
 
 /// Parse one already-stat'ed candidate, optionally resuming from a
@@ -1011,7 +1191,38 @@ fn cache_row_from_parsed(parsed: &ParsedSession, project_dir: &str) -> ScanCache
         frontier_pending_close: parsed.resume.frontier.pending_close,
         frontier_pending_close_msg_id: parsed.resume.frontier.pending_close_msg_id.clone(),
         frontier_leaf_uuid: parsed.resume.frontier.leaf_uuid.clone(),
+        effective_uuids: parsed.resume.effective_uuids.clone(),
+        lineage_ancestors: encode_lineage(&parsed.lineage_ancestors),
     }
+}
+
+/// Drop superseded lineage ancestors from a listing. A resumed session's
+/// file embeds its pre-rotation history under the old session ids; the old
+/// files are then stale prefixes of the new one and listing them alongside
+/// it offers the user two versions of one conversation — the older of
+/// which silently missing everything since the rotation. An ancestor is
+/// suppressed only while it is genuinely superseded (not modified since
+/// the descendant was): an ancestor file that has grown PAST the
+/// descendant's mtime has forked into its own live conversation and stays
+/// visible.
+fn suppress_superseded_lineage(
+    metas: &mut Vec<ExternalSessionMeta>,
+    claims: &[(i64, Vec<String>)],
+) {
+    if claims.iter().all(|(_, ancestors)| ancestors.is_empty()) {
+        return;
+    }
+    let mut newest_claim: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
+    for (descendant_mtime, ancestors) in claims {
+        for sid in ancestors {
+            let entry = newest_claim.entry(sid.as_str()).or_insert(*descendant_mtime);
+            *entry = (*entry).max(*descendant_mtime);
+        }
+    }
+    metas.retain(|meta| match newest_claim.get(meta.session_id.as_str()) {
+        Some(&descendant_mtime) => meta.file_mtime > descendant_mtime,
+        None => true,
+    });
 }
 
 fn meta_from_cache_row(row: ScanCacheRow) -> ExternalSessionMeta {
@@ -1089,6 +1300,9 @@ pub fn scan_external_sessions_cached_with_progress(
     // ledger owns one connection behind a mutex.
     let mut seen_ids: Vec<String> = Vec::with_capacity(candidates.len());
     let mut misses: Vec<(&SessionFileCandidate, Option<ResumeSeed>)> = Vec::new();
+    // `(descendant file_mtime, embedded ancestor sids)` per listed file,
+    // for the superseded-lineage sweep after pass 3.
+    let mut lineage_claims: Vec<(i64, Vec<String>)> = Vec::new();
     for candidate in &candidates {
         seen_ids.push(candidate.session_id.clone());
         let cached = ledger
@@ -1101,6 +1315,8 @@ pub fn scan_external_sessions_cached_with_progress(
             if row.file_size == candidate.file_size && row.file_mtime == candidate.file_mtime {
                 outcome.cache_hits += 1;
                 if !row.excluded {
+                    lineage_claims
+                        .push((row.file_mtime, decode_lineage(row.lineage_ancestors.as_deref())));
                     outcome.metas.push(meta_from_cache_row(row));
                 }
                 continue;
@@ -1151,6 +1367,8 @@ pub fn scan_external_sessions_cached_with_progress(
                 ) {
                     tracing::warn!(error = %err, "external scan: ledger count reconcile failed");
                 }
+                lineage_claims
+                    .push((parsed.meta.file_mtime, parsed.lineage_ancestors.clone()));
                 outcome.metas.push(parsed.meta);
             }
             None => {
@@ -1173,6 +1391,8 @@ pub fn scan_external_sessions_cached_with_progress(
                     frontier_pending_close: false,
                     frontier_pending_close_msg_id: None,
                     frontier_leaf_uuid: None,
+                    effective_uuids: None,
+                    lineage_ancestors: None,
                 };
                 if let Err(err) = ledger.upsert_scan_cache(&row) {
                     tracing::warn!(error = %err, "external scan: cache write failed");
@@ -1193,6 +1413,7 @@ pub fn scan_external_sessions_cached_with_progress(
             tracing::warn!(error = %err, "external scan: cache prune failed");
         }
     }
+    suppress_superseded_lineage(&mut outcome.metas, &lineage_claims);
     outcome
 }
 
@@ -1244,6 +1465,187 @@ mod tests {
         let dir = root.join(encode_claude_project_name(project_dir));
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(format!("{session_id}.jsonl")), content).unwrap();
+    }
+
+    /// Local-only sweep over the real reference sessions (compaction-heavy,
+    /// duplicate-heavy, 22–29 MB): an incremental resume from any line
+    /// boundary must reproduce the full parse exactly — count, frontier,
+    /// and effective-uuid set. This is the property the persisted uuid set
+    /// exists to guarantee, measured on the files that motivated it.
+    #[test]
+    fn incremental_resume_matches_full_parse_over_reference_sessions() {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let corpus = std::path::PathBuf::from(home)
+            .join(".claude/projects/-Users-kocienda-Mounts-u-src-tugtool");
+        if !corpus.is_dir() {
+            eprintln!("skipping: real corpus not present at {}", corpus.display());
+            return;
+        }
+        let sessions = [
+            "8b8d7bf1-5d25-4b2d-95de-ee1ccba71d42",
+            "4eb21996-9a77-4528-a854-53081ec7bc66",
+        ];
+        for stem in sessions {
+            let Ok(bytes) = fs::read(corpus.join(format!("{stem}.jsonl"))) else {
+                eprintln!("skipping {stem}: not present");
+                continue;
+            };
+            // The file's own cwd is the project dir — the same value the
+            // scan would resolve through the chokepoint.
+            let cwd = bytes
+                .split(|&b| b == b'\n')
+                .find_map(|line| {
+                    serde_json::from_slice::<serde_json::Value>(line)
+                        .ok()
+                        .and_then(|v| v.get("cwd").and_then(|c| c.as_str()).map(str::to_owned))
+                })
+                .expect("reference session carries a cwd");
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join(format!("{stem}.jsonl"));
+
+            fs::write(&path, &bytes).unwrap();
+            let full = parse_session_file(&path, &cwd, stem, bytes.len() as i64, 0, None)
+                .unwrap()
+                .expect("reference session parses (resumed lineage is accepted)");
+            assert!(
+                full.resume.parse_offset > 0,
+                "{stem}: a compacted session must now record a resumable frontier"
+            );
+
+            let splits = 8usize;
+            for k in 1..splits {
+                let target = bytes.len() * k / splits;
+                let Some(cut) = bytes[..target].iter().rposition(|&b| b == b'\n') else {
+                    continue;
+                };
+                let prefix = &bytes[..=cut];
+                fs::write(&path, prefix).unwrap();
+                // A prefix cut inside a resumed-lineage head contains only
+                // pre-rotation records and is legitimately excluded until
+                // the stem's own records arrive; no seed exists there.
+                let Some(head) =
+                    parse_session_file(&path, &cwd, stem, prefix.len() as i64, 0, None).unwrap()
+                else {
+                    continue;
+                };
+                if head.resume.parse_offset == 0 {
+                    continue;
+                }
+                let seed = seed_from(&head);
+                fs::write(&path, &bytes).unwrap();
+                let resumed =
+                    parse_session_file(&path, &cwd, stem, bytes.len() as i64, 0, Some(&seed))
+                        .unwrap()
+                        .expect("resume parses");
+                assert_eq!(
+                    resumed.meta.turn_count, full.meta.turn_count,
+                    "{stem} split {k}/{splits}: turn count"
+                );
+                assert_eq!(
+                    resumed.resume.frontier, full.resume.frontier,
+                    "{stem} split {k}/{splits}: frontier"
+                );
+                assert_eq!(
+                    resumed.resume.effective_uuids, full.resume.effective_uuids,
+                    "{stem} split {k}/{splits}: effective-uuid set"
+                );
+            }
+        }
+    }
+
+    /// A session id rotation: the new file embeds the old lineage's records
+    /// (old sessionId stamps first, the stem's own later). The newest file
+    /// must be listed — not excluded at the first foreign record — and the
+    /// superseded ancestor file must be suppressed while it is a stale
+    /// prefix, but stay visible once it has forked past the descendant.
+    #[test]
+    fn a_rotated_lineage_lists_the_newest_file_and_suppresses_the_stale_ancestor() {
+        const OLD: &str = "aaaaaaaa-1111-2222-3333-444444444444";
+        let root = tempfile::tempdir().unwrap();
+        let old_content = format!(
+            r#"{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{OLD}","cwd":"{PROJECT}","message":{{"role":"user","content":"first"}}}}
+{{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{OLD}","message":{{"role":"assistant","content":[{{"type":"text","text":"hi"}}],"id":"m1","stop_reason":"end_turn"}}}}
+"#
+        );
+        // The rotated file: the old lineage's records verbatim, then the
+        // stem's own post-rotation records.
+        let new_content = format!(
+            r#"{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{OLD}","cwd":"{PROJECT}","message":{{"role":"user","content":"first"}}}}
+{{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{OLD}","message":{{"role":"assistant","content":[{{"type":"text","text":"hi"}}],"id":"m1","stop_reason":"end_turn"}}}}
+{{"type":"user","uuid":"u2","parentUuid":"a1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"second"}}}}
+{{"type":"assistant","uuid":"a2","parentUuid":"u2","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"ok"}}],"id":"m2","stop_reason":"end_turn"}}}}
+"#
+        );
+        seed(root.path(), PROJECT, OLD, &old_content);
+        seed(root.path(), PROJECT, SESSION_A, &new_content);
+        let dir = root.path().join(encode_claude_project_name(PROJECT));
+
+        // The ancestor stopped growing before the descendant: suppressed.
+        let set_mtime = |name: &str, secs: u64| {
+            let f = fs::OpenOptions::new()
+                .write(true)
+                .open(dir.join(format!("{name}.jsonl")))
+                .unwrap();
+            f.set_modified(UNIX_EPOCH + std::time::Duration::from_secs(secs))
+                .unwrap();
+        };
+        set_mtime(OLD, 1_000);
+        set_mtime(SESSION_A, 2_000);
+        let metas = scan_external_sessions(root.path(), PROJECT);
+        let ids: Vec<&str> = metas.iter().map(|m| m.session_id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![SESSION_A],
+            "newest lineage listed, stale ancestor suppressed"
+        );
+        assert_eq!(metas[0].turn_count, 2, "the rotated file counts normally");
+
+        // The ancestor grew past the descendant (a fork): both visible.
+        set_mtime(OLD, 3_000);
+        let metas = scan_external_sessions(root.path(), PROJECT);
+        let mut ids: Vec<&str> = metas.iter().map(|m| m.session_id.as_str()).collect();
+        ids.sort_unstable();
+        let mut expected = vec![OLD, SESSION_A];
+        expected.sort_unstable();
+        assert_eq!(ids, expected, "a forked ancestor stays visible");
+    }
+
+    /// A file whose records claim session ids but never the filename's stem
+    /// is another session's content under this name — still excluded.
+    #[test]
+    fn a_file_that_never_claims_its_stem_is_excluded() {
+        const OTHER: &str = "bbbbbbbb-1111-2222-3333-444444444444";
+        let root = tempfile::tempdir().unwrap();
+        let content = format!(
+            r#"{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{OTHER}","cwd":"{PROJECT}","message":{{"role":"user","content":"first"}}}}
+"#
+        );
+        seed(root.path(), PROJECT, SESSION_A, &content);
+        let metas = scan_external_sessions(root.path(), PROJECT);
+        assert!(metas.is_empty(), "foreign-only file must be excluded");
+    }
+
+    /// The seed a cache round-trip would hand the next scan for `parsed` —
+    /// what `resume_seed_from_cache` builds from the row this parse writes.
+    fn seed_from(parsed: &ParsedSession) -> ResumeSeed {
+        ResumeSeed {
+            offset: parsed.resume.parse_offset,
+            tail_hash: parsed.resume.tail_hash,
+            cwd_checked: parsed.resume.cwd_checked,
+            created_at_found: parsed.resume.created_at_found,
+            turn_count: parsed.meta.turn_count,
+            last_user_prompt: parsed.meta.last_user_prompt.clone(),
+            name: parsed.meta.name.clone(),
+            created_at: parsed.meta.created_at,
+            frontier: parsed.resume.frontier.clone(),
+            effective_uuids: parsed
+                .resume
+                .effective_uuids
+                .as_deref()
+                .and_then(decode_uuid_set)
+                .expect("parse recorded a resumable uuid set"),
+            lineage_ancestors: parsed.lineage_ancestors.clone(),
+        }
     }
 
     #[test]
@@ -1802,8 +2204,10 @@ mod tests {
     /// sequence. Splitting the same file at an incremental boundary INSIDE
     /// the re-append block must reach the identical count — the case the
     /// per-slice triggers cannot see, because the tail of a straddled
-    /// re-append looks perfectly linear. What saves it is that the head's
-    /// parse needed the recount and so handed out no resumable seed.
+    /// re-append looks perfectly linear. What saves it is the seed's
+    /// effective-uuid set: every record of the straddled tail is a known
+    /// uuid and is suppressed inline, so the resume neither re-counts a
+    /// preserved turn nor re-streams the file.
     #[test]
     fn an_incremental_split_inside_a_re_append_matches_a_full_segment() {
         let root = tempfile::tempdir().unwrap();
@@ -1862,17 +2266,7 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        let seed = ResumeSeed {
-            offset: first.resume.parse_offset,
-            tail_hash: first.resume.tail_hash,
-            cwd_checked: first.resume.cwd_checked,
-            created_at_found: first.resume.created_at_found,
-            turn_count: first.meta.turn_count,
-            last_user_prompt: first.meta.last_user_prompt.clone(),
-            name: first.meta.name.clone(),
-            created_at: first.meta.created_at,
-            frontier: first.resume.frontier.clone(),
-        };
+        let seed = seed_from(&first);
         fs::write(&path, &whole).unwrap();
         let resumed = parse_session_file(
             &path,
@@ -1885,12 +2279,21 @@ mod tests {
         .unwrap()
         .unwrap();
         assert!(
-            !resumed.resumed,
-            "the appended slice must force a full re-stream, not an incremental step"
+            resumed.resumed,
+            "the straddled tail must resume incrementally — its re-appends are \
+             suppressed against the seed's effective-uuid set"
         );
         assert_eq!(
             resumed.meta.turn_count, full.meta.turn_count,
-            "incremental-with-fallback must equal the full segment"
+            "incremental resume with suppression must equal the full segment"
+        );
+        assert_eq!(
+            resumed.resume.frontier, full.resume.frontier,
+            "the resumed frontier must equal the full segment's"
+        );
+        assert_eq!(
+            resumed.resume.effective_uuids, full.resume.effective_uuids,
+            "the resumed uuid set must equal the full segment's"
         );
     }
 
@@ -1919,17 +2322,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let mut stale = ResumeSeed {
-            offset: first.resume.parse_offset,
-            tail_hash: first.resume.tail_hash,
-            cwd_checked: first.resume.cwd_checked,
-            created_at_found: first.resume.created_at_found,
-            turn_count: first.meta.turn_count,
-            last_user_prompt: first.meta.last_user_prompt.clone(),
-            name: first.meta.name.clone(),
-            created_at: first.meta.created_at,
-            frontier: first.resume.frontier.clone(),
-        };
+        let mut stale = seed_from(&first);
         // What an epoch-2 row deserializes to: no leaf uuid.
         stale.frontier.leaf_uuid = None;
 
@@ -1951,17 +2344,7 @@ mod tests {
         );
 
         // With that leaf recorded, an ordinary append resumes incrementally.
-        let good = ResumeSeed {
-            offset: re_streamed.resume.parse_offset,
-            tail_hash: re_streamed.resume.tail_hash,
-            cwd_checked: re_streamed.resume.cwd_checked,
-            created_at_found: re_streamed.resume.created_at_found,
-            turn_count: re_streamed.meta.turn_count,
-            last_user_prompt: re_streamed.meta.last_user_prompt.clone(),
-            name: re_streamed.meta.name.clone(),
-            created_at: re_streamed.meta.created_at,
-            frontier: re_streamed.resume.frontier.clone(),
-        };
+        let good = seed_from(&re_streamed);
         let more = format!(
             r#"{{"type":"user","uuid":"u3","parentUuid":"a2","sessionId":"{SESSION_A}","message":{{"role":"user","content":"third"}}}}
 "#
