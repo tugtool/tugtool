@@ -85,6 +85,14 @@ body {
      cell at the cell edge, not a glyph in this gutter, so nothing here reflows
      when the cursor moves.) */
   --tugx-list-row-indicator-gutter:  0.2rem;
+  /* Glyph metrics — the reserved leading column and the radio / checkbox drawn
+     in it. Stated as knobs so a host surface whose options ARE the control
+     (the question dialog, where the glyph carries the whole selection) can
+     scale them up without the row's other geometry moving. */
+  --tugx-list-row-glyph-column:      1rem;
+  --tugx-list-row-glyph-size:        0.875rem;
+  --tugx-list-row-radio-dot-size:    0.375rem;
+  --tugx-list-row-checkmark-size:    0.75rem;
   /* Radio-dot glyph (`selectedGlyph="radio"`) — borrows TugRadioGroup's own base
      tokens so a list-row radio reads identically: a muted ring that fills the
      selection blue with a center dot when selected. */
@@ -228,7 +236,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1rem;
+  width: var(--tugx-list-row-glyph-column, 1rem);
   /* Align the glyph with the title's first line (the top row), not the row's
      vertical center — on a two-line row a centered check floats between the
      title and subtitle. `align-self: flex-start` pins it to the content top and
@@ -243,8 +251,8 @@ body {
 }
 
 .tug-list-row-check svg {
-  width: 0.875rem;
-  height: 0.875rem;
+  width: var(--tugx-list-row-glyph-size, 0.875rem);
+  height: var(--tugx-list-row-glyph-size, 0.875rem);
 }
 
 /* Radio-dot glyph (`selectedGlyph="radio"`) — mirrors TugRadioGroup's indicator.
@@ -255,8 +263,8 @@ body {
    Same reserved column + alignment as the check, so glyph kinds interleave
    without shifting titles. */
 .tug-list-row-radio {
-  width: 0.875rem;
-  height: 0.875rem;
+  width: var(--tugx-list-row-glyph-size, 0.875rem);
+  height: var(--tugx-list-row-glyph-size, 0.875rem);
   box-sizing: border-box;
   border-radius: 50%;
   border: 1.5px solid var(--tugx-list-row-radio-border);
@@ -267,8 +275,8 @@ body {
   transition: background-color 80ms ease, border-color 80ms ease;
 }
 .tug-list-row-radio-dot {
-  width: 0.375rem;
-  height: 0.375rem;
+  width: var(--tugx-list-row-radio-dot-size, 0.375rem);
+  height: var(--tugx-list-row-radio-dot-size, 0.375rem);
   border-radius: 50%;
   background-color: transparent;
 }
@@ -294,8 +302,8 @@ body {
    box always visible; on selection it fills the selection blue and the check
    fades in. Same four states as the radio. */
 .tug-list-row-checkbox {
-  width: 0.875rem;
-  height: 0.875rem;
+  width: var(--tugx-list-row-glyph-size, 0.875rem);
+  height: var(--tugx-list-row-glyph-size, 0.875rem);
   box-sizing: border-box;
   border-radius: 0.25rem;
   border: 1px solid var(--tugx-list-row-checkbox-border);
@@ -307,8 +315,8 @@ body {
   transition: background-color 80ms ease, border-color 80ms ease;
 }
 .tug-list-row-check .tug-list-row-checkbox svg {
-  width: 0.75rem;
-  height: 0.75rem;
+  width: var(--tugx-list-row-checkmark-size, 0.75rem);
+  height: var(--tugx-list-row-checkmark-size, 0.75rem);
   opacity: 0;
 }
 /* unselected / hovered */

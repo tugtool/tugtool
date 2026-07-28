@@ -420,6 +420,13 @@ body {
   --tugx-list-view-padding-block-start: 0;
   --tugx-list-view-padding-block-end: 0;
   --tugx-list-view-row-gap: 0;
+  /* The glyph IS the answer here (see the `selectionSurface="control"` note
+     below), so it is drawn a size up from the list-row default, where a radio
+     dot is a small accessory beside a title. */
+  --tugx-list-row-glyph-column: 1.25rem;
+  --tugx-list-row-glyph-size: 1.125rem;
+  --tugx-list-row-radio-dot-size: 0.5rem;
+  --tugx-list-row-checkmark-size: 0.9375rem;
 }
 
 /* Selection rides the CONTROL here, not the row (`selectionSurface="control"`
