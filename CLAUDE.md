@@ -57,7 +57,7 @@ Selection is derived, not guessed: every `*.test.ts` declares the source it exer
 Do **not** run `just app-test-all` on your own initiative. Run the full corpus only when:
 
 - the user explicitly asks for it, or
-- you changed the harness (`tests/app-test/_harness/`) or the app shell (`tugapp/Sources/`, `tugdeck/src/main.tsx`) — these sit underneath every test, so no `@covers` line can scope them and `app-test-changed` prints a **SWEEP ADVISED** advisory.
+- you changed something that runs before any test's first assertion (`tests/app-test/_harness/`, `tugapp/Sources/TestHarness/`, `tugdeck/src/main.tsx`, `tugdeck/index.html`) — no `@covers` line can scope those, so `app-test-changed` prints a **CORE TIER ADVISED** advisory. The answer to that advisory is the ~20-file core tier (`just app-test`), not the full corpus. Run it and move on; it is not a question for the user.
 
 Bare `just app-test` (no arguments) is a curated **core tier** of ~20 tests — one per load-bearing surface — for a fast read on whether the app fundamentally works. It is deliberately not everything. `just app-test <files…>` runs exactly what you name.
 

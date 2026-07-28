@@ -1382,9 +1382,10 @@ app-test *FILES:
 #   just app-test-changed                        # from the working diff
 #   just app-test-changed tugdeck/src/lib/lens-store/index.ts   # from explicit paths
 #
-# Changes to the harness or the app shell sit underneath every test, so
-# no `@covers` line can scope them; the selector prints a SWEEP ADVISED
-# advisory in that case and `just app-test-all` is the honest answer.
+# A few paths run before any test's first assertion (the harness, the deck
+# entry point), so no `@covers` line can scope them; the selector prints a
+# CORE TIER ADVISED advisory in that case, and `just app-test` — the ~20-file
+# core tier — is the honest answer to it.
 #
 # Run the app-tests whose @covers match your working diff.
 app-test-changed *PATHS:

@@ -2909,7 +2909,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     //
     //   - Rendered target → `SmartScroll.scrollToElement(el, options)`.
     //     The DOM rect is exact, no follow-up needed; `block` and
-    //     `animated` flow through to the underlying `scrollIntoView`.
+    //     `animated` flow through to the scrollport write.
     //   - Unrendered target → pass 1: compute the estimated offset
     //     from the height index (measured heights win, estimates
     //     fill gaps) and call `SmartScroll.scrollTo({ top })`. The

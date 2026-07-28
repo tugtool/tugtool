@@ -349,6 +349,42 @@ export class DeckStateInvariantError extends Error {
 }
 
 /**
+ * The deck's top edge, in canvas coordinates. A pane's `position.y` is measured
+ * from here and the title bar is the pane's first row, so `y >= DECK_TOP_Y` is
+ * exactly "the title bar is on the deck."
+ */
+export const DECK_TOP_Y = 0;
+
+/**
+ * Return `state` with every pane's title bar on the deck — the enforcement half
+ * of invariant 7.
+ *
+ * A pane above the deck top is not a layout the user can undo: the deck does
+ * not scroll, so a title bar parked above `DECK_TOP_Y` cannot be grabbed, and
+ * the pane it belongs to can never be moved back. The drag gesture has always
+ * clamped, but a gesture is one writer among many — restore from a persisted
+ * layout, detach, arrange, and any future writer all land geometry too. So the
+ * floor is applied at the store's commit point instead, where it holds for all
+ * of them at once.
+ *
+ * Returns the SAME object when nothing needed clamping, so the common path adds
+ * no allocation and no identity churn for `useSyncExternalStore`.
+ *
+ * Imposed panes do not pass through here — their frame is derived, pinned a gap
+ * below the canvas top in CSS ({@link imposeStyle}), so the law holds for them
+ * by construction rather than by clamp.
+ */
+export function clampPanesToDeck(state: DeckState): DeckState {
+  let changed = false;
+  const panes = state.panes.map((pane) => {
+    if (pane.position.y >= DECK_TOP_Y) return pane;
+    changed = true;
+    return { ...pane, position: { ...pane.position, y: DECK_TOP_Y } };
+  });
+  return changed ? { ...state, panes } : state;
+}
+
+/**
  * Validate every DeckState invariant documented above. Throws
  * {@link DeckStateInvariantError} on the first violation.
  *
@@ -360,6 +396,8 @@ export class DeckStateInvariantError extends Error {
  *   4. every `pane.activeCardId` is a member of that pane's `cardIds`;
  *   5. when `state.activePaneId` is set, it references a real pane;
  *   6. at most one pane hosts the Lens card, and it carries no `slot`.
+ *   7. no pane's `position.y` is above the deck's top edge — a title bar
+ *      the user cannot reach is a trap, not a layout ({@link DECK_TOP_Y}).
  *
  * Called from `DeckManager.notify` in dev/test builds only — guarded by
  * `isDevEnv()` so production builds pay no cost. Violations surface at the
@@ -427,6 +465,13 @@ export function validateDeckState(state: DeckState): void {
           `Lens pane "${pane.id}" carries slot ${pane.slot}; the Lens is the imposition's fixed end, not a link in its chain`,
         );
       }
+    }
+
+    // Invariant 7
+    if (pane.position.y < DECK_TOP_Y) {
+      throw new DeckStateInvariantError(
+        `pane "${pane.id}" sits at y=${pane.position.y}, above the deck top (${DECK_TOP_Y}) — its title bar would be unreachable`,
+      );
     }
 
     // Invariant 4

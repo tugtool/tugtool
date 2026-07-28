@@ -77,7 +77,7 @@ A `@covers` value is a repo-relative path (a trailing `/` means the whole subtre
 | `just app-test-all` | Every test file |
 | `just app-test-covers-check` | Lint: every test declares `@covers`, and every path resolves |
 
-Two things `@covers` cannot scope: the harness (`tests/app-test/_harness/`) and the app shell (`tugapp/Sources/`, `tugdeck/src/main.tsx`). Those sit underneath every test, so the selector prints a **SWEEP ADVISED** advisory when it sees them changed and `just app-test-all` is the honest answer.
+A few paths `@covers` cannot scope, because they run before any test's first assertion: `tests/app-test/_harness/`, `tugapp/Sources/TestHarness/`, `tugdeck/src/main.tsx`, `tugdeck/index.html`. The selector prints a **CORE TIER ADVISED** advisory when it sees one changed, and the answer is `just app-test` — the ~20-file core tier, which is what "did I break everything?" actually asks. The list is deliberately tiny: ordinary components, however widely used, are covered by name and do not trip it.
 
 `just app-test` ends every run with a structured summary block whose
 last stdout line is exactly `VERDICT: PASS  (...)` or `VERDICT: FAIL

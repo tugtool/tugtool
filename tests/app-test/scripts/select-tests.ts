@@ -48,28 +48,26 @@ const APP_TEST_DIR = resolve(dirname(import.meta.dir));
 const REPO_ROOT = resolve(APP_TEST_DIR, "..", "..");
 
 /**
- * Changes here invalidate coverage-based selection: the harness and the app shell sit
- * underneath every test, so no `@covers` line can scope their blast radius. Selection
- * still runs, but the caller is told a full sweep is the honest answer.
+ * The few paths whose breakage a `@covers` line genuinely cannot scope: they run before
+ * any test's first assertion, so a mistake there takes the whole corpus down at once
+ * rather than failing the tests that named them.
+ *
+ * The answer is the CORE TIER (`just app-test`, ~20 tests, one per load-bearing
+ * surface) — NOT the full corpus. The core tier is what "did I break everything?"
+ * actually asks, and it costs a minute rather than twenty.
+ *
+ * This list is deliberately tiny and stays that way. An ordinary component — even a
+ * heavily-used one like the session card, the transcript, or the text editor — does NOT
+ * belong here: those are covered by name, they change constantly, and flagging them
+ * turned the advisory into noise that fired on every substantial diff. If a component's
+ * honest `@covers` fan-out is too wide, that is the selection budget's problem to state,
+ * not this list's.
  */
-const SWEEP_TRIGGERS = [
-    // The harness and the app shell.
+const CORE_TIER_TRIGGERS = [
     "tests/app-test/_harness/",
-    "tests/app-test/scripts/",
-    "tugapp/Sources/",
+    "tugapp/Sources/TestHarness/",
     "tugdeck/src/main.tsx",
     "tugdeck/index.html",
-    "tugdeck/vite.config.ts",
-    // Shared UI substrate: components most tests drive without naming, because they
-    // mount inside every card. Declaring these honestly in each test that touches them
-    // would make one edit select 23–79 files — a sweep wearing a selection's clothes.
-    // They are listed here instead, so a change says plainly that it cannot be scoped.
-    "tugdeck/src/components/chrome/card-host.tsx",
-    "tugdeck/src/components/tugways/tug-text-editor.tsx",
-    "tugdeck/src/gesture-interpreter.ts",
-    "tugdeck/src/components/tugways/tug-sheet.tsx",
-    "tugdeck/src/components/tugways/cards/session-card.tsx",
-    "tugdeck/src/components/tugways/cards/session-card-transcript.tsx",
 ];
 
 /**
@@ -204,8 +202,8 @@ function fanOut(path: string): number {
 
 /**
  * Source roots an app-test can meaningfully cover. Everything outside these is either not
- * app-test territory (Rust unit-tested crates, build scripts) or is a SWEEP_TRIGGER, whose
- * blast radius no `@covers` line can scope anyway.
+ * app-test territory (Rust unit-tested crates, build scripts) or is a CORE_TIER_TRIGGER,
+ * whose blast radius no `@covers` line can scope anyway.
  */
 const HOLE_ROOTS = ["tugdeck/src/", "tugdeck/styles/", "tugcode/src/"];
 
@@ -220,7 +218,7 @@ function coverageHoles(): string[] {
         .filter((p) => !p.includes("/__tests__/") && !p.endsWith(".test.ts"))
         // Retired code nothing mounts — a "hole" there is not a gap to close.
         .filter((p) => !p.includes("/_archive/"))
-        .filter((p) => !SWEEP_TRIGGERS.some((t) => matches(t, p)))
+        .filter((p) => !CORE_TIER_TRIGGERS.some((t) => matches(t, p)))
         .filter((p) => fanOut(p) === 0);
 }
 
@@ -309,7 +307,7 @@ if (changed.length === 0) {
     process.exit(0);
 }
 
-const tripped = changed.filter((p) => SWEEP_TRIGGERS.some((t) => matches(t, p)));
+const tripped = changed.filter((p) => CORE_TIER_TRIGGERS.some((t) => matches(t, p)));
 
 const selected: { file: string; because: string[] }[] = [];
 for (const c of coverage) {
@@ -332,11 +330,13 @@ if (uncovered.length > 0) {
 
 if (tripped.length > 0) {
     process.stderr.write(
-        `\n[select-tests] SWEEP ADVISED — these changes sit underneath every test, so\n` +
-            `               coverage-based selection cannot scope them:\n`,
+        `\n[select-tests] CORE TIER ADVISED — these changed paths run before any test's\n` +
+            `               first assertion, so no \`@covers\` line can scope them:\n`,
     );
     for (const p of tripped) process.stderr.write(`  ${p}\n`);
-    process.stderr.write(`               Consider 'just app-test-all' (every test file).\n\n`);
+    process.stderr.write(
+        `               Add 'just app-test' (the ~20-file core tier) to this run.\n\n`,
+    );
 }
 
 // The budget refusal. Deliberately AFTER the per-test reasons above, so an over-budget

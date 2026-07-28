@@ -790,7 +790,23 @@ export function DeckCanvas(_props: DeckCanvasProps) {
        * without its own data-responder-id. Card-level responders
        * inside containerRef win via innermost-first DOM walk.
        */}
-      <div ref={setDeckRef} style={{ position: "absolute", inset: 0 }}>
+      {/*
+        * `overflow: clip` is the deck's "the page is not a scroller" law, not a
+        * styling choice. A pane parked so its frame reaches past a window edge
+        * overflows this box; because `#deck-container` is unpositioned, that
+        * overflow resolves against the viewport and lands in `<body>`'s scroll
+        * box, which `globals.css` makes invisible (`overflow: hidden`) but NOT
+        * unscrollable. Anything that walks ancestor scrollports — a stray
+        * `scrollIntoView`, a browser focus reveal — can then scroll the page,
+        * which slides the whole deck under the window with no scrollbar, no
+        * wheel target, and no gesture that returns it.
+        *
+        * `clip` (not `hidden`) is the operative word: it clips at the same box
+        * but forms no scroll container at all, so the range never exists to be
+        * spent. Panes are already clipped at the window edge by the window
+        * itself, so nothing that was visible before is lost.
+        */}
+      <div ref={setDeckRef} style={{ position: "absolute", inset: 0, overflow: "clip" }}>
       {/*
         * DeckCommitBeacon: zero-output React commit observer. Mounted
         * once at the deck root so every React commit of the deck tree

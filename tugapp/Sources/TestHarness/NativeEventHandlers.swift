@@ -147,6 +147,17 @@ enum ModifierKey: String {
         case .ctrl: return 0x3B
         }
     }
+
+    /// The `CGEventFlags` bit the modifier sets on every event posted while
+    /// it is held.
+    var eventFlag: CGEventFlags {
+        switch self {
+        case .cmd: return .maskCommand
+        case .shift: return .maskShift
+        case .alt: return .maskAlternate
+        case .ctrl: return .maskControl
+        }
+    }
 }
 
 // MARK: - Errors
@@ -564,6 +575,19 @@ final class NativeEventHandlers {
     /// leaving windowserver's modifier table in an inconsistent
     /// state — observed symptom: inadvertent global hotkey triggers
     /// (Cmd-Ctrl-Space emoji picker, Fn-Fn dictation).
+    /// Modifiers currently held down by `holdModifier` or by a transparent
+    /// Shift, in press order. Read by `postKeyEvent` — see the note there.
+    private var heldModifiers: [ModifierKey] = []
+
+    /// The `CGEventFlags` union of `heldModifiers`.
+    private var heldFlags: CGEventFlags {
+        var flags: CGEventFlags = []
+        for mod in heldModifiers {
+            flags.insert(mod.eventFlag)
+        }
+        return flags
+    }
+
     func nativeKey(key: String, modifiers: [ModifierKey] = []) throws {
         activateSelf()
         guard let mapping = VirtualKeyMap.lookup(key) else {
@@ -575,12 +599,12 @@ final class NativeEventHandlers {
         holdModifier(modifiers: modifiers) { [self] in
             let shiftOverride = mapping.needsShift && !modifiers.contains(.shift)
             if shiftOverride {
-                postKeyEvent(keyCode: ModifierKey.shift.keyCode, keyDown: true)
+                pressModifier(.shift)
             }
             postKeyEvent(keyCode: mapping.keyCode, keyDown: true)
             postKeyEvent(keyCode: mapping.keyCode, keyDown: false)
             if shiftOverride {
-                postKeyEvent(keyCode: ModifierKey.shift.keyCode, keyDown: false)
+                releaseModifier(.shift)
             }
         }
         sleepMs(NATIVE_KEY_POST_SEQUENCE_SETTLE_MS)
@@ -633,7 +657,7 @@ final class NativeEventHandlers {
         // the next test.
         defer {
             if shiftHeld {
-                postKeyEvent(keyCode: ModifierKey.shift.keyCode, keyDown: false)
+                releaseModifier(.shift)
             }
             sleepMs(NATIVE_KEY_POST_SEQUENCE_SETTLE_MS)
         }
@@ -652,11 +676,11 @@ final class NativeEventHandlers {
             // Shift-up immediately followed by Shift-down on
             // consecutive shift-needing chars.
             if mapping.needsShift && !shiftHeld {
-                postKeyEvent(keyCode: ModifierKey.shift.keyCode, keyDown: true)
+                pressModifier(.shift)
                 sleepMs(NATIVE_MODIFIER_SETTLE_MS)
                 shiftHeld = true
             } else if !mapping.needsShift && shiftHeld {
-                postKeyEvent(keyCode: ModifierKey.shift.keyCode, keyDown: false)
+                releaseModifier(.shift)
                 sleepMs(NATIVE_MODIFIER_SETTLE_MS)
                 shiftHeld = false
             }
@@ -678,7 +702,7 @@ final class NativeEventHandlers {
             activateSelf()
         }
         for mod in modifiers {
-            postKeyEvent(keyCode: mod.keyCode, keyDown: true)
+            pressModifier(mod)
         }
         // Let the modifier bits propagate to the app's main thread
         // before the inner keystroke arrives. See
@@ -696,7 +720,7 @@ final class NativeEventHandlers {
                 sleepMs(NATIVE_MODIFIER_SETTLE_MS)
             }
             for mod in modifiers.reversed() {
-                postKeyEvent(keyCode: mod.keyCode, keyDown: false)
+                releaseModifier(mod)
             }
         }
         try inner()
@@ -762,6 +786,23 @@ final class NativeEventHandlers {
     /// and NO `type = .flagsChanged` override — the source's state
     /// table auto-stamps flags on events posted after a modifier
     /// keyDown.
+    /// Press `mod` and record it as held, so every event posted while it is
+    /// down carries its flag.
+    private func pressModifier(_ mod: ModifierKey) {
+        heldModifiers.append(mod)
+        postKeyEvent(keyCode: mod.keyCode, keyDown: true)
+    }
+
+    /// Release `mod`. Dropped from the held set BEFORE the post, so the
+    /// release event itself no longer carries the flag — what a real
+    /// `flagsChanged` looks like.
+    private func releaseModifier(_ mod: ModifierKey) {
+        if let index = heldModifiers.lastIndex(of: mod) {
+            heldModifiers.remove(at: index)
+        }
+        postKeyEvent(keyCode: mod.keyCode, keyDown: false)
+    }
+
     private func postKeyEvent(keyCode: CGKeyCode, keyDown: Bool) {
         guard let event = CGEvent(
             keyboardEventSource: source,
@@ -775,6 +816,13 @@ final class NativeEventHandlers {
                   keyCode, keyDown ? "true" : "false")
             return
         }
+        // Stamp the flags rather than inheriting them. `CGEvent(keyboardEvent
+        // Source:)` derives its flags from the source's own modifier
+        // bookkeeping, and that bookkeeping does not survive two modifier
+        // presses in a row: a ⌥⌘ chord reaches WebKit with `metaKey` true and
+        // `altKey` false, so a two-modifier binding never matches. Stamping the
+        // held set makes the flags a function of what the harness asked for.
+        event.flags = heldFlags
         event.post(tap: .cgSessionEventTap)
     }
 

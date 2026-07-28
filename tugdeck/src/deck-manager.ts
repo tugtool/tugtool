@@ -36,6 +36,7 @@ import {
   type TugPaneState,
   type CardStateBag,
   validateDeckState,
+  clampPanesToDeck,
 } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import { getRegistration, getSizePolicy, getStackSizePolicy } from "./card-registry";
@@ -859,6 +860,13 @@ export class DeckManager implements IDeckManagerStore {
   // ---- Store notification ----
 
   private notify(): void {
+    // Invariant 7, enforced rather than merely asserted: no pane commits with
+    // its title bar above the deck top. Every mutation in this class lands
+    // through here, so one clamp covers all of them — including the ones no
+    // gesture guards (restore from a persisted layout, detach, arrange). The
+    // clamp returns the same object when nothing was out of bounds, so the
+    // common path costs one pass and no allocation.
+    this.deckState = clampPanesToDeck(this.deckState);
     // Dev-only invariant check. Fires after every mutation so violations
     // surface at the site that produced them rather than downstream where
     // the symptom manifests. Guarded so production builds pay no cost.

@@ -400,21 +400,61 @@ export class SmartScroll {
     if (this.shouldAutoPin) this.pinToBottom();
   }
 
+  /**
+   * Place `element` in this scrollport per `block`, writing only this
+   * scroller's `scrollTop`.
+   *
+   * Deliberately NOT `Element.scrollIntoView`. That walks EVERY scrollable
+   * ancestor of the target and scrolls each one to satisfy `block` — the card
+   * body, the deck's containing block, the document itself. A deck whose panes
+   * reach past the window bottom leaves the document a few pixels of scroll
+   * range, and then one turn-step chord (⌥⌘↑ → `pageByEntry`) scrolls the whole
+   * deck: every card's title bar parks above the window top, with no gesture
+   * that brings it back. A scroller owns its own scrollport and nothing else,
+   * so the delta is computed here and written to `_container` alone.
+   *
+   * The write routes through `scrollTo`, so it clears a pending cold-boot
+   * restore and enters the programmatic phase like any other explicit scroll.
+   */
   scrollToElement(
     element: HTMLElement,
     options: { animated?: boolean; block?: ScrollLogicalPosition } = {},
   ): void {
     if (this._disposed) return;
     const { animated = false, block = 'nearest' } = options;
-    // An explicit programmatic scroll supersedes a pending cold-boot
-    // restore — see `scrollTo`.
-    this.clearRestoreTarget();
-    this._enterProgrammatic();
-    element.scrollIntoView({ behavior: animated ? 'smooth' : 'instant', block });
-    if (!animated) {
-      this._exitProgrammaticImmediate();
+    const el = this._container;
+    // `clientTop` is the border width: the scrollport's content box starts
+    // inside it, and `clientHeight` already excludes the borders.
+    const portTop = el.getBoundingClientRect().top + el.clientTop;
+    const portHeight = el.clientHeight;
+    const rect = element.getBoundingClientRect();
+    // Target position expressed in scrollport-relative coordinates.
+    const top = rect.top - portTop;
+    const bottom = top + rect.height;
+    let delta: number;
+    switch (block) {
+      case 'start':
+        delta = top;
+        break;
+      case 'end':
+        delta = bottom - portHeight;
+        break;
+      case 'center':
+        delta = top - (portHeight - rect.height) / 2;
+        break;
+      default:
+        // `nearest`: the minimum delta that brings the target inside, and
+        // nothing at all when it already is. A target taller than the port
+        // aligns to the leading edge rather than pushing it out of view.
+        delta =
+          top < 0 ? top : bottom > portHeight ? Math.min(bottom - portHeight, top) : 0;
+        break;
     }
-    // animated: scrollend or timer fallback handles return to idle.
+    const max = Math.max(0, el.scrollHeight - portHeight);
+    this.scrollTo({
+      top: Math.max(0, Math.min(max, el.scrollTop + delta)),
+      animated,
+    });
   }
 
   // -------------------------------------------------------------------------

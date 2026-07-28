@@ -21,9 +21,9 @@
  * visible.
  *
  * This module is the SELECTION half: given every cell's top edge it
- * picks the target entry. The actual scroll is the browser's
- * `Element.scrollIntoView` (via `SmartScroll.scrollToElement`), which
- * aligns the chosen cell's top exactly flush with the viewport top.
+ * picks the target entry. The actual scroll is
+ * `SmartScroll.scrollToElement`, which aligns the chosen cell's top
+ * exactly flush with the scrollport top.
  *
  * Why geometry comes from DOM rects, not the height index. The list
  * view's `HeightIndex` sums per-cell measured heights — but the

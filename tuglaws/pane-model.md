@@ -200,6 +200,22 @@ A developer changing Swift menu strings must preserve this vocabulary: Card-leve
 
 ---
 
+## The deck is placed, never scrolled
+
+**Every Pane's title bar is on the Deck, and the Deck itself never moves.** A title bar above the Deck's top edge cannot be grabbed, and since nothing in the Deck scrolls there is no gesture that brings it back: the Pane is stranded and the user is stuck with a Card they cannot address. The rule is therefore enforced, not merely intended, and at three independent layers — because the incident that produced it (2026-07-28: one ⌥⌘↑ parked every card's title bar above the window top) came from a layer nobody was watching.
+
+| Layer | The law | Where it lives |
+|---|---|---|
+| Geometry | No Pane commits with `position.y` above the Deck top | `DeckState` invariant 7 + `clampPanesToDeck`, applied in `DeckManager.notify` — the one commit point every mutation passes through, so restore-from-disk, detach, and arrange are covered along with drag |
+| Structure | The page is not a scroller | `overflow: clip` on the Deck root (`deck-canvas.tsx`) |
+| Behavior | A scroller scrolls itself and no ancestor | `SmartScroll.scrollToElement` computes its own delta; `revealFocusTarget` walks scrollports minimally |
+
+The structural layer is the subtle one and worth stating plainly. **The canvas does not scroll — but the page underneath it can.** A Pane parked so its frame reaches past a window edge overflows the Deck root; because `#deck-container` is unpositioned, that overflow resolves against the viewport and lands in `<body>`'s scroll box, which `globals.css` renders invisible (`overflow: hidden`) but leaves perfectly scrollable from script. Anything that walks ancestor scrollports — a stray `scrollIntoView`, a browser focus reveal — can then scroll the *page*, which slides the whole Deck under the window with no scrollbar, no wheel target, and nothing to put it back. `clip` rather than `hidden` is what closes it: it clips at the same box but forms no scroll container, so the range never exists to be spent.
+
+Imposed Panes get the rule twice over, as they should — Tug places them itself. Their frame is derived, pinned a gap below the canvas top in CSS (`imposeStyle`), so the geometry law holds for them by construction rather than by clamp; the structural and behavioral layers protect them exactly as they protect free Panes. Pinned by `at0283-page-not-a-scroller` and `at0284-title-bar-floor`.
+
+---
+
 ## Pane-modal vs canvas-overlay surfaces
 
 **A surface that claims pane-modal semantics — "this surface blocks interaction with this pane" — is scoped to the host Pane's stacking context, not to the canvas-overlay tier.** The Pane's outer frame element (`.tug-pane`, exposed via `TugPaneFrameContext` from `tug-pane.tsx`) is its own stacking context: position-absolute with an inline z-index assigned by the deck. Anything portaled into that frame paints inside the Pane's stacking context, so peer Panes z-stacked above paint above the modal panel automatically. Bleed across Panes is structurally impossible.
