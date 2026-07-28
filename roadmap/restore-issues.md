@@ -175,7 +175,7 @@ What has **not** happened is the verification and consequence work the brief dem
 
 #### [P02] Re-append suppression = earliest non-dead occurrence wins (DECIDED) {#p02-first-occurrence}
 
-**Decision:** For every uuid with multiple occurrences, exactly one occurrence emits: the earliest one not in the dead set. All other occurrences are nulled in `translateJsonlSession` immediately after dead-branch nulling and before `hoistCompactCommandEnvelope`. The deck's `committedMsgIds` dedupe is retained unchanged as defense-in-depth, no longer load-bearing for replay.
+**Decision:** For every uuid with multiple occurrences, exactly one occurrence emits: the earliest one not in the dead set. The suppression domain is exactly `computeDeadEntryIndices`' index domain — **chain entries only** (uuid-bearing, non-sidechain); sidechain records and no-uuid bookkeeping records are never suppressed, so a sidechain record sharing a uuid with a main-chain record can never null it (or be nulled by it). All other occurrences are nulled in `translateJsonlSession` immediately after dead-branch nulling and before `hoistCompactCommandEnvelope`. The deck's `committedMsgIds` dedupe is retained unchanged as defense-in-depth, no longer load-bearing for replay.
 
 **Rationale:**
 - The first occurrence sits at the turn's true chronological position; re-appends are verbatim copies with later positions and stale context.
@@ -188,14 +188,19 @@ What has **not** happened is the verification and consequence work the brief dem
 
 #### [P03] Rust incremental segmentation invalidates on compaction or branch shapes (DECIDED) {#p03-incremental-invalidation}
 
-**Decision:** The Rust engine's full-file path (`segment_str`) computes the effective sequence exactly. The incremental path (a carried `Frontier` over an appended slice, used by `external_sessions.rs` / `session_ledger.rs`) stays cheap but **falls back to a full re-segment** when the appended slice contains (a) any compaction marker (`compact_boundary` system record or `isCompactSummary` user record) or (b) a chain entry whose `parentUuid` is non-null and differs from the carried previous leaf uuid (the rewind-branch shape). `Frontier` gains the carried leaf uuid to make (b) checkable.
+**Decision:** The Rust engine's full-file path computes the effective sequence exactly — with the **`external_sessions.rs` streaming scanner as the count authority** (it feeds `sessions_recorder.engine_turn_count`, which is what `agent_bridge.rs` stamps; `segment_str` is the shared kernel, not the seat). The incremental path (a carried `Frontier` over an appended slice) stays cheap but **falls back to a full re-segment** when the appended slice contains (a) any compaction marker (`compact_boundary` system record or `isCompactSummary` user record) or (b) a **non-sidechain** chain entry whose `parentUuid` is non-null and differs from the carried previous leaf uuid (the rewind-branch shape). `Frontier` gains the carried leaf uuid to make (b) checkable.
+
+Trigger (b) is **conservative by design**: benign mid-turn spurs the walk's doc comment already names (hook-result `attachment` records, a `tool_result` whose sibling carried the chain forward, an abandoned API-retry `assistant` branch) may trip it and force a full re-segment. That is acceptable — the fallback is always sound and costs tens of ms on a rare event; do not "optimize" the trigger by narrowing it, because every narrowing is a correctness bet. Sidechain records are excluded from the trigger (they root their own chains mid-file and would false-positive constantly).
+
+**Ledger persistence:** the carried leaf uuid is persisted alongside the existing frontier columns (`frontier_open`, `frontier_pending_close`, `frontier_pending_close_msg_id`) in the session-ledger row (`session_ledger.rs`) as a new nullable column, added via the ledger's established **self-healing column guard** (the `CREATE … IF NOT EXISTS` + column-reconciliation doctrine documented at the top of `session_ledger.rs` — this is the tugcast-local sessions ledger, **not** the shared `changes.db`, so no `CHANGES_SCHEMA_VERSION` bump or registered migration applies). A seed row whose leaf-uuid column is absent or NULL (any row written before this change) is treated as **non-resumable**: one full re-stream repopulates it, after which incremental resumes proceed normally.
 
 **Rationale:**
 - Duplicates only arrive with compactions and dead branches only arrive with rewinds (Assumptions), so appends free of both shapes segment incrementally with unchanged semantics.
 - A persistent seen-uuid set across the append boundary would bloat the ledger schema; a rare full re-segment (~tens of ms) is the precedented fallback (`rewritten_prefix_falls_back_to_full_parse` already covers the prefix-rewrite case).
 
 **Implications:**
-- `parse_significant` / `SigRecord` must expose `uuid`, `parentUuid`, and the compaction-marker bit.
+- `parse_significant` / `SigRecord` must expose `uuid`, `parentUuid`, sidechain, and the compaction-marker bit.
+- The streaming scanner needs a two-pass-on-demand restructure (see #scanner-two-pass and #step-5) — dead-branch detection cannot run inside a single forward stream.
 - The incremental-matches-full property (existing test `engine_incremental_matches_full_on_reference_session`) must hold across an artificial split placed inside a re-append block.
 
 #### [P04] Dead-set validity is asserted as properties, not counts (DECIDED) {#p04-property-validation}
@@ -254,6 +259,17 @@ Enforcement points: the real-corpus contract test `engine_matches_tugcode_segmen
 
 `computeConversationTruncation` (`tugcode/src/session.ts`) scans lines in order; the boundary is the **first** line whose user-submission record carries the anchor uuid (`boundary === -1` latch), and any compaction marker at/after the boundary yields `compaction_blocked`. A uuid duplicated by a compaction re-append necessarily has its first occurrence *before* the compaction that re-appended it, hence a `compact_boundary` between that occurrence and the tip → the guard refuses. The anchor source (`ActiveTurn.promptUuid`, captured live from the current turn's user record) post-dates the last compaction in normal operation, so duplicated anchors are an edge, not the norm — but the retract path (`interrupt{retract:true}`, applied at `computeConversationTruncation` call sites around `session.ts` `handleInterrupt` / the deferred retraction) truncates bytes, so the edge must be pinned by test, not by reasoning ([P06]). Rust-side audit result: `turn_engine.rs` has zero uuid references; `session_ledger.rs` fingerprints byte prefixes (FNV-1a over the resumable tail), not uuids; `external_sessions.rs` uses uuids only as filename stems.
 
+#### The streaming scanner becomes two-pass on demand {#scanner-two-pass}
+
+The Rust count authority is **not** `segment_str`: the value `agent_bridge.rs` stamps onto `replay_complete` comes from `sessions_recorder.engine_turn_count(...)`, fed by the `external_sessions.rs` scanner — a single forward pass over the file (`BufReader` line loop, "typed extraction… builds no tree") that accumulates `turn_count` via `step_record` as it reads, carrying `Frontier` across incremental resumes. Dead-branch detection is inherently two-pass: the live walk starts at the newest leaf, which a forward stream doesn't know until EOF. Wiring the effective sequence therefore restructures the scanner, not just `segment_str`:
+
+- **During the stream**, additionally buffer each significant record's parsed `SigRecord` (extended per [P03] with `uuid`, `parent_uuid`, sidechain, and compaction-marker fields — it already carries what `segment_turns` consumes) and set two flags: *saw a compaction marker*, *saw a duplicate uuid*. Memory is bounded and small (the largest corpus session is ~11.5 k entries of short tuples).
+- **At EOF**, if **neither** flag is set, the buffered records are discarded and the streamed `turn_count` stands — the common no-compaction, no-rewind session keeps today's single-pass cost and byte-identical behavior.
+- If **either** flag is set, run the `dead_branch.rs` computation over the buffered records, derive the effective indices, and re-run `segment_turns` over the effective sequence (the buffered `SigRecord`s carry everything segmentation needs; no second disk read). The result replaces the streamed count.
+- **Turn-count deltas on resume are handled by the [P03] triggers**: a rewind append can *reduce* previously-counted turns (the branch it strands was already counted), which the incremental path can never express — trigger (b) forces the full re-stream that recounts honestly.
+
+`segment_str` (the full-file entry point used by tests and the contract) applies the same effective-sequence computation, so scanner and kernel cannot drift — both call into `dead_branch.rs`.
+
 **List L01: uuid-keyed consumers in tugcode to audit in #step-3** {#l01-uuid-consumers}
 
 - `computeConversationTruncation` + both apply-time call sites and the eligibility probe (`tugcode/src/session.ts`).
@@ -290,8 +306,10 @@ No session among the 894 in the corpus has both a genuine dead branch and a comp
 | `SigRecord` | struct | `tugrust/crates/tugcast/src/turn_engine.rs` | gains `uuid`, `parent_uuid`, compaction-marker + sidechain bits |
 | `Frontier` | struct | `turn_engine.rs` | gains carried leaf uuid for the [P03] branch trigger |
 | `compute_dead_entry_indices` / `effective_indices` | fn | `dead_branch.rs` | mirrors the TS walk decision-for-decision |
-| `segment_str` | fn | `turn_engine.rs` | full path applies effective sequence before `segment_turns` |
-| incremental append handler | fn | `external_sessions.rs` / `session_ledger.rs` | [P03] invalidation triggers → full re-segment |
+| `segment_str` | fn | `turn_engine.rs` | shared kernel: applies effective sequence before `segment_turns` |
+| scanner EOF second pass | fn | `external_sessions.rs` | #scanner-two-pass: buffer `SigRecord`s + flags; dead+dedup recount at EOF only when flagged — this path feeds `engine_turn_count`, the count authority |
+| [P03] invalidation triggers | logic | `external_sessions.rs` | appended compaction marker or mismatched non-sidechain chain parent → full re-stream |
+| `frontier_leaf_uuid` (nullable column) | schema | `session_ledger.rs` | added via the self-healing column guard; absent/NULL ⇒ seed non-resumable (one full re-stream) |
 | `validateDeadEntryInvariants` | fn | `replay-dead-invariants.test.ts` | [P04] property checks (test-only) |
 
 ---
@@ -370,13 +388,13 @@ No session among the 894 in the corpus has both a genuine dead branch and a comp
 **Tasks:**
 - [ ] Implement the three [P04] properties; run them over every corpus session.
 - [ ] Diff pre-fix vs post-fix dead sets on the five affected sessions (`29e49a13`, `130fec67`, `0744463c`, `8b8d7bf1`, `31c60766`) using a test-local reimplementation of the old walk; inspect every entry that left the dead set and confirm each is either inside a re-append block or downstream of one — no rescued entry may be a live-parented off-chain user submission bypassed by its successor.
-- [ ] Assert the 7 genuine-dead sessions (identified by the sweep in the brief) still produce non-empty dead sets; encode as "at least one corpus session has a non-empty dead set that passes all properties" so the test doesn't hardcode private session ids.
+- [ ] Guard against dead-branch detection going silent: the committed assertion is "at least one corpus session has a non-empty dead set that passes all properties" (no private session ids hardcoded); the suite additionally **logs** the count of non-empty-dead sessions so the checkpoint can compare it against the brief's observed 7.
 
 **Tests:**
 - [ ] `bun test tugcode/src/__tests__/replay-dead-invariants.test.ts` (with corpus present).
 
 **Checkpoint:**
-- [ ] Corpus suite reports every session validated, 0 property violations; run output names the count of sessions with non-empty dead sets (expect ≥7).
+- [ ] Corpus suite reports every session validated, 0 property violations; the asserted floor (≥1 non-empty dead set) holds, and the logged count is checked by eye against the brief's observed 7 (a drop below that is investigated, not asserted).
 - [ ] `cd tugcode && bun test` green.
 
 ---
@@ -442,14 +460,15 @@ No session among the 894 in the corpus has both a genuine dead branch and a comp
 **References:** [P01], [P02], [P03], [Q01], [Q03], Table T01, Risk R01, (#contract-topology, #p02-first-occurrence, #p03-incremental-invalidation)
 
 **Artifacts:**
-- TS: `suppressReappendDuplicates` applied in `translateJsonlSession` (after dead-nulling, before `hoistCompactCommandEnvelope`) and in `segmentJsonlOrigins` (dead filter + suppression, matching the translator exactly).
-- Rust: `segment_str` computes the effective sequence via `dead_branch.rs` before `segment_turns`; incremental callers in `external_sessions.rs` / `session_ledger.rs` gain the [P03] invalidation triggers (`Frontier` carries the previous leaf uuid; appended compaction marker or mismatched chain parent → full re-segment).
+- TS: `suppressReappendDuplicates` applied in `translateJsonlSession` (after dead-nulling, before `hoistCompactCommandEnvelope`) and in `segmentJsonlOrigins` (dead filter + suppression, matching the translator exactly), scoped to chain entries per [P02].
+- Rust, in dependency order: (a) `segment_str` computes the effective sequence via `dead_branch.rs` before `segment_turns` (the shared kernel); (b) the **`external_sessions.rs` scanner** — the actual count authority behind `sessions_recorder.engine_turn_count` — restructured per #scanner-two-pass (buffer extended `SigRecord`s, flags for compaction-marker/duplicate-uuid, EOF second pass only when flagged); (c) the [P03] invalidation triggers on the incremental resume path (`Frontier` carries the previous leaf uuid; appended compaction marker or mismatched non-sidechain chain parent → full re-stream); (d) the leaf-uuid ledger column in `session_ledger.rs` via the self-healing column guard, with absent/NULL treated as non-resumable ([P03] ledger persistence).
 - `tuglaws/turn-metric.md` updated: canonical count defined over the effective record sequence, with the re-append and dead-branch rationale.
 - Re-measured reference anchors in `turn_engine.rs` tests (e.g. `engine_counts_reference_session_81`) updated to effective-sequence counts in this same commit.
 
 **Tasks:**
-- [ ] Implement TS suppression; extend `replay-compact-reappend.test.ts`: emitted `turn_complete` count == distinct `msg_id` count on the fixture; all 9 boundary analogs still emit; chronology (first-occurrence positions) preserved.
-- [ ] Implement Rust wiring; place an artificial incremental split inside the fixture's re-append block and assert incremental-with-fallback == full re-segment.
+- [ ] Implement TS suppression; extend `replay-compact-reappend.test.ts`: emitted `turn_complete` count == distinct `msg_id` count on the fixture; all 9 boundary analogs still emit; chronology (first-occurrence positions) preserved; sidechain/no-uuid records never suppressed.
+- [ ] Implement Rust wiring per #scanner-two-pass: extend `SigRecord`/`parse_significant`, wire `dead_branch.rs` into `segment_str`, restructure the scanner's EOF second pass, add the [P03] triggers and the leaf-uuid ledger column (self-healing guard; absent/NULL ⇒ full re-stream once).
+- [ ] Rust tests: a no-compaction session takes the single-pass path (assert via the flags); place an artificial incremental split inside the fixture's re-append block and assert incremental-with-fallback == full re-segment; a pre-change seed row (NULL leaf uuid) triggers exactly one full re-stream then resumes incrementally.
 - [ ] Re-run the [P04] corpus validator (unchanged expectations — suppression must not alter dead sets).
 - [ ] Run the real-corpus contract test and re-measure: expect 0 divergent sessions and, on `8b8d7bf1`, 59 turns from both halves.
 - [ ] Verify replay of `8b8d7bf1` end-to-end via a local probe (the brief's `/tmp/probe-replay-8b8.ts` recipe): frames mentioning `gallery-pulse-display` ≥ 39, `compact_summary` frames == 9, no duplicate turn emission.
