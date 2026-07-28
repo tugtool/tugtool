@@ -29,6 +29,7 @@ import { FeedId } from "../protocol";
 import { getTugbankClient } from "./tugbank-singleton";
 import {
   isLocalModelBridgeAvailable,
+  prewarm,
   requestAvailability,
   type LocalModelAvailability,
 } from "./local-model-bridge";
@@ -178,6 +179,16 @@ export class LocalModelStore {
     if (!isLocalModelBridgeAvailable()) return;
     const availability = await requestAvailability();
     this.commit({ ...this.snapshot, availability });
+
+    // Start the load the moment we know there is something to load. Weights
+    // take seconds to page in — longer than any task's deadline — so a model
+    // that is merely *installed* cannot answer the first request that arrives.
+    // Only a *resident* one can, and residency has to be established before a
+    // user is waiting on it. This runs again on every window focus, which is
+    // also what re-establishes residency after the host's idle release.
+    const wanted =
+      this.snapshot.shellRoutingEnabled || this.snapshot.pulseOverviewEnabled;
+    if (availability.ready && wanted) prewarm();
   }
 
   private readConfig(): Pick<

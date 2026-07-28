@@ -195,6 +195,21 @@ actor MLXLocalModelBackend: LocalModelBackend {
         return LocalModelAvailability(ready: true, backend: backendId, reason: nil)
     }
 
+    /// The pack whose weights are in memory right now, or nil.
+    ///
+    /// Residency is not the same question as availability: a pack can be
+    /// installed, selected, and still take seconds to answer because nothing
+    /// has paged it in yet. Callers on a deadline ask this first.
+    func residentId() -> String? {
+        container == nil ? nil : residentModel?.id
+    }
+
+    /// Begin loading without waiting for it. For callers who cannot block on a
+    /// load but want the next request to find the weights already there.
+    func loadInBackground(model: InstalledModel) {
+        Task { try? await self.load(model: model) }
+    }
+
     func load(model: InstalledModel) async throws {
         if residentModel == model, container != nil { return }
         // Switching models releases the outgoing weights first — two packs

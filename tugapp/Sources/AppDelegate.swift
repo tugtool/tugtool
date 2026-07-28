@@ -154,6 +154,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         TugbankClient.configure(path: dbPath)
         lap("TugbankClient.configure")
 
+        // Earliest point the assignment is knowable — it needs tugbank and
+        // nothing else. The load runs off the launch path, and shell routing
+        // is unusable until it finishes, so every millisecond it starts sooner
+        // is one less during which a typed command routes the wrong way.
+        LocalModelService.shared.prewarmIfWanted()
+        lap("localModel prewarm requested")
+
         // Placeholder rect — `MainWindow.init` overrides this
         // immediately (restored autosave frame, else 80% of the main
         // screen's visible frame, clamped to `minWindowSize`).

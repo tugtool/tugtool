@@ -141,7 +141,7 @@ import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 import { DEFAULT_ROUTE } from "@/lib/route-constants";
 import type { PathCommandsStore } from "@/lib/path-commands-store";
-import { bandShellLine, ShellVerdictCache } from "@/lib/shell-line-classifier";
+import { isShellCandidate, ShellVerdictCache } from "@/lib/shell-line-classifier";
 import { useLocalModelReady } from "@/lib/local-model-store";
 import { prewarm as prewarmLocalModel, requestClassify } from "@/lib/local-model-bridge";
 import { BANG_COMMANDS, matchBangCommandLine } from "@/lib/bang-commands";
@@ -229,7 +229,7 @@ const ESCAPE_REPEAT_FLOOR_MS = 60;
 const COMMIT_PERSIST_DEBOUNCE_MS = 500;
 
 /**
- * Quiet time, in milliseconds, before an ambiguous draft line is put to the
+ * Quiet time, in milliseconds, before a candidate draft line is put to the
  * local model (Spec S07). Long enough that ordinary typing doesn't fire a
  * request per keystroke; short enough that the answer is usually back before
  * the user reaches for Return.
@@ -237,12 +237,13 @@ const COMMIT_PERSIST_DEBOUNCE_MS = 500;
 const VERDICT_DEBOUNCE_MS = 300;
 
 /**
- * How long a submit will wait on a verdict already on the wire before giving
- * up and sending the line to Claude. A submit is a gesture, not a query — past
- * this bound the delay reads as the app hanging, and Claude is the safe
- * direction for an unanswered ambiguity anyway.
+ * How long a submit will wait for a verdict before giving up and sending the
+ * line to Claude. A submit is a gesture, not a query — past this bound the
+ * delay reads as the app hanging, and Claude is the safe direction for an
+ * unanswered line anyway. Matches the host's own classify deadline, so the
+ * two bounds expire together rather than one masking the other.
  */
-const VERDICT_SUBMIT_WAIT_MS = 250;
+const VERDICT_SUBMIT_WAIT_MS = 2000;
 
 // ---------------------------------------------------------------------------
 // Preserved state shape + migration
@@ -1917,7 +1918,7 @@ export const TugPromptEntry = React.forwardRef<
   const shellRoutingReadyRef = useRef(shellRoutingReady);
   shellRoutingReadyRef.current = shellRoutingReady;
 
-  // Verdicts for `unsure` lines, plus the request currently on the wire.
+  // Verdicts for candidate lines, plus the request currently on the wire.
   // Non-render state by construction: a verdict arriving must not repaint the
   // composer, it only settles where the next submit goes ([L06]).
   const verdictCacheRef = useRef(new ShellVerdictCache());
@@ -1926,11 +1927,6 @@ export const TugPromptEntry = React.forwardRef<
     promise: Promise<"shell" | "prompt" | null>;
   } | null>(null);
   const verdictDebounceRef = useRef<number | null>(null);
-  // Weights load lazily, so the first ambiguous line of a session would
-  // otherwise pay the whole load. Prewarm on that first line — the moment
-  // ambiguity is demonstrated — rather than on focus, which would drag
-  // gigabytes in for every session a user opens and never types into.
-  const prewarmedRef = useRef(false);
 
   // Substrate-level extensions installed at mount time. The
   // data-empty sync writes through a ref-tracked root element —
@@ -2008,7 +2004,7 @@ export const TugPromptEntry = React.forwardRef<
           pendingVerdictRef.current = null;
         }
 
-        // Pre-consult the local model on `unsure` lines while the user types,
+        // Pre-consult the local model on candidate lines while the user types,
         // so a verdict is usually already cached by the time Return arrives —
         // submit-time is far too late to start a multi-hundred-millisecond
         // round trip. Debounced: a verdict is only worth asking for once the
@@ -2030,17 +2026,18 @@ export const TugPromptEntry = React.forwardRef<
             if (
               text.length > 0 &&
               verdictCacheRef.current.get(text) === undefined &&
-              bandShellLine(
+              isShellCandidate(
                 text,
                 pathCommandsStoreRef.current?.getSnapshot() ?? null,
-              ) === "unsure"
+              )
             ) {
               verdictDebounceRef.current = window.setTimeout(() => {
                 verdictDebounceRef.current = null;
-                if (!prewarmedRef.current) {
-                  prewarmedRef.current = true;
-                  prewarmLocalModel();
-                }
+                // Re-assert residency alongside the question. The host releases
+                // the weights on its own idle timer, so a composer left open
+                // and returned to can be cold again; this is a no-op when the
+                // model is already loaded.
+                prewarmLocalModel();
                 const promise = requestClassify(text);
                 pendingVerdictRef.current = { text, promise };
                 void promise.then((verdict) => {
@@ -2454,13 +2451,13 @@ export const TugPromptEntry = React.forwardRef<
     // the empty-input guard and don't send a blank turn.
     if (submitText.length === 0 && sendAtoms.length === 0) return;
 
-    // PATH classifier ([P09], Spec S07): a command-shaped, atom-free,
-    // single-line draft silently routes to the shell instead of Claude — after
-    // the slash-command intercepts, before `send`. The auto-routed row renders a
-    // visible `→ shell` attribution with a one-click "send to Claude instead",
-    // so a rare misroute is undoable. A null command set (not yet loaded) bands
-    // as prose — the safety net keeps the first line of a session from
-    // misrouting while the set warms.
+    // Shell routing ([P09], Spec S07): an atom-free, single-line draft whose
+    // first word names a real program may route to the shell instead of Claude
+    // — after the slash-command intercepts, before `send`. The local model
+    // makes that call; nothing here reads the line's meaning. The auto-routed
+    // row renders a visible `→ shell` attribution with a one-click "send to
+    // Claude instead", which recovers the answer but cannot un-run the
+    // command, so every degraded path below resolves to Claude.
     const shellStore = shellSessionStoreRef.current;
     const routeToShell = (): void => {
       shellStore?.exec(submitText, { origin: "auto" });
@@ -2486,38 +2483,46 @@ export const TugPromptEntry = React.forwardRef<
     if (
       shellStore !== undefined &&
       sendAtoms.length === 0 &&
-      !submitText.includes("\n")
+      !submitText.includes("\n") &&
+      // Readiness off ⇒ never route, which is exactly the behavior of a build
+      // with no local model at all ([P12]).
+      shellRoutingReadyRef.current &&
+      isShellCandidate(
+        submitText,
+        pathCommandsStoreRef.current?.getSnapshot() ?? null,
+      )
     ) {
-      // Readiness off ⇒ band as prose without even looking, which is exactly
-      // the behavior of a build with no local model ([P12]).
-      const band = shellRoutingReadyRef.current
-        ? bandShellLine(submitText, pathCommandsStoreRef.current?.getSnapshot() ?? null)
-        : "prompt";
-
-      if (band === "shell") {
+      let verdict = verdictCacheRef.current.get(submitText) ?? null;
+      if (verdict === null) {
+        // Either the typing debounce already asked and the model hasn't
+        // answered, or Return beat the debounce and nobody has asked yet. Both
+        // resolve the same way: one request for this exact line, awaited for a
+        // bounded moment.
+        const inFlight = pendingVerdictRef.current;
+        let asked: Promise<"shell" | "prompt" | null>;
+        if (inFlight !== null && inFlight.text === submitText) {
+          asked = inFlight.promise;
+        } else {
+          // A debounce timer that hasn't fired would ask the same question a
+          // second time; the submit supersedes it.
+          if (verdictDebounceRef.current !== null) {
+            window.clearTimeout(verdictDebounceRef.current);
+            verdictDebounceRef.current = null;
+          }
+          asked = requestClassify(submitText);
+        }
+        verdict = await Promise.race([
+          asked,
+          new Promise<null>((resolve) => {
+            window.setTimeout(() => resolve(null), VERDICT_SUBMIT_WAIT_MS);
+          }),
+        ]);
+      }
+      // Only an explicit `shell` verdict routes. A `prompt`, a failed request,
+      // and an expired wait are all the same answer: send it to Claude.
+      if (verdict === "shell") {
         routeToShell();
         return;
-      }
-
-      if (band === "unsure") {
-        let verdict = verdictCacheRef.current.get(submitText) ?? null;
-        const inFlight = pendingVerdictRef.current;
-        if (verdict === null && inFlight !== null && inFlight.text === submitText) {
-          // The typing debounce asked, and the model hasn't answered yet. Hold
-          // the gesture for a bounded moment rather than discarding an answer
-          // that is milliseconds away — past the bound the line goes to Claude,
-          // which is the safe direction and what an unanswered `unsure` means.
-          verdict = await Promise.race([
-            inFlight.promise,
-            new Promise<null>((resolve) => {
-              window.setTimeout(() => resolve(null), VERDICT_SUBMIT_WAIT_MS);
-            }),
-          ]);
-        }
-        if (verdict === "shell") {
-          routeToShell();
-          return;
-        }
       }
     }
 

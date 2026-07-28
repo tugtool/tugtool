@@ -18,6 +18,28 @@ enum LocalModelConfig {
         }
         return value
     }
+
+    /// The per-feature kill switches, mirrored from
+    /// `SHELL_ROUTING_KEY` / `PULSE_OVERVIEW_KEY` in `local-model-store.ts`.
+    static let shellRoutingKey = "shell-routing"
+    static let pulseOverviewKey = "pulse-overview"
+
+    /// A tenant kill switch. Absent — and any non-bool — reads as enabled,
+    /// matching `readTenantEnabled` on the deck side. `getBool` alone would
+    /// read an absent switch as *off*, which is the opposite default.
+    static func tenantEnabled(_ key: String) -> Bool {
+        guard let value = TugbankClient.shared?.get(domain: domain, key: key) else {
+            return true
+        }
+        if case .bool(let on) = value { return on }
+        return true
+    }
+
+    /// Whether any feature would use the model, and so whether its weights are
+    /// worth holding resident.
+    static func anyTenantEnabled() -> Bool {
+        tenantEnabled(shellRoutingKey) || tenantEnabled(pulseOverviewKey)
+    }
 }
 
 /// The instruction text every task ships with.
@@ -163,6 +185,19 @@ final class LocalModelService {
             return LocalModelReply(ok: true, availability: await availability())
 
         case .classify(let text, let labels):
+            // Classify runs between Return and the line going somewhere, so it
+            // is the one task that must never block on a load. Loading weights
+            // takes seconds; the caller's whole budget is smaller than that, so
+            // a cold classify cannot produce a usable answer however long it
+            // waits — it can only make the person watch a spinner before
+            // getting the fallback they were always going to get. Answer "no"
+            // at once and start the load, so the wait is spent in the
+            // background and the *next* line is right.
+            if let model = await resolveRoute()?.model,
+               await mlx.residentId() != model.id {
+                await mlx.loadInBackground(model: model)
+                return .failure("local model not resident")
+            }
             let job = LocalModelJob(
                 instructions: LocalModelPrompts.classify,
                 input: text,
@@ -204,6 +239,20 @@ final class LocalModelService {
                 return .failure(String(describing: error))
             }
         }
+    }
+
+    /// Begin loading the assigned pack now, off the launch path.
+    ///
+    /// Shell routing answers between Return and the line going somewhere, on a
+    /// deadline measured in seconds while a cold load costs more than that. A
+    /// model that is merely installed therefore cannot answer the first request
+    /// of a session — only a resident one can, and nothing about waiting for
+    /// the user to type makes the load any faster. So the load starts at launch
+    /// rather than on demand, gated on a feature actually wanting it: with
+    /// every switch off, nothing is read from disk.
+    func prewarmIfWanted() {
+        guard LocalModelConfig.anyTenantEnabled() else { return }
+        Task { _ = await handle(LocalModelRequest(requestId: "launch-prewarm", kind: .prewarm)) }
     }
 
     func availability() async -> LocalModelAvailability {

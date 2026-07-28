@@ -28,8 +28,8 @@
  *      separate call sites, so absence has to be pinned on both.
  *
  * **Typing only — this test never submits a turn.** A real send into a
- * replay-backed harness session is out of bounds; submit-time banding is
- * covered as pure logic in `shell-line-classifier.test.ts`.
+ * replay-backed harness session is out of bounds; the submit-time precondition
+ * is covered as pure logic in `shell-line-classifier.test.ts`.
  *
  * @covers tugdeck/src/lib/local-model-store.ts
  * @covers tugdeck/src/lib/shell-line-classifier.ts
@@ -168,7 +168,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(await count(app, HEADLINE)).toBe(0);
 
           // 2. Two lines that open with a real PATH executable — the exact
-          //    shape the routing heuristic reacts to when a model is present.
+          //    shape that would be put to the model when one is present.
           await typeLine(app, "make test");
           expect(await count(app, ATOM)).toBe(0);
 

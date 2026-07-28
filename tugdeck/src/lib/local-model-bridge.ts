@@ -19,8 +19,15 @@
  * @module lib/local-model-bridge
  */
 
-/** How long a request waits before the caller gives up on it. */
-export const LOCAL_MODEL_TIMEOUT_MS = 1500;
+/**
+ * How long a request waits before the caller gives up on it.
+ *
+ * 2s, matching the host's own classify deadline (`CLASSIFY_TIMEOUT` in
+ * `local_model.rs`) and the composer's submit wait. All three bound the same
+ * user-visible pause, so they are the same number — a shorter one here would
+ * silently become the real deadline and make the others unreachable.
+ */
+export const LOCAL_MODEL_TIMEOUT_MS = 2000;
 
 /** What the host answers with. Shapes vary by task; all fields optional. */
 export interface LocalModelResult {

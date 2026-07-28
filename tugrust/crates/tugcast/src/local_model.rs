@@ -749,7 +749,7 @@ async fn fetch_one(
 /// somewhere — so its ceiling is the point past which waiting is worse than
 /// guessing Claude. `summarize` runs on a background cadence with nobody
 /// waiting, so it can afford the long transport deadline.
-const CLASSIFY_TIMEOUT: Duration = Duration::from_secs(3);
+const CLASSIFY_TIMEOUT: Duration = Duration::from_secs(2);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// What the app answered for one request.

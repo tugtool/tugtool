@@ -1,184 +1,103 @@
 /**
- * shell-line-classifier — the high-precision PATH heuristic for deciding
- * whether an unprefixed, atom-free, single-line draft means the shell or means
- * Claude (Spec S03, [P09]).
+ * shell-line-classifier — the precondition half of deciding whether an
+ * unprefixed, atom-free, single-line draft means the shell or means Claude
+ * (Spec S03, [P09]).
  *
- * The heuristic answers in **three bands**, not two ({@link bandShellLine}).
- * `shell` and `prompt` are the cases syntax alone settles: a flagged, piped, or
- * pathful command line on one side, a line whose first word isn't an executable
- * at all on the other. `unsure` is the honest middle — `make the button bigger`
- * and `make test` open identically, and no amount of token inspection separates
- * them. That band is what a local model is for; without one the caller treats it
- * as Claude, which is exactly today's behavior.
+ * This module does not decide anything about intent. It answers one factual
+ * question — {@link isShellCandidate} — and the local model answers the rest.
  *
- * The wrong-way costs are asymmetric — prose at the shell error-barfs, but a
- * command at Claude just gets answered — so the heuristic is tuned for
- * near-zero *false-shell*: nothing reaches `shell` on a maybe. Every auto-routed
- * exchange is visibly attributed with a one-click "send to Claude instead", so a
- * rare misroute is undoable.
+ * The fact is: *does the first word name a program that exists on this
+ * machine?* That is checkable against the login PATH, and when the answer is no
+ * the line cannot be a command, so no inference is spent on it. Everything past
+ * that point — whether the person meant to RUN that program or was writing a
+ * sentence that happens to start with its name — is a judgement about English,
+ * and the model makes it.
+ *
+ * An earlier revision tried to make that judgement here, with a stopword list,
+ * a list of "ambiguous" openers, and a token-count rule. Those were guesses
+ * about English dressed as syntax, and they pre-empted the model on most lines
+ * it should have seen: the classifier decided `which bun` and `open .` by
+ * itself and delegated only the leftovers. They are gone. The rule now is that
+ * anything opening on a real program name is the model's question.
+ *
+ * The wrong-way costs are asymmetric and that asymmetry sets the whole design.
+ * A line sent to Claude that meant the shell costs one keystroke to retype with
+ * `!shell`. A line sent to the shell that meant Claude has **already executed**
+ * — the auto-routed row offers "send to Claude instead", but nothing un-runs
+ * the command. So every degraded path here resolves to Claude: no model, no
+ * PATH set, no verdict, a timeout, a malformed answer. The shell is reached
+ * only by an explicit `shell` verdict.
  *
  * Routing is decided once, at submit, over the **whole line**. There is no
  * opener-only judgement while the user types: the set of English words that are
  * also PATH executables is large (`write`, `say`, `who`, `last`, `join`,
- * `split`, `yes`, `top`, `sleep`, …) and varies by machine, so a first-word test
- * cannot tell `write me a haiku` from `write kocienda ttys001` and has no line
- * context yet to help it. The full line does: `me` is a stopword, which lands
- * the draft in `unsure`, which is what the model is asked about.
+ * `split`, `yes`, `top`, `sleep`, …) and varies by machine, so a first-word
+ * test cannot tell `write me a haiku` from `write kocienda ttys001` and has no
+ * line context yet to help it.
  *
- * Pure — no side effects, no store reads. The caller enforces the precondition
- * (the draft has no atoms; `text` is trimmed and single-line), supplies the
- * login-PATH command set (null until it loads, which answers Code — the safety
- * net, not the steady state), and supplies its own readiness.
+ * Pure — no side effects, no store reads. The caller enforces the rest of the
+ * precondition (the draft has no atoms; `text` is trimmed and single-line),
+ * supplies the login-PATH command set (null until it loads, which answers
+ * Claude — the safety net, not the steady state), and supplies its own
+ * readiness.
  *
  * @module lib/shell-line-classifier
  */
 
-/**
- * Openers that read as prose as often as commands. A bare one (or one with no
- * command-shaped argument after it) is prose-adjacent and vetoed to Code; a
- * bare `ls` / `git` / `pwd` (absent here) stays a command.
- */
-const AMBIGUOUS_OPENERS: ReadonlySet<string> = new Set([
-  "find", "man", "time", "test", "look", "touch", "sort", "head", "tail",
-  "less", "more", "which", "open", "cat",
-]);
-
-/**
- * Bare lowercase English stopwords. A subsequent token that is exactly one of
- * these marks the line as prose — UNLESS the line also carries a strong shell
- * signal (a piped/redirected/flagged/pathful command outweighs an English
- * word appearing in an argument).
- */
-const STOPWORDS: ReadonlySet<string> = new Set([
-  "a", "an", "the", "my", "me", "i", "we", "you", "is", "are", "was", "be",
-  "been", "to", "of", "in", "on", "at", "it", "its", "this", "that", "these",
-  "those", "and", "or", "but", "not", "do", "does", "did", "can", "could",
-  "should", "would", "please", "what", "when", "where", "which", "who", "why",
-  "how", "there", "about", "with", "from", "into", "over", "under", "some",
-  "any", "all", "more", "most", "other", "than", "then", "if", "else", "so",
-  "just", "like", "want", "need", "make", "sure",
-]);
-
 /** A leading `NAME=value` environment-assignment token (skipped to find the command). */
 const ENV_ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
-/** A token that looks like a shell argument, not prose: a flag, a path, or an assignment. */
-function isCommandShaped(token: string): boolean {
-  return token.startsWith("-") || token.includes("/") || token.includes("=");
-}
-
 /**
- * A token that reads as a command *target* — command-shaped, or a filename with
- * an extension (`README.md`, `main.rs`). Used only to decide whether an
- * ambiguous opener (`cat README.md` vs `cat and dog pictures`) has a real
- * argument; not a strong signal (it does not neutralize the stopword veto).
+ * The longest draft worth putting to the model. Past this the line is prose by
+ * volume, and the classify prompt is tuned on command-length input.
  */
-function looksLikeCommandTarget(token: string): boolean {
-  return isCommandShaped(token) || /\.[A-Za-z0-9]+$/.test(token);
-}
+const MAX_CANDIDATE_LENGTH = 400;
 
 /**
- * A strong shell signal (Spec S03 point 4): any one neutralizes the
- * stopword / length vetoes and satisfies "command-shaped after" an ambiguous
- * opener. Operators (`|`, `&&`, `||`, `;`, `>`, `<`, backtick, `$(`, `${`), a
- * flag / path / assignment token, or a quoted string.
- */
-function hasStrongSignal(text: string, tokens: readonly string[]): boolean {
-  if (/[|<>`;]/.test(text)) return true;
-  if (text.includes("&&") || text.includes("$(") || text.includes("${")) return true;
-  if (/["']/.test(text)) return true;
-  return tokens.some(isCommandShaped);
-}
-
-/**
- * The three answers syntax can give about a draft line.
+ * Whether a trimmed, single-line, atom-free draft could be a shell command at
+ * all — the factual precondition the model's verdict is conditioned on.
  *
- * - `shell` — the line is a command by construction; route it, no model needed.
- * - `prompt` — the line isn't a command at all; send it to Claude.
- * - `unsure` — it opens like a command but reads like prose. Only intent
- *   separates these, so this is the band a local model is asked about; with no
- *   model the caller treats it as `prompt`.
- */
-export type ShellBand = "shell" | "prompt" | "unsure";
-
-/**
- * Band a trimmed, single-line, atom-free draft per Spec S07.
+ * True means "the first word names a real program on this machine", which is
+ * exactly what the classify prompt tells the model it may assume. It does
+ * **not** mean the line is a command; only the model's verdict means that.
  *
- * Unconditional and readiness-free: this is the syntax half of the decision,
- * and it answers the same way whether or not a model exists. Gating belongs to
- * the caller.
- *
- * A null command set (still loading) answers `prompt` rather than `unsure` — a
- * line we can't even check the first word of isn't worth spending inference on.
+ * A null command set (still loading) answers false: a line whose first word
+ * can't be checked doesn't satisfy the precondition, so asking would put the
+ * model a question it was told the answer to.
  */
-export function bandShellLine(
+export function isShellCandidate(
   text: string,
   commands: ReadonlySet<string> | null,
-): ShellBand {
-  if (commands === null) return "prompt";
+): boolean {
+  if (commands === null) return false;
 
-  // 1. Length + shape gate. Slash commands are already intercepted; `#` leads a
-  //    comment / prose aside.
-  if (text.length === 0 || text.length > 400) return "prompt";
-  if (text.startsWith("/") || text.startsWith("#")) return "prompt";
+  // `#` leads a comment or a prose aside. (Slash commands are handled below,
+  // where they are told apart from absolute paths.)
+  if (text.length === 0 || text.length > MAX_CANDIDATE_LENGTH) return false;
+  if (text.startsWith("#")) return false;
 
   const tokens = text.split(/\s+/).filter((t) => t.length > 0);
-  if (tokens.length === 0) return "prompt";
 
   // Skip a leading `NAME=value` env-assignment prefix (`FOO=1 make test`) so the
-  // real command token is examined. The assignment itself is a strong signal.
+  // real command token is the one examined.
   let cmdStart = 0;
   while (cmdStart < tokens.length && ENV_ASSIGN.test(tokens[cmdStart]!)) cmdStart += 1;
-  const commandTokens = tokens.slice(cmdStart);
-  if (commandTokens.length === 0) return "prompt";
-  const first = commandTokens[0]!;
+  const first = tokens[cmdStart];
+  if (first === undefined) return false;
 
-  // 2. The command token must be a known PATH executable OR a path-shaped
-  //    executable (`./…`, `~/…`, `/…`; tokens never contain spaces). A line that
-  //    doesn't even open with an executable is prose outright — no model needed.
-  const pathShaped =
-    first.startsWith("./") || first.startsWith("~/") || first.startsWith("/");
-  if (!commands.has(first) && !pathShaped) return "prompt";
-
-  // A trailing `?` is a question whatever it opens with.
-  if (text.endsWith("?")) return "prompt";
-
-  const strong = hasStrongSignal(text, tokens);
-
-  // 3. Prose vetoes. Past this point the line DOES open with an executable, so a
-  //    veto means "reads like prose", not "is prose" — hence `unsure` rather
-  //    than `prompt`. These are precisely the lines worth asking a model about.
-  if (
-    AMBIGUOUS_OPENERS.has(first) &&
-    !commandTokens.slice(1).some(looksLikeCommandTarget)
-  ) {
-    return "unsure";
-  }
-  if (!strong && commandTokens.slice(1).some((t) => STOPWORDS.has(t))) return "unsure";
-  // A long run of tokens with no shell punctuation reads as a sentence.
-  if (!strong && tokens.length >= 8) return "unsure";
-
-  return "shell";
+  // Either a known PATH executable, or a program named by path — a script at
+  // `./build.sh` is as real as one on the PATH, and tokens never contain
+  // spaces. An absolute path needs an interior slash (`/usr/bin/true`), which
+  // is what separates it from a slash command (`/shell`, `/tugplug:draft`);
+  // those are intercepted upstream and must not be read as programs here.
+  if (commands.has(first)) return true;
+  return (
+    first.startsWith("./") || first.startsWith("~/") || /^\/[^/]+\//.test(first)
+  );
 }
 
 /**
- * Whether a draft should route to the shell on syntax alone — the `shell` band,
- * and only when the caller says routing is live.
- *
- * `unsure` deliberately answers `false` here: this is the no-model answer, and
- * without a verdict the safe direction is Claude.
- */
-export function classifyShellLine(
-  text: string,
-  commands: ReadonlySet<string> | null,
-  ready: boolean,
-): boolean {
-  if (!ready) return false;
-  return bandShellLine(text, commands) === "shell";
-}
-
-/**
- * Verdicts already obtained for `unsure` lines, keyed by the exact draft text.
+ * Verdicts already obtained from the model, keyed by the exact draft text.
  *
  * A model round trip costs hundreds of milliseconds, and a user editing the tail
  * of a line re-presents earlier prefixes constantly — so the same question would
