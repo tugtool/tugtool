@@ -36,13 +36,13 @@ import {
 import {
   pendingOpenStepCopy,
   localAiOfferDetail,
-  localAiProgressDetail,
+  localAiProgressValue,
 } from "@/components/tugways/tug-setup-copy";
 
 /** The v1 catalog's one `offered` entry, for the on-device AI scenarios. */
 const OFFER_NAME = "Ternary Bonsai 8B";
 const OFFER_BYTES = 2_315_155_948;
-const OFFER_NOTES = "Runs command routing and session summaries on this Mac, offline.";
+const OFFER_NOTES = "Runs command & session summaries locally on this Mac.";
 import "./gallery.css";
 import "./gallery-tug-setup.css";
 
@@ -107,7 +107,7 @@ const DOT_SIZE = 14;
 function SetupStepRow({ step }: { step: SetupStepModel }): React.ReactElement {
   const { role, state } = dotVisual(step.status);
   return (
-    <li className="cg-setup-step" data-status={step.status}>
+    <li className="cg-setup-step" data-step={step.key} data-status={step.status}>
       <div className="cg-setup-step-main">
         <div className="cg-setup-step-headline">
           <TugProgressIndicator
@@ -358,7 +358,7 @@ function buildFlow(
             cta: { label: "Download", onClick: () => go("local_ai_downloading") },
             secondaryCta: { label: "Skip", onClick: () => go("local_ai_skipped") },
           }),
-          open({ status: "active", detail: "Open a Session card to get started", cta: { label: "Open a Session Card" } }),
+          open({ status: "pending", detail: "Add or skip on-device AI first." }),
         ],
       };
     case "local_ai_downloading":
@@ -369,7 +369,6 @@ function buildFlow(
           localAi({
             status: "busy",
             label: "Adding on-device AI",
-            detail: localAiProgressDetail(OFFER_BYTES * 0.42, OFFER_BYTES),
             body: (
               <TugProgressIndicator
                 variant="bar"
@@ -378,11 +377,12 @@ function buildFlow(
                 value={OFFER_BYTES * 0.42}
                 max={OFFER_BYTES}
                 showValue
+                formatValue={localAiProgressValue}
               />
             ),
             secondaryCta: { label: "Cancel", onClick: () => go("local_ai_offer") },
           }),
-          open({ status: "active", detail: "Open a Session card to get started", cta: { label: "Open a Session Card" } }),
+          open({ status: "pending", detail: "Add or skip on-device AI first." }),
         ],
       };
     case "local_ai_failed":
@@ -397,7 +397,7 @@ function buildFlow(
             cta: { label: "Retry", onClick: () => go("local_ai_downloading") },
             secondaryCta: { label: "Skip", onClick: () => go("local_ai_skipped") },
           }),
-          open({ status: "active", detail: "Open a Session card to get started", cta: { label: "Open a Session Card" } }),
+          open({ status: "pending", detail: "Add or skip on-device AI first." }),
         ],
       };
     case "local_ai_skipped":

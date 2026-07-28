@@ -13,7 +13,7 @@ import {
   pendingOpenStepCopy,
   formatModelSize,
   localAiOfferDetail,
-  localAiProgressDetail,
+  localAiProgressValue,
 } from "../tug-setup-copy";
 
 describe("subscriptionLabel", () => {
@@ -87,27 +87,27 @@ describe("localAiOfferDetail", () => {
   test("names the model, its cost in disk, and what it's for", () => {
     expect(
       localAiOfferDetail("Ternary Bonsai 8B", 2_315_155_948, "Runs offline."),
-    ).toBe("Ternary Bonsai 8B · 2.3 GB download. Runs offline.");
+    ).toBe("Ternary Bonsai 8B • 2.3 GB download. Runs offline.");
   });
 
   test("a note-less entry ends after the size, with no dangling period", () => {
     expect(localAiOfferDetail("Ternary Bonsai 8B", 2_315_155_948)).toBe(
-      "Ternary Bonsai 8B · 2.3 GB download",
+      "Ternary Bonsai 8B • 2.3 GB download",
     );
     expect(localAiOfferDetail("Ternary Bonsai 8B", 2_315_155_948, "  ")).toBe(
-      "Ternary Bonsai 8B · 2.3 GB download",
+      "Ternary Bonsai 8B • 2.3 GB download",
     );
   });
 });
 
-describe("localAiProgressDetail", () => {
-  test("reads as received-of-total", () => {
-    expect(localAiProgressDetail(1_200_000_000, 2_315_155_948)).toBe(
-      "Downloading — 1.2 GB of 2.3 GB",
+describe("localAiProgressValue", () => {
+  test("reads as received-of-total, with no words the bar already says", () => {
+    expect(localAiProgressValue(1_200_000_000, 2_315_155_948)).toBe(
+      "1.2 GB of 2.3 GB",
     );
   });
 
   test("falls back to a bare line before the total is known", () => {
-    expect(localAiProgressDetail(0, 0)).toBe("Downloading…");
+    expect(localAiProgressValue(0, 0)).toBe("Downloading…");
   });
 });

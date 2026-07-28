@@ -118,7 +118,7 @@ pub const CATALOG: &[CatalogEntry] = &[
         ],
         total_bytes: 2315155948,
         context_window: 65536,
-        notes: "Runs command routing and session summaries on this Mac, offline.",
+        notes: "Runs command & session summaries locally on this Mac.",
     },
     CatalogEntry {
         id: "qwen3-4b-instruct-2507-4bit",

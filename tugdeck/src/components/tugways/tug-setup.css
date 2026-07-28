@@ -33,6 +33,11 @@
  * content block is vertically centered in that height. */
 .tug-setup-steps {
   --tug-setup-row-h: 60px;
+  /* The on-device AI row is the one row carrying a real offer — the model's
+   * name, what it costs in disk, and what it buys — so its detail runs to two
+   * lines. It gets its own height, held constant across the offer, the
+   * download, and the result so the panel never hops between them. */
+  --tug-setup-row-offer-h: 84px;
   /* Dot diameter (mirrors DOT_SIZE in tug-setup.tsx) + the headline gap; used
    * to indent the detail line so it aligns under the label, not the dot. */
   --tug-setup-dot: 14px;
@@ -47,6 +52,10 @@
   padding: 0 var(--tug-space-md);
   background: var(--tugx-block-surface);
   border-radius: var(--tugx-block-chrome-radius);
+}
+
+.tug-setup-step[data-step="local-ai"] {
+  min-height: var(--tug-setup-row-offer-h);
 }
 
 .tug-setup-step[data-status="pending"] {
@@ -87,12 +96,15 @@
   opacity: 0.8;
 }
 
-/* Extra content under the detail line — today the on-device AI download's
- * progress bar, which spans the main block's full width. This is the one row
- * that grows past `--tug-setup-row-h`, and only while a download runs. */
+/* The detail line's slot, occupied by content instead of text — today the
+ * on-device AI download's progress bar, which spans the main block's full
+ * width. It takes the detail's place rather than stacking below it, so a
+ * downloading row is the same two lines as every other row. */
 .tug-setup-step-body {
   padding-left: calc(var(--tug-setup-dot) + var(--tug-setup-headline-gap));
-  padding-top: 4px;
+  min-height: calc(13px * 1.45);
+  display: flex;
+  align-items: center;
 }
 
 .tug-setup-step-action {

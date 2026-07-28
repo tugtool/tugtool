@@ -16,9 +16,11 @@
  *   4. Open your first session — pops the first Session card. First-run only:
  *      a set-up user whose deck goes empty mid-life is left alone with it.
  *
- * The on-device AI step gates nothing below it. Its download lives in tugcast,
- * so opening the first session — which closes the wizard — leaves it running,
- * and tugcast's startup auto-resume covers a quit mid-download.
+ * The on-device AI step gates the one below it: whether a local model is
+ * installed decides where command and summary work runs, so the answer is
+ * settled — downloaded or skipped — before the wizard hands over a session.
+ * "Settled" is not "finished with Tug": the acquisition lives in tugcast, so a
+ * quit mid-download is picked back up by its startup auto-resume.
  *
  * Two ways in. The wizard opens itself when setup isn't done (the steps above),
  * and the Tug-menu "Set Up Tug…" item opens it on demand on an app that is
@@ -84,7 +86,7 @@ import {
   subscriptionLabel,
   pendingOpenStepCopy,
   localAiOfferDetail,
-  localAiProgressDetail,
+  localAiProgressValue,
 } from "./tug-setup-copy";
 import { TugPushButton } from "./tug-push-button";
 import {
@@ -137,6 +139,7 @@ function dotVisual(status: StepStatus): {
 }
 
 function StepRow({
+  stepKey,
   status,
   label,
   detail,
@@ -144,6 +147,7 @@ function StepRow({
   cta,
   secondaryCta,
 }: {
+  stepKey: string;
   status: StepStatus;
   label: string;
   detail?: string;
@@ -153,7 +157,7 @@ function StepRow({
 }): ReactElement {
   const { role, state } = dotVisual(status);
   return (
-    <li className="tug-setup-step" data-status={status}>
+    <li className="tug-setup-step" data-step={stepKey} data-status={status}>
       <div className="tug-setup-step-main">
         <div className="tug-setup-step-headline">
           <TugProgressIndicator
@@ -440,21 +444,28 @@ export function TugSetup(): ReactElement {
     if (inFlight !== null || offer.state === "downloading") {
       const received = inFlight?.receivedBytes ?? offer.receivedBytes ?? 0;
       const total = inFlight?.totalBytes || offer.totalBytes;
+      // The bar takes the detail line's place rather than stacking under it —
+      // its own readout carries the bytes, so the downloading row stays the
+      // same two lines as every other row. Before the total is known there is
+      // nothing to count, so the bar runs indeterminate with no readout.
       return {
         key,
         status: "busy",
         label: "Adding on-device AI",
-        detail: localAiProgressDetail(received, total),
-        body: (
-          <TugProgressIndicator
-            variant="bar"
-            role="agent"
-            state="running"
-            value={received}
-            max={total}
-            showValue
-          />
-        ),
+        body:
+          total > 0 ? (
+            <TugProgressIndicator
+              variant="bar"
+              role="agent"
+              state="running"
+              value={received}
+              max={total}
+              showValue
+              formatValue={localAiProgressValue}
+            />
+          ) : (
+            <TugProgressIndicator variant="bar" role="agent" state="running" />
+          ),
         secondaryCta: { label: "Cancel", onClick: handleCancelLocalAi },
       };
     }
@@ -478,18 +489,32 @@ export function TugSetup(): ReactElement {
     };
   })();
 
-  const openStep: Step = effectiveLoggedIn
-    ? {
-        key: "open",
-        status: "active",
-        label: "Start a Claude Code session",
-        detail: "Open a Session card to get started",
-        cta: { label: "Open a Session Card", onClick: handleOpenSession },
-      }
-    : // Pending (logged-out) preview: with cards already open — the
+  // Whether the on-device AI row is on screen at all, and whether the user has
+  // answered it. An unanswered offer holds the session step shut: the answer
+  // decides where command and summary work runs, and it is far easier to make
+  // once, here, than to go looking for later.
+  const localAiShown = (firstRun || showingOnDemand) && localAiStep !== null;
+  const localAiSettled = !localAiShown || localAiStep?.status === "done";
+
+  const openStep: Step = !effectiveLoggedIn
+    ? // Pending (logged-out) preview: with cards already open — the
       // logout-with-work case — this reads "Continue working" and re-login
       // auto-closes the wizard back to them, rather than nudging a new card.
-      { key: "open", status: "pending", ...pendingOpenStepCopy(cardCount) };
+      { key: "open", status: "pending", ...pendingOpenStepCopy(cardCount) }
+    : !localAiSettled
+      ? {
+          key: "open",
+          status: "pending",
+          label: "Start a Claude Code session",
+          detail: "Add or skip on-device AI first.",
+        }
+      : {
+          key: "open",
+          status: "active",
+          label: "Start a Claude Code session",
+          detail: "Open a Session card to get started",
+          cta: { label: "Open a Session Card", onClick: handleOpenSession },
+        };
 
   const probingSteps: Step[] = [
     { key: "install", status: "busy", label: "Install Claude Code", detail: "Looking for Claude Code…" },
@@ -521,9 +546,7 @@ export function TugSetup(): ReactElement {
           signInStep,
           // On demand the on-device-AI row is the point of the visit, so it
           // shows outside a first run too.
-          ...((firstRun || showingOnDemand) && localAiStep !== null
-            ? [localAiStep]
-            : []),
+          ...(localAiShown && localAiStep !== null ? [localAiStep] : []),
           // …and the "open your first session" row is dead weight on a deck
           // that already has work in it; Done takes its place.
           ...(dismissible ? [] : [openStep]),
@@ -573,6 +596,7 @@ export function TugSetup(): ReactElement {
             {steps.map((step) => (
               <StepRow
                 key={step.key}
+                stepKey={step.key}
                 status={step.status}
                 label={step.label}
                 detail={step.detail}

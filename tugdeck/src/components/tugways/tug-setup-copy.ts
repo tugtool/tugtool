@@ -51,19 +51,20 @@ export function formatModelSize(bytes: number): string {
  * costs them in disk. The catalog note, when present, carries the "what for".
  */
 export function localAiOfferDetail(displayName: string, bytes: number, notes?: string): string {
-  const head = `${displayName} · ${formatModelSize(bytes)} download`;
+  const head = `${displayName} • ${formatModelSize(bytes)} download`;
   const note = (notes ?? "").trim();
   return note ? `${head}. ${note}` : head;
 }
 
 /**
- * Detail line while the pack downloads. Aggregate bytes, not per-file — the
- * user cares that it is moving and how much is left, not which shard is in
- * flight.
+ * The readout carried alongside the download's progress bar. Aggregate bytes,
+ * not per-file — the user cares that it is moving and how much is left, not
+ * which shard is in flight. The bar itself says "downloading", so the words
+ * only have to carry the numbers.
  */
-export function localAiProgressDetail(received: number, total: number): string {
+export function localAiProgressValue(received: number, total: number): string {
   if (total <= 0) return "Downloading…";
-  return `Downloading — ${formatModelSize(received)} of ${formatModelSize(total)}`;
+  return `${formatModelSize(received)} of ${formatModelSize(total)}`;
 }
 
 /**

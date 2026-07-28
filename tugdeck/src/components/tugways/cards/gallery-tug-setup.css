@@ -64,6 +64,7 @@
   /* Mirrors tug-setup.css: every row the same fixed height so the dialog never
    * hops as a step grows. */
   --tug-setup-row-h: 60px;
+  --tug-setup-row-offer-h: 84px;
   --tug-setup-dot: 14px;
   --tug-setup-headline-gap: 10px;
 }
@@ -80,6 +81,10 @@
   padding: 0 var(--tug-space-md);
   background: var(--tugx-block-surface);
   border-radius: var(--tugx-block-chrome-radius);
+}
+
+.cg-setup-step[data-step="local-ai"] {
+  min-height: var(--tug-setup-row-offer-h);
 }
 
 .cg-setup-step[data-status="pending"] {
@@ -121,7 +126,9 @@
 
 .cg-setup-step-body {
   padding-left: calc(var(--tug-setup-dot) + var(--tug-setup-headline-gap));
-  padding-top: 4px;
+  min-height: calc(13px * 1.45);
+  display: flex;
+  align-items: center;
 }
 
 .cg-setup-step-action {
