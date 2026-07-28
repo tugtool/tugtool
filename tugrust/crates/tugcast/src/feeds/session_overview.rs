@@ -315,10 +315,7 @@ pub fn headline_register(raw: &str) -> String {
     // Matched wrapping quotes, straight or curly. A model asked for one line
     // often hands back that line in quotes.
     for (open, close) in [('"', '"'), ('\'', '\''), ('\u{201c}', '\u{201d}')] {
-        if text.chars().count() >= 2
-            && text.starts_with(open)
-            && text.ends_with(close)
-        {
+        if text.chars().count() >= 2 && text.starts_with(open) && text.ends_with(close) {
             let mut chars = text.chars();
             chars.next();
             chars.next_back();
@@ -691,8 +688,14 @@ mod tests {
         ("Trying to fix download resume", "fix download resume"),
         ("Currently hunting focus drift", "hunting focus drift"),
         ("The user is working on the pulse strip", "pulse strip"),
-        ("This session is wiring cadence gates", "wiring cadence gates"),
-        ("It looks like a refactor of the ledger", "refactor of the ledger"),
+        (
+            "This session is wiring cadence gates",
+            "wiring cadence gates",
+        ),
+        (
+            "It looks like a refactor of the ledger",
+            "refactor of the ledger",
+        ),
         ("The pulse strip", "pulse strip"),
         ("A cadence gate", "cadence gate"),
         ("An overview emitter", "overview emitter"),
