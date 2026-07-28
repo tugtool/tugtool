@@ -82,6 +82,12 @@ pub struct Frontier {
     /// never be continued, mirroring `continuationSuppressed`'s
     /// non-empty-id requirement on both halves of the pair.
     pub pending_close_msg_id: Option<String>,
+    /// The `uuid` of the last chain record (uuid-bearing, non-sidechain)
+    /// seen at the frontier — the chain's leaf. The incremental scanner
+    /// compares an appended record's `parentUuid` against this to detect a
+    /// rewind branch, which it cannot segment incrementally and must
+    /// re-stream in full. `None` before any chain record.
+    pub leaf_uuid: Option<String>,
 }
 
 /// The engine's output for a (possibly incremental) run.
@@ -290,11 +296,30 @@ where
     SegmentOutput { turns, frontier }
 }
 
-/// Convenience: segment a whole JSONL string from an empty frontier.
-/// Parses each line and runs the engine. The canonical count is
-/// `output.turns.len()`.
+/// Segment a whole JSONL string from an empty frontier — the shared
+/// kernel behind the contract test and every full-file count.
+///
+/// The engine counts the **effective record sequence**, not the raw file:
+/// records on an abandoned branch and re-appended duplicate occurrences
+/// are dropped first (`crate::dead_branch`). This is what keeps the
+/// turn-metric law true — `engine(file)` has to equal what the transcript
+/// renders, and tugcode's replay renders exactly this sequence. Counting
+/// the raw file instead overcounts by every dead-branch turn and every
+/// compaction re-append, and `agent_bridge.rs` would then stamp that
+/// inflated value over the translator's honest `totalTurns`.
+///
+/// The canonical count is `output.turns.len()`.
 pub fn segment_str(jsonl: &str) -> SegmentOutput {
-    let records = jsonl.lines().filter_map(parse_significant);
+    let chain = crate::dead_branch::parse_chain_records(jsonl);
+    let effective: std::collections::HashSet<usize> =
+        crate::dead_branch::effective_indices(&chain)
+            .into_iter()
+            .collect();
+    let records = jsonl
+        .lines()
+        .enumerate()
+        .filter(|(i, _)| effective.contains(i))
+        .filter_map(|(_, line)| parse_significant(line));
     segment_turns(records, Frontier::default())
 }
 

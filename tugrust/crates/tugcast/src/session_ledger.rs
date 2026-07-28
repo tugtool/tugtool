@@ -453,7 +453,13 @@ pub struct PulseLineRow {
 /// orphan assistant output) the prior user-record-only rule could not see.
 /// The bump re-`set_turn_count`s every existing ledger row from
 /// `engine(file)` on the next scan (`tuglaws/turn-metric.md` S03).
-pub(crate) const CURRENT_RULE_EPOCH: i64 = 2;
+///
+/// Epoch `3` is the first in which the count is taken over the **effective
+/// record sequence** — abandoned branches and compaction re-appends
+/// excluded, matching what the transcript renders. It also introduces
+/// `frontier_leaf_uuid`, which epoch-2 rows lack; failing the gate is what
+/// makes those rows re-stream once and record a real leaf.
+pub(crate) const CURRENT_RULE_EPOCH: i64 = 3;
 
 /// One row of the `external_scan_cache` table — the persisted result
 /// of scanning one on-disk session JSONL, keyed by session id and
@@ -501,6 +507,11 @@ pub struct ScanCacheRow {
     /// The `message.id` that armed the deferred close
     /// (`Frontier::pending_close_msg_id`), or `None`.
     pub frontier_pending_close_msg_id: Option<String>,
+    /// The chain leaf uuid at the frontier (`Frontier::leaf_uuid`).
+    /// Carried so a tail-resume can tell an ordinary append from a rewind
+    /// branch, which it must re-stream in full rather than segment
+    /// incrementally.
+    pub frontier_leaf_uuid: Option<String>,
 }
 
 /// One row of the `file_events` table — an authoritative record that a
@@ -1506,7 +1517,8 @@ impl SessionLedger {
                 rule_epoch        INTEGER NOT NULL DEFAULT 0,
                 frontier_open                  INTEGER NOT NULL DEFAULT 0,
                 frontier_pending_close         INTEGER NOT NULL DEFAULT 0,
-                frontier_pending_close_msg_id  TEXT
+                frontier_pending_close_msg_id  TEXT,
+                frontier_leaf_uuid             TEXT
             );
 
             CREATE INDEX IF NOT EXISTS external_scan_cache_project
@@ -1851,6 +1863,8 @@ impl SessionLedger {
             ("frontier_open", "INTEGER NOT NULL DEFAULT 0"),
             ("frontier_pending_close", "INTEGER NOT NULL DEFAULT 0"),
             ("frontier_pending_close_msg_id", "TEXT"),
+            // Epoch 3: the chain leaf uuid at the frontier.
+            ("frontier_leaf_uuid", "TEXT"),
         ] {
             if !cols.iter().any(|(n, _)| n == name) {
                 conn.execute(
@@ -2542,7 +2556,8 @@ impl SessionLedger {
             "SELECT session_id, project_dir, file_size, file_mtime, excluded,
                     turn_count, last_user_prompt, name, created_at, last_used_at,
                     parse_offset, tail_hash, cwd_checked, created_at_found,
-                    frontier_open, frontier_pending_close, frontier_pending_close_msg_id
+                    frontier_open, frontier_pending_close, frontier_pending_close_msg_id,
+                    frontier_leaf_uuid
              FROM external_scan_cache
              WHERE session_id = ?1 AND rule_epoch = ?2
              LIMIT 1",
@@ -2564,9 +2579,10 @@ impl SessionLedger {
                 session_id, project_dir, file_size, file_mtime, excluded,
                 turn_count, last_user_prompt, name, created_at, last_used_at,
                 parse_offset, tail_hash, cwd_checked, created_at_found, rule_epoch,
-                frontier_open, frontier_pending_close, frontier_pending_close_msg_id
+                frontier_open, frontier_pending_close, frontier_pending_close_msg_id,
+                frontier_leaf_uuid
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                       ?16, ?17, ?18)",
+                       ?16, ?17, ?18, ?19)",
             params![
                 row.session_id,
                 row.project_dir,
@@ -2589,6 +2605,7 @@ impl SessionLedger {
                 row.frontier_open as i64,
                 row.frontier_pending_close as i64,
                 row.frontier_pending_close_msg_id,
+                row.frontier_leaf_uuid,
             ],
         )?;
         Ok(())
@@ -3844,6 +3861,7 @@ fn scan_cache_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScanCa
         frontier_open: row.get::<_, i64>(14)? != 0,
         frontier_pending_close: row.get::<_, i64>(15)? != 0,
         frontier_pending_close_msg_id: row.get(16)?,
+        frontier_leaf_uuid: row.get(17)?,
     })
 }
 
@@ -4433,6 +4451,7 @@ mod tests {
             frontier_open: false,
             frontier_pending_close: false,
             frontier_pending_close_msg_id: None,
+            frontier_leaf_uuid: None,
         })
         .unwrap();
 
@@ -4477,6 +4496,7 @@ mod tests {
             frontier_open: false,
             frontier_pending_close: false,
             frontier_pending_close_msg_id: None,
+            frontier_leaf_uuid: None,
         })
         .unwrap();
 
@@ -4547,6 +4567,7 @@ mod tests {
             frontier_open: false,
             frontier_pending_close: false,
             frontier_pending_close_msg_id: None,
+            frontier_leaf_uuid: None,
         })
         .unwrap();
 
@@ -4590,6 +4611,7 @@ mod tests {
             frontier_open: false,
             frontier_pending_close: false,
             frontier_pending_close_msg_id: None,
+            frontier_leaf_uuid: None,
         })
         .unwrap();
         let now = millis(10);
@@ -4769,6 +4791,7 @@ mod tests {
             frontier_open: false,
             frontier_pending_close: false,
             frontier_pending_close_msg_id: None,
+            frontier_leaf_uuid: None,
         })
         .unwrap();
         l.record_spawn("ext", WS_A, "/proj/alpha", "card-1", millis(10), None)

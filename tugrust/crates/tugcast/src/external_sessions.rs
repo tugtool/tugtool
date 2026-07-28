@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 use crate::session_ledger::{
     ScanCacheRow, SessionLedger, USER_PROMPT_MAX_CHARS, claude_project_dir,
 };
-use crate::turn_engine::{Frontier, parse_significant, step_record};
+use crate::turn_engine::{Frontier, SigRecord, parse_significant, segment_turns, step_record};
 
 /// Metadata extracted from one external session JSONL — the picker-
 /// facing subset, plus the `(file_size, file_mtime)` validity pair the
@@ -136,6 +136,7 @@ pub fn resume_seed_from_cache(row: &ScanCacheRow) -> Option<ResumeSeed> {
             open: row.frontier_open,
             pending_close: row.frontier_pending_close,
             pending_close_msg_id: row.frontier_pending_close_msg_id.clone(),
+            leaf_uuid: row.frontier_leaf_uuid.clone(),
         },
     })
 }
@@ -161,6 +162,11 @@ pub struct ParsedSession {
     /// Whether this parse actually resumed from a verified frontier
     /// (vs streaming from byte 0). Drives the scan's `resumed` counter.
     pub resumed: bool,
+    /// Whether this parse took the EOF second pass — re-deriving the
+    /// effective sequence and re-segmenting — rather than letting the
+    /// streamed count stand. Observable so tests can pin which path a
+    /// given file takes.
+    pub recounted: bool,
 }
 
 /// True when `stem` looks like a claude session UUID
@@ -468,6 +474,31 @@ fn try_resume(
 /// append, and this drops it to just the appended tail. Only complete
 /// (newline-terminated) lines advance the frontier; an unterminated
 /// final line is a write in progress and is left for the next scan.
+///
+/// ## Two-pass on demand
+///
+/// The count this produces is the count authority: it feeds
+/// [`engine_turn_count`], which `agent_bridge.rs` stamps onto
+/// `replay_complete`. It must therefore count the **effective record
+/// sequence** — the same thing tugcode's replay renders — and that cannot
+/// be done in a single forward pass, because the live chain walk starts at
+/// the newest leaf, which a forward stream does not know until EOF.
+///
+/// So the stream buffers what a second pass would need and decides at EOF:
+///
+/// - Buffer each line's chain record and significant record, and watch for
+///   a compaction marker and a repeated uuid.
+/// - **Neither seen** → the streamed count stands, the buffer is dropped,
+///   and the cost is exactly today's single pass. This is the common
+///   session.
+/// - **Either seen** → re-derive the effective indices over the buffer and
+///   re-run segmentation across them. No second disk read: the buffered
+///   records carry everything both computations need.
+///
+/// On an incremental resume the buffer covers only the appended tail, so
+/// the recount is not available. [`AppendTriggers`] decides that case: an
+/// appended compaction marker or a rewind branch forces one full
+/// re-stream, which then takes the path above.
 fn parse_session_file(
     path: &Path,
     project_dir: &str,
@@ -477,6 +508,17 @@ fn parse_session_file(
     resume: Option<&ResumeSeed>,
 ) -> std::io::Result<Option<ParsedSession>> {
     let mut file = fs::File::open(path)?;
+
+    // The second-pass buffer, index-aligned: one slot per line read in this
+    // stream. Dropped at EOF unless a trigger fires.
+    let mut chain_buf: Vec<Option<crate::dead_branch::ChainRecord>> = Vec::new();
+    let mut sig_buf: Vec<Option<SigRecord>> = Vec::new();
+    let mut seen_uuids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut saw_compaction = false;
+    let mut saw_duplicate_uuid = false;
+    // A chain record whose parent is not the leaf we carried in — the
+    // rewind-branch shape, only meaningful on a resumed (partial) stream.
+    let mut saw_branch = false;
 
     let mut turn_count: i64 = 0;
     let mut last_prompt: Option<String> = None;
@@ -582,11 +624,52 @@ fn parse_session_file(
         // that opens a turn container grows the count. This sees
         // assistant-originated openers (wakes, `/compact` continuations,
         // leading orphans) the prior user-record-only rule could not.
-        if let Some(sig) = parse_significant(trimmed) {
-            if step_record(&mut frontier, &sig).is_some() {
+        let chain_rec = crate::dead_branch::parse_chain_record(trimmed);
+        if let Some(chain) = chain_rec.as_ref() {
+            if chain.is_compaction {
+                saw_compaction = true;
+            }
+            if let Some(uuid) = chain.uuid.as_deref() {
+                if !chain.is_sidechain {
+                    if !seen_uuids.insert(uuid.to_owned()) {
+                        saw_duplicate_uuid = true;
+                    }
+                    // Trigger (b): this record's parent is not the chain leaf
+                    // we were carrying. Conservative by design — a benign
+                    // mid-turn spur (a hook attachment, a `tool_result` whose
+                    // sibling carried the chain forward, an abandoned
+                    // API-retry branch) trips it too, and a needless full
+                    // re-stream is sound where a missed rewind is not. Do not
+                    // narrow it; every narrowing is a correctness bet.
+                    match chain.parent_uuid.as_deref() {
+                        Some(parent) => {
+                            if frontier.leaf_uuid.as_deref() != Some(parent) {
+                                saw_branch = true;
+                            }
+                        }
+                        // A null parent mid-file roots a new segment — a
+                        // restart, or the record right after a compaction
+                        // boundary. Only the very first chain record of a
+                        // file legitimately has no leaf before it.
+                        None => {
+                            if frontier.leaf_uuid.is_some() {
+                                saw_branch = true;
+                            }
+                        }
+                    }
+                    frontier.leaf_uuid = Some(uuid.to_owned());
+                }
+            }
+        }
+
+        let sig = parse_significant(trimmed);
+        if let Some(sig) = sig.as_ref() {
+            if step_record(&mut frontier, sig).is_some() {
                 turn_count += 1;
             }
         }
+        chain_buf.push(chain_rec);
+        sig_buf.push(sig);
 
         match rec.kind.as_deref() {
             Some("user") => {
@@ -628,6 +711,69 @@ fn parse_session_file(
         }
     }
 
+    // The effective sequence can only differ from the raw one when the file
+    // holds a compaction (which breaks the chain and re-appends duplicates)
+    // or a chain record that does not parent to its predecessor (the branch
+    // shape a rewind leaves). A stream that saw neither is provably linear
+    // and duplicate-free, so its streamed count is already the effective
+    // count and the buffer is discarded untouched.
+    let needs_effective_recount = saw_compaction || saw_duplicate_uuid || saw_branch;
+
+    if needs_effective_recount && resumed {
+        // The buffer covers only the appended tail, so the recount is not
+        // available here — and a rewind append can even *reduce* the
+        // previously-counted turns, which no incremental step can express.
+        // Re-stream the whole file once; that pass takes the branch below.
+        tracing::debug!(
+            path = %path.display(),
+            saw_compaction,
+            saw_duplicate_uuid,
+            saw_branch,
+            "external scan: appended slice needs a full re-segment",
+        );
+        return parse_session_file(
+            path,
+            project_dir,
+            expected_stem,
+            file_size,
+            file_mtime,
+            None,
+        );
+    }
+
+    if needs_effective_recount {
+        let effective = crate::dead_branch::effective_indices(&chain_buf);
+        let records = effective
+            .into_iter()
+            .filter_map(|i| sig_buf.get(i).and_then(|s| s.clone()));
+        let out = segment_turns(records, Frontier::default());
+        turn_count = out.turns.len() as i64;
+        frontier = Frontier {
+            leaf_uuid: frontier.leaf_uuid,
+            ..out.frontier
+        };
+    }
+
+    // A file that needed the recount cannot hand out a resumable seed.
+    //
+    // The triggers above are computed from the appended slice alone, and a
+    // compaction re-append block can straddle a scan boundary: its tail
+    // arrives looking perfectly linear (each record parenting to the one
+    // before it), with the duplicated originals sitting back in the
+    // already-consumed prefix where no trigger can see them. Segmenting
+    // that tail incrementally would count those preserved turns a second
+    // time — the exact defect the effective sequence exists to remove.
+    //
+    // So a session carrying a compaction or a branch re-streams in full on
+    // every change. That is a real cost on precisely the largest files, and
+    // it is not an accident of this implementation: computing the live
+    // chain requires the whole file, since the walk starts at the newest
+    // leaf. Incremental resume survives for linear, compaction-free
+    // sessions, which is where it was already doing the most good.
+    if needs_effective_recount {
+        resumable = false;
+    }
+
     let resume = if resumable && consumed > 0 {
         ResumeMark {
             parse_offset: consumed as i64,
@@ -651,6 +797,7 @@ fn parse_session_file(
         }
     };
     Ok(Some(ParsedSession {
+        recounted: needs_effective_recount,
         meta: ExternalSessionMeta {
             session_id: expected_stem.to_owned(),
             turn_count,
@@ -863,6 +1010,7 @@ fn cache_row_from_parsed(parsed: &ParsedSession, project_dir: &str) -> ScanCache
         frontier_open: parsed.resume.frontier.open,
         frontier_pending_close: parsed.resume.frontier.pending_close,
         frontier_pending_close_msg_id: parsed.resume.frontier.pending_close_msg_id.clone(),
+        frontier_leaf_uuid: parsed.resume.frontier.leaf_uuid.clone(),
     }
 }
 
@@ -1024,6 +1172,7 @@ pub fn scan_external_sessions_cached_with_progress(
                     frontier_open: false,
                     frontier_pending_close: false,
                     frontier_pending_close_msg_id: None,
+                    frontier_leaf_uuid: None,
                 };
                 if let Err(err) = ledger.upsert_scan_cache(&row) {
                     tracing::warn!(error = %err, "external scan: cache write failed");
@@ -1611,6 +1760,220 @@ mod tests {
             row.turn_count, 2,
             "stale ledger count migrated to engine(file) on re-scan, live row included"
         );
+    }
+
+    /// A linear session — one uuid per record, each parenting to its
+    /// predecessor, no compaction — is provably free of dead branches and
+    /// duplicates, so the streamed count stands and the buffer is dropped.
+    #[test]
+    fn a_linear_session_keeps_the_single_pass_count() {
+        let root = tempfile::tempdir().unwrap();
+        let content = format!(
+            r#"{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{SESSION_A}","cwd":"{PROJECT}","message":{{"role":"user","content":"first"}}}}
+{{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"hi"}}],"id":"m1","stop_reason":"end_turn"}}}}
+{{"type":"user","uuid":"u2","parentUuid":"a1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"second"}}}}
+{{"type":"assistant","uuid":"a2","parentUuid":"u2","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"ok"}}],"id":"m2","stop_reason":"end_turn"}}}}
+"#
+        );
+        seed(root.path(), PROJECT, SESSION_A, &content);
+        let dir = root.path().join(encode_claude_project_name(PROJECT));
+        let path = dir.join(format!("{SESSION_A}.jsonl"));
+        let md = fs::metadata(&path).unwrap();
+        let parsed = parse_session_file(
+            &path,
+            PROJECT,
+            SESSION_A,
+            md.len() as i64,
+            0,
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(
+            !parsed.recounted,
+            "a linear session must not need the EOF second pass"
+        );
+        assert_eq!(parsed.meta.turn_count, 2);
+        assert_eq!(parsed.resume.frontier.leaf_uuid.as_deref(), Some("a2"));
+    }
+
+    /// A compaction re-append duplicates uuids, so the second pass runs and
+    /// counts each preserved turn once — the whole point of the effective
+    /// sequence. Splitting the same file at an incremental boundary INSIDE
+    /// the re-append block must reach the identical count — the case the
+    /// per-slice triggers cannot see, because the tail of a straddled
+    /// re-append looks perfectly linear. What saves it is that the head's
+    /// parse needed the recount and so handed out no resumable seed.
+    #[test]
+    fn an_incremental_split_inside_a_re_append_matches_a_full_segment() {
+        let root = tempfile::tempdir().unwrap();
+        // Two turns, a compaction, then those two turns re-appended
+        // verbatim, then a third turn.
+        let head = format!(
+            r#"{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{SESSION_A}","cwd":"{PROJECT}","message":{{"role":"user","content":"first"}}}}
+{{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"hi"}}],"id":"m1","stop_reason":"end_turn"}}}}
+{{"type":"user","uuid":"u2","parentUuid":"a1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"second"}}}}
+{{"type":"assistant","uuid":"a2","parentUuid":"u2","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"ok"}}],"id":"m2","stop_reason":"end_turn"}}}}
+{{"type":"system","uuid":"c1","parentUuid":null,"subtype":"compact_boundary","sessionId":"{SESSION_A}"}}
+{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{SESSION_A}","message":{{"role":"user","content":"first"}}}}
+"#
+        );
+        let tail = format!(
+            r#"{{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"hi"}}],"id":"m1","stop_reason":"end_turn"}}}}
+{{"type":"user","uuid":"u2","parentUuid":"a1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"second"}}}}
+{{"type":"assistant","uuid":"a2","parentUuid":"u2","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"ok"}}],"id":"m2","stop_reason":"end_turn"}}}}
+{{"type":"user","uuid":"u3","parentUuid":"a2","sessionId":"{SESSION_A}","message":{{"role":"user","content":"third"}}}}
+{{"type":"assistant","uuid":"a3","parentUuid":"u3","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"done"}}],"id":"m3","stop_reason":"end_turn"}}}}
+"#
+        );
+        let whole = format!("{head}{tail}");
+
+        let dir = root.path().join(encode_claude_project_name(PROJECT));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{SESSION_A}.jsonl"));
+
+        // Full segment of the whole file.
+        fs::write(&path, &whole).unwrap();
+        let full = parse_session_file(
+            &path,
+            PROJECT,
+            SESSION_A,
+            whole.len() as i64,
+            0,
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(full.recounted, "a re-append must take the second pass");
+        // u1/u2 preserved once each plus u3 — the /compact continuation
+        // opens no separate container here because the summary is absent.
+        assert_eq!(full.meta.turn_count, 3);
+
+        // Now the same file assembled incrementally: scan the head, then
+        // resume across the boundary that sits inside the re-append block.
+        fs::write(&path, &head).unwrap();
+        let first = parse_session_file(
+            &path,
+            PROJECT,
+            SESSION_A,
+            head.len() as i64,
+            0,
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        let seed = ResumeSeed {
+            offset: first.resume.parse_offset,
+            tail_hash: first.resume.tail_hash,
+            cwd_checked: first.resume.cwd_checked,
+            created_at_found: first.resume.created_at_found,
+            turn_count: first.meta.turn_count,
+            last_user_prompt: first.meta.last_user_prompt.clone(),
+            name: first.meta.name.clone(),
+            created_at: first.meta.created_at,
+            frontier: first.resume.frontier.clone(),
+        };
+        fs::write(&path, &whole).unwrap();
+        let resumed = parse_session_file(
+            &path,
+            PROJECT,
+            SESSION_A,
+            whole.len() as i64,
+            0,
+            Some(&seed),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(
+            !resumed.resumed,
+            "the appended slice must force a full re-stream, not an incremental step"
+        );
+        assert_eq!(
+            resumed.meta.turn_count, full.meta.turn_count,
+            "incremental-with-fallback must equal the full segment"
+        );
+    }
+
+    /// A row written before the leaf uuid existed carries `None`, so the
+    /// first appended chain record cannot match it: the seed is effectively
+    /// non-resumable and the file re-streams once, after which the recorded
+    /// leaf lets ordinary appends resume incrementally.
+    #[test]
+    fn a_seed_without_a_leaf_uuid_re_streams_once_then_resumes() {
+        let root = tempfile::tempdir().unwrap();
+        let head = format!(
+            r#"{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{SESSION_A}","cwd":"{PROJECT}","message":{{"role":"user","content":"first"}}}}
+{{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"hi"}}],"id":"m1","stop_reason":"end_turn"}}}}
+"#
+        );
+        let appended = format!(
+            r#"{{"type":"user","uuid":"u2","parentUuid":"a1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"second"}}}}
+{{"type":"assistant","uuid":"a2","parentUuid":"u2","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"ok"}}],"id":"m2","stop_reason":"end_turn"}}}}
+"#
+        );
+        let dir = root.path().join(encode_claude_project_name(PROJECT));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{SESSION_A}.jsonl"));
+        fs::write(&path, &head).unwrap();
+        let first = parse_session_file(&path, PROJECT, SESSION_A, head.len() as i64, 0, None)
+            .unwrap()
+            .unwrap();
+
+        let mut stale = ResumeSeed {
+            offset: first.resume.parse_offset,
+            tail_hash: first.resume.tail_hash,
+            cwd_checked: first.resume.cwd_checked,
+            created_at_found: first.resume.created_at_found,
+            turn_count: first.meta.turn_count,
+            last_user_prompt: first.meta.last_user_prompt.clone(),
+            name: first.meta.name.clone(),
+            created_at: first.meta.created_at,
+            frontier: first.resume.frontier.clone(),
+        };
+        // What an epoch-2 row deserializes to: no leaf uuid.
+        stale.frontier.leaf_uuid = None;
+
+        let whole = format!("{head}{appended}");
+        fs::write(&path, &whole).unwrap();
+        let re_streamed =
+            parse_session_file(&path, PROJECT, SESSION_A, whole.len() as i64, 0, Some(&stale))
+                .unwrap()
+                .unwrap();
+        assert!(
+            !re_streamed.resumed,
+            "a leaf-less seed must fall back to a full re-stream"
+        );
+        assert_eq!(re_streamed.meta.turn_count, 2);
+        assert_eq!(
+            re_streamed.resume.frontier.leaf_uuid.as_deref(),
+            Some("a2"),
+            "the re-stream records a real leaf"
+        );
+
+        // With that leaf recorded, an ordinary append resumes incrementally.
+        let good = ResumeSeed {
+            offset: re_streamed.resume.parse_offset,
+            tail_hash: re_streamed.resume.tail_hash,
+            cwd_checked: re_streamed.resume.cwd_checked,
+            created_at_found: re_streamed.resume.created_at_found,
+            turn_count: re_streamed.meta.turn_count,
+            last_user_prompt: re_streamed.meta.last_user_prompt.clone(),
+            name: re_streamed.meta.name.clone(),
+            created_at: re_streamed.meta.created_at,
+            frontier: re_streamed.resume.frontier.clone(),
+        };
+        let more = format!(
+            r#"{{"type":"user","uuid":"u3","parentUuid":"a2","sessionId":"{SESSION_A}","message":{{"role":"user","content":"third"}}}}
+"#
+        );
+        let grown = format!("{whole}{more}");
+        fs::write(&path, &grown).unwrap();
+        let incremental =
+            parse_session_file(&path, PROJECT, SESSION_A, grown.len() as i64, 0, Some(&good))
+                .unwrap()
+                .unwrap();
+        assert!(incremental.resumed, "an ordinary append resumes");
+        assert_eq!(incremental.meta.turn_count, 3);
     }
 
     #[test]

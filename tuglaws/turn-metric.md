@@ -20,6 +20,19 @@ the **single producer** of the count for *both* the picker (the pre-open disk
 scan) and the resume authority. The count is a pure function of the file, so
 it is recomputable anywhere and cannot drift from itself.
 
+### The effective record sequence
+
+"The file" means the file's **effective record sequence**, not its raw lines. A session JSONL is an append-only `parentUuid` tree, and two kinds of record in it are never rendered, so neither may be counted:
+
+- **Dead branches.** History edits abandon records rather than removing them — a rewind branches (the next submission parents to an ancestor, stranding everything after the branch point) and the REPL's pre-response Escape leaves the aborted prompt an orphan. Claude resumes by walking the chain from the newest leaf, so those records never re-enter its context. The dead set is the descendant closure of off-chain user submissions whose parent is live; off-chain alone is *not* dead, because real files carry benign mid-turn spurs and whole null-parent segments that stay visible.
+- **Compaction re-appends.** Claude Code re-appends a compaction's preserved messages verbatim — same `uuid`, same `parentUuid`, a later file position. Exactly one occurrence of each uuid is effective: the earliest one not on a dead branch. The rest are copies of a turn already counted at its true chronological position.
+
+Both sides of the contract compute this identically — `computeDeadEntryIndices` plus first-occurrence suppression in `tugcode/src/replay.ts`, and `tugcast/src/dead_branch.rs` behind `segment_str` and the disk scanner. Parent resolution on both sides takes the newest occurrence **strictly before** the child, never the file's last: because a uuid names several records, resolving forward sends the ancestor walk into a re-appended copy and strands the genuine history behind it.
+
+Counting the raw file instead breaks the equality invariant in the direction that is hardest to see — the engine reports *more* turns than the transcript renders, and the `replay_complete` stamp (S03) writes that inflated value over tugcode's honest `totalTurns`.
+
+Computing the live chain requires the whole file, since the walk starts at the newest leaf. The disk scanner therefore buffers as it streams and runs a second pass at EOF only when the file holds a compaction or a non-linear parent edge; a linear, compaction-free session keeps the single-pass cost. A session that needs the second pass hands out no resumable frontier — a re-append block can straddle a scan boundary and its tail is indistinguishable from ordinary linear appends — so it re-streams in full on every change.
+
 tugcode's replay/live segmenter still segments for **rendering** — it tells
 the reducer how to lay out a turn — but it is **not** a count authority. Its
 rendering segmentation is held byte-for-byte equal to the engine by a contract

@@ -419,6 +419,17 @@ export type ConversationTruncation =
  * The compaction guard is checked first: if any record from the tip back to
  * the anchor is a compaction marker, the chop would cross it, so we refuse.
  *
+ * A uuid does NOT identify one record. Claude Code re-appends a compaction's
+ * preserved messages verbatim — same `uuid`, later position — so an anchor
+ * can name two lines, and this path chops bytes off the real file. Two
+ * properties keep it safe. The scan latches on the FIRST matching submission
+ * (`boundary === -1`), so a re-appended copy can never move the boundary
+ * later than the original. And a duplicate exists only because a compaction
+ * created it, which puts a compaction marker between the first occurrence and
+ * the tip — so the guard refuses a duplicated anchor outright. In normal
+ * operation the anchor is captured live from the current turn and post-dates
+ * the last compaction, so it is unique and resolves cleanly.
+ *
  * Finally, the retained prefix must contain at least one *earlier* user
  * submission. Rewinding to the very first turn would leave only leading
  * bookkeeping records — claude rejects that on `--resume` ("No conversation

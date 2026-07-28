@@ -11,6 +11,7 @@
 // `tugrust/crates/tugcast/tests/common/probes.rs`.
 
 import { describe, test, expect } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
   ActiveTurn,
   SessionManager,
@@ -527,6 +528,57 @@ describe("computeConversationTruncation (pure boundary + compaction guard)", () 
     lines.splice(betaIdx, 0, JSON.stringify({ type: "system", subtype: "compact_boundary" }));
     const spliced = lines.join("\n") + "\n";
     expect(computeConversationTruncation(spliced, anchors[2]).kind).toBe("ok");
+  });
+});
+
+// The truncation path is destructive — it chops bytes off the real session
+// file — and compaction re-appends make a uuid name several records. These
+// run over a projection of a real re-appended session (the same fixture
+// `replay-compact-reappend.test.ts` uses) rather than a built topology,
+// because "which occurrence does the scan land on" is exactly the question.
+describe("computeConversationTruncation against duplicate-uuid anchors", () => {
+  const FIXTURE = new URL(
+    "./fixtures/compact-reappend/chain-topology.jsonl",
+    import.meta.url,
+  ).pathname;
+  const jsonl = readFileSync(FIXTURE, "utf8");
+  const lines = jsonl.split("\n");
+
+  // A user submission preserved by a compaction and re-appended verbatim:
+  // the same uuid at line 31 (original) and 850 (the copy).
+  const DUPLICATED_ANCHOR = "953bead5-4dfb-4dc0-8aa5-08c86810439c";
+  // A submission after the file's last compaction — the ordinary live case.
+  const LATE_ANCHOR = "b5e95347-27a5-4c61-9793-4f435981e690";
+
+  const linesWithUuid = (uuid: string): number[] =>
+    lines
+      .map((line, i) => {
+        if (line.trim().length === 0) return -1;
+        return (JSON.parse(line) as { uuid?: unknown }).uuid === uuid ? i : -1;
+      })
+      .filter((i) => i >= 0);
+
+  test("the fixture really does duplicate the anchor's uuid", () => {
+    expect(linesWithUuid(DUPLICATED_ANCHOR)).toEqual([31, 850]);
+    expect(linesWithUuid(LATE_ANCHOR).length).toBe(1);
+  });
+
+  test("a re-appended anchor is refused, never truncated at either occurrence", () => {
+    // A duplicate exists only because a compaction preserved and re-appended
+    // the record, so a compaction always sits between the first occurrence
+    // and the tip. The guard refuses before the first-occurrence scan can
+    // matter — which is what makes the destructive path safe.
+    const result = computeConversationTruncation(jsonl, DUPLICATED_ANCHOR);
+    expect(result.kind).toBe("compaction_blocked");
+  });
+
+  test("an anchor after the last compaction still resolves, duplicates earlier notwithstanding", () => {
+    const result = computeConversationTruncation(jsonl, LATE_ANCHOR);
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(JSON.parse(lines[result.boundary]).uuid).toBe(LATE_ANCHOR);
+    // Everything the re-append duplicated stays in the retained prefix.
+    expect(result.boundary).toBeGreaterThan(1195);
   });
 });
 

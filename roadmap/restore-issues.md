@@ -340,14 +340,14 @@ No session among the 894 in the corpus has both a genuine dead branch and a comp
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Pin the re-append walk fix with the committed fixture | pending | — |
-| #step-2 | Dead-set property validator + corpus audit | pending | — |
-| #step-3 | Truncation duplicate-anchor safety + uuid-consumer audit | pending | — |
-| #step-4 | Rust dead-branch/effective-sequence module (unwired) | pending | — |
-| #step-5 | Effective sequence everywhere, atomically | pending | — |
-| #step-6 | Adversarial rewind+compaction session | pending | — |
-| #step-7 | Restore-completeness app-test | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Pin the re-append walk fix with the committed fixture | done | `da97265cc` |
+| #step-2 | Dead-set property validator + corpus audit | done | `a58289b63` |
+| #step-3 | Truncation duplicate-anchor safety + uuid-consumer audit | done | `f9280506d` |
+| #step-4 | Rust dead-branch/effective-sequence module (unwired) | done | `5239655cd` |
+| #step-5 | Effective sequence everywhere, atomically | done | `ec2903f41` |
+| #step-6 | Adversarial rewind+compaction session | done | `240a8bcd7` (re-append half not reproducible on 2.1.219) |
+| #step-7 | Restore-completeness app-test | done | `03120ceb3` (manual `8b8d7bf1` check pending the debug build) |
+| #step-8 | Integration checkpoint | done | `N/A (verification only)` |
 
 #### Step 1: Pin the re-append walk fix with the committed fixture {#step-1}
 

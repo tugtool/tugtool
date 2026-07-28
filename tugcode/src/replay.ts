@@ -2474,11 +2474,82 @@ function hoistCompactCommandEnvelope(
 }
 
 /**
+ * Suppress compaction re-appends: for every uuid appearing more than once,
+ * exactly one occurrence survives — the earliest one not already nulled.
+ * Mutates `parsedEntries` in place, nulling the rest, and returns how many
+ * it suppressed.
+ *
+ * Claude Code re-appends a compaction's preserved messages verbatim (same
+ * `uuid`, same content, a later file position). The first occurrence sits
+ * at the turn's true chronological position; a re-append is a copy with
+ * stale context. Replaying both paints each preserved turn twice.
+ *
+ * "Earliest not-yet-nulled" rather than simply "first" is what makes this
+ * composable with dead-branch nulling: where an original occurrence was
+ * legitimately swept as a dead branch, its re-appended copy is live
+ * preserved content and must still emit.
+ *
+ * The suppression domain is exactly {@link computeDeadEntryIndices}'
+ * index domain — chain entries, i.e. uuid-bearing and non-sidechain.
+ * Sidechain records root their own chains mid-file and can share a uuid
+ * with a main-chain record; they are never suppressed, and never suppress.
+ */
+function suppressReappendDuplicates(
+  parsedEntries: Array<JsonlEntry | null>,
+): number {
+  const seen = new Set<string>();
+  let suppressed = 0;
+  for (let i = 0; i < parsedEntries.length; i++) {
+    const entry = parsedEntries[i];
+    if (entry === null) continue;
+    if (entry.isSidechain === true) continue;
+    if (typeof entry.uuid !== "string" || entry.uuid.length === 0) continue;
+    if (seen.has(entry.uuid)) {
+      parsedEntries[i] = null;
+      suppressed++;
+    } else {
+      seen.add(entry.uuid);
+    }
+  }
+  return suppressed;
+}
+
+/**
+ * The **effective record sequence**: the entries segmentation and replay
+ * both operate on. Nulls, in place, every entry that is either on a dead
+ * branch or a re-appended duplicate occurrence, and returns the two counts.
+ *
+ * This composition is the whole point — the canonical turn count
+ * (`tuglaws/turn-metric.md`) must equal what the transcript renders, so
+ * whatever replay skips, segmentation must skip too. `translateJsonlSession`
+ * and {@link segmentJsonlOrigins} therefore both start here, as does the
+ * Rust engine via `tugcast/src/dead_branch.rs`.
+ *
+ * Order matters: dead-branch detection runs first and over ALL occurrences,
+ * because occurrence-aware parent resolution needs the full occurrence
+ * lists. Suppression then picks the earliest surviving occurrence.
+ */
+function nullNonEffectiveEntries(parsedEntries: Array<JsonlEntry | null>): {
+  dead: number;
+  suppressed: number;
+} {
+  const deadIndices = computeDeadEntryIndices(parsedEntries);
+  for (const idx of deadIndices) {
+    parsedEntries[idx] = null;
+  }
+  return {
+    dead: deadIndices.size,
+    suppressed: suppressReappendDuplicates(parsedEntries),
+  };
+}
+
+/**
  * The real-corpus contract's tugcode side (#step-7): segment a whole JSONL
  * string into the ordered per-turn origin list `["user" | "assistant", …]`
- * by dry-running the real translator (`computeTurns`). The Rust engine
- * (`tugcast/src/turn_engine.rs`) produces the same list over the same file;
- * the contract asserts they are equal per-turn (origin + ordinal).
+ * by dry-running the real translator (`computeTurns`) over the effective
+ * record sequence. The Rust engine (`tugcast/src/turn_engine.rs`) produces
+ * the same list over the same file; the contract asserts they are equal
+ * per-turn (origin + ordinal).
  */
 export function segmentJsonlOrigins(
   jsonl: string,
@@ -2494,6 +2565,7 @@ export function segmentJsonlOrigins(
         return null;
       }
     });
+  nullNonEffectiveEntries(parsedEntries);
   return computeTurns(parsedEntries).map((t) => t.origin);
 }
 
@@ -2762,21 +2834,24 @@ export async function* translateJsonlSession(
     }
   });
 
-  // Dead-branch exclusion: entries off the live `parentUuid` chain
-  // (retracted prompts, REPL-escape orphans, abandoned rewind branches)
-  // are nulled so every downstream pass — the anchor scans, turn
-  // location, windowing, and the emit loop — skips them uniformly, the
-  // same way malformed lines are skipped. Claude's own resume walks the
-  // chain and never feeds these to the model; replaying them paints
-  // phantom turns the live session never showed.
-  const deadIndices = computeDeadEntryIndices(parsedEntries);
-  if (deadIndices.size > 0) {
+  // Reduce to the effective record sequence: entries off the live
+  // `parentUuid` chain (retracted prompts, REPL-escape orphans, abandoned
+  // rewind branches) and re-appended duplicate occurrences are nulled so
+  // every downstream pass — the anchor scans, turn location, windowing,
+  // and the emit loop — skips them uniformly, the same way malformed
+  // lines are skipped. Claude's own resume walks the chain and shows each
+  // preserved message once; replaying the rest paints phantom turns the
+  // live session never showed.
+  const effective = nullNonEffectiveEntries(parsedEntries);
+  if (effective.dead > 0) {
     console.log(
-      `Replay: skipping ${deadIndices.size} dead-branch JSONL entr${deadIndices.size === 1 ? "y" : "ies"} (off the live parent chain)`,
+      `Replay: skipping ${effective.dead} dead-branch JSONL entr${effective.dead === 1 ? "y" : "ies"} (off the live parent chain)`,
     );
-    for (const idx of deadIndices) {
-      parsedEntries[idx] = null;
-    }
+  }
+  if (effective.suppressed > 0) {
+    console.log(
+      `Replay: skipping ${effective.suppressed} re-appended duplicate JSONL entr${effective.suppressed === 1 ? "y" : "ies"} (compaction re-append)`,
+    );
   }
 
   hoistCompactCommandEnvelope(parsedEntries);

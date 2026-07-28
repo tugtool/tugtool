@@ -25,7 +25,8 @@ import {
   statSync,
   writeSync,
 } from "node:fs";
-import { segmentJsonlOrigins } from "./replay.ts";
+import { computeDeadEntryIndices, segmentJsonlOrigins } from "./replay.ts";
+import type { JsonlEntry } from "./replay.ts";
 
 // Process-start wall clock for the boot-latency split. Captured at
 // module evaluation — before arg parsing, settings reads, or the
@@ -126,6 +127,48 @@ if (args[0] === "segment") {
   // a pipe, and the immediately-following `process.exit` can truncate it
   // (the Rust contract test captures this over a pipe). `writeSync` flushes
   // before we exit.
+  writeSync(1, JSON.stringify(out));
+  process.exit(0);
+}
+
+// `tugcode dead <file-or-dir>` — the tugcode side of the dead-branch
+// parity contract, the sibling of `segment` above. Emits the dead-entry
+// index set for each session JSONL as `{ "<basename>": [index, …] }` on
+// stdout, ascending, so the Rust `dead_branch` port can be diffed against
+// this walk over the whole local corpus in one spawn.
+if (args[0] === "dead") {
+  const target = args[1];
+  if (target === undefined) {
+    originalError("usage: tugcode dead <file-or-dir>");
+    process.exit(2);
+  }
+  const out: Record<string, number[]> = {};
+  const deadOne = (path: string): void => {
+    const base = path.split("/").pop() ?? path;
+    try {
+      const parsed = readFileSync(path, "utf8")
+        .split("\n")
+        .map((line) => {
+          if (line.trim().length === 0) return null;
+          try {
+            return JSON.parse(line) as JsonlEntry;
+          } catch {
+            return null;
+          }
+        });
+      out[base] = [...computeDeadEntryIndices(parsed)].sort((a, b) => a - b);
+    } catch (err) {
+      originalError(`tugcode dead: skip ${path}: ${String(err)}`);
+    }
+  };
+  const st = statSync(target);
+  if (st.isDirectory()) {
+    for (const name of readdirSync(target)) {
+      if (name.endsWith(".jsonl")) deadOne(join(target, name));
+    }
+  } else {
+    deadOne(target);
+  }
   writeSync(1, JSON.stringify(out));
   process.exit(0);
 }
