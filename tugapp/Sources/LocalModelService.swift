@@ -28,6 +28,14 @@ enum LocalModelConfig {
 /// wording rather than wording tuned to itself. Changing a line here invalidates
 /// those scores for every catalog entry at once.
 ///
+/// `classify` was retuned after the routing feature adopted an asymmetric
+/// error budget: a wrong SHELL executes a command the user never asked for,
+/// so the prompt resolves doubt toward PROMPT, hands the model the one fact
+/// the caller has verified (the first word names an installed program), and
+/// teaches by paired examples — the same opener labeled both ways — because
+/// small quantized models form first-word priors from unpaired examples.
+/// The catalog's recorded classify scores refer to the previous wording.
+///
 /// `summarize` was rewritten from a sentence prompt to a headline prompt when
 /// the PULSE strip promoted the overview to its bright leading run. The
 /// catalog's recorded overview scores therefore refer to the *previous*
@@ -46,41 +54,41 @@ enum LocalModelPrompts {
     You label one line a developer typed into a dev tool. Answer with exactly \
     one word and nothing else: SHELL or PROMPT.
 
-    The person is working at a developer's command line. They run shell \
-    commands constantly, and most of those are short — one to three words, \
-    often with no flags or punctuation at all. They also ask an AI assistant \
-    for help, writing in ordinary English sentences.
-
-    The first word of the line is ALWAYS the name of a real program installed \
-    on this machine. You are never being asked whether the program exists. You \
-    are being asked whether the person meant to RUN it, or was writing a \
-    sentence that happens to begin with that word.
+    The first word of the line ALWAYS names a real program installed on this \
+    machine. The question is never whether the program exists — only whether \
+    the person meant to RUN it, or was writing a sentence to an AI assistant \
+    that happens to begin with that word.
 
     SHELL — they meant to run the program. Anything after the first word is an \
     argument to it: a file name, a directory, a flag, a path, or a subcommand. \
-    A bare argument with no punctuation is still an argument. Lines of one or \
-    two words are the most common kind of shell command.
+    Most shell commands are one to three plain words.
 
     PROMPT — they were writing to the assistant. The line reads as English \
     prose: it contains an article ("the", "a"), a pronoun ("it", "me", "this"), \
-    a preposition ("for", "about", "in"), or it asks a question. It describes \
-    work to be done rather than naming a program and its argument.
+    a preposition ("for", "about", "in"), or it asks a question.
 
-    Decide by what follows the first word. One bare word that could name a file \
-    or a directory means SHELL. Several words forming an English phrase mean \
-    PROMPT.
+    Decide by what follows the first word. A bare word that could name a file \
+    or a directory means SHELL. An English phrase means PROMPT. A wrong SHELL \
+    runs a command the person never asked for; a wrong PROMPT costs one \
+    keystroke. When in doubt, answer PROMPT.
 
     pwd => SHELL
     cd tugrust => SHELL
+    which cargo => SHELL
     rg TODO src => SHELL
     kill 4821 => SHELL
-    wc report => SHELL
-    du node_modules => SHELL
-    npm run build => SHELL
+    head config.log => SHELL
+    open index.html => SHELL
+    sort data.csv => SHELL
+    make clean => SHELL
+    npm install => SHELL
+    head over to the docs => PROMPT
+    open an issue for this bug => PROMPT
+    sort these imports alphabetically => PROMPT
+    make this function faster => PROMPT
     build the project for me => PROMPT
     explain this error => PROMPT
     why is the test failing => PROMPT
-    add a dark mode toggle => PROMPT
     read the config and tell me what changed => PROMPT
     """
 
