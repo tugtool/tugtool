@@ -1,11 +1,12 @@
 /**
  * session-load-control-bar-state — pure state-machine tests for the Z0 load
- * control bar ([recency P09], #step-5-5).
+ * control bar ([recency P09]).
  */
 
 import { describe, expect, test } from "bun:test";
 
 import {
+  countClaudeTurns,
   deriveControlBarState,
   deriveLoadStatus,
 } from "../session-load-control-bar-state";
@@ -52,7 +53,7 @@ describe("deriveLoadStatus — metadata row turns math", () => {
     // 3 displayed of a 40-turn session; oldest loaded turn is index 37.
     expect(
       deriveLoadStatus({
-        transcriptLength: 3,
+        claudeTurnsDisplayed: 3,
         firstLoadedTurnIndex: 37,
         totalTurns: 40,
         step: 25,
@@ -63,7 +64,7 @@ describe("deriveLoadStatus — metadata row turns math", () => {
   test("load step clamps to the older count when fewer than the page", () => {
     expect(
       deriveLoadStatus({
-        transcriptLength: 35,
+        claudeTurnsDisplayed: 35,
         firstLoadedTurnIndex: 5,
         totalTurns: 40,
         step: 25,
@@ -75,7 +76,7 @@ describe("deriveLoadStatus — metadata row turns math", () => {
     // No window: firstLoadedTurnIndex / totalTurns null → derive from length.
     expect(
       deriveLoadStatus({
-        transcriptLength: 12,
+        claudeTurnsDisplayed: 12,
         firstLoadedTurnIndex: null,
         totalTurns: null,
         step: 25,
@@ -86,11 +87,42 @@ describe("deriveLoadStatus — metadata row turns math", () => {
   test("windowed but whole session fits: all loaded", () => {
     expect(
       deriveLoadStatus({
-        transcriptLength: 40,
+        claudeTurnsDisplayed: 40,
         firstLoadedTurnIndex: 0,
         totalTurns: 40,
         step: 25,
       }),
     ).toEqual({ displayed: 40, total: 40, hasOlder: false, loadStep: 0 });
+  });
+});
+
+describe("countClaudeTurns — shell rows are not conversation turns", () => {
+  test("shell-origin rows are excluded; every other origin counts", () => {
+    const transcript = [
+      { origin: "user" },
+      { origin: "shell" },
+      { origin: "assistant" },
+      { origin: "shell" },
+      { origin: "wake" },
+      {},
+    ];
+    expect(countClaudeTurns(transcript)).toBe(4);
+  });
+
+  test("a shell-heavy session reads X of Y honestly", () => {
+    // The shape that read "83 of 68": 68 Claude turns interleaved with 15
+    // shell rows, against an engine count of 68.
+    const transcript = [
+      ...Array.from({ length: 68 }, () => ({ origin: "user" })),
+      ...Array.from({ length: 15 }, () => ({ origin: "shell" })),
+    ];
+    expect(
+      deriveLoadStatus({
+        claudeTurnsDisplayed: countClaudeTurns(transcript),
+        firstLoadedTurnIndex: 0,
+        totalTurns: 68,
+        step: 25,
+      }),
+    ).toEqual({ displayed: 68, total: 68, hasOlder: false, loadStep: 0 });
   });
 });

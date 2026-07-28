@@ -681,40 +681,39 @@ fn parse_session_file_inner(
 
     let mut reader = BufReader::new(file);
     let mut line = String::new();
-    // Cleared when the final line arrives unterminated (a write in
-    // progress, or a fixture without a trailing newline): the line still
-    // counts toward THIS scan's meta, but the frontier can't include it
-    // — a resume would re-read it and double-count — so the result is
-    // recorded as non-resumable and the next change re-streams in full.
-    let mut resumable = true;
 
     loop {
         line.clear();
         if reader.read_line(&mut line)? == 0 {
             break;
         }
-        let terminated = line.ends_with('\n');
-        if terminated {
-            consumed += line.len() as u64;
-            push_tail(&mut window, line.as_bytes());
-        } else {
-            resumable = false;
+        // An unterminated final line is a write in progress. It is deferred
+        // whole — not consumed, not counted, not shown to the engine or the
+        // triggers — so the frontier stops at the last complete record and
+        // the parse stays resumable. The next scan, once the line is
+        // terminated, resumes from that frontier and counts it exactly once.
+        // Active sessions race the scanner constantly; poisoning
+        // resumability here would re-stream the whole file on every append,
+        // on precisely the busiest sessions ([P05]).
+        //
+        // Accepted edge: if a writer dies mid-line and the file never changes
+        // again, the cache hit hides the truncated JSON indefinitely. It was
+        // never a complete record, and any future append moves `(size,
+        // mtime)` and picks it up.
+        if !line.ends_with('\n') {
+            break;
         }
+        consumed += line.len() as u64;
+        push_tail(&mut window, line.as_bytes());
         let trimmed = line.trim();
         if trimmed.is_empty() {
-            if terminated {
-                continue;
-            }
-            break;
+            continue;
         }
         // Typed extraction: scans the line structurally but builds no tree
         // for the bulk fields. A non-object or malformed line fails here
         // and is skipped — same tolerance as the prior `Value` path.
         let Ok(rec) = serde_json::from_str::<ScanRecord>(trimmed) else {
-            if terminated {
-                continue;
-            }
-            break;
+            continue;
         };
 
         if let Some(sid) = rec.session_id.as_deref() {
@@ -777,15 +776,28 @@ fn parse_session_file_inner(
                             saw_duplicate_uuid = true;
                         }
                         // Trigger (b): this record's parent is not the chain leaf
-                        // we were carrying. Conservative by design — a benign
-                        // mid-turn spur (a hook attachment, a `tool_result` whose
-                        // sibling carried the chain forward, an abandoned
-                        // API-retry branch) trips it too, and a needless full
-                        // re-stream is sound where a missed rewind is not. Do not
-                        // narrow it; every narrowing is a correctness bet.
+                        // we were carrying.
+                        //
+                        // On a full stream the trigger stays broad — there it only
+                        // decides whether the EOF recount runs over buffered
+                        // records, which is cheap and never wrong.
+                        //
+                        // On a resumed slice the trigger costs a full re-stream of
+                        // the file, so it fires only for the shapes that can edit
+                        // history: an off-leaf USER SUBMISSION (the rewind /
+                        // Escape-orphan shape). `compute_dead_entry_indices` roots
+                        // dead branches exclusively at user submissions, so a
+                        // non-user off-leaf record — a hook attachment, a
+                        // `tool_result` whose sibling carried the chain forward, an
+                        // abandoned API-retry spur — can neither kill nor resurrect
+                        // a prefix record. It is effective in the full pass too, so
+                        // absorbing it inline (leaf + engine, no trigger) keeps
+                        // incremental ≡ full.
                         match chain.parent_uuid.as_deref() {
                             Some(parent) => {
-                                if frontier.leaf_uuid.as_deref() != Some(parent) {
+                                if frontier.leaf_uuid.as_deref() != Some(parent)
+                                    && (!resumed || chain.is_user_submission)
+                                {
                                     saw_branch = true;
                                 }
                             }
@@ -885,9 +897,6 @@ fn parse_session_file_inner(
             }
             _ => {}
         }
-        if !terminated {
-            break;
-        }
     }
 
     // The foreign-file verdict, deferred from the per-record gate: a file
@@ -944,15 +953,15 @@ fn parse_session_file_inner(
     // persisted effective-uuid set is what makes the next append's
     // re-append records (including a straddled block's tail, which arrives
     // looking perfectly linear) detectable without the prefix.
-    let resume = if resumable && consumed > 0 {
+    let resume = if consumed > 0 {
         ResumeMark {
             parse_offset: consumed as i64,
             tail_hash: fnv1a64(&window) as i64,
             cwd_checked,
             created_at_found: created_at.is_some(),
             // The frontier reflects exactly the complete (terminated) lines
-            // in `[0, consumed)`; `resumable` is false if any final line was
-            // unterminated, so this is the open-turn state at the offset.
+            // in `[0, consumed)` — an unterminated tail was deferred before
+            // it could touch any of this state.
             frontier: frontier.clone(),
             effective_uuids: Some(encode_uuid_set(&effective_seen)),
         }
@@ -1459,6 +1468,7 @@ mod tests {
             ),
         ]
         .join("\n")
+            + "\n"
     }
 
     fn seed(root: &Path, project_dir: &str, session_id: &str, content: &str) {
@@ -1467,11 +1477,68 @@ mod tests {
         fs::write(dir.join(format!("{session_id}.jsonl")), content).unwrap();
     }
 
+    /// Classify a resumed tail against the head it resumes from: `None` for
+    /// an ordinary append, `Some(reason)` when the tail carries a
+    /// history-editing shape (a new compaction, a mid-file segment root, a
+    /// rewind) that legitimately costs a full re-stream.
+    ///
+    /// Suppression-aware, which is the whole difficulty: a tail record whose
+    /// uuid the head already counted is a re-append restating history, not an
+    /// edit — including a copied compaction summary inside a straddled
+    /// re-append block. A naive classifier misfiles exactly the straddle case
+    /// this certification exists to prove.
+    fn classify_resumed_tail(
+        tail: &str,
+        head_effective: &std::collections::HashSet<[u8; 16]>,
+        head_leaf: Option<&str>,
+    ) -> Option<&'static str> {
+        let mut leaf = head_leaf.map(str::to_owned);
+        let mut seen_in_tail: std::collections::HashSet<[u8; 16]> =
+            std::collections::HashSet::new();
+        let mut reason = None;
+        for rec in crate::dead_branch::parse_chain_records(tail)
+            .into_iter()
+            .flatten()
+        {
+            if rec.is_sidechain {
+                continue;
+            }
+            let Some(uuid) = rec.uuid.as_deref() else {
+                continue;
+            };
+            let key = uuid_key(uuid);
+            // A uuid the head already counted — or one this tail already
+            // carried — restates history: it only moves the raw leaf.
+            if head_effective.contains(&key) || !seen_in_tail.insert(key) {
+                leaf = Some(uuid.to_owned());
+                continue;
+            }
+            if reason.is_none() {
+                reason = if rec.is_compaction {
+                    Some("new compaction")
+                } else if rec.parent_uuid.is_none() {
+                    Some("mid-file segment root")
+                } else if rec.parent_uuid.as_deref() != leaf.as_deref() && rec.is_user_submission {
+                    Some("off-leaf user submission")
+                } else {
+                    None
+                };
+            }
+            leaf = Some(uuid.to_owned());
+        }
+        reason
+    }
+
     /// Local-only sweep over the real reference sessions (compaction-heavy,
-    /// duplicate-heavy, 22–29 MB): an incremental resume from any line
-    /// boundary must reproduce the full parse exactly — count, frontier,
-    /// and effective-uuid set. This is the property the persisted uuid set
-    /// exists to guarantee, measured on the files that motivated it.
+    /// duplicate-heavy, 22–29 MB). Two properties at every line boundary:
+    ///
+    /// 1. An incremental resume reproduces the full parse exactly — count,
+    ///    frontier, and effective-uuid set. This is what the persisted uuid
+    ///    set exists to guarantee.
+    /// 2. **The north star:** a split whose tail is an ordinary append
+    ///    (assistant output, tool results, hook attachments, off-leaf
+    ///    non-user spurs, re-append tails, partial writes) resumes — it never
+    ///    re-streams the file. Only a history-editing tail may re-stream.
     #[test]
     fn incremental_resume_matches_full_parse_over_reference_sessions() {
         let home = std::env::var("HOME").unwrap_or_default();
@@ -1512,10 +1579,19 @@ mod tests {
                 "{stem}: a compacted session must now record a resumable frontier"
             );
 
-            let splits = 8usize;
+            // One append is a bounded chunk, not the rest of the file: a
+            // scan lands, some records are written, the next scan resumes.
+            // The window is sized to hold a plausible burst of appends —
+            // over these sessions ~10–40 records — so a compaction landing
+            // inside one is the rare event it is in life.
+            const APPEND_WINDOW: usize = 64 * 1024;
+            let splits = 24usize;
+            let mut ordinary = 0usize;
+            let mut edits: std::collections::BTreeMap<&str, usize> =
+                std::collections::BTreeMap::new();
             for k in 1..splits {
-                let target = bytes.len() * k / splits;
-                let Some(cut) = bytes[..target].iter().rposition(|&b| b == b'\n') else {
+                let at = bytes.len() * k / splits;
+                let Some(cut) = bytes[..at].iter().rposition(|&b| b == b'\n') else {
                     continue;
                 };
                 let prefix = &bytes[..=cut];
@@ -1532,24 +1608,84 @@ mod tests {
                     continue;
                 }
                 let seed = seed_from(&head);
-                fs::write(&path, &bytes).unwrap();
+
+                // The file after one append: the prefix plus a whole number
+                // of appended lines.
+                let window_end = (cut + 1 + APPEND_WINDOW).min(bytes.len());
+                let Some(end) = bytes[..window_end].iter().rposition(|&b| b == b'\n') else {
+                    continue;
+                };
+                let appended = &bytes[..=end];
+
+                fs::write(&path, appended).unwrap();
+                let grown =
+                    parse_session_file(&path, &cwd, stem, appended.len() as i64, 0, None)
+                        .unwrap()
+                        .expect("the grown file parses");
                 let resumed =
-                    parse_session_file(&path, &cwd, stem, bytes.len() as i64, 0, Some(&seed))
+                    parse_session_file(&path, &cwd, stem, appended.len() as i64, 0, Some(&seed))
                         .unwrap()
                         .expect("resume parses");
                 assert_eq!(
-                    resumed.meta.turn_count, full.meta.turn_count,
+                    resumed.meta.turn_count, grown.meta.turn_count,
                     "{stem} split {k}/{splits}: turn count"
                 );
                 assert_eq!(
-                    resumed.resume.frontier, full.resume.frontier,
+                    resumed.resume.frontier, grown.resume.frontier,
                     "{stem} split {k}/{splits}: frontier"
                 );
                 assert_eq!(
-                    resumed.resume.effective_uuids, full.resume.effective_uuids,
+                    resumed.resume.effective_uuids, grown.resume.effective_uuids,
                     "{stem} split {k}/{splits}: effective-uuid set"
                 );
+
+                let tail = String::from_utf8_lossy(&bytes[cut + 1..=end]);
+                match classify_resumed_tail(
+                    &tail,
+                    &seed.effective_uuids,
+                    seed.frontier.leaf_uuid.as_deref(),
+                ) {
+                    None => {
+                        ordinary += 1;
+                        assert!(
+                            resumed.resumed,
+                            "{stem} split {k}/{splits}: an ordinary append re-streamed the \
+                             whole file — the north-star guarantee is broken"
+                        );
+                    }
+                    Some(reason) => *edits.entry(reason).or_default() += 1,
+                }
+
+                // The same split resumed all the way to EOF: the strongest
+                // equality, over a tail that spans every compaction and
+                // re-append block still ahead of the cut.
+                fs::write(&path, &bytes).unwrap();
+                let to_eof =
+                    parse_session_file(&path, &cwd, stem, bytes.len() as i64, 0, Some(&seed))
+                        .unwrap()
+                        .expect("resume to EOF parses");
+                assert_eq!(
+                    to_eof.meta.turn_count, full.meta.turn_count,
+                    "{stem} split {k}/{splits}: turn count to EOF"
+                );
+                assert_eq!(
+                    to_eof.resume.frontier, full.resume.frontier,
+                    "{stem} split {k}/{splits}: frontier to EOF"
+                );
+                assert_eq!(
+                    to_eof.resume.effective_uuids, full.resume.effective_uuids,
+                    "{stem} split {k}/{splits}: effective-uuid set to EOF"
+                );
             }
+            eprintln!(
+                "north star {stem}: {ordinary} ordinary-append splits resumed; \
+                 history-edit splits {edits:?}"
+            );
+            assert!(
+                ordinary > 0,
+                "{stem}: no ordinary-append split in the sample — the certification \
+                 asserts nothing"
+            );
         }
     }
 
@@ -1732,7 +1868,10 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let long = "é".repeat(USER_PROMPT_MAX_CHARS + 50);
         let content = format!(
-            r#"{{"type":"user","sessionId":"{SESSION_A}","cwd":"{PROJECT}","message":{{"role":"user","content":"{long}"}}}}"#
+            "{}\n",
+            format_args!(
+                r#"{{"type":"user","sessionId":"{SESSION_A}","cwd":"{PROJECT}","message":{{"role":"user","content":"{long}"}}}}"#
+            )
         );
         seed(root.path(), PROJECT, SESSION_A, &content);
         let metas = scan_external_sessions(root.path(), PROJECT);
@@ -1785,7 +1924,7 @@ mod tests {
             .join(format!("{SESSION_A}.jsonl"));
         let mut content = fs::read_to_string(&path).unwrap();
         content.push_str(&format!(
-            "\n{{\"type\":\"user\",\"sessionId\":\"{SESSION_A}\",\"message\":{{\"role\":\"user\",\"content\":\"third prompt\"}}}}"
+            "{{\"type\":\"user\",\"sessionId\":\"{SESSION_A}\",\"message\":{{\"role\":\"user\",\"content\":\"third prompt\"}}}}\n"
         ));
         fs::write(&path, content).unwrap();
         let rescan = scan_external_sessions_cached(&ledger, PROJECT);
@@ -1933,16 +2072,21 @@ mod tests {
         assert_eq!(rescan.metas[0].last_user_prompt.as_deref(), Some("only"));
     }
 
+    /// A partial final line is deferred whole: invisible to this scan's meta
+    /// and frontier, and no bar to resumability. Once the writer terminates
+    /// it, the next scan resumes from the frontier and counts it exactly
+    /// once ([P05]).
     #[test]
-    fn unterminated_tail_line_is_counted_but_not_resumable() {
+    fn unterminated_tail_line_is_deferred_to_the_next_scan() {
         let root = tempfile::tempdir().unwrap();
         let ledger = ledger_with_root(root.path());
         let projects = root.path().join("projects");
         // Mid-write capture: the final line has no trailing newline.
         let mut content = terminated_jsonl(SESSION_A, PROJECT, &["first"]);
-        content.push_str(&format!(
+        let partial = format!(
             "{{\"type\":\"user\",\"sessionId\":\"{SESSION_A}\",\"message\":{{\"role\":\"user\",\"content\":\"partial\"}}}}"
-        ));
+        );
+        content.push_str(&partial);
         seed(&projects, PROJECT, SESSION_A, &content);
         let path = projects
             .join(encode_claude_project_name(PROJECT))
@@ -1951,27 +2095,78 @@ mod tests {
 
         let cold = scan_external_sessions_cached(&ledger, PROJECT);
         assert_eq!(
-            cold.metas[0].turn_count, 2,
-            "the in-flight line still counts toward this scan"
+            cold.metas[0].turn_count, 1,
+            "the in-flight line is deferred, not counted"
+        );
+        assert_eq!(
+            cold.metas[0].last_user_prompt.as_deref(),
+            Some("first"),
+            "the deferred line must not reach the meta arm either"
         );
         let cached = ledger.get_scan_cache(SESSION_A).unwrap().unwrap();
+        assert!(
+            cached.parse_offset > 0,
+            "a partial tail must not poison resumability"
+        );
         assert_eq!(
-            cached.parse_offset, 0,
-            "no frontier past an unterminated line — a resume would double-count"
+            cached.parse_offset as usize,
+            content.len() - partial.len(),
+            "the frontier stops at the last terminated line"
         );
 
-        // The writer finishes the line; the rescan is full (seedless)
-        // and correct.
+        // The writer finishes the line; the rescan resumes from the frontier
+        // and picks it up exactly once.
         let mut content = fs::read_to_string(&path).unwrap();
         content.push('\n');
         fs::write(&path, content).unwrap();
         bump_mtime(&path, 2_000_000);
         let warm = scan_external_sessions_cached(&ledger, PROJECT);
-        assert_eq!(warm.parsed, 1);
-        assert_eq!(warm.resumed, 0);
+        assert_eq!(warm.resumed, 1, "tail-only resume, no re-stream");
         assert_eq!(warm.metas[0].turn_count, 2);
-        let cached = ledger.get_scan_cache(SESSION_A).unwrap().unwrap();
-        assert!(cached.parse_offset > 0, "frontier recorded once terminated");
+        assert_eq!(warm.metas[0].last_user_prompt.as_deref(), Some("partial"));
+    }
+
+    /// Two scans across a partial write: seed, append a complete line plus a
+    /// partial one, resume, then complete the partial line and resume again.
+    /// The end state must equal a from-scratch parse of the finished file.
+    #[test]
+    fn a_completed_partial_line_resumes_to_the_full_parse_result() {
+        let root = tempfile::tempdir().unwrap();
+        let path = session_file(root.path());
+        let head = format!(
+            r#"{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{SESSION_A}","cwd":"{PROJECT}","message":{{"role":"user","content":"first"}}}}
+{{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"hi"}}],"id":"m1","stop_reason":"end_turn"}}}}
+"#
+        );
+        let complete = format!(
+            r#"{{"type":"user","uuid":"u2","parentUuid":"a1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"second"}}}}
+"#
+        );
+        let last = format!(
+            r#"{{"type":"assistant","uuid":"a2","parentUuid":"u2","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"ok"}}],"id":"m2","stop_reason":"end_turn"}}}}"#
+        );
+        let whole = format!("{head}{complete}{last}\n");
+
+        let full = parse_content(&path, &whole, None);
+
+        let first = parse_content(&path, &head, None);
+        // Mid-write: one complete line and one still being written.
+        let mid = parse_content(
+            &path,
+            &format!("{head}{complete}{last}"),
+            Some(&seed_from(&first)),
+        );
+        assert!(mid.resumed, "a partial tail still resumes");
+        assert_eq!(
+            mid.meta.turn_count, 2,
+            "only the terminated append counts this scan"
+        );
+        // The writer terminates the line.
+        let done = parse_content(&path, &whole, Some(&seed_from(&mid)));
+        assert!(done.resumed, "the completed line resumes from the frontier");
+        assert_eq!(done.meta.turn_count, full.meta.turn_count);
+        assert_eq!(done.resume.frontier, full.resume.frontier);
+        assert_eq!(done.resume.effective_uuids, full.resume.effective_uuids);
     }
 
     #[test]
@@ -2093,6 +2288,7 @@ mod tests {
             ),
         ]
         .join("\n")
+            + "\n"
     }
 
     /// `engine_turn_count` runs the engine when there is no cache entry (a
@@ -2294,6 +2490,112 @@ mod tests {
         assert_eq!(
             resumed.resume.effective_uuids, full.resume.effective_uuids,
             "the resumed uuid set must equal the full segment's"
+        );
+    }
+
+    /// Write `content` to a fresh session file and parse it, optionally from
+    /// a seed. Returns the parse; the path is reused across calls so a head
+    /// parse and the resume that follows it see the same file.
+    fn parse_content(path: &Path, content: &str, seed: Option<&ResumeSeed>) -> ParsedSession {
+        fs::write(path, content).unwrap();
+        parse_session_file(
+            path,
+            PROJECT,
+            SESSION_A,
+            content.len() as i64,
+            0,
+            seed,
+        )
+        .unwrap()
+        .unwrap()
+    }
+
+    fn session_file(root: &Path) -> std::path::PathBuf {
+        let dir = root.join(encode_claude_project_name(PROJECT));
+        fs::create_dir_all(&dir).unwrap();
+        dir.join(format!("{SESSION_A}.jsonl"))
+    }
+
+    /// An appended record whose parent is not the carried leaf, but which is
+    /// not a user submission — a `tool_result` sibling, a hook attachment, an
+    /// API-retry spur. Dead branches root only at user submissions, so such a
+    /// record can neither kill nor resurrect a prefix record: the resumed
+    /// slice absorbs it inline instead of re-streaming the file ([P04]).
+    #[test]
+    fn a_resumed_slice_absorbs_an_off_leaf_non_user_record() {
+        let root = tempfile::tempdir().unwrap();
+        let path = session_file(root.path());
+        let head = format!(
+            r#"{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{SESSION_A}","cwd":"{PROJECT}","message":{{"role":"user","content":"first"}}}}
+{{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"hi"}}],"id":"m1","stop_reason":"end_turn"}}}}
+"#
+        );
+        // `t1` parents to `u1` while the carried leaf is `a1` — off-leaf, and
+        // a tool_result-only user record, so not a submission.
+        let tail = format!(
+            r#"{{"type":"user","uuid":"t1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"x1","content":"ok"}}]}}}}
+{{"type":"user","uuid":"u2","parentUuid":"t1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"second"}}}}
+{{"type":"assistant","uuid":"a2","parentUuid":"u2","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"ok"}}],"id":"m2","stop_reason":"end_turn"}}}}
+"#
+        );
+        let whole = format!("{head}{tail}");
+
+        let full = parse_content(&path, &whole, None);
+        let first = parse_content(&path, &head, None);
+        let seed = seed_from(&first);
+        let resumed = parse_content(&path, &whole, Some(&seed));
+
+        assert!(
+            resumed.resumed,
+            "an off-leaf non-user record must be absorbed, not re-streamed"
+        );
+        assert_eq!(
+            resumed.meta.turn_count, full.meta.turn_count,
+            "absorbed inline must equal the full parse's count"
+        );
+        assert_eq!(
+            resumed.resume.frontier, full.resume.frontier,
+            "absorbed inline must equal the full parse's frontier"
+        );
+        assert_eq!(
+            resumed.resume.effective_uuids, full.resume.effective_uuids,
+            "absorbed inline must equal the full parse's uuid set"
+        );
+    }
+
+    /// The shape the trigger exists for: an off-leaf USER submission is a
+    /// rewind, which kills the abandoned branch and so changes the prefix's
+    /// effective membership. The resumed slice must give up and re-stream.
+    #[test]
+    fn a_resumed_slice_re_streams_on_an_off_leaf_user_submission() {
+        let root = tempfile::tempdir().unwrap();
+        let path = session_file(root.path());
+        let head = format!(
+            r#"{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{SESSION_A}","cwd":"{PROJECT}","message":{{"role":"user","content":"first"}}}}
+{{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"hi"}}],"id":"m1","stop_reason":"end_turn"}}}}
+"#
+        );
+        // `u2` re-parents to `u1`, abandoning `a1` — the rewind shape.
+        let tail = format!(
+            r#"{{"type":"user","uuid":"u2","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"instead, this"}}}}
+{{"type":"assistant","uuid":"a2","parentUuid":"u2","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"ok"}}],"id":"m2","stop_reason":"end_turn"}}}}
+"#
+        );
+        let whole = format!("{head}{tail}");
+
+        let full = parse_content(&path, &whole, None);
+        let first = parse_content(&path, &head, None);
+        let seed = seed_from(&first);
+        let resumed = parse_content(&path, &whole, Some(&seed));
+
+        assert!(
+            !resumed.resumed,
+            "a rewind must re-stream so the dead branch is recomputed"
+        );
+        assert_eq!(resumed.meta.turn_count, full.meta.turn_count);
+        assert_eq!(resumed.resume.frontier, full.resume.frontier);
+        assert_eq!(
+            resumed.resume.effective_uuids, full.resume.effective_uuids
         );
     }
 

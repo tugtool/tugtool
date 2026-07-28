@@ -3899,7 +3899,20 @@ function handleCompactBoundary(
   }
   const entry = state.scratch.get(turnKey);
   if (entry === undefined) {
-    return { state, effects: [] };
+    // An open turn with no scratch (a suppressed `/compact` summarization turn,
+    // whose commit is dropped) would swallow the boundary silently. Seat the
+    // divider on the last committed turn instead — the same fallback the
+    // no-open-turn path takes — so a compaction never goes unmarked.
+    return {
+      state,
+      effects: [
+        {
+          kind: "append-compact-note",
+          text: compactionNoteText(event.preTokens),
+          ...(honestTotal !== undefined ? { compactionPostTotal: honestTotal } : {}),
+        },
+      ],
+    };
   }
   const note: SystemNote = {
     kind: "system_note",

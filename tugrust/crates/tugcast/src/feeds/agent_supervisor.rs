@@ -11078,7 +11078,7 @@ mod tests {
         let path = dir.join(format!("{session_id}.jsonl"));
         let content = format!(
             "{{\"type\":\"mode\",\"mode\":\"normal\",\"sessionId\":\"{session_id}\"}}\n\
-             {{\"type\":\"user\",\"sessionId\":\"{session_id}\",\"cwd\":\"{project_dir}\",\"timestamp\":\"2026-06-01T10:00:00.000Z\",\"message\":{{\"role\":\"user\",\"content\":\"{last_prompt}\"}}}}"
+             {{\"type\":\"user\",\"sessionId\":\"{session_id}\",\"cwd\":\"{project_dir}\",\"timestamp\":\"2026-06-01T10:00:00.000Z\",\"message\":{{\"role\":\"user\",\"content\":\"{last_prompt}\"}}}}\n"
         );
         std::fs::write(&path, content).unwrap();
         path

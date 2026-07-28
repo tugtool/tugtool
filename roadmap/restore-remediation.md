@@ -105,11 +105,15 @@ A sixth defect was discovered during remediation, not in the brief: the scanner'
 
 **Resolution:** OPEN — needs a user decision; not a step of this plan.
 
-#### [Q04] Issue 6 rule change (OPEN pending #step-9) {#q04-issue6-rule}
+#### [Q04] Issue 6 rule change (RESOLVED — no rule change) {#q04-issue6-rule}
 
 **Question:** Do the non-verbatim duplicate-pair divergences (parentUuid ×9, message ×3, toolUseResult ×299 on `4eb21996`) require changing the first-occurrence-wins rule (e.g. field-level last-occurrence-wins for `toolUseResult`)?
 
-**Resolution:** OPEN — #step-9 produces the verdicts; any rule change becomes a follow-up plan.
+**Resolution:** RESOLVED — **no rule change.** First-occurrence-wins is not merely safe on these divergences; it is the load-bearing choice, and last-occurrence-wins would destroy real content. Measured over `4eb21996`'s 1,183 duplicate pairs (max 2 occurrences per uuid):
+
+- **`toolUseResult` (299) — harmless, and the rule is why.** The divergence is entirely one-directional: the re-append blanks `stdout` to `""` while keeping the same key set. Across all 299 pairs the re-append is **poorer in 299, richer in 0** (e.g. 13,460 B → 95 B). Keeping the first occurrence in `tool_use_structured` emission preserves the real tool output; adopting the re-append would blank 299 tool results.
+- **`message` (3) — harmless, same direction.** The only divergent subfield is `message.usage`, zeroed in the re-append (`input_tokens: 0`, both cache figures 0). `message.id`, `role`, and `stop_reason` are byte-identical in all three pairs, so the `SigRecord` shape and the same-`message.id` continuation rule in `turn_engine.rs` / `replay.ts` are untouched. First-occurrence-wins keeps the real per-turn telemetry.
+- **`parentUuid` (9) — harmless.** Eight are non-user records (six `attachment`, two `assistant`) whose parents are permuted *within* a re-append block; `compute_dead_entry_indices` roots dead branches exclusively at user submissions, so a non-user record's re-parenting cannot change prefix membership. The ninth (`2b01382c`, lines 4422 → 6316) is a genuine user submission whose parent moves from `6baaa79f` to `43aeabaf` — both inside the same compacted block. It kills nothing: `tugcode dead` reports an **empty dead set** for this file, and the Rust↔TS dead-branch parity contract is 0-divergent over 886 sessions. No branch is mis-killed or mis-resurrected on the real topology.
 
 ---
 
@@ -266,12 +270,12 @@ Where to look (from the brief + store layout): `tugcode/src/replay.ts` (`hoistCo
 | #step-1 | Issue 5 attribution + MLX memory fix | done | uncommitted (working tree) |
 | #step-2 | Incremental-resume redesign (effective-uuid seed) | done | uncommitted (working tree) |
 | #step-3 | Resumed-lineage exclusion fix | done | uncommitted (working tree) |
-| #step-4 | Narrow the resumed-slice trigger taxonomy | pending | — |
-| #step-5 | Unterminated-tail deferral | pending | — |
-| #step-6 | North-star certification (zero re-streams on ordinary appends) | pending | — |
-| #step-7 | Issues 1–3: root-cause the compaction seating in the running app | pending | — |
-| #step-8 | Issues 1–3: fix + multi-compaction regression coverage | pending | — |
-| #step-9 | Issue 6: duplicate-pair divergence verdicts | pending | — |
+| #step-4 | Narrow the resumed-slice trigger taxonomy | done | dash `restore-remediation` |
+| #step-5 | Unterminated-tail deferral | done | dash `restore-remediation` |
+| #step-6 | North-star certification (zero re-streams on ordinary appends) | done | dash `restore-remediation` |
+| #step-7 | Issues 1–3: root-cause the compaction seating in the running app | done | dash `restore-remediation` |
+| #step-8 | Issues 1–3: fix + multi-compaction regression coverage | done | dash `restore-remediation` |
+| #step-9 | Issue 6: duplicate-pair divergence verdicts | done | dash `restore-remediation` |
 | #step-10 | Landing + in-app verification | pending | — |
 
 #### Step 1: Issue 5 attribution + MLX memory fix {#step-1}
@@ -413,8 +417,18 @@ Where to look (from the brief + store layout): `tugcode/src/replay.ts` (`hoistCo
 
 **Tests:** none (investigation).
 
+**Findings (recorded 2026-07-28):**
+
+*Symptom 1 — boundaries seat as assistant turns.* The literal `No response requested.` is **not deck text**: it is a real assistant record in the JSONL, Claude's actual reply to the `/compact` envelope (10 occurrences in `8b8d7bf1`). The seating defect is upstream of it. `hoistCompactCommandEnvelope` (`tugcode/src/replay.ts`) moves the `/compact` envelope to sit immediately **before** the `compact_boundary` frame; the measured frame order at every one of the 9 boundaries is `add_user_message` → `compact_boundary` → `compact_summary` → (assistant blocks) → `turn_complete`. That `add_user_message` opens a `pendingTurn`, so `handleCompactBoundary` (`tugdeck/src/lib/code-session-store/reducer.ts`) takes its **mid-turn branch** (`turnKey !== undefined`) and pushes the `system_note` into the open turn's scratch, instead of emitting the `append-compact-note` effect that seats the divider on the last committed turn. The handler's own docstring — "on replay the `/compact` scaffolding records are skipped, so the boundary usually arrives with no open turn ([P04])" — is stale: the hoist is what put a turn there. The open turn then absorbs Claude's `No response requested.` reply and commits as one row carrying envelope + `Session compacted` block + reply + token footer.
+
+*Symptom 2 — the missing 9th divider.* The file holds 10 boundary records; suppression nulls one re-appended duplicate, so replay emits 9 `compact_boundary` frames and 8 dividers render. The mid-turn branch has a silent drop: `const entry = state.scratch.get(turnKey); if (entry === undefined) return { state, effects: [] };`. A `pendingTurn` whose turn is `suppressed` (the canceled-`/compact` throwaway summarization turn the commit path drops) loses its note with the turn. This is the leading hypothesis for the single lost divider and is falsifiable at #step-8: seating the divider off the open turn entirely must restore 9 of 9.
+
+*Symptom 3 — `83 OF 68`.* Not compaction at all. `displayed` is `transcript.length` (`session-load-control-bar.tsx`), which counts **every** row including shell-exchange rows; `total` is `replayWindow.totalTurns`, the engine's Claude-turn count. `instances/release-main/shell_exchanges` records **18** shell exchanges for `8b8d7bf1`, interleaved into `_transcript` by `upsertShellTurn` / `insertTurnByTimestamp`. Shell rows are `#s` non-context ink ([D111]) and are not Claude turns. **Prediction: `83 = 68 Claude turns + 15 shell rows`** (15 of the 18 inside the loaded window); the fix is to count only Claude-origin turns in `displayed`, not to remove rows.
+
+*Method note.* The offline store-lifecycle probe could not be completed: driving the real `CodeSessionStore` with `translateJsonlSession`'s frames for this session crashes bun 1.3.9 with `EXC_BREAKPOINT` on a worker thread (a bun-internal panic, JS stack absent, reproducible from ~230 frames in and unaffected by JIT/stack-size knobs). The frame-level measurements above come from draining `translateJsonlSession` alone, which is stable; the row-composition claims are from static tracing plus the ledger counts, and are pinned by #step-8's regression test rather than by a probe.
+
 **Checkpoint:**
-- [ ] The root-cause statement names file/symbol for each of the three symptoms and predicts the exact rendered-row arithmetic (83 = 68 + …) — falsifiable against #step-8's fix.
+- [x] The root-cause statement names file/symbol for each of the three symptoms and predicts the exact rendered-row arithmetic (83 = 68 + 15 shell rows) — falsifiable against #step-8's fix.
 
 ---
 
@@ -461,7 +475,7 @@ Where to look (from the brief + store layout): `tugcode/src/replay.ts` (`hoistCo
 **Tests:** none (analysis); any resulting rule change ships with its own tests in a follow-up plan.
 
 **Checkpoint:**
-- [ ] [Q04] resolution updated with three explicit verdicts and evidence.
+- [x] [Q04] resolution updated with three explicit verdicts and evidence.
 
 ---
 
@@ -478,7 +492,7 @@ Where to look (from the brief + store layout): `tugcode/src/replay.ts` (`hoistCo
 - [ ] Memory: `vmmap --summary <host pid>` shows `IOAccelerator` ≈ weights + ≤256 MB cache (~2.6 GB ceiling with the model resident); `MLXLocalModelBackend` `logGpu` lines confirm; typing/session-open lag gone.
 - [ ] Issue 4 residuals: transcript no longer blanks on app activation; `4eb21996` lists with full content and correct count; report the `31c60766` fork state to the user ([Q02]).
 - [ ] `just db-inspect "instances/release-main/sessions" "SELECT excluded, COUNT(*) FROM external_scan_cache GROUP BY excluded"` — the 22 exclusions drop to only genuinely-foreign files.
-- [ ] Cross-check tuglaws: `turn-metric.md` already updated; verify no other law text states the old re-stream policy.
+- [x] Cross-check tuglaws: `turn-metric.md`'s scanner paragraph now states the [P04] trigger taxonomy and the [P05] tail deferral; no other law text carries the old re-stream policy (`tracking-changes.md`'s "re-stream" mentions are about replay idempotency, unrelated).
 
 **Checkpoint:**
 - [ ] Every #success-criteria line verified in the running release app.
@@ -495,13 +509,13 @@ Where to look (from the brief + store layout): `tugcode/src/replay.ts` (`hoistCo
 - [ ] `8b8d7bf1` renders 68/68 with 9 dividers and correct boundary seating (#step-8, verified in-app at #step-10).
 - [ ] Host RSS with model resident ≤ ~2.6 GB; lag gone (#step-10).
 - [ ] `4eb21996` listed with full content; exclusion count reduced to genuinely-foreign files (#step-10).
-- [ ] [Q04] carries three explicit verdicts (#step-9).
+- [x] [Q04] carries three explicit verdicts (#step-9).
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] [Q01] absorb `/compact` boundary events incrementally (property-test-gated).
 - [ ] [Q03] local-model residency product decision (user).
-- [ ] Any Issue 6 rule change that #step-9's verdicts demand.
+- [x] Issue 6 needs no rule change — #step-9's verdicts closed [Q04].
 - [ ] Lineage-aware session identity in the picker (unify rotated ids under one row rather than suppressing files).
 
 | Checkpoint | Verification |

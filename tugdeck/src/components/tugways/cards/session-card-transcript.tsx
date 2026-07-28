@@ -262,6 +262,23 @@ const SHELL_IDENTIFIER = "Shell";
 const GIT_IDENTIFIER = "Git Commit";
 
 /**
+ * Claude Code's canned replies to a `/compact` dispatch. Both are
+ * acknowledgements of the compaction, not the model addressing the user, and
+ * both appear in real transcripts (`Compacted` on older builds, `No response
+ * requested.` on current ones). A turn whose only assistant content is one of
+ * these is a compaction boundary, so it renders as a standalone divider rather
+ * than an assistant turn — see {@link AssistantTurnCell}'s compaction-only path.
+ */
+const COMPACT_ACKNOWLEDGEMENTS: ReadonlySet<string> = new Set([
+  "Compacted",
+  "No response requested.",
+]);
+
+function isCompactAcknowledgement(text: string): boolean {
+  return COMPACT_ACKNOWLEDGEMENTS.has(text.trim());
+}
+
+/**
  * Stable empty-atoms reference for the ghost-row defensive fallback —
  * a fresh `[]` would defeat the `useMemo` identity gate that derives
  * `imageAtoms`.
@@ -921,7 +938,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
 
   const elements: React.ReactNode[] = [];
   const lastMessage = messages[messages.length - 1];
-  // A compaction turn's assistant reply is Claude Code's canned "Compacted"
+  // A compaction turn's assistant reply is Claude Code's canned
   // acknowledgement — redundant beside the quiet "Session compacted" line and
   // the Compaction Summary block the compact note renders. Suppress it so the
   // compaction point reads once, not twice.
@@ -1012,7 +1029,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
       continue;
     }
     if (message.kind === "assistant_text") {
-      if (hasCompactNote && message.text.trim() === "Compacted") {
+      if (hasCompactNote && isCompactAcknowledgement(message.text)) {
         continue;
       }
       const path = `turn.${turnKey}.message.${message.messageKey}.text`;
@@ -1335,7 +1352,8 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
   // header, no Z1B end-state), so the transcript reads it as a boundary rather
   // than a turn. The turn qualifies when its only content is the compact
   // `system_note`, ignoring the user's `/compact` command (rendered by the
-  // separate user row) and Claude Code's canned "Compacted" acknowledgement.
+  // separate user row) and Claude Code's canned acknowledgement of the
+  // compaction ({@link COMPACT_ACKNOWLEDGEMENTS}).
   const compactNote = messages.find(
     (m) => m.kind === "system_note" && m.source === "compact",
   );
@@ -1345,7 +1363,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
       (m) =>
         m.kind === "user_message" ||
         (m.kind === "system_note" && m.source === "compact") ||
-        (m.kind === "assistant_text" && m.text.trim() === "Compacted"),
+        (m.kind === "assistant_text" && isCompactAcknowledgement(m.text)),
     );
   if (
     isCompactionOnlyTurn &&

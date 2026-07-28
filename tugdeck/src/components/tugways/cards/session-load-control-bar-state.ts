@@ -41,9 +41,21 @@ export function deriveControlBarState(input: ControlBarInputs): ControlBarState 
   return input.loadingDisplay ? { kind: "loading" } : { kind: "metadata" };
 }
 
+/**
+ * Claude turns among the loaded rows. Shell exchanges ride the same
+ * transcript as `#s` non-context ink ([D111]) and are not conversation
+ * turns, so they must not count toward the `X of Y` metric whose `Y` is
+ * the segmentation engine's Claude-turn count.
+ */
+export function countClaudeTurns(
+  transcript: ReadonlyArray<{ origin?: string }>,
+): number {
+  return transcript.reduce((n, turn) => (turn.origin === "shell" ? n : n + 1), 0);
+}
+
 /** The metadata row's right-side status, derived from the loaded window. */
 export interface LoadStatus {
-  /** X — turns currently displayed (the loaded slice). */
+  /** X — Claude turns currently displayed (the loaded slice). */
   displayed: number;
   /** Y — the whole session's committed turn count. */
   total: number;
@@ -59,14 +71,19 @@ export interface LoadStatus {
  * `totalTurns` are `null` on a full (non-windowed) replay — there, the
  * whole session is loaded, so displayed == total and nothing is older.
  * `step` is the fixed page size (clamped to the older count).
+ *
+ * `claudeTurnsDisplayed` counts Claude turns, not transcript rows: shell
+ * rows are `#s` non-context ink ([D111]) interleaved into the same
+ * transcript, and `totalTurns` is the segmentation engine's Claude-turn
+ * count. Counting rows here reads a shell-heavy session as "83 of 68".
  */
 export function deriveLoadStatus(input: {
-  transcriptLength: number;
+  claudeTurnsDisplayed: number;
   firstLoadedTurnIndex: number | null;
   totalTurns: number | null;
   step: number;
 }): LoadStatus {
-  const displayed = input.transcriptLength;
+  const displayed = input.claudeTurnsDisplayed;
   const total = input.totalTurns ?? displayed;
   const earlier = input.firstLoadedTurnIndex ?? 0;
   const hasOlder = earlier > 0;

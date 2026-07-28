@@ -47,6 +47,7 @@ import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { useSessionLedger } from "@/lib/session-ledger-store";
 import { deriveColdRestoreActive } from "./session-card-restore-gate";
 import {
+  countClaudeTurns,
   deriveControlBarState,
   deriveLoadStatus,
   type ControlBarLoadKind,
@@ -405,9 +406,12 @@ function ControlBarMetadata({
   // Ledger wins (stable, present at zero turns); replay anchor backfills the
   // pre-load window.
   const createdAtMs = ledgerCreatedAtMs ?? replayCreatedAtMs;
-  const transcriptLength = React.useSyncExternalStore(
+  // Claude turns, not rows: shell exchanges ride the same transcript as
+  // `#s` non-context ink ([D111]), while the `of Y` denominator is the
+  // segmentation engine's Claude-turn count.
+  const claudeTurnsDisplayed = React.useSyncExternalStore(
     codeSessionStore.subscribe,
-    () => codeSessionStore.getSnapshot().transcript.length,
+    () => countClaudeTurns(codeSessionStore.getSnapshot().transcript),
   );
   const replayWindow = React.useSyncExternalStore(
     codeSessionStore.subscribe,
@@ -426,7 +430,7 @@ function ControlBarMetadata({
   const focusGroup = React.useId();
 
   const status = deriveLoadStatus({
-    transcriptLength,
+    claudeTurnsDisplayed,
     firstLoadedTurnIndex: replayWindow?.firstLoadedTurnIndex ?? null,
     totalTurns: replayWindow?.totalTurns ?? null,
     step: LOAD_PREVIOUS_STEP,
