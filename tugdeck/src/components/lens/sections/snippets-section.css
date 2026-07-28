@@ -50,9 +50,8 @@
   height: auto;
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
-  /* Tighter rows than the default 8px — the snippet list is a dense index of
-     one-line handles, so it spends less vertical space per row. TUNE HERE. */
-  --tugx-list-row-padding-block: 5px;
+  /* Row height comes from `.lens-oneline-list` in `lens-content.css`, shared
+     with the Text Files list so the two agree. */
   /* One step in from the band header's own inline padding, so the incipits read
      as sitting UNDER the section's icon and title rather than starting at the
      same hard edge the header does. */
@@ -223,7 +222,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  /* Size comes from the list's `rowTextSize` — inherited, not restated, so the
+     Snippets incipit and the Text Files filename are one measure. */
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;

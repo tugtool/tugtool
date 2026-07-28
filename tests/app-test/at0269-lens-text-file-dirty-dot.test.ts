@@ -128,13 +128,22 @@ describe.skipIf(!SHOULD_RUN)("at0269 — Lens text-file dirty dot", () => {
           ),
         ).toContain("•");
 
-        // The row's one line reads at the Sessions rows' title scale, and there
-        // is no second line: the directory is not ink.
+        // The row's one line reads at the measure the LIST sets — its
+        // `rowTextSize`, which both Lens one-line lists share — rather than at
+        // whatever size the title's own `TugLabel` asked for. Asserted against
+        // the list's own token so tuning the measure does not fail the test;
+        // what is pinned is that the list governs, not the label.
         expect(
           await app.evalJS<string>(
             `getComputedStyle(document.querySelector('${ROW_TITLE}')).fontSize`,
           ),
-        ).toBe("13px");
+        ).toBe(
+          await app.evalJS<string>(
+            `getComputedStyle(document.querySelector('.lens-text-files-list'))
+               .getPropertyValue('--tugx-list-row-font-size').trim()`,
+          ),
+        );
+        // And there is no second line: the directory is not ink.
         expect(
           await app.evalJS<number>(
             `document.querySelectorAll('${ROW_SUBTITLE}').length`,

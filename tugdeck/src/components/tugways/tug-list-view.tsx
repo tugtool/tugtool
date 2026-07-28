@@ -118,6 +118,10 @@ import {
   resolveRowSeparator,
   type TugListViewRowSeparator,
 } from "./internal/list-view-separator";
+import {
+  resolveRowStriping,
+  type TugListViewRowStriping,
+} from "./internal/list-view-striping";
 import { useFocusable, useFocusManager } from "./use-focusable";
 import { FocusModeContext, KEY_WITHIN_ATTRIBUTE } from "./focus-manager";
 import type {
@@ -136,6 +140,13 @@ export type {
   TugListViewRowSeparatorConfig,
   TugListViewSeparatorThickness,
 } from "./internal/list-view-separator";
+
+// Same for `rowStriping`.
+export type {
+  TugListViewRowStriping,
+  TugListViewRowStripingConfig,
+  TugListViewStripeStrength,
+} from "./internal/list-view-striping";
 
 /** Where the container focus ring is drawn — see {@link TugListViewProps.ringPlacement}. */
 export type TugListViewRingPlacement = "outset" | "inset";
@@ -886,6 +897,53 @@ export interface TugListViewProps<
   rowSeparator?: TugListViewRowSeparator;
 
   /**
+   * Alternating row tint — the other way to separate rows in a dense list.
+   * A divider spends a line BETWEEN rows; a stripe tints every other row, so
+   * the eye tracks across a one-line row by its band instead of by counting
+   * hairlines. The two are independent: a list may carry both, either, or
+   * neither, and a list that stripes usually wants `rowSeparator="none"`.
+   *
+   *  - omitted / `"none"` ⇒ no striping; every row sits on the host surface.
+   *  - `"faint"` | `"subtle"` | `"medium"` | `"strong"` ⇒ band every other row
+   *    at 2% / 4% / 7% / 11% of the surface's own text color.
+   *  - `{ strength: 5.5 }` ⇒ any wash alpha as a percent, for landing between
+   *    the named rungs.
+   *  - `{ color }` ⇒ skip the wash and paint an explicit color or token.
+   *
+   * The band is on ODD rows (0-based), so row 0 stays on the host surface —
+   * the list's first row reads as part of what is above it, and a list short
+   * enough to hold one row shows no banding at all. Parity comes from the
+   * row's ABSOLUTE data-source index (`data-row-parity` on the cell wrapper),
+   * never from `:nth-child`, which under windowing would flip the bands as
+   * the rendered range slides.
+   *
+   * A selected row drops its band: the selection fill is a translucent wash,
+   * and letting the stripe tint through it would make the same selection paint
+   * two different colors depending on which row it landed on.
+   *
+   * @selector [data-row-striping="on"] .tug-list-view-cell[data-row-parity="odd"]
+   */
+  rowStriping?: TugListViewRowStriping;
+
+  /**
+   * Text size for every row in the list — one number for the title, the
+   * subtitle, and any label a cell renderer puts in the content column.
+   *
+   * A number is taken as px; a string is used verbatim, so a token reference
+   * (`"var(--tug-font-size-xs)"`) works. Written to
+   * `--tugx-list-row-font-size` on the container, which the rule below
+   * consumes at a specificity that outranks `TugLabel`'s own `size` prop —
+   * that is the point of the prop: a dense list sets its measure once rather
+   * than every cell renderer choosing a label size and hoping they agree.
+   *
+   * Omitted ⇒ no attribute and no token: every label keeps the size its own
+   * `size` prop asked for, so existing lists are unchanged.
+   *
+   * @selector [data-row-text-size] .tug-list-row-content
+   */
+  rowTextSize?: number | string;
+
+  /**
    * Where the container focus ring is drawn.
    *
    *  - `"outset"` (default) — an `outline` just outside the list's box. Right
@@ -1337,7 +1395,10 @@ function resolveSelectionIndex(
  *   spacer.
  * - Cell wrapper carries `data-tug-list-cell-index` and
  *   `data-tug-list-cell-kind` for test addressability, observer
- *   index lookup, and (later) reuse-pool routing. Wrappers for cells
+ *   index lookup, and (later) reuse-pool routing, plus
+ *   `data-row-parity` — the row's index parity, which alternating row
+ *   tint reads instead of `:nth-child` (windowing slides the rendered
+ *   range, so child order is not row order). Wrappers for cells
  *   whose `roleForIndex` is `"header"` or `"footer"` additionally
  *   carry `data-list-cell-role` set to that value, render with
  *   `tabIndex={-1}`, and short-circuit the wrapper-level `onSelect`
@@ -1389,6 +1450,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       rowLayout,
       rowDensity,
       rowSeparator,
+      rowStriping,
+      rowTextSize,
       ringPlacement = "outset",
       selectedAccent = false,
       selectionSurface,
@@ -4125,6 +4188,32 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           } as React.CSSProperties)
         : undefined;
 
+    // The two presentation props that write a token and a gating attribute:
+    // alternating row tint and the list's text measure. Both are absent
+    // entirely when the prop is omitted, so a list that asks for neither has
+    // the DOM it always had.
+    const resolvedStriping = resolveRowStriping(rowStriping);
+    const rowTextSizeValue =
+      rowTextSize === undefined
+        ? undefined
+        : typeof rowTextSize === "number"
+          ? `${rowTextSize}px`
+          : rowTextSize;
+    const containerStyle: React.CSSProperties | undefined =
+      separatorStyle === undefined &&
+      resolvedStriping === null &&
+      rowTextSizeValue === undefined
+        ? undefined
+        : ({
+            ...separatorStyle,
+            ...(resolvedStriping !== null
+              ? { "--tugx-list-view-stripe-color": resolvedStriping.color }
+              : {}),
+            ...(rowTextSizeValue !== undefined
+              ? { "--tugx-list-row-font-size": rowTextSizeValue }
+              : {}),
+          } as React.CSSProperties);
+
     // Rows are native per-row Tab stops only for an un-authored, non-subordinate
     // list (today's default). A `focusGroup` listbox is one container stop with a
     // movement cursor; a subordinate list contributes no stops.
@@ -4137,6 +4226,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         data-tug-scroll-key={scrollKey ?? "tug-list-view"}
         data-row-layout={rowLayout}
         data-row-separator={rowSeparatorMode}
+        data-row-striping={resolvedStriping !== null ? "on" : undefined}
+        data-row-text-size={rowTextSizeValue !== undefined ? "" : undefined}
         data-ring-placement={ringPlacement === "inset" ? "inset" : undefined}
         data-selection-surface={
           selectionSurface === "control" ? "control" : undefined
@@ -4148,7 +4239,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         className={
           className === undefined ? "tug-list-view" : `tug-list-view ${className}`
         }
-        style={separatorStyle}
+        style={containerStyle}
         role={listRole}
         // A subordinate list adds no Tab stop of its own (the filter input owns
         // focus); an un-authored interactive list is a native focus stop at
@@ -4260,6 +4351,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   className="tug-list-view-cell"
                   data-tug-list-cell-index={index}
                   data-tug-list-cell-kind={kind}
+                  data-row-parity={index % 2 === 0 ? "even" : "odd"}
                   data-list-cell-role={wrapperRoleAttr}
                   data-selected={wrapperSelectedAttr}
                   data-disabled={wrapperDisabledAttr}
@@ -4280,6 +4372,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 className="tug-list-view-cell"
                 data-tug-list-cell-index={index}
                 data-tug-list-cell-kind={kind}
+                data-row-parity={index % 2 === 0 ? "even" : "odd"}
                 data-list-cell-role={wrapperRoleAttr}
                 data-selected={wrapperSelectedAttr}
                 data-disabled={wrapperDisabledAttr}

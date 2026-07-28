@@ -88,6 +88,16 @@ body {
   /* Divider thickness — hairline default; `rowSeparator` overwrites it
      on the container for `thin` / `medium`. */
   --tugx-list-view-divider-thickness:  1px;
+
+  /* Alternating row tint (`rowStriping`) — a wash of the host surface's own
+     FOREGROUND color, which is why one strength scale reads correctly in six
+     themes: the text color is light on the dark themes and dark on the light
+     ones, so the band always moves AWAY from the surface. The color itself is
+     written by the component from the resolved strength; the tint is a token
+     here so a consumer can retint the whole scale (a band in the accent hue,
+     say) without restating the four alphas. Absent by default — the rule below
+     is gated on `data-row-striping`, so an unstriped list resolves nothing. */
+  --tugx-list-view-stripe-tint: var(--tug7-element-global-text-normal-default-rest);
 }
 
 /* ---- Scroll container ---- */
@@ -480,4 +490,55 @@ body {
    own border. */
 .tug-list-view[data-row-layout="pill"] {
   --tugx-list-view-row-gap: var(--tugx-list-view-pill-row-gap);
+}
+
+/* ---- Alternating row tint — opt-in via the `rowStriping` prop ----
+
+   The band goes on ODD rows, so row 0 stays on the host surface: a list's first
+   row reads as continuous with the header above it, and a one-row list shows no
+   banding at all. Parity is the row's ABSOLUTE data index, published as
+   `data-row-parity` by the component — `:nth-child` would be read against the
+   rendered WINDOW, and the bands would crawl as the window slides under a
+   scroll.
+
+   The band paints on the cell WRAPPER, under the row, which is what lets it
+   compose: a `flush` row is transparent at rest, so the band shows through; the
+   row's hover graze and selection fill are washes over it and still read as
+   themselves. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-list-view[data-row-striping="on"]
+  .tug-list-view-cell[data-row-parity="odd"] {
+  background-color: var(--tugx-list-view-stripe-color);
+}
+
+/* A selected row drops its band. The selection fill is a translucent wash, so a
+   band beneath it would tint it — the same selection would paint two different
+   colors depending on which row the user landed on, which reads as a bug. Keyed
+   off the same two selection signals the divider suppression uses: the wrapper's
+   own `data-selected` (the list-owned cursor) and a `TugListRow` that paints its
+   own selection (the picker shape, where selection is driven through cell
+   context). A control-selection row paints no fill, so it keeps its band. */
+.tug-list-view[data-row-striping="on"]:not([data-selection-surface="control"])
+  .tug-list-view-cell[data-row-parity="odd"][data-selected="true"],
+.tug-list-view[data-row-striping="on"]:not([data-selection-surface="control"])
+  .tug-list-view-cell[data-row-parity="odd"]:has(
+    .tug-list-row[data-selected="true"]:not([data-selection-surface="control"])
+  ) {
+  background-color: transparent;
+}
+
+/* ---- Row text size — opt-in via the `rowTextSize` prop ----
+
+   One measure for the whole list. The selector deliberately outranks
+   `TugLabel`'s own `size` rule: a dense list is a typographic unit, and its
+   rows agreeing on a size is worth more than each cell renderer's label
+   choosing for itself. Gated on the attribute, so a list that does not ask
+   keeps every label exactly as its `size` prop set it.
+
+   Reaching the content column (not the row root) leaves the row's leading and
+   trailing accessories — icon buttons, badges, the grip — at their own sizes,
+   which is right: shrinking the text should not shrink the close box. */
+.tug-list-view[data-row-text-size] .tug-list-row-content,
+.tug-list-view[data-row-text-size] .tug-list-row-content .tug-label {
+  font-size: var(--tugx-list-row-font-size);
 }

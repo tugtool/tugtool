@@ -67,3 +67,17 @@
   margin-inline-start: 7px;
   margin-inline-end: calc(4px - var(--tugx-list-row-padding-inline));
 }
+
+/* ---- The Lens's one-line lists ----
+   Snippets and Text Files are the same kind of surface: a dense index of
+   one-line handles read by scanning. They share this class so a row in one is
+   the same height as a row in the other — two lists stacked in one narrow
+   column that disagree on row height read as a layout accident.
+
+   TUNE HERE for row height. The rest of the shared presentation — alternating
+   row color and its strength, separators, text size — is props, and lives in
+   `lens-list-presentation.ts`. Height is the one knob that has to be CSS: it is
+   the row component's own token, and the list passes it down by cascade. */
+.lens-content .lens-oneline-list {
+  --tugx-list-row-padding-block: 2px;
+}

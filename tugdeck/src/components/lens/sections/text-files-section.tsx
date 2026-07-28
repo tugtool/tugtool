@@ -54,6 +54,7 @@ import type {
 } from "@/components/tugways/tug-list-view";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { LENS_LIST_PRESENTATION } from "@/components/lens/lens-list-presentation";
 import { SlotPicker } from "@/components/lens/slot-picker";
 import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
@@ -437,7 +438,8 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
               focusGroup={hasContent ? host.focusGroup : undefined}
               commitOnEnter="act"
               initialSelectedIndex={initialSelectedIndex}
-              className="lens-text-files-list"
+              {...LENS_LIST_PRESENTATION}
+              className="lens-oneline-list lens-text-files-list"
             />
           </TextFilesCellContext>
         </div>

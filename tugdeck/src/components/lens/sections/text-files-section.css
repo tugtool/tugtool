@@ -113,7 +113,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--tug-font-size-xs);
+  /* Relative to the row's own measure, so it stays a step down from the
+     filename at whatever text size the list is tuned to. */
+  font-size: 0.9em;
   color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 

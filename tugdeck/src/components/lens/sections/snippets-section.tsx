@@ -72,6 +72,7 @@ import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
+import { LENS_LIST_PRESENTATION } from "@/components/lens/lens-list-presentation";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { useBlockReorder } from "@/components/lens/block-reorder";
 import {
@@ -1004,7 +1005,8 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
                 onKeyViewKey={onSectionKeyViewKey}
                 onSelectionChange={onSelectionChange}
                 initialSelectedIndex={initialSelectedIndex}
-                className="lens-snippets-list"
+                {...LENS_LIST_PRESENTATION}
+                className="lens-oneline-list lens-snippets-list"
               />
             </SnippetsCellContext>
           </div>
