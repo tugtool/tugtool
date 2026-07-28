@@ -582,6 +582,8 @@ class ProcessManager {
                 kind = .summarize(prompt: prompt)
             case "generate":
                 kind = .generate(prompt: prompt, maxTokens: maxTokens)
+            case "classify":
+                kind = .classify(text: prompt, labels: ["shell", "prompt"])
             default:
                 sendLocalModelResult(id: id, ok: false, text: nil, error: "unsupported task \(task)")
                 return
@@ -590,8 +592,12 @@ class ProcessManager {
                 let reply = await LocalModelService.shared.handle(
                     LocalModelRequest(requestId: id, kind: kind))
                 await MainActor.run {
+                    // Classify answers in `verdict`; every other task answers
+                    // in `text`. The socket reply carries one field, so the
+                    // verdict rides it.
                     self.sendLocalModelResult(
-                        id: id, ok: reply.ok, text: reply.text, error: reply.error)
+                        id: id, ok: reply.ok, text: reply.text ?? reply.verdict,
+                        error: reply.error)
                 }
             }
         case "dev_mode_result":

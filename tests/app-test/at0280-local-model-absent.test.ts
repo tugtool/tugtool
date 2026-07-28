@@ -20,9 +20,9 @@
  *   1. The PULSE strip renders its single activity run and NO headline run —
  *      not an empty one, not a reserved one. Absent means absent.
  *   2. Typing lines that open with a PATH executable — `make test`, `git
- *      status` — never auto-inserts the `!shell` routing chip. Both entry
- *      points into shell routing take caller-supplied readiness, and with no
- *      model readiness is false.
+ *      status` — leaves the composer holding plain text: no routing chip, no
+ *      atom of any kind. Routing is a submit-time decision over the whole
+ *      line, so nothing may materialize in the document while the user types.
  *   3. The Lens's row for the same session shows no goal line either. The
  *      card's strip and the Lens row read the same overview through two
  *      separate call sites, so absence has to be pinned on both.
@@ -109,9 +109,9 @@ async function count(app: App, selector: string): Promise<number> {
 /**
  * Type `text` into the composer and block until the document reads exactly it.
  *
- * The wait is the point: the `!shell` chip is inserted in a microtask after the
- * keystroke that would trigger it, so a document that still reads as plain text
- * once the WHOLE line has landed is a document no chip was inserted into.
+ * The wait is the point: anything the composer materializes on its own does so
+ * in a microtask after the keystroke, so a document that still reads as plain
+ * text once the WHOLE line has landed is a document nothing was inserted into.
  */
 async function typeLine(app: App, text: string, replace = false): Promise<void> {
   await app.nativeClickAtElement(PROMPT);

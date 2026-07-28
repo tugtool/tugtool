@@ -1,7 +1,6 @@
 import { describe, it, expect } from "bun:test";
 
 import {
-  autoShellOpener,
   bandShellLine,
   classifyShellLine,
   ShellVerdictCache,
@@ -15,6 +14,7 @@ const COMMANDS: ReadonlySet<string> = new Set([
   "head", "tail", "less", "more", "which", "open", "npm", "bun", "node",
   "python", "python3", "docker", "kubectl", "ssh", "curl", "tar", "chmod",
   "sed", "awk", "kill", "ps", "top", "df", "du", "cat", "tmux", "write", "apply",
+  "sleep", "say", "who", "last", "join", "split", "yes",
 ]);
 
 // ≥30 command lines that MUST classify shell. A single miss here is a
@@ -185,42 +185,29 @@ describe("classifyShellLine — the compatibility wrapper", () => {
   });
 });
 
-describe("autoShellOpener — live `!shell` chip insert gate", () => {
-  it("fires on an unambiguous PATH command + trailing space, caret at end", () => {
-    expect(autoShellOpener("git ", 4, COMMANDS, true)).toBe("git");
-    expect(autoShellOpener("ls ", 3, COMMANDS, true)).toBe("ls");
-    expect(autoShellOpener("cargo ", 6, COMMANDS, true)).toBe("cargo");
-  });
+describe("bandShellLine — prose opening with an executable reaches the model", () => {
+  // English verbs that are also PATH executables are the whole reason routing
+  // is decided on the full line rather than the opener: on a stock macOS
+  // install `write`, `say`, `who`, `last`, `join`, `split`, `yes`, `top` and
+  // `sleep` are all real binaries, and the set grows with whatever else is on
+  // a given machine's PATH. Each of these must reach `unsure` — the band that
+  // spends a model round trip — and never `shell`.
+  const PROSE_OPENING_WITH_A_BINARY: readonly string[] = [
+    "write me a haiku about summertime",
+    "write a test for the classifier",
+    "top of the file needs a docblock",
+    "sleep is what I need after this bug",
+  ];
 
-  it("never fires when the caller says routing is not live", () => {
-    expect(autoShellOpener("git ", 4, COMMANDS, false)).toBeNull();
-    expect(autoShellOpener("./run.sh ", 9, COMMANDS, false)).toBeNull();
-  });
-
-  it("fires on a path-shaped executable", () => {
-    expect(autoShellOpener("./run.sh ", 9, COMMANDS, true)).toBe("./run.sh");
-    expect(autoShellOpener("~/bin/tool ", 11, COMMANDS, true)).toBe("~/bin/tool");
-  });
-
-  it("never fires on ambiguous openers or stopword-ish commands", () => {
-    for (const doc of ["cat ", "find ", "make ", "test ", "open ", "which "]) {
-      expect(autoShellOpener(doc, doc.length, COMMANDS, true)).toBeNull();
+  it("bands prose that opens with an executable as unsure, never shell", () => {
+    for (const line of PROSE_OPENING_WITH_A_BINARY) {
+      expect(bandShellLine(line, COMMANDS)).toBe("unsure");
+      expect(classifyShellLine(line, COMMANDS, true)).toBe(false);
     }
   });
 
-  it("never fires on an unknown token, sigil leads, or a null set", () => {
-    expect(autoShellOpener("frobnicate ", 11, COMMANDS, true)).toBeNull();
-    expect(autoShellOpener("/shell ", 7, COMMANDS, true)).toBeNull();
-    expect(autoShellOpener("!shell ", 7, COMMANDS, true)).toBeNull();
-    expect(autoShellOpener("# note ", 7, COMMANDS, true)).toBeNull();
-    expect(autoShellOpener("git ", 4, null, true)).toBeNull();
-  });
-
-  it("requires exactly one token + one space with the caret at the end", () => {
-    expect(autoShellOpener("git", 3, COMMANDS, true)).toBeNull();
-    expect(autoShellOpener("git status ", 11, COMMANDS, true)).toBeNull();
-    expect(autoShellOpener("git ", 2, COMMANDS, true)).toBeNull();
-    expect(autoShellOpener("git \n", 5, COMMANDS, true)).toBeNull();
+  it("still bands the same opener as shell when the line is a real command", () => {
+    expect(bandShellLine("write kocienda ttys001", COMMANDS)).toBe("shell");
   });
 });
 

@@ -489,13 +489,14 @@ async fn session_user_prompts(
     let Some(claude_id) = (deps.resolver)(&key.owner_id) else {
         return Vec::new();
     };
-    let jsonl = deps
-        .ledger
-        .claude_projects_root()
-        .join(crate::session_ledger::encode_claude_project_name(
-            &key.project_dir,
-        ))
-        .join(format!("{claude_id}.jsonl"));
+    // The entry key carries the project path as it was recorded, which may be
+    // any spelling of the directory; claude names its project folder after one
+    // of them. The chokepoint is what makes them agree ([L29]).
+    let (project_root, _canonical) = crate::session_ledger::claude_project_dir(
+        deps.ledger.claude_projects_root(),
+        &key.project_dir,
+    );
+    let jsonl = project_root.join(format!("{claude_id}.jsonl"));
 
     // "Since the changeset began" = the earliest file-event time across the
     // entry's currently-dirty paths.

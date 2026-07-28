@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::feeds::draft_engine::SessionResolver;
 use crate::feeds::pulse::forwardable_session;
@@ -374,17 +374,20 @@ pub struct SessionIdentity {
 
 impl SessionIdentity {
     /// The session's JSONL, or `None` when either half of the identity is
-    /// unresolvable — which skips the tick silently.
+    /// unresolvable.
+    ///
+    /// The ledger records the path the user typed, which may be any spelling of
+    /// the directory — `/u/src/tugtool` and `/Users/…/Mounts/u/src/tugtool` are
+    /// one directory with two names, and claude names its project folder after
+    /// only one of them. Routing through `claude_project_dir` is what makes the
+    /// two agree ([L29]); encoding the raw string finds nothing and costs the
+    /// digest the user's own prompts without saying so.
     pub fn jsonl_path(&self, tug_session_id: &str) -> Option<PathBuf> {
         let claude_id = (self.resolver)(tug_session_id)?;
         let project_dir = (self.project_dir)(tug_session_id)?;
-        Some(
-            self.claude_projects_root
-                .join(crate::session_ledger::encode_claude_project_name(
-                    &project_dir,
-                ))
-                .join(format!("{claude_id}.jsonl")),
-        )
+        let (dir, _canonical) =
+            crate::session_ledger::claude_project_dir(&self.claude_projects_root, &project_dir);
+        Some(dir.join(format!("{claude_id}.jsonl")))
     }
 }
 
@@ -471,36 +474,69 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
         state.new_frames = 0;
         state.last_emit = now;
 
-        let Some(jsonl) = config.identity.jsonl_path(&session_id) else {
-            continue;
+        // The prompts are the better half of the digest but not a required
+        // one: `compose_digest` describes a session from its tool use alone.
+        // An identity that won't resolve — the supervisor's map has no claude
+        // id yet, or the ledger has no project dir — costs the digest its
+        // goals, not the whole tick.
+        let prompts = match config.identity.jsonl_path(&session_id) {
+            Some(jsonl) => {
+                crate::scribe::session_prompts_since(&jsonl, 0, MAX_PROMPTS, MAX_PROMPT_CHARS)
+            }
+            None => {
+                debug!(
+                    session = %session_id,
+                    "session overview: identity unresolved; digest from tool use alone",
+                );
+                Vec::new()
+            }
         };
-        let prompts =
-            crate::scribe::session_prompts_since(&jsonl, 0, MAX_PROMPTS, MAX_PROMPT_CHARS);
         let tools: Vec<String> = state.tools.iter().cloned().collect();
         let Some(digest) = compose_digest(&prompts, &tools) else {
+            debug!(session = %session_id, "session overview: nothing to describe");
             continue;
         };
         if state.last_digest.as_deref() == Some(digest.as_str()) {
+            debug!(session = %session_id, "session overview: digest unchanged");
             continue;
         }
         state.last_digest = Some(digest.clone());
 
         let Some(requester) = config.local_model.requester() else {
+            debug!(session = %session_id, "session overview: no local model host");
             backoff.fail(now);
             continue;
         };
+        // Turnaround is the standing measure of whether this feature is usable:
+        // the request deadline is a transport timeout, far above the point at
+        // which a headline stops being worth having.
+        let started = Instant::now();
         let headline = match requester.summarize(digest).await {
             Ok(text) => {
+                let headline = headline_register(&text);
+                info!(
+                    session = %session_id,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    raw = %text,
+                    headline = %headline,
+                    "session overview: summarized",
+                );
                 backoff.succeed();
-                headline_register(&text)
+                headline
             }
             Err(error) => {
-                warn!(%error, session = %session_id, "session overview: summarize failed");
+                warn!(
+                    %error,
+                    session = %session_id,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "session overview: summarize failed",
+                );
                 backoff.fail(Instant::now());
                 continue;
             }
         };
         if headline.is_empty() {
+            debug!(session = %session_id, "session overview: headline empty after register");
             continue;
         }
 
@@ -509,6 +545,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
             continue;
         };
         if state.last_headline.as_deref() == Some(headline.as_str()) {
+            debug!(session = %session_id, "session overview: headline unchanged");
             continue;
         }
         state.beat += 1;
@@ -519,7 +556,13 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
             state.beat,
             crate::session_ledger::now_millis(),
         );
-        let _ = config.pulse_tx.send(frame);
+        let receivers = config.pulse_tx.send(frame).unwrap_or(0);
+        info!(
+            session = %session_id,
+            beat = state.beat,
+            receivers,
+            "session overview: emitted",
+        );
     }
 }
 
@@ -872,10 +915,13 @@ mod tests {
 
     /// A claude JSONL holding one user prompt, at the path the identity below
     /// resolves to.
+    ///
+    /// Seeded through the same `claude_project_dir` chokepoint the emitter
+    /// uses, so the fixture and production agree on the spelling ([L29]) — a
+    /// fixture that encoded the raw string would keep passing while the
+    /// emitter looked somewhere else.
     fn seed_jsonl(root: &std::path::Path, project_dir: &str, claude_id: &str, prompt: &str) {
-        let dir = root.join(crate::session_ledger::encode_claude_project_name(
-            project_dir,
-        ));
+        let (dir, _canonical) = crate::session_ledger::claude_project_dir(root, project_dir);
         std::fs::create_dir_all(&dir).unwrap();
         let mut file = std::fs::File::create(dir.join(format!("{claude_id}.jsonl"))).unwrap();
         let line = serde_json::json!({
@@ -995,6 +1041,39 @@ mod tests {
         assert_eq!(body["text"], "Hardening the watch loop");
         assert_eq!(body["scopes"], serde_json::json!(["s1"]));
         assert_eq!(body["beat"], 1);
+    }
+
+    #[test]
+    fn an_aliased_project_path_still_finds_the_session_jsonl() {
+        // `/tmp` is a symlink to `/private/tmp`, which makes it the same
+        // two-spellings-one-directory case as `/u/src/tugtool` versus
+        // `/Users/…/Mounts/u/src/tugtool`. The project directory must exist
+        // before either side resolves it — the resolver falls back to its
+        // input for a path that isn't on disk, which would make both spellings
+        // agree for the wrong reason and leave this test proving nothing.
+        let name = format!("tugcast-l29-project-{}", std::process::id());
+        let project_dir = format!("/tmp/{name}");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        let root = std::env::temp_dir().join(format!("tugcast-l29-root-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        seed_jsonl(&root, &project_dir, "claude-1", "goal text");
+
+        let project_for_closure = project_dir.clone();
+        let identity = SessionIdentity {
+            resolver: Arc::new(|_| Some("claude-1".to_string())),
+            project_dir: Arc::new(move |_| Some(project_for_closure.clone())),
+            claude_projects_root: root.clone(),
+        };
+        let path = identity.jsonl_path("s1").expect("a resolvable identity");
+        assert!(
+            path.exists(),
+            "jsonl_path resolved to {path:?}, which does not exist — the raw \
+             encoder is back and the digest has silently lost its prompts",
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&project_dir);
     }
 
     #[tokio::test]

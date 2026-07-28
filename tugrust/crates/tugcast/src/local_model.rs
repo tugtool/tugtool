@@ -743,6 +743,13 @@ async fn fetch_one(
 // MARK: - Task requests to the Swift service
 
 /// How long a task request waits for the app before giving up.
+///
+/// Per task, because the tasks sit in different places. `classify` is on a
+/// person's critical path — it runs between Return and the line going
+/// somewhere — so its ceiling is the point past which waiting is worse than
+/// guessing Claude. `summarize` runs on a background cadence with nobody
+/// waiting, so it can afford the long transport deadline.
+const CLASSIFY_TIMEOUT: Duration = Duration::from_secs(3);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// What the app answered for one request.
@@ -786,6 +793,15 @@ impl LocalModelRequester {
     pub async fn summarize(&self, prompt: String) -> Result<String, String> {
         self.request("summarize", prompt, None, REQUEST_TIMEOUT)
             .await
+    }
+
+    /// Ask the model whether one line means the shell or means Claude.
+    ///
+    /// The deck asks this over its own WebKit bridge; this is the same
+    /// question reachable from the socket, so the verdict can be observed
+    /// without a composer in the loop.
+    pub async fn classify(&self, text: String) -> Result<String, String> {
+        self.request("classify", text, None, CLASSIFY_TIMEOUT).await
     }
 
     async fn request(
@@ -985,6 +1001,48 @@ pub fn request_summary(
                 "action": "local_model_summarize_result",
                 "ok": ok,
                 "text": text,
+                "error": error,
+            }),
+        );
+    });
+}
+
+/// Run one classify task through the app and broadcast the verdict.
+///
+/// The shell-routing tenant asks this question on every ambiguous line, but it
+/// asks over the deck's WebKit bridge, where the answer is invisible from
+/// outside. This is the same question on the socket, so what the model actually
+/// says about a given line can be read directly.
+pub fn request_classification(
+    state: &SharedLocalModelState,
+    cat: Option<broadcast::Sender<Frame>>,
+    text: String,
+) {
+    let requester = state.requester();
+    tokio::spawn(async move {
+        let started = std::time::Instant::now();
+        let result = match requester {
+            Some(requester) => requester.classify(text.clone()).await,
+            None => Err("local model host unavailable".to_string()),
+        };
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        let (ok, verdict, error) = match result {
+            Ok(verdict) => {
+                info!(%text, %verdict, elapsed_ms, "local model classify answered");
+                (true, Some(verdict), None)
+            }
+            Err(error) => {
+                warn!(%text, %error, elapsed_ms, "local model classify failed");
+                (false, None, Some(error))
+            }
+        };
+        let Some(cat) = cat else { return };
+        send_control(
+            &cat,
+            serde_json::json!({
+                "action": "local_model_classify_result",
+                "ok": ok,
+                "verdict": verdict,
                 "error": error,
             }),
         );

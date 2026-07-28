@@ -57,7 +57,6 @@ import {
 } from "lucide-react";
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
-import { isolateHistory } from "@codemirror/commands";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -95,7 +94,6 @@ import {
 } from "./tug-text-editor/drop-extension";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import {
-  addAtomsEffect,
   getAtomsInState,
   regenerateAtomsEffect,
   removeAtomById,
@@ -143,11 +141,7 @@ import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 import { DEFAULT_ROUTE } from "@/lib/route-constants";
 import type { PathCommandsStore } from "@/lib/path-commands-store";
-import {
-  autoShellOpener,
-  bandShellLine,
-  ShellVerdictCache,
-} from "@/lib/shell-line-classifier";
+import { bandShellLine, ShellVerdictCache } from "@/lib/shell-line-classifier";
 import { useLocalModelReady } from "@/lib/local-model-store";
 import { prewarm as prewarmLocalModel, requestClassify } from "@/lib/local-model-bridge";
 import { BANG_COMMANDS, matchBangCommandLine } from "@/lib/bang-commands";
@@ -1914,14 +1908,6 @@ export const TugPromptEntry = React.forwardRef<
     selectionGuard.updateCardDomSelection(id, range);
   }, []);
 
-  // Live `!shell` auto-insert latches ([P09] companion). One flag pair per
-  // draft: `inserted` marks that THIS draft's chip came from the auto path
-  // (a menu/chord-seeded chip never sets it), `declined` latches once the
-  // user deletes an auto-inserted chip — one backspace (or ⌘Z) means "this
-  // is prose", and the chip must not nag on the next space. Both reset when
-  // the editor empties (clear / submit / select-all-delete).
-  const autoShellFlagsRef = useRef({ inserted: false, declined: false });
-
   // Shell routing is live only when the local-model store says a model can
   // answer AND the tenant's kill switch is on. Mirrored to a ref because the
   // extension closures below run per keystroke and must never re-render for
@@ -2014,78 +2000,12 @@ export const TugPromptEntry = React.forwardRef<
           const view = update.view;
           queueMicrotask(() => renumberImageChips(view));
         }
-        // Live `!shell` auto-insert: the moment a typed draft becomes
-        // `<unambiguous PATH command><space>`, materialize the `!shell`
-        // routing chip at the head — the routing decision is visible (and
-        // vetoable) while the user types, instead of decided silently at
-        // submit. The submit-time classifier stays as the backstop for what
-        // this deliberately won't touch (ambiguous openers, env-assignment
-        // prefixes, pasted lines).
-        {
-          const flags = autoShellFlagsRef.current;
-          const doc = update.state.doc;
-          if (doc.length === 0) {
-            flags.inserted = false;
-            flags.declined = false;
-            // Verdicts belong to the draft being composed, not to the session:
-            // an emptied editor (clear, select-all-delete, or the teardown at
-            // the end of a submit) is where they go.
-            verdictCacheRef.current.clear();
-            pendingVerdictRef.current = null;
-          } else if (
-            flags.inserted &&
-            (positioned.length === 0 ||
-              positioned[0]!.position !== 0 ||
-              positioned[0]!.segment.type !== "command")
-          ) {
-            // The auto-inserted chip is gone but the draft lives on — the
-            // user deleted it (backspace or ⌘Z). Latch the decline.
-            flags.inserted = false;
-            flags.declined = true;
-          }
-          if (
-            !flags.inserted &&
-            !flags.declined &&
-            positioned.length === 0 &&
-            // Cheap structural pre-gates before materializing any text:
-            // the classifier only ever matches `<token><space>` on a
-            // single line, so a multi-line or long draft (a paste) must
-            // not pay a full doc copy per keystroke just to fail the
-            // `\n` check inside.
-            doc.lines === 1 &&
-            doc.length <= 256 &&
-            update.transactions.some((tr) => tr.isUserEvent("input.type")) &&
-            autoShellOpener(
-              doc.sliceString(0),
-              update.state.selection.main.head,
-              pathCommandsStoreRef.current?.getSnapshot() ?? null,
-              shellRoutingReadyRef.current,
-            ) !== null
-          ) {
-            flags.inserted = true;
-            const view = update.view;
-            // Deferred dispatch — never re-enter the in-flight update. Its
-            // own isolated undo step, so ⌘Z peels just the chip (and the
-            // decline latch above reads that as "no, this is prose").
-            queueMicrotask(() => {
-              view.dispatch({
-                changes: { from: 0, insert: `${TUG_ATOM_CHAR} ` },
-                effects: addAtomsEffect.of([
-                  {
-                    position: 0,
-                    segment: {
-                      kind: "atom",
-                      type: "command",
-                      label: "shell",
-                      value: "shell",
-                    },
-                  },
-                ]),
-                annotations: isolateHistory.of("full"),
-                userEvent: "input.tug-atom",
-              });
-            });
-          }
+        // Verdicts belong to the draft being composed, not to the session:
+        // an emptied editor (clear, select-all-delete, or the teardown at
+        // the end of a submit) is where they go.
+        if (update.state.doc.length === 0) {
+          verdictCacheRef.current.clear();
+          pendingVerdictRef.current = null;
         }
 
         // Pre-consult the local model on `unsure` lines while the user types,

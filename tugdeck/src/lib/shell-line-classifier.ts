@@ -17,6 +17,14 @@
  * exchange is visibly attributed with a one-click "send to Claude instead", so a
  * rare misroute is undoable.
  *
+ * Routing is decided once, at submit, over the **whole line**. There is no
+ * opener-only judgement while the user types: the set of English words that are
+ * also PATH executables is large (`write`, `say`, `who`, `last`, `join`,
+ * `split`, `yes`, `top`, `sleep`, …) and varies by machine, so a first-word test
+ * cannot tell `write me a haiku` from `write kocienda ttys001` and has no line
+ * context yet to help it. The full line does: `me` is a stopword, which lands
+ * the draft in `unsure`, which is what the model is asked about.
+ *
  * Pure — no side effects, no store reads. The caller enforces the precondition
  * (the draft has no atoms; `text` is trimmed and single-line), supplies the
  * login-PATH command set (null until it loads, which answers Code — the safety
@@ -80,49 +88,6 @@ function hasStrongSignal(text: string, tokens: readonly string[]): boolean {
   if (text.includes("&&") || text.includes("$(") || text.includes("${")) return true;
   if (/["']/.test(text)) return true;
   return tokens.some(isCommandShaped);
-}
-
-/**
- * The live-typing companion to {@link classifyShellLine}: decide whether a
- * draft that just became `<token><space>` should auto-insert the `!shell`
- * routing chip at its head, so the routing is visible (and vetoable) while
- * the user types instead of decided silently at submit.
- *
- * Far stricter than the submit-time classifier, because at first-space time
- * there is no line context to judge — only the opener itself:
- *  - `docText` must be exactly one token + one trailing space, single-line,
- *    with the caret (`caret`) right after that space.
- *  - The token must be a known PATH executable (or `./…` / `~/…`
- *    path-shaped) AND unambiguous: an {@link AMBIGUOUS_OPENERS} or
- *    {@link STOPWORDS} member never live-inserts (`cat …`, `make sure …`) —
- *    those wait for the full-line classifier at submit.
- *
- * Returns the opener token when the chip should be inserted, else `null`.
- * Pure; the caller enforces the atom-free precondition, its own
- * once-per-draft / declined latches, and `ready` — which is false whenever
- * on-device routing is unavailable or switched off, restoring the surface to
- * the behavior of a build with no local model at all.
- */
-export function autoShellOpener(
-  docText: string,
-  caret: number,
-  commands: ReadonlySet<string> | null,
-  ready: boolean,
-): string | null {
-  if (!ready) return null;
-  if (commands === null) return null;
-  if (docText.includes("\n")) return null;
-  if (caret !== docText.length) return null;
-  const m = /^(\S+) $/.exec(docText);
-  if (m === null) return null;
-  const token = m[1]!;
-  if (token.startsWith("./") || token.startsWith("~/")) return token;
-  if (token.startsWith("/") || token.startsWith("!") || token.startsWith("#")) {
-    return null;
-  }
-  if (!commands.has(token)) return null;
-  if (AMBIGUOUS_OPENERS.has(token) || STOPWORDS.has(token)) return null;
-  return token;
 }
 
 /**

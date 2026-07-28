@@ -233,6 +233,18 @@ pub async fn dispatch_action(
                 None => info!("dispatch_action: local_model_summarize missing prompt"),
             }
         }
+        "local_model_classify" => {
+            let cat = stream_outputs
+                .get(&FeedId::CONTROL)
+                .map(|(tx, _)| tx.clone());
+            let text = serde_json::from_slice::<serde_json::Value>(raw_payload)
+                .ok()
+                .and_then(|v| v.get("text")?.as_str().map(str::to_owned));
+            match text {
+                Some(text) => crate::local_model::request_classification(local_model, cat, text),
+                None => info!("dispatch_action: local_model_classify missing text"),
+            }
+        }
         "local_model_list" => {
             let cat = stream_outputs
                 .get(&FeedId::CONTROL)
