@@ -19,6 +19,8 @@ import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 import {
   beginsTokenAt,
   completionField,
+  completionQueryMatchesSelection,
+  queryStopChar,
   scanForwardForTokenEnd,
   tugCompletionExt,
 } from "../tug-text-editor/completion-extension";
@@ -203,6 +205,84 @@ describe("word-savvy query derivation", () => {
       userEvent: "delete.backward",
     }).state;
     expect(deleted.field(completionField).active).toBe(false);
+  });
+});
+
+describe("queryStopChar — a slash-command query ends at the next slash", () => {
+  const doc = (s: string) => Text.of(s.split("\n"));
+
+  test("only the slash trigger has a stop char", () => {
+    expect(queryStopChar("/")).toBe("/");
+    expect(queryStopChar("@")).toBe(null);
+    expect(queryStopChar("!")).toBe(null);
+  });
+
+  test("the scan stops at the stop char", () => {
+    expect(scanForwardForTokenEnd(doc("compact/tugplug:implement"), 0, "/")).toBe(7);
+    expect(scanForwardForTokenEnd(doc("compact/tugplug:implement"), 0)).toBe(25);
+  });
+
+  test("a file path keeps its slashes and its inner @", () => {
+    expect(scanForwardForTokenEnd(doc("tuglaws/tuglaws.md"), 0, null)).toBe(18);
+    expect(scanForwardForTokenEnd(doc("node_modules/@types/bun"), 0, null)).toBe(23);
+  });
+});
+
+describe("prepending a slash command in front of another one", () => {
+  // The reported flow: the composer holds "/tugplug:implement <path>" and the
+  // user types "/compact" at offset 0. The two commands are one unbroken
+  // token, so without the slash stop char the query would be the whole
+  // unmatchable "compact/tugplug:implement" — no popup, and the separating
+  // space the user types next would go in as plain text.
+  const compactProvider: CompletionProvider = (query) =>
+    "compact".startsWith(query) ? [item("compact", "command")] : [];
+
+  function prependState(): EditorState {
+    return EditorState.create({
+      doc: "/tugplug:implement roadmap/restore-remediation.md",
+      selection: EditorSelection.cursor(0),
+      extensions: [tugCompletionExt(() => ({ "/": compactProvider }))],
+    });
+  }
+
+  test("the query is the command being typed, not the whole glued run", () => {
+    const slashed = prependState().update({
+      changes: { from: 0, insert: "/" },
+      selection: EditorSelection.cursor(1),
+      userEvent: "input.type",
+    }).state;
+    expect(slashed.field(completionField).active).toBe(true);
+    expect(slashed.field(completionField).query).toBe("");
+
+    const typed = slashed.update({
+      changes: { from: 1, insert: "compact" },
+      selection: EditorSelection.cursor(8),
+      userEvent: "input.type",
+    }).state;
+    const field = typed.field(completionField);
+    expect(field.query).toBe("compact");
+    expect(field.filtered.map((f) => f.label)).toEqual(["compact"]);
+    // The gate the space key reads: an exact match, so the next space
+    // atomizes "/compact" instead of inserting literally.
+    expect(
+      completionQueryMatchesSelection({
+        query: field.query,
+        filtered: field.filtered,
+        selectedIndex: field.selectedIndex,
+      }),
+    ).toBe(true);
+  });
+
+  test("a click inside the second command opens nothing rather than flashing", () => {
+    const clicked = EditorState.create({
+      doc: "/compact/tugplug:implement",
+      selection: EditorSelection.cursor(26),
+      extensions: [tugCompletionExt(() => ({ "/": compactProvider }))],
+    }).update({
+      selection: EditorSelection.cursor(14),
+      userEvent: "select.pointer",
+    }).state;
+    expect(clicked.field(completionField).active).toBe(false);
   });
 });
 

@@ -36,7 +36,8 @@
  *   - **Word-savvy queries**: the query is the text from the trigger
  *     through the end of the token the caret sits in
  *     ({@link scanForwardForTokenEnd} — stops at whitespace, U+FFFC,
- *     or doc end), NOT trigger-to-caret. The caret's position inside
+ *     doc end, or the trigger's {@link queryStopChar}), NOT
+ *     trigger-to-caret. The caret's position inside
  *     the token is an editing detail, never a filter boundary: editing
  *     mid-token filters on (and accepting replaces) the whole token,
  *     so an accept can never strand a tail fragment after the atom.
@@ -377,9 +378,31 @@ export function scanBackForTrigger(
 }
 
 /**
+ * The extra character — beyond whitespace, U+FFFC, and doc end — that ends a
+ * given trigger's query, or `null` when the trigger has none.
+ *
+ * A slash-command name never contains a `/`, so a second slash inside the
+ * token starts a *different* command rather than continuing this one. That
+ * makes prepending work: with `/tugplug:implement …` already in the composer,
+ * typing `/compact` at offset 0 produces the single token
+ * `/compact/tugplug:implement`, and without this stop the query would be the
+ * whole unmatchable run — no popup, and the following space would be plain
+ * text instead of the accept that atomizes `/compact`.
+ *
+ * The rule is per-trigger, not global, because the same character is ordinary
+ * query text elsewhere: a `@` file path is full of slashes
+ * (`@tuglaws/tuglaws.md`) and can even repeat its own trigger
+ * (`@node_modules/@types/bun`).
+ */
+export function queryStopChar(trigger: string): string | null {
+  return trigger === "/" ? "/" : null;
+}
+
+/**
  * Walk forward from `pos` to the end of the token containing it:
- * the first whitespace, atom character (U+FFFC), or doc end. Returns
- * the offset one past the token's last character (== `pos` when `pos`
+ * the first whitespace, atom character (U+FFFC), or doc end — or the
+ * trigger's {@link queryStopChar} when one is supplied. Returns the
+ * offset one past the token's last character (== `pos` when `pos`
  * already sits at a token boundary).
  *
  * This is the forward complement of {@link scanBackForTrigger} and the
@@ -389,11 +412,13 @@ export function scanBackForTrigger(
 export function scanForwardForTokenEnd(
   doc: { sliceString: (from: number, to: number) => string; length: number },
   pos: number,
+  stopChar?: string | null,
 ): number {
   let i = pos;
   while (i < doc.length) {
     const ch = doc.sliceString(i, i + 1);
     if (ch === TUG_ATOM_CHAR || /\s/.test(ch)) break;
+    if (stopChar !== undefined && stopChar !== null && ch === stopChar) break;
     i++;
   }
   return i;
@@ -459,7 +484,11 @@ export function deriveQueryUpdate(
     return { kind: "cancel" };
   }
   const queryStart = state.anchorOffset + 1;
-  const tokenEnd = scanForwardForTokenEnd(doc, queryStart);
+  const tokenEnd = scanForwardForTokenEnd(
+    doc,
+    queryStart,
+    queryStopChar(state.trigger),
+  );
   if (selection.head > tokenEnd) return { kind: "cancel" };
   const query = doc.sliceString(queryStart, tokenEnd);
   if (query.includes("\n")) return { kind: "cancel" };
@@ -522,7 +551,18 @@ export function detectRejoin(
   if (!found) return null;
   const provider = lookupCompletionProvider(providers, found.trigger);
   if (!provider) return null;
-  const queryEnd = scanForwardForTokenEnd(tr.state.doc, found.anchorOffset + 1);
+  const queryEnd = scanForwardForTokenEnd(
+    tr.state.doc,
+    found.anchorOffset + 1,
+    queryStopChar(found.trigger),
+  );
+  // The caret must sit inside the run we found. A `queryStopChar` can end the
+  // query before the caret (`/compact/tugplug…` clicked inside the second
+  // command), and reopening there would activate a session that
+  // `deriveQueryUpdate` cancels on the very next transaction — a popup that
+  // flashes on every keystroke. Leading-trigger-wins means that run simply
+  // gets no popup.
+  if (sel.head > queryEnd) return null;
   const query = tr.state.doc.sliceString(found.anchorOffset + 1, queryEnd);
   return {
     provider,
@@ -726,6 +766,7 @@ function completionExtender(
       const queryEnd = scanForwardForTokenEnd(
         tr.state.doc,
         detected.anchorOffset + 1,
+        queryStopChar(detected.trigger),
       );
       const query = tr.state.doc.sliceString(
         detected.anchorOffset + 1,
