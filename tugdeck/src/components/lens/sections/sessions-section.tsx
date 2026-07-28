@@ -1,9 +1,15 @@
 /**
  * The Lens **Sessions** section — a read-only session *monitor* rendered as a
- * `TugListView`. One row per open session card, stacked two lines:
+ * `TugListView`. One row per open session card, stacked (L1):
  *
  *   [phase dot]  <session name>            <slot layout>   [grip]
+ *                <standing goal>
  *                <latest pulse line>      <activity sparkline>
+ *
+ * The middle line is the local model's session overview — the same string the
+ * card's strip wears as its headline. It is there only when one exists, so a
+ * row is genuinely two heights and a deck with no model sees the two-line row
+ * it always had.
  *
  * The list is authored into the section's focus group (`host.focusGroup`), so
  * it is one Tab stop in the Lens: arrows rove the movement cursor over the
@@ -14,10 +20,10 @@
  * it (`initialSelectedIndex`).
  *
  * The name is resolved exactly like the Session card's title-bar chip
- * (`sessionCardTitleOverride`); the pulse line + sparkline share the second
- * row and align the same way the on-card `session-pulse-strip` does. The slot
- * layout rides the name line, so the arrangement affordance never crowds the
- * pulse.
+ * (`sessionCardTitleOverride`); the goal and activity lines wear the same
+ * tones and sizes as the on-card `session-pulse-strip`'s two runs, so a
+ * session reads identically in both places. The slot layout rides the name
+ * line, so the arrangement affordance never crowds the pulse.
  *
  * Laws: [L02] every store enters React through `useSyncExternalStore`; [L06]
  * appearance (cursor ring, selection, dot/sparkline) is CSS on engine
@@ -85,7 +91,11 @@ import { sessionNameStore } from "@/lib/session-name-store";
 import { sessionTagStore } from "@/lib/session-tag-store";
 import { sessionCardTitleOverride } from "@/lib/session-card-title";
 import { branchForProject, useChangesetAll } from "@/lib/changeset-all-store";
-import { latestLineForScope, usePulse } from "@/lib/pulse-store";
+import {
+  latestLineForScope,
+  usePulse,
+  usePulseOverview,
+} from "@/lib/pulse-store";
 import {
   ACTIVITY_BIN_MS,
   getSessionActivityStore,
@@ -292,6 +302,10 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
   const displayName = useSessionLabel(row.projectDir, row.tugSessionId, branch);
   const pulse = usePulse();
   const latest = latestLineForScope(pulse.lines, row.tugSessionId);
+  // The session's standing goal — the same string the card's strip wears as
+  // its headline. Rendered on its own line here (L1) rather than inline, and
+  // only when it exists: an absent overview costs the row no height.
+  const overview = usePulseOverview(row.tugSessionId);
   // The compaction pin, exactly as the on-card strip wears it: a `/compact`
   // run streams nothing for minutes, so without it the row keeps showing the
   // last line from before the submit for the whole run.
@@ -325,6 +339,16 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
         </TugLabel>
         <SlotPicker cardId={row.cardId} />
       </span>
+      {pulse.enabled && overview !== null ? (
+        <span className="session-row-intent-line">
+          <span
+            className="session-row-intent"
+            data-slot="session-row-intent"
+          >
+            {overview.text}
+          </span>
+        </span>
+      ) : null}
       <span className="session-row-pulse-line">
         {pulseText !== null ? (
           <span className="sessions-monitor-pulse">{pulseText}</span>

@@ -84,6 +84,22 @@
   transform: translateY(calc(-1 * var(--tugx-lens-sessions-dot-rise)));
 }
 
+/* A row carrying a standing goal is three lines, not two, and the same lift
+   would be wrong twice over: centering moves down by half the added line, so
+   holding the dot against the title would need roughly twice the rise — and at
+   that height the glyph leaves the content box entirely and crowds the divider
+   above.
+
+   Dead center is the answer instead, for the reason the two-line case gives:
+   the lift exists to correct a small dot reading low against the title, and a
+   28px glyph spanning a ~62px column already reads as belonging to the whole
+   row. The taller the column, the less there is to correct. */
+.lens-sessions-list
+  .session-row-content:has(.session-row-intent-line)
+  .tug-list-row-leading {
+  --tugx-lens-sessions-dot-rise: 0px;
+}
+
 /* The wrap is the reorder container: the `BlockDropCaret` positions absolutely
    within it, and it is the list's flex scroller (mirrors `.snippets-list-wrap`). */
 .sessions-list-wrap {
@@ -109,14 +125,31 @@
   font-size: 12px;
 }
 
-/* The pulse line rides the row's subtitle slot. Size + color MATCH the on-card
-   `session-pulse-strip`: the live line reads in the default text tone at the
-   strip's 0.75rem, so a session reads identically in the Lens and on its card. */
+/* The activity line. Size + color MATCH the on-card `session-pulse-strip`'s
+   activity run, so a session reads identically in the Lens and on its card:
+   the live operation is a machine string in the machine face, muted and
+   smaller than the goal above it. */
+/* @tug-renders-on var(--tugx-pane-bg) */
 .sessions-monitor-pulse {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.6875rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The standing goal, between the session's name and its activity (L1). Wears
+   the strip headline's tone and size exactly — one string, one register,
+   wherever it appears. Present only when the local model has written one; an
+   absent overview renders no line and reserves no height. */
+/* @tug-renders-on var(--tugx-pane-bg) */
+.session-row-intent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.75rem;
+  font-weight: var(--tug-font-weight-medium);
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 
@@ -127,12 +160,13 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* The row's two lines. The content column is authored by hand (see
-   `SessionRowContent`) so each line can carry its own trailing accessory: the
-   slot layout rides the name, the sparkline rides the pulse. A shared row
-   `trailing` slot could only span both lines at once, which is exactly the
-   collision this replaces. */
+/* The row's lines — two, or three when the session has a standing goal. The
+   content column is authored by hand (see `SessionRowContent`) so each line can
+   carry its own trailing accessory: the slot layout rides the name, the
+   sparkline rides the activity. A shared row `trailing` slot could only span
+   every line at once, which is exactly the collision this replaces. */
 .session-row-headline,
+.session-row-intent-line,
 .session-row-pulse-line {
   display: flex;
   align-items: center;
@@ -140,9 +174,11 @@
   min-inline-size: 0;
 }
 
-/* Each line's text takes the slack and truncates; the accessory past it keeps
-   its intrinsic width and pins to the right edge. */
+/* Each line's text takes the slack and truncates on its own; none of the three
+   wraps into the line below. The accessory past it keeps its intrinsic width
+   and pins to the right edge. */
 .session-row-headline .tug-list-row-title,
+.session-row-intent-line .session-row-intent,
 .session-row-pulse-line .sessions-monitor-pulse {
   flex: 1 1 auto;
   min-inline-size: 0;

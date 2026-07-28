@@ -27,6 +27,20 @@ enum LocalModelConfig {
 /// and a model earns its place in the catalog by clearing the bars with *this*
 /// wording rather than wording tuned to itself. Changing a line here invalidates
 /// those scores for every catalog entry at once.
+///
+/// `summarize` was rewritten from a sentence prompt to a headline prompt when
+/// the PULSE strip promoted the overview to its bright leading run. The
+/// catalog's recorded overview scores therefore refer to the *previous*
+/// wording, and are not being refreshed: scoring a summary against a fixed
+/// corpus says nothing about whether the strip works, and there is no ground
+/// truth for "what is this session working on" to score against. What the
+/// feature is actually held to is the `headline_register` normalizer in
+/// `session_overview.rs`, which guarantees the form in Rust whatever the model
+/// answers, plus liveness and turnaround (`roadmap/local-model-liveness-brief.md`).
+///
+/// The freeze rule above still holds and is doing a different job: it keeps
+/// catalog entries comparable on identical wording, and it makes editing one of
+/// these strings a deliberate act rather than a drive-by.
 enum LocalModelPrompts {
     static let classify = """
     You classify what a developer typed into a dev tool. Reply with exactly one \
@@ -35,10 +49,14 @@ enum LocalModelPrompts {
     """
 
     static let summarize = """
-    You are the status strip for a live coding session. In ONE short line of at \
-    most 12 words, describe what the session is working on overall — the \
-    high-level goal, not the latest single action. Output only that line: no \
-    preamble, no quotes, no explanation.
+    You write the headline for a live coding session. Name what the session is \
+    working on overall — the high-level goal, not the latest single action — \
+    in newspaper headline style. Rules: at most 8 words; no "the", "a", or \
+    "an"; never begin with "Working on", "Trying to", "Currently", or any \
+    other filler; no trailing period; no quotes. Name the work, do not describe \
+    the act of working on it. Examples: "Hunting focus drift in Lens", \
+    "Wiring overview cadence gate", "Fixing download resume restart-from-zero". \
+    Output only the headline.
     """
 
     static let generate = """
@@ -47,7 +65,12 @@ enum LocalModelPrompts {
     """
 
     static let classifyMaxTokens = 8
-    static let summarizeMaxTokens = 48
+    /// A headline budget, not a sentence budget. The strip clips at 56
+    /// characters (`MAX_HEADLINE_CHARS` in `session_overview.rs`), and 24
+    /// tokens comfortably covers that — enough that a legal headline is never
+    /// truncated mid-word, few enough that the model cannot spend latency
+    /// generating text the strip will immediately discard.
+    static let summarizeMaxTokens = 24
     static let generateMaxTokens = 256
 }
 

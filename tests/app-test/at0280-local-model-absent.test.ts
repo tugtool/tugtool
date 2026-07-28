@@ -17,12 +17,15 @@
  * the same on a fresh machine and on this one.
  *
  * Two claims:
- *   1. The PULSE strip renders its single beat row and NO overview row — not an
- *      empty one, not a reserved one. Absent means absent.
+ *   1. The PULSE strip renders its single activity run and NO headline run —
+ *      not an empty one, not a reserved one. Absent means absent.
  *   2. Typing lines that open with a PATH executable — `make test`, `git
  *      status` — never auto-inserts the `!shell` routing chip. Both entry
  *      points into shell routing take caller-supplied readiness, and with no
  *      model readiness is false.
+ *   3. The Lens's row for the same session shows no goal line either. The
+ *      card's strip and the Lens row read the same overview through two
+ *      separate call sites, so absence has to be pinned on both.
  *
  * **Typing only — this test never submits a turn.** A real send into a
  * replay-backed harness session is out of bounds; submit-time banding is
@@ -31,6 +34,7 @@
  * @covers tugdeck/src/lib/local-model-store.ts
  * @covers tugdeck/src/lib/shell-line-classifier.ts
  * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
+ * @covers tugdeck/src/components/lens/sections/sessions-section.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  */
 
@@ -57,7 +61,12 @@ const CARD = '[data-card-id="A"]';
 const PROMPT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const ATOM = `${CARD} [data-slot="tug-text-editor"] img[data-atom-type]`;
 const STRIP = `${CARD} [data-slot="session-pulse-strip"]`;
-const OVERVIEW = `${CARD} [data-slot="session-pulse-overview"]`;
+const HEADLINE = `${CARD} [data-slot="session-pulse-headline"]`;
+
+// The Lens's own row for the same session. Addressed the way
+// `at0257-lens-session-reorder.test.ts` addresses Sessions rows.
+const LENS_ROW = `.lens-sessions-list .session-row-content[data-session-id="${SID}"]`;
+const LENS_INTENT = `${LENS_ROW} [data-slot="session-row-intent"]`;
 
 let projectDir = "";
 
@@ -151,12 +160,12 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 20_000 },
           );
 
-          // 1. The strip is there, and it wears exactly one row.
+          // 1. The strip is there, and it carries no headline run.
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(STRIP)}) !== null`,
             { timeoutMs: 20_000 },
           );
-          expect(await count(app, OVERVIEW)).toBe(0);
+          expect(await count(app, HEADLINE)).toBe(0);
 
           // 2. Two lines that open with a real PATH executable — the exact
           //    shape the routing heuristic reacts to when a model is present.
@@ -166,8 +175,19 @@ describe.skipIf(!SHOULD_RUN)(
           await typeLine(app, "git status", true);
           expect(await count(app, ATOM)).toBe(0);
 
-          // Still no overview after all that activity.
-          expect(await count(app, OVERVIEW)).toBe(0);
+          // Still no headline after all that activity.
+          expect(await count(app, HEADLINE)).toBe(0);
+
+          // 3. The Lens says the same thing. The strip and the Lens row are
+          //    two separate readers of the same overview, so a regression can
+          //    land in one and not the other — the claim is only pinned where
+          //    it is asserted.
+          await app.dispatchControlAction("toggle-lens");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(LENS_ROW)}) !== null`,
+            { timeoutMs: 10_000 },
+          );
+          expect(await count(app, LENS_INTENT)).toBe(0);
         } finally {
           await app.close();
           rmTempTugbank(tugbankPath);

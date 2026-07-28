@@ -18,8 +18,12 @@
  *     name, activity + sparkline on a third; each level keeps a clean
  *     single-line run.
  *
- * The shipped strip renders the pair inverted (goal muted, beat bright);
- * the reference zone keeps that baseline visible for comparison.
+ * S1 and L1 both shipped, so this card is no longer a proposal — it is the
+ * doctrine reference for the copy register, and the zone below is where the
+ * rewrite rule stays legible. The shipping surfaces are
+ * `session-pulse-strip.tsx` (S1) and `sessions-section.tsx` (L1); on the
+ * strip the headline is fed by the local model's session overview, and the
+ * reference zone keeps the pre-S1 baseline visible for comparison.
  *
  * Pure presentation on hand-authored fixtures — no stores, no wire. The
  * sparklines are the real `TugSparkline` fed a deterministic synthetic

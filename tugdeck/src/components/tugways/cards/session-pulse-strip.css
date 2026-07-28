@@ -1,12 +1,14 @@
 /**
  * session-pulse-strip.css — the Z2 PULSE strip's scoped styling.
  *
- * One fixed-height line: a letterspaced mono PULSE legend, then the
- * machine's latest thought in a small italic, ellipsized. A changed line
- * SWAPS INSTANTLY — one text node, no animation. Text cannot cross-fade
- * (two different strings in one box interleave their glyphs into a
- * smash), and the dwell paces changes ≥1.8s apart, so an instant replace
- * reads calm; the sparkline carries the liveness.
+ * One fixed-height line carrying two levels (S1): a letterspaced PULSE
+ * legend, then the session's standing goal as a bright pinned headline,
+ * then `›`, then the machine's latest thought trailing in small muted
+ * mono. The activity is the run that ellipsizes. A changed line SWAPS
+ * INSTANTLY — one text node, no animation. Text cannot cross-fade (two
+ * different strings in one box interleave their glyphs into a smash), and
+ * the dwell paces changes ≥1.8s apart, so an instant replace reads calm;
+ * the sparkline carries the liveness.
  *
  * Tuglaw cross-check:
  *  - [L19] component file pair with `data-slot="session-pulse-strip"`.
@@ -45,16 +47,20 @@
   /* How tightly the keyboard focus ring hugs the PULSE label pill (smaller =
    * tighter). The global default is 2px; this label wears a snugger ring. */
   --session-pulse-strip-legend-ring-offset: 0px;
-  /* Height of the overview line, when there is one. */
-  --session-pulse-strip-overview-height: 22px;
-  --session-pulse-strip-overview-font-size: 0.6875rem;
-  /* A column of at most two rows: the standing overview (only when one
-   * exists — no reserved empty row) over the live beat. With no overview the
-   * column is exactly the beat row, so the strip is the same single fixed-height
-   * line it has always been. */
+  /* The activity run's own size — smaller than the headline it trails, so the
+   * two levels read as headline over caption rather than as one long line. */
+  --session-pulse-strip-activity-font-size: 0.6875rem;
+  /* ONE row, always. Both levels of the reading share this line (S1), so
+   * whether a session has an overview changes what the row says and never how
+   * tall it is. */
   display: flex;
-  flex-direction: column;
+  /* Optically center the small label against the larger line text (NOT
+   * baseline-aligned — that drops the small label low). */
+  align-items: center;
+  gap: var(--tug-space-sm);
   flex: 0 0 auto;
+  height: var(--session-pulse-strip-height);
+  line-height: var(--session-pulse-strip-height);
   box-sizing: border-box;
   padding-block: 0;
   padding-inline: var(--tug-space-md);
@@ -66,47 +72,6 @@
   background-color: var(--tugx-pane-bg);
   color: var(--tug7-element-global-text-normal-muted-rest);
   overflow: hidden;
-}
-
-/* The live beat: the row this component has always been. Every geometry rule
- * that used to sit on the root lives here, so a strip with no overview above it
- * is byte-identical to the single-line strip. */
-.session-pulse-strip-beat {
-  display: flex;
-  /* Optically center the small label against the larger line text (NOT
-   * baseline-aligned — that drops the small label low). */
-  align-items: center;
-  gap: var(--tug-space-sm);
-  flex: 0 0 auto;
-  height: var(--session-pulse-strip-height);
-  line-height: var(--session-pulse-strip-height);
-  box-sizing: border-box;
-  overflow: hidden;
-}
-
-/* The standing overview: what the session is FOR, above the beat's what just
- * happened. Quieter and smaller than the beat — it is context, not news, and it
- * must not compete with the line that actually changes. */
-.session-pulse-strip-overview {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  height: var(--session-pulse-strip-overview-height);
-  line-height: var(--session-pulse-strip-overview-height);
-  box-sizing: border-box;
-  /* Indent to the beat text's start, so the two lines share a left edge
-   * rather than the overview hanging under the PULSE pill. */
-  padding-inline-start: calc(24px + var(--tug-space-sm) + 14px);
-  overflow: hidden;
-}
-
-.session-pulse-strip-overview-text {
-  font-size: var(--session-pulse-strip-overview-font-size);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  opacity: 0.85;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
@@ -162,11 +127,13 @@
   outline-offset: var(--session-pulse-strip-legend-ring-offset);
 }
 
-/* The cross-fade stage: fills the remaining width so the text runs to the
- * strip's right padding before it ellipsizes (no character-count clip). */
+/* The S1 stage: fills the remaining width and lays the two levels out on one
+ * baseline. The runs sit IN FLOW so their baseline drives the stage's, shared
+ * with the legend pill. */
 .session-pulse-strip-stage {
   position: relative;
-  display: block;
+  display: flex;
+  align-items: baseline;
   flex: 1 1 auto;
   min-width: 0;
   transform: translate(
@@ -175,14 +142,9 @@
   );
 }
 
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+/* Single-line mechanics shared by both runs. Tone and size belong to the run's
+ * own class, so the two levels can differ without fighting over specificity. */
 .session-pulse-strip-text {
-  /* The current line sits IN FLOW so its baseline drives the stage's
-   * baseline (shared with the legend). One line, ellipsized at the stage's
-   * right edge — fills the available width, not a character count. */
-  display: block;
-  color: var(--tug7-element-global-text-normal-default-rest);
-  font-size: var(--session-pulse-strip-font-size);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -227,65 +189,49 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* ── Two-level line: "intent › action" ─────────────────────────────────
-   The retained goal (muted context) leads into the live beat (primary).
-   The line is a flex row so the BEAT is layout-pinned and the INTENT
-   ellipsizes first — the thing happening now is never the part that gets
-   cut, the inversion the old single-run ellipsis produced. `›` is a
-   directional divider (reads "into detail"), not the symmetric bullet. */
-.session-pulse-line--twolevel {
-  display: flex;
-  align-items: baseline;
-  min-width: 0;
-}
+/* ── S1: "headline › activity" ─────────────────────────────────────────
+   The session's standing goal leads, in headline register; the live
+   operation trails. `›` is a directional divider (reads "into detail"),
+   not the symmetric bullet.
 
-/* The goal: muted, shrinks first, ellipsized. Its markdown emphasis is
-   flattened (see below) so it stays a calm context line and never
-   flickers to bold/mono as tool beats start and stop. */
+   Which run truncates is the whole point of the split. The headline is
+   PINNED — `flex: 0 0 auto`, so it yields no width to the activity and the
+   activity is always what ellipsizes. Pinned does NOT mean unclipped: both
+   runs keep `overflow: hidden` + ellipsis + `min-width: 0`, because the
+   strip root clips and a headline let loose would be cut mid-glyph with no
+   `…` to admit it. The only difference between the two runs is the flex
+   basis. */
+
+/* The goal: the brightest, heaviest run on the strip — a headline. */
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.session-pulse-intent {
-  flex: 0 1 auto;
+.session-pulse-headline {
+  flex: 0 0 auto;
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* Emphasis flattening: a `**bold**` or `/slash` code span in the goal
-   must not out-shout the muted context tone. Scoped to the intent only —
-   a standalone monologue line (rendered as the bright beat) keeps full
-   markdown. */
-.session-pulse-intent :is(strong, b, em, i) {
-  font-weight: inherit;
-  font-style: inherit;
-}
-.session-pulse-intent code {
-  font-family: inherit;
-  font-size: inherit;
-  background: none;
-  padding: 0;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-size: var(--session-pulse-strip-font-size);
+  font-weight: var(--tug-font-weight-medium);
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.session-pulse-intent-sep {
+.session-pulse-sep {
   flex: 0 0 auto;
   margin-inline: 0.45em;
   color: var(--tug7-element-global-text-normal-muted-disabled-rest);
 }
 
-/* The live beat: primary reading. Pinned (does not shrink to make room
-   for the goal), brighter, a touch heavier so it reads as the action. */
+/* The live operation: muted, mono, smaller, and the run that gives way. A
+   tool call is a machine string, so it reads in the machine face. */
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.session-pulse-beat {
-  flex: 0 0 auto;
+.session-pulse-activity {
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--tug7-element-global-text-normal-default-rest);
-  font-weight: var(--tug-font-weight-medium);
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--session-pulse-strip-activity-font-size);
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* Rendered markdown flattens to one inline run: the strip is a single

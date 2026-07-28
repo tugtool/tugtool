@@ -41,6 +41,7 @@ import { DEFAULT_LENS_SIDE } from "./lib/layout-imposer";
 import { deckTrace, type DeckTraceEvent } from "./deck-trace";
 import { getFocusManager } from "./components/tugways/focus-manager";
 import { currentGesture } from "./gesture-interpreter";
+import { _ingestPulseFrameForTest, getPulseStore } from "./lib/pulse-store";
 import { nodeToPath, selectionGuard } from "./components/tugways/selection-guard";
 import {
   cardSessionBindingStore,
@@ -160,12 +161,16 @@ import {
  * rather than a residue of the transitions that wrote them. Additive; major
  * stays `1`.
  *
+ * `1.17.0`: adds {@link TugTestSurface.publishPulseFrame} — delivers a PULSE
+ * frame body as if it arrived over the wire, so a test can put a session
+ * overview or a beat on screen without a live commentator behind it.
+ *
  * `1.16.0`: adds {@link TugTestSurface.currentGesture} — the live pointer
  * gesture's classification record, so a test can assert what the interpreter
  * decided (activation, promotion, placement, the named reasons) rather than
  * only the downstream effects. Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.16.0" as const;
+export const SURFACE_VERSION = "1.17.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -556,6 +561,22 @@ export interface TugTestSurface {
     preventMousedownDefault: boolean;
     reasons: string[];
   } | null;
+
+  /**
+   * Deliver a PULSE frame body as if it had arrived over the wire
+   * (SURFACE_VERSION 1.17.0).
+   *
+   * `payloadJson` is the emitter's own shape —
+   * `{"type":"pulse","kind":"overview","text":…,"scopes":[…],"beat":N,"at":ms}`
+   * for a standing overview, the same without `kind` for a beat. The bytes go
+   * through the production parser and folds, so this puts a real overview on
+   * the strip and in the Lens without a local model or a live commentator.
+   *
+   * Returns `false` when no store is attached. A `true` return only means the
+   * bytes were handed over: the parser drops a malformed body silently, so
+   * assert on what rendered, never on this alone.
+   */
+  publishPulseFrame(payloadJson: string): boolean;
 
   /**
    * Register an element as a selection boundary on behalf of a test
@@ -1424,6 +1445,16 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         preventMousedownDefault: g.preventMousedownDefault,
         reasons: g.reasons,
       };
+    },
+
+    publishPulseFrame(payloadJson: string): boolean {
+      if (getPulseStore() === null) return false;
+      try {
+        _ingestPulseFrameForTest(JSON.parse(payloadJson));
+      } catch {
+        return false;
+      }
+      return true;
     },
 
     getSelection(cardId?: string): SelectionSnapshot | null {

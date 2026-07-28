@@ -54,8 +54,11 @@ const MAX_PROMPT_CHARS: usize = 1_500;
 /// Characters of a tool's target kept in its digest line.
 const MAX_TARGET_CHARS: usize = 60;
 
-/// PulseLine doctrine: one line, and it has to fit the strip.
-const MAX_HEADLINE_CHARS: usize = 110;
+/// PulseLine doctrine: one line, and it has to fit the strip as a *headline* —
+/// the bright leading run of the strip's single row, not a sentence about the
+/// session. Long enough for the work's name with slack, short enough that prose
+/// cannot pass. A tuning value; the live matrix may move it.
+const MAX_HEADLINE_CHARS: usize = 56;
 
 /// First and last back-off after the model refuses or fails.
 const BACKOFF_START: Duration = Duration::from_secs(60);
@@ -266,6 +269,84 @@ pub fn clip(text: &str, max_chars: usize) -> String {
     }
 }
 
+/// Openers a model reaches for when it describes the act of working instead of
+/// naming the work. Matched case-insensitively, on the prefix only.
+const FILLER_OPENERS: &[&str] = &[
+    "working on ",
+    "trying to ",
+    "currently ",
+    "the user is ",
+    "this session is ",
+    "it looks like ",
+];
+
+/// Articles, stripped only from the very front — a headline names a thing, and
+/// the article is the one word that never carries any of that name.
+const LEADING_ARTICLES: &[&str] = &["the ", "a ", "an "];
+
+/// Strip a case-insensitive prefix from `text`, returning the remainder.
+///
+/// Compares the original's leading characters rather than lowercasing the whole
+/// string and slicing by the prefix's byte length: lowercasing can change a
+/// character's byte width, and the resulting offset would not be a char
+/// boundary in the original.
+fn strip_prefix_ci<'a>(text: &'a str, prefixes: &[&str]) -> Option<&'a str> {
+    prefixes.iter().find_map(|prefix| {
+        let head: String = text.chars().take(prefix.chars().count()).collect();
+        (head.to_lowercase() == *prefix).then(|| &text[head.len()..])
+    })
+}
+
+/// Impose headline register on whatever the model wrote.
+///
+/// Mechanical only: it removes the forms a model in the wrong register
+/// produces, and never rewrites content. Paraphrase would be a second model
+/// with none of the first one's context, so the rules stop at quotes, filler
+/// openers, articles, whitespace and terminal punctuation, then clip.
+///
+/// Order is load-bearing. Filler openers go before articles, so
+/// `The user is working on the pulse strip` reduces in one pass; clipping is
+/// last, so a stripped prefix buys back budget instead of wasting it.
+///
+/// Total: any input, including empty or whitespace-only, yields a string.
+pub fn headline_register(raw: &str) -> String {
+    let mut text = raw.trim();
+
+    // Matched wrapping quotes, straight or curly. A model asked for one line
+    // often hands back that line in quotes.
+    for (open, close) in [('"', '"'), ('\'', '\''), ('\u{201c}', '\u{201d}')] {
+        if text.chars().count() >= 2
+            && text.starts_with(open)
+            && text.ends_with(close)
+        {
+            let mut chars = text.chars();
+            chars.next();
+            chars.next_back();
+            text = chars.as_str().trim();
+            break;
+        }
+    }
+
+    while let Some(rest) = strip_prefix_ci(text, FILLER_OPENERS) {
+        text = rest.trim_start();
+    }
+    if let Some(rest) = strip_prefix_ci(text, LEADING_ARTICLES) {
+        text = rest.trim_start();
+    }
+
+    // Collapse internal whitespace runs, including any the model wrapped with.
+    let mut collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    // A trailing period is sentence punctuation and never belongs on a
+    // headline. `?` and `!` are content; `…` is `clip`'s own marker and is a
+    // different character entirely, and a spelled-out `...` is left alone too.
+    if collapsed.ends_with('.') && !collapsed.ends_with("..") {
+        collapsed.pop();
+    }
+
+    clip(collapsed.trim(), MAX_HEADLINE_CHARS)
+}
+
 /// The PULSE frame carrying an overview. `kind` is what tells the deck to file
 /// it above the beat line instead of in the beat stream; parsers that predate
 /// the field ignore it.
@@ -414,7 +495,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
         let headline = match requester.summarize(digest).await {
             Ok(text) => {
                 backoff.succeed();
-                clip(text.trim(), MAX_HEADLINE_CHARS)
+                headline_register(&text)
             }
             Err(error) => {
                 warn!(%error, session = %session_id, "session overview: summarize failed");
@@ -594,6 +675,78 @@ mod tests {
     fn clip_respects_character_boundaries() {
         // Four multi-byte characters: a naive byte slice here would panic.
         assert_eq!(clip("日本語です", 3), "日本語…");
+    }
+
+    /// Every shape the normalizer is expected to fix, paired with what it owes.
+    /// Reused by the idempotence test so a rule that is not stable under a
+    /// second pass cannot pass the first.
+    const REGISTER_CORPUS: &[(&str, &str)] = &[
+        ("\"Wiring the watch loop\"", "Wiring the watch loop"),
+        ("'Wiring the watch loop'", "Wiring the watch loop"),
+        (
+            "\u{201c}Wiring the watch loop\u{201d}",
+            "Wiring the watch loop",
+        ),
+        ("Working on the pulse strip", "pulse strip"),
+        ("Trying to fix download resume", "fix download resume"),
+        ("Currently hunting focus drift", "hunting focus drift"),
+        ("The user is working on the pulse strip", "pulse strip"),
+        ("This session is wiring cadence gates", "wiring cadence gates"),
+        ("It looks like a refactor of the ledger", "refactor of the ledger"),
+        ("The pulse strip", "pulse strip"),
+        ("A cadence gate", "cadence gate"),
+        ("An overview emitter", "overview emitter"),
+        ("Fixing   spaced\tout  text", "Fixing spaced out text"),
+        // Articles come off the front only — one inside the headline is part
+        // of what the headline says.
+        ("Wiring the cadence gate.", "Wiring the cadence gate"),
+        ("What broke the resume?", "What broke the resume?"),
+        ("Ship it!", "Ship it!"),
+        ("Wiring the gate...", "Wiring the gate..."),
+        ("   ", ""),
+        ("", ""),
+    ];
+
+    #[test]
+    fn the_normalizer_imposes_headline_register() {
+        for (raw, want) in REGISTER_CORPUS {
+            assert_eq!(&headline_register(raw), want, "input: {raw:?}");
+        }
+    }
+
+    #[test]
+    fn the_normalizer_is_idempotent() {
+        for (raw, _) in REGISTER_CORPUS {
+            let once = headline_register(raw);
+            assert_eq!(headline_register(&once), once, "input: {raw:?}");
+        }
+    }
+
+    #[test]
+    fn the_normalizer_clips_to_the_headline_budget() {
+        let long = "x".repeat(MAX_HEADLINE_CHARS + 20);
+        let out = headline_register(&long);
+        assert_eq!(out.chars().count(), MAX_HEADLINE_CHARS + 1);
+        assert!(out.ends_with('…'));
+        // The clip marker is not a trailing period, so a second pass leaves it.
+        assert_eq!(headline_register(&out), out);
+    }
+
+    #[test]
+    fn the_normalizer_clips_on_character_boundaries() {
+        let long = "日".repeat(MAX_HEADLINE_CHARS + 5);
+        let out = headline_register(&long);
+        assert_eq!(out.chars().count(), MAX_HEADLINE_CHARS + 1);
+    }
+
+    #[test]
+    fn the_normalizer_strips_a_prefix_before_it_counts_the_budget() {
+        // The filler opener comes off first, so the headline underneath fits
+        // where the raw string would have been clipped.
+        let raw = format!("The user is working on {}", "y".repeat(MAX_HEADLINE_CHARS));
+        let out = headline_register(&raw);
+        assert_eq!(out, "y".repeat(MAX_HEADLINE_CHARS));
+        assert!(!out.ends_with('…'));
     }
 
     #[test]
@@ -833,7 +986,10 @@ mod tests {
         let body = next_overview(&mut h.pulse_rx).await.expect("an overview");
         assert_eq!(body["type"], "pulse");
         assert_eq!(body["kind"], "overview");
-        assert_eq!(body["text"], "Hardening the watch loop.");
+        // The model answered with a sentence; what reaches the wire is a
+        // headline. The emit path runs every answer through the normalizer, so
+        // the trailing period never leaves this task.
+        assert_eq!(body["text"], "Hardening the watch loop");
         assert_eq!(body["scopes"], serde_json::json!(["s1"]));
         assert_eq!(body["beat"], 1);
     }

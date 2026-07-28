@@ -8,10 +8,13 @@
  *  - hidden entirely while the `pulse/enabled` tugbank default is off
  *    (the snapshot carries the toggle);
  *  - fixed single-line height once shown — a new line never moves
- *    layout. A session that has a standing OVERVIEW (the local model's
- *    answer to "what is this session working on") wears it as a second,
- *    quieter line above the beat; with no overview there is no reserved
- *    row and the strip is exactly the single line it has always been;
+ *    layout. The line reads at two levels (S1): the session's standing
+ *    OVERVIEW (the local model's answer to "what is this session working
+ *    on") leads in headline register, bright and layout-pinned, then a
+ *    `›`, then the live beat trailing in muted small mono. The activity is
+ *    the run that ellipsizes, so the goal is never the part that gets cut.
+ *    With no overview there is no headline and no separator — the strip is
+ *    exactly the single activity line it has always been;
  *  - every line DWELLS at least {@link MIN_DWELL_MS} before the next
  *    replaces it (rapid thoughts coalesce — the newest pending line
  *    wins when the dwell expires), except the user's own clear
@@ -118,10 +121,6 @@ const SPARKLINE_CURVE = sparklineCurves.gamma(0.6);
 interface DisplayEntry {
   key: string;
   text: string;
-  /** Retained high-level goal behind a low-level `text` beat — the strip
-   *  renders "intent › beat" (goal muted and ellipsized first, beat
-   *  pinned) when present. */
-  intent?: string;
   placeholder: boolean;
   /** Swap this entry in the moment it arrives, skipping the dwell — the
    *  user's own clear and the compaction pin both answer a gesture. */
@@ -283,9 +282,9 @@ export function SessionPulseStrip({
     tugSessionId,
     pulse.cleared.get(tugSessionId),
   );
-  // The session's standing overview. Separate from the beat entirely: it never
-  // enters the dwell queue (it is not news, so it has nothing to pace against)
-  // and never enters the history.
+  // The session's standing overview — the headline run. Separate from the beat
+  // entirely: it never enters the dwell queue (it is not news, so it has
+  // nothing to pace against) and never enters the history.
   const overview = usePulseOverview(tugSessionId);
   const target: DisplayEntry = compacting
     ? COMPACTING_ENTRY
@@ -293,7 +292,6 @@ export function SessionPulseStrip({
       ? {
           key: latest.key,
           text: latest.text,
-          ...(latest.intent !== undefined ? { intent: latest.intent } : {}),
           placeholder: false,
         }
       : NONE_ENTRY;
@@ -330,30 +328,14 @@ export function SessionPulseStrip({
   const history = linesForScope(pulse.lines, tugSessionId, PULSE_HISTORY_COUNT);
 
   // Right-click → Copy the current line's raw text (not the placeholder),
-  // intent included so the copy carries the whole two-level reading.
+  // headline included so the copy carries the whole two-level reading.
   const copyLine = useCopyableButton(
-    current.placeholder ? "" : composeLineCopy(current.intent, current.text),
+    current.placeholder ? "" : composeLineCopy(overview?.text, current.text),
   );
 
   if (!pulse.enabled) return null;
   return (
     <div className="session-pulse-strip" data-slot="session-pulse-strip">
-      {/*
-        The standing overview, when the local model has produced one for this
-        session. Rendered only when present — no reserved empty row — so a
-        model-less deck sees the exact single-line strip it always has.
-      */}
-      {overview !== null && (
-        <div
-          className="session-pulse-strip-overview"
-          data-slot="session-pulse-overview"
-        >
-          <span className="session-pulse-strip-overview-text">
-            {overview.text}
-          </span>
-        </div>
-      )}
-      <div className="session-pulse-strip-beat">
       {/*
         dismissOnChainActivity=false: a row's right-click → Copy dispatches the
         `copy` action through the responder chain, which would otherwise read as
@@ -389,12 +371,37 @@ export function SessionPulseStrip({
         onContextMenu={copyLine.onContextMenu}
         className="session-pulse-strip-stage"
       >
+        {/*
+          S1: the headline leads, pinned and bright; the activity trails,
+          muted and shrinking. Both runs are optional — a session with no
+          overview renders the activity alone, with no separator and nothing
+          reserved where the headline would have been.
+
+          The headline is read straight from the store on every render. It
+          deliberately does NOT go through `useDwellDisplay`: the dwell paces
+          the beat's rapid commentary, and the emitter's own floor already
+          makes the overview slow. Pacing it twice would only delay the
+          session's first headline for no reading benefit.
+        */}
+        {overview !== null && (
+          <span
+            className="session-pulse-headline"
+            data-slot="session-pulse-headline"
+          >
+            {overview.text}
+          </span>
+        )}
+        {overview !== null && (
+          <span className="session-pulse-sep" aria-hidden="true">
+            ›
+          </span>
+        )}
         <PulseLineText
           entry={current}
           className={
             current.placeholder
-              ? "session-pulse-strip-text session-pulse-strip-placeholder"
-              : "session-pulse-strip-text"
+              ? "session-pulse-activity session-pulse-strip-text session-pulse-strip-placeholder"
+              : "session-pulse-activity session-pulse-strip-text"
           }
         />
       </span>
@@ -432,7 +439,6 @@ export function SessionPulseStrip({
         </TugPopoverContent>
       </TugPopover>
       {copyLine.contextMenu}
-      </div>
     </div>
   );
 }
@@ -531,19 +537,29 @@ function SessionPulseHistoryBeat({
   );
 }
 
-/** Raw-text form of a line for the clipboard: "intent › text". */
+/**
+ * Raw-text form of a line for the clipboard: "intent › text".
+ *
+ * Two callers with two different intents. The strip passes the session
+ * overview, so a copy carries the same two-level reading the eye gets; the
+ * history popover passes its group's line intent, which is the level that
+ * survives there ([P09]).
+ */
 function composeLineCopy(intent: string | undefined, text: string): string {
   return intent !== undefined ? `${intent} › ${text}` : text;
 }
 
 /**
- * One rendered line layer. The pulse-line library owns fidelity and
- * safety (math-first split, sanitized markdown, KaTeX, total-function
- * fallback); this component only re-renders once a lazy KaTeX load
- * resolves, then every render is synchronous. `html: ""` is the
- * library's render-as-plain-text signal. An entry carrying an `intent`
- * renders two levels — the retained thought muted, then a bullet, then
- * the live beat.
+ * The activity run. The pulse-line library owns fidelity and safety
+ * (math-first split, sanitized markdown, KaTeX, total-function fallback);
+ * this component only re-renders once a lazy KaTeX load resolves, then
+ * every render is synchronous. `html: ""` is the library's
+ * render-as-plain-text signal.
+ *
+ * The activity is a tool call, so backticked paths and commands are exactly
+ * what the markdown pipeline is for. The headline beside it is one
+ * model-written sentence with no markup in it, so the strip renders that one
+ * as plain text rather than paying for a second pipeline.
  */
 function PulseLineText({
   entry,
@@ -560,60 +576,27 @@ function PulseLineText({
   // the SAME entry with real typesetting (the first pass showed the
   // escaped source while the engine loaded).
   const render = React.useMemo(
-    () =>
-      entry.placeholder
-        ? null
-        : {
-            text: renderPulseLine(entry.text),
-            intent:
-              entry.intent !== undefined ? renderPulseLine(entry.intent) : null,
-          },
+    () => (entry.placeholder ? null : renderPulseLine(entry.text)),
     [entry, engineEpoch],
   );
   React.useEffect(() => {
-    const pendings = [render?.text.pending, render?.intent?.pending].filter(
-      (p): p is Promise<void> => p != null,
-    );
-    if (pendings.length === 0) return;
+    const pending = render?.pending;
+    if (pending == null) return;
     let live = true;
-    void Promise.all(pendings).then(() => {
+    void pending.then(() => {
       if (live) bumpEngineReady();
     });
     return () => {
       live = false;
     };
   }, [render]);
-  if (render === null) {
+  if (render === null || render.html.length === 0) {
     return <span className={className}>{entry.text}</span>;
   }
-  const textNode =
-    render.text.html.length === 0 ? (
-      <>{entry.text}</>
-    ) : (
-      <span dangerouslySetInnerHTML={{ __html: render.text.html }} />
-    );
-  if (entry.intent === undefined) {
-    return <span className={className}>{textNode}</span>;
-  }
-  const intentNode =
-    render.intent === null || render.intent.html.length === 0 ? (
-      <>{entry.intent}</>
-    ) : (
-      <span dangerouslySetInnerHTML={{ __html: render.intent.html }} />
-    );
-  // Two levels on one line: the retained goal (muted context) leads
-  // into the live beat (bright, primary). The beat is layout-pinned and
-  // the intent ellipsizes first, so the thing happening NOW is never the
-  // part that gets cut. `›` reads as "drilling into detail".
   return (
-    <span className={className}>
-      <span className="session-pulse-line session-pulse-line--twolevel">
-        <span className="session-pulse-intent">{intentNode}</span>
-        <span className="session-pulse-intent-sep" aria-hidden="true">
-          ›
-        </span>
-        <span className="session-pulse-beat">{textNode}</span>
-      </span>
-    </span>
+    <span
+      className={className}
+      dangerouslySetInnerHTML={{ __html: render.html }}
+    />
   );
 }

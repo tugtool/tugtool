@@ -65,7 +65,7 @@ Nothing connects them. The model still writes prose sentences, because `LocalMod
 
 - The local-model infrastructure from `roadmap/local-model-bringup.md`, landed on `main` (`9b67b446c`). Specifically: the `summarize` task path (`LocalModelRequester::summarize` in `tugrust/crates/tugcast/src/local_model.rs`), the overview emitter, the `pulse-overview` tenant switch (`PULSE_OVERVIEW_KEY`), and the deck's `usePulseOverview` selector.
 - A downloaded on-device model for the live half of the integration checkpoint. The Tug ▸ **Set Up Tug…** menu item opens the wizard on demand, which is the fastest path to installing or re-installing one.
-- The bake-off harness at `~/bonsai-eval/pulse_8b.py` — the out-of-repo fixture set the current overview prompt was validated against ([#task-prompts](#task-prompts) of the bring-up plan). Re-validation there is the honest response to [P05].
+- ~~The bake-off harness at `~/bonsai-eval/pulse_8b.py`~~ — no longer a dependency; [P05] is withdrawn and re-validation there is retired. See [`local-model-liveness-brief.md`](local-model-liveness-brief.md#retiring-the-re-score).
 
 #### Constraints {#constraints}
 
@@ -120,7 +120,7 @@ Nothing connects them. The model still writes prose sentences, because `LocalMod
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | Bright headline amplifies a wrong overview | med | med | Normalizer bounds the form, not the truth; the beat beneath it is always ground truth, and the whole tenant is behind the `pulse-overview` switch | Owner reports a headline that misdescribes the session |
-| Frozen-prompt doctrine broken without a re-score | med | med | [P05] makes the re-score an explicit obligation with a named harness | Any further edit to `LocalModelPrompts` |
+| ~~Frozen-prompt doctrine broken without a re-score~~ (retired) | — | — | The re-score is withdrawn ([P05]); the freeze rule stays, and liveness + turnaround replace scoring | Any further edit to `LocalModelPrompts` |
 | Lens row grows and crowds the phase dot | low | high | The dot rise knob is retuned in the same step that adds the line | Row divider crowding at the shipped dot size |
 | Model-less users lose the retained goal | low | high | Documented in [P01]; the goal survives in the history popover, and `at0280` pins that the model-less strip is clean rather than degraded | Owner or a user asks where the goal went |
 
@@ -133,13 +133,14 @@ Nothing connects them. The model still writes prose sentences, because `LocalMod
   - The `pulse-overview` tenant switch turns the whole level off without touching the beat.
 - **Residual risk:** A confident wrong headline still reads as fact for as long as it stands. This is inherent to the feature, not to this plan.
 
-**Risk R02: Invalidated model scores** {#r02-score-invalidation}
+**Risk R02: Invalidated model scores (RETIRED 2026-07-28)** {#r02-score-invalidation}
 
 - **Risk:** `LocalModelPrompts.summarize` is documented as frozen precisely so catalog entries are comparable; rewriting it silently makes every recorded score stale.
-- **Mitigation:**
-  - [P05] states the obligation and names `~/bonsai-eval/pulse_8b.py`.
-  - [#step-2](#step-2) updates the docblock so the next reader knows which wording the current scores refer to.
-- **Residual risk:** Until the harness is re-run, the catalog's `recommended` flag rests on scores from the old wording.
+- **Why it is retired:** the risk assumed the scores were load-bearing. They are not — a fixed-corpus score does not tell us whether this feature works, and there is no ground truth for a session summary to score against. Only one catalog entry is offered today, so `recommended` is not currently choosing between anything either.
+- **What stands in its place:**
+  - [#step-2](#step-2)'s docblock edit stays, so the next reader knows which wording is live.
+  - The freeze rule stays: a prompt change remains a deliberate act.
+  - Liveness and turnaround ([`local-model-liveness-brief.md`](local-model-liveness-brief.md)) are the real checks, and a narrow old-vs-new comparison is available by hand if a model choice ever needs defending.
 
 ---
 
@@ -199,7 +200,9 @@ Nothing connects them. The model still writes prose sentences, because `LocalMod
 - The exact number is [Q01] and is expected to move once the live matrix runs.
 - Clipping frequency becomes a diagnostic: if headlines are regularly clipped, the prompt is failing, not the budget.
 
-#### [P05] Changing a frozen prompt obliges a re-score (DECIDED) {#p05-rescore-obligation}
+#### [P05] Changing a frozen prompt obliges a re-score (WITHDRAWN 2026-07-28) {#p05-rescore-obligation}
+
+> **Withdrawn.** The re-score obligation below is retired — see [`local-model-liveness-brief.md`](local-model-liveness-brief.md#retiring-the-re-score). Scoring a generative model against a fixed corpus carries no information about whether this feature works, and there is no ground truth for "what is this session working on" to score against. What survives: the `LocalModelPrompts` freeze rule stays (it keeps catalog entries comparable on identical wording, and makes a prompt change deliberate), the docblock edit stays, and a narrow old-prompt-vs-new comparison remains available by hand when there is a reason to doubt a model choice. The rest of this decision is kept as written for the record.
 
 **Decision:** The `summarize` prompt changes, and the change carries an explicit obligation: re-validate against `~/bonsai-eval/pulse_8b.py`, and update the `LocalModelPrompts` docblock so it names the wording the current catalog scores refer to.
 
@@ -415,12 +418,12 @@ The payload shape is the emitter's own: `{"type":"pulse","kind":"overview","text
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Headline register normalizer + budget (tugcast) | pending | — |
-| #step-2 | Headline-register prompt (tugapp) | pending | — |
-| #step-3 | S1 on the session card strip | pending | — |
-| #step-4 | L1 in the Lens session row | pending | — |
-| #step-5 | Test-surface frame hook + two-level app-test | pending | — |
-| #step-6 | Integration checkpoint — live headlines | pending | — |
+| #step-1 | Headline register normalizer + budget (tugcast) | done | `c468e2f1e` |
+| #step-2 | Headline-register prompt (tugapp) | done | `2a1258e19` |
+| #step-3 | S1 on the session card strip | done | `8c615a0d1` |
+| #step-4 | L1 in the Lens session row | done | `27ed1d8b5` |
+| #step-5 | Test-surface frame hook + two-level app-test | done | `764ec66ac` |
+| #step-6 | Integration checkpoint — live headlines | automated half done; live half is the owner's | — |
 
 #### Step 1: Headline register normalizer + budget (tugcast) {#step-1}
 
@@ -604,13 +607,15 @@ The payload shape is the emitter's own: `{"type":"pulse","kind":"overview","text
 - [ ] Resolve [Q01] from the clip rate: frequent clipping means the prompt is failing, not the budget.
 - [ ] Resolve [Q02] from how the headline reads over time: stale, twitchy, or right.
 - [ ] Confirm both surfaces agree — the Lens row's intent line and the card's headline show the same string for the same session.
-- [ ] Re-run `~/bonsai-eval/pulse_8b.py` against the new wording, and record the outcome against [P05] / [R02] — whether the catalog's `recommended` flag still holds under the new prompt.
+- [x] ~~Re-run `~/bonsai-eval/pulse_8b.py` against the new wording~~ — **withdrawn**, see [P05] and [`local-model-liveness-brief.md`](local-model-liveness-brief.md#retiring-the-re-score). Liveness and turnaround replace it; that brief carries the follow-on work.
 - [ ] Flip the `pulse-overview` tenant switch off and confirm both surfaces fall back cleanly to activity-only, with no reserved space ([P07]).
 
 **Tests:**
-- [ ] `cd tugrust && cargo nextest run`
-- [ ] `just test-ts`
-- [ ] `just app-test-changed`
+- [x] `cd tugrust && cargo nextest run` — 1582 passed, 4 skipped.
+- [x] `cd tugdeck && bun test` — 5007 passed. (`just test-ts` does not exist; the justfile's Rust recipe is `just test`, and the TS suite runs from `tugdeck/`.)
+- [x] `just app-test-changed --allow-large <branch diff>` — 23/23 files green, 34/34 tests.
+
+> The derived selection is 23 files, over the 20-file scoped budget, so it was opted into explicitly rather than narrowed. The selector also prints **SWEEP ADVISED** because `LocalModelService.swift` is app-shell source that no `@covers` line can scope; the change there is a prompt string, and no app-test drives a local model (`at0280` pins the model-*absent* posture), so a full corpus run would cost minutes to tell us nothing. Not swept, deliberately.
 
 **Checkpoint:**
 - [ ] Ten observed headlines, all in register and all recognizably about the work.

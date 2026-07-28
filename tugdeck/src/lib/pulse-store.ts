@@ -234,24 +234,7 @@ export class PulseStore {
     // Live lines fold as the commentator speaks — including while the
     // tail load is still pending (the merge dedupes by line identity).
     this.disposers.push(
-      this.conn.onFrame(FeedId.PULSE, (payload) => {
-        const line = parsePulseFrame(payload);
-        if (line === null) return;
-        if (line.kind === "overview") {
-          this.foldOverview(line);
-          return;
-        }
-        this.fold([
-          {
-            key: lineKey(line.at, line.beat),
-            text: line.text,
-            ...(line.intent !== undefined ? { intent: line.intent } : {}),
-            scopes: Object.freeze([...line.scopes]),
-            beat: line.beat,
-            atMs: line.at,
-          },
-        ]);
-      }),
+      this.conn.onFrame(FeedId.PULSE, (payload) => this._onPulse(payload)),
     );
     this.disposers.push(
       subscribeToListPulseLinesOk((payload) => this.onTail(payload)),
@@ -315,6 +298,34 @@ export class PulseStore {
     }
     return this.snapshot;
   };
+
+  /**
+   * One PULSE frame off the wire. Overviews fold into the per-scope standing
+   * line; everything else joins the rolling beat log.
+   *
+   * Named rather than inlined at the subscription so the app-test surface can
+   * reach it with bytes the wire would otherwise have supplied
+   * ({@link _ingestPulseFrameForTest}) — the parse and both folds are then
+   * exactly the production ones.
+   */
+  private _onPulse(payload: Uint8Array): void {
+    const line = parsePulseFrame(payload);
+    if (line === null) return;
+    if (line.kind === "overview") {
+      this.foldOverview(line);
+      return;
+    }
+    this.fold([
+      {
+        key: lineKey(line.at, line.beat),
+        text: line.text,
+        ...(line.intent !== undefined ? { intent: line.intent } : {}),
+        scopes: Object.freeze([...line.scopes]),
+        beat: line.beat,
+        atMs: line.at,
+      },
+    ]);
+  }
 
   private onTail(payload: ListPulseLinesOk): void {
     const tail: PulseLineEntry[] = payload.lines.map((row) =>
@@ -424,6 +435,21 @@ export function getPulseStore(): PulseStore | null {
 export function _resetPulseStoreForTest(): void {
   _activeStore?.dispose();
   _activeStore = null;
+}
+
+/**
+ * Test-only: feed a PULSE frame body as if it arrived over the wire.
+ *
+ * Not a mock — the bytes go through the production `parsePulseFrame` and the
+ * production folds, so what the components see is what the wire would have
+ * produced. `parsePulseFrame` rejects a malformed body silently, so a caller
+ * must assert on rendered output rather than on having called this.
+ */
+export function _ingestPulseFrameForTest(body: unknown): void {
+  if (_activeStore === null) return;
+  const bytes = new TextEncoder().encode(JSON.stringify(body));
+  // Reach the private handler through the same path onFrame would.
+  (_activeStore as unknown as { _onPulse(p: Uint8Array): void })._onPulse(bytes);
 }
 
 /**
