@@ -1031,6 +1031,11 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Tests:** `at0266-lens-filter.test.ts`.
 - **Summary:** The band-mounted `TugFilterField` on the Lens's filterable sections: seeded snippets narrow as the query is typed with `<mark>` on the survivors, a query matching nothing shows the section's distinct "No matches" body while its field stays clickable and clearable (the field registers independently of the section's has-content gate, so filtering to zero can never strand it), Escape in a non-empty field clears the filter without collapsing the section or exiting the Lens, and the ✕ restores the rows with the cursor keys still walking the list.
 
+#### [AT0283] List row striping and text measure
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0283-list-row-striping.test.ts`.
+- **Summary:** `TugListView`'s alternating row tint bands the DATA, not the rendered window: every cell's `data-row-parity` is asserted against its own `data-tug-list-cell-index`, which is what a `:nth-child` zebra rule cannot hold once windowing slides the rendered range. A striped list draws no hairlines (line OR band, never both) and a selected row drops its band, so the translucent selection fill paints one color wherever it lands. The text half pins that `rowTextSize` GOVERNS — every row's content column reads at the list's own `--tugx-list-row-font-size` rather than at whatever size its label asked for — asserted against the token, so tuning the measure does not fail the test. Both halves branch on the list's live `data-row-striping`, so the Lens can be tuned back to hairlines without invalidating the gate.
+
 ## Maintenance
 
 This file is append-only for the tag list. Status fields update as fixes land or regress. Removing a tag requires a documented decision and a successor tag noted inline (`[M{NN}] superseded by [M{MM}] — see ...`).

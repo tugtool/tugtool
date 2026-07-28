@@ -58,6 +58,10 @@ a *data source* and a *cell renderer*; the cell renderer's job is to compose
    `pill` is reserved for free-standing, card-like rows *outside* a bordered list
    frame. A list inside a bordered frame uses `flush`.
 
+7. **Rows are separated by a line OR a band, never both, and never from consumer CSS.** `rowSeparator` draws the hairline between rows; `rowStriping` tints alternate rows instead. They say the same thing, so a list that turns one on turns the other off — a striped list with hairlines too is stating its structure twice. Both are the primitive's, and the band especially cannot be hand-rolled in a consumer stylesheet: `:nth-child` is read against the *rendered window*, not the data, so a consumer zebra rule makes the bands crawl as the window slides under a scroll. The primitive publishes `data-row-parity` from the absolute row index for exactly this reason. Strength is a named rung (`"faint"` / `"subtle"` / `"medium"` / `"strong"` = 2 / 4 / 7 / 11%) or any percent; the tint is a wash of the surface's own text color, which is what lets one number read correctly on the dark themes and the light ones.
+
+8. **A dense list sets its text measure once, with `rowTextSize`.** Rows in one list agreeing on a size matters more than each cell renderer picking for itself, so the prop deliberately outranks each `TugLabel`'s own `size`. It reaches the content column only — shrinking a list's type must not shrink its close boxes. Two lists that stack in one column (the Lens's Snippets and Text Files) share one measure from one place; see `lens-list-presentation.ts`.
+
 ## Selection ownership matrix
 
 Pick the mechanism by the list's intent — do not invent a third path.
@@ -88,8 +92,8 @@ adding a consumer.
 | dev recents (`session-picker-cells`) | `TugListRow` `children` (RTL path + `<mark>`, justified) | `selectionRequired` | |
 | `/resume` overlay (`resume-sheet`) | the session-picker cells | none | filtered by `TugFilterField` |
 | lens Sessions (`sessions-section`) | `TugListRow` title/subtitle + leading dot + trailing sparkline | none, cursor only | filtered by `TugFilterField` |
-| lens Snippets (`snippets-section`) | `TugListRow` `children` (incipit, drag source + inline markdown) | `selectionRequired` | filtered by `TugFilterField` |
-| lens Text Files (`text-files-section`) | `TugListRow` title/subtitle (both filter-highlighted) | none, cursor only | filtered by `TugFilterField` |
+| lens Snippets (`snippets-section`) | `TugListRow` `children` (incipit, drag source + inline markdown) | `selectionRequired` | filtered by `TugFilterField`; one-line list — striping + measure from `lens-list-presentation.ts` |
+| lens Text Files (`text-files-section`) | `TugListRow` title + leading close box + slot picker on the title line | none, cursor only | filtered by `TugFilterField`; one-line list — striping + measure from `lens-list-presentation.ts` |
 | `gallery-list-view-filter` | custom path cells | none | the `useFilteredDataSource` wrapper's living contract |
 | `rewind-sheet` | `TugListRow` title/subtitle | consumer | |
 | transcript body-kinds (`path-list`, `todo-list`, `search-result`) | see [Sanctioned exceptions](#sanctioned-exceptions) | none, `inline` | |

@@ -59,7 +59,11 @@
   --tugx-list-row-indicator-gutter: 0px;
 }
 
-/* Row dividers always show (see the Sessions list for the rationale). */
+/* If this list is ever tuned back to hairlines (`rowStriping: "none"` in
+   `lens-list-presentation.ts`), they show on EVERY row — re-assert the divider
+   the list-view's "clean selected block" rule drops around a selected / cursor
+   row, exactly as the Sessions list does. Inert while the list is striped,
+   which draws no hairlines at all. */
 .tug-list-view.lens-snippets-list[data-row-layout="flush"]
   .tug-list-view-cell:not(:last-child) {
   border-bottom-color: var(--tugx-list-view-divider-color) !important;
