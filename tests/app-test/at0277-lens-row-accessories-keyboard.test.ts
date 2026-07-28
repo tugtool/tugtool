@@ -317,8 +317,18 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             { timeoutMs: 4_000 },
           );
 
-          // ---- E. Descend onto a Text Files row's first slot.
+          // ---- E. Descend into a Text Files row. Its accessories run leading
+          // to trailing — the close box first, then the slots — so the first
+          // Right lands on the close box and the second reaches slot 1.
           await tabUntilKbd(app, ".lens-content .lens-text-files-list");
+          await app.nativeKey("ArrowRight");
+          await app.waitForCondition<boolean>(
+            `(function(){
+              var el = document.querySelector('.lens-content [data-key-view-kbd]');
+              return el !== null && (el.getAttribute('aria-label') || '').indexOf('Close ') === 0;
+            })()`,
+            { timeoutMs: 3_000 },
+          );
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(function(){

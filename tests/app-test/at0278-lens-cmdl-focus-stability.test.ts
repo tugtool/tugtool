@@ -191,7 +191,14 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
             await app.nativeKey("Tab");
             await new Promise<void>((r) => setTimeout(r, 200));
           }
-          await app.nativeKey("ArrowRight"); // descend onto the row's slots
+          // Right descends onto the row's FIRST accessory — the leading close
+          // box — and the next Right walks on to the slots.
+          await app.nativeKey("ArrowRight");
+          await app.waitForCondition<boolean>(
+            `(function(){ var el = document.querySelector(${JSON.stringify(LENS_KBD)}); return el !== null && (el.getAttribute('aria-label') || '').indexOf('Close ') === 0; })()`,
+            { timeoutMs: 3_000 },
+          );
+          await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(function(){ var el = document.querySelector(${JSON.stringify(LENS_KBD)}); return el !== null && el.getAttribute('aria-label') === 'Put at position 1'; })()`,
             { timeoutMs: 3_000 },

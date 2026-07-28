@@ -40,6 +40,10 @@ export type TextFilesRow = {
   /** The card wears its unsaved-changes mark (manual mode, dirty buffer); the
    *  row paints the same dot after the filename. */
   readonly unsaved: boolean;
+  /** The shortest trailing directory run that tells this row apart from the
+   *  other open files sharing its filename (`"roadmap"`, `"tugcast/src"`), or
+   *  `null` when the filename is already unique. */
+  readonly disambiguator: string | null;
 };
 
 /** The trailing filename of a path (`/a/b/c.txt` → `c.txt`). */
@@ -62,6 +66,60 @@ export function dirname(path: string): string {
  */
 export function displayDir(dir: string): string {
   return dir.replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
+}
+
+/** The abbreviated full path a row shows on hover (`~/src/proj/a.txt`). */
+export function displayPath(path: string): string {
+  const dir = dirname(path);
+  const shown = dir.length > 0 ? displayDir(dir) : "";
+  return shown.length > 0 ? `${shown}/${basename(path)}` : basename(path);
+}
+
+/**
+ * Fill in each row's {@link TextFilesRow.disambiguator}: `null` when the
+ * filename is unique among the open files, otherwise the **shortest trailing
+ * directory run** that separates this row from the others sharing its name —
+ * one segment where one is enough (`roadmap` vs `Desktop`), more only where the
+ * near directories also match (`tugcast/src` vs `tugbank/src`). Two files with
+ * the same name in the same directory cannot happen, so the walk always
+ * terminates at the abbreviated full directory.
+ *
+ * Pure over the row list; the caller runs it on the UNFILTERED set so a row's
+ * suffix does not appear and vanish as the filter narrows the list.
+ */
+export function assignDisambiguators(
+  rows: readonly TextFilesRow[],
+): TextFilesRow[] {
+  const byTitle = new Map<string, TextFilesRow[]>();
+  for (const row of rows) {
+    const group = byTitle.get(row.title);
+    if (group === undefined) byTitle.set(row.title, [row]);
+    else group.push(row);
+  }
+  return rows.map((row) => {
+    const group = byTitle.get(row.title) ?? [];
+    if (group.length < 2 || row.path === null) {
+      return { ...row, disambiguator: null };
+    }
+    const segments = (path: string): string[] =>
+      displayDir(dirname(path))
+        .split("/")
+        .filter((s) => s !== "");
+    const mine = segments(row.path);
+    const others: string[][] = [];
+    for (const other of group) {
+      if (other === row || other.path === null) continue;
+      others.push(segments(other.path));
+    }
+    for (let k = 1; k <= mine.length; k += 1) {
+      const tail = mine.slice(mine.length - k).join("/");
+      const clashes = others.some(
+        (segs) => segs.slice(segs.length - k).join("/") === tail,
+      );
+      if (!clashes) return { ...row, disambiguator: tail };
+    }
+    return { ...row, disambiguator: mine.length > 0 ? mine.join("/") : null };
+  });
 }
 
 interface TextFilesInputs {
@@ -132,22 +190,28 @@ export function buildTextFilesRows(
       path,
       title,
       unsaved: resolveUnsaved(card.id),
+      disambiguator: null,
     });
   }
   const order = inputs.order;
-  if (order === undefined || order.length === 0) return rows;
-  const rank = new Map<string, number>();
-  order.forEach((id, i) => rank.set(id, i));
-  // Stable sort: ranked ids by rank; unranked (newly opened) cards keep their
-  // deck order (their pre-sort index) and sort last.
-  return rows
-    .map((row, i) => ({ row, i }))
-    .sort((a, b) => {
-      const ra = rank.get(a.row.cardId) ?? Number.POSITIVE_INFINITY;
-      const rb = rank.get(b.row.cardId) ?? Number.POSITIVE_INFINITY;
-      return ra !== rb ? ra - rb : a.i - b.i;
-    })
-    .map((x) => x.row);
+  const ordered =
+    order === undefined || order.length === 0
+      ? rows
+      : (() => {
+          const rank = new Map<string, number>();
+          order.forEach((id, i) => rank.set(id, i));
+          // Stable sort: ranked ids by rank; unranked (newly opened) cards keep
+          // their deck order (their pre-sort index) and sort last.
+          return rows
+            .map((row, i) => ({ row, i }))
+            .sort((a, b) => {
+              const ra = rank.get(a.row.cardId) ?? Number.POSITIVE_INFINITY;
+              const rb = rank.get(b.row.cardId) ?? Number.POSITIVE_INFINITY;
+              return ra !== rb ? ra - rb : a.i - b.i;
+            })
+            .map((x) => x.row);
+        })();
+  return assignDisambiguators(ordered);
 }
 
 export class LensTextFilesDataSource implements TugListViewDataSource {
@@ -229,9 +293,11 @@ export class LensTextFilesDataSource implements TugListViewDataSource {
   private recompute(): void {
     const rows = buildTextFilesRows(this.inputs);
     // A row matches on its filename and on the directory AS DISPLAYED (`~/src`,
-    // not `/Users/name/src`) — the same strings the row shows. Ranked
-    // best-first while filtering; deck-card order returns when the query
-    // clears.
+    // not `/Users/name/src`) — the row shows the directory on hover and, when
+    // its name is ambiguous, as the trailing run beside the filename, so both
+    // are things the user can see and type. Only the filename paints highlight
+    // marks. Ranked best-first while filtering; deck-card order returns when
+    // the query clears.
     this.rows = [
       ...filterAndRank(rows, this.inputs.filterQuery, (row) => [
         row.title,

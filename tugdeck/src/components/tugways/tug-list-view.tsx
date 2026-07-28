@@ -3339,29 +3339,45 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       delegateRef.current?.onActivate?.(i);
       scrollIndexIntoView(i, "nearest");
     }, [isCursorableRow, scrollIndexIntoView]);
+    /**
+     * Descend into row `index` and land on its `ordinal`-th accessory, clamped
+     * to what that row actually holds. The ordinal is what lets the vertical
+     * arrows carry the keyboard DOWN a column of accessories — row 3's close
+     * box from row 2's — instead of ejecting it back to the container on every
+     * step. A row with no focusable accessory is not descendable and this is a
+     * no-op.
+     */
+    const descendRowAt = React.useCallback(
+      (index: number, ordinal: number): void => {
+        if (manager === null) return;
+        const ids = rowFocusableIds(index);
+        if (ids.length === 0) return;
+        const pick = ids[Math.min(Math.max(ordinal, 0), ids.length - 1)];
+        // Record the descend by the row's STABLE data-source id (not its
+        // index), so the reconciliation below can tell "this row was
+        // deleted" apart from "this row scrolled out of the render
+        // window" — only deletion may ascend the scope out from under
+        // the user.
+        descendedRowRef.current = {
+          id: dataSourceRef.current.idForIndex(index),
+          scopeId: rowScopeId(index),
+          index,
+        };
+        manager.pushFocusMode(rowScopeId(index), { trapped: false });
+        manager.place(null, { kind: "focusable", id: pick }, {
+          modality: "keyboard",
+        });
+      },
+      [manager, rowFocusableIds, rowScopeId],
+    );
     const descendCursorRow = React.useCallback((): void => {
-      if (manager === null) return;
       const i = cursorIndexRef.current;
-      const innerId = rowFirstFocusableId(i);
-      if (innerId === null) {
+      if (rowFirstFocusableId(i) === null) {
         selectCursorRow();
         return;
       }
-      // Record the descend by the row's STABLE data-source id (not its
-      // index), so the reconciliation below can tell "this row was
-      // deleted" apart from "this row scrolled out of the render
-      // window" — only deletion may ascend the scope out from under
-      // the user.
-      descendedRowRef.current = {
-        id: dataSourceRef.current.idForIndex(i),
-        scopeId: rowScopeId(i),
-        index: i,
-      };
-      manager.pushFocusMode(rowScopeId(i), { trapped: false });
-      manager.place(null, { kind: "focusable", id: innerId }, {
-        modality: "keyboard",
-      });
-    }, [manager, rowFirstFocusableId, rowScopeId, selectCursorRow]);
+      descendRowAt(i, 0);
+    }, [rowFirstFocusableId, selectCursorRow, descendRowAt]);
 
     // Populate the imperative `descendIntoRow` entry now that the cursor /
     // descend callbacks exist. Refreshed every render (like `cursorNavRef`
@@ -3771,11 +3787,63 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // what Right means from inside a row.
         return true;
       }
+      // The vertical arrows while descended: step to the SAME accessory in the
+      // adjacent row. A row is a position in a list, not a room the keyboard
+      // gets shut into — running down a column of close boxes is the gesture a
+      // user reaches for, and dead-ending an arrow here is what makes the app
+      // beep at someone who did nothing wrong. The key is swallowed either way:
+      // at the list's edge nothing moves, quietly. Rows are ragged (one may
+      // hold two accessories where its neighbour holds one), so the ordinal
+      // clamps rather than refusing the move.
+      if (
+        inRowScope &&
+        manager !== null &&
+        !e.altKey &&
+        !e.shiftKey &&
+        (e.key === "ArrowDown" || e.key === "ArrowUp")
+      ) {
+        const from = descendedRowRef.current?.index ?? -1;
+        const ordinal = rowFocusableIds(from).indexOf(manager.keyView() ?? "");
+        const next =
+          from < 0 ? -1 : stepCursorableRow(from, e.key === "ArrowDown" ? 1 : -1);
+        if (next >= 0 && next !== from) {
+          // Ascend first so the outgoing row's scope is popped, then move the
+          // cursor (which reveals the landing row) and descend afresh. A row
+          // that turns out to hold no accessory — or one still outside the
+          // render window — leaves the keyboard on the container with the
+          // cursor moved, which is the graceful half-step, never a dead end.
+          manager.ascend();
+          descendedRowRef.current = null;
+          moveCursorTo(next, true);
+          if (commitOnMoveRef.current) selectCursorRow();
+          descendRowAt(next, Math.max(ordinal, 0));
+        }
+        return true;
+      }
+      // Home / End / Page from inside a row are LIST gestures — jump to the
+      // top, the bottom, a screenful on — so they ascend out of the row and
+      // then mean what they mean on the list. Refusing them because the
+      // keyboard happens to be on an accessory is the row-as-jail behavior
+      // again.
+      const listJumpFromRow =
+        inRowScope &&
+        manager !== null &&
+        (e.key === "Home" ||
+          e.key === "End" ||
+          e.key === "PageUp" ||
+          e.key === "PageDown");
+      if (listJumpFromRow && manager !== null) {
+        manager.ascend();
+        descendedRowRef.current = null;
+      }
       // Move the cursor only while the container itself holds the keyboard key
       // view. After Enter descends onto an inner focusable the container is no
       // longer the key view — arrows then belong to the descended component,
-      // not the list cursor.
-      if (!scrollEl.hasAttribute("data-key-view-kbd")) return false;
+      // not the list cursor. (The ascend just above has handed it back, which
+      // the projection may not have written yet.)
+      if (!listJumpFromRow && !scrollEl.hasAttribute("data-key-view-kbd")) {
+        return false;
+      }
       const total = dataSourceRef.current.numberOfItems();
       if (total === 0) return false;
       const cur = cursorIndexRef.current;

@@ -52,14 +52,16 @@
   height: auto;
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
-  /* One step in from the band header's own inline padding, so the filenames read
-     as sitting UNDER the section's icon and title rather than starting at the
-     same hard edge the header does. Matches the Snippets list. */
-  --tugx-list-row-padding-inline: var(--tug-space-lg);
+  /* THE SAME ROW METRICS THE SESSIONS LIST USES — not a coincidence and not
+     free to drift. A Text Files row and a Sessions row are the same shape (a
+     leading glyph, a name, the slot picker, a grip), and they stack one above
+     the other in the same narrow column, so every one of those four has to land
+     on one vertical line down the Lens. The inline padding places the leading
+     glyph and, at the far edge, the grip; the leading column's width places the
+     name; the name's `flex: 1` places the picker. Change any of these here and
+     you must change them in `sessions-section.css` too. */
+  --tugx-list-row-padding-inline: var(--tug-space-md);
   --tugx-list-row-indicator-gutter: 0px;
-  /* Same air between the two lines as the Sessions rows — the two sections are
-     the same kind of two-line row and must read as one rhythm. */
-  --tugx-list-row-content-gap: 5px;
 }
 
 /* Row dividers always show (see the Sessions list for the rationale). */
@@ -68,17 +70,9 @@
   border-bottom-color: var(--tugx-list-view-divider-color) !important;
 }
 
-/* The directory line matches the Sessions rows' pulse line — one step down from
-   the title, not the row primitive's default `sm`. The two sections are the
-   same kind of two-line row and must read as one type scale. */
-.lens-text-files-list .tug-list-row-subtitle {
-  font-size: var(--tug-font-size-xs);
-}
-
-/* The row's title line, carrying the slot picker past the filename. Authored by
-   hand for the same reason the Sessions headline is (see `FileRow`): a shared
-   trailing accessory would span both lines and center on the row, sitting at a
-   different height from the Sessions picker. */
+/* The row's one line: the filename, its disambiguating directory run, the close
+   box, and the slot picker. Authored by hand (see `FileRow`) so the picker
+   rides the name line at the same height the Sessions picker does. */
 .text-files-row-headline {
   display: flex;
   align-items: center;
@@ -86,10 +80,43 @@
   min-inline-size: 0;
 }
 
+/* The name yields the line's slack rather than absorbing it, so its
+   disambiguating run keeps hugging it; the slack goes to the picker's leading
+   margin below. The picker still ends at the content column's end — the same
+   place the Sessions picker lands, which is the point. */
 .text-files-row-headline .tug-list-row-title {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-inline-size: 0;
 }
+
+/* The picker takes the line's slack, so it sits at the content column's end in
+   both sections and the two impositions read as one column down the Lens. */
+.text-files-row-headline .slot-picker {
+  margin-inline-start: auto;
+}
+
+/* The close box holds the leading column at the width the Sessions rows give
+   their phase dot, so the two glyphs sit on one line down the Lens and the
+   filenames start where the session names do. The width mirrors
+   `ROW_PHASE_DOT_SIZE` in `sessions-section.tsx`. */
+.lens-text-files-list .tug-list-row-leading {
+  inline-size: 28px;
+  justify-content: center;
+}
+
+/* Where this file is, shown only when its name alone would be ambiguous. Muted
+   and a step down so it reads as an annotation on the filename, never as a
+   second name; it yields its width to the filename before truncating. */
+.text-files-row-where {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
 
 /* The unsaved-changes dot — the same `•` the card's own header wears, set just
    off the filename and muted so the name stays the row's voice. */

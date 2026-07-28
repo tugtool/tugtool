@@ -13,6 +13,7 @@ import {
   basename,
   buildTextFilesRows,
   dirname,
+  displayPath,
   type OpenCardPathResolver,
 } from "../text-files-data-source";
 
@@ -39,6 +40,70 @@ describe("path helpers", () => {
     expect(dirname("/a/b/c.txt")).toBe("/a/b");
     expect(basename("bare")).toBe("bare");
     expect(dirname("bare")).toBe("");
+  });
+
+  it("abbreviates the home prefix in the hover path", () => {
+    expect(displayPath("/Users/ada/src/tug/a.md")).toBe("~/src/tug/a.md");
+    expect(displayPath("/proj/a.md")).toBe("/proj/a.md");
+    expect(displayPath("bare.md")).toBe("bare.md");
+  });
+});
+
+describe("disambiguating duplicate filenames", () => {
+  it("leaves a unique filename unannotated", () => {
+    const rows = buildTextFilesRows(
+      { deck: deck([["c1", "text"], ["c2", "text"]]) },
+      resolver({ c1: "/proj/a.md", c2: "/proj/b.md" }),
+    );
+    expect(rows.map((r) => r.disambiguator)).toEqual([null, null]);
+  });
+
+  it("annotates twins with the shortest trailing run that separates them", () => {
+    const rows = buildTextFilesRows(
+      { deck: deck([["c1", "text"], ["c2", "text"]]) },
+      resolver({
+        c1: "/Users/ada/src/tug/roadmap/plan.md",
+        c2: "/Users/ada/Desktop/plan.md",
+      }),
+    );
+    expect(rows.map((r) => r.disambiguator)).toEqual(["roadmap", "Desktop"]);
+  });
+
+  it("takes more segments when the near directories also match", () => {
+    const rows = buildTextFilesRows(
+      { deck: deck([["c1", "text"], ["c2", "text"], ["c3", "text"]]) },
+      resolver({
+        c1: "/proj/tugcast/src/mod.rs",
+        c2: "/proj/tugbank/src/mod.rs",
+        c3: "/proj/other/mod.rs",
+      }),
+    );
+    expect(rows.map((r) => r.disambiguator)).toEqual([
+      "tugcast/src",
+      "tugbank/src",
+      "other",
+    ]);
+  });
+
+  it("annotates only the rows whose name is shared", () => {
+    const rows = buildTextFilesRows(
+      { deck: deck([["c1", "text"], ["c2", "text"], ["c3", "text"]]) },
+      resolver({
+        c1: "/proj/one/a.md",
+        c2: "/proj/two/a.md",
+        c3: "/proj/three/b.md",
+      }),
+    );
+    expect(rows.map((r) => r.disambiguator)).toEqual(["one", "two", null]);
+  });
+
+  it("leaves a path-less twin unannotated", () => {
+    const rows = buildTextFilesRows(
+      { deck: deck([["c1", "text"], ["c2", "text"]]) },
+      resolver({ c1: "/proj/one/Untitled" }),
+      () => "Untitled",
+    );
+    expect(rows.map((r) => r.disambiguator)).toEqual(["one", null]);
   });
 });
 

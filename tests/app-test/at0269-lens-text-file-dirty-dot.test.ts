@@ -1,7 +1,8 @@
 /**
  * at0269-lens-text-file-dirty-dot.test.ts — the Lens **Text Files** row wears
- * the same unsaved-changes dot the text card's own header does, and reads at
- * the Sessions rows' type scale.
+ * the same unsaved-changes dot the text card's own header does, on the one line
+ * it now is: the filename at the Sessions rows' title scale, the directory only
+ * as the row's hover title, and a close box leading the row.
  *
  * Drives the real path: a real file opened in a real manual-mode Text card,
  * typed into with `execCommand` (the at0209/at0212 idiom), with the Lens open
@@ -36,6 +37,8 @@ const CARD = '[data-card-id="A"]';
 const EDITOR_CONTENT = `${CARD} [data-slot="tug-text-card-editor"] .cm-content`;
 const ROW_TITLE = ".lens-text-files-list .tug-list-row-title";
 const ROW_SUBTITLE = ".lens-text-files-list .tug-list-row-subtitle";
+const ROW_HEADLINE = ".lens-text-files-list .text-files-row-headline";
+const ROW_CLOSE = ".lens-text-files-list .tug-list-row-leading .text-files-row-close";
 const DOT = '[data-testid="lens-text-file-unsaved"]';
 
 const ORIGINAL = "alpha\nbeta\ngamma\n";
@@ -125,18 +128,34 @@ describe.skipIf(!SHOULD_RUN)("at0269 — Lens text-file dirty dot", () => {
           ),
         ).toContain("•");
 
-        // The row's two lines read at the Sessions rows' type scale:
-        // a 13px title over a 12px directory line.
+        // The row's one line reads at the Sessions rows' title scale, and there
+        // is no second line: the directory is not ink.
         expect(
           await app.evalJS<string>(
             `getComputedStyle(document.querySelector('${ROW_TITLE}')).fontSize`,
           ),
         ).toBe("13px");
         expect(
-          await app.evalJS<string>(
-            `getComputedStyle(document.querySelector('${ROW_SUBTITLE}')).fontSize`,
+          await app.evalJS<number>(
+            `document.querySelectorAll('${ROW_SUBTITLE}').length`,
           ),
-        ).toBe("12px");
+        ).toBe(0);
+
+        // The directory reaches the user as the row's hover title — the whole
+        // path, which is the only place it appears now.
+        const hover = await app.evalJS<string>(
+          `document.querySelector('${ROW_HEADLINE}').getAttribute("title")`,
+        );
+        expect(hover).toContain(dir);
+        expect(hover).toContain("manual.txt");
+
+        // The close box leads the row, in the column the Sessions rows give
+        // their phase dot.
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll('${ROW_CLOSE}').length`,
+          ),
+        ).toBe(1);
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });

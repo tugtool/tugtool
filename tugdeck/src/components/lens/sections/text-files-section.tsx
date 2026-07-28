@@ -5,6 +5,13 @@
  * recent-documents MRU) are no longer listed here — they hang off the section
  * header's recents menu, which mirrors File ▸ Open Recent.
  *
+ * A row is one line — the filename, with the directory reaching the user as the
+ * hover title and, when two open files share a name, as a muted trailing run
+ * beside it. A close box leads the row — the column the Sessions rows give
+ * their phase dot — and sends `close` to that card by identity, so the file's
+ * own close guard runs; it is reachable by descending onto the row
+ * (ArrowRight), ahead of the slot picker.
+ *
  * Rows carry the same trailing reorder grip the Sessions and Snippets rows do,
  * driven by the shared `useBlockReorder` FLIP and committing to `lensStore`'s
  * `textFileOrder` on drop.
@@ -26,7 +33,7 @@ import React, {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { Clock3, FileText } from "lucide-react";
+import { Clock3, FileText, X } from "lucide-react";
 
 import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
@@ -53,6 +60,7 @@ import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { useBlockReorder } from "@/components/lens/block-reorder";
 import { lensStore } from "@/lib/lens-store/lens-store";
 import { TugButton } from "@/components/tugways/internal/tug-button";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugPopupMenu } from "@/components/tugways/internal/tug-popup-menu";
 import type { TugPopupMenuEntry } from "@/components/tugways/internal/tug-popup-menu";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
@@ -64,11 +72,12 @@ import {
 import {
   basename,
   buildTextFilesRows,
-  dirname,
-  displayDir,
+  displayPath,
   useLensTextFilesDataSource,
   type LensTextFilesDataSource,
 } from "./text-files-data-source";
+import { useResponderChain } from "@/components/tugways/responder-chain-provider";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 // The reorder-drag matches each row by its stable id on the row's `TugListRow`
 // element; the FLIP translates that element, the store commit persists the new
@@ -78,9 +87,11 @@ import {
 const ROW_SELECTOR = ".text-files-row[data-text-card-id]";
 const ROW_KIND_ATTR = "data-text-card-id";
 
-/** Row verbs the section body hands the module-level cell — the reorder grip. */
+/** Row verbs the section body hands the module-level cell — the reorder grip
+ *  and the close box. */
 interface TextFilesCellContextValue {
   onGripPointerDown: (cardId: string, event: React.PointerEvent) => void;
+  onClose: (cardId: string) => void;
 }
 const TextFilesCellContext =
   React.createContext<TextFilesCellContextValue | null>(null);
@@ -104,18 +115,26 @@ function useTextFilesFilterQuery(): string {
   return getFilterQuery(SECTION_KIND);
 }
 
-/** A two-line row on the shared `TugListRow` chrome: filename over its dimmed
- *  directory — the same two-line type scale the Sessions rows wear (`sm` title,
- *  `xs` second line; see `text-files-section.css`). Both lines paint their
- *  filter matches — against the exact strings rendered here, which is why the
- *  abbreviated directory (not the raw path) is what both the matcher and the
- *  highlighter see.
+/** Focus group for the row's close box. The rows render inside `TugListView`'s
+ *  per-row `FocusModeContext`, so the button registers into its own row's
+ *  descend scope — the mode scopes the walk, this constant is only the
+ *  within-row ordering. ArrowRight on the cursor row descends onto it, past the
+ *  slot picker. Same authoring as the Snippets row's delete. */
+const ROW_ACTION_FOCUS_GROUP = "lens-text-file-row-actions";
+
+/** A one-line row on the shared `TugListRow` chrome: the filename, the slot
+ *  picker, and a close box. The directory is not ink — it reaches the user as
+ *  the row's hover title, which carries the whole abbreviated path.
+ *
+ *  When two open files share a filename, the shortest trailing directory run
+ *  that tells them apart rides beside the name, muted (`roadmap`, `Desktop`),
+ *  so the list never shows two rows the user cannot choose between. The
+ *  filename alone paints filter matches — the suffix is disambiguation, not the
+ *  row's voice.
  *
  *  The content column is authored by hand for the same reason the Sessions row
- *  authors its own: a shared `trailing` accessory spans BOTH lines and so
- *  centers on the row, which put this row's slot picker at a different height
- *  from the one two sections up. Riding the title line — the one line both row
- *  types have — is what makes the two pickers line up down the Lens.
+ *  authors its own: it carries the slot picker on the name line, which is what
+ *  lines the two sections' pickers up down the Lens.
  *
  *  A card with unsaved changes carries the same `•` after its filename that the
  *  card's own header wears (`text-card.tsx` sets it on `cardTitleStore`), so
@@ -123,21 +142,38 @@ function useTextFilesFilterQuery(): string {
 function FileRow({
   cardId,
   name,
-  dir,
+  hoverPath,
+  disambiguator,
   unsaved,
 }: {
   cardId: string;
   name: string;
-  dir: string;
+  hoverPath: string;
+  disambiguator: string | null;
   unsaved: boolean;
 }): React.ReactElement {
   const ctx = React.useContext(TextFilesCellContext);
   const filterQuery = useTextFilesFilterQuery();
-  const shownDir = dir.length > 0 ? displayDir(dir) : "";
   return (
     <TugListRow
       className="text-files-row"
       data-text-card-id={cardId}
+      leading={
+        <TugIconButton
+          className="text-files-row-close"
+          icon={<X size={12} />}
+          size="xs"
+          aria-label={`Close ${name}`}
+          title={`Close ${name}`}
+          focusGroup={ROW_ACTION_FOCUS_GROUP}
+          focusOrder={0}
+          onClick={(e) => {
+            // Closing is not a row activation — stop it reaching the cell.
+            e?.stopPropagation();
+            ctx?.onClose(cardId);
+          }}
+        />
+      }
       grip={
         ctx !== null ? (
           <BlockGrip
@@ -146,7 +182,12 @@ function FileRow({
         ) : undefined
       }
     >
-      <span className="text-files-row-headline">
+      {/* The path is the row's hover title: `TugListRow` owns the `title` prop
+          as row text, so the tooltip rides the content column instead. */}
+      <span
+        className="text-files-row-headline"
+        title={hoverPath.length > 0 ? hoverPath : undefined}
+      >
         <TugLabel className="tug-list-row-title" size="sm" maxLines={1}>
           {renderFilterHighlight(name, filterQuery)}
           {unsaved ? (
@@ -160,18 +201,16 @@ function FileRow({
             </span>
           ) : null}
         </TugLabel>
+        {disambiguator !== null ? (
+          <span
+            className="text-files-row-where"
+            data-testid="lens-text-file-where"
+          >
+            {disambiguator}
+          </span>
+        ) : null}
         <SlotPicker cardId={cardId} />
       </span>
-      {shownDir.length > 0 ? (
-        <TugLabel
-          className="tug-list-row-subtitle"
-          size="sm"
-          emphasis="calm"
-          maxLines={1}
-        >
-          {renderFilterHighlight(shownDir, filterQuery)}
-        </TugLabel>
-      ) : null}
     </TugListRow>
   );
 }
@@ -185,7 +224,8 @@ const TextFilesCell: TugListViewCellRenderer<LensTextFilesDataSource> = ({
     <FileRow
       cardId={row.cardId}
       name={row.title}
-      dir={row.path !== null ? dirname(row.path) : ""}
+      hoverPath={row.path !== null ? displayPath(row.path) : ""}
+      disambiguator={row.disambiguator}
       unsaved={row.unsaved}
     />
   );
@@ -343,9 +383,28 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
     },
     [filtering, beginGripReorder],
   );
+  // The close box sends `close` to the card BY IDENTITY, the same event the
+  // card's own ⌘W raises — so it walks that card's chain to the host pane and
+  // passes through the card's close guard (a dirty Text buffer still gets its
+  // save sheet). `sendToFirstResponder` would close whatever card is front,
+  // which is never the row the user aimed at.
+  const chain = useResponderChain();
+  const onClose = useCallback(
+    (cardId: string): void => {
+      // `sendToTarget` throws on an unregistered target, and a row can outlive
+      // its card by a frame (the deck snapshot the rows were built from is one
+      // render behind the unmount).
+      if (chain === null || !chain.hasResponder(cardId)) return;
+      chain.sendToTarget(cardId, {
+        action: TUG_ACTIONS.CLOSE,
+        phase: "discrete",
+      });
+    },
+    [chain],
+  );
   const cellContext = useMemo<TextFilesCellContextValue>(
-    () => ({ onGripPointerDown }),
-    [onGripPointerDown],
+    () => ({ onGripPointerDown, onClose }),
+    [onGripPointerDown, onClose],
   );
 
   return (
