@@ -75,6 +75,22 @@ pub mod health {
         }
     }
 
+    /// Latch degraded for a non-SQLite reason the deck must still be
+    /// honest about — a forwarded write that could not be delivered means
+    /// attribution claims are incomplete, not empty. Logged once per
+    /// `reason`.
+    pub fn note_degraded(reason: &str) {
+        DEGRADED.store(true, Ordering::Relaxed);
+        let mut announced = ANNOUNCED.lock().expect("health mutex poisoned");
+        if !announced.iter().any(|l| l == reason) {
+            announced.push(reason.to_string());
+            tracing::error!(
+                reason,
+                "changes ledger degraded — some attribution writes have not landed"
+            );
+        }
+    }
+
     /// True once any ledger statement has hit corruption in this process.
     pub fn is_degraded() -> bool {
         DEGRADED.load(Ordering::Relaxed)
@@ -103,6 +119,11 @@ pub enum GateOutcome {
 /// and a quarantine that cannot be performed (rename raced by a sibling
 /// process) degrades to `Healthy` so startup proceeds against whatever the
 /// winner left in place.
+///
+/// Contention is NOT corruption: a probe that fails with a busy/locked
+/// error (a sibling process mid-bootstrap or mid-checkpoint — observed
+/// racing two instances at launch on 2026-07-27) passes as `Healthy`; the
+/// real open's own `busy_timeout` handles the wait.
 pub fn integrity_gate(db_path: &Path, label: &str) -> GateOutcome {
     if !db_path.exists() {
         return GateOutcome::Healthy;
@@ -110,8 +131,29 @@ pub fn integrity_gate(db_path: &Path, label: &str) -> GateOutcome {
     match quick_check(db_path) {
         Ok(None) => GateOutcome::Healthy,
         Ok(Some(detail)) => quarantine(db_path, label, &detail),
+        Err(err) if is_contention(&err) => {
+            tracing::warn!(
+                ledger = label,
+                error = %err,
+                "integrity probe hit lock contention; treating as healthy and proceeding"
+            );
+            GateOutcome::Healthy
+        }
         Err(err) => quarantine(db_path, label, &format!("unopenable: {err}")),
     }
+}
+
+/// Busy/locked-class errors — a sibling holds the file, which says nothing
+/// about its integrity.
+fn is_contention(err: &rusqlite::Error) -> bool {
+    matches!(
+        err,
+        rusqlite::Error::SqliteFailure(e, _)
+            if matches!(
+                e.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            )
+    )
 }
 
 /// Run `PRAGMA quick_check(1)` on the file. `Ok(None)` means healthy;
@@ -427,6 +469,42 @@ mod tests {
             integrity_gate(&dir.path().join("missing.db"), "test"),
             GateOutcome::Healthy
         ));
+    }
+
+    #[test]
+    fn locked_db_is_not_quarantined() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("x.db");
+        make_db(&db, 5);
+        // Hold an exclusive lock the way a sibling mid-bootstrap would.
+        let holder = Connection::open(&db).unwrap();
+        holder
+            .execute_batch(
+                "PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE; CREATE TABLE lockholder (x);",
+            )
+            .unwrap();
+        // Probe with no patience so the test doesn't sit in busy_timeout:
+        // the gate itself sets a 5s timeout, so simulate the outcome by
+        // classifying the error the probe would return.
+        let busy = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            None,
+        );
+        assert!(is_contention(&busy));
+        let locked = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_LOCKED),
+            None,
+        );
+        assert!(is_contention(&locked));
+        let corrupt = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CORRUPT),
+            None,
+        );
+        assert!(!is_contention(&corrupt));
+        drop(holder);
+        // With the lock released the gate sees a healthy file, untouched.
+        assert!(matches!(integrity_gate(&db, "test"), GateOutcome::Healthy));
+        assert!(db.exists());
     }
 
     #[test]

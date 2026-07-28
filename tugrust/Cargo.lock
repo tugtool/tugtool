@@ -2542,6 +2542,7 @@ dependencies = [
  "tugdash-core",
  "tuglog",
  "tugutil-core",
+ "ureq",
  "uuid",
 ]
 

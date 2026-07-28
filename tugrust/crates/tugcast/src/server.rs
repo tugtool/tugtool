@@ -249,7 +249,10 @@ async fn draft_handler(
         Ok(r) => r,
         Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid JSON: {e}")),
     };
-    let raw = req.raw_project_dir.clone().filter(|r| *r != req.project_dir);
+    let raw = req
+        .raw_project_dir
+        .clone()
+        .filter(|r| *r != req.project_dir);
     let read_existing = || {
         ledger
             .changeset_draft(&req.owner_kind, &req.owner_id, &req.project_dir)
@@ -326,6 +329,60 @@ async fn draft_handler(
         }
         other => err(StatusCode::BAD_REQUEST, &format!("unknown op '{other}'")),
     }
+}
+
+/// Handle POST /api/changes-write — the owner side of the single-writer
+/// contract ([LR8]). The body is one `changes_journal::Record`, sent by an
+/// instance that lost the writer claim; the owner applies it through the
+/// same funnel as its own writes (SQLite + journal) and answers with the
+/// number of rows it touched, so the caller gets a durable ack. Loopback
+/// only, like every tugcast API.
+async fn changes_write_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(router): State<FeedRouter>,
+    body: Bytes,
+) -> Response {
+    if !addr.ip().is_loopback() {
+        return changes_write_error(StatusCode::FORBIDDEN, "forbidden");
+    }
+    let Some(ledger) = router
+        .supervisor
+        .as_ref()
+        .and_then(|s| s.session_ledger.clone())
+    else {
+        return changes_write_error(StatusCode::SERVICE_UNAVAILABLE, "no session ledger");
+    };
+    apply_changes_write(&ledger, &body)
+}
+
+/// The body-to-ledger half of [`changes_write_handler`], factored out so
+/// the forwarding path can be exercised over a real loopback socket.
+pub(crate) fn apply_changes_write(
+    ledger: &crate::session_ledger::SessionLedger,
+    body: &[u8],
+) -> Response {
+    let record: crate::changes_journal::Record = match serde_json::from_slice(body) {
+        Ok(r) => r,
+        Err(e) => {
+            return changes_write_error(StatusCode::BAD_REQUEST, &format!("invalid record: {e}"));
+        }
+    };
+    match ledger.apply_forwarded_change(record) {
+        Ok(applied) => (
+            StatusCode::OK,
+            axum::Json(serde_json::json!({ "status": "ok", "applied": applied })),
+        )
+            .into_response(),
+        Err(e) => changes_write_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    }
+}
+
+fn changes_write_error(status: StatusCode, message: &str) -> Response {
+    (
+        status,
+        axum::Json(serde_json::json!({ "status": "error", "message": message })),
+    )
+        .into_response()
 }
 
 /// Handle POST /api/eval requests for evaluating JavaScript in the browser.
@@ -469,6 +526,7 @@ pub(crate) fn build_app(
         .route("/api/host", get(crate::host::get_host))
         .route("/api/changesets", get(changesets_handler))
         .route("/api/draft", post(draft_handler))
+        .route("/api/changes-write", post(changes_write_handler))
         .route("/api/permissions", get(crate::permissions::get_permissions))
         .route("/api/permissions/rule", post(crate::permissions::post_rule))
         .route("/api/fs/complete", get(crate::fs_complete::get_fs_complete))

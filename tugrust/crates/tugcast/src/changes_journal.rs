@@ -66,6 +66,21 @@ pub enum Record {
     },
 }
 
+impl Record {
+    /// Whether this record creates or reshapes rows, as opposed to
+    /// removing them. Deletes are shape-safe and stay allowed when the
+    /// `user_version` gate has locked this build out of the shared tables
+    /// ([LR5]); inserts and updates against an unknown shape are not.
+    pub fn shapes_rows(&self) -> bool {
+        match self {
+            Record::FileEvent { .. } | Record::Rewrite { .. } | Record::Draft { .. } => true,
+            Record::DeleteSession { .. } | Record::Sever { .. } | Record::DraftDelete { .. } => {
+                false
+            }
+        }
+    }
+}
+
 /// Open journal handle. Appends serialize under an internal lock; every
 /// append is flushed with `sync_data` so a crash never loses an
 /// acknowledged attribution row.

@@ -18,8 +18,11 @@ The doctrine for Tug's SQLite ledgers — the machine-global `changes.db` (attri
 
 **[LR7] Short-lived CLIs don't write shared ledgers.** `tugutil draft set|clear` posts to the running tugcast's `/api/draft`; the CLI opens the changes ledger read-only, and writes locally only under `TUG_CHANGES_DB` test isolation. Every write path funnels through the long-lived server: one writer surface, one journal, one pragma set.
 
+**[LR8] Exactly one process writes the shared ledger.** Write ownership of `changes.db` is a first-come `flock` claim on `changes.db.writer-lock` (`tugcore::ledger_db::claim_writer`), held for the owner's lifetime and released by the kernel when it dies — no handoff protocol, no stale-lock scanning. An instance that loses the claim attaches the shared database **read-only** (so a mutation that escapes the route fails loudly instead of becoming a second writer) and forwards every mutation to the owner's `POST /api/changes-write`; the body is one `changes_journal::Record`, so the wire format, the durable format, and the replay applier are the same code. Owner-only duties follow the claim: quarantine/salvage, schema bootstrap, journaling, checkpointing, snapshot backups. Failover is the same path as crash recovery — a failed forward triggers a re-claim, the winner drains the forwarder's bounded queue (256 records; overflow drops the oldest, loudly, and latches `ledger_degraded`).
+
 ## Recovery runbook
 
+0. Only the owning instance ([LR8]) gates, rebuilds, or checkpoints the shared database; a forwarding instance recovers by taking the claim when the owner exits.
 1. Corruption is announced by [LR4] (log line, telemetry, deck banner) — or found via `just db-inspect <db> "PRAGMA integrity_check;"`.
 2. Restart the instance: the [LR3] gate quarantines, salvages, and replays the journal automatically. Nothing else is usually required.
 3. If the automatic rebuild is suspected short (pre-journal history), recover from the newest `backups/` snapshot: verify it (`quick_check`), then re-apply the journal on top.
@@ -27,5 +30,4 @@ The doctrine for Tug's SQLite ledgers — the machine-global `changes.db` (attri
 
 ## Pending extensions
 
-- **Single-writer ownership for `changes.db`** — design at `roadmap/ledger-single-writer-plan.md`; removes multi-process WAL writes to the shared ledger entirely.
 - **Graceful termination protocol** — design at `roadmap/graceful-termination-plan.md`; retires SIGKILL-first process management so ledgers always close cleanly.

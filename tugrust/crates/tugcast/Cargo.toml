@@ -50,6 +50,7 @@ dirs = { workspace = true }
 tokio-stream = { workspace = true }
 rusqlite = { workspace = true }
 reqwest = { workspace = true }
+ureq = { version = "3", features = ["json"] }
 
 [dev-dependencies]
 tower = { workspace = true }

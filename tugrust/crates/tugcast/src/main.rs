@@ -1,6 +1,7 @@
 mod actions;
 mod auth;
 mod changes_journal;
+mod changes_writer;
 mod cli;
 mod control;
 mod defaults;
@@ -391,7 +392,7 @@ async fn main() {
             std::process::exit(1);
         }
     }
-    let ledger = match SessionLedger::open(&ledger_path) {
+    let ledger = match SessionLedger::open(&ledger_path, actual_port) {
         Ok(l) => Arc::new(l),
         Err(e) => {
             eprintln!(
@@ -421,14 +422,16 @@ async fn main() {
             // Snapshot backups (`VACUUM INTO`, retained 5-deep beside each
             // db) on startup and every 6 hours of watchdog ticks.
             const BACKUP_EVERY_TICKS: u64 = 72;
+            // Snapshotting the shared database belongs to whoever holds
+            // the writer claim; a forwarding instance would duplicate the
+            // owner's backups beside the same file.
             let backup_targets = |ledger: &session_ledger::SessionLedger| {
-                ledger_integrity::snapshot_backups(
-                    ledger,
-                    &[
-                        ("main", sessions_db_path.as_path()),
-                        ("changes", changes_db_path.as_path()),
-                    ],
-                );
+                let mut targets: Vec<(&str, &std::path::Path)> =
+                    vec![("main", sessions_db_path.as_path())];
+                if ledger.owns_changes_writer() {
+                    targets.push(("changes", changes_db_path.as_path()));
+                }
+                ledger_integrity::snapshot_backups(ledger, &targets);
             };
             backup_targets(&ledger);
             let mut strikes: std::collections::HashMap<&'static str, u32> =
@@ -437,6 +440,10 @@ async fn main() {
             loop {
                 tokio::time::sleep(WATCHDOG_PERIOD).await;
                 tick += 1;
+                // A forwarding instance whose owner died while nothing was
+                // being written takes over here rather than waiting for
+                // the next attribution event.
+                ledger.retry_changes_takeover();
                 if tick % BACKUP_EVERY_TICKS == 0 {
                     backup_targets(&ledger);
                 }

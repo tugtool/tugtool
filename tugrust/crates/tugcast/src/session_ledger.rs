@@ -623,7 +623,20 @@ pub struct SessionLedger {
     /// Append-only durable record of every shared-table mutation — the
     /// disaster-recovery source of truth ([`crate::changes_journal`]).
     /// `None` for in-memory ledgers or when the journal file cannot open.
+    /// Appended to only while this instance owns the writer claim; a
+    /// forwarding instance's records are journaled by the owner.
     changes_journal: Option<crate::changes_journal::ChangesJournal>,
+    /// How this instance writes the shared ledger: holding the
+    /// machine-wide writer claim, forwarding to whoever holds it, or
+    /// unclaimed (a private/in-memory changes database). See
+    /// [`crate::changes_writer`].
+    changes_access: Mutex<crate::changes_writer::ChangesAccess>,
+    /// Path of the attached changes database — `None` for in-memory.
+    /// Needed to re-claim and re-attach read-write on takeover.
+    changes_db_path: Option<PathBuf>,
+    /// Identity published in the claim so non-owners can reach this
+    /// instance's `/api/changes-write`.
+    writer_identity: tugcore::ledger_db::WriterOwner,
 }
 
 impl SessionLedger {
@@ -634,11 +647,15 @@ impl SessionLedger {
     /// bootstrap. Safe to call against an existing file. Uses the default
     /// claude projects root (`~/.claude/projects/`). The production
     /// constructor.
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, LedgerError> {
+    /// `http_port` is the loopback port this tugcast bound; it is
+    /// published in the writer claim so a non-owning instance can forward
+    /// its changes mutations here.
+    pub fn open(path: impl AsRef<Path>, http_port: u16) -> Result<Self, LedgerError> {
         Self::open_full(
             path,
             Some(tugcore::instance::changes_db_path()),
             default_claude_projects_root(),
+            http_port,
         )
     }
 
@@ -653,7 +670,7 @@ impl SessionLedger {
     ) -> Result<Self, LedgerError> {
         let mut sibling = path.as_ref().as_os_str().to_owned();
         sibling.push(".changes");
-        Self::open_full(path, Some(PathBuf::from(sibling)), claude_projects_root)
+        Self::open_full(path, Some(PathBuf::from(sibling)), claude_projects_root, 0)
     }
 
     /// Core constructor: open `path`, attach the changes ledger at
@@ -665,18 +682,46 @@ impl SessionLedger {
         path: impl AsRef<Path>,
         changes_db: Option<PathBuf>,
         claude_projects_root: PathBuf,
+        http_port: u16,
     ) -> Result<Self, LedgerError> {
+        // Claim the machine-wide writer role before anything touches the
+        // shared file. Only the owner may quarantine, bootstrap, salvage,
+        // or write it; a non-owner attaches read-only and forwards.
+        let writer_identity = crate::changes_writer::local_identity(http_port);
+        let changes_access = match changes_db.as_deref() {
+            None => crate::changes_writer::ChangesAccess::Unclaimed,
+            Some(p) => match tugcore::ledger_db::claim_writer(p, &writer_identity) {
+                Some(lock) => crate::changes_writer::ChangesAccess::Owner(lock),
+                None => {
+                    let owner = tugcore::ledger_db::read_writer_owner(p);
+                    tracing::info!(
+                        changes_db = %p.display(),
+                        owner_pid = owner.as_ref().map(|o| o.pid).unwrap_or(0),
+                        owner_instance = owner.as_ref().map(|o| o.instance_id.as_str()).unwrap_or("?"),
+                        "another instance owns the changes ledger; attaching read-only \
+                         and forwarding writes"
+                    );
+                    crate::changes_writer::ChangesAccess::Forward(
+                        crate::changes_writer::ChangesForwarder::new(p.to_path_buf()),
+                    )
+                }
+            },
+        };
+        let forwarding = changes_access.is_forwarding();
         // Integrity gate before the real open: a database that fails
         // quick_check is quarantined (renamed aside with its WAL/shm) so
         // no writer ever compounds damage in a corrupt tree; readable
         // rows are salvaged back in after the fresh schema bootstrap.
+        // Only the owner gates the shared database — renaming a file the
+        // owning process has open is its own kind of damage.
         let sessions_gate = ledger_integrity::integrity_gate(path.as_ref(), "sessions");
         let changes_gate = changes_db
             .as_deref()
+            .filter(|_| !forwarding)
             .map(|p| ledger_integrity::integrity_gate(p, "changes"));
         let conn = tugcore::ledger_db::open(path)?;
-        Self::attach_changes(&conn, changes_db.as_deref())?;
-        let changes_write_ok = Self::configure(&conn)?;
+        Self::attach_changes(&conn, changes_db.as_deref(), forwarding)?;
+        let changes_write_ok = Self::configure(&conn, !forwarding)?;
         if let ledger_integrity::GateOutcome::Quarantined { corrupt_path } = &sessions_gate {
             ledger_integrity::salvage_into(
                 &conn,
@@ -712,6 +757,9 @@ impl SessionLedger {
             sessions_changed: OnceLock::new(),
             changes_write_ok,
             changes_journal,
+            changes_access: Mutex::new(changes_access),
+            changes_db_path: changes_db.clone(),
+            writer_identity,
         };
         // Journal replay completes a post-quarantine rebuild: salvage
         // recovered what was readable; the journal re-applies everything
@@ -732,14 +780,17 @@ impl SessionLedger {
     /// using trash should use `open_with_claude_root` against a tempdir).
     pub fn open_in_memory() -> Result<Self, LedgerError> {
         let conn = Connection::open_in_memory()?;
-        Self::attach_changes(&conn, None)?;
-        let changes_write_ok = Self::configure(&conn)?;
+        Self::attach_changes(&conn, None, false)?;
+        let changes_write_ok = Self::configure(&conn, true)?;
         Ok(Self {
             db: Mutex::new(conn),
             claude_projects_root: PathBuf::from("/tmp/tugcast-tests-no-trash"),
             sessions_changed: OnceLock::new(),
             changes_write_ok,
             changes_journal: None,
+            changes_access: Mutex::new(crate::changes_writer::ChangesAccess::Unclaimed),
+            changes_db_path: None,
+            writer_identity: crate::changes_writer::local_identity(0),
         })
     }
 
@@ -756,7 +807,7 @@ impl SessionLedger {
         let mut failed = 0usize;
         for record in &records {
             match Self::apply_journal_record(&conn, record) {
-                Ok(()) => applied += 1,
+                Ok(_) => applied += 1,
                 Err(err) => {
                     failed += 1;
                     tracing::warn!(error = %err, "journal record failed to re-apply");
@@ -771,51 +822,50 @@ impl SessionLedger {
         );
     }
 
-    /// Apply one journal record without re-journaling it.
+    /// Apply one changes-ledger mutation to SQLite without journaling it.
+    /// The single applier shared by the live write path, the forwarded
+    /// write endpoint, and journal replay — one record shape, one set of
+    /// statements, so the wire, durable, and recovery formats cannot drift
+    /// apart. Returns the number of rows the record touched.
     fn apply_journal_record(
         conn: &Connection,
         record: &crate::changes_journal::Record,
-    ) -> Result<(), LedgerError> {
+    ) -> Result<usize, LedgerError> {
         use crate::changes_journal::Record;
-        match record {
-            Record::FileEvent { row } => {
-                Self::insert_file_event(conn, row)?;
-            }
-            Record::DeleteSession { session } => {
-                conn.execute(
-                    "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
-                    params![session],
-                )?;
-            }
+        let touched = match record {
+            Record::FileEvent { row } => Self::insert_file_event(conn, row)?,
+            Record::DeleteSession { session } => conn.execute(
+                "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
+                params![session],
+            )?,
             Record::Sever {
                 project_dir,
                 paths,
                 keep_session,
-            } => {
-                Self::sever_file_ownership_sql(conn, project_dir, paths, keep_session)?;
-            }
+            } => Self::sever_file_ownership_sql(conn, project_dir, paths, keep_session)?,
             Record::Rewrite {
                 canonical_project_dir,
                 rewrite,
-            } => {
-                Self::apply_file_event_rewrite(conn, canonical_project_dir, rewrite)?;
-            }
+            } => usize::from(Self::apply_file_event_rewrite(
+                conn,
+                canonical_project_dir,
+                rewrite,
+            )?),
             Record::Draft { row } => {
                 Self::upsert_changeset_draft_sql(conn, row)?;
+                1
             }
             Record::DraftDelete {
                 owner_kind,
                 owner_id,
                 project_dir,
-            } => {
-                conn.execute(
-                    "DELETE FROM changes.changeset_drafts
+            } => conn.execute(
+                "DELETE FROM changes.changeset_drafts
                      WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
-                    params![owner_kind, owner_id, project_dir],
-                )?;
-            }
-        }
-        Ok(())
+                params![owner_kind, owner_id, project_dir],
+            )?,
+        };
+        Ok(touched)
     }
 
     /// Attach the shared changes ledger as schema `changes` ([D112]: one
@@ -824,8 +874,18 @@ impl SessionLedger {
     /// truth). `None` attaches an in-memory database. WAL + NORMAL sync on
     /// the attached db so concurrent instances (multiple tugcast processes)
     /// write safely; `busy_timeout` is per-connection and already applies.
-    fn attach_changes(conn: &Connection, changes_db: Option<&Path>) -> Result<(), LedgerError> {
+    /// `read_only` attaches without write access — the non-owner half of
+    /// the single-writer claim, so a mutation that escapes the forwarding
+    /// route fails loudly instead of becoming a second writer.
+    fn attach_changes(
+        conn: &Connection,
+        changes_db: Option<&Path>,
+        read_only: bool,
+    ) -> Result<(), LedgerError> {
         match changes_db {
+            Some(path) if read_only => {
+                tugcore::ledger_db::attach_read_only(conn, "changes", path)?;
+            }
             Some(path) => {
                 tugcore::ledger_db::attach(conn, "changes", path)?;
             }
@@ -887,12 +947,14 @@ impl SessionLedger {
     /// Apply pragmas and bootstrap both schemas. Returns whether this
     /// build may write the shared changes tables (the `user_version` gate
     /// verdict from [`bootstrap_changes_schema`]).
-    fn configure(conn: &Connection) -> Result<bool, LedgerError> {
+    /// `may_write_changes` is false for a forwarding instance: the shared
+    /// schema is the owner's to create, stamp, and migrate.
+    fn configure(conn: &Connection, may_write_changes: bool) -> Result<bool, LedgerError> {
         // Unified pragma set from the chokepoint ([tugcore::ledger_db]);
         // idempotent when the connection came from `ledger_db::open`, and
         // the only pragma application for injected in-memory connections.
         tugcore::ledger_db::apply_pragmas(conn)?;
-        Self::bootstrap_schema(conn)
+        Self::bootstrap_schema(conn, may_write_changes)
     }
 
     /// One database's WAL-checkpoint verdict from
@@ -902,9 +964,17 @@ impl SessionLedger {
     /// are failing — the silent precursor signature of the 2026-07-27
     /// corruption incident (a 4 MB WAL, a main file three days stale, and
     /// nothing logged).
+    /// Checkpointing the shared database is an owner-only duty: a
+    /// forwarding instance has it attached read-only and would report a
+    /// pragma failure on every tick.
     pub fn checkpoint_health(&self) -> Vec<CheckpointHealth> {
+        let databases: &[&'static str] = if self.forwarding() {
+            &["main"]
+        } else {
+            &["main", "changes"]
+        };
         let conn = self.db.lock().expect("ledger mutex poisoned");
-        ["main", "changes"]
+        databases
             .iter()
             .map(|db| {
                 let result =
@@ -1008,7 +1078,7 @@ impl SessionLedger {
         ("updated_at", "INTEGER"),
     ];
 
-    fn bootstrap_schema(conn: &Connection) -> Result<bool, LedgerError> {
+    fn bootstrap_schema(conn: &Connection, may_write_changes: bool) -> Result<bool, LedgerError> {
         // Self-healing schema guard. `CREATE TABLE IF NOT EXISTS` does
         // not alter a table that already exists, so when a typed
         // table's column set changes, an on-disk DB created before the
@@ -1353,8 +1423,8 @@ impl SessionLedger {
             DROP TRIGGER IF EXISTS file_events_cascade_delete_on_session;
             ",
         )?;
-        let changes_write_ok = Self::bootstrap_changes_schema(conn)?;
-        if changes_write_ok {
+        let changes_write_ok = Self::bootstrap_changes_schema(conn, may_write_changes)?;
+        if changes_write_ok && may_write_changes {
             Self::migrate_instance_file_events_to_changes(conn)?;
             Self::migrate_instance_changeset_drafts_to_changes(conn)?;
         }
@@ -1376,7 +1446,10 @@ impl SessionLedger {
     /// (2026-07-27 incident). Row DELETEs (session eviction, ownership
     /// severing) stay allowed: removing rows is shape-safe; creating or
     /// updating rows against an unknown shape is not.
-    fn bootstrap_changes_schema(conn: &Connection) -> Result<bool, LedgerError> {
+    fn bootstrap_changes_schema(
+        conn: &Connection,
+        may_write_changes: bool,
+    ) -> Result<bool, LedgerError> {
         let on_disk: i64 = conn.query_row("PRAGMA changes.user_version", [], |r| r.get(0))?;
         if on_disk > CHANGES_SCHEMA_VERSION {
             tracing::error!(
@@ -1386,6 +1459,11 @@ impl SessionLedger {
                  and row writes to the shared tables; upgrade this instance"
             );
             return Ok(false);
+        }
+        if !may_write_changes {
+            // A forwarding instance only verifies it can live with the
+            // shape on disk; creating and stamping it is the owner's job.
+            return Ok(true);
         }
         if on_disk > 0 && on_disk < CHANGES_SCHEMA_VERSION {
             for (from, sql) in CHANGES_MIGRATIONS {
@@ -2108,13 +2186,10 @@ impl SessionLedger {
         )?;
         // Explicit attribution cascade (the legacy trigger cannot reach the
         // attached changes db): an evicted session takes its rows with it.
-        tx.execute(
-            "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
-            params![session_id],
-        )?;
+        self.delete_session_events(&tx, session_id)?;
         tx.commit()?;
         drop(conn);
-        self.journal_delete_sessions([session_id]);
+        self.settle_session_deletes([session_id]);
 
         let trash_path = move_jsonl_to_trash(
             &self.claude_projects_root,
@@ -2150,14 +2225,11 @@ impl SessionLedger {
         };
         for id in &doomed {
             tx.execute("DELETE FROM sessions WHERE session_id = ?1", params![id])?;
-            tx.execute(
-                "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
-                params![id],
-            )?;
+            self.delete_session_events(&tx, id)?;
         }
         tx.commit()?;
         drop(conn);
-        self.journal_delete_sessions(doomed.iter().map(String::as_str));
+        self.settle_session_deletes(doomed.iter().map(String::as_str));
 
         let now = now_millis();
         for id in &doomed {
@@ -2260,13 +2332,10 @@ impl SessionLedger {
         };
         for id in &doomed {
             tx.execute("DELETE FROM sessions WHERE session_id = ?1", params![id])?;
-            tx.execute(
-                "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
-                params![id],
-            )?;
+            self.delete_session_events(&tx, id)?;
         }
         tx.commit()?;
-        self.journal_delete_sessions(doomed.iter().map(String::as_str));
+        self.settle_session_deletes(doomed.iter().map(String::as_str));
         Ok(doomed)
     }
 
@@ -2306,13 +2375,10 @@ impl SessionLedger {
         };
         for id in &doomed {
             tx.execute("DELETE FROM sessions WHERE session_id = ?1", params![id])?;
-            tx.execute(
-                "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
-                params![id],
-            )?;
+            self.delete_session_events(&tx, id)?;
         }
         tx.commit()?;
-        self.journal_delete_sessions(doomed.iter().map(String::as_str));
+        self.settle_session_deletes(doomed.iter().map(String::as_str));
         if !doomed.is_empty() {
             self.notify_sessions_changed();
         }
@@ -2646,18 +2712,7 @@ impl SessionLedger {
     /// already-recorded `origin='replay'` back to `exact`, or vice
     /// versa) — the point of change is recorded once.
     pub fn record_file_event(&self, row: &FileEventRow) -> Result<(), LedgerError> {
-        self.guard_changes_write()?;
-        let inserted = {
-            let conn = self.db.lock().expect("ledger mutex");
-            Self::insert_file_event(&conn, row)?
-        };
-        // Journal only rows that actually landed — replayed frames hit the
-        // PK's DO NOTHING and must not bloat the durable record.
-        if inserted > 0 {
-            if let Some(journal) = &self.changes_journal {
-                journal.append(&crate::changes_journal::Record::FileEvent { row: row.clone() });
-            }
-        }
+        self.write_change(crate::changes_journal::Record::FileEvent { row: row.clone() })?;
         Ok(())
     }
 
@@ -2701,20 +2756,11 @@ impl SessionLedger {
         if paths.is_empty() {
             return Ok(0);
         }
-        let deleted = {
-            let conn = self.db.lock().expect("ledger mutex");
-            Self::sever_file_ownership_sql(&conn, project_dir, paths, keep_session_id)?
-        };
-        if deleted > 0 {
-            if let Some(journal) = &self.changes_journal {
-                journal.append(&crate::changes_journal::Record::Sever {
-                    project_dir: project_dir.to_string(),
-                    paths: paths.to_vec(),
-                    keep_session: keep_session_id.to_string(),
-                });
-            }
-        }
-        Ok(deleted)
+        self.write_change(crate::changes_journal::Record::Sever {
+            project_dir: project_dir.to_string(),
+            paths: paths.to_vec(),
+            keep_session: keep_session_id.to_string(),
+        })
     }
 
     /// The bare severing delete — shared with journal replay.
@@ -2745,13 +2791,17 @@ impl SessionLedger {
     /// starts from a clean, WAL-less state instead of running recovery.
     /// Best-effort; failures are logged and shutdown proceeds.
     pub fn final_flush(&self) {
+        let databases: &[&str] = if self.forwarding() {
+            &["main"]
+        } else {
+            &["main", "changes"]
+        };
         let conn = self.db.lock().expect("ledger mutex");
-        for db in ["main", "changes"] {
-            let result = conn.query_row(
-                &format!("PRAGMA {db}.wal_checkpoint(TRUNCATE)"),
-                [],
-                |_| Ok(()),
-            );
+        for db in databases {
+            let result =
+                conn.query_row(&format!("PRAGMA {db}.wal_checkpoint(TRUNCATE)"), [], |_| {
+                    Ok(())
+                });
             if let Err(err) = result {
                 tracing::warn!(db, error = %err, "final WAL checkpoint failed at shutdown");
             }
@@ -2772,17 +2822,202 @@ impl SessionLedger {
         Ok(())
     }
 
-    /// Journal per-session attribution deletes (eviction/trash flows) —
-    /// called after the enclosing transaction commits so a rollback never
-    /// leaves phantom deletes in the durable record.
-    fn journal_delete_sessions<'a>(&self, ids: impl IntoIterator<Item = &'a str>) {
-        if let Some(journal) = &self.changes_journal {
-            for id in ids {
-                journal.append(&crate::changes_journal::Record::DeleteSession {
-                    session: id.to_string(),
-                });
+    /// Settle the attribution half of a session eviction after the
+    /// enclosing transaction commits, so a rollback never leaves phantom
+    /// deletes behind: the owner journals the deletes it already applied
+    /// in-transaction; a forwarding instance (whose read-only attach could
+    /// not apply them) sends them to the owner now.
+    fn settle_session_deletes<'a>(&self, ids: impl IntoIterator<Item = &'a str>) {
+        let forwarding = self.forwarding();
+        for id in ids {
+            let record = crate::changes_journal::Record::DeleteSession {
+                session: id.to_string(),
+            };
+            if forwarding {
+                if let Err(err) = self.write_change(record) {
+                    tracing::warn!(session = id, error = %err, "session eviction: attribution delete could not be forwarded");
+                }
+            } else if let Some(journal) = &self.changes_journal {
+                journal.append(&record);
             }
         }
+    }
+
+    /// The attribution cascade inside an eviction transaction. A
+    /// forwarding instance skips it — its attach is read-only, and
+    /// [`settle_session_deletes`] sends the delete after the commit.
+    fn delete_session_events(&self, tx: &Connection, session_id: &str) -> Result<(), LedgerError> {
+        if self.forwarding() {
+            return Ok(());
+        }
+        tx.execute(
+            "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
+            params![session_id],
+        )?;
+        Ok(())
+    }
+
+    /// Whether shared-ledger mutations must be forwarded to the instance
+    /// that holds the writer claim.
+    fn forwarding(&self) -> bool {
+        self.changes_access
+            .lock()
+            .expect("changes access mutex")
+            .is_forwarding()
+    }
+
+    /// Route one shared-ledger mutation: apply it locally when this
+    /// instance owns the writer claim, otherwise forward it to the owner.
+    /// Returns the number of rows the mutation touched (as reported by
+    /// the owner when forwarded).
+    ///
+    /// A forward that fails is the failover trigger: the owner is gone or
+    /// unreachable, so this instance tries to take the claim. Whoever wins
+    /// drains what the forwarder was holding and continues locally;
+    /// whoever loses queues the record for the next attempt.
+    fn write_change(&self, record: crate::changes_journal::Record) -> Result<usize, LedgerError> {
+        if record.shapes_rows() {
+            self.guard_changes_write()?;
+        }
+        let mut access = self.changes_access.lock().expect("changes access mutex");
+        let crate::changes_writer::ChangesAccess::Forward(forwarder) = &mut *access else {
+            return self.apply_change_locally(&record);
+        };
+        match forwarder.send(&record) {
+            Ok(applied) => Ok(applied),
+            Err(err) => {
+                if !forwarder.retry_due() {
+                    forwarder.queue(record);
+                    return Ok(0);
+                }
+                forwarder.note_attempt();
+                match self.take_over_changes_writer() {
+                    Some(lock) => {
+                        tracing::warn!(
+                            error = %err,
+                            "changes-ledger owner unreachable; this instance took the writer claim"
+                        );
+                        let drained = forwarder.take_pending();
+                        *access = crate::changes_writer::ChangesAccess::Owner(lock);
+                        drop(access);
+                        for held in &drained {
+                            if let Err(e) = self.apply_change_locally(held) {
+                                tracing::warn!(error = %e, "queued changes record failed to apply after takeover");
+                            }
+                        }
+                        self.apply_change_locally(&record)
+                    }
+                    None => {
+                        forwarder.queue(record);
+                        tracing::warn!(
+                            error = %err,
+                            pending = forwarder.pending_len(),
+                            "changes mutation could not be forwarded; holding it for retry"
+                        );
+                        ledger_integrity::health::note_degraded("changes-forward");
+                        Ok(0)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Apply a record to this instance's own attach and journal it.
+    /// Only ever reached while this instance owns (or does not contend
+    /// for) the shared database.
+    fn apply_change_locally(
+        &self,
+        record: &crate::changes_journal::Record,
+    ) -> Result<usize, LedgerError> {
+        let touched = {
+            let conn = self.db.lock().expect("ledger mutex");
+            Self::apply_journal_record(&conn, record).inspect_err(|err| {
+                ledger_integrity::health::note_error("changes", err);
+            })?
+        };
+        // Journal only what actually landed: a replayed frame hits the
+        // primary key's DO NOTHING and must not bloat the durable record.
+        if touched > 0 {
+            if let Some(journal) = &self.changes_journal {
+                journal.append(record);
+            }
+        }
+        Ok(touched)
+    }
+
+    /// Apply a mutation that another instance forwarded to us. Routes
+    /// through the same funnel as a local write, so a record that arrives
+    /// after ownership moved on is forwarded rather than misapplied.
+    pub fn apply_forwarded_change(
+        &self,
+        record: crate::changes_journal::Record,
+    ) -> Result<usize, LedgerError> {
+        self.write_change(record)
+    }
+
+    /// Try to take the writer claim and promote the attach to read-write.
+    /// `None` when the claim is still held elsewhere or the re-attach
+    /// fails (in which case the claim is released again rather than held
+    /// by an instance that cannot write).
+    fn take_over_changes_writer(&self) -> Option<tugcore::ledger_db::WriterLock> {
+        let path = self.changes_db_path.as_deref()?;
+        let lock = tugcore::ledger_db::claim_writer(path, &self.writer_identity)?;
+        let conn = self.db.lock().expect("ledger mutex");
+        if let Err(err) = conn.execute("DETACH DATABASE changes", []) {
+            tracing::error!(error = %err, "cannot detach the read-only changes attach for takeover");
+            return None;
+        }
+        if let Err(err) = tugcore::ledger_db::attach(&conn, "changes", path) {
+            tracing::error!(error = %err, "cannot re-attach the changes ledger read-write after taking the writer claim");
+            // Fall back to read-only so reads keep working; without the
+            // attach every changeset query would fail outright.
+            if let Err(err) = tugcore::ledger_db::attach_read_only(&conn, "changes", path) {
+                tracing::error!(error = %err, "cannot re-attach the changes ledger at all");
+            }
+            ledger_integrity::health::note_degraded("changes-takeover");
+            return None;
+        }
+        Some(lock)
+    }
+
+    /// Retry a stalled takeover from outside the write path — the
+    /// maintenance tick's nudge, so a forwarding instance whose owner died
+    /// while nothing was being written still recovers (and drains what it
+    /// is holding) instead of waiting for the next attribution event.
+    pub fn retry_changes_takeover(&self) {
+        let mut access = self.changes_access.lock().expect("changes access mutex");
+        let crate::changes_writer::ChangesAccess::Forward(forwarder) = &mut *access else {
+            return;
+        };
+        if !forwarder.retry_due() {
+            return;
+        }
+        forwarder.note_attempt();
+        let Some(lock) = self.take_over_changes_writer() else {
+            return;
+        };
+        let drained = forwarder.take_pending();
+        *access = crate::changes_writer::ChangesAccess::Owner(lock);
+        drop(access);
+        tracing::warn!(
+            drained = drained.len(),
+            "changes-ledger writer claim taken over on the maintenance tick"
+        );
+        for held in &drained {
+            if let Err(err) = self.apply_change_locally(held) {
+                tracing::warn!(error = %err, "queued changes record failed to apply after takeover");
+            }
+        }
+    }
+
+    /// Whether this instance currently owns the shared changes ledger.
+    /// Owner-only duties (checkpointing, snapshot backups) consult it.
+    pub fn owns_changes_writer(&self) -> bool {
+        matches!(
+            &*self.changes_access.lock().expect("changes access mutex"),
+            crate::changes_writer::ChangesAccess::Owner(_)
+                | crate::changes_writer::ChangesAccess::Unclaimed
+        )
     }
 
     /// Refuse row INSERT/UPDATEs to the shared changes tables when the
@@ -2822,6 +3057,19 @@ impl SessionLedger {
             return Ok(0);
         }
         self.guard_changes_write()?;
+        // Forwarding mode has no local transaction to run: each rewrite
+        // goes to the owner on its own. Rewrites are individually
+        // idempotent, so the loss of batch atomicity costs nothing.
+        if self.forwarding() {
+            let mut applied = 0usize;
+            for rw in rewrites {
+                applied += self.write_change(crate::changes_journal::Record::Rewrite {
+                    canonical_project_dir: canonical_project_dir.to_string(),
+                    rewrite: rw.clone(),
+                })?;
+            }
+            return Ok(applied);
+        }
         let mut applied: Vec<FileEventRewrite> = Vec::new();
         {
             let mut conn = self.db.lock().expect("ledger mutex");
@@ -2987,14 +3235,7 @@ impl SessionLedger {
     /// on the `(owner_kind, owner_id, project_dir)` key — the draft engine
     /// writes the latest message for an entry, superseding any prior draft.
     pub fn upsert_changeset_draft(&self, row: &ChangesetDraftRow) -> Result<(), LedgerError> {
-        self.guard_changes_write()?;
-        {
-            let conn = self.db.lock().expect("ledger mutex");
-            Self::upsert_changeset_draft_sql(&conn, row)?;
-        }
-        if let Some(journal) = &self.changes_journal {
-            journal.append(&crate::changes_journal::Record::Draft { row: row.clone() });
-        }
+        self.write_change(crate::changes_journal::Record::Draft { row: row.clone() })?;
         Ok(())
     }
 
@@ -3067,23 +3308,11 @@ impl SessionLedger {
         owner_id: &str,
         project_dir: &str,
     ) -> Result<(), LedgerError> {
-        let deleted = {
-            let conn = self.db.lock().expect("ledger mutex");
-            conn.execute(
-                "DELETE FROM changes.changeset_drafts
-                 WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
-                params![owner_kind, owner_id, project_dir],
-            )?
-        };
-        if deleted > 0 {
-            if let Some(journal) = &self.changes_journal {
-                journal.append(&crate::changes_journal::Record::DraftDelete {
-                    owner_kind: owner_kind.to_string(),
-                    owner_id: owner_id.to_string(),
-                    project_dir: project_dir.to_string(),
-                });
-            }
-        }
+        self.write_change(crate::changes_journal::Record::DraftDelete {
+            owner_kind: owner_kind.to_string(),
+            owner_id: owner_id.to_string(),
+            project_dir: project_dir.to_string(),
+        })?;
         Ok(())
     }
 
@@ -4898,6 +5127,12 @@ mod tests {
             })
             .unwrap_err();
         assert!(matches!(err, LedgerError::InvalidState(_)), "{err:?}");
+        // ...but shape-safe deletes are never gated ([LR5]): this one
+        // fails on the future table's shape, not on the write lockout.
+        let err = ledger
+            .delete_changeset_draft("session", "s1", "/proj")
+            .unwrap_err();
+        assert!(matches!(err, LedgerError::Sqlite(_)), "{err:?}");
         // ...and the future schema was not reshaped or stamped down.
         drop(ledger);
         let conn = Connection::open(&changes_sibling).unwrap();
@@ -4944,6 +5179,139 @@ mod tests {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
         assert_eq!(v, CHANGES_SCHEMA_VERSION);
+    }
+
+    /// The single-writer contract end to end ([LR8]): two ledgers on one
+    /// shared changes database, one real loopback endpoint between them.
+    /// The instance that loses the claim forwards its writes to the owner,
+    /// holds what it cannot deliver, and takes the claim over — draining
+    /// what it held — once the owner is gone.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_non_owner_forwards_its_writes_and_takes_over_when_the_owner_exits() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let changes = dir.path().join("changes.db");
+        let root = PathBuf::from("/tmp/tugcast-tests-no-trash");
+        let event = |tool: &str, file: &str| FileEventRow {
+            tug_session_id: "s1".into(),
+            tool_use_id: tool.into(),
+            file_path: file.into(),
+            tool_name: "Write".into(),
+            op: "modified".into(),
+            origin: "exact".into(),
+            ambiguous: false,
+            parent_tool_use_id: None,
+            project_dir: "/proj".into(),
+            at: 1,
+        };
+
+        // The owner: claims the shared database and serves the endpoint a
+        // non-owner forwards to.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let owner = Arc::new(
+            SessionLedger::open_full(
+                dir.path().join("owner.db"),
+                Some(changes.clone()),
+                root.clone(),
+                port,
+            )
+            .expect("owner ledger"),
+        );
+        assert!(owner.owns_changes_writer());
+        let app = axum::Router::new().route(
+            "/api/changes-write",
+            axum::routing::post({
+                let ledger = Arc::clone(&owner);
+                move |body: axum::body::Bytes| {
+                    let ledger = Arc::clone(&ledger);
+                    async move { crate::server::apply_changes_write(&ledger, &body) }
+                }
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+
+        // The follower: same shared database, claim already taken.
+        let follower = Arc::new(
+            SessionLedger::open_full(
+                dir.path().join("follower.db"),
+                Some(changes.clone()),
+                root,
+                0,
+            )
+            .expect("follower ledger"),
+        );
+        assert!(
+            !follower.owns_changes_writer(),
+            "the second instance must not own the writer claim"
+        );
+
+        // A forwarded write lands in the owner's database.
+        let write = |ledger: Arc<SessionLedger>, row: FileEventRow| async move {
+            tokio::task::spawn_blocking(move || ledger.record_file_event(&row))
+                .await
+                .expect("join")
+        };
+        write(Arc::clone(&follower), event("t1", "a.rs"))
+            .await
+            .expect("forwarded write");
+        assert_eq!(
+            owner.file_events_for_session("s1").unwrap().len(),
+            1,
+            "the owner applied the forwarded row"
+        );
+        assert_eq!(
+            follower.file_events_for_session("s1").unwrap().len(),
+            1,
+            "the follower reads the shared database through its read-only attach"
+        );
+
+        // The follower's read-only attach must refuse a direct write, so a
+        // path that ever escaped the forwarding route fails loudly.
+        {
+            let conn = follower.db.lock().expect("ledger mutex");
+            assert!(
+                conn.execute("DELETE FROM changes.file_events", []).is_err(),
+                "a non-owner must not be able to write the shared database"
+            );
+        }
+
+        // Owner unreachable but still holding the claim: the write is held.
+        server.abort();
+        let _ = server.await;
+        write(Arc::clone(&follower), event("t2", "b.rs"))
+            .await
+            .expect("held write");
+        assert!(!follower.owns_changes_writer(), "the claim is still held");
+        assert_eq!(
+            owner.file_events_for_session("s1").unwrap().len(),
+            1,
+            "the undeliverable row did not land"
+        );
+
+        // Owner gone: the next write takes the claim over and drains what
+        // the follower was holding.
+        drop(owner);
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        write(Arc::clone(&follower), event("t3", "c.rs"))
+            .await
+            .expect("write after takeover");
+        assert!(
+            follower.owns_changes_writer(),
+            "the survivor took the writer claim"
+        );
+        let files: Vec<String> = follower
+            .file_events_for_session("s1")
+            .unwrap()
+            .into_iter()
+            .map(|r| r.file_path)
+            .collect();
+        assert_eq!(
+            files,
+            vec!["a.rs".to_string(), "b.rs".to_string(), "c.rs".to_string()],
+            "nothing was lost across the takeover"
+        );
     }
 
     #[test]
@@ -5101,14 +5469,17 @@ mod tests {
     fn fresh_ledger_with_root(root: &Path) -> SessionLedger {
         // Use an in-memory db (in-memory changes attach) but explicit claude root.
         let conn = Connection::open_in_memory().expect("open_in_memory");
-        SessionLedger::attach_changes(&conn, None).expect("attach");
-        let changes_write_ok = SessionLedger::configure(&conn).expect("configure");
+        SessionLedger::attach_changes(&conn, None, false).expect("attach");
+        let changes_write_ok = SessionLedger::configure(&conn, true).expect("configure");
         SessionLedger {
             db: Mutex::new(conn),
             claude_projects_root: root.to_path_buf(),
             sessions_changed: OnceLock::new(),
             changes_write_ok,
             changes_journal: None,
+            changes_access: Mutex::new(crate::changes_writer::ChangesAccess::Unclaimed),
+            changes_db_path: None,
+            writer_identity: crate::changes_writer::local_identity(0),
         }
     }
 
