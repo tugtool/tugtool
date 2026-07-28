@@ -23,11 +23,12 @@
  */
 
 import React, { useState } from "react";
-import { CircleCheck, Rocket } from "lucide-react";
+import { CircleCheck, Rocket, X } from "lucide-react";
 
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import {
   TugProgressIndicator,
   type TugProgressIndicatorRole,
@@ -42,7 +43,7 @@ import {
 /** The v1 catalog's one `offered` entry, for the on-device AI scenarios. */
 const OFFER_NAME = "Ternary Bonsai 8B";
 const OFFER_BYTES = 2_315_155_948;
-const OFFER_NOTES = "Runs command & session summaries locally on this Mac.";
+const OFFER_NOTES = "Enhances command parsing & session summaries.";
 import "./gallery.css";
 import "./gallery-tug-setup.css";
 
@@ -99,6 +100,9 @@ function dotVisual(status: StepStatus): {
 }
 
 const DOT_SIZE = 14;
+
+/** Mirrors PROGRESS_BAR_HEIGHT in tug-setup.tsx. */
+const PROGRESS_BAR_HEIGHT = 6;
 
 // ---------------------------------------------------------------------------
 // SetupStepRow — the bespoke spike row
@@ -370,17 +374,26 @@ function buildFlow(
             status: "busy",
             label: "Adding on-device AI",
             body: (
-              <TugProgressIndicator
-                variant="bar"
-                role="agent"
-                state="running"
-                value={OFFER_BYTES * 0.42}
-                max={OFFER_BYTES}
-                showValue
-                formatValue={localAiProgressValue}
-              />
+              <>
+                <TugProgressIndicator
+                  variant="bar"
+                  size={PROGRESS_BAR_HEIGHT}
+                  role="agent"
+                  state="running"
+                  value={OFFER_BYTES * 0.42}
+                  max={OFFER_BYTES}
+                  showValue
+                  formatValue={localAiProgressValue}
+                />
+                <TugIconButton
+                  size="2xs"
+                  icon={<X aria-hidden="true" />}
+                  aria-label="Cancel download"
+                  title="Cancel download"
+                  onClick={() => go("local_ai_offer")}
+                />
+              </>
             ),
-            secondaryCta: { label: "Cancel", onClick: () => go("local_ai_offer") },
           }),
           open({ status: "pending", detail: "Add or skip on-device AI first." }),
         ],

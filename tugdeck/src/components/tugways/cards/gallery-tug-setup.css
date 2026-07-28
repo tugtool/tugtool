@@ -129,6 +129,16 @@
   min-height: calc(13px * 1.45);
   display: flex;
   align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+.cg-setup-step-body .tug-progress-indicator {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cg-setup-step-body .tug-progress-indicator-value .tug-label {
+  font-size: var(--tug-font-size-2xs);
 }
 
 .cg-setup-step-action {

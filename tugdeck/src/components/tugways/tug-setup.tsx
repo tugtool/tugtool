@@ -57,7 +57,7 @@
  */
 
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import { CircleCheck, Rocket } from "lucide-react";
+import { CircleCheck, Rocket, X } from "lucide-react";
 import { type ReactElement, useEffect, useState, useSyncExternalStore } from "react";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { authStore, useAuth } from "@/lib/auth-store";
@@ -89,6 +89,7 @@ import {
   localAiProgressValue,
 } from "./tug-setup-copy";
 import { TugPushButton } from "./tug-push-button";
+import { TugIconButton } from "./tug-icon-button";
 import {
   TugProgressIndicator,
   type TugProgressIndicatorRole,
@@ -111,6 +112,12 @@ const SESSION_FORCE_SETUP: "claude_missing" | "logged_out" | "open_session" | fa
 type StepStatus = "pending" | "active" | "busy" | "error" | "done";
 
 const DOT_SIZE = 14;
+
+/**
+ * Track height of the download's progress bar. Thin enough to read as a rule
+ * under the label rather than a second object competing with it.
+ */
+const PROGRESS_BAR_HEIGHT = 6;
 
 /**
  * How long to wait on a browser sign-in before offering a re-try (ms). Generous
@@ -448,25 +455,42 @@ export function TugSetup(): ReactElement {
       // its own readout carries the bytes, so the downloading row stays the
       // same two lines as every other row. Before the total is known there is
       // nothing to count, so the bar runs indeterminate with no readout.
+      // Cancel rides the bar's own row as an ✕ rather than a worded button in
+      // the row's action slot, which would tower over a 6px track.
       return {
         key,
         status: "busy",
         label: "Adding on-device AI",
-        body:
-          total > 0 ? (
-            <TugProgressIndicator
-              variant="bar"
-              role="agent"
-              state="running"
-              value={received}
-              max={total}
-              showValue
-              formatValue={localAiProgressValue}
+        body: (
+          <>
+            {total > 0 ? (
+              <TugProgressIndicator
+                variant="bar"
+                size={PROGRESS_BAR_HEIGHT}
+                role="agent"
+                state="running"
+                value={received}
+                max={total}
+                showValue
+                formatValue={localAiProgressValue}
+              />
+            ) : (
+              <TugProgressIndicator
+                variant="bar"
+                size={PROGRESS_BAR_HEIGHT}
+                role="agent"
+                state="running"
+              />
+            )}
+            <TugIconButton
+              size="2xs"
+              icon={<X aria-hidden="true" />}
+              aria-label="Cancel download"
+              title="Cancel download"
+              onClick={handleCancelLocalAi}
             />
-          ) : (
-            <TugProgressIndicator variant="bar" role="agent" state="running" />
-          ),
-        secondaryCta: { label: "Cancel", onClick: handleCancelLocalAi },
+          </>
+        ),
       };
     }
     if (localModel.lastError !== null) {

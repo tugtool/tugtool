@@ -105,6 +105,22 @@
   min-height: calc(13px * 1.45);
   display: flex;
   align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+/* The bar claims the row's slack; its byte readout and the cancel ✕ keep their
+ * intrinsic widths beside it. */
+.tug-setup-step-body .tug-progress-indicator {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The readout drops below the detail line's 13px — it annotates the bar rather
+ * than speaking at the same volume as the step's own prose. The size is set on
+ * the TugLabel itself, so an ancestor `--tugx-label-font-size` would not reach
+ * it; this outranks the label's own rule instead. */
+.tug-setup-step-body .tug-progress-indicator-value .tug-label {
+  font-size: var(--tug-font-size-2xs);
 }
 
 .tug-setup-step-action {
