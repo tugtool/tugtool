@@ -360,7 +360,8 @@ Where to look (from the brief + store layout): `tugcode/src/replay.ts` (`hoistCo
 **Artifacts:** The parse loop's unterminated-line handling; the inverted test.
 
 **Tasks:**
-- [ ] On an unterminated final line: do not consume it into `consumed`/`window`, do not parse it into meta/engine/triggers, end the loop; the parse stays `resumable` with the frontier at the last terminated line.
+- [ ] On an unterminated final line: do not consume it into `consumed`/`window`, do not parse it into meta/engine/triggers, end the loop; the parse stays `resumable` with the frontier at the last terminated line. This includes the meta arm — the partial line must not feed `last_prompt`, `name`, or `created_at` either (today the parsed record reaches the `match rec.kind` arm before the `terminated` check at loop end; the deferral must cut it off before all of that).
+- [ ] Record the accepted edge: if a writer dies mid-line and the file never changes again, the cache hit hides the partial line indefinitely. Accepted — the line is truncated JSON and was never a complete record; any future append changes `(size, mtime)` and picks it up.
 - [ ] Invert `unterminated_tail_line_is_counted_but_not_resumable` → `unterminated_tail_line_is_deferred_to_the_next_scan`: partial line invisible this scan; after the line completes, the next scan resumes from the frontier and counts it exactly once.
 
 **Tests:**
@@ -384,6 +385,7 @@ Where to look (from the brief + store layout): `tugcode/src/replay.ts` (`hoistCo
 
 **Tasks:**
 - [ ] Extend `incremental_resume_matches_full_parse_over_reference_sessions` (raise splits to ~24 per session): for each split, classify the tail's first records with `dead_branch::parse_chain_records` — a split is a **history-edit split** if the tail contains a new compaction record or an off-leaf user submission before any other trigger shape; every other split is an **ordinary-append split**.
+- [ ] The classifier MUST be suppression-aware: a tail compaction record (or any tail record) whose uuid is in the head's effective-uuid set is a suppressed re-append, NOT a history edit — a split inside a re-append block that carries a copied old compact summary is an **ordinary-append split** and must assert `resumed == true`. A naive classifier misfiles exactly the straddle case this certification exists to prove. Compute the head's effective set the same way the parser does (the head parse's `ResumeMark.effective_uuids`, decoded), and check tail uuids against it before classifying.
 - [ ] Assert `resumed == true` for every ordinary-append split (zero re-streams), alongside the existing incremental ≡ full equalities for all splits.
 - [ ] Log the split classification tallies (`eprintln!`) so a corpus change that erodes coverage is visible in test output.
 
@@ -420,7 +422,7 @@ Where to look (from the brief + store layout): `tugcode/src/replay.ts` (`hoistCo
 
 **Depends on:** #step-7
 
-**Commit:** `tugdeck(restore-remediation): seat compaction boundaries as dividers, not assistant turns`
+**Commit:** `tugdeck(restore-remediation): seat compaction boundaries as dividers, not assistant turns` — scope follows #step-7's root cause: use `tugcode(restore-remediation): …` if the fix lands in `tugcode/src/replay.ts` rather than the deck
 
 **References:** Risk R02, (#deck-facts, #success-criteria)
 
