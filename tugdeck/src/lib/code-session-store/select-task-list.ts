@@ -10,7 +10,10 @@
  *   - `TaskCreate` — creates one task; the server assigns a monotonic
  *     `taskId` and echoes it in `tool_result.content` as
  *     `"Task #N created successfully: <subject>"`.
- *   - `TaskUpdate` — flips one task's `status` by `taskId`.
+ *   - `TaskUpdate` — mutates one task by `taskId`: its `status`, its
+ *     text fields (`subject` / `description` / `activeForm`), or both.
+ *     `status: "deleted"` is not a fourth lifecycle state — it removes
+ *     the task from the list outright.
  *
  * The pinned `Z2A` renderer ([D100]) reads the assembled state from
  * {@link reduceTaskListState} and treats the slot as *active* when
@@ -30,6 +33,14 @@ import type { ToolUseMessage } from "./types";
 
 /** Lifecycle of one task per Claude Code's vocabulary. */
 export type TaskStatus = "pending" | "in_progress" | "completed";
+
+/**
+ * The `status` vocabulary a `TaskUpdate` may carry on the wire. It is
+ * the lifecycle plus `"deleted"`, which is a *removal instruction*
+ * rather than a state a task can rest in — no {@link TaskItem} ever
+ * holds it, which is why {@link TaskStatus} stays three-valued.
+ */
+export type TaskWireStatus = TaskStatus | "deleted";
 
 /**
  * One task — the assembled state of one `TaskCreate` + any subsequent
@@ -68,10 +79,21 @@ export interface TaskCreateInput {
   activeForm?: string;
 }
 
-/** Narrowed `tool_use.input` for a `TaskUpdate` call. */
+/**
+ * Narrowed `tool_use.input` for a `TaskUpdate` call.
+ *
+ * Every field but `taskId` is optional: `TaskUpdate` is a partial
+ * mutation, and a call may carry a status, an edited text field, or
+ * both. The narrowing keeps only the fields this side renders —
+ * `owner`, `metadata`, and the blocks/blockedBy edges are accepted on
+ * the wire but have no surface here.
+ */
 export interface TaskUpdateInput {
   taskId: string;
-  status: TaskStatus;
+  status?: TaskWireStatus;
+  subject?: string;
+  description?: string;
+  activeForm?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,23 +118,51 @@ export function narrowTaskCreateInput(
 
 /**
  * Narrow a `TaskUpdate` call's `tool_use.input` into a typed
- * {@link TaskUpdateInput}. Defensive: returns `undefined` when
- * `taskId` is not a string or `status` is not a known
- * {@link TaskStatus}.
+ * {@link TaskUpdateInput}.
+ *
+ * Defensive in two directions, and the difference matters:
+ *
+ *  - No `taskId` string → `undefined`. There is nothing to address.
+ *  - A `status` that is present but unrecognised → `undefined`. A
+ *    status word this side has never seen carries semantics we would
+ *    be guessing at, so the call is skipped rather than applied
+ *    partially.
+ *  - No `status` at all → **accepted**, provided the call carries at
+ *    least one text field to apply. A rename or a description edit is
+ *    a legitimate `TaskUpdate` with no lifecycle change, and dropping
+ *    it would leave the list showing stale text.
  */
 export function narrowTaskUpdateInput(
   value: unknown,
 ): TaskUpdateInput | undefined {
   if (value === null || typeof value !== "object") return undefined;
   const v = value as Record<string, unknown>;
-  const taskId = typeof v.taskId === "string" ? v.taskId : undefined;
-  const status = narrowTaskStatus(v.status);
-  if (taskId === undefined || status === undefined) return undefined;
-  return { taskId, status };
+  if (typeof v.taskId !== "string") return undefined;
+  if (v.status !== undefined && narrowTaskWireStatus(v.status) === undefined) {
+    return undefined;
+  }
+  const status = narrowTaskWireStatus(v.status);
+  const subject = typeof v.subject === "string" ? v.subject : undefined;
+  const description = typeof v.description === "string" ? v.description : undefined;
+  const activeForm = typeof v.activeForm === "string" ? v.activeForm : undefined;
+  if (
+    status === undefined &&
+    subject === undefined &&
+    description === undefined &&
+    activeForm === undefined
+  ) {
+    return undefined;
+  }
+  return { taskId: v.taskId, status, subject, description, activeForm };
 }
 
-function narrowTaskStatus(value: unknown): TaskStatus | undefined {
-  if (value === "pending" || value === "in_progress" || value === "completed") {
+function narrowTaskWireStatus(value: unknown): TaskWireStatus | undefined {
+  if (
+    value === "pending" ||
+    value === "in_progress" ||
+    value === "completed" ||
+    value === "deleted"
+  ) {
     return value;
   }
   return undefined;
@@ -222,14 +272,40 @@ export function reduceTaskListState(
       if (tasks === null) continue;
       const index = tasks.findIndex((t) => t.taskId === input.taskId);
       if (index === -1) continue;
+      // `deleted` is a removal, not a state: the task leaves the list
+      // entirely. Splicing (rather than flagging) is what keeps every
+      // downstream consumer honest for free — `countTasks`, the
+      // progress fraction, the copy text, and the active-list rule all
+      // read straight off `tasks`, so a task that is gone is gone
+      // everywhere without any of them learning a fourth status.
+      if (input.status === "deleted") {
+        tasks.splice(index, 1);
+        continue;
+      }
+      const prev = tasks[index];
+      const status = input.status ?? prev.status;
       const completedAtMs =
-        input.status === "completed"
-          ? call.createdAt + (call.toolWallMs ?? 0)
+        status === "completed"
+          ? // A text-only edit must not restamp an already-completed
+            // task's linger clock, so the previous stamp wins when this
+            // call didn't itself complete the task.
+            (prev.completedAtMs ?? call.createdAt + (call.toolWallMs ?? 0))
           : undefined;
-      tasks[index] = { ...tasks[index], status: input.status, completedAtMs };
+      tasks[index] = {
+        ...prev,
+        subject: input.subject ?? prev.subject,
+        description: input.description ?? prev.description,
+        activeForm: input.activeForm ?? prev.activeForm,
+        status,
+        completedAtMs,
+      };
     }
   }
-  if (tasks === null) return EMPTY_STATE;
+  // An emptied list reads as "no tasks", identical to never having had
+  // any — including by reference, so consumers comparing against
+  // `EMPTY_TASK_LIST_STATE` with `Object.is` see the empty branch after
+  // the last task is deleted.
+  if (tasks === null || tasks.length === 0) return EMPTY_STATE;
   return { tasks };
 }
 

@@ -34,6 +34,12 @@
  *  - `TaskUpdate → pending` → `RotateCcw` + `"Reset"` (rare —
  *    explicit revert from a non-pending status; defensive coverage
  *    of a valid wire value the design didn't specify a verb for).
+ *  - `TaskUpdate → deleted` → `CircleMinus` + `"Deleted"`. The task
+ *    is removed from the fold, so the subject resolves by id.
+ *  - `TaskUpdate` with no `status` → `Pencil` + `"Edited"` — a rename
+ *    or description change. The subject is the update's own new
+ *    `subject` when it carries one, since the fold still holds the
+ *    pre-edit text.
  *  - `TaskUpdate` with unknown `taskId` → subject falls back to
  *    `"Task #<taskId>"` (the matching `TaskCreate` may have arrived
  *    out of order in replay; the bare id is the least-misleading
@@ -95,8 +101,10 @@ import {
   CircleAlert,
   CircleCheck,
   CircleDot,
+  CircleMinus,
   ListChecks,
   ListPlus,
+  Pencil,
   RotateCcw,
 } from "lucide-react";
 
@@ -104,7 +112,7 @@ import {
   narrowTaskCreateInput,
   narrowTaskUpdateInput,
   type TaskItem,
-  type TaskStatus,
+  type TaskWireStatus,
 } from "@/lib/code-session-store/select-task-list";
 import { useTaskListState } from "@/lib/code-session-store/hooks/use-task-list-state";
 import type { CodeSessionStore } from "@/lib/code-session-store";
@@ -151,18 +159,19 @@ export function composeCreatedLabel(subject: string): string {
 /**
  * What the marker says for a `TaskUpdate` event. The verb tracks
  * the new status (`Started` for `in_progress`, `Completed` for
- * `completed`, `Reset` for `pending`, `Updated` for any future
- * status), the subject comes from the reducer's lookup, and the
- * helper formats them together.
+ * `completed`, `Reset` for `pending`, `Deleted` for `deleted`), the
+ * subject comes from the reducer's lookup, and the helper formats
+ * them together. A status-free update — a rename or a description
+ * edit — reads as `Edited`.
  */
 export function composeUpdatedLabel(
-  status: TaskStatus,
+  status: TaskWireStatus | undefined,
   subjectOrId: string,
 ): string {
   return `${updateVerb(status)}: ${subjectOrId}`;
 }
 
-function updateVerb(status: TaskStatus): string {
+function updateVerb(status: TaskWireStatus | undefined): string {
   switch (status) {
     case "in_progress":
       return "Started";
@@ -170,6 +179,10 @@ function updateVerb(status: TaskStatus): string {
       return "Completed";
     case "pending":
       return "Reset";
+    case "deleted":
+      return "Deleted";
+    case undefined:
+      return "Edited";
   }
 }
 
@@ -184,11 +197,13 @@ export type TaskMarkerState =
   | "started"
   | "completed"
   | "reset"
+  | "deleted"
+  | "edited"
   | "creating"
   | "updating"
   | "unknown";
 
-function updateState(status: TaskStatus): TaskMarkerState {
+function updateState(status: TaskWireStatus | undefined): TaskMarkerState {
   switch (status) {
     case "in_progress":
       return "started";
@@ -196,14 +211,22 @@ function updateState(status: TaskStatus): TaskMarkerState {
       return "completed";
     case "pending":
       return "reset";
+    case "deleted":
+      return "deleted";
+    case undefined:
+      return "edited";
   }
 }
 
 /**
  * Resolve a `subject` for a `TaskUpdate`'s `taskId` against the
- * reducer's task list. Falls back to `Task #<taskId>` when the
- * matching `TaskCreate` hasn't been folded yet (the rare replay-
- * out-of-order case).
+ * reducer's task list. Falls back to `Task #<taskId>`.
+ *
+ * The fallback covers two cases. The rare one is replay-out-of-order,
+ * where the matching `TaskCreate` hasn't been folded yet. The routine
+ * one is a `deleted` update: the list handed here is the *settled*
+ * fold, and the task it names is by then removed from it — so a
+ * `Deleted` marker reads by id rather than by subject.
  *
  * Exported for tests.
  */
@@ -277,6 +300,10 @@ function markerIcon(state: TaskMarkerState): React.ReactNode {
       return <CircleCheck size={MARKER_ICON_SIZE} aria-hidden="true" />;
     case "reset":
       return <RotateCcw size={MARKER_ICON_SIZE} aria-hidden="true" />;
+    case "deleted":
+      return <CircleMinus size={MARKER_ICON_SIZE} aria-hidden="true" />;
+    case "edited":
+      return <Pencil size={MARKER_ICON_SIZE} aria-hidden="true" />;
     case "creating":
     case "updating":
     case "unknown":
@@ -386,7 +413,10 @@ export function composeMarker({
   if (kind === "update") {
     const narrowed = narrowTaskUpdateInput(input);
     if (narrowed === undefined) return { state: "updating", verb: "Updating…", subject: "" };
-    const subject = resolveUpdateSubject(narrowed.taskId, tasks);
+    // A rename carries the new subject in its own input, and that is
+    // what the row should say — the fold's copy is the pre-edit text.
+    const subject =
+      narrowed.subject ?? resolveUpdateSubject(narrowed.taskId, tasks);
     return { state: updateState(narrowed.status), verb: updateVerb(narrowed.status), subject };
   }
   // Defensive — an unrecognised kind shouldn't reach here, but the

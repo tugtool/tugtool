@@ -165,6 +165,29 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
           type: "tool_result", tool_use_id: "tc-2",
           output: "Task #2 created successfully: Migrate JOBS popover onto TugPopupList",
         }));
+        // A third task, then deleted. `deleted` is a removal instruction,
+        // not a fourth lifecycle state: the row must never seat, so the
+        // row-count assertion below still expects two checklist rows.
+        await app.driveSession("A", f({
+          type: "tool_use", msg_id: "m2", tool_use_id: "tc-3",
+          tool_name: "TaskCreate",
+          input: { subject: "Retire the happy-dom shim" },
+          seq: 3,
+        }));
+        await app.driveSession("A", f({
+          type: "tool_result", tool_use_id: "tc-3",
+          output: "Task #3 created successfully: Retire the happy-dom shim",
+        }));
+        await app.driveSession("A", f({
+          type: "tool_use", msg_id: "m2", tool_use_id: "tu-3",
+          tool_name: "TaskUpdate",
+          input: { taskId: "3", status: "deleted" },
+          seq: 4,
+        }));
+        await app.driveSession("A", f({
+          type: "tool_result", tool_use_id: "tu-3",
+          output: "Updated task #3 deleted",
+        }));
         await app.driveSession("A", f({
           type: "turn_complete", msg_id: "m2", result: "success",
         }));
@@ -221,11 +244,12 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
             title: placardTitle,
             hasFrameTitle: popup.querySelector('.tug-popup-list-title') !== null,
             rows: popup.querySelectorAll('.tug-popup-list-item').length,
+            taskSubjects: Array.from(popup.querySelectorAll('.session-tasks-popover-item .tug-popup-list-item-primary')).map(el => (el.textContent||'').trim()),
             stopRounded: stop ? stop.getAttribute('data-rounded') : null,
             stopTopDelta: stopRect && lineRect ? (stopRect.top - lineRect.top) : null,
             stopHeight: stopRect ? stopRect.height : null,
             copy: footer ? !!footer.querySelector('[data-slot="block-copy"]') : false,
-            clear: footer ? Array.from(footer.querySelectorAll('button')).some(b => (b.textContent||'').trim().toLowerCase() === 'clear') : false,
+            clear: footer ? Array.from(footer.querySelectorAll('button')).some(b => (b.textContent||'').trim().toLowerCase() === 'clear jobs') : false,
             summary: footer ? (footer.querySelector('.tug-popup-list-footer-summary')||{}).textContent : null,
             scroller: (() => {
               const sc = popup.querySelector('.tug-popup-list-scroller');
@@ -247,7 +271,11 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
         // headerless ([P07]).
         expect(jobs.title).toBe("Work");
         expect(jobs.hasFrameTitle).toBe(false);
-        expect(jobs.rows).toBe(JOB_COUNT + 2); // 28 job rows + 2 checklist tasks
+        // 28 job rows + 2 checklist tasks. Three tasks were created; the
+        // deleted one leaves no row behind.
+        expect(jobs.rows).toBe(JOB_COUNT + 2);
+        expect(jobs.taskSubjects).not.toContain("Retire the happy-dom shim");
+        expect(jobs.summary).toContain("2 tasks");
         // Scroll strategy: a long ledger scrolls inside its capped
         // scroller instead of growing the popup — and the popup stays
         // fully on-screen.
@@ -264,6 +292,9 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
         // at (or within a hairline of) the first line's top.
         expect(Math.abs(jobs.stopTopDelta)).toBeLessThanOrEqual(2);
         expect(jobs.copy).toBe(true);
+        // Named for its scope: the WORK footer sits under Goal + Tasks +
+        // Jobs but clearing only ever touches finished jobs, so a bare
+        // "Clear" would read as a work-list wipe it cannot perform.
         expect(jobs.clear).toBe(true);
         await closePopup("work");
 

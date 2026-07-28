@@ -14,6 +14,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  EMPTY_TASK_LIST_STATE,
   narrowTaskCreateInput,
   narrowTaskUpdateInput,
   parseTaskCreateResultId,
@@ -153,6 +154,33 @@ describe("narrowTaskUpdateInput", () => {
     expect(narrowTaskUpdateInput(null)).toBeUndefined();
     expect(narrowTaskUpdateInput("string")).toBeUndefined();
   });
+
+  test("accepts the deleted wire status", () => {
+    expect(narrowTaskUpdateInput({ taskId: "4", status: "deleted" })).toEqual({
+      taskId: "4",
+      status: "deleted",
+    });
+  });
+
+  test("accepts a status-free text edit", () => {
+    expect(narrowTaskUpdateInput({ taskId: "5", subject: "renamed" })).toEqual({
+      taskId: "5",
+      subject: "renamed",
+    });
+    expect(
+      narrowTaskUpdateInput({ taskId: "6", description: "new detail" }),
+    ).toEqual({ taskId: "6", description: "new detail" });
+  });
+
+  test("a status-free call with no applicable field is undefined", () => {
+    expect(narrowTaskUpdateInput({ taskId: "7", owner: "someone" })).toBeUndefined();
+  });
+
+  test("an unrecognised status is refused even beside a valid text field", () => {
+    expect(
+      narrowTaskUpdateInput({ taskId: "8", status: "archived", subject: "x" }),
+    ).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -248,6 +276,77 @@ describe("reduceTaskListState", () => {
     ]);
     expect(out.tasks.map((t) => t.subject)).toEqual(["new"]);
     expect(out.tasks[0].status).toBe("pending");
+  });
+
+  test("a deleted update removes the task from the list", () => {
+    const out = reduceTaskListState([
+      createCall("t1", { subject: "one" }, 1),
+      createCall("t2", { subject: "two" }, 2),
+      createCall("t3", { subject: "three" }, 3),
+      updateCall("u1", { taskId: "2", status: "deleted" }),
+    ]);
+    expect(out.tasks.map((t) => t.subject)).toEqual(["one", "three"]);
+  });
+
+  test("deleting every task returns the shared empty state", () => {
+    const out = reduceTaskListState([
+      createCall("t1", { subject: "one" }, 1),
+      createCall("t2", { subject: "two" }, 2),
+      updateCall("u1", { taskId: "1", status: "deleted" }),
+      updateCall("u2", { taskId: "2", status: "deleted" }),
+    ]);
+    expect(out.tasks).toEqual([]);
+    expect(out).toBe(EMPTY_TASK_LIST_STATE);
+    expect(taskListIsActive(out)).toBe(false);
+  });
+
+  test("deleting a completed task does not leave it counted as done", () => {
+    const out = reduceTaskListState([
+      createCall("t1", { subject: "one" }, 1),
+      createCall("t2", { subject: "two" }, 2),
+      updateCall("u1", { taskId: "1", status: "completed" }),
+      updateCall("u2", { taskId: "1", status: "deleted" }),
+    ]);
+    expect(out.tasks.map((t) => t.subject)).toEqual(["two"]);
+  });
+
+  test("an update targeting an already-deleted task is skipped", () => {
+    const out = reduceTaskListState([
+      createCall("t1", { subject: "one" }, 1),
+      createCall("t2", { subject: "two" }, 2),
+      updateCall("u1", { taskId: "1", status: "deleted" }),
+      updateCall("u2", { taskId: "1", status: "in_progress" }),
+    ]);
+    expect(out.tasks.map((t) => t.subject)).toEqual(["two"]);
+  });
+
+  test("a status-free update edits the text and keeps the status", () => {
+    const out = reduceTaskListState([
+      createCall("t1", { subject: "one", description: "first" }, 1),
+      updateCall("u1", { taskId: "1", status: "in_progress" }),
+      updateCall("u2", { taskId: "1", subject: "one, renamed" }),
+    ]);
+    expect(out.tasks[0].subject).toBe("one, renamed");
+    expect(out.tasks[0].description).toBe("first");
+    expect(out.tasks[0].status).toBe("in_progress");
+  });
+
+  test("a text edit on a completed task does not restamp its completion", () => {
+    const out = reduceTaskListState([
+      createCall("t1", { subject: "one" }, 1),
+      updateCall(
+        "u1",
+        { taskId: "1", status: "completed" },
+        { createdAt: 5_000, toolWallMs: 200 },
+      ),
+      updateCall(
+        "u2",
+        { taskId: "1", description: "a note added after the fact" },
+        { createdAt: 90_000 },
+      ),
+    ]);
+    expect(out.tasks[0].status).toBe("completed");
+    expect(out.tasks[0].completedAtMs).toBe(5_200);
   });
 
   test("non-Task* calls are ignored", () => {

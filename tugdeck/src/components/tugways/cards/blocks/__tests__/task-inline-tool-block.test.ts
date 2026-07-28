@@ -103,6 +103,18 @@ describe("composeUpdatedLabel", () => {
       "Reset: Write the spec",
     );
   });
+
+  test("deleted → `Deleted: <subject>`", () => {
+    expect(composeUpdatedLabel("deleted", "Write the spec")).toBe(
+      "Deleted: Write the spec",
+    );
+  });
+
+  test("no status → `Edited: <subject>`", () => {
+    expect(composeUpdatedLabel(undefined, "Write the spec")).toBe(
+      "Edited: Write the spec",
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -278,6 +290,43 @@ describe("composeMarker", () => {
         tasks: TASKS,
       }),
     ).toEqual({ state: "reset", verb: "Reset", subject: "Ship the gallery" });
+  });
+
+  test("update + deleted → state `deleted`, subject by id (the task is gone from the settled fold)", () => {
+    expect(
+      composeMarker({
+        kind: "update",
+        input: { taskId: "9", status: "deleted" },
+        status: "ready",
+        tasks: TASKS,
+      }),
+    ).toEqual({ state: "deleted", verb: "Deleted", subject: "Task #9" });
+  });
+
+  test("update with no status → state `edited`, not the streaming placeholder", () => {
+    expect(
+      composeMarker({
+        kind: "update",
+        input: { taskId: "3", subject: "Ship the gallery, revised" },
+        status: "ready",
+        tasks: TASKS,
+      }),
+    ).toEqual({
+      state: "edited",
+      verb: "Edited",
+      subject: "Ship the gallery, revised",
+    });
+  });
+
+  test("update with no status and no subject falls back to the fold's subject", () => {
+    expect(
+      composeMarker({
+        kind: "update",
+        input: { taskId: "3", description: "more detail" },
+        status: "ready",
+        tasks: TASKS,
+      }),
+    ).toEqual({ state: "edited", verb: "Edited", subject: "Ship the gallery" });
   });
 
   test("streaming create → state `creating`, no subject", () => {

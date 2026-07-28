@@ -15,10 +15,11 @@
  * Task* events, with no reset signal between prompts). The fold is
  * therefore unconditional: every Task* event across the whole
  * transcript folds into the current batch, and the list persists across
- * turn boundaries. It clears only when the reducer's batch-boundary
- * supersede fires — a fresh `TaskCreate` arriving over a
- * fully-completed list starts a new batch — so accumulated history
- * never piles up.
+ * turn boundaries. It empties two ways, both driven by the events
+ * themselves: the reducer's batch-boundary supersede (a fresh
+ * `TaskCreate` arriving over a fully-completed list starts a new
+ * batch, so accumulated history never piles up), and explicit
+ * `TaskUpdate` deletion, which removes the named task outright.
  *
  * An earlier revision gated visibility on whether the *latest turn* had
  * a Task* event, returning the empty state otherwise. That collapsed

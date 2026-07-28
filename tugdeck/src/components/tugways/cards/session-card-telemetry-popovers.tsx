@@ -1471,6 +1471,16 @@ export function WorkPopoverContent({
                 .join("\n\n")
             }
           />
+          {/*
+            Named for its scope, unlike the JOBS popup's bare "Clear".
+            This footer sits under Goal + Tasks + Jobs, and clearing is
+            a jobs-only affordance: the task list is derived from the
+            transcript's Task* calls, so it has no deck-local wipe —
+            it empties only when the assistant deletes the tasks. A
+            bare "Clear" here reads as "clear the work list" and then
+            sits disabled for want of a finished job, which is exactly
+            the wrong story.
+          */}
           <TugPushButton
             emphasis="outlined"
             role="action"
@@ -1480,7 +1490,7 @@ export function WorkPopoverContent({
             disabled={jobCounts.finished === 0 || onClearJobs === undefined}
             onClick={onClearJobs}
           >
-            Clear
+            Clear Jobs
           </TugPushButton>
         </TugPopupListFooter>
       }

@@ -449,6 +449,18 @@ function ReferenceZone(): React.ReactElement {
       />
       <TaskInlineToolBlock
         {...taskProps({
+          input: { taskId: "3", subject: "Propagate saveAs failure to the caller" },
+          session,
+        })}
+      />
+      <TaskInlineToolBlock
+        {...taskProps({
+          input: { taskId: "4", status: "deleted" },
+          session,
+        })}
+      />
+      <TaskInlineToolBlock
+        {...taskProps({
           status: "error",
           textOutput: "TaskUpdate failed: task #9 not found",
           session,
