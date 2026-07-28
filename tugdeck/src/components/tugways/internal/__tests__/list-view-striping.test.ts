@@ -28,6 +28,9 @@ describe("resolveRowStriping", () => {
     expect(subtle!.color).toContain("color-mix");
     expect(subtle!.color).toContain("--tugx-list-view-stripe-tint");
     expect(subtle!.color).toContain("4%");
+    // Both parities paint, in opposite directions.
+    expect(subtle!.baseColor).toContain("--tugx-list-view-stripe-shade");
+    expect(subtle!.baseColor).toContain("4%");
   });
 
   test("the strengths are a strictly increasing scale", () => {
@@ -55,13 +58,21 @@ describe("resolveRowStriping", () => {
     expect(resolveRowStriping({ strength: 5.5 })!.color).toContain("5.5%");
   });
 
-  test("an explicit color overrides the strength scale outright", () => {
+  test("explicit colors override the strength scale outright", () => {
     const resolved = resolveRowStriping({
       strength: "strong",
-      color: "var(--tug7-surface-global-primary-normal-content-rest)",
+      color: "rebeccapurple",
+      baseColor: "goldenrod",
     });
-    expect(resolved!.color).toBe(
-      "var(--tug7-surface-global-primary-normal-content-rest)",
+    expect(resolved!.color).toBe("rebeccapurple");
+    expect(resolved!.baseColor).toBe("goldenrod");
+  });
+
+  test("overriding one parity leaves the other on its wash", () => {
+    const resolved = resolveRowStriping({ strength: "medium", color: "red" });
+    expect(resolved!.color).toBe("red");
+    expect(resolved!.baseColor).toBe(
+      resolveRowStriping("medium")!.baseColor,
     );
   });
 });

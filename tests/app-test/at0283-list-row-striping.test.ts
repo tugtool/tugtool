@@ -17,6 +17,11 @@
  *    `data-tug-list-cell-index` — which is what fails if the attribute is ever
  *    dropped and the CSS falls back to child order. (The list here renders all
  *    its rows, so this pins the SOURCE of the parity, not a scrolled window.)
+ *  - **Both parities paint, and differently.** Washing only every other row and
+ *    leaving the rest on the host surface puts ONE step between neighbours,
+ *    which the eye resolves only when it repeats — a long list looks banded
+ *    while a two-row list looks like two identical rows. This is the assertion
+ *    that a two-row Lens section depends on.
  *  - **A selected row drops its band.** The selection fill is translucent; a
  *    band beneath it would tint it, so the same selection would paint two
  *    different colors depending on which row the user landed on.
@@ -150,14 +155,21 @@ describe.skipIf(!SHOULD_RUN)("at0283 — list row striping + text measure", () =
           }
 
           if (striping === "on") {
-            // Odd rows carry a band; even rows sit on the host surface. The
-            // cursor row is excluded from the "even is bare" half: the list
-            // seeds a selection, which paints its own fill.
-            const banded = rows.filter((r) => r.parity === "odd");
-            expect(banded.length).toBeGreaterThan(0);
-            for (const row of banded) {
-              expect(isPainted(row.bg)).toBe(true);
-            }
+            // BOTH parities paint, and they paint DIFFERENTLY. This is the
+            // half that a two-row list depends on: washing only the odd rows
+            // puts one step between neighbours, and one step of a few percent
+            // is invisible without repetition to compare it against — a long
+            // list would look banded while a two-row list looked like two
+            // identical rows. The selected row is excluded, since it drops its
+            // band for its own fill.
+            const unselected = rows.filter((r) => isPainted(r.bg));
+            const odd = unselected.filter((r) => r.parity === "odd");
+            const even = unselected.filter((r) => r.parity === "even");
+            expect(odd.length).toBeGreaterThan(0);
+            expect(even.length).toBeGreaterThan(0);
+            expect(new Set(odd.map((r) => r.bg)).size).toBe(1);
+            expect(new Set(even.map((r) => r.bg)).size).toBe(1);
+            expect(odd[0]!.bg).not.toBe(even[0]!.bg);
 
             // ---- B. Line OR band, never both: a striped list draws no
             // hairline between its rows.

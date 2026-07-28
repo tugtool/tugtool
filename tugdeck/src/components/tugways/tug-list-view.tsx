@@ -908,14 +908,16 @@ export interface TugListViewProps<
    *    at 2% / 4% / 7% / 11% of the surface's own text color.
    *  - `{ strength: 5.5 }` ⇒ any wash alpha as a percent, for landing between
    *    the named rungs.
-   *  - `{ color }` ⇒ skip the wash and paint an explicit color or token.
+   *  - `{ color, baseColor }` ⇒ skip the washes and paint explicit colors.
    *
-   * The band is on ODD rows (0-based), so row 0 stays on the host surface —
-   * the list's first row reads as part of what is above it, and a list short
-   * enough to hold one row shows no banding at all. Parity comes from the
-   * row's ABSOLUTE data-source index (`data-row-parity` on the cell wrapper),
-   * never from `:nth-child`, which under windowing would flip the bands as
-   * the rendered range slides.
+   * BOTH parities are painted — odd rows wash toward the surface's foreground,
+   * even rows toward its content surface. Washing only one parity and leaving
+   * the other on the host surface is the obvious construction and it is wrong:
+   * it puts one step between neighbours, which the eye can only resolve when
+   * it repeats, so a long list looks banded while a two-row list looks like
+   * two identical rows. Parity comes from the row's ABSOLUTE data-source index
+   * (`data-row-parity` on the cell wrapper), never from `:nth-child`, which
+   * under windowing would flip the bands as the rendered range slides.
    *
    * A selected row drops its band: the selection fill is a translucent wash,
    * and letting the stripe tint through it would make the same selection paint
@@ -4207,7 +4209,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         : ({
             ...separatorStyle,
             ...(resolvedStriping !== null
-              ? { "--tugx-list-view-stripe-color": resolvedStriping.color }
+              ? {
+                  "--tugx-list-view-stripe-color": resolvedStriping.color,
+                  "--tugx-list-view-stripe-base-color":
+                    resolvedStriping.baseColor,
+                }
               : {}),
             ...(rowTextSizeValue !== undefined
               ? { "--tugx-list-row-font-size": rowTextSizeValue }

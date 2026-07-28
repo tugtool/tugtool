@@ -89,15 +89,18 @@ body {
      on the container for `thin` / `medium`. */
   --tugx-list-view-divider-thickness:  1px;
 
-  /* Alternating row tint (`rowStriping`) — a wash of the host surface's own
-     FOREGROUND color, which is why one strength scale reads correctly in six
-     themes: the text color is light on the dark themes and dark on the light
-     ones, so the band always moves AWAY from the surface. The color itself is
-     written by the component from the resolved strength; the tint is a token
-     here so a consumer can retint the whole scale (a band in the accent hue,
-     say) without restating the four alphas. Absent by default — the rule below
-     is gated on `data-row-striping`, so an unstriped list resolves nothing. */
+  /* Alternating row tint (`rowStriping`) — the two directions the bands move
+     in. Odd rows wash toward the host surface's own FOREGROUND, even rows
+     toward its CONTENT SURFACE, and those are opposites in every theme: on the
+     dark themes the foreground is light and the content surface dark, on the
+     light themes they swap. That is why one strength number bands correctly in
+     all six. The colors themselves are written by the component from the
+     resolved strength; these tints are tokens so a consumer can retint the
+     whole scale (bands in the accent hue, say) without restating the alphas.
+     The rules below are gated on `data-row-striping`, so an unstriped list
+     resolves nothing. */
   --tugx-list-view-stripe-tint: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-list-view-stripe-shade: var(--tug7-surface-global-primary-normal-content-rest);
 }
 
 /* ---- Scroll container ---- */
@@ -432,10 +435,21 @@ body {
    unchanged) and for any layout when `rowSeparator` is set to an object
    (`data-row-separator="on"`). Thickness + color come from the
    `--tugx-list-view-divider-*` tokens — hairline by default; the
-   `rowSeparator` prop overwrites them on the container. */
+   `rowSeparator` prop overwrites them on the container.
+
+   A STRIPED list draws no hairline: the band already separates the rows, and
+   saying it twice reads as clutter. The primitive owns that exclusion rather
+   than leaving each consumer to pass `rowSeparator="none"` alongside its
+   striping — and owning it is what makes the short-list fallback work, since a
+   list too short to band (below `STRIPE_MIN_ROWS`) publishes no
+   `data-row-striping` and gets its hairline back with no second decision
+   anywhere. A consumer that explicitly passes `rowSeparator="none"` still gets
+   no line either way; that override is handled by the rule below. */
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.tug-list-view[data-row-layout="flush"] .tug-list-view-cell:not(:last-child),
-.tug-list-view[data-row-separator="on"] .tug-list-view-cell:not(:last-child) {
+.tug-list-view[data-row-layout="flush"]:not([data-row-striping="on"])
+  .tug-list-view-cell:not(:last-child),
+.tug-list-view[data-row-separator="on"]:not([data-row-striping="on"])
+  .tug-list-view-cell:not(:last-child) {
   border-bottom: var(--tugx-list-view-divider-thickness) solid
     var(--tugx-list-view-divider-color);
 }
@@ -494,12 +508,15 @@ body {
 
 /* ---- Alternating row tint — opt-in via the `rowStriping` prop ----
 
-   The band goes on ODD rows, so row 0 stays on the host surface: a list's first
-   row reads as continuous with the header above it, and a one-row list shows no
-   banding at all. Parity is the row's ABSOLUTE data index, published as
-   `data-row-parity` by the component — `:nth-child` would be read against the
-   rendered WINDOW, and the bands would crawl as the window slides under a
-   scroll.
+   BOTH parities paint. Leaving the even rows on the host surface and washing
+   only the odd ones puts ONE step between neighbours, and a step that small
+   reads only when it repeats — a long list looks banded while a two-row list
+   looks like two identical rows, because a single transition gives the eye
+   nothing to compare against. Two washes in opposite directions put a step of
+   twice the strength between any two rows, so two rows alternate as plainly as
+   ten. Parity is the row's ABSOLUTE data index, published as `data-row-parity`
+   by the component — `:nth-child` would be read against the rendered WINDOW,
+   and the bands would crawl as the window slides under a scroll.
 
    The band paints on the cell WRAPPER, under the row, which is what lets it
    compose: a `flush` row is transparent at rest, so the band shows through; the
@@ -510,6 +527,10 @@ body {
   .tug-list-view-cell[data-row-parity="odd"] {
   background-color: var(--tugx-list-view-stripe-color);
 }
+.tug-list-view[data-row-striping="on"]
+  .tug-list-view-cell[data-row-parity="even"] {
+  background-color: var(--tugx-list-view-stripe-base-color);
+}
 
 /* A selected row drops its band. The selection fill is a translucent wash, so a
    band beneath it would tint it — the same selection would paint two different
@@ -519,9 +540,9 @@ body {
    own selection (the picker shape, where selection is driven through cell
    context). A control-selection row paints no fill, so it keeps its band. */
 .tug-list-view[data-row-striping="on"]:not([data-selection-surface="control"])
-  .tug-list-view-cell[data-row-parity="odd"][data-selected="true"],
+  .tug-list-view-cell[data-selected="true"],
 .tug-list-view[data-row-striping="on"]:not([data-selection-surface="control"])
-  .tug-list-view-cell[data-row-parity="odd"]:has(
+  .tug-list-view-cell:has(
     .tug-list-row[data-selected="true"]:not([data-selection-surface="control"])
   ) {
   background-color: transparent;
