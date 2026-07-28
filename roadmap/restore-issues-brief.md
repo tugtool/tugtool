@@ -158,11 +158,3 @@ Affected sessions live in `/Users/kocienda/.claude/projects/-Users-kocienda-Moun
 - `/tmp/probe-still-detects.ts` — confirms dead-branch detection still fires corpus-wide.
 
 `translateJsonlSession` takes `{ kind: "ok", jsonl: <whole file text>, claudeSessionId }` — not a `lines` array.
-
----
-
-## State of the working tree
-
-`M tugcode/src/replay.ts` and untracked `tugcode/src/__tests__/fixtures/compact-reappend/` are the **only** artifacts of Bug 2. Everything else modified in the tree (`tugapp/Sources/AppDelegate.swift`, `tugdeck/src/components/tugways/tug-setup*`, `tugdeck/src/lib/setup-request-store.ts`, `tugdeck/src/lib/code-session-store/{end-state,events,types}.ts`, `tests/app-test/at0281-setup-on-demand.test.ts`, `tests/app-test/at0168-menu-structure.test.ts`, `tugdeck/src/{action-dispatch,deck-manager}.ts`) belongs to **unrelated in-flight work** (setup-on-demand) and must not be swept into a commit for this.
-
-Bug 1 is already committed as `31b775d1d`; nothing from it remains uncommitted.
