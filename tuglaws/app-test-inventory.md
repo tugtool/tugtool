@@ -1036,6 +1036,11 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Tests:** `at0283-list-row-striping.test.ts`.
 - **Summary:** `TugListView`'s alternating row tint bands the DATA, not the rendered window: every cell's `data-row-parity` is asserted against its own `data-tug-list-cell-index`, which is what a `:nth-child` zebra rule cannot hold once windowing slides the rendered range. A striped list draws no hairlines (line OR band, never both) and a selected row drops its band, so the translucent selection fill paints one color wherever it lands. The text half pins that `rowTextSize` GOVERNS — every row's content column reads at the list's own `--tugx-list-row-font-size` rather than at whatever size its label asked for — asserted against the token, so tuning the measure does not fail the test. Both halves branch on the list's live `data-row-striping`, so the Lens can be tuned back to hairlines without invalidating the gate.
 
+#### [AT0287] A row action is not a row pick
+- **Status:** ✅ open (regression gate).
+- **Tests:** `at0287-lens-row-action-not-a-pick.test.ts`.
+- **Summary:** The Lens Text Files close box acts on the file its row names without also picking that row. Both halves of the original defect are pinned from one real click: the front pane is unchanged (a pick would dispatch `focus-session-card` and haul the about-to-close card's pane in front of what the user was working in — the closed card's pane survives the close, so the theft would still be visible when the dust settled), no row carries `data-selected` afterwards, and the two survivors keep their alternating tint by position — the phantom selection used to strip the band off whichever row slid into the closed one's place. The close is `close-tab` carrying the row's card id, so a row for a BACKGROUND tab closes its own file rather than its pane's front card.
+
 ## Maintenance
 
 This file is append-only for the tag list. Status fields update as fixes land or regress. Removing a tag requires a documented decision and a successor tag noted inline (`[M{NN}] superseded by [M{MM}] — see ...`).

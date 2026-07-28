@@ -384,11 +384,13 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
     },
     [filtering, beginGripReorder],
   );
-  // The close box sends `close` to the card BY IDENTITY, the same event the
-  // card's own ⌘W raises — so it walks that card's chain to the host pane and
-  // passes through the card's close guard (a dirty Text buffer still gets its
-  // save sheet). `sendToFirstResponder` would close whatever card is front,
-  // which is never the row the user aimed at.
+  // The close box names the card it closes — `close-tab` carrying the row's own
+  // `cardId`, walked from that card up to its host pane. This is the tab ×'s
+  // event, and for the same reason: `close` means "close the active one", which
+  // is only ever the row the user aimed at by luck. A row for a background tab
+  // would close its pane's front card instead — the wrong file, silently. The
+  // named path also keeps the close guard attached to the card it concerns, so
+  // a dirty Text buffer is activated before it raises its save sheet.
   const chain = useResponderChain();
   const onClose = useCallback(
     (cardId: string): void => {
@@ -397,7 +399,8 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
       // render behind the unmount).
       if (chain === null || !chain.hasResponder(cardId)) return;
       chain.sendToTarget(cardId, {
-        action: TUG_ACTIONS.CLOSE,
+        action: TUG_ACTIONS.CLOSE_TAB,
+        value: cardId,
         phase: "discrete",
       });
     },

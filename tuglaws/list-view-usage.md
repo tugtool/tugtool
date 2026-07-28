@@ -62,6 +62,8 @@ a *data source* and a *cell renderer*; the cell renderer's job is to compose
 
 8. **A dense list sets its text measure once, with `rowTextSize`.** Rows in one list agreeing on a size matters more than each cell renderer picking for itself, so the prop deliberately outranks each `TugLabel`'s own `size`. It reaches the content column only — shrinking a list's type must not shrink its close boxes. Two lists that stack in one column (the Lens's Snippets and Text Files) share one measure from one place; see `lens-list-presentation.ts`.
 
+9. **An in-row action is not a row pick, and it names its target.** A close box, a trash button, a reveal — any `TugIconButton` in a row — acts on the row it sits in; picking that row is a different gesture with different consequences (a Lens Text Files pick fronts the bound card). `TugListView` keeps them apart for you: a pointer gesture that lands on a focus-refusing control (`data-tug-focus="refuse"`, which every `TugIconButton` carries) commits no selection and moves no cursor. A consumer must not try to arrange this itself with `stopPropagation` on the button's click — **selection commits at pointerdown**, which has already bubbled by the time any click handler runs, so the click-level guard reads as if it worked while the row was picked a moment earlier. The action's own dispatch then has to say WHICH row it acts on: send `close-tab` with the card id, not `close`, or the pane closes whichever card is front and the user watches the wrong file go.
+
 ## Selection ownership matrix
 
 Pick the mechanism by the list's intent — do not invent a third path.

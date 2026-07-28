@@ -87,7 +87,7 @@ import "./tug-list-view.css";
 
 import React from "react";
 
-import { currentGesture } from "@/gesture-interpreter";
+import { currentGesture, targetRefusesFocus } from "@/gesture-interpreter";
 import { SmartScroll } from "@/lib/smart-scroll";
 import {
   anchorDepthFromEnd,
@@ -4018,9 +4018,20 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         e.currentTarget instanceof Element &&
         e.currentTarget.querySelector('[contenteditable="true"], input, textarea') !==
           null;
+      // The gesture landed on an in-row ACTION rather than on the row — a
+      // close box, a trash button, any `data-tug-focus="refuse"` control. Such
+      // a control acts on the row it names, which is not the same as picking
+      // that row: a close box that first selects fronts the very card it is
+      // about to close, stealing activation from whatever the user was working
+      // in and leaving it nowhere to go. `stopPropagation` on the control's
+      // CLICK cannot prevent this — selection commits at pointerdown, which has
+      // already bubbled by then — so the row's own handlers ask the question.
+      const targetIsRowAction = (e: { target: EventTarget | null }): boolean =>
+        targetRefusesFocus(e.target);
       const pointerDownCb = (e: React.PointerEvent<HTMLDivElement>): void => {
         if (e.button !== 0) return;
         if (!cellIsPickable()) return;
+        if (targetIsRowAction(e)) return;
         // A pointerdown anywhere in the open editor's cell stays with the
         // editor: the editor's own focusable (found by the capture-phase pointer
         // placement) keeps the caret, so the click lands as expected.
@@ -4087,6 +4098,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // A click in the open editor's cell is the editor's, not a re-selection
         // of the container's row (mirrors the pointerdown guard).
         if (cellHasOpenEditor(e)) return;
+        // Space on a descended-onto close box synthesizes a click that bubbles
+        // here; it is still the action's gesture, not the row's.
+        if (targetIsRowAction(e)) return;
         delegateRef.current?.onSelect?.(index);
         // `selectionRequired` mode — the list view owns the selected index; a
         // cell activation moves it. `delegate.onSelect` above still fires, so

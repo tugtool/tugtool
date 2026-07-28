@@ -532,15 +532,18 @@ body {
   background-color: var(--tugx-list-view-stripe-base-color);
 }
 
-/* A selected row drops its band. The selection fill is a translucent wash, so a
-   band beneath it would tint it — the same selection would paint two different
-   colors depending on which row the user landed on, which reads as a bug. Keyed
-   off the same two selection signals the divider suppression uses: the wrapper's
-   own `data-selected` (the list-owned cursor) and a `TugListRow` that paints its
-   own selection (the picker shape, where selection is driven through cell
-   context). A control-selection row paints no fill, so it keeps its band. */
-.tug-list-view[data-row-striping="on"]:not([data-selection-surface="control"])
-  .tug-list-view-cell[data-selected="true"],
+/* A row that PAINTS a selection fill drops its band. The fill is a translucent
+   wash, so a band beneath it would tint it — the same selection would paint two
+   different colors depending on which row the user landed on.
+
+   The condition is the fill, not the selected-ness. A band is the row's only
+   paint, so a rule that removes it must put something back in its place; keying
+   off the wrapper's `data-selected` would not, because the list marks its own
+   selected index whether or not the cell renderer forwards `selected` into a
+   `TugListRow` — and a list that tracks a selection it never renders (a
+   cursor-only listing) would then show a hole in its banding where that index
+   sits. So the selector asks for the `TugListRow` that actually paints. A
+   control-selection row paints no fill either, and likewise keeps its band. */
 .tug-list-view[data-row-striping="on"]:not([data-selection-surface="control"])
   .tug-list-view-cell:has(
     .tug-list-row[data-selected="true"]:not([data-selection-surface="control"])

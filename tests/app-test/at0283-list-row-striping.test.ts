@@ -22,9 +22,13 @@
  *    which the eye resolves only when it repeats — a long list looks banded
  *    while a two-row list looks like two identical rows. This is the assertion
  *    that a two-row Lens section depends on.
- *  - **A selected row drops its band.** The selection fill is translucent; a
- *    band beneath it would tint it, so the same selection would paint two
- *    different colors depending on which row the user landed on.
+ *  - **A row that PAINTS a selection fill drops its band.** The fill is
+ *    translucent; a band beneath it would tint it, so the same selection would
+ *    paint two different colors depending on which row the user landed on. The
+ *    condition is the fill and not the selected-ness: a list that tracks a
+ *    selected index it never renders would otherwise show a hole in its
+ *    banding, which is why this waits for the ROW's `data-selected` before it
+ *    reads the background.
  *  - **One measure per list.** `rowTextSize` outranks each `TugLabel`'s own
  *    `size`, so every row in the list reads at the list's size — asserted
  *    against the list's own token rather than a literal, so tuning the measure

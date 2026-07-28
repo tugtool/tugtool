@@ -82,6 +82,11 @@ function priorCardDeck() {
       },
     ],
     activePaneId: "pA",
+    // Stated, not inherited: the arrangement is deck state, and a seed that
+    // omits it takes whatever arrangement the machine's own saved deck was
+    // left in — which decides where the CARDS cursor starts, and so whether
+    // section C's walk begins where it says it does.
+    imposition: { kind: "one-up", lens: "right" },
     hasFocus: true,
   };
 }
