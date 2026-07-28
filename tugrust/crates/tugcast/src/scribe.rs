@@ -200,11 +200,13 @@ fn draft_ask(style_rules: &str) -> String {
          bullet points. The subject MUST follow the house scoped format \
          `scope(topic): specific summary` (e.g. `tugdash(changesets-m03b): …`, \
          `plan(update): …`) — scoped and specific, NEVER a bare one-word subject \
-         like `Fix`. NEVER hard-wrap text to a column width: the subject is one \
-         unbroken line, each bullet is one unbroken line however long, and the \
-         only newlines you emit are the structural blank line before the body \
-         and the single break between bullets. Output only the commit message \
-         text, nothing else.\n\n\
+         like `Fix`. NEVER hard-wrap text to a column width — not to 72, not to \
+         80, not to any width: the subject is one unbroken line, each paragraph \
+         is one unbroken line, each bullet is one unbroken line however long, \
+         and the ONLY newlines you emit are the structural blank line before \
+         the body and the single break between bullets. A 400-character bullet \
+         is one 400-character line. Output only the commit message text, \
+         nothing else.\n\n\
          Follow these project style rules:\n{}\n",
         style_rules.trim()
     )
@@ -433,46 +435,96 @@ pub fn fingerprint_dash_entry(branch_head_sha: &str, worktree_status: &str) -> S
 // Commit-skill style rules
 // ---------------------------------------------------------------------------
 
-/// Baked fallback style rules — used when the packaged commit skill can't be
-/// read or its expected sections are absent. Mirrors the skill's contract.
-const BAKED_STYLE_RULES: &str = "\
+/// The commit-message style rules embedded in every draft prompt.
+const COMMIT_STYLE_RULES: &str = "\
 - First line: imperative mood, no period, under 50 characters.
 - Subject uses the house scoped format `scope(topic): specific summary` (e.g. \
 `tugdash(changesets-m03b): …`, `plan(update): …`) — scoped and specific, never a \
 bare one-word subject like `Fix`.
 - Then, only if warranted, a blank line and terse factual bullet points.
+- Every line runs unbroken to its end: no hard wrapping, no wrapping to 72 or \
+80 columns, no continuation lines. A bullet that runs 400 characters is one \
+line of 400 characters.
 - No buzzwords, no filler, no \"enhanced\"/\"improved\" without specifics.
 - List only the most significant files if many changed.
 - NEVER include Co-Authored-By lines or any AI/agent attribution.";
 
-/// The commit-message style rules read from the packaged commit skill
-/// (`tugplug/skills/commit/SKILL.md`), falling back to [`BAKED_STYLE_RULES`]
-/// when the file or its sections are missing.
+/// The commit-message style rules the draft prompt embeds.
 pub fn commit_style_rules() -> String {
-    let path = crate::resources::source_tree().join("tugplug/skills/commit/SKILL.md");
-    match std::fs::read_to_string(&path) {
-        Ok(text) => extract_style_rules(&text).unwrap_or_else(|| BAKED_STYLE_RULES.to_string()),
-        Err(_) => BAKED_STYLE_RULES.to_string(),
-    }
+    COMMIT_STYLE_RULES.to_string()
 }
 
-/// Extract the message-format contract from the commit skill markdown: the
-/// "Compose the Commit Message" section plus the two "Examples" sections.
-fn extract_style_rules(md: &str) -> Option<String> {
-    let compose = md.find("**Compose the Commit Message**")?;
-    let stage = md[compose..]
-        .find("**Stage and Commit**")
-        .map(|i| compose + i)?;
-    let compose_section = md[compose..stage].trim();
+/// Join hard-wrapped lines back into one line per paragraph, bullet, or
+/// trailer. Applied to every generated draft so a wrapped generation can never
+/// reach the ledger. Blank lines, fenced code blocks, and lines that open a
+/// new structural unit (bullet, heading, quote, `Key: value` trailer) start a
+/// fresh line; anything else joins the line above with a single space.
+pub fn unwrap_hard_wraps(message: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut in_fence = false;
+    // The subject is line one and stands alone: nothing folds into it, so a
+    // message with no blank line after the subject survives untouched.
+    let mut past_subject = false;
 
-    let examples = md.find("## Examples of Good Commit Messages")?;
-    let examples_end = md[examples..]
-        .find("## If Uncertain")
-        .map(|i| examples + i)
-        .unwrap_or(md.len());
-    let examples_section = md[examples..examples_end].trim();
+    for raw in message.lines() {
+        let trimmed = raw.trim();
 
-    Some(format!("{compose_section}\n\n{examples_section}"))
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            out.push(raw.to_string());
+            past_subject = true;
+            continue;
+        }
+        if in_fence || trimmed.is_empty() {
+            out.push(raw.to_string());
+            past_subject = true;
+            continue;
+        }
+
+        let joinable = past_subject
+            && !starts_structure(trimmed)
+            && out.last().is_some_and(|prev| {
+                let prev = prev.trim_start();
+                !prev.is_empty() && !prev.starts_with("```") && !prev.starts_with("~~~")
+            });
+
+        if joinable {
+            let prev = out.last_mut().expect("joinable implies a previous line");
+            prev.push(' ');
+            prev.push_str(trimmed);
+        } else {
+            out.push(raw.trim_end().to_string());
+        }
+    }
+
+    out.join("\n")
+}
+
+/// Whether a trimmed line opens its own structural unit rather than
+/// continuing the line above it.
+fn starts_structure(line: &str) -> bool {
+    if line.starts_with("- ")
+        || line.starts_with("* ")
+        || line.starts_with("+ ")
+        || line.starts_with('#')
+        || line.starts_with('>')
+        || line.starts_with('|')
+    {
+        return true;
+    }
+    // Ordered list: `1.` / `2)` …
+    let digits = line.chars().take_while(char::is_ascii_digit).count();
+    if digits > 0 && matches!(line.as_bytes().get(digits), Some(b'.') | Some(b')')) {
+        return true;
+    }
+    // Git trailer: `Tug-Session: …`, `Co-Authored-By: …`.
+    line.split_once(':').is_some_and(|(key, rest)| {
+        rest.starts_with(' ')
+            && !key.is_empty()
+            && key
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -771,14 +823,49 @@ mod tests {
     }
 
     #[test]
-    fn commit_style_rules_extracts_from_the_packaged_skill_or_falls_back() {
-        // In debug/tests, `source_tree()` resolves the tugtool root, which
-        // ships the commit skill — so extraction should find the sections.
+    fn commit_style_rules_carry_the_message_contract() {
         let rules = commit_style_rules();
-        assert!(!rules.is_empty());
-        assert!(
-            rules.contains("imperative") || rules.contains("Co-Authored-By"),
-            "carries the message-style contract: {rules}"
+        assert!(rules.contains("imperative"));
+        assert!(rules.contains("Co-Authored-By"));
+        assert!(rules.contains("no hard wrapping"));
+    }
+
+    #[test]
+    fn unwrap_hard_wraps_rejoins_paragraphs_and_bullets() {
+        let wrapped = "restore: count and replay the effective record sequence\n\
+                       \n\
+                       Session restore now renders every live turn exactly once — abandoned\n\
+                       branches suppressed, compaction re-appends deduplicated.\n\
+                       \n\
+                       - Pin the committed re-append fixture with a tripwire that reimplements the\n  \
+                       pre-fix last-wins walk and holds its 980-entry dead set.\n\
+                       - State dead-set validity as three properties.\n";
+        assert_eq!(
+            unwrap_hard_wraps(wrapped),
+            "restore: count and replay the effective record sequence\n\
+             \n\
+             Session restore now renders every live turn exactly once — abandoned branches suppressed, compaction re-appends deduplicated.\n\
+             \n\
+             - Pin the committed re-append fixture with a tripwire that reimplements the pre-fix last-wins walk and holds its 980-entry dead set.\n\
+             - State dead-set validity as three properties."
         );
+    }
+
+    #[test]
+    fn unwrap_hard_wraps_leaves_unwrapped_messages_alone() {
+        let clean = "tugdash(pulse-display): PULSE two-level display\n\nThe PULSE now reads as one two-level grammar wherever it appears.\n\n- tugcast: new headline_register normalizer strips wrapping quotes.\n- Lens (L1): the session row grows a goal line between the name and the activity.";
+        assert_eq!(unwrap_hard_wraps(clean), clean);
+    }
+
+    #[test]
+    fn unwrap_hard_wraps_never_folds_the_body_into_the_subject() {
+        let no_blank = "subject line\nbody line that followed without a blank";
+        assert_eq!(unwrap_hard_wraps(no_blank), no_blank);
+    }
+
+    #[test]
+    fn unwrap_hard_wraps_preserves_fences_trailers_and_ordered_lists() {
+        let message = "scope(topic): summary\n\n```\nfn wrapped(\n    arg: u8,\n) {}\n```\n\n1. first item\n2. second item\n\nTug-Session: abc\nTug-Dash: def";
+        assert_eq!(unwrap_hard_wraps(message), message);
     }
 }

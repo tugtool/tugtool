@@ -71,6 +71,7 @@ The buckets — **decide a disposition for every one of them:**
    Rules:
    - First line: imperative mood, no period, under 50 characters
    - Bullets: terse, factual, no filler words
+   - Every line runs unbroken to its end: no hard wrapping, no wrapping to 72 or 80 columns, no continuation lines. A bullet that runs 400 characters is one line of 400 characters.
    - No buzzwords, no "enhanced" or "improved" without specifics
    - NEVER include Co-Authored-By lines or any AI/agent attribution
 

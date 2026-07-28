@@ -391,6 +391,9 @@ async fn generate_for_entry(deps: &EngineDeps, key: &EntryKey, target: &DraftTar
 
     match result {
         Ok(message) => {
+            // A wrapped generation never reaches the ledger, whatever the
+            // model did with the prompt's no-hard-wrap rule.
+            let message = scribe::unwrap_hard_wraps(&message);
             // Selection dispositions are the user's, not the scribe's — a
             // regeneration replaces the message but carries them forward.
             let selection = read_draft(
