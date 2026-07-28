@@ -236,17 +236,16 @@ function caption(head: string, note?: string): string {
 /**
  * Pulse stroke weights, as multiples of the resting ring's.
  *
- * The ring expands by `transform: scale`, so its border is thinnest at
- * ignition — where it most needs to read — and thickest as it fades out. The
- * multiplier compensates for the first; 1 is no compensation at all and the
- * pulse is born a hairline ghost.
+ * Every cell here is born at the same 1px hairline; the weight is where the
+ * stroke arrives by the end of the ring's travel. 1 is a pulse that barely
+ * opens at all — it leaves as thin as the ring it settles into.
  *
- * Expect coarse steps rather than a smooth ladder. Borders quantize to whole
- * CSS px, so at a 32px glyph the resting ring is 2px and these four weights
- * paint 2, 2, 2 and 3 — the knob is continuous, the screen is not.
+ * Expect coarse steps rather than a smooth ladder. Borders resolve to device
+ * pixels, so neighboring weights can paint identically — the knob is
+ * continuous, the screen is not.
  */
 const PULSE_WEIGHTS: ReadonlyArray<{ weight: number; note?: string }> = [
-  { weight: 1, note: "no compensation" },
+  { weight: 1, note: "barely opens" },
   { weight: 1.15 },
   { weight: 1.3 },
   { weight: DEFAULT_PULSE_WEIGHT },
@@ -326,12 +325,15 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
           <TugLabel size="2xs" emphasis="calm">
             The inner dot eases between 0.35 and full size over a 2s cycle,
             traveling the whole swing every time. The ring is not on its own
-            clock: it is lit a few degrees before top dead center — 47% of the
+            clock: it is lit a few degrees before top dead center — 27% of the
             cycle, ~10.8° BTDC — flush with the dot's edge, so it is already
             moving when the dot turns over it. It then widens to the glyph box
-            and fades across the exhale. Two rejected timings: the 75% crossing
-            read as a hesitation the dot never makes, and exact TDC ran a hair
-            behind the beat.
+            and fades across the exhale. Its stroke is born a 1px hairline and
+            holds there through most of the travel before opening to the full
+            pulse weight — sharp for long enough to be read as sharp, soft by
+            the time it is leaving. Two rejected timings: the 75%
+            crossing read as a hesitation the dot never makes, and exact TDC ran
+            a hair behind the beat.
           </TugLabel>
           <TugChoiceGroup
             size="sm"
@@ -569,14 +571,15 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
             its visible life. Shipped even, bench removed.
           </TugLabel>
           <TugLabel size="2xs" emphasis="calm">
-            Stroke weight, on the same envelope. The pulse expands by
-            `transform: scale`, which scales its border with its radius — so it
-            is thinnest at ignition, where it most needs to read, and thickest
-            as it fades out. `--…-pulse-weight` compensates for the first, and
-            because it multiplies a stroke that is growing, it lands hardest at
-            the second. Expect coarse steps: borders quantize to whole CSS px,
-            so at a 32px glyph the resting ring is 2px and these four weights
-            paint 2, 2, 2 and 3. The knob is continuous; the screen is not.
+            Stroke weight, on the same envelope. The pulse's stroke holds at a
+            1px hairline — sharp, where the ring is brightest and still near the
+            dot's edge — and only opens across the back of the cycle, to
+            `--…-pulse-weight` × the resting ring, as it fades out. So this knob
+            sets where the stroke ENDS, not what it carries throughout; the
+            hairline it starts from is `--…-pulse-hairline`, and how long it
+            stays there is `--…-emit-thicken-ease`. Expect coarse steps: borders
+            resolve to device pixels, so neighboring weights can paint
+            identically. The knob is continuous; the screen is not.
           </TugLabel>
           <div className="gpi-grid">
             {PULSE_WEIGHTS.map(({ weight, note }) => (

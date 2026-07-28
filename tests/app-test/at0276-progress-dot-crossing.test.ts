@@ -471,10 +471,11 @@ describe.skipIf(!SHOULD_RUN)("AT0276: pulsing-dot state crossing", () => {
         ).toBe(true);
         expect(
           held.running,
-          "both halves of the pulse — radius and opacity — outlive the state",
+          "every part of the pulse — radius, opacity, stroke — outlives the state",
         ).toEqual([
           "tugx-progress-pulsing-dot-emit-expand",
           "tugx-progress-pulsing-dot-emit-fade",
+          "tugx-progress-pulsing-dot-emit-thicken",
         ]);
 
         // --- A pulse that was never lit is not held -----------------------

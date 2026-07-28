@@ -270,15 +270,16 @@ export const DEFAULT_FADE_POWER = 1;
  * Shipped pulse stroke weight, mirroring the fallback on
  * `--tugx-progress-pulsing-dot-pulse-weight`.
  *
- * It is over 1 because the ring expands by `transform: scale`, which scales
- * the border along with the radius: born at ~0.59 of the box, the pulse paints
- * at ~59% of nominal at ignition — the frame it is most opaque and most worth
- * seeing — and only reaches full weight as it fades out.
+ * It is the weight the pulse ENDS at, as a multiple of the resting ring's — not
+ * the weight it carries throughout. The stroke opens across the ring's travel,
+ * from a 1px hairline at ignition to this as the ring reaches the box and fades
+ * out: sharp where it is brightest, soft where it is leaving. The stylesheet
+ * pre-divides both ends by the scale they paint at, since a border on a
+ * `transform: scale`d element renders at border × scale.
  *
- * Read it as an intent rather than a rendered ratio: borders are quantized to
- * whole CSS px, so at the sizes this glyph runs at (a 28px Lens row, a 32px
- * bench cell) the resting ring lands on 1–2px and the pulse on 2–3px. Between
- * neighboring weights the painted difference is often nothing at all.
+ * Read it as an intent rather than a rendered ratio: borders resolve to device
+ * pixels, so at the sizes this glyph runs at (a 28px Lens row, a 32px bench
+ * cell) neighboring weights can paint identically.
  */
 export const DEFAULT_PULSE_WEIGHT = 1.6;
 
@@ -390,7 +391,7 @@ export function breathEnvelope(
  * ~160ms per cycle, so neighbors take roughly a dozen breaths to fall out of
  * step — slow enough that no single glance catches the drift happening.
  *
- * It only ever scales the period, so all three loops under one draw still read
+ * It only ever scales the period, so every loop under one draw still reads
  * the same duration and stay phase-locked: the ring is still shed at 10.8° BTDC
  * of that breath.
  */
