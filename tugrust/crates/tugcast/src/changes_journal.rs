@@ -1,22 +1,34 @@
 //! Append-only journal for the machine-global changes ledger.
 //!
-//! Every mutation of the shared `changes.*` tables is appended here as one
-//! JSON line **before** it is applied to SQLite, making the journal — a
-//! plain fsync'd append-only file, effectively incorruptible — the durable
-//! record and the database a rebuildable index. When the open-time
-//! integrity gate quarantines a corrupt `changes.db`, the fresh database
-//! is reconstructed as: bootstrap schema → salvage readable rows →
-//! **replay this journal**, whose records are idempotent (inserts land on
-//! `ON CONFLICT DO NOTHING` / `INSERT OR REPLACE` keys, deletes re-delete)
-//! so re-applying rows the salvage already carried is harmless, and
-//! deletes the salvage resurrected are re-applied.
+//! Every mutation of the shared `changes.*` tables is appended here as
+//! one fsync'd JSON line, under the same ledger mutex as the SQLite
+//! apply and immediately after it — so the journal's order is the apply
+//! order. A mutation is journaled when it landed (`touched > 0`) **and
+//! when its apply failed**: a database degrading mid-run must not
+//! swallow the durable record — the post-quarantine rebuild replays
+//! exactly the writes the corrupt database refused. Only a no-op apply
+//! (a replayed duplicate hitting its `ON CONFLICT DO NOTHING` key) is
+//! skipped, so session replays never bloat the journal. The one window
+//! the journal does not cover is a crash between a successful apply and
+//! its append — that row exists in the database and is carried by
+//! salvage and the `VACUUM INTO` snapshots instead.
+//!
+//! When the open-time integrity gate quarantines a corrupt `changes.db`,
+//! the fresh database is reconstructed as: bootstrap schema → salvage
+//! readable rows → **replay this journal**, whose records are idempotent
+//! (inserts land on `ON CONFLICT DO NOTHING` / `INSERT OR REPLACE` keys,
+//! deletes re-delete) so re-applying rows the salvage already carried is
+//! harmless, and deletes the salvage resurrected are re-applied.
 //!
 //! The journal lives beside the database (`changes.db.journal.jsonl` for
-//! `changes.db`). It begins at the moment this code first runs on a
-//! machine — rows older than the journal come from salvage and the
-//! `VACUUM INTO` snapshots, never from here. At open, an oversized
-//! journal is rotated to `<name>.old` (one prior generation kept); the
-//! snapshots cover history beyond that horizon.
+//! `changes.db`) and is opened **only by the writer-claim owner** — an
+//! open rotates an oversized journal to `<name>.old` (one prior
+//! generation kept), and rotation is the owner's act alone: a forwarding
+//! instance opening it would rename the live owner's file out from under
+//! its append fd. The owner opens it only *after* any quarantine replay,
+//! so rotation can never empty the very rebuild that needs it. The
+//! journal begins at the moment this code first runs on a machine — rows
+//! older than it come from salvage and the snapshots, never from here.
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -98,19 +110,14 @@ pub fn journal_path_for(changes_db: &Path) -> PathBuf {
 
 impl ChangesJournal {
     /// Open (creating if needed) the journal beside `changes_db`,
-    /// rotating an oversized file to `<name>.old` first. Returns `None`
-    /// (with a loud log) when the journal cannot be opened — the ledger
-    /// still works, minus journal durability.
+    /// rotating an oversized file to `<name>.old` first. Owner-only: the
+    /// caller must hold (or have just taken) the writer claim, and must
+    /// have finished any quarantine replay — see the module doc. Returns
+    /// `None` (with a loud log) when the journal cannot be opened — the
+    /// ledger still works, minus journal durability.
     pub fn open(changes_db: &Path) -> Option<Self> {
         let path = journal_path_for(changes_db);
-        if let Ok(meta) = std::fs::metadata(&path) {
-            if meta.len() > ROTATE_BYTES {
-                let old = path.with_extension("jsonl.old");
-                if let Err(err) = std::fs::rename(&path, &old) {
-                    tracing::warn!(journal = %path.display(), error = %err, "journal rotation failed; continuing to append");
-                }
-            }
-        }
+        Self::rotate_if_oversized(&path, ROTATE_BYTES);
         match OpenOptions::new().create(true).append(true).open(&path) {
             Ok(file) => Some(Self {
                 file: Mutex::new(file),
@@ -127,8 +134,25 @@ impl ChangesJournal {
         }
     }
 
-    /// Append one record durably. Failures are logged, never propagated —
-    /// the SQLite write (which follows) is still the serving copy.
+    /// Rename `path` to `<name>.old` when it exceeds `limit` bytes. One
+    /// prior generation is kept; a second rotation replaces it.
+    fn rotate_if_oversized(path: &Path, limit: u64) {
+        let Ok(meta) = std::fs::metadata(path) else {
+            return;
+        };
+        if meta.len() <= limit {
+            return;
+        }
+        let old = path.with_extension("jsonl.old");
+        if let Err(err) = std::fs::rename(path, &old) {
+            tracing::warn!(journal = %path.display(), error = %err, "journal rotation failed; continuing to append");
+        }
+    }
+
+    /// Append one record durably. Failures are logged and latch the
+    /// process-global degraded flag — a journal that cannot append is a
+    /// durability outage the deck must not report as healthy — but are
+    /// never propagated: the SQLite apply is still the serving copy.
     pub fn append(&self, record: &Record) {
         let mut line = match serde_json::to_vec(record) {
             Ok(v) => v,
@@ -145,6 +169,7 @@ impl ChangesJournal {
                 error = %err,
                 "changes journal append failed"
             );
+            crate::ledger_integrity::health::note_degraded("changes-journal");
         }
     }
 
@@ -208,6 +233,28 @@ mod tests {
         assert_eq!(records.len(), 2);
         assert!(matches!(&records[0], Record::FileEvent { row } if row.file_path == "src/a.rs"));
         assert!(matches!(&records[1], Record::DeleteSession { session } if session == "s9"));
+    }
+
+    #[test]
+    fn rotation_keeps_one_prior_generation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("changes.db.journal.jsonl");
+        std::fs::write(&path, b"x".repeat(64)).unwrap();
+
+        // Under the limit: untouched.
+        ChangesJournal::rotate_if_oversized(&path, 64);
+        assert!(path.exists());
+        assert!(!path.with_extension("jsonl.old").exists());
+
+        // Over the limit: renamed aside, original gone.
+        ChangesJournal::rotate_if_oversized(&path, 63);
+        assert!(!path.exists());
+        assert_eq!(
+            std::fs::read(path.with_extension("jsonl.old"))
+                .unwrap()
+                .len(),
+            64
+        );
     }
 
     #[test]

@@ -1975,18 +1975,50 @@ describe("session management", () => {
 
     await manager.shutdown();
 
-    // stdin.end() (EOF) must have been called to signal graceful shutdown.
-    expect(callOrder).toContain("stdin.end");
-
-    // kill() is called after stdin.end() in the cleanup sequence.
-    expect(callOrder).toContain("kill");
-
-    // Order matters: EOF before force-kill.
-    const endIdx = callOrder.indexOf("stdin.end");
-    const killIdx = callOrder.indexOf("kill");
-    expect(endIdx).toBeLessThan(killIdx);
+    // A claude that exits within its EOF grace needs no signal at all —
+    // the graceful path is EOF, wait, done.
+    expect(callOrder).toEqual(["stdin.end"]);
 
     // claudeProcess must be nulled out after shutdown.
+    expect((manager as any).claudeProcess).toBeNull();
+  });
+
+  test("a claude that outlives its EOF grace is escalated to SIGKILL", async () => {
+    const manager = new SessionManager(
+      "/tmp/tugcode-shutdown-wedged-" + Date.now(),
+      crypto.randomUUID(),
+    );
+
+    const callOrder: string[] = [];
+    let resolveExit!: (code: number) => void;
+    const exited = new Promise<number>((res) => {
+      resolveExit = res;
+    });
+    // A wedged claude: ignores EOF and SIGTERM, dies only to SIGKILL.
+    // The ladder must reach SIGKILL — otherwise the stdout drain never
+    // sees EOF and shutdown hangs forever.
+    const mockProcess = {
+      stdin: {
+        write: (_data: unknown) => {},
+        flush: () => {},
+        end: () => {
+          callOrder.push("stdin.end");
+        },
+      },
+      exited,
+      kill: (signal?: string) => {
+        callOrder.push(signal ?? "SIGTERM");
+        if (signal === "SIGKILL") resolveExit(137);
+      },
+      stdout: new ReadableStream(),
+    };
+    (manager as any).claudeProcess = mockProcess;
+    (manager as any).stdoutReader = null;
+    (manager as any).stdoutBuffer = "";
+
+    await manager.shutdown({ graceMs: 50 });
+
+    expect(callOrder).toEqual(["stdin.end", "SIGTERM", "SIGKILL"]);
     expect((manager as any).claudeProcess).toBeNull();
   });
 });

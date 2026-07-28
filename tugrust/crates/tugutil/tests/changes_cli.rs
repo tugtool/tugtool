@@ -712,10 +712,13 @@ fn draft_set_show_round_trip_with_selection() {
 
 #[cfg(unix)]
 #[test]
-fn draft_set_canonicalizes_a_symlinked_project_spelling() {
-    // Spec S05: writers store `project_dir` canonical. A draft written under
-    // a symlink spelling of the checkout must land under the canonical
-    // spelling — and read back through either spelling.
+fn draft_set_preserves_the_users_project_spelling() {
+    // [L29]: the CLI never canonicalizes — bare `realpath(3)` mints the
+    // firmlink-expanded spelling Claude never writes, so the row key is
+    // the user's own spelling here (isolation mode) and the tugcast
+    // gateway's Claude-form resolution in production. A draft written
+    // under a symlink spelling must land under that spelling — and read
+    // back through it.
     let (_repo, root) = init_repo();
     let ledger = seed_ledger(&root);
     let link_dir = tempfile::tempdir().unwrap();
@@ -736,7 +739,7 @@ fn draft_set_canonicalizes_a_symlinked_project_spelling() {
     let (code, _, err) = run(set);
     assert_eq!(code, 0, "stderr: {err}");
 
-    // The stored spelling is canonical.
+    // The stored spelling is the one the user gave, not its realpath.
     let changes = Connection::open(ledger.path().join("changes.db")).unwrap();
     let stored: String = changes
         .query_row(
@@ -745,7 +748,7 @@ fn draft_set_canonicalizes_a_symlinked_project_spelling() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stored, root.to_string_lossy());
+    assert_eq!(stored, link.to_string_lossy());
 
     // The dash owner normalizes to the branch-ref id.
     let owner_id: String = changes

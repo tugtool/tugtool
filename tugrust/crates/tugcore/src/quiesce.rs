@@ -96,6 +96,10 @@ mod tests {
             ),
             (
                 "tests/app-test/_harness/index.ts",
+                format!("export const QUIESCE_DRAIN_DEADLINE_MS = {DRAIN_DEADLINE_MS};"),
+            ),
+            (
+                "tests/app-test/_harness/index.ts",
                 format!("export const QUIESCE_REPORT_NAME = \"{QUIESCE_REPORT_FILENAME}\";"),
             ),
         ];

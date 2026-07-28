@@ -44,9 +44,10 @@ const FORWARD_TIMEOUT: Duration = Duration::from_secs(2);
 pub enum ChangesAccess {
     /// This process holds the claim: mutations execute locally against a
     /// read-write attach, and it alone journals and checkpoints. The
-    /// claim is held purely by existing — dropping this variant releases
-    /// it, which is how ownership passes on exit.
-    Owner(#[allow(dead_code)] WriterLock),
+    /// claim is held by existing — dropping this variant releases it,
+    /// which is how ownership passes on exit — and its lockfile identity
+    /// is re-published on the maintenance tick.
+    Owner(WriterLock),
     /// Another process holds the claim: mutations are forwarded to it.
     Forward(ChangesForwarder),
     /// No claim was attempted — an in-memory or per-test changes database
@@ -146,6 +147,9 @@ impl ChangesForwarder {
                 cap = PENDING_CAP,
                 "changes-ledger forward queue overflowed; oldest pending attribution dropped"
             );
+            // Dropped attribution is data loss ([LR8]): the deck must
+            // report it, not present a quietly thinner changeset.
+            crate::ledger_integrity::health::note_degraded("changes-forward-overflow");
         }
         self.pending.push_back(record);
     }

@@ -444,21 +444,33 @@ async fn main() {
                 // being written takes over here rather than waiting for
                 // the next attribution event.
                 ledger.retry_changes_takeover();
+                // The inverse duty: an owner whose lockfile identity
+                // drifted (publish failed at claim time) heals it here so
+                // forwarders never route to a stale owner. No-op when the
+                // content already matches.
+                ledger.republish_writer_identity();
                 if tick % BACKUP_EVERY_TICKS == 0 {
                     backup_targets(&ledger);
                 }
                 for health in ledger.checkpoint_health() {
+                    let count = strikes.entry(health.db).or_insert(0);
                     if let Some(err) = &health.error {
+                        *count += 1;
                         error!(
                             db = health.db,
                             error = %err,
                             "ledger WAL checkpoint pragma failed — database may be corrupt or locked out"
                         );
+                        // Two consecutive failures is the incident's
+                        // silent signature; the deck must show it, not
+                        // just the log ([LR4]).
+                        if *count >= 2 {
+                            ledger_integrity::health::note_degraded("checkpoint-error");
+                        }
                         continue;
                     }
                     let stalled = health.log_frames >= STALL_FRAMES
                         && health.checkpointed_frames < health.log_frames;
-                    let count = strikes.entry(health.db).or_insert(0);
                     if stalled {
                         *count += 1;
                         if *count >= 2 {
@@ -469,6 +481,7 @@ async fn main() {
                                 busy = health.busy,
                                 "ledger WAL checkpoint stalled — WAL growing without being applied"
                             );
+                            ledger_integrity::health::note_degraded("checkpoint-stall");
                         }
                     } else {
                         if *count >= 2 {
@@ -1659,21 +1672,42 @@ async fn main() {
             .status();
     }
 
-    // Final ledger flush (graceful-termination protocol, tuglaws
-    // ledger-reliability [LR3]): checkpoint the WALs down to the main
-    // files so a subsequent open — possibly by a different build — starts
-    // from a clean, WAL-less state instead of running recovery.
-    ledger.final_flush();
-
     // Kill our entire process group (tugcast + tugcode + children).
     // `std::process::exit` doesn't run destructors, so `kill_on_drop`
     // and async cancellation can't be relied upon — sending SIGTERM
     // to our own pgid is the only mechanism that guarantees tugcode
     // children are signalled regardless of how we got here. tugcode's
-    // SIGTERM handler then shuts claude down and exits cleanly.
+    // SIGTERM handler then shuts claude down and exits cleanly. Signalled
+    // BEFORE our own ledger flush so every service's flush window runs in
+    // parallel — serial flushes would consume the conductor's whole drain
+    // deadline with zero headroom. (Our own SIGTERM is absorbed by the
+    // still-installed handler; the select above has already resolved.)
     info!("Killing process group before exit");
     unsafe {
         libc::kill(0, libc::SIGTERM);
+    }
+
+    // Final ledger flush (graceful-termination protocol, [LR3]/[LR9]):
+    // checkpoint the WALs down to the main files so a subsequent open —
+    // possibly by a different build — starts from a clean, WAL-less state
+    // instead of running recovery. Bounded by the tug-quiesce flush
+    // budget, enforced on ourselves: a hung checkpoint must never wedge
+    // shutdown into the conductor's SIGKILL — the budget expiring means
+    // exit anyway, loudly.
+    let (flush_done_tx, flush_done_rx) = std::sync::mpsc::channel::<()>();
+    let flush_ledger = Arc::clone(&ledger);
+    std::thread::spawn(move || {
+        flush_ledger.final_flush();
+        let _ = flush_done_tx.send(());
+    });
+    if flush_done_rx
+        .recv_timeout(Duration::from_millis(tugcore::quiesce::FLUSH_BUDGET_MS))
+        .is_err()
+    {
+        tracing::error!(
+            budget_ms = tugcore::quiesce::FLUSH_BUDGET_MS,
+            "final ledger flush exceeded the quiesce budget; exiting without it"
+        );
     }
 
     info!("tugcast shut down");
@@ -1882,8 +1916,11 @@ fn reclaim_stale_process(pid: i32) {
     let deadline =
         std::time::Instant::now() + Duration::from_millis(tugcore::quiesce::STALE_RECLAIM_GRACE_MS);
     while std::time::Instant::now() < deadline {
-        // `kill(pid, 0)` sends no signal; ESRCH means it is gone.
-        if unsafe { libc::kill(pid, 0) } != 0 {
+        // `kill(pid, 0)` sends no signal; only ESRCH means it is gone —
+        // any other errno (EPERM) means the process still exists.
+        if unsafe { libc::kill(pid, 0) } != 0
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
             eprintln!("tugcast: --force: stale instance (PID {pid}) exited on SIGTERM");
             return;
         }

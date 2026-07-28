@@ -139,7 +139,22 @@ pub fn integrity_gate(db_path: &Path, label: &str) -> GateOutcome {
             );
             GateOutcome::Healthy
         }
-        Err(err) => quarantine(db_path, label, &format!("unopenable: {err}")),
+        Err(err) if is_corruption(&err) => {
+            quarantine(db_path, label, &format!("unopenable: {err}"))
+        }
+        Err(err) => {
+            // An IO error, permissions problem, or disk-pressure hiccup
+            // says "cannot verify", not "corrupt" — quarantining a
+            // healthy database over a transient probe failure would be
+            // self-inflicted data loss. Leave the file alone; the real
+            // open fails loudly if the problem is real.
+            tracing::warn!(
+                ledger = label,
+                error = %err,
+                "integrity probe failed for a non-corruption reason; leaving the database untouched"
+            );
+            GateOutcome::Healthy
+        }
     }
 }
 
@@ -152,6 +167,20 @@ fn is_contention(err: &rusqlite::Error) -> bool {
             if matches!(
                 e.code,
                 rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            )
+    )
+}
+
+/// Corruption-class errors — the file's *content* is damaged, which is
+/// what quarantine exists for. Everything else (IO, permissions) is an
+/// environmental failure that must never trigger it.
+fn is_corruption(err: &rusqlite::Error) -> bool {
+    matches!(
+        err,
+        rusqlite::Error::SqliteFailure(e, _)
+            if matches!(
+                e.code,
+                rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
             )
     )
 }
@@ -186,6 +215,37 @@ fn quarantine(db_path: &Path, label: &str, detail: &str) -> GateOutcome {
         detail,
         "ledger database failed integrity check; quarantining and rebuilding"
     );
+    // The WAL/shm siblings move FIRST: if the db were renamed and a
+    // sibling then refused to move, the fresh database bootstrapped in
+    // its place would sit beside a stale `-wal` and replay the damage
+    // right back in on the next open. A sibling that can be neither
+    // moved nor deleted aborts the quarantine outright — an honest
+    // degraded state beats a rebuilt db with a poisoned WAL.
+    for ext in ["-wal", "-shm"] {
+        let side = path_with_appended(db_path, ext);
+        if !side.exists() {
+            continue;
+        }
+        let dest = sibling_with_suffix(db_path, &suffix, ext);
+        if std::fs::rename(&side, &dest).is_ok() {
+            continue;
+        }
+        if let Err(err) = std::fs::remove_file(&side) {
+            tracing::error!(
+                ledger = label,
+                file = %side.display(),
+                error = %err,
+                "cannot move or delete a WAL/shm sibling; aborting quarantine"
+            );
+            health::note_degraded("quarantine-blocked");
+            return GateOutcome::Healthy;
+        }
+        tracing::warn!(
+            ledger = label,
+            file = %side.display(),
+            "WAL/shm sibling could not be renamed into quarantine; deleted instead (db is quarantined whole)"
+        );
+    }
     if let Err(err) = std::fs::rename(db_path, &corrupt_path) {
         // A sibling process won the quarantine race (or the file vanished);
         // open whatever is now in place.
@@ -195,20 +255,6 @@ fn quarantine(db_path: &Path, label: &str, detail: &str) -> GateOutcome {
             "quarantine rename raced or failed; proceeding with the file now in place"
         );
         return GateOutcome::Healthy;
-    }
-    for ext in ["-wal", "-shm"] {
-        let side = path_with_appended(db_path, ext);
-        if side.exists() {
-            let dest = sibling_with_suffix(db_path, &suffix, ext);
-            if let Err(err) = std::fs::rename(&side, &dest) {
-                tracing::warn!(
-                    ledger = label,
-                    file = %side.display(),
-                    error = %err,
-                    "failed to move WAL/shm sibling into quarantine"
-                );
-            }
-        }
     }
     GateOutcome::Quarantined { corrupt_path }
 }
@@ -308,8 +354,18 @@ fn salvage_table(conn: &Connection, schema: &str, table: &str) -> Result<usize, 
                 }
             }
             Ok(None) => return Ok(copied),
-            // The scan reached damage; keep what we have.
-            Err(_) if copied > 0 => return Ok(copied),
+            // The scan reached damage; keep what we have — but say so,
+            // loudly: a scan that died at row 3 of 30,000 must never
+            // read like a complete salvage in the logs.
+            Err(err) if copied > 0 => {
+                tracing::warn!(
+                    table,
+                    rows = copied,
+                    error = %err,
+                    "salvage scan hit damage mid-table; the salvaged row count is PARTIAL"
+                );
+                return Ok(copied);
+            }
             Err(err) => return Err(err),
         }
     }
@@ -505,6 +561,30 @@ mod tests {
         // With the lock released the gate sees a healthy file, untouched.
         assert!(matches!(integrity_gate(&db, "test"), GateOutcome::Healthy));
         assert!(db.exists());
+    }
+
+    /// An environmental probe failure (here: permissions) must never
+    /// quarantine — "cannot verify" is not "corrupt", and renaming a
+    /// healthy database aside over a transient IO problem would be
+    /// self-inflicted data loss.
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_but_intact_db_is_not_quarantined() {
+        use std::os::unix::fs::PermissionsExt;
+        if unsafe { libc::geteuid() } == 0 {
+            return; // root ignores file modes; the scenario can't exist
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("x.db");
+        make_db(&db, 10);
+        std::fs::set_permissions(&db, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let outcome = integrity_gate(&db, "test");
+        std::fs::set_permissions(&db, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(
+            matches!(outcome, GateOutcome::Healthy),
+            "expected the file left untouched, got {outcome:?}"
+        );
+        assert!(db.exists(), "the database must not be renamed aside");
     }
 
     #[test]

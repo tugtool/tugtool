@@ -200,6 +200,13 @@ const QUIESCE_FLUSH_BUDGET_MS = 2000;
 let quiescing = false;
 
 /**
+ * The exit code quiesce will use. Latched to the first non-zero code any
+ * quiesce request carries — a fatal error arriving while a code-0 quiesce
+ * is already in flight must not be laundered into a clean exit.
+ */
+let quiesceExitCode = 0;
+
+/**
  * Run `work` with a hard time bound. Resolves `true` when it finished,
  * `false` when the budget ran out first. The timer is unref'd so it can
  * never be the thing keeping the process alive.
@@ -236,13 +243,17 @@ async function withBudget(
  * half-written pipe.
  */
 async function quiesce(reason: string, code = 0): Promise<void> {
+  if (code !== 0 && quiesceExitCode === 0) quiesceExitCode = code;
   if (quiescing) return;
   quiescing = true;
   console.log(`${reason}, shutting down`);
   const flushed = await withBudget(async () => {
-    // Give claude the smaller of its own grace and what the budget can
-    // afford; the outer race is the hard bound either way.
-    await sessionManager?.shutdown({ graceMs: QUIESCE_FLUSH_BUDGET_MS });
+    // Claude gets half the budget as its EOF grace: killAndCleanup's
+    // escalation ladder can spend up to ~1.5× the grace before SIGKILL
+    // guarantees an exit, and the stdout drain below needs the rest.
+    // Passing the full budget down would starve the drain — the very
+    // frames this path exists to protect — whenever claude is slow.
+    await sessionManager?.shutdown({ graceMs: QUIESCE_FLUSH_BUDGET_MS / 2 });
     await drainPendingWrites();
   }, QUIESCE_FLUSH_BUDGET_MS);
   if (!flushed) {
@@ -250,16 +261,27 @@ async function quiesce(reason: string, code = 0): Promise<void> {
       `quiesce: flush budget (${QUIESCE_FLUSH_BUDGET_MS}ms) expired after ${reason}; exiting anyway`,
     );
   }
-  process.exit(code);
+  process.exit(quiesceExitCode);
 }
 
-// Graceful signal handlers: close stdin and kill claude process. SIGTERM
-// and SIGHUP are both routed through the same path. SIGHUP covers the
-// Unix "controlling process died" signal that arrives when tugcast (our
-// parent) exits ungracefully — without handling it, tugcode would keep
-// running as an orphan reparented to PID 1, pinning the claude pipe open.
+// Graceful signal handlers, all routed through the same quiesce path.
+// SIGTERM is the conductor's quiesce request (tugcast signals its
+// process group at shutdown). The orphaned-parent case is covered by
+// the stdin-EOF path (the for-await loop below exits when the pipe
+// closes); SIGHUP is belt-and-suspenders for anything that still
+// delivers it, and SIGINT covers a dev-terminal Ctrl-C on the group so
+// even a hand-run tugcode flushes before it dies.
 process.on("SIGTERM", () => void quiesce("SIGTERM received"));
 process.on("SIGHUP", () => void quiesce("SIGHUP received"));
+process.on("SIGINT", () => void quiesce("SIGINT received"));
+
+// A rejected promise nobody re-chained (an EPIPE on the write tail after
+// tugcast died first, for one) must still exit through quiesce — the
+// default handler would kill the process with everything unflushed.
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled rejection:", err);
+  void quiesce("unhandled rejection", 1);
+});
 
 // IPC loop. When stdin closes (parent hangup / pipe EOF), the for-await
 // loop exits naturally. We then run the same shutdown path as SIGTERM so
@@ -391,13 +413,15 @@ async function main() {
           sessionManager.prepareSession();
         } catch (err) {
           console.error("Session prepare failed:", err);
-          writeLine({
-            type: "error",
-            message: `Session prepare failed: ${err}`,
-            recoverable: false,
-            ipc_version: 2,
-          });
-          process.exit(1);
+          await writeLineAndExit(
+            {
+              type: "error",
+              message: `Session prepare failed: ${err}`,
+              recoverable: false,
+              ipc_version: 2,
+            },
+            1,
+          );
         }
 
         // Ready to serve verbs: the synthetic session_init is on the
@@ -420,15 +444,17 @@ async function main() {
         // typical failure surfaces through the early-exit watcher,
         // which writes its own IPC lines and calls process.exit;
         // this catch is for the unexpected synchronous-throw case.
-        claudeReady.catch((err) => {
+        claudeReady.catch(async (err) => {
           console.error("Background claude spawn failed:", err);
-          writeLine({
-            type: "error",
-            message: `Background claude spawn failed: ${err}`,
-            recoverable: false,
-            ipc_version: 2,
-          });
-          process.exit(1);
+          await writeLineAndExit(
+            {
+              type: "error",
+              message: `Background claude spawn failed: ${err}`,
+              recoverable: false,
+              ipc_version: 2,
+            },
+            1,
+          );
         });
       } else {
         // New mode: eager spawn + emit init via the historical
@@ -437,13 +463,15 @@ async function main() {
           await sessionManager.initialize();
         } catch (err) {
           console.error("Session initialization failed:", err);
-          writeLine({
-            type: "error",
-            message: `Session initialization failed: ${err}`,
-            recoverable: false,
-            ipc_version: 2,
-          });
-          process.exit(1);
+          await writeLineAndExit(
+            {
+              type: "error",
+              message: `Session initialization failed: ${err}`,
+              recoverable: false,
+              ipc_version: 2,
+            },
+            1,
+          );
         }
         logSessionLifecycle("perf.boot", {
           ms: Date.now() - PROCESS_STARTED_AT,
@@ -458,7 +486,9 @@ async function main() {
       if (stubReplay !== null) {
         const ok = stubReplay.dispatchTurn();
         if (!ok) {
-          process.exit(1);
+          // The engine emitted its own error event; quiesce drains it
+          // onto the pipe instead of racing a bare exit against it.
+          await quiesce("stub replay exhausted", 1);
         }
         continue;
       }

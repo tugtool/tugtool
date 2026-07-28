@@ -7,9 +7,10 @@
 //! isolation), writes fall back to the direct local path against that
 //! private file. Reads (`show`) open the ledger read-only. A skill-authored
 //! draft is an authored draft: every `set` writes `edited=1`, so the draft
-//! engine never clobbers it. `--project` is canonicalized on write
-//! (Spec S05); reads query the canonical spelling and union the raw one
-//! when it differs.
+//! engine never clobbers it. `--project` travels as the user's own
+//! spelling and the **server** canonicalizes it to the persisted row key
+//! ([L29] — the CLI never canonicalizes); reads union the as-spelled and
+//! legacy-realpath spellings (Spec S05).
 
 use std::path::PathBuf;
 
@@ -59,17 +60,26 @@ fn parse_owner(owner: &str) -> Result<(String, String), AppError> {
     )))
 }
 
-/// Resolve `--project` (default cwd) to `(canonical, raw)` spellings.
+/// Resolve `--project` (default cwd) to `(project, legacy)` spellings.
+///
+/// `project` is the path as the user spelled it, absolutized — the CLI
+/// never canonicalizes ([L29]): the canonicalization gateway is the
+/// tugcast server, which resolves this spelling to Claude form and keys
+/// the row on the result. `legacy` is the `realpath(3)` spelling older
+/// CLI builds used as their row key; it rides along solely so the server
+/// supersedes/sweeps rows written under it.
 fn resolve_project(project: Option<PathBuf>) -> Result<(String, String), AppError> {
+    let cwd =
+        std::env::current_dir().map_err(|e| AppError::Exit1(format!("cannot resolve cwd: {e}")))?;
     let raw = match project {
-        Some(p) => p,
-        None => std::env::current_dir()
-            .map_err(|e| AppError::Exit1(format!("cannot resolve cwd: {e}")))?,
+        Some(p) if p.is_absolute() => p,
+        Some(p) => cwd.join(p),
+        None => cwd,
     };
-    let canonical = std::fs::canonicalize(&raw).unwrap_or_else(|_| raw.clone());
+    let legacy = std::fs::canonicalize(&raw).unwrap_or_else(|_| raw.clone());
     Ok((
-        canonical.to_string_lossy().into_owned(),
         raw.to_string_lossy().into_owned(),
+        legacy.to_string_lossy().into_owned(),
     ))
 }
 
@@ -168,14 +178,14 @@ fn open_changes_db() -> Result<Connection, AppError> {
     Ok(conn)
 }
 
-/// Read one draft row under the Spec S05 spelling contract: canonical first,
-/// raw fallback.
+/// Read one draft row under the Spec S05 spelling contract: the primary
+/// spelling first, the fallback when it differs.
 fn read_row(
     conn: &Connection,
     owner_kind: &str,
     owner_id: &str,
-    canonical: &str,
-    raw: &str,
+    primary: &str,
+    fallback: &str,
 ) -> Option<DraftRow> {
     let read = |project: &str| -> Option<DraftRow> {
         conn.query_row(
@@ -201,7 +211,7 @@ fn read_row(
         )
         .ok()
     };
-    read(canonical).or_else(|| (canonical != raw).then(|| read(raw)).flatten())
+    read(primary).or_else(|| (primary != fallback).then(|| read(fallback)).flatten())
 }
 
 fn now_millis() -> i64 {
@@ -220,7 +230,7 @@ pub fn run_set(
     json: bool,
 ) -> Result<(), AppError> {
     let (owner_kind, owner_id) = parse_owner(&owner)?;
-    let (canonical, raw) = resolve_project(project)?;
+    let (project_dir, legacy) = resolve_project(project)?;
 
     if !isolated_changes_db() {
         let selection = (!include.is_empty() || !exclude.is_empty())
@@ -229,8 +239,8 @@ pub fn run_set(
             "op": "set",
             "owner_kind": owner_kind,
             "owner_id": owner_id,
-            "project_dir": canonical,
-            "raw_project_dir": raw,
+            "project_dir": project_dir,
+            "raw_project_dir": legacy,
         });
         if let Some(m) = &message {
             body["message"] = serde_json::json!(m);
@@ -253,7 +263,7 @@ pub fn run_set(
 
     let conn = open_changes_db()?;
 
-    let existing = read_row(&conn, &owner_kind, &owner_id, &canonical, &raw);
+    let existing = read_row(&conn, &owner_kind, &owner_id, &project_dir, &legacy);
     let selection = if include.is_empty() && exclude.is_empty() {
         existing
             .as_ref()
@@ -286,7 +296,7 @@ pub fn run_set(
         params![
             owner_kind,
             owner_id,
-            canonical,
+            project_dir,
             fingerprint,
             message,
             now_millis(),
@@ -294,17 +304,18 @@ pub fn run_set(
         ],
     )
     .map_err(|e| AppError::Exit1(format!("cannot write draft: {e}")))?;
-    // A raw-spelling row for the same owner is now stale — the canonical row
-    // supersedes it.
-    if canonical != raw {
+    // A legacy-spelling row for the same owner is now stale — the row
+    // just written supersedes it.
+    if project_dir != legacy {
         let _ = conn.execute(
             "DELETE FROM changeset_drafts
              WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
-            params![owner_kind, owner_id, raw],
+            params![owner_kind, owner_id, legacy],
         );
     }
 
-    let row = read_row(&conn, &owner_kind, &owner_id, &canonical, &raw).expect("row just written");
+    let row =
+        read_row(&conn, &owner_kind, &owner_id, &project_dir, &legacy).expect("row just written");
     if json {
         print_ok("draft set", &row);
     } else {
@@ -315,11 +326,11 @@ pub fn run_set(
 
 pub fn run_show(owner: String, project: Option<PathBuf>, json: bool) -> Result<(), AppError> {
     let (owner_kind, owner_id) = parse_owner(&owner)?;
-    let (canonical, raw) = resolve_project(project)?;
+    let (project_dir, legacy) = resolve_project(project)?;
     // Reads never need a writable ledger open; a missing file just means
     // no drafts exist yet.
     let Some(row) = open_changes_db_readonly()
-        .and_then(|conn| read_row(&conn, &owner_kind, &owner_id, &canonical, &raw))
+        .and_then(|conn| read_row(&conn, &owner_kind, &owner_id, &project_dir, &legacy))
     else {
         return Err(AppError::Exit1(format!("no draft on file for {owner}")));
     };
@@ -370,15 +381,15 @@ fn print_clear(owner: String, deleted: bool, json: bool) {
 
 pub fn run_clear(owner: String, project: Option<PathBuf>, json: bool) -> Result<(), AppError> {
     let (owner_kind, owner_id) = parse_owner(&owner)?;
-    let (canonical, raw) = resolve_project(project)?;
+    let (project_dir, legacy) = resolve_project(project)?;
 
     if !isolated_changes_db() {
         let response = post_draft_api(serde_json::json!({
             "op": "clear",
             "owner_kind": owner_kind,
             "owner_id": owner_id,
-            "project_dir": canonical,
-            "raw_project_dir": raw,
+            "project_dir": project_dir,
+            "raw_project_dir": legacy,
         }))?;
         let deleted = response
             .get("deleted")
@@ -393,15 +404,15 @@ pub fn run_clear(owner: String, project: Option<PathBuf>, json: bool) -> Result<
         .execute(
             "DELETE FROM changeset_drafts
              WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
-            params![owner_kind, owner_id, canonical],
+            params![owner_kind, owner_id, project_dir],
         )
         .map_err(|e| AppError::Exit1(format!("cannot clear draft: {e}")))?;
-    if canonical != raw {
+    if project_dir != legacy {
         deleted += conn
             .execute(
                 "DELETE FROM changeset_drafts
                  WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
-                params![owner_kind, owner_id, raw],
+                params![owner_kind, owner_id, legacy],
             )
             .unwrap_or(0);
     }

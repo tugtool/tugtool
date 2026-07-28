@@ -21,7 +21,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
+import { QUIESCE_DRAIN_DEADLINE_MS, launchTugApp } from "./_harness";
 import {
   mkTempTugbank,
   rmTempTugbank,
@@ -50,8 +50,9 @@ describe.skipIf(!SHOULD_RUN)("at0282: quiesce teardown fires no SIGKILL", () => 
 
         const report = app.quiesceReport();
         expect(report).not.toBeNull();
-        // The conductor's deadline is the shared one, not a local guess.
-        expect(report!.drainDeadlineMs).toBe(4000);
+        // The conductor's deadline is the shared one, not a local guess —
+        // the harness constant is pinned by the Rust mirror test.
+        expect(report!.drainDeadlineMs).toBe(QUIESCE_DRAIN_DEADLINE_MS);
         // The whole point: nothing had to be forced.
         expect(report!.sigkills).toEqual([]);
       } finally {

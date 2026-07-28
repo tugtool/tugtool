@@ -239,6 +239,13 @@ interface ResolvedLaunch {
 const QUIESCE_TEARDOWN_DEADLINE_MS = 8000;
 
 /**
+ * The conductor's process-group drain deadline, as tests assert it in
+ * `quiesce-report.json`. Mirror of `tugcore::quiesce::DRAIN_DEADLINE_MS`,
+ * pinned by the same build-failing Rust mirror test.
+ */
+export const QUIESCE_DRAIN_DEADLINE_MS = 4000;
+
+/**
  * Filename of the per-shutdown quiesce report Tug.app writes into its
  * instance data dir. Mirror of
  * `tugcore::quiesce::QUIESCE_REPORT_FILENAME`.

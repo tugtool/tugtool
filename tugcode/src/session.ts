@@ -3740,21 +3740,46 @@ export class SessionManager {
           // Already terminated.
         }
       } else {
+        let exited = false;
         try {
           // Close stdin to signal EOF (graceful shutdown).
           child.stdin.end();
           // Wait for the process to exit, bounded by the caller's grace.
-          await Promise.race([
-            child.exited,
-            new Promise<void>((res) => setTimeout(res, graceMs)),
+          exited = await Promise.race([
+            child.exited.then(() => true),
+            new Promise<boolean>((res) =>
+              setTimeout(() => res(false), graceMs),
+            ),
           ]);
         } catch {
           // Process may already be gone.
         }
-        try {
-          child.kill();
-        } catch {
-          // Ignore if already terminated.
+        if (!exited) {
+          // A claude that outlives its EOF grace gets the signal ladder,
+          // with SIGKILL as the guaranteed last rung: a SIGTERM-ignoring
+          // claude would otherwise never close its stdout, pinning
+          // `drainTask` — and the whole shutdown — open forever. The
+          // rung is scaled to the caller's grace so a quiesce-budgeted
+          // teardown stays inside its budget.
+          const rungMs = Math.min(
+            FORCE_TERMINATE_SIGINT_GRACE_MS,
+            Math.max(250, graceMs / 2),
+          );
+          try {
+            child.kill();
+            const terminated = await Promise.race([
+              child.exited.then(() => true),
+              new Promise<boolean>((res) =>
+                setTimeout(() => res(false), rungMs),
+              ),
+            ]);
+            if (!terminated) {
+              child.kill("SIGKILL");
+              await child.exited;
+            }
+          } catch {
+            // Already terminated.
+          }
         }
       }
       this.claudeProcess = null;

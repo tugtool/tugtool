@@ -172,6 +172,22 @@ pub fn claim_writer(db_path: &Path, owner: &WriterOwner) -> Option<WriterLock> {
 }
 
 impl WriterLock {
+    /// Re-publish the holder's identity when the lockfile content has
+    /// drifted from it (a failed publish at claim time — disk pressure is
+    /// likeliest exactly when ownership just changed hands — or a torn
+    /// write). The claim itself is the flock; this heals only the routing
+    /// hint non-owners read. Cheap no-op when the content already matches,
+    /// so it is safe to call on every maintenance tick.
+    pub fn republish(&mut self, owner: &WriterOwner) {
+        let current = std::fs::read_to_string(&self.path)
+            .ok()
+            .and_then(|t| serde_json::from_str::<WriterOwner>(t.trim()).ok());
+        if current.as_ref() == Some(owner) {
+            return;
+        }
+        self.publish(owner);
+    }
+
     /// Overwrite the lockfile content with the holder's identity. Failures
     /// are non-fatal: the claim is the lock, not the bytes.
     fn publish(&mut self, owner: &WriterOwner) {
@@ -338,12 +354,8 @@ mod tests {
                 if path.extension().and_then(|e| e.to_str()) != Some("rs") {
                     continue;
                 }
-                // The chokepoint itself, and the integrity prober whose
-                // quick_check open is deliberately raw (it must open a
-                // possibly-corrupt file without side effects).
-                if path == crates_root.join("tugcore/src/ledger_db.rs")
-                    || path == crates_root.join("tugcast/src/ledger_integrity.rs")
-                {
+                // The chokepoint itself.
+                if path == crates_root.join("tugcore/src/ledger_db.rs") {
                     continue;
                 }
                 let text = std::fs::read_to_string(&path).expect("read source");
@@ -356,8 +368,23 @@ mod tests {
                     Some(cut) => &text[..cut],
                     None => &text[..],
                 };
-                if production.contains("Connection::open(") {
+                // The integrity prober's quick_check open is deliberately
+                // raw (it must open a possibly-corrupt file without side
+                // effects) — exactly ONE raw open is sanctioned there,
+                // zero anywhere else. A count, not a whole-file skip, so
+                // a future ad-hoc open added to that file is still caught.
+                let allowed_raw =
+                    usize::from(path == crates_root.join("tugcast/src/ledger_integrity.rs"));
+                if production.matches("Connection::open(").count() > allowed_raw {
                     offenders.push(path.display().to_string());
+                }
+                // A writable `open_with_flags` is the same bypass wearing
+                // different clothes; only READ_ONLY opens are exempt.
+                for (idx, _) in production.match_indices("Connection::open_with_flags(") {
+                    let window = &production[idx..production.len().min(idx + 300)];
+                    if !window.contains("READ_ONLY") {
+                        offenders.push(format!("{} (writable open_with_flags)", path.display()));
+                    }
                 }
             }
         }

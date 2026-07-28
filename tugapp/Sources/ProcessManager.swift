@@ -707,29 +707,49 @@ class ProcessManager {
         connection.send(msg)
     }
 
-    /// Stop the tugcast process
+    /// Stop the tugcast process.
+    ///
+    /// Every wait in here is bounded — never a bare `waitUntilExit()`. A
+    /// tugcast wedged in its flush and ignoring SIGTERM must fall
+    /// through to the group SIGKILL and the quiesce report, not hang
+    /// this method forever: an unbounded wait would let the one process
+    /// that most needs the escalation prevent it. The ladder shares one
+    /// clock: the conductor's drain deadline starts when the shutdown
+    /// request is sent, and the later rungs spend whatever remains of it.
     func stop() {
-        // Stop vite dev server first
+        // Stop the vite dev server first. No ledgers to flush, so it
+        // gets the short reclaim grace rather than the drain deadline.
         if let proc = viteProcess, proc.isRunning {
             proc.terminate()
-            proc.waitUntilExit()
+            if !waitForExit(proc, until: Date().addingTimeInterval(InstanceConfig.quiesceStaleReclaimGrace)) {
+                noteSigkill(
+                    target: "vite",
+                    pid: proc.processIdentifier,
+                    after: InstanceConfig.quiesceStaleReclaimGrace
+                )
+                kill(proc.processIdentifier, SIGKILL)
+                proc.waitUntilExit() // SIGKILL cannot be ignored; returns promptly
+            }
         }
         viteProcess = nil
 
-        // Graceful shutdown: send shutdown over UDS first
+        // Graceful shutdown: send shutdown over UDS first. The drain
+        // clock starts now.
         if let connection = controlConnection {
             connection.send(["type": "shutdown"])
         }
+        let drainDeadline = Date().addingTimeInterval(Self.processGroupExitGrace)
 
-        // Wait up to 5 seconds for tugcast to exit from the UDS shutdown.
+        // Give tugcast the drain window to exit from the UDS shutdown;
+        // if it doesn't, SIGTERM it and grant only the short reclaim
+        // grace before falling through to the group ladder.
         if let proc = process, proc.isRunning {
-            let deadline = Date().addingTimeInterval(5)
-            while proc.isRunning && Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.1)
-            }
-            if proc.isRunning {
+            if !waitForExit(proc, until: drainDeadline) {
                 proc.terminate()
-                proc.waitUntilExit()
+                _ = waitForExit(
+                    proc,
+                    until: Date().addingTimeInterval(InstanceConfig.quiesceStaleReclaimGrace)
+                )
             }
         }
 
@@ -737,11 +757,17 @@ class ProcessManager {
         // Tugcast calls setpgid(0,0) at startup to create its own group,
         // so this won't affect the app. We always do this — even if tugcast
         // exited gracefully — because std::process::exit in tugcast doesn't
-        // reliably kill children.
+        // reliably kill children. The group already got SIGTERM from
+        // tugcast's own quiesce; whatever drain time is left is theirs,
+        // floored at the reclaim grace so the rung never rounds to zero.
         if let proc = process {
             let pgid = proc.processIdentifier
             kill(-pgid, SIGTERM)
-            waitForProcessGroupToExit(pgid: pgid)
+            let groupDeadline = max(
+                drainDeadline,
+                Date().addingTimeInterval(InstanceConfig.quiesceStaleReclaimGrace)
+            )
+            waitForProcessGroupToExit(pgid: pgid, deadline: groupDeadline)
         }
         process = nil
 
@@ -750,6 +776,14 @@ class ProcessManager {
         controlConnection = nil
 
         writeQuiesceReport()
+    }
+
+    /// Poll `proc` for exit until `deadline`. Returns whether it exited.
+    private func waitForExit(_ proc: Process, until deadline: Date) -> Bool {
+        while proc.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: Self.processGroupPollInterval)
+        }
+        return !proc.isRunning
     }
 
     /// How long the process group gets to exit on its own after SIGTERM,
@@ -809,9 +843,8 @@ class ProcessManager {
     /// timer, is what lets teardown move on. Costs nothing when the
     /// children exit fast, which is the normal case now that the deck has
     /// already interrupted and idled the sessions.
-    private func waitForProcessGroupToExit(pgid: pid_t) {
+    private func waitForProcessGroupToExit(pgid: pid_t, deadline: Date) {
         let startedAt = Date()
-        let deadline = startedAt.addingTimeInterval(Self.processGroupExitGrace)
         while Date() < deadline {
             if kill(-pgid, 0) != 0 && errno == ESRCH {
                 NSLog(
@@ -823,12 +856,13 @@ class ProcessManager {
             }
             Thread.sleep(forTimeInterval: Self.processGroupPollInterval)
         }
+        let waited = Date().timeIntervalSince(startedAt)
         NSLog(
             "ProcessManager: process group %d still alive after %.1fs — SIGKILL",
             pgid,
-            Self.processGroupExitGrace
+            waited
         )
-        noteSigkill(target: "tugcast-process-group", pid: pgid, after: Self.processGroupExitGrace)
+        noteSigkill(target: "tugcast-process-group", pid: pgid, after: waited)
         kill(-pgid, SIGKILL)
     }
 

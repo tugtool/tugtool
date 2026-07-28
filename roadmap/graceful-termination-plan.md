@@ -34,6 +34,15 @@ Shared constants live in `tugcore` (Rust) and are mirrored in `InstanceConfig.sw
 
 `tugcore::quiesce` is the source of truth: `FLUSH_BUDGET_MS` 2 s (per service, self-enforced), `DRAIN_DEADLINE_MS` 4 s (conductor waits), `STALE_RECLAIM_GRACE_MS` 1 s, `TEARDOWN_DEADLINE_MS` 8 s (outer supervisor). Swift mirrors them in `InstanceConfig`, TypeScript in the harness and `tugcode/src/main.ts`; `quiesce_constants_are_mirrored` reads those exact lines and fails the Rust build when a mirror drifts.
 
+## Vet fixups (2026-07-27, same day)
+
+The post-ship audit tightened the ladder where the arithmetic or the bounds didn't hold:
+
+- **tugcast now enforces the 2 s flush budget on itself** — `final_flush` runs on a thread with a `FLUSH_BUDGET_MS` timeout, so a hung checkpoint can no longer ride into the conductor's SIGKILL mid-checkpoint. It also signals its process group *before* flushing, so every service's flush window runs in parallel instead of serially consuming the drain deadline.
+- **The Swift conductor's waits are all bounded.** `stop()` shares one clock (the drain deadline starts at the shutdown request), the leftover 5 s literal is gone, and no `waitUntilExit()` is unbounded — a SIGTERM-ignoring tugcast falls through to the group SIGKILL and the quiesce report instead of hanging the quit forever. Vite gets the short reclaim grace with a recorded SIGKILL if it needs one. The bounded worst case now fits inside the harness's 8 s teardown deadline; `restart()` shares the same bound (a wedged restart beachballs for at most the drain window — a deliberate trade to keep `quiesceEscalations` main-queue-confined).
+- **tugcode reserves drain headroom** — claude's EOF grace is half the budget, and the graceful teardown escalates SIGTERM→SIGKILL when the grace expires, so the stdout drain (the frames the whole path exists to protect) always runs. Three `writeLine`+`process.exit(1)` races became `writeLineAndExit`, `unhandledRejection` funnels into `quiesce()`, a re-entrant quiesce preserves a non-zero exit code, and SIGINT is handled for dev-terminal runs.
+- **The mirror test pins more of the ladder**: the harness now exports `QUIESCE_DRAIN_DEADLINE_MS` (asserted by at0282 instead of a bare `4000`), and it is one of the exact lines `quiesce_constants_are_mirrored` checks.
+
 ## Non-goals
 
 Arbitrary user processes (shell commands, claude itself) keep their existing TERM/INT→KILL ladders — the protocol governs Tug's own services, whose exit path owns ledger state.

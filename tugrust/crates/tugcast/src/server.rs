@@ -204,9 +204,15 @@ struct DraftApiRequest {
     op: String,
     owner_kind: String,
     owner_id: String,
-    /// Canonical project spelling (Spec S05) — the row key written.
+    /// Project path as the caller spelled it. The server is the
+    /// canonicalization gateway ([L29]): this is resolved through
+    /// `resolve_to_claude_form` and the *resolved* spelling is the row
+    /// key written — a CLI must never canonicalize on its own (bare
+    /// `fs::canonicalize` mints the firmlink-expanded spelling Claude
+    /// never writes).
     project_dir: String,
-    /// Raw (pre-canonicalization) spelling; a differing raw row is
+    /// Additional legacy spelling of the same directory (e.g. the old
+    /// CLI's `fs::canonicalize` form); a differing row under it is
     /// superseded on set and swept on clear.
     #[serde(default)]
     raw_project_dir: Option<String>,
@@ -249,19 +255,52 @@ async fn draft_handler(
         Ok(r) => r,
         Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid JSON: {e}")),
     };
-    let raw = req
-        .raw_project_dir
-        .clone()
-        .filter(|r| *r != req.project_dir);
+    // Blocking work (path resolution syscalls, ledger mutex, SQLite)
+    // stays off the async workers.
+    match tokio::task::spawn_blocking(move || apply_draft_request(&ledger, &req)).await {
+        Ok(response) => response,
+        Err(e) => err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("draft task failed: {e}"),
+        ),
+    }
+}
+
+/// The ledger half of [`draft_handler`], run on the blocking pool.
+fn apply_draft_request(
+    ledger: &crate::session_ledger::SessionLedger,
+    req: &DraftApiRequest,
+) -> Response {
+    fn err(status: StatusCode, message: &str) -> Response {
+        (
+            status,
+            axum::Json(serde_json::json!({ "status": "error", "message": message })),
+        )
+            .into_response()
+    }
+    // The gateway ([L29]): the persisted row key is the Claude-form
+    // spelling, whatever the caller sent. Every differing spelling the
+    // caller knows about — its own as-sent path, a legacy realpath form —
+    // is a stale sibling to read as fallback, supersede on set, and
+    // sweep on clear.
+    let canonical =
+        crate::path_resolver::resolve_to_claude_form(std::path::Path::new(&req.project_dir))
+            .to_string_lossy()
+            .into_owned();
+    let alternates: Vec<String> = [Some(req.project_dir.clone()), req.raw_project_dir.clone()]
+        .into_iter()
+        .flatten()
+        .filter(|s| *s != canonical)
+        .collect();
     let read_existing = || {
         ledger
-            .changeset_draft(&req.owner_kind, &req.owner_id, &req.project_dir)
+            .changeset_draft(&req.owner_kind, &req.owner_id, &canonical)
             .ok()
             .flatten()
             .or_else(|| {
-                raw.as_ref().and_then(|r| {
+                alternates.iter().find_map(|alt| {
                     ledger
-                        .changeset_draft(&req.owner_kind, &req.owner_id, r)
+                        .changeset_draft(&req.owner_kind, &req.owner_id, alt)
                         .ok()
                         .flatten()
                 })
@@ -286,7 +325,7 @@ async fn draft_handler(
             let row = crate::session_ledger::ChangesetDraftRow {
                 owner_kind: req.owner_kind.clone(),
                 owner_id: req.owner_id.clone(),
-                project_dir: req.project_dir.clone(),
+                project_dir: canonical.clone(),
                 fingerprint: existing
                     .as_ref()
                     .map(|e| e.fingerprint.clone())
@@ -302,8 +341,8 @@ async fn draft_handler(
             if let Err(e) = ledger.upsert_changeset_draft(&row) {
                 return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
             }
-            if let Some(r) = &raw {
-                let _ = ledger.delete_changeset_draft(&req.owner_kind, &req.owner_id, r);
+            for alt in &alternates {
+                let _ = ledger.delete_changeset_draft(&req.owner_kind, &req.owner_id, alt);
             }
             (
                 StatusCode::OK,
@@ -314,12 +353,12 @@ async fn draft_handler(
         "clear" => {
             let existed = read_existing().is_some();
             if let Err(e) =
-                ledger.delete_changeset_draft(&req.owner_kind, &req.owner_id, &req.project_dir)
+                ledger.delete_changeset_draft(&req.owner_kind, &req.owner_id, &canonical)
             {
                 return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
             }
-            if let Some(r) = &raw {
-                let _ = ledger.delete_changeset_draft(&req.owner_kind, &req.owner_id, r);
+            for alt in &alternates {
+                let _ = ledger.delete_changeset_draft(&req.owner_kind, &req.owner_id, alt);
             }
             (
                 StatusCode::OK,
@@ -352,7 +391,15 @@ async fn changes_write_handler(
     else {
         return changes_write_error(StatusCode::SERVICE_UNAVAILABLE, "no session ledger");
     };
-    apply_changes_write(&ledger, &body)
+    // Blocking work (ledger mutex, SQLite, journal fsync) stays off the
+    // async workers — a busy ledger must not starve the runtime.
+    match tokio::task::spawn_blocking(move || apply_changes_write(&ledger, &body)).await {
+        Ok(response) => response,
+        Err(e) => changes_write_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("write task failed: {e}"),
+        ),
+    }
 }
 
 /// The body-to-ledger half of [`changes_write_handler`], factored out so

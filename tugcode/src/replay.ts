@@ -2262,12 +2262,29 @@ function computeTurns(
  * `queue-operation`, `file-history-snapshot`, …) and sidechain entries
  * (`isSidechain: true` — they root their own chains mid-file) are never
  * marked dead.
+ *
+ * A uuid is NOT unique in the file. Claude Code re-appends a
+ * compaction's preserved messages verbatim — same `uuid`, later
+ * position — so a uuid can name several records. Parent resolution
+ * therefore has to respect the append-only invariant every part of this
+ * walk rests on: **a parent always precedes its child**. Resolving a
+ * `parentUuid` to the file's LAST occurrence instead of the newest one
+ * before the child sends the ancestor walk FORWARD into the re-appended
+ * copy, where it immediately meets an already-live entry and stops. The
+ * segment root is then an ordinary `assistant` record rather than a
+ * compaction record, no bridge fires, and the walk ends with most of the
+ * session unvisited — after which the dead-roots rule below sweeps that
+ * genuinely-live history away as abandoned branches. Observed on a real
+ * 9-compaction session: 980 of 5082 entries dropped, including every
+ * turn of the most recent day's work ([L23]).
  */
 export function computeDeadEntryIndices(
   parsedEntries: ReadonlyArray<JsonlEntry | null>,
 ): Set<number> {
   // Index the chain participants: uuid-bearing, non-sidechain entries.
-  const indexByUuid = new Map<string, number>();
+  // `occurrencesByUuid` holds EVERY position a uuid appears at, ascending
+  // — a compaction re-append makes duplicates routine.
+  const occurrencesByUuid = new Map<string, number[]>();
   const childIndices = new Map<string, number[]>();
   const chainIndices: number[] = [];
   for (let i = 0; i < parsedEntries.length; i++) {
@@ -2275,7 +2292,9 @@ export function computeDeadEntryIndices(
     if (entry === null) continue;
     if (entry.isSidechain === true) continue;
     if (typeof entry.uuid !== "string" || entry.uuid.length === 0) continue;
-    indexByUuid.set(entry.uuid, i);
+    const at = occurrencesByUuid.get(entry.uuid);
+    if (at === undefined) occurrencesByUuid.set(entry.uuid, [i]);
+    else at.push(i);
     chainIndices.push(i);
     if (typeof entry.parentUuid === "string") {
       const siblings = childIndices.get(entry.parentUuid);
@@ -2284,6 +2303,34 @@ export function computeDeadEntryIndices(
     }
   }
   if (chainIndices.length === 0) return new Set();
+
+  /**
+   * Resolve `parentUuid` for a child at `childIndex` — the newest
+   * occurrence strictly BEFORE the child. `undefined` when the uuid is
+   * unknown or appears only later (a forward edge is not a parent).
+   * Occurrence lists are ascending by construction, so this is a
+   * binary search for the rightmost entry below `childIndex`.
+   */
+  const resolveParent = (
+    childIndex: number,
+    parentUuid: string,
+  ): number | undefined => {
+    const at = occurrencesByUuid.get(parentUuid);
+    if (at === undefined) return undefined;
+    let lo = 0;
+    let hi = at.length - 1;
+    let found: number | undefined;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (at[mid] < childIndex) {
+        found = at[mid];
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return found;
+  };
 
   const isCompactionRecord = (entry: JsonlEntry): boolean =>
     (entry.type === "system" && entry.subtype === "compact_boundary") ||
@@ -2305,7 +2352,7 @@ export function computeDeadEntryIndices(
       const parent: string | null | undefined =
         parsedEntries[walk]?.parentUuid;
       walk =
-        typeof parent === "string" ? indexByUuid.get(parent) : undefined;
+        typeof parent === "string" ? resolveParent(walk, parent) : undefined;
     }
     // Segment root reached. A compaction root means the chain broke at
     // a `/compact` — bridge to the newest chain entry before it.
@@ -2346,7 +2393,7 @@ export function computeDeadEntryIndices(
     if (entry === null || !isUserSubmission(entry)) continue;
     const parentIndex =
       typeof entry.parentUuid === "string"
-        ? indexByUuid.get(entry.parentUuid)
+        ? resolveParent(i, entry.parentUuid)
         : undefined;
     if (parentIndex !== undefined && live.has(parentIndex)) queue.push(i);
   }
@@ -2357,6 +2404,10 @@ export function computeDeadEntryIndices(
     const uuid = parsedEntries[i]?.uuid;
     if (typeof uuid !== "string") continue;
     for (const child of childIndices.get(uuid) ?? []) {
+      // `childIndices` is keyed by uuid, so a re-appended duplicate's
+      // children are pooled with this record's. Descend only into the
+      // children that actually parent to THIS occurrence.
+      if (resolveParent(child, uuid) !== i) continue;
       if (!dead.has(child)) queue.push(child);
     }
   }
