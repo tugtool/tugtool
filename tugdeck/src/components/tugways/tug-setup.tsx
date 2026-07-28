@@ -214,8 +214,8 @@ export function TugSetup(): ReactElement {
   const transport = useAppTransportState();
   const deck = useDeckManager();
   const deckState = useSyncExternalStore(deck.subscribe, deck.getSnapshot);
-  // The Lens is open by factory default, so it must not read as "this deck
-  // already holds work" — count everything but the Lens.
+  // The Lens stands at its pin on any restored deck, so it must not read as
+  // "this deck already holds work" — count everything but the Lens.
   const cardCount = countWorkCards(deckState);
   const [openedFirstSession, setOpenedFirstSession] = useState(false);
   const localModel = useLocalModel();

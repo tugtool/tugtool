@@ -16,15 +16,16 @@
  * gap end to end, against the real app and the real control.
  *
  * The head of that path is the factory default: a launch that finds no layout
- * at all builds the default one and opens the Lens at its pin. Phase 0 pins
- * it, because it is the same `_createLensPane`-from-a-persisted-record path
- * read from its starting end — and because it is the deck a user meets on a
- * first launch, right after setup hands them the empty canvas.
+ * at all builds the default one and holds the Lens back until the deck has its
+ * first card. Phase 0 pins both halves, because the stand-up is the same
+ * `_createLensPane`-from-a-persisted-record path read from its starting end —
+ * and because it is the deck a user meets on a first launch, where setup hands
+ * them a canvas that must stay bare until they open something.
  *
  * | Phase | Action                                          | Assertion                        |
  * |-------|-------------------------------------------------|----------------------------------|
- * | 0     | launch with `restoreInTestMode` against a bank | the Lens mounts on the right,    |
- * |       | holding no layout — the factory state          | alone on the deck                |
+ * | 0     | launch with `restoreInTestMode` against a bank | the deck is bare; opening the    |
+ * |       | holding no layout — the factory state          | first card raises the Lens right |
  * | A     | open the Lens, click "Lens on left" in Layouts, | the layout blob on disk carries  |
  * |       | let the save debounce land, quit gracefully     | `imposition.lens === "left"`     |
  * | B     | relaunch with `restoreInTestMode` — no seeding, | the Lens mounts on the left      |
@@ -87,17 +88,25 @@ describe.skipIf(!SHOULD_RUN)("at0276 — the Lens side survives a relaunch", () 
             restoreInTestMode: true,
           });
           try {
-            await waitForLensOn(app, "right");
-            // The Lens is the whole factory deck — nothing else is opened
-            // for the user, and nothing stands over it.
+            // The factory deck opens BARE. A first launch meets the setup
+            // wizard over an empty canvas, and a rail of empty sections
+            // beside it would promise work that does not exist yet.
             expect(
               await app.evalJS<number>(`document.querySelectorAll('.tug-pane').length`),
-            ).toBe(1);
+            ).toBe(0);
             expect(
               await app.evalJS<number>(
                 `document.querySelectorAll('[data-slot="tug-alert"]').length`,
               ),
             ).toBe(0);
+
+            // The deck's first card is the Lens's cue: it stands up beside
+            // that card, at its pin, on the default side.
+            await app.dispatchControlAction("show-component-gallery");
+            await waitForLensOn(app, "right");
+            expect(
+              await app.evalJS<number>(`document.querySelectorAll('.tug-pane').length`),
+            ).toBe(2);
           } finally {
             await app.close();
           }

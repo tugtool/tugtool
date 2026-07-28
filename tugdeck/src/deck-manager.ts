@@ -646,12 +646,21 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * True when the boot honored the persisted boot state and found no layout
-   * at all — a factory-fresh install. The factory deck is not empty: it
-   * stands with the Lens open at its pin on {@link DEFAULT_LENS_SIDE}. Stays
-   * false under the ordinary test-mode boot, which discards the boot state
-   * and starts empty for the harness to seed.
+   * at all — a factory-fresh install. The factory deck stands with the Lens
+   * open at its pin on {@link DEFAULT_LENS_SIDE}, but not until it has a card
+   * to be a lens onto ({@link factoryLensPending}). Stays false under the
+   * ordinary test-mode boot, which discards the boot state and starts empty
+   * for the harness to seed.
    */
   private factoryFresh = false;
+
+  /**
+   * The factory deck's Lens, waiting for the deck's first card. A brand-new
+   * install opens onto the setup wizard over a bare canvas, and a rail of
+   * empty sections beside it is a promise about work that does not exist yet.
+   * The first card the user opens is the Lens's cue to stand up beside it.
+   */
+  private factoryLensPending = false;
 
   /**
    * Whether the constructor honored the tugbank-sourced boot arguments. False
@@ -754,11 +763,10 @@ export class DeckManager implements IDeckManagerStore {
     }
 
     // Factory default: a deck with no persisted layout opens with the Lens
-    // standing at its pin. Runs after the restore loop so it is the only card
-    // in the fresh deck, and before the first render so the Lens is there on
-    // the first paint rather than appearing a frame later.
+    // standing at its pin — but it holds until the deck has its first card,
+    // so the setup wizard's first launch is not staged over an empty rail.
     if (this.factoryFresh) {
-      this._createLensPane();
+      this.factoryLensPending = true;
     }
 
     this.reactRoot.render(
@@ -921,6 +929,8 @@ export class DeckManager implements IDeckManagerStore {
       );
       return null;
     }
+
+    this.claimFactoryLens(componentId);
 
     const paneId = crypto.randomUUID();
     const sizePolicy = getSizePolicy(componentId);
@@ -1096,6 +1106,8 @@ export class DeckManager implements IDeckManagerStore {
    * unregistered.
    */
   showLensPane(): string | null {
+    // Asking for the Lens settles the factory deck's held-back one.
+    this.factoryLensPending = false;
     const existing = this.deckState.cards.find(
       (c) => c.componentId === LENS_CARD_ID,
     );
@@ -1109,6 +1121,9 @@ export class DeckManager implements IDeckManagerStore {
   /** Hide the Lens by closing its pane (the presence-is-open
    *  model, [P02]). No-op when the Lens is not open. */
   hideLensPane(): void {
+    // Dismissing the Lens settles it too — the factory default must not
+    // reinstate what the user just closed.
+    this.factoryLensPending = false;
     const card = this.deckState.cards.find(
       (c) => c.componentId === LENS_CARD_ID,
     );
@@ -1202,6 +1217,19 @@ export class DeckManager implements IDeckManagerStore {
     this.notify();
     for (const cardId of stillSlotted) this.cardLifecycle.notifyCardDidMove(cardId);
     this.scheduleSave();
+  }
+
+  /**
+   * Stand the factory deck's Lens up beside the deck's first card. Called from
+   * {@link addCard} before the card commits, so the Lens is pinned first and
+   * the new card cascades into the canvas the rail leaves — the same picture a
+   * restored deck presents. The Lens opening itself is not the cue.
+   */
+  private claimFactoryLens(componentId: string): void {
+    if (!this.factoryLensPending) return;
+    if (componentId === LENS_CARD_ID) return;
+    this.factoryLensPending = false;
+    this._createLensPane();
   }
 
   /**
