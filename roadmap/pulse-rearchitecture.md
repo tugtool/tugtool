@@ -179,6 +179,7 @@ The prior liveness plan (`roadmap/local-model-liveness-completion.md`, landed on
 **Implications:**
 - The complete frame is self-contained (carries `command`, `exit_code`) so no exchange-id→command map is needed.
 - `shell_state`, `path_commands`, and any other SHELL_OUTPUT types are ignored.
+- The zero-exit completion is `SessionBeat::Shell(None)` — a shell beat with no line — never `SessionBeat::Turn`, because `Turn` carries prose finalization and `beaten`-clearing side effects that must key off CODE_OUTPUT turn frames only (Spec S02).
 
 #### [P04] The emitter runs on a clock; frames are evidence, not triggers (DECIDED) {#p04-clock-driven}
 
@@ -270,8 +271,9 @@ One interleaved activity stream per session, each line from one beat, in arrival
 | `Tool` | CODE_OUTPUT `tool_use` | `Name(target)` | unchanged from today (`tool_line`) |
 | `Said` | CODE_OUTPUT `assistant_text` (accumulated) | `said: <head>` | head = first sentence or `MAX_SAID_CHARS`, whichever first; single line, whitespace-collapsed |
 | `Shell` | SHELL_OUTPUT `exchange_started` | `$ <command>` | command clipped to `MAX_TARGET_CHARS` (60), matching tool targets |
-| `Shell` | SHELL_OUTPUT `exchange_complete`, `exit_code != 0` | `$ <command> → exit N` | zero-exit completes beat (advance counters) with no line |
-| `Turn` | CODE_OUTPUT `turn_complete` | — | counter advance only; also finalizes any open prose block |
+| `Shell` | SHELL_OUTPUT `exchange_complete`, `exit_code != 0` | `$ <command> → exit N` | — |
+| `Shell` | SHELL_OUTPUT `exchange_complete`, `exit_code == 0` | — | counter advance only; `Shell`'s line is an `Option<String>` and this is its `None` case — **never** `SessionBeat::Turn`, which carries prose side effects |
+| `Turn` | CODE_OUTPUT `turn_complete` **or** `turn_cancelled` | — | counter advance; finalizes any open prose block and clears `beaten` — these side effects key off CODE_OUTPUT turn frames **only**, never off shell beats |
 
 `MAX_SAID_CHARS` starts at 100 ([Q01] tunes it). Sentence boundary = the first `.`, `!`, or `?` followed by whitespace/end, at index ≥ 20 (so "e.g." bait doesn't produce stub lines; a simple threshold, not a sentence parser).
 
@@ -285,7 +287,8 @@ Per session, alongside the activity deque:
   - If `open` holds a *different* key: finalize it (emit `Said` if non-empty and not beaten), then open the new key.
   - Append fragment to `open.text` **only up to** `MAX_SAID_CHARS + slack` (no unbounded buffering); when the head first crosses the threshold (sentence or cap), emit the `Said` beat immediately, add key to `beaten`, keep the block open only as a key marker.
 - On `assistant_text { is_partial: false }` (reconnect snapshot / synthetic): if key ∈ `beaten`, drop; else treat `text` as the whole block and beat once from its head.
-- On `turn_complete`: finalize any open block, then clear `beaten` (msg ids never recur across turns) and record the `Turn` beat.
+- On `turn_complete` **or** `turn_cancelled`: finalize any open block, then clear `beaten` (msg ids never recur across turns) and record the `Turn` beat. `turn_cancelled` matters: a cancelled turn's trailing prose — what the session was saying when the user hit Escape — is often the most informative line it produced, and without this rule it never beats and its state leaks until the next turn's traffic. (`turn_cancelled` is already on `PULSE_FORWARD_ALLOWLIST`; today `session_beat` returns `None` for it.)
+- Finalization and `beaten`-clearing are triggered **only** by CODE_OUTPUT turn frames (`turn_complete`/`turn_cancelled`). A zero-exit `exchange_complete` is a `Shell` beat with no line (Spec S01) — a shell command settling mid-prose-stream must not finalize an open assistant block or clear the dedup set while the turn is still live.
 
 **Spec S03: Cadence semantics under the clock** {#s03-cadence}
 
@@ -336,9 +339,9 @@ The compose-time background clip is new: `tools[..split]` becomes the *last* 12 
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `SessionBeat::{Said, Shell}` | enum variants | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | `Said(String)`, `Shell(String)` — line pre-formatted at mapping time |
-| `session_beat` | fn (modify) | same | stays CODE_OUTPUT-only; `assistant_text` returns a new `BeatInput::Prose{..}` — see `code_output_event` note in #step-2 |
-| `shell_beat` | fn (new) | same | SHELL_OUTPUT payload → `Option<SessionBeat>` per Spec S01 |
+| `SessionBeat::{Said, Shell}` | enum variants | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | `Said(String)`, `Shell(Option<String>)` — line pre-formatted at mapping time; `Shell(None)` is the zero-exit completion (counter only, no prose side effects) |
+| `session_beat` | fn (modify) | same | stays CODE_OUTPUT-only; `turn_cancelled` maps to `Turn` alongside `turn_complete`; `assistant_text` returns a new `BeatInput::Prose{..}` — see `code_output_event` note in #step-2 |
+| `shell_beat` | fn (new) | same | SHELL_OUTPUT payload → `Option<SessionBeat>` per Spec S01; never returns `Turn` |
 | `ProseBlock`, prose fields on `SessionState` | struct/fields (new) | same | Spec S02 state |
 | `SessionState::activity` | field (rename) | same | was `tools`; interleaved lines |
 | `Cadence` | struct (modify) | same | `burst_beats`, lowered defaults ([P05]) |
@@ -391,7 +394,7 @@ The compose-time background clip is new: `tools[..split]` becomes the *last* 12 
 **References:** [P01] enum is the bus, [P06] compressed transcript, Spec S01, (#chokepoints, #s01-activity-lines)
 
 **Artifacts:**
-- `SessionBeat::{Tool, Said, Shell, Turn}` with content-bearing variants carrying their pre-formatted line.
+- `SessionBeat::{Tool, Said, Shell, Turn}` with content-bearing variants carrying their pre-formatted line (`Shell` carries `Option<String>`; its `None` case is the zero-exit completion, Spec S01).
 - `SessionState.tools` → `SessionState.activity` (interleaved deque, `MAX_ACTIVITY_LINES`); `tools_since_emit` → `activity_since_emit`.
 - `SessionState::record` appends the line for any content-bearing beat; `Turn` stays counter-only.
 
@@ -428,11 +431,12 @@ The compose-time background clip is new: `tools[..split]` becomes the *last* 12 
 - [ ] Extend the frame-arm dispatch: `session_beat` (or a widened successor) surfaces prose fragments with `(msg_id, block_index, is_partial, text)` so accumulation lives on `SessionState`, not in the parser.
 - [ ] Implement the head-extraction helper (first sentence at index ≥ 20, else `MAX_SAID_CHARS` cap) as a pure `pub fn` for direct testing.
 - [ ] Handle `is_partial: false` frames per Spec S02 (whole-block text, beaten-key drop) — this is the reconnect-snapshot dedup.
-- [ ] Clear `beaten` and finalize open blocks on `turn_complete`.
+- [ ] Clear `beaten` and finalize open blocks on `turn_complete` **and** `turn_cancelled` (map `turn_cancelled` to `Turn` in `session_beat`); the trigger is CODE_OUTPUT turn frames only, never shell beats.
 
 **Tests:**
 - [ ] Delta fragments accumulate and beat exactly once at the sentence boundary; further deltas for the key are dropped.
-- [ ] A short block (never crossing the threshold) beats at finalization via a new key and via `turn_complete`.
+- [ ] A short block (never crossing the threshold) beats at finalization via a new key, via `turn_complete`, and via `turn_cancelled`.
+- [ ] A `Shell(None)` beat mid-stream leaves an open prose block and the `beaten` set untouched.
 - [ ] An `is_partial: false` snapshot for a beaten key produces no second beat; for an unseen key produces exactly one.
 - [ ] Accumulation buffer never exceeds cap + slack (bounded even for a 10k-char block).
 
@@ -451,7 +455,7 @@ The compose-time background clip is new: `tools[..split]` becomes the *last* 12 
 
 **Artifacts:**
 - `SessionOverviewConfig.shell_tx: broadcast::Sender<Frame>`; a `shell_rx` subscription and `select!` arm in `session_overview_task`.
-- `shell_beat(payload) -> Option<SessionBeat>`: `exchange_started` → `Shell("$ cmd")`; `exchange_complete` → `Shell("$ cmd → exit N")` on nonzero exit, `Turn`-like counter beat on zero exit; everything else `None`.
+- `shell_beat(payload) -> Option<SessionBeat>`: `exchange_started` → `Shell(Some("$ cmd"))`; `exchange_complete` → `Shell(Some("$ cmd → exit N"))` on nonzero exit, `Shell(None)` on zero exit; everything else `None`. Never returns `Turn` ([P03], Spec S02).
 - `main.rs` wiring: `shell_tx: shell_output_feed.sender()` in the overview config block.
 
 **Tasks:**
