@@ -12,6 +12,14 @@
   min-width: var(--radix-popover-trigger-width);
 }
 
+/* Anchored to an arbitrary element rather than to a trigger the popover drops
+   from (the controlled API): the anchor's width says nothing about how wide the
+   question is. A confirm on a full-width list row would otherwise stretch to
+   the row. */
+.tug-confirm-popover[data-anchored="external"] {
+  min-width: 0;
+}
+
 /* side="top" → popover above trigger → buttons should be at bottom (near trigger) */
 .tug-confirm-popover[data-side="top"] {
   flex-direction: column-reverse;

@@ -15,6 +15,12 @@
  *    distinct anchor targets — the canonical "in-list confirmation"
  *    shape (see [tugplan-session-picker-redesign §D15](
  *    ../../roadmap/tugplan-session-picker-redesign.md#d15-tug-confirm-popover-controlled)).
+ *    Anchor to the ROW rather than to a row's hover-revealed button: the
+ *    popover covers the row it opened from, the pointer leaves, and a button
+ *    anchor unmounts under its own popover, which then re-resolves and hops.
+ *    A controlled popover also sizes to its message rather than to its anchor
+ *    (`data-anchored="external"`), since an arbitrary anchor's width says
+ *    nothing about how wide the question is.
  *
  * The two APIs are mutually exclusive at the call site: a controlled-mode
  * caller passes `open` and skips the imperative `ref.confirm()` path
@@ -629,6 +635,12 @@ export const TugConfirmPopover = React.forwardRef<
           onKeyDown={handleKeyDown}
           onFocus={handleContentFocus}
           data-side={side}
+          // Which of the two APIs positioned this box. Imperative mode wraps a
+          // TRIGGER, and a surface that drops from a trigger conventionally
+          // spans it. Controlled mode anchors to an arbitrary element — a list
+          // row, a whole card — where "as wide as what you clicked" is not a
+          // size at all, so the box sizes to the question instead.
+          data-anchored={isControlled ? "external" : "trigger"}
           ref={responderRef as (el: HTMLDivElement | null) => void}
         >
           {/* Registers the button-row arrow order against the popover's trap mode.

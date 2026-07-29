@@ -135,7 +135,7 @@ function copySnippetText(text: string): void {
 /** Row verbs provided by the section body to the module-level cell. */
 interface SnippetsCellContextValue {
   onGripPointerDown: (id: string, event: React.PointerEvent) => void;
-  /** Open the destructive-delete confirm popover anchored to the row's ✕. */
+  /** Open the destructive-delete confirm popover anchored to the row. */
   onRequestDelete: (id: string, anchorEl: HTMLElement) => void;
 }
 const SnippetsCellContext =
@@ -255,11 +255,17 @@ function SnippetDisplayRow({
               focusOrder={1}
               onClick={(e) => {
                 // Never let the delete read as a row activation (open) on the
-                // cell wrapper above; open the confirm popover anchored to ✕.
+                // cell wrapper above.
                 e?.stopPropagation();
-                const anchor = e?.currentTarget;
-                if (anchor instanceof HTMLElement) {
-                  ctx.onRequestDelete(snippet.id, anchor);
+                // Anchor the confirm to the ROW, not to this button. The ✕ is
+                // a hover reveal, and the popover takes the pointer off the row
+                // the moment it opens — the button then unmounts out from under
+                // its own popover, which re-anchors to whatever is left and
+                // visibly hops. The row is present for as long as the question
+                // it is asking about.
+                const cell = e?.currentTarget?.closest?.(".tug-list-view-cell");
+                if (cell instanceof HTMLElement) {
+                  ctx.onRequestDelete(snippet.id, cell);
                 }
               }}
             />
@@ -885,14 +891,6 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
       listWrapRef.current?.querySelector<HTMLElement>("[data-key-cursor]") ?? null,
     [],
   );
-  // The cursor row's delete ✕ — the anchor the KEYBOARD delete confirm popover
-  // points at, so it opens beside the row's ✕ exactly like a mouse click does
-  // (anchoring to the full-width cell threw the popover to the far left).
-  const cursorDeleteButton = useCallback(
-    (): HTMLElement | null =>
-      cursorCell()?.querySelector<HTMLElement>(".snippet-row-delete") ?? null,
-    [cursorCell],
-  );
   const cursorSnippetId = useCallback((): string | null => {
     const idxAttr = cursorCell()?.getAttribute("data-tug-list-cell-index");
     if (idxAttr === null || idxAttr === undefined) return null;
@@ -923,9 +921,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
       }
       if (e.key === "Backspace" || e.key === "Delete") {
         const id = cursorSnippetId();
-        // Anchor to the row's ✕ (revealed on the cursor row) so the popover opens
-        // beside it, exactly as the mouse path does; fall back to the cell.
-        const anchor = cursorDeleteButton() ?? cursorCell();
+        const anchor = cursorCell();
         if (id === null || anchor === null) return false;
         // Destructive — raise the SAME confirm popover the mouse ✕ does, anchored
         // to the cursor row. Confirm deletes (keeping the cursor on a neighbor).
@@ -934,7 +930,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
       }
       return false;
     },
-    [editingId, store, cursorSnippetId, cursorCell, cursorDeleteButton],
+    [editingId, store, cursorSnippetId, cursorCell],
   );
   // ⌘/⌃ chords never reach the key-view delegate (they belong to the
   // bindings tier), so the old ⌘N-in-list-mode alias does not ride it;
@@ -1011,16 +1007,18 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
             </SnippetsCellContext>
           </div>
         )}
-        {/* One controlled confirm popover serves every row's ✕ — it anchors to
-            whichever button opened it. Confirm deletes (keeping the cursor on a
-            surviving neighbor); cancel / outside-click / Escape dismisses. */}
+        {/* One controlled confirm popover serves every row — it anchors to the
+            ROW the question is about (never to the hover-revealed ✕, which
+            unmounts under its own popover), centered over it and pointing down
+            at it. Confirm deletes (keeping the cursor on a surviving neighbor);
+            cancel / outside-click / Escape dismisses. */}
         <TugConfirmPopover
           open={pendingDelete !== null}
           anchorEl={pendingDelete?.anchorEl ?? null}
           message="Delete this snippet?"
           confirmLabel="Delete"
           confirmRole="danger"
-          side="left"
+          side="top"
           align="center"
           arrow
           onConfirm={() => {
