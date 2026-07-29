@@ -98,39 +98,21 @@ const ringOpacityAt = (fraction: number) => `(function(){
  * Seek as above and report the pulse's stroke, both as declared and as it lands
  * on the screen.
  *
- * The ring expands by `transform: scale`, so its border paints at border ×
- * scale — the stylesheet pre-divides both ends of the stroke by the scale they
- * are painted at, so `apparent` is the number the design is authored in and
- * `border` is what the stroke is holding at that instant.
- *
- * The stroke is not one animated `border-width`; it is two static widths in
- * two stacked layers, crossfaded by `opacity`, and the ring itself carries no
- * border at all. That substitution is what keeps the whole pulse on the
- * compositor — a `border-width` in flight is a layout property and demotes
- * every other animation on the element with it. So the width the eye reads has
- * to be RECONSTRUCTED here rather than looked up: the hairline sits on top at
- * full strength for the whole flight, and the open layer rises underneath it,
- * so the visible band runs from the hairline's width to the open one in
- * proportion to the open layer's opacity. Reading `borderTopWidth` off the ring
- * returns 0 forever, which is how this probe silently stopped measuring
- * anything when the layers landed.
+ * The ring expands by `transform: scale`, and a border on a scaled element
+ * paints at border × scale — so one declared width is a hairline at the ring's
+ * birth radius and opens as it travels. `apparent` is what the eye gets;
+ * `border` is the single declared width, which does not change.
  */
 const ringStrokeAt = (fraction: number) => `(function(){
   var glyph = document.querySelector(${JSON.stringify(GLYPH)});
   var ring = document.querySelector(${JSON.stringify(RING)});
   if (!glyph || !ring) return null;
-  var hairline = ring.querySelector(".tug-progress-pulsing-dot-ring-stroke-hairline");
-  var open = ring.querySelector(".tug-progress-pulsing-dot-ring-stroke-open");
-  if (!hairline || !open) return null;
   var anims = glyph.getAnimations({ subtree: true });
   if (anims.length === 0) return null;
   var duration = anims[0].effect.getTiming().duration;
   anims.forEach(function (a) { a.pause(); a.currentTime = duration * ${fraction}; });
   var cs = getComputedStyle(ring);
-  var thin = parseFloat(getComputedStyle(hairline).borderTopWidth);
-  var wide = parseFloat(getComputedStyle(open).borderTopWidth);
-  var lit = Number(getComputedStyle(open).opacity);
-  var border = thin + (wide - thin) * (Number.isFinite(lit) ? lit : 0);
+  var border = parseFloat(cs.borderTopWidth);
   return {
     border: border,
     apparent: border * new DOMMatrixReadOnly(cs.transform).a,
@@ -234,9 +216,11 @@ describe.skipIf(!SHOULD_RUN)("AT0274: pulsing-dot breath envelope", () => {
           { timeoutMs: 6000 },
         );
 
-        // Four loops, one clock: the dot's breath, plus the ring's radius,
-        // opacity and stroke as separate animations — separate because their
-        // shapes differ, welded because their duration does not.
+        // Three loops, one clock: the dot's breath, plus the ring's radius and
+        // opacity as separate animations — separate because their shapes
+        // differ, welded because their duration does not. The stroke is not a
+        // fourth: it opens as a consequence of the radius, since a border on a
+        // scaled element paints at border × scale.
         const census = await app.evalJS<{
           names: string[];
           durations: number[];
@@ -245,7 +229,6 @@ describe.skipIf(!SHOULD_RUN)("AT0274: pulsing-dot breath envelope", () => {
           "tugx-progress-pulsing-dot-breathe",
           "tugx-progress-pulsing-dot-emit-expand",
           "tugx-progress-pulsing-dot-emit-fade",
-          "tugx-progress-pulsing-dot-emit-thicken",
         ]);
         expect(census.durations).toHaveLength(1);
 
@@ -281,19 +264,21 @@ describe.skipIf(!SHOULD_RUN)("AT0274: pulsing-dot breath envelope", () => {
         );
         expect(await app.evalJS<number>(ringOpacityAt(1))).toBeCloseTo(0, 3);
 
-        // The stroke is born a hairline, HOLDS there while the ring travels
-        // out, and only opens as it fades. The hold is the assertion that
-        // matters: on the radius' own cubic ease-out the stroke would be done
-        // thickening before the sharp pose could be read, so it carries its own
-        // easing. Apparent px = border × scale; the born width is asserted
-        // loosely, since borders resolve to device pixels.
+        // The stroke is a hairline where the ring is born and opens as it
+        // travels — sharp where it is brightest and closest to the dot's edge,
+        // soft by the time it is leaving. It is ONE declared width doing that,
+        // because the ring is scaled and a border paints at border × scale, so
+        // the declared width is constant across the flight and only the
+        // apparent one grows. Asserted loosely at the birth end, since borders
+        // resolve to device pixels.
         type Stroke = { border: number; apparent: number };
         const born = await app.evalJS<Stroke>(ringStrokeAt(ignition));
-        expect(born.apparent).toBeGreaterThan(0.5);
+        expect(born.apparent).toBeGreaterThan(0.4);
         expect(born.apparent).toBeLessThan(1.25);
 
         const midFlight = await app.evalJS<Stroke>(ringStrokeAt(0.5));
         expect(midFlight.border).toBeCloseTo(born.border, 3);
+        expect(midFlight.apparent).toBeGreaterThan(born.apparent);
 
         const leaving = await app.evalJS<Stroke>(ringStrokeAt(0.999));
         expect(leaving.apparent).toBeGreaterThan(born.apparent * 1.4);

@@ -37,7 +37,7 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import {
-  breathEnvelope,
+  breathKeyframes,
   sizeGeometry,
   DEFAULT_BREATH_TURN,
   DEFAULT_PULSE_WEIGHT,
@@ -212,6 +212,25 @@ function ladderCaption(size: number, where: string): string {
  * the screen is not, which is also why the intermediate weights were never
  * distinguishable here.
  */
+/** Keyframe prefix for the one alternative envelope the bench shows. */
+const SYMMETRIC_PREFIX = "gpi-symmetric";
+
+/**
+ * Point a glyph at a different envelope.
+ *
+ * The turn is no longer a variable the stylesheet reads — the shape lives in
+ * the keyframe stops, because an easing that carries it cannot be accelerated.
+ * So an alternative cut is an alternative `@keyframes` block, injected once
+ * below, and the override is its NAME.
+ */
+function envelopeNamed(prefix: string): React.CSSProperties {
+  return {
+    ["--tugx-progress-pulsing-dot-breathe-name" as string]: `${prefix}-breathe`,
+    ["--tugx-progress-pulsing-dot-emit-expand-name" as string]: `${prefix}-emit-expand`,
+    ["--tugx-progress-pulsing-dot-emit-fade-name" as string]: `${prefix}-emit-fade`,
+  } as React.CSSProperties;
+}
+
 const KNOBS: ReadonlyArray<{
   key: string;
   caption: string;
@@ -220,14 +239,14 @@ const KNOBS: ReadonlyArray<{
   {
     key: "turn-symmetric",
     caption: "turn 50 / 50 — symmetric",
-    style: breathEnvelope(0.5),
+    style: envelopeNamed(SYMMETRIC_PREFIX),
   },
   {
     key: "turn-shipped",
     caption: `turn ${Math.round(DEFAULT_BREATH_TURN * 100)} / ${Math.round(
       (1 - DEFAULT_BREATH_TURN) * 100,
     )} — shipped`,
-    style: breathEnvelope(DEFAULT_BREATH_TURN),
+    style: {},
   },
   {
     key: "stroke-flat",
@@ -286,6 +305,9 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
         className="cg-content"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
+        {/* The one alternative envelope the knob bench compares against. */}
+        <style>{breathKeyframes(0.5, SYMMETRIC_PREFIX)}</style>
+
         {/* Variants ---------------------------------------------------- */}
         <section className="cg-section">
           <TugLabel className="cg-section-title">
@@ -418,11 +440,12 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
           </div>
           <TugLabel size="2xs" emphasis="calm">
             The knobs, each shown as the shipped value against the one
-            alternative that makes the case for it. Nothing here is a separate
-            keyframe block: the turn cells override the four `linear()` easing
-            variables the stylesheet reads, from the same `breathEnvelope` call
-            that produced the shipped defaults, and the stroke cells set
-            `--…-pulse-weight`. The period is not pinned either — dots run the
+            alternative that makes the case for it. The turn cell IS a separate
+            keyframe block — the envelope's shape lives in the stops, since an
+            easing that carries it cannot be handed to the compositor, so a
+            different cut is a different `@keyframes` and the override is its
+            name. The stroke cells set `--…-pulse-weight`, which is still an
+            ordinary variable. The period is not pinned either — dots run the
             nominal 2s unless a caller opts into the jitter, and the only caller
             that does is the Lens.
           </TugLabel>

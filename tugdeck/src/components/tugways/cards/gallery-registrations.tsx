@@ -100,6 +100,7 @@ import { GalleryDevChrome } from "./gallery-dev-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
+import { GalleryMotionBench } from "./gallery-motion-bench";
 import { GalleryPulseDisplay } from "./gallery-pulse-display";
 import { GalleryTugSetup } from "./gallery-tug-setup";
 import { GalleryModalHeaders } from "./gallery-modal-headers";
@@ -1101,6 +1102,18 @@ export function registerGalleryCards(): void {
     componentId: "gallery-tug-progress-indicator",
     contentFactory: (_cardId) => <GalleryTugProgressIndicator />,
     defaultMeta: { title: "TugProgressIndicator", icon: "Activity", closable: true },
+    family: "maker",
+    acceptsFamilies: ["maker"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  // An instrument rather than a showcase — a pinned population of one glyph so
+  // a profile can be compared to the one before it. See the file header.
+  registerCard({
+    componentId: "gallery-motion-bench",
+    contentFactory: (_cardId) => <GalleryMotionBench />,
+    defaultMeta: { title: "Motion bench", icon: "Activity", closable: true },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

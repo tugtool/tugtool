@@ -305,19 +305,25 @@ function stop(n: number): string {
 }
 
 /**
- * The whole envelope for a given turn, as the four custom properties the
- * stylesheet reads.
+ * The whole envelope for a given turn, as the three `@keyframes` blocks the
+ * stylesheet carries — the SHAPE, not an easing.
  *
- * The keyframes over in the CSS carry no shape at all — each is two stops, a
- * start pose and an end pose. Everything about the timing is in these
- * `linear()` easings, which is what makes the curve a knob: hand this a
- * different turn and the dot's legs, the ring's ignition, and the radius the
- * ring is born at all move together, with nothing to keep in sync by hand.
+ * The shape has to live in the stops. An earlier cut put it in `linear()`
+ * easings over two-stop keyframes, which made the curve a single-variable knob
+ * and cost the glyph everything: Core Animation expresses a segment's easing as
+ * a cubic bezier, a multi-stop `linear()` is not one, and WebKit answers by
+ * declining to accelerate the animation at all. On a 100-glyph bench that was
+ * the difference between 18.0% of the main thread and 0.9%.
  *
- * The shipped default is `breathEnvelope(DEFAULT_BREATH_TURN)`, written out
- * literally in the stylesheet so the common case costs no inline style and no
- * work at render. This function is the source those numbers came from, and the
- * gallery's timing bench calls it live to put several cuts side by side.
+ * Sampling the same curve into keyframe stops and interpolating linearly
+ * between them is the same envelope by construction, and Core Animation runs it
+ * natively. Hand this a different turn and the dot's legs, the ring's ignition
+ * and the radius it is born at all move together, exactly as before — the knob
+ * survived, it just changed which property it turns.
+ *
+ * `breathKeyframes(DEFAULT_BREATH_TURN, "tugx-progress-pulsing-dot")` is what
+ * the stylesheet's blocks were generated from; regenerate them together if the
+ * turn changes.
  *
  *   - **breathe** — the dot. Runs 0 → 1 → 0 across the cycle, so a two-stop
  *     keyframe (min → full) plays out and back on a single pass.
@@ -334,51 +340,50 @@ function stop(n: number): string {
  *   - **emit-birth** — the dot's own scale at ignition × {@link DOT_RATIO}, so
  *     the ring peels off the dot's edge rather than appearing beside it.
  */
-export function breathEnvelope(
-  turn: number,
-  fadePower: number = DEFAULT_FADE_POWER,
-): React.CSSProperties {
+export function breathKeyframes(turn: number, prefix: string): string {
   const RISE_STOPS = 8;
   const FALL_STOPS = 12;
   const EXPAND_STOPS = 12;
   const ignition = turn - EMIT_ADVANCE;
+  const TROUGH = "var(--tugx-progress-pulsing-dot-trough-resolved)";
+  const BIRTH = "var(--tugx-progress-pulsing-dot-birth-resolved)";
+  const REACH = "var(--tugx-progress-pulsing-dot-reach-resolved)";
+  const pose = (scale: string): string =>
+    `    transform: translate(-50%, -50%) scale(${scale});`;
 
   const breathe: string[] = [];
-  for (let i = 0; i <= RISE_STOPS; i++) {
-    const p = (turn * i) / RISE_STOPS;
-    breathe.push(`${stop(breathAt(turn, p))} ${stop(p * 100)}%`);
-  }
-  for (let i = 1; i <= FALL_STOPS; i++) {
-    const p = turn + ((1 - turn) * i) / FALL_STOPS;
-    breathe.push(`${stop(breathAt(turn, p))} ${stop(p * 100)}%`);
-  }
+  const at = (p: number): void => {
+    const v = breathAt(turn, p);
+    const scale =
+      v <= 0 ? TROUGH : v >= 1 ? "1" : `calc(${TROUGH} + (1 - ${TROUGH}) * ${stop(v)})`;
+    breathe.push(`  ${stop(p * 100)}% {\n${pose(scale)}\n  }`);
+  };
+  for (let i = 0; i <= RISE_STOPS; i++) at((turn * i) / RISE_STOPS);
+  for (let i = 1; i <= FALL_STOPS; i++) at(turn + ((1 - turn) * i) / FALL_STOPS);
 
-  const expand: string[] = ["0 0%", `0 ${stop(ignition * 100)}%`];
-  // The hold, then the lit hairline: the last frame of nothing sits at the
-  // stop just under ignition, so the ring turns on between two stops the eye
-  // cannot resolve.
-  const fade: string[] = [
-    "1 0%",
-    `1 ${stop(ignition * 100 - 0.01)}%`,
-    `0 ${stop(ignition * 100)}%`,
+  const expand: string[] = [
+    `  0%,\n  ${stop(ignition * 100)}% {\n${pose(BIRTH)}\n  }`,
   ];
   for (let i = 1; i <= EXPAND_STOPS; i++) {
     const u = i / EXPAND_STOPS;
     const p = ignition + u * (1 - ignition);
-    expand.push(`${stop(1 - (1 - u) ** 3)} ${stop(p * 100)}%`);
-    fade.push(`${stop(1 - (1 - u) ** fadePower)} ${stop(p * 100)}%`);
+    const w = 1 - (1 - u) ** 3;
+    const scale =
+      w >= 1 ? REACH : `calc(${BIRTH} + (${REACH} - ${BIRTH}) * ${stop(w)})`;
+    expand.push(`  ${stop(p * 100)}% {\n${pose(scale)}\n  }`);
   }
 
-  const birth =
-    DOT_RATIO *
-    (DOT_SCALE_MIN + (1 - DOT_SCALE_MIN) * breathAt(turn, ignition));
+  const fade = [
+    `  0%,\n  ${stop(ignition * 100 - 0.01)}% {\n    opacity: 0;\n  }`,
+    `  ${stop(ignition * 100)}% {\n    opacity: var(--tugx-progress-pulsing-dot-emit-opacity, 0.95);\n  }`,
+    `  100% {\n    opacity: 0;\n  }`,
+  ];
 
-  return {
-    ["--tugx-progress-pulsing-dot-breathe-ease" as string]: `linear(${breathe.join(", ")})`,
-    ["--tugx-progress-pulsing-dot-emit-expand-ease" as string]: `linear(${expand.join(", ")})`,
-    ["--tugx-progress-pulsing-dot-emit-fade-ease" as string]: `linear(${fade.join(", ")})`,
-    ["--tugx-progress-pulsing-dot-emit-birth" as string]: stop(birth),
-  };
+  return [
+    `@keyframes ${prefix}-breathe {\n${breathe.join("\n")}\n}`,
+    `@keyframes ${prefix}-emit-expand {\n${expand.join("\n")}\n}`,
+    `@keyframes ${prefix}-emit-fade {\n${fade.join("\n")}\n}`,
+  ].join("\n\n");
 }
 
 /**
@@ -457,15 +462,15 @@ const PHASE_VAR = "--tugx-progress-pulsing-dot-phase";
 
 /** The dot's transform at a given breath scale. */
 function dotPose(scale: number): string {
-  // 3D, like the keyframes — see the compositing note in the stylesheet. The
-  // settled pose has to be on the same footing as the animated one, or handing
-  // the dot from the loop to the transition tears its layer down and rebuilds
-  // it at exactly the frame the handoff is trying to hide.
-  return `translate3d(-50%, -50%, 0) scale(${scale})`;
+  // 3D, like the keyframes. The settled pose has to be on the same footing as
+  // the animated one, or handing the dot from the loop to the transition tears
+  // its layer down and rebuilds it at exactly the frame the handoff is trying
+  // to hide.
+  return `translate(-50%, -50%) scale(${scale})`;
 }
 
 /**
- * The scale the element is painting at RIGHT NOW — the animated value, not the
+ * The scale the dot is painting at RIGHT NOW — the animated value, not the
  * declared one.
  *
  * This is the whole mechanism behind a smooth exit. A state change arrives on
@@ -538,9 +543,10 @@ function releaseEmitter(
   for (const animation of ring.getAnimations()) {
     // Keyframe loops only: a transition's progress has nothing to do with
     // where the pulse is, and counting one held the emitter open on a glyph
-    // that never lit a ring. The stroke layers are not consulted — they run on
-    // the same clock as the radius and fade read here.
+    // that never lit a ring.
     if (!(animation instanceof CSSAnimation)) continue;
+    // The breath is on `::before` and runs whenever the glyph runs; only the
+    // ring's own loops say anything about whether a pulse is in flight.
     const timing = animation.effect?.getComputedTiming();
     const progress = timing?.progress;
     const duration = typeof timing?.duration === "number" ? timing.duration : 0;
@@ -779,13 +785,9 @@ export const TugProgressPulsingDot = React.forwardRef<
       )}
     >
       <span ref={dotRef} className="tug-progress-pulsing-dot-dot" />
-      {/* The ring carries radius and fade; its two stroke layers carry the
-          thickening as a crossfade under a solid hairline. Both are
-          presentational — nothing scripts them. */}
-      <span ref={ringRef} className="tug-progress-pulsing-dot-ring">
-        <span className="tug-progress-pulsing-dot-ring-stroke tug-progress-pulsing-dot-ring-stroke-open" />
-        <span className="tug-progress-pulsing-dot-ring-stroke tug-progress-pulsing-dot-ring-stroke-hairline" />
-      </span>
+      {/* The emitted pulse. Its stroke opens as it travels, because a border on
+          a scaled element paints at border × scale. */}
+      <span ref={ringRef} className="tug-progress-pulsing-dot-ring" />
     </span>
   );
 });

@@ -5,15 +5,21 @@
 /**
  * Internal glyph for TugProgressIndicator's `pulsing-dot` variant.
  *
- * **Two treatments, one motion.** Every value in this file is the BIG one —
- * the Lens session row, 28px and up, the figure this glyph was designed as.
- * Below that the component derives a different geometry and publishes it as
- * `-auto` variables that the defaults here defer to, reaching the previous
- * glyph's exact proportions at 16px and under: a 0.5 dot ratio, a full-box
- * static ring, no presence ladder. A settled dot in a Z2 status cell or a
- * tool-call header therefore paints the pixels it always painted. What those
- * surfaces adopt is the MOTION below and nothing else. See `sizeGeometry` and
- * `presenceScale` in the component for the derivations.
+ * **The glyph is two circles: one filled, one stroked.** It is drawn with one
+ * element and its two pseudo-elements — `::before` is the filled dot,
+ * `::after` is the ring — and it runs three loops on one clock. Nothing else
+ * is in the box.
+ *
+ * That is worth stating because it did not used to be true. An earlier cut
+ * drew the same two circles with five elements: a root, a dot, a ring, and two
+ * stacked stroke layers whose only job was to crossfade a border width by
+ * opacity, on the theory that a `border-width` in the effect stack would demote
+ * the pulse off the compositor. Measured on a pinned bench of 100 glyphs, that
+ * structure cost ~17% of the main thread with **every animation paused** — the
+ * furniture, not the motion. Six boxes per glyph is 600 boxes for a Lens
+ * column, each carrying a promoted layer and a stacking context to be walked
+ * every frame. The stroke layers in particular bought nothing, because the
+ * animation they were protecting was never accelerated in the first place.
  *
  * Geometry (big): the root span is a positioned square sized by
  * `--tugx-progress-pulsing-dot-size` (parent-set, 32px by default —
@@ -27,30 +33,38 @@
  * `--…-emit-reach`, which is `1.0` — the box edge — so the glyph is
  * layout-safe: no part of the motion overflows the square the caller reserved.
  *
- * Two of those cannot hold on the way down, for the same reason the ratios
- * above cannot: the screen is not a ratio. The ring's whole journey inside the
- * box measures ~2.5px of radius at a 12px glyph, and a 0.35 trough there is a
- * 2.5px dot — a pulse that twitches and a breath that reads as blinking out.
- * So the component ramps `--…-emit-reach` past the box (to 1.75× at 16px and
- * under, near enough the 1.9× the glyph this one replaces always used) and
- * narrows `--…-dot-scale-min` to 0.7 — a shallow modulation rather than a full
- * breath, since a 6px dot cannot spend half its diameter every cycle and the
- * shed ring is carrying the motion down there anyway.
+ * **Two treatments, one motion.** Every value here is the BIG one — the Lens
+ * session row, 28px and up. Below that the component derives a different
+ * geometry and publishes it as `-auto` variables that the defaults here defer
+ * to, reaching the previous glyph's exact proportions at 16px and under: a 0.5
+ * dot ratio, a full-box static ring, no presence ladder. What those surfaces
+ * adopt is the MOTION and nothing else. Two numbers cannot hold on the way
+ * down, for the same reason the ratios cannot: the screen is not a ratio. The
+ * ring's whole journey inside the box measures ~2.5px of radius at a 12px
+ * glyph, and a 0.35 trough there is a 2.5px dot — a pulse that twitches and a
+ * breath that reads as blinking out. So the component ramps `--…-emit-reach`
+ * past the box (to 1.75× at 16px and under) and narrows `--…-dot-scale-min` to
+ * 0.7. See `sizeGeometry` and `presenceScale` in the component.
  *
- * Presence: `--tugx-progress-pulsing-dot-presence` is the state's share
- * of that box, set by the component from its ladder. `running` is 1 — the
- * breath and the pulse own the box — and every settled state draws in from the
- * edge, so a working session is the biggest figure in a column of them and a
- * finished one is the smallest. The box is unchanged either way, so nothing
- * reflows as a session moves through the ladder. The ladder is a big-treatment
- * affordance only: encoding state as relative size needs pixels to be relative
- * in, so it ramps away to nothing by 16px.
+ * Presence: `--tugx-progress-pulsing-dot-presence` is the state's share of the
+ * box, set by the component from its ladder. `running` is 1 — the breath and
+ * the pulse own the box — and every settled state draws in from the edge, so a
+ * working session is the biggest figure in a column of them and a finished one
+ * is the smallest. The box is unchanged either way, so nothing reflows.
  *
- * Motion: four `@keyframes` on ONE shared 2000ms period (scaled by
- * `--tug-timing`, and by this instance's own drift), started in the same frame — that
- * is what welds the ring's emission to the dot's breath, with no timer and no
- * scripting. The drift is per-glyph, so the weld holds while separate glyphs
- * run at slightly different rates.
+ * **The ring is one circle doing two jobs.** While the glyph runs it is the
+ * emitted pulse — lit at ignition, expanding, fading. Settled, it is the
+ * static ring at the state's presence diameter. It is the same `::after`
+ * either way, which is what keeps the glyph to a single element; the price is
+ * that a shed pulse and the arriving static ring cannot overlap, so the static
+ * ring fades in once the pulse has finished rather than underneath it. The
+ * component already holds `data-emitting` until that moment, so the sequence
+ * is ordered rather than raced.
+ *
+ * Motion: three `@keyframes` on ONE shared 2000ms period (scaled by
+ * `--tug-timing`, and by this instance's own drift), started in the same frame
+ * — that is what welds the ring's emission to the dot's breath, with no timer
+ * and no scripting.
  *
  * **Nothing here is allowed to cut.** The loops are gated on `data-breathing`
  * and `data-emitting`, which the component writes, rather than on `data-state`,
@@ -58,17 +72,13 @@
  * pulse outlive the state that shed it: a ring caught mid-travel finishes its
  * travel, and only then is the emitter released. Everything else about a state
  * change is a transition on `--…-settle` — the dot from its pinned live pose to
- * its settled one, the static ring's opacity and diameter, and the tint on all
- * three. A settled glyph is therefore never a pose the eye arrived at
- * suddenly; it is one it watched the glyph reach.
+ * its settled one, the ring's opacity and diameter, and the tint on both.
  *
  * **The keyframes carry no shape.** Every one of them is two stops — a start
  * pose and an end pose. The entire curve, including the turn and the ring's
  * ignition, lives in the `linear()` easings held in the `--…-ease` variables
  * below. That is what makes the timing a KNOB: an override of one variable
- * re-cuts the whole envelope, with nothing to keep in sync by hand and no
- * keyframe block to regenerate. The gallery's timing bench is exactly that
- * override, four presets deep.
+ * re-cuts the whole envelope, with nothing to keep in sync by hand.
  *
  *  - `tugx-progress-pulsing-dot-breathe` — the dot, `--…-dot-scale-min`
  *    → `1`. Its easing runs 0 → 1 → 0 within the single cycle, so the
@@ -83,77 +93,42 @@
  *    invisible) through the inhale, steps to 0 at ignition in a hairline
  *    between two stops at the same position, then climbs evenly to 1 — so the
  *    ring is born near-solid and thins at a constant rate as it widens.
- *    Splitting radius and opacity into two animations is what lets them carry
- *    different shapes on one clock (their holds are opposite either way).
  *
- *  - `tugx-progress-pulsing-dot-emit-thicken` — the ring's stroke, born a
- *    hairline (`--…-pulse-hairline`, 1px) which HOLDS past the radius' fastest
- *    stretch, and only then opens to `--…-pulse-width` (the settled ring's
- *    stroke by `--…-pulse-weight`) as it fades out. Sharp at ignition, where
- *    the ring is brightest and closest to the dot's own edge, and soft by the
- *    time it is leaving.
- *
- *    The ring carries the stroke in TWO layers rather than interpolating one
- *    `border-width`: the hairline sits on top at full strength, and the open
- *    weight rises underneath it on this easing. The gesture is the same and the
- *    property in flight is `opacity`, which keeps the whole ring — radius,
- *    fade and stroke — on the compositor. A `border-width` in the stack put
- *    every one of them on the main thread instead.
- *
- *    A third animation rather than a stroke pair on the radius' keyframe, and
- *    the hold is why: the radius runs a cubic ease-out, which spends over half
- *    its travel in the first quarter of the flight. A stroke on that curve is
- *    finished opening before the sharp pose has been read.
- *
- *    The hold is on the DECLARED stroke. In the big treatment that is the
- *    apparent one too, since the ring reaches exactly the box; at the small
- *    end, where it is let out to 1.75×, the scale opens the stroke during the
- *    hold whatever the border does — which is the same trade the reach is: the
- *    small glyph spends what it has on travel.
- *
- *    Both ends are authored in APPARENT px and divided by the scale they are
- *    painted at — a border on a `transform: scale`d element paints at border ×
- *    scale, so the declared widths are the intended widths pre-divided. See
- *    `--…-pulse-birth-width`.
+ * **The stroke opens with the radius.** The ring is scaled, and a border on a
+ * scaled element paints at border × scale, so a single declared stroke is a
+ * hairline at the ring's birth radius and opens as it travels — sharp where it
+ * is brightest and near the dot's edge, soft by the time it is leaving. The
+ * declared width is pre-divided by the reach so the APPARENT width at the end
+ * of the travel is the intended one (see `--…-pulse-end-width`). An earlier cut
+ * held the stroke at a hairline through the radius' fastest stretch and only
+ * then opened it, on its own easing, using a second stacked layer; the hold is
+ * gone with the layer that carried it.
  *
  * **Asymmetry — the inhale is quicker than the exhale.** The default envelope
  * turns at 30% of the cycle: the dot rises over 600ms and falls over 1400ms,
  * each leg a cosine ease-in-out fitted to its own length. A symmetric breath
  * is a machine's breath; it is the same going up as coming down, and the eye
- * reads it as a mechanism cycling. Splitting the legs is the oldest trick for
- * fixing that — it is the shape of the colon blink on an Apple Watch digital
- * time label, where the dots appear faster than they leave. Fitting a cosine
- * to each leg separately (rather than skewing one curve) keeps the velocity
- * zero at the top, so the quick rise arrives at a HOLD rather than a corner,
- * and the long fall then drifts away from it. Rise, hover, sink.
+ * reads it as a mechanism cycling. Fitting a cosine to each leg separately
+ * (rather than skewing one curve) keeps the velocity zero at the top, so the
+ * quick rise arrives at a HOLD rather than a corner, and the long fall then
+ * drifts away from it. Rise, hover, sink.
  *
  * **Ignition advance.** The turn is top dead center — the frame the dot turns
  * over. Firing the ring there is defensible but reads a hair late, because the
  * ring needs a few frames to become visible and gather speed. So the spark is
  * advanced, exactly as it is in an engine: 3% of the cycle (60ms at the
- * nominal period) before the turn, ~10.8° BTDC read as a 360° cycle. The ring
- * is already alive and moving when the dot turns over it. `--…-emit-birth` is
- * the dot's own scale at that instant × the 0.6 dot ratio, so the ring peels
- * off the dot's edge rather than appearing beside it.
- *
- * Two rejected timings, both from the symmetric era. Emitting where the
- * falling dot passed 75% of its scale range read as an EVENT at that instant,
- * and the eye back-filled a pause in the dot to explain it — an optical
- * illusion, since the dot's curve is smooth throughout, but the fix is to stop
- * asking the viewer to explain a late arrival. Emitting exactly at the turn
- * fixed that and ran a touch behind the beat.
+ * nominal period) before the turn, ~10.8° BTDC read as a 360° cycle.
+ * `--…-emit-birth` is the dot's own scale at that instant × the dot ratio, so
+ * the ring peels off the dot's edge rather than appearing beside it.
  *
  * Tuglaws cross-check:
- *  - [L06] `data-state` on the root gates the motion; static poses are seeded
- *    inline by the component.
- *  - [L13] every loop is continuous, so they are declarative CSS. What
- *    the component scripts is the CROSSING between states, not a frame: it
- *    pins the dot's live pose, drops the breath against that pin, and holds
- *    `data-emitting` until a lit pulse has finished — after which CSS
- *    transitions carry the pose, the static ring and the tint. Motion-off is
- *    handled by the global `body[data-tug-motion="off"]` rule, which zeroes
- *    those transitions along with the loops.
- *  - [L16] the dot's `background-color` and the rings' `border-color` are
+ *  - [L06] `data-state` on the root gates the motion; the dot's settled pose is
+ *    a custom property on the root, not React state — a pseudo-element cannot
+ *    carry an inline style, so the pose is published as `--…-dot-pose` and read
+ *    at point of use.
+ *  - [L13] every loop is continuous, so they are declarative CSS. What the
+ *    component scripts is the CROSSING between states, not a frame.
+ *  - [L16] the dot's `background-color` and the ring's `border-color` are
  *    self-paired (set in the same rule).
  *  - [L19] file pair, `data-slot="tug-progress-pulsing-dot"`.
  *  - [L20] owns its `--tugx-progress-pulsing-dot-*` sub-family; reads
@@ -172,44 +147,35 @@
      locked together, so nothing here jitters them by default.
 
      The one caller that opts in is the Lens's session list (`dotDriftFor`),
-     where the dots represent genuinely separate items: several sessions on one
-     exact period read as a single mechanism with several heads, and a few
-     percent of spread pulls them apart over a dozen breaths. It multiplies the
+     where the dots represent genuinely separate items. It multiplies the
      period and nothing else, so every loop in a glyph still shares one
-     duration and stay welded — the ring is still shed at 10.8° BTDC of that
-     glyph's own breath. */
+     duration and stays welded. */
   --tugx-progress-pulsing-dot-period: calc(
     2000ms * var(--tug-timing, 1) * var(--tugx-progress-pulsing-dot-drift, 1)
   );
 
   /* The settle — how long the glyph takes to cross between two states.
      Every state change is a transition, never a cut: the dot eases from
-     wherever the breath left it to its settled pose, the static ring fades in
-     or out, and the tint crosses over. All three run on this duration, so the
-     crossing reads as ONE gesture rather than three properties changing at
-     once. Short enough to feel like a response, long enough that the eye
-     follows the dot rather than noticing it has moved. */
+     wherever the breath left it to its settled pose, the ring fades in or out,
+     and the tint crosses over. All of it runs on this duration, so the crossing
+     reads as ONE gesture rather than three properties changing at once. */
   --tugx-progress-pulsing-dot-settle: calc(260ms * var(--tug-timing, 1));
 
   /* --- The knobs are NOT declared here. -------------------------------------
 
      `--…-dot-scale-min`, `--…-emit-birth`, `--…-emit-opacity`,
-     `--…-pulse-weight`, `--…-pulse-hairline` and the four `--…-ease` curves
-     carry their defaults as
+     `--…-pulse-weight` and the three `--…-ease` curves carry their defaults as
      `var()` FALLBACKS at the point each is consumed, not as declarations in
      this rule. That is deliberate and it is load-bearing.
 
      A custom property declared on this element wins over the same property
      inherited from an ancestor — that is just the cascade, and it silently
      defeats every override from outside. Declaring the defaults here made the
-     glyph un-tunable: the gallery's timing bench set the curves on the
-     indicator root, one level up, and each cell rendered the default anyway,
-     four identical dots captioned as four different envelopes.
+     glyph un-tunable: the gallery's timing bench sets the curves on the
+     indicator root, one level up, and each cell rendered the default anyway.
 
      With the defaults as fallbacks there is nothing on the element to win, so
-     a value set anywhere above is the one that applies. `--…-drift` uses the
-     same reasoning by a different route: the component writes its random draw
-     to `--…-drift-auto` and the period reads the pin first.
+     a value set anywhere above is the one that applies.
 
      ---------------------------------------------------------------------- */
 
@@ -228,30 +194,15 @@
   );
 
   /* The pulse's stroke is authored in APPARENT px — what lands on the screen —
-     and the two variables below convert that intent into the declared border
-     the keyframe interpolates. The conversion is a division, because the ring
-     expands by `transform: scale`: whatever border it declares paints at that
-     border × the current scale.
-
-     Born a hairline: `--…-pulse-hairline` is the width the ring paints at
-     ignition, so it is divided by the scale it is born at. It ends at
-     `--…-pulse-width` — divided by the reach for the same reason — so the
-     stroke opens up as the ring travels out and thins. Sharp where it is
-     brightest, soft where it is leaving.
+     and this converts that intent into the declared border. The conversion is
+     a division, because the ring expands by `transform: scale`: whatever border
+     it declares paints at that border × the current scale. Dividing by the
+     reach makes the APPARENT width at the end of the travel the intended one,
+     and the ring is correspondingly thinner at its birth radius — which is the
+     gesture, got for free from the scale it is already carrying.
 
      Floored at 1px: below that a border rounds toward nothing, and a stroke
-     that vanishes is not a thin stroke. Only the small treatment's terminal
-     width reaches the floor, by which point the ring is nearly gone. */
-  --tugx-progress-pulsing-dot-pulse-birth-width: max(
-    1px,
-    calc(
-      var(--tugx-progress-pulsing-dot-pulse-hairline, 1px) /
-        var(
-          --tugx-progress-pulsing-dot-emit-birth,
-          var(--tugx-progress-pulsing-dot-emit-birth-auto, 0.5905)
-        )
-    )
-  );
+     that vanishes is not a thin stroke. */
   --tugx-progress-pulsing-dot-pulse-end-width: max(
     1px,
     calc(
@@ -270,6 +221,14 @@
   height: var(--tugx-progress-pulsing-dot-size);
 }
 
+/* The filled circle.
+
+   Its settled pose is `--…-dot-pose`, written to the ROOT by the component: a
+   pseudo-element takes no inline style, so the pose has to arrive as an
+   inherited custom property and be read here. While the breath runs the
+   animation outranks it, and the component hands off by pinning the live scale
+   into that property before it drops the animation — so the transition starts
+   from exactly where the dot was, never from the keyframe's base. */
 .tug-progress-pulsing-dot-dot {
   position: absolute;
   top: 50%;
@@ -277,80 +236,26 @@
   width: var(--tugx-progress-pulsing-dot-dot-size);
   height: var(--tugx-progress-pulsing-dot-dot-size);
   border-radius: 999px;
-  transform-origin: center center;
   background-color: var(--tugx-progress-indicator-fill, currentColor);
-  /* The settled pose is an inline transform written by the component, so a
-     state change is a plain property change and this carries it. While the
-     breath runs the animation outranks both, and the component hands off by
-     pinning the live scale before it drops the animation — so the transition
-     starts from exactly where the dot was, never from the keyframe's base. */
+  transform-origin: center center;
   transition:
     transform var(--tugx-progress-pulsing-dot-settle)
-      var(--tugx-progress-pulsing-dot-settle-ease, cubic-bezier(0.22, 0.61, 0.36, 1)),
+      var(
+        --tugx-progress-pulsing-dot-settle-ease,
+        cubic-bezier(0.22, 0.61, 0.36, 1)
+      ),
     background-color var(--tugx-progress-pulsing-dot-settle) linear;
 }
 
-/* The emitted ring. Hidden by default: only an emitting glyph animates it,
-   and every other state shows the static `::after` ring instead — which is why
-   the heavier pulse stroke lives here and nowhere else.
+/* The stroked circle, doing both of its jobs.
 
-   The tint transition is here because a pulse can outlive the state that shed
-   it (see `data-emitting`): a ring still in flight when the work finishes
-   crosses to the settled tone alongside the dot instead of switching colors
-   in one frame halfway through its travel. */
-.tug-progress-pulsing-dot-ring {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: var(--tugx-progress-pulsing-dot-size);
-  height: var(--tugx-progress-pulsing-dot-size);
-  transform: translate3d(-50%, -50%, 0) scale(1);
-  opacity: 0;
-}
+   Settled, this is the static ring: diameter is the box scaled by the state's
+   PRESENCE, sized by width/height rather than a transform deliberately — a
+   transform would thin the stroke along with the radius, and a receding state
+   should read as a smaller ring, not a fainter one.
 
-/* The stroke, in two layers. Both are the same circle at the same box, drawn
-   inward from the same outer edge; they differ only in how far in they reach —
-   the hairline the ring is born with, and the open weight it ends at.
-
-   The pair replaces a `border-width` interpolation, and the reason is the whole
-   point of this file's residency: a border is a layout property, so animating
-   it demoted every OTHER animation on this ring to the main thread with it
-   (WebKit judges acceleration over an element's whole keyframe effect stack).
-   Two static widths crossfading by opacity is the same gesture with nothing but
-   opacity in flight. See tuglaws/motion-residency.md.
-
-   Stacking order matters and it is why this does not read as a double edge: the
-   hairline sits ON TOP at full strength for the whole flight, so the band it
-   covers is always solid. Only the open layer's inner extension fades in
-   underneath, which is where the thickening actually happens. Crossfading two
-   full strokes instead would dip the shared band's alpha to ~0.75 mid-cycle,
-   and a stroke that goes translucent as it opens is a different gesture. */
-.tug-progress-pulsing-dot-ring-stroke {
-  position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  border-style: solid;
-  border-color: var(--tugx-progress-indicator-fill, currentColor);
-  box-sizing: border-box;
-  transition: border-color var(--tugx-progress-pulsing-dot-settle) linear;
-}
-
-.tug-progress-pulsing-dot-ring-stroke-open {
-  border-width: var(--tugx-progress-pulsing-dot-pulse-end-width);
-  opacity: 0;
-}
-
-.tug-progress-pulsing-dot-ring-stroke-hairline {
-  border-width: var(--tugx-progress-pulsing-dot-pulse-birth-width);
-}
-
-/* Static outer ring for the settled / held states — the running state's ring
-   is the emitted pulse, so the static one steps aside there.
-
-   Its diameter is the box scaled by the state's PRESENCE (the ladder lives in
-   the component). Sized by width/height rather than a `transform: scale`
-   deliberately: a transform would thin the stroke along with the radius, and
-   a receding state should read as a smaller ring, not a fainter one. */
+   Running, presence is 1 and the same circle is the emitted pulse: the rules
+   below swap in the pulse stroke and hand transform and opacity to the loops. */
 .tug-progress-pulsing-dot::after {
   content: "";
   position: absolute;
@@ -368,54 +273,58 @@
   border: var(--tugx-progress-pulsing-dot-ring-width) solid
     var(--tugx-progress-indicator-fill, currentColor);
   box-sizing: border-box;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) scale(1);
   transition:
     opacity var(--tugx-progress-pulsing-dot-settle) linear,
     width var(--tugx-progress-pulsing-dot-settle)
-      var(--tugx-progress-pulsing-dot-settle-ease, cubic-bezier(0.22, 0.61, 0.36, 1)),
+      var(
+        --tugx-progress-pulsing-dot-settle-ease,
+        cubic-bezier(0.22, 0.61, 0.36, 1)
+      ),
     height var(--tugx-progress-pulsing-dot-settle)
-      var(--tugx-progress-pulsing-dot-settle-ease, cubic-bezier(0.22, 0.61, 0.36, 1)),
+      var(
+        --tugx-progress-pulsing-dot-settle-ease,
+        cubic-bezier(0.22, 0.61, 0.36, 1)
+      ),
     border-color var(--tugx-progress-pulsing-dot-settle) linear;
 }
 
-/* Withdrawn — not absent — while the glyph runs. `display: none` would be the
-   cheaper way to hide it and it is the wrong one: a display change cannot be
-   transitioned, so the static ring would materialize in a single frame the
-   instant a tool call finished. At zero opacity it is still there to fade, and
-   the settled ring arrives by fading in while the last shed pulse is still
-   flying out. */
+/* Withdrawn — not absent — while the glyph runs. At zero opacity the ring is
+   still there to fade back in when the work stops. */
 .tug-progress-pulsing-dot[data-state="running"]::after {
   opacity: 0;
 }
 
-/* One period, four loops — started together, phase-locked for as long as they
-   run.
+.tug-progress-pulsing-dot-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--tugx-progress-pulsing-dot-size);
+  height: var(--tugx-progress-pulsing-dot-size);
+  border-radius: 999px;
+  border: var(--tugx-progress-pulsing-dot-pulse-end-width) solid
+    var(--tugx-progress-indicator-fill, currentColor);
+  box-sizing: border-box;
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 0;
+  transition: border-color var(--tugx-progress-pulsing-dot-settle) linear;
+}
+
+/* One period, two loops on two pseudo-elements — started together,
+   phase-locked for as long as they run.
 
    The gate is `data-breathing` / `data-emitting`, written by the component,
    NOT `data-state`. State is React's to set and it changes the moment the work
    does; motion has to outlive that by a beat. Gating on state cut the loops
    dead at whatever frame the change landed on — a ring halfway through its
    travel simply ceased to exist, which is the pop this pair of attributes
-   exists to prevent. The component drops `data-breathing` in the same frame it
-   pins the dot's live scale, and holds `data-emitting` until a lit pulse has
-   finished its travel.
+   exists to prevent.
 
-   `will-change` promotes both elements to compositor layers while they move;
-   scoped to the gates so a settled glyph costs zero layers.
-
-   `will-change` is a hint, and a hint is not enough here. Every pose in this
-   file — the keyframes, the ring's base, and the settled pose the component
-   writes inline — is a `translate3d`, which is not a hint: a 3D transform gets
-   the element a layer of its own and the animation runs off the main thread.
-   That is the whole point. A column of these sits beside a live transcript, a
-   sparkline, and a telemetry feed; on the main thread the breath stutters
-   whenever any of them does work, and the stutter is far more legible than the
-   breath. The `z` is always 0 — nothing is being moved in depth, only made
-   independent of what else the page is busy with. */
+   No `will-change`. It was measured inert here: the promotion it asks for
+   buys nothing the poses do not already establish, and 200 hinted layers on a
+   Lens column is a compositing walk nobody is paid for. */
 .tug-progress-pulsing-dot[data-breathing] .tug-progress-pulsing-dot-dot,
-.tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring,
-.tug-progress-pulsing-dot[data-emitting]
-  .tug-progress-pulsing-dot-ring-stroke-open {
+.tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring {
   animation-duration: var(--tugx-progress-pulsing-dot-period);
   /* Negative, and written by the component when it starts the breath: the
      phase whose pose matches where the settled dot was standing, so the loop
@@ -426,115 +335,42 @@
       var(--tugx-progress-pulsing-dot-phase, 0)
   );
   animation-iteration-count: infinite;
-  will-change: transform, opacity;
 }
 
 /* Turn at 30%: cosine up over the first 600ms, cosine down over the remaining
    1400ms. Runs 0 → 1 → 0, so the two-stop keyframe plays out and back on one
    pass. */
 .tug-progress-pulsing-dot[data-breathing] .tug-progress-pulsing-dot-dot {
-  animation-name: tugx-progress-pulsing-dot-breathe;
-  animation-timing-function: var(
-    --tugx-progress-pulsing-dot-breathe-ease,
-    linear(
-      0 0%,
-      0.0381 3.75%,
-      0.1464 7.5%,
-      0.3087 11.25%,
-      0.5 15%,
-      0.6913 18.75%,
-      0.8536 22.5%,
-      0.9619 26.25%,
-      1 30%,
-      0.983 35.8333%,
-      0.933 41.6667%,
-      0.8536 47.5%,
-      0.75 53.3333%,
-      0.6294 59.1667%,
-      0.5 65%,
-      0.3706 70.8333%,
-      0.25 76.6667%,
-      0.1464 82.5%,
-      0.067 88.3333%,
-      0.017 94.1667%,
-      0 100%
-    )
+  /* Overridable by NAME, not by an easing: the shape lives in the stops, so a
+     different envelope is a different keyframe block. The gallery's turn bench
+     injects one and points these at it. */
+  animation-name: var(
+    --tugx-progress-pulsing-dot-breathe-name,
+    tugx-progress-pulsing-dot-breathe
   );
+  animation-timing-function: linear;
 }
 
-/* Two animations on the ring, a third on its open stroke layer — one clock for
-   all of them: the duration and iteration count above are single values shared
-   by every rule in that selector list, so the ring and the stroke stay welded.
+/* Two animations on one pseudo-element, one clock for both: the duration and
+   iteration count above are shared, so the radius and the fade stay welded.
 
    Radius: parked at birth radius until ignition (27% — 3% before the turn),
    then a cubic ease-out to the box edge.
 
    Opacity: held fully faded (easing at 1 = the keyframe's `to`, opacity 0)
    through the inhale, lit in the hairline at 27%, then a LINEAR fall to
-   nothing across the rest of the cycle. The asymmetry the pulse needed was in
-   where it starts, not in how it leaves: born near-solid, an even fall reads
-   as a ring travelling outward and thinning. Front-loading the falloff on top
-   of that only cut the ring's visible life short. */
+   nothing across the rest of the cycle. Born near-solid, an even fall reads as
+   a ring travelling outward and thinning. */
 .tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring {
-  animation-name: tugx-progress-pulsing-dot-emit-expand,
-    tugx-progress-pulsing-dot-emit-fade;
-  animation-timing-function:
-    var(
-      --tugx-progress-pulsing-dot-emit-expand-ease,
-      linear(
-        0 0%,
-        0 27%,
-        0.2297 33.0833%,
-        0.4213 39.1667%,
-        0.5781 45.25%,
-        0.7037 51.3333%,
-        0.8015 57.4167%,
-        0.875 63.5%,
-        0.9277 69.5833%,
-        0.963 75.6667%,
-        0.9844 81.75%,
-        0.9954 87.8333%,
-        0.9994 93.9167%,
-        1 100%
-      )
+  animation-name: var(
+      --tugx-progress-pulsing-dot-emit-expand-name,
+      tugx-progress-pulsing-dot-emit-expand
     ),
     var(
-      --tugx-progress-pulsing-dot-emit-fade-ease,
-      linear(
-        1 0%,
-        1 26.99%,
-        0 27%,
-        0.0833 33.0833%,
-        0.1667 39.1667%,
-        0.25 45.25%,
-        0.3333 51.3333%,
-        0.4167 57.4167%,
-        0.5 63.5%,
-        0.5833 69.5833%,
-        0.6667 75.6667%,
-        0.75 81.75%,
-        0.8333 87.8333%,
-        0.9167 93.9167%,
-        1 100%
-      )
+      --tugx-progress-pulsing-dot-emit-fade-name,
+      tugx-progress-pulsing-dot-emit-fade
     );
-}
-
-/* The stroke, on its own easing — the open layer held fully hidden through the
-   inhale and the first stretch of the flight, then brought up under the
-   hairline as the ring reaches the box and fades out. It carries its OWN easing
-   rather than riding the radius': the radius is a cubic ease-out, which spends
-   more than half its travel in the first quarter of the flight, and a stroke on
-   that curve is done thickening before the eye has read the ring as sharp at
-   all. The hold is the whole point of the ring being born a hairline — it is
-   there to be seen for a beat before it opens. */
-.tug-progress-pulsing-dot[data-emitting]
-  .tug-progress-pulsing-dot-ring-stroke-open {
-  animation-name: tugx-progress-pulsing-dot-emit-thicken;
-  animation-timing-function: var(
-    --tugx-progress-pulsing-dot-emit-thicken-ease,
-    linear(0 0%, 0 55%, 0.1 66%, 0.3 77%, 0.62 88%, 1 100%)
-  );
+  animation-timing-function: linear, linear;
 }
 
 /* The action-role in-progress fill is the same fixed cobalt the small
@@ -549,77 +385,166 @@
   opacity: var(--tugx-control-disabled-opacity, 0.45);
 }
 
-/* Two stops each; the shape is entirely in the easings. Every default below is
-   a `var()` fallback so an ancestor can override it — see the knobs note. */
+/* The knobs, resolved once.
+ *
+ * Each reads the override first and falls through to the size-derived `-auto`
+ * value and then to the authored default, so a value set on any ancestor still
+ * wins — the knobs note above still holds. They exist because the keyframes
+ * below reference them ~40 times between them, and spelling the full fallback
+ * chain out at every stop would be unreadable. */
+.tug-progress-pulsing-dot {
+  --tugx-progress-pulsing-dot-trough-resolved: var(
+    --tugx-progress-pulsing-dot-dot-scale-min,
+    var(--tugx-progress-pulsing-dot-dot-scale-min-auto, 0.35)
+  );
+  --tugx-progress-pulsing-dot-birth-resolved: var(
+    --tugx-progress-pulsing-dot-emit-birth,
+    var(--tugx-progress-pulsing-dot-emit-birth-auto, 0.5905)
+  );
+  --tugx-progress-pulsing-dot-reach-resolved: var(
+    --tugx-progress-pulsing-dot-emit-reach,
+    var(--tugx-progress-pulsing-dot-emit-reach-auto, 1)
+  );
+}
 
-/* Trough of the breath. A wide swing on purpose: the dot travels the full
-   distance every cycle, and the ring's emission is a waypoint on the way down,
-   not the end of the fall. */
+/* The shape lives HERE, in the stops — not in an easing function.
+ *
+ * That is not a style preference, it is the difference between this glyph
+ * costing 28% of the main thread and costing under 1%. The envelope used to be
+ * carried by 14-to-21-stop `linear()` easings over two-stop keyframes, which
+ * made the timing a single-variable knob and read beautifully. It also made
+ * every loop unacceleratable: Core Animation expresses a segment's easing as a
+ * cubic bezier, a multi-stop `linear()` is not one, and WebKit responds by
+ * declining to accelerate the animation at all — blending it on the main
+ * thread, every element, every frame. Measured on a 100-glyph bench that was
+ * 18.0% with the easings and 0.9% without them.
+ *
+ * A many-stop keyframe animation with `linear` interpolation between the stops
+ * is the same curve by construction — the stops below are the same samples of
+ * the same cosine legs and the same cubic ease-out that the easings were built
+ * from — and Core Animation runs it natively.
+ *
+ * Regenerate all three together if the envelope changes; `breathEnvelope` in
+ * the component is the source these were sampled from, and `--…-emit-birth`
+ * must agree with the turn they encode. */
 @keyframes tugx-progress-pulsing-dot-breathe {
-  from {
-    transform: translate3d(-50%, -50%, 0)
-      scale(
-        var(
-          --tugx-progress-pulsing-dot-dot-scale-min,
-          var(--tugx-progress-pulsing-dot-dot-scale-min-auto, 0.35)
-        )
-      );
+  0% {
+    transform: translate(-50%, -50%) scale(var(--tugx-progress-pulsing-dot-trough-resolved));
   }
-  to {
-    transform: translate3d(-50%, -50%, 0) scale(1);
+  3.75% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.0381));
+  }
+  7.5% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.1464));
+  }
+  11.25% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.3087));
+  }
+  15% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.5));
+  }
+  18.75% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.6913));
+  }
+  22.5% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.8536));
+  }
+  26.25% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.9619));
+  }
+  30% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  35.8333% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.983));
+  }
+  41.6667% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.933));
+  }
+  47.5% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.8536));
+  }
+  53.3333% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.75));
+  }
+  59.1667% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.6294));
+  }
+  65% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.5));
+  }
+  70.8333% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.3706));
+  }
+  76.6667% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.25));
+  }
+  82.5% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.1464));
+  }
+  88.3333% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.067));
+  }
+  94.1667% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.017));
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(var(--tugx-progress-pulsing-dot-trough-resolved));
   }
 }
 
-/* The ring is born at the dot's edge: the dot's scale at ignition (0.9755 at
-   the shipped turn) × the 0.6 dot ratio. Regenerate alongside the easings — it
-   is the one number that must agree with them.
-
-   Where it ENDS is a size question, not a shape one. `--…-emit-reach` is 1 at
-   every size this variant was authored for, which keeps the whole motion inside
-   the box the caller reserved; below 24px the component ramps it past 1, because
-   the box stops being far enough away to be worth traveling to. */
 @keyframes tugx-progress-pulsing-dot-emit-expand {
-  from {
-    transform: translate3d(-50%, -50%, 0)
-      scale(
-        var(
-          --tugx-progress-pulsing-dot-emit-birth,
-          var(--tugx-progress-pulsing-dot-emit-birth-auto, 0.5905)
-        )
-      );
+  0%,
+  27% {
+    transform: translate(-50%, -50%) scale(var(--tugx-progress-pulsing-dot-birth-resolved));
   }
-  to {
-    transform: translate3d(-50%, -50%, 0)
-      scale(
-        var(
-          --tugx-progress-pulsing-dot-emit-reach,
-          var(--tugx-progress-pulsing-dot-emit-reach-auto, 1)
-        )
-      );
+  33.0833% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-birth-resolved) + (var(--tugx-progress-pulsing-dot-reach-resolved) - var(--tugx-progress-pulsing-dot-birth-resolved)) * 0.2297));
+  }
+  39.1667% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-birth-resolved) + (var(--tugx-progress-pulsing-dot-reach-resolved) - var(--tugx-progress-pulsing-dot-birth-resolved)) * 0.4213));
+  }
+  45.25% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-birth-resolved) + (var(--tugx-progress-pulsing-dot-reach-resolved) - var(--tugx-progress-pulsing-dot-birth-resolved)) * 0.5781));
+  }
+  51.3333% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-birth-resolved) + (var(--tugx-progress-pulsing-dot-reach-resolved) - var(--tugx-progress-pulsing-dot-birth-resolved)) * 0.7037));
+  }
+  57.4167% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-birth-resolved) + (var(--tugx-progress-pulsing-dot-reach-resolved) - var(--tugx-progress-pulsing-dot-birth-resolved)) * 0.8015));
+  }
+  63.5% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-birth-resolved) + (var(--tugx-progress-pulsing-dot-reach-resolved) - var(--tugx-progress-pulsing-dot-birth-resolved)) * 0.875));
+  }
+  69.5833% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-birth-resolved) + (var(--tugx-progress-pulsing-dot-reach-resolved) - var(--tugx-progress-pulsing-dot-birth-resolved)) * 0.9277));
+  }
+  75.6667% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-birth-resolved) + (var(--tugx-progress-pulsing-dot-reach-resolved) - var(--tugx-progress-pulsing-dot-birth-resolved)) * 0.963));
+  }
+  81.75% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-birth-resolved) + (var(--tugx-progress-pulsing-dot-reach-resolved) - var(--tugx-progress-pulsing-dot-birth-resolved)) * 0.9844));
+  }
+  87.8333% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-birth-resolved) + (var(--tugx-progress-pulsing-dot-reach-resolved) - var(--tugx-progress-pulsing-dot-birth-resolved)) * 0.9954));
+  }
+  93.9167% {
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-birth-resolved) + (var(--tugx-progress-pulsing-dot-reach-resolved) - var(--tugx-progress-pulsing-dot-birth-resolved)) * 0.9994));
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(var(--tugx-progress-pulsing-dot-reach-resolved));
   }
 }
 
-/* The thickening: the open stroke layer rising from hidden to full underneath
-   the hairline. Every property in flight here is `opacity`, so the ring stays
-   on the compositor for the whole pulse. */
-@keyframes tugx-progress-pulsing-dot-emit-thicken {
-  from {
+@keyframes tugx-progress-pulsing-dot-emit-fade {
+  0%,
+  26.99% {
     opacity: 0;
   }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Opacity at ignition. Near-solid on purpose: the ring is born flush with the
-   dot's own edge, and anything much under full strength there reads as a ring
-   that was already fading before it existed — grey, not shed. The falloff does
-   the work instead, and does it fast. */
-@keyframes tugx-progress-pulsing-dot-emit-fade {
-  from {
+  27% {
     opacity: var(--tugx-progress-pulsing-dot-emit-opacity, 0.95);
   }
-  to {
+  100% {
     opacity: 0;
   }
 }

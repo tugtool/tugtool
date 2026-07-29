@@ -1,0 +1,28 @@
+/* @tug-pairings: none — no color is set here. */
+
+/**
+ * Layout for the motion bench. A plain wrapping flow: the point is to get a
+ * pinned population of glyphs on screen with nothing around them that moves,
+ * paints a gradient, or establishes a stacking context of its own.
+ */
+
+.gmb-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: var(--tug-space-3, 12px);
+  padding: var(--tug-space-4, 16px);
+}
+
+/* The diagnostic layer — the same population, parented to `<body>` instead of
+   to a card, so nothing in its ancestor chain carries a rounded clip. Fixed and
+   on top so the window still paints it: an occluded surface throttles to a flat
+   0% and would read as a false win. */
+.gmb-escaped {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 60vw;
+  z-index: 99999;
+  pointer-events: none;
+}
