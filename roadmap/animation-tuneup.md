@@ -2,7 +2,9 @@
 
 ## Animation Tune-up — Motion Residency, Stationing, and Enforcement {#animation-tuneup}
 
-**Purpose:** Make Tug's long-running animations structurally free — every design-approved loop runs on the compositor, inside a contained box, pausing when its pane collapses — and lock the contract in with a machine-checked residency law so no future animation can regress it.
+**Purpose:** Make Tug's long-running animations structurally free — every design-approved loop runs on the compositor, and stays there — and lock the contract in with a machine-checked residency law so no future animation can regress it.
+
+> **Read [Addendum C](#addendum-c) first.** This document has been rewritten twice by measurement. The body and Addenda A and B are kept as the record of what was believed and why it was wrong; Addendum C holds the finding that resolved the phase, the corrected cost model, the live step ledger (#c-step-status-ledger), and the only steps still pending. The one-line version: a multi-stop CSS `linear()` easing silently blocks compositor acceleration in WebKit, which cost the pulsing dot 28.0% of a core for 100 glyphs where the same animation, with its curve moved into the keyframe stops, costs 1.5%. "Inside a contained box" in the original purpose statement above is withdrawn ([P17]); stationing was never justified by a measurement.
 
 ---
 
@@ -393,6 +395,8 @@ No new React state, no new stores, no new persistence.
 > **Commit after all checkpoints pass.** This rule applies to every step below.
 
 #### Step Status Ledger {#step-status-ledger}
+
+> **Stale — this ledger is historical.** The live ledger is #c-step-status-ledger in Addendum C, which is the one an implementer resumes from. Read #addendum-c first: it supersedes the cost model, the success criteria, and every pending step in this document and in Addenda A and B.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
@@ -827,6 +831,8 @@ tugutil host tell show-card -p component=<componentId> --instance debug-tugdash-
 
 #### Revised Step Status Ledger {#a-step-status-ledger}
 
+> **Stale.** Superseded by #c-step-status-ledger.
+
 | Step | Title | Status | Commit |
 |---|---|---|---|
 | #step-1 | Baseline profile + census helper + profiling recipe | done | `92f80410e` |
@@ -1018,7 +1024,7 @@ A session picking this up cold should, in order: read #a-state and #a-measuremen
 
 Steps 11–13 replaced every number this plan was built on. Addendum A's three readings are all retired: the burn *is* in the cards, the walk does *not* outweigh the blend on any surface that matters, and structure is *not* a co-equal cost driver. This addendum states what the measurements support, re-scopes the held steps against them, and gives the remaining work as steps with checkpoints that can fail.
 
-Where a statement here contradicts the body or Addendum A, this addendum wins.
+Where a statement here contradicts the body or Addendum A, this addendum wins — **except where [Addendum C](#addendum-c) contradicts this one, which it does on the central point.** B's cost model ("cost is linear in the number of loops running; nothing about how an individual animation is written changes its cost") is false, and the paragraph below is retained only as the record of a wrong reading. See [P21].
 
 ### The cost, in one paragraph {#b-the-cost}
 
@@ -1075,9 +1081,151 @@ These SUPERSEDE #success-criteria. Each one can fail.
 4. An idle profile of any single non-gallery card stays under 1% main-thread busy. (Holds today: lens 0.2%, skeleton gallery 0.2%.)
 5. The idle profile of a deck showing the indicator gallery with its pane collapsed is within noise of an empty deck. (Fails today; this is criterion 3 measured rather than asserted.)
 
+
 ### Remaining execution steps {#b-execution-steps}
 
-#### Revised Step Status Ledger {#b-step-status-ledger}
+**Superseded.** Addendum B's steps 15–18 were written before the acceleration finding and are replaced wholesale by #c-execution-steps. The step numbers were reassigned in that rewrite (the old 16/17/18 shifted to 17/18/19 to make room for the per-variant sweep); nothing had been implemented against the old numbering, so no commit refers to it.
+
+---
+
+## Addendum C — Acceleration is provable (2026-07-28) {#addendum-c}
+
+Addendum B concluded that cost is linear in the number of animations running, that nothing about how an individual animation is *written* changes its cost once it is accelerable-shaped, and that dormancy was therefore the only lever with a slope behind it. **All three statements are false**, and the measurement that disproves them also fixed the app's most expensive surface.
+
+Where this addendum contradicts Addendum B, the body, or Addendum A, this addendum wins.
+
+### The finding {#c-finding}
+
+**A multi-stop CSS `linear()` easing blocks compositor acceleration in WebKit entirely.**
+
+Core Animation expresses a keyframe segment's timing as a cubic Bézier. That is the only shape the compositor's timing model has. A `linear(0, 0.0381, 0.1464, …)` with fourteen to twenty-one stops is not a cubic Bézier and cannot be expressed as one, so WebKit does not accelerate the animation *at all*. It falls back to resolving style and blending the animated value on the main thread, every frame, for every element carrying it. The animation still animates and still looks correct — there is no visual tell, no console warning, and no DevTools badge. It just costs main thread instead of costing nothing.
+
+The pulsing dot carried its entire motion design in three such easings, sampled from cosine legs and a cubic ease-out by `cssEasing()` in `tugdeck/src/lib/unit-functions.ts` and held in `--…-ease` custom properties over two-stop `@keyframes`. Every running dot in the app was blended by hand.
+
+**The fix preserves the curve exactly.** Move the shape out of the easing and into the keyframe stops: sample the same unit functions at ~40 offsets, emit them as `@keyframes` percentages, and let the segments interpolate `linear`. Same curve by construction — the stops *are* samples of the same functions the easing was sampled from — and Core Animation runs it natively. This shipped in `3e24f00d2`; `breathKeyframes(turn, prefix)` in `tugdeck/src/components/tugways/internal/tug-progress-pulsing-dot.tsx` is the generator.
+
+### The ladder {#c-ladder}
+
+**Table T05 — 100 running pulsing dots, `gallery-motion-bench`, `just perf-resize-profile idle 6`.** "busy" is total samples minus `mach_msg2_trap`; the other two columns are sample counts for `WebCore::Style::TreeResolver::resolve` and `WebCore::Style::applyKeyframeEffects`.
+
+| configuration | busy | TreeResolver | applyKeyframeEffects |
+|---|---|---|---|
+| shipped — `linear()` easings, 6 boxes per glyph | **28.0%** | 518 | 159 |
+| `linear()` → `ease-in-out` (curve wrong, diagnostic only) | 19.2% | 319 | 86 |
+| + literal duration/delay, no `calc(var())` | 18.9% | — | — |
+| + literal keyframe values, no `var()` | 19.0% | 336 | 98 |
+| + every animation `paused` (nothing moves at all) | 17.1% | 394 | 103 |
+| 1 element + 2 pseudo-elements instead of 3 elements | 36.3% | 1151 | — |
+| 3 elements, `will-change` deleted | 24.2% | 512 | 119 |
+| + `translate3d(…, 0)` → `translate(…)` | 18.0% | 411 | 101 |
+| + `linear()` → the `linear` keyword (curve wrong, diagnostic only) | **0.9%** | 20 | 2 |
+| **shape moved into ~40 keyframe stops, full envelope restored** | **1.5%** | 23 | 4 |
+
+**28.0% → 1.5% with the animation numerically unchanged.** `at0274` seeks the real running animation and asserts the same envelope it asserted before: peak at the turn, sinking at the midpoint and at 70%, ring dark through the inhale, near-solid at ignition, gone by cycle end. It passes on both sides of the change.
+
+### What the ladder also settles {#c-corollaries}
+
+- **`var()` in keyframe values does not block acceleration.** Proven twice — 18.9% → 19.0% while still blocked, and 1.5% vs 0.9% after the fix (the 0.6 points are the extra stops, not the variables). This closes **[Q05]** for good, in the same direction Addendum B closed it but with a mechanism attached. Size-derived knobs survive.
+- **Animating pseudo-elements is more expensive than animating elements**, in WebKit, at parity: 24.2% for three elements against 36.3% for one element plus two pseudo-elements, with `TreeResolver::resolve` more than doubling to 1151. The intuition that a pseudo-element is cheaper than a box is wrong here.
+- **`translate3d(…, 0)` forced-layer promotion is a cost, not a win**: 24.2% → 18.0% removing it, with `computeCompositingRequirements` falling 415 → 184. This is [P18]'s direction, now with a measured slope.
+- **`applyKeyframeEffects` is not an acceleration tell.** It held near 100 samples with *every animation paused*. It measures style resolution walking effect stacks, not blending. Addendum B's trigger/bill split read it as the former; that reading was wrong.
+- **SVG is not an escape hatch.** SVG interior elements can never hold a compositing layer in WebKit, so SVG motion is always main-thread. Spec S01 clause 3 already says this; it is restated because it is the natural next guess after "make the DOM simpler."
+
+### Refuted, by name {#c-refuted}
+
+Each of these was tested against the bench and moved the number by less than the run-to-run noise, or moved it the wrong way. They are listed so nobody re-derives them.
+
+- **The rounded clip.** `.tug-pane` carries `border-radius: var(--tug-radius-md)` + `overflow: clip`. Portalling the identical population to `<body>` with `position: fixed`, out of every card ancestor, measured 25.0% against 24.2% in-card. Card corners do not break the compositing pipeline.
+- **`will-change`.** Inert on this surface in both directions.
+- **Containment.** Two granularities, both inside noise (Addendum B, #b-trigger-and-bill).
+- **`calc(var())` in durations and delays.** 19.2% → 18.9%, inside noise.
+- **Tree depth.** Mean 16.7, deepest nested stacking chain 5.
+- **Element count as the dominant term.** Cutting six boxes per glyph to four helped ~14% while the easing bug was live; it is a second-order term.
+
+### Re-scoped decisions {#c-decisions}
+
+#### [P21] The cost model, corrected (SUPERSEDES [P19]'s premise and #b-trigger-and-bill) (DECIDED) {#p21-cost-model-corrected}
+
+**Decision:** cost is linear in the number of loops WebKit is **blending on the main thread**, not in the number of loops running. An accelerated loop is very nearly free — 100 of them, four boxes each, cost 1.5%.
+
+**Rationale:** Addendum B measured its slope by silencing 110 of 161 loops on a surface where *every* loop was main-thread-blended, so "running" and "main-thread-blended" were the same set and the data could not tell them apart. Table T05 separates them: the same population, same count, same visual output, differs by a factor of eighteen depending only on whether the compositor will take it.
+
+**Implication:** "how many animations are on screen" is the wrong question to design around. "Is each one shaped so the compositor will take it" is the right one, and unlike the first it is checkable from script.
+
+#### [P22] Acceleration becomes a census rule, not a convention (DECIDED — ADDS clause 9 to Spec S01) {#p22-easing-is-a-census-rule}
+
+**Decision:** `animationCensus()` gains a violation for a timing function the compositor cannot express. Spec S01 gains: *a long-running animation's timing function — at the animation level and at every keyframe — MUST be expressible as a cubic Bézier: the `linear` keyword, `ease`/`ease-in`/`ease-out`/`ease-in-out`, or `cubic-bezier(…)`. A `linear()` with more than two stops MUST NOT appear on a long-running animation.*
+
+**Rationale:** this is the single highest-value thing the census can check, it is the bug that actually cost the app, and it is invisible to every other form of review — the animation looks right, typechecks, and passes its behavioral test. It is exactly the class of defect a machine gate exists for.
+
+**Mechanism:** `KeyframeEffect.getTiming().easing` gives the animation-level easing as a serialized string; `effect.getKeyframes()[i].easing` gives each segment's. Both are already reachable in `animationCensus()` — `getTiming()` is called there today for `iterations`/`duration`, and `easing` is already in `KEYFRAME_METADATA_KEYS`. Flag any value matching `linear(` with more than two comma-separated stops.
+
+**Not a violation:** a two-stop `linear(0, 1)` is the `linear` keyword and is fine. `steps(…)` is left un-flagged pending [Q07].
+
+#### [P23] Dormancy is demoted from remediation to hygiene (SUPERSEDES [P19]) (DECIDED) {#p23-dormancy-is-hygiene}
+
+**Decision:** dormancy still lands, but as a hygiene rule rather than as the phase's remediation, and its success criterion is re-baselined. It is no longer allowed to claim the 19.7%-to-noise win — that win was the easing fix.
+
+**Rationale:** [P19] made dormancy load-bearing because it was the only lever with a measured slope. [P21] removed that premise: with acceleration restored, a hundred running dots cost 1.5%, so pausing them saves ~1.5 points, not ~18. The rule is still right — motion nobody can see should not run, and it is a genuine battery and thermal argument on a laptop — but it is cheap insurance, not a fix, and it must not be sold as one.
+
+#### [P24] The `will-change` sweep is bounded and enumerated (REFINES [P18]) (DECIDED) {#p24-will-change-bounded}
+
+**Decision:** the sweep works from the **source** declarations, of which there are eleven, not from the 127 live instances the layer probe counted (one source rule under a `running` selector multiplies across every glyph on the bench). The eleven:
+
+| File | Line | Value |
+|---|---|---|
+| `tugdeck/src/components/tugways/tug-sheet.css` | 502 | `transform, opacity` |
+| `tugdeck/src/components/tugways/tug-marquee.css` | 81 | `transform` |
+| `tugdeck/src/components/tugways/tug-sparkline.css` | 58 | `transform` |
+| `tugdeck/src/components/tugways/cards/gallery.css` | 326 | `transform` |
+| `tugdeck/src/components/tugways/cards/gallery.css` | 338 | `transform, opacity` |
+| `tugdeck/src/components/tugways/cards/session-changes/session-changes-view.css` | 65 | `transform` |
+| `tugdeck/src/components/tugways/internal/tug-progress-bar.css` | 70 | `transform` |
+| `tugdeck/src/components/tugways/internal/tug-progress-pie.css` | 35 | `transform` |
+| `tugdeck/src/components/tugways/internal/tug-progress-ring.css` | 60 | `transform` |
+| `tugdeck/src/components/tugways/internal/tug-progress-spinner.css` | 58 | `opacity` |
+| `tugdeck/src/components/tugways/internal/tug-progress-wave.css` | 75 | `transform` |
+
+(`tug-progress-pulsing-dot.css` line 323 and `tug-list-view.css` line 338 are prose about the absence of a hint, not declarations; `gallery-commit-surfaces.tsx` line 110 is changelog copy.)
+
+**Rationale:** [P18] was a hunch about layer breadth. It now has a measurement behind it — deleting the dot's `will-change` and its `translate3d` together took 24.2% → 18.0% — but the honest attribution of those 6.2 points is to the `translate3d`, since `will-change` alone moved 0.1. So the sweep's justification is *forced promotion costs*, and `will-change` is swept because it is a forced promotion, not because it was independently convicted.
+
+#### [P25] The doctrine leads with the easing law (SUPERSEDES [P11]'s framing) (DECIDED) {#p25-doctrine-leads-with-easing}
+
+**Decision:** `tuglaws/motion-residency.md` opens with the timing-function rule, not with the property rule. The property rule (`transform`/`opacity` only) is well known and widely written down; the easing rule is not, cost eighteen points, and is invisible without a gate.
+
+**Rationale:** doctrine is read for what the reader does not already know.
+
+### New open questions {#c-open-questions}
+
+#### [Q06] Do the other five variants pay a comparable cost? (OPEN — the blast-radius question) {#q06-blast-radius}
+
+None of `tug-progress-{bar,pie,ring,spinner,wave}.css` uses `linear()` — each declares a plain `linear` or an `ease` keyword — so none carries *this* bug. But none of them has ever been validly profiled either. An earlier per-variant sweep this session was **withdrawn as invalid**: `tugutil host tell show-card` *adds* a card to the deck rather than replacing the current one, so every measurement in that sweep included the whole `gallery-tug-progress-indicator` card underneath it. The tell was `ring` reading 16.4%, below the supposed shared baseline. Resolved by #step-16.
+
+#### [Q07] Does `steps()` block acceleration the same way? (OPEN — cheap to settle) {#q07-steps-easing}
+
+A step function is not a cubic Bézier either, but WebKit may special-case it (Core Animation has a discrete timing mode). Nothing in tugdeck uses `steps()` on a long-running animation today, so this is not blocking. Settle it with one A/B on `gallery-motion-bench` while the bench is already set up in #step-16, and record the answer in the doctrine.
+
+#### [Q01] The stacked-stroke thicken — now moot {#q01-resolved-by-removal}
+
+**[Q01]** (#q01-thicken-parity) is **closed by deletion.** The stacked-stroke crossfade layers that [P04] introduced were removed in `3e24f00d2` — the rework dropped the glyph from six boxes to four and the ring's opening is carried by the ring's own border again. There is no longer a crossfade whose parity with the border-width lerp could be in question. What is still owed is the user's eyes on the reworked dot generally, which is a review gesture, not a plan step.
+
+### Revised success criteria {#c-success-criteria}
+
+These SUPERSEDE #b-success-criteria.
+
+1. `at0288`'s empty-deck census reports zero animations and its layer probe reports a non-empty tree. (Holds.)
+2. `at0288`'s seeded-deck census reports **zero violations**, with the station rule gone and the easing rule added. (Unknown until #step-15 runs; the easing rule may convict something.)
+3. Re-introducing a multi-stop `linear()` on any long-running animation fails `at0288`, naming the animation and its target.
+4. Every `TugProgressIndicator` variant, profiled alone at a pinned population of 100 on `gallery-motion-bench`, reads **under 3% busy**. (The reworked pulsing dot reads 1.5%.)
+5. A deck showing `gallery-tug-progress-indicator` in a **collapsed** pane censuses zero `running` animations.
+6. An idle profile of any single non-gallery card stays under 1% busy. (Holds: lens 0.2%, skeleton gallery 0.2%.)
+
+Note what is *not* here: Addendum B's criterion 5 asked the collapsed-pane profile to fall to noise from 19.7%. Per [P23] that delta was the easing bug and has already been collected; the collapsed-pane profile now starts near noise, so the criterion would pass vacuously.
+
+### Revised execution steps {#c-execution-steps}
+
+#### Revised Step Status Ledger {#c-step-status-ledger}
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
@@ -1085,101 +1233,164 @@ These SUPERSEDE #success-criteria. Each one can fail.
 | #step-11 | Census app-test as diagnostic instrument | done | `838704d6a` |
 | #step-12 | Attribute the idle burn | done | `9df8c4425` |
 | #step-13 | Layer-tree structural probe | done | `d23e8ef70` |
-| #step-14 | Addendum B | done | this section |
-| #step-15 | Withdraw the station rule; make violations mean something | pending | — |
-| #step-16 | Dormancy for invisible motion | pending | — |
-| #step-17 | `will-change` deletion sweep | pending | — |
-| #step-18 | Doctrine: `tuglaws/motion-residency.md` written against the numbers | pending | — |
+| #step-14 | Addendum B | done | `14fb1b0e5`, `f42100fef` (landed `a207d1e6b`) |
+| — | Pulsing-dot rework: keyframe-native envelope, gallery consolidation | done | `826cc958a`, `3e24f00d2` |
+| #step-15 | Census truth: drop the station rule, add the easing rule | pending | — |
+| #step-16 | Per-variant residency sweep — one card at a time | pending | — |
+| #step-17 | Dormancy for invisible motion | pending | — |
+| #step-18 | Forced-promotion sweep (`will-change`, `translate3d`) | pending | — |
+| #step-19 | Doctrine: `tuglaws/motion-residency.md` | pending | — |
 | #step-6 | Motion stations | **withdrawn** ([P17]) | — |
-| #step-7 | Collapse dormancy | superseded by #step-16 ([P19]) | — |
+| #step-7 | Collapse dormancy | superseded by #step-17 | — |
 | #step-8 | Residency app-test (contract assertions) | folded into #step-15 | — |
-| #step-9 | tuglaws doctrine | superseded by #step-18 | — |
-| #step-10 | Integration checkpoint | withdrawn — #step-16's checkpoint is the integration check | — |
+| #step-9 | tuglaws doctrine | superseded by #step-19 | — |
+| #step-10 | Integration checkpoint | withdrawn — #step-16 is the integration check | — |
 
-#### Step 15: Withdraw the station rule; make violations mean something {#step-15}
+#### Step 15: Census truth — drop the station rule, add the easing rule {#step-15}
 
 **Depends on:** #step-13
 
 **Commit:** `tugways(motion-residency): violations mean acceleration, not stations`
 
-**References:** [P17], Spec S01, (#a-census-result)
+**References:** [P17], [P22], Spec S01, #c-finding
+
+**Context an implementer needs.** `animationCensus()` lives in `tugdeck/src/lib/perf-monitor.ts`. It walks `document.getAnimations()`, filters out `CSSTransition`s, keeps effects whose target is non-null, computes a per-box property set so a demoting neighbour convicts its box-mates, and emits one `AnimationCensusEntry` per long-running animation with a `violations: string[]`. Four rules are checked today: non-accelerable property, SVG target, demoting neighbour, and station ancestry. `MOTION_STATION_SELECTOR` is the module constant `".tugx-motion-station"`; `stationed` is a field on `AnimationCensusEntry`; both the field and the violation go. `at0288` mirrors the entry shape in a local `CensusEntry` interface and prints `stationed` in its reporter — both need the same edit or the app-test will not typecheck.
 
 **Tasks:**
-- [ ] Delete `MOTION_STATION_SELECTOR`, the `stationed` field, and the `no … ancestor` violation from `animationCensus()` in `tugdeck/src/lib/perf-monitor.ts`. Keep the property / SVG / co-animation rules.
-- [ ] Delete Spec S02 (`.tugx-motion-station`) and Spec S01's station clause from this document, with a pointer to [P17].
-- [ ] Update `at0288`'s reporter and docstring; drop `stationed` from its printed columns.
-- [ ] Promote the seeded-deck assertion from a floor to a gate: `expect(seeded.violations).toEqual([])`, with the failure message naming the offending animation and target.
+- [ ] Delete `MOTION_STATION_SELECTOR`, the `stationed` field on `AnimationCensusEntry`, the `const stationed = …` computation, and the `no … ancestor` violation from `animationCensus()`. Keep the property, SVG, and co-animation rules.
+- [ ] Add the easing rule per [P22]. Collect the animation-level easing from `effect.getTiming().easing` and every keyframe's `easing` from `effect.getKeyframes()`; flag any that starts with `linear(` and carries more than two comma-separated stops. Violation text names the offending easing, truncated — e.g. ``blends on the main thread: `linear(0, 0.0381, 0.1464, …)` (23 stops) is not a cubic Bézier``. Add the collected easings to the entry as a `timingFunctions: string[]` field so the census prints them and the next investigation does not have to re-derive them.
+- [ ] Delete Spec S02 (#s02-motion-station) and Spec S01 clause 5 from this document, leaving a one-line pointer to [P17]; add Spec S01 clause 9 from [P22].
+- [ ] Update `at0288`'s `CensusEntry` interface, its reporter columns, and its module docstring: drop `stationed`, print `timingFunctions`, and restate what the contract checks.
+- [ ] Promote the seeded-deck assertion from a floor to a gate: `expect(seeded.violations).toEqual([])`. The failure message must name the offending animation and target — pass the violating entries through `JSON.stringify` in the assertion message rather than asserting a bare length.
+- [ ] Correct the stale docstrings in the reworked dot. `tug-progress-pulsing-dot.css` line ~79 still says the envelope "lives in the `linear()` easings held in the `--…-ease` variables", and the file header still describes the retired pseudo-element structure (`::before` filled dot, `::after` ring) and claims "the keyframes carry no shape". `tug-progress-pulsing-dot.tsx` line ~29 carries the same stale `linear()` claim. All are now false; the corrected explanation already exists at `tug-progress-pulsing-dot.css` lines ~414–417 and can be the source of truth.
 
 **Tests:** `at0288`.
 
 **Checkpoint:**
 - [ ] `just app-test tests/app-test/at0288-motion-residency.test.ts` passes with `violations` asserted empty on the seeded deck
-- [ ] Re-introducing a non-accelerable property in any glyph makes it fail, naming that glyph
+- [ ] Temporarily setting any glyph's `animation-timing-function` to a multi-stop `linear()` makes `at0288` fail, naming that glyph and the easing — revert after proving it
+- [ ] `bunx tsc --noEmit` clean; `bunx vite build` green
 
 ---
 
-#### Step 16: Dormancy for invisible motion {#step-16}
+#### Step 16: Per-variant residency sweep — one card at a time {#step-16}
 
 **Depends on:** #step-15
 
-**Commit:** `tugways(motion-residency): motion stops where it cannot be seen`
+**Commit:** `tugways(motion-residency): profile every progress variant at a pinned population`
 
-**References:** [P19], [P08], criteria 3 and 5 in #b-success-criteria
+**References:** [Q06], [Q07], [P21], criterion 4 in #c-success-criteria, Table T05
+
+**Context an implementer needs.** `tugdeck/src/components/tugways/cards/gallery-motion-bench.tsx` exists for exactly this: a pinned population of `BENCH_COUNT = 100` glyphs of one `BENCH_VARIANT`, all `running`, all `BENCH_SIZE = 28`, with nothing else on the card that moves. It is registered as `gallery-motion-bench` in `gallery-registrations.tsx`. Change `BENCH_VARIANT` (currently `"bar"`), let HMR repaint, profile.
+
+**Two traps that invalidated the previous attempt at this sweep. Both are mandatory reading.**
+
+1. **`tugutil host tell show-card` ADDS a card to the deck; it does not replace the current one.** A sweep that shows six variants in sequence without closing the previous card measures a growing pile, not six variants. Every number from the first attempt was discarded for this reason — the tell was `ring` reading 16.4%, *below* the supposed shared baseline, which is impossible for a strictly-additive deck. **Close the previous card before showing the next, and verify the deck holds exactly one card** before each profile.
+2. **An occluded window profiles at a flat ~0% no matter what is running** (see [P15]). The window must be raised. A 0.1% reading is far more likely to be an occluded window than a win.
+
+Additionally, confirm the running app actually has your `BENCH_VARIANT` edit before trusting a profile: `curl http://127.0.0.1:<vite-port>/src/components/tugways/cards/gallery-motion-bench.tsx` and read the constant back. [P15] documents why this is not optional — there is no `evalJS` outside `just app-test` to ask the app directly.
 
 **Tasks:**
-- [ ] Decide the mechanism and record it as a [P##]: a CSS gate driven by an existing collapsed/background attribute is preferred over any JS observer — a `body`-level or pane-level `[data-collapsed] … { animation-play-state: paused }` rule costs nothing and needs no subscription. Only reach for `IntersectionObserver` if the attribute does not exist.
-- [ ] Apply it to the collapsed-pane case first, since the attribute is already there ([P08] named the surfaces).
-- [ ] Extend to background tabs in a multi-card pane — a non-front tab's card stays mounted and its loops keep running today.
-- [ ] Confirm the pause is `paused`, not removed: a resumed pane must pick the loop up mid-phase, not restart it (the pulsing dot's whole phase discipline depends on this).
+- [ ] For each of `bar`, `pie`, `ring`, `spinner`, `wave`, `pulsing-dot`: set `BENCH_VARIANT`, mount `gallery-motion-bench` as the **only** card in the deck, raise the window, and run `just perf-resize-profile idle 6`. Record busy %, `TreeResolver::resolve`, `applyKeyframeEffects`, and `updateCompositingLayersAfterStyleChange`.
+- [ ] Record the six rows as **Table T06** in this addendum, alongside the empty-deck baseline taken in the same session on the same window.
+- [ ] For any variant over the 3% criterion, diagnose it against #c-finding and #c-refuted before proposing anything new — the known-expensive shapes are a non-cubic easing, a forced layer (`translate3d`, `will-change`), an SVG target, and an animated pseudo-element, in roughly that order of cost.
+- [ ] Settle [Q07] while the bench is up: one A/B swapping the bench variant's easing for `steps(8)`. Record the answer.
+- [ ] Fix what the sweep convicts, or record why a variant's cost is irreducible.
 
-**Tests:** `at0288` gains a third deck — the same gallery card in a collapsed pane — asserting every censused animation reports `playState === "paused"`.
+**Tests:** `at0288` (unchanged assertions must still pass); `just app-test-changed` for any glyph actually edited.
 
 **Checkpoint:**
-- [ ] Criterion 3 holds: collapsed-pane census reports no `running` animation
-- [ ] Criterion 5 holds: `just perf-resize-profile idle 6` on that deck reads within noise of an empty deck (target < 1%, against the 19.7% it costs uncollapsed)
+- [ ] Table T06 exists with six rows plus a baseline, each stated as taken against a single-card deck on a raised window
+- [ ] Criterion 4 holds for every variant, or each exception carries a recorded reason
+- [ ] [Q07] is answered yes or no, with the two numbers that answer it
+
+---
+
+#### Step 17: Dormancy for invisible motion {#step-17}
+
+**Depends on:** #step-16
+
+**Commit:** `tugways(motion-residency): motion stops where it cannot be seen`
+
+**References:** [P23], [P08], criterion 5 in #c-success-criteria
+
+**Context an implementer needs — the two in-page invisibility cases are not symmetric.**
+
+- **Background tab in a multi-card pane: already free, verify and move on.** `CardHost` renders every card into the pane and hides the non-active ones with `display: none` (`tugdeck/src/components/chrome/card-host.tsx`, the `style={{ display: isActive ? "contents" : "none" }}` on the `[data-card-host]` div). A `display: none` subtree generates no boxes, and WebKit does not run CSS animations on elements with no box. So a background card's loops are expected to be **absent from the census entirely** — not paused, absent. Addendum B listed this as work; it is almost certainly already done by construction. **Verify it with the census, and if it holds, record the finding and write no code for this case.**
+- **Collapsed pane: the real work.** A collapsed pane keeps its body displayed and collapses it geometrically — `tug-pane.css` line ~279, `.tug-pane-chrome--collapsed .tug-pane-body { height: 0; overflow: hidden }` (see also the `[D07]` comment at line ~270). The content still generates boxes, so its animations still run. This is the case dormancy exists for.
+
+**Mechanism — decide and record as a [P##] before writing it.** Two candidates:
+
+- *A descendant rule.* `.tug-pane-chrome--collapsed .tug-pane-body * { animation-play-state: paused !important }`. Needs no opt-in, so a newly written animation cannot forget to participate — which is the whole failure mode of the alternative. The `!important` is load-bearing: several glyphs already set `animation-play-state` under their own state selectors at comparable specificity (`tug-progress-{bar,pie,ring,spinner}.css` each carry a `paused`-state rule), and without it the cascade winner is order-dependent. The universal selector only ever matches inside a collapsed subtree, so its match cost is bounded by content that is invisible anyway.
+- *The inherited custom property* from [P08] and Spec S01 clause 6 — `animation-play-state: var(--tugx-motion-play, running)` on every animation declaration, with the collapsed rule setting `--tugx-motion-play: paused`. Cleaner cascade, no `!important`, but it is opt-in at every declaration site and nothing enforces the opt-in. Clause 6 has never been implemented: `grep -rn "animation-play-state: var" tugdeck/src` returns nothing today.
+
+The descendant rule is recommended; if the custom-property route is chosen instead, `animationCensus()` must gain a rule that convicts a long-running animation whose declaration omits the variable, or clause 6 is decorative.
+
+**Do not remove the animation — pause it.** A resumed pane must pick the loop up mid-phase, not restart it. The pulsing dot's phase discipline (`releaseEmitter` / `liveScale` in `tug-progress-pulsing-dot.tsx`) depends on the loop's clock being continuous across a pause.
+
+**Tasks:**
+- [ ] Census a deck whose multi-card pane has `gallery-tug-progress-indicator` in a background tab; confirm zero animations from that card. Record the result either way.
+- [ ] Implement collapsed-pane dormancy by the chosen mechanism; record the choice as a [P##] in this addendum with the cascade reasoning above.
+- [ ] Confirm the resumed loop continues rather than restarts — expand a collapsed pane holding a running pulsing dot and check that the dot's scale does not snap to its trough.
+
+**Tests:** `at0288` gains a third deck — the same gallery card in a collapsed pane — asserting every censused animation reports `playState === "paused"` (and a fourth, background-tab deck asserting zero entries, if the verification above holds).
+
+**Checkpoint:**
+- [ ] Criterion 5 holds: collapsed-pane census reports no `running` animation
+- [ ] The background-tab case is settled by measurement, with either a test or a recorded finding — not left as an assumption
 - [ ] Expanding the pane resumes the motion without a visible restart
 
 ---
 
-#### Step 17: `will-change` deletion sweep {#step-17}
+#### Step 18: Forced-promotion sweep {#step-18}
 
-**Depends on:** #step-16
+**Depends on:** #step-17
 
-**Commit:** `tugways(motion-residency): drop will-change hints that buy nothing`
+**Commit:** `tugways(motion-residency): drop forced promotions that buy nothing`
 
-**References:** [P18], Table T03, Table T04
+**References:** [P24], [P18], Table T05
+
+**Context an implementer needs.** The eleven source `will-change` declarations are enumerated in [P24]'s table. The companion target is `translate3d(…, 0)` used purely to force a layer — the dot's removal was worth 6.2 points on the bench, with `computeCompositingRequirements` falling 415 → 184. Find the rest with `grep -rn "translate3d" tugdeck/src`. A `translate3d` that carries real 3D motion stays; one whose Z is a literal `0` is a promotion request in disguise.
+
+Each A/B follows the same discipline as #step-16 — single-card deck, raised window, `curl` the dev server to confirm the running app has the change — and must be taken minutes apart on the same window, because the absolute numbers drift between app launches.
 
 **Tasks:**
-- [ ] Enumerate every standing `will-change` in `tugdeck/` (the probe counts 127 live on one gallery deck; the source count is much smaller and is what to work from).
-- [ ] A/B each one on the surface that carries it: remove, `curl` the dev server to confirm the running app has the change, profile, compare.
-- [ ] Delete the ones that show no regression. Leave a comment on each survivor naming the measurement that saved it.
+- [ ] A/B each of the eleven `will-change` declarations on the surface that carries it. Delete the ones that show no regression.
+- [ ] Enumerate `translate3d(…, 0)` uses in `tugdeck/src` and apply the same test; replace the promotion-only ones with `translate(…)`.
+- [ ] Leave a comment on each survivor naming the measurement that saved it, in the form the reworked dot's CSS already uses at `tug-progress-pulsing-dot.css` line ~323.
 
 **Checkpoint:**
-- [ ] Every surviving `will-change` in the codebase cites a measurement
-- [ ] The seeded-gallery layer probe's `willChange` count falls, and its idle profile does not rise
+- [ ] Every surviving `will-change` and Z-zero `translate3d` in `tugdeck/src` cites a measurement in a comment
+- [ ] The seeded-gallery layer probe's `willChange` count falls, and no variant's #step-16 number rises
 
 ---
 
-#### Step 18: Doctrine written against the numbers {#step-18}
+#### Step 19: Doctrine written against the numbers {#step-19}
 
-**Depends on:** #step-15, #step-16, #step-17
+**Depends on:** #step-15, #step-16, #step-17, #step-18
 
 **Commit:** `tuglaws(motion-residency): the contract, and what it is actually for`
 
+**References:** [P25], [P21], [P22], #c-finding, #c-refuted, Table T05, Table T06
+
 **Tasks:**
-- [ ] Write `tuglaws/motion-residency.md` from the surviving rules: `transform`/`opacity` only, on an element that can hold a layer, with no demoting neighbour in the same keyframe-effect stack — and the fourth rule the measurements added, which is that motion nobody can see does not run.
-- [ ] State the cost model as measured: linear in concurrently-running loops; style resolution tracks the loops, the compositing walk tracks the layers they promote and outlives them.
-- [ ] Record the refuted hypotheses by name so nobody re-derives them — `var()` keyframes ([Q05]), `will-change` as a lever, containment, tree depth. A doctrine that only lists what is true invites the same wrong guesses.
-- [ ] Fix the stale claims the investigation found in existing docstrings: the pulsing dot's "translate3d gets the element a layer of its own" is unverified from script (see #a-structure).
-- [ ] Point at `at0288` as the enforcement and at `just perf-resize-profile` as the measurement, including the two deck-verification traps in #a-deck-verification.
+- [ ] Write `tuglaws/motion-residency.md`. Open with the timing-function law per [P25] — *the envelope goes in the keyframe stops, never in a multi-stop `linear()`* — with #c-finding's mechanism and Table T05's 28.0% → 1.5% as its evidence. Then the property law, the element law (no SVG), the no-demoting-neighbour law, the no-forced-promotion law, and dormancy last, marked as hygiene per [P23].
+- [ ] State the corrected cost model from [P21]: linear in main-thread-blended loops, not in running loops; an accelerated loop is very nearly free. Explain why the earlier reading was wrong, because that mistake is easy to repeat.
+- [ ] Record #c-refuted by name — the rounded clip, `will-change`, containment, `calc(var())` durations, `var()` in keyframe values, tree depth, element count, SVG-as-remedy. A doctrine that lists only what is true invites the same wrong guesses.
+- [ ] Record the two anti-tells: `applyKeyframeEffects` does not drop when animations pause and is not an acceleration signal; a pseudo-element is not cheaper than an element.
+- [ ] Point at `at0288` as the enforcement and `just perf-resize-profile` as the measurement, and carry across the measurement traps: `show-card` adds rather than replaces (#step-16), an occluded window reads ~0% ([P15]), and there is no `evalJS` outside `just app-test` so the dev server must be `curl`ed to confirm a change is live.
+- [ ] Note the one legitimate `linear()` left in the codebase and why it is legitimate: `--tugx-imposer-settle-easing`, written by `deck-canvas.tsx` from `IMPOSITION_SETTLE_EASING` via `cssEasing()` in `tugdeck/src/lib/unit-functions.ts`, drives the pane settle **transition** in `tug-pane.css`. It is finite, one-shot, and animates `left`/`top`/`width` — properties that are not accelerable in any case — so the contract does not reach it. Say so explicitly, or the next reader will delete it.
+- [ ] Register the doc in `tuglaws/INDEX.md` and add the pointer from `tuglaws/tuglaws.md` and `tuglaws/component-authoring.md`.
 
 **Checkpoint:**
-- [ ] Every rule in the doc cites the measurement that justifies it, or is marked as a convention with no measured backing
-- [ ] `bun run audit:*` and the app-test corpus selection for the touched files pass
+- [ ] Every rule in the doc cites the measurement that justifies it, or is explicitly marked as a convention with no measured backing
+- [ ] `tuglaws/INDEX.md` lists it and at least one law doc links to it
+- [ ] `just app-test-changed` selection for the touched files passes
 
 ---
 
-### Still open {#b-open}
+### Still open {#c-open}
 
-- **[Q01]** (#q01-thicken-parity) — the stacked-stroke thicken shipped in `cd9ee8916` has still never been seen. It needs the user's eyes on the running build, or an `app.screenshot()` comparison inside an app-test. It is the one visual risk this whole investigation has not touched.
-- **Is the rest worth doing?** [P20] is the honest framing: steps 15–18 are a guardrail against a regression, not a fix for a present complaint. That is a legitimate thing to build and it is also the user's call.
+- **[Q06]** — the blast radius across the other five variants. #step-16 answers it.
+- **[Q07]** — whether `steps()` blocks acceleration. #step-16 answers it in passing.
+- **The reworked dot has not been seen by the user.** Its fidelity is verified numerically by `at0274`, which seeks the live animation and asserts the envelope's shape at five points. It has not been verified by eye. This is a review gesture rather than a plan step, but it is the one thing this investigation cannot self-certify.
