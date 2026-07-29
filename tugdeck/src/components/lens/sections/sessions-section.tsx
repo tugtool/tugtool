@@ -193,8 +193,8 @@ const PHASE_VISUAL: (key: string) => TugProgressIndicatorPhaseVisual =
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
 /** The per-row phase dot — reads the bound card's `codeSessionStore`. Its size
- *  is the row's (`TUG_SESSION_ROW_INDICATOR_SIZE`); its vertical position in
- *  the `gutter` fit is the `--tugx-lens-sessions-dot-rise` knob next door. */
+ *  and where it sits are the row's (`TUG_SESSION_ROW_INDICATOR_SIZE`, and the
+ *  `inset` fit's name line); this function only answers what phase it is in. */
 function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
   const services = useSyncExternalStore(cardServicesStore.subscribe, () =>
     cardServicesStore.getServices(cardId),
