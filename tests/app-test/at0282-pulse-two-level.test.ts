@@ -5,7 +5,7 @@
  * The PULSE carries a session's standing goal over the operation running right
  * now. Two surfaces render that pair: the session card's strip in one line
  * (**S1** — headline, `›`, activity) and the Lens row stacked (**L1** — the
- * goal on its own line between the session name and the activity). Three
+ * goal on its own line between the session name and the activity). Four
  * claims here, and every one of them is a layout fact no unit test can reach:
  *
  *   1. **One row, not two.** The strip carries both levels on a single 34px
@@ -23,6 +23,11 @@
  *      resize themselves as sessions come and go quiet. Measured against a
  *      present sibling in the same list at the same moment, so "it holds"
  *      cannot pass by the feature being broken outright.
+ *   4. **The row's three lines start on one vertical, and the phase dot tops
+ *      out with the name.** Both are geometry a screenshot shows and nothing
+ *      else here would catch: a zero-width strut still collects its
+ *      container's flex gap, which indented the two pulse lines past the name
+ *      while every other assertion in this file stayed green.
  *
  * **The frames are real, the commentator is not.** `publishPulseFrame` hands
  * the store bytes in the emitter's own shape and they go through the
@@ -36,6 +41,8 @@
  *
  * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
  * @covers tugdeck/src/components/lens/sections/sessions-section.tsx
+ * @covers tugdeck/src/components/tugways/tug-pulse.css
+ * @covers tugdeck/src/components/lens/sections/sessions-section.css
  * @covers tugdeck/src/lib/pulse-store.ts
  * @covers tugdeck/src/test-surface.ts
  */
@@ -159,6 +166,48 @@ async function lensLineCount(app: App, sid: string): Promise<number> {
        return el.querySelectorAll(
          ".session-row-headline, .tug-pulse-line"
        ).length;
+     })()`,
+  );
+}
+
+/**
+ * A Lens row's geometry, in one read: the left edge of each of its three
+ * lines, and the top of the phase dot against the top of the name line.
+ */
+async function lensRowGeometry(
+  app: App,
+  sid: string,
+): Promise<{
+  nameLeft: number;
+  intentLeft: number;
+  activityLeft: number;
+  dotTop: number;
+  nameLineTop: number;
+} | null> {
+  return app.evalJS<{
+    nameLeft: number;
+    intentLeft: number;
+    activityLeft: number;
+    dotTop: number;
+    nameLineTop: number;
+  } | null>(
+    `(function(){
+       var row = document.querySelector(${JSON.stringify(lensRow(sid))});
+       if (row === null) return null;
+       var name = row.querySelector(".session-row-headline .tug-list-row-title");
+       var intent = row.querySelector('[data-slot="tug-pulse-headline"]');
+       var activity = row.querySelector('[data-slot="tug-pulse-activity"]');
+       var nameLine = row.querySelector(".session-row-headline");
+       var dot = row.parentElement.querySelector(".tug-list-row-leading");
+       if (name === null || intent === null || activity === null) return null;
+       if (nameLine === null || dot === null) return null;
+       return {
+         nameLeft: name.getBoundingClientRect().left,
+         intentLeft: intent.getBoundingClientRect().left,
+         activityLeft: activity.getBoundingClientRect().left,
+         dotTop: dot.getBoundingClientRect().top,
+         nameLineTop: nameLine.getBoundingClientRect().top,
+       };
      })()`,
   );
 }
@@ -299,6 +348,17 @@ describe.skipIf(!SHOULD_RUN)("AT0282: the PULSE reads at two levels", () => {
         expect(await lensRowHeight(app, SID_A)).toBe(
           await lensRowHeight(app, SID_B),
         );
+
+        // 4. The row's geometry. All three lines start on ONE vertical — a
+        //    zero-width strut that still collects a flex gap indented the two
+        //    pulse lines past the name and was invisible to every other check
+        //    here. And the phase dot tops out with the NAME line, because the
+        //    dot reports the session's phase and the name says which session.
+        const geo = await lensRowGeometry(app, SID_A);
+        expect(geo).not.toBeNull();
+        expect(Math.abs(geo!.intentLeft - geo!.nameLeft)).toBeLessThan(0.51);
+        expect(Math.abs(geo!.activityLeft - geo!.nameLeft)).toBeLessThan(0.51);
+        expect(Math.abs(geo!.dotTop - geo!.nameLineTop)).toBeLessThan(0.51);
       } finally {
         await app.close();
         rmTempTugbank(tugbankPath);

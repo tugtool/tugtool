@@ -62,22 +62,22 @@
 }
 
 /* Every session row is three lines — name, intent, activity — because the
-   PULSE never drops a level; it stands in for one. So the dot has one
-   position to hold rather than one per row shape, and dead center is it: the
-   lift exists to correct a small dot reading low against the title, and a
-   28px glyph spanning a ~62px column already reads as belonging to the whole
-   row.
+   PULSE never drops a level; it stands in for one. The dot therefore has one
+   position to hold rather than one per row shape, and it TOPS OUT WITH THE
+   NAME: the dot reports the session's phase, the name line says which session,
+   and the two belong to each other. Centered on the whole column it read as
+   floating beside the pulse instead — an indicator for the lines it happened
+   to be next to.
 
    `--tugx-lens-sessions-dot-rise` is the knob — the dot's SIZE is
    `ROW_PHASE_DOT_SIZE` in `sessions-section.tsx`. The lift is a transform, so
    it never touches layout: the row's height and the text baselines stay put no
-   matter what you set here. Positive rises, negative drops. Past a few pixels
-   the glyph climbs into the row's block padding and crowds the divider above. */
+   matter what you set here. Positive rises, negative drops. */
 .lens-sessions-list .tug-list-row-leading {
   --tugx-lens-sessions-dot-rise: 0px;
 
-  align-self: center;
-  align-items: center;
+  align-self: start;
+  align-items: start;
   transform: translateY(calc(-1 * var(--tugx-lens-sessions-dot-rise)));
 }
 
