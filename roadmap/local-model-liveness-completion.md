@@ -1,6 +1,6 @@
 ## Local Model Liveness — Completion {#local-model-liveness-completion}
 
-**Purpose:** Make the local-model path observable and bounded — a Swift file logger so the app can write where we already read, one structured line per inference request from both transports, per-task ceilings that mean something, and a batch analyzer that answers "is it fast enough, how often does it fail" from accumulated real usage.
+**Purpose:** Make the PULSE headline actually follow the work, then make the local-model path observable and bounded — a Swift file logger so the app can write where we already read, one structured line per inference request from both transports, per-task ceilings that mean something, and a batch analyzer that answers "is it fast enough, how often does it fail" from accumulated real usage.
 
 ---
 
@@ -30,9 +30,12 @@ The blocking discovery is about *where* measurement has to happen. The deck's sh
 
 Swift's problem is that it logs with `NSLog`, which goes to Console and never reaches `tugcast.log.<date>` where `just logs-debug` reads. That is not a fact of nature — it is a missing facility. `InstanceConfig.logDir` already resolves the per-instance `Logs/` directory and currently has no readers. This plan gives Swift a real file logger there.
 
+One more thing changed after the plan was first drafted, and it comes first in the work. The PULSE headline turned out to be *semantically* frozen: alive, inferring every 30–60 seconds, and saying the same thing for half an hour. The cause is a sentence in the summarize prompt instructing the model to report the session's lifetime goal rather than what is happening now, which contradicts the locked doctrine in the pulse-display gallery card. A headline that never moves is a liveness defect in the plainest sense, and there is little point measuring the turnaround of a feature that is not doing its job — so [#step-1] fixes it before any instrumentation lands. The evidence and the reasoning are in [#frozen-headline].
+
 #### Strategy {#strategy}
 
-- **Give Swift the ability to write to our log first.** Everything else in this plan is a log line, so the facility comes before the content ([P01]).
+- **Make the headline move before measuring how fast it arrives.** A constant headline is the liveness failure that matters most, and it is a prompt and digest problem, not an instrumentation one ([P10], [P11]).
+- **Give Swift the ability to write to our log next.** Everything else in this plan is a log line, so the facility comes before the content ([P01]).
 - **Instrument at the one seam that sees everything.** `LocalModelService.handle` covers both transports and every task ([P03]).
 - **Record two perspectives, because they answer different questions.** Swift knows what inference cost; the caller knows whether it gave up waiting. Neither can see the other's fact ([P05]).
 - **Write for batch analysis, not live aggregation.** No counters in memory, no dashboards. Structured lines that accumulate across days, and a script that reads them when there is enough to read ([P06]).
@@ -41,9 +44,11 @@ Swift's problem is that it logs with `NSLog`, which goes to Console and never re
 
 #### Success Criteria (Measurable) {#success-criteria}
 
+- The headline names the current stretch of work and changes when the work changes — verify by driving one session through two visibly different stretches and reading both headlines out of `just logs-debug`, and by the summarized-to-emitted ratio improving materially on the 47:16 baseline in [#frozen-headline].
+- The headline's register survives the rewrite — verify `just model-eval` still scores 12/12 across all five checks.
 - Swift writes to `<instance>/Logs/tugapp.log.<UTC-date>` in a format the same parser reads as `tugcast.log.*` — verify by launching `just app-debug` and confirming the file exists with a well-formed init line.
 - Every inference request produces exactly one service-side line carrying `task`, `transport`, `outcome`, and `elapsed_ms` — verify by typing one shell-shaped line into the composer (bridge classify) and running `just model-eval` (socket summarize), then confirming both appear.
-- A `summarize` that exceeds its own ceiling fails at that ceiling, not at 10s — verify with the unit test in `#step-3` and by the constant's value.
+- A `summarize` that exceeds its own ceiling fails at that ceiling, not at 10s — verify with the unit test in `#step-4` and by the constant's value.
 - `headline_register` reports whether it changed, budget-trimmed, or clipped the answer, and the emitter logs all three — verify by unit test plus a live emit.
 - `just model-liveness` exits 0 with a naming skip message on a machine with no pack installed, and exits 0 after a real answer on one with a pack — verify both by temporarily pointing the pack probe at an empty directory.
 - `just model-stats` reads accumulated logs and reports per-task outcome counts, duration percentiles, and normalizer work rate — verify against the logs this plan's own development produces.
@@ -51,13 +56,14 @@ Swift's problem is that it logs with `NSLog`, which goes to Console and never re
 
 #### Scope {#scope}
 
-1. A Swift file-logging facility writing into the per-instance `Logs/` directory, in tuglog's line format.
-2. Service-side instrumentation of every local-model request at `LocalModelService.handle`.
-3. Caller-side instrumentation in tugcast's `LocalModelRequester::request`, plus a `summarize` ceiling and per-task slow thresholds.
-4. Normalizer work-rate reporting from `headline_register`.
-5. An on-demand liveness smoke test that skips cleanly without a pack.
-6. A batch analyzer over accumulated logs, exposed as a `just` recipe.
-7. Fixing the UTC/local date bug in the three log-tailing recipes.
+1. The summarize prompt's subject and the digest's recency structure, so the headline tracks the current stretch of work.
+2. A Swift file-logging facility writing into the per-instance `Logs/` directory, in tuglog's line format.
+3. Service-side instrumentation of every local-model request at `LocalModelService.handle`.
+4. Caller-side instrumentation in tugcast's `LocalModelRequester::request`, plus a `summarize` ceiling and per-task slow thresholds.
+5. Normalizer work-rate reporting from `headline_register`.
+6. An on-demand liveness smoke test that skips cleanly without a pack.
+7. A batch analyzer over accumulated logs, exposed as a `just` recipe.
+8. Fixing the UTC/local date bug in the three log-tailing recipes.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -68,6 +74,9 @@ Swift's problem is that it logs with `NSLog`, which goes to Console and never re
 - **In-memory counters, live rollups, or a metrics endpoint.** [P06].
 - **Setting the final thresholds.** They need real usage; the plan ships the instrument and leaves [Q01] open by design.
 - **CI coverage of the live model path.** Needs a downloaded pack and real hardware; on-demand is the honest form.
+- **Reopening the headline's register.** [#step-1] changes what the headline is *about*, not how it is worded. The verb-first, six-word, no-article rules and their eight examples stay byte-identical, and `just model-eval` guards them (Risk R03).
+- **Re-scoring the model catalog** against the new `summarize` wording. The catalog's overview scores were already stale against two prior rewrites and are deliberately not maintained; the `LocalModelPrompts` docblock says why.
+- **Rebalancing prompts against tool lines in the digest.** [#step-1] adds a recency split, not a new budget. `MAX_TOOL_LINES` and `MAX_PROMPTS` keep their values; the ratio question stays in [#roadmap].
 
 #### Dependencies / Prerequisites {#dependencies}
 
@@ -81,7 +90,7 @@ Swift's problem is that it logs with `NSLog`, which goes to Console and never re
 - **The classify path must not get slower.** Any instrumentation on it emits *after* the reply is returned, never before ([P04]).
 - **`tugapp` has no XCTest target.** Swift correctness is verified by building, by app-tests, and by observing real log output — steps are written accordingly.
 - **Two processes must not write one log file.** tugcast's `tracing_appender` owns rotation of `tugcast.log.*`; a second writer would race it ([P02]).
-- **`LocalModelPrompts` strings stay frozen** per the rule in `LocalModelService.swift`. This plan changes no prompt.
+- **`LocalModelPrompts` strings are frozen by default** per the rule in `LocalModelService.swift` — editing one invalidates the catalog's recorded scores for every entry at once. This plan breaks that freeze exactly once, for `summarize`'s subject sentence, as the deliberate act the rule exists to require ([P10]). `classify` and `generate` are untouched.
 
 #### Assumptions {#assumptions}
 
@@ -103,7 +112,7 @@ Swift's problem is that it logs with `NSLog`, which goes to Console and never re
 
 **Plan to resolve:** Ship the proposed numbers, accumulate real lines, then run `just model-stats` over a week of genuine use and set them from the observed distribution. This is the explicit request behind this plan: *"write logs we can examine in batch mode later, after we have some real usage to study."*
 
-**Resolution:** DEFERRED — the instrument ships in [#step-3] and [#step-6]; the numbers are set in a follow-on once there is data. Recorded in [#roadmap].
+**Resolution:** DEFERRED — the instrument ships in [#step-4] and [#step-7]; the numbers are set in a follow-on once there is data. Recorded in [#roadmap].
 
 #### [Q02] Log retention for `tugapp.log.*` (OPEN) {#q02-log-retention}
 
@@ -125,6 +134,7 @@ Swift's problem is that it logs with `NSLog`, which goes to Console and never re
 | A `summarize` ceiling set too low breaks working headlines | med | low | 6s is ~5x the measured 1263ms median; the emitter already treats failure as back-off, not breakage | Timeout outcomes appear in `just model-stats` |
 | Two writers race the log directory | high | low | Separate filename, separate rotation ([P02]) | Any interleaved or truncated line |
 | Log volume grows unpleasantly | low | med | One line per request; availability at debug | Directory size becomes noticeable |
+| Rewriting the summarize prompt regresses the register | med | med | Only the subject sentence changes; `just model-eval` scores register before and after | Any of the five register checks drops below 12/12 |
 
 **Risk R01: The classify path is on a person's critical path** {#r01-classify-latency}
 
@@ -141,6 +151,15 @@ Swift's problem is that it logs with `NSLog`, which goes to Console and never re
   - The format is pinned in [Spec S01](#s01-log-line-format) and asserted by the analyzer's own parse test against a captured sample of each file.
   - The analyzer reports how many lines it parsed per file, so a zero is visible rather than silent.
 - **Residual risk:** A future change to tugcast's `fmt::layer()` configuration would break both together, which the parse test catches.
+
+**Risk R03: The prompt rewrite costs the register that was just won** {#r03-register-regression}
+
+- **Risk:** `LocalModelPrompts.summarize` is a single string, and a small quantized model responds to its whole shape. Editing the sentence that sets the subject could disturb the register rules that took verb-first from 1/12 to 12/12 and sentence case from 5/12 to 12/12.
+- **Mitigation:**
+  - The edit is scoped to the opening two lines. The rules block and all eight examples are left byte-identical ([P10]).
+  - `just model-eval` scores exactly the five register properties over twelve digests and is run before and after ([#step-1]'s checkpoint). It is a direct guard, not a proxy.
+  - The examples are all imperative-verb-first, so they reinforce the register independently of what the opening sentence asks the headline to be *about*.
+- **Residual risk:** The register could hold on the twelve fixed corpus digests and drift on live sessions. The normalizer's work rate ([#step-6]) is the standing read that would show it, and the normalizer imposes the form in Rust regardless of what the model answers.
 
 ---
 
@@ -169,7 +188,7 @@ Swift's problem is that it logs with `NSLog`, which goes to Console and never re
 - UTC rotation matches tugcast so the two files roll at the same instant and a day's data is never split across a boundary in one file but not the other.
 
 **Implications:**
-- `just logs-debug` and `just logs-release` tail two files ([#step-2]).
+- `just logs-debug` and `just logs-release` tail two files ([#step-3]).
 - The analyzer takes a directory, not a file.
 
 #### [P03] `LocalModelService.handle` is the instrumentation seam (DECIDED) {#p03-handle-seam}
@@ -258,9 +277,63 @@ Swift's problem is that it logs with `NSLog`, which goes to Console and never re
 **Implications:**
 - The brief's provisional table is amended here rather than followed literally; [#turnaround-table] records both.
 
+#### [P10] The headline names the current phase, read against the goal (DECIDED) {#p10-current-phase}
+
+**Decision:** `LocalModelPrompts.summarize` stops asking for the session's lifetime goal and starts asking for the current stretch of work, read against what the user asked for. The register rules in the rest of the prompt are untouched.
+
+**Rationale:**
+- The locked doctrine in `tugdeck/src/components/tugways/cards/gallery-pulse-display.tsx` defines the intent level as *"the model's reading of the goal **and what is going on now**, at a high level."* The shipped prompt says *"the goal, **not** the latest single action."* Those are opposites, and the prompt is the one that drifted.
+- A headline that reports only the lifetime goal is *correct* to be constant, because the goal is constant. Liveness was instructed out of existence rather than lost to a bug — see [#frozen-headline] for the log evidence.
+- The register is not the problem and is not being reopened. Verb-first went from 1/12 to 12/12 and sentence case from 5/12 to 12/12 on the current wording; only the sentence naming the *subject* changes.
+- "The latest single action" remains correctly excluded — that is the activity level's job, already shipped on both surfaces. The headline sits between the single tool call and the lifetime goal, which is exactly the level the gallery card calls "at a high level".
+
+**Implications:**
+- The freeze rule in the `LocalModelPrompts` docblock is not waived; this is the deliberate act it exists to require. The docblock records the rewrite, as it already does for the two before it.
+- The catalog's recorded overview scores were already stale against two prior rewrites and are explicitly not being refreshed; the docblock says why.
+- `tests/model-eval` becomes the regression guard rather than a casualty: it scores register, register is unchanged, so a drop in its score means the edit reached further than intended (Risk R03).
+
+#### [P11] The digest marks what is recent (DECIDED) {#p11-digest-recency}
+
+**Decision:** `compose_digest` gains a third section separating tool lines that arrived since the last overview from the standing background, and takes a `recent_tools: usize` count to make the split.
+
+**Rationale:**
+- Asking for "now" is useless if the digest cannot express which lines are now. Today all 40 tool lines arrive under one undifferentiated heading in arrival order, with nothing marking the boundary the model is being asked to find.
+- The data is not the shortfall — measured across the twelve corpus digests, the tool half outweighs the prompt half 2–3:1 in every real session (`app-self-update` 2217 vs 628 characters, `splash-screen-stall` 1995 vs 640). The freshest material is already the bulk of what the model reads. It is unlabeled, not absent.
+- The count is carried rather than a timestamp because the emitter already has it for free: `SessionState` sees every beat and knows exactly how many tool lines it has recorded since it last committed a tick.
+- Three sections is the ceiling. A small quantized model given four or five headings starts answering about the headings; the prompt-half stays one list.
+
+**Implications:**
+- `compose_digest`'s signature changes, so `corpus_digests_are_what_compose_digest_produces` fails until the corpus is regenerated. That test exists precisely to catch this, and the corpus JSONs gain a `recent_tools` field.
+- The `last_digest` dedupe gains real teeth: an idle session now produces an identical digest and skips the inference entirely, where today the rolling deque made the digest differ by one line and paid for a re-summary that produced the same headline.
+
 ---
 
 ### Deep Dives {#deep-dives}
+
+#### The headline was frozen by its own prompt {#frozen-headline}
+
+The symptom reported was that the PULSE's first part is written once and then never changes. The emitter is not stuck, and neither is the transport or the deck. Reading `release-main`'s `tugcast.log.2026-07-29` on 2026-07-28, one session (`4eb21996`) produced **15 summarize calls in 31 minutes**, each a real inference at ~1.5s, each delivered:
+
+```
+01:11  Fix local-model bring up work
+01:12  Fix local-model bring up work      (and four more identical)
+01:18  Fix local model pulse silence
+01:23  Fix local-model bring up work      (back again)
+01:24  Fix local-model liveness issues
+01:41  Fix local-model liveness work
+01:42  Fix local-model liveness pulse
+01:42  Fix local-model liveness overview
+```
+
+Half an hour spanning plan authoring, validator runs, Swift reading and corpus scoring, and the line says `Fix local-model …` throughout, moving only by a synonym in the last slot. Across both live sessions that day: **47 inferences, 16 emits** — two thirds of every inference discarded by the `last_headline` dedupe. That ratio is the measurable signature of the defect and the number [#step-1]'s checkpoint moves.
+
+Everything downstream checks out and needs no change:
+
+- `pulse-store.ts` `foldOverview` replaces the entry for every named scope outright — newest wins, no monotonic beat gate, no dedupe of its own.
+- The emitter's own `session overview: emitted receivers=1` lines confirm delivery.
+- The cadence gate is firing freely: 15 ticks in 31 minutes against a 15s floor.
+
+The cause is one sentence in `LocalModelPrompts.summarize`: *"Say what the session is DOING overall — the goal, not the latest single action."* It was added during the headline-register rewrite that fixed the label-headline problem, and it instructs the model to ignore recency. A line reporting only the lifetime goal is correct to be constant. [P10] replaces the sentence; [P11] gives the digest the recency structure that makes the replacement answerable.
 
 #### Where each request is actually visible {#request-visibility}
 
@@ -380,6 +453,29 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 **Asserts nothing about what the headline says.** That is the owner's eye.
 
+**Spec S03: Digest shape** {#s03-digest-shape}
+
+`compose_digest(prompts, tools, recent_tools)` composes at most three labeled sections, in this order, each a `- ` bulleted list. `recent_tools` is clamped to `tools.len()`; the trailing `recent_tools` entries are *recent*, the rest are *background*.
+
+```
+What the user asked for:
+- <prompt 1>            ← oldest first, newest last; existing behavior, 240-char clip
+- <prompt 2>
+
+What the session has been doing:
+- <background tool line>    ← tools[..tools.len() - recent_tools]
+
+What it is doing right now:
+- <recent tool line>        ← tools[tools.len() - recent_tools..]
+```
+
+Rules:
+
+- A section with no entries is **omitted entirely**, heading and all — the existing rule for the prompt and tool halves, extended to the split. `recent_tools == tools.len()` (a session's first overview) therefore yields no background section; `recent_tools == 0` yields no *right now* section.
+- Sections are separated by a blank line; no line appears in more than one section.
+- Both halves empty still returns `None`. Prompts-only and tools-only both still compose. These are existing guarantees and this change must not touch them.
+- The prompt half stays one list. Marking the newest prompt would be a fourth heading, and three is the ceiling ([P11]).
+
 ---
 
 ### Definitive Symbol Inventory {#symbol-inventory}
@@ -405,6 +501,9 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 | `SUMMARIZE_TIMEOUT` | const | `tugrust/crates/tugcast/src/local_model.rs` | 6s ([Table T01](#turnaround-table)) |
 | `SUMMARIZE_SLOW` / `CLASSIFY_SLOW` | const | `tugrust/crates/tugcast/src/local_model.rs` | 3s / 1s |
 | `LocalModelRequester::request` | fn | `tugrust/crates/tugcast/src/local_model.rs` | Emits the caller-side line ([P05]) |
+| `LocalModelPrompts.summarize` | const | `tugapp/Sources/LocalModelService.swift` | Opening two lines rewritten; register rules untouched ([P10]) |
+| `compose_digest` | fn | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | Gains `recent_tools: usize`; three-section output ([Spec S03](#s03-digest-shape)) |
+| `SessionState.tools_since_emit` | field | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | Tool beats since the last committed tick ([P11]) |
 | `HeadlineReport` | struct | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | `text`, `normalized`, `trimmed`, `clipped` |
 | `headline_register_report` | fn | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | New; `headline_register` becomes a wrapper over it |
 | `model-liveness` / `model-stats` | recipe | `Justfile` | New entries beside `model-eval` |
@@ -414,7 +513,9 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] `tests/model-eval/README.md` — add the liveness check and the analyzer, and say plainly that register-scoring, liveness, and turnaround are three different questions sharing one harness.
+- [ ] `tests/model-eval/README.md` — document the three-section digest and the corpus `recent_tools` field ([#step-1]); add the liveness check and the analyzer, and say plainly that register-scoring, liveness, and turnaround are three different questions sharing one harness.
+- [ ] `tugapp/Sources/LocalModelService.swift` — the `LocalModelPrompts` docblock records the `summarize` rewrite and what it changed (the subject, not the register), keeping the freeze rule's audit trail intact ([P10]).
+- [ ] `tugrust/crates/tugcast/src/feeds/session_overview.rs` — `compose_digest`'s docblock states the three sections and what `recent_tools` means ([Spec S03](#s03-digest-shape)).
 - [ ] `roadmap/archive/local-model-liveness-brief.md` — tick the work items this plan closes and add a pointer to this plan for the ones it deliberately leaves open ([Q01], [P07]).
 - [ ] `tugapp/Sources/TugLog.swift` module docblock — where it writes, why it is a separate file from `tugcast.log` ([P02]), and that it is general rather than local-model-specific.
 - [ ] `tugrust/crates/tugcast/src/local_model.rs` — the timeout constants' docblock states which bound is a transport deadline and which is a performance budget.
@@ -448,18 +549,59 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Swift file logger | pending | — |
-| #step-2 | Fix the log-tailing recipes | pending | — |
-| #step-3 | Instrument the Swift service seam | pending | — |
-| #step-4 | Summarize ceiling + caller-side line | pending | — |
-| #step-5 | Normalizer work-rate reporting | pending | — |
-| #step-6 | Liveness smoke test | pending | — |
-| #step-7 | Batch analyzer | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Make the headline track the current phase | pending | — |
+| #step-2 | Swift file logger | pending | — |
+| #step-3 | Fix the log-tailing recipes | pending | — |
+| #step-4 | Instrument the Swift service seam | pending | — |
+| #step-5 | Summarize ceiling + caller-side line | pending | — |
+| #step-6 | Normalizer work-rate reporting | pending | — |
+| #step-7 | Liveness smoke test | pending | — |
+| #step-8 | Batch analyzer | pending | — |
+| #step-9 | Integration checkpoint | pending | — |
 
 ---
 
-#### Step 1: Swift file logger {#step-1}
+#### Step 1: Make the headline track the current phase {#step-1}
+
+**Commit:** `tugcast(pulse-headline): let the headline follow the work instead of the goal`
+
+**References:** [P10] Headline names the current phase, [P11] The digest marks what is recent, [Spec S03](#s03-digest-shape), (#frozen-headline), Risk R03
+
+**Artifacts:**
+- `tugapp/Sources/LocalModelService.swift` — `LocalModelPrompts.summarize` and the type docblock above `enum LocalModelPrompts`
+- `tugrust/crates/tugcast/src/feeds/session_overview.rs` — `compose_digest`, `SessionState`, `session_overview_task`
+- `tests/model-eval/corpus/*.json` and `tests/model-eval/corpus/*.digest.txt`
+- `tests/model-eval/README.md`
+
+**Tasks:**
+- [ ] In `LocalModelPrompts.summarize`, replace the opening pair of lines — currently `You write the headline for a live coding session. Say what the session is DOING overall — the goal, not the latest single action.` — with wording that asks for the current stretch of work read against the user's goal, and that says explicitly the headline is expected to change as the work moves on ([P10]). **Change nothing else in the string**: the register rules below it (verb-first, six words, no articles, no `and`, sentence case, the eight examples) are what took verb-first from 1/12 to 12/12 and are not in question ([#frozen-headline]).
+- [ ] Update the `summarize` paragraph of the docblock above `enum LocalModelPrompts` to record this as the third rewrite and say what it changed — the subject, not the register. The freeze rule stated in that docblock still holds and is the reason this is a deliberate edit rather than a drive-by.
+- [ ] Add `tools_since_emit: usize` to `SessionState`. Increment it in `record` for `SessionBeat::Tool` only; reset it to 0 in `session_overview_task` at the same place `new_frames` resets, so it counts tool lines accumulated since the last committed tick.
+- [ ] Change `compose_digest(prompts: &[String], tools: &[String])` to `compose_digest(prompts: &[String], tools: &[String], recent_tools: usize)`, emitting the three-section shape in [Spec S03](#s03-digest-shape). `recent_tools` is clamped to `tools.len()` by the function, so a caller can pass a count larger than the deque without producing a wrong split.
+- [ ] Pass `state.tools_since_emit` at the call site. Read it before the `await` on `summarize`, alongside the existing `state.tools` clone — the map is re-borrowed after the await and the pre-await values are the ones the digest was built from.
+- [ ] Keep the `last_digest` dedupe exactly as it is. It now does real work: an idle session produces an empty *right now* section and therefore an unchanged digest, which skips the inference entirely rather than paying for a headline that cannot have changed.
+- [ ] Add a `recent_tools` number to each `tests/model-eval/corpus/*.json` fixture. For the six real-session entries set it to the trailing slice that represents one tick's worth of work (5–10 lines); for the six synthetic entries choose whatever exercises the entry's point, including `0` for `conversation-only` and the full count for `tools-without-prompts`.
+- [ ] Read it in `corpus_digests_are_what_compose_digest_produces` — the test already parses each fixture as a `serde_json::Value` with a local `strings(key)` helper, so this is one `body["recent_tools"].as_u64()` beside it, defaulting to 0 when absent.
+- [ ] Regenerate the frozen digests with `TUG_REGENERATE_DIGESTS=1 cargo nextest run -p tugcast corpus_digests` and commit them. The `corpus_digests_are_what_compose_digest_produces` test **will fail before this** — that is the pin working, not a defect, and regenerating is the intended response.
+- [ ] Update `tests/model-eval/README.md` to describe the three-section digest, so the corpus fixture format is documented where the corpus lives.
+
+**Tests:**
+- [ ] Unit test: `compose_digest` with `recent_tools` between 1 and `tools.len()` emits all three sections, with the recent lines appearing **only** in the third and the background lines only in the second — no line is repeated across sections.
+- [ ] Unit test: `recent_tools == tools.len()` (a session's first overview) emits no background section, and `recent_tools == 0` emits no *right now* section.
+- [ ] Unit test: `recent_tools` greater than `tools.len()` is clamped rather than panicking.
+- [ ] Unit test: prompts-only and tools-only inputs still compose, and the both-empty case still returns `None` — the existing guarantees this step must not break.
+- [ ] Unit test: `tools_since_emit` counts `Tool` beats and ignores `Turn` beats.
+- [ ] `corpus_digests_are_what_compose_digest_produces` green against the regenerated corpus.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast` green.
+- [ ] `just model-eval` still scores 12/12 on register — verb-first, within budget, no article, no `and`, sentence case. This is the guard on Risk R03: the step changes the headline's *subject*, and any drop here means it changed the register too.
+- [ ] Drive one real session through two visibly different stretches of work (read some files, then run a build) and confirm from `just logs-debug` that the emitted headline names each in turn, rather than restating the session's opening goal both times.
+- [ ] Over that run, the ratio of `session overview: summarized` lines to `session overview: emitted` lines is materially better than the 47:16 recorded in [#frozen-headline] — most inferences should now produce a line worth sending.
+
+---
+
+#### Step 2: Swift file logger {#step-2}
 
 **Commit:** `tugapp(logging): give Swift a real log file beside tugcast's`
 
@@ -489,9 +631,9 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 ---
 
-#### Step 2: Fix the log-tailing recipes {#step-2}
+#### Step 3: Fix the log-tailing recipes {#step-3}
 
-**Depends on:** #step-1
+**Depends on:** #step-2
 
 **Commit:** `tug(logs): select the newest log file instead of guessing today's date`
 
@@ -502,7 +644,7 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 **Tasks:**
 - [ ] Replace `DATE="$(date +%Y-%m-%d)"` and the `$LOG` construction in all three recipes with selection of the **newest** `tugcast.log.*` by modification time, removing the timezone question entirely ([#utc-date-bug]).
-- [ ] `logs-debug` and `logs-release` tail both `tugcast.log.*` and `tugapp.log.*` (newest of each), so one command shows the whole system ([P02]). Tail the app log only if it exists, so a build predating [#step-1] still works.
+- [ ] `logs-debug` and `logs-release` tail both `tugcast.log.*` and `tugapp.log.*` (newest of each), so one command shows the whole system ([P02]). Tail the app log only if it exists, so a build predating [#step-2] still works.
 - [ ] Fix `tail-replay` to read the per-instance directory via `bash tugrust/scripts/instance-id-from-cwd.sh debug` — it currently reads the legacy single-instance path `~/Library/Application Support/Tug/Logs/` and has not followed a real instance since multi-instance landed.
 - [ ] Keep each recipe's existing "no log yet" message and non-zero exit when nothing matches.
 
@@ -516,9 +658,9 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 ---
 
-#### Step 3: Instrument the Swift service seam {#step-3}
+#### Step 4: Instrument the Swift service seam {#step-4}
 
-**Depends on:** #step-1
+**Depends on:** #step-2
 
 **Commit:** `tugapp(local-model): record every inference request from both transports`
 
@@ -550,9 +692,9 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 ---
 
-#### Step 4: Summarize ceiling and the caller-side line {#step-4}
+#### Step 5: Summarize ceiling and the caller-side line {#step-5}
 
-**Depends on:** #step-1
+**Depends on:** #step-2
 
 **Commit:** `tugcast(local-model): give summarize its own ceiling and record what callers wait for`
 
@@ -578,9 +720,9 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 ---
 
-#### Step 5: Normalizer work-rate reporting {#step-5}
+#### Step 6: Normalizer work-rate reporting {#step-6}
 
-**Depends on:** #step-1
+**Depends on:** #step-2
 
 **Commit:** `tugcast(pulse-headline): report what the register normalizer had to do`
 
@@ -608,9 +750,9 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 ---
 
-#### Step 6: Liveness smoke test {#step-6}
+#### Step 7: Liveness smoke test {#step-7}
 
-**Depends on:** #step-4
+**Depends on:** #step-5
 
 **Commit:** `tugcast(model-eval): add an on-demand liveness check for the live model path`
 
@@ -640,9 +782,9 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 ---
 
-#### Step 7: Batch analyzer {#step-7}
+#### Step 8: Batch analyzer {#step-8}
 
-**Depends on:** #step-3, #step-4, #step-5
+**Depends on:** #step-4, #step-5, #step-6
 
 **Commit:** `tugcast(model-eval): summarize accumulated local-model logs in batch`
 
@@ -656,6 +798,7 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 - [ ] Parse both files with one regex per [Spec S01](#s01-log-line-format), extracting the trailing `key=value` pairs into a dict.
 - [ ] Report, per task: attempts, outcome counts, `elapsed_ms` p50 / p90 / max, the count over the slow threshold, and the count over the ceiling.
 - [ ] Report the normalizer work rate: what fraction of summarize answers were `normalized`, `trimmed`, and `clipped` — the standing read on whether the prompt is in register (#normalizer-reporting).
+- [ ] Report the headline change rate per session: `session overview: emitted` lines over `session overview: summarized` lines. This is the standing read on whether the headline is still tracking the work — it was 16/47 when the headline was frozen ([#frozen-headline]), and a return toward that ratio means the subject has drifted back to the lifetime goal.
 - [ ] For bridge classify, apply the deck's known 2000ms deadline to report how many answers arrived too late to be used, since the deck's own give-up is not logged ([P05]).
 - [ ] Print how many lines were parsed from each file, so a format drift shows as a zero rather than as silence (Risk R02).
 - [ ] Add `--self-test` running the parser over a small set of captured real lines from both files, checked into the script as literals.
@@ -672,16 +815,17 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 ---
 
-#### Step 8: Integration checkpoint {#step-8}
+#### Step 9: Integration checkpoint {#step-9}
 
-**Depends on:** #step-2, #step-6, #step-7
+**Depends on:** #step-3, #step-7, #step-8
 
 **Commit:** `N/A (verification only)`
 
-**References:** [P03] Handle seam, [P05] Two perspectives, [P06] Batch not live, [Spec S01](#s01-log-line-format), (#success-criteria)
+**References:** [P03] Handle seam, [P05] Two perspectives, [P06] Batch not live, [P10] Headline names the current phase, [Spec S01](#s01-log-line-format), (#success-criteria)
 
 **Tasks:**
 - [ ] Drive one real turn in a session card so a bridge classify and a socket summarize both occur.
+- [ ] Confirm the headline has kept following the work across the whole implementation run — the logs from building this plan are themselves the sample, and `just model-stats` reports the change rate over them ([#step-1], [#frozen-headline]).
 - [ ] Confirm both perspectives are present for the socket path: a `local model request` line from `tugapp` and a `local model call` line from `tugcast` for the same summarize.
 - [ ] Confirm the bridge classify appears in `tugapp` only — the asymmetry [P05] exists for.
 - [ ] Tick the closed items in `roadmap/archive/local-model-liveness-brief.md` and point its remaining items at this plan.
@@ -705,6 +849,7 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
+- [ ] The headline follows the work: one session driven through two different stretches yields two different headlines, and `just model-eval` still scores 12/12 on register.
 - [ ] Swift writes `tugapp.log.<UTC-date>` beside `tugcast.log.*`, in the same format (`just logs-debug` shows both).
 - [ ] Every inference request emits a service-side line; classify over the WebKit bridge — invisible to tugcast — is included (`task=classify transport=bridge` present after typing in the composer).
 - [ ] `summarize` fails at its own 6s ceiling rather than the shared 10s transport deadline (`SUMMARIZE_TIMEOUT` exists; ordering unit test green).
@@ -725,10 +870,11 @@ The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal
 - [ ] **Close the display plan's [Q01]** (the 56-char headline budget) once the normalizer work rate has real volume behind it — the first reading suggests the six-word budget binds before the character budget ever does (#normalizer-reporting).
 - [ ] **Promote the numbers to the dev panel** if reading logs proves too indirect ([P07]).
 - [ ] **Migrate the app's existing `NSLog` calls** to `TugLog` now that a real facility exists.
-- [ ] **Digest composition** — up to 40 tool lines against as few as two prompts lets recent tool shape outweigh the stated goal (the `app-self-update` corpus entry demonstrates it). A composition question, not a prompt one.
+- [ ] **Digest budget balance** — up to 40 tool lines against as few as two prompts lets tool shape outweigh the stated goal (the `app-self-update` corpus entry demonstrates it: 2217 characters of activity against 628 of goal). [#step-1] gives the tool half a recency split but leaves `MAX_TOOL_LINES` and `MAX_PROMPTS` where they are. Whether those numbers are right is a separate question, answerable once the change rate from [#step-8] has volume behind it.
 
 | Checkpoint | Verification |
 |------------|--------------|
+| The headline moves with the work | two stretches, two headlines; `just model-eval` still 12/12 |
 | Swift can write to our log | `tugapp.log.<date>` exists and `just logs-debug` shows it |
 | Both transports measured | `transport=bridge` and `transport=socket` lines both present |
 | Ceilings mean something | ordering unit test green; `SUMMARIZE_TIMEOUT` in force |
