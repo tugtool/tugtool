@@ -312,6 +312,56 @@ export function initActionDispatch(
 
   // Register built-in handlers
 
+  // eval: run a expression in the deck and hand the value back on
+  // `eval-response`, keyed by the request id tugcast is blocking on.
+  //
+  // This is the seam `POST /api/eval` drives, and it is how a live instance can
+  // be inspected and driven from outside — reading a store's real snapshot,
+  // submitting a turn, checking what a surface actually rendered. tugcast has
+  // always had its half (`eval_handler` in `server.rs`, `"eval-response"` in
+  // `actions.rs`); without this handler the request went out and nothing ever
+  // answered, so every call died on the 30s timeout.
+  //
+  // Gated twice on the tugcast side before a frame is ever broadcast: loopback
+  // callers only, and dev mode only. A release instance answers `forbidden`
+  // without consulting the deck at all.
+  registerAction("eval", (payload) => {
+    const requestId = payload.requestId;
+    const code = payload.code;
+    if (typeof requestId !== "string" || typeof code !== "string") return;
+    let result: unknown;
+    try {
+      // Indirect eval — the value is evaluated in global scope, so the code
+      // sees `window` and the module singletons rather than this closure.
+      result = (0, eval)(code);
+    } catch (error) {
+      result = { error: error instanceof Error ? error.message : String(error) };
+    }
+    const reply = (value: unknown): void => {
+      // The frame is JSON, so the answer has to survive `JSON.stringify`.
+      // Anything that won't (a DOM node, a function, a cycle) comes back as
+      // its String form rather than silently becoming null.
+      let encoded: unknown = value;
+      try {
+        JSON.stringify(value);
+      } catch {
+        encoded = String(value);
+      }
+      connection.sendControlFrame("eval-response", {
+        requestId,
+        result: encoded ?? null,
+      });
+    };
+    // A promise is awaited before answering, so `await`-shaped probes work.
+    if (result instanceof Promise) {
+      result.then(reply, (error: unknown) => {
+        reply({ error: error instanceof Error ? error.message : String(error) });
+      });
+      return;
+    }
+    reply(result);
+  });
+
   // claude_auth_result: tugcast's answer to `check_auth` (probe) and
   // `claude_sign_in` (login). Updates the app-level authStore that the
   // app-wide sign-in sheet, the picker gate, and the per-card banner all read.

@@ -5,7 +5,8 @@
 //! session is *for*. It is composed from two things the session already has:
 //! the user's own prompts (read from the claude JSONL) and the shape of its
 //! recent tool use. Those go to the local model as one digest, and the sentence
-//! that comes back is the line.
+//! that comes back is the line. Either half alone is enough — a session that
+//! only answers questions is described by its prompts.
 //!
 //! **One-way, like the pulse bridge.** This module taps the CODE_OUTPUT
 //! broadcast and produces exactly two outputs — a PULSE frame and tracing. It
@@ -31,8 +32,9 @@ use crate::feeds::pulse::forwardable_session;
 use crate::local_model::SharedLocalModelState;
 use tugcast_core::{FeedId, Frame};
 
-/// Tool-use frames since the last emit that on their own justify a new
-/// overview: enough has happened that the last sentence is probably stale.
+/// Frames since the last emit that on their own justify a new overview: enough
+/// has happened that the last sentence is probably stale. Counted over both
+/// beats a session can produce — a tool running and a turn ending.
 const BURST_FRAMES: u32 = 8;
 
 /// Elapsed time that justifies a new overview on its own, given any activity
@@ -121,6 +123,34 @@ impl Cadence {
     }
 }
 
+/// What a frame contributes to a session's picture.
+///
+/// Both kinds advance the cadence; only a tool use has a line to remember. A
+/// session that answers questions rather than running commands produces no tool
+/// frames at all, and counting only those left it permanently below the cadence
+/// floor — the digest can describe a session from its prompts alone, but the
+/// loop never reached the code that would.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SessionBeat {
+    /// A tool ran; the digest line describing it.
+    Tool(String),
+    /// A turn ended. No line, but the session is demonstrably alive and the
+    /// user has said something new since the last overview.
+    Turn,
+}
+
+/// What, if anything, a CODE_OUTPUT frame contributes.
+///
+/// The frame is already known to be forwardable and un-muted; this is only the
+/// question of which frames are evidence of work happening.
+pub fn session_beat(payload: &serde_json::Value) -> Option<SessionBeat> {
+    match payload.get("type").and_then(|v| v.as_str())? {
+        "tool_use" => tool_line(payload).map(SessionBeat::Tool),
+        "turn_complete" => Some(SessionBeat::Turn),
+        _ => None,
+    }
+}
+
 /// One session's rolling picture of what it is doing.
 struct SessionState {
     tools: VecDeque<String>,
@@ -143,11 +173,13 @@ impl SessionState {
         }
     }
 
-    fn record(&mut self, line: String) {
-        if self.tools.len() == MAX_TOOL_LINES {
-            self.tools.pop_front();
+    fn record(&mut self, beat: SessionBeat) {
+        if let SessionBeat::Tool(line) = beat {
+            if self.tools.len() == MAX_TOOL_LINES {
+                self.tools.pop_front();
+            }
+            self.tools.push_back(line);
         }
-        self.tools.push_back(line);
         self.new_frames += 1;
     }
 }
@@ -200,8 +232,13 @@ pub fn next_backoff(current: Duration) -> Duration {
 /// acted on. The target is whichever of the well-known input fields is present
 /// — a path, a command, a pattern, a URL — clipped, because the digest is about
 /// shape, not detail.
+///
+/// The name field is `tool_name`, which is what tugcode puts on the wire
+/// (`ToolUseFrame` in `tugcode/src/types.ts`) and what every other consumer of
+/// this frame reads. Anthropic's own tool-use block calls it `name`, but that
+/// shape never reaches CODE_OUTPUT — tugcode has already reframed it.
 pub fn tool_line(payload: &serde_json::Value) -> Option<String> {
-    let name = payload.get("name").and_then(|v| v.as_str())?;
+    let name = payload.get("tool_name").and_then(|v| v.as_str())?;
     let target = payload
         .get("input")
         .and_then(|input| {
@@ -441,10 +478,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
         let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&frame.payload) else {
             continue;
         };
-        if payload.get("type").and_then(|v| v.as_str()) != Some("tool_use") {
-            continue;
-        }
-        let Some(line) = tool_line(&payload) else {
+        let Some(beat) = session_beat(&payload) else {
             continue;
         };
 
@@ -452,7 +486,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
         let state = sessions
             .entry(session_id.clone())
             .or_insert_with(|| SessionState::new(now));
-        state.record(line);
+        state.record(beat);
 
         let gates = Gates {
             tenant_enabled: (config.tenant_enabled)(),
@@ -643,13 +677,13 @@ mod tests {
     #[test]
     fn tool_lines_name_what_was_acted_on() {
         let bash = serde_json::json!({
-            "name": "Bash",
+            "tool_name": "Bash",
             "input": { "command": "cargo nextest run", "description": "run tests" },
         });
         assert_eq!(tool_line(&bash).unwrap(), "Bash(cargo nextest run)");
 
         let read = serde_json::json!({
-            "name": "Read",
+            "tool_name": "Read",
             "input": { "file_path": "/tmp/main.rs" },
         });
         assert_eq!(tool_line(&read).unwrap(), "Read(/tmp/main.rs)");
@@ -657,14 +691,14 @@ mod tests {
 
     #[test]
     fn a_tool_with_no_recognizable_target_is_still_worth_a_line() {
-        let value = serde_json::json!({ "name": "TodoWrite", "input": { "todos": [] } });
+        let value = serde_json::json!({ "tool_name": "TodoWrite", "input": { "todos": [] } });
         assert_eq!(tool_line(&value).unwrap(), "TodoWrite");
     }
 
     #[test]
     fn a_long_target_is_clipped() {
         let value = serde_json::json!({
-            "name": "Bash",
+            "tool_name": "Bash",
             "input": { "command": "x".repeat(200) },
         });
         let line = tool_line(&value).unwrap();
@@ -675,6 +709,24 @@ mod tests {
     #[test]
     fn a_payload_without_a_name_yields_nothing() {
         assert!(tool_line(&serde_json::json!({ "input": {} })).is_none());
+    }
+
+    /// Verbatim CODE_OUTPUT lines, copied off the wire rather than composed
+    /// here. Every other fixture in this module is hand-written, and a
+    /// hand-written frame agrees with whatever the reader happens to expect —
+    /// which is how the emitter spent its whole life reading a field tugcode
+    /// does not send, recording no tool lines, and never reaching the model.
+    #[test]
+    fn tool_lines_read_the_frame_tugcode_actually_sends() {
+        let write = br#"{"type":"tool_use","msg_id":"m1","seq":0,"tool_name":"Write","tool_use_id":"tu-1","input":{"file_path":"/proj/a.rs","content":"x"},"ipc_version":1}"#;
+        let bash = br#"{"type":"tool_use","msg_id":"m2","seq":1,"tool_name":"Bash","tool_use_id":"tu-2","input":{"command":"cargo nextest run"},"ipc_version":1}"#;
+        for (line, expected) in [
+            (&write[..], "Write(/proj/a.rs)"),
+            (&bash[..], "Bash(cargo nextest run)"),
+        ] {
+            let payload: serde_json::Value = serde_json::from_slice(line).unwrap();
+            assert_eq!(tool_line(&payload).as_deref(), Some(expected));
+        }
     }
 
     #[test]
@@ -799,7 +851,7 @@ mod tests {
     fn the_accumulator_keeps_only_the_recent_tail() {
         let mut state = SessionState::new(Instant::now());
         for i in 0..(MAX_TOOL_LINES + 5) {
-            state.record(format!("Bash(step {i})"));
+            state.record(SessionBeat::Tool(format!("Bash(step {i})")));
         }
         assert_eq!(state.tools.len(), MAX_TOOL_LINES);
         assert_eq!(state.tools.front().unwrap(), "Bash(step 5)");
@@ -822,7 +874,7 @@ mod tests {
     #[test]
     fn replay_bracketed_frames_are_muted_like_the_pulse_bridge() {
         let mut muted = HashSet::new();
-        let tool_use = br#"{"tug_session_id":"s1","type":"tool_use","name":"Bash"}"#;
+        let tool_use = br#"{"tug_session_id":"s1","type":"tool_use","tool_name":"Bash"}"#;
         assert_eq!(
             forwardable_session(tool_use, &mut muted),
             Some("s1".to_string())
@@ -936,8 +988,16 @@ mod tests {
         let body = serde_json::json!({
             "tug_session_id": session,
             "type": "tool_use",
-            "name": "Bash",
+            "tool_name": "Bash",
             "input": { "command": command },
+        });
+        Frame::new(FeedId::CODE_OUTPUT, serde_json::to_vec(&body).unwrap())
+    }
+
+    fn turn_complete_frame(session: &str) -> Frame {
+        let body = serde_json::json!({
+            "tug_session_id": session,
+            "type": "turn_complete",
         });
         Frame::new(FeedId::CODE_OUTPUT, serde_json::to_vec(&body).unwrap())
     }
@@ -1141,6 +1201,22 @@ mod tests {
         assert!(next_overview(&mut h.pulse_rx).await.is_none());
     }
 
+    /// A session that only ever answers questions — no tool calls anywhere in
+    /// it — still earns an overview. Its digest is the user's prompts alone,
+    /// which `compose_digest` has always supported; what was missing is that
+    /// nothing but a `tool_use` frame could advance the cadence, so a purely
+    /// conversational session sat at zero frames forever and never got there.
+    #[tokio::test]
+    async fn a_session_with_no_tool_use_still_gets_an_overview() {
+        let mut h = start(Some("Explaining Maxwell's equations."), true, true, true);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.code_tx.send(turn_complete_frame("s1")).unwrap();
+        let overview = next_overview(&mut h.pulse_rx).await.expect("an overview");
+        assert_eq!(overview["kind"], "overview");
+        assert_eq!(overview["text"], "Explaining Maxwell's equations");
+        assert_eq!(overview["scopes"], serde_json::json!(["s1"]));
+    }
+
     #[tokio::test]
     async fn an_unresolvable_session_skips_the_tick_silently() {
         let mut h = start(Some("Hardening the watch loop."), true, true, true);
@@ -1149,7 +1225,7 @@ mod tests {
         // for the seeded project — a session whose file is missing yields no
         // prompts, and with tool use present the digest still composes, so the
         // meaningful "unresolvable" case is the frame with no session id.
-        let anonymous = serde_json::json!({ "type": "tool_use", "name": "Bash" });
+        let anonymous = serde_json::json!({ "type": "tool_use", "tool_name": "Bash" });
         h.code_tx
             .send(Frame::new(
                 FeedId::CODE_OUTPUT,
