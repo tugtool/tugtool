@@ -14,11 +14,20 @@
  * a row click opens it directly.
  *
  * It portals into the canvas overlay root ([L25]) so it floats above every
- * pane, escaping their `overflow: hidden`. A native `<input>` owns focus
- * while open — so this is a lightweight popover, NOT a focus-mode trap
+ * pane, escaping their `overflow: hidden`. The field owns focus while open —
+ * so this is a lightweight popover, NOT a focus-mode trap
  * (`focus-language.md`): there is no key-view seed or spatial ring to
  * register; the field's own browser focus and blur drive open/commit/
  * dismiss.
+ *
+ * The field is a {@link TugInput}, not a bare `<input>`, so it registers as
+ * a chain responder and carries the substrate CUT / COPY / PASTE /
+ * SELECT_ALL / UNDO / REDO handlers plus the right-click editing menu. That
+ * registration is load-bearing, not decorative: ⌘V is a capture-phase
+ * global binding with `preventDefaultOnMatch`, dispatched to the first
+ * responder. A bare `<input>` carries no `data-responder-id`, so focusing it
+ * promotes nothing — the paste would be swallowed by whatever surface behind
+ * the popup still held first responder.
  *
  * Laws: [L06] appearance via CSS + DOM, no React state for looks; [L19]
  * authoring guide (`data-slot`, tokens); [L25] mounted into the canvas
@@ -39,6 +48,7 @@ import { Search } from "lucide-react";
 
 import "./tug-completion-popup.css";
 
+import { TugInput } from "./tug-input";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import type { CompletionItem, CompletionProvider } from "@/lib/tug-text-types";
 
@@ -201,10 +211,10 @@ export function TugCompletionPopup({
       >
         <div className="tug-completion-popup-field">
           <Search className="tug-completion-popup-field-icon" aria-hidden />
-          <input
+          <TugInput
             ref={inputRef}
             className="tug-completion-popup-input"
-            data-slot="tug-completion-popup-input"
+            borderless
             type="text"
             spellCheck={false}
             autoComplete="off"

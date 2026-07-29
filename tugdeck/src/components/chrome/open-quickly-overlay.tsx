@@ -9,6 +9,11 @@
  * one {@link openFileInCard} entry point (so it also lands in Open Recent);
  * dismissing just closes the popup.
  *
+ * The query passes through {@link parseFileLocationQuery} on its way to the
+ * provider: `tug-list-view.tsx:123` searches for the path and opens on line
+ * 123, and an absolute path inside the project collapses to the relative
+ * form the index keys on.
+ *
  * The FileTreeStore is built and torn down per open session: the inner
  * body mounts only while open, so its `useEffect` owns the store's
  * lifetime and no WebSocket subscription lingers when the popup is closed.
@@ -16,13 +21,14 @@
  * @module components/chrome/open-quickly-overlay
  */
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 import { TugCompletionPopup } from "@/components/tugways/tug-completion-popup";
 import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
 import { FeedId } from "@/protocol";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { getConnection } from "@/lib/connection-singleton";
+import { parseFileLocationQuery } from "@/lib/file-location-query";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import { frontmostProjectBinding } from "@/lib/frontmost-project";
 import { openFileInCard } from "@/lib/open-file-in-card";
@@ -104,6 +110,28 @@ function OpenQuicklyBody(): React.ReactElement {
     };
   }, []);
 
+  // The line carried by the current query's `file:line` suffix, if any.
+  // Written by the provider wrapper below on every keystroke, read at commit.
+  const lineRef = useRef<number | undefined>(undefined);
+
+  // The popup owns the raw query; the file index only knows project-relative
+  // paths. This wrapper sits between them: it splits off `:line` (and any
+  // `:col`) and relativizes an absolute paste before the search, so the
+  // clipboard forms people actually have — `tug-list-view.tsx:123`, a
+  // compiler diagnostic, an absolute path from the shell — resolve to a row.
+  const provider = useMemo<CompletionProvider>(() => {
+    const base = stackRef.current?.provider ?? EMPTY_PROVIDER;
+    const wrapped = ((raw: string) => {
+      const { search, line } = parseFileLocationQuery(raw, projectDir);
+      lineRef.current = line;
+      return base(search);
+    }) as CompletionProvider;
+    if (base.subscribe !== undefined) {
+      wrapped.subscribe = (listener: () => void) => base.subscribe!(listener);
+    }
+    return wrapped;
+  }, [projectDir]);
+
   const commit = (item: CompletionItem): void => {
     const relative = item.atom.value;
     const store = getDeckStore();
@@ -113,7 +141,11 @@ function OpenQuicklyBody(): React.ReactElement {
       typeof relative === "string" &&
       relative !== ""
     ) {
-      openFileInCard(store, resolveAgainstRoot(projectDir, relative));
+      openFileInCard(
+        store,
+        resolveAgainstRoot(projectDir, relative),
+        lineRef.current,
+      );
     }
     closeOpenQuickly();
   };
@@ -130,7 +162,7 @@ function OpenQuicklyBody(): React.ReactElement {
       placeholder={
         projectLeaf !== "" ? `Open Quickly in ${projectLeaf}` : "Open Quickly"
       }
-      provider={stackRef.current?.provider ?? EMPTY_PROVIDER}
+      provider={provider}
       onCommit={commit}
       onDismiss={closeOpenQuickly}
     />

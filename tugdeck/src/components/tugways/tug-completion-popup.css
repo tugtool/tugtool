@@ -79,20 +79,39 @@ body {
   color: var(--tugx-completion-popup-icon);
 }
 
-.tug-completion-popup-input {
+/* The field is a TugInput — it carries the substrate clipboard responders,
+   without which ⌘V in the popup routes to whatever surface sits behind it.
+   These rules strip TugInput's boxed chrome (fill, border, size-variant
+   height and padding) down to a bare search line on the popup's own surface.
+   Every state TugInput paints is repeated in the selector list because each
+   is authored at a specificity this must beat: `.tug-input:focus` (0,2,0),
+   `.tug-input[data-key-view-kbd]` (0,2,0), and the hover rule's
+   `:not()` chain (0,5,0). The field is focused for its whole life, so :focus
+   is the state that actually renders. */
+.tug-completion-popup input.tug-completion-popup-input,
+.tug-completion-popup input.tug-completion-popup-input:focus,
+.tug-completion-popup input.tug-completion-popup-input[data-key-view-kbd],
+.tug-completion-popup
+  input.tug-completion-popup-input:hover:not(:disabled):not(:read-only) {
   flex: 1;
+  width: auto;
   min-width: 0;
+  height: auto;
+  padding: 0;
   border: none;
   outline: none;
-  background: transparent;
   /* @tug-renders-on: --tugx-completion-popup-bg */
+  background-color: transparent;
+  background-image: none;
   color: var(--tugx-completion-popup-fg);
   font-family: var(--tug-font-family-sans);
   font-size: var(--tug-font-size-xl);
+  font-weight: var(--tug-font-weight-regular);
+  letter-spacing: normal;
   line-height: 1.2;
 }
 
-.tug-completion-popup-input::placeholder {
+.tug-completion-popup input.tug-completion-popup-input::placeholder {
   /* @tug-renders-on: --tugx-completion-popup-bg */
   color: var(--tugx-completion-popup-placeholder);
 }
