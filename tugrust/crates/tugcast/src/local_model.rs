@@ -890,7 +890,9 @@ impl LocalModelRequester {
     /// two durations is the transport and queueing cost.
     fn record(task: &str, outcome: &str, started: Instant) {
         let elapsed = started.elapsed();
-        let slow = Self::bounds(task).1.is_some_and(|threshold| elapsed > threshold);
+        let slow = Self::bounds(task)
+            .1
+            .is_some_and(|threshold| elapsed > threshold);
         let elapsed_ms = elapsed.as_millis() as u64;
         // Display-formatted rather than debug-formatted so the values land
         // unquoted, which is the shape the app's own lines carry and what lets

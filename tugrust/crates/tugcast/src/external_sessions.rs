@@ -585,9 +585,9 @@ fn try_resume(
 /// compaction re-append block straddling the scan boundary, whose tail
 /// arrives looking perfectly linear. Records whose uuid is already in the
 /// set are suppressed inline; the shapes the set cannot absorb (a new
-/// compaction boundary, a rewind branch) restart as the buffered full
-/// stream above — once, after which the fresh seed resumes incrementally
-/// again.
+/// compaction boundary, a rewind branch, a record re-attaching below the
+/// carried frontier) restart as the buffered full stream above — once,
+/// after which the fresh seed resumes incrementally again.
 fn parse_session_file(
     path: &Path,
     project_dir: &str,
@@ -636,6 +636,15 @@ fn parse_session_file_inner(
     // A chain record whose parent is not the leaf we carried in — the
     // rewind-branch shape, only meaningful on a resumed (partial) stream.
     let mut saw_branch = false;
+    // Every non-sidechain uuid this slice itself carried, and the leaf it
+    // resumed from. Together they say whether an off-leaf record attaches
+    // inside the slice (a spur among the appended records) or reaches back
+    // into the prefix at a point other than the frontier — the shape that
+    // relocates the live chain and so can resurrect buried prefix records.
+    // Only populated on a resumed slice; a full stream triggers on any
+    // off-leaf record and never consults them.
+    let mut slice_uuids: std::collections::HashSet<[u8; 16]> = std::collections::HashSet::new();
+    let mut seed_leaf_key: Option<[u8; 16]> = None;
 
     let mut turn_count: i64 = 0;
     let mut last_prompt: Option<String> = None;
@@ -669,6 +678,7 @@ fn parse_session_file_inner(
             window = verified_window;
             resumed = true;
             frontier = seed.frontier.clone();
+            seed_leaf_key = seed.frontier.leaf_uuid.as_deref().map(uuid_key);
             effective_seen = seed.effective_uuids.clone();
             lineage_ancestors = seed.lineage_ancestors.clone();
             // The prefix was accepted when the seed's row was written, so
@@ -763,6 +773,13 @@ fn parse_session_file_inner(
                     .uuid
                     .as_deref()
                     .is_some_and(|uuid| effective_seen.contains(&uuid_key(uuid)));
+            // Every chain record the slice carries — suppressed re-appends
+            // included, since a later record may parent to one of them.
+            if resumed && !chain.is_sidechain {
+                if let Some(uuid) = chain.uuid.as_deref() {
+                    slice_uuids.insert(uuid_key(uuid));
+                }
+            }
             if known {
                 suppressed = true;
                 frontier.leaf_uuid = chain.uuid.clone();
@@ -784,19 +801,38 @@ fn parse_session_file_inner(
                         //
                         // On a resumed slice the trigger costs a full re-stream of
                         // the file, so it fires only for the shapes that can edit
-                        // history: an off-leaf USER SUBMISSION (the rewind /
-                        // Escape-orphan shape). `compute_dead_entry_indices` roots
-                        // dead branches exclusively at user submissions, so a
-                        // non-user off-leaf record — a hook attachment, a
-                        // `tool_result` whose sibling carried the chain forward, an
-                        // abandoned API-retry spur — can neither kill nor resurrect
-                        // a prefix record. It is effective in the full pass too, so
-                        // absorbing it inline (leaf + engine, no trigger) keeps
-                        // incremental ≡ full.
+                        // history. Two of them:
+                        //
+                        // - An off-leaf USER SUBMISSION — the rewind /
+                        //   Escape-orphan shape. `compute_dead_entry_indices`
+                        //   roots dead branches exclusively at user submissions,
+                        //   so only this shape can bury records.
+                        // - An off-leaf record whose parent lies in the PREFIX
+                        //   rather than in this slice. Deadness is not a local
+                        //   property: `compute_live_indices` walks up from the
+                        //   file's newest leaf, and a record that re-attaches
+                        //   below the frontier moves that walk onto a different
+                        //   prefix branch. Off-chain user submissions that rooted
+                        //   dead branches then lose their live parent and stop
+                        //   qualifying, so prefix records the head parse buried
+                        //   come back. Such a record cannot root a dead branch,
+                        //   but it can un-kill one, and the recount is the only
+                        //   thing that sees it.
+                        //
+                        // A spur that attaches WITHIN the slice — a hook
+                        // attachment, a `tool_result` whose sibling carried the
+                        // chain forward, an abandoned API-retry spur — leaves the
+                        // prefix's live closure untouched and is effective in the
+                        // full pass too, so absorbing it inline (leaf + engine, no
+                        // trigger) keeps incremental ≡ full.
                         match chain.parent_uuid.as_deref() {
                             Some(parent) => {
+                                let reaches_into_prefix = {
+                                    let key = uuid_key(parent);
+                                    !slice_uuids.contains(&key) && seed_leaf_key != Some(key)
+                                };
                                 if frontier.leaf_uuid.as_deref() != Some(parent)
-                                    && (!resumed || chain.is_user_submission)
+                                    && (!resumed || chain.is_user_submission || reaches_into_prefix)
                                 {
                                     saw_branch = true;
                                 }
@@ -1224,7 +1260,9 @@ fn suppress_superseded_lineage(
     let mut newest_claim: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
     for (descendant_mtime, ancestors) in claims {
         for sid in ancestors {
-            let entry = newest_claim.entry(sid.as_str()).or_insert(*descendant_mtime);
+            let entry = newest_claim
+                .entry(sid.as_str())
+                .or_insert(*descendant_mtime);
             *entry = (*entry).max(*descendant_mtime);
         }
     }
@@ -1324,8 +1362,10 @@ pub fn scan_external_sessions_cached_with_progress(
             if row.file_size == candidate.file_size && row.file_mtime == candidate.file_mtime {
                 outcome.cache_hits += 1;
                 if !row.excluded {
-                    lineage_claims
-                        .push((row.file_mtime, decode_lineage(row.lineage_ancestors.as_deref())));
+                    lineage_claims.push((
+                        row.file_mtime,
+                        decode_lineage(row.lineage_ancestors.as_deref()),
+                    ));
                     outcome.metas.push(meta_from_cache_row(row));
                 }
                 continue;
@@ -1376,8 +1416,7 @@ pub fn scan_external_sessions_cached_with_progress(
                 ) {
                     tracing::warn!(error = %err, "external scan: ledger count reconcile failed");
                 }
-                lineage_claims
-                    .push((parsed.meta.file_mtime, parsed.lineage_ancestors.clone()));
+                lineage_claims.push((parsed.meta.file_mtime, parsed.lineage_ancestors.clone()));
                 outcome.metas.push(parsed.meta);
             }
             None => {
@@ -1493,8 +1532,13 @@ mod tests {
         head_leaf: Option<&str>,
     ) -> Option<&'static str> {
         let mut leaf = head_leaf.map(str::to_owned);
+        let head_leaf_key = head_leaf.map(uuid_key);
         let mut seen_in_tail: std::collections::HashSet<[u8; 16]> =
             std::collections::HashSet::new();
+        // Every chain uuid the tail carries, re-appends included — what
+        // separates a spur among the appended records from one that reaches
+        // back into the prefix.
+        let mut tail_uuids: std::collections::HashSet<[u8; 16]> = std::collections::HashSet::new();
         let mut reason = None;
         for rec in crate::dead_branch::parse_chain_records(tail)
             .into_iter()
@@ -1507,6 +1551,7 @@ mod tests {
                 continue;
             };
             let key = uuid_key(uuid);
+            tail_uuids.insert(key);
             // A uuid the head already counted — or one this tail already
             // carried — restates history: it only moves the raw leaf.
             if head_effective.contains(&key) || !seen_in_tail.insert(key) {
@@ -1514,12 +1559,23 @@ mod tests {
                 continue;
             }
             if reason.is_none() {
+                let off_leaf = rec.parent_uuid.as_deref() != leaf.as_deref();
                 reason = if rec.is_compaction {
                     Some("new compaction")
                 } else if rec.parent_uuid.is_none() {
                     Some("mid-file segment root")
-                } else if rec.parent_uuid.as_deref() != leaf.as_deref() && rec.is_user_submission {
+                } else if off_leaf && rec.is_user_submission {
                     Some("off-leaf user submission")
+                } else if off_leaf
+                    && rec.parent_uuid.as_deref().is_some_and(|parent| {
+                        let pk = uuid_key(parent);
+                        !tail_uuids.contains(&pk) && head_leaf_key != Some(pk)
+                    })
+                {
+                    // Re-attaching below the frontier relocates the newest
+                    // leaf's ancestor walk onto another prefix branch, which
+                    // resurrects prefix records the head parse buried.
+                    Some("rewind into the prefix")
                 } else {
                     None
                 };
@@ -1618,10 +1674,9 @@ mod tests {
                 let appended = &bytes[..=end];
 
                 fs::write(&path, appended).unwrap();
-                let grown =
-                    parse_session_file(&path, &cwd, stem, appended.len() as i64, 0, None)
-                        .unwrap()
-                        .expect("the grown file parses");
+                let grown = parse_session_file(&path, &cwd, stem, appended.len() as i64, 0, None)
+                    .unwrap()
+                    .expect("the grown file parses");
                 let resumed =
                     parse_session_file(&path, &cwd, stem, appended.len() as i64, 0, Some(&seed))
                         .unwrap()
@@ -2377,16 +2432,9 @@ mod tests {
         let dir = root.path().join(encode_claude_project_name(PROJECT));
         let path = dir.join(format!("{SESSION_A}.jsonl"));
         let md = fs::metadata(&path).unwrap();
-        let parsed = parse_session_file(
-            &path,
-            PROJECT,
-            SESSION_A,
-            md.len() as i64,
-            0,
-            None,
-        )
-        .unwrap()
-        .unwrap();
+        let parsed = parse_session_file(&path, PROJECT, SESSION_A, md.len() as i64, 0, None)
+            .unwrap()
+            .unwrap();
         assert!(
             !parsed.recounted,
             "a linear session must not need the EOF second pass"
@@ -2434,16 +2482,9 @@ mod tests {
 
         // Full segment of the whole file.
         fs::write(&path, &whole).unwrap();
-        let full = parse_session_file(
-            &path,
-            PROJECT,
-            SESSION_A,
-            whole.len() as i64,
-            0,
-            None,
-        )
-        .unwrap()
-        .unwrap();
+        let full = parse_session_file(&path, PROJECT, SESSION_A, whole.len() as i64, 0, None)
+            .unwrap()
+            .unwrap();
         assert!(full.recounted, "a re-append must take the second pass");
         // u1/u2 preserved once each plus u3 — the /compact continuation
         // opens no separate container here because the summary is absent.
@@ -2452,16 +2493,9 @@ mod tests {
         // Now the same file assembled incrementally: scan the head, then
         // resume across the boundary that sits inside the re-append block.
         fs::write(&path, &head).unwrap();
-        let first = parse_session_file(
-            &path,
-            PROJECT,
-            SESSION_A,
-            head.len() as i64,
-            0,
-            None,
-        )
-        .unwrap()
-        .unwrap();
+        let first = parse_session_file(&path, PROJECT, SESSION_A, head.len() as i64, 0, None)
+            .unwrap()
+            .unwrap();
         let seed = seed_from(&first);
         fs::write(&path, &whole).unwrap();
         let resumed = parse_session_file(
@@ -2498,16 +2532,9 @@ mod tests {
     /// parse and the resume that follows it see the same file.
     fn parse_content(path: &Path, content: &str, seed: Option<&ResumeSeed>) -> ParsedSession {
         fs::write(path, content).unwrap();
-        parse_session_file(
-            path,
-            PROJECT,
-            SESSION_A,
-            content.len() as i64,
-            0,
-            seed,
-        )
-        .unwrap()
-        .unwrap()
+        parse_session_file(path, PROJECT, SESSION_A, content.len() as i64, 0, seed)
+            .unwrap()
+            .unwrap()
     }
 
     fn session_file(root: &Path) -> std::path::PathBuf {
@@ -2516,11 +2543,12 @@ mod tests {
         dir.join(format!("{SESSION_A}.jsonl"))
     }
 
-    /// An appended record whose parent is not the carried leaf, but which is
-    /// not a user submission — a `tool_result` sibling, a hook attachment, an
-    /// API-retry spur. Dead branches root only at user submissions, so such a
-    /// record can neither kill nor resurrect a prefix record: the resumed
-    /// slice absorbs it inline instead of re-streaming the file ([P04]).
+    /// An appended non-user record whose parent is not the carried leaf, but
+    /// which attaches AT the frontier or inside the slice — a `tool_result`
+    /// sibling, a hook attachment, an API-retry spur. It strands no prefix
+    /// record, so the prefix's live closure (and therefore its dead set) is
+    /// untouched and the resumed slice absorbs it inline instead of
+    /// re-streaming the file ([P04]).
     #[test]
     fn a_resumed_slice_absorbs_an_off_leaf_non_user_record() {
         let root = tempfile::tempdir().unwrap();
@@ -2530,11 +2558,15 @@ mod tests {
 {{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"hi"}}],"id":"m1","stop_reason":"end_turn"}}}}
 "#
         );
-        // `t1` parents to `u1` while the carried leaf is `a1` — off-leaf, and
-        // a tool_result-only user record, so not a submission.
+        // `t1` and `t2` are tool_result-only user records (not submissions)
+        // that both parent to `a1`, the carried leaf: once `t1` has moved the
+        // leaf, `t2` is off-leaf but re-attaches exactly AT the frontier.
+        // `t3` is off-leaf too and re-attaches to `t1`, inside the slice.
         let tail = format!(
-            r#"{{"type":"user","uuid":"t1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"x1","content":"ok"}}]}}}}
-{{"type":"user","uuid":"u2","parentUuid":"t1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"second"}}}}
+            r#"{{"type":"user","uuid":"t1","parentUuid":"a1","sessionId":"{SESSION_A}","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"x1","content":"ok"}}]}}}}
+{{"type":"user","uuid":"t2","parentUuid":"a1","sessionId":"{SESSION_A}","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"x2","content":"ok"}}]}}}}
+{{"type":"user","uuid":"t3","parentUuid":"t1","sessionId":"{SESSION_A}","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"x3","content":"ok"}}]}}}}
+{{"type":"user","uuid":"u2","parentUuid":"t3","sessionId":"{SESSION_A}","message":{{"role":"user","content":"second"}}}}
 {{"type":"assistant","uuid":"a2","parentUuid":"u2","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"ok"}}],"id":"m2","stop_reason":"end_turn"}}}}
 "#
         );
@@ -2561,6 +2593,66 @@ mod tests {
             resumed.resume.effective_uuids, full.resume.effective_uuids,
             "absorbed inline must equal the full parse's uuid set"
         );
+    }
+
+    /// A non-user record re-attaching BELOW the carried frontier strands the
+    /// prefix records that followed its parent. That relocates the newest
+    /// leaf's ancestor walk onto another prefix branch, and any prefix dead
+    /// root whose parent was stranded stops qualifying — so records the head
+    /// parse buried come back. Only a full re-stream sees that, and the count
+    /// it produces is the one that must win.
+    #[test]
+    fn a_resumed_slice_re_streams_when_a_record_re_attaches_below_the_frontier() {
+        let root = tempfile::tempdir().unwrap();
+        let path = session_file(root.path());
+        // The head buries the two-turn `u2` branch: `u2` is an off-chain user
+        // submission whose parent `a1` is live, so the head counts `u1` and
+        // the one-turn `u3` branch — two turns, not four.
+        let head = format!(
+            r#"{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{SESSION_A}","cwd":"{PROJECT}","message":{{"role":"user","content":"first"}}}}
+{{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"hi"}}],"id":"m1","stop_reason":"end_turn"}}}}
+{{"type":"user","uuid":"u2","parentUuid":"a1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"second"}}}}
+{{"type":"assistant","uuid":"a2","parentUuid":"u2","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"ok"}}],"id":"m2","stop_reason":"end_turn"}}}}
+{{"type":"user","uuid":"u2b","parentUuid":"a2","sessionId":"{SESSION_A}","message":{{"role":"user","content":"carry on"}}}}
+{{"type":"assistant","uuid":"a2b","parentUuid":"u2b","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"will do"}}],"id":"m2b","stop_reason":"end_turn"}}}}
+{{"type":"user","uuid":"u3","parentUuid":"a1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"third"}}}}
+{{"type":"assistant","uuid":"a3","parentUuid":"u3","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"sure"}}],"id":"m3","stop_reason":"end_turn"}}}}
+"#
+        );
+        // `t1` is not a submission, and it re-attaches to `a2b` — below the
+        // carried leaf `a3`. The live chain now runs through the `u2` branch,
+        // so `u2` is no longer an off-chain submission with a live parent and
+        // its two turns are resurrected; the one-turn `u3` branch is stranded
+        // and buried instead. The count moves, which is the whole defect.
+        let tail = format!(
+            r#"{{"type":"user","uuid":"t1","parentUuid":"a2b","sessionId":"{SESSION_A}","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"x1","content":"ok"}}]}}}}
+{{"type":"assistant","uuid":"a4","parentUuid":"t1","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"onward"}}],"id":"m4","stop_reason":"end_turn"}}}}
+"#
+        );
+        let whole = format!("{head}{tail}");
+
+        let full = parse_content(&path, &whole, None);
+        let first = parse_content(&path, &head, None);
+        let seed = seed_from(&first);
+        let resumed = parse_content(&path, &whole, Some(&seed));
+
+        // The fixture only bites if the re-attachment actually moves the
+        // count. The head buries the two-turn `u2` branch and counts `u1` plus
+        // the `u3` branch; the whole file resurrects `u2`/`u2b`, buries `u3`
+        // instead, and `a4` opens a container of its own after `a2b` closed.
+        assert_eq!(first.meta.turn_count, 2, "the head buries the `u2` branch");
+        assert_eq!(
+            full.meta.turn_count, 4,
+            "the whole file resurrects it and buries `u3` instead"
+        );
+        assert!(
+            !resumed.resumed,
+            "re-attaching below the frontier must re-stream so the prefix's \
+             dead set is recomputed"
+        );
+        assert_eq!(resumed.meta.turn_count, full.meta.turn_count);
+        assert_eq!(resumed.resume.frontier, full.resume.frontier);
+        assert_eq!(resumed.resume.effective_uuids, full.resume.effective_uuids);
     }
 
     /// The shape the trigger exists for: an off-leaf USER submission is a
@@ -2594,9 +2686,7 @@ mod tests {
         );
         assert_eq!(resumed.meta.turn_count, full.meta.turn_count);
         assert_eq!(resumed.resume.frontier, full.resume.frontier);
-        assert_eq!(
-            resumed.resume.effective_uuids, full.resume.effective_uuids
-        );
+        assert_eq!(resumed.resume.effective_uuids, full.resume.effective_uuids);
     }
 
     /// A row written before the leaf uuid existed carries `None`, so the
@@ -2630,10 +2720,16 @@ mod tests {
 
         let whole = format!("{head}{appended}");
         fs::write(&path, &whole).unwrap();
-        let re_streamed =
-            parse_session_file(&path, PROJECT, SESSION_A, whole.len() as i64, 0, Some(&stale))
-                .unwrap()
-                .unwrap();
+        let re_streamed = parse_session_file(
+            &path,
+            PROJECT,
+            SESSION_A,
+            whole.len() as i64,
+            0,
+            Some(&stale),
+        )
+        .unwrap()
+        .unwrap();
         assert!(
             !re_streamed.resumed,
             "a leaf-less seed must fall back to a full re-stream"
@@ -2653,10 +2749,16 @@ mod tests {
         );
         let grown = format!("{whole}{more}");
         fs::write(&path, &grown).unwrap();
-        let incremental =
-            parse_session_file(&path, PROJECT, SESSION_A, grown.len() as i64, 0, Some(&good))
-                .unwrap()
-                .unwrap();
+        let incremental = parse_session_file(
+            &path,
+            PROJECT,
+            SESSION_A,
+            grown.len() as i64,
+            0,
+            Some(&good),
+        )
+        .unwrap()
+        .unwrap();
         assert!(incremental.resumed, "an ordinary append resumes");
         assert_eq!(incremental.meta.turn_count, 3);
     }

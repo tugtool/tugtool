@@ -311,10 +311,9 @@ where
 /// The canonical count is `output.turns.len()`.
 pub fn segment_str(jsonl: &str) -> SegmentOutput {
     let chain = crate::dead_branch::parse_chain_records(jsonl);
-    let effective: std::collections::HashSet<usize> =
-        crate::dead_branch::effective_indices(&chain)
-            .into_iter()
-            .collect();
+    let effective: std::collections::HashSet<usize> = crate::dead_branch::effective_indices(&chain)
+        .into_iter()
+        .collect();
     let records = jsonl
         .lines()
         .enumerate()

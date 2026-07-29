@@ -101,9 +101,9 @@ pub fn parse_chain_record(line: &str) -> Option<ChainRecord> {
             .and_then(|m| m.content);
         match content {
             Some(serde_json::Value::String(s)) => !s.is_empty(),
-            Some(serde_json::Value::Array(blocks)) => blocks.iter().any(|b| {
-                b.get("type").and_then(|t| t.as_str()) != Some("tool_result")
-            }),
+            Some(serde_json::Value::Array(blocks)) => blocks
+                .iter()
+                .any(|b| b.get("type").and_then(|t| t.as_str()) != Some("tool_result")),
             _ => false,
         }
     } else {
@@ -168,11 +168,7 @@ fn index_chain(records: &[Option<ChainRecord>]) -> ChainIndex {
 fn resolve_parent(index: &ChainIndex, child_index: usize, parent_uuid: &str) -> Option<usize> {
     let at = index.occurrences.get(parent_uuid)?;
     let pos = at.partition_point(|&i| i < child_index);
-    if pos == 0 {
-        None
-    } else {
-        Some(at[pos - 1])
-    }
+    if pos == 0 { None } else { Some(at[pos - 1]) }
 }
 
 /// The live set: the ancestor closure of the newest leaf, bridged
@@ -329,8 +325,8 @@ mod tests {
     }
 
     fn fixture_records() -> Vec<Option<ChainRecord>> {
-        let jsonl = std::fs::read_to_string(fixture_path())
-            .expect("read chain-topology.jsonl fixture");
+        let jsonl =
+            std::fs::read_to_string(fixture_path()).expect("read chain-topology.jsonl fixture");
         parse_chain_records(&jsonl)
     }
 
@@ -353,10 +349,7 @@ mod tests {
         let firsts: Vec<usize> = duplicated.iter().map(|at| at[0]).collect();
         let seconds: Vec<usize> = duplicated.iter().map(|at| at[1]).collect();
         assert_eq!(
-            (
-                *firsts.iter().min().unwrap(),
-                *firsts.iter().max().unwrap()
-            ),
+            (*firsts.iter().min().unwrap(), *firsts.iter().max().unwrap()),
             (3, 512)
         );
         assert_eq!(
@@ -407,7 +400,11 @@ mod tests {
         let index = index_chain(&records);
         let kept: HashSet<usize> = effective.iter().copied().collect();
         for at in index.occurrences.values().filter(|at| at.len() > 1) {
-            assert!(kept.contains(&at[0]), "earliest occurrence {} dropped", at[0]);
+            assert!(
+                kept.contains(&at[0]),
+                "earliest occurrence {} dropped",
+                at[0]
+            );
             assert!(!kept.contains(&at[1]), "later occurrence {} kept", at[1]);
         }
     }

@@ -250,7 +250,10 @@ pub fn code_output_event(payload: &serde_json::Value) -> Option<CodeOutputEvent>
         "turn_complete" | "turn_cancelled" => Some(CodeOutputEvent::Beat(SessionBeat::Turn)),
         "assistant_text" => Some(CodeOutputEvent::Prose {
             msg_id: payload.get("msg_id").and_then(|v| v.as_str())?.to_string(),
-            block_index: payload.get("block_index").and_then(|v| v.as_u64()).unwrap_or(0),
+            block_index: payload
+                .get("block_index")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
             is_partial: payload
                 .get("is_partial")
                 .and_then(|v| v.as_bool())
@@ -929,7 +932,9 @@ pub fn trim_to_word_budget(text: &str) -> String {
         return text.to_string();
     }
     let joiner_at = words.iter().enumerate().find(|(i, word)| {
-        let bare = word.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+        let bare = word
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
         *i >= 3 && *i <= MAX_HEADLINE_WORDS && TAIL_JOINERS.contains(&bare.as_str())
     });
     let end = match joiner_at {
@@ -1278,7 +1283,14 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
             active.insert(session_id.clone());
             queue.push_back(session_id);
         }
-        spawn_next(&mut queue, &mut active, &mut in_flight, &mut sessions, &backoff, &config);
+        spawn_next(
+            &mut queue,
+            &mut active,
+            &mut in_flight,
+            &mut sessions,
+            &backoff,
+            &config,
+        );
     }
     if let Some((_, handle)) = in_flight {
         handle.abort();
@@ -1668,8 +1680,9 @@ mod tests {
             };
             let recent_tools = body["recent_tools"].as_u64().unwrap_or(0) as usize;
             let asked = body["asked"].as_bool().unwrap_or(false);
-            let digest = compose_digest(&strings("prompts"), &strings("tools"), recent_tools, asked)
-                .unwrap_or_else(|| panic!("{} describes nothing", input.display()));
+            let digest =
+                compose_digest(&strings("prompts"), &strings("tools"), recent_tools, asked)
+                    .unwrap_or_else(|| panic!("{} describes nothing", input.display()));
             let frozen = input.with_extension("digest.txt");
             if regenerate {
                 std::fs::write(&frozen, &digest).unwrap();
@@ -1771,7 +1784,9 @@ mod tests {
                 "type": "exchange_complete", "command": "cargo build", "exit_code": 101,
                 "output": "…", "duration_ms": 5,
             })),
-            Some(SessionBeat::Shell(Some("$ cargo build → exit 101".to_string())))
+            Some(SessionBeat::Shell(Some(
+                "$ cargo build → exit 101".to_string()
+            )))
         );
         // A killed or spawn-failed exchange settles with a null exit code:
         // evidence of life with no number to narrate.
@@ -1782,10 +1797,19 @@ mod tests {
             Some(SessionBeat::Shell(None))
         );
         // Other SHELL_OUTPUT types are not transcript events.
-        assert_eq!(beat(serde_json::json!({ "type": "shell_state", "cwd": "/p" })), None);
-        assert_eq!(beat(serde_json::json!({ "type": "path_commands", "paths": [] })), None);
+        assert_eq!(
+            beat(serde_json::json!({ "type": "shell_state", "cwd": "/p" })),
+            None
+        );
+        assert_eq!(
+            beat(serde_json::json!({ "type": "path_commands", "paths": [] })),
+            None
+        );
         // A start with no command has nothing to say.
-        assert_eq!(beat(serde_json::json!({ "type": "exchange_started" })), None);
+        assert_eq!(
+            beat(serde_json::json!({ "type": "exchange_started" })),
+            None
+        );
     }
 
     #[test]
@@ -1930,10 +1954,15 @@ mod tests {
     /// say which lines are now.
     #[test]
     fn recent_tool_lines_get_their_own_section() {
-        let tools: Vec<String> = ["Read(a.rs)", "Read(b.rs)", "Edit(c.rs)", "Bash(cargo build)"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let tools: Vec<String> = [
+            "Read(a.rs)",
+            "Read(b.rs)",
+            "Edit(c.rs)",
+            "Bash(cargo build)",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
         let digest = compose_digest(&["port the router".to_string()], &tools, 2, false).unwrap();
 
         let (background, right_now) = digest
@@ -1988,7 +2017,10 @@ mod tests {
         // The newest MAX_BACKGROUND_LINES before the split survive.
         let split = activity.len() - 2;
         for i in (split - MAX_BACKGROUND_LINES)..split {
-            assert!(background.contains(&format!("Read(file_{i}.rs)")), "line {i} missing");
+            assert!(
+                background.contains(&format!("Read(file_{i}.rs)")),
+                "line {i} missing"
+            );
         }
         assert_eq!(
             background.matches("- ").count(),
@@ -2035,8 +2067,12 @@ mod tests {
         let lines: Vec<String> = state.activity.iter().cloned().collect();
         assert_eq!(
             lines,
-            ["said: porting the router", "Edit(router.rs)", "$ cargo build"]
-                .map(String::from)
+            [
+                "said: porting the router",
+                "Edit(router.rs)",
+                "$ cargo build"
+            ]
+            .map(String::from)
         );
         assert_eq!(state.new_beats, 5);
     }
@@ -2126,7 +2162,12 @@ mod tests {
     #[test]
     fn a_shell_beat_mid_stream_leaves_the_prose_state_alone() {
         let mut state = SessionState::new(Instant::now());
-        state.observe(prose("m1", 0, true, "This sentence has already beaten, yes. And"));
+        state.observe(prose(
+            "m1",
+            0,
+            true,
+            "This sentence has already beaten, yes. And",
+        ));
         assert_eq!(state.activity.len(), 1);
         state.observe(prose("m1", 1, true, "still streaming"));
         assert_eq!(state.beaten.len(), 1);
@@ -2141,7 +2182,12 @@ mod tests {
     #[test]
     fn a_terminal_frame_dedupes_against_beaten_keys() {
         let mut state = SessionState::new(Instant::now());
-        state.observe(prose("m1", 0, true, "Wiring the shell subscription now. More"));
+        state.observe(prose(
+            "m1",
+            0,
+            true,
+            "Wiring the shell subscription now. More",
+        ));
         assert_eq!(state.activity.len(), 1);
 
         state.observe(prose(
@@ -2159,7 +2205,11 @@ mod tests {
             "said: A block the live stream never sent."
         );
         state.observe(prose("m2", 0, false, "A block the live stream never sent."));
-        assert_eq!(state.activity.len(), 2, "terminal replays drop on the beaten key");
+        assert_eq!(
+            state.activity.len(),
+            2,
+            "terminal replays drop on the beaten key"
+        );
     }
 
     /// The buffer stops at cap + slack however much the block streams.
@@ -2182,7 +2232,10 @@ mod tests {
         // Under budget mid-stream: keep accumulating.
         assert_eq!(said_head("Working on the", false), None);
         // A terminator before MIN_SENTENCE_CHARS is bait, not a boundary.
-        assert_eq!(said_head("e.g. the cadence gate keeps this run", false), None);
+        assert_eq!(
+            said_head("e.g. the cadence gate keeps this run", false),
+            None
+        );
         // A sentence with following text beats mid-stream.
         assert_eq!(
             said_head("The cadence gate holds. Next up", false),
@@ -2492,7 +2545,11 @@ mod tests {
         assert_eq!(cache.offset, first_len);
         assert_eq!(cache.first.as_deref(), Some("build the emitter"));
 
-        let appended = format!("{}\n{}\n", user_line("now the cache"), user_line("and the digest"));
+        let appended = format!(
+            "{}\n{}\n",
+            user_line("now the cache"),
+            user_line("and the digest")
+        );
         std::fs::OpenOptions::new()
             .append(true)
             .open(&path)
@@ -2507,7 +2564,10 @@ mod tests {
         );
         assert_eq!(cache.first.as_deref(), Some("build the emitter"));
         let recent: Vec<String> = cache.recent.iter().cloned().collect();
-        assert_eq!(recent, ["now the cache", "and the digest"].map(String::from));
+        assert_eq!(
+            recent,
+            ["now the cache", "and the digest"].map(String::from)
+        );
 
         let _ = std::fs::remove_file(&path);
     }
@@ -2522,7 +2582,11 @@ mod tests {
 
         let mut cache = PromptCache::default();
         cache.refresh(&path);
-        assert_eq!(cache.offset as usize, complete.len(), "stopped at the last newline");
+        assert_eq!(
+            cache.offset as usize,
+            complete.len(),
+            "stopped at the last newline"
+        );
         assert_eq!(cache.recent.len(), 1);
 
         std::fs::OpenOptions::new()
@@ -2533,7 +2597,10 @@ mod tests {
             .unwrap();
         cache.refresh(&path);
         assert_eq!(cache.offset, std::fs::metadata(&path).unwrap().len());
-        assert_eq!(cache.recent.back().map(String::as_str), Some("a line still being written"));
+        assert_eq!(
+            cache.recent.back().map(String::as_str),
+            Some("a line still being written")
+        );
 
         let _ = std::fs::remove_file(&path);
     }
@@ -2543,7 +2610,11 @@ mod tests {
         let path = cache_tmp("shrunk");
         std::fs::write(
             &path,
-            format!("{}\n{}\n", user_line("the original goal"), user_line("its follow-up")),
+            format!(
+                "{}\n{}\n",
+                user_line("the original goal"),
+                user_line("its follow-up")
+            ),
         )
         .unwrap();
         let mut cache = PromptCache::default();
@@ -2587,7 +2658,10 @@ mod tests {
         let cache = PromptCache {
             offset: 0,
             first: Some("the goal".to_string()),
-            recent: VecDeque::from(["a course correction".to_string(), "and a refinement".to_string()]),
+            recent: VecDeque::from([
+                "a course correction".to_string(),
+                "and a refinement".to_string(),
+            ]),
         };
         assert_eq!(
             cache.digest_prompts(),
@@ -3079,7 +3153,13 @@ mod tests {
     /// beat is recorded — its own line is the sole "right now" entry.
     #[tokio::test(start_paused = true)]
     async fn an_exchange_started_re_aims_with_its_line_as_the_sole_right_now() {
-        let mut h = start_cadenced(Some("Running the build."), true, true, true, strict_cadence());
+        let mut h = start_cadenced(
+            Some("Running the build."),
+            true,
+            true,
+            true,
+            strict_cadence(),
+        );
         tokio::time::sleep(Duration::from_millis(50)).await;
         h.code_tx.send(tool_use_frame("s1", "cargo check")).unwrap();
         tokio::time::sleep(Duration::from_secs(3)).await;
@@ -3170,7 +3250,12 @@ mod tests {
             .iter()
             .filter(|line| line.starts_with("said:"))
             .collect();
-        assert_eq!(said.len(), 1, "one block, one said line: {:?}", state.activity);
+        assert_eq!(
+            said.len(),
+            1,
+            "one block, one said line: {:?}",
+            state.activity
+        );
         assert_eq!(state.activity_since_emit, 1);
         assert_eq!(state.pending_ask.as_deref(), Some("and check the floor"));
     }
@@ -3232,7 +3317,10 @@ mod tests {
     /// work.
     #[test]
     fn the_synthesized_right_now_requires_a_fresh_ask() {
-        let prompts = vec!["fix the parser".to_string(), "now chase the lag".to_string()];
+        let prompts = vec![
+            "fix the parser".to_string(),
+            "now chase the lag".to_string(),
+        ];
         let activity = vec!["Bash(cargo build)".to_string()];
         let with = compose_digest(&prompts, &activity, 0, true).unwrap();
         assert!(with.ends_with("What it is doing right now:\n- now chase the lag\n"));
@@ -3448,7 +3536,9 @@ mod tests {
         assert!(h.pulse_rx.try_recv().is_err());
         // Past the floor the sweep fires it with no further frame to help.
         tokio::time::sleep(EMIT_FLOOR).await;
-        let overview = next_overview(&mut h.pulse_rx).await.expect("the trailing emit");
+        let overview = next_overview(&mut h.pulse_rx)
+            .await
+            .expect("the trailing emit");
         assert_eq!(overview["text"], "Hardening the watch loop");
     }
 
