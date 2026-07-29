@@ -19,9 +19,9 @@
  *
  * The spokes are HTML, not SVG, because an SVG interior element can
  * never hold a compositing layer — twelve of them running an opacity
- * loop is twelve perpetual main-thread animations. See
- * tuglaws/motion-residency.md; the geometry constants live in the
- * component.
+ * loop is twelve perpetual main-thread animations. Enforced by
+ * `animationCensus()` in tugdeck/src/lib/perf-monitor.ts; the geometry
+ * constants live in the component.
  *
  * Motion: [L13] running uses a CSS `@keyframes` fade (opacity 1 → rest
  * → 1); each spoke gets a staggered `animation-delay` (set inline so

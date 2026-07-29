@@ -1,9 +1,10 @@
 /**
  * at0288 — motion residency census: what animates, and where.
  *
- * This test is an instrument AND a gate. The residency contract
- * (tuglaws/motion-residency.md, via `animationCensus()` in
- * tugdeck/src/lib/perf-monitor.ts) says a long-running animation must
+ * This test is an instrument AND a gate. The residency contract lives in
+ * `animationCensus()` (tugdeck/src/lib/perf-monitor.ts) — there is no
+ * doctrine document yet, so the census IS the contract. It says a
+ * long-running animation must
  * touch only `transform`/`opacity`, must target an element that can hold
  * a compositing layer, must not share its box with a non-accelerable
  * property, and must carry only timing functions the compositor can

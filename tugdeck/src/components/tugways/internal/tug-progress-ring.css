@@ -51,7 +51,9 @@
    thread every frame, and one such animation is enough to put the page's whole
    style and compositing pass back in the frame loop. The SVG keeps its static
    -90deg so the arc still starts at 12 o'clock, and the wrapper turns a plain
-   0 -> 360. See tuglaws/motion-residency.md. */
+   0 -> 360. Enforced by `animationCensus()` in
+   tugdeck/src/lib/perf-monitor.ts, whose SVG-target rule convicts the
+   shape this comment describes avoiding. */
 .tug-progress-ring-indeterminate {
   animation: tug-progress-ring-spin calc(1200ms * var(--tug-timing, 1)) linear infinite;
   /* Compositor promotion: keeps the spin off the main thread. Scoped

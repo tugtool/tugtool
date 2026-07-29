@@ -10,7 +10,7 @@
  * out above it. With both tokens opaque, `α·highlight + (1−α)·base` is the
  * same pixel a color interpolation would produce — and unlike background-color,
  * opacity is compositor-accelerable, so the loop never touches the main thread.
- * See tuglaws/motion-residency.md.
+ * Enforced by `animationCensus()` in tugdeck/src/lib/perf-monitor.ts.
  *
  * No explicit @media (prefers-reduced-motion) rule is needed here — the global
  * body[data-tug-motion="off"] * { animation-duration: 0s !important } rule in

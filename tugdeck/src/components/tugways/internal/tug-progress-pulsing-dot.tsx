@@ -495,10 +495,10 @@ const PHASE_VAR = "--tugx-progress-pulsing-dot-phase";
 
 /** The dot's transform at a given breath scale. */
 function dotPose(scale: number): string {
-  // 3D, like the keyframes. The settled pose has to be on the same footing as
-  // the animated one, or handing the dot from the loop to the transition tears
-  // its layer down and rebuilds it at exactly the frame the handoff is trying
-  // to hide.
+  // The same function list the keyframes write — translate, then scale.
+  // Transforms interpolate componentwise only between matching lists; a pose
+  // written in any other shape would decompose to a matrix at the handoff,
+  // which is the frame the handoff exists to hide.
   return `translate(-50%, -50%) scale(${scale})`;
 }
 
@@ -695,7 +695,7 @@ function resolvedSettleMs(dot: HTMLElement): number {
 }
 
 export interface TugProgressPulsingDotProps {
-  /** Glyph box diameter in CSS px. @default 24 */
+  /** Glyph box diameter in CSS px. @default 32 */
   size?: number;
   /** Lifecycle state. @default "running" */
   state?: TugProgressIndicatorState;
@@ -746,7 +746,9 @@ export const TugProgressPulsingDot = React.forwardRef<
   // The render mode — the end-state swap. STRUCTURE, so it is React state
   // (see the module header's [L06] note): static renders settled DOM, live
   // renders the loop-and-crossing DOM. Born settled → static, so a restored
-  // transcript's dots never touch the motion machinery at all.
+  // transcript's dots never touch the motion machinery at all — and the
+  // crossing effect's first-paint branch reads that pairing the other way
+  // round: live at mount means running.
   const [mode, setMode] = React.useState<"static" | "live">(() =>
     state === "running" ? "live" : "static",
   );
@@ -927,9 +929,11 @@ export const TugProgressPulsingDot = React.forwardRef<
       };
     };
 
-    // First paint in live mode — born running (born settled is static's
-    // business). Nothing to cross from, so the pose and the loops are
-    // seeded — with the transition suppressed around the write. There is
+    // First paint in live mode, which means born RUNNING: the mode
+    // initializer derives `static` from the same `state` this effect reads,
+    // so a dot born settled never reaches here — it is static's business.
+    // Nothing to cross from, so the full pose and the loops are seeded
+    // directly — with the transition suppressed around the write. There is
     // nothing this could visibly transition FROM, so letting it fire buys
     // only a wasted style pass, and WebKit retains the finished
     // CSSTransition in getAnimations() forever — one zombie per dot,
@@ -938,11 +942,10 @@ export const TugProgressPulsingDot = React.forwardRef<
     // the insertion and this effect, so the suppression is unconditional.
     if (previous === null) {
       dot.style.transition = "none";
-      dot.style.transform = dotPose(isRunning ? 1 : staticScale);
+      dot.style.transform = dotPose(1);
       void dot.offsetWidth;
       dot.style.transition = "";
-      if (isRunning) startLoops(0);
-      else armDemotion();
+      startLoops(0);
       return;
     }
 

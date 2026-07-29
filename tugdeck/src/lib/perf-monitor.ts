@@ -42,7 +42,8 @@
  *  - STREAMING: React notification cadence per store is bounded by
  *    LIVE_NOTIFY_MIN_MS (~one frame), never per-token.
  *  - MOTION: every long-running animation is compositor-resident —
- *    see {@link animationCensus} and `tuglaws/motion-residency.md`.
+ *    see {@link animationCensus}, which is that contract in executable
+ *    form.
  *
  * @module lib/perf-monitor
  */
@@ -281,7 +282,9 @@ function easingViolation(easing: string): string | null {
 
 /**
  * Inventory every long-running animation in the document and judge it
- * against the compositor-residency contract (`tuglaws/motion-residency.md`):
+ * against the compositor-residency contract. The rules checked here ARE
+ * that contract — there is no doctrine document yet, so this function and
+ * the app-tests that assert on it (at0288, at0289) are where it lives:
  * only `transform`/`opacity`, only on an `HTMLElement`, no co-animated
  * property on the same box, and every timing function expressible as a
  * cubic Bézier (a multi-stop `linear()` demotes the whole animation to

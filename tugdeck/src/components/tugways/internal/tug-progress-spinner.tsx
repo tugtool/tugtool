@@ -30,8 +30,8 @@
  * perpetual main-thread opacity animations per visible spinner. A
  * capsule is exactly what a span with a full border-radius is. Each
  * spoke's placement rotation is a STATIC transform, which acceleration
- * does not object to — only the animated property set matters. See
- * tuglaws/motion-residency.md.
+ * does not object to — only the animated property set matters. Enforced
+ * by `animationCensus()` in tugdeck/src/lib/perf-monitor.ts.
  *
  * Color is inherited from the parent's `--tugx-progress-indicator-fill`.
  *
