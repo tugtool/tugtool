@@ -443,7 +443,7 @@ All four new numbers are provisional per [Q01]. `summarize`'s 6s ceiling is chos
 Preconditions, each producing a **skip with exit 0** and a naming message:
 
 1. No pack installed — no `~/Library/Application Support/Tug/models/*/tug-manifest.json`. Message names Tug ▸ **Set Up Tug…** as the way to get one.
-2. No running instance — the id is absent from `$TMPDIR/tug-instances.json`. Message names `just app-debug`.
+2. No running instance — the id is absent from `tugutil host instance list` output. The raw `$TMPDIR/tug-instances.json` is deliberately **not** read: the registry's doctrine (`tugcore/src/registry.rs`) is that dead entries are pruned at read time through the library — "live" means `kill(pid, 0) == 0` — so a crashed instance leaves a stale entry in the file that only the library-mediated read filters out. Parsing the raw JSON would see that entry, conclude the instance is up, and turn a should-skip into a spurious failure. Message names `just app-debug`.
 
 The check itself: send one corpus digest (`tests/model-eval/corpus/one-line-goal.digest.txt`) through `tugutil host tell local_model_summarize` and read the answer from the log.
 
@@ -506,8 +506,8 @@ Rules:
 | `SessionState.tools_since_emit` | field | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | Tool beats since the last committed tick ([P11]) |
 | `HeadlineReport` | struct | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | `text`, `normalized`, `trimmed`, `clipped` |
 | `headline_register_report` | fn | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | New; `headline_register` becomes a wrapper over it |
-| `model-liveness` / `model-stats` | recipe | `Justfile` | New entries beside `model-eval` |
-| `logs-debug` / `logs-release` / `tail-replay` | recipe | `Justfile` | Newest-file selection ([#utc-date-bug]) |
+| `model-liveness` / `model-stats` | recipe | `justfile` | New entries beside `model-eval` |
+| `logs-debug` / `logs-release` / `tail-replay` | recipe | `justfile` | Newest-file selection ([#utc-date-bug]) |
 
 ---
 
@@ -640,7 +640,7 @@ Rules:
 **References:** [P02] Separate file same format, (#utc-date-bug)
 
 **Artifacts:**
-- `Justfile` — `logs-debug`, `logs-release`, `tail-replay`
+- `justfile` — `logs-debug`, `logs-release`, `tail-replay`
 
 **Tasks:**
 - [ ] Replace `DATE="$(date +%Y-%m-%d)"` and the `$LOG` construction in all three recipes with selection of the **newest** `tugcast.log.*` by modification time, removing the timezone question entirely ([#utc-date-bug]).
@@ -694,8 +694,6 @@ Rules:
 
 #### Step 5: Summarize ceiling and the caller-side line {#step-5}
 
-**Depends on:** #step-2
-
 **Commit:** `tugcast(local-model): give summarize its own ceiling and record what callers wait for`
 
 **References:** [P05] Two perspectives, [P09] Classify ceiling stays, [Table T01](#turnaround-table), [Spec S01](#s01-log-line-format), [Q01] Real thresholds
@@ -721,8 +719,6 @@ Rules:
 ---
 
 #### Step 6: Normalizer work-rate reporting {#step-6}
-
-**Depends on:** #step-2
 
 **Commit:** `tugcast(pulse-headline): report what the register normalizer had to do`
 
@@ -759,17 +755,17 @@ Rules:
 **References:** [P08] Liveness in model-eval, [Spec S02](#s02-liveness-contract), [Table T01](#turnaround-table)
 
 **Artifacts:**
-- `tests/model-eval/harness.py` (new), `tests/model-eval/liveness.py` (new), `tests/model-eval/run.py` (refactored), `Justfile`
+- `tests/model-eval/harness.py` (new), `tests/model-eval/liveness.py` (new), `tests/model-eval/run.py` (refactored), `justfile`
 
 **Tasks:**
 - [ ] Extract `log_path`, `answers`, and `ask` from `tests/model-eval/run.py` into `tests/model-eval/harness.py` unchanged, and import them back into `run.py`. `log_path` already selects the newest log by mtime — keep that, it is the fix for [#utc-date-bug] on the Python side.
 - [ ] Add `liveness.py` implementing [Spec S02](#s02-liveness-contract).
 - [ ] Pack detection: glob `~/Library/Application Support/Tug/models/*/tug-manifest.json`. The stamp file is the presence probe — a directory without it is a partial download, per `LocalModelStore` in `tugapp/Sources/LocalModelBackend.swift`.
-- [ ] Instance detection: read `$TMPDIR/tug-instances.json` and look for the requested `instance_id`.
+- [ ] Instance detection: run `tugutil host instance list` and look for the requested instance id in its output — never parse `$TMPDIR/tug-instances.json` directly, which can hold stale entries for crashed instances that only the library-mediated read prunes ([Spec S02](#s02-liveness-contract)).
 - [ ] Both preconditions **skip with exit 0** and a message naming the remedy — Tug ▸ **Set Up Tug…** for a missing pack, `just app-debug` for a missing instance.
 - [ ] Fail (exit 1) only on: no answer within the timeout, an empty headline, or an elapsed time over `SUMMARIZE_TIMEOUT`.
 - [ ] Report the normalizer's verdict from the `raw=`/`headline=` pair without failing on it.
-- [ ] Add the `model-liveness INSTANCE="debug-main"` recipe to the `Justfile`, beside `model-eval`, with a comment saying it is on-demand and needs a pack.
+- [ ] Add the `model-liveness INSTANCE="debug-main"` recipe to the `justfile`, beside `model-eval`, with a comment saying it is on-demand and needs a pack.
 
 **Tests:**
 - [ ] The check is itself the test; its skip paths are exercised in the checkpoint.
@@ -791,7 +787,7 @@ Rules:
 **References:** [P06] Batch not live, [Spec S01](#s01-log-line-format), [Table T01](#turnaround-table), [Q01] Real thresholds, Risk R02
 
 **Artifacts:**
-- `tests/model-eval/analyze.py` (new), `Justfile`, `tests/model-eval/README.md`
+- `tests/model-eval/analyze.py` (new), `justfile`, `tests/model-eval/README.md`
 
 **Tasks:**
 - [ ] Add `analyze.py` reading every `tugapp.log.*` and `tugcast.log.*` in an instance's `Logs/` directory, with an optional `--since YYYY-MM-DD` window.
@@ -802,7 +798,7 @@ Rules:
 - [ ] For bridge classify, apply the deck's known 2000ms deadline to report how many answers arrived too late to be used, since the deck's own give-up is not logged ([P05]).
 - [ ] Print how many lines were parsed from each file, so a format drift shows as a zero rather than as silence (Risk R02).
 - [ ] Add `--self-test` running the parser over a small set of captured real lines from both files, checked into the script as literals.
-- [ ] Add the `model-stats INSTANCE="debug-main"` recipe to the `Justfile`.
+- [ ] Add the `model-stats INSTANCE="debug-main"` recipe to the `justfile`.
 - [ ] Update `tests/model-eval/README.md` to cover liveness, stats, and the three distinct questions the directory now answers.
 
 **Tests:**
