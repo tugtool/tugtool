@@ -60,6 +60,17 @@ pub const EMIT_FLOOR: Duration = Duration::from_secs(8);
 /// inside every floor, so nothing due waits perceptibly.
 const TICK_INTERVAL: Duration = Duration::from_secs(2);
 
+/// Minimum spacing between forced (human-act) fires — two sweep ticks. A lone
+/// submission still re-aims at typing speed, but every `$` command's start
+/// arms the fire too, and an unspaced burst of them would drive one inference
+/// per tick into the model that also serves the `$` route's classify calls.
+const FORCED_EMIT_FLOOR: Duration = Duration::from_secs(4);
+
+/// Sessions with no frames for this long are dropped at the sweep. The map is
+/// a rolling picture, not an archive: a closed or abandoned session's state
+/// would otherwise ride in memory for the life of the process.
+const SESSION_RETENTION: Duration = Duration::from_secs(3600);
+
 /// Activity lines carried per session — tool, prose, and shell lines in one
 /// interleaved deque. Enough to show the shape of the work, bounded so the
 /// digest can't grow without limit.
@@ -146,6 +157,9 @@ pub struct Cadence {
     pub burst_beats: u32,
     pub idle_period: Duration,
     pub floor: Duration,
+    /// Minimum spacing on the forced (human-act) fire path — the only floor
+    /// that path honors.
+    pub forced_floor: Duration,
 }
 
 impl Default for Cadence {
@@ -154,6 +168,7 @@ impl Default for Cadence {
             burst_beats: BURST_BEATS,
             idle_period: IDLE_PERIOD,
             floor: EMIT_FLOOR,
+            forced_floor: FORCED_EMIT_FLOOR,
         }
     }
 }
@@ -365,12 +380,19 @@ struct SessionState {
     prompts: PromptCache,
     /// Armed by a human act — a submission or a `$` command starting — and
     /// cleared by the committed tick: the next sweep treats this session as
-    /// due regardless of floor, burst, or idle. Gates still apply.
+    /// due past the forced floor, regardless of burst, idle, or the full
+    /// anti-twitch floor. Gates still apply.
     fire_asap: bool,
+    /// A text-bearing submission arrived since the last committed tick — the
+    /// freshness signal the digest's synthesized right-now section requires,
+    /// so a later quiet tick cannot resurrect a finished ask as live work.
+    asked_since_emit: bool,
     /// The newest submission's clipped ask, carried into the digest as the
     /// current directive until the prompt cache reads the same text back from
     /// the JSONL.
     pending_ask: Option<String>,
+    /// When any frame last arrived for this session — the retention clock.
+    last_seen: Instant,
     last_emit: Instant,
     last_digest: Option<String>,
     last_headline: Option<String>,
@@ -387,7 +409,9 @@ impl SessionState {
             beaten: HashSet::new(),
             prompts: PromptCache::default(),
             fire_asap: false,
+            asked_since_emit: false,
             pending_ask: None,
+            last_seen: now,
             last_emit: now,
             last_digest: None,
             last_headline: None,
@@ -405,6 +429,22 @@ impl SessionState {
     fn human_act(&mut self) {
         self.activity_since_emit = 0;
         self.fire_asap = true;
+    }
+
+    /// Commit a due tick: reset the counters the cadence and the digest read,
+    /// and snapshot what the emit needs — the activity lines, how many of them
+    /// are "right now", and whether the stretch contained a fresh ask. Runs on
+    /// the loop at spawn time, so a session never emits from a half-committed
+    /// picture.
+    fn commit_tick(&mut self, now: Instant) -> (Vec<String>, usize, bool) {
+        let recent = self.activity_since_emit;
+        let asked = self.asked_since_emit;
+        self.new_beats = 0;
+        self.activity_since_emit = 0;
+        self.asked_since_emit = false;
+        self.fire_asap = false;
+        self.last_emit = now;
+        (self.activity.iter().cloned().collect(), recent, asked)
     }
 
     fn record(&mut self, beat: SessionBeat) {
@@ -693,12 +733,18 @@ pub fn tool_line(payload: &serde_json::Value) -> Option<String> {
 /// overview (everything recent) carries no background section, and a tick
 /// with no new activity carries no *right now* section.
 ///
+/// `asked` marks a stretch that contained a text submission. When it did, and
+/// no activity has arrived since, the digest closes with a synthesized *right
+/// now* section carrying the newest ask — the session was just re-aimed, and
+/// taking up that ask is what it is doing.
+///
 /// Returns `None` when there is nothing to describe — with neither prompts nor
 /// activity there is no session to have an opinion about.
 pub fn compose_digest(
     prompts: &[String],
     activity: &[String],
     recent_count: usize,
+    asked: bool,
 ) -> Option<String> {
     if prompts.is_empty() && activity.is_empty() {
         return None;
@@ -735,14 +781,16 @@ pub fn compose_digest(
             out.push('\n');
         }
     }
-    // No activity is "now" but the asks have moved past the opening goal:
-    // the session was just re-aimed, and taking up the newest ask *is* what
-    // it is doing right now. Without this line the digest ends on the old
-    // turn's background and a small model headlines the work it can see
-    // instead of the directive it was given. The line is the ask verbatim —
-    // a meta-prefix ("taking up:") makes the model discount the line as
-    // commentary and fall back to the background.
-    if activity[split..].is_empty() && prompts.len() >= 2 {
+    // No activity is "now" but an ask arrived this stretch: the session was
+    // just re-aimed, and taking up the newest ask *is* what it is doing
+    // right now. `asked` holds this to a stretch that actually contained a
+    // submission — without it, any quiet tick (a turn settling, a clean `$`
+    // exit) would resurrect the finished ask as live work. Without the line
+    // itself the digest ends on the old turn's background and a small model
+    // headlines the work it can see instead of the directive it was given.
+    // The line is the ask verbatim — a meta-prefix ("taking up:") makes the
+    // model discount the line as commentary and fall back to the background.
+    if asked && activity[split..].is_empty() && prompts.len() >= 2 {
         if !out.is_empty() {
             out.push('\n');
         }
@@ -990,6 +1038,40 @@ enum Inbound {
     Submission(Frame),
 }
 
+/// A due session's snapshot, committed on the loop and carried onto the emit
+/// task. Everything the digest needs rides along, so the task never touches
+/// the session map.
+struct EmitJob {
+    session_id: String,
+    activity: Vec<String>,
+    recent_activity: usize,
+    asked: bool,
+    cache: PromptCache,
+    pending_ask: Option<String>,
+    last_digest: Option<String>,
+    jsonl: Option<PathBuf>,
+    local_model: SharedLocalModelState,
+}
+
+/// What an emit task hands back to the loop.
+struct EmitOutcome {
+    session_id: String,
+    /// The prompt cache, back from its round trip through the emit.
+    cache: PromptCache,
+    /// The pending ask the cache caught up with — cleared on the state only
+    /// while it is still the current one, so a submission landing mid-emit
+    /// survives.
+    caught_up_ask: Option<String>,
+    /// The digest the model actually saw. Recorded as `last_digest` only on
+    /// success, so a digest the model never saw retries once the model
+    /// returns instead of dying to the digest-unchanged dedup.
+    seen_digest: Option<String>,
+    /// The normalized headline, when the model produced one.
+    headline: Option<String>,
+    /// The model was absent or failed — arm the back-off.
+    failed: bool,
+}
+
 /// Run the emitter until cancelled.
 ///
 /// The loop is clock-driven: frame arrival only accumulates evidence, and the
@@ -997,6 +1079,14 @@ enum Inbound {
 /// when its overview is due, not when the next frame happens to arrive. That
 /// is what lets a prose-only stretch fire on the idle path and the final
 /// stretch of a session get summarized with no trailing frame.
+///
+/// Emits run off the loop: a due session's tick commits synchronously, then
+/// its prompt refresh and summarize ride a spawned task while the loop keeps
+/// observing frames and cancellation — an emit held at the transport timeout
+/// cannot deafen the accumulator. One emit is in flight at a time (the one
+/// shared model serializes inference anyway); the other due sessions queue
+/// behind it with their ticks uncommitted, so a back-off arming mid-queue
+/// leaves their evidence — and any armed forced fire — intact.
 pub async fn session_overview_task(config: SessionOverviewConfig, cancel: CancellationToken) {
     let mut code_rx = config.code_tx.subscribe();
     let mut shell_rx = config.shell_tx.subscribe();
@@ -1009,14 +1099,41 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
     let mut backoff = BackOff::new();
     let mut tick = tokio::time::interval(TICK_INTERVAL);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // Due sessions waiting behind the in-flight emit, and — in `active` —
+    // every session currently queued or in flight, excluded from the sweep
+    // and from pruning until its outcome lands.
+    let mut queue: VecDeque<String> = VecDeque::new();
+    let mut active: HashSet<String> = HashSet::new();
+    let mut in_flight: Option<(String, tokio::task::JoinHandle<EmitOutcome>)> = None;
 
     loop {
         let inbound = tokio::select! {
             _ = cancel.cancelled() => {
                 info!("session overview: cancelled");
-                return;
+                break;
             }
             _ = tick.tick() => None,
+            done = async { (&mut in_flight.as_mut().expect("guarded by is_some").1).await },
+                if in_flight.is_some() =>
+            {
+                let (session_id, _) = in_flight.take().expect("guarded by is_some");
+                active.remove(&session_id);
+                match done {
+                    Ok(outcome) => apply_emit_outcome(
+                        outcome,
+                        &mut sessions,
+                        &mut backoff,
+                        &mut queue,
+                        &mut active,
+                        &config.pulse_tx,
+                    ),
+                    Err(error) => {
+                        warn!(%error, session = %session_id, "session overview: emit task failed");
+                    }
+                }
+                spawn_next(&mut queue, &mut active, &mut in_flight, &mut sessions, &backoff, &config);
+                continue;
+            }
             recv = code_rx.recv() => match recv {
                 Ok(frame) => Some(Inbound::Code(frame)),
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
@@ -1027,7 +1144,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                 }
                 Err(broadcast::error::RecvError::Closed) => {
                     info!("session overview: code broadcast closed");
-                    return;
+                    break;
                 }
             },
             recv = shell_rx.recv() => match recv {
@@ -1038,7 +1155,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                 }
                 Err(broadcast::error::RecvError::Closed) => {
                     info!("session overview: shell broadcast closed");
-                    return;
+                    break;
                 }
             },
             recv = submission_rx.recv() => match recv {
@@ -1049,7 +1166,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                 }
                 Err(broadcast::error::RecvError::Closed) => {
                     info!("session overview: submission broadcast closed");
-                    return;
+                    break;
                 }
             },
         };
@@ -1067,10 +1184,11 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                 let Some(event) = code_output_event(&payload) else {
                     continue;
                 };
-                sessions
+                let state = sessions
                     .entry(session_id)
-                    .or_insert_with(|| SessionState::new(now))
-                    .observe(event);
+                    .or_insert_with(|| SessionState::new(now));
+                state.last_seen = now;
+                state.observe(event);
                 continue;
             }
             Some(Inbound::Shell(frame)) => {
@@ -1091,6 +1209,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                 let state = sessions
                     .entry(session_id)
                     .or_insert_with(|| SessionState::new(now));
+                state.last_seen = now;
                 // A command starting is the human act; its settle is just the
                 // machine reporting back.
                 if payload.get("type").and_then(|v| v.as_str()) == Some("exchange_started") {
@@ -1110,9 +1229,11 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                 let state = sessions
                     .entry(session_id)
                     .or_insert_with(|| SessionState::new(now));
+                state.last_seen = now;
                 state.human_act();
                 if let SessionBeat::Asked(Some(text)) = &beat {
                     state.pending_ask = Some(text.clone());
+                    state.asked_since_emit = true;
                 }
                 state.record(beat);
                 continue;
@@ -1120,11 +1241,12 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
             None => {}
         }
 
-        // The tick sweep. Gates are process-wide, so one closed gate ends the
-        // whole sweep; due sessions are collected first because the emit path
-        // awaits, and a `HashMap` iterator cannot be held across it. Multiple
-        // due sessions emit serially — the one shared model serializes
-        // inference anyway.
+        // The tick sweep. Sessions past the retention window drop first —
+        // unless queued or in flight, whose outcome still needs its state.
+        sessions.retain(|id, state| {
+            active.contains(id) || now.duration_since(state.last_seen) < SESSION_RETENTION
+        });
+        // Gates are process-wide, so one closed gate ends the whole sweep.
         let gates = Gates {
             tenant_enabled: (config.tenant_enabled)(),
             pulse_enabled: (config.pulse_enabled)(),
@@ -1135,12 +1257,17 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
         }
         let due: Vec<String> = sessions
             .iter()
+            .filter(|(id, _)| !active.contains(*id))
             .filter(|(_, state)| {
-                // An armed session is due at the very next tick — a human act
-                // is typing-speed-bounded and the strongest possible signal
-                // the standing headline is stale, so it never waits out the
-                // anti-twitch floor meant for streaming evidence.
-                (state.fire_asap && state.new_beats > 0)
+                // An armed session is due at the first tick past the forced
+                // floor — a human act is the strongest possible signal the
+                // standing headline is stale, so it never waits out the full
+                // anti-twitch floor meant for streaming evidence. The forced
+                // floor still spaces a run of `$` starts, each of which
+                // re-arms the fire.
+                (state.fire_asap
+                    && state.new_beats > 0
+                    && now.duration_since(state.last_emit) >= config.cadence.forced_floor)
                     || config
                         .cadence
                         .fires(state.new_beats, now.duration_since(state.last_emit))
@@ -1148,48 +1275,90 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
             .map(|(session_id, _)| session_id.clone())
             .collect();
         for session_id in due {
-            // A summarize failure mid-sweep arms the back-off for every
-            // session, exactly as it always has; the rest of the sweep yields
-            // and the next tick re-evaluates.
-            if backoff.active(Instant::now()) {
-                break;
-            }
-            emit_overview(&config, &mut sessions, &mut backoff, &session_id).await;
+            active.insert(session_id.clone());
+            queue.push_back(session_id);
         }
+        spawn_next(&mut queue, &mut active, &mut in_flight, &mut sessions, &backoff, &config);
+    }
+    if let Some((_, handle)) = in_flight {
+        handle.abort();
     }
 }
 
-/// One due session's emit path: commit the tick, compose the digest, dedupe,
-/// summarize, impose the register, publish. Every early return is a silent
-/// skip — the tick is already committed, so a failing model can't make every
-/// subsequent sweep retry.
-async fn emit_overview(
-    config: &SessionOverviewConfig,
+/// Start the next queued emit when none is in flight: commit the session's
+/// tick, snapshot its job, and spawn it. A back-off arming mid-queue drops
+/// the rest with their ticks uncommitted, so their evidence survives for the
+/// first allowed sweep after it lifts.
+fn spawn_next(
+    queue: &mut VecDeque<String>,
+    active: &mut HashSet<String>,
+    in_flight: &mut Option<(String, tokio::task::JoinHandle<EmitOutcome>)>,
     sessions: &mut HashMap<String, SessionState>,
-    backoff: &mut BackOff,
-    session_id: &str,
+    backoff: &BackOff,
+    config: &SessionOverviewConfig,
 ) {
-    let Some(state) = sessions.get_mut(session_id) else {
-        return;
-    };
-    let now = Instant::now();
-    let recent_activity = state.activity_since_emit;
-    state.new_beats = 0;
-    state.activity_since_emit = 0;
-    state.fire_asap = false;
-    state.last_emit = now;
-    let activity: Vec<String> = state.activity.iter().cloned().collect();
+    while in_flight.is_none() {
+        if backoff.active(Instant::now()) {
+            for id in queue.drain(..) {
+                active.remove(&id);
+            }
+            return;
+        }
+        let Some(session_id) = queue.pop_front() else {
+            return;
+        };
+        let Some(state) = sessions.get_mut(&session_id) else {
+            active.remove(&session_id);
+            continue;
+        };
+        let (activity, recent_activity, asked) = state.commit_tick(Instant::now());
+        let job = EmitJob {
+            jsonl: config.identity.jsonl_path(&session_id),
+            cache: std::mem::take(&mut state.prompts),
+            pending_ask: state.pending_ask.clone(),
+            last_digest: state.last_digest.clone(),
+            local_model: Arc::clone(&config.local_model),
+            session_id: session_id.clone(),
+            activity,
+            recent_activity,
+            asked,
+        };
+        *in_flight = Some((session_id, tokio::spawn(run_emit(job))));
+    }
+}
 
+/// One due session's emit, off the loop: refresh the prompts, compose the
+/// digest, dedupe, summarize, impose the register. Every early return is a
+/// silent skip — the tick was committed at spawn, so a failing model can't
+/// make every subsequent sweep retry.
+async fn run_emit(job: EmitJob) -> EmitOutcome {
+    let EmitJob {
+        session_id,
+        activity,
+        recent_activity,
+        asked,
+        cache,
+        pending_ask,
+        last_digest,
+        jsonl,
+        local_model,
+    } = job;
+    let mut outcome = EmitOutcome {
+        session_id: session_id.clone(),
+        cache: PromptCache::default(),
+        caught_up_ask: None,
+        seen_digest: None,
+        headline: None,
+        failed: false,
+    };
     // The prompts are the better half of the digest but not a required
     // one: `compose_digest` describes a session from its activity alone.
     // An identity that won't resolve — the supervisor's map has no claude
     // id yet, or the ledger has no project dir — costs the digest its
     // goals, not the whole tick. The refresh reads only appended bytes, off
-    // the async thread; the cache rides out of the map for the read and back
-    // in after, so a panicked read costs the cache, never the tick.
-    let prompts = match config.identity.jsonl_path(session_id) {
+    // the async thread; a panicked read costs the cache, never the tick.
+    let mut prompts = match jsonl {
         Some(jsonl) => {
-            let cache = std::mem::take(&mut state.prompts);
             let read = tokio::task::spawn_blocking(move || {
                 let mut cache = cache;
                 cache.refresh(&jsonl);
@@ -1199,9 +1368,7 @@ async fn emit_overview(
             .await;
             match read {
                 Ok((cache, prompts)) => {
-                    if let Some(state) = sessions.get_mut(session_id) {
-                        state.prompts = cache;
-                    }
+                    outcome.cache = cache;
                     prompts
                 }
                 Err(error) => {
@@ -1215,43 +1382,39 @@ async fn emit_overview(
                 session = %session_id,
                 "session overview: identity unresolved; digest from activity alone",
             );
+            outcome.cache = cache;
             Vec::new()
         }
-    };
-    // Re-borrow: the prompt read held an await across the map.
-    let Some(state) = sessions.get_mut(session_id) else {
-        return;
     };
     // The standing ask rides last in the prompt section — the current
     // directive, which compose marks — until the JSONL catches up and the
     // cache spells it itself; from then on the cache carries it.
-    let mut prompts = prompts;
-    if let Some(ask) = state.pending_ask.clone() {
-        if state.prompts.carries(&ask) {
-            state.pending_ask = None;
+    if let Some(ask) = pending_ask {
+        if outcome.cache.carries(&ask) {
+            outcome.caught_up_ask = Some(ask);
         } else {
             prompts.push(ask);
         }
     }
-    let Some(digest) = compose_digest(&prompts, &activity, recent_activity) else {
+    let Some(digest) = compose_digest(&prompts, &activity, recent_activity, asked) else {
         debug!(session = %session_id, "session overview: nothing to describe");
-        return;
+        return outcome;
     };
-    if state.last_digest.as_deref() == Some(digest.as_str()) {
+    if last_digest.as_deref() == Some(digest.as_str()) {
         debug!(session = %session_id, "session overview: digest unchanged");
-        return;
+        return outcome;
     }
 
-    let Some(requester) = config.local_model.requester() else {
+    let Some(requester) = local_model.requester() else {
         debug!(session = %session_id, "session overview: no local model host");
-        backoff.fail(now);
-        return;
+        outcome.failed = true;
+        return outcome;
     };
     // Turnaround is the standing measure of whether this feature is usable:
     // the request deadline is a transport timeout, far above the point at
     // which a headline stops being worth having.
     let started = Instant::now();
-    let headline = match requester.summarize(digest.clone()).await {
+    match requester.summarize(digest.clone()).await {
         Ok(text) => {
             let report = headline_register_report(&text);
             info!(
@@ -1264,8 +1427,8 @@ async fn emit_overview(
                 clipped = report.clipped,
                 "session overview: summarized",
             );
-            backoff.succeed();
-            report.text
+            outcome.seen_digest = Some(digest);
+            outcome.headline = Some(report.text);
         }
         Err(error) => {
             warn!(
@@ -1274,18 +1437,57 @@ async fn emit_overview(
                 elapsed_ms = started.elapsed().as_millis() as u64,
                 "session overview: summarize failed",
             );
-            backoff.fail(Instant::now());
-            return;
+            outcome.failed = true;
         }
-    };
-    // Re-borrow: the summarize above held an await across the map. The
-    // digest is recorded only now, after the model actually saw it — a
-    // failure above leaves `last_digest` as it was, so the same digest
-    // retries once the model returns instead of being permanently eaten.
-    let Some(state) = sessions.get_mut(session_id) else {
+    }
+    outcome
+}
+
+/// Land an emit outcome back on the loop's state: restore the cache, settle
+/// the back-off, record the digest the model saw, and publish the headline
+/// when it is new.
+fn apply_emit_outcome(
+    outcome: EmitOutcome,
+    sessions: &mut HashMap<String, SessionState>,
+    backoff: &mut BackOff,
+    queue: &mut VecDeque<String>,
+    active: &mut HashSet<String>,
+    pulse_tx: &broadcast::Sender<Frame>,
+) {
+    let EmitOutcome {
+        session_id,
+        cache,
+        caught_up_ask,
+        seen_digest,
+        headline,
+        failed,
+    } = outcome;
+    if failed {
+        // The back-off is process-wide. The queued sessions behind this one
+        // drop with their ticks uncommitted, so their evidence survives for
+        // the first allowed sweep after the back-off lifts.
+        backoff.fail(Instant::now());
+        for id in queue.drain(..) {
+            active.remove(&id);
+        }
+    } else if seen_digest.is_some() {
+        backoff.succeed();
+    }
+    let Some(state) = sessions.get_mut(&session_id) else {
         return;
     };
-    state.last_digest = Some(digest);
+    state.prompts = cache;
+    if let Some(ask) = caught_up_ask {
+        if state.pending_ask.as_ref() == Some(&ask) {
+            state.pending_ask = None;
+        }
+    }
+    if let Some(digest) = seen_digest {
+        state.last_digest = Some(digest);
+    }
+    let Some(headline) = headline else {
+        return;
+    };
     if headline.is_empty() {
         debug!(session = %session_id, "session overview: headline empty after register");
         return;
@@ -1297,12 +1499,12 @@ async fn emit_overview(
     state.beat += 1;
     state.last_headline = Some(headline.clone());
     let frame = overview_frame(
-        session_id,
+        &session_id,
         &headline,
         state.beat,
         crate::session_ledger::now_millis(),
     );
-    let receivers = config.pulse_tx.send(frame).unwrap_or(0);
+    let receivers = pulse_tx.send(frame).unwrap_or(0);
     info!(
         session = %session_id,
         beat = state.beat,
@@ -1375,6 +1577,13 @@ mod tests {
         assert!(EMIT_FLOOR < IDLE_PERIOD);
         assert_eq!(EMIT_FLOOR, Duration::from_secs(8));
         assert_eq!(IDLE_PERIOD, Duration::from_secs(20));
+        // The forced floor sits between the sweep tick and the full floor:
+        // at least two sweeps apart, still faster than streaming evidence.
+        assert!(TICK_INTERVAL <= FORCED_EMIT_FLOOR);
+        assert!(FORCED_EMIT_FLOOR < EMIT_FLOOR);
+        // Retention dwarfs every cadence number: pruning can never race a
+        // session that is merely between beats.
+        assert!(SESSION_RETENTION > 100 * IDLE_PERIOD);
     }
 
     #[test]
@@ -1458,7 +1667,8 @@ mod tests {
                     .unwrap_or_default()
             };
             let recent_tools = body["recent_tools"].as_u64().unwrap_or(0) as usize;
-            let digest = compose_digest(&strings("prompts"), &strings("tools"), recent_tools)
+            let asked = body["asked"].as_bool().unwrap_or(false);
+            let digest = compose_digest(&strings("prompts"), &strings("tools"), recent_tools, asked)
                 .unwrap_or_else(|| panic!("{} describes nothing", input.display()));
             let frozen = input.with_extension("digest.txt");
             if regenerate {
@@ -1695,6 +1905,7 @@ mod tests {
                 "Edit(watch.rs)".to_string(),
             ],
             0,
+            false,
         )
         .expect("both halves present");
         assert!(digest.contains("make the watch loop resilient"));
@@ -1704,14 +1915,14 @@ mod tests {
 
     #[test]
     fn a_digest_with_only_tool_use_is_still_a_digest() {
-        let digest = compose_digest(&[], &["Bash(cargo build)".to_string()], 0).unwrap();
+        let digest = compose_digest(&[], &["Bash(cargo build)".to_string()], 0, false).unwrap();
         assert!(digest.contains("Bash(cargo build)"));
         assert!(!digest.contains("What the user asked for"));
     }
 
     #[test]
     fn nothing_to_describe_yields_no_digest() {
-        assert!(compose_digest(&[], &[], 0).is_none());
+        assert!(compose_digest(&[], &[], 0, false).is_none());
     }
 
     /// The recency split is the whole point of carrying a count: the model is
@@ -1723,7 +1934,7 @@ mod tests {
             .iter()
             .map(|s| s.to_string())
             .collect();
-        let digest = compose_digest(&["port the router".to_string()], &tools, 2).unwrap();
+        let digest = compose_digest(&["port the router".to_string()], &tools, 2, false).unwrap();
 
         let (background, right_now) = digest
             .split_once("What it is doing right now:")
@@ -1745,12 +1956,12 @@ mod tests {
 
         // A session's first overview: everything on record arrived this tick,
         // so there is no background to speak of.
-        let all_recent = compose_digest(&[], &tools, tools.len()).unwrap();
+        let all_recent = compose_digest(&[], &tools, tools.len(), false).unwrap();
         assert!(!all_recent.contains("What the session has been doing:"));
         assert!(all_recent.contains("What it is doing right now:"));
 
         // A tick with no new tool use: nothing is happening right now.
-        let none_recent = compose_digest(&[], &tools, 0).unwrap();
+        let none_recent = compose_digest(&[], &tools, 0, false).unwrap();
         assert!(none_recent.contains("What the session has been doing:"));
         assert!(!none_recent.contains("What it is doing right now:"));
     }
@@ -1763,7 +1974,7 @@ mod tests {
         let activity: Vec<String> = (0..(MAX_BACKGROUND_LINES + 8))
             .map(|i| format!("Read(file_{i}.rs)"))
             .collect();
-        let digest = compose_digest(&[], &activity, 2).unwrap();
+        let digest = compose_digest(&[], &activity, 2, false).unwrap();
         let (background, right_now) = digest
             .split_once("What it is doing right now:")
             .expect("the recent section is present");
@@ -1792,7 +2003,7 @@ mod tests {
     #[test]
     fn a_recent_count_past_the_end_is_clamped() {
         let tools = vec!["Read(a.rs)".to_string()];
-        let digest = compose_digest(&[], &tools, 99).unwrap();
+        let digest = compose_digest(&[], &tools, 99, false).unwrap();
         assert!(digest.contains("What it is doing right now:"));
         assert!(!digest.contains("What the session has been doing:"));
         assert!(digest.contains("Read(a.rs)"));
@@ -2506,6 +2717,7 @@ mod tests {
                 burst_beats: 1,
                 idle_period: Duration::ZERO,
                 floor: Duration::ZERO,
+                forced_floor: Duration::ZERO,
             },
         )
     }
@@ -2801,6 +3013,7 @@ mod tests {
             burst_beats: 8,
             idle_period: Duration::from_secs(300),
             floor: Duration::from_secs(8),
+            forced_floor: FORCED_EMIT_FLOOR,
         }
     }
 
@@ -2812,10 +3025,10 @@ mod tests {
     }
 
     /// The proper-coast defect, pinned: a submission landing mid-quiet-stretch
-    /// — floor unexpired, burst nowhere near — emits at the next tick instead
-    /// of waiting out the cadence.
+    /// — full floor unexpired, burst nowhere near — emits at the first tick
+    /// past the forced floor instead of waiting out the cadence.
     #[tokio::test(start_paused = true)]
-    async fn a_mid_stretch_submission_re_aims_at_the_next_tick() {
+    async fn a_mid_stretch_submission_re_aims_within_the_forced_floor() {
         let mut h = start_cadenced(
             Some("Answering the new ask."),
             true,
@@ -3011,6 +3224,146 @@ mod tests {
             .await
             .expect("the armed session fires once the back-off lifts");
         assert_eq!(overview["scopes"], serde_json::json!(["s1"]));
+    }
+
+    /// The synthesized right-now section requires the stretch to have
+    /// contained the ask: on any later quiet tick the same prompt shape must
+    /// end on the background, not resurrect a finished directive as live
+    /// work.
+    #[test]
+    fn the_synthesized_right_now_requires_a_fresh_ask() {
+        let prompts = vec!["fix the parser".to_string(), "now chase the lag".to_string()];
+        let activity = vec!["Bash(cargo build)".to_string()];
+        let with = compose_digest(&prompts, &activity, 0, true).unwrap();
+        assert!(with.ends_with("What it is doing right now:\n- now chase the lag\n"));
+        let without = compose_digest(&prompts, &activity, 0, false).unwrap();
+        assert!(!without.contains("What it is doing right now:"));
+    }
+
+    /// The stale-resurrection defect, pinned end to end: after the re-aimed
+    /// emit and the response's own emit, a trailing `turn_complete` — a beat
+    /// with no line — must yield a digest with no right-now section at all,
+    /// not one that claims the finished ask is being taken up.
+    #[tokio::test(start_paused = true)]
+    async fn a_settled_turn_does_not_resurrect_the_ask_as_right_now() {
+        let mut h = start(Some("Chasing the lag."), true, true, true);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.submission_tx
+            .send(user_message_frame("s1", "now chase the lag"))
+            .unwrap();
+        let mut digests = h.digests.take().unwrap();
+        let first = next_digest(&mut digests).await;
+        assert!(first.ends_with("What it is doing right now:\n- now chase the lag\n"));
+
+        h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
+        let second = next_digest(&mut digests).await;
+        assert!(second.ends_with("What it is doing right now:\n- Bash(cargo build)\n"));
+
+        h.code_tx.send(turn_complete_frame("s1")).unwrap();
+        let third = next_digest(&mut digests).await;
+        assert!(
+            !third.contains("What it is doing right now:"),
+            "a finished ask was claimed as live work:\n{third}"
+        );
+    }
+
+    /// The session map is a rolling picture, not an archive: a session with
+    /// no frames for the retention window is dropped at the sweep, and its
+    /// next frame starts fresh — no stale background rides along.
+    #[tokio::test(start_paused = true)]
+    async fn an_idle_session_is_pruned_at_the_retention_window() {
+        let mut h = start(Some("Building again."), true, true, true);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
+        let mut digests = h.digests.take().unwrap();
+        let first = next_digest(&mut digests).await;
+        assert!(first.contains("Bash(cargo build)"));
+
+        tokio::time::sleep(SESSION_RETENTION + TICK_INTERVAL).await;
+        h.code_tx.send(tool_use_frame("s1", "cargo test")).unwrap();
+        let second = next_digest(&mut digests).await;
+        assert!(second.contains("Bash(cargo test)"));
+        assert!(
+            !second.contains("cargo build"),
+            "the pruned session's old activity resurfaced:\n{second}"
+        );
+    }
+
+    /// A burst of `$` commands cannot drive one inference per sweep: each
+    /// start re-arms the fire, and the forced floor spaces the fires so the
+    /// shared model — which also serves the `$` route's classify calls — is
+    /// asked at most once per two ticks.
+    #[tokio::test(start_paused = true)]
+    async fn forced_fires_are_spaced_by_the_forced_floor() {
+        let cadence = Cadence {
+            burst_beats: 100,
+            idle_period: Duration::from_secs(3_000),
+            floor: Duration::from_secs(3_000),
+            forced_floor: FORCED_EMIT_FLOOR,
+        };
+        let mut h = start_cadenced(Some("Running commands."), true, true, true, cadence);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let exec = |n: u32| {
+            let body = serde_json::json!({
+                "tug_session_id": "s1", "type": "exchange_started",
+                "exchange_id": format!("e{n}"), "command": format!("echo {n}"),
+                "cwd": "/proj", "started_at": n,
+            });
+            Frame::new(FeedId::SHELL_OUTPUT, serde_json::to_vec(&body).unwrap())
+        };
+        h.shell_tx.send(exec(1)).unwrap();
+        let mut digests = h.digests.take().unwrap();
+        let _first = next_digest(&mut digests).await;
+        // The second command lands right after the first emit; the forced
+        // floor holds it to the second sweep, not the first.
+        let sent = Instant::now();
+        h.shell_tx.send(exec(2)).unwrap();
+        let second = next_digest(&mut digests).await;
+        assert!(second.contains("$ echo 2"));
+        let waited = Instant::now().duration_since(sent);
+        assert!(
+            waited >= FORCED_EMIT_FLOOR - TICK_INTERVAL / 2,
+            "the forced fire ignored its floor: {waited:?}"
+        );
+    }
+
+    /// A host that accepts requests — forwarding each digest so the test can
+    /// see the summarize is in flight — and never answers them.
+    fn mute_host(state: &SharedLocalModelState) -> tokio::sync::mpsc::Receiver<String> {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(8);
+        let (seen_tx, seen_rx) = tokio::sync::mpsc::channel::<String>(8);
+        let requester = LocalModelRequester::new(tx);
+        state.set_requester(Arc::clone(&requester));
+        tokio::spawn(async move {
+            while let Some(line) = rx.recv().await {
+                let body: serde_json::Value = serde_json::from_str(&line).unwrap();
+                let digest = body["prompt"].as_str().unwrap_or_default().to_string();
+                let _ = seen_tx.send(digest).await;
+            }
+        });
+        seen_rx
+    }
+
+    /// The emit rides its own task: with a summarize hung at the transport
+    /// timeout, the loop still observes cancellation immediately. No virtual
+    /// time passes after the cancel, so a loop blocked inside the emit would
+    /// still hold its subscription — the receiver count is the tell.
+    #[tokio::test(start_paused = true)]
+    async fn cancellation_is_observed_mid_emit() {
+        let h = start(None, true, true, false);
+        let mut digests = mute_host(&h.model);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
+        let _ = next_digest(&mut digests).await;
+        h.cancel.cancel();
+        for _ in 0..32 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            h.code_tx.receiver_count(),
+            0,
+            "the loop did not observe cancellation while an emit was in flight"
+        );
     }
 
     /// Append one more user prompt to an already-seeded session JSONL — the
