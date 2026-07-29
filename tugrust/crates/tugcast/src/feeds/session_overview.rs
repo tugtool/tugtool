@@ -49,7 +49,11 @@ const EMIT_FLOOR: Duration = Duration::from_secs(15);
 /// bounded so the digest can't grow without limit.
 const MAX_TOOL_LINES: usize = 40;
 
-/// User prompts fed into the digest, and their total character budget.
+/// User prompts fed into the digest, and the character budget applied to each
+/// one — `session_prompts_since` clips per prompt, not across the set, so the
+/// digest's prompt half runs to `MAX_PROMPTS * MAX_PROMPT_CHARS` in the worst
+/// case. Real sessions land far under it: the eval corpus's largest digest is
+/// about 3.6k characters.
 const MAX_PROMPTS: usize = 10;
 const MAX_PROMPT_CHARS: usize = 1_500;
 

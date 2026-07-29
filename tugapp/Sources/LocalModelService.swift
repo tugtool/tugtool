@@ -58,15 +58,21 @@ enum LocalModelConfig {
 /// small quantized models form first-word priors from unpaired examples.
 /// The catalog's recorded classify scores refer to the previous wording.
 ///
-/// `summarize` was rewritten from a sentence prompt to a headline prompt when
-/// the PULSE strip promoted the overview to its bright leading run. The
-/// catalog's recorded overview scores therefore refer to the *previous*
-/// wording, and are not being refreshed: scoring a summary against a fixed
-/// corpus says nothing about whether the strip works, and there is no ground
-/// truth for "what is this session working on" to score against. What the
-/// feature is actually held to is the `headline_register` normalizer in
-/// `session_overview.rs`, which guarantees the form in Rust whatever the model
-/// answers, plus liveness and turnaround (`roadmap/local-model-liveness-brief.md`).
+/// `summarize` was rewritten twice: first from a sentence prompt to a headline
+/// prompt when the PULSE strip promoted the overview to its bright leading run,
+/// then again when the headlines that produced turned out to be *labels* —
+/// noun phrases with no verb, which is the failure newspaper headline register
+/// exists to prevent. The current wording leads with the rule the first version
+/// never stated: start with a verb, in the plain command form. The catalog's
+/// recorded overview scores refer to a wording older than both.
+///
+/// Those scores are not being refreshed, because a fixed-corpus summary score
+/// says nothing about whether the strip works — there is no ground truth for
+/// "what is this session working on". What the feature is held to instead:
+/// `headline_register` in `session_overview.rs`, which imposes the form in Rust
+/// whatever the model answers; `tests/model-eval` (`just model-eval`), which
+/// scores the register of real headlines against a live instance; and liveness
+/// and turnaround (`roadmap/archive/local-model-liveness-brief.md`).
 ///
 /// The freeze rule above still holds and is doing a different job: it keeps
 /// catalog entries comparable on identical wording, and it makes editing one of
