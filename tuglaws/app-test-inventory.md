@@ -1041,6 +1041,11 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Tests:** `at0287-lens-row-action-not-a-pick.test.ts`.
 - **Summary:** The Lens Text Files close box acts on the file its row names without also picking that row. Both halves of the original defect are pinned from one real click: the front pane is unchanged (a pick would dispatch `focus-session-card` and haul the about-to-close card's pane in front of what the user was working in — the closed card's pane survives the close, so the theft would still be visible when the dust settled), no row carries `data-selected` afterwards, and the two survivors keep their alternating tint by position — the phantom selection used to strip the band off whichever row slid into the closed one's place. The close is `close-tab` carrying the row's card id, so a row for a BACKGROUND tab closes its own file rather than its pane's front card.
 
+#### [AT0288] Motion residency census
+- **Status:** ✅ open (diagnostic instrument; contract assertions pending).
+- **Tests:** `at0288-motion-residency.test.ts`.
+- **Summary:** `animationCensus()` inventoried against two decks in one launch so their outputs subtract. The empty deck is ASSERTED empty (`[data-card-host]` count is zero) rather than assumed — the measurement that opened this investigation was taken on a deck nobody confirmed had emptied, and every conclusion drawn from it rested on that. Whatever the census reports with zero cards mounted is persistent chrome or the engine's own frame machinery, and the test prints the full entry list (name, target, animated properties, co-animated properties, station ancestry, SVG-ness, and the rules each entry breaks) alongside a raw `getAnimations()` dump that is wider than the census, so a short effect re-arming every frame cannot hide behind the long-running filter. The assertions are the floor — the census call works, the empty deck is really empty, and seeding `gallery-tug-progress-indicator` adds long-running animations — because station ancestry and collapse dormancy cannot be asserted before the surfaces they describe exist.
+
 ## Maintenance
 
 This file is append-only for the tag list. Status fields update as fixes land or regress. Removing a tag requires a documented decision and a successor tag noted inline (`[M{NN}] superseded by [M{MM}] — see ...`).

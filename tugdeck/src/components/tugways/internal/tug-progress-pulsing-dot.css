@@ -86,18 +86,24 @@
  *    Splitting radius and opacity into two animations is what lets them carry
  *    different shapes on one clock (their holds are opposite either way).
  *
- *  - `tugx-progress-pulsing-dot-emit-thicken` — the ring's stroke,
- *    `--…-pulse-birth-width` → `--…-pulse-end-width`. It is born a hairline —
- *    `--…-pulse-hairline`, 1px — HOLDS there past the radius' fastest stretch,
- *    and only then opens to `--…-pulse-width` (the settled ring's stroke by
- *    `--…-pulse-weight`) as it fades out. Sharp at ignition, where the ring is
- *    brightest and closest to the dot's own edge, and soft by the time it is
- *    leaving.
+ *  - `tugx-progress-pulsing-dot-emit-thicken` — the ring's stroke, born a
+ *    hairline (`--…-pulse-hairline`, 1px) which HOLDS past the radius' fastest
+ *    stretch, and only then opens to `--…-pulse-width` (the settled ring's
+ *    stroke by `--…-pulse-weight`) as it fades out. Sharp at ignition, where
+ *    the ring is brightest and closest to the dot's own edge, and soft by the
+ *    time it is leaving.
  *
- *    A third animation rather than a `border-width` pair on the radius'
- *    keyframe, and the hold is why: the radius runs a cubic ease-out, which
- *    spends over half its travel in the first quarter of the flight. A stroke
- *    on that curve is finished opening before the sharp pose has been read.
+ *    The ring carries the stroke in TWO layers rather than interpolating one
+ *    `border-width`: the hairline sits on top at full strength, and the open
+ *    weight rises underneath it on this easing. The gesture is the same and the
+ *    property in flight is `opacity`, which keeps the whole ring — radius,
+ *    fade and stroke — on the compositor. A `border-width` in the stack put
+ *    every one of them on the main thread instead.
+ *
+ *    A third animation rather than a stroke pair on the radius' keyframe, and
+ *    the hold is why: the radius runs a cubic ease-out, which spends over half
+ *    its travel in the first quarter of the flight. A stroke on that curve is
+ *    finished opening before the sharp pose has been read.
  *
  *    The hold is on the DECLARED stroke. In the big treatment that is the
  *    apparent one too, since the ring reaches exactly the box; at the small
@@ -298,13 +304,44 @@
   left: 50%;
   width: var(--tugx-progress-pulsing-dot-size);
   height: var(--tugx-progress-pulsing-dot-size);
-  border-radius: 999px;
-  border: var(--tugx-progress-pulsing-dot-pulse-birth-width) solid
-    var(--tugx-progress-indicator-fill, currentColor);
-  box-sizing: border-box;
   transform: translate3d(-50%, -50%, 0) scale(1);
   opacity: 0;
+}
+
+/* The stroke, in two layers. Both are the same circle at the same box, drawn
+   inward from the same outer edge; they differ only in how far in they reach —
+   the hairline the ring is born with, and the open weight it ends at.
+
+   The pair replaces a `border-width` interpolation, and the reason is the whole
+   point of this file's residency: a border is a layout property, so animating
+   it demoted every OTHER animation on this ring to the main thread with it
+   (WebKit judges acceleration over an element's whole keyframe effect stack).
+   Two static widths crossfading by opacity is the same gesture with nothing but
+   opacity in flight. See tuglaws/motion-residency.md.
+
+   Stacking order matters and it is why this does not read as a double edge: the
+   hairline sits ON TOP at full strength for the whole flight, so the band it
+   covers is always solid. Only the open layer's inner extension fades in
+   underneath, which is where the thickening actually happens. Crossfading two
+   full strokes instead would dip the shared band's alpha to ~0.75 mid-cycle,
+   and a stroke that goes translucent as it opens is a different gesture. */
+.tug-progress-pulsing-dot-ring-stroke {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border-style: solid;
+  border-color: var(--tugx-progress-indicator-fill, currentColor);
+  box-sizing: border-box;
   transition: border-color var(--tugx-progress-pulsing-dot-settle) linear;
+}
+
+.tug-progress-pulsing-dot-ring-stroke-open {
+  border-width: var(--tugx-progress-pulsing-dot-pulse-end-width);
+  opacity: 0;
+}
+
+.tug-progress-pulsing-dot-ring-stroke-hairline {
+  border-width: var(--tugx-progress-pulsing-dot-pulse-birth-width);
 }
 
 /* Static outer ring for the settled / held states — the running state's ring
@@ -376,7 +413,9 @@
    breath. The `z` is always 0 — nothing is being moved in depth, only made
    independent of what else the page is busy with. */
 .tug-progress-pulsing-dot[data-breathing] .tug-progress-pulsing-dot-dot,
-.tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring {
+.tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring,
+.tug-progress-pulsing-dot[data-emitting]
+  .tug-progress-pulsing-dot-ring-stroke-open {
   animation-duration: var(--tugx-progress-pulsing-dot-period);
   /* Negative, and written by the component when it starts the breath: the
      phase whose pose matches where the settled dot was standing, so the loop
@@ -423,19 +462,12 @@
   );
 }
 
-/* Three animations, one clock: the duration and iteration count above are
-   single values, so the list cycles to cover every name.
+/* Two animations on the ring, a third on its open stroke layer — one clock for
+   all of them: the duration and iteration count above are single values shared
+   by every rule in that selector list, so the ring and the stroke stay welded.
 
    Radius: parked at birth radius until ignition (27% — 3% before the turn),
    then a cubic ease-out to the box edge.
-
-   Stroke: parked at the hairline well past ignition, then eased up to the
-   pulse weight over the back of the cycle. It carries its OWN easing rather
-   than riding the radius': the radius is a cubic ease-out, which spends more
-   than half its travel in the first quarter of the flight, and a stroke on
-   that curve is done thickening before the eye has read the ring as sharp at
-   all. The hold is the whole point of the ring being born a hairline — it is
-   there to be seen for a beat before it opens.
 
    Opacity: held fully faded (easing at 1 = the keyframe's `to`, opacity 0)
    through the inhale, lit in the hairline at 27%, then a LINEAR fall to
@@ -444,9 +476,8 @@
    as a ring travelling outward and thinning. Front-loading the falloff on top
    of that only cut the ring's visible life short. */
 .tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring {
-  animation-name:
-    tugx-progress-pulsing-dot-emit-expand, tugx-progress-pulsing-dot-emit-fade,
-    tugx-progress-pulsing-dot-emit-thicken;
+  animation-name: tugx-progress-pulsing-dot-emit-expand,
+    tugx-progress-pulsing-dot-emit-fade;
   animation-timing-function:
     var(
       --tugx-progress-pulsing-dot-emit-expand-ease,
@@ -486,11 +517,24 @@
         0.9167 93.9167%,
         1 100%
       )
-    ),
-    var(
-      --tugx-progress-pulsing-dot-emit-thicken-ease,
-      linear(0 0%, 0 55%, 0.1 66%, 0.3 77%, 0.62 88%, 1 100%)
     );
+}
+
+/* The stroke, on its own easing — the open layer held fully hidden through the
+   inhale and the first stretch of the flight, then brought up under the
+   hairline as the ring reaches the box and fades out. It carries its OWN easing
+   rather than riding the radius': the radius is a cubic ease-out, which spends
+   more than half its travel in the first quarter of the flight, and a stroke on
+   that curve is done thickening before the eye has read the ring as sharp at
+   all. The hold is the whole point of the ring being born a hairline — it is
+   there to be seen for a beat before it opens. */
+.tug-progress-pulsing-dot[data-emitting]
+  .tug-progress-pulsing-dot-ring-stroke-open {
+  animation-name: tugx-progress-pulsing-dot-emit-thicken;
+  animation-timing-function: var(
+    --tugx-progress-pulsing-dot-emit-thicken-ease,
+    linear(0 0%, 0 55%, 0.1 66%, 0.3 77%, 0.62 88%, 1 100%)
+  );
 }
 
 /* The action-role in-progress fill is the same fixed cobalt the small
@@ -555,19 +599,15 @@
   }
 }
 
-/* The stroke, on its own easing — held at the hairline through the inhale and
-   the first stretch of the flight, then opened to the pulse weight as the ring
-   reaches the box and fades out.
-
-   It is the one property in this file that is painted rather than composited,
-   so it re-rasters the ring's layer on the frames it changes — a circle a few
-   dozen pixels across, and only across the back of the cycle. */
+/* The thickening: the open stroke layer rising from hidden to full underneath
+   the hairline. Every property in flight here is `opacity`, so the ring stays
+   on the compositor for the whole pulse. */
 @keyframes tugx-progress-pulsing-dot-emit-thicken {
   from {
-    border-width: var(--tugx-progress-pulsing-dot-pulse-birth-width);
+    opacity: 0;
   }
   to {
-    border-width: var(--tugx-progress-pulsing-dot-pulse-end-width);
+    opacity: 1;
   }
 }
 

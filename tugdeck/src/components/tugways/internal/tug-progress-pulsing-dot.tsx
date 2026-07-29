@@ -536,9 +536,10 @@ function releaseEmitter(
   }
   let remaining = 0;
   for (const animation of ring.getAnimations()) {
-    // Keyframe loops only. The ring also carries a tint transition during the
-    // settle, and its progress has nothing to do with where the pulse is —
-    // counting it held the emitter open on a glyph that never lit a ring.
+    // Keyframe loops only: a transition's progress has nothing to do with
+    // where the pulse is, and counting one held the emitter open on a glyph
+    // that never lit a ring. The stroke layers are not consulted — they run on
+    // the same clock as the radius and fade read here.
     if (!(animation instanceof CSSAnimation)) continue;
     const timing = animation.effect?.getComputedTiming();
     const progress = timing?.progress;
@@ -778,7 +779,13 @@ export const TugProgressPulsingDot = React.forwardRef<
       )}
     >
       <span ref={dotRef} className="tug-progress-pulsing-dot-dot" />
-      <span ref={ringRef} className="tug-progress-pulsing-dot-ring" />
+      {/* The ring carries radius and fade; its two stroke layers carry the
+          thickening as a crossfade under a solid hairline. Both are
+          presentational — nothing scripts them. */}
+      <span ref={ringRef} className="tug-progress-pulsing-dot-ring">
+        <span className="tug-progress-pulsing-dot-ring-stroke tug-progress-pulsing-dot-ring-stroke-open" />
+        <span className="tug-progress-pulsing-dot-ring-stroke tug-progress-pulsing-dot-ring-stroke-hairline" />
+      </span>
     </span>
   );
 });

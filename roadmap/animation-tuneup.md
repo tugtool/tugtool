@@ -396,11 +396,11 @@ No new React state, no new stores, no new persistence.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Baseline profile + census helper + profiling recipe | pending | — |
-| #step-2 | Skeleton shimmer overlay | pending | — |
-| #step-3 | Pulsing-dot thicken crossfade | pending | — |
-| #step-4 | Spinner HTML spokes | pending | — |
-| #step-5 | Ring spin to wrapper; pie/bar/wave census pass | pending | — |
+| #step-1 | Baseline profile + census helper + profiling recipe | done | `92f80410e` |
+| #step-2 | Skeleton shimmer overlay | done | `757bb04fb` |
+| #step-3 | Pulsing-dot thicken crossfade | done (Q01 open) | `cd9ee8916` |
+| #step-4 | Spinner HTML spokes | done | `43c627966` |
+| #step-5 | Ring spin to wrapper; pie/bar/wave census pass | done | `5a193deff` |
 | #step-6 | Motion stations + will-change audit | pending | — |
 | #step-7 | Collapse dormancy | pending | — |
 | #step-8 | Residency app-test + inventory registration | pending | — |
@@ -688,3 +688,498 @@ No new React state, no new stores, no new persistence.
 | Perf improved | step-1 vs step-10 `perf-resize-profile` delta |
 | Look preserved | per-step gallery side-by-sides |
 | Doctrine durable | `tuglaws/motion-residency.md` + `[D##]` entry |
+
+---
+
+## Addendum A — Attribution first, structure back in scope (2026-07-28) {#addendum-a}
+
+**Why this addendum exists:** steps 1–5 landed and the profile did not move. Re-plumbing four animations off the main thread changed idle main-thread busy by less than run-to-run noise, and a deck seeded down to **zero cards** measured the same as a deck full of animating gallery variants. The cost the plan set out to remove is therefore **not attributable to the surfaces the plan re-plumbed**, and the remaining steps (stations, dormancy) rest on a cost model that the evidence no longer supports. This addendum records exactly where the work stands, what the numbers say, what the environment can and cannot verify, and the revised sequence: **get an instrument, attribute the cost, then remediate** — with layer-tree structure restored as a first-class avenue rather than a gated follow-on.
+
+Everything above this line stands as authored except where a decision below supersedes it. Supersessions are named explicitly.
+
+### Where the work stands {#a-state}
+
+Dash worktree — **all work happens here, addressed by absolute path**:
+
+| Field | Value |
+|---|---|
+| Worktree | `/Users/kocienda/Mounts/u/src/tugtool/.tug/worktrees/animation-tuneup` |
+| Branch | `tugdash/animation-tuneup` (base `main`) |
+| Dash name | `animation-tuneup` |
+| Debug instance | `debug-tugdash-animation-tuneup` |
+| Bundle id | `dev.tugtool.app.debug-tugdash-animation-tuneup` |
+| Product name | `Tug-debug-tugdash-animation-tuneup` |
+
+Landed commits (all verified in the worktree with `bunx tsc --noEmit` and `bunx vite build`):
+
+| Step | Commit | Landed |
+|---|---|---|
+| #step-1 | `92f80410e` | `animationCensus()` in `perf-monitor.ts` (exposed as `window.tugPerfMonitor.animationCensus`, alongside `.snapshot`); `scripts/perf-resize-profile.sh` + `just perf-resize-profile`; baselines |
+| #step-2 | `757bb04fb` | Skeleton shimmer as an `::after` opacity crossfade; motion-off gate in `tug.css` widened to `*::before` / `*::after` (`*` matches elements only, so a pseudo-element loop escaped it) |
+| #step-3 | `cd9ee8916` | Pulsing-dot ring = wrapper + two stroke layers; thicken animates opacity |
+| #step-4 | `43c627966` | Spinner spokes = 12 HTML spans (percent geometry, `transform-origin: 50% 200%`) |
+| #step-5 | `5a193deff` | Ring spin moved to the root span; SVG holds a static `rotate(-90deg)` |
+
+Steps 6–10 are **not** started. Their status is revised by [P14] below.
+
+**A correction to the record:** during steps 2–4 the Bash shell's working directory had drifted to the **main checkout**, so some `tsc` / `vite build` runs and one skeleton A/B experiment executed against `main`'s tree rather than the worktree. The A/B was a no-op on unmodified files and proved nothing; the build checks were re-run in the worktree afterward and pass. No file in the main checkout was modified. See [P16] for the standing rule this produced.
+
+### The measurement that changed the plan {#a-measurement}
+
+All four runs: same machine, same debug instance, `idle` mode, 6s, window raised, minutes apart.
+
+**Table T02: idle profiles across deck contents** {#t02-empty-deck}
+
+| Deck contents | Busy / total | `updateRendering` | `updateCompositing…` | `computeCompositingRequirements` | `TreeResolver::resolve` | `applyKeyframeEffects` |
+|---|---|---|---|---|---|---|
+| Gallery indicator card (baseline, pre-fix) | 931 / 5213 (17.9%) | 889 (95%) | 154 (17%) | 135 (15%) | 171 (18%) | 58 (6%) |
+| Gallery indicator card (after steps 2–5) | 933 / 5193 (18.0%) | 911 (98%) | 223 (24%) | 153 (16%) | 258 (28%) | 68 (7%) |
+| One `gallery-skeleton` card | 892 / 5200 (17.2%) | 861 (97%) | 231 (26%) | 165 (18%) | 248 (28%) | 55 (6%) |
+| **Zero cards** | 892 / 5177 (17.2%) | 856 (96%) | 190 (21%) | 143 (16%) | 235 (26%) | 62 (7%) |
+
+Three readings follow, in decreasing confidence:
+
+1. **The burn is not in the cards.** An empty deck costs what a full one costs. Whatever dirties style every frame lives in persistent chrome, or in the engine's own frame loop, not in `TugProgressIndicator` or `TugSkeleton`.
+2. **The walk outweighs the blend.** `updateCompositingLayersAfterStyleChange` (21%) plus `computeCompositingRequirements` (16%) is three times `applyKeyframeEffects` (7%). Keyframe blending is the *trigger* that dirties style; the compositing walk is the *bill*. Removing every trigger only helps if no other trigger exists — and a window live-resize is a trigger by construction, every frame, forever.
+3. **Therefore structure is not a follow-on.** The bill is `O(layer-tree size × depth)` per dirty frame. Capping it is the only thing that makes a *resize* smooth, because a resize dirties layout no matter how well-behaved every animation is.
+
+### Superseded and revised decisions {#a-decisions}
+
+#### [P12] The census app-test is an instrument first, a gate second (DECIDED) {#p12-instrument-first}
+
+**Decision:** Build the residency app-test (#step-8's artifact) **now**, ahead of stations and dormancy, and treat its first job as diagnosis rather than enforcement. It runs against an **empty deck** as well as a seeded one, and it reports the full census (`entries`, not just `violations`) so the output names every animation the app runs at rest.
+
+**Rationale:** the app-test harness is the only sanctioned path to `evalJS` (see [P15]), and `document.getAnimations()` is the only thing that can answer "what is animating in an empty deck". Every other route was tried and is closed.
+
+**Implications:** #step-8's assertions about station ancestry ([P02]) and collapse pause ([P08]) cannot pass until those steps land — so the test is authored in two passes: the diagnostic census first (asserting only the vacuous-pass floor and reporting entries), the contract assertions once the remediation is known.
+
+#### [P13] Layer-tree structure returns as a first-class avenue (SUPERSEDES the #non-goals entry and the #roadmap entry) (DECIDED) {#p13-structure-first-class}
+
+**Decision:** "Reducing transcript layer depth" is no longer out of scope and no longer gated on a #step-10 profile. Structural cost is investigated on equal footing with animation residency, starting with measurement (#step-13) rather than with a proposed restructuring.
+
+**Rationale:** Risk R02 fired. Its residual said the next suspect is layer depth if the profile still janks; the profile never improved at all, and the walk is the majority of the cost with zero cards on screen.
+
+**Implications:**
+- The plan's title promise ("motion residency") is now one half of the work; the other half is bounding what a dirty frame costs.
+- [P02] motion stations remain correct but are re-motivated: `contain` bounds an animation's *extent*, and the same primitive applied to chrome subtrees bounds the *walk*. Their target list may change once #step-13 says where the depth is.
+- Nothing is proposed here about *how* to restructure. That is #step-14's output, written against measured numbers.
+
+#### [P14] Steps 6 and 7 are held pending attribution (DECIDED) {#p14-hold-6-7}
+
+**Decision:** #step-6 (motion stations + `will-change` audit) and #step-7 (collapse dormancy) move to `held` in the ledger. Neither is withdrawn — both are defensible on their own terms — but both are re-scoped after #step-12 attributes the cost, because their current target lists were derived from the same model the measurement undermined.
+
+**Rationale:** stationing the six indicator variants is cheap and correct, and it is also not obviously where the cost is. Doing it now would spend the next verification window proving nothing again.
+
+#### [P15] What this environment can and cannot verify (DECIDED — a constraint, not a choice) {#p15-environment-limits}
+
+**Decision:** record these as standing facts so a fresh session does not re-derive them.
+
+- **No `evalJS` outside the app-test harness.** The in-app bridge (`TestHarnessBridge`, `tugapp/Sources/TestHarness/`) binds its Unix socket only when `TUGAPP_TEST_SOCKET` is set at launch, which only `just app-test` does. A normally-launched debug instance has no bridge, so `window.tugPerfMonitor.animationCensus()` is unreachable from the shell. Hand-rolling the `TUGAPP_*` launch is forbidden by project doctrine — go through `just app-test`.
+- **No screenshots from the shell.** `screencapture` returns frames with all window content blanked (menu bar only) because the terminal lacks screen-recording permission. This is what blocked every gallery side-by-side. Visual verification must go through `app.screenshot()` inside an app-test, or the user's own eyes on the running build.
+- **The window must be visible to measure.** macOS stops delivering frames to a fully occluded window and WebKit throttles with it: the same deck read 0.1% busy behind the terminal and 17.9% raised. `scripts/perf-resize-profile.sh` now raises the target window before sampling for exactly this reason. A flat-zero profile means "occluded", not "fixed".
+- **HMR is live from the worktree.** The app auto-starts a Vite dev server for its own source tree (observed on `127.0.0.1:55270`). To confirm what the running app is actually serving: `curl -s "http://127.0.0.1:<port>/src/<path-to-module>"` and read the payload. Do this before trusting any before/after.
+
+#### [P16] Absolute paths into the worktree, always (DECIDED) {#p16-absolute-paths}
+
+**Decision:** every Bash invocation touching the tree uses an absolute path under the worktree. Never a bare `cd tugdeck`, never a relative `git checkout <path>`.
+
+**Rationale:** the Bash tool's working directory persists across calls and was silently reset to the main checkout mid-run, which invalidated a set of verification results and pointed a `git checkout` at the wrong tree. The damage was nil by luck, not by design.
+
+### New open questions {#a-open-questions}
+
+#### [Q03] What animates in an empty deck? (OPEN — the central question) {#q03-empty-deck-animations}
+
+**Question:** with zero cards, what does `document.getAnimations()` report, and which entries fail the residency contract?
+
+**Why it matters:** it is the whole attribution. Until it is answered, no remediation can be aimed.
+
+**Candidates to check first** (persistent chrome, none yet examined): the Lens rail and its `--tugx-lens-rail` registered property; the deck canvas / imposer settle machinery (`deck-canvas.tsx` arms `data-imposer-settling` from a store subscriber); the window chrome's connection/status affordances; the tugcast connection indicator; any always-mounted sparkline or pulse-line surface; `tug-sheet` shade elements that may be mounted at rest (flagged in [P07] as needing an unmount-at-rest check).
+
+**Plan to resolve:** #step-11 and #step-12.
+
+#### [Q04] Did the empty-deck measurement actually measure an empty deck? (OPEN — verify before building on T02) {#q04-empty-deck-validity}
+
+**Question:** the zero-card layout was written straight into tugbank and applied with `tugutil host tell reload`. The resulting numbers were *identical* to the seeded runs, which is either the finding itself or evidence that the reload did not take.
+
+**Why it matters:** the entire addendum rests on T02's last row.
+
+**Plan to resolve:** re-run the isolation inside the app-test harness, where the deck's contents are seeded by the harness and can be asserted (count the mounted cards via `evalJS` in the same run as the census). This is the first assertion #step-11 should make. Do not build remediation on T02 until it holds.
+
+**Reproduction of the seeding used** (for the record, and to retry): write the layout, then reload.
+
+```
+tugbank --instance debug-tugdash-animation-tuneup write dev.tugtool.deck.layout layout "$(cat layout.json)" --type json
+tugutil host tell reload --instance debug-tugdash-animation-tuneup
+tugutil host tell show-card -p component=<componentId> --instance debug-tugdash-animation-tuneup
+```
+
+#### [Q05] Do `var()`-bearing keyframes block compositor acceleration in WebKit? (OPEN — strong hypothesis, unverified) {#q05-var-keyframes}
+
+**Question:** several of Tug's loops interpolate values that are `var()` references rather than literals — the pulsing dot's `breathe` and `emit-expand` keyframes hold `scale(var(--tugx-progress-pulsing-dot-dot-scale-min, …))`, and durations are `calc(… * var(--tug-timing, 1))` throughout. If WebKit declines to accelerate a keyframe effect whose values depend on custom properties (as it must, since a custom property can change at any time and is resolved during style), then those loops were **never** accelerated and never could be — and no amount of re-plumbing the animated *property* fixes them.
+
+**Why it matters:** it would explain steps 3–5 producing no delta, it applies to nearly every loop in the codebase, and it would add a clause to Spec S01 that changes how every future animation is authored (literal keyframes; parameterize by swapping the animation, not by `var()` inside it).
+
+**Plan to resolve:** #step-12 — the census reports each entry's keyframe values, so a `var()`-bearing effect is visible in the output; confirm with a one-variable A/B in the running app (literalize the dot's keyframes, re-profile) and, if it holds, grep WebKit's behavior rather than guessing at the mechanism.
+
+**[Q01] remains OPEN** (#q01-thicken-parity): the stacked-stroke thicken shipped in `cd9ee8916` has never been seen. Per [P15] it cannot be judged from this environment; it needs the user's eyes on the running build, or an `app.screenshot()` comparison inside an app-test.
+
+### Revised execution steps {#a-execution-steps}
+
+#### Revised Step Status Ledger {#a-step-status-ledger}
+
+| Step | Title | Status | Commit |
+|---|---|---|---|
+| #step-1 | Baseline profile + census helper + profiling recipe | done | `92f80410e` |
+| #step-2 | Skeleton shimmer overlay | done | `757bb04fb` |
+| #step-3 | Pulsing-dot thicken crossfade | done (Q01 open) | `cd9ee8916` |
+| #step-4 | Spinner HTML spokes | done | `43c627966` |
+| #step-5 | Ring spin to wrapper; pie/bar/wave census pass | done | `5a193deff` |
+| #step-11 | Census app-test as diagnostic instrument | done | `838704d6a` |
+| #step-12 | Attribute the idle burn | done | `9df8c4425` |
+| #step-13 | Layer-tree structural probe | done | `d23e8ef70` |
+| #step-14 | Revised remediation plan | done | `14fb1b0e5` |
+| #step-6 | Motion stations + will-change audit | held ([P14]) | — |
+| #step-7 | Collapse dormancy | held ([P14]) | — |
+| #step-8 | Residency app-test (contract assertions) | folded into #step-11 / re-opened after #step-14 | — |
+| #step-9 | tuglaws doctrine | pending (rewrite after #step-14) | — |
+| #step-10 | Integration checkpoint | pending | — |
+
+#### Step 11: Census app-test as diagnostic instrument {#step-11}
+
+**Depends on:** #step-1
+
+**Commit:** `tugways(motion-residency): census app-test reporting every running animation`
+
+**References:** [P12], [P09], [Q03], [Q04], Spec S01, (#a-measurement)
+
+**Artifacts:**
+- `tests/app-test/at02XX-motion-residency.test.ts` (next free AT number per `tuglaws/app-test-inventory.md`; `at0284` was highest at authoring time)
+- Registration in `tuglaws/app-test-inventory.md` with `@covers` lines (`perf-monitor.ts`, `tug-progress-indicator.tsx`, the internal variant files, `tug-skeleton.tsx`, `tug-text-editor/wave-caret.ts`, `tug-pane.css`)
+
+**Tasks:**
+- [ ] Launch with **no cards** and assert the deck really is empty (`evalJS` a count of mounted card roots) — this discharges [Q04] properly, in a harness that controls the deck instead of writing tugbank behind the app's back.
+- [ ] Call `window.tugPerfMonitor.animationCensus()` and print the **full** `entries` array (name, kind, target, properties, playState, stationed, svgTarget) into the test output. Diagnosis is the deliverable; assertions come later.
+- [ ] Repeat with the `gallery-tug-progress-indicator` card seeded, so the two censuses subtract.
+- [ ] Assert only what is safe today: the vacuous-pass floor (seeded run discovers ≥ the card's running-variant count) and that the census call itself works.
+- [ ] Keep it fast and exiting per app-test doctrine.
+
+**Tests:** the test itself.
+
+**Checkpoint:**
+- [x] `just app-test tests/app-test/at0288-motion-residency.test.ts` passes and its output **names every animation running in an empty deck**
+- [x] `just app-test-covers-check` passes
+
+**Result — the empty deck runs nothing** {#a-census-result}
+
+`tests/app-test/at0288-motion-residency.test.ts`, one launch, two decks:
+
+| Deck | Card hosts | `getAnimations()` total | Long-running | In violation |
+|---|---|---|---|---|
+| Empty (asserted) | 0 | **0** | 0 | 0 |
+| `gallery-tug-progress-indicator` | 1 | 161 | 161 | 161 |
+
+Two things fall out of the first row, and one out of the second.
+
+- **[Q03] is answered, and the answer is "nothing".** With zero cards mounted, `document.getAnimations()` returns an empty list — not a short list of chrome loops. The candidate list in [Q03] (Lens rail, imposer settle, connection affordances, sparkline, sheet shade) is empty of animations at rest. Whatever costs 17.2% in an idle empty-deck profile is **not an animation**, so no residency work can reach it. #step-12's fourth task is now its only task.
+- **[Q04] resolves against T02's last row.** The profiled "zero cards" deck showed `applyKeyframeEffects` at 62 samples (7%). A genuinely empty deck has no keyframe effects to apply. So the tugbank-written layout plus `host tell reload` did **not** empty the deck — T02's last row measured a deck that still had cards in it, and its agreement with the seeded rows is an artifact, not a finding. The *first three* rows of T02 stand; the conclusion drawn from the fourth ("an empty deck costs what a full one costs") is withdrawn pending a re-measurement with the deck emptied through the app.
+- **Steps 2–5 did their job, on their own terms.** All 161 seeded violations are the single reason `no .tugx-motion-station ancestor` — which is #step-6, held. Zero entries animate a non-accelerable property, zero target an SVG element, zero share a box with a demoting neighbour. The shapes the plan set out to fix are fixed; the profile not moving is a separate fact about what the profile was measuring.
+
+---
+
+#### Step 12: Attribute the idle burn {#step-12}
+
+**Depends on:** #step-11
+
+**Commit:** `tugways(motion-residency): <what the attribution turned out to be>` (or none — this step may be investigation only)
+
+**References:** [Q03], [Q05], (#a-measurement), (#webkit-cost-model)
+
+**Tasks:**
+- [ ] Take the empty-deck census from #step-11 and, for each entry, decide: is it a residency violation, an accelerated loop that still forces per-frame compositing updates, or something the contract does not cover?
+- [ ] Test [Q05]: literalize one loop's `var()`-bearing keyframes in the running app (HMR), re-profile, and compare. A delta confirms the hypothesis and promotes it to a Spec S01 clause.
+- [ ] For each attributed source, record its cost with a `perf-resize-profile` A/B — one variable at a time, confirming via `curl` on the dev server that the running app has the change ([P15]).
+- [ ] If the census reports **nothing** running in an empty deck, the trigger is not an animation: profile with the dev-log and `PerformanceObserver` to find what dirties style per frame (candidates: a `requestAnimationFrame` loop, a store notifying on a timer, a `ResizeObserver` feedback cycle, the imposer's settle subscriber).
+
+**Checkpoint:**
+- [x] The idle burn is attributed to named sources with per-source numbers, written into this document as Table T03
+
+**Result — the burn is the gallery card, and it scales with the number of running loops** {#a-attribution}
+
+Every row below is a 6s `just perf-resize-profile idle` on `debug-tugdash-animation-tuneup`, same window (1590×1028), raised, minutes apart, with the deck's contents confirmed in the app's own persisted layout before sampling.
+
+**Table T03: idle cost by deck contents and by one-variable A/B** {#t03-attribution}
+
+| Deck / variable | Busy / total | `updateRendering` | `updateCompositing…` | `computeCompositingReq…` | `TreeResolver::resolve` | `applyKeyframeEffects` |
+|---|---|---|---|---|---|---|
+| Empty (0 cards, 0 animations) | **1 / 4785 (0.0%)** | 0 | 0 | 0 | 0 | 0 |
+| `lens` only | **8 / 4765 (0.2%)** | 0 | 0 | 0 | 0 | 0 |
+| `gallery-skeleton` only | **11 / 4772 (0.2%)** | 8 | 0 | 0 | 4 | 1 |
+| `gallery-tug-progress-indicator` only | **926 / 4712 (19.7%)** | 894 | 333 | 204 | 270 | 69 |
+| …with `var()` keyframes literalized | 947 / 4702 (20.1%) | 926 | 351 | 221 | 268 | 72 |
+| …with `will-change` removed | 934 / 4713 (19.8%) | 902 | 337 | 202 | 276 | 76 |
+| …with every pulsing-dot loop silenced | **504 / 4726 (10.7%)** | 473 | 253 | 179 | 41 | 9 |
+
+What this establishes, and what it retires:
+
+- **T02 is retired in full.** Its four rows were all measured against the same never-emptied four-card deck (`lens` + `gallery-tug-progress-indicator` + two `gallery-skeleton`), which is why they agreed with each other to within noise. The mechanism is now known and it is not the one first suspected: **`tugutil host tell reload` persists the live deck before it reloads**, so any layout written into tugbank beforehand is overwritten by the app's own save on the way out and the reload restores what was already on screen. Writing `dev.tugtool.deck.layout` and reloading is therefore a no-op *by construction*, whatever the layout says — verified directly by writing a one-card layout, reading it back intact, reloading, and reading back the pre-existing deck. The route that does change a live deck is the app's own actions: `tugutil host tell close-all` (repeat until the panes are gone) and `tugutil host tell show-card`.
+- **Nothing costs anything at rest except the indicator gallery.** An empty deck, a Lens, and a card full of skeletons are all within noise of zero. The plan's premise — that Tug burns CPU while idle — is true of exactly one surface, and that surface is a stress bench showing 161 concurrent loops, not a thing a user sits in front of.
+- **[Q05] is REFUTED.** Literalizing the pulsing dot's `var()`-bearing `transform` keyframes moved the profile by less than run-to-run noise (19.7% → 20.1%). Custom properties in keyframe values do not block acceleration in this WebKit, and nothing in Spec S01 needs a clause about them.
+- **`will-change` is not the lever either.** Removing it from the dot's animating rule changed nothing (19.7% → 19.8%) — the `translate3d` poses already promote those elements, so the hint was redundant rather than load-bearing.
+- **Cost scales with the count of concurrently running loops.** Silencing the pulsing dots — about 110 of the card's 161 animations — halved the burn (19.7% → 10.7%) and collapsed style resolution with it (`TreeResolver::resolve` 270 → 41, `applyKeyframeEffects` 69 → 9). The remaining ~50 loops carry the remaining 10.7%. There is no single villain to fix; the bill is per-running-animation, and it is the same bill whether or not the animation is accelerable-shaped.
+- **The walk outlives the blend.** With the dots silenced, `updateCompositingLayersAfterStyleChange` fell only 333 → 253 while style resolution fell by 85%. The compositing walk is not proportional to the animations the way style resolution is — it is proportional to the layer tree those animations promote, and it is the half that #step-13 measures.
+- **Steps 2–5 were correct and are now measurable.** `gallery-skeleton` at 0.2% is what step 2's overlay crossfade bought; the earlier "one skeleton card, 17.2%" reading was the stale deck, not the skeletons.
+
+**A tooling caveat for anyone repeating this** {#a-deck-verification}
+
+Two traps, both of which cost this investigation a wrong conclusion before they were understood.
+
+- **The persisted layout lags the live deck.** `dev.tugtool.deck.layout` is written on a long debounce, so reading it back seconds after a `host tell show-card` reports the *previous* contents. Two `show-card` calls that looked like no-ops turned out to have both applied, and only surfaced after a reload.
+- **Writing the layout and reloading cannot seed a deck.** `host tell reload` saves the live deck on the way out, clobbering the write. There is no shell-side route that sets deck contents directly.
+
+So deck contents are controlled by the app's own actions (`close-all`, `show-card`) and confirmed either by a `tugbank read` taken *well* after the change has settled, or — properly — inside the app-test harness, which seeds and asserts the deck in the same run. Add this to [P15]'s list of what this environment cannot do.
+
+---
+
+#### Step 13: Layer-tree structural probe {#step-13}
+
+**Depends on:** #step-11
+
+**Commit:** `tugways(motion-residency): layer-tree structural probe`
+
+**References:** [P13], [P02], (#webkit-cost-model), Risk R02
+
+**Tasks:**
+- [ ] Add a `layerTreeProbe()` beside `animationCensus()` in `perf-monitor.ts`: DOM depth distribution, count of stacking contexts, count of elements with a standing `will-change`, count of elements carrying `contain`, and the deepest chain of stacking contexts with its selector path.
+- [ ] Run it against an empty deck, a one-card deck, and a full session deck; record the shape.
+- [ ] Correlate with the sample: `computeCompositingRequirements` / `calculateClipRects` / `accumulateOffsetTowardsAncestor` sample counts against measured depth.
+- [ ] Identify which ancestors already bound the walk (`.tug-pane-chrome` has `overflow: clip; isolation: isolate`) and where a `contain` boundary would cut the deepest chains.
+
+**Checkpoint:**
+- [x] Depth and layer counts are numbers in this document, not adjectives — Table T04
+- [x] At least one candidate containment boundary is identified with the sample-count reduction it would plausibly buy — two were tried, and both bought nothing
+
+**Result — the tree is shallow and containment buys nothing** {#a-structure}
+
+`layerTreeProbe()` (in `perf-monitor.ts`, beside `animationCensus()`, exposed as `window.tugPerfMonitor.layerTreeProbe`) walks every element, reads its computed style, and reports depth, stacking contexts, standing `will-change`, containment boundaries, and the deepest nested stacking chain with its selector path. `at0288` reads it against the same two decks it censuses.
+
+**Table T04: the structure a dirty frame walks** {#t04-layer-tree}
+
+| Deck | Elements | Max depth | Mean depth | Stacking contexts | Deepest chain | `will-change` | `contain` |
+|---|---|---|---|---|---|---|---|
+| Empty | 32 | 8 | 4.6 | 5 | 2 | 0 | 0 |
+| `gallery-tug-progress-indicator` | 1016 | 21 | 16.7 | 254 | **5** | 127 | **0** |
+
+Depth histogram for the seeded deck: `{"0-9": 50, "10-19": 735, "20-29": 231}`. Deepest stacking chain: `html > div.tug-pane > div.tug-pane-chrome > span.tug-progress-ring.tug-progress-ring-indeterminate > svg.tug-progress-ring-svg`.
+
+**Table T05: containment A/Bs against the 19.7% baseline** {#t05-containment}
+
+| Variable | Busy / total | `updateCompositing…` | `computeCompositingReq…` |
+|---|---|---|---|
+| Baseline (`gallery-tug-progress-indicator`) | 927 / 4713 (19.7%) | 318 | 183 |
+| `contain: layout paint` on `.tug-progress-indicator` (one per glyph) | 905 / 4708 (19.2%) | 309 | 198 |
+| `contain: layout paint` on `[data-card-host]` (one per card) | 903 / 4718 (19.1%) | 345 | 193 |
+
+**[P13] does not survive its own measurement.** The layer tree is not deep and it does not branch deeply: 21 elements at the very bottom, a mean of 16.7, and a *deepest nested stacking chain of five*. A recursion five frames deep over a thousand elements is not where 19.7% of a core goes. Both containment boundaries — one fine-grained (254 of them, one per glyph), one coarse (one per card, the whole subtree) — moved the profile by half a point, which is inside the run-to-run spread of the baseline itself. Structure is not a co-equal cost driver, and "reduce transcript layer depth" should go back to being out of scope until some *measured* surface says otherwise.
+
+What the numbers do say is that the walk's cost tracks the **breadth** of composited content, not the depth of the tree: 254 stacking contexts and 127 standing `will-change` hints on one card, essentially all of them created by the animating glyphs themselves. That is the same quantity #step-12 found the burn scaling with, seen from the other side — which is why silencing the loops cut style resolution by 85% but the compositing walk by only 24%. The layers outlive the animation that promoted them.
+
+Two smaller findings worth keeping:
+
+- **Nothing in the deck uses containment at all** (`contain: 0` on both decks). That is a genuine gap in the codebase, just not one that pays here.
+- **`translate3d(x, y, 0)` does not read as a 3D transform.** The probe counts zero `matrix3d` computed transforms on a deck full of `translate3d` poses — a zero `z` normalizes to a 2D matrix in computed style. Whether WebKit still promotes internally is not observable from script, so the pulsing dot's docstring claim that its `translate3d` "gets the element a layer of its own" is unverified rather than wrong. The `will-change` A/B in T03 is the relevant evidence: removing the hint changed nothing, which is consistent with the element already being promoted by something.
+
+---
+
+#### Step 14: Revised remediation plan {#step-14}
+
+**Depends on:** #step-12, #step-13
+
+**Commit:** `tugways(motion-residency): remediation plan revised against measured attribution`
+
+**Tasks:**
+- [ ] Write Addendum B: what the cost actually is, split between trigger-side (what dirties style) and bill-side (what a dirty frame costs).
+- [ ] Re-scope #step-6 and #step-7 against the attribution — keep, re-target, or withdraw each with a reason.
+- [ ] Propose the structural work as concrete steps with falsifiable checkpoints, sized by [P13]'s numbers.
+- [ ] Restate the phase's #success-criteria in terms that the empty-deck measurement can falsify (the current criteria could all pass while the app still janks).
+- [ ] Re-open #step-8's contract assertions and #step-9's doctrine against the revised model.
+
+**Checkpoint:**
+- [x] A fresh session can implement the remediation from Addendum B alone
+
+---
+
+### Resuming from here {#a-resume}
+
+A session picking this up cold should, in order: read #a-state and #a-measurement; re-read [P15] before attempting any verification; start at #addendum-b, which supersedes everything above it. The dash already exists — `tugutil dash create animation-tuneup` is idempotent and returns the worktree path. The plan file being edited is the **worktree copy**; never write to the base checkout.
+
+---
+
+## Addendum B — What the cost actually is (2026-07-28) {#addendum-b}
+
+Steps 11–13 replaced every number this plan was built on. Addendum A's three readings are all retired: the burn *is* in the cards, the walk does *not* outweigh the blend on any surface that matters, and structure is *not* a co-equal cost driver. This addendum states what the measurements support, re-scopes the held steps against them, and gives the remaining work as steps with checkpoints that can fail.
+
+Where a statement here contradicts the body or Addendum A, this addendum wins.
+
+### The cost, in one paragraph {#b-the-cost}
+
+**Tug does not burn CPU at idle on any surface a user sits in front of.** An empty deck: 0.0% busy and zero animations. A Lens: 0.2%. A card full of skeletons: 0.2%. The only expensive surface in the app is `gallery-tug-progress-indicator` — the *bench* that renders 161 concurrent loops so a developer can compare six variants across five states and ten sizes at once — and it costs 19.7%. That cost is roughly linear in the number of animations running: silencing the ~110 pulsing-dot loops took it to 10.7%. It is not caused by any of the things this plan assumed. Not by non-accelerable properties (there are none left after steps 2–5). Not by `var()` in keyframes ([Q05], refuted by A/B). Not by missing or excess `will-change` (removing it changed nothing). Not by tree depth (mean 16.7, deepest nested stacking chain 5). Not by missing containment (two A/Bs, both inside noise).
+
+### Trigger and bill {#b-trigger-and-bill}
+
+The split Addendum A proposed is real, but the proportions are the other way around and both halves scale with the same quantity — **how many loops are running right now**, not how they are authored.
+
+- **Trigger — style resolution.** Tracks the running-animation count almost exactly. Silencing 110 of 161 loops cut `TreeResolver::resolve` from 270 samples to 41 (-85%) and `applyKeyframeEffects` from 69 to 9 (-87%).
+- **Bill — the compositing walk.** Tracks the *composited breadth* those animations promote, and outlives them: the same silencing cut `updateCompositingLayersAfterStyleChange` only 333 → 253 (-24%). The layers persist after the animation that created them stops. This is why containment at either granularity bought nothing — containment bounds a subtree's *extent*, and the walk here is wide, not deep.
+
+The single lever both halves respond to is therefore **how many animations are running at once**. Nothing about how an individual animation is written changes its cost once it is already accelerable-shaped.
+
+### Re-scoped decisions {#b-decisions}
+
+#### [P17] The station rule is withdrawn from the contract (SUPERSEDES [P02] and Spec S01's station clause) (DECIDED) {#p17-stations-withdrawn}
+
+**Decision:** `.tugx-motion-station` is removed from the residency contract. `animationCensus()` stops emitting `no .tugx-motion-station ancestor` as a violation, and Spec S01 loses that rule. #step-6 is **withdrawn**, not held.
+
+**Rationale:** the rule was justified by a cost model that measured false. Containment was tried at both the granularity stations would have used (per-glyph, 254 boundaries) and a coarser one (per-card), and neither moved the profile. Meanwhile the rule dominates the census output — all 161 seeded entries are "violations" for this reason and this reason only — which makes the violation list useless as a signal. A contract clause with no measured backing that also drowns out the clauses that do have backing is worse than no clause.
+
+**Implications:** after this lands, a non-empty `census.violations` means something again: a property that cannot be accelerated, an SVG target, or a demoting neighbour in the same box. That is exactly the set steps 2–5 fixed, so the assertion "zero violations" becomes a true regression gate rather than a vacuous one.
+
+#### [P18] The `will-change` audit inverts: remove hints, do not add them (DECIDED) {#p18-will-change-inverts}
+
+**Decision:** the surviving half of #step-6 is a sweep to *delete* standing `will-change` declarations that buy nothing, not to add them to surfaces that lack them.
+
+**Rationale:** the seeded gallery carries 127 standing `will-change` hints. Removing the pulsing dot's changed the profile by 0.1 points. Each hint is a promise to the engine to keep a layer around, and the bill above is proportional to composited breadth — so a hint that does not demonstrably help is a hint that costs.
+
+**Method:** one A/B per hint, on the surface that actually carries it, against a profile taken minutes apart on the same window. A hint survives only if removing it measurably hurts.
+
+#### [P19] Dormancy is the only remediation the measurement supports (SUPERSEDES [P14]'s hold on #step-7) (DECIDED) {#p19-dormancy-only}
+
+**Decision:** #step-7 comes off hold and becomes the phase's remaining substantive work, broadened past collapsed panes: an animation nobody can see should not run, whether it is hidden by a collapsed pane, a background tab, a scrolled-away region, or an occluded window.
+
+**Rationale:** cost is linear in concurrently-running loops. Not running the invisible ones is the only lever with a measured slope behind it. It is also the lever that would have made the gallery bench cheap without changing a single glyph.
+
+**Scope note:** WebKit already throttles a fully occluded *window* (the 0.1% vs 17.9% reading in [P15]), so the window case is free. What is not free is in-page invisibility, which the engine does not know about.
+
+#### [P20] The phase's problem statement did not survive (DECIDED — the honest reading) {#p20-premise-retired}
+
+**Decision:** record plainly that the phase set out to fix an idle burn that no user-facing surface exhibits. The re-plumbs in steps 2–5 are still correct work and still land; the enforcement and dormancy work below is still worth doing as a guardrail. But the plan should not continue to describe itself as fixing a present-tense performance problem.
+
+**Rationale:** every idle profile that motivated this plan was taken against a deck that had the gallery bench open, and the deck could not be emptied by the route being used to try (see #a-deck-verification). The bench is a developer surface. Whether the remaining steps are worth the time is a call for the user to make with these numbers in hand, not a foregone conclusion.
+
+### Revised success criteria {#b-success-criteria}
+
+These SUPERSEDE #success-criteria. Each one can fail.
+
+1. `at0288`'s empty-deck census reports **zero** animations and its layer probe reports a non-empty tree. (Holds today.)
+2. `at0288`'s seeded-deck census reports **zero** violations once [P17] lands. (Fails today: 161, all for the withdrawn rule.)
+3. A deck showing `gallery-tug-progress-indicator` in a **collapsed** pane censuses zero *running* animations — every loop `paused` or absent. (Fails today: dormancy is unimplemented.)
+4. An idle profile of any single non-gallery card stays under 1% main-thread busy. (Holds today: lens 0.2%, skeleton gallery 0.2%.)
+5. The idle profile of a deck showing the indicator gallery with its pane collapsed is within noise of an empty deck. (Fails today; this is criterion 3 measured rather than asserted.)
+
+### Remaining execution steps {#b-execution-steps}
+
+#### Revised Step Status Ledger {#b-step-status-ledger}
+
+| Step | Title | Status | Commit |
+|---|---|---|---|
+| #step-1 … #step-5 | Census helper, profiling recipe, four re-plumbs | done | see #a-step-status-ledger |
+| #step-11 | Census app-test as diagnostic instrument | done | `838704d6a` |
+| #step-12 | Attribute the idle burn | done | `9df8c4425` |
+| #step-13 | Layer-tree structural probe | done | `d23e8ef70` |
+| #step-14 | Addendum B | done | this section |
+| #step-15 | Withdraw the station rule; make violations mean something | pending | — |
+| #step-16 | Dormancy for invisible motion | pending | — |
+| #step-17 | `will-change` deletion sweep | pending | — |
+| #step-18 | Doctrine: `tuglaws/motion-residency.md` written against the numbers | pending | — |
+| #step-6 | Motion stations | **withdrawn** ([P17]) | — |
+| #step-7 | Collapse dormancy | superseded by #step-16 ([P19]) | — |
+| #step-8 | Residency app-test (contract assertions) | folded into #step-15 | — |
+| #step-9 | tuglaws doctrine | superseded by #step-18 | — |
+| #step-10 | Integration checkpoint | withdrawn — #step-16's checkpoint is the integration check | — |
+
+#### Step 15: Withdraw the station rule; make violations mean something {#step-15}
+
+**Depends on:** #step-13
+
+**Commit:** `tugways(motion-residency): violations mean acceleration, not stations`
+
+**References:** [P17], Spec S01, (#a-census-result)
+
+**Tasks:**
+- [ ] Delete `MOTION_STATION_SELECTOR`, the `stationed` field, and the `no … ancestor` violation from `animationCensus()` in `tugdeck/src/lib/perf-monitor.ts`. Keep the property / SVG / co-animation rules.
+- [ ] Delete Spec S02 (`.tugx-motion-station`) and Spec S01's station clause from this document, with a pointer to [P17].
+- [ ] Update `at0288`'s reporter and docstring; drop `stationed` from its printed columns.
+- [ ] Promote the seeded-deck assertion from a floor to a gate: `expect(seeded.violations).toEqual([])`, with the failure message naming the offending animation and target.
+
+**Tests:** `at0288`.
+
+**Checkpoint:**
+- [ ] `just app-test tests/app-test/at0288-motion-residency.test.ts` passes with `violations` asserted empty on the seeded deck
+- [ ] Re-introducing a non-accelerable property in any glyph makes it fail, naming that glyph
+
+---
+
+#### Step 16: Dormancy for invisible motion {#step-16}
+
+**Depends on:** #step-15
+
+**Commit:** `tugways(motion-residency): motion stops where it cannot be seen`
+
+**References:** [P19], [P08], criteria 3 and 5 in #b-success-criteria
+
+**Tasks:**
+- [ ] Decide the mechanism and record it as a [P##]: a CSS gate driven by an existing collapsed/background attribute is preferred over any JS observer — a `body`-level or pane-level `[data-collapsed] … { animation-play-state: paused }` rule costs nothing and needs no subscription. Only reach for `IntersectionObserver` if the attribute does not exist.
+- [ ] Apply it to the collapsed-pane case first, since the attribute is already there ([P08] named the surfaces).
+- [ ] Extend to background tabs in a multi-card pane — a non-front tab's card stays mounted and its loops keep running today.
+- [ ] Confirm the pause is `paused`, not removed: a resumed pane must pick the loop up mid-phase, not restart it (the pulsing dot's whole phase discipline depends on this).
+
+**Tests:** `at0288` gains a third deck — the same gallery card in a collapsed pane — asserting every censused animation reports `playState === "paused"`.
+
+**Checkpoint:**
+- [ ] Criterion 3 holds: collapsed-pane census reports no `running` animation
+- [ ] Criterion 5 holds: `just perf-resize-profile idle 6` on that deck reads within noise of an empty deck (target < 1%, against the 19.7% it costs uncollapsed)
+- [ ] Expanding the pane resumes the motion without a visible restart
+
+---
+
+#### Step 17: `will-change` deletion sweep {#step-17}
+
+**Depends on:** #step-16
+
+**Commit:** `tugways(motion-residency): drop will-change hints that buy nothing`
+
+**References:** [P18], Table T03, Table T04
+
+**Tasks:**
+- [ ] Enumerate every standing `will-change` in `tugdeck/` (the probe counts 127 live on one gallery deck; the source count is much smaller and is what to work from).
+- [ ] A/B each one on the surface that carries it: remove, `curl` the dev server to confirm the running app has the change, profile, compare.
+- [ ] Delete the ones that show no regression. Leave a comment on each survivor naming the measurement that saved it.
+
+**Checkpoint:**
+- [ ] Every surviving `will-change` in the codebase cites a measurement
+- [ ] The seeded-gallery layer probe's `willChange` count falls, and its idle profile does not rise
+
+---
+
+#### Step 18: Doctrine written against the numbers {#step-18}
+
+**Depends on:** #step-15, #step-16, #step-17
+
+**Commit:** `tuglaws(motion-residency): the contract, and what it is actually for`
+
+**Tasks:**
+- [ ] Write `tuglaws/motion-residency.md` from the surviving rules: `transform`/`opacity` only, on an element that can hold a layer, with no demoting neighbour in the same keyframe-effect stack — and the fourth rule the measurements added, which is that motion nobody can see does not run.
+- [ ] State the cost model as measured: linear in concurrently-running loops; style resolution tracks the loops, the compositing walk tracks the layers they promote and outlives them.
+- [ ] Record the refuted hypotheses by name so nobody re-derives them — `var()` keyframes ([Q05]), `will-change` as a lever, containment, tree depth. A doctrine that only lists what is true invites the same wrong guesses.
+- [ ] Fix the stale claims the investigation found in existing docstrings: the pulsing dot's "translate3d gets the element a layer of its own" is unverified from script (see #a-structure).
+- [ ] Point at `at0288` as the enforcement and at `just perf-resize-profile` as the measurement, including the two deck-verification traps in #a-deck-verification.
+
+**Checkpoint:**
+- [ ] Every rule in the doc cites the measurement that justifies it, or is marked as a convention with no measured backing
+- [ ] `bun run audit:*` and the app-test corpus selection for the touched files pass
+
+---
+
+### Still open {#b-open}
+
+- **[Q01]** (#q01-thicken-parity) — the stacked-stroke thicken shipped in `cd9ee8916` has still never been seen. It needs the user's eyes on the running build, or an `app.screenshot()` comparison inside an app-test. It is the one visual risk this whole investigation has not touched.
+- **Is the rest worth doing?** [P20] is the honest framing: steps 15–18 are a guardrail against a regression, not a fix for a present complaint. That is a legitimate thing to build and it is also the user's call.

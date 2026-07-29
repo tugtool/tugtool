@@ -17,12 +17,21 @@
  *   aborted   — same pose as stopped; the danger tint comes from the
  *               parent via `--tugx-progress-indicator-fill`.
  *
- * Geometry (SVG viewBox 0 0 100 100): each spoke is a rounded rect
- * positioned vertically above the center, from inner radius 18 to
- * outer radius 48 (units of the 100×100 viewBox). Width 10. The
- * inner radius leaves a small empty center; spokes occupy most of
- * the host radius so the glyph reads at parity with the ring / pie
- * variants at the same `size`.
+ * Geometry: each spoke is a capsule positioned vertically above the
+ * center, from inner radius 24 to outer radius 48 on a 100-unit
+ * square, emitted as percentages of the root box so the glyph scales
+ * with `size`. Width 9. The inner radius leaves a small empty center;
+ * spokes occupy most of the host radius so the glyph reads at parity
+ * with the ring / pie variants at the same `size`.
+ *
+ * The spokes are HTML spans rather than SVG rects, and that is a
+ * residency requirement, not a preference: an SVG interior element
+ * never gets a compositing layer, so twelve SVG spokes meant twelve
+ * perpetual main-thread opacity animations per visible spinner. A
+ * capsule is exactly what a span with a full border-radius is. Each
+ * spoke's placement rotation is a STATIC transform, which acceleration
+ * does not object to — only the animated property set matters. See
+ * tuglaws/motion-residency.md.
  *
  * Color is inherited from the parent's `--tugx-progress-indicator-fill`.
  *
@@ -49,15 +58,19 @@ export interface TugProgressSpinnerProps {
 const SPOKE_COUNT = 12;
 const SPOKES = Array.from({ length: SPOKE_COUNT }, (_, i) => i);
 
-// SVG viewBox is 100×100. Spoke is a vertical rounded rect above the
-// center, from inner radius (18) to outer radius (48). Width 9.
+// Geometry on a 100-unit square, which is also percent of the root box.
+// A spoke is a vertical capsule above the center, running from the inner
+// radius (24) out to the outer radius (48). Width 9.
 const INNER = 24;
 const OUTER = 48;
 const SPOKE_WIDTH = 9;
 const SPOKE_HEIGHT = OUTER - INNER;
-const SPOKE_X = 50 - SPOKE_WIDTH / 2;
-const SPOKE_Y = 50 - OUTER;
-const SPOKE_RADIUS = SPOKE_WIDTH / 2;
+const SPOKE_LEFT = 50 - SPOKE_WIDTH / 2;
+const SPOKE_TOP = 50 - OUTER;
+// Rotation happens about the BOX center, which sits `OUTER` units below the
+// spoke's own top edge — expressed, as transform-origin requires, in units of
+// the spoke's own height.
+const SPOKE_ORIGIN_Y = (OUTER / SPOKE_HEIGHT) * 100;
 
 export const TugProgressSpinner = React.forwardRef<HTMLSpanElement, TugProgressSpinnerProps>(
   function TugProgressSpinner(
@@ -80,24 +93,21 @@ export const TugProgressSpinner = React.forwardRef<HTMLSpanElement, TugProgressS
           className,
         )}
       >
-        <svg viewBox="0 0 100 100" className="tug-progress-spinner-svg">
-          {SPOKES.map((i) => (
-            <rect
-              key={i}
-              className="tug-progress-spinner-spoke"
-              x={SPOKE_X}
-              y={SPOKE_Y}
-              width={SPOKE_WIDTH}
-              height={SPOKE_HEIGHT}
-              rx={SPOKE_RADIUS}
-              ry={SPOKE_RADIUS}
-              transform={`rotate(${i * (360 / SPOKE_COUNT)} 50 50)`}
-              style={{
-                animationDelay: `calc(${-(SPOKE_COUNT - i) / SPOKE_COUNT} * var(--tugx-progress-spinner-cycle))`,
-              }}
-            />
-          ))}
-        </svg>
+        {SPOKES.map((i) => (
+          <span
+            key={i}
+            className="tug-progress-spinner-spoke"
+            style={{
+              left: `${SPOKE_LEFT}%`,
+              top: `${SPOKE_TOP}%`,
+              width: `${SPOKE_WIDTH}%`,
+              height: `${SPOKE_HEIGHT}%`,
+              transformOrigin: `50% ${SPOKE_ORIGIN_Y}%`,
+              transform: `rotate(${i * (360 / SPOKE_COUNT)}deg)`,
+              animationDelay: `calc(${-(SPOKE_COUNT - i) / SPOKE_COUNT} * var(--tugx-progress-spinner-cycle))`,
+            }}
+          />
+        ))}
       </span>
     );
   },

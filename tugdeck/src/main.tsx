@@ -57,7 +57,9 @@ import { registerGalleryCards } from "./components/tugways/cards/gallery-registr
 import { installSessionPlacementGlobal } from "./components/tugways/cards/session-card-placement-experiment";
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import {
+  animationCensus,
   getPerfMonitorSnapshot,
+  layerTreeProbe,
   startPerfMonitor,
 } from "./lib/perf-monitor";
 import { initMotionObserver } from "./components/tugways/scale-timing";
@@ -327,9 +329,17 @@ if (!container) {
     startPerfMonitor();
     (
       window as unknown as {
-        tugPerfMonitor?: typeof getPerfMonitorSnapshot;
+        tugPerfMonitor?: {
+          snapshot: typeof getPerfMonitorSnapshot;
+          animationCensus: typeof animationCensus;
+          layerTreeProbe: typeof layerTreeProbe;
+        };
       }
-    ).tugPerfMonitor = getPerfMonitorSnapshot;
+    ).tugPerfMonitor = {
+      snapshot: getPerfMonitorSnapshot,
+      animationCensus,
+      layerTreeProbe,
+    };
   }
   if (import.meta.env.DEV) {
     installSessionPlacementGlobal();

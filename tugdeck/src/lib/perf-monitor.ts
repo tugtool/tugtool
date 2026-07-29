@@ -41,6 +41,8 @@
  *    (≤16ms) even while other cards stream.
  *  - STREAMING: React notification cadence per store is bounded by
  *    LIVE_NOTIFY_MIN_MS (~one frame), never per-token.
+ *  - MOTION: every long-running animation is compositor-resident —
+ *    see {@link animationCensus} and `tuglaws/motion-residency.md`.
  *
  * @module lib/perf-monitor
  */
@@ -140,6 +142,393 @@ export function startPerfMonitor(): void {
     heartbeatTimer = setTimeout(beat, HEARTBEAT_MS);
   };
   heartbeatTimer = setTimeout(beat, HEARTBEAT_MS);
+}
+
+// MARK: - Animation census (the motion-residency detector)
+
+/**
+ * An animation is long-running once it outlasts this many milliseconds
+ * of total playtime; infinite-iteration loops always qualify.
+ */
+const LONG_RUN_MS = 5_000;
+
+/** The only two properties WebKit can hand to the compositor. */
+const ACCELERATED_PROPERTIES = new Set(["transform", "opacity"]);
+
+/** `getKeyframes()` keys that describe the keyframe, not a property. */
+const KEYFRAME_METADATA_KEYS = new Set([
+  "offset",
+  "computedOffset",
+  "easing",
+  "composite",
+]);
+
+/** The contain wrapper that bounds an animation's overlap extent. */
+const MOTION_STATION_SELECTOR = ".tugx-motion-station";
+
+export interface AnimationCensusEntry {
+  /** `animation-name` for CSS loops; the WAAPI `id` (or `<waapi>`) otherwise. */
+  name: string;
+  /** `css` for `CSSAnimation`, `waapi` for a script-driven `Animation`. */
+  kind: "css" | "waapi";
+  /** `tag.class.class` of the effect target, plus any pseudo-element suffix. */
+  target: string;
+  /** Properties this animation's keyframes touch. */
+  properties: string[];
+  /** Properties every OTHER animation on the same box touches. */
+  coAnimatedProperties: string[];
+  playState: string;
+  /** `Infinity` serializes as `null` through the app-test JSON bridge. */
+  iterations: number | null;
+  durationMs: number | null;
+  /** Whether the target sits inside a `.tugx-motion-station`. */
+  stationed: boolean;
+  /** Whether the effect target is an SVG element (never accelerable). */
+  svgTarget: boolean;
+  /** One line per broken rule of the residency contract; empty = compliant. */
+  violations: string[];
+}
+
+export interface AnimationCensus {
+  /** Every animation `document.getAnimations()` reported, in scope. */
+  total: number;
+  /** How many of those are long-running per the contract. */
+  longRunning: number;
+  /** Long-running animations, compliant and not. */
+  entries: AnimationCensusEntry[];
+  /** The subset with a non-empty `violations` list. */
+  violations: AnimationCensusEntry[];
+}
+
+function describeTarget(target: Element, pseudo: string | null): string {
+  const tag = target.tagName.toLowerCase();
+  const classes = Array.from(target.classList);
+  const head = classes.length > 0 ? `${tag}.${classes.join(".")}` : tag;
+  return pseudo !== null && pseudo !== "" ? `${head}${pseudo}` : head;
+}
+
+function keyframeProperties(effect: KeyframeEffect): string[] {
+  const props = new Set<string>();
+  for (const frame of effect.getKeyframes()) {
+    for (const key of Object.keys(frame)) {
+      if (!KEYFRAME_METADATA_KEYS.has(key)) props.add(key);
+    }
+  }
+  return Array.from(props).sort();
+}
+
+function isLongRunning(effect: KeyframeEffect): boolean {
+  const timing = effect.getTiming();
+  const iterations = timing.iterations ?? 1;
+  if (iterations === Infinity) return true;
+  const duration = typeof timing.duration === "number" ? timing.duration : 0;
+  return duration * iterations > LONG_RUN_MS;
+}
+
+/**
+ * Inventory every long-running animation in the document and judge it
+ * against the compositor-residency contract (`tuglaws/motion-residency.md`):
+ * only `transform`/`opacity`, only on an `HTMLElement`, no co-animated
+ * property on the same box, and inside a `.tugx-motion-station`.
+ *
+ * This is the shared implementation behind the residency app-test and
+ * any future DevPanel tile — a violation names itself, so a regression
+ * fails with the offending animation and target in the message.
+ *
+ * `CSSTransition`s are excluded: they are finite by construction and so
+ * fall outside the contract. Every other `Animation` is in scope, WAAPI
+ * loops included — a script-driven loop is no cheaper than a CSS one.
+ *
+ * @param options.within CSS selector; when given, only animations whose
+ *   target sits inside a matching element are censused (the collapse-
+ *   dormancy assertion scopes to one pane this way).
+ */
+export function animationCensus(options?: { within?: string }): AnimationCensus {
+  const scope =
+    options?.within !== undefined
+      ? document.querySelector(options.within)
+      : null;
+  if (options?.within !== undefined && scope === null) {
+    return { total: 0, longRunning: 0, entries: [], violations: [] };
+  }
+
+  const all = document.getAnimations().filter((animation) => {
+    if (
+      typeof CSSTransition !== "undefined" &&
+      animation instanceof CSSTransition
+    ) {
+      return false;
+    }
+    const effect = animation.effect;
+    if (!(effect instanceof KeyframeEffect) || effect.target === null) {
+      return false;
+    }
+    return scope === null || scope.contains(effect.target);
+  });
+
+  // Every property animated on each (element, pseudo) box, across ALL
+  // animations — WebKit evaluates acceleration over the whole keyframe
+  // effect stack, so one stray property demotes its neighbours too.
+  const boxProperties = new Map<Element, Map<string, Set<string>>>();
+  const propertiesForBox = (
+    target: Element,
+    pseudo: string | null,
+  ): Set<string> => {
+    let byPseudo = boxProperties.get(target);
+    if (byPseudo === undefined) {
+      byPseudo = new Map<string, Set<string>>();
+      boxProperties.set(target, byPseudo);
+    }
+    const key = pseudo ?? "";
+    let props = byPseudo.get(key);
+    if (props === undefined) {
+      props = new Set<string>();
+      byPseudo.set(key, props);
+    }
+    return props;
+  };
+  for (const animation of all) {
+    const effect = animation.effect as KeyframeEffect;
+    const props = propertiesForBox(
+      effect.target as Element,
+      effect.pseudoElement,
+    );
+    for (const prop of keyframeProperties(effect)) props.add(prop);
+  }
+
+  const entries: AnimationCensusEntry[] = [];
+  for (const animation of all) {
+    const effect = animation.effect as KeyframeEffect;
+    if (!isLongRunning(effect)) continue;
+    const target = effect.target as Element;
+    const properties = keyframeProperties(effect);
+    const box = propertiesForBox(target, effect.pseudoElement);
+    const coAnimated = Array.from(box)
+      .filter((prop) => !properties.includes(prop))
+      .sort();
+    const svgTarget = !(target instanceof HTMLElement);
+    const stationed = target.closest(MOTION_STATION_SELECTOR) !== null;
+    const timing = effect.getTiming();
+    const iterations = timing.iterations ?? 1;
+    const duration = timing.duration;
+
+    const violations: string[] = [];
+    const offending = properties.filter(
+      (prop) => !ACCELERATED_PROPERTIES.has(prop),
+    );
+    if (offending.length > 0) {
+      violations.push(`animates ${offending.join(", ")}`);
+    }
+    if (svgTarget) {
+      violations.push("targets an SVG element (never accelerated)");
+    }
+    const offendingNeighbours = coAnimated.filter(
+      (prop) => !ACCELERATED_PROPERTIES.has(prop),
+    );
+    if (offendingNeighbours.length > 0) {
+      violations.push(
+        `shares its box with ${offendingNeighbours.join(", ")}`,
+      );
+    }
+    if (!stationed) {
+      violations.push(`no ${MOTION_STATION_SELECTOR} ancestor`);
+    }
+
+    entries.push({
+      name:
+        typeof CSSAnimation !== "undefined" && animation instanceof CSSAnimation
+          ? animation.animationName
+          : animation.id !== ""
+            ? animation.id
+            : "<waapi>",
+      kind:
+        typeof CSSAnimation !== "undefined" && animation instanceof CSSAnimation
+          ? "css"
+          : "waapi",
+      target: describeTarget(target, effect.pseudoElement),
+      properties,
+      coAnimatedProperties: coAnimated,
+      playState: animation.playState,
+      iterations: iterations === Infinity ? null : iterations,
+      durationMs: typeof duration === "number" ? duration : null,
+      stationed,
+      svgTarget,
+      violations,
+    });
+  }
+
+  return {
+    total: all.length,
+    longRunning: entries.length,
+    entries,
+    violations: entries.filter((entry) => entry.violations.length > 0),
+  };
+}
+
+// MARK: - Layer-tree probe (what a dirty frame costs to walk)
+
+/**
+ * `contain` values that establish a containment boundary the compositing
+ * walk can stop at. `size` alone does not.
+ */
+const CONTAINMENT_VALUES = ["paint", "layout", "strict", "content"];
+
+/** Selector path segments are capped so the deepest chain stays readable. */
+const CHAIN_PATH_LIMIT = 24;
+
+export interface LayerTreeProbe {
+  /** Every element in the document, root included. */
+  elements: number;
+  /** Depth of the deepest element, counting the root as 1. */
+  maxDepth: number;
+  /** Mean element depth — the multiplier on every ancestor walk. */
+  meanDepth: number;
+  /** Elements at each depth, bucketed by tens (`"0-9"`, `"10-19"`, …). */
+  depthHistogram: Record<string, number>;
+  /** Elements that establish a stacking context. */
+  stackingContexts: number;
+  /** Depth of the deepest stacking-context CHAIN (nested contexts). */
+  maxStackingDepth: number;
+  /** Selector path of that deepest chain, outermost first. */
+  deepestStackingPath: string[];
+  /** Elements carrying a standing (non-`auto`) `will-change`. */
+  willChange: number;
+  /** Elements carrying a paint/layout `contain`. */
+  contained: number;
+  /** Elements whose computed `transform` is a 3D one (forces a layer). */
+  transform3d: number;
+}
+
+function describeElement(element: Element): string {
+  const tag = element.tagName.toLowerCase();
+  const id = element.id !== "" ? `#${element.id}` : "";
+  const classes = Array.from(element.classList).slice(0, 3);
+  return `${tag}${id}${classes.length > 0 ? `.${classes.join(".")}` : ""}`;
+}
+
+/**
+ * Whether an element establishes a stacking context. The list follows
+ * the CSS spec's triggers, minus the ones that cannot occur in the deck
+ * (`-webkit-overflow-scrolling`, SVG-only cases). A stacking context is
+ * what makes `RenderLayerCompositor::computeCompositingRequirements`
+ * recurse, so counting them counts the walk's branching.
+ */
+function establishesStackingContext(
+  element: Element,
+  style: CSSStyleDeclaration,
+): boolean {
+  if (element === document.documentElement) return true;
+  const position = style.position;
+  if (
+    (position === "absolute" || position === "relative") &&
+    style.zIndex !== "auto"
+  ) {
+    return true;
+  }
+  if (position === "fixed" || position === "sticky") return true;
+  if (style.opacity !== "" && Number(style.opacity) < 1) return true;
+  if (style.transform !== "none") return true;
+  if (style.filter !== "none") return true;
+  if (style.perspective !== "none") return true;
+  if (style.mixBlendMode !== "normal") return true;
+  if (style.isolation === "isolate") return true;
+  if (style.willChange !== "auto" && style.willChange !== "") {
+    const hinted = style.willChange.split(",").map((v) => v.trim());
+    if (
+      hinted.some((v) =>
+        ["transform", "opacity", "filter", "perspective"].includes(v),
+      )
+    ) {
+      return true;
+    }
+  }
+  if (CONTAINMENT_VALUES.some((v) => style.contain.includes(v))) return true;
+  return false;
+}
+
+/**
+ * Inventory the structure a dirty frame has to walk.
+ *
+ * `animationCensus` measures the TRIGGER — what dirties style each
+ * frame. This measures the BILL: WebKit's compositing-requirements pass
+ * is recursive over the layer tree and re-derives clip rects and offsets
+ * against every ancestor, so its cost is a function of how deep the tree
+ * is and how many stacking contexts it branches through, not of how many
+ * animations set it off. A tree that costs too much to walk janks on a
+ * window resize with no animation running at all.
+ *
+ * Every read here is a `getComputedStyle` over the whole document, so
+ * this is a probe to call from an app-test or the DevPanel on demand —
+ * never on a frame path.
+ */
+export function layerTreeProbe(): LayerTreeProbe {
+  const all = document.querySelectorAll("*");
+  const depthHistogram: Record<string, number> = {};
+  let maxDepth = 0;
+  let depthSum = 0;
+  let stackingContexts = 0;
+  let willChange = 0;
+  let contained = 0;
+  let transform3d = 0;
+  let maxStackingDepth = 0;
+  let deepest: Element | null = null;
+
+  // Stacking depth per element, memoized down the tree: an element's
+  // chain length is its nearest stacking ancestor's plus its own.
+  const stackingDepth = new Map<Element, number>();
+
+  for (const element of all) {
+    let depth = 1;
+    for (let p = element.parentElement; p !== null; p = p.parentElement) {
+      depth += 1;
+    }
+    depthSum += depth;
+    if (depth > maxDepth) maxDepth = depth;
+    const bucket = `${Math.floor(depth / 10) * 10}-${Math.floor(depth / 10) * 10 + 9}`;
+    depthHistogram[bucket] = (depthHistogram[bucket] ?? 0) + 1;
+
+    const style = getComputedStyle(element);
+    if (style.willChange !== "auto" && style.willChange !== "") willChange += 1;
+    if (CONTAINMENT_VALUES.some((v) => style.contain.includes(v))) contained += 1;
+    if (style.transform.startsWith("matrix3d")) transform3d += 1;
+
+    const parentChain =
+      element.parentElement !== null
+        ? (stackingDepth.get(element.parentElement) ?? 0)
+        : 0;
+    if (establishesStackingContext(element, style)) {
+      stackingContexts += 1;
+      const chain = parentChain + 1;
+      stackingDepth.set(element, chain);
+      if (chain > maxStackingDepth) {
+        maxStackingDepth = chain;
+        deepest = element;
+      }
+    } else {
+      stackingDepth.set(element, parentChain);
+    }
+  }
+
+  const deepestStackingPath: string[] = [];
+  for (let e = deepest; e !== null; e = e.parentElement) {
+    if (stackingDepth.get(e) !== (stackingDepth.get(e.parentElement as Element) ?? 0)) {
+      deepestStackingPath.unshift(describeElement(e));
+    }
+    if (deepestStackingPath.length >= CHAIN_PATH_LIMIT) break;
+  }
+
+  return {
+    elements: all.length,
+    maxDepth,
+    meanDepth: all.length > 0 ? Math.round((depthSum / all.length) * 10) / 10 : 0,
+    depthHistogram,
+    stackingContexts,
+    maxStackingDepth,
+    deepestStackingPath,
+    willChange,
+    contained,
+    transform3d,
+  };
 }
 
 /** Stop and reset — test hygiene. */

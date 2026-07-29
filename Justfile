@@ -458,6 +458,25 @@ stop:
 instances *FLAGS:
     tugrust/target/debug/tugutil host instance list {{FLAGS}}
 
+# Profile what the cwd-derived debug instance's renderer does per frame.
+#
+# MODE is `resize` (drive a paced window resize while sampling — the
+# jank the user feels) or `idle` (steady state). The verdict reports
+# main-thread busy share and the sample counts of the frames motion
+# residency turns on: keyframe blending in style resolution, and the
+# compositing walk it triggers. See tuglaws/motion-residency.md.
+#
+# This is a hand tool, not a gate — `sample` numbers move with machine
+# load. Compare a before and an after taken minutes apart, not across
+# days. Resize mode needs accessibility permission for this terminal.
+# Profile the debug instance's renderer (MODE = resize | idle).
+perf-resize-profile MODE="resize" SECONDS="6":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    unset TUG_FORCE_BUNDLE_ID
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh debug)"
+    bash scripts/perf-resize-profile.sh "$BUNDLE_ID" {{MODE}} {{SECONDS}}
+
 # Tail today's debug-instance log.
 logs-debug:
     #!/usr/bin/env bash

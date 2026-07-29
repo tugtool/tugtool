@@ -16,7 +16,8 @@
  *
  * Motion: [L13] indeterminate rotation uses a CSS `@keyframes` because the
  * arc lives in a Radix-free, library-free SVG and the lifecycle is owned
- * by React directly. Paused state suppresses the animation via
+ * by React directly. The spin runs on the root span rather than the SVG so
+ * it can be composited. Paused and disabled states suppress it via
  * `animation-play-state`.
  */
 
@@ -42,10 +43,16 @@
   transition: stroke-dashoffset calc(300ms * var(--tug-timing, 1)) ease;
 }
 
-/* Indeterminate: rotate the SVG continuously so the visible partial arc
-   chases around the ring. */
-.tug-progress-ring-indeterminate .tug-progress-ring-svg {
-  transform: none;
+/* Indeterminate: rotate the whole glyph continuously so the visible partial
+   arc chases around the ring.
+
+   The spin rides the ROOT span, not the SVG. Only an HTML element can hold a
+   compositing layer of its own; a spin on the `<svg>` is resolved on the main
+   thread every frame, and one such animation is enough to put the page's whole
+   style and compositing pass back in the frame loop. The SVG keeps its static
+   -90deg so the arc still starts at 12 o'clock, and the wrapper turns a plain
+   0 -> 360. See tuglaws/motion-residency.md. */
+.tug-progress-ring-indeterminate {
   animation: tug-progress-ring-spin calc(1200ms * var(--tug-timing, 1)) linear infinite;
   /* Compositor promotion: keeps the spin off the main thread. Scoped
      to indeterminate — a determinate ring holds still and costs no
@@ -54,19 +61,16 @@
 }
 
 @keyframes tug-progress-ring-spin {
-  from { transform: rotate(-90deg); }
-  to   { transform: rotate(270deg); }
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 /* Paused freezes the in-flight rotation. */
-.tug-progress-ring-paused .tug-progress-ring-svg {
+.tug-progress-ring-paused {
   animation-play-state: paused;
 }
 
 .tug-progress-ring-disabled {
   opacity: var(--tugx-control-disabled-opacity, 0.45);
-}
-
-.tug-progress-ring-disabled .tug-progress-ring-svg {
   animation-play-state: paused;
 }

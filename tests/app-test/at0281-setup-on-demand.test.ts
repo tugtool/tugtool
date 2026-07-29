@@ -134,8 +134,10 @@ describe.skipIf(!SHOULD_RUN)("AT0281: Set Up Tug… opens the wizard on demand",
         await app.waitForCondition<boolean>(absent(SETUP), { timeoutMs: 8000 });
 
         // ── 2. Mid-turn: the confirm gate ──
-        const stopEnabled = async (): Promise<boolean> =>
-          (await app.menuItemState("session.stop")).enabled;
+        const stopEnabled = async (): Promise<boolean> => {
+          const state = await app.menuItemState("session.stop");
+          return state.found && state.enabled;
+        };
         await app.driveSession("A", { op: "send", text: "hello there" });
         for (let i = 0; i < 60; i += 1) {
           if (await stopEnabled()) break;

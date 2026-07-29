@@ -5,11 +5,18 @@
  * is always visible at its base color; it breathes between full and half opacity
  * over 2 seconds.
  *
+ * The breathe is a crossfade, not a background-color interpolation: the bar
+ * holds its base color, and a highlight-colored ::after overlay fades in and
+ * out above it. With both tokens opaque, `α·highlight + (1−α)·base` is the
+ * same pixel a color interpolation would produce — and unlike background-color,
+ * opacity is compositor-accelerable, so the loop never touches the main thread.
+ * See tuglaws/motion-residency.md.
+ *
  * No explicit @media (prefers-reduced-motion) rule is needed here — the global
  * body[data-tug-motion="off"] * { animation-duration: 0s !important } rule in
  * tug.css already suppresses all CSS animations (including this pulse) when
  * reduced motion is active. The skeleton renders as a static placeholder in
- * that case.
+ * that case: the overlay rests at opacity 0, leaving the base color.
  */
 
 /* @tug-pairings: none — decorative shimmer placeholder, no foreground-on-background contrast */
@@ -24,12 +31,12 @@ body {
    ============================================================================ */
 
 /*
- * Gentle opacity breathe: fully visible at endpoints, fades to 50% at midpoint.
+ * Gentle breathe: base color at the endpoints, highlight at the midpoint.
  * Matches shadcn/ui Skeleton approach — always visible, never disappears.
  */
 @keyframes td-shimmer {
-  0%, 100% { background-color: var(--tugx-skeleton-base); }
-  50%      { background-color: var(--tugx-skeleton-highlight); }
+  0%, 100% { opacity: 0; }
+  50%      { opacity: 1; }
 }
 
 /* ============================================================================
@@ -38,9 +45,21 @@ body {
 
 .tug-skeleton {
   background-color: var(--tugx-skeleton-base);
-  animation: td-shimmer 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   border-radius: var(--tug-radius-sm);
   display: block;
+  /* Containing block for the highlight overlay. */
+  position: relative;
+}
+
+.tug-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--tugx-skeleton-highlight);
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  animation: td-shimmer 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /* ============================================================================

@@ -6,18 +6,22 @@
  * @tug-pairings
  * | Element                          | Surface                                            | Role    | Context                                       |
  * |----------------------------------|----------------------------------------------------|---------|-----------------------------------------------|
- * | --tugx-progress-indicator-fill   | --tug7-surface-global-primary-normal-default-rest  | control | .tug-progress-spinner-spoke (fill)             |
+ * | --tugx-progress-indicator-fill   | --tug7-surface-global-primary-normal-default-rest  | control | .tug-progress-spinner-spoke (background-color)  |
  *
  * Internal glyph for TugProgressIndicator's `spinner` variant.
  *
- * Twelve radial capsule spokes laid out in SVG (viewBox 100×100). Each
- * spoke is a rounded rectangle running vertically above the center
- * from inner radius 28 to outer radius 48; the SVG `transform` on
- * each rect rotates it `(i * 30)deg` around the center, so the spokes
- * fan around an empty middle.
+ * Twelve radial capsule spokes, absolutely positioned in the root box.
+ * Each spoke runs vertically above the center from inner radius 24 to
+ * outer radius 48 on a 100-unit square; a static `rotate((i * 30)deg)`
+ * about the box center fans them around an empty middle. Every
+ * dimension is a percentage of the root, so the glyph scales with the
+ * parent's `size` prop the way the old SVG viewBox did.
  *
- * Sizing comes from inline width/height on the root span (driven by
- * the parent's `size` prop). The SVG scales to fill.
+ * The spokes are HTML, not SVG, because an SVG interior element can
+ * never hold a compositing layer — twelve of them running an opacity
+ * loop is twelve perpetual main-thread animations. See
+ * tuglaws/motion-residency.md; the geometry constants live in the
+ * component.
  *
  * Motion: [L13] running uses a CSS `@keyframes` fade (opacity 1 → rest
  * → 1); each spoke gets a staggered `animation-delay` (set inline so
@@ -30,16 +34,17 @@
   --tugx-progress-spinner-cycle: 1100ms;
   --tugx-progress-spinner-rest-opacity: 0.16;
   display: inline-block;
+  /* Containing block for the spokes, whose placement is all percentages. */
+  position: relative;
 }
 
-.tug-progress-spinner-svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
+/* Placement (left / top / width / height / transform-origin / transform) is
+   inline per spoke — it is data derived from the geometry constants, not a
+   style choice. */
 .tug-progress-spinner-spoke {
-  fill: var(--tugx-progress-indicator-fill, currentColor);
+  position: absolute;
+  border-radius: 999px;
+  background-color: var(--tugx-progress-indicator-fill, currentColor);
   opacity: var(--tugx-progress-spinner-rest-opacity);
 }
 

@@ -53,9 +53,14 @@
   --tug-font-weight-bold:       700;
 }
 
-/* Motion-off rule: JS sets data-tug-motion="off" on body when --tug-motion is 0 */
+/* Motion-off rule: JS sets data-tug-motion="off" on body when --tug-motion is 0.
+ * `*` matches elements only, so the generated-content selectors are not
+ * redundant — without them a ::before/::after animation keeps running with
+ * motion off (the prefers-reduced-motion block below already spells them out). */
 body[data-tug-motion="off"],
-body[data-tug-motion="off"] * {
+body[data-tug-motion="off"] *,
+body[data-tug-motion="off"] *::before,
+body[data-tug-motion="off"] *::after {
   animation-duration: 0s !important;
   transition-duration: 0s !important;
 }
