@@ -1,0 +1,13 @@
+{
+ "prompts": [
+  "make the session card resize smoothly when the sidebar collapses",
+  "good. now chase the typing lag in the composer"
+ ],
+ "tools": [
+  "Read(tugdeck/src/components/chrome/session-card.tsx)",
+  "Edit(tugdeck/styles/session-card.css)",
+  "said: The resize stutter came from a transition on grid-template-columns.",
+  "Bash(bunx vite build)"
+ ],
+ "recent_tools": 0
+}

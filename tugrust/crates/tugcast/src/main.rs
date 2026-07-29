@@ -292,6 +292,19 @@ async fn main() {
     );
     let (code_input_tx, code_input_rx) = mpsc::channel(256);
 
+    // CODE_INPUT relay: the router's registered sink is the relay sender; the
+    // relay tees every frame to the session overview's submission broadcast
+    // before forwarding it verbatim to the supervisor's dispatcher. The relay
+    // channel matches the dispatcher channel's capacity — a hop, not a buffer
+    // cliff.
+    let (code_submission_tx, _) = broadcast::channel::<Frame>(64);
+    let (code_input_relay_tx, code_input_relay_rx) = mpsc::channel::<Frame>(256);
+    tokio::spawn(feeds::session_overview::relay_code_input(
+        code_input_relay_rx,
+        code_submission_tx.clone(),
+        code_input_tx.clone(),
+    ));
+
     // SHELL feed — the `$` route's block-oriented shell execution. SHELL_OUTPUT
     // is a session-scoped broadcast (exchange frames tagged by tug_session_id);
     // SHELL_INPUT flows to the shell dispatcher (spawned below), which owns one
@@ -1356,6 +1369,8 @@ async fn main() {
         };
         let overview_config = feeds::session_overview::SessionOverviewConfig {
             code_tx: code_output_feed.sender(),
+            shell_tx: shell_output_feed.sender(),
+            submission_tx: code_submission_tx.clone(),
             pulse_tx,
             tenant_enabled: overview_tenant,
             pulse_enabled: Arc::clone(&pulse_enabled),
@@ -1395,7 +1410,7 @@ async fn main() {
     // per-session worker.
     feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
-    feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
+    feed_router.register_input(FeedId::CODE_INPUT, code_input_relay_tx);
     feed_router.register_input(FeedId::SHELL_INPUT, shell_input_tx);
     feed_router.register_input(FeedId::FILETREE_QUERY, ft_input_tx);
     feed_router.register_input(FeedId::GIT_DIFF_QUERY, gd_input_tx);

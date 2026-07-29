@@ -3,8 +3,11 @@
   "bundle tmux statically from source"
  ],
  "tools": [
+  "$ bash scripts/fetch-tmux.sh --verify",
+  "$ bash scripts/fetch-tmux.sh --verify \u2192 exit 1",
   "Bash(bash scripts/fetch-tmux.sh --verify)",
-  "Edit(scripts/fetch-tmux.sh)"
+  "Edit(scripts/fetch-tmux.sh)",
+  "said: The checksum step failed because the mirror serves a gzip, not an xz."
  ],
- "recent_tools": 1
+ "recent_tools": 2
 }

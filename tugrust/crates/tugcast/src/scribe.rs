@@ -545,62 +545,69 @@ pub fn session_prompts_since(
     let Ok(content) = std::fs::read_to_string(jsonl_path) else {
         return Vec::new();
     };
-    let mut prompts = Vec::new();
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        if value.get("type").and_then(|t| t.as_str()) != Some("user") {
-            continue;
-        }
-        if let Some(ts) = value
-            .get("timestamp")
-            .and_then(|t| t.as_str())
-            .and_then(crate::external_sessions::parse_timestamp_millis)
-        {
-            if ts < since_ms {
-                continue;
-            }
-        }
-        let is_meta = value
-            .get("isMeta")
-            .and_then(|b| b.as_bool())
-            .unwrap_or(false);
-        let is_compact = value
-            .get("isCompactSummary")
-            .and_then(|b| b.as_bool())
-            .unwrap_or(false);
-        let has_perm = value
-            .get("permissionMode")
-            .map(|p| !p.is_null())
-            .unwrap_or(false);
-        let Some(msg_content) = value.get("message").and_then(|m| m.get("content")) else {
-            continue;
-        };
-        let (counts, is_wake) = crate::external_sessions::user_submission_opens_turn(
-            is_meta,
-            is_compact,
-            has_perm,
-            msg_content,
-        );
-        if !counts || is_wake {
-            continue;
-        }
-        let text = crate::external_sessions::submission_text(msg_content);
-        let text = text.trim();
-        if text.is_empty() {
-            continue;
-        }
-        prompts.push(text.chars().take(max_chars).collect::<String>());
-    }
+    let mut prompts: Vec<String> = content
+        .lines()
+        .filter_map(|line| prompt_from_jsonl_line(line, since_ms, max_chars))
+        .collect();
     if prompts.len() > max_prompts {
         prompts = prompts.split_off(prompts.len() - max_prompts);
     }
     prompts
+}
+
+/// One JSONL line's genuine user prompt, when it holds one.
+///
+/// The whole filter chain lives here — `type == "user"`, the timestamp floor,
+/// the `isMeta` / `isCompactSummary` / `permissionMode` exclusions, the
+/// submission classifier, the per-prompt char clip — shared by the batch
+/// reader above and the session overview's incremental cache, so the two
+/// readers cannot drift.
+pub fn prompt_from_jsonl_line(line: &str, since_ms: i64, max_chars: usize) -> Option<String> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let value = serde_json::from_str::<serde_json::Value>(line).ok()?;
+    if value.get("type").and_then(|t| t.as_str()) != Some("user") {
+        return None;
+    }
+    if let Some(ts) = value
+        .get("timestamp")
+        .and_then(|t| t.as_str())
+        .and_then(crate::external_sessions::parse_timestamp_millis)
+    {
+        if ts < since_ms {
+            return None;
+        }
+    }
+    let is_meta = value
+        .get("isMeta")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+    let is_compact = value
+        .get("isCompactSummary")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+    let has_perm = value
+        .get("permissionMode")
+        .map(|p| !p.is_null())
+        .unwrap_or(false);
+    let msg_content = value.get("message").and_then(|m| m.get("content"))?;
+    let (counts, is_wake) = crate::external_sessions::user_submission_opens_turn(
+        is_meta,
+        is_compact,
+        has_perm,
+        msg_content,
+    );
+    if !counts || is_wake {
+        return None;
+    }
+    let text = crate::external_sessions::submission_text(msg_content);
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    Some(text.chars().take(max_chars).collect())
 }
 
 #[cfg(test)]

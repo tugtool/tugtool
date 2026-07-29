@@ -27,6 +27,8 @@ Two further defects compound this. The digest outvotes its own subject: a tick's
 
 The prior liveness plan (`roadmap/local-model-liveness-completion.md`, landed on main) fixed the prompt's subject and gave the digest a recency split, and shipped the measurement layer this plan will be judged with: structured `local model request` lines from both transports, the `session overview: summarized` line with register-report fields, and `just model-stats` / `just model-liveness`. The measured baseline is a 44% headline change rate (87/199) on the pre-split build.
 
+**Addendum (post-Step-7 live vetting).** Steps 1–7 landed and the mechanics verified, but the first live conversational session (proper-coast/50857d9a) showed the pulse still trailing the person it serves: msg 1 submitted at 15:51:10, the whole turn over by ~15:51:28, and the *first overview ever* — "Explain Maxwell's equations" — emitted at 15:51:34.5, three hundred milliseconds after msg 2 (a different topic) was submitted. Three structural gaps compound into that behavior: the user's submission is not a beat (the emitter never hears the one event that says the session's subject just changed), the cadence applies its anti-twitch floor and idle thresholds to the opening line and to re-aims (a 10–20s conversational turn fits entirely inside the pulse's reaction window), and the digest's "right now" section is emit-relative rather than turn-relative (a sparse-emit stretch makes "right now" span the whole previous turn, so the first emit after a new prompt narrates the old one). Steps 8–10 close these: the throughline extends to **the pulse follows the transcript, and the human leads it** — a human act (a submission, a `$` command) re-aims the pulse immediately instead of waiting its turn behind the response.
+
 #### Strategy {#strategy}
 
 - One throughline applied at every seam: **the pulse follows the transcript, not the toolbelt.** The digest becomes a compressed transcript — prose, tool calls, and shell commands interleaved in arrival order — and everything the transcript shows advances the cadence.
@@ -46,6 +48,8 @@ The prior liveness plan (`roadmap/local-model-liveness-completion.md`, landed on
 - The regenerated model-eval corpus (compressed-transcript digests with `said:` and `$` lines) scores at parity or better with the current 12/12 register pass — `just model-eval` against the debug instance.
 - Live headline change rate improves over the 44% (87/199) baseline — `just model-stats <instance>` after a real working session on the new build; the comparison is recorded in the dash round summary, not asserted by a test.
 - `at0282-pulse-two-level.test.ts` still passes unchanged (`just app-test tests/app-test/at0282-pulse-two-level.test.ts`) — the PULSE frame contract (`overview_frame`) is untouched.
+- A live user submission produces an overview aimed at the new prompt within one tick plus inference — proven by a paused-clock test (submission event mid-quiet-stretch → emit at the next tick with the ask last in the digest's prompt section, floor and idle untouched) and by replaying the proper-coast scenario live in Step 10: two conversational asks in a row, each headlined before its turn completes.
+- The first emit after a new ask carries no stale "right now": a paused-clock test runs a full turn, lets it emit, submits a new ask, and asserts the next digest's "What it is doing right now:" section carries the fresh ask verbatim as its sole line (no old activity) while the old turn's lines sit in background. (Amended during Step 10: the original shape — omit the section entirely — left the digest ending on the old turn's background, and the eval showed the model headlining that background instead of the directive; a digest whose asks have moved past the opening goal now ends on the newest ask *as* the right-now section. A meta-prefix like "taking up:" on that line makes the model discount it as commentary — the ask rides verbatim.)
 
 #### Scope {#scope}
 
@@ -55,6 +59,8 @@ The prior liveness plan (`roadmap/local-model-liveness-completion.md`, landed on
 4. Clock-driven emitter: tick arm, per-session cadence sweep, lowered floors (Spec S03, [P04], [P05]).
 5. Incremental prompt cache: per-session byte offset, first-prompt retention, `spawn_blocking` reads (Spec S04, [P07]).
 6. Digest rebalance: compressed-transcript layout, background clip, first + recent prompts, budgets validated through model-eval with a regenerated corpus (Spec S05, [P06]).
+7. Submission beats: tap the CODE_INPUT wire for live `user_message` submissions; the ask reaches the emitter the moment it happens (Spec S06, [P08]).
+8. Human acts re-aim the pulse: a submission (or a `$` command starting) resets the recency boundary and force-fires the next tick, floor and idle bypassed; the newest ask rides the digest as the current directive (Spec S06, S07, [P09], [P10]).
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -125,6 +131,8 @@ The prior liveness plan (`roadmap/local-model-liveness-completion.md`, landed on
 | Tick sweep + inline `await` serializes multi-session emits | low | med | accepted: one shared model serializes inference anyway; note in code | a session's emit visibly starves another's |
 | Reconnect-snapshot `assistant_text` double-counts prose | med | low | keyed dedup on `(msg_id, block_index)` (Spec S02) | duplicate `said:` lines in a digest |
 | `exchange_complete` payloads are large (full `output` field) | low | low | parse only `type`/`command`/`exit_code`; never store output | overview task memory growth |
+| Forced fires raise the inference rate | low | med | human acts are typing-speed-bounded; digest/headline dedupes still gate the wire; `just model-stats` watches | summarize call rate tracks command rate 1:1 over a working stretch |
+| The model headlines old background instead of the new ask | med | med | recency reset empties "right now"; ask rides newest-last in the prompt section; Step 10's corpus entry + eval gate | ask-shaped corpus entry fails the register or headlines the background |
 
 **Risk R01: Prose beats raise the inference bill** {#r01-prose-beat-flood}
 
@@ -230,6 +238,45 @@ The prior liveness plan (`roadmap/local-model-liveness-completion.md`, landed on
 - The parse offset only advances past complete lines (the JSONL's last line may be mid-write).
 - `scribe.rs`'s per-line prompt-extraction logic is factored into a shared helper so the batch function and the incremental reader cannot drift.
 
+#### [P08] The submission is a beat, tapped from CODE_INPUT (DECIDED) {#p08-submission-beat}
+
+**Decision:** The overview learns of a live user submission from the CODE_INPUT wire itself — a relay in `main.rs` teed between the router's input sink and the supervisor — not from any CODE_OUTPUT frame and not from the JSONL prompt cache.
+
+**Rationale:**
+- The live path emits **no** `add_user_message` on CODE_OUTPUT: that frame exists only on replay, the mid-turn snapshot, and the never-drop synthetic path; the steady-state live turn sends a uuid-only `prompt_anchor` (see #submission-wire). There is nothing to allowlist.
+- Waiting for the JSONL cache to notice the new prompt would couple the ask to identity resolution and to the emit path's own schedule — the two dependencies the ask exists to jump.
+- CODE_INPUT frames the overview sees are already authorized (the router's P5 cross-check runs before the sink) and are inherently live — replay and reconnect never ride CODE_INPUT, so the tap needs no mute set and no snapshot dedup.
+
+**Implications:**
+- A new `SessionOverviewConfig.submission_tx: broadcast::Sender<Frame>` and a third wire arm in the `select!` — exactly the growth path [P01] promised.
+- Only `type == "user_message"` frames become beats; interrupts, approvals, mode changes, and every other CODE_INPUT verb are ignored.
+- The `$` route already has its human-act wire: `exchange_started` (Step 3). No new shell plumbing.
+
+#### [P09] A human act re-aims the pulse: force-fire at the next tick (DECIDED) {#p09-human-act-refire}
+
+**Decision:** A live user submission and a `$` `exchange_started` each arm a per-session `fire_asap` flag; the tick sweep treats an armed session as due, bypassing the floor, the burst threshold, and the idle period. The committed tick clears the flag.
+
+**Rationale:**
+- The floor exists to stop re-summarize twitching on *streaming* evidence. A human act is not streaming evidence — it is rare, deliberate, and the single strongest signal that the current headline is stale. Human acts are bounded by typing speed; one inference per act is a cost worth paying for a pulse that answers the person.
+- The proper-coast failure is exactly this gap: the cadence had no way to distinguish "more of the same turn" from "the subject just changed."
+
+**Implications:**
+- `Gates` still apply: a tenant switch, PULSE off, or model back-off silences a forced fire like any other.
+- The digest-unchanged and headline-unchanged dedupes still guard the wire — a forced fire that would repeat the standing line emits nothing.
+- The `SUMMARIZE_TIMEOUT < EMIT_FLOOR` ladder assert is untouched; the floor still paces every non-forced emit.
+
+#### [P10] "Right now" is turn-relative: the ask resets the recency boundary (DECIDED) {#p10-turn-relative-recency}
+
+**Decision:** The same human acts that arm `fire_asap` also zero `activity_since_emit`, so the digest's "What it is doing right now:" section starts empty at the ask and fills with the new turn's activity only. The newest ask itself rides the digest as the last line of the prompt section — the current directive.
+
+**Rationale:**
+- With sparse emits, an emit-relative recency window spans the whole previous turn; the first emit after a new prompt then truthfully summarizes "right now" as the old work — the observed proper-coast defect.
+- The digest heading count is capped at three (#constraints), so the current directive cannot get a fourth section; newest-last in the existing prompt section plus an empty right-now is the strongest available signal that the old activity is background.
+
+**Implications:**
+- Ordering matters for the `$` route: reset the boundary first, then record the `exchange_started` beat, so the command itself is the first "right now" line.
+- A submission records an `Asked` counter beat (no activity line — the prompt is not activity) and stores the ask text as `pending_ask`, deduped against the prompt cache once the JSONL catches up (Spec S07).
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -253,6 +300,15 @@ The critical wire fact (verified in `tugcode/src/session.ts`): live streaming em
 #### Why the shell subscription is cheap {#shell-subscription}
 
 `SessionScopedFeed` (`feeds/session_scoped.rs`) exposes `subscribe()` and `sender()`; `shell_output_feed` is in scope at the overview wiring site in `main.rs` (the config block sits just above `register_session_feed(&shell_output_feed)`). The dispatcher's `emit` publishes through `SessionScopedFeed::publish`, which splices `tug_session_id` into the payload — so shell frames route by the same field as CODE_OUTPUT frames. `exchange_complete` carries the full command `output`; the overview parses only `type`, `command`, and `exit_code` and never retains the payload.
+
+#### The submission wire {#submission-wire}
+
+Where the user's message actually travels (verified in `tugproto/src/inbound.ts`, `tugdeck/src/protocol.ts`, `tugcode/src/types.ts`, and `tugrust/crates/tugcast/src/main.rs`):
+
+- The deck encodes `{ tug_session_id, type: "user_message", content: ContentBlock[] }` (`encodeCodeInputPayload`) and sends it on **CODE_INPUT**. `content` is an Anthropic content-block array; the text lives in `{ type: "text", text }` blocks (image blocks may interleave).
+- tugcast's router authorizes the frame (P5 session-ownership cross-check in `authorize_and_claim_input`) and hands it to the input sink registered in `main.rs`: `feed_router.register_input(FeedId::CODE_INPUT, code_input_tx)`, consumed by `supervisor.dispatcher_task(code_input_rx)`.
+- **CODE_OUTPUT never carries the live submission.** `add_user_message` is emitted only by the JSONL replay translator, the mid-turn consolidated snapshot, and the never-drop synthetic path; the steady-state live turn emits `prompt_anchor { promptUuid }` — a uuid with no text (documented at the `AddUserMessage` / `PromptAnchor` types in `tugcode/src/types.ts`). An allowlist entry cannot fix Gap [P08]; the tap must sit on the input side.
+- The tap seam: `main.rs` interposes a relay mpsc — the router's registered sink becomes the relay's sender; a small task forwards every frame verbatim to the supervisor's original `code_input_tx` **and** publishes it on a `broadcast::Sender<Frame>` for the overview. The supervisor sees byte-identical traffic; the overview stays one-way (it taps a broadcast, backpressures nothing — a lagged overview subscriber drops frames, never delays the supervisor forward).
 
 #### What the prior plan's instrumentation buys this one {#measurement-inheritance}
 
@@ -325,6 +381,24 @@ struct PromptCache {
 
 The compose-time background clip is new: `tools[..split]` becomes the *last* 12 of the background slice, so a long session's ancient history drops out of the model's input entirely while the deque keeps enough for the next split.
 
+**Spec S06: The submission tap and the Asked event** {#s06-submission-tap}
+
+- `main.rs` relay: construct `(relay_tx, relay_rx) = mpsc::channel(<same capacity as code_input_tx's channel>)` and a `broadcast::channel::<Frame>(64)` submission bus; register `relay_tx` as the CODE_INPUT input sink in place of `code_input_tx`; spawn a task that loops `relay_rx.recv()` → `broadcast.send(frame.clone())` (ignore send errors — zero receivers is normal before the overview starts) → `code_input_tx.send(frame).await` (forward failure ends the relay exactly as the sink closing would). Forward *after* publish so the overview's clock never trails the supervisor's by more than the broadcast hop.
+- `SessionOverviewConfig.submission_tx: broadcast::Sender<Frame>` wired from the relay's broadcast sender; the task subscribes and adds a third wire arm to the `select!` (lagged → warn-and-continue; closed → return, mirroring the other arms).
+- Frame handling: parse the payload JSON; require `tug_session_id` (string) and `type == "user_message"`; everything else → ignore. Extract the ask text through the prompt cache's own extraction — `external_sessions::submission_text` (text blocks concatenated), trimmed, then the cache's own clip (`chars().take(MAX_PROMPT_CHARS)`, no ellipsis) — so the dedup in Spec S07 is exact string equality against what `prompt_from_jsonl_line` later yields for the same submission. An image-only submission (no text) still counts as a human act (beat + re-aim) with no pending-ask line.
+- `SessionBeat::Asked(Option<String>)`: a counter beat — never an activity line; the prompt is not activity, it is direction. `record` treats it like `Turn` (counter only); the state handler additionally stores the text as `pending_ask` and performs the [P10] reset + [P09] arm.
+- Prose-state safety: an ask does **not** finalize an open prose block and does not clear `beaten` — those side effects stay keyed to CODE_OUTPUT turn frames only (Spec S02). A submission racing a still-streaming cancelled turn leaves the accumulation state to the `turn_cancelled` frame that follows on the output wire.
+
+**Spec S07: Re-aim semantics — force-fire, recency reset, and the pending ask** {#s07-reaim}
+
+Per session, alongside the Spec S02 state:
+
+- `fire_asap: bool` — armed by `Asked` and by `Shell` beats born from `exchange_started` (the two human acts); cleared by the committed tick, whatever the emit outcome past that point.
+- The tick sweep's due test becomes: `fire_asap && new_beats > 0`, **or** the unchanged `Cadence::fires(new_beats, since_last_emit)`. Gates short-circuit the whole sweep exactly as today; a forced fire is never exempt from tenant/PULSE/back-off.
+- The [P10] reset: on `Asked` and on `exchange_started`, set `activity_since_emit = 0` *before* recording the beat — so the shell command's own line is the first "right now" entry and a submission leaves "right now" empty until the response streams.
+- `pending_ask: Option<String>` — the newest submission's clipped text. Digest prompt set = `PromptCache::digest_prompts()` + `pending_ask` appended last, skipped when it already equals the cache's newest recent entry (the JSONL caught up) or the pinned first (a young session's opening ask). Cleared when the equality check first passes — from then on the cache carries it.
+- A committed tick that fails downstream (no requester, summarize error) must not swallow the standing digest: `last_digest` is recorded only after a successful summarize, so the same digest re-tries once the model returns. (Today `last_digest` is set before the requester check — a model briefly absent at the first sweep permanently eats that digest; Step 9 fixes this as part of the re-aim work because forced fires make the window live.)
+
 ---
 
 ### Definitive Symbol Inventory {#symbol-inventory}
@@ -351,6 +425,12 @@ The compose-time background clip is new: `tools[..split]` becomes the *last* 12 
 | `prompt_from_jsonl_line` | fn (new, factored) | `tugrust/crates/tugcast/src/scribe.rs` | shared per-line extraction; `session_prompts_since` re-expressed over it |
 | `PromptCache` | struct (new) | `session_overview.rs` (or `scribe.rs` if the read logic reads better there) | Spec S04 |
 | `MAX_ACTIVITY_LINES`, `MAX_SAID_CHARS`, `MAX_RECENT_PROMPTS`, background clip const | consts | `session_overview.rs` | Spec S05 values, finalized by [Q01] |
+| `SessionBeat::Asked` | enum variant | `session_overview.rs` | `Asked(Option<String>)` — counter beat, never an activity line; the clipped ask text or `None` for an image-only submission (Spec S06) |
+| `submission_beat` | fn (new) | same | CODE_INPUT payload → `Option<(String, SessionBeat)>`: the `tug_session_id` plus an `Asked` for `type == "user_message"`, `None` for every other verb; text = `content[]` text blocks joined, trimmed, clipped to `MAX_PROMPT_CHARS` |
+| `SessionState::{fire_asap, pending_ask}` | fields (new) | same | Spec S07 re-aim state |
+| `SessionOverviewConfig::submission_tx` | field (new) | same | `broadcast::Sender<Frame>`; wired from the `main.rs` CODE_INPUT relay |
+| CODE_INPUT relay task | wiring (new) | `tugrust/crates/tugcast/src/main.rs` | interposes on `register_input(FeedId::CODE_INPUT, …)`: publish to the submission broadcast, then forward verbatim to the supervisor's original `code_input_tx` (#submission-wire) |
+| `emit_overview` | fn (modify) | `session_overview.rs` | records `last_digest` only after a successful summarize (Spec S07's retry fix); clears `fire_asap` at the committed tick |
 
 ---
 
@@ -379,13 +459,16 @@ The compose-time background clip is new: `tools[..split]` becomes the *last* 12 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Widen the beat vocabulary and interleave the activity stream | pending | — |
-| #step-2 | Prose beats from live assistant_text deltas | pending | — |
-| #step-3 | Shell beats: subscribe the overview to SHELL_OUTPUT | pending | — |
-| #step-4 | Clock-driven emitter and lowered cadence | pending | — |
-| #step-5 | Incremental prompt cache | pending | — |
-| #step-6 | Digest rebalance, corpus regeneration, eval gate | pending | — |
-| #step-7 | Integration checkpoint — live transcript following | pending | — |
+| #step-1 | Widen the beat vocabulary and interleave the activity stream | done | bbf6af968 |
+| #step-2 | Prose beats from live assistant_text deltas | done | c880ae144 |
+| #step-3 | Shell beats: subscribe the overview to SHELL_OUTPUT | done | 7d99491b0 |
+| #step-4 | Clock-driven emitter and lowered cadence | done | b1be9b514 |
+| #step-5 | Incremental prompt cache | done | 9e9f84937 |
+| #step-6 | Digest rebalance, corpus regeneration, eval gate | done | d34e35a8b |
+| #step-7 | Integration checkpoint — live transcript following | done | verification only |
+| #step-8 | The submission tap: CODE_INPUT reaches the overview | done | 43e02f5c2 |
+| #step-9 | Human acts re-aim the pulse | done | 1b0c08fbd |
+| #step-10 | Ask-shape eval and live re-vetting | done | b4b1a3e00 |
 
 #### Step 1: Widen the beat vocabulary and interleave the activity stream {#step-1}
 
@@ -582,9 +665,102 @@ The compose-time background clip is new: `tools[..split]` becomes the *last* 12 
 
 ---
 
+#### Step 8: The submission tap — CODE_INPUT reaches the overview {#step-8}
+
+**Depends on:** #step-3
+
+**Commit:** `tugcast(session-overview): the user's submission reaches the pulse`
+
+**References:** [P08] submission beat, Spec S06, (#submission-wire)
+
+**Artifacts:**
+- The `main.rs` CODE_INPUT relay: publish to a new submission broadcast, then forward verbatim to the supervisor's `code_input_tx` (Spec S06's ordering — publish first). The supervisor's traffic is byte-identical before and after.
+- `SessionOverviewConfig.submission_tx: broadcast::Sender<Frame>`; a `submission_rx` subscription and a third wire arm in `session_overview_task`'s `select!` (lagged → warn-and-continue, closed → return, mirroring the shell arm).
+- `submission_beat(payload) -> Option<(String, SessionBeat)>`: `user_message` → the session id plus `Asked(Some(text))` / `Asked(None)` for image-only content; every other CODE_INPUT verb → `None`. Text extraction per Spec S06 (the prompt cache's own extraction and clip, so later JSONL reads spell the same ask identically).
+- This step records the `Asked` beat as a plain counter beat only — the re-aim semantics (reset, force-fire, pending ask) are Step 9, so this step's behavior change is exactly "a submission advances the cadence."
+
+**Tasks:**
+- [ ] Interpose the relay in `main.rs` at the `register_input(FeedId::CODE_INPUT, …)` site; keep channel capacity equal to the original sink's so the relay adds a hop, not a buffer cliff.
+- [ ] Add the config field, subscription, and `select!` arm; route by the payload's own `tug_session_id` (no splice needed — the deck encodes it).
+- [ ] Implement `submission_beat`; wire the frame arm to `record` the beat (counter semantics, no activity line).
+
+**Tests:**
+- [ ] `submission_beat` mapping table: text submission, multi-block text+image, image-only, `interrupt`, `tool_approval`, missing `tug_session_id`, malformed JSON.
+- [ ] Paused-clock integration: a session receiving only submission frames (no CODE_OUTPUT, no SHELL_OUTPUT) accumulates beats and emits once the cadence is met — the third wire is live end to end.
+- [ ] A relay round-trip test at the tugcast layer: frames sent into the relayed sink arrive at the supervisor-side receiver unchanged and in order.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast session_overview`
+- [ ] `cd tugrust && cargo build -p tugcast` (warnings are errors)
+
+---
+
+#### Step 9: Human acts re-aim the pulse {#step-9}
+
+**Depends on:** #step-8
+
+**Commit:** `tugcast(session-overview): a human act re-aims the pulse`
+
+**References:** [P09] force-fire, [P10] turn-relative recency, Spec S07, Risk table (forced fires, stale background)
+
+**Artifacts:**
+- `SessionState.{fire_asap, pending_ask}` per Spec S07; `Asked` and `exchange_started`-born `Shell` beats arm `fire_asap` and zero `activity_since_emit` (reset before record, so the shell line is the first "right now" entry).
+- The tick sweep's due test: `fire_asap && new_beats > 0` or the unchanged `Cadence::fires`; the committed tick clears `fire_asap`.
+- Digest prompt set = cache prompts + `pending_ask` appended last, equality-deduped and cleared once the cache carries it (Spec S07).
+- `last_digest` recorded only after a successful summarize — the unsummarized-digest retry fix (Spec S07's final bullet).
+- Prose-state safety per Spec S06: an ask neither finalizes an open block nor clears `beaten`.
+
+**Tasks:**
+- [ ] Add the re-aim state and wire both human acts through it; keep the reset-then-record ordering.
+- [ ] Extend the due test in the tick sweep; clear the flag in `emit_overview`'s committed-tick block.
+- [ ] Append/dedupe `pending_ask` in the emit path's prompt assembly; clear on cache catch-up.
+- [ ] Move the `last_digest` assignment after the summarize success arm; the failure arms leave it untouched.
+
+**Tests:**
+- [ ] Paused clock: mid-quiet-stretch submission → emit at the next tick, floor and idle both unexpired (the proper-coast fix, pinned).
+- [x] Paused clock: full turn → emit → new submission → next digest's "right now" section is the fresh ask verbatim (sole line, digest ends on it — per the Step 10 amendment) and the old turn's lines sit in background; the ask is the last prompt line.
+- [ ] Paused clock: `exchange_started` force-fires and its `$` line is the sole "right now" entry.
+- [ ] `pending_ask` dedup: once the prompt cache's newest recent equals the ask, the digest carries it once; a young session's first ask never doubles against the pinned first prompt.
+- [ ] An ask mid-prose-stream leaves `open` and `beaten` untouched (extends the Spec S02 suite).
+- [ ] Summarize-failure retry: requester absent at the forced fire → same digest succeeds on the next sweep once the requester returns (the `last_digest` fix, pinned).
+- [ ] Forced fire respects gates: with back-off active the armed session emits nothing, and because gates short-circuit the sweep *before* any tick commits, `fire_asap` survives and fires on the first allowed tick after the back-off expires.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast`
+
+---
+
+#### Step 10: Ask-shape eval and live re-vetting {#step-10}
+
+**Depends on:** #step-9
+
+**Commit:** `tugcast(session-overview): ask-shape corpus entry and eval gate`
+
+**References:** (#success-criteria, #measurement-inheritance), Risk R02, [Q02]
+
+**Artifacts:**
+- A corpus entry mirroring the ask shape (old turn's lines all background, no right-now section, prompts ending with a fresh directive on a different topic) — the model must headline the directive, not the background. Regenerated digests; `just model-eval` at parity, prompt still frozen unless [Q02]'s A/B discipline says otherwise.
+- Live re-vetting of the proper-coast scenario on a rebuilt debug instance, with log evidence quoted in the round summary.
+
+**Tasks:**
+- [ ] Author the ask-shape corpus entry (match existing JSON formatting: indent=1, no trailing newline); `TUG_REGENERATE_DIGESTS=1 cargo nextest run corpus_digests`; `just model-eval <debug-instance>` — register at parity and the ask-shape entry headlined on the directive.
+- [ ] `just app-debug` from the worktree; replay the proper-coast scenario live: two conversational asks on different topics in one session; confirm each ask's overview lands before its turn completes (`just logs-debug`, `session overview: summarized` timestamps against the JSONL's submission timestamps).
+- [ ] Run a `$` command mid-session and confirm the re-aim emit within a tick or two of `exchange_started`.
+
+**Tests:**
+- [ ] `corpus_digests_are_what_compose_digest_produces` green against the regenerated corpus.
+- [ ] `just app-test tests/app-test/at0282-pulse-two-level.test.ts` (wire contract still unchanged) plus whatever `just app-test-changed` selects.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run` (full workspace, modulo the known `external_sessions` flake)
+- [ ] `just model-eval <debug-instance>` ≥ 12/12 with the new entry passing
+- [ ] Live log evidence: submission timestamp → overview emit within one tick + inference, for both asks and the `$` command, quoted in the round summary
+
+---
+
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** A pulse that follows the transcript: prose, tool calls, and shell commands all feed the digest and the cadence; the emitter fires on a clock with lower floors; the prompt read is incremental; and the rebalanced digest is validated through model-eval before it ships.
+**Deliverable:** A pulse that follows the transcript and is led by the human: prose, tool calls, shell commands, and the user's own submissions all feed the digest and the cadence; a human act re-aims the pulse at the next tick with a turn-relative "right now"; the emitter fires on a clock with lower floors; the prompt read is incremental; and the rebalanced digest is validated through model-eval before it ships.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
@@ -593,6 +769,7 @@ The compose-time background clip is new: `tools[..split]` becomes the *last* 12 
 - [ ] `just model-eval` register at parity or better on the regenerated compressed-transcript corpus.
 - [ ] `EMIT_FLOOR` = 8s with the timeout-ladder assert still true; `at0282` green.
 - [ ] Live `just model-stats` change-rate reading recorded against the 44% baseline.
+- [ ] A live submission's overview lands before its turn completes, aimed at the new ask; the emit after a new ask carries no stale "right now" — the section holds the fresh ask itself (paused-clock tests + Step 10 live log evidence).
 
 **Acceptance tests:**
 - [ ] `cd tugrust && cargo nextest run` — full workspace green (modulo the known pre-existing `external_sessions` reference-session flake, which reads this conversation's own live transcript).
@@ -600,6 +777,7 @@ The compose-time background clip is new: `tools[..split]` becomes the *last* 12 
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
+- [ ] Ask-aim quality on meta-phrased asks: the Step 10 probes showed the 100M model aims correctly at a plain directive ("chase the typing lag in the composer") even with the old turn's background present, but a conversational preamble ("now switch topics entirely: what is a monad…") makes it discount the whole line and headline the background or the first prompt instead — the same digest with the preamble stripped aims correctly. Stripping preambles is fragile NLP; the honest fixes are a bigger model or prompt A/B under [Q02]. Probe evidence in the Step 10 round summary.
 - [ ] Shell-command classification quality: harvest real commands + verdicts from the accumulated `task=classify` log lines into a labeled corpus and add a classify register to model-eval — feeds on this plan's shell plumbing.
 - [ ] Cadence tuning from a week of `just model-stats` data (the reason the analyzer exists); revisit `BURST_FRAMES` and the 2s tick if turnaround data argues.
 - [ ] A third beat wire (e.g. composer bang-command routings) if the transcript vocabulary grows — the enum-is-the-bus decision keeps it a `select!` arm away.

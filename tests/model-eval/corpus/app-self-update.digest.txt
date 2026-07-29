@@ -6,26 +6,6 @@ What the user asked for:
 - Indeed. I joined this work back to main. Now, I'd like
 
 What the session has been doing:
-- Bash(just app-test tests/app-test/at0279-quit-draft-survival.test)
-- Bash(just app-test-changed 2>&1 | tail -12)
-- Bash(python3 - <<'PY'
-- TaskUpdate
-- Bash(osascript -e 'tell application id "dev.tugtool.app.debug-tug)
-- Bash(kill -9 95421 2>/dev/null && echo "killed tugcast pid 95421")
-- Bash(APP="/Users/kocienda/Library/Developer/Xcode/DerivedData/Tug)
-- Bash(pgrep -fl tugcast | head -5; echo "---"; grep -E "tugcast|re)
-- Bash(PID=$(just instances 2>/dev/null | awk '/debug-tugdash-quit-)
-- Bash(APP="/Users/kocienda/Library/Developer/Xcode/DerivedData/Tug)
-- Bash(kill -9 97322; osascript -e 'tell application id "dev.tugtoo)
-- Read(deck-manager.ts)
-- Edit(deck-manager.ts)
-- Bash(cd tugdeck && bunx tsc --noEmit && echo TSC_OK && bunx vite )
-- Bash(cd /Users/kocienda/Mounts/u/src/tugtool/.tug/worktrees/quit-)
-- Bash(kill -9 51428; osascript -e 'tell application id "dev.tugtoo)
-- Bash(cd tugdeck && bun test src/__tests__ src/lib/code-session-st)
-- Bash(python3 - <<'PY'
-- Bash(just app-debug 2>&1 | grep -E "^/Users.*(error|warning):|BUI)
-- Bash(sleep 30; just instances 2>&1 | tail -3)
 - Bash(just instances 2>&1 | tail -3)
 - Bash(tugutil draft set --owner dash:quit-hardening --message "qui)
 - TaskUpdate(Two of four passes run with log evidence (tugcast-outage ret)

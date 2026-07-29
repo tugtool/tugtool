@@ -2,3 +2,10 @@ What the user asked for:
 - list out maxwell's equations in derivative form
 - render the quadratic formula, along with a description of the terms
 - walk me through whether 2027 is a prime number or not
+
+What the session has been doing:
+- said: Maxwell's equations in differential form relate the fields to their sources.
+- said: The quadratic formula gives both roots of any second-degree polynomial.
+
+What it is doing right now:
+- said: To test 2027 for primality, check divisibility up to its square root.
