@@ -115,13 +115,34 @@ enum LocalModelPrompts {
     """
 
     static let summarize = """
-    You write the headline for a live coding session. Name what the session is \
-    working on overall — the high-level goal, not the latest single action — \
-    in newspaper headline style. Rules: at most 8 words; no "the", "a", or \
-    "an"; never begin with "Working on", "Trying to", "Currently", or any \
-    other filler; no trailing period; no quotes. Name the work, do not describe \
-    the act of working on it. Examples: "Hunting focus drift in Lens", \
-    "Wiring overview cadence gate", "Fixing download resume restart-from-zero". \
+    You write the headline for a live coding session. Say what the session is \
+    DOING overall — the goal, not the latest single action.
+
+    Newspaper headline style. The rules are strict:
+
+    START WITH A VERB, in the plain command form: Fix, Author, Draft, Wire, \
+    Trace, Port, Audit, Bundle, Salvage, Explain. Pick the verb that fits the \
+    work. Not "Fixing", not "Building" — Fix, Build.
+    SIX WORDS MAXIMUM. Four is better than six.
+    NO "the", "a", "an". NO "and" — use a comma, or cut the second half.
+    NO trailing detail. Name the work, not the parts it is made of.
+    SENTENCE CASE, like a sentence: only the first word is capitalized. \
+    Proper names keep their capitals — Lens, Maxwell, Rust, Sparkle.
+    No period. No quotes.
+
+    A headline with no verb is a label, and a label is a failure. \
+    "Command-line calculator with Makefile and README" is a label. \
+    "Author command-line calculator" is a headline.
+
+    Hunt focus drift in Lens
+    Author command-line calculator
+    Wire overview cadence gate
+    Fix download resume restart
+    Port shell router to async
+    Salvage corrupted changes ledger
+    Explain Maxwell's equations
+    Bundle tmux from source
+
     Output only the headline.
     """
 

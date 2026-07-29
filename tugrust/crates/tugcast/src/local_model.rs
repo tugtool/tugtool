@@ -991,6 +991,11 @@ pub fn start_download(
 /// This is tugcast's own use of the local-model API — the same round trip the
 /// overview emitter makes, reachable as a verb so the socket path can be
 /// exercised and diagnosed without a tenant attached to it.
+///
+/// The answer is normalized through `headline_register` before it is reported,
+/// exactly as the emitter normalizes it, so what this verb prints is what the
+/// strip would wear. The raw answer rides alongside it: the two differing is the
+/// signal that the prompt is drifting and the normalizer is covering for it.
 pub fn request_summary(
     state: &SharedLocalModelState,
     cat: Option<broadcast::Sender<Frame>>,
@@ -1003,8 +1008,9 @@ pub fn request_summary(
             None => Err("local model host unavailable".to_string()),
         };
         let (ok, text, error) = match result {
-            Ok(text) => {
-                info!(headline = %text, "local model summarize answered");
+            Ok(raw) => {
+                let text = crate::feeds::session_overview::headline_register(&raw);
+                info!(%raw, headline = %text, "local model summarize answered");
                 (true, Some(text), None)
             }
             Err(error) => {

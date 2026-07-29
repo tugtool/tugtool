@@ -62,6 +62,20 @@ const MAX_TARGET_CHARS: usize = 60;
 /// cannot pass. A tuning value; the live matrix may move it.
 const MAX_HEADLINE_CHARS: usize = 56;
 
+/// Words a headline runs to. The character budget alone cannot enforce this: a
+/// long-enough run of short words fits 56 characters and still reads as a
+/// sentence.
+const MAX_HEADLINE_WORDS: usize = 6;
+
+/// Joiners a headline's dispensable tail hangs from.
+///
+/// Past the word budget, what a model has added is almost always the parts list
+/// a label headline drags behind it — "Author command-line calculator **with
+/// makefile and readme**". Headline register drops exactly this: `and` gives way
+/// to a comma or is cut, and trailing modifiers go. Cutting at the joiner keeps
+/// a whole phrase rather than a truncated one.
+const TAIL_JOINERS: &[&str] = &["and", "with", "plus", "including", "featuring"];
+
 /// First and last back-off after the model refuses or fails.
 const BACKOFF_START: Duration = Duration::from_secs(60);
 const BACKOFF_MAX: Duration = Duration::from_secs(600);
@@ -378,7 +392,31 @@ pub fn headline_register(raw: &str) -> String {
         collapsed.pop();
     }
 
-    clip(collapsed.trim(), MAX_HEADLINE_CHARS)
+    clip(&trim_to_word_budget(collapsed.trim()), MAX_HEADLINE_CHARS)
+}
+
+/// Bring a headline within the word budget by dropping its tail.
+///
+/// Cuts at the earliest joiner in range, so the whole tail goes rather than
+/// part of it — "Author command-line calculator with makefile and readme" loses
+/// everything from `with`, not just `and readme`. A headline with no
+/// joiner to cut at is truncated, because a bounded headline is the guarantee
+/// and an unbounded one is prose. Never cuts below three words: past that there
+/// is no headline left to save.
+pub fn trim_to_word_budget(text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.len() <= MAX_HEADLINE_WORDS {
+        return text.to_string();
+    }
+    let joiner_at = words.iter().enumerate().find(|(i, word)| {
+        let bare = word.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+        *i >= 3 && *i <= MAX_HEADLINE_WORDS && TAIL_JOINERS.contains(&bare.as_str())
+    });
+    let end = match joiner_at {
+        Some((i, _)) => i,
+        None => MAX_HEADLINE_WORDS,
+    };
+    words[..end].join(" ")
 }
 
 /// The PULSE frame carrying an overview. `kind` is what tells the deck to file
@@ -693,6 +731,51 @@ mod tests {
     fn a_tool_with_no_recognizable_target_is_still_worth_a_line() {
         let value = serde_json::json!({ "tool_name": "TodoWrite", "input": { "todos": [] } });
         assert_eq!(tool_line(&value).unwrap(), "TodoWrite");
+    }
+
+    /// The live failure this budget exists for: the model obeyed every other
+    /// rule and still dragged a parts list behind the verb.
+    #[test]
+    fn a_parts_list_tail_is_cut_at_its_joiner() {
+        assert_eq!(
+            headline_register("Author command-line calculator with makefile and readme"),
+            "Author command-line calculator"
+        );
+        assert_eq!(
+            headline_register("Salvage corrupted ledger and harden open path"),
+            "Salvage corrupted ledger"
+        );
+    }
+
+    #[test]
+    fn a_headline_inside_the_budget_is_left_alone() {
+        for headline in [
+            "Fix pulse overview never emitting",
+            "Port shell router to async",
+            "Hunt focus drift in Lens",
+            // Exactly at the budget, joiner and all.
+            "Wire cadence gate and emit line",
+        ] {
+            assert_eq!(headline_register(headline), headline);
+        }
+    }
+
+    #[test]
+    fn an_overlong_headline_with_no_joiner_is_truncated_to_the_budget() {
+        assert_eq!(
+            trim_to_word_budget("Fix sparkline idle burn regression across every open session"),
+            "Fix sparkline idle burn regression across"
+        );
+    }
+
+    /// Cutting at a joiner that leaves one or two words would trade a long
+    /// headline for a meaningless one, so the budget yields instead.
+    #[test]
+    fn a_joiner_too_early_to_cut_at_falls_back_to_truncation() {
+        assert_eq!(
+            trim_to_word_budget("Fix and harden the resume path across every backend"),
+            "Fix and harden the resume path"
+        );
     }
 
     #[test]
