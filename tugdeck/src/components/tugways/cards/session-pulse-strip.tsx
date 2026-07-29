@@ -24,7 +24,8 @@
  *    glyphs into a smash), and the dwell already paces changes ≥1.8s
  *    apart, so an instant replace reads calm; the sparkline carries the
  *    liveness. Only one string is ever painted, so overlap is impossible;
- *  - a dimmed `None` placeholder before the session's first line;
+ *  - a `None` line before the session's first beat — set exactly like
+ *    every other activity string, not in a placeholder voice of its own;
  *  - a `Compacting context…` PIN for the length of a `/compact` run
  *    started from this card — the one stretch the voice cannot narrate,
  *    since the wire streams nothing between the submit and the boundary.
@@ -89,6 +90,7 @@ import {
   getSessionActivityStore,
 } from "@/lib/session-activity-store";
 import { SessionPulseCard } from "@/components/tugways/cards/pulse-card";
+import { TugPulse } from "@/components/tugways/tug-pulse";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 
 /** How many recent pulses the PULSE-label popover lists. */
@@ -334,110 +336,103 @@ export function SessionPulseStrip({
   );
 
   if (!pulse.enabled) return null;
+  /*
+    dismissOnChainActivity=false: a row's right-click → Copy dispatches the
+    `copy` action through the responder chain, which would otherwise read as
+    foreign chain activity and close this popover mid-copy. The copy
+    originates from WITHIN the popover, so it must not dismiss it; Escape,
+    click-outside, Space, and the trigger toggle still close it.
+  */
+  const legend = (
+    <TugPopover dismissOnChainActivity={false}>
+      <TugPopoverTrigger>
+        <button
+          type="button"
+          className="session-pulse-strip-legend"
+          data-slot="session-pulse-legend"
+          // Like the Z2 status cells: not a *native* Tab stop and never steals
+          // card focus to the editor on click; the engine drives DOM focus
+          // here during the cycle walk (a `<button>` is programmatically
+          // focusable at -1) and Space/Enter open the popover natively.
+          tabIndex={-1}
+          data-tug-focus="refuse"
+          data-no-activate=""
+          data-tug-focusable={legendRegistered ? legendFocusableId : undefined}
+          aria-label="Recent pulses"
+        >
+          PULSE
+        </button>
+      </TugPopoverTrigger>
+      <TugPopoverContent side="top" align="start" sideOffset={8} arrow spaceDismisses>
+        <SessionPulseHistory lines={history} />
+      </TugPopoverContent>
+    </TugPopover>
+  );
+
+  /*
+    The compact sparkline is the entry point to the expanded Activity card
+    ([P12] Surface): clicking it opens a popover of per-channel small-multiples
+    for this session. The trigger mirrors the legend button's focus discipline
+    (leaf, never steals card focus).
+  */
+  const spark = (
+    <TugPopover>
+      <TugPopoverTrigger>
+        <button
+          type="button"
+          className="session-pulse-strip-spark-trigger"
+          tabIndex={-1}
+          data-tug-focus="refuse"
+          data-no-activate=""
+          aria-label="Session pulse detail"
+        >
+          <TugSparkline
+            getSeries={getSeries}
+            subscribeActivity={subscribeActivity}
+            binMs={ACTIVITY_BIN_MS}
+            fullScale={SPARKLINE_FULL_SCALE_CHARS}
+            curve={SPARKLINE_CURVE}
+            width={64}
+            height={22}
+            title="Session activity — text, tokens, tools, and subagents"
+          />
+        </button>
+      </TugPopoverTrigger>
+      <TugPopoverContent side="top" align="end" sideOffset={8} arrow>
+        <SessionPulseCard session={tugSessionId} />
+      </TugPopoverContent>
+    </TugPopover>
+  );
+
   return (
     <div className="session-pulse-strip" data-slot="session-pulse-strip">
       {/*
-        dismissOnChainActivity=false: a row's right-click → Copy dispatches the
-        `copy` action through the responder chain, which would otherwise read as
-        foreign chain activity and close this popover mid-copy. The copy
-        originates from WITHIN the popover, so it must not dismiss it; Escape,
-        click-outside, Space, and the trigger toggle still close it.
-      */}
-      <TugPopover dismissOnChainActivity={false}>
-        <TugPopoverTrigger>
-          <button
-            type="button"
-            className="session-pulse-strip-legend"
-            data-slot="session-pulse-legend"
-            // Like the Z2 status cells: not a *native* Tab stop and never steals
-            // card focus to the editor on click; the engine drives DOM focus
-            // here during the cycle walk (a `<button>` is programmatically
-            // focusable at -1) and Space/Enter open the popover natively.
-            tabIndex={-1}
-            data-tug-focus="refuse"
-            data-no-activate=""
-            data-tug-focusable={legendRegistered ? legendFocusableId : undefined}
-            aria-label="Recent pulses"
-          >
-            PULSE
-          </button>
-        </TugPopoverTrigger>
-        <TugPopoverContent side="top" align="start" sideOffset={8} arrow spaceDismisses>
-          <SessionPulseHistory lines={history} />
-        </TugPopoverContent>
-      </TugPopover>
-      <span
-        ref={copyLine.ref as React.Ref<HTMLSpanElement>}
-        onContextMenu={copyLine.onContextMenu}
-        className="session-pulse-strip-stage"
-      >
-        {/*
-          S1: the headline leads, pinned and bright; the activity trails,
-          muted and shrinking. Both runs are optional — a session with no
-          overview renders the activity alone, with no separator and nothing
-          reserved where the headline would have been.
+        The whole two-level reading is `TugPulse`: the strip contributes the
+        band it rides on and the two controls at its ends, and NO typography —
+        face, size, baseline, and the `›` all belong to the component, so this
+        strip and the Lens row cannot drift apart.
 
-          The headline is read straight from the store on every render. It
-          deliberately does NOT go through `useDwellDisplay`: the dwell paces
-          the beat's rapid commentary, and the emitter's own floor already
-          makes the overview slow. Pacing it twice would only delay the
-          session's first headline for no reading benefit.
-        */}
-        {overview !== null && (
-          <span
-            className="session-pulse-headline"
-            data-slot="session-pulse-headline"
-          >
-            {overview.text}
-          </span>
-        )}
-        {overview !== null && (
-          <span className="session-pulse-sep" aria-hidden="true">
-            ›
-          </span>
-        )}
-        <PulseLineText
-          entry={current}
-          className={
-            current.placeholder
-              ? "session-pulse-activity session-pulse-strip-text session-pulse-strip-placeholder"
-              : "session-pulse-activity session-pulse-strip-text"
-          }
-        />
-      </span>
-      {/*
-        The compact sparkline is the entry point to the expanded Activity
-        card ([P12] Surface): clicking it opens a popover of per-channel
-        small-multiples for this session. The trigger mirrors the legend
-        button's focus discipline (leaf, never steals card focus).
+        The headline is read straight from the store on every render. It
+        deliberately does NOT go through `useDwellDisplay`: the dwell paces the
+        beat's rapid commentary, and the emitter's own floor already makes the
+        overview slow. Pacing it twice would only delay the session's first
+        headline for no reading benefit.
       */}
-      <TugPopover>
-        <TugPopoverTrigger>
-          <button
-            type="button"
-            className="session-pulse-strip-spark-trigger"
-            tabIndex={-1}
-            data-tug-focus="refuse"
-            data-no-activate=""
-            aria-label="Session pulse detail"
-          >
-            <TugSparkline
-              getSeries={getSeries}
-              subscribeActivity={subscribeActivity}
-              binMs={ACTIVITY_BIN_MS}
-              fullScale={SPARKLINE_FULL_SCALE_CHARS}
-              curve={SPARKLINE_CURVE}
-              width={64}
-              height={22}
-              className="session-pulse-strip-spark"
-              title="Session activity — text, tokens, tools, and subagents"
-            />
-          </button>
-        </TugPopoverTrigger>
-        <TugPopoverContent side="top" align="end" sideOffset={8} arrow>
-          <SessionPulseCard session={tugSessionId} />
-        </TugPopoverContent>
-      </TugPopover>
+      <TugPulse
+        legend={legend}
+        headline={overview !== null ? overview.text : undefined}
+        activity={
+          <PulseLineText
+            entry={current}
+            className="session-pulse-strip-text"
+          />
+        }
+        trailing={spark}
+        stageProps={{
+          ref: copyLine.ref as React.Ref<HTMLSpanElement>,
+          onContextMenu: copyLine.onContextMenu,
+        }}
+      />
       {copyLine.contextMenu}
     </div>
   );

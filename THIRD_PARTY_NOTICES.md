@@ -267,7 +267,7 @@ SOFTWARE.
 ## IBM Plex
 
 **Source:** https://github.com/IBM/plex (npm: `@ibm/plex-*`)
-**What was adopted:** IBM Plex font files (woff2) bundled in `tugdeck/public/fonts/`, used as the primary UI typeface family. Core families — IBM Plex Sans, IBM Plex Mono, IBM Plex Sans Condensed — plus the non-Latin script companions IBM Plex Sans Arabic, Hebrew, Thai, and Devanagari, and the CJK families IBM Plex Sans JP and KR (shipped as IBM's pre-split unicode-range subsets so the browser fetches only on-screen subsets). All companion faces are vendored reproducibly via `tugdeck/scripts/fetch-fonts.ts` (`just fetch-fonts` / `just fetch-fonts --cjk`), pinned to the versions in that script's manifest.
+**What was adopted:** IBM Plex font files (woff2) bundled in `tugdeck/public/fonts/`, used as the primary UI typeface family. Core families — IBM Plex Sans, IBM Plex Mono, IBM Plex Sans Condensed — plus the non-Latin script companions IBM Plex Sans Arabic, Hebrew, Thai, and Devanagari, and the CJK families IBM Plex Sans JP and KR (shipped as IBM's pre-split unicode-range subsets so the browser fetches only on-screen subsets). The two proportional Latin families carry the full upright 100–700 range; Plex Mono carries 400–700. All faces are vendored reproducibly via `tugdeck/scripts/fetch-fonts.ts` (`just fetch-fonts` / `just fetch-fonts --cjk`), pinned to the versions in that script's manifest.
 **Used in:** `tugdeck/public/fonts.css` + `tugdeck/public/fonts-cjk.css` `@font-face` declarations; `--tug-font-family-sans` / `--tug-font-family-mono` / `--tug-font-family-condensed` token stacks in `tugdeck/styles/themes/*.css`.
 
 ```
@@ -280,6 +280,26 @@ This license is copied below, and is also available with a FAQ at:
 https://openfontlicense.org
 
 (Full per-family license text in tugdeck/public/fonts/licenses/plex-sans-*-OFL.txt)
+```
+
+---
+
+## Datatype
+
+**Source:** https://github.com/franktisellano/datatype (tag `v1.2.0`)
+**What was adopted:** The Datatype variable font file (`Datatype-Variable.woff2`) bundled in `tugdeck/public/fonts/`. Its OpenType ligatures substitute a literal text expression with an inline chart glyph — `{p:75}` a pie, `{b:…}` a bar row, `{l:…}` a static sparkline — on two variable axes (wdth 50–150, wght 100–900). Vendored reproducibly via `tugdeck/scripts/fetch-fonts.ts --datatype` (`just fetch-fonts --datatype`), pinned to the tag in that script.
+**Used in:** `tugdeck/public/fonts.css` `@font-face` declaration; the `--tug-font-family-chart` token stack in `tugdeck/styles/themes/*.css`; `tugdeck/src/components/tugways/tug-chart-glyph.tsx`.
+
+```
+SIL Open Font License Version 1.1
+
+Copyright © 2025 Frank Tisellano with Reserved Font Name "Datatype".
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://openfontlicense.org
+
+(Full license text in tugdeck/public/fonts/licenses/datatype-OFL.txt)
 ```
 
 ---

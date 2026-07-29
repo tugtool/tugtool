@@ -50,6 +50,10 @@ body {
   --tug-font-family-mono: "IBM Plex Mono", "SFMono-Regular", "Menlo", monospace;
   --tug-font-family-sans: "IBM Plex Sans", "IBM Plex Sans Arabic", "IBM Plex Sans Hebrew", "IBM Plex Sans Thai", "IBM Plex Sans Devanagari", "IBM Plex Sans JP", "IBM Plex Sans KR", "IBM Plex Sans SC", "IBM Plex Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif;
   --tug-font-family-condensed: "IBM Plex Sans Condensed", "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  /* Chart marks, not reading text: Datatype's ligatures render `{p:75}` /
+     `{b:...}` / `{l:...}` as inline pie / bar / sparkline glyphs. Falls through
+     to the sans stack for anything that is not a chart expression. */
+  --tug-font-family-chart: "Datatype", var(--tug-font-family-sans);
   --tug-font-size-8xs: 5px;
   --tug-font-size-7xs: 6px;
   --tug-font-size-6xs: 7px;

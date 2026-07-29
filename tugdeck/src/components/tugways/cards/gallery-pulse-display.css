@@ -1,15 +1,15 @@
 /**
- * gallery-pulse-display.css — scaffolding + chosen treatments for the
- * PULSE intent/activity design spike (`gallery-pulse-display.tsx`).
+ * gallery-pulse-display.css — SCAFFOLDING ONLY for the PULSE design card.
  *
- * The two register voices:
- *   - `.gpd-intent-text` — the headline: ambient sans, default tone,
- *     medium weight (the strip's 0.75rem body size).
- *   - `.gpd-activity-text` — the operation: small mono, muted tone.
- * Bands mirror the shipping strip's surface (`--tugx-pane-bg`) and the
- * Lens frames mirror the monitor row, so the treatments are judged on the
- * real surfaces. Tokens only — every value resolves to a `--tug7-*`
- * semantic token or `--tug-*` scale token in one hop.
+ * The PULSE's own type — face, size, weight, tracking, the shared baseline,
+ * the stacked leading — is not here. It is in `tug-pulse.css`, which the
+ * demos on this card render through. That separation is the point: a rule
+ * added here would be a rule that ships nowhere, which is exactly how a
+ * gallery design drifts from the app it was designed for.
+ *
+ * What IS here: the surfaces the demos are judged on (the strip's band, the
+ * Lens monitor frame), the labels naming each proposal, and the measuring
+ * rig. Tokens only.
  */
 
 .gpd-root {
@@ -76,60 +76,40 @@
   font-weight: var(--tug-font-weight-medium);
 }
 
-/* ── The two register voices ─────────────────────────────────────────── */
+/* ── Naming a proposal ───────────────────────────────────────────────── */
 
-/* @tug-renders-on var(--tugx-pane-bg) */
-.gpd-intent-text {
-  font-size: 0.75rem;
-  font-weight: var(--tug-font-weight-medium);
-  color: var(--tug7-element-global-text-normal-default-rest);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.gpd-preset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+}
+
+.gpd-preset-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tug-space-sm);
   min-width: 0;
 }
 
-/* @tug-renders-on var(--tugx-pane-bg) */
-.gpd-activity-text {
-  font-family: var(--tug-font-family-mono);
-  font-size: 0.6875rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.gpd-placeholder {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-weight: 400;
-}
-
-/* The live dot leading an activity line — a quiet "this is running now"
- * mark in the muted tone, not an alert color. */
-.gpd-live-dot {
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
+.gpd-preset-name {
   flex: 0 0 auto;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background-color: var(--tug7-element-global-text-normal-subtle-rest);
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-/* ── S1: the strip band — one line, headline first ───────────────────── */
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
+.gpd-preset-blurb {
+  min-width: 0;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
 
-/* One demo band on the strip's own surface and geometry. */
+/* ── The strip's band — the surface a proposal is judged on ──────────── */
+
 /* @tug-renders-on var(--tugx-pane-bg) */
 .gpd-band {
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-sm);
-  height: 34px;
-  /* The shipping strip's baseline trick: the line box equals the bar
-   * height, so the text baseline lands where the 34px box puts it and the
-   * 24px legend pill's own centered baseline meets it — the label and the
-   * line share ONE optical baseline. Without this the flex centering
-   * floats the small label ~2px high. */
-  line-height: 34px;
   box-sizing: border-box;
   padding-inline: var(--tug-space-md);
   border-radius: var(--tug-radius-sm, 4px);
@@ -137,52 +117,65 @@
   overflow: hidden;
 }
 
-/* The PULSE legend at the shipping strip's exact metrics: the 24px pill
- * box with 7px inline padding and the 1px optical nudge — so the label's
- * position against the text matches what Z2 ships today. */
+/* The declared baseline, drawn — a hairline at exactly the offset the strut
+   enforces, so anything sitting off it is visibly off it — and beside it the
+   headline's VISUAL MIDDLE, which is the line the legend is actually aligned
+   to. Both are derived from the component's own knobs, so they track a preset
+   change rather than being drawn where the numbers used to be. */
+.gpd-band-ruled {
+  position: relative;
+}
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gpd-band-ruled::after,
+.gpd-band-ruled::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  height: 1px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* The baseline. */
+.gpd-band-ruled::after {
+  top: var(--tugx-pulse-baseline);
+  background-color: var(--tug7-element-global-text-normal-link-rest);
+}
+
+/* The headline's visual middle: half its cap height above that baseline. */
+.gpd-band-ruled::before {
+  top: calc(
+    var(--tugx-pulse-baseline) - var(--tugx-pulse-headline-size) *
+      var(--tugx-pulse-legend-center-ratio) / 2
+  );
+  background-color: var(--tug7-element-global-text-normal-caution-rest);
+}
+
+/* A band narrowed until the activity has to give way — the only way to judge
+   a truncation rule is against a width that forces it. */
+.gpd-band-tight {
+  width: 420px;
+}
+
+/* The PULSE legend at the shipping strip's metrics: the 24px pill with 7px
+   inline padding. Its POSITION is the component's business — the pill only
+   declares its own box and tracking. */
 /* @tug-renders-on var(--tugx-pane-bg) */
 .gpd-legend {
-  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   height: 24px;
   padding-inline: 7px;
   line-height: 1;
-  font-size: 0.5625rem;
+  font-size: var(--tugx-pulse-legend-size);
   letter-spacing: 0.18em;
   text-indent: 0.18em;
   color: var(--tug7-element-global-text-normal-muted-rest);
-  transform: translateY(1.5px);
 }
 
-.gpd-s1-line {
-  display: flex;
-  align-items: baseline;
-  min-width: 0;
-  flex: 1 1 auto;
-  /* The shipping stage offsets: -2px toward the legend, 1px down. */
-  transform: translate(-2px, 1px);
-}
-
-/* The intent is pinned; the activity shrinks and ellipsizes first. */
-.gpd-s1-line .gpd-intent-text {
-  flex: 0 0 auto;
-  max-width: 100%;
-}
-
-/* @tug-renders-on var(--tugx-pane-bg) */
-.gpd-s1-sep {
-  flex: 0 0 auto;
-  margin-inline: 0.45em;
-  color: var(--tug7-element-global-text-normal-muted-disabled-rest);
-}
-
-.gpd-s1-activity {
-  flex: 0 1 auto;
-}
-
-/* ── L1: the Lens row — stacked ──────────────────────────────────────── */
+/* ── The Lens monitor frame ──────────────────────────────────────────── */
 
 .gpd-lens-stack {
   display: flex;
@@ -249,37 +242,33 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* The pulse pair reads as ONE unit: tight leading between the intent and
- * its activity line (1px air on compact line boxes), clearly tighter than
- * the 4px that separates the pair from the name line above. */
-.gpd-lens-intent-line {
+/* ── The measuring rig ───────────────────────────────────────────────── */
+
+.gpd-meter {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--tug-space-xs);
-  min-width: 0;
-  line-height: 1.2;
-  margin-block-end: 1px;
 }
 
-.gpd-lens-intent {
-  flex: 1 1 auto;
+.gpd-meter-row {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr) 12rem;
+  align-items: baseline;
+  column-gap: var(--tug-space-sm);
 }
 
-.gpd-lens-activity-line {
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-xs);
-  min-width: 0;
-  line-height: 1.2;
+/* The specimen is measured, so it must not be clipped: it reports the
+   type's own width, not the frame's. */
+.gpd-meter-specimen {
+  overflow: visible;
 }
 
-.gpd-lens-activity {
-  flex: 1 1 auto;
-}
-
-.gpd-lens-spark {
-  flex: 0 0 auto;
-  margin-inline-start: auto;
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
+.gpd-meter-readout {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  text-align: end;
 }
 
 /* ── States zone ─────────────────────────────────────────────────────── */
@@ -291,6 +280,66 @@
 }
 
 .gpd-state-label {
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* ── Datatype specimens ──────────────────────────────────────────────── */
+
+.gpd-chart-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--tug-space-lg);
+}
+
+.gpd-chart-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  font-size: 1.25rem;
+}
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
+.gpd-chart-caption {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+.gpd-worklist {
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: var(--tugx-pane-bg);
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  gap: var(--tug-space-xs);
+}
+
+.gpd-work-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+}
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gpd-work-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-sm);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gpd-work-count {
+  flex: 0 0 auto;
+  font-family: var(--tug-font-family-mono);
   font-size: var(--tug-font-size-xs);
   color: var(--tug7-element-global-text-normal-subtle-rest);
 }

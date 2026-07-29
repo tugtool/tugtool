@@ -1,19 +1,19 @@
 /**
  * session-pulse-strip.css — the Z2 PULSE strip's scoped styling.
  *
- * One fixed-height line carrying two levels (S1): a letterspaced PULSE
- * legend, then the session's standing goal as a bright pinned headline,
- * then `›`, then the machine's latest thought trailing in small muted
- * mono. The activity is the run that ellipsizes. A changed line SWAPS
- * INSTANTLY — one text node, no animation. Text cannot cross-fade (two
- * different strings in one box interleave their glyphs into a smash), and
- * the dwell paces changes ≥1.8s apart, so an instant replace reads calm;
- * the sparkline carries the liveness.
+ * The band, and the two controls at its ends. The READING on it — the
+ * letterspaced legend, the session's standing goal, the `›`, the machine's
+ * latest thought, and the one baseline they all sit on — belongs to
+ * `TugPulse`, so this file sets no type. A changed line SWAPS INSTANTLY:
+ * one text node, no animation. Text cannot cross-fade (two different
+ * strings in one box interleave their glyphs into a smash), and the dwell
+ * paces changes ≥1.8s apart, so an instant replace reads calm; the
+ * sparkline carries the liveness.
  *
  * Tuglaw cross-check:
  *  - [L19] component file pair with `data-slot="session-pulse-strip"`.
- *  - [L20] the strip owns its own legend/stage/text/placeholder
- *    scope; the session card contributes only the mount position.
+ *  - [L20] `TugPulse`, the popovers, and the sparkline keep their own
+ *    tokens; the strip contributes only the band and the mount position.
  *  - [L16] color-setting rules pair with `@tug-renders-on` (the strip
  *    rides the card's status surface).
  *
@@ -22,45 +22,14 @@
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .session-pulse-strip {
-  /* One fixed-height line. The line box equals the strip height, so the
-   * single line centers vertically and the legend + text — same font-size,
-   * same line box — share ONE baseline. Tall typeset math crops (overflow)
-   * rather than moving layout. */
-  --session-pulse-strip-height: 34px;
-  --session-pulse-strip-font-size: 0.75rem;
-  /* The legend matches the Z2 status labels' size exactly; the line text
-   * keeps its own larger size. */
-  --session-pulse-strip-label-size: 0.5625rem;
-  /* ── Geometry fine-tuning (one location) ──────────────────────────────
-   * Each offset nudges one element up (negative) or down (positive) from
-   * its flex-centered rest position, via translateY — so it shifts only
-   * that element and never changes the bar's height or flow. The text
-   * offset moves the whole stage, so every message (commentary, None,
-   * Done) shifts together. Bar height is --session-pulse-strip-height above. */
-  --session-pulse-strip-legend-offset-y: 1px;
-  --session-pulse-strip-text-offset-y: 1px;
-  --session-pulse-strip-spark-offset-y: 0px;
-  /* Horizontal gap between the PULSE label and the text that follows it:
-   * positive nudges the text right (away from the label), negative pulls it
-   * left (toward the label). Moves the whole stage, so every message tracks. */
-  --session-pulse-strip-text-offset-x: -2px;
   /* How tightly the keyboard focus ring hugs the PULSE label pill (smaller =
    * tighter). The global default is 2px; this label wears a snugger ring. */
   --session-pulse-strip-legend-ring-offset: 0px;
-  /* The activity run's own size — smaller than the headline it trails, so the
-   * two levels read as headline over caption rather than as one long line. */
-  --session-pulse-strip-activity-font-size: 0.6875rem;
-  /* ONE row, always. Both levels of the reading share this line (S1), so
-   * whether a session has an overview changes what the row says and never how
-   * tall it is. */
-  display: flex;
-  /* Optically center the small label against the larger line text (NOT
-   * baseline-aligned — that drops the small label low). */
-  align-items: center;
-  gap: var(--tug-space-sm);
+  /* ONE row, always. Both levels of the reading share the bar `TugPulse`
+   * lays out, so whether a session has an overview changes what the row says
+   * and never how tall it is. Bar height, baseline, and the gap between the
+   * label and the words are `--tugx-pulse-*` knobs in `tug-pulse.css`. */
   flex: 0 0 auto;
-  height: var(--session-pulse-strip-height);
-  line-height: var(--session-pulse-strip-height);
   box-sizing: border-box;
   padding-block: 0;
   padding-inline: var(--tug-space-md);
@@ -100,12 +69,13 @@
   background-color: transparent;
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-family: inherit;
-  font-size: var(--session-pulse-strip-label-size);
+  /* The label's size is the PULSE's, not this strip's: `TugPulse` computes
+     the label's vertical position from it. */
+  font-size: var(--tugx-pulse-legend-size);
   letter-spacing: 0.18em;
   flex: 0 0 auto;
   cursor: pointer;
   transition: background-color 0.1s ease;
-  transform: translateY(var(--session-pulse-strip-legend-offset-y));
 }
 
 .session-pulse-strip-legend:hover {
@@ -125,36 +95,6 @@
    border-radius; only the gap shrinks (see --session-pulse-strip-legend-ring-offset). */
 .session-pulse-strip-legend[data-key-view-kbd] {
   outline-offset: var(--session-pulse-strip-legend-ring-offset);
-}
-
-/* The S1 stage: fills the remaining width and lays the two levels out on one
- * baseline. The runs sit IN FLOW so their baseline drives the stage's, shared
- * with the legend pill. */
-.session-pulse-strip-stage {
-  position: relative;
-  display: flex;
-  align-items: baseline;
-  flex: 1 1 auto;
-  min-width: 0;
-  transform: translate(
-    var(--session-pulse-strip-text-offset-x),
-    var(--session-pulse-strip-text-offset-y)
-  );
-}
-
-/* Single-line mechanics shared by both runs. Tone and size belong to the run's
- * own class, so the two levels can differ without fighting over specificity. */
-.session-pulse-strip-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-/* The activity sparkline; flex-centered in the bar, then nudged by the
- * spark offset token (see --session-pulse-strip-spark-offset-y above). */
-.session-pulse-strip-spark {
-  transform: translateY(var(--session-pulse-strip-spark-offset-y));
 }
 
 /* The sparkline's popover trigger: a button wrapper that wears the same
@@ -182,56 +122,6 @@
    mirroring the legend pill. */
 .session-pulse-strip-spark-trigger[data-state="open"] {
   background-color: var(--tug7-surface-control-primary-ghost-accent-active);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.session-pulse-strip-placeholder {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* ── S1: "headline › activity" ─────────────────────────────────────────
-   The session's standing goal leads, in headline register; the live
-   operation trails. `›` is a directional divider (reads "into detail"),
-   not the symmetric bullet.
-
-   Which run truncates is the whole point of the split. The headline is
-   PINNED — `flex: 0 0 auto`, so it yields no width to the activity and the
-   activity is always what ellipsizes. Pinned does NOT mean unclipped: both
-   runs keep `overflow: hidden` + ellipsis + `min-width: 0`, because the
-   strip root clips and a headline let loose would be cut mid-glyph with no
-   `…` to admit it. The only difference between the two runs is the flex
-   basis. */
-
-/* The goal: the brightest, heaviest run on the strip — a headline. */
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.session-pulse-headline {
-  flex: 0 0 auto;
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--tug7-element-global-text-normal-default-rest);
-  font-size: var(--session-pulse-strip-font-size);
-  font-weight: var(--tug-font-weight-medium);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.session-pulse-sep {
-  flex: 0 0 auto;
-  margin-inline: 0.45em;
-  color: var(--tug7-element-global-text-normal-muted-disabled-rest);
-}
-
-/* The live operation: muted, mono, smaller, and the run that gives way. A
-   tool call is a machine string, so it reads in the machine face. */
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.session-pulse-activity {
-  flex: 0 1 auto;
-  min-width: 0;
-  font-family: var(--tug-font-family-mono);
-  font-size: var(--session-pulse-strip-activity-font-size);
-  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* Rendered markdown flattens to one inline run: the strip is a single

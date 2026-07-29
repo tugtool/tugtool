@@ -23,10 +23,15 @@
  *    beside its woff2 so the relative url()s resolve) and regenerate
  *    public/fonts-cjk.css, a flat list of @imports that index.html links.
  *
+ * One family is not IBM Plex and not on npm: **Datatype**, a variable font whose
+ * OpenType ligatures turn `{p:75}` / `{b:…}` / `{l:…}` into inline pie, bar, and
+ * sparkline marks. It is vendored straight from its GitHub tag by `--datatype`.
+ *
  * Usage:
  *   bun run scripts/fetch-fonts.ts                 # all alphabetic (phase 1)
  *   bun run scripts/fetch-fonts.ts plex-sans-kr    # one family by short name
  *   bun run scripts/fetch-fonts.ts --cjk           # all CJK families
+ *   bun run scripts/fetch-fonts.ts --datatype      # the Datatype chart font
  *   bun run scripts/fetch-fonts.ts --list          # print the manifest
  */
 
@@ -51,10 +56,30 @@ interface Family {
   phase: 1 | 4;
   /** CJK families ship pre-split unicode-range subsets, not flat woff2. */
   split?: boolean;
+  /** Face suffixes to keep, when this family needs more than {@link KEEP_WEIGHTS}. */
+  weights?: readonly string[];
 }
+
+/**
+ * The proportional Latin families carry the light end too. The PULSE is the
+ * surface where set width buys information density, so Thin/ExtraLight/Light/
+ * Text are real faces there.
+ *
+ * Plex Mono is deliberately absent: the committed mono woff2 predate this
+ * manifest and carry 82 glyphs the npm build drops, and the editor reads in
+ * that face. Vertical metrics and advance width are identical between the two
+ * builds, so the coverage is the only difference — and it is not worth trading
+ * for light mono cuts nothing renders.
+ */
+const CORE_WEIGHTS = [
+  "Thin", "ExtraLight", "Light", "Regular", "Text",
+  "Medium", "SemiBold", "Bold", "Italic", "BoldItalic",
+] as const;
 
 // Pinned manifest. Bump a version here, re-run, commit the new woff2.
 const MANIFEST: Family[] = [
+  { pkg: "plex-sans", version: "1.1.0", label: "IBM Plex Sans", stem: "IBMPlexSans", phase: 1, weights: CORE_WEIGHTS },
+  { pkg: "plex-sans-condensed", version: "1.1.0", label: "IBM Plex Sans Condensed", stem: "IBMPlexSansCondensed", phase: 1, weights: CORE_WEIGHTS },
   { pkg: "plex-sans-arabic", version: "1.1.0", label: "IBM Plex Sans Arabic", stem: "IBMPlexSansArabic", phase: 1 },
   { pkg: "plex-sans-hebrew", version: "1.1.0", label: "IBM Plex Sans Hebrew", stem: "IBMPlexSansHebrew", phase: 1 },
   { pkg: "plex-sans-thai", version: "1.1.0", label: "IBM Plex Sans Thai", stem: "IBMPlexSansThai", phase: 1 },
@@ -65,9 +90,9 @@ const MANIFEST: Family[] = [
   { pkg: "plex-sans-tc", version: "1.1.1", label: "IBM Plex Sans TC", stem: "IBMPlexSansTC", phase: 4, split: true },
 ];
 
-// Weights the UI requests (match the @font-face set in fonts.css). Both the
-// flat alphabetic families and the split CJK families ship the same four;
-// Thin/ExtraLight/Light/Text are never rendered, so they are skipped.
+// Weights the UI requests (match the @font-face set in fonts.css). The
+// non-Latin companions and the CJK subsets carry the four the UI renders in
+// running prose; the core Latin families take CORE_WEIGHTS on top.
 const KEEP_WEIGHTS = ["Regular", "Medium", "SemiBold", "Bold"];
 const CJK_KEEP_WEIGHTS = KEEP_WEIGHTS;
 
@@ -107,9 +132,10 @@ function copyLicense(pkgRoot: string, fam: Family, ...extraDirs: string[]): bool
 function fetchFlat(fam: Family, pkgRoot: string): number {
   const woffDir = join(pkgRoot, "fonts", "complete", "woff2");
   if (!existsSync(woffDir)) throw new Error(`no complete/woff2 in ${fam.pkg} — packaging changed?`);
+  const keep = fam.weights ?? KEEP_WEIGHTS;
   const woff2 = readdirSync(woffDir)
     .filter((f) => f.endsWith(".woff2"))
-    .filter((f) => KEEP_WEIGHTS.some((w) => f.endsWith(`-${w}.woff2`)));
+    .filter((f) => keep.some((w) => f.endsWith(`-${w}.woff2`)));
   if (woff2.length === 0) throw new Error(`no kept-weight woff2 in ${fam.pkg}`);
   for (const f of woff2) copyFileSync(join(woffDir, f), join(PUBLIC_FONTS, f));
   const lic = copyLicense(pkgRoot, fam, woffDir);
@@ -152,6 +178,31 @@ function fetchFamily(fam: Family): number {
   }
 }
 
+/* --------------------------------------------------------------------------
+ * Datatype — the chart font
+ * ------------------------------------------------------------------------*/
+
+/** Pinned Datatype tag. Bump, re-run with `--datatype`, commit the woff2. */
+const DATATYPE_TAG = "v1.2.0";
+const DATATYPE_RAW = `https://raw.githubusercontent.com/franktisellano/datatype/${DATATYPE_TAG}`;
+/** The upstream variable file's name carries brackets; we land it path-safe. */
+const DATATYPE_SRC = "fonts/variable/Datatype%5Bwdth,wght%5D.woff2";
+const DATATYPE_DEST = "Datatype-Variable.woff2";
+
+/** Vendor the Datatype variable woff2 + its OFL from the pinned GitHub tag. */
+async function fetchDatatype(): Promise<number> {
+  log(`• Datatype (${DATATYPE_TAG})`);
+  const grab = async (url: string, dest: string): Promise<void> => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
+    writeFileSync(dest, new Uint8Array(await res.arrayBuffer()));
+  };
+  await grab(`${DATATYPE_RAW}/${DATATYPE_SRC}`, join(PUBLIC_FONTS, DATATYPE_DEST));
+  await grab(`${DATATYPE_RAW}/OFL.txt`, join(LICENSE_DIR, "datatype-OFL.txt"));
+  log(`  ↳ ${DATATYPE_DEST} + license`);
+  return 2;
+}
+
 /** Rebuild public/fonts-cjk.css from whatever CJK weight-CSS is on disk, so the
  *  @import list always matches the vendored subsets (partial runs accumulate). */
 function regenCjkIndex(): void {
@@ -172,10 +223,19 @@ function regenCjkIndex(): void {
   log(`\nRegenerated fonts-cjk.css (${imports.length} @import).`);
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.includes("--list")) {
     for (const f of MANIFEST) log(`${f.pkg}@${f.version}  (phase ${f.phase}${f.split ? ", split" : ""})  ${f.label}`);
+    log(`datatype@${DATATYPE_TAG}  (--datatype)  Datatype (chart font)`);
+    return;
+  }
+
+  if (args.includes("--datatype")) {
+    mkdirSync(PUBLIC_FONTS, { recursive: true });
+    mkdirSync(LICENSE_DIR, { recursive: true });
+    const n = await fetchDatatype();
+    log(`\nDone. ${n} files vendored.`);
     return;
   }
 
@@ -200,4 +260,4 @@ function main(): void {
   log(`\nDone. ${total} files vendored.`);
 }
 
-main();
+await main();

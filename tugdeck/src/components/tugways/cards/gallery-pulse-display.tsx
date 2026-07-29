@@ -1,46 +1,43 @@
 /**
- * gallery-pulse-display.tsx — design spike for the PULSE's two-level
- * grammar: **intent** over **activity**.
+ * gallery-pulse-display.tsx — the PULSE's design surface.
  *
- * The PULSE is a two-level feed. INTENT is the headline: the model's
- * reading of the goal and what is going on now, at a high level.
- * ACTIVITY is the detail: the tool call / operation / command running at
- * this moment in service of that intent.
+ * The PULSE is a two-level feed. INTENT is the headline: the model's reading
+ * of the goal. ACTIVITY is the detail: the operation running now in service
+ * of it. Both levels, both layouts, and every typographic proposal on this
+ * card are rendered by the REAL {@link TugPulse} — the same component the Z2
+ * strip and the Lens row mount. There is no gallery copy of the type rules,
+ * so what is tuned here is what ships, and rolling a decision out is changing
+ * `TUG_PULSE_DEFAULT_PRESET`.
  *
- * Chosen directions (locked):
- *   - The intent is written in HEADLINE REGISTER — newspaper rules. No
- *     definite or indefinite articles, no needless words, punchy and
- *     pithy. The copy doctrine zone shows the rewrite rule in action.
- *   - Session card: **S1** — one line, headline first. The intent leads
- *     bright and layout-pinned, `›` separates, the activity trails in
- *     muted small mono and is the part that ellipsizes.
- *   - Lens: **L1** — stacked. Intent on its own line under the session
- *     name, activity + sparkline on a third; each level keeps a clean
- *     single-line run.
+ * The open question this card is asking: the activity run has been set in
+ * mono, which spends more width per character than any other face we ship on
+ * the one line where width is the scarce resource. The presets audition Plex
+ * Sans Condensed in its place, across a ladder of sizes, and the bake-off
+ * measures them rather than asserting. A preset changes the SECOND run only —
+ * the headline is Plex Sans Condensed medium 12px throughout.
  *
- * S1 and L1 both shipped, so this card is no longer a proposal — it is the
- * doctrine reference for the copy register, and the zone below is where the
- * rewrite rule stays legible. The shipping surfaces are
- * `session-pulse-strip.tsx` (S1) and `sessions-section.tsx` (L1); on the
- * strip the headline is fed by the local model's session overview, and the
- * reference zone keeps the pre-S1 baseline visible for comparison.
- *
- * Pure presentation on hand-authored fixtures — no stores, no wire. The
- * sparklines are the real `TugSparkline` fed a deterministic synthetic
- * series so the frames read live without a session behind them.
+ * Fixtures are hand-authored; the sparklines are the real `TugSparkline` fed
+ * a deterministic synthetic series so the frames read live without a session
+ * behind them.
  *
  * @module components/tugways/cards/gallery-pulse-display
  */
 
 import "./gallery-pulse-display.css";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 
 import {
   sparklineCurves,
   TugSparkline,
 } from "@/components/tugways/tug-sparkline";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { TugChartGlyph } from "@/components/tugways/tug-chart-glyph";
+import {
+  TUG_PULSE_PRESETS,
+  TugPulse,
+  type TugPulsePreset,
+} from "@/components/tugways/tug-pulse";
 
 // ---------------------------------------------------------------------------
 // Fixtures — intent in headline register: no articles, no needless words.
@@ -124,6 +121,39 @@ const LENS_SESSIONS: ReadonlyArray<{ name: string; pair: PulsePair }> = [
   { name: "tugtool/bonsai-eval", pair: PAIRS[7] },
 ];
 
+/**
+ * What each preset proposes, in one line, beside the thing it proposes.
+ *
+ * A preset changes the ACTIVITY only — the headline is Plex Sans Condensed medium 12px
+ * in every one of them — so each blurb names both runs rather than leaving
+ * the reader to assume the one it names covers the whole line.
+ */
+const PRESET_BLURB: Record<TugPulsePreset, string> = {
+  machine:
+    "Condensed medium 12px › Mono regular 11px — today, and here only to be measured against.",
+  "condensed-xs":
+    "Condensed medium 12px › Condensed regular 10.5px — the activity recedes; the headline clearly leads.",
+  "condensed-sm":
+    "Condensed medium 12px › Condensed regular 11px — level with the mono baseline's size, so the swap is a pure face change.",
+  condensed: "Condensed medium 12px › Condensed regular 11.5px.",
+  "condensed-lg":
+    "Condensed medium 12px › Condensed regular 12px — level with the headline's size, still quieter by weight, set width, and tone.",
+  "condensed-xl":
+    "Condensed medium 12px › Condensed regular 12.5px — the larger run by measure, still the quieter one.",
+};
+
+/**
+ * The condensed weights we ship, for the second run. The ladder above sets
+ * regular; this is the column that shows what the other cuts cost in color,
+ * so the weight can be chosen on sight rather than by name.
+ */
+const ACTIVITY_WEIGHTS: ReadonlyArray<{ weight: number; name: string }> = [
+  { weight: 100, name: "thin" },
+  { weight: 200, name: "extralight" },
+  { weight: 300, name: "light" },
+  { weight: 400, name: "regular" },
+];
+
 // Sparkline shape — the strip's own constants, so the demos read at the
 // shipping weight.
 const SPARK_FULL_SCALE = 1200;
@@ -139,12 +169,10 @@ function DemoSpark({
   phase,
   width = 64,
   height = 22,
-  className,
 }: {
   phase: number;
   width?: number;
   height?: number;
-  className?: string;
 }): React.ReactElement {
   const getSeries = useCallback(
     (nowMs: number): number[] => {
@@ -169,7 +197,6 @@ function DemoSpark({
       curve={SPARK_CURVE}
       width={width}
       height={height}
-      className={className}
       title="Synthetic activity (demo)"
     />
   );
@@ -197,63 +224,76 @@ function Section({
   );
 }
 
-// ---------------------------------------------------------------------------
-// S1 — the session-card band: one line, headline first.
-// ---------------------------------------------------------------------------
+/** The strip's legend pill, as a plain label — the shipping one is a popover
+ *  trigger, and its behavior is the strip's business, not the type's. */
+function Legend(): React.ReactElement {
+  return <span className="gpd-legend">PULSE</span>;
+}
 
-/** The chosen strip grammar: intent bright and layout-pinned, `›`, then
- *  activity in muted mono — the activity is the part that ellipsizes.
- *  Either level may be absent; the line simply drops that run. */
-function StripLine({
+/** One demo band on the strip's own surface, carrying a real `TugPulse`. */
+function Band({
+  preset,
   pair,
   phase,
-  placeholder,
+  legendAlign,
+  truncate,
+  activityWeight,
+  rules,
+  tight,
 }: {
+  preset?: TugPulsePreset;
   pair: Partial<PulsePair>;
   phase: number;
-  placeholder?: boolean;
+  legendAlign?: "cap-center" | "baseline";
+  truncate?: "middle" | "end";
+  /** Override the activity's weight — the knob, set at the mount site. */
+  activityWeight?: number;
+  /** Draw the declared baseline and the headline's visual middle. */
+  rules?: boolean;
+  /** Narrow the band so the activity has to give way. */
+  tight?: boolean;
 }): React.ReactElement {
   return (
-    <div className="gpd-band">
-      <span className="gpd-legend">PULSE</span>
-      <span className="gpd-s1-line">
-        {pair.intent !== undefined ? (
-          <span
-            className={
-              placeholder === true
-                ? "gpd-intent-text gpd-placeholder"
-                : "gpd-intent-text"
-            }
-          >
-            {pair.intent}
-          </span>
-        ) : null}
-        {pair.intent !== undefined && pair.activity !== undefined ? (
-          <span className="gpd-s1-sep" aria-hidden="true">
-            ›
-          </span>
-        ) : null}
-        {pair.activity !== undefined ? (
-          <span className="gpd-activity-text gpd-s1-activity">
-            {pair.activity}
-          </span>
-        ) : null}
-      </span>
-      <DemoSpark phase={phase} />
+    <div
+      className={[
+        "gpd-band",
+        rules === true ? "gpd-band-ruled" : "",
+        tight === true ? "gpd-band-tight" : "",
+      ]
+        .filter((c) => c.length > 0)
+        .join(" ")}
+    >
+      <TugPulse
+        preset={preset}
+        legendAlign={legendAlign}
+        truncate={truncate}
+        style={
+          activityWeight !== undefined
+            ? ({
+                "--tugx-pulse-activity-weight": activityWeight,
+              } as React.CSSProperties)
+            : undefined
+        }
+        legend={<Legend />}
+        headline={pair.intent}
+        activity={pair.activity}
+        trailing={<DemoSpark phase={phase} />}
+      />
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// L1 — the Lens row: stacked intent + activity under the name line.
-// ---------------------------------------------------------------------------
-
+/** A Lens monitor row, carrying a real stacked `TugPulse` beneath the name. */
 function LensFrame({
   name,
-  children,
+  preset,
+  pair,
+  phase,
 }: {
   name: string;
-  children: React.ReactNode;
+  preset?: TugPulsePreset;
+  pair: Partial<PulsePair>;
+  phase: number;
 }): React.ReactElement {
   return (
     <div className="gpd-lens-frame">
@@ -266,55 +306,137 @@ function LensFrame({
           <span>3</span>
         </span>
       </div>
-      {children}
+      <TugPulse
+        layout="stacked"
+        preset={preset}
+        headline={pair.intent}
+        activity={pair.activity}
+        trailing={<DemoSpark phase={phase} width={56} height={16} />}
+      />
     </div>
   );
 }
 
-/** The chosen Lens grammar: intent on its own line, activity + sparkline
- *  on a third. A missing level collapses its line — the row never
- *  reserves an empty run. */
-function LensStacked({
-  name,
-  pair,
-  phase,
-  placeholder,
+// ---------------------------------------------------------------------------
+// The density bake-off — measured, not asserted
+// ---------------------------------------------------------------------------
+
+/**
+ * Sets the SAME machine string in every preset and measures the natural
+ * width each one takes, reporting it against the mono baseline. The measure
+ * runs after `document.fonts.ready`, because a face that has not loaded
+ * measures as its fallback and would report a confident wrong number.
+ *
+ * Measurement writes straight to the DOM ([L06]): the readout is appearance
+ * derived from layout, and routing it through React state would re-render
+ * the very rows being measured.
+ */
+interface Specimen {
+  /** Row label, and the measurement key. */
+  key: string;
+  preset: TugPulsePreset;
+  /** Activity weight override, when the row is auditioning a cut. */
+  weight?: number;
+}
+
+function DensityMeter({
+  sample,
+  specimens,
+  baselineKey,
 }: {
-  name: string;
-  pair: Partial<PulsePair>;
-  phase: number;
-  placeholder?: boolean;
+  sample: string;
+  specimens: readonly Specimen[];
+  /** The row every other row is reported against. */
+  baselineKey: string;
 }): React.ReactElement {
+  const rowRefs = useRef(new Map<string, HTMLSpanElement>());
+  const outRefs = useRef(new Map<string, HTMLSpanElement>());
+
+  useEffect(() => {
+    let live = true;
+    const measure = (): void => {
+      if (!live) return;
+      const widths = new Map<string, number>();
+      for (const [key, el] of rowRefs.current) {
+        widths.set(key, el.getBoundingClientRect().width);
+      }
+      const base = widths.get(baselineKey);
+      if (base === undefined || base === 0) return;
+      for (const [key, width] of widths) {
+        const out = outRefs.current.get(key);
+        if (out === undefined) continue;
+        const saved = Math.round((1 - width / base) * 100);
+        out.textContent =
+          key === baselineKey
+            ? `${Math.round(width)}px — the baseline`
+            : `${Math.round(width)}px — ${
+                saved > 0 ? `${saved}% narrower` : `${-saved}% wider`
+              }`;
+      }
+    };
+    void document.fonts.ready.then(measure);
+    return () => {
+      live = false;
+    };
+  }, [sample, baselineKey]);
+
   return (
-    <LensFrame name={name}>
-      {pair.intent !== undefined ? (
-        <div className="gpd-lens-intent-line">
-          <span
-            className={
-              placeholder === true
-                ? "gpd-intent-text gpd-lens-intent gpd-placeholder"
-                : "gpd-intent-text gpd-lens-intent"
+    <div className="gpd-meter">
+      {specimens.map(({ key, preset, weight }) => (
+        <div className="gpd-meter-row" key={key}>
+          <span className="gpd-preset-name">{key}</span>
+          {/* Measured, so it must not be shortened: middle truncation would
+              have this row reporting the width of a string it just cut down
+              rather than the width the type actually asks for. */}
+          <TugPulse
+            className="gpd-meter-specimen"
+            preset={preset}
+            truncate="end"
+            style={
+              weight !== undefined
+                ? ({
+                    "--tugx-pulse-activity-weight": weight,
+                  } as React.CSSProperties)
+                : undefined
             }
-          >
-            {pair.intent}
-          </span>
-          {pair.activity === undefined ? (
-            <DemoSpark phase={phase} width={56} height={16} className="gpd-lens-spark" />
-          ) : null}
+            activity={
+              <span
+                ref={(el) => {
+                  if (el !== null) rowRefs.current.set(key, el);
+                }}
+              >
+                {sample}
+              </span>
+            }
+          />
+          <span
+            className="gpd-meter-readout"
+            ref={(el) => {
+              if (el !== null) outRefs.current.set(key, el);
+            }}
+          />
         </div>
-      ) : null}
-      {pair.activity !== undefined ? (
-        <div className="gpd-lens-activity-line">
-          <span className="gpd-live-dot" aria-hidden="true" />
-          <span className="gpd-activity-text gpd-lens-activity">
-            {pair.activity}
-          </span>
-          <DemoSpark phase={phase} width={56} height={16} className="gpd-lens-spark" />
-        </div>
-      ) : null}
-    </LensFrame>
+      ))}
+    </div>
   );
 }
+
+/** The size ladder, all in regular — the axis the presets encode. */
+const SIZE_SPECIMENS: readonly Specimen[] = TUG_PULSE_PRESETS.map((preset) => ({
+  key: preset,
+  preset,
+}));
+
+/** The weight axis at one size, measured through the same rig so the two
+ *  tables can be read against each other. */
+const WEIGHT_SPECIMENS: readonly Specimen[] = [
+  { key: "machine", preset: "machine" },
+  ...ACTIVITY_WEIGHTS.map(({ weight, name }) => ({
+    key: name,
+    preset: "condensed-sm" as TugPulsePreset,
+    weight,
+  })),
+];
 
 // ---------------------------------------------------------------------------
 // The card
@@ -325,11 +447,10 @@ export function GalleryPulseDisplay(): React.ReactElement {
     <div className="gpd-root" data-slot="gallery-pulse-display">
       <p className="gpd-blurb">
         The PULSE as a two-level feed: <strong>INTENT</strong> — the headline —
-        over <strong>ACTIVITY</strong> — the operation running now. Locked
-        directions: intents in headline register (no articles, no needless
-        words); the session card wears <strong>S1</strong> (one line, headline
-        first, <code>›</code> separator); the Lens wears <strong>L1</strong>{" "}
-        (stacked lines).
+        over <strong>ACTIVITY</strong> — the operation running now. Every frame
+        below is the real <code>TugPulse</code>, the same component the Z2 strip
+        and the Lens row mount; the type rules live in <code>tug-pulse.css</code>{" "}
+        and nowhere else, so tuning here is tuning what ships.
       </p>
 
       <TugSeparator />
@@ -354,25 +475,97 @@ export function GalleryPulseDisplay(): React.ReactElement {
       <TugSeparator />
 
       <Section
-        title="Session card — S1, headline first"
-        blurb="One line, today's band geometry. The intent leads bright and is layout-pinned; the activity trails in muted mono past the › and is the part that ellipsizes. The sparkline keeps its place and weight."
+        title="Density — the same string, measured in each proposal"
+        blurb="Set width is the whole argument, so it is measured rather than claimed: one real machine string, set in every preset, reported against the mono baseline. Measured after the faces load."
       >
-        {PAIRS.slice(0, 6).map((pair, i) => (
-          <StripLine key={pair.intent} pair={pair} phase={i + 1} />
+        <DensityMeter
+          sample={LONG_PAIR.activity}
+          specimens={SIZE_SPECIMENS}
+          baselineKey="machine"
+        />
+      </Section>
+
+      <TugSeparator />
+
+      <Section
+        title="Session card — the presets on the strip"
+        blurb="Today's band geometry. The intent leads bright and layout-pinned; the activity trails past the › and is the run that gives way. The HEADLINE IS THE SAME IN ALL OF THEM — Plex Sans Condensed medium 12px; only the second run changes. The bar height, the baseline, and the legend do not move either."
+      >
+        {TUG_PULSE_PRESETS.map((preset, i) => (
+          <div className="gpd-preset" key={preset}>
+            <span className="gpd-preset-label">
+              <span className="gpd-preset-name">{preset}</span>
+              <span className="gpd-preset-blurb">{PRESET_BLURB[preset]}</span>
+            </span>
+            <Band preset={preset} pair={PAIRS[i]} phase={i + 1} />
+          </div>
         ))}
       </Section>
 
       <TugSeparator />
 
       <Section
-        title="Lens — L1, stacked"
-        blurb="Intent on its own line under the session name; activity + sparkline on a third. Each level keeps a clean single-line run. Frames at monitor width."
+        title="Weight — the second run's cut, at one size"
+        blurb={
+          <>
+            The ladder above sets the activity in Condensed{" "}
+            <strong>regular</strong>. This is what the lighter cuts cost, all at
+            11px over the same headline, so the weight is chosen on sight. The
+            two runs already separate by face, size, and tone before weight is
+            asked to do anything — which is why regular still reads as the
+            quieter run rather than competing with the headline.
+          </>
+        }
+      >
+        <DensityMeter
+          sample={LONG_PAIR.activity}
+          specimens={WEIGHT_SPECIMENS}
+          baselineKey="machine"
+        />
+        {ACTIVITY_WEIGHTS.map(({ weight, name }, i) => (
+          <div className="gpd-preset" key={weight}>
+            <span className="gpd-preset-label">
+              <span className="gpd-preset-name">{name}</span>
+              <span className="gpd-preset-blurb">
+                {`Condensed medium 12px › Condensed ${name} 11px`}
+              </span>
+            </span>
+            <Band
+              preset="condensed-sm"
+              activityWeight={weight}
+              pair={PAIRS[i]}
+              phase={i + 60}
+            />
+          </div>
+        ))}
+      </Section>
+
+      <TugSeparator />
+
+      <Section
+        title="Overflow — the presets under pressure"
+        blurb="One overlong activity, one width. The headline never truncates; where each preset's ellipsis falls is how much of the operation the reader actually gets."
+      >
+        {TUG_PULSE_PRESETS.map((preset, i) => (
+          <div className="gpd-preset" key={preset}>
+            <span className="gpd-preset-name">{preset}</span>
+            <Band preset={preset} pair={LONG_PAIR} phase={i + 30} />
+          </div>
+        ))}
+      </Section>
+
+      <TugSeparator />
+
+      <Section
+        title="Lens — the presets stacked"
+        blurb="Intent on its own line under the session name; activity + sparkline on a third. Leading is stated baseline-to-baseline, so the row is exactly two steps tall in every preset — swapping faces changes the reading, never the row height."
       >
         <div className="gpd-lens-stack">
           {LENS_SESSIONS.map((s, i) => (
-            <LensStacked
+            <LensFrame
               key={s.name}
               name={s.name}
+              preset={TUG_PULSE_PRESETS[i]}
               pair={s.pair}
               phase={i + 10}
             />
@@ -383,50 +576,204 @@ export function GalleryPulseDisplay(): React.ReactElement {
       <TugSeparator />
 
       <Section
-        title="States — the lifecycle in both grammars"
-        blurb="Either level can be absent. S1 drops the missing run from its line; L1 collapses the missing line entirely — neither surface reserves empty space."
+        title="The legend against the line"
+        blurb={
+          <>
+            The general rule for a label sharing a line with text is the
+            baseline. The PULSE is an exception to it: <code>PULSE</code> is an
+            all-caps word beside a mixed-case headline nearly half again its
+            size, and on the shared baseline its cap band hangs low — it reads
+            as sitting <em>under</em> the line rather than on it. What the eye
+            wants matched is the two glyph bands&apos; VISUAL CENTERS. The blue
+            hairline is the declared baseline; the amber one is the headline&apos;s
+            visual middle.
+          </>
+        }
+      >
+        <div className="gpd-state">
+          <span className="gpd-state-label">
+            cap-center — the label&apos;s middle on the headline&apos;s middle (the
+            PULSE&apos;s rule, and the default)
+          </span>
+          <Band pair={PAIRS[4]} phase={40} legendAlign="cap-center" rules />
+        </div>
+        <div className="gpd-state">
+          <span className="gpd-state-label">
+            baseline — the general rule, shown so the exception can be seen as
+            one
+          </span>
+          <Band pair={PAIRS[4]} phase={41} legendAlign="baseline" rules />
+        </div>
+      </Section>
+
+      <TugSeparator />
+
+      <Section
+        title="Truncation — where the activity gives way"
+        blurb={
+          <>
+            An activity is a command or a path, and both carry the part that
+            identifies them at the END — the file being read, the test being
+            run, the weights being fetched. An end ellipsis throws exactly that
+            away and leaves a row of <code>https://huggingf…</code> that says
+            nothing the next row does not also say. Cutting the middle keeps
+            both: what is running, and what it is running on. The full string
+            stays in the DOM either way, so a copy and a screen reader still get
+            all of it.
+          </>
+        }
+      >
+        {[
+          { label: "end — the CSS ellipsis", mode: "end" as const },
+          { label: "middle — both ends survive (the default)", mode: "middle" as const },
+        ].map(({ label, mode }) => (
+          <div className="gpd-state" key={mode}>
+            <span className="gpd-state-label">{label}</span>
+            <Band pair={LONG_PAIR} phase={50} truncate={mode} tight />
+            <Band
+              pair={{ activity: PAIRS[2].activity }}
+              phase={51}
+              truncate={mode}
+              tight
+            />
+          </div>
+        ))}
+      </Section>
+
+      <TugSeparator />
+
+      <Section
+        title="States — the lifecycle in both layouts"
+        blurb={
+          <>
+            Either level can be absent. Inline drops the missing run from its
+            line; stacked collapses the missing line entirely — neither reserves
+            empty space, and the baseline does not move when a run disappears.{" "}
+            <strong>None</strong> and <strong>Done</strong> are activity strings
+            like any other and are set like any other — there is no placeholder
+            voice, so a lifecycle word never becomes the reader&apos;s one
+            inconsistent second run.
+          </>
+        }
       >
         <div className="gpd-state">
           <span className="gpd-state-label">Both levels live</span>
-          <StripLine pair={PAIRS[2]} phase={20} />
+          <Band pair={PAIRS[2]} phase={20} />
         </div>
         <div className="gpd-state">
           <span className="gpd-state-label">
             No intent yet — turn just started, first overview pending
           </span>
-          <StripLine pair={{ activity: "Grep tugdeck/src for pulse" }} phase={21} />
+          <Band pair={{ activity: "Grep tugdeck/src for pulse" }} phase={21} />
         </div>
         <div className="gpd-state">
           <span className="gpd-state-label">
             Intent held, activity idle — between operations
           </span>
-          <StripLine pair={{ intent: PAIRS[1].intent }} phase={22} />
-        </div>
-        <div className="gpd-state">
-          <span className="gpd-state-label">Turn done</span>
-          <StripLine pair={{ intent: "Done" }} phase={23} placeholder />
+          <Band pair={{ intent: PAIRS[1].intent }} phase={22} />
         </div>
         <div className="gpd-state">
           <span className="gpd-state-label">
-            Overflow — activity past the width; the headline never truncates
+            Before the session&apos;s first beat
           </span>
-          <StripLine pair={LONG_PAIR} phase={24} />
+          <Band pair={{ intent: PAIRS[3].intent, activity: "None" }} phase={23} />
+        </div>
+        <div className="gpd-state">
+          <span className="gpd-state-label">Turn done</span>
+          <Band pair={{ intent: PAIRS[3].intent, activity: "Done" }} phase={24} />
         </div>
         <div className="gpd-state">
           <span className="gpd-state-label">Lens: no intent yet / turn done</span>
           <div className="gpd-lens-stack">
-            <LensStacked
+            <LensFrame
               name="tugtool/lens-xp"
               pair={{ activity: "Grep tugdeck/src for pulse" }}
               phase={25}
             />
-            <LensStacked
+            <LensFrame
               name="tugtool/local-model-bringup"
-              pair={{ intent: "Done" }}
+              pair={{ activity: "Done" }}
               phase={26}
-              placeholder
             />
           </div>
+        </div>
+      </Section>
+
+      <TugSeparator />
+
+      <Section
+        title="Datatype — a chart as a glyph"
+        blurb={
+          <>
+            Datatype&apos;s ligatures substitute a literal expression with a
+            drawn mark: <code>{"{p:75}"}</code> is a pie, <code>{"{b:…}"}</code>{" "}
+            a bar row, <code>{"{l:…}"}</code> a static sparkline. A mark costs
+            what a word costs, so it fits where a chart cannot — but it cannot
+            animate, which is why the activity tape stays{" "}
+            <code>TugSparkline</code> and this is for quantities that stand
+            still.
+          </>
+        }
+      >
+        <div className="gpd-chart-row">
+          {[0, 12, 25, 40, 50, 66, 75, 88, 100].map((v) => (
+            <span className="gpd-chart-cell" key={v}>
+              <TugChartGlyph kind="pie" values={[v]} label={`${v} percent`} />
+              <span className="gpd-chart-caption">{v}%</span>
+            </span>
+          ))}
+        </div>
+
+        <p className="gpd-blurb">
+          The proposal: a work item&apos;s completion, inline in its own row —
+          the quantity sits with the words instead of in a column beside them.
+        </p>
+        <div className="gpd-worklist">
+          {[
+            { name: "Pulse componentization", done: 5, total: 6 },
+            { name: "Proportional activity run", done: 3, total: 4 },
+            { name: "Condensed weights vendored", done: 2, total: 2 },
+            { name: "Lens rollout", done: 1, total: 5 },
+          ].map((w) => {
+            const pct = Math.round((w.done / w.total) * 100);
+            return (
+              <div className="gpd-work-row" key={w.name}>
+                <TugChartGlyph
+                  kind="pie"
+                  values={[pct]}
+                  label={`${w.done} of ${w.total} done`}
+                />
+                <span className="gpd-work-name">{w.name}</span>
+                <span className="gpd-work-count">
+                  {w.done}/{w.total}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="gpd-blurb">
+          The other two marks, for reference. The bar row reads a distribution;
+          the line is a frozen series — a shape to compare against, not a live
+          one.
+        </p>
+        <div className="gpd-chart-row">
+          <span className="gpd-chart-cell">
+            <TugChartGlyph
+              kind="bar"
+              values={[15, 45, 80, 30, 60, 90, 20]}
+              label="Bar chart of seven values"
+            />
+            <span className="gpd-chart-caption">bar</span>
+          </span>
+          <span className="gpd-chart-cell">
+            <TugChartGlyph
+              kind="line"
+              values={[20, 45, 60, 55, 80, 95, 70, 88]}
+              label="Sparkline of eight values"
+            />
+            <span className="gpd-chart-caption">line</span>
+          </span>
         </div>
       </Section>
     </div>

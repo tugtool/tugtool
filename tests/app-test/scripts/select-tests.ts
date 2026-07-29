@@ -91,10 +91,11 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     "tugdeck/src/components/tugways/focus-manager.ts": 63,
     "tugdeck/src/focus-transfer.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/": 29,
-    // The two editor modules named individually by a test on top of the 29 that name the
+    // The editor modules named individually by a test on top of the 29 that name the
     // whole directory — the directory declaration is what actually costs here.
     "tugdeck/src/components/tugways/tug-text-editor/drop-extension.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/state-preservation.ts": 30,
+    "tugdeck/src/components/tugways/tug-text-editor/theme.ts": 30,
     "tugdeck/src/card-state-orchestrator.ts": 21,
     // The deck's card/pane model: lens, tab, drag, and save-on-quit tests all
     // route through it because it is where a card's placement actually lives.

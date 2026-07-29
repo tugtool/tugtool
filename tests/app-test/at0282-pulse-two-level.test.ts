@@ -52,15 +52,15 @@ const SID_B = "a7c0d1ea-0000-4000-8000-000000000283";
 
 const CARD_A = '[data-card-id="A"]';
 const STRIP_A = `${CARD_A} [data-slot="session-pulse-strip"]`;
-const HEADLINE_A = `${CARD_A} [data-slot="session-pulse-headline"]`;
-const ACTIVITY_A = `${CARD_A} .session-pulse-activity`;
+const HEADLINE_A = `${CARD_A} [data-slot="tug-pulse-headline"]`;
+const ACTIVITY_A = `${CARD_A} [data-slot="tug-pulse-activity"]`;
 const CARD_B = '[data-card-id="B"]';
 const STRIP_B = `${CARD_B} [data-slot="session-pulse-strip"]`;
 
 const lensRow = (sid: string): string =>
   `.lens-sessions-list .session-row-content[data-session-id="${sid}"]`;
 const lensIntent = (sid: string): string =>
-  `${lensRow(sid)} [data-slot="session-row-intent"]`;
+  `${lensRow(sid)} [data-slot="tug-pulse-headline"]`;
 
 /** The strip's fixed band height — one line, in every state. */
 const STRIP_HEIGHT = 34;
@@ -131,11 +131,18 @@ async function heightOf(app: App, selector: string): Promise<number> {
  * Whether a run is ellipsized: its content is wider than the box drawn for it.
  * The only honest read of "this is the run that got cut".
  */
+/**
+ * Whether a run gave way, by either of the two mechanisms `TugPulse` has.
+ * The headline overflows its box and takes the CSS ellipsis; the activity is
+ * shortened in the middle and then FITS, so overflow alone would read it as
+ * untruncated — `data-truncated` is the signal there.
+ */
 async function isTruncated(app: App, selector: string): Promise<boolean> {
   return app.evalJS<boolean>(
     `(function(){
        var el = document.querySelector(${JSON.stringify(selector)});
-       return el !== null && el.scrollWidth > el.clientWidth;
+       if (el === null) return false;
+       return el.dataset.truncated === "true" || el.scrollWidth > el.clientWidth;
      })()`,
   );
 }
@@ -148,7 +155,7 @@ async function lensLineCount(app: App, sid: string): Promise<number> {
        var el = document.querySelector(${JSON.stringify(row)});
        if (el === null) return -1;
        return el.querySelectorAll(
-         ".session-row-headline, .session-row-intent-line, .session-row-pulse-line"
+         ".session-row-headline, .tug-pulse-line"
        ).length;
      })()`,
   );

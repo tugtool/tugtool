@@ -20,10 +20,11 @@
  * it (`initialSelectedIndex`).
  *
  * The name is resolved exactly like the Session card's title-bar chip
- * (`sessionCardTitleOverride`); the goal and activity lines wear the same
- * tones and sizes as the on-card `session-pulse-strip`'s two runs, so a
- * session reads identically in both places. The slot layout rides the name
- * line, so the arrangement affordance never crowds the pulse.
+ * (`sessionCardTitleOverride`); the goal and activity lines are a stacked
+ * `TugPulse` — the same component the on-card strip mounts inline — so a
+ * session reads identically in both places by construction rather than by
+ * two files agreeing. The slot layout rides the name line, so the
+ * arrangement affordance never crowds the pulse.
  *
  * Laws: [L02] every store enters React through `useSyncExternalStore`; [L06]
  * appearance (cursor ring, selection, dot/sparkline) is CSS on engine
@@ -66,6 +67,7 @@ import type {
 } from "@/components/tugways/tug-list-view";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugPulse } from "@/components/tugways/tug-pulse";
 import {
   sparklineCurves,
   TugSparkline,
@@ -339,26 +341,17 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
         </TugLabel>
         <SlotPicker cardId={row.cardId} />
       </span>
-      {pulse.enabled && overview !== null ? (
-        <span className="session-row-intent-line">
-          <span
-            className="session-row-intent"
-            data-slot="session-row-intent"
-          >
-            {overview.text}
-          </span>
-        </span>
-      ) : null}
-      <span className="session-row-pulse-line">
-        {pulseText !== null ? (
-          <span className="sessions-monitor-pulse">{pulseText}</span>
-        ) : (
-          <span className="sessions-monitor-pulse sessions-monitor-pulse-none">
-            None
-          </span>
-        )}
-        <RowSparkline tugSessionId={row.tugSessionId} />
-      </span>
+      {/* The pulse pair, stacked. Nothing about how it reads is decided here:
+          `TugPulse` owns the two faces, the leading between the lines, and
+          where each baseline falls. */}
+      <TugPulse
+        layout="stacked"
+        headline={
+          pulse.enabled && overview !== null ? overview.text : undefined
+        }
+        activity={pulseText ?? "None"}
+        trailing={<RowSparkline tugSessionId={row.tugSessionId} />}
+      />
     </TugListRow>
   );
 }
