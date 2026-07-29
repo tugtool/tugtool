@@ -342,14 +342,15 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
         <SlotPicker cardId={row.cardId} />
       </span>
       {/* The pulse pair, stacked. Nothing about how it reads is decided here:
-          `TugPulse` owns the two faces, the leading between the lines, and
-          where each baseline falls. */}
+          `TugPulse` owns the two faces, the leading between the lines, where
+          each baseline falls, and what a level with nothing to say says — so
+          the row is the same three lines tall whatever the session is doing. */}
       <TugPulse
         layout="stacked"
         headline={
           pulse.enabled && overview !== null ? overview.text : undefined
         }
-        activity={pulseText ?? "None"}
+        activity={pulseText ?? undefined}
         trailing={<RowSparkline tugSessionId={row.tugSessionId} />}
       />
     </TugListRow>

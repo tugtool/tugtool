@@ -44,6 +44,7 @@ import "./tug-pulse.css";
 
 import React from "react";
 
+import { textMeasurer, whenFaceLoaded } from "@/lib/font-metrics";
 import { cn } from "@/lib/utils";
 
 /** Which arrangement of the pair to render. */
@@ -59,34 +60,43 @@ export type TugPulseLegendAlign = "cap-center" | "baseline";
 /**
  * A complete typographic proposal for the pair: `machine` (the mono
  * baseline, kept to measure against) and the condensed ladder, which is one
- * face across five sizes. See the preset blocks in `tug-pulse.css`.
+ * face at one size per rung — 11, 12, 13px — with the two runs separating by
+ * weight rather than by measure. See the preset blocks in `tug-pulse.css`.
  */
 export type TugPulsePreset =
   | "machine"
-  | "condensed-xs"
   | "condensed-sm"
   | "condensed"
-  | "condensed-lg"
-  | "condensed-xl";
+  | "condensed-lg";
 
 /** Every preset, in the order the gallery auditions them. */
 export const TUG_PULSE_PRESETS: readonly TugPulsePreset[] = [
   "machine",
-  "condensed-xs",
   "condensed-sm",
   "condensed",
   "condensed-lg",
-  "condensed-xl",
 ];
 
 /**
  * The preset every PULSE wears unless its mount site says otherwise.
  * Changing this line changes the Z2 strip and the Lens together.
  */
-export const TUG_PULSE_DEFAULT_PRESET: TugPulsePreset = "machine";
+export const TUG_PULSE_DEFAULT_PRESET: TugPulsePreset = "condensed";
 
 /** The divider between the two levels — directional, reading "into detail". */
 const SEPARATOR = "›";
+
+/**
+ * What each level says when it has nothing to say. Both levels ALWAYS render,
+ * so a PULSE occupies the same space whether or not the session it reports on
+ * has an intent or an operation running yet.
+ *
+ * Both are ordinary content, set exactly like the level they stand in for —
+ * there is no placeholder voice, because a stand-in wearing its own weight or
+ * tone would be the reader's one inconsistent line.
+ */
+const HEADLINE_FALLBACK = "PULSE";
+const ACTIVITY_FALLBACK = "None";
 
 /** What a middle truncation puts between the two surviving ends. */
 const ELLIPSIS = "…";
@@ -142,9 +152,16 @@ export interface TugPulseProps
    * focus registration) and its own tokens.
    */
   legend?: React.ReactNode;
-  /** The standing goal. Omit when the session has none — nothing is reserved. */
+  /**
+   * The standing goal. Omitting it does NOT drop the level: the run stands in
+   * with `PULSE` and keeps its space, except inline where the legend beside it
+   * is already saying the word.
+   */
   headline?: React.ReactNode;
-  /** The operation running now. Omit when there is none. */
+  /**
+   * The operation running now. Omitting it does not drop the level either —
+   * the run reads `None`, set exactly like any other activity string.
+   */
   activity?: React.ReactNode;
   /** Trailing accessory — the activity sparkline, or its popover trigger. */
   trailing?: React.ReactNode;
@@ -174,8 +191,23 @@ export const TugPulse = React.forwardRef<HTMLDivElement, TugPulseProps>(
     },
     ref,
   ) {
-    const hasHeadline = headline !== undefined && headline !== null;
-    const hasActivity = activity !== undefined && activity !== null;
+    // NEITHER LEVEL IS EVER ABSENT. A level with nothing to say holds its
+    // space and says so, because a PULSE that drops a line is a PULSE that
+    // changes the height of the row carrying it — and Lens rows must not
+    // resize themselves midstream as sessions come and go quiet.
+    //
+    // The headline's stand-in is the word the legend would have said. Inline,
+    // the legend is right there saying it, so the run stays empty rather than
+    // printing PULSE twice; the bar is a fixed height either way.
+    const hasLegend = legend !== undefined && legend !== null;
+    const headlineNode =
+      headline !== undefined && headline !== null
+        ? headline
+        : hasLegend
+          ? undefined
+          : HEADLINE_FALLBACK;
+    const activityNode =
+      activity !== undefined && activity !== null ? activity : ACTIVITY_FALLBACK;
     const root = (
       children: React.ReactNode,
     ): React.ReactElement => (
@@ -193,36 +225,26 @@ export const TugPulse = React.forwardRef<HTMLDivElement, TugPulseProps>(
     );
 
     if (layout === "stacked") {
-      // The accessory rides the LAST line the row actually renders, so a
-      // session with no activity yet still shows its sparkline beside the
-      // goal rather than dropping it with the line.
-      const trailingOnHeadline = hasHeadline && !hasActivity;
+      // Always two lines, so the block is always exactly two baseline steps
+      // tall. The accessory rides the second one.
       return root(
         <>
-          {hasHeadline ? (
-            <span className="tug-pulse-line">
-              <Runs
-                headline={headline}
-                activity={undefined}
-                truncate={truncate}
-                stageProps={stageProps}
-              />
-              {trailingOnHeadline ? (
-                <span className="tug-pulse-trailing">{trailing}</span>
-              ) : null}
-            </span>
-          ) : null}
-          {hasActivity ? (
-            <span className="tug-pulse-line">
-              <Runs
-                headline={undefined}
-                activity={activity}
-                truncate={truncate}
-                stageProps={hasHeadline ? undefined : stageProps}
-              />
-              <span className="tug-pulse-trailing">{trailing}</span>
-            </span>
-          ) : null}
+          <span className="tug-pulse-line">
+            <Runs
+              headline={headlineNode}
+              activity={undefined}
+              truncate={truncate}
+            />
+          </span>
+          <span className="tug-pulse-line">
+            <Runs
+              headline={undefined}
+              activity={activityNode}
+              truncate={truncate}
+              stageProps={stageProps}
+            />
+            <span className="tug-pulse-trailing">{trailing}</span>
+          </span>
         </>,
       );
     }
@@ -234,8 +256,8 @@ export const TugPulse = React.forwardRef<HTMLDivElement, TugPulseProps>(
             <span className="tug-pulse-legend">{legend}</span>
           ) : null}
           <Runs
-            headline={headline}
-            activity={activity}
+            headline={headlineNode}
+            activity={activityNode}
             truncate={truncate}
             stageProps={stageProps}
           />
@@ -337,10 +359,12 @@ function ActivityRun({
  * parent, because the run itself shrinks to whatever it was just given and
  * would observe its own answer).
  *
- * Order matters at both ends: nothing is measured until `document.fonts.ready`
- * (an unloaded face measures as its fallback and would truncate to the wrong
- * length), and every pass restores the full text before reading, so the width
- * it reads is the space available rather than the space last taken.
+ * Order matters at both ends: nothing is measured until the run's OWN face has
+ * loaded — an unloaded face measures as its fallback and would truncate to the
+ * wrong length, and `document.fonts.ready` does not promise that (see
+ * `lib/font-metrics.ts`) — and every pass restores the full text before
+ * reading, so the width it reads is the space available rather than the space
+ * last taken.
  */
 function useMiddleTruncation(
   runRef: React.RefObject<HTMLSpanElement | null>,
@@ -388,32 +412,23 @@ function useMiddleTruncation(
       run.querySelector<HTMLElement>(".tug-pulse-activity-full")?.textContent ??
       "";
     if (text === lastTextRef.current) return;
-    void document.fonts.ready.then(measure);
+    void whenFaceLoaded(run, text).then(measure);
   });
 
   React.useEffect(() => {
-    const parent = runRef.current?.parentElement;
+    const run = runRef.current;
+    const parent = run?.parentElement;
+    if (run === undefined || run === null) return;
     if (parent === undefined || parent === null) return;
     const observer = new ResizeObserver(() => {
       measure();
     });
     observer.observe(parent);
-    void document.fonts.ready.then(measure);
+    void whenFaceLoaded(run, run.textContent ?? "").then(measure);
     return () => {
       observer.disconnect();
     };
   }, [runRef, measure]);
-}
-
-/** A width function for `el`'s exact rendered type, or null with no canvas. */
-function textMeasurer(el: HTMLElement): ((s: string) => number) | null {
-  const ctx = document.createElement("canvas").getContext("2d");
-  if (ctx === null) return null;
-  const style = window.getComputedStyle(el);
-  ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-  const tracking = parseFloat(style.letterSpacing);
-  const perChar = Number.isFinite(tracking) ? tracking : 0;
-  return (s: string) => ctx.measureText(s).width + perChar * s.length;
 }
 
 /** `keep` of `text`'s characters around an ellipsis, split by head fraction. */

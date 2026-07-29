@@ -11,9 +11,11 @@
  *     at `--tugx-pulse-baseline` from the top of the bar. The claim is worth
  *     pinning because it is what lets a preset swap the activity's face
  *     without disturbing anything beside it.
- *  2. **Leading is baseline-to-baseline.** A stacked PULSE puts consecutive
- *     baselines exactly `--tugx-pulse-stacked-baseline-step` apart, again
- *     regardless of the type on either line.
+ *  2. **Leading is baseline-to-baseline, over two lines that always exist.**
+ *     A stacked PULSE puts consecutive baselines exactly
+ *     `--tugx-pulse-stacked-baseline-step` apart, regardless of the type on
+ *     either line — and renders both lines whether or not it has anything to
+ *     put on them, so a Lens row never resizes as its session goes quiet.
  *  3. **The legend is aligned by visual center, not baseline** — the PULSE's
  *     own exception. The label's lift is half the difference between the two
  *     cap bands, so it re-derives itself when a preset changes a size instead
@@ -42,6 +44,7 @@
  * @covers tugdeck/src/components/tugways/cards/gallery-pulse-display.tsx
  * @covers tugdeck/src/components/tugways/cards/gallery-pulse-display.css
  * @covers tugdeck/public/fonts.css
+ * @covers tugdeck/src/lib/font-metrics.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -121,9 +124,12 @@ async function inlineBaselines(app: App): Promise<number[][]> {
   );
 }
 
-/** Baseline-to-baseline distance within every stacked PULSE that has two lines. */
-async function stackedSteps(app: App): Promise<number[]> {
-  return app.evalJS<number[]>(
+/**
+ * Baseline-to-baseline distance within every stacked PULSE — and `null` for
+ * any that does not carry exactly two runs, which is itself the failure.
+ */
+async function stackedSteps(app: App): Promise<Array<number | null>> {
+  return app.evalJS<Array<number | null>>(
     `(function(){
        var out = [];
        var pulses = document.querySelectorAll(
@@ -133,7 +139,7 @@ async function stackedSteps(app: App): Promise<number[]> {
          var runs = pulses[i].querySelectorAll(
            '[data-slot="tug-pulse-headline"], [data-slot="tug-pulse-activity"]'
          );
-         if (runs.length !== 2) continue;
+         if (runs.length !== 2) { out.push(null); continue; }
          var b = [];
          for (var j = 0; j < 2; j++) {
            var probe = document.createElement("span");
@@ -197,7 +203,13 @@ describe.skipIf(!SHOULD_RUN)("AT0283: the PULSE's declared type metrics", () => 
         expect(declaredStep).toBeGreaterThan(0);
         const steps = await stackedSteps(app);
         expect(steps.length).toBeGreaterThan(0);
-        for (const s of steps) expect(Math.abs(s - declaredStep)).toBeLessThan(0.51);
+        for (const s of steps) {
+          // A null is a stacked PULSE that rendered fewer than two runs —
+          // i.e. it dropped a level, and the Lens row carrying it just changed
+          // height. Neither level is ever absent; an empty one stands in.
+          expect(s).not.toBeNull();
+          expect(Math.abs(s! - declaredStep)).toBeLessThan(0.51);
+        }
 
         // ── 3. The legend sits on the headline's VISUAL middle ─────────
         // The PULSE's exception to the baseline rule. The lift is derived
@@ -277,7 +289,44 @@ describe.skipIf(!SHOULD_RUN)("AT0283: the PULSE's declared type metrics", () => 
           expect(shown.length).toBeLessThan(full.length);
         }
 
-        // ── 5. The chart ligature actually substituted ─────────────────
+        // ── 5. The density meter reports the type, not its fallback ────
+        // `document.fonts.ready` resolves against the loads pending AT THAT
+        // MOMENT, so awaiting it before a face has been asked for resolves on
+        // an empty queue and every reading lands on the fallback — uniformly
+        // ~11% wide here, which looked like a plausible table and was wrong in
+        // every cell. Each readout must equal what the run actually measures.
+        const meter = await app.evalJS<
+          ReadonlyArray<{ name: string; rect: number; readout: number }>
+        >(
+          `Array.from(document.querySelectorAll(
+             ${JSON.stringify(`${CARD} .gpd-meter-row`)}
+           )).map(function(row){
+             var run = row.querySelector('[data-slot="tug-pulse-activity"]');
+             var inner = run.querySelector(".tug-pulse-activity-full").firstElementChild;
+             return {
+               name: row.querySelector(".gpd-preset-name").textContent,
+               rect: inner.getBoundingClientRect().width,
+               readout: parseFloat(row.querySelector(".gpd-meter-readout").textContent),
+             };
+           })`,
+        );
+        expect(meter.length).toBeGreaterThan(4);
+        for (const { rect, readout } of meter) {
+          expect(rect).toBeGreaterThan(0);
+          expect(Math.abs(readout - rect)).toBeLessThan(1);
+        }
+        // And the weight column climbs monotonically, as the face's own
+        // advance widths do. It read non-monotonic for exactly as long as it
+        // was reporting the fallback.
+        const weights = ["thin", "extralight", "light", "regular"]
+          .map((n) => meter.find((m) => m.name === n))
+          .filter((m) => m !== undefined);
+        expect(weights.length).toBe(4);
+        for (let i = 1; i < weights.length; i++) {
+          expect(weights[i]!.rect).toBeGreaterThan(weights[i - 1]!.rect);
+        }
+
+        // ── 6. The chart ligature actually substituted ─────────────────
         const ligature = await app.evalJS<{ glyph: number; literal: number }>(
           `(function(){
              var el = document.querySelector(

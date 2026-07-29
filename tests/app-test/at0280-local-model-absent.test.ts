@@ -187,7 +187,15 @@ describe.skipIf(!SHOULD_RUN)(
             `document.querySelector(${JSON.stringify(LENS_ROW)}) !== null`,
             { timeoutMs: 10_000 },
           );
-          expect(await count(app, LENS_INTENT)).toBe(0);
+          // The intent LINE is always there — the PULSE holds both levels so
+          // Lens rows keep their height — so what "no overview" looks like is
+          // the stand-in, not a missing run.
+          expect(await count(app, LENS_INTENT)).toBe(1);
+          expect(
+            await app.evalJS<string>(
+              `document.querySelector(${JSON.stringify(LENS_INTENT)}).textContent`,
+            ),
+          ).toBe("PULSE");
         } finally {
           await app.close();
           rmTempTugbank(tugbankPath);

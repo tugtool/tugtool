@@ -61,43 +61,24 @@
   border-bottom-color: var(--tugx-list-view-divider-color) !important;
 }
 
-/* The phase dot centers on the WHOLE two-line row, and at the current size it
-   stays there. A small dot centered between two lines reads low against a
-   title that carries the row's identity, which is what the rise below was for;
-   a 32px glyph spans both lines outright, so dead center IS the title-aware
-   position and the lift has nothing left to correct.
+/* Every session row is three lines — name, intent, activity — because the
+   PULSE never drops a level; it stands in for one. So the dot has one
+   position to hold rather than one per row shape, and dead center is it: the
+   lift exists to correct a small dot reading low against the title, and a
+   28px glyph spanning a ~62px column already reads as belonging to the whole
+   row.
 
    `--tugx-lens-sessions-dot-rise` is the knob — the dot's SIZE is
    `ROW_PHASE_DOT_SIZE` in `sessions-section.tsx`. The lift is a transform, so
    it never touches layout: the row's height and the text baselines stay put no
-   matter what you set here. Positive rises, negative drops.
-
-   Headroom is the thing to watch: the two text lines total 38px, so a 32px box
-   centers with ~3px of slack per side. Past that the glyph climbs into the
-   row's block padding and starts crowding the divider above — so at this size
-   the useful range is roughly ±3px, not the ±9px a 20px dot had. */
+   matter what you set here. Positive rises, negative drops. Past a few pixels
+   the glyph climbs into the row's block padding and crowds the divider above. */
 .lens-sessions-list .tug-list-row-leading {
-  --tugx-lens-sessions-dot-rise: 9px;
+  --tugx-lens-sessions-dot-rise: 0px;
 
   align-self: center;
   align-items: center;
   transform: translateY(calc(-1 * var(--tugx-lens-sessions-dot-rise)));
-}
-
-/* A row carrying a standing goal is three lines, not two, and the same lift
-   would be wrong twice over: centering moves down by half the added line, so
-   holding the dot against the title would need roughly twice the rise — and at
-   that height the glyph leaves the content box entirely and crowds the divider
-   above.
-
-   Dead center is the answer instead, for the reason the two-line case gives:
-   the lift exists to correct a small dot reading low against the title, and a
-   28px glyph spanning a ~62px column already reads as belonging to the whole
-   row. The taller the column, the less there is to correct. */
-.lens-sessions-list
-  .session-row-content:has([data-slot="tug-pulse-headline"])
-  .tug-list-row-leading {
-  --tugx-lens-sessions-dot-rise: 0px;
 }
 
 /* The wrap is the reorder container: the `BlockDropCaret` positions absolutely

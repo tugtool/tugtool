@@ -91,8 +91,8 @@ body {
   /* ── Stacked layout (Lens) ──────────────────────────────────────────── */
   /* Top of the block to the first baseline. Must CLEAR the tallest run's
      ascent — a strut only wins the baseline group while it is the tallest
-     thing in it. At the sizes the presets set, the tallest ascent is a hair
-     under 12px, so 13 holds with room to spare. */
+     thing in it. 13 clears the ladder's top rung; at0283 measures the step
+     in every preset and fails if a taller size ever takes the baseline back. */
   --tugx-pulse-stacked-first-baseline: 13px;
   /* Baseline to baseline — the leading, stated as leading. Also the height
      of each line's box, so a two-line block is exactly two steps tall and
@@ -329,45 +329,36 @@ body {
   --tugx-pulse-activity-weight: var(--tug-font-weight-regular);
 }
 
-/* The condensed ladder — the ACTIVITY only. Every preset here leaves the
-   headline exactly as the knobs above set it (Plex Sans Condensed, medium,
-   12px); what changes down the ladder is the second run, in the same face at
-   regular, across five sizes.
+/* The condensed ladder. Both runs are Plex Sans Condensed at ONE size per
+   rung; what separates them is weight, and tone: medium for the headline,
+   regular for the activity. So a rung is a single decision — how big is the
+   PULSE — rather than a pair of sizes to reconcile.
 
-   The two runs already separate by face, weight, size, and tone, so the
+   The two runs already separate by weight, set width, and tone, so the
    activity does not need a light cut to stay subordinate; regular keeps its
    color on a dark surface at these sizes, where light starts to go thin.
 
-   `condensed` is the middle rung; the others step a half-pixel either way. */
+   `condensed` (12px) is the shipping rung; the others step a pixel either
+   way for a surface that wants the PULSE quieter or louder. */
 .tug-pulse[data-preset^="condensed"] {
   --tugx-pulse-activity-font: var(--tug-font-family-condensed);
   --tugx-pulse-activity-weight: var(--tug-font-weight-regular);
 }
 
-/* 10.5px — the activity recedes; the headline clearly leads. */
-.tug-pulse[data-preset="condensed-xs"] {
-  --tugx-pulse-activity-size: 0.65625rem;
-}
-
-/* 11px — matches the mono baseline's size exactly, so the swap is a pure
-   face change and nothing else. */
+/* 11px — the quiet rung. */
 .tug-pulse[data-preset="condensed-sm"] {
+  --tugx-pulse-headline-size: 0.6875rem;
   --tugx-pulse-activity-size: 0.6875rem;
 }
 
-/* 11.5px. */
+/* 12px — the shipping rung. */
 .tug-pulse[data-preset="condensed"] {
-  --tugx-pulse-activity-size: 0.71875rem;
-}
-
-/* 12px — level with the headline's size, still visibly quieter: lighter
-   weight, narrower set, muted tone. */
-.tug-pulse[data-preset="condensed-lg"] {
+  --tugx-pulse-headline-size: 0.75rem;
   --tugx-pulse-activity-size: 0.75rem;
 }
 
-/* 12.5px — the activity is the larger run by measure, and still the quieter
-   one by weight, set width, and tone. */
-.tug-pulse[data-preset="condensed-xl"] {
-  --tugx-pulse-activity-size: 0.78125rem;
+/* 13px — the loud rung. */
+.tug-pulse[data-preset="condensed-lg"] {
+  --tugx-pulse-headline-size: 0.8125rem;
+  --tugx-pulse-activity-size: 0.8125rem;
 }

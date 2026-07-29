@@ -17,10 +17,12 @@
  *      renders whole. This is the entire reason the headline is flex-pinned,
  *      and the failure it prevents — a goal clipped to make room for a file
  *      path — is invisible to anything but a real browser at a real width.
- *   3. **A level nobody wrote costs nothing.** A session with no overview
- *      shows two lines in the Lens; the one beside it with an overview shows
- *      three. Absence is measured against a present sibling in the same list,
- *      so "it collapses" cannot pass by the feature being broken outright.
+ *   3. **A level nobody wrote still holds its line.** A session with no
+ *      overview shows the same three lines in the Lens as the one beside it
+ *      that has one, with `PULSE` standing in for the goal — so rows do not
+ *      resize themselves as sessions come and go quiet. Measured against a
+ *      present sibling in the same list at the same moment, so "it holds"
+ *      cannot pass by the feature being broken outright.
  *
  * **The frames are real, the commentator is not.** `publishPulseFrame` hands
  * the store bytes in the emitter's own shape and they go through the
@@ -161,6 +163,17 @@ async function lensLineCount(app: App, sid: string): Promise<number> {
   );
 }
 
+/** The rendered height of a Lens session row — the thing that must not move. */
+async function lensRowHeight(app: App, sid: string): Promise<number> {
+  return app.evalJS<number>(
+    `(function(){
+       var el = document.querySelector(${JSON.stringify(lensRow(sid))});
+       if (el === null) return -1;
+       return Math.round(el.getBoundingClientRect().height);
+     })()`,
+  );
+}
+
 /**
  * Publish one PULSE frame in the emitter's own shape. `kind: "overview"` files
  * it as the session's standing goal; without it the body is an ordinary beat.
@@ -175,7 +188,7 @@ async function publishPulse(
 
 describe.skipIf(!SHOULD_RUN)("AT0282: the PULSE reads at two levels", () => {
   test(
-    "S1 keeps one row and truncates the activity; L1 grows a line only when there is one",
+    "S1 keeps one row and truncates the activity; L1 keeps three lines whether or not there is a goal",
     async () => {
       const tugbankPath = mkTempTugbank();
       seedTugbankForLaunch(tugbankPath);
@@ -273,10 +286,19 @@ describe.skipIf(!SHOULD_RUN)("AT0282: the PULSE reads at two levels", () => {
           ),
         ).toBe(GOAL);
         expect(await lensLineCount(app, SID_A)).toBe(3);
-        // The sibling row, same list, same moment: two lines and no gap where
-        // the third would have been.
-        expect(await count(app, lensIntent(SID_B))).toBe(0);
-        expect(await lensLineCount(app, SID_B)).toBe(2);
+        // The sibling row, same list, same moment: no goal published, and yet
+        // exactly the same three lines — the intent line stands in rather than
+        // collapsing, which is what keeps the row from changing height.
+        expect(await count(app, lensIntent(SID_B))).toBe(1);
+        expect(
+          await app.evalJS<string>(
+            `document.querySelector(${JSON.stringify(lensIntent(SID_B))}).textContent`,
+          ),
+        ).toBe("PULSE");
+        expect(await lensLineCount(app, SID_B)).toBe(3);
+        expect(await lensRowHeight(app, SID_A)).toBe(
+          await lensRowHeight(app, SID_B),
+        );
       } finally {
         await app.close();
         rmTempTugbank(tugbankPath);

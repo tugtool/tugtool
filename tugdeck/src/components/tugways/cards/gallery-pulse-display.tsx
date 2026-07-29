@@ -32,6 +32,7 @@ import {
   TugSparkline,
 } from "@/components/tugways/tug-sparkline";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { whenFaceLoaded } from "@/lib/font-metrics";
 import { TugChartGlyph } from "@/components/tugways/tug-chart-glyph";
 import {
   TUG_PULSE_PRESETS,
@@ -124,22 +125,19 @@ const LENS_SESSIONS: ReadonlyArray<{ name: string; pair: PulsePair }> = [
 /**
  * What each preset proposes, in one line, beside the thing it proposes.
  *
- * A preset changes the ACTIVITY only — the headline is Plex Sans Condensed medium 12px
- * in every one of them — so each blurb names both runs rather than leaving
- * the reader to assume the one it names covers the whole line.
+ * A condensed rung sets both runs at ONE size and lets weight do the
+ * separating, so each blurb names both runs and the rung is read as a single
+ * decision — how big is the PULSE.
  */
 const PRESET_BLURB: Record<TugPulsePreset, string> = {
   machine:
-    "Condensed medium 12px › Mono regular 11px — today, and here only to be measured against.",
-  "condensed-xs":
-    "Condensed medium 12px › Condensed regular 10.5px — the activity recedes; the headline clearly leads.",
+    "Condensed medium 12px › Mono regular 11px — the old setting, kept only to be measured against.",
   "condensed-sm":
-    "Condensed medium 12px › Condensed regular 11px — level with the mono baseline's size, so the swap is a pure face change.",
-  condensed: "Condensed medium 12px › Condensed regular 11.5px.",
+    "Condensed medium 11px › Condensed regular 11px — the quiet rung.",
+  condensed:
+    "Condensed medium 12px › Condensed regular 12px — the shipping rung, and the app's default.",
   "condensed-lg":
-    "Condensed medium 12px › Condensed regular 12px — level with the headline's size, still quieter by weight, set width, and tone.",
-  "condensed-xl":
-    "Condensed medium 12px › Condensed regular 12.5px — the larger run by measure, still the quieter one.",
+    "Condensed medium 13px › Condensed regular 13px — the loud rung.",
 };
 
 /**
@@ -374,7 +372,16 @@ function DensityMeter({
               }`;
       }
     };
-    void document.fonts.ready.then(measure);
+    // Every specimen's OWN face, requested and awaited. `document.fonts.ready`
+    // was the bug here: it resolved before any condensed face had been asked
+    // for, so every condensed row reported the width of the Plex Sans fallback
+    // — a uniform ~11% too wide, which read as a plausible-looking table and
+    // was wrong in every cell.
+    void Promise.all(
+      [...rowRefs.current.values()].map((el) =>
+        whenFaceLoaded(el, el.textContent ?? ""),
+      ),
+    ).then(measure);
     return () => {
       live = false;
     };
@@ -489,7 +496,7 @@ export function GalleryPulseDisplay(): React.ReactElement {
 
       <Section
         title="Session card — the presets on the strip"
-        blurb="Today's band geometry. The intent leads bright and layout-pinned; the activity trails past the › and is the run that gives way. The HEADLINE IS THE SAME IN ALL OF THEM — Plex Sans Condensed medium 12px; only the second run changes. The bar height, the baseline, and the legend do not move either."
+        blurb="Today's band geometry. The intent leads bright and layout-pinned; the activity trails past the › and is the run that gives way. A condensed rung sets BOTH runs at one size — 11, 12, or 13px — and separates them by weight and tone alone. The bar height, the baseline, and the legend hold across every rung."
       >
         {TUG_PULSE_PRESETS.map((preset, i) => (
           <div className="gpd-preset" key={preset}>
@@ -510,10 +517,10 @@ export function GalleryPulseDisplay(): React.ReactElement {
           <>
             The ladder above sets the activity in Condensed{" "}
             <strong>regular</strong>. This is what the lighter cuts cost, all at
-            11px over the same headline, so the weight is chosen on sight. The
-            two runs already separate by face, size, and tone before weight is
-            asked to do anything — which is why regular still reads as the
-            quieter run rather than competing with the headline.
+            11px under an 11px headline, so the weight is chosen on sight.
+            Weight is doing the whole job of separating the two runs now that
+            they share a face and a size — which is why the medium/regular pair
+            has to carry, and does.
           </>
         }
       >
@@ -527,7 +534,7 @@ export function GalleryPulseDisplay(): React.ReactElement {
             <span className="gpd-preset-label">
               <span className="gpd-preset-name">{name}</span>
               <span className="gpd-preset-blurb">
-                {`Condensed medium 12px › Condensed ${name} 11px`}
+                {`Condensed medium 11px › Condensed ${name} 11px`}
               </span>
             </span>
             <Band
@@ -646,13 +653,15 @@ export function GalleryPulseDisplay(): React.ReactElement {
         title="States — the lifecycle in both layouts"
         blurb={
           <>
-            Either level can be absent. Inline drops the missing run from its
-            line; stacked collapses the missing line entirely — neither reserves
-            empty space, and the baseline does not move when a run disappears.{" "}
-            <strong>None</strong> and <strong>Done</strong> are activity strings
-            like any other and are set like any other — there is no placeholder
-            voice, so a lifecycle word never becomes the reader&apos;s one
-            inconsistent second run.
+            <strong>Neither level is ever absent.</strong> A level with nothing
+            to say holds its space and says so: the headline stands in with{" "}
+            <code>PULSE</code>, the activity with <code>None</code>. So a
+            stacked PULSE is always exactly two baseline steps tall, and a Lens
+            row never changes height as its session comes and goes quiet.
+            Inline, the legend is already saying <code>PULSE</code> beside the
+            run, so the run stays empty rather than printing the word twice —
+            the bar is a fixed height either way. Every stand-in is set exactly
+            like the level it stands in for; there is no placeholder voice.
           </>
         }
       >
@@ -683,18 +692,22 @@ export function GalleryPulseDisplay(): React.ReactElement {
           <Band pair={{ intent: PAIRS[3].intent, activity: "Done" }} phase={24} />
         </div>
         <div className="gpd-state">
-          <span className="gpd-state-label">Lens: no intent yet / turn done</span>
+          <span className="gpd-state-label">
+            Lens: three lines whatever the session is doing
+          </span>
           <div className="gpd-lens-stack">
-            <LensFrame
-              name="tugtool/lens-xp"
-              pair={{ activity: "Grep tugdeck/src for pulse" }}
-              phase={25}
-            />
+            <LensFrame name="tugtool/lens-xp" pair={PAIRS[2]} phase={25} />
             <LensFrame
               name="tugtool/local-model-bringup"
-              pair={{ activity: "Done" }}
+              pair={{ activity: "Grep tugdeck/src for pulse" }}
               phase={26}
             />
+            <LensFrame
+              name="tugtool/release-recipes"
+              pair={{ intent: PAIRS[1].intent }}
+              phase={27}
+            />
+            <LensFrame name="tugtool/bonsai-eval" pair={{}} phase={28} />
           </div>
         </div>
       </Section>
