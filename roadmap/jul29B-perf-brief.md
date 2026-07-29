@@ -81,6 +81,45 @@ Decisive tests, in order:
 **[E3] A typing-latency app-test on the heavy fixture deck**: focus the composer, `nativeType` a fixed ~80-char burst, measure per-keystroke `keydown → post-paint` latency in-page (keydown timestamp vs the next rAF-after-paint tick, collected by a probe installed via evalJS), assert **p95 under one 60Hz frame (16.7ms)** and record the distribution in the test output. This is the guarantee: not a vibe, a gated budget that fails CI when a future card regresses it. Alongside it, budget assertions on the structural proxies (stacking contexts, RenderLayer candidates, idle DOM writes/s) so the gate names the cause when it trips, not just the symptom.
 
 
+## Charge 4 — the other 15 cores {#multicore}
+
+The machine has 16 cores; the assumption "basically everything happens on the main thread" is half right, and the half matters. What Tug.app already gets for free, what is genuinely available, and what is a mirage:
+
+### What is already parallel {#multicore-already}
+
+WebKit's process architecture gives us more than zero. The app is at minimum four processes: the UI process (Swift, thin), the **WebContent process** (all of tugdeck), the Networking process, and the GPU process. Beyond that: **compositing display is UI-side** (WebContent commits a remote CoreAnimation layer tree; the render server draws it — this is why compositor-resident animations cost ~nothing, the whole point of the census program), **scrolling is asynchronous** (off the WebContent main thread), and the Rust side (tugcast, tug, tugexec) is its own multicore world already. The one image-heavy pipeline in tugdeck already runs on Workers with `OffscreenCanvas` (`lib/workers/image-downsample-worker.ts` — one worker per attachment job, all paint/encode off-main).
+
+The precise bottleneck is therefore one thread: the **WebContent main thread**, which serializes all JS, style resolution, layout, paint recording, and the compositing walks. WebKit does not parallelize style resolution or layout internally (unlike Servo, and unlike Blink's partial efforts) — so nothing we do can make *one document's* style/layout pipeline use two cores. That constraint frames every idea below.
+
+### Shot down, with reasons {#multicore-shot-down}
+
+- **"Move each session card to its own thread" via Workers — dead on arrival.** Workers cannot touch the DOM, period. A card is DOM. Worker-DOM mirror libraries (AMP's worker-dom lineage) are toys that break focus, selection, IME, and every tuglaw about real DOM ownership.
+- **React rendering in a worker** — same corpse, same reason. react-dom needs the real document.
+- **CSS Paint/Layout worklets** — not implemented in WebKit. Not an option on our engine.
+- **Canvas/WebGL text engine for the transcript** (the Google-Docs-style escape hatch) — a from-scratch text stack: selection, IME, accessibility, find, links. A year of work to escape problems whose actual causes (#idle-attribution, #typing) are fixable in weeks. Ridiculous for us.
+- **"More cores will fix idle burn"** — backwards. A 4Hz timer that dirties style burns the main thread no matter how many cores idle beside it. Charges 1–3 are wake-rate and tree-breadth problems; zero of them are compute-starvation problems. Multicore is a *fourth* axis, not a substitute for the first three.
+
+### Genuinely available, ranked by cost/benefit {#multicore-options}
+
+**Calls made 2026-07-29:** M1, M2, M3 are **IN** — committed work, no spikes or further debate. M4 is **MAYBE IN** — its spike runs **first, before any other work on any charge**, so its verdict completes the IN list before the devise's execution order is fixed. M5 is **OUT** — no work at all until further notice.
+
+**[M1] Workers for the data plane — IN. Cheap, proven in-repo, aimed at turn latency not idle.** The candidates are the JS that actually chews: JSONL transcript parsing on resume/Reload (the restore path), tiktoken counting (the wasm is worker-friendly), diff computation for diff blocks, transcript find/search indexing, and syntax-highlight tokenization for large code blocks. Pattern already established by the image-downsample worker. Honesty clause: today's profiles show the bill is style/layout/compositing housekeeping, **not** JS compute — so M1 buys smoother restores and big-turn ingestion, not the idle 8% and not the typing walk. Do it where a profile shows a JS hotspot, never speculatively.
+
+**[M2] OffscreenCanvas for sparklines and any future chart surface — IN. Cheap, natural extension.** The Pulse card's canvases can be transferred to a worker (`transferControlToOffscreen`), moving sampling + redraw off-main entirely; combined with the Step 3 dormancy fixes this makes the Pulse card cost ~zero main-thread at idle *and* under load. The downsample worker proves our WebKit supports the full path.
+
+**[M3] Process-per-window — IN. Cheap Swift-side lever, real isolation.** Two deck windows today share one WebContent process (one `MainWindow.swift` webview, default pool). Giving each window its own WebContent process (distinct `WKProcessPool` per window, or just verifying modern WebKit's process-per-tab behavior applies) means a heavy deck in window A cannot lag typing in window B. Doesn't split cards, splits *workspaces* — but that is a real user-facing win and nearly free. Verify empirically before claiming: process sharing rules changed across WebKit versions.
+
+**[M4] The out-of-process iframe spike — MAYBE IN, spike runs first. The only honest path to "a card on its own thread."** WebKit has been landing site isolation (cross-origin iframes hosted in their own WebContent process). *If* it is enabled for WKWebView on this macOS version, a session card hosted in a cross-origin iframe would get its own main thread: its style/layout/walks fully parallel to the deck's. The costs are real — postMessage instead of shared stores, separate focus/selection worlds, drag-between-panes across process boundaries, duplicated bundles — so this is a *measured spike*, not a plan: build a toy (deck page + cross-origin iframe animating/typing), check Activity Monitor for a second WebContent process, and profile whether load in one stalls the other. If WebKit gives us in-process iframes only, the idea is dead on our engine and we write that down and stop wondering.
+
+**[M5] Separate WKWebView per heavy surface — OUT, by call. No work on this until further notice; recorded only so the reasoning isn't re-derived.** An NSView-layered second webview *does* get its own WebContent process today (with its own pool). Fits surfaces with low interaction coupling to the deck — a future log viewer, a profiler UI, possibly the Pulse card. Does not fit session cards: panes, card drag, z-order, focus, and the share gesture all assume one document. Scoped tool, not an architecture.
+
+**[M6] Scheduling, not parallelism, for the rest**: `requestIdleCallback` (supported in our WebKit) for deferrable work (prefetch, cache warm, census bookkeeping) so it never competes with a keystroke. Zero new threads, often the biggest perceived-latency win per line changed.
+
+### Multicore exit criterion {#multicore-exit}
+
+**[E4]** M1, M2, and M3 are landed (committed by call, not gated on further debate — M1's *worker targets* are still chosen against named profile hotspots, but the workstream itself is in). The M4 spike has a written verdict (own-process iframes: yes/no on our WebKit, with the Activity Monitor + profile evidence), delivered before any other charge's work begins; if yes, M4 graduates to IN with its own design pass. M5: no work.
+
+
 ## Instruments {#instruments}
 
 | id | instrument | what it answers | status |
@@ -97,12 +136,14 @@ I2–I5 live where `animationCensus` lives and graduate the same way: instrument
 
 ## Execution {#execution}
 
-Order matters: instruments before verdicts, verdicts before fixes, fixes before gates, and the release re-profile last.
+Order matters: the M4 spike before everything (its verdict completes the IN list), then instruments before verdicts, verdicts before fixes, fixes before gates, and the release re-profile last.
 
+- **Step 0 — The M4 spike, upfront.** Toy deck page + cross-origin iframe (served from a second port on the local server), animate and type in both; Activity Monitor for a second WebContent process; profile whether load in one stalls the other. Written yes/no verdict in #record. Nothing else starts until this is answered.
 - **Step 1 — Build I2/I3/I5** in `perf-monitor.ts`, with an app-test that exercises each on a seeded deck (anti-vacuity floors like at0288's: the waker census must see the wrapped timers fire, the mutation census must see a deliberate write).
 - **Step 2 — The attribution session.** Web Inspector + the new censuses against the heavy deck at idle, debug and release. Deliverable: a table where **every** rendering update per second and every style recalc has a named initiator, and the arithmetic in #idle-arithmetic closes against fresh `sample` numbers. No fixes in this step.
 - **Step 3 — Kill the idle wakes.** Change-gate the pulse readout paint (write only when the formatted string or idle flag actually changed — this also stops the dataset write), extend dormancy to whatever Step 2 convicted, re-examine the gauge-row always-alive policy against its measured cost. Each fix is one commit with a before/after census read.
 - **Step 4 — The typing term.** Layers-tab ground truth, then the containment experiment on the restored heavy card, then the scoped-walk check. Deliverable: the after-layout walk attributed and a chosen lever with measured effect.
+- **Step 4c — The IN multicore work (M1/M2/M3).** M2 rides with Step 3's Pulse fixes (dormancy-gate the readout, then transfer the canvases off-main — one surface, one pass). M3 is a Swift-side change in `MainWindow.swift` (per-window process isolation, verified in Activity Monitor). M1 lands worker offloads against the hotspots Step 2's attribution names, restore-path parsing first in line.
 - **Step 5 — Land the gates.** The E1 idle-silence assertion and the E3 typing-latency budget as app-tests; extend at0288's docstring scope honestly if the census family grows.
 - **Step 6 — Release re-profile** against all three exit criteria; record in this brief's #record section; archive.
 
@@ -111,6 +152,7 @@ Order matters: instruments before verdicts, verdicts before fixes, fixes before 
 - **[E1]** Idle deck: zero scheduled rendering updates, ≤1% release busy, every surviving waker named with its cost.
 - **[E2]** Style recalcs: zero at idle; per-keystroke recalc cost attributed with CM6's necessary work separated from collateral.
 - **[E3]** Typing: p95 keystroke→paint < 16.7ms on the heavy fixture deck, enforced by a committed app-test.
+- **[E4]** Multicore: the out-of-process-iframe question answered with evidence; workers/OffscreenCanvas adopted only against named profile hotspots, never speculatively.
 
 ## Record {#record}
 
