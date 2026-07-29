@@ -19,7 +19,9 @@ Three probes, all against real apps, all repeatable:
 - `tests/app-test/zz-blink-probe.test.ts` — A/B/C of the caret blink easing inside one live app instance via injected style override, sampling the renderer per phase.
 - `tests/app-test/zz-heavy-census.test.ts` — cold-restores one of the user's real 30MB sessions (`8b8d7bf1`, one of the five cards in the lagging deck) through the production picker → resume path via the corpus reference-seeding mechanism (session content never enters the repo), then runs `document.getAnimations()` census, `layerTreeProbe()`, a stacking-context histogram, and a renderer sample.
 
-Both probe tests are temporary (`zz-` prefix, untracked). They are the measurement instruments for the fix phase and should be kept until the fixes land, then deleted or graduated.
+Both probe tests are temporary (`zz-` prefix, untracked). They are the measurement instruments for the fix phase and should be kept until the fixes land, then deleted or graduated. (All four `zz-` probes are deleted as of the close; `at0288`/`at0289` are what graduated.)
+
+**One trap in `perf-resize-profile.sh`'s verdict line.** It reads any nonzero `applyKeyframeEffects` as "at least one long-running animation is not compositor-resident." That frame also runs for finite CSS *transitions* — the post-fix release samples show 1–3 samples of it reached through `updateCSSTransitionsForStyleableAndProperty`, which is a live transition doing its job, not an unaccelerated loop. Read the call path before believing the verdict; `animationCensus()` makes the same distinction correctly, and it is the authority.
 
 ## The causal chain, measured {#causal-chain}
 
@@ -118,9 +120,9 @@ Steps 16–19 of the animation tune-up (per-variant sweep, dormancy, forced-prom
 
 | Measurement | Before | After (2026-07-29, fixes landed on the dash) |
 |---|---|---|
-| Release renderer idle busy (5 heavy cards, 07-29 06:40) | 13.8% (581/4210 samples) | *pending the landing* — the release app must pick up the fixes via `/join` + rebuild before an honest after exists; re-sampled pre-fix at 24.2% (active session, 07-29 late) confirming the before-state persists |
-| — compositing walk after style / after layout | 167 / 124 samples | pre-fix re-check: 424 / 101 |
-| — ResizeObserver gather / IntersectionObserver | 67 / 32 samples | — |
+| Release renderer idle busy (5 heavy cards, 07-29 06:40) | 13.8% (581/4210 samples) | **8.3%** — three 5s idle samples at 11:12 on the post-fix release bundle (11:09 build, `data-static` present in the shipped CSS and JS): 8.5% / 8.1% / 8.3%, i.e. 351/4119, 331/4099, 334/4041. The deck was not certified card-for-card identical to the baseline's five, so the frame counts below are the comparable signal; the pre-fix re-check is the same-day, same-machine, active-session comparison at 24.2% |
+| — compositing walk after style / after layout | 167 / 124 samples | **85 / 45** (pre-fix re-check: 424 / 101) |
+| — ResizeObserver gather / IntersectionObserver | 67 / 32 samples | **29 / 21** |
 | Restored heavy card (820×620 harness window, production bundle) idle busy | 2.9–4.0% | **2.0%** — at the empty-deck floor (2.4% below) |
 | — elements / stacking contexts / max depth | 16,249 / 1,603 / 37 | 16,249 / **725** / 37 |
 | — pulsing dots / their stacking contexts | 438 / 1,314 (82%) | 438 / **0** (438/438 `data-static`; dot/ring buckets absent from the histogram) |

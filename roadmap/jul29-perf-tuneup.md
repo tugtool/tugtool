@@ -249,7 +249,7 @@ Out of scope for tests: jsdom/mocks (banned), CI-gated profiling (machine-depend
 | #step-3 | Mount suppression + atom pulse filter | done | `091356536` |
 | #step-4 | End-state swap | done | `333980af9` |
 | #step-5 | Sticky headers + ResizeObserver: accuse or absolve | done | `3ca1d2c1c` — both absolved |
-| #step-6 | Release re-profile, brief update, probe cleanup | done | `0410ec12e` — release after-number awaits the landing |
+| #step-6 | Release re-profile, brief update, probe cleanup | done | `0410ec12e` — release after-number taken post-landing: 13.8% → 8.3% idle |
 
 #### Step 1: Census truth + zombie rule {#step-1}
 
@@ -390,7 +390,7 @@ Out of scope for tests: jsdom/mocks (banned), CI-gated profiling (machine-depend
 - [ ] Release idle busy measurably below 13.8% with the delta recorded; typing sample recorded
 - [ ] Working tree free of `zz-` probes this plan owns; `just app-test-covers-check` green
 
-**Record (2026-07-29).** The brief's #reference-numbers now carries the after column. What could be measured pre-landing is measured: the restored heavy card on the production bundle reads **2.0% idle** (from 2.9–4.0%), at the empty-deck floor, with 438/438 dots static, 0 retained transitions, contexts 1,603 → 725; the typing-load table is recorded under #step-5's A/B. The live release renderer was re-sampled still running pre-fix code (24.2% busy mid-session, 424 after-style walk samples) confirming the before-state persists — the release **after** number requires the user's landing gesture (`/join` + release rebuild) and is the one open cell; take it with the same pid-by-cache-dir `sample` the brief's #method names. `zz-blink-probe`, `zz-deck-census`, and `zz-heavy-census` are deleted (with the temporary `theme.ts` ACCEPTED_FANOUT entry); `zz-probe.test.ts` is pre-existing and the user's to keep or delete. Findings handed to animation-tuneup #step-19's task list.
+**Record (2026-07-29).** The brief's #reference-numbers now carries the after column. What could be measured pre-landing is measured: the restored heavy card on the production bundle reads **2.0% idle** (from 2.9–4.0%), at the empty-deck floor, with 438/438 dots static, 0 retained transitions, contexts 1,603 → 725; the typing-load table is recorded under #step-5's A/B. The live release renderer was re-sampled still running pre-fix code (24.2% busy mid-session, 424 after-style walk samples) confirming the before-state persists. **Closed 2026-07-29 11:12:** the release rebuild (11:09, `data-static` present in the shipped bundle) reads **8.3% idle** across three 5s samples (8.5 / 8.1 / 8.3), with the after-style compositing walk at 85 samples (from 167 at the 06:40 baseline and 424 at the pre-fix re-check), after-layout 45, ResizeObserver gather 29, IntersectionObserver 21. The deck was not certified card-for-card identical to the baseline's five, so the frame counts carry the comparison. `zz-blink-probe`, `zz-deck-census`, `zz-heavy-census`, and `zz-probe` are all deleted (with the temporary `theme.ts` ACCEPTED_FANOUT entry). Findings handed to animation-tuneup #step-19's task list.
 
 ---
 
