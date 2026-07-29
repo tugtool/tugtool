@@ -46,10 +46,6 @@
      share a leading edge. */
   --tugx-list-row-padding-inline: var(--tug-space-md);
   --tugx-list-row-indicator-gutter: 0px;
-  /* The row's two lines are a headline and a live readout, not a wrapped
-     paragraph — the primitive's 2px stack reads as one crowded block. This is
-     the air between the name line and the pulse + sparkline line. TUNE HERE. */
-  --tugx-list-row-content-gap: 5px;
 }
 
 /* Row dividers ALWAYS show in the Lens lists — re-assert the hairline the
@@ -59,26 +55,6 @@
 .tug-list-view.lens-sessions-list[data-row-layout="flush"]
   .tug-list-view-cell:not(:last-child) {
   border-bottom-color: var(--tugx-list-view-divider-color) !important;
-}
-
-/* Every session row is three lines — name, intent, activity — because the
-   PULSE never drops a level; it stands in for one. The dot therefore has one
-   position to hold rather than one per row shape, and it TOPS OUT WITH THE
-   NAME: the dot reports the session's phase, the name line says which session,
-   and the two belong to each other. Centered on the whole column it read as
-   floating beside the pulse instead — an indicator for the lines it happened
-   to be next to.
-
-   `--tugx-lens-sessions-dot-rise` is the knob — the dot's SIZE is
-   `ROW_PHASE_DOT_SIZE` in `sessions-section.tsx`. The lift is a transform, so
-   it never touches layout: the row's height and the text baselines stay put no
-   matter what you set here. Positive rises, negative drops. */
-.lens-sessions-list .tug-list-row-leading {
-  --tugx-lens-sessions-dot-rise: 0px;
-
-  align-self: start;
-  align-items: start;
-  transform: translateY(calc(-1 * var(--tugx-lens-sessions-dot-rise)));
 }
 
 /* The wrap is the reorder container: the `BlockDropCaret` positions absolutely
@@ -106,25 +82,10 @@
   font-size: 12px;
 }
 
-/* The row's lines. The name line is authored here; the two pulse lines below
-   it are a stacked `TugPulse`, which owns their type and their leading. The
-   content column is hand-authored (see `SessionRowContent`) so each line can
-   carry its own trailing accessory: the slot layout rides the name, the
-   sparkline rides the activity. A shared row `trailing` slot could only span
-   every line at once, which is exactly the collision this replaces. */
-.session-row-headline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-inline-size: 0;
-}
-
-/* The name takes the slack and truncates on its own; the slot layout past it
-   keeps its intrinsic width and pins to the right edge. */
-.session-row-headline .tug-list-row-title {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-}
+/* How the row divides its width — which line the dot, the slots, the grip, and
+   the sparkline ride, and what each costs the text beside it — is
+   `tug-session-row.css`'s, not this file's. Nothing about the row's packing is
+   authored here, so the Lens cannot drift from the fit the gallery approved. */
 
 .sessions-monitor-spark {
   flex-shrink: 0;

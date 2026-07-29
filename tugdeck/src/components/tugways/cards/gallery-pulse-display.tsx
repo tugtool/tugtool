@@ -16,6 +16,14 @@
  * measures them rather than asserting. A preset changes the SECOND run only —
  * the headline is Plex Sans Condensed medium 12px throughout.
  *
+ * The card's other question is the Lens session row's PACKING — how one
+ * rail's width is divided between the phase indicator, the session name, the
+ * layout slots, the reorder grip, and the PULSE's three parts. Those frames
+ * mount the real {@link TugSessionRow} with the real indicator, slots, grip,
+ * and tape inside it, one frame per {@link TugSessionRowFit}, and the fit meter
+ * measures what each proposal actually hands the two runs rather than arguing
+ * it. Rolling a fit out is changing `TUG_SESSION_ROW_DEFAULT_FIT`.
+ *
  * Fixtures are hand-authored; the sparklines are the real `TugSparkline` fed
  * a deterministic synthetic series so the frames read live without a session
  * behind them.
@@ -39,6 +47,20 @@ import {
   TugPulse,
   type TugPulsePreset,
 } from "@/components/tugways/tug-pulse";
+import {
+  TUG_SESSION_ROW_FITS,
+  TUG_SESSION_ROW_INDICATOR_SIZE,
+  TUG_SESSION_ROW_SPARK_HEIGHT,
+  TUG_SESSION_ROW_SPARK_WIDTH,
+  TUG_SESSION_ROW_DEFAULT_FIT,
+  TugSessionRow,
+  type TugSessionRowFit,
+} from "@/components/tugways/tug-session-row";
+import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
+import { TugSlotLayout } from "@/components/tugways/tug-slot-layout";
+import type { TugSlotState } from "@/components/tugways/tug-slot";
+import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
+import { sessionSessionPhaseVisual } from "@/lib/code-session-store/session-phase-visual";
 
 // ---------------------------------------------------------------------------
 // Fixtures — intent in headline register: no articles, no needless words.
@@ -115,12 +137,70 @@ const DOCTRINE: ReadonlyArray<{ before: string; after: string }> = [
   },
 ];
 
-const LENS_SESSIONS: ReadonlyArray<{ name: string; pair: PulsePair }> = [
-  { name: "tugtool/local-model-bringup", pair: PAIRS[1] },
-  { name: "tugtool/lens-xp", pair: PAIRS[0] },
-  { name: "tugtool/release-recipes", pair: PAIRS[5] },
-  { name: "tugtool/bonsai-eval", pair: PAIRS[7] },
+/**
+ * The Lens rows the fit audition sets. Each fit is shown twice: once on an
+ * everyday session, once on the one that does not fit. The pair is the SAME in
+ * every fit, so what differs between two frames is only how the row packs.
+ */
+const FIT_CALM: SessionFixture = {
+  name: "tugtool/lens-xp",
+  intent: PAIRS[0].intent,
+  activity: PAIRS[0].activity,
+  phase: "streaming",
+};
+
+const FIT_PRESSURE: SessionFixture = {
+  name: "tugtool/local-model-bringup",
+  intent: LONG_PAIR.intent,
+  activity: LONG_PAIR.activity,
+  phase: "tool_work",
+};
+
+/** One session's row content, as the Lens would supply it. */
+interface SessionFixture {
+  name: string;
+  intent?: string;
+  activity?: string;
+  phase: string;
+}
+
+/** The lifecycle, as four rows: both levels live, no intent yet, intent held
+ *  with nothing running, and a session before its first beat. */
+const LIFECYCLE_ROWS: readonly SessionFixture[] = [
+  {
+    name: "tugtool/lens-xp",
+    intent: PAIRS[2].intent,
+    activity: PAIRS[2].activity,
+    phase: "streaming",
+  },
+  {
+    name: "tugtool/local-model-bringup",
+    activity: "Grep tugdeck/src for pulse",
+    phase: "tool_work",
+  },
+  {
+    name: "tugtool/release-recipes",
+    intent: PAIRS[1].intent,
+    phase: "idle",
+  },
+  { name: "tugtool/bonsai-eval", phase: "idle" },
 ];
+
+/**
+ * What each fit proposes, and what it hands back — stated as the line that
+ * gains the width, because that is the whole argument.
+ */
+const FIT_BLURB: Record<TugSessionRowFit, string> = {
+  gutter:
+    "What ships today. The indicator holds a column of its own, so all three lines start past it; the slots ride the name, the tape rides the activity, the grip holds a column at the far edge.",
+  inset:
+    "The indicator moves onto the name line. The two PULSE lines start at the row's own inset and gain the whole leading column — the widest single reclamation available, and it costs nothing but the dot's advance on one line.",
+  reveal:
+    "The slots and the grip join the indicator on the name line and carry no width until the row is engaged. At rest every line runs the full rail; the furniture claims its width back from the name, which is the one string the reader already knows.",
+  wash: "The tape leaves the flow and paints behind the PULSE at the trailing edge. The activity keeps the width the sparkline was spending — the line that needed it most, since a path identifies itself at the end.",
+  duplex:
+    "Both levels share one line, read as the session card's strip reads them. Three lines become two, and the activity gets a whole line minus the intent rather than a line minus the tape.",
+};
 
 /**
  * What each preset proposes, in one line, beside the thing it proposes.
@@ -157,6 +237,18 @@ const ACTIVITY_WEIGHTS: ReadonlyArray<{ weight: number; name: string }> = [
 const SPARK_FULL_SCALE = 1200;
 const SPARK_CURVE = sparklineCurves.gamma(0.6);
 const DEMO_BIN_MS = 250;
+
+// The session row's own metrics, imported rather than restated: an audition
+// whose dot or tape is a different size than the Lens's is an audition of a row
+// nobody ships.
+const ROW_PHASE_DOT_SIZE = TUG_SESSION_ROW_INDICATOR_SIZE;
+const SPARK_ROW_WIDTH = TUG_SESSION_ROW_SPARK_WIDTH;
+const SPARK_ROW_HEIGHT = TUG_SESSION_ROW_SPARK_HEIGHT;
+
+// The slot layout as a row wears it while its card holds the second slot and is
+// the one on top of it — the everyday look, so the furniture is auditioned at
+// the width it actually has.
+const SLOT_STATES: readonly TugSlotState[] = ["rest", "filled", "rest"];
 
 /**
  * The real sparkline over a deterministic synthetic series — a phased
@@ -281,36 +373,143 @@ function Band({
   );
 }
 
-/** A Lens monitor row, carrying a real stacked `TugPulse` beneath the name. */
-function LensFrame({
-  name,
-  preset,
-  pair,
+/**
+ * A Lens session row — the REAL {@link TugSessionRow}, with every part it
+ * carries supplied by the real component the Lens supplies: the phase
+ * indicator, the slot layout, the reorder grip, and a sparkline. Only the
+ * strings and the series are fixtures. So a fit judged here is a fit that
+ * ships; there is no gallery drawing of a row.
+ *
+ * The frame is the Lens rail at its usual width, and it declares the two row
+ * knobs `lens-sessions-list` declares — the row inset and the zeroed indicator
+ * gutter — so widths read here are widths the Lens has.
+ */
+function SessionFrame({
+  fit,
+  fixture,
   phase,
+  measure,
 }: {
-  name: string;
-  preset?: TugPulsePreset;
-  pair: Partial<PulsePair>;
+  fit: TugSessionRowFit;
+  fixture: SessionFixture;
   phase: number;
+  /** Marks this row as the one the fit meter reads. */
+  measure?: boolean;
 }): React.ReactElement {
   return (
-    <div className="gpd-lens-frame">
-      <div className="gpd-lens-name-line">
-        <span className="gpd-lens-dot" aria-hidden="true" />
-        <span className="gpd-lens-name">{name}</span>
-        <span className="gpd-lens-slots" aria-hidden="true">
-          <span>1</span>
-          <span>2</span>
-          <span>3</span>
-        </span>
-      </div>
-      <TugPulse
-        layout="stacked"
-        preset={preset}
-        headline={pair.intent}
-        activity={pair.activity}
-        trailing={<DemoSpark phase={phase} width={56} height={16} />}
+    <div className="gpd-rail">
+      <TugSessionRow
+        fit={fit}
+        data-gpd-fit-measure={measure === true ? fit : undefined}
+        indicator={
+          <TugProgressIndicator
+            variant="pulsing-dot"
+            size={ROW_PHASE_DOT_SIZE}
+            phase={fixture.phase}
+            phaseVisual={sessionSessionPhaseVisual}
+            aria-hidden
+          />
+        }
+        name={fixture.name}
+        slots={<TugSlotLayout count={3} states={SLOT_STATES} size="sm" />}
+        grip={<BlockGrip />}
+        intent={fixture.intent}
+        activity={fixture.activity}
+        sparkline={
+          <DemoSpark
+            phase={phase}
+            width={SPARK_ROW_WIDTH}
+            height={SPARK_ROW_HEIGHT}
+          />
+        }
       />
+    </div>
+  );
+}
+
+/**
+ * The fit meter — what each fit actually hands the two runs that have
+ * something to lose.
+ *
+ * Packing is an argument about pixels, so it is measured rather than claimed:
+ * the numbers come from the audition rows above, not from a second rendering,
+ * so the table always describes exactly what is on screen. For each fit it
+ * reports the width the ACTIVITY run was given and the width the NAME was
+ * given, against the shipping `gutter` fit, plus whether the activity still
+ * had to be cut at that width.
+ *
+ * Measurement writes straight to the DOM ([L06]): a readout derived from
+ * layout, routed through React state, would re-render the rows being measured.
+ */
+function FitMeter(): React.ReactElement {
+  const outRefs = useRef(new Map<TugSessionRowFit, HTMLSpanElement>());
+
+  useEffect(() => {
+    let live = true;
+    const read = (
+      fit: TugSessionRowFit,
+    ): { activity: number; name: number; cut: boolean } | null => {
+      const row = document.querySelector<HTMLElement>(
+        `[data-gpd-fit-measure="${fit}"]`,
+      );
+      if (row === null) return null;
+      const run = row.querySelector<HTMLElement>(
+        '[data-slot="tug-pulse-activity"]',
+      );
+      const name = row.querySelector<HTMLElement>(".tug-list-row-title");
+      if (run === null || name === null) return null;
+      return {
+        activity: run.clientWidth,
+        name: name.clientWidth,
+        cut: run.dataset.truncated === "true",
+      };
+    };
+    const measure = (): void => {
+      if (!live) return;
+      const base = read("gutter");
+      if (base === null || base.activity === 0) return;
+      for (const [fit, out] of outRefs.current) {
+        const now = read(fit);
+        if (now === null) continue;
+        const delta = Math.round(now.activity - base.activity);
+        out.textContent =
+          `activity ${Math.round(now.activity)}px` +
+          (fit === "gutter"
+            ? " — the baseline"
+            : ` — ${delta >= 0 ? "+" : ""}${delta}px`) +
+          ` · name ${Math.round(now.name)}px` +
+          (now.cut ? " · still cut" : " · fits");
+      }
+    };
+    // Nothing is measured until the rows' own faces have loaded — an unloaded
+    // face measures as its fallback — and not until the PULSE has had its own
+    // pass at the truncation it reports here, which is a frame behind the load.
+    const row = document.querySelector<HTMLElement>("[data-gpd-fit-measure]");
+    void whenFaceLoaded(row ?? document.body, row?.textContent ?? "").then(
+      () => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(measure);
+        });
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  return (
+    <div className="gpd-meter">
+      {TUG_SESSION_ROW_FITS.map((fit) => (
+        <div className="gpd-fit-row" key={fit}>
+          <span className="gpd-preset-name">{fit}</span>
+          <span
+            className="gpd-fit-readout"
+            ref={(el) => {
+              if (el !== null) outRefs.current.set(fit, el);
+            }}
+          />
+        </div>
+      ))}
     </div>
   );
 }
@@ -564,20 +763,49 @@ export function GalleryPulseDisplay(): React.ReactElement {
       <TugSeparator />
 
       <Section
-        title="Lens — the presets stacked"
-        blurb="Intent on its own line under the session name; activity + sparkline on a third. Leading is stated baseline-to-baseline, so the row is exactly two steps tall in every preset — swapping faces changes the reading, never the row height."
+        title="Lens — how the session row packs"
+        blurb={
+          <>
+            A session row carries <strong>six</strong> things and has one
+            rail&apos;s width to spend on them: the phase indicator, the
+            session&apos;s name, the layout slots, the reorder grip, and the
+            PULSE&apos;s three parts — intent, activity, and the tape. Three of
+            those are text that would rather not be cut; the rest is
+            fixed-width furniture that takes its width off the top before the
+            text gets any. Each fit below is one proposal about where the
+            furniture goes, rendered by the real <code>TugSessionRow</code> with
+            the real indicator, slots, grip, and tape in it — so the fit
+            approved here is the fit the Lens wears, by construction. Every fit
+            shows the same two sessions: an everyday one, then the one that does
+            not fit.
+          </>
+        }
       >
-        <div className="gpd-lens-stack">
-          {LENS_SESSIONS.map((s, i) => (
-            <LensFrame
-              key={s.name}
-              name={s.name}
-              preset={TUG_PULSE_PRESETS[i]}
-              pair={s.pair}
-              phase={i + 10}
-            />
+        <div className="gpd-fit-audition">
+          {TUG_SESSION_ROW_FITS.map((fit, i) => (
+            <div className="gpd-fit" key={fit}>
+              <span className="gpd-preset-label">
+                <span className="gpd-preset-name">{fit}</span>
+                <span className="gpd-preset-blurb">{FIT_BLURB[fit]}</span>
+              </span>
+              <div className="gpd-lens-stack">
+                <SessionFrame fit={fit} fixture={FIT_CALM} phase={i + 10} />
+                <SessionFrame
+                  fit={fit}
+                  fixture={FIT_PRESSURE}
+                  phase={i + 70}
+                  measure
+                />
+              </div>
+            </div>
           ))}
         </div>
+
+        <p className="gpd-blurb">
+          What each fit actually handed the two runs that have something to
+          lose, measured off the pressure rows above rather than claimed:
+        </p>
+        <FitMeter />
       </Section>
 
       <TugSeparator />
@@ -693,21 +921,18 @@ export function GalleryPulseDisplay(): React.ReactElement {
         </div>
         <div className="gpd-state">
           <span className="gpd-state-label">
-            Lens: three lines whatever the session is doing
+            Lens: the same row height whatever the session is doing — shown in
+            the shipping fit
           </span>
           <div className="gpd-lens-stack">
-            <LensFrame name="tugtool/lens-xp" pair={PAIRS[2]} phase={25} />
-            <LensFrame
-              name="tugtool/local-model-bringup"
-              pair={{ activity: "Grep tugdeck/src for pulse" }}
-              phase={26}
-            />
-            <LensFrame
-              name="tugtool/release-recipes"
-              pair={{ intent: PAIRS[1].intent }}
-              phase={27}
-            />
-            <LensFrame name="tugtool/bonsai-eval" pair={{}} phase={28} />
+            {LIFECYCLE_ROWS.map((fixture, i) => (
+              <SessionFrame
+                key={fixture.name}
+                fit={TUG_SESSION_ROW_DEFAULT_FIT}
+                fixture={fixture}
+                phase={i + 25}
+              />
+            ))}
           </div>
         </div>
       </Section>

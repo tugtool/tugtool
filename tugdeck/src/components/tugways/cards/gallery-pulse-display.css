@@ -175,70 +175,66 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* ── The Lens monitor frame ──────────────────────────────────────────── */
+/* ── The Lens rail ───────────────────────────────────────────────────────
+   The frame a session row is auditioned in: the Lens's rail at the width it
+   usually has, carrying the two row knobs `lens-sessions-list` sets. Both are
+   restated here deliberately — the audition is worthless if the row is being
+   measured at an inset the Lens does not use — and any change to the Lens's
+   inset belongs in both places or the numbers below stop being the Lens's. */
 
 .gpd-lens-stack {
   display: flex;
   flex-direction: column;
-  gap: var(--tug-space-sm);
+}
+
+/* The hairline the Lens list draws between its rows, in the list view's own
+   divider color: rows that abut with no rule read as one tall row, and a fit is
+   partly a judgement about how a STACK of these reads. */
+.gpd-lens-stack .gpd-rail + .gpd-rail {
+  border-block-start: 1px solid var(--tugx-list-view-divider-color);
 }
 
 /* @tug-renders-on var(--tugx-pane-bg) */
-.gpd-lens-frame {
+.gpd-rail {
+  --tugx-list-row-padding-inline: var(--tug-space-md);
+  --tugx-list-row-indicator-gutter: 0px;
+
   width: 340px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  padding: var(--tug-space-sm) var(--tug-space-md);
-  border-radius: var(--tug-radius-sm, 4px);
   background-color: var(--tugx-pane-bg);
 }
 
-.gpd-lens-name-line {
+/* ── The fit audition ────────────────────────────────────────────────── */
+
+.gpd-fit-audition {
   display: flex;
-  align-items: center;
-  gap: var(--tug-space-sm);
-  min-width: 0;
-  margin-block-end: 4px;
+  flex-direction: column;
+  gap: var(--tug-space-lg);
 }
 
-.gpd-lens-dot {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: var(--tug7-element-global-text-normal-link-rest);
+.gpd-fit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+}
+
+/* The fit meter's rows report two numbers and a verdict — no specimen column,
+   because the specimens are the audition rows above and the meter reads them
+   there. A row of its own class, not the density meter's: that meter's rows are
+   each expected to CARRY a measured PULSE. */
+.gpd-fit-row {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--tug-space-sm);
 }
 
 /* @tug-renders-on var(--tugx-pane-bg) */
-.gpd-lens-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--tug-font-size-sm);
-  font-weight: var(--tug-font-weight-semibold);
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-/* Static stand-ins for the slot layout squares on the name line. */
-/* @tug-renders-on var(--tugx-pane-bg) */
-.gpd-lens-slots {
-  flex: 0 0 auto;
-  display: flex;
-  gap: 3px;
-}
-
-.gpd-lens-slots > span {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 3px;
-  border: 1px solid var(--tug7-element-global-text-normal-subtle-rest);
-  font-size: 0.5625rem;
+.gpd-fit-readout {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 

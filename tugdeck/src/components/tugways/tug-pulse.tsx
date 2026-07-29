@@ -146,6 +146,23 @@ export interface TugPulseProps
    */
   truncate?: "middle" | "end";
   /**
+   * WHICH run gives way on a short `inline` bar.
+   *
+   *  - `activity` — the headline is pinned and the activity is the only run
+   *    that shortens. Right where the bar is the width of a card: the goal is
+   *    the reading, and it is never worth cutting.
+   *  - `both` — the headline yields too, up to a share of the bar. The mode
+   *    for a bar as narrow as a list row, where a pinned headline can eat the
+   *    line and leave the activity a few pixels: a run that has been shortened
+   *    to nothing says less than a shortened run of each.
+   *
+   * Inert in the `stacked` layout, where the runs are on separate lines and
+   * never compete.
+   * @selector [data-give-way="activity"] | [data-give-way="both"]
+   * @default "activity"
+   */
+  giveWay?: "activity" | "both";
+  /**
    * The label that names the band — the strip's `PULSE` pill. Rendered in
    * the `inline` layout only; the Lens row is already named by its session.
    * Supplied whole by the caller, which owns its behavior (popover trigger,
@@ -181,6 +198,7 @@ export const TugPulse = React.forwardRef<HTMLDivElement, TugPulseProps>(
       preset = TUG_PULSE_DEFAULT_PRESET,
       legendAlign = "cap-center",
       truncate = "middle",
+      giveWay = "activity",
       legend,
       headline,
       activity,
@@ -218,6 +236,7 @@ export const TugPulse = React.forwardRef<HTMLDivElement, TugPulseProps>(
         data-layout={layout}
         data-preset={preset}
         data-legend-align={legendAlign}
+        data-give-way={giveWay}
         {...rest}
       >
         {children}

@@ -98,6 +98,17 @@ body {
      of each line's box, so a two-line block is exactly two steps tall and
      the last line keeps (step − first baseline) of descender room. */
   --tugx-pulse-stacked-baseline-step: 16px;
+  /* How far the trailing accessory is LIFTED off its own line. TUNE HERE.
+     The tape is centered on the activity's line box, which is typographically
+     correct and reads a touch low: it is the bottom-most thing in the block,
+     and the eye measures it against the row's furniture two lines above rather
+     than against the run beside it. A small lift closes that gap without
+     moving any type — it is a transform, so no baseline, line box, or row
+     height changes with it.
+     Ceiling: the line ABOVE reserves no trailing space (the headline runs the
+     full width and truncates), so a lift past ~5px starts riding into a long
+     headline's line box at the trailing edge. */
+  --tugx-pulse-stacked-trailing-rise: 3px;
 }
 
 /* ── Root ─────────────────────────────────────────────────────────────── */
@@ -205,6 +216,20 @@ body {
   font-weight: var(--tugx-pulse-headline-weight);
   letter-spacing: var(--tugx-pulse-headline-tracking);
   color: var(--tugx-pulse-headline-color);
+}
+
+/* ── Which run gives way on a short bar ──────────────────────────────────
+   The pinned headline above is right for a bar the width of a card. It is
+   wrong for a bar the width of a list row: there, a long goal eats the line
+   and leaves the activity a handful of pixels, which is not a shortened run —
+   it is a missing one. `both` lets the headline yield too, capped at a share of
+   the bar so the activity is guaranteed the rest. Both runs then ellipsize,
+   each in its own way, and the reader gets some of each. */
+.tug-pulse[data-give-way="both"] .tug-pulse-headline {
+  flex: 0 1 auto;
+  /* The goal keeps the larger share: it is the reading, and the activity is
+     the run built to survive being cut. */
+  max-inline-size: 60%;
 }
 
 /* `None` and `Done` are activity strings like any other, and set exactly like
@@ -317,6 +342,17 @@ body {
   align-self: baseline;
   inline-size: 0;
   block-size: var(--tugx-pulse-stacked-first-baseline);
+}
+
+/* The tape's lift off its own line — see the knob's own note above. A
+   transform, so the line box, the baseline, and the row's height are all
+   exactly where they were; only the accessory moves. Stacked only: on the
+   inline bar the accessory shares the one line with the runs it belongs to,
+   and there is nothing above it to close a gap against. */
+.tug-pulse[data-layout="stacked"] .tug-pulse-trailing {
+  transform: translateY(
+    calc(-1 * var(--tugx-pulse-stacked-trailing-rise, 0px))
+  );
 }
 
 /* Stacked, both runs take the slack and truncate on their own line; neither

@@ -42,6 +42,8 @@
  * @covers tugdeck/src/components/tugways/tug-chart-glyph.tsx
  * @covers tugdeck/src/components/tugways/tug-chart-glyph.css
  * @covers tugdeck/src/components/tugways/cards/gallery-pulse-display.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-row.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-row.css
  * @covers tugdeck/src/components/tugways/cards/gallery-pulse-display.css
  * @covers tugdeck/public/fonts.css
  * @covers tugdeck/src/lib/font-metrics.ts
@@ -89,16 +91,16 @@ function deckSeed() {
 }
 
 /**
- * The baseline of every run inside each inline PULSE on the card, measured
- * from that PULSE's own top edge. One entry per PULSE, each a list of its
- * runs' baseline offsets.
+ * The baseline of every run inside each inline PULSE matching `within`,
+ * measured from that PULSE's own top edge. One entry per PULSE, each a list of
+ * its runs' baseline offsets.
  */
-async function inlineBaselines(app: App): Promise<number[][]> {
+async function inlineBaselines(app: App, within: string): Promise<number[][]> {
   return app.evalJS<number[][]>(
     `(function(){
        var out = [];
        var pulses = document.querySelectorAll(
-         ${JSON.stringify(`${CARD} [data-slot="tug-pulse"][data-layout="inline"]`)}
+         ${JSON.stringify(`${within} [data-slot="tug-pulse"][data-layout="inline"]`)}
        );
        for (var i = 0; i < pulses.length; i++) {
          var pulse = pulses[i];
@@ -180,18 +182,25 @@ describe.skipIf(!SHOULD_RUN)("AT0283: the PULSE's declared type metrics", () => 
         );
 
         // ── 1. One baseline per bar, and the SAME one in every preset ──
-        const perPulse = await inlineBaselines(app);
+        // Within one bar: the headline and the activity share a baseline,
+        // whatever sizes and faces they are wearing. True of EVERY inline bar
+        // on the card, at whatever bar geometry it is set in.
+        const perPulse = await inlineBaselines(app, CARD);
         expect(perPulse.length).toBeGreaterThan(4);
-        const every: number[] = [];
         for (const runs of perPulse) {
           expect(runs.length).toBeGreaterThan(0);
-          // Within one bar: the headline and the activity share a baseline,
-          // whatever sizes and faces they are wearing.
           for (const b of runs) expect(Math.abs(b - runs[0])).toBeLessThan(0.51);
-          every.push(runs[0]);
         }
-        // Across bars: swapping the preset moves nothing. This is the
-        // regression that "the gallery design drifted on rollout" describes.
+        // Across bars: swapping the PRESET moves nothing. This is the
+        // regression that "the gallery design drifted on rollout" describes,
+        // and it is an argument about presets — so it is measured on the
+        // preset bands, which are the bars that differ only by preset. A bar
+        // that declares its own geometry (the session row's `duplex` fit sets
+        // a shorter bar, and its baseline moves with the height because a 21px
+        // baseline cannot exist in a 22px bar) is a different rung, not drift.
+        const bands = await inlineBaselines(app, `${CARD} .gpd-band`);
+        expect(bands.length).toBeGreaterThan(4);
+        const every = bands.map((runs) => runs[0]);
         const first = every[0];
         for (const b of every) expect(Math.abs(b - first)).toBeLessThan(0.51);
 
@@ -350,6 +359,60 @@ describe.skipIf(!SHOULD_RUN)("AT0283: the PULSE's declared type metrics", () => 
         // One pie glyph against six characters — a wide margin, so this fails
         // loudly if the face is missing rather than marginally.
         expect(ligature.glyph).toBeLessThan(ligature.literal * 0.6);
+
+        // ── 7. Every session-row fit is a real reclamation ─────────────
+        // A fit exists to hand width back to the runs that can lose it. So
+        // each one is measured against the shipping `gutter` fit at the same
+        // rail width, on the same fixture: none may hand the activity LESS
+        // than gutter does, and the three that reclaim a column must hand it
+        // strictly more. This is the assertion that catches a fit whose CSS
+        // stopped reclaiming anything while still reading as a proposal.
+        const fits = await app.evalJS<
+          ReadonlyArray<{ fit: string; activity: number; height: number }>
+        >(
+          `Array.from(document.querySelectorAll(
+             ${JSON.stringify(`${CARD} [data-gpd-fit-measure]`)}
+           )).map(function(row){
+             var run = row.querySelector('[data-slot="tug-pulse-activity"]');
+             return {
+               fit: row.getAttribute("data-gpd-fit-measure"),
+               activity: run === null ? -1 : run.clientWidth,
+               height: row.getBoundingClientRect().height,
+             };
+           })`,
+        );
+        const byFit = new Map(fits.map((f) => [f.fit, f]));
+        const gutter = byFit.get("gutter");
+        expect(gutter).not.toBeUndefined();
+        expect(gutter!.activity).toBeGreaterThan(0);
+        // The three column-reclaiming fits each take a whole column out of the
+        // flow, so the gain is a column's width and not a rounding — and none
+        // of them may resize the row, since a Lens whose rows changed height
+        // with the fit would reflow its list on a design decision.
+        for (const fit of ["inset", "reveal", "wash"]) {
+          const f = byFit.get(fit);
+          expect(f).not.toBeUndefined();
+          expect(f!.activity).toBeGreaterThan(gutter!.activity + 8);
+          expect(Math.abs(f!.height - gutter!.height)).toBeLessThan(0.51);
+        }
+        // `duplex` trades the other way — a shorter row for a shared line — so
+        // it is pinned on height instead. What it must NOT do is starve the
+        // activity: two runs on one bar with the goal pinned collapses the
+        // second to a few pixels, which is the defect `giveWay="both"` fixes,
+        // and a run that is present but unreadable is the one outcome no fit
+        // may ship.
+        const duplex = byFit.get("duplex");
+        expect(duplex).not.toBeUndefined();
+        expect(duplex!.height).toBeLessThan(gutter!.height);
+        expect(duplex!.activity).toBeGreaterThan(gutter!.activity * 0.3);
+        // And the meter reported what it measured, rather than sitting blank.
+        const readouts = await app.evalJS<readonly string[]>(
+          `Array.from(document.querySelectorAll(
+             ${JSON.stringify(`${CARD} .gpd-fit-readout`)}
+           )).map(function(el){ return el.textContent; })`,
+        );
+        expect(readouts.length).toBe(fits.length);
+        for (const line of readouts) expect(line).toMatch(/^activity \d+px/);
       } finally {
         await app.close();
       }

@@ -2,14 +2,14 @@
  * The Lens **Sessions** section — a read-only session *monitor* rendered as a
  * `TugListView`. One row per open session card, stacked (L1):
  *
- *   [phase dot]  <session name>            <slot layout>   [grip]
- *                <standing goal>
- *                <latest pulse line>      <activity sparkline>
+ *   [dot] <session name>                   <slot layout>   [grip]
+ *   <standing goal>
+ *   <latest pulse line>                        <activity sparkline>
  *
  * The middle line is the local model's session overview — the same string the
- * card's strip wears as its headline. It is there only when one exists, so a
- * row is genuinely two heights and a deck with no model sees the two-line row
- * it always had.
+ * card's strip wears as its headline. Both PULSE lines always render, so the
+ * row is the same height whatever the session is doing and a deck with no
+ * model sees a row that stands in rather than one that collapses.
  *
  * The list is authored into the section's focus group (`host.focusGroup`), so
  * it is one Tab stop in the Lens: arrows rove the movement cursor over the
@@ -20,11 +20,12 @@
  * it (`initialSelectedIndex`).
  *
  * The name is resolved exactly like the Session card's title-bar chip
- * (`sessionCardTitleOverride`); the goal and activity lines are a stacked
- * `TugPulse` — the same component the on-card strip mounts inline — so a
- * session reads identically in both places by construction rather than by
- * two files agreeing. The slot layout rides the name line, so the
- * arrangement affordance never crowds the pulse.
+ * (`sessionCardTitleOverride`). The row itself is `TugSessionRow`, the shared
+ * component the Pulse Display gallery card auditions its fits on: how the row
+ * divides its one line's width between the indicator, the name, the slots, the
+ * grip, and the PULSE's three parts is that component's decision, so what the
+ * gallery approves is what the Lens wears, by construction rather than by two
+ * files agreeing.
  *
  * Laws: [L02] every store enters React through `useSyncExternalStore`; [L06]
  * appearance (cursor ring, selection, dot/sparkline) is CSS on engine
@@ -65,9 +66,12 @@ import type {
   TugListViewCellRenderer,
   TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
-import { TugListRow } from "@/components/tugways/tug-list-row";
-import { TugLabel } from "@/components/tugways/tug-label";
-import { TugPulse } from "@/components/tugways/tug-pulse";
+import {
+  TugSessionRow,
+  TUG_SESSION_ROW_INDICATOR_SIZE,
+  TUG_SESSION_ROW_SPARK_HEIGHT,
+  TUG_SESSION_ROW_SPARK_WIDTH,
+} from "@/components/tugways/tug-session-row";
 import {
   sparklineCurves,
   TugSparkline,
@@ -116,11 +120,12 @@ const ROW_SELECTOR = ".session-row-content[data-session-id]";
 const ROW_KIND_ATTR = "data-session-id";
 
 // Sparkline shape — the same constants the on-card `session-pulse-strip` uses,
-// so a session reads identically in the Lens and on its card.
+// so a session reads identically in the Lens and on its card. Its SIZE is the
+// row's, not this section's: the tape's width comes off the activity run's, so
+// `TugSessionRow` declares it and the gallery's audition rows read the same
+// number.
 const SPARKLINE_FULL_SCALE_CHARS = 1200;
 const SPARKLINE_CURVE = sparklineCurves.gamma(0.6);
-const SPARKLINE_WIDTH = 64;
-const SPARKLINE_HEIGHT = 18;
 
 // The section's remembered selection — the last-activated session id, mapped
 // to a cursor seed on the next Cmd-L / Tab into the section ([P10] selection
@@ -187,31 +192,9 @@ const PHASE_VISUAL: (key: string) => TugProgressIndicatorPhaseVisual =
 /** Stable no-op subscribe for a card whose services aren't constructed yet. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
-/**
- * Glyph box for the row's phase dot — the knob for its SIZE. Its vertical
- * position is the separate `--tugx-lens-sessions-dot-rise` knob in
- * `sessions-section.css`.
- *
- * This is the BOX, not the dot: the `pulsing-dot` sheds a ring that
- * travels out to the box edge, and the dot itself paints at 60% of the box at
- * the top of its breath (35% at the bottom). So a running row reads as a
- * `0.6 × size` dot throwing a ring the full width of the box — at 32, a 19px
- * dot inside a 32px ring.
- *
- * A settled row is deliberately smaller, and by the variant's own doing: the
- * component's presence ladder draws stopped / completed in to half the box and
- * paused / aborted to 0.7 of it. At 32 that is a 16px quiet ring against the
- * running row's 32px — which is the whole reason this size is legible from
- * across the room without every idle session shouting along with it.
- *
- * Ceiling before the row grows: the two text lines total 38px (a 19px title
- * over a 19px pulse line), so any size up to ~38 leaves the row height alone.
- * At 32 that leaves only ~3px of slack per side, which is why the rise knob
- * next door sits near zero — see `sessions-section.css`.
- */
-const ROW_PHASE_DOT_SIZE = 28;
-
-/** The per-row phase dot — reads the bound card's `codeSessionStore`. */
+/** The per-row phase dot — reads the bound card's `codeSessionStore`. Its size
+ *  is the row's (`TUG_SESSION_ROW_INDICATOR_SIZE`); its vertical position in
+ *  the `gutter` fit is the `--tugx-lens-sessions-dot-rise` knob next door. */
 function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
   const services = useSyncExternalStore(cardServicesStore.subscribe, () =>
     cardServicesStore.getServices(cardId),
@@ -233,7 +216,7 @@ function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
   return (
     <TugProgressIndicator
       variant="pulsing-dot"
-      size={ROW_PHASE_DOT_SIZE}
+      size={TUG_SESSION_ROW_INDICATOR_SIZE}
       phase={sessionSessionPhaseKey(input)}
       phaseVisual={PHASE_VISUAL}
       // The ONLY place in the app that takes the dot's period jitter. This is
@@ -276,26 +259,21 @@ function RowSparkline({ tugSessionId }: { tugSessionId: string }): React.ReactEl
       binMs={ACTIVITY_BIN_MS}
       fullScale={SPARKLINE_FULL_SCALE_CHARS}
       curve={SPARKLINE_CURVE}
-      width={SPARKLINE_WIDTH}
-      height={SPARKLINE_HEIGHT}
+      width={TUG_SESSION_ROW_SPARK_WIDTH}
+      height={TUG_SESSION_ROW_SPARK_HEIGHT}
       className="sessions-monitor-spark"
       title="Session activity — text, tokens, tools, and subagents"
     />
   );
 }
 
-/** One monitor row, composed on the shared `TugListRow` chrome (padding,
- *  hover, divider, and the movement-cursor caret come from the row + the
- *  enclosing `TugListView`). The phase dot leads and the reorder grip trails;
- *  in between, the content column is authored by hand as two lines:
- *
- *    line 1 — the session name, with the slot layout right-aligned past it
- *    line 2 — the latest pulse line, with the activity sparkline past it
- *
- *  The hand-authored column is what keeps the arrangement affordance off the
- *  pulse line: on the row's `title`/`subtitle` path a trailing accessory spans
- *  both lines, so the slots and the pulse text end up competing for the same
- *  run. The `TugListView` cell wrapper still owns cursor / selection / click. */
+/** One monitor row: the shared `TugSessionRow`, fed live nodes. Every
+ *  decision about how the row packs — which line the dot, the slots, the grip,
+ *  and the sparkline ride, and what each costs the text beside it — belongs to
+ *  that component and is auditioned in the Pulse Display gallery card, so what
+ *  ships here is what was chosen there. This function's whole job is to supply
+ *  the six parts from the stores. The `TugListView` cell wrapper still owns
+ *  cursor / selection / click. */
 function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
   const ctx = React.useContext(SessionsCellContext);
   const filterQuery = useSessionsFilterQuery();
@@ -323,10 +301,12 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
         ? latest.text
         : null;
   return (
-    <TugListRow
+    <TugSessionRow
       className="session-row-content"
       data-session-id={row.tugSessionId}
-      leading={<RowPhaseDot cardId={row.cardId} />}
+      indicator={<RowPhaseDot cardId={row.cardId} />}
+      name={renderFilterHighlight(displayName, filterQuery)}
+      slots={<SlotPicker cardId={row.cardId} />}
       grip={
         ctx !== null ? (
           <BlockGrip
@@ -334,26 +314,10 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
           />
         ) : undefined
       }
-    >
-      <span className="session-row-headline">
-        <TugLabel className="tug-list-row-title" size="sm" maxLines={1}>
-          {renderFilterHighlight(displayName, filterQuery)}
-        </TugLabel>
-        <SlotPicker cardId={row.cardId} />
-      </span>
-      {/* The pulse pair, stacked. Nothing about how it reads is decided here:
-          `TugPulse` owns the two faces, the leading between the lines, where
-          each baseline falls, and what a level with nothing to say says — so
-          the row is the same three lines tall whatever the session is doing. */}
-      <TugPulse
-        layout="stacked"
-        headline={
-          pulse.enabled && overview !== null ? overview.text : undefined
-        }
-        activity={pulseText ?? undefined}
-        trailing={<RowSparkline tugSessionId={row.tugSessionId} />}
-      />
-    </TugListRow>
+      intent={pulse.enabled && overview !== null ? overview.text : undefined}
+      activity={pulseText ?? undefined}
+      sparkline={<RowSparkline tugSessionId={row.tugSessionId} />}
+    />
   );
 }
 
