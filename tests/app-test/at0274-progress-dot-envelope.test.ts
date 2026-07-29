@@ -101,18 +101,36 @@ const ringOpacityAt = (fraction: number) => `(function(){
  * The ring expands by `transform: scale`, so its border paints at border ×
  * scale — the stylesheet pre-divides both ends of the stroke by the scale they
  * are painted at, so `apparent` is the number the design is authored in and
- * `border` is what the stroke's own animation is holding at that instant.
+ * `border` is what the stroke is holding at that instant.
+ *
+ * The stroke is not one animated `border-width`; it is two static widths in
+ * two stacked layers, crossfaded by `opacity`, and the ring itself carries no
+ * border at all. That substitution is what keeps the whole pulse on the
+ * compositor — a `border-width` in flight is a layout property and demotes
+ * every other animation on the element with it. So the width the eye reads has
+ * to be RECONSTRUCTED here rather than looked up: the hairline sits on top at
+ * full strength for the whole flight, and the open layer rises underneath it,
+ * so the visible band runs from the hairline's width to the open one in
+ * proportion to the open layer's opacity. Reading `borderTopWidth` off the ring
+ * returns 0 forever, which is how this probe silently stopped measuring
+ * anything when the layers landed.
  */
 const ringStrokeAt = (fraction: number) => `(function(){
   var glyph = document.querySelector(${JSON.stringify(GLYPH)});
   var ring = document.querySelector(${JSON.stringify(RING)});
   if (!glyph || !ring) return null;
+  var hairline = ring.querySelector(".tug-progress-pulsing-dot-ring-stroke-hairline");
+  var open = ring.querySelector(".tug-progress-pulsing-dot-ring-stroke-open");
+  if (!hairline || !open) return null;
   var anims = glyph.getAnimations({ subtree: true });
   if (anims.length === 0) return null;
   var duration = anims[0].effect.getTiming().duration;
   anims.forEach(function (a) { a.pause(); a.currentTime = duration * ${fraction}; });
   var cs = getComputedStyle(ring);
-  var border = parseFloat(cs.borderTopWidth);
+  var thin = parseFloat(getComputedStyle(hairline).borderTopWidth);
+  var wide = parseFloat(getComputedStyle(open).borderTopWidth);
+  var lit = Number(getComputedStyle(open).opacity);
+  var border = thin + (wide - thin) * (Number.isFinite(lit) ? lit : 0);
   return {
     border: border,
     apparent: border * new DOMMatrixReadOnly(cs.transform).a,

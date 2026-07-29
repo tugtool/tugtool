@@ -7,18 +7,14 @@
  *
  * Layout:
  *  - Variants  — six glyphs in a wrapping card grid
- *  - pulsing-dot — the workshop bench for the breathing dot: size
- *                picker, all five states, and a Lens-row preview
- *  - Size      — the ladder, every size the app actually asks for, 10 → 32.
- *                This is the open bench: the glyph was designed at 32 and now
- *                has to hold at 10.
- *  - Crossing  — the same ladder under a live state picker. State changes are
- *                the one thing a still frame cannot show, and the one place
- *                this glyph used to tear.
- *  - Timing    — two benches left on the pulse: cuts of the breath envelope
- *                (symmetric through severe) and the pulse's stroke weight.
- *                The fade-falloff and ring-easing benches are retired — see
- *                the note there for what they settled.
+ *  - pulsing-dot — the whole bench for the breathing dot in one section: the
+ *                size ladder under a live state picker, the Lens-row
+ *                destination, and the two knobs still worth benching.
+ *                The ladder and the picker are one grid because they were
+ *                always one question — every size the app asks for, crossing
+ *                to whatever state you name. A still frame cannot show a
+ *                crossing, and a size ladder frozen in `running` cannot show
+ *                the settled poses most of these sizes spend their life in.
  *  - Roles     — eight role tones in a wrapping card grid (ring variant)
  *  - States    — a 4 × 5 matrix (variant rows × state columns)
  *  - Determinate — a 3 × 5 matrix (variant rows × value columns)
@@ -147,15 +143,13 @@ function GalleryCell({
 // ---------------------------------------------------------------------------
 
 /**
- * Sizes for the workshop picker, spanning the glyph's whole working range —
- * from the 10px it is asked for inside a status cell up past the Z5 submit
- * button's 36px square, which is the legibility bar the big end aims at.
+ * Where the glyph is going, and the size it goes there at — the leading slot
+ * of a Lens Sessions row.
  */
-const DOT_SIZES = [10, 12, 14, 16, 20, 24, 28, 32, 36, 40] as const;
-const DOT_SIZE_ITEMS = DOT_SIZES.map((s) => ({
-  value: String(s),
-  label: String(s),
-}));
+const LENS_SIZE = 28;
+
+/** The size the envelope is judged at, and the size it was authored at. */
+const BENCH_SIZE = 32;
 
 /**
  * The size ladder — every size the app actually asks this glyph for, with the
@@ -196,59 +190,61 @@ function ladderCaption(size: number, where: string): string {
 }
 
 /**
- * The timing bench — cuts of the breath envelope, symmetric through severe.
+ * The two knobs still worth a side-by-side, each as the shipped value against
+ * the one alternative that makes the argument.
  *
- * `turn` is where in the cycle the dot reaches full size, so it is also the
- * split between the two legs: 0.3 means the dot rises over 600ms of the 2s
- * cycle and sinks over the remaining 1400ms. 0.5 is the symmetric breath this
- * variant shipped with first — the one that reads as a mechanism cycling
- * rather than something alive.
+ * **Turn** is where in the cycle the dot reaches full size, so it is also the
+ * split between the legs: 0.3 means the dot rises over 600ms of the 2s cycle
+ * and sinks over the remaining 1400ms. The comparison that carries the
+ * decision is against 0.5 — the symmetric breath this variant shipped with
+ * first, the one that reads as a mechanism cycling rather than something
+ * alive. Cuts between the two only interpolate between those two readings, and
+ * a bench of them asks the eye to grade a continuum instead of judging a
+ * choice. Everything else about the envelope follows from the turn: the ring's
+ * ignition sits 3% of the cycle ahead of it, at whatever radius the dot's edge
+ * measures there.
  *
- * Everything else about the envelope follows from the turn: the ring's
- * ignition sits 3% of the cycle ahead of it, and the radius it is born at is
- * whatever the dot's edge measures at that instant.
+ * **Stroke** is where the pulse's stroke arrives by the end of its travel;
+ * every cell is born at the same 1px hairline. ×1 is a pulse that barely opens
+ * at all, leaving as thin as the ring it settles into, and it is the reading
+ * the shipped ×1.6 was chosen against. Expect a coarse difference rather than
+ * a fine one — borders resolve to device pixels, so the knob is continuous and
+ * the screen is not, which is also why the intermediate weights were never
+ * distinguishable here.
  */
-const BREATH_TURNS: ReadonlyArray<{ turn: number; note?: string }> = [
-  { turn: 0.5, note: "symmetric" },
-  { turn: 0.4 },
-  { turn: DEFAULT_BREATH_TURN },
-  { turn: 0.22, note: "severe" },
-];
-
-/** "30 / 70 — shipped". The split is the turn; the shipped cut says so. */
-function turnCaption(turn: number, note?: string): string {
-  const split = `${Math.round(turn * 100)} / ${Math.round((1 - turn) * 100)}`;
-  return caption(split, turn === DEFAULT_BREATH_TURN ? "shipped" : note);
-}
-
-/** "×1.6 — shipped". */
-function weightCaption(weight: number, note?: string): string {
-  return caption(
-    `×${weight}`,
-    weight === DEFAULT_PULSE_WEIGHT ? "shipped" : note,
-  );
-}
-
-function caption(head: string, note?: string): string {
-  return note === undefined ? head : `${head} — ${note}`;
-}
-
-/**
- * Pulse stroke weights, as multiples of the resting ring's.
- *
- * Every cell here is born at the same 1px hairline; the weight is where the
- * stroke arrives by the end of the ring's travel. 1 is a pulse that barely
- * opens at all — it leaves as thin as the ring it settles into.
- *
- * Expect coarse steps rather than a smooth ladder. Borders resolve to device
- * pixels, so neighboring weights can paint identically — the knob is
- * continuous, the screen is not.
- */
-const PULSE_WEIGHTS: ReadonlyArray<{ weight: number; note?: string }> = [
-  { weight: 1, note: "barely opens" },
-  { weight: 1.15 },
-  { weight: 1.3 },
-  { weight: DEFAULT_PULSE_WEIGHT },
+const KNOBS: ReadonlyArray<{
+  key: string;
+  caption: string;
+  style: React.CSSProperties;
+}> = [
+  {
+    key: "turn-symmetric",
+    caption: "turn 50 / 50 — symmetric",
+    style: breathEnvelope(0.5),
+  },
+  {
+    key: "turn-shipped",
+    caption: `turn ${Math.round(DEFAULT_BREATH_TURN * 100)} / ${Math.round(
+      (1 - DEFAULT_BREATH_TURN) * 100,
+    )} — shipped`,
+    style: breathEnvelope(DEFAULT_BREATH_TURN),
+  },
+  {
+    key: "stroke-flat",
+    caption: "stroke ×1 — barely opens",
+    style: {
+      ["--tugx-progress-pulsing-dot-pulse-weight" as string]: "1",
+    } as React.CSSProperties,
+  },
+  {
+    key: "stroke-shipped",
+    caption: `stroke ×${DEFAULT_PULSE_WEIGHT} — shipped`,
+    style: {
+      ["--tugx-progress-pulsing-dot-pulse-weight" as string]: String(
+        DEFAULT_PULSE_WEIGHT,
+      ),
+    } as React.CSSProperties,
+  },
 ];
 
 const CROSSING_ITEMS = STATES.map((s) => ({ value: s, label: s }));
@@ -265,14 +261,12 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
   const [glyphPosition, setGlyphPosition] = useState<"left" | "right" | "both">(
     "both",
   );
-  const [largeDotSize, setLargeDotSize] = useState<number>(32);
   const [crossingState, setCrossingState] =
     useState<TugProgressIndicatorState>("running");
 
   const phaseGroupId = useId();
   const layoutPhaseGroupId = useId();
   const glyphPositionGroupId = useId();
-  const largeDotSizeGroupId = useId();
   const crossingGroupId = useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
@@ -281,7 +275,6 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
       [layoutPhaseGroupId]: setPhase,
       [glyphPositionGroupId]: (v: string) =>
         setGlyphPosition(v as "left" | "right" | "both"),
-      [largeDotSizeGroupId]: (v: string) => setLargeDotSize(Number(v)),
       [crossingGroupId]: (v: string) =>
         setCrossingState(v as TugProgressIndicatorState),
     },
@@ -315,14 +308,6 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
             pulsing-dot — breathing dot, ring on the fall
           </TugLabel>
           <TugLabel size="2xs" emphasis="calm">
-            Read the row of states below as a size ladder first. Running owns
-            the whole glyph box; paused and aborted draw in to 0.7 of it;
-            stopped and completed recede to 0.5. The box never changes, so
-            nothing reflows — only the figure inside it does. That ordering is
-            the point: a working session must be the biggest mark in a column of
-            them.
-          </TugLabel>
-          <TugLabel size="2xs" emphasis="calm">
             The inner dot eases between 0.35 and full size over a 2s cycle,
             traveling the whole swing every time. The ring is not on its own
             clock: it is lit a few degrees before top dead center — 27% of the
@@ -331,32 +316,73 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
             and fades across the exhale. Its stroke is born a 1px hairline and
             holds there through most of the travel before opening to the full
             pulse weight — sharp for long enough to be read as sharp, soft by
-            the time it is leaving. Two rejected timings: the 75%
-            crossing read as a hesitation the dot never makes, and exact TDC ran
-            a hair behind the beat.
+            the time it is leaving.
           </TugLabel>
-          <TugChoiceGroup
-            size="sm"
-            value={String(largeDotSize)}
-            senderId={largeDotSizeGroupId}
-            items={DOT_SIZE_ITEMS}
-            aria-label="Large dot size"
-          />
-          <div className="gpi-grid">
-            {STATES.map((s) => (
-              <GalleryCell key={s} caption={s}>
-                <TugProgressIndicator
-                  variant="pulsing-dot"
-                  size={largeDotSize}
-                  state={s}
-                />
-              </GalleryCell>
-            ))}
+          <TugLabel size="2xs" emphasis="calm">
+            **One variant, two treatments.** Below is every size the app asks
+            this glyph for, with the surface that asks. At 16px and under it is
+            the previous glyph's geometry exactly — same 0.5 dot ratio, same
+            full-box static ring, same hairline — picking up the new motion and
+            nothing else, so a settled dot in a Z2 cell or a tool-call header
+            paints the pixels it always painted. From 28px up it is the Lens
+            figure, where the extra size buys a 0.6 dot ratio, a ring held
+            inside the box, and the PRESENCE ladder: running owns the whole box,
+            paused and aborted draw in to 0.7, stopped and completed recede to
+            0.5. The box itself never changes, so nothing reflows — only the
+            figure inside it does. Two numbers move on the way down: the ring's
+            reach, let out past the box to 1.75× because 2.5px of radius reads
+            as a twitch rather than a pulse, and the breath's depth, which
+            narrows to a 0.7 trough because a 6px dot cannot spend half its
+            diameter every cycle. The two middle rungs are here to show that the
+            crossing between treatments is a ramp and not a cliff.
+          </TugLabel>
+          {/* The state picker drives the whole ladder at once, so one click
+              crosses both treatments together. Scoped as the crossing bench —
+              AT0276 asserts that NO glyph inside this subtree is left emitting
+              after a settled crossing, so every glyph in here must be one the
+              picker drives. The previews and knob cells below run `running`
+              permanently and are deliberately outside it. */}
+          <div data-bench="crossing">
+            <TugChoiceGroup
+              size="sm"
+              value={crossingState}
+              senderId={crossingGroupId}
+              items={CROSSING_ITEMS}
+              aria-label="Crossing state"
+            />
+            <div className="gpi-grid">
+              {LADDER.map(({ size, where }) => (
+                <GalleryCell key={size} caption={ladderCaption(size, where)}>
+                  <TugProgressIndicator
+                    variant="pulsing-dot"
+                    size={size}
+                    state={crossingState}
+                  />
+                </GalleryCell>
+              ))}
+            </div>
           </div>
           <TugLabel size="2xs" emphasis="calm">
-            The scale reference is the real Z5 submit button (36px square),
-            shown here beside the glyph. Below it, the destination: the leading
-            slot of a Lens Sessions row, over the row's own two-line type.
+            **Every state change is a transition, never a cut.** A real one
+            lands on a frame nobody chose — a tool call finishes mid-breath,
+            with a ring halfway through its travel — and the glyph has to arrive
+            without tearing. A lit pulse always finishes: it was shed, it is
+            travelling outward under its own momentum, and the work ending is no
+            business of its, so the emitter is released on the pulse's clock
+            rather than the state's. A ring that was never lit is simply never
+            lit. The dot is caught where it stands — its live scale is pinned,
+            the loop dropped against that pin so the removal changes nothing,
+            and a transition carries it from there. Going back into running is
+            the same idea inverted: the breath starts at the phase whose pose the
+            dot already holds, and picks it up mid-stride.
+          </TugLabel>
+          <TugLabel size="2xs" emphasis="calm">
+            The destination, at the {LENS_SIZE}px the Lens actually asks for:
+            the leading slot of a Sessions row, over the row's own two-line
+            type. Beside it the scale reference — the real Z5 submit button, a
+            36px square, which is the legibility this variant is aiming at and
+            runs a little under, since motion carries some of the load size
+            alone carries for a static control.
           </TugLabel>
           <div className="gpi-demo-frame">
             <div className="gpi-row-preview">
@@ -370,7 +396,7 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
               />
               <TugProgressIndicator
                 variant="pulsing-dot"
-                size={largeDotSize}
+                size={LENS_SIZE}
                 state="running"
               />
             </div>
@@ -379,7 +405,7 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
             <div className="gpi-row-preview">
               <TugProgressIndicator
                 variant="pulsing-dot"
-                size={largeDotSize}
+                size={LENS_SIZE}
                 state="running"
               />
               <div className="gpi-row-preview-text">
@@ -390,219 +416,28 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
               </div>
             </div>
           </div>
-        </section>
-
-        <TugSeparator />
-
-        {/* Size ladder ------------------------------------------------- */}
-        <section className="cg-section">
-          <TugLabel className="cg-section-title">
-            Size — the ladder, 10px through 32px
-          </TugLabel>
           <TugLabel size="2xs" emphasis="calm">
-            Every size the app asks this glyph for, with the surface that asks.
-            One variant now, so this row has to carry a 10px status cell and a
-            28px Lens row — and the honest answer is that it does it as two
-            treatments, not one figure scaled. What they share is the whole
-            point of the unification: the same breath, the same ring shed at the
-            turn, the same 30/70 asymmetry.
-          </TugLabel>
-          <TugLabel size="2xs" emphasis="calm">
-            **The small treatment is the previous glyph's geometry, exactly.**
-            Same 0.5 dot ratio, same full-box static ring, same hairline stroke,
-            no presence ladder — so a settled dot in a Z2 cell or a tool-call
-            header paints the pixels it painted before, to the fraction. It
-            picks up the new motion and nothing else. Making a status marker
-            bigger or smaller was never what this was for.
-          </TugLabel>
-          <TugLabel size="2xs" emphasis="calm">
-            **The big treatment is the Lens figure**, and it is where the extra
-            size buys something: a 0.6 dot ratio, a ring held inside the box so
-            the glyph is layout-safe, and the PRESENCE ladder that makes a
-            column of sessions readable by size alone. Two numbers still have to
-            move on the way down — the ring's reach, since 2.5px of radius reads
-            as a twitch rather than a pulse, so below 28px it is let out past
-            the box to 1.75× (the old glyph ran to 1.9×); and the breath's
-            depth, which narrows to a 0.7 trough. A deep swing is a luxury of
-            diameter — 0.35 of a 19px dot still reads as a dot, 0.35 of a 6px
-            one reads as a dot going out, and the small glyph is the only mark
-            in a row of type. It cannot afford to half-disappear every cycle,
-            and it does not need to: the shed ring is carrying the motion.
+            The knobs, each shown as the shipped value against the one
+            alternative that makes the case for it. Nothing here is a separate
+            keyframe block: the turn cells override the four `linear()` easing
+            variables the stylesheet reads, from the same `breathEnvelope` call
+            that produced the shipped defaults, and the stroke cells set
+            `--…-pulse-weight`. The period is not pinned either — dots run the
+            nominal 2s unless a caller opts into the jitter, and the only caller
+            that does is the Lens.
           </TugLabel>
           <div className="gpi-grid">
-            {LADDER.map(({ size, where }) => (
-              <GalleryCell key={size} caption={ladderCaption(size, where)}>
+            {KNOBS.map(({ key, caption, style }) => (
+              <GalleryCell key={key} caption={caption}>
                 <TugProgressIndicator
                   variant="pulsing-dot"
-                  size={size}
+                  size={BENCH_SIZE}
                   state="running"
+                  style={style}
                 />
               </GalleryCell>
             ))}
           </div>
-          <TugLabel size="2xs" emphasis="calm">
-            The same ladder settled — the state most of these sizes spend most
-            of their life in, and the row where the parity claim is checkable.
-            Every cell at 16px and under is the previous glyph's `completed`
-            pose to the pixel: a full-box 1px ring around a dot at 0.85 of half
-            the box. From 28px the PRESENCE ladder takes over and the figure
-            draws in, which is the Lens behavior and is meant to look different
-            here.
-          </TugLabel>
-          <div className="gpi-grid">
-            {LADDER.map(({ size }) => (
-              <GalleryCell key={size} caption={`${size}px · completed`}>
-                <TugProgressIndicator
-                  variant="pulsing-dot"
-                  size={size}
-                  state="completed"
-                />
-              </GalleryCell>
-            ))}
-          </div>
-        </section>
-
-        <TugSeparator />
-
-        {/* Crossing ---------------------------------------------------- */}
-        <section className="cg-section" data-bench="crossing">
-          <TugLabel className="cg-section-title">
-            Crossing — every state change is a transition, never a cut
-          </TugLabel>
-          <TugLabel size="2xs" emphasis="calm">
-            Drive the whole ladder at once. A real state change lands on a frame
-            nobody chose — a tool call finishes mid-breath, with a ring halfway
-            through its travel — and the glyph has to arrive at its new pose
-            without tearing. Watch the same crossing at both treatments: the
-            small cells are the tool-call header and the Z2 status cell, the
-            28px and 32px cells are the Lens row.
-          </TugLabel>
-          <TugChoiceGroup
-            size="sm"
-            value={crossingState}
-            senderId={crossingGroupId}
-            items={CROSSING_ITEMS}
-            aria-label="Crossing state"
-          />
-          <TugLabel size="2xs" emphasis="calm">
-            **A lit pulse always finishes.** The ring was shed — it left the dot
-            and is travelling outward under its own momentum, and the work
-            ending is no business of its. So the emitter is released on the
-            pulse's clock rather than the state's, which is why the motion is
-            gated on `data-emitting` and not on `data-state`. Change the state
-            while a ring is in flight and it flies out and fades as though
-            nothing had happened. A ring that was never lit — the change landed
-            during the inhale — is simply never lit.
-          </TugLabel>
-          <TugLabel size="2xs" emphasis="calm">
-            **The dot is caught where it stands.** Its live scale is pinned, the
-            loop is dropped against that pin so the removal changes nothing, and
-            a transition carries it from there to the settled pose — so the
-            settle starts from the pose that was on screen, not from the
-            keyframe's base. Going back the other way is the same idea inverted:
-            the breath starts at the phase whose pose the dot already holds, as
-            a negative `animation-delay`, and picks it up mid-stride. Neither
-            direction has a frame you could call the jump.
-          </TugLabel>
-          <div className="gpi-grid">
-            {LADDER.map(({ size, where }) => (
-              <GalleryCell
-                key={size}
-                caption={`${size}px · ${where === "—" ? crossingState : where}`}
-              >
-                <TugProgressIndicator
-                  variant="pulsing-dot"
-                  size={size}
-                  state={crossingState}
-                />
-              </GalleryCell>
-            ))}
-          </div>
-        </section>
-
-        <TugSeparator />
-
-        {/* Timing bench ------------------------------------------------ */}
-        <section className="cg-section">
-          <TugLabel className="cg-section-title">
-            Timing — the breath envelope, four cuts
-          </TugLabel>
-          <TugLabel size="2xs" emphasis="calm">
-            Where the dot reaches full size is also where the cycle splits. At
-            the left it turns at the halfway mark: the rise takes exactly as
-            long as the fall, and the glyph reads as a mechanism cycling. Moving
-            the turn earlier makes the dot arrive quickly and leave slowly — the
-            shape of the colon blink on a digital watch face, where the dots
-            appear faster than they go away. Each leg is its own cosine fitted
-            to its own length, so however quick the rise, it still lands with
-            zero velocity: the dot hits a HOLD at the top rather than a corner,
-            then drifts back down. Rise, hover, sink.
-          </TugLabel>
-          <TugLabel size="2xs" emphasis="calm">
-            The ring follows the turn — it is lit 3% of the cycle ahead of it,
-            at whatever radius the dot's edge measures there. Nothing here is a
-            separate keyframe block: each cell overrides the four `linear()`
-            easing variables the stylesheet reads, which is the same call
-            (`breathEnvelope`) that produced the shipped defaults. Nothing here
-            needs to pin the period: dots run the nominal 2s unless a caller
-            opts into the jitter, and the only caller that does is the Lens.
-          </TugLabel>
-          <div className="gpi-grid">
-            {BREATH_TURNS.map(({ turn, note }) => (
-              <GalleryCell key={turn} caption={turnCaption(turn, note)}>
-                <TugProgressIndicator
-                  variant="pulsing-dot"
-                  size={largeDotSize}
-                  state="running"
-                  style={breathEnvelope(turn)}
-                />
-              </GalleryCell>
-            ))}
-          </div>
-          <TugLabel size="2xs" emphasis="calm">
-            **Retired: the ring's opacity falloff.** Four exponents were benched
-            here, from an even fall to a near-flash. The bench answered a
-            different question than it asked — the shape of the ring's exit was
-            never the lever, its birth was. At partial strength the ring looked
-            like it was already fading before it existed, and no exit curve
-            fixes that. With the birth corrected to near-solid, the even fall
-            (`breathEnvelope`'s default power of 1) is the one that reads as a
-            ring travelling outward and thinning; every step up only shortened
-            its visible life. Shipped even, bench removed.
-          </TugLabel>
-          <TugLabel size="2xs" emphasis="calm">
-            Stroke weight, on the same envelope. The pulse's stroke holds at a
-            1px hairline — sharp, where the ring is brightest and still near the
-            dot's edge — and only opens across the back of the cycle, to
-            `--…-pulse-weight` × the resting ring, as it fades out. So this knob
-            sets where the stroke ENDS, not what it carries throughout; the
-            hairline it starts from is `--…-pulse-hairline`, and how long it
-            stays there is `--…-emit-thicken-ease`. Expect coarse steps: borders
-            resolve to device pixels, so neighboring weights can paint
-            identically. The knob is continuous; the screen is not.
-          </TugLabel>
-          <div className="gpi-grid">
-            {PULSE_WEIGHTS.map(({ weight, note }) => (
-              <GalleryCell key={weight} caption={weightCaption(weight, note)}>
-                <TugProgressIndicator
-                  variant="pulsing-dot"
-                  size={largeDotSize}
-                  state="running"
-                  style={{
-                    ["--tugx-progress-pulsing-dot-pulse-weight" as string]:
-                      String(weight),
-                  }}
-                />
-              </GalleryCell>
-            ))}
-          </div>
-          <TugLabel size="2xs" emphasis="calm">
-            **Retired: the old dot's ring easing.** A two-cell bench used to sit
-            here comparing `ease-out` against an expo-out on the WAAPI one-shot
-            that the previous `pulsing-dot` chained around a fixed circle. There
-            is no such glyph any more — the breathing dot took the name and the
-            call sites — so the bench went with it.
-          </TugLabel>
         </section>
 
         <TugSeparator />
