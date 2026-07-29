@@ -1,0 +1,8 @@
+What the user asked for:
+- the download restarts from zero when resumed, fix it
+- also port the shell router to async
+
+What the session has been doing:
+- Edit(tugcast/src/local_model.rs)
+- Bash(cargo nextest run download)
+- Edit(tugcast/src/feeds/shell.rs)

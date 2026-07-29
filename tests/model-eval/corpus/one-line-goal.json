@@ -1,0 +1,9 @@
+{
+ "prompts": [
+  "bundle tmux statically from source"
+ ],
+ "tools": [
+  "Bash(bash scripts/fetch-tmux.sh --verify)",
+  "Edit(scripts/fetch-tmux.sh)"
+ ]
+}

@@ -1,0 +1,9 @@
+{
+ "prompts": [],
+ "tools": [
+  "Read(tugcast/src/feeds/session_overview.rs)",
+  "Grep(session overview)",
+  "Bash(cargo nextest run session_overview)",
+  "Edit(tugcast/src/feeds/session_overview.rs)"
+ ]
+}

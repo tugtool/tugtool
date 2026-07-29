@@ -67,3 +67,6 @@ tugdeck/dist/
 # dmgbuild lives in a pinned, isolated venv created by
 # tugrust/scripts/dmg/ensure-dmgbuild.sh; never checked in.
 /.build-tools/
+
+# Python bytecode from the model-eval harness.
+__pycache__/

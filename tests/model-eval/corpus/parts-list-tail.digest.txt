@@ -1,0 +1,11 @@
+What the user asked for:
+- write a command line calculator in c
+- add a makefile
+- write a readme
+
+What the session has been doing:
+- Write(/tmp/calc/calc.c)
+- Write(/tmp/calc/Makefile)
+- Bash(make)
+- Write(/tmp/calc/README.md)
+- Bash(./calc 2 + 2)

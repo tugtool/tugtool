@@ -1,0 +1,6 @@
+What the user asked for:
+- bundle tmux statically from source
+
+What the session has been doing:
+- Bash(bash scripts/fetch-tmux.sh --verify)
+- Edit(scripts/fetch-tmux.sh)

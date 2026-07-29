@@ -1431,6 +1431,23 @@ app-test-all:
 app-test-covers-check:
     @cd tests/app-test && bun scripts/select-tests.ts --check
 
+# Score the local model's PULSE session headlines against a RUNNING instance.
+#
+# Frozen digests go over the control socket to the live app, so what gets
+# scored is the shipped prompt + the resident model + tugcast's
+# `headline_register` together. On-demand, not part of `just test`: it needs an
+# instance up with a model installed, and it spends real inference.
+#
+# Run it after touching `LocalModelPrompts.summarize` or `headline_register` —
+# both change what lands on the strip, and neither has a unit test that can
+# tell you whether the wording got better.
+#
+#   just app-debug          # then, once it is up:
+#   just model-eval
+#   just model-eval release-main
+model-eval INSTANCE="debug-main":
+    @python3 tests/model-eval/run.py {{INSTANCE}}
+
 # Force a fresh app-test build, then run. Use after changing Swift /
 # Rust / harness source — `just app-test` only builds when the bundle is
 # ABSENT, so it would otherwise run against a stale bundle. The build

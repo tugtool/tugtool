@@ -1,0 +1,4 @@
+What the user asked for:
+- list out maxwell's equations in derivative form
+- render the quadratic formula, along with a description of the terms
+- walk me through whether 2027 is a prime number or not

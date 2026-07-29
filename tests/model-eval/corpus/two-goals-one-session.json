@@ -1,0 +1,11 @@
+{
+ "prompts": [
+  "the download restarts from zero when resumed, fix it",
+  "also port the shell router to async"
+ ],
+ "tools": [
+  "Edit(tugcast/src/local_model.rs)",
+  "Bash(cargo nextest run download)",
+  "Edit(tugcast/src/feeds/shell.rs)"
+ ]
+}
