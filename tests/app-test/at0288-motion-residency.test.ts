@@ -1,13 +1,22 @@
 /**
  * at0288 — motion residency census: what animates, and where.
  *
- * This test is an instrument before it is a gate. The residency contract
+ * This test is an instrument AND a gate. The residency contract
  * (tuglaws/motion-residency.md, via `animationCensus()` in
  * tugdeck/src/lib/perf-monitor.ts) says a long-running animation must
  * touch only `transform`/`opacity`, must target an element that can hold
  * a compositing layer, must not share its box with a non-accelerable
- * property, and must live inside a `.tugx-motion-station`. The census
- * reports every long-running animation and the rules each one breaks.
+ * property, and must carry only timing functions the compositor can
+ * express as a cubic Bézier — a multi-stop `linear()` demotes the whole
+ * animation to main-thread blending (`steps()` does not; measured
+ * 2026-07-29). One hygiene rule rides alongside: no finished
+ * `CSSTransition`s retained in `getAnimations()` at rest — a retained
+ * population means some component wrote a transitioned property through
+ * a live transition outside a designed crossing, and the animation
+ * controller iterates the retained list every rendering update. The
+ * census reports every long-running animation, the rules each one
+ * breaks, and the retained-transition count; both decks here assert
+ * `violations` empty.
  *
  * Two decks are censused in one launch so their outputs subtract:
  *
@@ -30,11 +39,6 @@
  * count — which a window resize pays whether or not anything animates.
  * Printing both against the same two decks is what lets the trigger and
  * the bill be told apart.
- *
- * The assertions are deliberately the floor — the census call works, the
- * empty deck is really empty, and seeding a card of running glyphs adds
- * long-running animations. Contract assertions (station ancestry,
- * collapse dormancy) land once the surfaces they describe exist.
  *
  * @covers tugdeck/src/lib/perf-monitor.ts
  * @covers tugdeck/src/components/tugways/cards/gallery-tug-progress-indicator.tsx
@@ -60,7 +64,7 @@ interface CensusEntry {
   playState: string;
   iterations: number | null;
   durationMs: number | null;
-  stationed: boolean;
+  timingFunctions: string[];
   svgTarget: boolean;
   violations: string[];
 }
@@ -94,6 +98,8 @@ interface Probe {
   longRunning: number;
   entries: CensusEntry[];
   violations: CensusEntry[];
+  /** Finished `CSSTransition`s still retained in `getAnimations()`. */
+  retainedTransitions: { count: number; targets: string[] };
   /** Everything `getAnimations()` reports, long-running or not. */
   raw: RawEntry[];
   /** The structure a dirty frame has to walk. */
@@ -143,6 +149,7 @@ const PROBE = `(function(){
     longRunning: census.longRunning,
     entries: census.entries,
     violations: census.violations,
+    retainedTransitions: census.retainedTransitions,
     raw: raw,
     layers: window.tugPerfMonitor.layerTreeProbe(),
   };
@@ -154,6 +161,10 @@ function report(label: string, probe: Probe): void {
     `card hosts: ${probe.cardHosts}`,
     `animations: ${probe.total} total, ${probe.longRunning} long-running, ` +
       `${probe.violations.length} in violation`,
+    `retained finished transitions: ${probe.retainedTransitions.count}` +
+      (probe.retainedTransitions.targets.length > 0
+        ? ` (${probe.retainedTransitions.targets.join(", ")})`
+        : ""),
     "",
     "-- long-running (the contract's scope) --",
   ];
@@ -170,7 +181,7 @@ function report(label: string, probe: Probe): void {
         (e.coAnimatedProperties.length > 0
           ? ` | co-animated: ${e.coAnimatedProperties.join(", ")}`
           : ""),
-      `      stationed: ${e.stationed} | svg: ${e.svgTarget}`,
+      `      timing: ${e.timingFunctions.join(", ") || "(default)"} | svg: ${e.svgTarget}`,
       `      violations: ${e.violations.join("; ") || "none"}`,
     );
   }
@@ -245,6 +256,11 @@ describe.skipIf(!SHOULD_RUN)("at0288: motion residency census", () => {
         const empty = await app.evalJS<Probe>(PROBE);
         report("empty deck", empty);
         expect(empty.cardHosts).toBe(0);
+        expect(
+          empty.violations,
+          `empty-deck residency violations:\n${JSON.stringify(empty.violations, null, 2)}`,
+        ).toEqual([]);
+        expect(empty.retainedTransitions.count).toBe(0);
 
         // --- seeded deck ------------------------------------------------
         await app.seedDeckState({
@@ -271,11 +287,19 @@ describe.skipIf(!SHOULD_RUN)("at0288: motion residency census", () => {
         expect(seeded.cardHosts).toBeGreaterThan(0);
 
         // The floor: a card full of running glyphs animates more than an
-        // empty deck does. Anything stronger waits on the remediation.
+        // empty deck does — a motion-off environment or a failed card
+        // mount must read as a failure, never a vacuous pass.
         expect(
           seeded.longRunning,
           "seeding a card of running indicators added no long-running animations",
         ).toBeGreaterThan(empty.longRunning);
+        // The gate: every long-running animation compliant, and no
+        // finished transitions retained after the settle window.
+        expect(
+          seeded.violations,
+          `seeded-deck residency violations:\n${JSON.stringify(seeded.violations, null, 2)}`,
+        ).toEqual([]);
+        expect(seeded.retainedTransitions.count).toBe(0);
         // The layer probe reads a real tree, not an empty one — a probe
         // that silently returned zeros would otherwise look like good news.
         expect(empty.layers.elements).toBeGreaterThan(0);

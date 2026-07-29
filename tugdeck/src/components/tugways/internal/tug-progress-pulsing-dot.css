@@ -5,10 +5,12 @@
 /**
  * Internal glyph for TugProgressIndicator's `pulsing-dot` variant.
  *
- * **The glyph is two circles: one filled, one stroked.** It is drawn with one
- * element and its two pseudo-elements — `::before` is the filled dot,
- * `::after` is the ring — and it runs three loops on one clock. Nothing else
- * is in the box.
+ * **The glyph is two circles: one filled, one stroked.** It is drawn with a
+ * root span and two child spans — `.tug-progress-pulsing-dot-dot` is the
+ * filled dot, `.tug-progress-pulsing-dot-ring` is the emitted pulse — plus
+ * the root's `::after`, which is the static ring the settled states draw.
+ * Three loops run on one clock (the dot's breath, the pulse's radius and
+ * fade). Nothing else is in the box.
  *
  * That is worth stating because it did not used to be true. An earlier cut
  * drew the same two circles with five elements: a root, a dot, a ring, and two
@@ -52,14 +54,15 @@
  * working session is the biggest figure in a column of them and a finished one
  * is the smallest. The box is unchanged either way, so nothing reflows.
  *
- * **The ring is one circle doing two jobs.** While the glyph runs it is the
- * emitted pulse — lit at ignition, expanding, fading. Settled, it is the
- * static ring at the state's presence diameter. It is the same `::after`
- * either way, which is what keeps the glyph to a single element; the price is
- * that a shed pulse and the arriving static ring cannot overlap, so the static
- * ring fades in once the pulse has finished rather than underneath it. The
- * component already holds `data-emitting` until that moment, so the sequence
- * is ordered rather than raced.
+ * **The stroked circle is two nodes doing one job each.** While the glyph
+ * runs, `.tug-progress-pulsing-dot-ring` is the emitted pulse — lit at
+ * ignition, expanding, fading. Settled, the root's `::after` is the static
+ * ring at the state's presence diameter, withdrawn (opacity 0, never
+ * removed) for as long as the state is `running` and faded back in on the
+ * settle when the work stops. A pulse caught mid-flight is not cut by that
+ * arrival: the component holds `data-emitting` until the travel completes,
+ * so the pulse thins out to nothing on its own clock while the static ring
+ * arrives underneath.
  *
  * Motion: three `@keyframes` on ONE shared 2000ms period (scaled by
  * `--tug-timing`, and by this instance's own drift), started in the same frame
@@ -74,24 +77,28 @@
  * change is a transition on `--…-settle` — the dot from its pinned live pose to
  * its settled one, the ring's opacity and diameter, and the tint on both.
  *
- * **The keyframes carry no shape.** Every one of them is two stops — a start
- * pose and an end pose. The entire curve, including the turn and the ring's
- * ignition, lives in the `linear()` easings held in the `--…-ease` variables
- * below. That is what makes the timing a KNOB: an override of one variable
- * re-cuts the whole envelope, with nothing to keep in sync by hand.
+ * **The keyframes carry the shape.** The entire curve — both legs of the
+ * breath, the ring's ignition and travel — lives in the sampled STOPS of the
+ * three `@keyframes` blocks at the bottom of this file, interpolated
+ * linearly, never in a multi-stop `linear()` easing. That is load-bearing:
+ * Core Animation expresses a segment's easing as a cubic Bézier, a
+ * multi-stop `linear()` is not one, and WebKit answers by blending the
+ * animation on the main thread (see the note above those blocks — 18.0% vs
+ * 0.9% on a 100-glyph bench). The knob is `breathKeyframes` in the
+ * component, which regenerates all three blocks from one turn value.
  *
  *  - `tugx-progress-pulsing-dot-breathe` — the dot, `--…-dot-scale-min`
- *    → `1`. Its easing runs 0 → 1 → 0 within the single cycle, so the
- *    two-stop keyframe plays out and back: the easing IS the breath.
+ *    → `1` → back. The stops run 0 → 1 → 0 across the cycle, a cosine leg
+ *    up and a cosine leg down.
  *
  *  - `tugx-progress-pulsing-dot-emit-expand` — the ring's radius,
- *    `--…-emit-birth` → `1`. Its easing holds flat at 0 through the inhale
- *    (the ring parked, unlit, at the dot's edge), then eases out to the box.
+ *    `--…-emit-birth` → the reach. Parked flat at the birth radius through
+ *    the inhale (the ring unlit at the dot's edge), then a sampled cubic
+ *    ease-out to the end of its travel.
  *
- *  - `tugx-progress-pulsing-dot-emit-fade` — the ring's opacity,
- *    `--…-emit-opacity` → `0`. Its easing holds at 1 (fully faded out, i.e.
- *    invisible) through the inhale, steps to 0 at ignition in a hairline
- *    between two stops at the same position, then climbs evenly to 1 — so the
+ *  - `tugx-progress-pulsing-dot-emit-fade` — the ring's opacity. Held at 0
+ *    (invisible) through the inhale, lit to `--…-emit-opacity` in a hairline
+ *    between two stops at the same position, then an even fall to 0 — so the
  *    ring is born near-solid and thins at a constant rate as it widens.
  *
  * **The stroke opens with the radius.** The ring is scaled, and a border on a
@@ -122,10 +129,10 @@
  * the ring peels off the dot's edge rather than appearing beside it.
  *
  * Tuglaws cross-check:
- *  - [L06] `data-state` on the root gates the motion; the dot's settled pose is
- *    a custom property on the root, not React state — a pseudo-element cannot
- *    carry an inline style, so the pose is published as `--…-dot-pose` and read
- *    at point of use.
+ *  - [L06] `data-state` on the root gates the static ring; the loops are gated
+ *    on `data-breathing`/`data-emitting`, and the dot's settled pose is an
+ *    inline `transform` the component writes — none of it React state, so a
+ *    crossing renders nothing.
  *  - [L13] every loop is continuous, so they are declarative CSS. What the
  *    component scripts is the CROSSING between states, not a frame.
  *  - [L16] the dot's `background-color` and the ring's `border-color` are
@@ -223,12 +230,11 @@
 
 /* The filled circle.
 
-   Its settled pose is `--…-dot-pose`, written to the ROOT by the component: a
-   pseudo-element takes no inline style, so the pose has to arrive as an
-   inherited custom property and be read here. While the breath runs the
-   animation outranks it, and the component hands off by pinning the live scale
-   into that property before it drops the animation — so the transition starts
-   from exactly where the dot was, never from the keyframe's base. */
+   Its settled pose is an inline `transform` the component writes. While the
+   breath runs the animation outranks it, and the component hands off by
+   pinning the live scale inline before it drops the animation — so the
+   transition starts from exactly where the dot was, never from the
+   keyframe's base. */
 .tug-progress-pulsing-dot-dot {
   position: absolute;
   top: 50%;
@@ -295,6 +301,57 @@
   opacity: 0;
 }
 
+/* STATIC MODE — settled states render settled DOM.
+
+   The component sets `data-static` once a settled state has fully come to
+   rest (swap when settled: settle transition done, any shed pulse finished
+   its travel, nothing else animating, one frame of grace), and from first
+   render for a dot BORN settled — the restored-transcript case, hundreds of
+   glyphs per card that will never animate again.
+
+   Same circles, cheaper channels. The dot is sized by width/height from the
+   same numbers the live pose scales by, and both circles center by
+   inset/margin instead of a translate — so nothing here carries a transform,
+   a transition, or an animation, which means no stacking context, no
+   compositing-walk breadth, and no retained CSSTransition. `transition:
+   none` is load-bearing twice over: it keeps a settled dot from ever firing
+   a transition (WebKit retains the finished objects in getAnimations()
+   forever), and it DROPS any transition a live crossing already retained,
+   the moment the demotion lands.
+
+   The pulse ring span is display: none rather than restyled: it is
+   invisible in every settled state anyway, and a rendered opacity-0 box is
+   itself a stacking context — keeping it would defeat the point.
+
+   The crossings this mode cannot express are not its business: any state
+   change on a static glyph promotes it back to live before the frame
+   paints, and the live machinery plays the crossing. */
+.tug-progress-pulsing-dot[data-static] .tug-progress-pulsing-dot-dot {
+  width: calc(
+    var(--tugx-progress-pulsing-dot-dot-size) *
+      var(--tugx-progress-pulsing-dot-static-scale, 1)
+  );
+  height: calc(
+    var(--tugx-progress-pulsing-dot-dot-size) *
+      var(--tugx-progress-pulsing-dot-static-scale, 1)
+  );
+  inset: 0;
+  margin: auto;
+  transform: none;
+  transition: none;
+}
+
+.tug-progress-pulsing-dot[data-static] .tug-progress-pulsing-dot-ring {
+  display: none;
+}
+
+.tug-progress-pulsing-dot[data-static]::after {
+  inset: 0;
+  margin: auto;
+  transform: none;
+  transition: none;
+}
+
 .tug-progress-pulsing-dot-ring {
   position: absolute;
   top: 50%;
@@ -310,7 +367,7 @@
   transition: border-color var(--tugx-progress-pulsing-dot-settle) linear;
 }
 
-/* One period, two loops on two pseudo-elements — started together,
+/* One period, the loops on the two child spans — started together,
    phase-locked for as long as they run.
 
    The gate is `data-breathing` / `data-emitting`, written by the component,

@@ -311,17 +311,15 @@ Even accelerated transform animations participate in overlap testing whenever a 
 2. A long-running animation MUST animate only `transform` and/or `opacity`.
 3. Its effect target MUST be an `HTMLElement` (never `SVGElement`, root or interior).
 4. No other animation or transition on the same element may animate a property outside {`transform`, `opacity`} while the long-running animation runs.
-5. The target MUST have a `.tugx-motion-station` ancestor (or be the station itself).
+5. *(Withdrawn — [P17]. Stations are no longer part of the contract.)*
 6. Every long-running animation declaration MUST include `animation-play-state: var(--tugx-motion-play, running)` unless a more specific state rule (e.g. paused-state) overrides it deliberately.
 7. `will-change` MUST appear only in rules whose selector implies the animation is running.
 8. Finite gesture transitions and one-shot animations are exempt from 2–7 (but not from good sense).
+9. A long-running animation's timing function — at the animation level and at every keyframe — MUST be expressible as a cubic Bézier: the `linear` keyword, `ease`/`ease-in`/`ease-out`/`ease-in-out`, or `cubic-bezier(…)`. A `linear()` with more than two stops MUST NOT appear on a long-running animation ([P22]). `steps(…)` is compliant — measured harmless, see [Q07].
 
-**Spec S02: `.tugx-motion-station`** {#s02-motion-station}
+**Spec S02** {#s02-motion-station}
 
-- CSS: `contain: layout paint size; display: inline-block; position: relative;` — the box MUST carry explicit dimensions equal to the hosted animation's full motion extent (glyph size × max designed overshoot).
-- Lives in a new `tugdeck/src/components/tugways/internal/tugx-motion-station.css` (or folded into `tug-progress-indicator.css`; implementer's call, one place only).
-- Rendered by: `TugProgressIndicator` (around the variant glyph), `TugSkeleton`, `TugSparkline`, `TugMarquee`, and the **wave caret** (`tugdeck/src/components/tugways/tug-text-editor/wave-caret.ts` — it builds `tug-progress-wave` DOM directly inside the CM6 editor, bypassing `TugProgressIndicator`, so it stations its own root span; extent = the wave box it already sizes via the `--tugx-progress-wave-*` variables it sets).
-- For the pulsing dot, the station box is `size × emit-reach` per `sizeGeometry` (`tug-progress-pulsing-dot.tsx`) — reach is 1 at ≥28px and ramps past 1 below.
+*(Deleted — motion stations were withdrawn by [P17]; nothing renders or asserts a `.tugx-motion-station`.)*
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
@@ -1160,7 +1158,7 @@ Each of these was tested against the bench and moved the number by less than the
 
 **Mechanism:** `KeyframeEffect.getTiming().easing` gives the animation-level easing as a serialized string; `effect.getKeyframes()[i].easing` gives each segment's. Both are already reachable in `animationCensus()` — `getTiming()` is called there today for `iterations`/`duration`, and `easing` is already in `KEYFRAME_METADATA_KEYS`. Flag any value matching `linear(` with more than two comma-separated stops.
 
-**Not a violation:** a two-stop `linear(0, 1)` is the `linear` keyword and is fine. `steps(…)` is left un-flagged pending [Q07].
+**Not a violation:** a two-stop `linear(0, 1)` is the `linear` keyword and is fine. `steps(…)` is un-flagged — [Q07] settled it as harmless (measured 2026-07-29).
 
 #### [P23] Dormancy is demoted from remediation to hygiene (SUPERSEDES [P19]) (DECIDED) {#p23-dormancy-is-hygiene}
 
@@ -1202,9 +1200,9 @@ Each of these was tested against the bench and moved the number by less than the
 
 None of `tug-progress-{bar,pie,ring,spinner,wave}.css` uses `linear()` — each declares a plain `linear` or an `ease` keyword — so none carries *this* bug. But none of them has ever been validly profiled either. An earlier per-variant sweep this session was **withdrawn as invalid**: `tugutil host tell show-card` *adds* a card to the deck rather than replacing the current one, so every measurement in that sweep included the whole `gallery-tug-progress-indicator` card underneath it. The tell was `ring` reading 16.4%, below the supposed shared baseline. Resolved by #step-16.
 
-#### [Q07] Does `steps()` block acceleration the same way? (OPEN — cheap to settle) {#q07-steps-easing}
+#### [Q07] Does `steps()` block acceleration the same way? (SETTLED — no) {#q07-steps-easing}
 
-A step function is not a cubic Bézier either, but WebKit may special-case it (Core Animation has a discrete timing mode). Nothing in tugdeck uses `steps()` on a long-running animation today, so this is not blocking. Settle it with one A/B on `gallery-motion-bench` while the bench is already set up in #step-16, and record the answer in the doctrine.
+A step function is not a cubic Bézier either, but WebKit special-cases it (Core Animation has a discrete timing mode). **Settled 2026-07-29** by a three-phase A/B on the editor caret blink in one live app instance (roadmap/jul29-perf-tuneup-brief.md #exonerated): busy 1.6% with the shipped `steps(1)`, 1.3% with a keyframe-native `linear` override, 1.4% with `animation: none` — noise; `TreeResolver::resolve` and the compositing walk flat across all three. `steps()` does not block acceleration, the census rule set carries no steps() clause (noted in the `animationCensus()` docstring so one doesn't grow later), and #step-16's bench A/B is no longer needed for this.
 
 #### [Q01] The stacked-stroke thicken — now moot {#q01-resolved-by-removal}
 
@@ -1235,7 +1233,7 @@ Note what is *not* here: Addendum B's criterion 5 asked the collapsed-pane profi
 | #step-13 | Layer-tree structural probe | done | `d23e8ef70` |
 | #step-14 | Addendum B | done | `14fb1b0e5`, `f42100fef` (landed `a207d1e6b`) |
 | — | Pulsing-dot rework: keyframe-native envelope, gallery consolidation | done | `826cc958a`, `3e24f00d2` |
-| #step-15 | Census truth: drop the station rule, add the easing rule | pending | — |
+| #step-15 | Census truth: drop the station rule, add the easing rule | done | `18e6cf53c` — landed by roadmap/jul29-perf-tuneup.md #step-1 (with a retained-transition rule added on top) |
 | #step-16 | Per-variant residency sweep — one card at a time | pending | — |
 | #step-17 | Dormancy for invisible motion | pending | — |
 | #step-18 | Forced-promotion sweep (`will-change`, `translate3d`) | pending | — |
@@ -1381,6 +1379,7 @@ Each A/B follows the same discipline as #step-16 — single-card deck, raised wi
 - [ ] Point at `at0288` as the enforcement and `just perf-resize-profile` as the measurement, and carry across the measurement traps: `show-card` adds rather than replaces (#step-16), an occluded window reads ~0% ([P15]), and there is no `evalJS` outside `just app-test` so the dev server must be `curl`ed to confirm a change is live.
 - [ ] Note the one legitimate `linear()` left in the codebase and why it is legitimate: `--tugx-imposer-settle-easing`, written by `deck-canvas.tsx` from `IMPOSITION_SETTLE_EASING` via `cssEasing()` in `tugdeck/src/lib/unit-functions.ts`, drives the pane settle **transition** in `tug-pane.css`. It is finite, one-shot, and animates `left`/`top`/`width` — properties that are not accelerable in any case — so the contract does not reach it. Say so explicitly, or the next reader will delete it.
 - [ ] Register the doc in `tuglaws/INDEX.md` and add the pointer from `tuglaws/tuglaws.md` and `tuglaws/component-authoring.md`.
+- [ ] Absorb the jul29-perf-tuneup findings (roadmap/jul29-perf-tuneup-brief.md, all measured 2026-07-29): **(a)** the `steps()` verdict — [Q07] settled, steps() does not block acceleration (caret A/B 1.6/1.3/1.4%), so the timing-function law needs no steps clause; **(b)** the retained-transition rule — a transitioned property written through a live `transition` outside a designed crossing leaves a finished `CSSTransition` in `getAnimations()` forever, iterated by the animation controller every rendering update (415 on one restored card; the census's `retainedTransitions` + at0288/at0289 enforce zero-at-rest), and `transition: none` both prevents and DROPS them; **(c)** the end-state principle — *progress machinery is for progress; settled states render settled DOM* — a settled glyph renders transform-free, transition-free, animation-free (the pulsing dot's static mode; 1,314 stacking contexts → 0 on the restored card), with the live↔static handoff governed by the swap-when-settled rule (jul29-perf-tuneup [P06]).
 
 **Checkpoint:**
 - [ ] Every rule in the doc cites the measurement that justifies it, or is explicitly marked as a convention with no measured backing

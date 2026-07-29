@@ -121,10 +121,19 @@ interface Sample {
 /**
  * Start a per-frame sampler over the bench's glyphs at {@link SAMPLED_SIZES}.
  *
- * Everything read here is PAINTED, not declared: the dot's scale comes off the
- * resolved matrix (which includes the running animation), and both opacities
- * off the computed style. A crossing that looked right in the attributes and
- * still tore on screen is exactly the failure this file exists to catch.
+ * Everything read here is PAINTED, not declared: the dot's scale comes off
+ * what is on screen, and both opacities off the computed style. A crossing
+ * that looked right in the attributes and still tore on screen is exactly
+ * the failure this file exists to catch.
+ *
+ * `scale` is the VISUAL scale — painted diameter over full diameter — not
+ * the raw transform matrix. In live mode the two are the same number (the
+ * box is full-size and the transform scales it); in static mode, which a
+ * settled glyph demotes into once its crossing has fully come to rest, the
+ * dot is width-sized with no transform at all and the metric reads the
+ * same pose off the width. One continuous series across the demotion is
+ * the point: the rate bound below then convicts a hop at the swap moment
+ * exactly as it convicts a mid-crossing cut.
  */
 const installSampler = `(function(){
   var sizes = ${JSON.stringify(SAMPLED_SIZES)};
@@ -141,12 +150,16 @@ const installSampler = `(function(){
     targets.forEach(function (g, i) {
       var dot = g.querySelector(".tug-progress-pulsing-dot-dot");
       var ring = g.querySelector(".tug-progress-pulsing-dot-ring");
+      var cs = getComputedStyle(dot);
+      var full = parseFloat(
+        getComputedStyle(g).getPropertyValue("--tugx-progress-pulsing-dot-dot-size"));
+      var m = cs.transform === "none" ? 1 : new DOMMatrixReadOnly(cs.transform).a;
       window.__dotSamples[i].push({
         t: now - start,
         state: g.getAttribute("data-state"),
         emitting: g.hasAttribute("data-emitting"),
         breathing: g.hasAttribute("data-breathing"),
-        scale: new DOMMatrixReadOnly(getComputedStyle(dot).transform).a,
+        scale: (parseFloat(cs.width) / full) * m,
         ringOpacity: Number(getComputedStyle(ring).opacity) || 0,
         staticWidth: parseFloat(getComputedStyle(g, "::after").width)
       });
@@ -251,7 +264,8 @@ interface Census {
 const anyEmitting = `Array.from(document.querySelectorAll(${JSON.stringify(GLYPH)}))
   .some(function (g) { return g.hasAttribute("data-emitting"); })`;
 
-/** The settled scale of the bench glyph whose box measures `px`. */
+/** The settled VISUAL scale of the bench glyph whose box measures `px` —
+ *  the same metric the sampler reads, valid in live and static mode both. */
 const scaleAtSize = (px: number) => `(function(){
   var g = Array.from(document.querySelectorAll(${JSON.stringify(GLYPH)}))
     .filter(function (el) {
@@ -259,7 +273,11 @@ const scaleAtSize = (px: number) => `(function(){
     })[0];
   if (!g) return -1;
   var dot = g.querySelector(".tug-progress-pulsing-dot-dot");
-  return new DOMMatrixReadOnly(getComputedStyle(dot).transform).a;
+  var cs = getComputedStyle(dot);
+  var full = parseFloat(
+    getComputedStyle(g).getPropertyValue("--tugx-progress-pulsing-dot-dot-size"));
+  var m = cs.transform === "none" ? 1 : new DOMMatrixReadOnly(cs.transform).a;
+  return (parseFloat(cs.width) / full) * m;
 })()`;
 
 /**
@@ -499,6 +517,88 @@ describe.skipIf(!SHOULD_RUN)("AT0276: pulsing-dot state crossing", () => {
           (await app.evalJS<Census>(crossingCensus(12))).running,
           "and its animations are gone with it",
         ).toEqual([]);
+
+        // --- Swap when settled: the demotion waits for the pulse ----------
+        //
+        // A settled glyph eventually demotes to STATIC mode (settled DOM, no
+        // transforms, no transitions) — but only once everything under it has
+        // come to rest. Drive a crossing with a ring definitely in flight and
+        // pin the ordering: no `data-static` while the pulse lives, and at the
+        // moment it has appeared, nothing under the root is running.
+        const swapProbe = `(function(){
+          var g = document.querySelector(${JSON.stringify(GLYPH)});
+          return {
+            isStatic: g.hasAttribute("data-static"),
+            emitting: g.hasAttribute("data-emitting"),
+            running: g.getAnimations({ subtree: true }).filter(function (a) {
+              return a.playState === "running";
+            }).length
+          };
+        })()`;
+        await app.click(segment("running"));
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(GLYPH)}).getAnimations({ subtree: true }).length > 0`,
+          { timeoutMs: 6000 },
+        );
+        expect(await app.evalJS<number>(seekAll(0.4))).toBeGreaterThan(0);
+        await app.click(segment("completed"));
+        const mid = await app.evalJS<{ isStatic: boolean; emitting: boolean; running: number }>(swapProbe);
+        expect(mid.emitting, "the shed pulse is still flying").toBe(true);
+        expect(
+          mid.isStatic,
+          "no swap while the shed pulse is still flying",
+        ).toBe(false);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(GLYPH)}).hasAttribute("data-static")`,
+          { timeoutMs: 8000 },
+        );
+        const landed = await app.evalJS<{ isStatic: boolean; emitting: boolean; running: number }>(swapProbe);
+        expect(landed.emitting, "the emitter released before the swap").toBe(false);
+        expect(
+          landed.running,
+          "nothing runs under the root once the swap has landed",
+        ).toBe(0);
+
+        // --- Rapid flips never strand the glyph mid-swap -------------------
+        //
+        // running → completed → running inside the settle window: the middle
+        // state arms a demotion, the third abandons it. The glyph must end
+        // LIVE and breathing, with no stale swap landing later.
+        await app.click(segment("running"));
+        await app.click(segment("completed"));
+        await app.click(segment("running"));
+        await new Promise((r) => setTimeout(r, 1_000));
+        const flipped = await app.evalJS<{ isStatic: boolean; emitting: boolean; running: number }>(swapProbe);
+        expect(
+          flipped.isStatic,
+          "a flip inside the settle window abandoned the demotion",
+        ).toBe(false);
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(GLYPH)}).hasAttribute("data-breathing")`,
+          ),
+          "the glyph is breathing after the flip",
+        ).toBe(true);
+
+        // --- Motion-off lands settled states in static mode ---------------
+        //
+        // With durations zeroed there is no transitionend to wait for; the
+        // demotion's fallback reads the RESOLVED duration (0) and the swap
+        // must land promptly rather than stranding the glyph live forever.
+        await app.evalJS<boolean>(
+          `(document.body.setAttribute("data-tug-motion", "off"), true)`,
+        );
+        try {
+          await app.click(segment("completed"));
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(GLYPH)}).hasAttribute("data-static")`,
+            { timeoutMs: 3000 },
+          );
+        } finally {
+          await app.evalJS<boolean>(
+            `(document.body.removeAttribute("data-tug-motion"), true)`,
+          );
+        }
       } finally {
         await app.close();
       }

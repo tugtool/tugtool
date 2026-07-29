@@ -92,7 +92,7 @@ Exonerated by measurement, recorded in the brief so they stay exonerated: the ca
 
 **Plan to resolve:** #step-5's A/B — `position: static !important` override on the restored heavy card, post-fix baseline, same-instance sampling. The ResizeObserver gather rides the same run.
 
-**Resolution:** OPEN until #step-5.
+**Resolution:** RESOLVED 2026-07-29 — **both absolved** (numbers in the brief's #sticky-headers, recorded by #step-5). Post-fix heavy card (438/438 dots static, 0 retained, contexts 1,603 → 725): forcing every `.tool-call-header` to `position: static` moved idle 2.0% → 2.2% and typing 65.9% → 65.8% — nothing, in any pipeline column; disconnecting all 506 ResizeObservers moved idle 2.0% → 1.8% and typing 65.9% → 62.9% with its own gather zeroed — at the edge of noise. No fix step is added; the follow-on candidates (static headers under skipped cells, entry-boundary containment) stay unbuilt for lack of a conviction.
 
 #### [Q02] Does the static ring survive in end states at the big treatment? (RESOLVED — yes, it must render) {#q02-static-ring}
 
@@ -192,7 +192,7 @@ If a new state arrives during the window, the demotion is abandoned and the mach
 
 - Root: `span.tug-progress-pulsing-dot[data-state=<state>][data-static]` — same `rootStyle` variable block (`--…-size`, `--…-dot-size`, `--…-presence`, and the three `-auto` geometry variables), same `aria-hidden`, same forwarded ref target.
 - Dot: `span.tug-progress-pulsing-dot-dot` with, under `[data-static]`: `width`/`height` = `calc(var(--tugx-progress-pulsing-dot-dot-size) * <staticScale>)` (the component may equally write one `--…-static-scale` variable and let CSS compute), `position: absolute; inset: 0; margin: auto;`, `transform: none`, `transition: none`.
-- Ring: `span.tug-progress-pulsing-dot-ring` with the same transform-free centering; its width-based presence sizing already avoids transforms and is unchanged.
+- Ring: `span.tug-progress-pulsing-dot-ring` is `display: none` under `[data-static]` (amended in-step: it is invisible in every settled state anyway, and a **rendered** opacity-0 box is itself a stacking context — restyling it transform-free would have left 438 contexts standing and defeated the swap). The STATIC ring the settled states draw is the root's `::after`, which gets the transform-free centering; its width-based presence sizing already avoids transforms and is unchanged.
 - No `data-breathing` / `data-emitting` ever present in static mode; no inline `transform` written.
 - Verification hooks: the census stacking-context histogram must show zero dot/ring entries for a static population, and `getAnimations({subtree})` under a static dot must be empty.
 
@@ -244,12 +244,12 @@ Out of scope for tests: jsdom/mocks (banned), CI-gated profiling (machine-depend
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Census truth + zombie rule (gate first) | pending | — |
-| #step-2 | Restored-transcript census deck | pending | — |
-| #step-3 | Mount suppression + atom pulse filter | pending | — |
-| #step-4 | End-state swap | pending | — |
-| #step-5 | Sticky headers + ResizeObserver: accuse or absolve | pending | — |
-| #step-6 | Release re-profile, brief update, probe cleanup | pending | — |
+| #step-1 | Census truth + zombie rule (gate first) | done | `18e6cf53c` |
+| #step-2 | Restored-transcript census deck | done | `c67bd0ae9` |
+| #step-3 | Mount suppression + atom pulse filter | done | `091356536` |
+| #step-4 | End-state swap | done | `333980af9` |
+| #step-5 | Sticky headers + ResizeObserver: accuse or absolve | done | `3ca1d2c1c` — both absolved |
+| #step-6 | Release re-profile, brief update, probe cleanup | done | `0410ec12e` — release after-number awaits the landing |
 
 #### Step 1: Census truth + zombie rule {#step-1}
 
@@ -288,6 +288,8 @@ Out of scope for tests: jsdom/mocks (banned), CI-gated profiling (machine-depend
 - [ ] New app-test: seed + cold-restore `session-transcript-basic` through the picker, settle, then census: assert `retainedTransitions.count` and record the stacking-context histogram counts for `.tug-progress-pulsing-dot-dot` / `-ring` (the audit's histogram logic; keep it in the test or promote it into `perf-monitor.ts` beside `layerTreeProbe()` — promoting is preferred so #step-5 reuses it).
 - [ ] **Land the test EXPECTED-RED-then-green:** on today's code the zombie assertion fails (29 retained transitions). Mark the zombie + histogram assertions with a short-lived expected-failure guard (or land this step *after* #step-3 flips them green in the same landing batch — implementer's call, but the test must be red against pre-#step-3 code when run locally, proving it detects the defect).
 - [ ] Inventory registration.
+
+**Finding (measured in-step, 2026-07-29, supersedes the zombie-count expectation above).** A plain cold restore at fixture scale retains **zero** transitions: the first-paint pose write resolves together with the element's initial style, so no transition ever fires from the `previous === null` branch on this path. The retention mechanism was isolated live instead: an inline `transform` write through the live transition **after** first style resolution retains exactly one finished `CSSTransition` (the audited card's 415 came from such post-first-paint writes — batched-replay state crossings land `in_flight` → `success` across separate batches on a 30MB session, where the fixture replays in one). Also measured: setting `transition: none` (with a flush) **drops** an already-retained finished transition — so [P03]'s static mode both prevents new zombies and clears crossing-retained ones at demotion. The committed gate therefore asserts at-rest retention **zero unconditionally from day one**, carries a permanent **induced-crossing phase** (the real write, performed on one real dot span) proving the detector fires naming the target, and guards only the breadth assertions behind `SETTLED_DOTS_STATIC` (flipped by #step-4, at which point the induced write must retain nothing — static immunity). #step-3's "flip the zombie guards" task is thereby absorbed: there is no zombie guard to flip, and #step-4 owns the one guard that exists.
 
 **Tests:**
 - [ ] The new test itself; `just app-test-covers-check`.
@@ -387,6 +389,8 @@ Out of scope for tests: jsdom/mocks (banned), CI-gated profiling (machine-depend
 **Checkpoint:**
 - [ ] Release idle busy measurably below 13.8% with the delta recorded; typing sample recorded
 - [ ] Working tree free of `zz-` probes this plan owns; `just app-test-covers-check` green
+
+**Record (2026-07-29).** The brief's #reference-numbers now carries the after column. What could be measured pre-landing is measured: the restored heavy card on the production bundle reads **2.0% idle** (from 2.9–4.0%), at the empty-deck floor, with 438/438 dots static, 0 retained transitions, contexts 1,603 → 725; the typing-load table is recorded under #step-5's A/B. The live release renderer was re-sampled still running pre-fix code (24.2% busy mid-session, 424 after-style walk samples) confirming the before-state persists — the release **after** number requires the user's landing gesture (`/join` + release rebuild) and is the one open cell; take it with the same pid-by-cache-dir `sample` the brief's #method names. `zz-blink-probe`, `zz-deck-census`, and `zz-heavy-census` are deleted (with the temporary `theme.ts` ACCEPTED_FANOUT entry); `zz-probe.test.ts` is pre-existing and the user's to keep or delete. Findings handed to animation-tuneup #step-19's task list.
 
 ---
 

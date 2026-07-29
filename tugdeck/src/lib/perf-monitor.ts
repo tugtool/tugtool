@@ -163,8 +163,8 @@ const KEYFRAME_METADATA_KEYS = new Set([
   "composite",
 ]);
 
-/** The contain wrapper that bounds an animation's overlap extent. */
-const MOTION_STATION_SELECTOR = ".tugx-motion-station";
+/** How many retained-transition targets the census names before eliding. */
+const RETAINED_TARGET_LIMIT = 10;
 
 export interface AnimationCensusEntry {
   /** `animation-name` for CSS loops; the WAAPI `id` (or `<waapi>`) otherwise. */
@@ -181,8 +181,12 @@ export interface AnimationCensusEntry {
   /** `Infinity` serializes as `null` through the app-test JSON bridge. */
   iterations: number | null;
   durationMs: number | null;
-  /** Whether the target sits inside a `.tugx-motion-station`. */
-  stationed: boolean;
+  /**
+   * Every distinct timing function on the animation — the animation-level
+   * easing plus each keyframe's — so a census reader never has to re-derive
+   * what the compositor was asked to run.
+   */
+  timingFunctions: string[];
   /** Whether the effect target is an SVG element (never accelerable). */
   svgTarget: boolean;
   /** One line per broken rule of the residency contract; empty = compliant. */
@@ -196,8 +200,22 @@ export interface AnimationCensus {
   longRunning: number;
   /** Long-running animations, compliant and not. */
   entries: AnimationCensusEntry[];
-  /** The subset with a non-empty `violations` list. */
+  /**
+   * The entries with a non-empty `violations` list — plus, when finished
+   * transitions are retained at rest, one synthetic `<retained-transitions>`
+   * entry, so a single `violations`-is-empty assertion gates hygiene too.
+   */
   violations: AnimationCensusEntry[];
+  /**
+   * Finished `CSSTransition`s still present in `getAnimations()` at census
+   * time. WebKit retains them, and the animation controller iterates the
+   * retained list on every rendering update — so a population of these at
+   * rest is a standing per-frame tax. A non-zero count means some component
+   * wrote a transitioned property through a live `transition` outside a
+   * designed crossing (the mount-write defect measured 2026-07-29: 415
+   * retained transitions on one restored transcript card).
+   */
+  retainedTransitions: { count: number; targets: string[] };
 }
 
 function describeTarget(target: Element, pseudo: string | null): string {
@@ -225,19 +243,62 @@ function isLongRunning(effect: KeyframeEffect): boolean {
   return duration * iterations > LONG_RUN_MS;
 }
 
+/** Every distinct easing an effect carries: animation-level + per-keyframe. */
+function effectTimingFunctions(effect: KeyframeEffect): string[] {
+  const easings = new Set<string>();
+  const animationEasing = effect.getTiming().easing;
+  if (typeof animationEasing === "string") easings.add(animationEasing);
+  for (const frame of effect.getKeyframes()) {
+    if (typeof frame.easing === "string") easings.add(frame.easing);
+  }
+  return Array.from(easings).sort();
+}
+
+/**
+ * The violation line for a timing function the compositor cannot express,
+ * or `null` for one it can. Core Animation expresses a segment's easing as
+ * a cubic Bézier; a `linear()` with more than two stops is not one, and
+ * WebKit answers by declining to accelerate the whole animation — blending
+ * it on the main thread, every element, every frame. A two-stop
+ * `linear(0, 1)` IS the `linear` keyword and passes. `steps()` passes too:
+ * measured 2026-07-29 (caret-blink A/B: 1.6% steps / 1.3% linear / 1.4%
+ * none — noise), WebKit accelerates it, so the rule set needs no steps()
+ * clause.
+ */
+function easingViolation(easing: string): string | null {
+  const trimmed = easing.trim();
+  if (!trimmed.startsWith("linear(")) return null;
+  const inner = trimmed.slice("linear(".length, trimmed.lastIndexOf(")"));
+  const stops = inner.split(",").map((stop) => stop.trim());
+  if (stops.length <= 2) return null;
+  const shown =
+    stops.length > 4 ? `${stops.slice(0, 4).join(", ")}, …` : stops.join(", ");
+  return (
+    `blends on the main thread: \`linear(${shown})\` ` +
+    `(${stops.length} stops) is not a cubic Bézier`
+  );
+}
+
 /**
  * Inventory every long-running animation in the document and judge it
  * against the compositor-residency contract (`tuglaws/motion-residency.md`):
  * only `transform`/`opacity`, only on an `HTMLElement`, no co-animated
- * property on the same box, and inside a `.tugx-motion-station`.
+ * property on the same box, and every timing function expressible as a
+ * cubic Bézier (a multi-stop `linear()` demotes the whole animation to
+ * main-thread blending; `steps()` does not — measured 2026-07-29, so the
+ * rule set carries no steps() clause).
  *
  * This is the shared implementation behind the residency app-test and
  * any future DevPanel tile — a violation names itself, so a regression
  * fails with the offending animation and target in the message.
  *
- * `CSSTransition`s are excluded: they are finite by construction and so
- * fall outside the contract. Every other `Animation` is in scope, WAAPI
- * loops included — a script-driven loop is no cheaper than a CSS one.
+ * `CSSTransition`s are excluded from the long-running entries: they are
+ * finite by construction and so fall outside that contract. They are
+ * enumerated for exactly one thing — `retainedTransitions`, the count of
+ * FINISHED transitions still present in `getAnimations()` at census time,
+ * which is a hygiene violation on its own (see the field's doc). Every
+ * other `Animation` is in scope, WAAPI loops included — a script-driven
+ * loop is no cheaper than a CSS one.
  *
  * @param options.within CSS selector; when given, only animations whose
  *   target sits inside a matching element are censused (the collapse-
@@ -249,21 +310,36 @@ export function animationCensus(options?: { within?: string }): AnimationCensus 
       ? document.querySelector(options.within)
       : null;
   if (options?.within !== undefined && scope === null) {
-    return { total: 0, longRunning: 0, entries: [], violations: [] };
+    return {
+      total: 0,
+      longRunning: 0,
+      entries: [],
+      violations: [],
+      retainedTransitions: { count: 0, targets: [] },
+    };
   }
 
+  const retained = { count: 0, targets: [] as string[] };
   const all = document.getAnimations().filter((animation) => {
-    if (
-      typeof CSSTransition !== "undefined" &&
-      animation instanceof CSSTransition
-    ) {
-      return false;
-    }
     const effect = animation.effect;
     if (!(effect instanceof KeyframeEffect) || effect.target === null) {
       return false;
     }
-    return scope === null || scope.contains(effect.target);
+    if (scope !== null && !scope.contains(effect.target)) return false;
+    if (
+      typeof CSSTransition !== "undefined" &&
+      animation instanceof CSSTransition
+    ) {
+      if (animation.playState === "finished") {
+        retained.count += 1;
+        if (retained.targets.length < RETAINED_TARGET_LIMIT) {
+          const label = describeTarget(effect.target, effect.pseudoElement);
+          if (!retained.targets.includes(label)) retained.targets.push(label);
+        }
+      }
+      return false;
+    }
+    return true;
   });
 
   // Every property animated on each (element, pseudo) box, across ALL
@@ -307,7 +383,7 @@ export function animationCensus(options?: { within?: string }): AnimationCensus 
       .filter((prop) => !properties.includes(prop))
       .sort();
     const svgTarget = !(target instanceof HTMLElement);
-    const stationed = target.closest(MOTION_STATION_SELECTOR) !== null;
+    const timingFunctions = effectTimingFunctions(effect);
     const timing = effect.getTiming();
     const iterations = timing.iterations ?? 1;
     const duration = timing.duration;
@@ -330,8 +406,9 @@ export function animationCensus(options?: { within?: string }): AnimationCensus 
         `shares its box with ${offendingNeighbours.join(", ")}`,
       );
     }
-    if (!stationed) {
-      violations.push(`no ${MOTION_STATION_SELECTOR} ancestor`);
+    for (const easing of timingFunctions) {
+      const violation = easingViolation(easing);
+      if (violation !== null) violations.push(violation);
     }
 
     entries.push({
@@ -351,9 +428,30 @@ export function animationCensus(options?: { within?: string }): AnimationCensus 
       playState: animation.playState,
       iterations: iterations === Infinity ? null : iterations,
       durationMs: typeof duration === "number" ? duration : null,
-      stationed,
+      timingFunctions,
       svgTarget,
       violations,
+    });
+  }
+
+  const violations = entries.filter((entry) => entry.violations.length > 0);
+  if (retained.count > 0) {
+    violations.push({
+      name: "<retained-transitions>",
+      kind: "css",
+      target: retained.targets.join(", "),
+      properties: [],
+      coAnimatedProperties: [],
+      playState: "finished",
+      iterations: null,
+      durationMs: null,
+      timingFunctions: [],
+      svgTarget: false,
+      violations: [
+        `${retained.count} finished transition(s) retained at rest — ` +
+          `a transitioned property was written through a live transition ` +
+          `outside a designed crossing`,
+      ],
     });
   }
 
@@ -361,7 +459,8 @@ export function animationCensus(options?: { within?: string }): AnimationCensus 
     total: all.length,
     longRunning: entries.length,
     entries,
-    violations: entries.filter((entry) => entry.violations.length > 0),
+    violations,
+    retainedTransitions: retained,
   };
 }
 
@@ -376,6 +475,9 @@ const CONTAINMENT_VALUES = ["paint", "layout", "strict", "content"];
 /** Selector path segments are capped so the deepest chain stays readable. */
 const CHAIN_PATH_LIMIT = 24;
 
+/** How many stacking-context creator classes the histogram reports. */
+const STACKING_HISTOGRAM_LIMIT = 15;
+
 export interface LayerTreeProbe {
   /** Every element in the document, root included. */
   elements: number;
@@ -387,6 +489,14 @@ export interface LayerTreeProbe {
   depthHistogram: Record<string, number>;
   /** Elements that establish a stacking context. */
   stackingContexts: number;
+  /**
+   * The stacking-context creators bucketed by `tag.class.class` (first two
+   * classes), most numerous first, capped at
+   * {@link STACKING_HISTOGRAM_LIMIT} buckets. This is what names a breadth
+   * regression: 438 dots × 3 contexts each reads as three buckets at 438,
+   * not as an anonymous total.
+   */
+  stackingHistogram: [string, number][];
   /** Depth of the deepest stacking-context CHAIN (nested contexts). */
   maxStackingDepth: number;
   /** Selector path of that deepest chain, outermost first. */
@@ -417,6 +527,9 @@ function establishesStackingContext(
   element: Element,
   style: CSSStyleDeclaration,
 ): boolean {
+  // No box, no context: a display: none subtree contributes nothing to the
+  // compositing walk regardless of what its computed style would trigger.
+  if (style.display === "none") return false;
   if (element === document.documentElement) return true;
   const position = style.position;
   if (
@@ -476,6 +589,7 @@ export function layerTreeProbe(): LayerTreeProbe {
   // Stacking depth per element, memoized down the tree: an element's
   // chain length is its nearest stacking ancestor's plus its own.
   const stackingDepth = new Map<Element, number>();
+  const stackingHistogram = new Map<string, number>();
 
   for (const element of all) {
     let depth = 1;
@@ -498,6 +612,11 @@ export function layerTreeProbe(): LayerTreeProbe {
         : 0;
     if (establishesStackingContext(element, style)) {
       stackingContexts += 1;
+      const classes = Array.from(element.classList).slice(0, 2);
+      const bucket =
+        element.tagName.toLowerCase() +
+        (classes.length > 0 ? `.${classes.join(".")}` : "");
+      stackingHistogram.set(bucket, (stackingHistogram.get(bucket) ?? 0) + 1);
       const chain = parentChain + 1;
       stackingDepth.set(element, chain);
       if (chain > maxStackingDepth) {
@@ -523,6 +642,9 @@ export function layerTreeProbe(): LayerTreeProbe {
     meanDepth: all.length > 0 ? Math.round((depthSum / all.length) * 10) / 10 : 0,
     depthHistogram,
     stackingContexts,
+    stackingHistogram: Array.from(stackingHistogram)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, STACKING_HISTOGRAM_LIMIT),
     maxStackingDepth,
     deepestStackingPath,
     willChange,

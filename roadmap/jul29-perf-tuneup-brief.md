@@ -89,6 +89,16 @@ Independent of (and complementary to) the swap: the mount path (`previous === nu
 
 The ResizeObserver gather (67 samples in the release profile, 22–32 on the probe card) rides the same decision: it is per-dirty-frame overhead proportional to observed-element count, and the same A/B run reports it for free. If it remains a material term after the dots, per-entry observers under skipped cells are the follow-on suspect.
 
+**RESOLVED 2026-07-29 — both absolved.** The A/B ran post-fix (dots static: 438/438 `data-static`, 0 retained transitions, stacking contexts 1,603 → 725) on the same restored heavy card, one app instance, three phases, each sampled 5s at rest and 5s under continuous native typing into the composer:
+
+| Phase | Idle busy | Typing busy | resolveStyle | compositing after style / layout | ResizeObserver gather |
+|---|---|---|---|---|---|
+| A — post-fix baseline | 2.0% | 65.9% | 5 / 98 | 0+9 / 241+61 | 23 / 12 |
+| B — `.tool-call-header { position: static !important }` | 2.2% | 65.8% | 4 / 112 | 0+9 / 236+50 | 21 / 18 |
+| C — all 506 tracked ResizeObservers disconnected | 1.8% | 62.9% | 3 / 96 | 0+13 / 255+63 | 1 / 0 |
+
+(Per cell: idle-sample / typing-sample counts.) Un-sticking 438 headers moves nothing outside noise in any column; disconnecting every observer trims ≤0.2 idle / ~3 typing points while zeroing its own gather counts — at the edge of run-to-run noise and nowhere near a term worth surgery on scroll-pinning or measurement machinery. The suspects are closed the way Addendum C's #c-refuted list closes suspects: with the numbers that would reopen them.
+
 ## Sequencing {#sequencing}
 
 Agreed order, folding in the guidance:
@@ -106,16 +116,17 @@ Steps 16–19 of the animation tune-up (per-variant sweep, dormancy, forced-prom
 
 ## Reference numbers {#reference-numbers}
 
-| Measurement | Value |
-|---|---|
-| Release renderer idle busy (5 heavy cards, 07-29 06:40) | 13.8% (581/4210 samples) |
-| — compositing walk after style / after layout | 167 / 124 samples |
-| — ResizeObserver gather / IntersectionObserver | 67 / 32 samples |
-| Restored heavy card (820×620 harness window) idle busy | 2.9–4.0% |
-| — elements / stacking contexts / max depth | 16,249 / 1,603 / 37 |
-| — pulsing dots / their stacking contexts | 438 / 1,314 (82%) |
-| — retained finished CSSTransitions | 415 |
-| — cells carrying `content-visibility: auto` | 46 of 47 |
-| Empty 3-session deck idle busy | 2.4% |
-| Caret blink A/B/C (steps / linear / none) | 1.6% / 1.3% / 1.4% |
-| Sample files | `/tmp/tug-webcontent-sample.txt`, `/tmp/tug-rel-2.txt`, `/tmp/zz-*-*.txt` |
+| Measurement | Before | After (2026-07-29, fixes landed on the dash) |
+|---|---|---|
+| Release renderer idle busy (5 heavy cards, 07-29 06:40) | 13.8% (581/4210 samples) | *pending the landing* — the release app must pick up the fixes via `/join` + rebuild before an honest after exists; re-sampled pre-fix at 24.2% (active session, 07-29 late) confirming the before-state persists |
+| — compositing walk after style / after layout | 167 / 124 samples | pre-fix re-check: 424 / 101 |
+| — ResizeObserver gather / IntersectionObserver | 67 / 32 samples | — |
+| Restored heavy card (820×620 harness window, production bundle) idle busy | 2.9–4.0% | **2.0%** — at the empty-deck floor (2.4% below) |
+| — elements / stacking contexts / max depth | 16,249 / 1,603 / 37 | 16,249 / **725** / 37 |
+| — pulsing dots / their stacking contexts | 438 / 1,314 (82%) | 438 / **0** (438/438 `data-static`; dot/ring buckets absent from the histogram) |
+| — retained finished CSSTransitions | 415 | **0** |
+| — typing busy, continuous native typing into the composer | (not measured pre-fix) | 65.9% baseline; 65.8% with sticky headers forced static; 62.9% with all 506 ResizeObservers disconnected (#sticky-headers — both absolved) |
+| — cells carrying `content-visibility: auto` | 46 of 47 | unchanged |
+| Empty 3-session deck idle busy | 2.4% | — |
+| Caret blink A/B/C (steps / linear / none) | 1.6% / 1.3% / 1.4% | — (exonerated; [Q07] settled) |
+| Sample files | `/tmp/tug-webcontent-sample.txt`, `/tmp/tug-rel-2.txt`, `/tmp/zz-*-*.txt` | `/tmp/zz-heavy-census-{A,B,C}-*.txt`, `/tmp/zz-rel-before-recheck.txt` |
