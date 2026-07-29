@@ -11,7 +11,7 @@ emit enforce evaluate expand explain explore extend
 fetch filter find fix flush fold format
 gate generate
 handle harden hunt
-implement improve index inject insert inspect install instrument
+implement improve index inject insert inspect install instrument investigate
 land link load log
 map measure merge migrate mount move
 normalize

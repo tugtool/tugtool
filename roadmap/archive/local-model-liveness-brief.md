@@ -86,11 +86,11 @@ The `LocalModelPrompts` freeze rule in `tugapp/Sources/LocalModelService.swift` 
 
 ## Work items
 
-- [ ] Liveness smoke test, on-demand, skipping cleanly without a pack ([1](#1-the-liveness-smoke-test)). Decide the driving layer first.
-- [ ] Split the per-task timeout off `REQUEST_TIMEOUT`; give `summarize` and `classify` their own ceilings ([2](#2-turnaround-constraints)).
-- [ ] Record turnaround durations and outcome counts per task; emit them as structured `tracing` first, dev-panel Telemetry only if it is nearly free.
-- [ ] Record the normalizer's work rate — changed and clipped — as the standing read on the prompt.
-- [ ] Set the real numbers from live sessions, alongside [Q01] and [Q02] of the display plan.
+- [x] Liveness smoke test, on-demand, skipping cleanly without a pack ([1](#1-the-liveness-smoke-test)). Driving layer decided: the existing `tests/model-eval` harness — `just model-liveness`.
+- [x] Split the per-task timeout off `REQUEST_TIMEOUT`; give `summarize` and `classify` their own ceilings ([2](#2-turnaround-constraints)). `SUMMARIZE_TIMEOUT` 6s and `CLASSIFY_TIMEOUT` 2s; the proposed 1s classify ceiling became a *slow threshold* instead, because 2s is one of three constants that must agree.
+- [x] Record turnaround durations and outcome counts per task; emit them as structured `tracing` first, dev-panel Telemetry only if it is nearly free. One line per request from both perspectives, read in batch by `just model-stats`. The panel was not nearly free and is deliberately not extended.
+- [x] Record the normalizer's work rate — changed and clipped — as the standing read on the prompt. `HeadlineReport` distinguishes `normalized` / `trimmed` / `clipped`, since a trim means the model wrote a parts list and a clip means it wrote prose.
+- [ ] Set the real numbers from live sessions, alongside [Q01] and [Q02] of the display plan. Left open deliberately: the instrument shipped, the numbers need a week of accumulated use. See `roadmap/local-model-liveness-completion.md`, which closed the four items above.
 - [x] Retire the [P05] re-score obligation ([3](#retiring-the-re-score)).
 
 ## Explicitly not doing

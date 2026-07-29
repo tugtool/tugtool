@@ -748,9 +748,28 @@ async fn fetch_one(
 /// person's critical path — it runs between Return and the line going
 /// somewhere — so its ceiling is the point past which waiting is worse than
 /// guessing Claude. `summarize` runs on a background cadence with nobody
-/// waiting, so it can afford the long transport deadline.
+/// waiting, but a headline that arrives late is still a headline nobody wanted,
+/// so it gets a performance budget of its own rather than riding the transport
+/// deadline.
+///
+/// `CLASSIFY_TIMEOUT` is one of **three** constants that must agree:
+/// `LOCAL_MODEL_TIMEOUT_MS` in `tugdeck/src/lib/local-model-bridge.ts` and
+/// `VERDICT_SUBMIT_WAIT_MS` in `tugdeck/src/components/tugways/tug-prompt-entry.tsx`
+/// are the same 2s from the deck's side. Lowering one silently makes it the
+/// real deadline and the other two unreachable.
 const CLASSIFY_TIMEOUT: Duration = Duration::from_secs(2);
+const SUMMARIZE_TIMEOUT: Duration = Duration::from_secs(6);
+
+/// The transport deadline, and the fallback ceiling for any task without its
+/// own. This is not a performance budget: it is the point past which the app is
+/// presumed not to be answering at all.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Turnaround past which a task is worth a second look. Nothing is cancelled
+/// here — these only mark a line `slow=true` so accumulated logs can be read
+/// for drift. Provisional, to be set from real data.
+const CLASSIFY_SLOW: Duration = Duration::from_secs(1);
+const SUMMARIZE_SLOW: Duration = Duration::from_secs(3);
 
 /// What the app answered for one request.
 #[derive(Debug, Clone)]
@@ -791,8 +810,7 @@ impl LocalModelRequester {
     }
 
     pub async fn summarize(&self, prompt: String) -> Result<String, String> {
-        self.request("summarize", prompt, None, REQUEST_TIMEOUT)
-            .await
+        self.request("summarize", prompt, None).await
     }
 
     /// Ask the model whether one line means the shell or means Claude.
@@ -801,7 +819,17 @@ impl LocalModelRequester {
     /// question reachable from the socket, so the verdict can be observed
     /// without a composer in the loop.
     pub async fn classify(&self, text: String) -> Result<String, String> {
-        self.request("classify", text, None, CLASSIFY_TIMEOUT).await
+        self.request("classify", text, None).await
+    }
+
+    /// The ceiling and the slow threshold for one task, in one place, so a
+    /// caller can never pair a task with bounds meant for another.
+    fn bounds(task: &str) -> (Duration, Option<Duration>) {
+        match task {
+            "classify" => (CLASSIFY_TIMEOUT, Some(CLASSIFY_SLOW)),
+            "summarize" => (SUMMARIZE_TIMEOUT, Some(SUMMARIZE_SLOW)),
+            _ => (REQUEST_TIMEOUT, None),
+        }
     }
 
     async fn request(
@@ -809,8 +837,8 @@ impl LocalModelRequester {
         task: &str,
         prompt: String,
         max_tokens: Option<u32>,
-        timeout: Duration,
     ) -> Result<String, String> {
+        let (timeout, _) = Self::bounds(task);
         let id = format!("lm-{}", self.next_id.fetch_add(1, Ordering::Relaxed));
         let body = serde_json::json!({
             "type": "local_model_request",
@@ -825,19 +853,58 @@ impl LocalModelRequester {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(id.clone(), reply_tx);
 
+        let started = Instant::now();
         if self.tx.send(line).await.is_err() {
             self.pending.lock().unwrap().remove(&id);
+            Self::record(task, "unavailable", started);
             return Err("local model host unavailable".to_string());
         }
 
         match tokio::time::timeout(timeout, reply_rx).await {
-            Ok(Ok(reply)) if reply.ok => Ok(reply.text.unwrap_or_default()),
-            Ok(Ok(reply)) => Err(reply.error.unwrap_or_else(|| "unavailable".to_string())),
-            Ok(Err(_)) => Err("local model request dropped".to_string()),
+            Ok(Ok(reply)) if reply.ok => {
+                Self::record(task, "ok", started);
+                Ok(reply.text.unwrap_or_default())
+            }
+            Ok(Ok(reply)) => {
+                Self::record(task, "refused", started);
+                Err(reply.error.unwrap_or_else(|| "unavailable".to_string()))
+            }
+            Ok(Err(_)) => {
+                Self::record(task, "dropped", started);
+                Err("local model request dropped".to_string())
+            }
             Err(_) => {
                 self.pending.lock().unwrap().remove(&id);
+                Self::record(task, "timed_out", started);
                 Err("local model request timed out".to_string())
             }
+        }
+    }
+
+    /// The caller's side of one request.
+    ///
+    /// The service's own line says what inference cost; this says what the
+    /// caller waited for and whether it gave up. Neither can see the other's
+    /// fact — a timeout is invisible to the service, which finishes eventually
+    /// and never learns nobody was still listening — and the gap between the
+    /// two durations is the transport and queueing cost.
+    fn record(task: &str, outcome: &str, started: Instant) {
+        let elapsed = started.elapsed();
+        let slow = Self::bounds(task).1.is_some_and(|threshold| elapsed > threshold);
+        let elapsed_ms = elapsed.as_millis() as u64;
+        // Display-formatted rather than debug-formatted so the values land
+        // unquoted, which is the shape the app's own lines carry and what lets
+        // one regex read both files.
+        if slow {
+            info!(
+                task = %task,
+                outcome = %outcome,
+                elapsed_ms,
+                slow = true,
+                "local model call",
+            );
+        } else {
+            info!(task = %task, outcome = %outcome, elapsed_ms, "local model call");
         }
     }
 }
@@ -1009,9 +1076,16 @@ pub fn request_summary(
         };
         let (ok, text, error) = match result {
             Ok(raw) => {
-                let text = crate::feeds::session_overview::headline_register(&raw);
-                info!(%raw, headline = %text, "local model summarize answered");
-                (true, Some(text), None)
+                let report = crate::feeds::session_overview::headline_register_report(&raw);
+                info!(
+                    %raw,
+                    headline = %report.text,
+                    normalized = report.normalized,
+                    trimmed = report.trimmed,
+                    clipped = report.clipped,
+                    "local model summarize answered",
+                );
+                (true, Some(report.text), None)
             }
             Err(error) => {
                 warn!(%error, "local model summarize failed");
@@ -1044,19 +1118,20 @@ pub fn request_classification(
 ) {
     let requester = state.requester();
     tokio::spawn(async move {
-        let started = std::time::Instant::now();
         let result = match requester {
             Some(requester) => requester.classify(text.clone()).await,
             None => Err("local model host unavailable".to_string()),
         };
-        let elapsed_ms = started.elapsed().as_millis() as u64;
+        // No elapsed here: `local model call` already timed this request from
+        // the caller's side, and two timings of one request invite the reader
+        // to wonder which is authoritative.
         let (ok, verdict, error) = match result {
             Ok(verdict) => {
-                info!(%text, %verdict, elapsed_ms, "local model classify answered");
+                info!(%text, %verdict, "local model classify answered");
                 (true, Some(verdict), None)
             }
             Err(error) => {
-                warn!(%text, %error, elapsed_ms, "local model classify failed");
+                warn!(%text, %error, "local model classify failed");
                 (false, None, Some(error))
             }
         };
@@ -1354,6 +1429,36 @@ mod tests {
 
     // MARK: Task requests
 
+    /// The bounds only mean anything in this order. A slow threshold at or
+    /// above its own ceiling can never fire; a summarize ceiling above the
+    /// emitter's floor would make the cadence inference-bound.
+    #[test]
+    fn the_turnaround_bounds_are_ordered() {
+        assert!(CLASSIFY_SLOW < CLASSIFY_TIMEOUT);
+        assert!(CLASSIFY_TIMEOUT < SUMMARIZE_SLOW);
+        assert!(SUMMARIZE_SLOW < SUMMARIZE_TIMEOUT);
+        assert!(SUMMARIZE_TIMEOUT < REQUEST_TIMEOUT);
+        assert!(SUMMARIZE_TIMEOUT < crate::feeds::session_overview::EMIT_FLOOR);
+    }
+
+    /// The point of giving summarize its own ceiling: it gives up at six
+    /// seconds rather than riding the ten-second transport deadline.
+    #[tokio::test(start_paused = true)]
+    async fn a_summarize_nobody_answers_gives_up_at_its_own_ceiling() {
+        // `_rx` is held so the send succeeds and the request really parks on
+        // its reply channel; dropping it would fail the send instead.
+        let (tx, _rx) = mpsc::channel::<String>(4);
+        let requester = LocalModelRequester::new(tx);
+
+        let started = tokio::time::Instant::now();
+        let error = requester.summarize("digest".to_string()).await.unwrap_err();
+        let waited = started.elapsed();
+
+        assert!(error.contains("timed out"), "{error}");
+        assert!(waited >= SUMMARIZE_TIMEOUT, "{waited:?}");
+        assert!(waited < REQUEST_TIMEOUT, "{waited:?}");
+    }
+
     #[tokio::test]
     async fn a_request_resolves_when_its_reply_arrives() {
         let (tx, mut rx) = mpsc::channel::<String>(4);
@@ -1402,17 +1507,12 @@ mod tests {
         assert_eq!(error, "no local model installed");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_request_times_out_and_stops_waiting() {
         let (tx, _rx) = mpsc::channel::<String>(4);
         let requester = LocalModelRequester::new(tx);
         let error = requester
-            .request(
-                "summarize",
-                "digest".to_string(),
-                None,
-                Duration::from_millis(50),
-            )
+            .request("summarize", "digest".to_string(), None)
             .await
             .unwrap_err();
         assert_eq!(error, "local model request timed out");

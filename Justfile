@@ -477,31 +477,19 @@ perf-resize-profile MODE="resize" SECONDS="6":
     BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh debug)"
     bash scripts/perf-resize-profile.sh "$BUNDLE_ID" {{MODE}} {{SECONDS}}
 
-# Tail today's debug-instance log.
+# Tail the debug instance's newest tugcast + tugapp logs.
 logs-debug:
     #!/usr/bin/env bash
     set -euo pipefail
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh debug)"
-    DATE="$(date +%Y-%m-%d)"
-    LOG="$HOME/Library/Application Support/Tug/instances/$INSTANCE_ID/Logs/tugcast.log.$DATE"
-    if [ ! -f "$LOG" ]; then
-        echo "no log for $INSTANCE_ID at $LOG — has the instance run today?"
-        exit 1
-    fi
-    tail -F "$LOG"
+    bash tugrust/scripts/tail-instance-logs.sh "$INSTANCE_ID"
 
-# Tail today's release-instance log.
+# Tail the release instance's newest tugcast + tugapp logs.
 logs-release:
     #!/usr/bin/env bash
     set -euo pipefail
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh release)"
-    DATE="$(date +%Y-%m-%d)"
-    LOG="$HOME/Library/Application Support/Tug/instances/$INSTANCE_ID/Logs/tugcast.log.$DATE"
-    if [ ! -f "$LOG" ]; then
-        echo "no log for $INSTANCE_ID at $LOG — has the instance run today?"
-        exit 1
-    fi
-    tail -F "$LOG"
+    bash tugrust/scripts/tail-instance-logs.sh "$INSTANCE_ID"
 
 # Tug-aware wrapper around `git worktree remove`. Cleans up the
 # worktree's instance state first (bundle, LaunchServices entry,
@@ -545,10 +533,11 @@ worktree-remove WORKTREE *FLAGS:
 tail-replay:
     #!/usr/bin/env bash
     set -euo pipefail
-    DATE="$(date +%Y-%m-%d)"
-    LOG="$HOME/Library/Application Support/Tug/Logs/tugcast.log.$DATE"
-    if [ ! -f "$LOG" ]; then
-        echo "No log yet for $DATE at $LOG. Launch Tug.app with 'just app-debug' first."
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh debug)"
+    LOGS="$HOME/Library/Application Support/Tug/instances/$INSTANCE_ID/Logs"
+    LOG="$(ls -t "$LOGS"/tugcast.log.* 2>/dev/null | head -1 || true)"
+    if [ -z "$LOG" ]; then
+        echo "no log for $INSTANCE_ID in $LOGS. Launch Tug.app with 'just app-debug' first."
         exit 1
     fi
     tail -F "$LOG" | grep --line-buffered -E "dev::replay::|dev::session-lifecycle"
@@ -1466,6 +1455,27 @@ app-test-covers-check:
 #   just model-eval release-main
 model-eval INSTANCE="debug-main":
     @python3 tests/model-eval/run.py {{INSTANCE}}
+
+# Is the live local-model path answering, and inside its ceiling?
+#
+# On-demand, not CI: it needs a downloaded pack and real hardware. Without
+# either it skips with exit 0 and names the remedy. Asks nothing about what
+# the headline says — that is `just model-eval`'s question.
+#
+#   just model-liveness
+#   just model-liveness release-main
+model-liveness INSTANCE="debug-main":
+    @python3 tests/model-eval/liveness.py {{INSTANCE}}
+
+# What accumulated logs say about the local model: how fast, how often it
+# fails, how often the register normalizer had to step in, and how often the
+# headline actually changed. Reads both log files in the instance's Logs
+# directory; the numbers are only as good as the usage behind them.
+#
+#   just model-stats
+#   just model-stats release-main
+model-stats INSTANCE="debug-main":
+    @python3 tests/model-eval/analyze.py {{INSTANCE}}
 
 # Force a fresh app-test build, then run. Use after changing Swift /
 # Rust / harness source — `just app-test` only builds when the bundle is

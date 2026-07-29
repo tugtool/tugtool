@@ -53,6 +53,9 @@ reqwest = { workspace = true }
 ureq = { version = "3", features = ["json"] }
 
 [dev-dependencies]
+# `test-util` gives tests a pausable clock, so a timeout whose ceiling is
+# measured in seconds can be asserted without spending them.
+tokio = { workspace = true, features = ["test-util"] }
 tower = { workspace = true }
 tokio-tungstenite = { workspace = true }
 http-body-util = { workspace = true }

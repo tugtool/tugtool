@@ -58,13 +58,21 @@ enum LocalModelConfig {
 /// small quantized models form first-word priors from unpaired examples.
 /// The catalog's recorded classify scores refer to the previous wording.
 ///
-/// `summarize` was rewritten twice: first from a sentence prompt to a headline
-/// prompt when the PULSE strip promoted the overview to its bright leading run,
-/// then again when the headlines that produced turned out to be *labels* —
-/// noun phrases with no verb, which is the failure newspaper headline register
-/// exists to prevent. The current wording leads with the rule the first version
-/// never stated: start with a verb, in the plain command form. The catalog's
-/// recorded overview scores refer to a wording older than both.
+/// `summarize` was rewritten three times: first from a sentence prompt to a
+/// headline prompt when the PULSE strip promoted the overview to its bright
+/// leading run; then again when the headlines that produced turned out to be
+/// *labels* — noun phrases with no verb, which is the failure newspaper
+/// headline register exists to prevent — which is where the rule the first
+/// version never stated came from: start with a verb, in the plain command
+/// form. The third rewrite changed the subject rather than the register. The
+/// second version asked for the session's overall goal and explicitly not the
+/// latest action; a goal is constant, so the headline it produced was constant
+/// too — 47 inferences over two live sessions yielded 16 distinct headlines.
+/// The current wording asks for the current stretch of work, read against the
+/// goal, and says the headline is expected to move. Everything below the
+/// opening sentences — the register rules and all eight examples — is
+/// byte-identical across the second and third. The catalog's recorded overview
+/// scores refer to a wording older than all three.
 ///
 /// Those scores are not being refreshed, because a fixed-corpus summary score
 /// says nothing about whether the strip works — there is no ground truth for
@@ -121,8 +129,11 @@ enum LocalModelPrompts {
     """
 
     static let summarize = """
-    You write the headline for a live coding session. Say what the session is \
-    DOING overall — the goal, not the latest single action.
+    You write the headline for a live coding session. The digest comes in \
+    labeled sections. Headline the section labeled "What it is doing right \
+    now", reading the other sections as context rather than as the subject. \
+    If there is no such section, headline the most recent work shown. The \
+    work moves on and the headline moves with it.
 
     Newspaper headline style. The rules are strict:
 
@@ -193,7 +204,71 @@ final class LocalModelService {
 
     // MARK: Requests
 
+    /// Answer one request, and record what it cost.
+    ///
+    /// This is the only seam that sees both transports, so it is where the
+    /// measurement goes: instrumenting tugcast's requester instead would leave
+    /// the deck's shell-routing classify — the task with a person waiting on it
+    /// — permanently unmeasured. Being a wrapper rather than a scatter of
+    /// inline timers is what makes it impossible to miss a return path.
+    ///
+    /// The line is emitted **after** the reply exists and its write is
+    /// dispatched to a background queue, so measurement never joins the
+    /// latency it measures.
     func handle(_ request: LocalModelRequest) async -> LocalModelReply {
+        let started = DispatchTime.now()
+        let reply = await perform(request)
+        let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
+
+        let task = request.kind.task
+        var fields = [
+            TugLog.field("task", task),
+            TugLog.field("transport", request.transport.rawValue),
+            TugLog.field("outcome", Self.outcome(of: reply)),
+            TugLog.field("elapsed_ms", Int(elapsed.rounded())),
+            TugLog.field("input_chars", request.kind.inputChars),
+            TugLog.field("output_chars", reply.ok ? (reply.text ?? reply.verdict ?? "").count : 0),
+            TugLog.field("model", await mlx.residentId() ?? "none"),
+        ]
+        if let threshold = Self.slowThresholdMs[task], elapsed > threshold {
+            fields.append(TugLog.field("slow", true))
+        }
+        // Availability fires on every window focus and performs no inference,
+        // so it would drown the file at `info`.
+        if case .availability = request.kind {
+            TugLog.debug("local_model", "local model request", fields)
+        } else {
+            TugLog.info("local_model", "local model request", fields)
+        }
+        return reply
+    }
+
+    /// Turnaround past which a task is worth a second look, keyed by task name.
+    ///
+    /// These are *slow thresholds*, not ceilings: nothing is cancelled here.
+    /// The ceilings live on the caller's side in `local_model.rs`, which is the
+    /// only side that can observe having given up. Provisional numbers, to be
+    /// set from accumulated data.
+    private static let slowThresholdMs: [String: Double] = [
+        "classify": 1_000,
+        "summarize": 3_000,
+    ]
+
+    /// What became of a request, in the four shapes the reply can carry.
+    ///
+    /// `not_resident` is classify's deliberate fast-fail on a cold model and is
+    /// not an error; counting it as one would make a working feature look
+    /// broken on its first line of every session.
+    private static func outcome(of reply: LocalModelReply) -> String {
+        if reply.ok { return "ok" }
+        switch reply.error {
+        case "local model not resident": return "not_resident"
+        case "classification did not name a label": return "refused"
+        default: return "error"
+        }
+    }
+
+    private func perform(_ request: LocalModelRequest) async -> LocalModelReply {
         switch request.kind {
         case .availability:
             return LocalModelReply(ok: true, availability: await availability())

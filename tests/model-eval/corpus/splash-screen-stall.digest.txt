@@ -38,6 +38,8 @@ What the session has been doing:
 - Edit(vite.config.ts)
 - Bash(sed -n '760,776p' /Users/kocienda/Mounts/u/src/tugtool/tugde)
 - Bash(grep -n "^import\|from \"vite\"" /Users/kocienda/Mounts/u/sr)
+
+What it is doing right now:
 - Edit(vite.config.ts)
 - Edit(index.html)
 - Bash(rm -rf ~/Library/Caches/dev.tugtool.app.debug/WebKit; cd /Us)

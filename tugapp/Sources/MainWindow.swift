@@ -1247,7 +1247,7 @@ extension MainWindow: WKScriptMessageHandler {
             }
             Task { [weak self] in
                 let reply = await LocalModelService.shared.handle(
-                    LocalModelRequest(requestId: requestId, kind: kind))
+                    LocalModelRequest(requestId: requestId, kind: kind, transport: .bridge))
                 await MainActor.run {
                     self?.replyLocalModel(requestId: requestId, reply: reply)
                 }

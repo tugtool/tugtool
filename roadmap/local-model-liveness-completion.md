@@ -506,8 +506,8 @@ Rules:
 | `SessionState.tools_since_emit` | field | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | Tool beats since the last committed tick ([P11]) |
 | `HeadlineReport` | struct | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | `text`, `normalized`, `trimmed`, `clipped` |
 | `headline_register_report` | fn | `tugrust/crates/tugcast/src/feeds/session_overview.rs` | New; `headline_register` becomes a wrapper over it |
-| `model-liveness` / `model-stats` | recipe | `justfile` | New entries beside `model-eval` |
-| `logs-debug` / `logs-release` / `tail-replay` | recipe | `justfile` | Newest-file selection ([#utc-date-bug]) |
+| `model-liveness` / `model-stats` | recipe | `Justfile` | New entries beside `model-eval` |
+| `logs-debug` / `logs-release` / `tail-replay` | recipe | `Justfile` | Newest-file selection ([#utc-date-bug]) |
 
 ---
 
@@ -549,15 +549,15 @@ Rules:
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Make the headline track the current phase | pending | — |
-| #step-2 | Swift file logger | pending | — |
-| #step-3 | Fix the log-tailing recipes | pending | — |
-| #step-4 | Instrument the Swift service seam | pending | — |
-| #step-5 | Summarize ceiling + caller-side line | pending | — |
-| #step-6 | Normalizer work-rate reporting | pending | — |
-| #step-7 | Liveness smoke test | pending | — |
-| #step-8 | Batch analyzer | pending | — |
-| #step-9 | Integration checkpoint | pending | — |
+| #step-1 | Make the headline track the current phase | done | `de2416c24` |
+| #step-2 | Swift file logger | done | `da9340fd7` |
+| #step-3 | Fix the log-tailing recipes | done | `21742af6a` |
+| #step-4 | Instrument the Swift service seam | done | `095b6eb63` |
+| #step-5 | Summarize ceiling + caller-side line | done | `62ab5914f` |
+| #step-6 | Normalizer work-rate reporting | done | `ae1527599` |
+| #step-7 | Liveness smoke test | done | `532000130` |
+| #step-8 | Batch analyzer | done | `452f0af04` |
+| #step-9 | Integration checkpoint | done | `db61f95c6` |
 
 ---
 
@@ -640,7 +640,7 @@ Rules:
 **References:** [P02] Separate file same format, (#utc-date-bug)
 
 **Artifacts:**
-- `justfile` — `logs-debug`, `logs-release`, `tail-replay`
+- `Justfile` — `logs-debug`, `logs-release`, `tail-replay`
 
 **Tasks:**
 - [ ] Replace `DATE="$(date +%Y-%m-%d)"` and the `$LOG` construction in all three recipes with selection of the **newest** `tugcast.log.*` by modification time, removing the timezone question entirely ([#utc-date-bug]).
@@ -755,7 +755,7 @@ Rules:
 **References:** [P08] Liveness in model-eval, [Spec S02](#s02-liveness-contract), [Table T01](#turnaround-table)
 
 **Artifacts:**
-- `tests/model-eval/harness.py` (new), `tests/model-eval/liveness.py` (new), `tests/model-eval/run.py` (refactored), `justfile`
+- `tests/model-eval/harness.py` (new), `tests/model-eval/liveness.py` (new), `tests/model-eval/run.py` (refactored), `Justfile`
 
 **Tasks:**
 - [ ] Extract `log_path`, `answers`, and `ask` from `tests/model-eval/run.py` into `tests/model-eval/harness.py` unchanged, and import them back into `run.py`. `log_path` already selects the newest log by mtime — keep that, it is the fix for [#utc-date-bug] on the Python side.
@@ -765,7 +765,7 @@ Rules:
 - [ ] Both preconditions **skip with exit 0** and a message naming the remedy — Tug ▸ **Set Up Tug…** for a missing pack, `just app-debug` for a missing instance.
 - [ ] Fail (exit 1) only on: no answer within the timeout, an empty headline, or an elapsed time over `SUMMARIZE_TIMEOUT`.
 - [ ] Report the normalizer's verdict from the `raw=`/`headline=` pair without failing on it.
-- [ ] Add the `model-liveness INSTANCE="debug-main"` recipe to the `justfile`, beside `model-eval`, with a comment saying it is on-demand and needs a pack.
+- [ ] Add the `model-liveness INSTANCE="debug-main"` recipe to the `Justfile`, beside `model-eval`, with a comment saying it is on-demand and needs a pack.
 
 **Tests:**
 - [ ] The check is itself the test; its skip paths are exercised in the checkpoint.
@@ -787,7 +787,7 @@ Rules:
 **References:** [P06] Batch not live, [Spec S01](#s01-log-line-format), [Table T01](#turnaround-table), [Q01] Real thresholds, Risk R02
 
 **Artifacts:**
-- `tests/model-eval/analyze.py` (new), `justfile`, `tests/model-eval/README.md`
+- `tests/model-eval/analyze.py` (new), `Justfile`, `tests/model-eval/README.md`
 
 **Tasks:**
 - [ ] Add `analyze.py` reading every `tugapp.log.*` and `tugcast.log.*` in an instance's `Logs/` directory, with an optional `--since YYYY-MM-DD` window.
@@ -798,7 +798,7 @@ Rules:
 - [ ] For bridge classify, apply the deck's known 2000ms deadline to report how many answers arrived too late to be used, since the deck's own give-up is not logged ([P05]).
 - [ ] Print how many lines were parsed from each file, so a format drift shows as a zero rather than as silence (Risk R02).
 - [ ] Add `--self-test` running the parser over a small set of captured real lines from both files, checked into the script as literals.
-- [ ] Add the `model-stats INSTANCE="debug-main"` recipe to the `justfile`.
+- [ ] Add the `model-stats INSTANCE="debug-main"` recipe to the `Justfile`.
 - [ ] Update `tests/model-eval/README.md` to cover liveness, stats, and the three distinct questions the directory now answers.
 
 **Tests:**

@@ -40,6 +40,8 @@ What the session has been doing:
 - Bash(cd ~/bonsai-eval && mkdir -p mlxspike/Sources/mlxspike && ls)
 - Bash(curl -sL "https://api.github.com/repos/ml-explore/mlx-swift/)
 - Bash(echo "=== mlx-swift 0.31.6 platforms ==="; curl -sL "https:/)
+
+What it is doing right now:
 - Bash(for v in 0.29.1 0.29.5 0.30.0 0.31.6; do echo "=== mlx-swift)
 - Write(Package.swift)
 - Bash(cd ~/bonsai-eval/mlxspike && printf 'print("hello")\n' > Sou)

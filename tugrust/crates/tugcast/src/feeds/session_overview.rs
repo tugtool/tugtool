@@ -43,7 +43,11 @@ const IDLE_PERIOD: Duration = Duration::from_secs(30);
 
 /// Minimum spacing between two overviews for one session, whatever the burst
 /// says. Inference isn't free and the line isn't worth twitching.
-const EMIT_FLOOR: Duration = Duration::from_secs(15);
+///
+/// `pub` so `local_model.rs` can assert its `summarize` ceiling sits under it:
+/// a ceiling above this floor would make the emitter's cadence inference-bound
+/// rather than designed.
+pub const EMIT_FLOOR: Duration = Duration::from_secs(15);
 
 /// Tool-use lines carried per session. Enough to show the shape of the work,
 /// bounded so the digest can't grow without limit.
@@ -173,6 +177,9 @@ pub fn session_beat(payload: &serde_json::Value) -> Option<SessionBeat> {
 struct SessionState {
     tools: VecDeque<String>,
     new_frames: u32,
+    /// Tool lines recorded since the last committed tick. The trailing slice of
+    /// `tools` this counts is the digest's *right now* section.
+    tools_since_emit: usize,
     last_emit: Instant,
     last_digest: Option<String>,
     last_headline: Option<String>,
@@ -184,6 +191,7 @@ impl SessionState {
         Self {
             tools: VecDeque::new(),
             new_frames: 0,
+            tools_since_emit: 0,
             last_emit: now,
             last_digest: None,
             last_headline: None,
@@ -197,6 +205,7 @@ impl SessionState {
                 self.tools.pop_front();
             }
             self.tools.push_back(line);
+            self.tools_since_emit += 1;
         }
         self.new_frames += 1;
     }
@@ -280,15 +289,27 @@ pub fn tool_line(payload: &serde_json::Value) -> Option<String> {
     }
 }
 
-/// Compose the digest the model summarizes: what the user asked for, and what
-/// the session has been doing about it.
+/// Compose the digest the model summarizes: what the user asked for, what the
+/// session has been doing about it, and what it is doing right now.
+///
+/// `recent_tools` is how many of the trailing `tools` entries arrived since the
+/// last committed tick, clamped to `tools.len()`. Those entries are the *right
+/// now* section and the ones before them are the background. A section with no
+/// entries is omitted entirely, heading and all — so a session's first overview
+/// (everything recent) carries no background section, and a tick with no new
+/// tool use carries no *right now* section.
 ///
 /// Returns `None` when there is nothing to describe — with neither prompts nor
 /// tool use there is no session to have an opinion about.
-pub fn compose_digest(prompts: &[String], tools: &[String]) -> Option<String> {
+pub fn compose_digest(
+    prompts: &[String],
+    tools: &[String],
+    recent_tools: usize,
+) -> Option<String> {
     if prompts.is_empty() && tools.is_empty() {
         return None;
     }
+    let split = tools.len() - recent_tools.min(tools.len());
     let mut out = String::new();
     if !prompts.is_empty() {
         out.push_str("What the user asked for:\n");
@@ -298,14 +319,21 @@ pub fn compose_digest(prompts: &[String], tools: &[String]) -> Option<String> {
             out.push('\n');
         }
     }
-    if !tools.is_empty() {
+    for (heading, lines) in [
+        ("What the session has been doing:", &tools[..split]),
+        ("What it is doing right now:", &tools[split..]),
+    ] {
+        if lines.is_empty() {
+            continue;
+        }
         if !out.is_empty() {
             out.push('\n');
         }
-        out.push_str("What the session has been doing:\n");
-        for tool in tools {
+        out.push_str(heading);
+        out.push('\n');
+        for line in lines {
             out.push_str("- ");
-            out.push_str(tool);
+            out.push_str(line);
             out.push('\n');
         }
     }
@@ -352,7 +380,26 @@ fn strip_prefix_ci<'a>(text: &'a str, prefixes: &[&str]) -> Option<&'a str> {
     })
 }
 
-/// Impose headline register on whatever the model wrote.
+/// What the register normalizer produced, and what it had to do to get there.
+///
+/// The three flags are the standing read on whether the prompt is still in
+/// register. They are different failures: a `trimmed` answer means the model
+/// wrote a parts list, a `clipped` one means it wrote prose, and `normalized`
+/// alone means it wrote a headline with an article or a filler opener in front.
+/// A `String` return cannot express any of that, which is why the normalizer
+/// reports rather than only returning.
+#[derive(Debug, Clone)]
+pub struct HeadlineReport {
+    pub text: String,
+    /// The normalizer changed the string at all.
+    pub normalized: bool,
+    /// The six-word budget cut a tail.
+    pub trimmed: bool,
+    /// The 56-character budget clipped, after any trim.
+    pub clipped: bool,
+}
+
+/// Impose headline register on whatever the model wrote, and report the work.
 ///
 /// Mechanical only: it removes the forms a model in the wrong register
 /// produces, and never rewrites content. Paraphrase would be a second model
@@ -364,7 +411,7 @@ fn strip_prefix_ci<'a>(text: &'a str, prefixes: &[&str]) -> Option<&'a str> {
 /// last, so a stripped prefix buys back budget instead of wasting it.
 ///
 /// Total: any input, including empty or whitespace-only, yields a string.
-pub fn headline_register(raw: &str) -> String {
+pub fn headline_register_report(raw: &str) -> HeadlineReport {
     let mut text = raw.trim();
 
     // Matched wrapping quotes, straight or curly. A model asked for one line
@@ -396,7 +443,15 @@ pub fn headline_register(raw: &str) -> String {
         collapsed.pop();
     }
 
-    clip(&trim_to_word_budget(collapsed.trim()), MAX_HEADLINE_CHARS)
+    let collapsed = collapsed.trim();
+    let trimmed_text = trim_to_word_budget(collapsed);
+    let text = clip(&trimmed_text, MAX_HEADLINE_CHARS);
+    HeadlineReport {
+        normalized: text != raw.trim(),
+        trimmed: trimmed_text != collapsed,
+        clipped: text != trimmed_text,
+        text,
+    }
 }
 
 /// Bring a headline within the word budget by dropping its tail.
@@ -547,7 +602,9 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
 
         // From here the tick is committed: reset the counters whatever the
         // outcome, so a failing model can't make every subsequent frame retry.
+        let recent_tools = state.tools_since_emit;
         state.new_frames = 0;
+        state.tools_since_emit = 0;
         state.last_emit = now;
 
         // The prompts are the better half of the digest but not a required
@@ -568,7 +625,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
             }
         };
         let tools: Vec<String> = state.tools.iter().cloned().collect();
-        let Some(digest) = compose_digest(&prompts, &tools) else {
+        let Some(digest) = compose_digest(&prompts, &tools, recent_tools) else {
             debug!(session = %session_id, "session overview: nothing to describe");
             continue;
         };
@@ -589,16 +646,19 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
         let started = Instant::now();
         let headline = match requester.summarize(digest).await {
             Ok(text) => {
-                let headline = headline_register(&text);
+                let report = headline_register_report(&text);
                 info!(
                     session = %session_id,
                     elapsed_ms = started.elapsed().as_millis() as u64,
                     raw = %text,
-                    headline = %headline,
+                    headline = %report.text,
+                    normalized = report.normalized,
+                    trimmed = report.trimmed,
+                    clipped = report.clipped,
                     "session overview: summarized",
                 );
                 backoff.succeed();
-                headline
+                report.text
             }
             Err(error) => {
                 warn!(
@@ -644,6 +704,13 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
 
 #[cfg(test)]
 mod tests {
+
+    /// The register normalizer's text alone. Every production path wants the
+    /// report; these tests are about the string it produces.
+    fn headline_register(raw: &str) -> String {
+        headline_register_report(raw).text
+    }
+
     use super::*;
 
     #[test]
@@ -769,7 +836,8 @@ mod tests {
                     })
                     .unwrap_or_default()
             };
-            let digest = compose_digest(&strings("prompts"), &strings("tools"))
+            let recent_tools = body["recent_tools"].as_u64().unwrap_or(0) as usize;
+            let digest = compose_digest(&strings("prompts"), &strings("tools"), recent_tools)
                 .unwrap_or_else(|| panic!("{} describes nothing", input.display()));
             let frozen = input.with_extension("digest.txt");
             if regenerate {
@@ -875,6 +943,7 @@ mod tests {
                 "Bash(cargo build)".to_string(),
                 "Edit(watch.rs)".to_string(),
             ],
+            0,
         )
         .expect("both halves present");
         assert!(digest.contains("make the watch loop resilient"));
@@ -884,14 +953,77 @@ mod tests {
 
     #[test]
     fn a_digest_with_only_tool_use_is_still_a_digest() {
-        let digest = compose_digest(&[], &["Bash(cargo build)".to_string()]).unwrap();
+        let digest = compose_digest(&[], &["Bash(cargo build)".to_string()], 0).unwrap();
         assert!(digest.contains("Bash(cargo build)"));
         assert!(!digest.contains("What the user asked for"));
     }
 
     #[test]
     fn nothing_to_describe_yields_no_digest() {
-        assert!(compose_digest(&[], &[]).is_none());
+        assert!(compose_digest(&[], &[], 0).is_none());
+    }
+
+    /// The recency split is the whole point of carrying a count: the model is
+    /// asked what the session is doing *now*, so the digest has to be able to
+    /// say which lines are now.
+    #[test]
+    fn recent_tool_lines_get_their_own_section() {
+        let tools: Vec<String> = ["Read(a.rs)", "Read(b.rs)", "Edit(c.rs)", "Bash(cargo build)"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let digest = compose_digest(&["port the router".to_string()], &tools, 2).unwrap();
+
+        let (background, right_now) = digest
+            .split_once("What it is doing right now:")
+            .expect("the recent section is present");
+        assert!(background.contains("What the session has been doing:"));
+        assert!(background.contains("Read(a.rs)"));
+        assert!(background.contains("Read(b.rs)"));
+        assert!(!background.contains("Edit(c.rs)"));
+        assert!(!background.contains("Bash(cargo build)"));
+        assert!(right_now.contains("Edit(c.rs)"));
+        assert!(right_now.contains("Bash(cargo build)"));
+        assert!(!right_now.contains("Read(a.rs)"));
+        assert!(!right_now.contains("Read(b.rs)"));
+    }
+
+    #[test]
+    fn an_empty_recency_section_is_omitted_entirely() {
+        let tools = vec!["Read(a.rs)".to_string(), "Edit(b.rs)".to_string()];
+
+        // A session's first overview: everything on record arrived this tick,
+        // so there is no background to speak of.
+        let all_recent = compose_digest(&[], &tools, tools.len()).unwrap();
+        assert!(!all_recent.contains("What the session has been doing:"));
+        assert!(all_recent.contains("What it is doing right now:"));
+
+        // A tick with no new tool use: nothing is happening right now.
+        let none_recent = compose_digest(&[], &tools, 0).unwrap();
+        assert!(none_recent.contains("What the session has been doing:"));
+        assert!(!none_recent.contains("What it is doing right now:"));
+    }
+
+    #[test]
+    fn a_recent_count_past_the_end_is_clamped() {
+        let tools = vec!["Read(a.rs)".to_string()];
+        let digest = compose_digest(&[], &tools, 99).unwrap();
+        assert!(digest.contains("What it is doing right now:"));
+        assert!(!digest.contains("What the session has been doing:"));
+        assert!(digest.contains("Read(a.rs)"));
+    }
+
+    /// Only tool use is a line in the digest, so only tool use moves the count
+    /// that decides where the recency boundary falls.
+    #[test]
+    fn tools_since_emit_counts_tool_beats_alone() {
+        let mut state = SessionState::new(Instant::now());
+        state.record(SessionBeat::Turn);
+        state.record(SessionBeat::Tool("Read(a.rs)".to_string()));
+        state.record(SessionBeat::Turn);
+        state.record(SessionBeat::Tool("Edit(b.rs)".to_string()));
+        assert_eq!(state.tools_since_emit, 2);
+        assert_eq!(state.new_frames, 4);
     }
 
     #[test]
@@ -983,6 +1115,52 @@ mod tests {
         let out = headline_register(&raw);
         assert_eq!(out, "y".repeat(MAX_HEADLINE_CHARS));
         assert!(!out.ends_with('…'));
+    }
+
+    /// The normalizer's work rate is only readable if a headline it left alone
+    /// says so.
+    #[test]
+    fn a_headline_already_in_register_reports_no_work() {
+        let report = headline_register_report("Wire overview cadence gate");
+        assert_eq!(report.text, "Wire overview cadence gate");
+        assert!(!report.normalized);
+        assert!(!report.trimmed);
+        assert!(!report.clipped);
+    }
+
+    /// The live failure the word budget was built for: a parts list dragged
+    /// behind an otherwise correct headline.
+    #[test]
+    fn a_parts_list_tail_reports_a_trim_and_no_clip() {
+        let report =
+            headline_register_report("Author command-line calculator with makefile and readme");
+        assert_eq!(report.text, "Author command-line calculator");
+        assert!(report.normalized);
+        assert!(report.trimmed);
+        assert!(!report.clipped);
+    }
+
+    /// The two budgets fire independently: six short words pass the word budget
+    /// and still overrun the character budget.
+    #[test]
+    fn a_long_but_short_worded_headline_reports_a_clip_and_no_trim() {
+        let raw = "Fix aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee";
+        let report = headline_register_report(raw);
+        assert_eq!(raw.split_whitespace().count(), MAX_HEADLINE_WORDS);
+        assert!(report.clipped);
+        assert!(!report.trimmed);
+        assert!(report.normalized);
+    }
+
+    /// Article stripping alone is work worth reporting, with neither budget
+    /// involved.
+    #[test]
+    fn article_stripping_alone_reports_normalized() {
+        let report = headline_register_report("The download resume path");
+        assert_eq!(report.text, "download resume path");
+        assert!(report.normalized);
+        assert!(!report.trimmed);
+        assert!(!report.clipped);
     }
 
     #[test]

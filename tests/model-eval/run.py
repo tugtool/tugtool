@@ -18,66 +18,14 @@ still describe the session badly. Read the lines.
 
 import argparse
 import json
-import re
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+from harness import ask, log_path  # noqa: E402
 from score import CHECKS, flags, score  # noqa: E402
 
 CORPUS = Path(__file__).parent / "corpus"
-ANSI = re.compile(r"\x1b\[[0-9;]*m")
-# tugcast logs the normalized headline beside the raw answer; the two differing
-# means the normalizer is covering for a prompt that has drifted.
-ANSWER = re.compile(r'raw=(?P<raw>.*?) headline=(?P<headline>.*?)\s*$')
-
-
-def log_path(instance: str) -> Path | None:
-    """The instance's newest tugcast log.
-
-    Picked by mtime rather than by today's date: tugcast names the file for the
-    UTC day, so an evening run west of Greenwich computes yesterday's name and
-    reads a log nothing is being written to.
-    """
-    logs = Path.home() / "Library/Application Support/Tug/instances" / instance / "Logs"
-    candidates = sorted(logs.glob("tugcast.log.*"), key=lambda p: p.stat().st_mtime)
-    return candidates[-1] if candidates else None
-
-
-def answers(path: Path) -> list[tuple[str, str]]:
-    if not path.exists():
-        return []
-    out = []
-    for line in path.read_text(errors="ignore").splitlines():
-        line = ANSI.sub("", line)
-        if "local model summarize answered" not in line:
-            continue
-        m = ANSWER.search(line)
-        if m:
-            out.append((m.group("raw").strip(), m.group("headline").strip()))
-    return out
-
-
-def ask(digest: str, instance: str, path: Path, timeout: float) -> tuple[str, str, int] | None:
-    before = len(answers(path))
-    started = time.monotonic()
-    proc = subprocess.run(
-        ["tugutil", "host", "tell", "local_model_summarize",
-         "--instance", instance, "-p", f"prompt={digest}"],
-        capture_output=True, text=True,
-    )
-    if proc.returncode != 0:
-        print(f"  tell failed: {proc.stderr.strip() or proc.stdout.strip()}", file=sys.stderr)
-        return None
-    while time.monotonic() - started < timeout:
-        time.sleep(0.2)
-        got = answers(path)
-        if len(got) > before:
-            raw, headline = got[-1]
-            return raw, headline, round((time.monotonic() - started) * 1000)
-    return None
 
 
 def main() -> int:

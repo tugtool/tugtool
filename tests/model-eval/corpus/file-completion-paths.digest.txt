@@ -36,6 +36,8 @@ What the session has been doing:
 - Bash(cd /Users/kocienda/Mounts/u/src/tugtool/tugrust && cargo bui)
 - Read(filetree.rs)
 - Edit(filetree.rs)
+
+What it is doing right now:
 - Bash(cargo nextest run -p tugcast filetree 2>&1 | tail -30)
 - Edit(filetree.rs)
 - Bash(cargo nextest run -p tugcast filetree 2>&1 | tail -25)

@@ -14,10 +14,49 @@ struct LocalModelRequest {
         case generate(prompt: String, maxTokens: Int?)
         case availability
         case prewarm
+
+        /// The task name the instrumentation records.
+        var task: String {
+            switch self {
+            case .classify: return "classify"
+            case .summarize: return "summarize"
+            case .generate: return "generate"
+            case .availability: return "availability"
+            case .prewarm: return "prewarm"
+            }
+        }
+
+        /// How much text the model was given, which is the input side of any
+        /// turnaround the logs later show.
+        var inputChars: Int {
+            switch self {
+            case .classify(let text, _): return text.count
+            case .summarize(let prompt): return prompt.count
+            case .generate(let prompt, _): return prompt.count
+            case .availability, .prewarm: return 0
+            }
+        }
+    }
+
+    /// How the request reached the service.
+    ///
+    /// The request itself cannot know this and the caller can, so it is set at
+    /// the call site. It is the fact that makes the deck's shell-routing
+    /// classify visible at all: that traffic goes over the WebKit bridge
+    /// straight into Swift and never touches tugcast, so tugcast's own logs can
+    /// never account for it.
+    enum Transport: String {
+        /// The deck's `localModel` `WKScriptMessageHandler` (`MainWindow`).
+        case bridge
+        /// tugcast's control socket (`ProcessManager`).
+        case socket
+        /// The app asking itself — the launch prewarm has no caller waiting.
+        case local
     }
 
     let requestId: String
     let kind: Kind
+    var transport: Transport = .local
 }
 
 /// The answer to a `LocalModelRequest`, shaped so either transport can

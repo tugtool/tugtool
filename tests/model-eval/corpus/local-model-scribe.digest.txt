@@ -41,6 +41,8 @@ What the session has been doing:
 - Bash(pgrep -fl git | grep -v pgrep || echo "no git process"
 - Bash(tugutil dash commit bonsai-eval --message "eval(bonsai): 8B )
 - Edit(project_bonsai_local_scribe_eval.md)
+
+What it is doing right now:
 - Bash(cd /Users/kocienda/Mounts/u/src/tugtool
 - Bash(cd /Users/kocienda/Mounts/u/src/tugtool
 - Write(local-model-investigations.md)

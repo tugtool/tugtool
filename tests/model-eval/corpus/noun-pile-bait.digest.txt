@@ -3,5 +3,7 @@ What the user asked for:
 
 What the session has been doing:
 - Read(tugdeck/styles/themes/nocturne.css)
+
+What it is doing right now:
 - Bash(bun run audit:theme-contrast)
 - Edit(tugdeck/styles/themes/aria.css)

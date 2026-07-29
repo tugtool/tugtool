@@ -590,7 +590,7 @@ class ProcessManager {
             }
             Task {
                 let reply = await LocalModelService.shared.handle(
-                    LocalModelRequest(requestId: id, kind: kind))
+                    LocalModelRequest(requestId: id, kind: kind, transport: .socket))
                 await MainActor.run {
                     // Classify answers in `verdict`; every other task answers
                     // in `text`. The socket reply carries one field, so the

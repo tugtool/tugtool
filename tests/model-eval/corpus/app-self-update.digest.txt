@@ -38,6 +38,8 @@ What the session has been doing:
 - Read(make-appcast.sh)
 - Bash(echo "=== Cargo.toml version ===" && grep -m1 '^version = ' )
 - Bash(grep -n "^[a-z][a-z0-9-]*:\|^# " Justfile | sed -n '1,240p')
+
+What it is doing right now:
 - Bash(echo "=== tags ===" && git tag | tail -20 && echo "=== recen)
 - Bash(echo "=== tag count / latest ===" && git tag | wc -l && git )
 - Bash(grep -n "version\|VERSION" Justfile | head -40)

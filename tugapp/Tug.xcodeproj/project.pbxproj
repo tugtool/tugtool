@@ -30,6 +30,7 @@
 		AA0000010000000000000015 /* BranchSlug.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000015 /* BranchSlug.swift */; };
 		AA0000010000000000000016 /* BuildInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000016 /* BuildInfo.swift */; };
 		AA0000010000000000000017 /* InstanceConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000017 /* InstanceConfig.swift */; };
+		AA000001000000000000001F /* TugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000001C /* TugLog.swift */; };
 		AA0000010000000000000018 /* UpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000018 /* UpdateController.swift */; };
 		AA0000010000000000000019 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000140000000000000001 /* Sparkle */; };
 		AA000001000000000000001A /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000140000000000000002 /* MLXLLM */; };
@@ -62,6 +63,7 @@
 		AA0000020000000000000015 /* BranchSlug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BranchSlug.swift; sourceTree = "<group>"; };
 		AA0000020000000000000016 /* BuildInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildInfo.swift; sourceTree = "<group>"; };
 		AA0000020000000000000017 /* InstanceConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstanceConfig.swift; sourceTree = "<group>"; };
+		AA000002000000000000001C /* TugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugLog.swift; sourceTree = "<group>"; };
 		AA0000020000000000000018 /* UpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateController.swift; sourceTree = "<group>"; };
 		AA0000030000000000000001 /* Tug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -108,6 +110,7 @@
 				AA0000020000000000000015 /* BranchSlug.swift */,
 				AA0000020000000000000017 /* InstanceConfig.swift */,
 				AA0000020000000000000018 /* UpdateController.swift */,
+				AA000002000000000000001C /* TugLog.swift */,
 				AA0000060000000000000002 /* TestHarness */,
 			);
 			path = Sources;
@@ -236,6 +239,7 @@
 				AA0000010000000000000015 /* BranchSlug.swift in Sources */,
 				AA0000010000000000000017 /* InstanceConfig.swift in Sources */,
 				AA0000010000000000000018 /* UpdateController.swift in Sources */,
+				AA000001000000000000001F /* TugLog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

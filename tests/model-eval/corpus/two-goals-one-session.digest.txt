@@ -4,5 +4,7 @@ What the user asked for:
 
 What the session has been doing:
 - Edit(tugcast/src/local_model.rs)
+
+What it is doing right now:
 - Bash(cargo nextest run download)
 - Edit(tugcast/src/feeds/shell.rs)

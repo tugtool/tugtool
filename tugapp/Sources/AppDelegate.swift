@@ -126,6 +126,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         lap("start")
 
+        TugLog.start()
+
         // Tug has no native window tabbing — cards and panes are Tug's own
         // navigation model, not NSWindow tabs. Disabling automatic tabbing
         // keeps AppKit from injecting the Show Previous/Next Tab, Move Tab
