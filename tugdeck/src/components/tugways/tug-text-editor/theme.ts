@@ -326,9 +326,13 @@ export const tugTheme: Extension = EditorView.theme({
   // construction and Core Animation runs them natively: each hold is
   // a constant segment, and the 0.1% ramps between them span ~1ms of
   // the cycle — a cut to the eye. Driven by the layer's own animation
-  // declaration so the keyframes only run while the editor is
-  // focused; the layer rebuilds on each selectionSet, which restarts
-  // the animation implicitly.
+  // declaration so the keyframes exist only while the editor is
+  // focused: an unfocused editor's layer carries `animation-name:
+  // none` and owns no animation object at all. The layer element
+  // itself is stable across selection changes (CM6's `LayerView`
+  // builds its `dom` once and diffs only the child markers), so the
+  // blink's phase is reset by the drag and typing rules below, not by
+  // a layer rebuild.
   "&.cm-focused > .cm-scroller > .tug-text-editor-caret-layer": {
     animation: "tug-text-editor-caret-blink 1.2s linear infinite",
   },
@@ -353,6 +357,11 @@ export const tugTheme: Extension = EditorView.theme({
   // native behavior of hiding the caret during drag-selection.
   // Toggled by `tugCaretInteractionPlugin`'s mousedown / global
   // mouseup pair in `caret-layer.ts`.
+  //
+  // `display: none` also cancels the blink outright — the layer holds
+  // zero animation objects for the duration of the drag, and the
+  // restore on mouseup starts a fresh cycle at time 0, so the caret
+  // reads solid at the newly clicked position.
   "&[data-tug-text-editor-dragging] .tug-text-editor-caret-layer": {
     display: "none",
   },
