@@ -148,7 +148,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | R01 Prompt tuned to the losing pack | med | med | Score the rewrite on all three packs in the same step that rules ([P02]) | A pack wins classify but loses register |
-| R02 Gate refuses too often; strip goes stale | high | med | One corrective re-ask ([P04]); refusal + rescue rates reported by `model-stats`; headline change rate is an exit criterion | Refusal rate above ~20% of ticks |
+| R02 Gate refuses too often; strip goes stale, emitter throughput drops | high | med | One corrective re-ask, skipped when the emit slot is contended ([P04]); refusal + rescue rates reported by `model-stats`; headline change rate is an exit criterion | Refusal rate above ~20% of ticks, or headline change rate below its pre-change value |
 | R03 Veto collapses shell recall | med | low | Veto is PROMPT-only and gated on `model-classify` shell recall not regressing | Shell recall drops below baseline |
 | R04 Swift parse fix has no unit test | med | high | Falsify through the real path (`just model-classify`) plus a crafted probe; see [#harness-reach] | Any future Swift-side logic of comparable consequence |
 | R05 LFM2.5 quirks under an 8-token classify budget | med | med | `just model-classify` is run against it in #step-3 before anything is tuned to it | `outcome=refused` rate materially above the other packs |
@@ -161,13 +161,13 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
   - The rewrite's acceptance criteria are pack-independent (paired structure, corpus disjointness, verb variety), not "scores well on X".
 - **Residual risk:** The author's intuition about what wording works is inevitably formed on whichever pack they iterate against. The gate limits the damage: a prompt that serves the winner poorly shows up as a high refusal rate, not as a wrong headline on the strip.
 
-**Risk R02: Truth is bought with silence** {#r02-gate-goes-quiet}
+**Risk R02: Truth is bought with silence — per session, and across the emitter** {#r02-gate-goes-quiet}
 
-- **Risk:** The gate refuses so often that the strip stops moving, trading a visible wrongness for an invisible staleness. Liveliness is a stated requirement of the pulse, not a nice-to-have.
+- **Risk:** Two distinct failures wear the same face. **Per session:** the gate refuses so often that one session's headline stops moving. **Across the emitter:** because `spawn_next` keeps exactly one emit in flight at a time and `SUMMARIZE_TIMEOUT` is 6 s, a refusing session that re-asks holds the only emit slot for up to 12 s, so *every queued session* goes stale behind it. The second failure is the more dangerous one because no per-session number reveals it — the refusing session looks like it is working hard while the others simply never get their turn.
 - **Mitigation:**
-  - One corrective re-ask per tick, naming the specific failure ([P04]) — a bad answer told what was wrong is usually recoverable.
-  - The refusal rate and the re-ask rescue rate are both reported by `just model-stats`, so the trade is measured rather than assumed.
-  - The headline change rate — already the standing "is the headline still tracking the work" number — is an exit criterion, so a gate that buys truth with silence fails the phase.
+  - The re-ask is skipped whenever the emit slot is contended ([P04]), so a busy emitter never spends double inference on one session. A session with peers waiting takes the hold instead.
+  - The refusal rate and the re-ask rescue rate are both reported by `just model-stats`, so the per-session trade is measured rather than assumed.
+  - The headline change rate — already the standing "is the headline still tracking the work" number, and an aggregate across sessions — is the number that sees the *throughput* failure, and it is an exit criterion. A gate that buys truth with silence fails the phase whichever way the silence arrives.
 - **Residual risk:** A session whose digest reliably provokes refusals sits on a stale headline. This is the accepted trade: a stale headline was true when it was written, and a wrong one never was.
 
 **Risk R04: The Swift parse fix cannot be unit-tested** {#r04-no-swift-tests}
@@ -224,16 +224,18 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 #### [P04] A refusal re-asks once with the failure named, then holds (DECIDED) {#p04-reask-once}
 
-**Decision:** On refusal, the emitter immediately re-asks the model once, appending a corrective line to the **digest** that names the rejected headline and the specific rule it broke. If the second answer also fails the gate, the previous headline stands until the next tick.
+**Decision:** On refusal, the emitter re-asks the model once, appending a corrective line to the **digest** that names the rejected headline and the specific rule it broke — **but only when no other session is waiting for the emit slot.** If the second answer also fails the gate, or the re-ask was skipped, the previous headline stands until the next tick.
 
 **Rationale:**
 - Liveliness is a stated requirement of the pulse. A gate with no recovery path trades a visible wrongness for an invisible staleness (Risk R02).
 - A small model told precisely what was wrong with its answer usually produces a better one; a blind retry at temperature 0 would produce the identical answer and is worthless.
-- One extra inference on a failing tick is affordable — refusals are the minority case, and the summarize path is already off the user's critical path (unlike classify).
+- The queue condition is not a nicety. `spawn_next` runs `while in_flight.is_none()`, so **exactly one emit is in flight at a time across all sessions**, and `SUMMARIZE_TIMEOUT` is 6 s. An unconditional re-ask therefore lets one refusing session hold the only emit slot for up to 12 s while every queued session waits — refusals would degrade liveliness *globally*, not just for the session that refused, which is the opposite of what [P04] exists to protect.
+- With the slot uncontended, a second inference costs nothing anyone can observe: the summarize path is off the user's critical path (unlike classify), and the tick was already committed at spawn.
 
 **Implications:**
 - The correction rides on the digest because `LocalModelPrompts.summarize` is a compile-time Swift constant and the digest is the only per-request input. This forces bookkeeping care: the re-ask sends `digest + correction` but `EmitOutcome.seen_digest` must record the **original** digest, or `last_digest` dedup breaks and the next tick re-summarizes identical evidence.
-- Two log lines per refused tick, distinguishable so `analyze.py` can compute a rescue rate: a refusal line and a re-ask outcome.
+- `run_emit` cannot see the queue — `EmitJob` carries no view of it. So `spawn_next` must pass the decision in as a field on `EmitJob` (a `may_reask: bool` set from `queue.is_empty()` at spawn time). Reading a live queue from the spawned task would be a lock across the loop boundary and is not the design.
+- Two log lines per refused tick, distinguishable so `analyze.py` can compute a rescue rate: a refusal line and a re-ask outcome. The skipped-re-ask case must be distinguishable from the attempted-and-failed case, or the rescue rate divides by the wrong denominator.
 - Temperature is 0, so the correction text is the only thing that can change the answer. If re-asks are never rescued in practice, [P04] should be revisited in favor of the cheaper hold-only behavior.
 
 #### [P05] The Rust gate holds no copy of the Swift example list (DECIDED) {#p05-no-example-copy}
@@ -396,8 +398,12 @@ pub fn ground_headline(headline: &str, digest: &str) -> GroundingVerdict
 
 It is called on `headline_register_report(&text).text` — after the normalizer, so the gate judges the string the strip would actually wear. It rejects on the first rule that fires, in this order:
 
-1. **Empty** — an empty headline after register. (Already handled by `apply_emit_outcome`; folded in here so one function owns the emit/no-emit question.)
-2. **Tool-name opener** — the headline's first word, lowercased, equals the tool name of any activity line in the digest. Activity lines are `Name(target)` or bare `Name` (see `tool_line`), so the tool-name set is derived from the digest itself rather than from a hardcoded list, which means a new Claude tool needs no change here.
+1. **Empty** — an empty headline after register. (Also checked in `apply_emit_outcome` today; checking it here means the gate is total over its input and callers need no pre-check.)
+2. **Tool-name opener** — the headline's first word, lowercased, equals the tool name of any activity line in the digest. Activity lines are `Name(target)` or bare `Name` (see `tool_line`), so the tool-name set is derived from the digest itself rather than from a hardcoded list, and a new Claude tool needs no change here.
+
+   **The parse must be section-aware, and this is not optional.** `compose_digest` emits the user's prompts as `- <text>` lines too, under `What the user asked for:`. A naive scan of every `- ` line would admit prompt text into the tool-name set — `parts-list-tail`'s digest contains `- write a command line calculator in c`, which would put `write` in the set. Generalized, an ask opening `fix the lag…` poisons the set with `fix`, and the gate then refuses every legitimate `Fix …` headline for that session. Since `Fix` is the most common opener in the corpus by a wide margin, an unscoped parse is a false-positive generator aimed at the common case. Only lines following an activity heading (`What the session has been doing:` or `What it is doing right now:`) may contribute, and a contributing line must match the `Name(target)` form or be a single bare token that is shaped like a tool name (leading capital, no whitespace — `Bash`, `TodoWrite`).
+
+   Section-awareness alone is *not* sufficient, which is why the shape test is also required: `compose_digest` synthesizes a `What it is doing right now:` section carrying **the newest ask verbatim** when a stretch contained a submission but no activity. So the user's own words appear under an activity heading by design, and only the shape test keeps them out of the tool-name set. A one-word ask (`- refactor`) is excluded by the leading-capital requirement.
 3. **Path-bearing** — any headline token contains `/`, or contains the `…` marker that `clip` writes. A bare filename (`session_overview.rs`) is *allowed*: `score.py`'s rubric explicitly exempts identifiers and dotted paths as proper names, and the gate must not contradict the rubric. What is rejected is a path fragment and a clipped token.
 4. **Activity restatement** — the headline's content-word set, minus its first word, is a subset of the content words of any single activity line. This is the intent/activity collapse: the headline is repeating what the digest already says the session is doing, instead of naming what it is for.
 5. **Ungrounded** — fewer than the [Q02] threshold of the headline's content words (excluding the first word, which is the verb, and excluding a small stopword set) appear anywhere in the digest.
@@ -443,6 +449,18 @@ For each pack, in a fixed order, on `debug-main`:
 
 Two harness gotchas, both previously hit: the tugcast log file is named for the **UTC day**, so a run spanning midnight UTC writes into a new file (`harness.py` picks the newest by mtime, which handles it, but a manual `grep` will not); and a cold load of a multi-gigabyte pack can exceed the default timeout on its own.
 
+#### Tuglaws Touched {#tuglaws-touched}
+
+**[L23] — Internal implementation operations must never lose, destroy, or cease to apply user-visible state.** This is the law the grounding gate brushes against, and it must be answered rather than assumed. A gate that withholds an update is exactly the shape L23 polices. The plan's position: a refusal **keeps** the previous headline rather than losing it, so nothing user-visible is destroyed — but "cease to apply" is the live reading, and it bites twice (Risk R02): per session, and across the emitter, since one re-asking session can hold the single emit slot. The answer is threefold and all of it is verifiable: the re-ask recovers the common case ([P04]), the re-ask is skipped when the slot is contended so refusals cannot starve peers, and the **headline change rate** — an aggregate across sessions — is a phase exit criterion, so a gate that goes quiet fails the phase. If that number regresses, [L23] has been violated and the gate is wrong, not the law.
+
+**[L10] — One responsibility per layer.** Honored. `shell-line-classifier.ts` answers a question about a line's shape; `tug-prompt-entry.tsx` decides routing. The veto does not migrate the routing decision into the lib, and the lib gains no knowledge of what routing does.
+
+**[L07] — Action handlers access current state through refs or stable singletons, never stale closures.** Honored. `vetoesShellVerdict(text)` is pure and receives its input as an argument, so it introduces no closure over state. The submit handler already reads `verdictCacheRef.current`, and that pattern is unchanged.
+
+**[L02], [L06], [L24] — State zones.** No new React state exists, in any zone. The veto is a pure function; the gate is in Rust; the PULSE overview frame continues to reach the deck through the store it already flows through. **The State Zone Mapping subsection is therefore deliberately omitted** rather than left blank — there is nothing to map, and an empty table would read as an oversight.
+
+**[L29] — Every persisted or compared path routes through the canonicalization gateway.** Does not apply, despite Spec S01 having a rule named "path-bearing". That rule inspects path-*shaped tokens inside a digest string* to decide whether a headline is prose; it never persists a path, never compares two paths for identity, and never touches the filesystem. No canonicalization gateway is involved and none should be added.
+
 ---
 
 ### Definitive Symbol Inventory {#symbol-inventory}
@@ -462,8 +480,10 @@ Two harness gotchas, both previously hit: the tugcast log file is named for the 
 | `content_words` | fn | same | Rust port of `run.py`'s `words()` + `stem()` normalization. Private. |
 | `digest_tool_names` | fn | same | The tool-name set derived from a digest's activity lines, for Spec S01 rule 2. Private. |
 | `GROUNDING_CORRECTION` | const | same | The corrective sentence appended to the digest on a re-ask ([P04]). |
-| `emit_one` (existing) | fn | same | Gains the gate call, the one-shot re-ask, and the original-digest bookkeeping. |
-| `EmitOutcome` (existing) | struct | same | Gains fields recording refusal rule and whether a re-ask rescued the tick. |
+| `run_emit` (existing) | async fn | same | The spawned per-session emit, `async fn run_emit(job: EmitJob) -> EmitOutcome`. Gains the gate call, the one-shot re-ask, and the original-digest bookkeeping. |
+| `spawn_next` (existing) | fn | same | Spawns `run_emit` and holds `while in_flight.is_none()`, so one emit runs at a time. Gains the `may_reask` decision, set from `queue.is_empty()` at spawn ([P04]). |
+| `EmitJob` (existing) | struct | same | Gains `may_reask: bool` — the spawned task cannot see the queue itself. |
+| `EmitOutcome` (existing) | struct | same | Gains fields recording refusal rule, whether a re-ask was attempted, and whether it rescued the tick. |
 | `verdict(from:labels:)` | static fn | `tugapp/Sources/LocalModelService.swift` | Spec S02. Signature and `nil` contract unchanged. |
 | `LocalModelPrompts.summarize` | static let | same | Paired-example rewrite; docstring freeze paragraph restated per [P08]. |
 | `vetoesShellVerdict` | fn | `tugdeck/src/lib/shell-line-classifier.ts` | Spec S03. Pure export. |
@@ -620,33 +640,43 @@ Two harness gotchas, both previously hit: the tugcast log file is named for the 
 
 **Artifacts:**
 - `GroundingVerdict`, `ground_headline`, `content_words`, `digest_tool_names`, `GROUNDING_CORRECTION` in `session_overview.rs`.
-- The gate wired into `emit_one` with a one-shot corrective re-ask.
-- `EmitOutcome` carrying the refusal rule and the rescue flag.
-- Two new log lines.
+- The gate wired into `run_emit` with a one-shot corrective re-ask, gated on `EmitJob.may_reask`.
+- `EmitJob` carrying `may_reask`; `EmitOutcome` carrying the refusal rule, re-ask attempted, and rescue flags.
+- Two new log lines, with space-free countable fields.
+- A per-pack register capture used to resolve [Q02].
 
 **Tasks:**
-- [ ] Resolve [Q02] first, as a spike: sweep the threshold over the 13 frozen digests, the per-pack headlines from `run.py --json`, and every List L01 defect. Pick the value that rejects all of L01 while accepting every headline a human reads as correct. Record the sweep and the chosen value in the commit body.
+- [ ] **Capture the spike's inputs first.** No register results are committed to the repo — `git ls-files tests/model-eval` carries only `classify-corpus.json` — and #step-3 produced classify numbers only. So run `python3 tests/model-eval/run.py debug-main --json /tmp/<pack>.json` once per pack (13 inferences each, cheap) to get real headlines against the 13 frozen digests. Do not skip the warming `summarize` tell when switching packs (Spec S04).
+- [ ] Resolve [Q02] as a spike over that capture plus every List L01 defect: sweep the threshold and pick the value that rejects all of L01 while accepting every headline a human reads as correct. Record the sweep and the chosen value in the commit body.
 - [ ] Implement `content_words` as a Rust port of `run.py`'s `words()`/`stem()` — hyphen/slash/underscore split, punctuation trim, crude suffix stem. Surface-form comparison is not sufficient; that mistake already cost two missed leaks in the contamination check.
+- [ ] Implement `digest_tool_names` **section-aware and shape-tested** per Spec S01 rule 2. This is the step's highest-risk detail: an unscoped parse admits the user's own prompt words and then refuses legitimate `Fix …` headlines, which is the most common opener in the corpus.
 - [ ] Implement `ground_headline` per Spec S01, rejecting on the first rule that fires, in the specified order.
-- [ ] Wire it into `emit_one` after `headline_register_report`. On `Ungrounded`, log a refusal line carrying the rule and the rejected text, then re-ask once with `GROUNDING_CORRECTION` appended to the digest, naming the rejected headline and the rule.
+- [ ] Add `may_reask: bool` to `EmitJob`, set in `spawn_next` from `queue.is_empty()`. The spawned task cannot see the queue, and reading it across the loop boundary is not the design ([P04]).
+- [ ] Wire the gate into `run_emit` after `headline_register_report`. On `Ungrounded`, log a refusal line, then re-ask once — **only if `may_reask`** — with `GROUNDING_CORRECTION` appended to the digest, naming the rejected headline and the rule.
 - [ ] **Bookkeeping:** set `EmitOutcome.seen_digest` to the **original** digest, not the corrected one, or `last_digest` dedup breaks and the next tick re-summarizes identical evidence.
-- [ ] If the second answer also refuses, emit nothing — the previous headline stands. Fold `apply_emit_outcome`'s existing empty-headline check into the gate so one function owns the emit/no-emit question.
+- [ ] **Log-field shape:** `analyze.py`'s `FIELD` regex is `(\w+)=("[^"]*"|\S+)` and every field it reads today is space-free. A field holding a headline (`headline=Bash make`) would parse as `Bash` and silently drop the rest. So the *countable* fields must be space-free — `rule=ungrounded`, `reask=skipped|failed|rescued` — and any headline text must be debug-formatted (`?headline`) so it arrives quoted. Do not add a space-bearing display field the analyzer is expected to count; that is why `harness.py` needs its own regex for the existing `raw = %text` line, and repeating that split by accident is the trap here.
+- [ ] If the second answer also refuses, or the re-ask was skipped, emit nothing — the previous headline stands. Check the empty-headline case inside the gate so it is total over its input; note that `apply_emit_outcome` keeps owning the *unchanged-headline* dedup, because that needs `state.last_headline` and `EmitJob` does not carry it.
 - [ ] Do not add a Rust copy of the Swift example list ([P05]).
-- [ ] Add refusal-rate and re-ask-rescue-rate reporting to `tests/model-eval/analyze.py`, and add the new log lines to its `--self-test` fixtures.
+- [ ] Add refusal-rate and re-ask-rescue-rate reporting to `tests/model-eval/analyze.py`. The rescue rate's denominator is re-asks *attempted*, not refusals — a skipped re-ask must not count as a failed one.
+- [ ] Add the new log lines to `analyze.py`'s `--self-test` fixtures, as captured real lines.
 
 **Tests:**
 - [ ] Rust unit: every entry in List L01 is refused, each by its expected rule.
 - [ ] Rust unit: for each of the 13 frozen digests, at least one hand-written correct headline is accepted. This is the false-positive guard and it is the test that keeps Risk R02 honest.
 - [ ] Rust unit: a bare filename headline (`Trace session_overview.rs regression`) is accepted while a path-bearing one (`Write /tmp/calc/calc.c`) and a clipped one (`Write jul29-p…`) are refused — the gate must not contradict `score.py`'s identifier exemption.
+- [ ] Rust unit: `digest_tool_names` over `parts-list-tail`'s digest yields exactly `{Write, Bash}` and does **not** contain `write` from the prompt line `- write a command line calculator in c`. Add a second case over a digest whose synthesized *right now* section is a verbatim ask, asserting no ask word enters the set.
+- [ ] Rust unit: a headline opening `Fix` is accepted against a digest whose ask opens `fix …` — the direct regression guard for the poisoned-set failure.
 - [ ] Rust unit: `seen_digest` records the original digest across a re-ask.
 - [ ] Rust unit: a second refusal emits no frame and leaves `last_headline` untouched.
-- [ ] `python3 tests/model-eval/analyze.py --self-test` covers the new lines.
+- [ ] Rust unit: with `may_reask: false`, a refusal performs no second summarize call and reports `reask=skipped`.
+- [ ] `python3 tests/model-eval/analyze.py --self-test` covers the new lines, including that a quoted headline field with a space parses whole.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast session_overview` green, zero warnings.
 - [ ] `cd tugrust && cargo nextest run` fully green.
 - [ ] `python3 tests/model-eval/analyze.py --self-test` passes.
 - [ ] `just app-debug`, then leave a real session running and confirm from `just model-stats debug-main` that a refusal rate is reported and is below ~20% of ticks. Above that, stop and revisit [Q02] rather than proceeding.
+- [ ] With **two or more** sessions live, confirm the headline change rate has not fallen against its pre-change value. One session cannot reveal the throughput failure in Risk R02 — the emit slot is only contended when there is a queue.
 
 ---
 
