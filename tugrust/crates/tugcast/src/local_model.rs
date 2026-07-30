@@ -1276,25 +1276,40 @@ pub fn delete_model(
 
 /// Resume an interrupted acquisition at startup.
 ///
-/// A user who picked a model and then quit mid-download shouldn't have to ask
-/// again: if the selection names a catalog entry that isn't installed, the
-/// download simply continues from the `.part` files already on disk.
-pub fn resume_selected_download(
+/// A user who started the download and then quit partway shouldn't have to ask
+/// again: if the shipping pack has `.part` files on disk, the download simply
+/// continues from them. A machine that never opted in has no `.part` files and
+/// nothing happens, which is why this is safe to run unconditionally — starting
+/// a download is what [`start_download`] decides, and it declines when there is
+/// nothing partial to finish.
+pub fn resume_partial_download(
     state: &SharedLocalModelState,
     cat: Option<broadcast::Sender<Frame>>,
-    selection: &str,
 ) {
-    if selection == MODEL_AUTO || selection == MODEL_DECLINED {
-        return;
-    }
-    let Some((_, entry)) = catalog_entry(selection) else {
+    let Some(entry) = CATALOG.first() else {
         return;
     };
-    if is_installed(&state.root, entry) || state.is_downloading(selection) {
+    if is_installed(&state.root, entry) || state.is_downloading(entry.id) {
         return;
     }
-    info!(model = selection, "resuming local model download");
-    start_download(state, cat, selection);
+    if !has_partial_files(&state.root, entry) {
+        return;
+    }
+    info!(model = entry.id, "resuming local model download");
+    start_download(state, cat, entry.id);
+}
+
+/// Whether an interrupted download left anything on disk to continue from.
+///
+/// Staging is where the answer lives: a pack's files are only moved into their
+/// installed directory once every one has matched its digest, so a half-done
+/// acquisition is entirely `.part` files under `.staging/<id>/`.
+fn has_partial_files(root: &Path, entry: &CatalogEntry) -> bool {
+    let staging = staging_dir(root).join(entry.id);
+    entry
+        .files
+        .iter()
+        .any(|file| staging.join(format!("{}.part", file.name)).exists())
 }
 
 // MARK: - Configuration
@@ -1302,12 +1317,14 @@ pub fn resume_selected_download(
 /// Tugbank domain for on-device inference. Mirrored in
 /// `tugapp/Sources/LocalModelService.swift` and
 /// `tugdeck/src/lib/local-model-store.ts`.
+///
+/// Nothing here records *which* model to run. Tug ships knowledge of one pack,
+/// so the question has one answer and the disk already holds it: the pack is
+/// installed or it isn't. A stored id could only ever disagree with that — and
+/// did, stranding a machine whose recorded pick had been retired out from under
+/// it. What this domain still carries is the per-feature kill switches, which
+/// are choices about whether a tenant runs at all, not about what it runs.
 pub const LOCAL_MODEL_DOMAIN: &str = "dev.tugtool.local-model";
-/// `Value::String`: a catalog id, `"auto"`, or `""` (declined). Absent reads
-/// as `"auto"`.
-pub const MODEL_KEY: &str = "model";
-pub const MODEL_AUTO: &str = "auto";
-pub const MODEL_DECLINED: &str = "";
 
 /// Per-tenant kill switch for the session-overview line. `Value::Bool`; absent
 /// reads as enabled, the repo's kill-switch convention ([Q05]).
@@ -1329,16 +1346,6 @@ pub fn tenant_enabled(bank: Option<&tugbank_core::TugbankClient>, key: &str) -> 
     }
 }
 
-/// Read the model selection, applying the absent-reads-as-`auto` rule.
-pub fn selected_model(bank: Option<&tugbank_core::TugbankClient>) -> String {
-    let Some(bank) = bank else {
-        return MODEL_AUTO.to_string();
-    };
-    match bank.get(LOCAL_MODEL_DOMAIN, MODEL_KEY) {
-        Ok(Some(tugbank_core::Value::String(value))) => value,
-        _ => MODEL_AUTO.to_string(),
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -1560,7 +1567,7 @@ mod tests {
 
     #[test]
     fn config_defaults_apply_without_a_bank() {
-        assert_eq!(selected_model(None), MODEL_AUTO);
+        assert!(tenant_enabled(None, PULSE_OVERVIEW_KEY));
     }
 
     // MARK: Task requests

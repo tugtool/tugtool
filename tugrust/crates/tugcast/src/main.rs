@@ -1582,12 +1582,11 @@ async fn main() {
     // Pick up a local-model download the last run didn't finish. Silent when
     // there is nothing to resume, which is the common case.
     {
-        let selection = local_model::selected_model(bank_client.as_deref());
         let cat = feed_router
             .stream_outputs
             .get(&FeedId::CONTROL)
             .map(|(tx, _)| tx.clone());
-        local_model::resume_selected_download(&feed_router.local_model, cat, &selection);
+        local_model::resume_partial_download(&feed_router.local_model, cat);
     }
 
     // Spawn control socket receive loop

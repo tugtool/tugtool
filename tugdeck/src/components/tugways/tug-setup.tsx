@@ -11,8 +11,9 @@
  *   1. Claude Code installed & reachable — Tug-managed install + recheck.
  *   2. Logged in to Claude — browser OAuth shell-out.
  *   3. Add on-device AI — optional, first-run only, and the one step the user
- *      may decline. Offers what the catalog marks `offered`; Download writes
- *      the selection and hands the acquisition to tugcast, Skip writes `""`.
+ *      may decline. Offers what the catalog marks `offered`; Download hands
+ *      the acquisition to tugcast, Skip records that the offer was waved away
+ *      so the wizard stops asking.
  *   4. Open your first session — pops the first Session card. First-run only:
  *      a set-up user whose deck goes empty mid-life is left alone with it.
  *
@@ -69,12 +70,11 @@ import {
   readSetupSeen,
   readSetupSuppressed,
   putSetupSeen,
-  putLocalModelSelection,
+  putLocalModelDeclined,
 } from "@/settings-api";
 import {
   getLocalModelStore,
   useLocalModel,
-  MODEL_DECLINED,
 } from "@/lib/local-model-store";
 import {
   useSetupOnDemand,
@@ -225,7 +225,7 @@ export function TugSetup(): ReactElement {
   const onDemand = useSetupOnDemand();
   // Declining on-device AI is remembered the same way as opening the first
   // session: a local latch for this wizard's lifetime. The durable record is
-  // the `""` selection written to tugbank.
+  // the `setup-declined` flag written to tugbank.
   const [declinedLocalAi, setDeclinedLocalAi] = useState(false);
 
   const forced = import.meta.env.DEV ? SESSION_FORCE_SETUP : false;
@@ -272,8 +272,8 @@ export function TugSetup(): ReactElement {
   }, [firstRun]);
 
   // Each on-demand visit starts fresh: a Skip from a previous visit is a
-  // durable tugbank selection, not a latch that should outlive the wizard it
-  // was clicked in.
+  // durable tugbank flag, not a latch that should outlive the wizard it was
+  // clicked in.
   useEffect(() => {
     if (onDemand) setDeclinedLocalAi(false);
   }, [onDemand]);
@@ -327,14 +327,16 @@ export function TugSetup(): ReactElement {
     getConnection()?.sendControlFrame("claude_sign_in");
   };
   const handleAddLocalAi = (modelId: string): void => {
-    putLocalModelSelection(modelId);
+    // A download in flight is itself the record that the offer was taken, so
+    // a previous Skip stops standing.
+    putLocalModelDeclined(false);
     getLocalModelStore()?.download(modelId);
   };
   const handleCancelLocalAi = (): void => {
     getLocalModelStore()?.cancelDownload();
   };
   const handleSkipLocalAi = (): void => {
-    putLocalModelSelection(MODEL_DECLINED);
+    putLocalModelDeclined(true);
     setDeclinedLocalAi(true);
   };
   const handleOpenSession = (): void => {
@@ -439,7 +441,7 @@ export function TugSetup(): ReactElement {
     // settles the row, so the Skip button has visible effect either way.
     if (
       declinedLocalAi ||
-      (localModel.selection === MODEL_DECLINED && !showingOnDemand)
+      (localModel.setupDeclined && !showingOnDemand)
     ) {
       return { key, status: "done", label: "On-device AI", detail: "Skipped." };
     }

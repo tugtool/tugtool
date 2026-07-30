@@ -9,12 +9,16 @@
 //!
 //! It aims to know a command's **flags**. It does not try to infer how many
 //! bare words a command takes or what they mean, so every harvested entry
-//! carries the permissive `free` positional policy. That asymmetry is the band
-//! doctrine showing through: a missed flag costs one band (Yes degrades to
-//! Maybe, and the model gets the documentation), while a *wrongly narrow*
-//! positional policy would manufacture Maybes on perfectly ordinary lines. When
-//! the distiller is unsure it stays permissive; the hand-authored curated
-//! entries are where tighter policies come from.
+//! carries the `free` positional policy — the honest record that the distiller
+//! learned nothing about this command's positions.
+//!
+//! `free` is not permissive in the band it produces. A free position cannot be
+//! recognized, so any harvested command carrying a bare word grades Maybe and
+//! goes to the model with its documentation attached. What `free` buys is that
+//! the entry can never *narrow wrongly*: it makes no claim about the position,
+//! so it cannot contradict one. Narrowing to `files` or an enum is what turns a
+//! command's bare words into something the grader can confirm, and it comes
+//! from the hand-authored curated entries.
 
 use std::collections::BTreeSet;
 
@@ -327,6 +331,7 @@ pub fn merge(curated: Vec<Entry>, harvested: Vec<Entry>) -> Vec<Entry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::catalog::PositionalVerdict;
 
     const SORT_MAN: &str = include_str!("../data/man-fixtures/sort.txt");
     const TOUCH_MAN: &str = include_str!("../data/man-fixtures/touch.txt");
@@ -387,7 +392,12 @@ mod tests {
     #[test]
     fn harvested_entries_never_narrow_the_positional_policy() {
         let entry = distill_man("sort", SORT_MAN).unwrap();
-        assert!(entry.grammar.positionals_accept("anything at all"));
+        // A claim of nothing, which is what the distiller actually learned —
+        // and which no longer holds a line at Yes.
+        assert_eq!(
+            entry.grammar.positional_verdict("anything at all", None),
+            PositionalVerdict::Free
+        );
     }
 
     #[test]

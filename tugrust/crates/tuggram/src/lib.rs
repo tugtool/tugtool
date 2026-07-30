@@ -4,11 +4,12 @@
 //!
 //! Given a line the user typed, this crate says how strong the evidence is that
 //! the line is a shell command, in four bands: **Yes | Maybe | No | Unknown**.
-//! It does not decide what the line *means*. Routing a line to the shell is
-//! irreversible — the command has already run by the time anyone notices the
-//! mistake — so the shell is reached only through an explicit model verdict that
-//! survives the deck's prose veto. This grader can withhold the model (No) or
-//! arm it with the program's own documentation (Maybe). It can never route.
+//! Routing a line to the shell is irreversible — the command has already run by
+//! the time anyone notices the mistake — so a **Yes is definitive and routes**:
+//! it runs the line with no model call at all. Every band short of definitive
+//! is a Maybe, where the model reads the line with the program's own
+//! documentation attached. That is the whole division of labor: the grader
+//! rules on what it can recognize, and hands everything else to the model.
 //!
 //! # The band doctrine
 //!
@@ -18,8 +19,10 @@
 //! - **No** requires evidence of *absence*: the line lexed cleanly and one of
 //!   its segment heads resolves to nothing at all — not on the login PATH, not a
 //!   shell builtin, not an existing executable file. Nothing else produces a No.
-//! - **Yes** is a resolving head whose every token fits its baked grammar.
-//! - **Maybe** is a resolving head with tokens the grammar cannot confirm.
+//! - **Yes** is a resolving head whose every token the grammar **recognized** —
+//!   a known flag, a known subcommand, an enumerated value, an existing path.
+//! - **Maybe** is a resolving head carrying any token the grammar could not
+//!   recognize, including a token in a position the grammar leaves free.
 //! - **Unknown** is a resolving head with no baked grammar, a line the lexer
 //!   will not claim to understand, or a check the grader could not perform.
 //!
@@ -30,14 +33,17 @@
 //!
 //! # What it never does
 //!
-//! It never reads English. `make the watch loop resilient` is a syntactically
-//! valid `make` invocation and grades **Yes**; whether the person meant to run
-//! it is a judgement about English, which is the model's question, not this
-//! crate's.
+//! It never reads English — it declines to. `make the watch loop resilient` is
+//! a syntactically valid `make` invocation, but `make`'s positionals are free,
+//! so the grammar recognizes nothing in those four words and the line grades
+//! **Maybe**. A free position is where English hides; accepting anything there
+//! is not recognizing anything there. Whether that line is a target list or a
+//! sentence is the model's question, not this crate's.
 //!
 //! It never executes anything at grading time. The catalog is baked in and the
 //! harvester that builds it runs offline; the only filesystem work on the hot
-//! path is `stat` on a path-shaped command word.
+//! path is `stat` — on a path-shaped command word, and on a path positional
+//! whose existence is what would make its line definitive.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -48,7 +54,8 @@ pub mod harvest;
 pub mod lex;
 
 pub use catalog::{
-    catalog, Catalog, Entry, Grammar, PositionalKind, Positionals, Source, SYNOPSIS_CHAR_CAP,
+    catalog, Catalog, Entry, Grammar, PositionalKind, PositionalVerdict, Positionals, Source,
+    SYNOPSIS_CHAR_CAP,
 };
 pub use lex::{lex, Segment};
 
@@ -277,7 +284,7 @@ pub fn grade_with_catalog(
                 // exactly as much as the pre-grader stack said.
                 None => Band::Unknown,
                 Some(entry) => {
-                    let graded = grade_tokens(&entry.grammar, segment.args());
+                    let graded = grade_tokens(&entry.grammar, segment.args(), cwd);
                     if graded == Band::Maybe && first_maybe_synopsis.is_none() {
                         first_maybe_synopsis = Some(entry.synopsis.clone());
                     }
@@ -314,12 +321,23 @@ fn catalog_key(head: &str) -> &str {
 
 /// Walk a resolved command's tokens against its grammar.
 ///
-/// `Yes` means every token was accounted for. `Maybe` means at least one was
-/// not — an unknown flag, an unknown subcommand, a bare word where the grammar
-/// takes none. Note what this never concludes: an unaccounted token is never
-/// evidence the line is prose, only evidence that the baked grammar cannot
-/// confirm it, which is the model's question with the documentation attached.
-fn grade_tokens(top: &Grammar, args: &[String]) -> Band {
+/// `Yes` means every token was *confirmed* — matched against something the
+/// grammar names. `Maybe` means at least one was not: an unknown flag, an
+/// unknown subcommand, a bare word where the grammar takes none, a path that
+/// does not exist, or a bare word in a position the grammar leaves free.
+///
+/// That last case is why a free positional cannot hold a line at `Yes`. A
+/// grammar with free positionals accepts any word at all, so `make the watch
+/// loop resilient` fits `make` as exactly as `make test` does — a free position
+/// is precisely where English hides, and confirming nothing there is not the
+/// same as confirming a command. A Yes routes to the shell without a model
+/// call, so it has to mean the grammar recognized every token, not merely that
+/// it declined to object to any.
+///
+/// Note what this never concludes: an unconfirmed token is never evidence the
+/// line is prose, only evidence that the baked grammar cannot confirm it, which
+/// is the model's question with the documentation attached.
+fn grade_tokens(top: &Grammar, args: &[String], cwd: Option<&Path>) -> Band {
     let mut grammar = top;
     // `--` ends option parsing; everything after it is a positional.
     let mut end_of_options = false;
@@ -364,7 +382,7 @@ fn grade_tokens(top: &Grammar, args: &[String]) -> Band {
             }
         }
         seen_positional = true;
-        if !grammar.positionals_accept(token) {
+        if grammar.positional_verdict(token, cwd) != PositionalVerdict::Confirmed {
             return Band::Maybe;
         }
     }
@@ -540,7 +558,9 @@ mod tests {
 
     #[test]
     fn an_env_prefix_does_not_hide_the_command() {
-        assert_eq!(band_of("FOO=1 make test", &["make"], None), Band::Yes);
+        // `make` resolves through the prefix — `test` is a free positional, so
+        // the line is Maybe rather than Yes, but it is emphatically not No.
+        assert_eq!(band_of("FOO=1 make test", &["make"], None), Band::Maybe);
         assert_eq!(band_of("FOO=1 nosuch test", &["make"], None), Band::No);
     }
 
@@ -607,8 +627,15 @@ mod tests {
         grade(line, &CommandSet::new_sorted(&names), None)
     }
 
+    /// The same, standing in a directory — for the path positionals whose band
+    /// depends on what is actually there.
+    fn graded_in(line: &str, installed: &[&str], cwd: &Path) -> Graded {
+        let names = names(installed);
+        grade(line, &CommandSet::new_sorted(&names), Some(cwd))
+    }
+
     #[test]
-    fn a_command_whose_every_token_fits_its_grammar_is_yes() {
+    fn a_command_whose_every_token_the_grammar_recognizes_is_yes() {
         assert_eq!(graded("git status", &["git"]).band, Band::Yes);
         assert_eq!(graded("git status -s", &["git"]).band, Band::Yes);
         assert_eq!(
@@ -616,7 +643,25 @@ mod tests {
             Band::Yes
         );
         assert_eq!(graded("cargo build -p tugcast", &["cargo"]).band, Band::Yes);
-        assert_eq!(graded("sort -u notes.txt", &["sort"]).band, Band::Yes);
+    }
+
+    #[test]
+    fn a_path_positional_is_yes_when_it_is_there_and_maybe_when_it_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("notes.txt"), b"hi").unwrap();
+
+        assert_eq!(
+            graded_in("sort -u notes.txt", &["sort"], dir.path()).band,
+            Band::Yes
+        );
+        // Nothing of that name is there, so the grader cannot call the line
+        // definitive and the model reads it instead.
+        assert_eq!(
+            graded_in("sort -u missing.txt", &["sort"], dir.path()).band,
+            Band::Maybe
+        );
+        // A session with no cwd yet has nothing to resolve the name against.
+        assert_eq!(graded("sort -u notes.txt", &["sort"]).band, Band::Maybe);
     }
 
     #[test]
@@ -653,13 +698,19 @@ mod tests {
     #[test]
     fn free_positionals_mean_the_grader_does_not_read_english() {
         // `make` takes arbitrary targets, so this IS a well-formed make
-        // invocation. Whether the person meant to run it is the model's
-        // question — the whole reason Yes still asks.
+        // invocation — and that is exactly the problem. A free position fits
+        // English as snugly as it fits a target list, so the grammar has
+        // recognized nothing here and the line cannot be definitive.
         assert_eq!(
             graded("make the watch loop resilient", &["make"]).band,
-            Band::Yes
+            Band::Maybe
         );
-        assert_eq!(graded("say hello there", &["say"]).band, Band::Yes);
+        assert_eq!(graded("say hello there", &["say"]).band, Band::Maybe);
+        // The short real invocation is no different: `test` is a target the
+        // grammar never named either.
+        assert_eq!(graded("make test", &["make"]).band, Band::Maybe);
+        // What survives is the line with nothing free in it at all.
+        assert_eq!(graded("make -j8", &["make"]).band, Band::Yes);
     }
 
     #[test]
@@ -686,15 +737,30 @@ mod tests {
 
     #[test]
     fn bundled_short_flags_are_accounted_for() {
-        assert_eq!(graded("sort -nr notes.txt", &["sort"]).band, Band::Yes);
-        assert_eq!(graded("sort -nq notes.txt", &["sort"]).band, Band::Maybe);
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("notes.txt"), b"hi").unwrap();
+        assert_eq!(
+            graded_in("sort -nr notes.txt", &["sort"], dir.path()).band,
+            Band::Yes
+        );
+        // `-q` is not one of sort's short flags, so the bundle is unrecognized
+        // whatever the file does.
+        assert_eq!(
+            graded_in("sort -nq notes.txt", &["sort"], dir.path()).band,
+            Band::Maybe
+        );
     }
 
     #[test]
     fn everything_after_a_double_dash_is_a_positional() {
+        // `cargo` takes no bare words, so `--nocapture` past the terminator is
+        // a positional it does not accept. The terminator is what makes it a
+        // positional rather than an unknown flag; either way it is not
+        // recognized, and the point of the test is that `--` ended option
+        // parsing rather than which band a trailing word lands in.
         assert_eq!(
             graded("cargo nextest run -- --nocapture", &["cargo"]).band,
-            Band::Yes
+            Band::Maybe
         );
     }
 

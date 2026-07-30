@@ -1,7 +1,11 @@
 /**
  * `local-model-store.ts` — app-scoped snapshot of everything the deck knows
- * about on-device inference: which model the user picked, what tugcast has on
- * disk, how a download is going, and whether the host can answer right now.
+ * about on-device inference: what tugcast has on disk, how a download is
+ * going, whether the host can answer right now, and whether the user has
+ * waved the offer away.
+ *
+ * Nothing here records *which* model to run. Tug ships knowledge of one pack,
+ * so the disk answers that: it is installed or it isn't.
  *
  * Three sources feed one snapshot. Configuration comes from the
  * `dev.tugtool.local-model` tugbank domain and re-derives on a DEFAULTS push,
@@ -15,9 +19,9 @@
  * never in component state.
  *
  * **Degradation.** Every field has an answer that means "nothing installed,
- * carry on": no selection reads as `auto`, an empty inventory is normal, and
- * availability starts not-ready. A consumer that renders the idle snapshot
- * correctly needs no further failure handling.
+ * carry on": an empty inventory is normal and availability starts not-ready.
+ * A consumer that renders the idle snapshot correctly needs no further failure
+ * handling.
  *
  * @module lib/local-model-store
  */
@@ -36,13 +40,15 @@ import {
 
 /** Tugbank domain and keys — mirrored in `tugcast/src/local_model.rs`. */
 export const LOCAL_MODEL_DOMAIN = "dev.tugtool.local-model";
-export const MODEL_KEY = "model";
 export const SHELL_ROUTING_KEY = "shell-routing";
 export const PULSE_OVERVIEW_KEY = "pulse-overview";
-
-/** `model` values with meaning beyond "a catalog id". */
-export const MODEL_AUTO = "auto";
-export const MODEL_DECLINED = "";
+/**
+ * Whether the user waved away the on-device AI offer. Boolean; absent reads
+ * false. This is a setup answer, not a model choice — it exists so the
+ * first-run wizard stops asking, and it says nothing about what would run if
+ * the pack were there.
+ */
+export const SETUP_DECLINED_KEY = "setup-declined";
 
 export type LocalModelState = "installed" | "downloading" | "available";
 
@@ -70,8 +76,8 @@ export interface LocalModelDownload {
 }
 
 export interface LocalModelSnapshot {
-  /** The `model` default: a catalog id, `auto`, or `""` when declined. */
-  selection: string;
+  /** Whether the user skipped the on-device AI offer during setup. */
+  setupDeclined: boolean;
   shellRoutingEnabled: boolean;
   pulseOverviewEnabled: boolean;
   models: readonly LocalModelEntry[];
@@ -90,7 +96,7 @@ const NOT_READY: LocalModelAvailability = Object.freeze({
 });
 
 export const IDLE_LOCAL_MODEL_SNAPSHOT: LocalModelSnapshot = Object.freeze({
-  selection: MODEL_AUTO,
+  setupDeclined: false,
   shellRoutingEnabled: true,
   pulseOverviewEnabled: true,
   models: EMPTY_MODELS,
@@ -116,13 +122,11 @@ function num(value: unknown, fallback = 0): number {
 // Configuration reads — absent always means the permissive default.
 // ---------------------------------------------------------------------------
 
-/** The `model` default. Absent reads as `auto`, per Spec S06. */
-export function readSelection(): string {
+/** Whether the offer was skipped. Absent — and any non-bool — reads false. */
+export function readSetupDeclined(): boolean {
   const client = getTugbankClient();
-  if (!client) return MODEL_AUTO;
-  const entry = client.get(LOCAL_MODEL_DOMAIN, MODEL_KEY);
-  if (entry === undefined || entry.kind !== "string") return MODEL_AUTO;
-  return typeof entry.value === "string" ? entry.value : MODEL_AUTO;
+  if (!client) return false;
+  return client.get(LOCAL_MODEL_DOMAIN, SETUP_DECLINED_KEY)?.value === true;
 }
 
 /** A tenant kill switch. Absent — and any non-bool — reads as enabled. */
@@ -193,10 +197,10 @@ export class LocalModelStore {
 
   private readConfig(): Pick<
     LocalModelSnapshot,
-    "selection" | "shellRoutingEnabled" | "pulseOverviewEnabled"
+    "setupDeclined" | "shellRoutingEnabled" | "pulseOverviewEnabled"
   > {
     return {
-      selection: readSelection(),
+      setupDeclined: readSetupDeclined(),
       shellRoutingEnabled: readTenantEnabled(SHELL_ROUTING_KEY),
       pulseOverviewEnabled: readTenantEnabled(PULSE_OVERVIEW_KEY),
     };

@@ -18,10 +18,12 @@
  * its tokens fit what the program can be shown to accept?* It refines within the
  * candidates {@link isShellCandidate} admits, doing what the deck cannot: lexing
  * past the first token, resolving every segment head of a pipeline, and stating
- * a `stat` on a path-shaped opener the deck can only take on faith.
- * {@link modelCallForBand} is what its four bands mean here — and note that none
- * of them routes: the grader can withhold the model (`no`) or arm it with the
- * program's documentation (`maybe`), never decide.
+ * a `stat` on a path-shaped opener — and on a path argument — that the deck can
+ * only take on faith. {@link modelCallForBand} is what its four bands mean here.
+ * A `yes` runs the line outright: the grader recognized every token against the
+ * program's own grammar, so there is no position left for English to occupy and
+ * nothing for the model to weigh. Everything short of that is a `maybe` and
+ * reaches the model with the program's documentation attached.
  *
  * After: {@link vetoesShellVerdict} asks *is this line shaped like English?* and
  * can refuse to honor a `shell` verdict. It can only refuse; see its own doc for
@@ -39,8 +41,10 @@
  * `!shell`. A line sent to the shell that meant Claude has **already executed**
  * — the auto-routed row offers "send to Claude instead", but nothing un-runs
  * the command. So every degraded path here resolves to Claude: no model, no
- * PATH set, no verdict, a timeout, a malformed answer. The shell is reached
- * only by an explicit `shell` verdict.
+ * PATH set, no verdict, a timeout, a malformed answer, no grammar store. The
+ * shell is reached two ways only: a `yes` from the grader, which is a statement
+ * of fact about the line's tokens rather than a judgement about its meaning, or
+ * an explicit `shell` verdict from the model that survives the veto.
  *
  * Routing is decided once, at submit, over the **whole line**. There is no
  * opener-only judgement while the user types: the set of English words that are
@@ -75,28 +79,38 @@ export type GrammarBand = "yes" | "maybe" | "no" | "unknown";
  * What the grader's band means for the model call — the third fact source in
  * this module's bracket, and the only one that can spend or save inference.
  *
- * Read what this does *not* do. No band routes to the shell: `yes` still asks
- * the model, because `make the watch loop resilient` is a syntactically valid
- * `make` invocation and grammar validity is not intent (which is exactly why
- * the shape rules that decided *toward* shell were removed from this module).
- * The grader's only unilateral decision is `no` → Claude, which falls in the
- * direction doubt is supposed to fall here.
+ * `yes` is the one band that decides, and it decides toward the shell: the line
+ * runs with no model call and no veto. That is not an exception to this
+ * module's asymmetry, it is what the band is defined to mean. A `yes` requires
+ * the grammar to have *recognized* every token — a known flag, a known
+ * subcommand, an enumerated value, a path that exists — so there is no position
+ * left in the line for English to occupy. `make the watch loop resilient` does
+ * not reach here: `make`'s positionals are free, the grammar recognizes none of
+ * those four words, and the line grades `maybe`. Any line the grader cannot
+ * account for token by token is a `maybe`, which is the model's question with
+ * the program's documentation attached.
+ *
+ * The other unilateral decision is `no` → Claude. Both fall in the direction
+ * doubt is supposed to fall, because a `yes` is not doubt.
  */
 export function modelCallForBand(
   band: GrammarBand,
-): "skip" | "ask" | "ask-with-grammar" {
+): "skip" | "run" | "ask" | "ask-with-grammar" {
   switch (band) {
     // Something in the line names nothing on this machine. Asking the model
     // would spend a round trip on a question already answered.
     case "no":
       return "skip";
+    // Every token accounted for by the program's own grammar. Nothing the
+    // model could add, and a round trip that would only delay the command.
+    case "yes":
+      return "run";
     // A real command the grammar can't confirm. The model decides, holding the
     // program's own documentation.
     case "maybe":
       return "ask-with-grammar";
-    // A clean parse, and a resolving command nothing knows the grammar of.
-    // Both are the pre-grader question, asked the pre-grader way.
-    case "yes":
+    // A resolving command nothing knows the grammar of: the pre-grader
+    // question, asked the pre-grader way.
     case "unknown":
       return "ask";
   }

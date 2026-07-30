@@ -206,18 +206,24 @@ describe("modelCallForBand — what a grade means for the model call", () => {
     expect(modelCallForBand("maybe")).toBe("ask-with-grammar");
   });
 
-  it("asks the plain question on a clean parse and on no evidence alike", () => {
-    // A `yes` still asks: `make the watch loop resilient` is a valid `make`
-    // invocation, and grammar validity is not intent. An `unknown` is the
-    // pre-grader question asked the pre-grader way.
-    expect(modelCallForBand("yes")).toBe("ask");
+  it("runs a line whose every token the grammar recognized", () => {
+    // A `yes` is a statement of fact about tokens, not a judgement about
+    // meaning: the grader reached it only by accounting for every one of them
+    // against the program's own grammar, so no position in the line was left
+    // for English. `make the watch loop resilient` grades `maybe` and never
+    // arrives here.
+    expect(modelCallForBand("yes")).toBe("run");
+  });
+
+  it("asks the plain question when there is no grammar to have an opinion", () => {
     expect(modelCallForBand("unknown")).toBe("ask");
   });
 
-  it("never routes — no band reaches the shell on the grader's authority", () => {
-    const decisions = (["yes", "maybe", "no", "unknown"] as const).map(modelCallForBand);
-    expect(decisions).not.toContain("route");
-    expect(new Set(decisions)).toEqual(new Set(["ask", "ask-with-grammar", "skip"]));
+  it("reaches the shell on one band only", () => {
+    const routing = (["yes", "maybe", "no", "unknown"] as const).filter(
+      (band) => modelCallForBand(band) === "run",
+    );
+    expect(routing).toEqual(["yes"]);
   });
 });
 

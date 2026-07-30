@@ -12,11 +12,10 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import {
   attachLocalModelStore,
   getLocalModelStore,
-  readSelection,
+  readSetupDeclined,
   readTenantEnabled,
   _resetLocalModelStoreForTest,
   IDLE_LOCAL_MODEL_SNAPSHOT,
-  MODEL_AUTO,
   SHELL_ROUTING_KEY,
   PULSE_OVERVIEW_KEY,
 } from "../local-model-store";
@@ -58,16 +57,16 @@ beforeEach(() => {
 afterEach(() => _resetLocalModelStoreForTest());
 
 describe("configuration defaults", () => {
-  test("absent values read as auto and enabled", () => {
+  test("absent values read as not-declined and enabled", () => {
     // No tugbank client is attached in this environment, which is the same
     // shape as a domain that was never written.
-    expect(readSelection()).toBe(MODEL_AUTO);
+    expect(readSetupDeclined()).toBe(false);
     expect(readTenantEnabled(SHELL_ROUTING_KEY)).toBe(true);
     expect(readTenantEnabled(PULSE_OVERVIEW_KEY)).toBe(true);
   });
 
   test("the idle snapshot is the fully-degraded posture", () => {
-    expect(IDLE_LOCAL_MODEL_SNAPSHOT.selection).toBe(MODEL_AUTO);
+    expect(IDLE_LOCAL_MODEL_SNAPSHOT.setupDeclined).toBe(false);
     expect(IDLE_LOCAL_MODEL_SNAPSHOT.models).toHaveLength(0);
     expect(IDLE_LOCAL_MODEL_SNAPSHOT.download).toBeNull();
     expect(IDLE_LOCAL_MODEL_SNAPSHOT.availability.ready).toBe(false);

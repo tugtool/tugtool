@@ -202,10 +202,6 @@ enum LocalModelStore {
             .sorted { ($0.catalogRank, $0.id) < ($1.catalogRank, $1.id) }
     }
 
-    static func installed(id: String) -> InstalledModel? {
-        read(directory: modelsDirectory.appendingPathComponent(id, isDirectory: true))
-    }
-
     private static func read(directory: URL) -> InstalledModel? {
         let stamp = directory.appendingPathComponent(stampName)
         guard let data = try? Data(contentsOf: stamp),

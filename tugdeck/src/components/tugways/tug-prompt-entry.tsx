@@ -2528,6 +2528,13 @@ export const TugPromptEntry = React.forwardRef<
           ? UNKNOWN_GRADE
           : await grammarStore.requestWithin(submitText, GRADE_SUBMIT_WAIT_MS);
       const modelCall = modelCallForBand(grade.band);
+      // `run` means the grader accounted for every token against the program's
+      // own grammar. There is no question left to put to the model, and no
+      // English left in the line for the veto to find.
+      if (modelCall === "run") {
+        routeToShell();
+        return;
+      }
       // `skip` means something in the line names nothing on this machine, so
       // the model has nothing to add: fall through to Claude, no round trip.
       if (modelCall !== "skip") {

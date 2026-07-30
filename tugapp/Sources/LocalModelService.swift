@@ -5,19 +5,6 @@ import Foundation
 /// `tugdeck/src/lib/local-model-store.ts`.
 enum LocalModelConfig {
     static let domain = "dev.tugtool.local-model"
-    static let modelKey = "model"
-
-    /// The model the user picked: a catalog id, `"auto"`, or `""` (declined).
-    /// Absent reads as `"auto"`.
-    static let auto = "auto"
-    static let declined = ""
-
-    static func selection() -> String {
-        guard let value = TugbankClient.shared?.getString(domain: domain, key: modelKey) else {
-            return auto
-        }
-        return value
-    }
 
     /// The per-feature kill switches, mirrored from
     /// `SHELL_ROUTING_KEY` / `PULSE_OVERVIEW_KEY` in `local-model-store.ts`.
@@ -652,9 +639,6 @@ final class LocalModelService {
     }
 
     func availability() async -> LocalModelAvailability {
-        if LocalModelConfig.selection() == LocalModelConfig.declined {
-            return .unavailable("on-device inference declined")
-        }
         guard let route = await resolveRoute() else {
             return .unavailable("no local model available")
         }
@@ -670,23 +654,25 @@ final class LocalModelService {
 
     /// Pick the backend (and pack, where one applies) that should answer.
     ///
-    /// Both halves of the assignment are re-read per request rather than
-    /// cached: the selection comes from a live tugbank query, and the pack from
-    /// its `tug-manifest.json` on disk. So a selection written by the deck takes
-    /// effect on the very next request with no relaunch, and a model deleted out
-    /// from under a resident backend stops being chosen immediately instead of
-    /// answering indefinitely from memory.
+    /// The assignment is re-read per request rather than cached: the pack comes
+    /// from its `tug-manifest.json` on disk, so one deleted out from under a
+    /// resident backend stops being chosen immediately instead of answering
+    /// indefinitely from memory.
+    ///
+    /// The disk is the whole of the question. Tug ships knowledge of one pack,
+    /// so "which model" has one answer and nothing needs to record it — the
+    /// pack is installed, or the system backend answers, or nothing does.
     ///
     /// Every path that resolves to no MLX pack also releases whatever MLX is
-    /// holding. Without that, a delete or a switch away would leave multiple
-    /// gigabytes of weights resident until the idle timer happened to fire.
+    /// holding. Without that, a delete would leave multiple gigabytes of
+    /// weights resident until the idle timer happened to fire.
     private func resolveRoute() async -> Route? {
         // The app-test harness never has a local model, whatever this machine
-        // happens to hold. Each test launches its own app against a fresh empty
-        // tugbank, so the selection reads as `auto` and would resolve to an
-        // installed pack — several gigabytes of weights into a process that
-        // lives for a few seconds, once per test file, and `classify` starts
-        // that load in the background even when it answers `not resident`.
+        // happens to hold. Each test launches its own app and would otherwise
+        // resolve to an installed pack — several gigabytes of weights into a
+        // process that lives for a few seconds, once per test file, and
+        // `classify` starts that load in the background even when it answers
+        // `not resident`.
         //
         // Answering "no model" is not a special case invented for tests. It is
         // the ordinary state of a machine that has not opted into the download,
@@ -694,27 +680,8 @@ final class LocalModelService {
         // can depend on anything else.
         guard !Self.isAppTestHarness else { return nil }
 
-        let selection = LocalModelConfig.selection()
-        guard selection != LocalModelConfig.declined else {
-            await mlx.unload()
-            return nil
-        }
-
-        if selection != LocalModelConfig.auto {
-            // An explicit pick is honored literally. If that pack isn't on disk
-            // — deleted, or still downloading — the answer is "no local model",
-            // never a substitute the user didn't choose: with strict
-            // enhancement, silence is always safe and a surprise substitution
-            // isn't.
-            guard let picked = LocalModelStore.installed(id: selection) else {
-                await mlx.unload()
-                return nil
-            }
-            return Route(backend: mlx, model: picked)
-        }
-
-        // `auto`: installed packs win by catalog rank, and the system model
-        // backstops them.
+        // Installed packs win by catalog rank, and the system model backstops
+        // them.
         if let best = LocalModelStore.installed().first {
             return Route(backend: mlx, model: best)
         }

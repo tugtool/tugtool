@@ -14,15 +14,38 @@
 //!
 //! Unlike the hermetic corpus test in the crate, this grades against **this
 //! machine's live login PATH** — the harness's job is to read reality, so it
-//! sees the same command set the running app would. It passes no working
-//! directory, because it is not a session: a relative opener therefore grades
-//! Unknown here, which is what the grader does for a card that has not yet
-//! spawned a shell.
+//! sees the same command set the running app would.
+//!
+//! It grades from a working directory for the same reason. A path positional's
+//! band is whatever a `stat` says, so a run with no cwd would confirm no path
+//! anywhere and report a Maybe rate no real session would ever see. `--cwd`
+//! names the directory to stand in; without it the process's own is used, which
+//! is where the harness was invoked from.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
+use std::path::PathBuf;
 
 fn main() -> std::process::ExitCode {
+    let mut args = std::env::args().skip(1);
+    let mut cwd: Option<PathBuf> = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--cwd" => match args.next() {
+                Some(dir) => cwd = Some(PathBuf::from(dir)),
+                None => {
+                    eprintln!("grade: --cwd needs a directory");
+                    return std::process::ExitCode::from(2);
+                }
+            },
+            other => {
+                eprintln!("grade: unknown argument {other}");
+                return std::process::ExitCode::from(2);
+            }
+        }
+    }
+    let cwd = cwd.or_else(|| std::env::current_dir().ok());
+
     let commands = tuggram::compute_path_commands();
     let set = tuggram::CommandSet::new_sorted(&commands);
 
@@ -35,7 +58,7 @@ fn main() -> std::process::ExitCode {
         if line.is_empty() {
             continue;
         }
-        let graded = tuggram::grade(&line, &set, None);
+        let graded = tuggram::grade(&line, &set, cwd.as_deref());
         let mut entry = serde_json::json!({ "band": graded.band.as_str() });
         if let Some(synopsis) = graded.synopsis {
             entry["synopsis"] = serde_json::json!(synopsis);

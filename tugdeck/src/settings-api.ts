@@ -318,19 +318,22 @@ export function putSetupSeen(seen: boolean): void {
 }
 
 /**
- * Persist the on-device model choice under `dev.tugtool.local-model` /
- * `model`. The value is a catalog id, `"auto"`, or `""` for declined —
- * absent reads as `"auto"`, so "declined" has to be written explicitly to be
- * distinguishable from never having been asked. Fire-and-forget, mirroring
+ * Persist a skipped on-device AI offer under `dev.tugtool.local-model` /
+ * `setup-declined`. Absent reads false, so a skip has to be written explicitly
+ * to be distinguishable from never having been asked — which is the whole
+ * point of the flag: it is what stops the first-run wizard asking again.
+ *
+ * Nothing writes *which* model to run, because Tug ships knowledge of one and
+ * the disk already says whether it is there. Fire-and-forget, mirroring
  * {@link putSetupSeen}.
  */
-export function putLocalModelSelection(modelId: string): void {
-  fetch("/api/defaults/dev.tugtool.local-model/model", {
+export function putLocalModelDeclined(declined: boolean): void {
+  fetch("/api/defaults/dev.tugtool.local-model/setup-declined", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind: "string", value: modelId }),
+    body: JSON.stringify({ kind: "bool", value: declined }),
   }).catch((err) => {
-    console.warn("[settings] PUT local-model selection failed:", err);
+    console.warn("[settings] PUT local-model setup-declined failed:", err);
   });
 }
 
