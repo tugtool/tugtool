@@ -747,12 +747,17 @@ export interface SessionUnknownEvent {
  * `{ type: "error", detail: "session_not_owned" }`. Router's P5 authz
  * check emits this when a client sends CODE_INPUT for a session that
  * another client owns — or, more commonly, a session this client
- * never registered via `spawn_session`. The wire frame currently
- * carries NO `tug_session_id` field (see `router.rs`: the rejection
- * handler sends just `{type, detail}`), so the per-card filter
- * relaxes for CONTROL error frames and the reducer uses a phase gate
- * — only stores in a waiting-for-response phase accept the routing —
- * to self-route in the multi-card single-client case.
+ * never registered via `spawn_session`. The frame carries the
+ * `tug_session_id` the rejected write was for (`router.rs`'s
+ * `InputDecision::NotOwned`), so it routes to exactly the card whose
+ * write died and the reducer ends that card's turn from any live phase.
+ *
+ * It used to ship as a bare `{type, detail}`, which left every card
+ * guessing from its own phase whether the rejection was its own. That
+ * guess could only recognize a card still waiting on its first token —
+ * so a rejected approval, interrupt, or mode write (all of which leave
+ * the phase further along) was dropped by every card, and the turn it
+ * killed stayed live forever.
  */
 export interface SessionNotOwnedEvent {
   type: "session_not_owned";

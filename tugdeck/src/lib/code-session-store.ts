@@ -1614,28 +1614,19 @@ export class CodeSessionStore {
   // ---------------------------------------------------------------------
 
   /**
-   * Per-card frame filter. For CODE_OUTPUT and SESSION_STATE the rule
-   * is simple: match on the payload's `tug_session_id`. For CONTROL it
-   * is relaxed: session-scoped non-error frames (e.g. `spawn_session_ok`)
-   * still require a tsid match, but CONTROL *error* frames are
-   * accepted either way — some (`session_unknown`) carry
-   * `tug_session_id`, while others (`session_not_owned`, per
-   * `router.rs`'s rejection handler) do not. The reducer's phase gate
-   * decides which store owns an unrouted error, so the filter stays
-   * permissive on the CONTROL-error path without flooding non-active
-   * stores with spurious transitions.
+   * Per-card frame filter: one rule for every feed — match on the
+   * payload's `tug_session_id`.
+   *
+   * CONTROL error frames used to be exempt. Both of the ones that reach
+   * a session store (`session_unknown` from the supervisor's orphan
+   * dispatcher, `session_not_owned` from the router's authz reject) now
+   * carry the id of the session whose turn they killed, so the exemption
+   * has nothing left to admit — and keeping it would be actively wrong,
+   * because each notice ends a live turn from any phase. An unaddressed
+   * error would end the wrong card's turn.
    */
   private acceptFrame(feedId: number, decoded: unknown): boolean {
-    const d = decoded as { tug_session_id?: string; type?: string };
-    if (feedId === FeedId.CONTROL) {
-      if (d.type === "error") {
-        return (
-          d.tug_session_id === undefined ||
-          d.tug_session_id === this.tugSessionId
-        );
-      }
-      return d.tug_session_id === this.tugSessionId;
-    }
+    const d = decoded as { tug_session_id?: string };
     return d.tug_session_id === this.tugSessionId;
   }
 

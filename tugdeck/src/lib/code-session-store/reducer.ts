@@ -4366,36 +4366,40 @@ function handleTransportSettled(
 }
 
 /**
- * Predicate used by the CONTROL-error handlers: a store "owns" an
- * incoming CONTROL error if it is currently waiting on a response to
- * a CODE_INPUT write. This covers `submitting` (just wrote the frame,
- * waiting for Claude's first token) and `awaiting_first_token` (same
- * waiting window, distinct only because a partial might already have
- * arrived in a previous turn context). Other active phases
- * (`streaming`, `tool_work`, `awaiting_approval`) have already
- * received some response from Claude, so a CONTROL error arriving
- * unrouted isn't about the current card's latest write.
- *
- * This gate is the multi-card self-routing mechanism: when the wire
- * frame lacks `tug_session_id` (see `router.rs`'s `session_not_owned`
- * path), every per-card FeedStore's filter lets it through, and each
- * reducer decides on its own whether to accept the routing.
+ * Whether a turn is open on this store — the phases from which a
+ * terminal event still has something to kill. `awaiting_approval` counts:
+ * the turn is blocked on the user but very much alive, and a supervisor
+ * that has forgotten the session will never deliver its `turn_complete`.
  */
-function isAwaitingInputResponse(state: CodeSessionState): boolean {
-  return (
-    state.phase === "submitting" || state.phase === "awaiting_first_token"
-  );
+function isLiveTurnPhase(state: CodeSessionState): boolean {
+  switch (state.phase) {
+    case "submitting":
+    case "awaiting_first_token":
+    case "streaming":
+    case "tool_work":
+    case "awaiting_approval":
+    case "waking":
+      return true;
+    case "idle":
+    case "errored":
+    case "replaying":
+      return false;
+  }
 }
 
 function handleSessionUnknown(
   state: CodeSessionState,
   event: SessionUnknownEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // The wire frame carries `tug_session_id`, so the per-card filter
-  // already routed it to the correct store. Drop if we're not in a
-  // turn that could have triggered it — defensive, because the wire
-  // contract says this only fires after a CODE_INPUT write.
-  if (!isAwaitingInputResponse(state)) {
+  // The wire frame carries `tug_session_id` (`build_session_unknown_frame`
+  // in `agent_supervisor.rs`), so `acceptFrame`'s tsid match already
+  // routed it here: this notice is about THIS card, whatever phase it is
+  // in. Accept it from any live turn rather than only the two
+  // waiting-for-first-token phases — the supervisor has forgotten the
+  // session, so no `turn_complete` is ever coming, and dropping the
+  // notice strands a `streaming` / `tool_work` turn live forever with a
+  // bowing in-flight indicator and no event left to stop it.
+  if (!isLiveTurnPhase(state)) {
     return { state, effects: [] };
   }
   const message = event.detail ?? "session unknown to supervisor";
@@ -4417,11 +4421,13 @@ function handleSessionNotOwned(
   state: CodeSessionState,
   event: SessionNotOwnedEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // The wire frame may arrive without `tug_session_id`, so every
-  // store's filter saw it. The phase gate picks the one store (or,
-  // rarely, small set) that actually issued a CODE_INPUT write in
-  // the immediate past.
-  if (!isAwaitingInputResponse(state)) {
+  // The rejection names the session whose write it killed (`router.rs`'s
+  // `InputDecision::NotOwned`), so `acceptFrame`'s tsid match already
+  // routed it here. Accept it from any live turn: a rejected write is the
+  // only notice that write is ever getting, and the approval / interrupt
+  // / mode writes all leave the phase somewhere past the
+  // waiting-for-first-token window the old self-routing gate could see.
+  if (!isLiveTurnPhase(state)) {
     return { state, effects: [] };
   }
   const message = event.detail ?? "session not owned by this client";

@@ -600,7 +600,15 @@ enum InputDecision {
     MissingSession,
     /// Client has not registered this `tug_session_id` via `spawn_session`
     /// — reject with `send_control_json(session_not_owned)`.
-    NotOwned,
+    ///
+    /// Carries the session the write was FOR. The rejection is the only
+    /// notice the deck ever gets that this write died, and without the id
+    /// on the frame no card can tell whether the rejection is its own: the
+    /// deck is reduced to guessing from phase, and a card whose turn is
+    /// past that guess is stranded live forever with no event left to end
+    /// it. Stamping the id makes the frame addressed, which is what lets
+    /// exactly one card own it.
+    NotOwned(TugSessionId),
     /// Another client owns this `(feed_id, tug_session_id?)` key — reject
     /// with `send_control_json(input_claimed)` carrying the owner id.
     Claimed(u64),
@@ -644,7 +652,7 @@ async fn authorize_and_claim_input(
     if let (Some(sessions), Some(session)) = (client_sessions, &tug_session_id) {
         let cs = sessions.lock().await;
         if !cs.get(&client_id).is_some_and(|set| set.contains(session)) {
-            return InputDecision::NotOwned;
+            return InputDecision::NotOwned(session.clone());
         }
     }
 
@@ -1007,15 +1015,17 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                                         "detail": "missing_tug_session_id",
                                                     })).await;
                                                 }
-                                                InputDecision::NotOwned => {
+                                                InputDecision::NotOwned(session) => {
                                                     warn!(
                                                         client_id,
                                                         %fid,
+                                                        tug_session_id = session.as_str(),
                                                         "CODE_INPUT for session not owned by client"
                                                     );
                                                     let _ = send_control_json(&mut socket, fid, &serde_json::json!({
                                                         "type": "error",
                                                         "detail": "session_not_owned",
+                                                        "tug_session_id": session.as_str(),
                                                     })).await;
                                                 }
                                                 InputDecision::Claimed(owner) => {
@@ -1354,7 +1364,12 @@ mod tests {
             1,
         )
         .await;
-        assert_eq!(decision, InputDecision::NotOwned);
+        // The rejection names the session it was for, so the deck can route
+        // it to exactly the card whose write died.
+        assert_eq!(
+            decision,
+            InputDecision::NotOwned(TugSessionId::new("sess-x"))
+        );
         assert!(
             ownership.lock().unwrap().is_empty(),
             "unowned session must not mutate the ownership map"

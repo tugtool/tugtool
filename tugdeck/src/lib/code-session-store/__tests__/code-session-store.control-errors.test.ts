@@ -110,18 +110,19 @@ describe("CodeSessionStore — session_unknown CONTROL error (T3.4.a.1)", () => 
 });
 
 describe("CodeSessionStore — session_not_owned CONTROL error (T3.4.a.1)", () => {
-  it("routes to errored via the phase gate when the wire frame has no tug_session_id", () => {
+  it("errors the card the rejected write was for", () => {
     const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
     expect(store.getSnapshot().phase).toBe("submitting");
 
-    // Exactly the shape `router.rs` emits on the P5 authz reject:
-    // `{type: "error", detail: "session_not_owned"}` with no tsid.
+    // Exactly the shape `router.rs` emits on the P5 authz reject: the
+    // rejection names the session whose CODE_INPUT write it killed.
     conn.dispatchDecoded(FeedId.CONTROL, {
       type: "error",
       detail: "session_not_owned",
+      tug_session_id: TUG_A,
     });
 
     const snap = store.getSnapshot();
@@ -130,13 +131,14 @@ describe("CodeSessionStore — session_not_owned CONTROL error (T3.4.a.1)", () =
     expect(snap.lastError?.message).toBe("session_not_owned");
   });
 
-  it("drops session_not_owned while the store is idle (no active send)", () => {
+  it("drops session_not_owned while the store is idle (no turn to kill)", () => {
     const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     conn.dispatchDecoded(FeedId.CONTROL, {
       type: "error",
       detail: "session_not_owned",
+      tug_session_id: TUG_A,
     });
 
     const snap = store.getSnapshot();
@@ -144,7 +146,23 @@ describe("CodeSessionStore — session_not_owned CONTROL error (T3.4.a.1)", () =
     expect(snap.lastError).toBeNull();
   });
 
-  it("drops session_not_owned once the store has received Claude tokens", () => {
+  it("drops an unaddressed CONTROL error outright", () => {
+    // No `tug_session_id` means no card can prove the notice is its own,
+    // and acting on it would end an unrelated card's turn.
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    store.send("hi", []);
+    conn.dispatchDecoded(FeedId.CONTROL, {
+      type: "error",
+      detail: "session_not_owned",
+    });
+
+    expect(store.getSnapshot().phase).toBe("submitting");
+    expect(store.getSnapshot().lastError).toBeNull();
+  });
+
+  it("ends a streaming turn whose write was rejected", () => {
     const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
@@ -170,40 +188,45 @@ describe("CodeSessionStore — session_not_owned CONTROL error (T3.4.a.1)", () =
     });
     expect(store.getSnapshot().phase).toBe("streaming");
 
-    // A late unrouted CONTROL error is not about THIS card's latest
-    // write — this card already got a response from Claude.
+    // A streaming card still issues CODE_INPUT writes — approvals,
+    // interrupts, mode changes. The rejection names this session, so it
+    // is this turn that died, and the turn must end: no `turn_complete`
+    // is coming, and a turn left live here bows its in-flight indicator
+    // forever.
     conn.dispatchDecoded(FeedId.CONTROL, {
       type: "error",
       detail: "session_not_owned",
+      tug_session_id: TUG_A,
     });
 
-    expect(store.getSnapshot().phase).toBe("streaming");
-    expect(store.getSnapshot().lastError).toBeNull();
+    expect(store.getSnapshot().phase).toBe("errored");
+    expect(store.getSnapshot().lastError?.cause).toBe("session_not_owned");
   });
 });
 
-describe("CodeSessionStore — multi-card routing of unrouted CONTROL errors (T3.4.a.1)", () => {
-  it("routes an unrouted session_not_owned only to the store in a waiting-for-response phase", () => {
+describe("CodeSessionStore — multi-card routing of CONTROL errors (T3.4.a.1)", () => {
+  it("routes session_not_owned by id, not by which card looks busy", () => {
     const conn = new TestFrameChannel();
     const storeA = constructStore(conn, TUG_A);
     const storeB = constructStore(conn, TUG_B);
 
+    // BOTH cards have a live turn — the old phase heuristic could not
+    // have told them apart.
     storeA.send("from A", []);
-    // storeB stays idle — it hasn't sent anything.
+    storeB.send("from B", []);
     expect(storeA.getSnapshot().phase).toBe("submitting");
-    expect(storeB.getSnapshot().phase).toBe("idle");
+    expect(storeB.getSnapshot().phase).toBe("submitting");
 
     conn.dispatchDecoded(FeedId.CONTROL, {
       type: "error",
       detail: "session_not_owned",
+      tug_session_id: TUG_B,
     });
 
-    expect(storeA.getSnapshot().phase).toBe("errored");
-    expect(storeA.getSnapshot().lastError?.cause).toBe("session_not_owned");
-    // storeB was never waiting on an input — the phase gate dropped
-    // the frame even though the filter let it through.
-    expect(storeB.getSnapshot().phase).toBe("idle");
-    expect(storeB.getSnapshot().lastError).toBeNull();
+    expect(storeA.getSnapshot().phase).toBe("submitting");
+    expect(storeA.getSnapshot().lastError).toBeNull();
+    expect(storeB.getSnapshot().phase).toBe("errored");
+    expect(storeB.getSnapshot().lastError?.cause).toBe("session_not_owned");
   });
 
   it("recovers via send() from errored after a CONTROL error", () => {
