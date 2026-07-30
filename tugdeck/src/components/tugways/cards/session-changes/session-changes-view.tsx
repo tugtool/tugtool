@@ -35,6 +35,7 @@ import {
   type TugChangesListEntry,
 } from "@/components/tugways/tug-changes-list";
 import type { DiffDescriptor } from "@/lib/git-diff-store";
+import { useChangesetClaim } from "@/lib/changeset-verb-store";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 
@@ -71,6 +72,12 @@ export function SessionChangesView({
     codeSessionStore.subscribe,
     () => codeSessionStore.getSnapshot().canInterrupt === true,
   );
+
+  // The claim round trip's state ([L02]). The failure detail is surfaced by
+  // the card's `ClaimErrorNoticeController` (a bulletin, not view chrome); the
+  // view reads it only to hold the Claim affordances while one is in flight.
+  const claim = useChangesetClaim(changesController.entryKey);
+  const claimPending = claim.phase === "pending";
 
   const sessionFiles = snap.entry?.files ?? [];
 
@@ -267,6 +274,7 @@ export function SessionChangesView({
           orphanedLabel="orphaned — claim to bring into this session"
           onClaimOrphaned={(path) => changesController.claim([path])}
           onClaimAllOrphaned={(paths) => changesController.claim(paths)}
+          claimPending={claimPending}
         />
       ) : null}
     </div>,

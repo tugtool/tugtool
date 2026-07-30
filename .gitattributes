@@ -1,0 +1,5 @@
+# Source is text even when it embeds a control byte. `changeset-verb-store.ts`
+# carries a literal NUL as the correlation-key separator, which is enough for
+# git's binary heuristic to stop diffing the file entirely.
+*.ts diff
+*.tsx diff

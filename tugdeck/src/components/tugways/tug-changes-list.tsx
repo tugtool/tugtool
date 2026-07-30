@@ -437,6 +437,7 @@ export function ChangesFileRow({
   popOut,
   body,
   onClaim,
+  claimPending = false,
   highlightQuery,
 }: {
   file: FileBlockData;
@@ -455,6 +456,9 @@ export function ChangesFileRow({
   /** When set, a Claim affordance leads the trailing cluster — the row's
    *  file is unattributed-but-likely and this session can claim it ([D1xx]). */
   onClaim?: () => void;
+  /** A claim round trip is in flight — the affordance disables rather than
+   *  re-sending, so a slow reply reads as "working", not as a dead button. */
+  claimPending?: boolean;
 }): React.ReactElement {
   return (
     <div
@@ -505,7 +509,12 @@ export function ChangesFileRow({
                   size="2xs"
                   emphasis="outlined"
                   role="accent"
-                  title="Claim this file for this session"
+                  disabled={claimPending}
+                  title={
+                    claimPending
+                      ? "Claiming…"
+                      : "Claim this file for this session"
+                  }
                   aria-label={`Claim ${file.path} for this session`}
                   data-testid="tug-changes-list-claim"
                   onClick={(event) => {
@@ -562,6 +571,7 @@ function EntryFiles({
   onToggleFile,
   ownSessionId,
   onClaim,
+  claimPending,
 }: {
   entry: TugChangesListEntry;
   expandedKeys: ReadonlySet<string>;
@@ -570,6 +580,8 @@ function EntryFiles({
   ownSessionId?: string;
   /** Per-path claim, wired only for the unattributed entry. */
   onClaim?: (path: string) => void;
+  /** A claim round trip is in flight. */
+  claimPending?: boolean;
 }) {
   const projectRoot = entry.project.project_dir;
   const descriptor = useMemo(() => entryDiffDescriptor(entry), [entry]);
@@ -608,6 +620,7 @@ function EntryFiles({
             popOut={filePopOutDescriptor(entry.project, file.path)}
             body={expanded ? fileBlockBody(diffSnapshot, file.path) : null}
             onClaim={onClaim !== undefined ? () => onClaim(file.path) : undefined}
+            claimPending={claimPending}
           />
         );
       })}
@@ -640,6 +653,9 @@ export interface TugChangesListProps {
   /** When set (and the section has 1+ files), a "Claim all" button on the
    *  orphaned header reclaims every path in one batch ([D120]). */
   onClaimAllOrphaned?: (paths: string[]) => void;
+  /** A claim round trip is in flight — every Claim affordance disables until
+   *  the reply lands, so a slow or refused claim never invites a re-click. */
+  claimPending?: boolean;
   className?: string;
 }
 
@@ -654,6 +670,7 @@ export function TugChangesList({
   orphanedLabel,
   onClaimOrphaned,
   onClaimAllOrphaned,
+  claimPending,
   className,
 }: TugChangesListProps): React.ReactElement {
   return (
@@ -697,7 +714,10 @@ export function TugChangesList({
                     size="2xs"
                     emphasis="outlined"
                     role="accent"
-                    title="Claim all files in this session"
+                    disabled={claimPending}
+                    title={
+                      claimPending ? "Claiming…" : "Claim all files in this session"
+                    }
                     aria-label={`Claim all ${entry.kind} files in this session`}
                     data-testid={`tug-changes-list-claim-all-${entry.kind}`}
                     onClick={(event) => {
@@ -716,6 +736,7 @@ export function TugChangesList({
               onToggleFile={onToggleFile}
               ownSessionId={entry.kind === "unattributed" ? ownSessionId : undefined}
               onClaim={onClaim}
+              claimPending={claimPending}
             />
           </React.Fragment>
         );

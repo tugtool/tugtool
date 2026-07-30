@@ -255,11 +255,13 @@ export class ChangesRouteController {
    * paths from "likely" hints into this session's changeset. Keyed by the
    * aggregate's canonical project spelling (`project.project_dir`) so the
    * claim rows land under the same project the unattributed rows compose
-   * against. No-op when the store is absent or `paths` is empty.
+   * against, and by `entryKey` so the round trip's outcome reaches this card's
+   * claim-error notice. No-op when the store is absent or `paths` is empty.
    */
   claim(paths: string[]): void {
     if (paths.length === 0) return;
     getChangesetVerbStore()?.claim(
+      this.entryKey,
       this._snapshot.project.project_dir,
       this.tugSessionId,
       paths,
