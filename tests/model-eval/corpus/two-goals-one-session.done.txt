@@ -4,9 +4,7 @@ The standing goal:
 The current ask:
 - also port the shell router to async
 
-What the session has been doing:
+What the session did:
 - Edit(tugcast/src/local_model.rs)
-
-What it is doing right now:
 - Bash(cargo nextest run download)
 - Edit(tugcast/src/feeds/shell.rs)

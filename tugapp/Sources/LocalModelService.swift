@@ -42,90 +42,87 @@ enum LocalModelConfig {
     }
 }
 
+/// One pack's instruction text, for every task that has any.
+///
+/// Prompts live per pack because packs differ in what they can follow. A 1.2B
+/// pack and a 4B pack read the same instructions differently, and a rule that
+/// rescues one can cost the other — so the shape of the ruling is "this pack
+/// under this profile", not "this pack". Budgets stay shared statics: a token
+/// ceiling is a fact about the strip, not about the model.
+///
+/// The table ships empty. A profile is earned by measurement (a candidate that
+/// fails the default in a way a smaller prompt plausibly rescues), never
+/// authored on a hunch, because every profile added is another axis the
+/// bake-off has to hold fixed.
+struct PromptProfile {
+    /// Logged as `profile=<name>` so a scored run can be read back to the exact
+    /// wording that produced it.
+    let name: String
+    let classify: String
+    let classifyWithGrammar: String
+    let summarize: String
+    let summarizeRetrospective: String
+}
+
 /// The instruction text every task ships with.
 ///
-/// These strings are frozen: they are the exact text the candidate models were
-/// scored against in the bring-up spike (`~/bonsai-eval/mlxspike/Sources/mlxspike/main.swift`),
-/// and a model earns its place in the catalog by clearing the bars with *this*
-/// wording rather than wording tuned to itself. Changing a line here invalidates
-/// those scores for every catalog entry at once.
+/// **The freeze rule.** These strings are frozen against a *bake-off*, not
+/// forever. A comparison is only a comparison if every pack in it was scored on
+/// identical wording, the same corpus, the same normalizer — so editing any
+/// string here invalidates the standing bake-off and obliges re-running it.
+/// That is what makes the edit a deliberate act rather than a drive-by. What it
+/// freezes is a **(pack, profile) pair**: a pack scored under one profile says
+/// nothing about the same pack under another, and a profile authored for one
+/// pack invalidates nothing scored under a different one.
 ///
-/// `classify` was retuned after the routing feature adopted an asymmetric
-/// error budget: a wrong SHELL executes a command the user never asked for,
-/// so the prompt resolves doubt toward PROMPT, hands the model the one fact
-/// the caller has verified (the first word names an installed program), and
-/// teaches by paired examples — the same opener labeled both ways — because
-/// small quantized models form first-word priors from unpaired examples.
-/// The catalog's recorded classify scores refer to the previous wording.
+/// It does not protect the scores in `CatalogEntry.notes`. Those refer to
+/// wordings several rewrites old and are stale beyond repair; the ruling in
+/// force lives in the roadmap plan that produced it.
 ///
-/// `summarize` was rewritten three times: first from a sentence prompt to a
-/// headline prompt when the PULSE strip promoted the overview to its bright
-/// leading run; then again when the headlines that produced turned out to be
-/// *labels* — noun phrases with no verb, which is the failure newspaper
-/// headline register exists to prevent — which is where the rule the first
-/// version never stated came from: start with a verb, in the plain command
-/// form. The third rewrite changed the subject rather than the register. The
-/// second version asked for the session's overall goal and explicitly not the
-/// latest action; a goal is constant, so the headline it produced was constant
-/// too — 47 inferences over two live sessions yielded 16 distinct headlines.
-/// The current wording asks for the current stretch of work, read against the
-/// goal, and says the headline is expected to move. Everything below the
-/// opening sentences — the register rules and all eight examples — is
-/// byte-identical across the second and third. The catalog's recorded overview
-/// scores refer to a wording older than all three.
+/// **What each prompt is for, and what it learned the hard way.**
 ///
-/// The fourth pass changed only the example block, and for a reason that has
-/// nothing to do with register: six of the eight examples, and the negative
-/// example, described entries in `tests/model-eval/corpus` — they had been
-/// drafted from it. Five of the twelve digests therefore had their expected
-/// answer sitting verbatim in the instructions, so a model could score the
-/// register harness by copying and did: `Author command-line calculator`,
-/// `Fix download resume restart` and `Explain Maxwell's equations` came back
-/// against exactly the digests they were drawn from, and the label the block
-/// held up as the failure to avoid was emitted as an answer. Every example and
-/// every proper name here is now absent from every digest, which is the
-/// property that makes a score mean something. Keep it that way: an example
-/// drawn from the corpus is an answer key, not a demonstration.
+/// `classify` and `classifyWithGrammar` are one designed pair over a shared
+/// core, not a prompt and an appendix. The core carries the asymmetry that
+/// decides every close call: a wrong SHELL executes a command nobody asked for
+/// and cannot be taken back, a wrong PROMPT costs one keystroke, so doubt
+/// resolves to PROMPT. Both teach by paired examples — the same opener labeled
+/// both ways — because small quantized models form first-word priors from
+/// unpaired ones. The grammar variant is built around the synopsis as primary
+/// evidence, because it runs only on the grader's `maybe` band, where the
+/// opener is already known to resolve and only the tail is in question.
 ///
-/// The fifth pass paired the examples with the digests they answer, the shape
-/// `classify` had used since its own retune. The unpaired block that preceded it
-/// showed eight bare headlines and no inputs, and what a model reads in a list of
-/// answers with no questions is available content: 85% of 1123 real headlines
-/// opened with `Fix`, and 13% returned a string out of the block itself — the
-/// label held up as the failure to avoid among them. Every example now carries a
-/// miniature digest in the real section headings and the real `Name(target)`
-/// activity form, so the pairing is visible. Two of them exist for particular
-/// failures: one whose *right now* section is a tool line, answered by naming
-/// what the work is for rather than which command ran; and one whose *right now*
-/// section is the newest ask verbatim, which is what `compose_digest` synthesizes
-/// when a session has been re-aimed but has not acted yet.
+/// `summarize` asks for a headline, and every rule in it is scar tissue. Asking
+/// for the session's *goal* produced a constant headline (47 inferences over
+/// two live sessions yielded 16 distinct lines), so it asks for the current
+/// stretch of work read against the ask, and says the headline is expected to
+/// move. Omitting "start with a verb" produced *labels* — noun phrases, which
+/// is the failure newspaper headline register exists to prevent. The examples
+/// are paired with the digests they answer because an unpaired block of eight
+/// bare headlines reads to a model as available content: 85% of 1123 real
+/// headlines opened with `Fix`, and 13% returned a string out of the block
+/// itself — including the label the block held up as the failure to avoid.
 ///
-/// Those scores are not being refreshed, because a fixed-corpus summary score
-/// says nothing about whether the strip works — there is no ground truth for
-/// "what is this session working on". What the feature is held to instead:
-/// `headline_register_report` in `session_overview.rs`, which imposes the form in
-/// Rust whatever the model answers; `ground_headline` beside it, which refuses a
-/// headline the digest does not support and is the only check that reads the
-/// answer against its own evidence; `tests/model-eval` (`just model-eval`), which
-/// scores the register of real headlines against a live instance; and liveness
-/// and turnaround (`roadmap/archive/local-model-liveness-brief.md`).
+/// `summarizeRetrospective` is the settled-stretch lane. Same register, past
+/// tense, because the strip gives an intent and a retrospective the same pixels
+/// and the tense is the only thing telling a reader the work stopped.
 ///
-/// The freeze rule above still holds, doing a narrower job than it used to claim.
-/// It no longer protects the scores recorded in `CatalogEntry.notes` — those refer
-/// to wordings four rewrites old and are stale beyond repair. What it protects is
-/// that a comparison is a comparison: every pack in one bake-off is scored on
-/// identical wording, the same corpus, the same normalizer. Editing one of these
-/// strings invalidates the current bake-off and obliges re-running it, which is
-/// what makes the edit a deliberate act rather than a drive-by.
+/// **Keep every example disjoint from `tests/model-eval/corpus`** — both the
+/// `*.digest.txt` and the `*.done.txt` fixtures. This is load-bearing twice
+/// over. It is what lets `run.py` call a match a lift, and it is what lets
+/// `ground_headline` catch a lifted example with no copy of this list in Rust:
+/// disjoint means a lifted example's words are absent from the digest, which
+/// the grounding rule already rejects. An example drawn from the corpus is an
+/// answer key, not a demonstration. `run.py` refuses to score rather than warn
+/// when it finds one.
 ///
-/// Keeping every example disjoint from `tests/model-eval/corpus` is now load
-/// bearing twice over. It is what lets `run.py` call a match a lift, and it is
-/// what lets `ground_headline` catch a lifted example with no copy of this list
-/// in Rust: disjoint means a lifted example's words are absent from the digest,
-/// which the grounding rule already rejects. A rule stated in two places drifts;
-/// this way it is stated once, here.
 enum LocalModelPrompts {
-    static let classify = """
+    /// What both classify prompts share: the task, the one fact the caller has
+    /// already verified, and the asymmetry that decides every close call.
+    ///
+    /// Shared as a constant rather than duplicated because the two variants must
+    /// answer the same question — a drift between them would show up as a band
+    /// difference in the bake-off and be read as a fact about the grader.
+    private static let classifyCore = """
     You label one line a developer typed into a dev tool. Answer with exactly \
     one word and nothing else: SHELL or PROMPT.
 
@@ -135,17 +132,23 @@ enum LocalModelPrompts {
     that happens to begin with that word.
 
     SHELL — they meant to run the program. Anything after the first word is an \
-    argument to it: a file name, a directory, a flag, a path, or a subcommand. \
-    Most shell commands are one to three plain words.
+    argument to it: a file name, a directory, a flag, a path, or a subcommand.
 
     PROMPT — they were writing to the assistant. The line reads as English \
     prose: it contains an article ("the", "a"), a pronoun ("it", "me", "this"), \
     a preposition ("for", "about", "in"), or it asks a question.
 
+    The two mistakes are not equal. A wrong SHELL runs a command nobody asked \
+    for and cannot be taken back. A wrong PROMPT costs one keystroke to \
+    retype. When the line could be read either way, answer PROMPT.
+    """
+
+    static let classify = classifyCore + """
+
+
     Decide by what follows the first word. A bare word that could name a file \
-    or a directory means SHELL. An English phrase means PROMPT. A wrong SHELL \
-    runs a command the person never asked for; a wrong PROMPT costs one \
-    keystroke. When in doubt, answer PROMPT.
+    or a directory means SHELL. An English phrase means PROMPT. Most shell \
+    commands are one to three plain words.
 
     pwd => SHELL
     cd tugrust => SHELL
@@ -159,7 +162,7 @@ enum LocalModelPrompts {
     npm install => SHELL
     head over to the docs => PROMPT
     open an issue for this bug => PROMPT
-    sort these imports alphabetically => PROMPT
+    sort the imports in this file for me => PROMPT
     make this function faster => PROMPT
     build the project for me => PROMPT
     explain this error => PROMPT
@@ -167,31 +170,52 @@ enum LocalModelPrompts {
     read the config and tell me what changed => PROMPT
     """
 
-    /// The classify rules, plus the program's own documentation to check the
-    /// line against.
+    /// The same question, asked with the program's own documentation in hand.
     ///
-    /// This is the `maybe` band of the command-grammar grader: the first word
-    /// names a real program and the grader could not account for what follows
-    /// against the grammar it has baked in. Reading a synopsis and checking a
-    /// line against it is evidence-checking rather than judgement, which is the
-    /// task shape a small on-device pack is demonstrably better at.
+    /// This is the `maybe` band of the command-grammar grader, and the band is
+    /// what the prompt is built around: the grader has already confirmed the
+    /// first word names a real program, and has already failed to account for
+    /// what follows against the grammar it knows. So the open question is
+    /// narrow and factual — do those trailing words read as arguments this
+    /// documentation would accept? Checking a line against a document is
+    /// evidence-checking rather than judgement, which is the task shape a small
+    /// on-device pack is demonstrably better at, and it is why this variant
+    /// leads with the documentation instead of appending it to a prompt about
+    /// English prose.
     ///
-    /// `{{GRAMMAR}}` is substituted with the synopsis at call time. Everything
-    /// before it is `classify` verbatim — this is an *additive* second constant
-    /// under the freeze rule above, not an edit to the base prompt, so the
-    /// base's comparability lineage is untouched and this one starts its own.
-    /// A future bake-off has to score both.
-    static let classifyWithGrammar = classify + """
+    /// The contrast pair is the load-bearing example. A real command wearing a
+    /// flag this documentation happens not to list is still a command; an
+    /// English sentence whose words the documentation gives no meaning to is
+    /// not. Nothing else in either prompt teaches that difference, and it is
+    /// the entire population of the band.
+    ///
+    /// `{{GRAMMAR}}` is substituted with the synopsis at call time.
+    static let classifyWithGrammar = classifyCore + """
 
 
-    The program's own documentation, from this machine:
+    Here is that program's own documentation, from this machine:
 
     {{GRAMMAR}}
 
-    Judge the line against this documentation. If what follows the first word \
-    reads as arguments this documentation accepts, answer SHELL. If it reads \
-    as an English request the documentation gives no meaning to, answer PROMPT. \
-    When in doubt, answer PROMPT.
+    Read the rest of the line against this documentation.
+
+    If the words after the first read as arguments — a subcommand it lists, a \
+    flag, a file, a path, a value — answer SHELL. Documentation is never \
+    complete: a flag or subcommand that is missing from it, or spelled a little \
+    wrong, is still someone running the program. Judge the SHAPE of what \
+    follows, not whether every token appears above.
+
+    If the words after the first read as English about the program — a request, \
+    a question, a description of what to do — answer PROMPT. The giveaway is \
+    that the documentation gives those words no meaning at all: they are not \
+    flags, not subcommands, not filenames, just sentence.
+
+    curl -sS --compressed https://example.com/api => SHELL
+    curl the config down from the staging box => PROMPT
+    docker compose up --detach --wait => SHELL
+    docker the worker into a smaller image => PROMPT
+    sed -i '' 's/warn/error/g' notes.txt => SHELL
+    sed the license header out of every file => PROMPT
     """
 
     /// The placeholder [`classifyWithGrammar`] substitutes the synopsis into.
@@ -199,17 +223,22 @@ enum LocalModelPrompts {
 
     static let summarize = """
     You write the headline for a live coding session. The digest comes in \
-    labeled sections. Headline the section labeled "What it is doing right \
-    now", reading the other sections as context rather than as the subject. \
-    If there is no such section, headline the most recent work shown. The \
-    work moves on and the headline moves with it.
+    labeled sections.
+
+    "The current ask" is what the person most recently asked for, and it names \
+    the subject: headline the work being done about THAT. "The standing goal" \
+    is the older, wider aim — background, not the subject, unless it is the \
+    only ask there is. "What it is doing right now" says how the ask is being \
+    advanced, and it is what makes the headline move: the subject holds while \
+    the machinery works, and the headline changes as the work does.
 
     Newspaper headline style. The rules are strict:
 
     START WITH A VERB, in the plain command form: Fix, Author, Draft, Wire, \
     Trace, Port, Audit, Bundle, Salvage, Explain. Pick the verb that fits the \
     work. Not "Fixing", not "Building" — Fix, Build.
-    SIX WORDS MAXIMUM. Four is better than six.
+    ROOM FOR ABOUT 64 CHARACTERS — one short line. Say the work in as many \
+    words as that takes and no more. Shorter is better when it is not vaguer.
     NO "the", "a", "an". NO "and" — use a comma, or cut the second half.
     NO trailing detail. Name the work, not the parts it is made of.
     SENTENCE CASE, like a sentence: only the first word is capitalized. \
@@ -229,7 +258,7 @@ enum LocalModelPrompts {
     headline uses that digest's own words, and no others.
 
     DIGEST:
-    What the user asked for:
+    The standing goal:
     - the keyboard shortcuts are fighting each other, sort it out
     What it is doing right now:
     - Read(keymap.ts)
@@ -238,6 +267,19 @@ enum LocalModelPrompts {
     Resolve keymap shortcut conflicts
 
     DIGEST:
+    The standing goal:
+    - make the editor feel quicker on big files
+    The current ask:
+    - forget that, undo is coalescing far too much
+    What it is doing right now:
+    - Read(undo-stack.ts)
+    - Edit(undo-stack.ts)
+    HEADLINE:
+    Tighten undo coalescing
+
+    DIGEST:
+    The standing goal:
+    - dropped sockets are hammering the server on reconnect
     What the session has been doing:
     - Read(reconnect.ts)
     - said: Every dropped socket retries at once, so the server sees a storm.
@@ -247,33 +289,29 @@ enum LocalModelPrompts {
     Throttle websocket reconnect storm
 
     DIGEST:
-    What the user asked for:
+    The standing goal:
     - the badge count stays wrong after things are marked read
+    What the session has been doing:
+    - Read(notification-badge.ts)
     What it is doing right now:
     - Bash(bun test notification-badge)
+    - Edit(notification-badge.ts)
     HEADLINE:
-    Fix stale notification badge count
+    Fix stale notification badge count from cached list
 
     DIGEST:
+    The standing goal:
+    - make the renderer stop stuttering when the window resizes
     What the session has been doing:
     - Read(/opt/render/glyph-atlas/atlas.rs)
     - said: The atlas reallocates on every resize instead of reusing pages.
     What it is doing right now:
     - Edit(/opt/render/glyph-atlas/atlas.rs)
     HEADLINE:
-    Prune glyph atlas reallocation
+    Prune glyph atlas reallocation on resize
 
     DIGEST:
-    What the user asked for:
-    - add the image paste path
-    - forget that, undo is coalescing far too much
-    What it is doing right now:
-    - forget that, undo is coalescing far too much
-    HEADLINE:
-    Tighten undo coalescing
-
-    DIGEST:
-    What the user asked for:
+    The standing goal:
     - walk me through how oauth refresh tokens rotate
     What it is doing right now:
     - said: A refresh token is exchanged once and replaced, so replay fails.
@@ -283,19 +321,119 @@ enum LocalModelPrompts {
     Output only the headline.
     """
 
+    /// The settled-stretch counterpart to [`summarize`]. Same register, one
+    /// difference that carries the whole meaning: the tense. The strip gives an
+    /// intent and a retrospective the same pixels, so past tense is the only
+    /// thing telling a reader that the work stopped rather than continued.
+    static let summarizeRetrospective = """
+    You write one line saying what a coding session accomplished. The work has \
+    stopped. The digest comes in labeled sections; the section labeled "What \
+    the session did" holds everything that happened, and the other sections \
+    say what it was for. Say what was accomplished — not the last thing that \
+    ran, and not every step in order.
+
+    Newspaper headline style, in the PAST TENSE. The rules are strict:
+
+    START WITH A PAST-TENSE VERB: Fixed, Authored, Drafted, Wired, Traced, \
+    Ported, Audited, Bundled, Salvaged, Explained. Pick the verb that fits \
+    what was done. Not "Fixing", not "Has fixed" — Fixed, Wired.
+    NO "the", "a", "an". NO "and" — use a comma, or cut the second half.
+    NO trailing detail. Name what was accomplished, not the parts it took.
+    SENTENCE CASE, like a sentence: only the first word is capitalized. \
+    Proper names keep their capitals — Lens, Finder, Keychain, CodeMirror.
+    No period. No quotes.
+
+    EVERY WORD MUST COME FROM THE DIGEST YOU WERE GIVEN. Never name a tool — \
+    Bash, Edit, Read, Write, Grep — and never write a path or a file's \
+    location. Never restate one line of the digest; say what the lines add up \
+    to.
+
+    Below are digests and the line each one earns.
+
+    DIGEST:
+    The standing goal:
+    - the keyboard shortcuts are fighting each other, sort it out
+    What the session did:
+    - Read(keymap.ts)
+    - Edit(keymap.ts)
+    - Bash(bun test keymap)
+    HEADLINE:
+    Resolved keymap shortcut conflicts
+
+    DIGEST:
+    The standing goal:
+    - the badge count stays wrong after things are marked read
+    What the session did:
+    - Read(notification-badge.ts)
+    - Edit(notification-badge.ts)
+    - said: The count read a cached list, so marking read never lowered it.
+    HEADLINE:
+    Fixed stale notification badge count
+
+    DIGEST:
+    The standing goal:
+    - walk me through how oauth refresh tokens rotate
+    What the session did:
+    - said: A refresh token is exchanged once and replaced, so replay fails.
+    HEADLINE:
+    Explained oauth refresh token rotation
+
+    Output only the line.
+    """
+
     static let generate = """
     You are a concise assistant embedded in a developer tool. Answer directly \
     and briefly, with no preamble.
     """
 
     static let classifyMaxTokens = 8
-    /// A headline budget, not a sentence budget. The strip clips at 56
-    /// characters (`MAX_HEADLINE_CHARS` in `session_overview.rs`), and 24
+    /// A headline budget, not a sentence budget. The strip clips at 64
+    /// characters (`MAX_HEADLINE_CHARS` in `session_overview.rs`), and 40
     /// tokens comfortably covers that — enough that a legal headline is never
     /// truncated mid-word, few enough that the model cannot spend latency
     /// generating text the strip will immediately discard.
-    static let summarizeMaxTokens = 24
+    static let summarizeMaxTokens = 40
     static let generateMaxTokens = 256
+
+    /// The shared, small-model-conscious wording every pack gets unless it has
+    /// earned its own.
+    static let defaultProfile = PromptProfile(
+        name: "default",
+        classify: classify,
+        classifyWithGrammar: classifyWithGrammar,
+        summarize: summarize,
+        summarizeRetrospective: summarizeRetrospective)
+
+    /// Per-pack wording, first prefix match wins. Keyed on an id *prefix* so a
+    /// requant of one family can share a profile without listing every id.
+    ///
+    /// Empty, and empty on evidence rather than for want of trying. One profile
+    /// was authored and scored during the bake-off: a compressed classify pair
+    /// for a 1.2B pack which, on the shared wording, called SHELL on fourteen
+    /// lines that all opened with a token also naming a program — a model
+    /// reading the first word and stopping. Leading with the decisive test and
+    /// stacking minimal pairs that share an opener made it worse, not better:
+    /// the pack's own false SHELL count went to thirty-six, because putting the
+    /// SHELL rule and the SHELL half of every pair first taught it that SHELL
+    /// is the default answer. It was removed rather than retuned, since a
+    /// second and third variant is tuning until the number looks good, and the
+    /// pack it was written for is no longer in the catalog at all.
+    ///
+    /// The lesson for whoever adds the first entry: a small pack over-reads
+    /// whatever the prompt puts first, so compression alone is not a strategy —
+    /// what leads has to be what you want over-read.
+    static let overrides: [(idPrefix: String, profile: PromptProfile)] = []
+
+    /// The profile a pack answers under. An absent id — the system backend, or
+    /// no pack resolved — gets the default, which is also what every pack gets
+    /// while the table is empty.
+    static func profile(forModelId id: String?) -> PromptProfile {
+        guard let id else { return defaultProfile }
+        for entry in overrides where id.hasPrefix(entry.idPrefix) {
+            return entry.profile
+        }
+        return defaultProfile
+    }
 }
 
 /// The one place that answers local-model requests, whichever transport they
@@ -341,7 +479,12 @@ final class LocalModelService {
     /// latency it measures.
     func handle(_ request: LocalModelRequest) async -> LocalModelReply {
         let started = DispatchTime.now()
-        let reply = await perform(request)
+        // Resolved once, here, so the wording that answered and the wording the
+        // log names can never be two different things.
+        let profile = request.kind.usesInstructions
+            ? LocalModelPrompts.profile(forModelId: await resolveRoute()?.model?.id)
+            : nil
+        let reply = await perform(request, profile: profile ?? LocalModelPrompts.defaultProfile)
         let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
 
         let task = request.kind.task
@@ -359,6 +502,12 @@ final class LocalModelService {
         // to tell them apart.
         if case .classify(_, _, let grammar) = request.kind {
             fields.append(TugLog.field("grammar", grammar != nil))
+        }
+        // Which wording answered. A score is a fact about a (pack, profile)
+        // pair, so a run that cannot name the profile cannot be compared to
+        // anything.
+        if let profile {
+            fields.append(TugLog.field("profile", profile.name))
         }
         if let threshold = Self.slowThresholdMs[task], elapsed > threshold {
             fields.append(TugLog.field("slow", true))
@@ -398,7 +547,9 @@ final class LocalModelService {
         }
     }
 
-    private func perform(_ request: LocalModelRequest) async -> LocalModelReply {
+    private func perform(
+        _ request: LocalModelRequest, profile: PromptProfile
+    ) async -> LocalModelReply {
         switch request.kind {
         case .availability:
             return LocalModelReply(ok: true, availability: await availability())
@@ -435,9 +586,9 @@ final class LocalModelService {
             // exactly when it wants the model to read one. The output budget is
             // unchanged — this adds input tokens only, and bounded ones.
             let instructions = grammar.map {
-                LocalModelPrompts.classifyWithGrammar.replacingOccurrences(
+                profile.classifyWithGrammar.replacingOccurrences(
                     of: LocalModelPrompts.grammarPlaceholder, with: $0)
-            } ?? LocalModelPrompts.classify
+            } ?? profile.classify
             let job = LocalModelJob(
                 instructions: instructions,
                 input: text,
@@ -453,9 +604,14 @@ final class LocalModelService {
                 return .failure(String(describing: error))
             }
 
-        case .summarize(let prompt):
+        // The two summarize lanes differ only in their instructions: a live
+        // intent in the present tense, a settled stretch in the past.
+        case .summarize(let prompt), .summarizeDone(let prompt):
+            let retrospective = if case .summarizeDone = request.kind { true } else { false }
             let job = LocalModelJob(
-                instructions: LocalModelPrompts.summarize,
+                instructions: retrospective
+                    ? profile.summarizeRetrospective
+                    : profile.summarize,
                 input: prompt,
                 maxTokens: LocalModelPrompts.summarizeMaxTokens,
                 temperature: 0)

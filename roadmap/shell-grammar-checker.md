@@ -58,7 +58,7 @@ The insight this plan builds on: nearly every command has a grammar we can know 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
 - Runtime version matching. The catalog records the version each grammar was harvested from, but the grader does not probe installed versions (probing runs binaries; see [P04]). Version drift is absorbed by the Yes→Maybe degradation rule ([P02]), which is what makes version matching non-load-bearing.
-- The rescue-or-rule-LFM2.5 experiment (`roadmap/rescue-or-rule-out-LFM.md` territory). This plan is pack-agnostic; it changes what any selected pack is asked. The two compose but neither depends on the other's outcome.
+- The rescue-or-rule-LFM2.5 experiment (run and settled in `roadmap/local-model-flow.md`, which absorbed the brief this line used to cite). This plan is pack-agnostic; it changes what any selected pack is asked. The two compose but neither depends on the other's outcome.
 - Any change to the PULSE/summarize half of the local model's work. `ground_headline`, the summarize prompt, and `run.py` are untouched.
 - Removing or weakening `vetoesShellVerdict`. The veto remains the last gate on every SHELL verdict.
 - Letting a Yes grade execute without the model. Considered and rejected ([Q02]).

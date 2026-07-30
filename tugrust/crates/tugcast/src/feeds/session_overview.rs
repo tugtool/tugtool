@@ -19,6 +19,26 @@
 //! PULSE itself switched off, an unresolvable session identity, a refusal — all
 //! of them end the tick silently, and the strip renders exactly as it does
 //! today.
+//!
+//! **A settled session says what it did.** When a turn ends — or a `$` command
+//! settles cleanly — and nothing follows for `IDLE_COLLAPSE_AFTER`, the emitter
+//! runs one last summarize over the whole stretch and the strip switches from
+//! the present tense to the past. Leaving the final intent up would be a claim
+//! the session has stopped making.
+//!
+//! The collapse rides the ordinary emit machinery — the same queue, the single
+//! in-flight slot, the same back-off, register, and gate — so it inherits every
+//! safety property already built rather than duplicating one. It differs in
+//! exactly two places, both deliberate: the gate runs in its retrospective mode
+//! (see `ground_headline`), and the attempt is marked spent when the model
+//! *answers* rather than when a headline emits. The second is not an
+//! optimization: the collapse fires on `settled_at`, which no refusal changes,
+//! so an attempt marked only on success would be retried on every sweep for as
+//! long as the session stayed idle.
+//!
+//! One retrospective per settled stretch. Any beat resumes ordinary intents and
+//! re-arms the next collapse, so nothing is lost — the intent it replaced was
+//! stale by the definition of the trigger.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -59,6 +79,10 @@ pub const EMIT_FLOOR: Duration = Duration::from_secs(8);
 /// are evidence, not triggers, so this is the only evaluation point — well
 /// inside every floor, so nothing due waits perceptibly.
 const TICK_INTERVAL: Duration = Duration::from_secs(2);
+
+/// How long a settled session stays quiet before the strip stops saying what it
+/// is doing and starts saying what it did.
+const IDLE_COLLAPSE_AFTER: Duration = Duration::from_secs(30);
 
 /// Minimum spacing between forced (human-act) fires — two sweep ticks. A lone
 /// submission still re-aims at typing speed, but every `$` command's start
@@ -107,19 +131,15 @@ const MIN_SENTENCE_CHARS: usize = 20;
 
 /// PulseLine doctrine: one line, and it has to fit the strip as a *headline* —
 /// the bright leading run of the strip's single row, not a sentence about the
-/// session. Long enough for the work's name with slack, short enough that prose
-/// cannot pass. A tuning value; the live matrix may move it.
-const MAX_HEADLINE_CHARS: usize = 56;
-
-/// Words a headline runs to. The character budget alone cannot enforce this: a
-/// long-enough run of short words fits 56 characters and still reads as a
-/// sentence.
-const MAX_HEADLINE_WORDS: usize = 6;
+/// session. This is the register's only budget: a headline is whatever says the
+/// work in the room 64 characters gives it, at whatever word count that takes.
+/// A tuning value; the live matrix may move it.
+const MAX_HEADLINE_CHARS: usize = 64;
 
 /// Joiners a headline's dispensable tail hangs from.
 ///
-/// Past the word budget, what a model has added is almost always the parts list
-/// a label headline drags behind it — "Author command-line calculator **with
+/// Past the budget, what a model has added is almost always the parts list a
+/// label headline drags behind it — "Author command-line calculator **with
 /// makefile and readme**". Headline register drops exactly this: `and` gives way
 /// to a comma or is cut, and trailing modifiers go. Cutting at the joiner keeps
 /// a whole phrase rather than a truncated one.
@@ -160,6 +180,11 @@ pub struct Cadence {
     /// Minimum spacing on the forced (human-act) fire path — the only floor
     /// that path honors.
     pub forced_floor: Duration,
+    /// How long a settled session stays quiet before its intent collapses into
+    /// a retrospective. Longer than `idle_period`, so the last live intent of a
+    /// stretch always gets its turn on the strip before the stretch is called
+    /// done.
+    pub idle_collapse_after: Duration,
 }
 
 impl Default for Cadence {
@@ -169,6 +194,7 @@ impl Default for Cadence {
             idle_period: IDLE_PERIOD,
             floor: EMIT_FLOOR,
             forced_floor: FORCED_EMIT_FLOOR,
+            idle_collapse_after: IDLE_COLLAPSE_AFTER,
         }
     }
 }
@@ -400,6 +426,19 @@ struct SessionState {
     last_digest: Option<String>,
     last_headline: Option<String>,
     beat: i64,
+    /// When the session last came to rest — a turn ended, or a `$` command
+    /// settled with a zero exit — with nothing recorded since. `None` means
+    /// work is in flight. This is the idle collapse's clock: any other beat,
+    /// and every human act, clears it.
+    settled_at: Option<Instant>,
+    /// Whether this idle stretch's retrospective has already been attempted.
+    /// Cleared by any beat, so a session that resumes and settles again
+    /// collapses again.
+    collapsed: bool,
+    /// Activity lines recorded since the last collapse was marked. A settled
+    /// stretch with none has nothing new to say it did, which is what keeps a
+    /// session that merely reconnects from re-announcing old work.
+    activity_since_collapse: usize,
 }
 
 impl SessionState {
@@ -419,6 +458,9 @@ impl SessionState {
             last_digest: None,
             last_headline: None,
             beat: 0,
+            settled_at: None,
+            collapsed: false,
+            activity_since_collapse: 0,
         }
     }
 
@@ -432,6 +474,40 @@ impl SessionState {
     fn human_act(&mut self) {
         self.activity_since_emit = 0;
         self.fire_asap = true;
+        self.resume();
+    }
+
+    /// The session is working again: it is no longer at rest, and whatever it
+    /// goes on to do earns a fresh retrospective when it next settles.
+    fn resume(&mut self) {
+        self.settled_at = None;
+        self.collapsed = false;
+    }
+
+    /// Whether this session has been at rest long enough to say what it did.
+    ///
+    /// Reads `settled_at` rather than `new_beats` — an idle session has no new
+    /// beats, which is the entire point of the trigger. That is also why
+    /// `collapsed` is marked on attempt rather than on emit: this arm does not
+    /// inherit the brake `commit_tick` applies to the intent path.
+    /// Record at the current instant, for the tests that exercise accumulation
+    /// rather than the settle clock.
+    #[cfg(test)]
+    fn record_now(&mut self, beat: SessionBeat) {
+        self.record(beat, Instant::now());
+    }
+
+    #[cfg(test)]
+    fn observe_now(&mut self, event: CodeOutputEvent) {
+        self.observe(event, Instant::now());
+    }
+
+    fn collapse_due(&self, now: Instant, after: Duration) -> bool {
+        !self.collapsed
+            && self.activity_since_collapse > 0
+            && self
+                .settled_at
+                .is_some_and(|at| now.duration_since(at) >= after)
     }
 
     /// Commit a due tick: reset the counters the cadence and the digest read,
@@ -450,7 +526,21 @@ impl SessionState {
         (self.activity.iter().cloned().collect(), recent, asked)
     }
 
-    fn record(&mut self, beat: SessionBeat) {
+    /// Record a beat, and with it whether the session is now at rest.
+    ///
+    /// A turn ending and a `$` command settling cleanly are the two ways work
+    /// finishes; every other beat means work is still happening. A *failed* `$`
+    /// command is `Shell(Some(line))` — a recorded beat like any other — so it
+    /// does not arm the collapse, and a session whose last act was an error
+    /// keeps its standing intent rather than announcing what it did.
+    fn record(&mut self, beat: SessionBeat, now: Instant) {
+        match beat {
+            SessionBeat::Turn | SessionBeat::Shell(None) => {
+                self.collapsed = false;
+                self.settled_at = Some(now);
+            }
+            _ => self.resume(),
+        }
         let line = match beat {
             SessionBeat::Tool(line) | SessionBeat::Said(line) => Some(line),
             SessionBeat::Shell(line) => line,
@@ -462,6 +552,7 @@ impl SessionState {
             }
             self.activity.push_back(line);
             self.activity_since_emit += 1;
+            self.activity_since_collapse += 1;
         }
         self.new_beats += 1;
     }
@@ -469,29 +560,34 @@ impl SessionState {
     /// Route a CODE_OUTPUT event into beats and record them. Prose fragments
     /// accumulate; everything else records directly, and a `Turn` first
     /// settles the prose state (finalize the open block, clear the dedup set).
-    fn observe(&mut self, event: CodeOutputEvent) {
+    fn observe(&mut self, event: CodeOutputEvent, now: Instant) {
         match event {
             CodeOutputEvent::Beat(SessionBeat::Turn) => {
                 if let Some(said) = self.finalize_open() {
-                    self.record(said);
+                    self.record(said, now);
                 }
                 self.beaten.clear();
-                self.record(SessionBeat::Turn);
+                self.record(SessionBeat::Turn, now);
             }
-            CodeOutputEvent::Beat(beat) => self.record(beat),
+            CodeOutputEvent::Beat(beat) => self.record(beat, now),
             CodeOutputEvent::Prose {
                 msg_id,
                 block_index,
                 is_partial,
                 text,
             } => {
+                // Prose arriving is the assistant talking, so the session is
+                // working whether or not this fragment completes a block. A
+                // delta that earns no beat still has to un-settle the session,
+                // or a stretch that resumes mid-block would collapse under it.
+                self.resume();
                 let beats = if is_partial {
                     self.prose_delta((msg_id, block_index), &text)
                 } else {
                     self.prose_terminal((msg_id, block_index), &text)
                 };
                 for beat in beats {
-                    self.record(beat);
+                    self.record(beat, now);
                 }
             }
         }
@@ -724,8 +820,20 @@ pub fn tool_line(payload: &serde_json::Value) -> Option<String> {
     }
 }
 
-/// Compose the digest the model summarizes: what the user asked for, what the
-/// session has been doing about it, and what it is doing right now.
+/// Compose the digest the model summarizes: the standing goal, the current ask,
+/// what the session has been doing about it, and what it is doing right now.
+///
+/// The two prompt sections are separate because the headline is meant to be
+/// biased toward the newest declaration of intent while still moving as the
+/// machinery works. One combined section made the current ask one bullet among
+/// three, indistinguishable from the goal it was supposed to redirect; a
+/// labeled section of its own is the only per-request lever strong enough for a
+/// small model. A session whose newest prompt still *is* its first has one goal
+/// and no redirection, and gets the standing-goal section alone.
+///
+/// Only the newest recent prompt reaches the digest. Anything between it and
+/// the pinned first is the same middle slice `digest_prompts` already trims for
+/// — least informative, and able to outvote the ask it precedes.
 ///
 /// `recent_count` is how many of the trailing `activity` entries arrived since
 /// the last committed tick, clamped to `activity.len()`. Those entries are the
@@ -755,14 +863,7 @@ pub fn compose_digest(
     let split = activity.len() - recent_count.min(activity.len());
     let background_start = split.saturating_sub(MAX_BACKGROUND_LINES);
     let mut out = String::new();
-    if !prompts.is_empty() {
-        out.push_str("What the user asked for:\n");
-        for prompt in prompts {
-            out.push_str("- ");
-            out.push_str(&clip(prompt.trim(), 240));
-            out.push('\n');
-        }
-    }
+    push_prompt_sections(&mut out, prompts);
     for (heading, lines) in [
         (
             "What the session has been doing:",
@@ -800,6 +901,58 @@ pub fn compose_digest(
         out.push_str("What it is doing right now:\n- ");
         out.push_str(&clip(prompts[prompts.len() - 1].trim(), 240));
         out.push('\n');
+    }
+    Some(out)
+}
+
+/// Write the two intent sections — the standing goal, then the current ask when
+/// the newest prompt is not still the first. Shared so the live digest and the
+/// retrospective state the session's intent in exactly the same words.
+fn push_prompt_sections(out: &mut String, prompts: &[String]) {
+    let Some((goal, rest)) = prompts.split_first() else {
+        return;
+    };
+    out.push_str(STANDING_GOAL_HEADING);
+    out.push('\n');
+    out.push_str("- ");
+    out.push_str(&clip(goal.trim(), 240));
+    out.push('\n');
+    if let Some(current) = rest.last() {
+        out.push('\n');
+        out.push_str(CURRENT_ASK_HEADING);
+        out.push('\n');
+        out.push_str("- ");
+        out.push_str(&clip(current.trim(), 240));
+        out.push('\n');
+    }
+}
+
+/// Compose the digest a settled session is summarized from: the same intent
+/// sections, then every activity line the stretch produced under one heading.
+///
+/// No recency split. The live digest divides activity into background and right
+/// now because the question is what the session is doing *at this moment*; the
+/// retrospective asks what it did across the whole stretch, and a boundary
+/// inside that stretch would only invite the model to answer about half of it.
+///
+/// Returns `None` when there is nothing to describe.
+pub fn compose_retrospective_digest(prompts: &[String], activity: &[String]) -> Option<String> {
+    if prompts.is_empty() && activity.is_empty() {
+        return None;
+    }
+    let mut out = String::new();
+    push_prompt_sections(&mut out, prompts);
+    if !activity.is_empty() {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(RETROSPECTIVE_HEADING);
+        out.push('\n');
+        for line in activity {
+            out.push_str("- ");
+            out.push_str(line);
+            out.push('\n');
+        }
     }
     Some(out)
 }
@@ -857,9 +1010,9 @@ pub struct HeadlineReport {
     pub text: String,
     /// The normalizer changed the string at all.
     pub normalized: bool,
-    /// The six-word budget cut a tail.
+    /// An over-budget headline hung from a joiner, and the tail was cut there.
     pub trimmed: bool,
-    /// The 56-character budget clipped, after any trim.
+    /// The character budget clipped, after any trim.
     pub clipped: bool,
 }
 
@@ -908,7 +1061,7 @@ pub fn headline_register_report(raw: &str) -> HeadlineReport {
     }
 
     let collapsed = collapsed.trim();
-    let trimmed_text = trim_to_word_budget(collapsed);
+    let trimmed_text = trim_tail_to_char_budget(collapsed);
     let text = clip(&trimmed_text, MAX_HEADLINE_CHARS);
     HeadlineReport {
         normalized: text != raw.trim(),
@@ -918,16 +1071,25 @@ pub fn headline_register_report(raw: &str) -> HeadlineReport {
     }
 }
 
+/// Headings under which a digest line states intent rather than activity: what
+/// the session is for, and what it was most recently pointed at.
+const STANDING_GOAL_HEADING: &str = "The standing goal:";
+const CURRENT_ASK_HEADING: &str = "The current ask:";
+
 /// Headings under which a digest line describes activity rather than intent.
 ///
 /// The tool-name and restatement rules read only these sections. `compose_digest`
-/// writes the user's own prompts under `What the user asked for:` in the same
+/// writes the user's own prompts under the intent headings above in the same
 /// `- ` form, and reading those as activity would put the user's verbs into the
 /// tool-name set — an ask opening `fix the lag` would make every legitimate
-/// `Fix …` headline unemittable for that session.
+/// `Fix …` headline unemittable for that session. Membership here is the whole
+/// scoping mechanism, so a heading that is not listed is excluded by default.
+const RETROSPECTIVE_HEADING: &str = "What the session did:";
+
 const ACTIVITY_HEADINGS: &[&str] = &[
     "What the session has been doing:",
     "What it is doing right now:",
+    RETROSPECTIVE_HEADING,
 ];
 
 /// Words that carry none of a headline's subject, so whether the digest spells
@@ -942,12 +1104,23 @@ const GROUNDING_STOPWORDS: &[&str] = &[
 /// Read as a fraction: `GROUNDED_MIN_NUMERATOR / GROUNDED_MIN_DENOMINATOR` of the
 /// content words after the opening verb.
 ///
-/// Swept over the thirteen frozen digests and the real defective answers. Correct
-/// headlines ground no worse than two thirds; the surviving defects ground three
-/// fifths and one third. Two thirds is therefore both the loosest value that
-/// refuses every defect and the strictest that accepts every correct headline,
-/// and the band between them is one word wide — which is why the sweep is pinned
-/// by a test rather than left as a comment.
+/// Swept over the thirteen frozen digests, the real defective answers, and the
+/// resident model's own answers at the 64-character budget. Correct headlines
+/// ground no worse than two thirds; the surviving defects ground three fifths
+/// and one third. Two thirds is therefore both the loosest value that refuses
+/// every defect and the strictest that accepts every correct headline, and the
+/// band between them is one word wide — which is why the sweep is pinned by a
+/// test rather than left as a comment.
+///
+/// The budget widening did not move it. The worry was that a 64-character
+/// headline carries more subject words, so one invented word costs a smaller
+/// fraction and the same ratio reads looser. Real answers do run longer — four
+/// to eight subject words against the six-word register's three to five — but
+/// the two edges landed on the same numbers, because a model that invents
+/// invents a phrase rather than a word: the defect that survives furthest is
+/// still three fifths, and correct answers still bottom out at exactly two
+/// thirds, now with real model output sitting there and not only a hand-written
+/// headline.
 const GROUNDED_MIN_NUMERATOR: usize = 2;
 const GROUNDED_MIN_DENOMINATOR: usize = 3;
 
@@ -1012,18 +1185,39 @@ fn stem(word: &str) -> &str {
 /// arrives glued to the tool name — `Bash(cargo` — and no headline can ever
 /// match it. That would silently weaken the restatement rule, which exists
 /// precisely to catch a headline that repeats a target.
+///
+/// A dotted token yields its parts *and* itself: `nocturne.css` contributes
+/// `nocturne`, `css`, and `nocturne.css`. The dot is not in the split set
+/// because a bare filename is a word in its own right — rule 3 admits one as a
+/// proper name — so splitting it away would leave a headline naming the file
+/// exactly with nothing to match. Emitting both is what lets a headline reading
+/// `nocturne` ground against a digest that only ever writes
+/// `Read(tugdeck/styles/themes/nocturne.css)`, which at 64 characters is a
+/// common correct shape and was refused outright at six words.
 fn content_words(text: &str) -> Vec<String> {
-    text.split(|c: char| {
+    let mut out = Vec::new();
+    for raw in text.split(|c: char| {
         c.is_whitespace() || c == '-' || c == '/' || c == '_' || c == '(' || c == ')'
-    })
-        .filter_map(|raw| {
-            let bare = raw
-                .trim_matches(|c: char| GROUNDING_TRIM.contains(c))
-                .to_lowercase();
-            let stemmed = stem(&bare);
-            (!stemmed.is_empty()).then(|| stemmed.to_string())
-        })
-        .collect()
+    }) {
+        let bare = raw
+            .trim_matches(|c: char| GROUNDING_TRIM.contains(c))
+            .to_lowercase();
+        // The whole token goes first so `first()` is still the opening word:
+        // the verb rule and the subject's `skip(1)` both read this in order.
+        let stemmed = stem(&bare);
+        if !stemmed.is_empty() {
+            out.push(stemmed.to_string());
+        }
+        if bare.contains('.') {
+            out.extend(
+                bare.split('.')
+                    .map(stem)
+                    .filter(|part| !part.is_empty())
+                    .map(str::to_string),
+            );
+        }
+    }
+    out
 }
 
 /// The tool name an activity item opens with, if it is shaped like one.
@@ -1112,7 +1306,33 @@ fn digest_tool_names(digest: &str) -> HashSet<String> {
 /// disjoint from every corpus digest, so a lifted example's words are by
 /// definition absent from the digest and rule 5 already rejects it; a duplicated
 /// list here would go stale the first time the Swift string was edited.
-pub fn ground_headline(headline: &str, digest: &str) -> GroundingVerdict {
+///
+/// # The retrospective's exemption from rule 2
+///
+/// A retrospective opens in the past tense, and past-tense verbs collide with
+/// tool names by construction. `stem` is deliberately crude — it strips `ed`, so
+/// `stem("edited")` is `"edit"`, which is exactly `stem("Edit")`. `Read` is
+/// worse: it is its own past tense and collides with no stemming at all. So
+/// `Edited keymap shortcut conflicts`, a correct line for a session that ran
+/// `Edit(keymap.ts)`, would be refused as a tool-name opener.
+///
+/// In `Retrospective` mode rule 2 therefore reads past the first word. This
+/// costs nothing rule 2 was buying: it exists to catch a headline whose
+/// *subject* is the tool, and a past-tense verb that happens to spell a tool
+/// name is a verb. Rule 4 still catches a line that restates the activity. Every
+/// other rule is byte-identical across modes — which is why
+/// `RETROSPECTIVE_HEADING` is in `ACTIVITY_HEADINGS`, without which rules 2 and
+/// 4 would both go inert over a digest that is nothing but tool lines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GroundingMode {
+    /// A live headline: the whole line is checked.
+    Intent,
+    /// A settled stretch's retrospective: the opening past-tense verb is exempt
+    /// from the tool-name rule.
+    Retrospective,
+}
+
+pub fn ground_headline(headline: &str, digest: &str, mode: GroundingMode) -> GroundingVerdict {
     let headline = headline.trim();
     if headline.is_empty() {
         return GroundingVerdict::Ungrounded {
@@ -1129,7 +1349,7 @@ pub fn ground_headline(headline: &str, digest: &str) -> GroundingVerdict {
         };
     };
 
-    if digest_tool_names(digest).contains(verb) {
+    if mode == GroundingMode::Intent && digest_tool_names(digest).contains(verb) {
         return GroundingVerdict::Ungrounded {
             rule: "tool-name-opener",
             detail: verb.clone(),
@@ -1196,37 +1416,53 @@ pub fn ground_headline(headline: &str, digest: &str) -> GroundingVerdict {
     GroundingVerdict::Grounded
 }
 
-/// Bring a headline within the word budget by dropping its tail.
+/// Bring an over-budget headline within the character budget by dropping the
+/// tail it hangs from a joiner.
 ///
-/// Cuts at the earliest joiner in range, so the whole tail goes rather than
-/// part of it — "Author command-line calculator with makefile and readme" loses
-/// everything from `with`, not just `and readme`. A headline with no
-/// joiner to cut at is truncated, because a bounded headline is the guarantee
-/// and an unbounded one is prose. Never cuts below three words: past that there
-/// is no headline left to save.
-pub fn trim_to_word_budget(text: &str) -> String {
-    let words: Vec<&str> = text.split_whitespace().collect();
-    if words.len() <= MAX_HEADLINE_WORDS {
+/// Fires only on overflow: a headline inside the budget is whatever the model
+/// wrote, at any word count. Over budget, cutting at the earliest joiner takes
+/// the whole tail rather than part of it — "Author command-line calculator with
+/// makefile and readme" loses everything from `with`, not just `and readme`.
+/// Never cuts below three words: past that there is no headline left to save.
+///
+/// The cut has to earn itself. If even the earliest joiner leaves the text over
+/// budget, the text comes back untouched and `clip` truncates it — a headline
+/// that is both amputated and clipped reads worse than one that is only
+/// clipped, and the phrase boundary buys nothing once the ellipsis lands.
+pub fn trim_tail_to_char_budget(text: &str) -> String {
+    if text.chars().count() <= MAX_HEADLINE_CHARS {
         return text.to_string();
     }
-    let joiner_at = words.iter().enumerate().find(|(i, word)| {
-        let bare = word
-            .trim_matches(|c: char| !c.is_alphanumeric())
-            .to_lowercase();
-        *i >= 3 && *i <= MAX_HEADLINE_WORDS && TAIL_JOINERS.contains(&bare.as_str())
-    });
-    let end = match joiner_at {
-        Some((i, _)) => i,
-        None => MAX_HEADLINE_WORDS,
-    };
-    words[..end].join(" ")
+    let words: Vec<&str> = text.split_whitespace().collect();
+    words
+        .iter()
+        .enumerate()
+        .filter(|(i, word)| {
+            let bare = word
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase();
+            *i >= 3 && TAIL_JOINERS.contains(&bare.as_str())
+        })
+        .map(|(i, _)| words[..i].join(" "))
+        .find(|cut| cut.chars().count() <= MAX_HEADLINE_CHARS)
+        .unwrap_or_else(|| text.to_string())
 }
 
 /// The PULSE frame carrying an overview. `kind` is what tells the deck to file
 /// it above the beat line instead of in the beat stream; parsers that predate
 /// the field ignore it.
-pub fn overview_frame(session_id: &str, headline: &str, beat: i64, at_ms: i64) -> Frame {
-    let body = serde_json::json!({
+///
+/// `phase` is `"done"` on a retrospective and absent on a live intent — present
+/// so the deck can eventually give a settled stretch its own register, and
+/// absent rather than `"live"` so nothing existing has to learn a new value.
+pub fn overview_frame(
+    session_id: &str,
+    headline: &str,
+    beat: i64,
+    at_ms: i64,
+    phase: Option<&str>,
+) -> Frame {
+    let mut body = serde_json::json!({
         "type": "pulse",
         "kind": "overview",
         "text": headline,
@@ -1234,6 +1470,9 @@ pub fn overview_frame(session_id: &str, headline: &str, beat: i64, at_ms: i64) -
         "beat": beat,
         "at": at_ms,
     });
+    if let (Some(phase), Some(map)) = (phase, body.as_object_mut()) {
+        map.insert("phase".to_string(), serde_json::json!(phase));
+    }
     Frame::new(FeedId::PULSE, serde_json::to_vec(&body).unwrap_or_default())
 }
 
@@ -1344,6 +1583,10 @@ struct EmitJob {
     /// refusal would then cost liveliness globally, which is the opposite of what
     /// the re-ask exists to protect.
     may_reask: bool,
+    /// Whether this emit says what the session did rather than what it is
+    /// doing. Chosen on the loop by the collapse arm; the task carries it into
+    /// the digest, the requester, the gate, and back out on the outcome.
+    retrospective: bool,
 }
 
 /// What the one corrective re-ask did, for the rescue rate.
@@ -1390,6 +1633,10 @@ struct EmitOutcome {
     headline: Option<String>,
     /// The model was absent or failed — arm the back-off.
     failed: bool,
+    /// Echoed back from the job. Paired with `seen_digest`, this is what tells
+    /// the loop a retrospective was attempted and answered, which is when the
+    /// collapse is marked — see `apply_emit_outcome`.
+    retrospective: bool,
 }
 
 /// Run the emitter until cancelled.
@@ -1422,7 +1669,9 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
     // Due sessions waiting behind the in-flight emit, and — in `active` —
     // every session currently queued or in flight, excluded from the sweep
     // and from pruning until its outcome lands.
-    let mut queue: VecDeque<String> = VecDeque::new();
+    // Each entry carries whether it is a retrospective, decided by the arm that
+    // queued it.
+    let mut queue: VecDeque<(String, bool)> = VecDeque::new();
     let mut active: HashSet<String> = HashSet::new();
     let mut in_flight: Option<(String, tokio::task::JoinHandle<EmitOutcome>)> = None;
 
@@ -1508,7 +1757,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                     .entry(session_id)
                     .or_insert_with(|| SessionState::new(now));
                 state.last_seen = now;
-                state.observe(event);
+                state.observe(event, now);
                 continue;
             }
             Some(Inbound::Shell(frame)) => {
@@ -1535,7 +1784,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                 if payload.get("type").and_then(|v| v.as_str()) == Some("exchange_started") {
                     state.human_act();
                 }
-                state.record(beat);
+                state.record(beat, now);
                 continue;
             }
             Some(Inbound::Submission(frame)) => {
@@ -1555,7 +1804,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                     state.pending_ask = Some(text.clone());
                     state.asked_since_emit = true;
                 }
-                state.record(beat);
+                state.record(beat, now);
                 continue;
             }
             None => {}
@@ -1596,7 +1845,21 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
             .collect();
         for session_id in due {
             active.insert(session_id.clone());
-            queue.push_back(session_id);
+            queue.push_back((session_id, false));
+        }
+        // The collapse arm. A session already queued for an intent is skipped
+        // by the `active` guard and reconsidered on a later sweep — by which
+        // time the intent it just emitted is the one being collapsed, which is
+        // the right order to say the two things in.
+        let collapse_due: Vec<String> = sessions
+            .iter()
+            .filter(|(id, _)| !active.contains(*id))
+            .filter(|(_, state)| state.collapse_due(now, config.cadence.idle_collapse_after))
+            .map(|(session_id, _)| session_id.clone())
+            .collect();
+        for session_id in collapse_due {
+            active.insert(session_id.clone());
+            queue.push_back((session_id, true));
         }
         spawn_next(
             &mut queue,
@@ -1617,7 +1880,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
 /// the rest with their ticks uncommitted, so their evidence survives for the
 /// first allowed sweep after it lifts.
 fn spawn_next(
-    queue: &mut VecDeque<String>,
+    queue: &mut VecDeque<(String, bool)>,
     active: &mut HashSet<String>,
     in_flight: &mut Option<(String, tokio::task::JoinHandle<EmitOutcome>)>,
     sessions: &mut HashMap<String, SessionState>,
@@ -1626,12 +1889,12 @@ fn spawn_next(
 ) {
     while in_flight.is_none() {
         if backoff.active(Instant::now()) {
-            for id in queue.drain(..) {
+            for (id, _) in queue.drain(..) {
                 active.remove(&id);
             }
             return;
         }
-        let Some(session_id) = queue.pop_front() else {
+        let Some((session_id, retrospective)) = queue.pop_front() else {
             return;
         };
         let Some(state) = sessions.get_mut(&session_id) else {
@@ -1651,6 +1914,7 @@ fn spawn_next(
             asked,
             // Read after the pop: nobody is left behind this emit.
             may_reask: queue.is_empty(),
+            retrospective,
         };
         *in_flight = Some((session_id, tokio::spawn(run_emit(job))));
     }
@@ -1672,6 +1936,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
         jsonl,
         local_model,
         may_reask,
+        retrospective,
     } = job;
     let mut outcome = EmitOutcome {
         session_id: session_id.clone(),
@@ -1680,6 +1945,12 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
         seen_digest: None,
         headline: None,
         failed: false,
+        retrospective,
+    };
+    let mode = if retrospective {
+        GroundingMode::Retrospective
+    } else {
+        GroundingMode::Intent
     };
     // The prompts are the better half of the digest but not a required
     // one: `compose_digest` describes a session from its activity alone.
@@ -1726,11 +1997,20 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
             prompts.push(ask);
         }
     }
-    let Some(digest) = compose_digest(&prompts, &activity, recent_activity, asked) else {
+    let composed = if retrospective {
+        compose_retrospective_digest(&prompts, &activity)
+    } else {
+        compose_digest(&prompts, &activity, recent_activity, asked)
+    };
+    let Some(digest) = composed else {
         debug!(session = %session_id, "session overview: nothing to describe");
         return outcome;
     };
-    if last_digest.as_deref() == Some(digest.as_str()) {
+    // The dedup is for the intent path only. A retrospective is attempted once
+    // per settled stretch and is marked spent by having been *asked*, so a path
+    // that returns before the model is reached would leave the collapse unmarked
+    // and re-fire on every sweep — this arm has no `new_beats` brake to stop it.
+    if !retrospective && last_digest.as_deref() == Some(digest.as_str()) {
         debug!(session = %session_id, "session overview: digest unchanged");
         return outcome;
     }
@@ -1744,19 +2024,35 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
     // the request deadline is a transport timeout, far above the point at
     // which a headline stops being worth having.
     let started = Instant::now();
-    let report = match requester.summarize(digest.clone()).await {
+    let answer = if retrospective {
+        requester.summarize_done(digest.clone()).await
+    } else {
+        requester.summarize(digest.clone()).await
+    };
+    let report = match answer {
         Ok(text) => {
             let report = headline_register_report(&text);
-            info!(
-                session = %session_id,
-                elapsed_ms = started.elapsed().as_millis() as u64,
-                raw = %text,
-                headline = %report.text,
-                normalized = report.normalized,
-                trimmed = report.trimmed,
-                clipped = report.clipped,
-                "session overview: summarized",
-            );
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+            if retrospective {
+                info!(
+                    session = %session_id,
+                    elapsed_ms,
+                    raw = %text,
+                    headline = ?report.text,
+                    "session overview: collapsed",
+                );
+            } else {
+                info!(
+                    session = %session_id,
+                    elapsed_ms,
+                    raw = %text,
+                    headline = %report.text,
+                    normalized = report.normalized,
+                    trimmed = report.trimmed,
+                    clipped = report.clipped,
+                    "session overview: summarized",
+                );
+            }
             report
         }
         Err(error) => {
@@ -1764,6 +2060,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
                 %error,
                 session = %session_id,
                 elapsed_ms = started.elapsed().as_millis() as u64,
+                retrospective,
                 "session overview: summarize failed",
             );
             outcome.failed = true;
@@ -1776,7 +2073,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
     // correction is appended for the model's benefit only.
     outcome.seen_digest = Some(digest.clone());
 
-    let refusal = match ground_headline(&report.text, &digest) {
+    let refusal = match ground_headline(&report.text, &digest, mode) {
         GroundingVerdict::Grounded => {
             outcome.headline = Some(report.text);
             return outcome;
@@ -1813,7 +2110,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
     let reask = match second {
         Ok(text) => {
             let report = headline_register_report(&text);
-            match ground_headline(&report.text, &digest) {
+            match ground_headline(&report.text, &digest, mode) {
                 GroundingVerdict::Grounded => {
                     outcome.headline = Some(report.text);
                     Reask::Rescued
@@ -1845,7 +2142,7 @@ fn apply_emit_outcome(
     outcome: EmitOutcome,
     sessions: &mut HashMap<String, SessionState>,
     backoff: &mut BackOff,
-    queue: &mut VecDeque<String>,
+    queue: &mut VecDeque<(String, bool)>,
     active: &mut HashSet<String>,
     pulse_tx: &broadcast::Sender<Frame>,
 ) {
@@ -1856,13 +2153,14 @@ fn apply_emit_outcome(
         seen_digest,
         headline,
         failed,
+        retrospective,
     } = outcome;
     if failed {
         // The back-off is process-wide. The queued sessions behind this one
         // drop with their ticks uncommitted, so their evidence survives for
         // the first allowed sweep after the back-off lifts.
         backoff.fail(Instant::now());
-        for id in queue.drain(..) {
+        for (id, _) in queue.drain(..) {
             active.remove(&id);
         }
     } else if seen_digest.is_some() {
@@ -1876,6 +2174,15 @@ fn apply_emit_outcome(
         if state.pending_ask.as_ref() == Some(&ask) {
             state.pending_ask = None;
         }
+    }
+    // The collapse is spent once the model has answered, whatever the gate then
+    // rules. Marking it on a successful emit instead would loop: the collapse
+    // arm fires on `settled_at`, which no refusal changes, so a retrospective
+    // the gate keeps refusing would be re-asked on every sweep for as long as
+    // the session stayed idle.
+    if retrospective && seen_digest.is_some() {
+        state.collapsed = true;
+        state.activity_since_collapse = 0;
     }
     if let Some(digest) = seen_digest {
         state.last_digest = Some(digest);
@@ -1898,12 +2205,14 @@ fn apply_emit_outcome(
         &headline,
         state.beat,
         crate::session_ledger::now_millis(),
+        retrospective.then_some("done"),
     );
     let receivers = pulse_tx.send(frame).unwrap_or(0);
     info!(
         session = %session_id,
         beat = state.beat,
         receivers,
+        retrospective,
         "session overview: emitted",
     );
 }
@@ -2038,49 +2347,93 @@ mod tests {
     /// `TUG_REGENERATE_DIGESTS=1 cargo nextest run corpus_digests` rewrites them.
     #[test]
     fn corpus_digests_are_what_compose_digest_produces() {
+        let mut checked = 0;
+        for entry in corpus_entries() {
+            let digest = compose_digest(
+                &entry.prompts,
+                &entry.tools,
+                entry.recent_tools,
+                entry.asked,
+            )
+            .unwrap_or_else(|| panic!("{} describes nothing", entry.input.display()));
+            freeze(&entry.input.with_extension("digest.txt"), &digest);
+            checked += 1;
+        }
+        assert!(checked >= 12, "corpus shrank to {checked} entries");
+    }
+
+    /// The retrospective's own frozen surface, pinned at birth so the lane that
+    /// scores it has a fixed thing to score.
+    #[test]
+    fn corpus_retrospectives_are_what_the_retrospective_composer_produces() {
+        let mut checked = 0;
+        for entry in corpus_entries() {
+            let digest = compose_retrospective_digest(&entry.prompts, &entry.tools)
+                .unwrap_or_else(|| panic!("{} describes nothing", entry.input.display()));
+            freeze(&entry.input.with_extension("done.txt"), &digest);
+            checked += 1;
+        }
+        assert!(checked >= 12, "corpus shrank to {checked} entries");
+    }
+
+    struct CorpusEntry {
+        input: PathBuf,
+        prompts: Vec<String>,
+        tools: Vec<String>,
+        recent_tools: usize,
+        asked: bool,
+    }
+
+    /// The corpus inputs — `compose_digest`'s four arguments, in file order.
+    fn corpus_entries() -> Vec<CorpusEntry> {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../tests/model-eval/corpus");
-        let regenerate = std::env::var("TUG_REGENERATE_DIGESTS").is_ok();
-        let mut checked = 0;
-        let mut entries: Vec<_> = std::fs::read_dir(&root)
+        let mut inputs: Vec<_> = std::fs::read_dir(&root)
             .unwrap_or_else(|e| panic!("read {}: {e}", root.display()))
             .filter_map(|e| e.ok().map(|e| e.path()))
             .filter(|p| p.extension().is_some_and(|x| x == "json"))
             .collect();
-        entries.sort();
-        for input in entries {
-            let raw = std::fs::read_to_string(&input).unwrap();
-            let body: serde_json::Value = serde_json::from_str(&raw).unwrap();
-            let strings = |key: &str| -> Vec<String> {
-                body[key]
-                    .as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|v| v.as_str().map(str::to_string))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            };
-            let recent_tools = body["recent_tools"].as_u64().unwrap_or(0) as usize;
-            let asked = body["asked"].as_bool().unwrap_or(false);
-            let digest =
-                compose_digest(&strings("prompts"), &strings("tools"), recent_tools, asked)
-                    .unwrap_or_else(|| panic!("{} describes nothing", input.display()));
-            let frozen = input.with_extension("digest.txt");
-            if regenerate {
-                std::fs::write(&frozen, &digest).unwrap();
-            } else {
-                let on_disk = std::fs::read_to_string(&frozen).unwrap_or_else(|_| {
-                    panic!(
-                        "{} is missing; regenerate with TUG_REGENERATE_DIGESTS=1",
-                        frozen.display()
-                    )
-                });
-                assert_eq!(on_disk, digest, "{} is stale", frozen.display());
-            }
-            checked += 1;
+        inputs.sort();
+        inputs
+            .into_iter()
+            .map(|input| {
+                let raw = std::fs::read_to_string(&input).unwrap();
+                let body: serde_json::Value = serde_json::from_str(&raw).unwrap();
+                let strings = |key: &str| -> Vec<String> {
+                    body[key]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                };
+                CorpusEntry {
+                    prompts: strings("prompts"),
+                    tools: strings("tools"),
+                    recent_tools: body["recent_tools"].as_u64().unwrap_or(0) as usize,
+                    asked: body["asked"].as_bool().unwrap_or(false),
+                    input,
+                }
+            })
+            .collect()
+    }
+
+    /// Compare one frozen file against what the composer produces now, or
+    /// rewrite it under `TUG_REGENERATE_DIGESTS`.
+    fn freeze(frozen: &std::path::Path, digest: &str) {
+        if std::env::var("TUG_REGENERATE_DIGESTS").is_ok() {
+            std::fs::write(frozen, digest).unwrap();
+            return;
         }
-        assert!(checked >= 12, "corpus shrank to {checked} entries");
+        let on_disk = std::fs::read_to_string(frozen).unwrap_or_else(|_| {
+            panic!(
+                "{} is missing; regenerate with TUG_REGENERATE_DIGESTS=1",
+                frozen.display()
+            )
+        });
+        assert_eq!(&on_disk, digest, "{} is stale", frozen.display());
     }
 
     /// One frozen corpus digest, by name.
@@ -2093,7 +2446,7 @@ mod tests {
     }
 
     fn refusal(headline: &str, name: &str) -> (&'static str, String) {
-        match ground_headline(headline, &digest(name)) {
+        match ground_headline(headline, &digest(name), GroundingMode::Intent) {
             GroundingVerdict::Grounded => {
                 panic!("{headline:?} was accepted against {name}, expected a refusal")
             }
@@ -2103,7 +2456,7 @@ mod tests {
 
     fn assert_grounded(headline: &str, name: &str) {
         if let GroundingVerdict::Ungrounded { rule, detail } =
-            ground_headline(headline, &digest(name))
+            ground_headline(headline, &digest(name), GroundingMode::Intent)
         {
             panic!("{headline:?} refused against {name} by {rule} ({detail})");
         }
@@ -2150,7 +2503,7 @@ mod tests {
     #[test]
     fn a_correct_headline_survives_every_frozen_digest() {
         for (headline, name) in [
-            ("Harden app termination for Sparkle updates", "app-self-update"),
+            ("Trace release version tags for self update", "app-self-update"),
             ("Explain maxwell equations and primality", "conversation-only"),
             ("Diagnose debug splash screen hang", "debug-launch-stuck"),
             ("Repair file completion path canonicalization", "file-completion-paths"),
@@ -2177,6 +2530,11 @@ mod tests {
     /// words it invents are the ones that matter. Stricter (three quarters)
     /// refuses correct headlines that reach for one word the digest spells
     /// differently, which is the staleness the gate must not buy.
+    ///
+    /// The third case is what the 64-character re-sweep added: the model's own
+    /// answer, not a hand-written one, landing on the same lower edge. Three
+    /// quarters is therefore ruled out by what ships, not only by a headline
+    /// written to rule it out.
     #[test]
     fn the_grounding_threshold_is_the_loosest_that_still_refuses_the_defects() {
         // Two thirds is what ships.
@@ -2206,6 +2564,37 @@ mod tests {
         let (grounded, total) = ratio("Explain maxwell equations and primality", "conversation-only");
         assert!(grounded * 4 < total * 3, "three quarters would refuse {grounded}/{total}");
         assert!(grounded * 3 >= total * 2, "two thirds must accept {grounded}/{total}");
+
+        // The resident model's own 64-character answer for `one-line-goal`, a
+        // fair reading of a session that found the tmux mirror serving gzip
+        // where the script expected xz. It carries six subject words to the
+        // hand-written headline's three and still sits on the same edge.
+        let (grounded, total) = ratio("Fix tmux static bundle gzip to xz mismatch", "one-line-goal");
+        assert_eq!((grounded, total), (4, 6), "the sweep's captured edge case moved");
+        assert!(grounded * 4 < total * 3, "three quarters would refuse {grounded}/{total}");
+        assert!(grounded * 3 >= total * 2, "two thirds must accept {grounded}/{total}");
+    }
+
+    /// A digest writes filenames and a 64-character headline has room to name
+    /// one, so a dotted token has to contribute the parts a headline says.
+    ///
+    /// Found by the re-sweep, not by reasoning: two of the resident model's
+    /// twelve answers were refused as ungrounded while being plainly correct —
+    /// `nocturne` and `aria` appear in the digest only inside
+    /// `Read(tugdeck/styles/themes/nocturne.css)`, and `vite config` only
+    /// inside `Read(vite.config.ts)`. No threshold reaches that; both would
+    /// need a value loose enough to admit the three-fifths defect.
+    #[test]
+    fn a_headline_grounds_against_a_filename_the_digest_only_spells_dotted() {
+        assert_grounded("Audit theme contrast in nocturne and aria css", "noun-pile-bait");
+        assert_grounded(
+            "Diagnose splash screen stall from vite config hold",
+            "splash-screen-stall",
+        );
+        // The whole token survives beside its parts, so a headline naming the
+        // file exactly still matches — the reason the dot is not simply added
+        // to the split set.
+        assert_eq!(content_words("Read(calc.c)"), ["read", "calc.c", "calc", "c"]);
     }
 
     /// The refusal rate the gate would produce over real model answers, printed
@@ -2249,13 +2638,29 @@ mod tests {
                 let Some(headline) = row.get("headline").and_then(|v| v.as_str()) else {
                     continue;
                 };
-                let Ok(digest) = std::fs::read_to_string(corpus.join(format!("{case}.digest.txt")))
+                // Which lane wrote the row decides both the fixture and the
+                // mode. Grounding a retrospective as an intent would refuse
+                // every past-tense opener that spells a tool name — `Edited`,
+                // `Read` — and report the gate's own mode error as the pack's
+                // refusal rate. A row without the field predates the lane and
+                // is an intent by construction.
+                let retrospective = row
+                    .get("retrospective")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let (fixture, mode) = if retrospective {
+                    ("done", GroundingMode::Retrospective)
+                } else {
+                    ("digest", GroundingMode::Intent)
+                };
+                let Ok(digest) =
+                    std::fs::read_to_string(corpus.join(format!("{case}.{fixture}.txt")))
                 else {
                     continue;
                 };
                 total += 1;
                 if let GroundingVerdict::Ungrounded { rule, detail } =
-                    ground_headline(headline, &digest)
+                    ground_headline(headline, &digest, mode)
                 {
                     refused += 1;
                     println!("REFUSED {name} {case}: {headline:?} — {rule} ({detail})");
@@ -2320,7 +2725,10 @@ mod tests {
             digest_tool_names(&digest),
             ["read"].iter().map(|s| s.to_string()).collect()
         );
-        assert_eq!(ground_headline("Fix composer typing lag", &digest), GroundingVerdict::Grounded);
+        assert_eq!(
+            ground_headline("Fix composer typing lag", &digest, GroundingMode::Intent),
+            GroundingVerdict::Grounded
+        );
     }
 
     /// Restating one tool line is the intent/activity collapse the strip showed:
@@ -2349,17 +2757,30 @@ mod tests {
     }
 
     /// The live failure this budget exists for: the model obeyed every other
-    /// rule and still dragged a parts list behind the verb.
+    /// rule and still dragged a parts list behind the verb. The cut fires on
+    /// overflow, so both of these run past the budget to reach it.
     #[test]
     fn a_parts_list_tail_is_cut_at_its_joiner() {
         assert_eq!(
-            headline_register("Author command-line calculator with makefile and readme"),
+            headline_register(
+                "Author command-line calculator with makefile and readme and integration tests"
+            ),
             "Author command-line calculator"
         );
         assert_eq!(
-            headline_register("Salvage corrupted ledger and harden open path"),
+            headline_register("Salvage corrupted ledger and harden every writable open path in tugcore"),
             "Salvage corrupted ledger"
         );
+    }
+
+    /// The headline the old word budget mangled for no reason: nine words that
+    /// say the work and fit the strip. Nothing touches it now.
+    #[test]
+    fn a_many_worded_headline_inside_the_budget_is_left_alone() {
+        let headline = "Wire the grammar grader bands into the composed submit path";
+        assert_eq!(headline.split_whitespace().count(), 10);
+        assert!(headline.chars().count() <= MAX_HEADLINE_CHARS);
+        assert_eq!(headline_register(headline), headline);
     }
 
     #[test]
@@ -2375,22 +2796,46 @@ mod tests {
         }
     }
 
+    /// With nothing to hang a cut on, the trim yields and leaves the string for
+    /// `clip` — one ellipsis reads better than an amputation plus an ellipsis.
     #[test]
-    fn an_overlong_headline_with_no_joiner_is_truncated_to_the_budget() {
-        assert_eq!(
-            trim_to_word_budget("Fix sparkline idle burn regression across every open session"),
-            "Fix sparkline idle burn regression across"
-        );
+    fn an_overlong_headline_with_no_joiner_is_left_for_the_clip() {
+        let raw = "Fix sparkline idle burn regression across every open session everywhere";
+        assert!(raw.chars().count() > MAX_HEADLINE_CHARS);
+        assert_eq!(trim_tail_to_char_budget(raw), raw);
+        assert!(headline_register(raw).ends_with('…'));
     }
 
     /// Cutting at a joiner that leaves one or two words would trade a long
-    /// headline for a meaningless one, so the budget yields instead.
+    /// headline for a meaningless one, so the trim yields instead.
     #[test]
-    fn a_joiner_too_early_to_cut_at_falls_back_to_truncation() {
-        assert_eq!(
-            trim_to_word_budget("Fix and harden the resume path across every backend"),
-            "Fix and harden the resume path"
-        );
+    fn a_joiner_too_early_to_cut_at_is_not_cut_at() {
+        let raw = "Fix and harden the resume path across every backend on every platform";
+        assert!(raw.chars().count() > MAX_HEADLINE_CHARS);
+        assert_eq!(trim_tail_to_char_budget(raw), raw);
+    }
+
+    /// A cut that still overruns buys nothing — and since every later joiner
+    /// cuts later still, one that cannot reach the budget means none can. The
+    /// text goes to `clip` whole rather than amputated *and* clipped.
+    #[test]
+    fn a_cut_that_cannot_reach_the_budget_is_not_taken() {
+        let raw = "Reconcile aaaaaaaaaaa bbbbbbbbbbb ccccccccccc ddddddddddd eeeeeeeeeee and ffff";
+        let joiner_cut = "Reconcile aaaaaaaaaaa bbbbbbbbbbb ccccccccccc ddddddddddd eeeeeeeeeee";
+        assert!(joiner_cut.chars().count() > MAX_HEADLINE_CHARS);
+        assert_eq!(trim_tail_to_char_budget(raw), raw);
+    }
+
+    /// A headline inside the budget is whatever the model wrote, however many
+    /// words that took and whatever joiners sit inside it.
+    #[test]
+    fn the_trim_does_not_fire_inside_the_budget() {
+        for raw in [
+            "Wire the grammar grader bands into the composed submit path",
+            "Salvage the ledger and harden the open path",
+        ] {
+            assert_eq!(trim_tail_to_char_budget(raw), raw);
+        }
     }
 
     #[test]
@@ -2585,11 +3030,67 @@ mod tests {
         assert!(digest.contains("Edit(watch.rs)"));
     }
 
+    /// The whole point of the split: the newest ask stands in its own labeled
+    /// section, after the goal it redirects, so a small model can tell the two
+    /// apart at a glance instead of reading three bullets under one heading.
+    #[test]
+    fn a_re_aimed_session_names_its_goal_and_its_current_ask_in_order() {
+        let digest = compose_digest(
+            &[
+                "make the watch loop resilient".to_string(),
+                "look at the parser instead".to_string(),
+            ],
+            &["Bash(cargo build)".to_string()],
+            0,
+            false,
+        )
+        .unwrap();
+        assert!(digest.starts_with(
+            "The standing goal:\n- make the watch loop resilient\n\n\
+             The current ask:\n- look at the parser instead\n"
+        ));
+    }
+
+    /// Only the newest ask reaches the digest. The prompts between it and the
+    /// pinned first are the same middle slice `digest_prompts` trims for, and
+    /// letting them accumulate is what let an old ask outvote a fresh one.
+    #[test]
+    fn only_the_newest_ask_reaches_the_current_ask_section() {
+        let digest = compose_digest(
+            &[
+                "make the watch loop resilient".to_string(),
+                "actually start with the parser".to_string(),
+                "no, the shell router first".to_string(),
+            ],
+            &[],
+            0,
+            false,
+        )
+        .unwrap();
+        assert!(digest.contains("The current ask:\n- no, the shell router first\n"));
+        assert!(!digest.contains("actually start with the parser"));
+    }
+
+    /// A session that has said one thing has a goal and nothing to redirect it.
+    #[test]
+    fn a_young_session_carries_a_standing_goal_alone() {
+        let digest = compose_digest(
+            &["bundle tmux statically from source".to_string()],
+            &["Bash(cargo build)".to_string()],
+            0,
+            false,
+        )
+        .unwrap();
+        assert!(digest.contains("The standing goal:\n- bundle tmux statically from source\n"));
+        assert!(!digest.contains(CURRENT_ASK_HEADING));
+    }
+
     #[test]
     fn a_digest_with_only_tool_use_is_still_a_digest() {
         let digest = compose_digest(&[], &["Bash(cargo build)".to_string()], 0, false).unwrap();
         assert!(digest.contains("Bash(cargo build)"));
-        assert!(!digest.contains("What the user asked for"));
+        assert!(!digest.contains(STANDING_GOAL_HEADING));
+        assert!(!digest.contains(CURRENT_ASK_HEADING));
     }
 
     #[test]
@@ -2694,10 +3195,10 @@ mod tests {
     #[test]
     fn activity_since_emit_counts_content_bearing_beats_alone() {
         let mut state = SessionState::new(Instant::now());
-        state.record(SessionBeat::Turn);
-        state.record(SessionBeat::Tool("Read(a.rs)".to_string()));
-        state.record(SessionBeat::Shell(None));
-        state.record(SessionBeat::Said("said: porting the router".to_string()));
+        state.record_now(SessionBeat::Turn);
+        state.record_now(SessionBeat::Tool("Read(a.rs)".to_string()));
+        state.record_now(SessionBeat::Shell(None));
+        state.record_now(SessionBeat::Said("said: porting the router".to_string()));
         assert_eq!(state.activity_since_emit, 2);
         assert_eq!(state.new_beats, 4);
     }
@@ -2707,11 +3208,11 @@ mod tests {
     #[test]
     fn record_interleaves_the_transcript_vocabulary_in_arrival_order() {
         let mut state = SessionState::new(Instant::now());
-        state.record(SessionBeat::Said("said: porting the router".to_string()));
-        state.record(SessionBeat::Tool("Edit(router.rs)".to_string()));
-        state.record(SessionBeat::Shell(Some("$ cargo build".to_string())));
-        state.record(SessionBeat::Shell(None));
-        state.record(SessionBeat::Turn);
+        state.record_now(SessionBeat::Said("said: porting the router".to_string()));
+        state.record_now(SessionBeat::Tool("Edit(router.rs)".to_string()));
+        state.record_now(SessionBeat::Shell(Some("$ cargo build".to_string())));
+        state.record_now(SessionBeat::Shell(None));
+        state.record_now(SessionBeat::Turn);
         let lines: Vec<String> = state.activity.iter().cloned().collect();
         assert_eq!(
             lines,
@@ -2729,7 +3230,7 @@ mod tests {
     #[test]
     fn a_turn_beat_advances_counters_without_a_line() {
         let mut state = SessionState::new(Instant::now());
-        state.record(SessionBeat::Turn);
+        state.record_now(SessionBeat::Turn);
         assert!(state.activity.is_empty());
         assert_eq!(state.activity_since_emit, 0);
         assert_eq!(state.new_beats, 1);
@@ -2753,16 +3254,16 @@ mod tests {
     #[test]
     fn a_streaming_block_beats_exactly_once_at_the_sentence_boundary() {
         let mut state = SessionState::new(Instant::now());
-        state.observe(prose("m1", 0, true, "I will widen the "));
+        state.observe_now(prose("m1", 0, true, "I will widen the "));
         assert!(state.activity.is_empty());
-        state.observe(prose("m1", 0, true, "beat enum first. Then the"));
+        state.observe_now(prose("m1", 0, true, "beat enum first. Then the"));
         assert_eq!(state.activity.len(), 1);
         assert_eq!(
             state.activity.front().unwrap(),
             "said: I will widen the beat enum first."
         );
-        state.observe(prose("m1", 0, true, " cadence, then the digest."));
-        state.observe(prose("m1", 0, true, " And more after that."));
+        state.observe_now(prose("m1", 0, true, " cadence, then the digest."));
+        state.observe_now(prose("m1", 0, true, " And more after that."));
         assert_eq!(state.activity.len(), 1);
     }
 
@@ -2772,17 +3273,17 @@ mod tests {
     fn a_short_block_beats_at_finalization() {
         // Finalized by a delta for a new key.
         let mut state = SessionState::new(Instant::now());
-        state.observe(prose("m1", 0, true, "Short answer"));
+        state.observe_now(prose("m1", 0, true, "Short answer"));
         assert!(state.activity.is_empty());
-        state.observe(prose("m1", 1, true, "Next block starts"));
+        state.observe_now(prose("m1", 1, true, "Next block starts"));
         assert_eq!(state.activity.len(), 1);
         assert_eq!(state.activity.front().unwrap(), "said: Short answer");
 
         // Finalized by turn_complete / turn_cancelled — same event shape.
         for _ in 0..2 {
             let mut state = SessionState::new(Instant::now());
-            state.observe(prose("m1", 0, true, "Short answer"));
-            state.observe(turn());
+            state.observe_now(prose("m1", 0, true, "Short answer"));
+            state.observe_now(turn());
             assert_eq!(state.activity.len(), 1);
             assert_eq!(state.activity.front().unwrap(), "said: Short answer");
             assert!(state.open.is_none());
@@ -2810,16 +3311,16 @@ mod tests {
     #[test]
     fn a_shell_beat_mid_stream_leaves_the_prose_state_alone() {
         let mut state = SessionState::new(Instant::now());
-        state.observe(prose(
+        state.observe_now(prose(
             "m1",
             0,
             true,
             "This sentence has already beaten, yes. And",
         ));
         assert_eq!(state.activity.len(), 1);
-        state.observe(prose("m1", 1, true, "still streaming"));
+        state.observe_now(prose("m1", 1, true, "still streaming"));
         assert_eq!(state.beaten.len(), 1);
-        state.record(SessionBeat::Shell(None));
+        state.record_now(SessionBeat::Shell(None));
         assert!(state.open.is_some());
         assert_eq!(state.beaten.len(), 1);
         assert_eq!(state.activity.len(), 1);
@@ -2830,7 +3331,7 @@ mod tests {
     #[test]
     fn a_terminal_frame_dedupes_against_beaten_keys() {
         let mut state = SessionState::new(Instant::now());
-        state.observe(prose(
+        state.observe_now(prose(
             "m1",
             0,
             true,
@@ -2838,7 +3339,7 @@ mod tests {
         ));
         assert_eq!(state.activity.len(), 1);
 
-        state.observe(prose(
+        state.observe_now(prose(
             "m1",
             0,
             false,
@@ -2846,13 +3347,13 @@ mod tests {
         ));
         assert_eq!(state.activity.len(), 1, "a beaten key must not beat twice");
 
-        state.observe(prose("m2", 0, false, "A block the live stream never sent."));
+        state.observe_now(prose("m2", 0, false, "A block the live stream never sent."));
         assert_eq!(state.activity.len(), 2);
         assert_eq!(
             state.activity.back().unwrap(),
             "said: A block the live stream never sent."
         );
-        state.observe(prose("m2", 0, false, "A block the live stream never sent."));
+        state.observe_now(prose("m2", 0, false, "A block the live stream never sent."));
         assert_eq!(
             state.activity.len(),
             2,
@@ -2866,7 +3367,7 @@ mod tests {
         let mut state = SessionState::new(Instant::now());
         // No whitespace and no terminator: nothing to beat on, only to buffer.
         for _ in 0..100 {
-            state.observe(prose("m1", 0, true, &"x".repeat(100)));
+            state.observe_now(prose("m1", 0, true, &"x".repeat(100)));
         }
         // The head beat at the cap; the open block keeps only the key marker.
         assert_eq!(state.activity.len(), 1);
@@ -3039,25 +3540,25 @@ mod tests {
         assert!(!report.clipped);
     }
 
-    /// The live failure the word budget was built for: a parts list dragged
-    /// behind an otherwise correct headline.
+    /// The live failure the trim was built for: a parts list dragged behind an
+    /// otherwise correct headline, far enough to overrun the budget.
     #[test]
     fn a_parts_list_tail_reports_a_trim_and_no_clip() {
-        let report =
-            headline_register_report("Author command-line calculator with makefile and readme");
+        let report = headline_register_report(
+            "Author command-line calculator with makefile and readme and integration tests",
+        );
         assert_eq!(report.text, "Author command-line calculator");
         assert!(report.normalized);
         assert!(report.trimmed);
         assert!(!report.clipped);
     }
 
-    /// The two budgets fire independently: six short words pass the word budget
-    /// and still overrun the character budget.
+    /// The two flags name different failures: with no joiner to cut at, the
+    /// overrun is the clip's to report and the trim's to keep quiet about.
     #[test]
-    fn a_long_but_short_worded_headline_reports_a_clip_and_no_trim() {
-        let raw = "Fix aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee";
-        let report = headline_register_report(raw);
-        assert_eq!(raw.split_whitespace().count(), MAX_HEADLINE_WORDS);
+    fn an_overrun_with_no_joiner_reports_a_clip_and_no_trim() {
+        let report =
+            headline_register_report("Fix aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff");
         assert!(report.clipped);
         assert!(!report.trimmed);
         assert!(report.normalized);
@@ -3078,7 +3579,7 @@ mod tests {
     fn the_accumulator_keeps_only_the_recent_tail() {
         let mut state = SessionState::new(Instant::now());
         for i in 0..(MAX_ACTIVITY_LINES + 5) {
-            state.record(SessionBeat::Tool(format!("Bash(round {i})")));
+            state.record_now(SessionBeat::Tool(format!("Bash(round {i})")));
         }
         assert_eq!(state.activity.len(), MAX_ACTIVITY_LINES);
         assert_eq!(state.activity.front().unwrap(), "Bash(round 5)");
@@ -3087,7 +3588,7 @@ mod tests {
 
     #[test]
     fn the_frame_is_a_scoped_overview_pulse_line() {
-        let frame = overview_frame("sess-1", "Wiring the watch loop.", 3, 1_700_000_000_000);
+        let frame = overview_frame("sess-1", "Wiring the watch loop.", 3, 1_700_000_000_000, None);
         assert_eq!(frame.feed_id, FeedId::PULSE);
         let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
         assert_eq!(body["type"], "pulse");
@@ -3096,6 +3597,17 @@ mod tests {
         assert_eq!(body["scopes"], serde_json::json!(["sess-1"]));
         assert_eq!(body["beat"], 3);
         assert_eq!(body["at"], 1_700_000_000_000i64);
+        // A live intent carries no phase at all, so nothing downstream has to
+        // learn a value for the ordinary case.
+        assert!(body.get("phase").is_none());
+    }
+
+    #[test]
+    fn a_retrospective_frame_is_marked_done() {
+        let frame = overview_frame("sess-1", "Bundled tmux from source", 4, 1, Some("done"));
+        let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(body["kind"], "overview");
+        assert_eq!(body["phase"], "done");
     }
 
     #[test]
@@ -3334,6 +3846,20 @@ mod tests {
         state: &SharedLocalModelState,
         answer: Option<&'static str>,
     ) -> tokio::sync::mpsc::Receiver<String> {
+        fake_host_by_task(state, answer, answer)
+    }
+
+    /// The same host, answering the two summarize lanes differently.
+    ///
+    /// The collapse tests need this: an emit whose headline matches the one
+    /// already on the strip is suppressed as unchanged, so a host that answered
+    /// both lanes with one string would show a retrospective being asked for
+    /// and never published, which looks exactly like the collapse not firing.
+    fn fake_host_by_task(
+        state: &SharedLocalModelState,
+        answer: Option<&'static str>,
+        done_answer: Option<&'static str>,
+    ) -> tokio::sync::mpsc::Receiver<String> {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(8);
         let (seen_tx, seen_rx) = tokio::sync::mpsc::channel::<String>(8);
         let requester = LocalModelRequester::new(tx);
@@ -3342,6 +3868,10 @@ mod tests {
             while let Some(line) = rx.recv().await {
                 let body: serde_json::Value = serde_json::from_str(&line).unwrap();
                 let id = body["id"].as_str().unwrap().to_string();
+                let answer = match body["task"].as_str() {
+                    Some("summarize_done") => done_answer,
+                    _ => answer,
+                };
                 let reply = match answer {
                     Some(text) => crate::local_model::LocalModelReply {
                         ok: true,
@@ -3421,6 +3951,11 @@ mod tests {
         }
     }
 
+    /// Far enough out that the collapse arm never fires in a test that is not
+    /// about it — every one of these harnesses runs a session to rest and would
+    /// otherwise pick up a retrospective it never asked for.
+    const NEVER_COLLAPSE: Duration = Duration::from_secs(3_600);
+
     /// `start` with the loop-test cadence: zero floor and a one-beat burst,
     /// so any beat is due at the next tick. The cadence itself is covered by
     /// the pure tests above; that harness shape is about the loop.
@@ -3440,6 +3975,7 @@ mod tests {
                 idle_period: Duration::ZERO,
                 floor: Duration::ZERO,
                 forced_floor: Duration::ZERO,
+                idle_collapse_after: NEVER_COLLAPSE,
             },
         )
     }
@@ -3736,6 +4272,7 @@ mod tests {
             idle_period: Duration::from_secs(300),
             floor: Duration::from_secs(8),
             forced_floor: FORCED_EMIT_FLOOR,
+            idle_collapse_after: NEVER_COLLAPSE,
         }
     }
 
@@ -3906,8 +4443,8 @@ mod tests {
     }
 
     /// The recency boundary is turn-relative: a new ask empties "right now",
-    /// demotes the old turn's lines to background, and rides last in the
-    /// prompt section as the current directive.
+    /// demotes the old turn's lines to background, and takes the current-ask
+    /// section as the directive standing over the session's goal.
     #[tokio::test(start_paused = true)]
     async fn a_new_ask_resets_right_now_and_rides_last_in_the_digest() {
         let mut h = start(Some("Harden the watch loop."), true, true, true);
@@ -3922,9 +4459,8 @@ mod tests {
             .unwrap();
         let second = next_digest(&mut digests).await;
         assert!(second.contains("What the session has been doing:\n- Bash(cargo build)"));
-        assert!(second.contains(
-            "What the user asked for:\n- make the watch loop resilient\n- look at the parser instead\n"
-        ));
+        assert!(second.contains("The standing goal:\n- make the watch loop resilient\n"));
+        assert!(second.contains("The current ask:\n- look at the parser instead\n"));
         // Nothing stale is "right now" — the section carries the fresh
         // directive itself, and the digest ends on it.
         assert!(second.ends_with("What it is doing right now:\n- look at the parser instead\n"));
@@ -4008,7 +4544,7 @@ mod tests {
     #[test]
     fn an_ask_mid_prose_stream_leaves_the_open_block_and_dedup_untouched() {
         let mut state = SessionState::new(Instant::now());
-        state.observe(CodeOutputEvent::Prose {
+        state.observe_now(CodeOutputEvent::Prose {
             msg_id: "m1".to_string(),
             block_index: 0,
             is_partial: true,
@@ -4017,14 +4553,14 @@ mod tests {
         // The submission arm's exact sequence.
         state.human_act();
         state.pending_ask = Some("and check the floor".to_string());
-        state.record(SessionBeat::Asked(Some("and check the floor".to_string())));
-        state.observe(CodeOutputEvent::Prose {
+        state.record_now(SessionBeat::Asked(Some("and check the floor".to_string())));
+        state.observe_now(CodeOutputEvent::Prose {
             msg_id: "m1".to_string(),
             block_index: 0,
             is_partial: true,
             text: " logic and what the floor guards.".to_string(),
         });
-        state.observe(CodeOutputEvent::Beat(SessionBeat::Turn));
+        state.observe_now(CodeOutputEvent::Beat(SessionBeat::Turn));
 
         let said: Vec<&String> = state
             .activity
@@ -4169,6 +4705,7 @@ mod tests {
             idle_period: Duration::from_secs(3_000),
             floor: Duration::from_secs(3_000),
             forced_floor: FORCED_EMIT_FLOOR,
+            idle_collapse_after: NEVER_COLLAPSE,
         };
         let mut h = start_cadenced(Some("Harden the watch loop."), true, true, true, cadence);
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -4362,5 +4899,313 @@ mod tests {
             ))
             .unwrap();
         assert!(next_overview(&mut h.pulse_rx).await.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // The idle collapse
+    // -----------------------------------------------------------------------
+
+    /// Intents fire on any beat, and a settled session collapses a short way
+    /// past its last one.
+    fn collapsing_cadence() -> Cadence {
+        Cadence {
+            burst_beats: 1,
+            idle_period: Duration::ZERO,
+            floor: Duration::ZERO,
+            forced_floor: Duration::ZERO,
+            idle_collapse_after: Duration::from_secs(30),
+        }
+    }
+
+    /// Every retrospective *attempt* the model was asked to answer.
+    ///
+    /// A refused retrospective is followed by the one corrective re-ask, whose
+    /// prompt is the same digest with the correction appended — counting those
+    /// as attempts would report two for every one and hide the very loop these
+    /// tests exist to catch.
+    fn drain_retrospective_attempts(rx: &mut tokio::sync::mpsc::Receiver<String>) -> Vec<String> {
+        let mut out = Vec::new();
+        while let Ok(digest) = rx.try_recv() {
+            if digest.contains(RETROSPECTIVE_HEADING) && !digest.contains(GROUNDING_CORRECTION) {
+                out.push(digest);
+            }
+        }
+        out
+    }
+
+    fn drain_overviews(rx: &mut broadcast::Receiver<Frame>) -> Vec<serde_json::Value> {
+        let mut out = Vec::new();
+        while let Ok(frame) = rx.try_recv() {
+            if let Ok(body) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
+                out.push(body);
+            }
+        }
+        out
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_settled_session_collapses_into_one_retrospective() {
+        let h = start_cadenced(None, true, true, false, collapsing_cadence());
+        let mut digests = fake_host_by_task(
+            &h.model,
+            Some("Hardening the watch loop."),
+            Some("Hardened the watch loop."),
+        );
+        let mut pulse_rx = h.pulse_rx.resubscribe();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
+        h.code_tx.send(turn_complete_frame("s1")).unwrap();
+
+        // Before the window, the strip is still saying what the session is
+        // doing — the last live intent gets its turn.
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert!(
+            drain_retrospective_attempts(&mut digests).is_empty(),
+            "collapsed before the idle window elapsed"
+        );
+
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        let attempts = drain_retrospective_attempts(&mut digests);
+        assert_eq!(attempts.len(), 1, "expected one retrospective");
+        assert!(attempts[0].contains("- Bash(cargo build)"));
+
+        let done: Vec<_> = drain_overviews(&mut pulse_rx)
+            .into_iter()
+            .filter(|body| body["phase"] == "done")
+            .collect();
+        assert_eq!(done.len(), 1);
+        assert_eq!(done[0]["text"], "Hardened the watch loop");
+
+        // And it stays one, however long the session stays at rest.
+        tokio::time::sleep(Duration::from_secs(600)).await;
+        assert!(drain_retrospective_attempts(&mut digests).is_empty());
+    }
+
+    /// The collapse is per settled stretch, not per session: work that resumes
+    /// goes back to live intents and earns exactly one more retrospective when
+    /// it next comes to rest.
+    #[tokio::test(start_paused = true)]
+    async fn work_after_a_collapse_re_arms_exactly_one_more() {
+        let h = start_cadenced(None, true, true, false, collapsing_cadence());
+        let mut digests = fake_host_by_task(
+            &h.model,
+            Some("Hardening the watch loop."),
+            Some("Hardened the watch loop."),
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
+        h.code_tx.send(turn_complete_frame("s1")).unwrap();
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        assert_eq!(drain_retrospective_attempts(&mut digests).len(), 1);
+
+        h.code_tx.send(tool_use_frame("s1", "cargo test")).unwrap();
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert!(
+            drain_retrospective_attempts(&mut digests).is_empty(),
+            "the session went back to work; it is not settled"
+        );
+
+        h.code_tx.send(turn_complete_frame("s1")).unwrap();
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        let attempts = drain_retrospective_attempts(&mut digests);
+        assert_eq!(attempts.len(), 1, "the second stretch earns one, and one only");
+        assert!(attempts[0].contains("- Bash(cargo test)"));
+    }
+
+    /// A session still working never collapses, however long the emitter runs.
+    #[tokio::test(start_paused = true)]
+    async fn a_session_that_never_settles_never_collapses() {
+        let h = start_cadenced(None, true, true, false, collapsing_cadence());
+        let mut digests = fake_host_by_task(
+            &h.model,
+            Some("Hardening the watch loop."),
+            Some("Hardened the watch loop."),
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
+        tokio::time::sleep(Duration::from_secs(600)).await;
+        assert!(drain_retrospective_attempts(&mut digests).is_empty());
+    }
+
+    /// A `$` command that *failed* is a recorded beat, so it leaves the session
+    /// working rather than settled. The stretch ended on an error; "what was
+    /// done" is not yet a true thing to say.
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_shell_command_does_not_arm_the_collapse() {
+        let h = start_cadenced(None, true, true, false, collapsing_cadence());
+        let mut digests = fake_host_by_task(
+            &h.model,
+            Some("Hardening the watch loop."),
+            Some("Hardened the watch loop."),
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.code_tx.send(turn_complete_frame("s1")).unwrap();
+        let failed = serde_json::json!({
+            "tug_session_id": "s1",
+            "type": "exchange_settled",
+            "exit_code": 1,
+            "command": "make test",
+        });
+        h.shell_tx
+            .send(Frame::new(
+                FeedId::SHELL_OUTPUT,
+                serde_json::to_vec(&failed).unwrap(),
+            ))
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(600)).await;
+        assert!(drain_retrospective_attempts(&mut digests).is_empty());
+    }
+
+    /// The direct pin on the retry loop. The collapse arm reads `settled_at`,
+    /// which a refusal does not change, and it never sees `commit_tick`'s beat
+    /// counter — so a retrospective marked spent only on a *successful* emit
+    /// would be re-asked on every sweep for as long as the session stayed idle.
+    /// Marking it on the answer is what bounds it at one.
+    #[tokio::test(start_paused = true)]
+    async fn a_refused_retrospective_is_attempted_exactly_once() {
+        // Grounded in nothing the digest says, so the gate refuses it every
+        // time, including on the re-ask.
+        let h = start_cadenced(None, true, true, false, collapsing_cadence());
+        let mut digests = fake_host_by_task(
+            &h.model,
+            Some("Hardening the watch loop."),
+            Some("Harvested the mango orchard."),
+        );
+        let mut pulse_rx = h.pulse_rx.resubscribe();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
+        h.code_tx.send(turn_complete_frame("s1")).unwrap();
+
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        assert_eq!(drain_retrospective_attempts(&mut digests).len(), 1);
+
+        // Hundreds of sweeps later, still one.
+        tokio::time::sleep(Duration::from_secs(1_800)).await;
+        let extra = drain_retrospective_attempts(&mut digests);
+        assert!(
+            extra.is_empty(),
+            "the refused retrospective was re-asked {} more times",
+            extra.len()
+        );
+        assert!(
+            drain_overviews(&mut pulse_rx)
+                .iter()
+                .all(|body| body["phase"] != "done"),
+            "a refused retrospective reached the strip"
+        );
+    }
+
+    /// The other door into the same loop: the digest-unchanged dedup returns
+    /// before the model is reached, which would leave the attempt unmarked. The
+    /// retrospective path skips that dedup for exactly this reason.
+    #[tokio::test]
+    async fn a_retrospective_is_asked_even_when_its_digest_is_unchanged() {
+        let tmp = std::env::temp_dir().join(format!("tugcast-retro-dedup-{}", std::process::id()));
+        let state = LocalModelState::new(tmp.clone(), "http://127.0.0.1:1".to_string());
+        let mut digests = fake_host(&state, Some("Hardened the watch loop."));
+        let activity = vec!["Bash(cargo build)".to_string()];
+        let composed = compose_retrospective_digest(&[], &activity).unwrap();
+        let outcome = run_emit(EmitJob {
+            session_id: "s1".to_string(),
+            activity,
+            recent_activity: 0,
+            asked: false,
+            cache: PromptCache::default(),
+            pending_ask: None,
+            // Exactly what this emit is about to compose.
+            last_digest: Some(composed.clone()),
+            jsonl: None,
+            local_model: state.clone(),
+            may_reask: false,
+            retrospective: true,
+        })
+        .await;
+        assert_eq!(digests.recv().await.as_deref(), Some(composed.as_str()));
+        assert!(
+            outcome.seen_digest.is_some(),
+            "the model answered, so the collapse is spent — an unmarked attempt re-fires forever"
+        );
+        assert!(outcome.retrospective);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// Past-tense register and tool names overlap by construction: `stem` strips
+    /// `ed`, so `edited` and `Edit` are the same word to the gate. Rule 2 reads
+    /// past the retrospective's opening verb for exactly this reason — and no
+    /// further, which the restatement case below proves.
+    #[test]
+    fn a_retrospective_may_open_on_what_reads_as_a_tool_name() {
+        let digest = compose_retrospective_digest(
+            &["resolve the keymap shortcut conflicts".to_string()],
+            &[
+                "Edit(keymap.ts)".to_string(),
+                "Bash(bun test keymap)".to_string(),
+            ],
+        )
+        .unwrap();
+        assert!(digest.contains(RETROSPECTIVE_HEADING));
+
+        let headline = "Edited keymap shortcut conflicts";
+        assert!(
+            matches!(
+                ground_headline(headline, &digest, GroundingMode::Intent),
+                GroundingVerdict::Ungrounded {
+                    rule: "tool-name-opener",
+                    ..
+                }
+            ),
+            "the collision this exemption exists for is gone; re-read the rule"
+        );
+        assert_eq!(
+            ground_headline(headline, &digest, GroundingMode::Retrospective),
+            GroundingVerdict::Grounded
+        );
+    }
+
+    /// The exemption is one word wide. A retrospective that restates a whole
+    /// activity line is the intent/activity collapse the gate was built to
+    /// refuse, and scoping the heading into `ACTIVITY_HEADINGS` is what keeps
+    /// that rule awake over a digest made entirely of tool lines.
+    #[test]
+    fn a_retrospective_that_restates_an_activity_line_is_still_refused() {
+        let digest = compose_retrospective_digest(
+            &["resolve the keymap shortcut conflicts".to_string()],
+            &["Bash(bun test keymap)".to_string()],
+        )
+        .unwrap();
+        let (rule, _) = match ground_headline(
+            "Ran bun test keymap",
+            &digest,
+            GroundingMode::Retrospective,
+        ) {
+            GroundingVerdict::Ungrounded { rule, detail } => (rule, detail),
+            GroundingVerdict::Grounded => panic!("a restated activity line was accepted"),
+        };
+        assert_eq!(rule, "activity-restatement");
+    }
+
+    #[test]
+    fn the_retrospective_digest_states_intent_then_everything_that_happened() {
+        let digest = compose_retrospective_digest(
+            &[
+                "make the watch loop resilient".to_string(),
+                "look at the parser instead".to_string(),
+            ],
+            &["Bash(cargo build)".to_string(), "Edit(parser.rs)".to_string()],
+        )
+        .unwrap();
+        assert_eq!(
+            digest,
+            "The standing goal:\n- make the watch loop resilient\n\n\
+             The current ask:\n- look at the parser instead\n\n\
+             What the session did:\n- Bash(cargo build)\n- Edit(parser.rs)\n"
+        );
+        // No recency split: the question is what the whole stretch did.
+        assert!(!digest.contains("What it is doing right now:"));
+    }
+
+    #[test]
+    fn a_retrospective_with_nothing_to_describe_is_no_digest() {
+        assert!(compose_retrospective_digest(&[], &[]).is_none());
     }
 }

@@ -221,7 +221,11 @@ pub async fn dispatch_action(
                 None => info!("dispatch_action: local_model_delete missing model"),
             }
         }
-        "local_model_summarize" => {
+        // The two summarize lanes: the live intent and the past-tense
+        // retrospective the idle collapse emits. Same seam, same normalization,
+        // different instructions on the app side.
+        "local_model_summarize" | "local_model_summarize_done" => {
+            let retrospective = action == "local_model_summarize_done";
             let cat = stream_outputs
                 .get(&FeedId::CONTROL)
                 .map(|(tx, _)| tx.clone());
@@ -229,8 +233,10 @@ pub async fn dispatch_action(
                 .ok()
                 .and_then(|v| v.get("prompt")?.as_str().map(str::to_owned));
             match prompt {
-                Some(prompt) => crate::local_model::request_summary(local_model, cat, prompt),
-                None => info!("dispatch_action: local_model_summarize missing prompt"),
+                Some(prompt) => {
+                    crate::local_model::request_summary(local_model, cat, prompt, retrospective)
+                }
+                None => info!(action, "dispatch_action: summarize missing prompt"),
             }
         }
         "local_model_classify" => {

@@ -231,7 +231,10 @@ def main() -> int:
     # A refusal is now a third reason not to emit, so the shortfall is broken out:
     # a rate that fell because the gate went quiet is a different failure from one
     # that fell because the model repeated itself.
-    emitted = sum(1 for _, rest, _ in parsed if "session overview: emitted" in rest)
+    emits = [f for _, rest, f in parsed if "session overview: emitted" in rest]
+    # Retrospectives emit on the same line and would inflate a rate about live
+    # intents, so the two are counted apart by the flag the emit carries.
+    emitted = sum(1 for f in emits if f.get("retrospective") != "true")
     print("\nheadline change rate (emitted / summarized)")
     if summarized:
         print(f"  {emitted}/{summarized}  ({100 * emitted / summarized:.0f}%)"
@@ -241,6 +244,22 @@ def main() -> int:
             print(f"  of the {summarized - emitted} not emitted, {held} were refused by the gate")
     else:
         print("  (no overviews in this window)")
+
+    # How often a settled session's retrospective survived to the strip.
+    #
+    # The denominator is retrospectives *attempted*, not collapse-due ticks:
+    # a stretch is attempted exactly once whatever the gate then rules, so
+    # attempts already count the stretches, and a rate below 1 is the gate
+    # refusing what the model said the session did. That is the number worth
+    # watching — a session that goes quiet with a stale intent still up is the
+    # failure the collapse exists to remove.
+    collapsed = sum(1 for _, rest, _ in parsed if "session overview: collapsed" in rest)
+    published = sum(1 for f in emits if f.get("retrospective") == "true")
+    print("\nidle collapse rate (published / attempted)")
+    if not collapsed:
+        print("  (no session settled long enough to collapse in this window)")
+    else:
+        print(f"  {published}/{collapsed}  ({100 * published / collapsed:.0f}%)")
 
     return 0
 
@@ -311,6 +330,20 @@ SAMPLES = [
      "overview: headline reask session=s3 reask=skipped",
      "tugcast::feeds::session_overview",
      {"session": "s3", "reask": "skipped"}),
+    # The idle collapse. `raw` is unquoted and `headline` quoted, exactly as the
+    # intent path formats them, so the retrospective's spaces survive the split.
+    ("2026-07-30T19:22:09.957764Z  INFO tugcast::feeds::session_overview: session "
+     "overview: collapsed session=s1 elapsed_ms=2720 raw=Fixed download resume "
+     'from zero offset headline="Fixed download resume from zero offset"',
+     "tugcast::feeds::session_overview",
+     {"session": "s1", "elapsed_ms": "2720",
+      "headline": "Fixed download resume from zero offset"}),
+    # The emit line carries which lane it came from — without it, a retrospective
+    # would be counted as a live headline change.
+    ("2026-07-30T19:22:09.958000Z  INFO tugcast::feeds::session_overview: session "
+     "overview: emitted session=s1 beat=52 receivers=1 retrospective=true",
+     "tugcast::feeds::session_overview",
+     {"beat": "52", "receivers": "1", "retrospective": "true"}),
 ]
 
 

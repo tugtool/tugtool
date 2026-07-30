@@ -5,7 +5,29 @@ The current ask:
 - Can we run a dash to try out these Bonsai models? I would like to see if we can use these *exclusively*, and never use Qwen3-Coder-30B at all. We can always fallback to `claude -p`.
 Use their MLX (see the branch/fork that supports these mod…
 
-What the session has been doing:
+What the session did:
+- Bash(sleep 1; pgrep -f eval_mlx.py >/dev/null && echo "still runn)
+- Read(bxuind75k.output)
+- Read(bliskslr9.output)
+- Write(report-mlx-1bit.md)
+- Bash(rm -f /Users/kocienda/Mounts/u/src/tugtool/.git/worktrees/bo)
+- Edit(project_bonsai_local_scribe_eval.md)
+- Bash(cd ~/bonsai-eval/Bonsai-demo
+- Write(eval_27b.py)
+- Write(classify_8b.py)
+- Bash(cd ~/bonsai-eval/Bonsai-demo
+- Bash(cd ~/bonsai-eval/Bonsai-demo
+- Edit(eval_27b.py)
+- Bash(cd ~/bonsai-eval/Bonsai-demo
+- Bash(RES=/Users/kocienda/Mounts/u/src/tugtool/.tug/worktrees/bons)
+- Read(bo777mcp8.output)
+- Edit(results-27b.md)
+- Write(report-27b-and-classifier.md)
+- Bash(rm -f /Users/kocienda/Mounts/u/src/tugtool/.git/worktrees/bo)
+- Edit(project_bonsai_local_scribe_eval.md)
+- Bash(cd /Users/kocienda/Mounts/u/src/tugtool/tugrust/crates/tugca)
+- Bash(cd /Users/kocienda/Mounts/u/src/tugtool
+- Bash(cd /Users/kocienda/Mounts/u/src/tugtool
 - Bash(cd /Users/kocienda/Mounts/u/src/tugtool
 - Read(main-pulse.ts)
 - Bash(DIR=~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool
@@ -18,8 +40,6 @@ What the session has been doing:
 - Bash(pgrep -fl git | grep -v pgrep || echo "no git process"
 - Bash(tugutil dash commit bonsai-eval --message "eval(bonsai): 8B )
 - Edit(project_bonsai_local_scribe_eval.md)
-
-What it is doing right now:
 - Bash(cd /Users/kocienda/Mounts/u/src/tugtool
 - Bash(cd /Users/kocienda/Mounts/u/src/tugtool
 - Write(local-model-investigations.md)

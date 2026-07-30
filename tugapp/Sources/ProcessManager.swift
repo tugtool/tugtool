@@ -580,6 +580,8 @@ class ProcessManager {
             switch task {
             case "summarize":
                 kind = .summarize(prompt: prompt)
+            case "summarize_done":
+                kind = .summarizeDone(prompt: prompt)
             case "generate":
                 kind = .generate(prompt: prompt, maxTokens: maxTokens)
             case "classify":

@@ -22,6 +22,12 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # than swallowing `normalized=…` into the headline.
 ANSWER = re.compile(r"raw=(?P<raw>.*?) headline=(?P<headline>.*?)(?= normalized=|\s*$)")
 
+# Which summarize lane answered. Both the live intent and the idle collapse's
+# retrospective log the same message, so without this a retrospective landing
+# between an `ask` call's two reads would be handed back as the intent's answer.
+# A line with no `task=` predates the field and is an intent by construction.
+TASK = re.compile(r'\btask="(?P<task>[a-z_]+)"')
+
 # The classify verdict, logged with the line it judged. The text may contain
 # anything including `verdict=`, so the verdict is anchored to end of line and
 # the text takes whatever precedes it.
@@ -54,7 +60,7 @@ def log_path(instance: str) -> Path | None:
     return candidates[-1] if candidates else None
 
 
-def answers(path: Path) -> list[tuple[str, str]]:
+def answers(path: Path, task: str = "summarize") -> list[tuple[str, str]]:
     if not path.exists():
         return []
     out = []
@@ -62,17 +68,35 @@ def answers(path: Path) -> list[tuple[str, str]]:
         line = ANSI.sub("", line)
         if "local model summarize answered" not in line:
             continue
+        found = TASK.search(line)
+        if (found.group("task") if found else "summarize") != task:
+            continue
         m = ANSWER.search(line)
         if m:
             out.append((m.group("raw").strip(), m.group("headline").strip()))
     return out
 
 
-def ask(digest: str, instance: str, path: Path, timeout: float) -> tuple[str, str, int] | None:
-    before = len(answers(path))
+def ask(
+    digest: str,
+    instance: str,
+    path: Path,
+    timeout: float,
+    retrospective: bool = False,
+) -> tuple[str, str, int] | None:
+    """Put one digest to the model and read its answer back out of the log.
+
+    `retrospective` drives the idle collapse's past-tense lane instead of the
+    live intent one. The two are read apart by task, never by arrival order:
+    they share a log message, and the emitter can answer one while this is
+    waiting on the other.
+    """
+    task = "summarize_done" if retrospective else "summarize"
+    action = f"local_model_{task}"
+    before = len(answers(path, task))
     started = time.monotonic()
     proc = subprocess.run(
-        ["tugutil", "host", "tell", "local_model_summarize",
+        ["tugutil", "host", "tell", action,
          "--instance", instance, "-p", f"prompt={digest}"],
         capture_output=True, text=True,
     )
@@ -81,7 +105,7 @@ def ask(digest: str, instance: str, path: Path, timeout: float) -> tuple[str, st
         return None
     while time.monotonic() - started < timeout:
         time.sleep(0.2)
-        got = answers(path)
+        got = answers(path, task)
         if len(got) > before:
             raw, headline = got[-1]
             return raw, headline, round((time.monotonic() - started) * 1000)

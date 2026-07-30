@@ -346,6 +346,8 @@ The distribution behind these: 85% `Fix` openers, 13% prompt-example lifts, 8% t
 
 Filled in by #step-3 (classify half) and #step-6 (register half). Both halves must be complete before the ruling, per [P02]. `lfm25` has no prior baseline, so its first numbers *are* its baseline.
 
+**These tables are historical.** Every number below was taken against the pipelines this plan shipped — six-word headlines, the pre-grammar classify prompt, the pre-current-ask digest corpus. `roadmap/local-model-flow.md` rewrote all three, and this plan's own freeze rule ([P08]) says a prompt edit invalidates the standing bake-off. Read these as the record of what was measured then; the ruling in force is the one in that plan, not the one below.
+
 **Table T03: Classify half — filled by #step-3** {#t03-classify-results}
 
 Taken on `debug-tugdash-model-trust` (the dash's own debug instance; `debug-main` was not running). `false SHELL` is what production would have run — the model's verdict after the veto — and it is what the exit code answers. `pack's own` is the unfiltered model verdict, which is the Table T02 priority-1 discriminator now that the veto clears all three.

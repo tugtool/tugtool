@@ -40,9 +40,9 @@ import {
   localAiProgressValue,
 } from "@/components/tugways/tug-setup-copy";
 
-/** The v1 catalog's one `offered` entry, for the on-device AI scenarios. */
-const OFFER_NAME = "Ternary Bonsai 8B";
-const OFFER_BYTES = 2_315_155_948;
+/** The catalog's one `offered` entry, for the on-device AI scenarios. */
+const OFFER_NAME = "Qwen3 4B Instruct";
+const OFFER_BYTES = 2_278_969_697;
 const OFFER_NOTES = "Enhances command parsing & session summaries.";
 import "./gallery.css";
 import "./gallery-tug-setup.css";

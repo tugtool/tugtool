@@ -34,7 +34,23 @@
     "so the inference they save here was already being saved. What the grader",
     "genuinely adds is an unresolving pipeline tail and a path-shaped opener that",
     "does not exist, and neither fits this corpus's one-command-per-case shape;",
-    "both are verified against the live app instead."
+    "both are verified against the live app instead.",
+    "",
+    "The `band: maybe` entries were authored too, and for the opposite reason: a",
+    "Maybe is the band that ARMS the model with the program's synopsis, so it is",
+    "the only band whose accuracy says anything about whether the grammar-bearing",
+    "prompt is worth its input tokens. Recovered lines almost never land here —",
+    "a line someone actually typed usually parses clean. They come in three",
+    "families: real commands carrying flags the catalog's grammar does not list,",
+    "a real opener whose English tail falls into the grammar's positionals, and",
+    "argument shapes that are off by one.",
+    "",
+    "The labels are the human call, and one distinction runs through them: a real",
+    "flag the catalog simply does not know (`ls --sort=size`, `du --max-depth=2`)",
+    "still means the shell, while an invented one (`rg --frobnicate`) is nothing",
+    "anyone would run, so doubt sends it to Claude. Every `maybe` line labeled",
+    "`shell` was checked against `vetoesShellVerdict`: a vetoed one could never be",
+    "scored correct, and would quietly shrink the band it was added to measure."
   ],
   "cases": [
     {
@@ -378,6 +394,86 @@
     {
       "text": "yes",
       "label": "shell"
+    },
+    {
+      "text": "cargo build --offline --frozen --locked",
+      "label": "shell",
+      "band": "maybe"
+    },
+    {
+      "text": "cargo nextest run --no-capture --failure-output immediate",
+      "label": "shell",
+      "band": "maybe"
+    },
+    {
+      "text": "git log --oneline --graph --decorate --all --since=yesterday",
+      "label": "shell",
+      "band": "maybe"
+    },
+    {
+      "text": "git commit --amend-message \"wip\"",
+      "label": "shell",
+      "band": "maybe"
+    },
+    {
+      "text": "ls --sort=size",
+      "label": "shell",
+      "band": "maybe"
+    },
+    {
+      "text": "du --max-depth=2 -h .",
+      "label": "shell",
+      "band": "maybe"
+    },
+    {
+      "text": "ps --sort=-rss -eo pid,comm",
+      "label": "shell",
+      "band": "maybe"
+    },
+    {
+      "text": "tail --follow=name /tmp/tug.log",
+      "label": "shell",
+      "band": "maybe"
+    },
+    {
+      "text": "rg --frobnicate TODO src",
+      "label": "prompt",
+      "band": "maybe"
+    },
+    {
+      "text": "git the parser instead",
+      "label": "prompt",
+      "band": "maybe"
+    },
+    {
+      "text": "git rid of the stale worktrees",
+      "label": "prompt",
+      "band": "maybe"
+    },
+    {
+      "text": "cargo the release build",
+      "label": "prompt",
+      "band": "maybe"
+    },
+    {
+      "text": "cargo check the whole workspace",
+      "label": "prompt",
+      "band": "maybe"
+    },
+    {
+      "text": "find . -name '*.rs' -printf '%p\\n'",
+      "label": "shell",
+      "band": "maybe"
+    },
+    {
+      "text": "make -j8 --output-sync=target test",
+      "label": "shell",
+      "band": "maybe"
+    },
+    {
+      "text": "grep -R --exclude-from=.gitignore TODO .",
+      "label": "shell",
+      "band": "maybe"
     },
     {
       "text": "sleep 5",

@@ -1456,6 +1456,19 @@ app-test-covers-check:
 model-eval INSTANCE="debug-main":
     @python3 tests/model-eval/run.py {{INSTANCE}}
 
+# The same scoring for the idle collapse's past-tense lane.
+#
+# A separate recipe rather than a flag because it is a separate measurement:
+# different fixtures (`corpus/*.done.txt`), a different task on the wire
+# (`summarize_done`), and a different half of `verbs.txt` deciding whether the
+# opener is a verb. A pack can be fine at one and bad at the other — the 1.2B
+# LFM2.5 scored 5/13 on intents and 2/13 here — so a run that reported one
+# number for both would hide exactly the difference worth seeing.
+#
+#   just model-eval-done
+model-eval-done INSTANCE="debug-main":
+    @python3 tests/model-eval/run.py {{INSTANCE}} --retrospective
+
 # Score shell routing against a RUNNING instance: did that line mean the shell?
 #
 # The one local-model harness with ground truth, so unlike `model-eval` it is a

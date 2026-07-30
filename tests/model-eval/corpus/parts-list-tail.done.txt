@@ -4,11 +4,9 @@ The standing goal:
 The current ask:
 - write a readme
 
-What the session has been doing:
+What the session did:
 - Write(/tmp/calc/calc.c)
 - Write(/tmp/calc/Makefile)
-
-What it is doing right now:
 - Bash(make)
 - Write(/tmp/calc/README.md)
 - Bash(./calc 2 + 2)

@@ -70,32 +70,56 @@ impl CatalogEntry {
     }
 }
 
-/// The models Tug ships knowledge of, in preference order.
+/// The one model Tug ships knowledge of.
 ///
-/// Order is the mechanism, not decoration: `catalog_rank` is position, and a user
-/// on `auto` resolves to the first entry they have installed. Exactly one entry is
-/// `offered`, because two multi-gigabyte downloads is not a configuration this app
-/// asks anyone to accept.
+/// One entry, deliberately. The bake-off that chose it also ruled out every
+/// alternative carried alongside it, and a catalog listing packs nobody should
+/// install is a menu of worse answers. What ships is the pack that won; the
+/// rest were deleted rather than demoted, so there is one thing to make or
+/// break with.
 ///
-/// `qwen3-4b-instruct-2507-4bit` holds that place on a three-way bake-off across
-/// both jobs, decided against criteria fixed before the numbers were taken. It
-/// reached for the executing SHELL verdict once in 36 prose lines where the other
-/// two reached 2 and 17 times, and it needed the register normalizer zero times in
-/// 13 headlines where the incumbent needed it three. The two entries below it lost
-/// on those, not on size or speed, and they stay here fully supported —
-/// downloadable, selectable, `auto`-eligible once installed — because a user who
-/// already has one should not be stranded by a ruling made after they installed it.
+/// `qwen3-4b-instruct-2507-4bit` holds the place on criteria fixed before any
+/// number was taken, the first of which is how often a pack reaches for the
+/// executing verdict on a line meant for the assistant. No score is quoted
+/// here: this entry outlives the wordings that produced it, and a number in
+/// this file would go stale silently while reading as current. The ruling in
+/// force, with its tables, lives in the roadmap plan that took it.
+///
+/// The list machinery stays at length one. `catalog_rank` is still position,
+/// `auto` still resolves to the first installed entry, `recommended` and
+/// `offered` still mean what they meant, and the invariants below still hold
+/// — so a future bake-off adds rows back without rebuilding selection,
+/// ranking, or the picker.
 ///
 /// Repo furniture — `README.md`, `LICENSE`, `.gitattributes`, evaluation
 /// artifacts — is deliberately absent: MLX never reads it, so it is never
-/// downloaded. Every `sha256` here was computed from the exact bytes that
-/// were scored during bring-up.
+/// downloaded. Every `sha256` was computed from the exact bytes that were
+/// scored, and the file set is read off the repo's own tree rather than
+/// assumed — quantizations of one model do not agree about which files they
+/// ship. The tree API supplies a digest only for LFS-tracked files; where it
+/// does, it is cross-checked against the local hash and is never the source.
 ///
-/// An entry is only listable if its `config.json` `model_type` is registered in
-/// mlx-swift-examples' `LLMModelFactory`; the Swift backend imports MLXLLM and
-/// resolves the architecture from that registry, so an unregistered pack fails
-/// the load rather than degrading. `mistral3` and `gemma4` are absent upstream,
-/// which rules out the Ministral 3 and Gemma 4 families at the current pin.
+/// # What it takes for a pack to be listable here
+///
+/// Its `config.json` `model_type` must be registered in mlx-swift-examples'
+/// `LLMModelFactory` — the Swift backend imports MLXLLM and resolves the
+/// architecture from that registry, so an unregistered pack fails the load
+/// rather than degrading. `mistral3` and `gemma4` are absent upstream, which
+/// rules out the Ministral 3 and Gemma 4 families at the current pin.
+///
+/// A registered name is necessary and not sufficient, which cost a full round
+/// of staging to learn. `config.json` and `tokenizer_config.json` also have to
+/// match the schema the *pinned* mlx-swift-examples expects, and a repo
+/// converted after that pin can miss on either while naming an architecture
+/// the registry lists. Two real failures, both worth recognizing on sight:
+///
+/// - `tokenizer_class: "TokenizersBackend"` — a sentinel newer `mlx-lm`
+///   versions write to mean "read `tokenizer.json` directly". swift-transformers
+///   at the pin does not know the name and refuses with `unsupportedTokenizer`.
+/// - `rope_parameters` in place of a flat `rope_theta`, which the LFM2 MoE
+///   configuration requires and decodes by key.
+///
+/// Check both against a candidate's raw files before spending a download.
 pub const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
         id: "qwen3-4b-instruct-2507-4bit",
@@ -164,102 +188,6 @@ pub const CATALOG: &[CatalogEntry] = &[
         total_bytes: 2278969697,
         context_window: 262144,
         notes: "Reads your command lines and writes your session headlines.",
-    },
-    CatalogEntry {
-        id: "ternary-bonsai-8b-2bit",
-        display_name: "Ternary Bonsai 8B",
-        recommended: false,
-        offered: false,
-        hf_repo: "prism-ml/Ternary-Bonsai-8B-mlx-2bit",
-        hf_revision: "9260b24298e4211e804663e9f519962cf59f34be",
-        files: &[
-            ModelFile {
-                name: "chat_template.jinja",
-                sha256: "30a75d10e60b57e2f260420163dd59720dacf9f63b9a8de070d65dd80a7b30f7",
-                bytes: 4063,
-            },
-            ModelFile {
-                name: "config.json",
-                sha256: "c9a8bbb4b2b682d0e2d2bf4f537d699e1a569d757b2918c480e82a0c77b060ba",
-                bytes: 3118,
-            },
-            ModelFile {
-                name: "model.safetensors",
-                sha256: "f43270cbae86830b7eecb25bb8a0a0a005a81f180b68868dc39c755cebfff362",
-                bytes: 2303661704,
-            },
-            ModelFile {
-                name: "model.safetensors.index.json",
-                sha256: "178ab2bf39b603d669f730e569045e69886e117a392f4c75cd148f1733add0b4",
-                bytes: 64065,
-            },
-            ModelFile {
-                name: "tokenizer.json",
-                sha256: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506",
-                bytes: 11422650,
-            },
-            ModelFile {
-                name: "tokenizer_config.json",
-                sha256: "579073f506a3f85caed232bb91617cfb93028408d1f43ffaf66f3fc1aee9a9af",
-                bytes: 348,
-            },
-        ],
-        total_bytes: 2315155948,
-        context_window: 65536,
-        notes: "2-bit ternary 8B pack. Superseded; kept for anyone already holding it.",
-    },
-    CatalogEntry {
-        id: "lfm25-1-2b-instruct-4bit",
-        display_name: "LFM2.5 1.2B Instruct",
-        recommended: false,
-        offered: false,
-        hf_repo: "mlx-community/LFM2.5-1.2B-Instruct-4bit",
-        hf_revision: "125e006d991147f3b432249d1bdf0821987f12b0",
-        files: &[
-            ModelFile {
-                name: "chat_template.jinja",
-                sha256: "f05bf4b967dc993bdc7a2fe6e43759ee218eb0eb340d68b063e1c4f8ad148176",
-                bytes: 1783,
-            },
-            ModelFile {
-                name: "config.json",
-                sha256: "3201758c1b68e92a8102583626b0d76f70ff4c6fc2e2b99d32e96cdbe6788cea",
-                bytes: 1572,
-            },
-            ModelFile {
-                name: "generation_config.json",
-                sha256: "5ffd97da1dec4308543894569662d96e923ed01f7a9d8c7ff5aea7f800738cbd",
-                bytes: 132,
-            },
-            ModelFile {
-                name: "model.safetensors.index.json",
-                sha256: "3074009e9be56358bf8edc25354572cbca2b5a625e02f8a2c2789a656f51f5a1",
-                bytes: 23414,
-            },
-            ModelFile {
-                name: "model.safetensors",
-                sha256: "d837f243744bbdbe7dd032f90b482a1c45d5b6035b25c1d7804d0f4c74b5c004",
-                bytes: 658540250,
-            },
-            ModelFile {
-                name: "special_tokens_map.json",
-                sha256: "742aefe2b7dec496e8caffdba03a75d0c1a9925d53bd3f3e0d388c96b591b6f4",
-                bytes: 434,
-            },
-            ModelFile {
-                name: "tokenizer.json",
-                sha256: "df1d8d5ec5d091b460562ffd545e4a5e91d17d4a0db7ebe733be34ed374377bd",
-                bytes: 4733389,
-            },
-            ModelFile {
-                name: "tokenizer_config.json",
-                sha256: "2a52ec012d3df831ba434b081bef3726a6ee22501f062ad8353c557a0cfa0d01",
-                bytes: 92225,
-            },
-        ],
-        total_bytes: 663393199,
-        context_window: 128000,
-        notes: "1.2B on-device pack, a third the download. Too small for headline work.",
     },
 ];
 
@@ -932,6 +860,16 @@ impl LocalModelRequester {
         self.request("summarize", prompt, None).await
     }
 
+    /// Summarize a settled stretch of work in the past tense — what the session
+    /// actually did, rather than what it is doing.
+    ///
+    /// A separate task rather than a flag on `summarize` because the app picks
+    /// its instructions by task name, and because the harness and `analyze.py`
+    /// both read the two lanes apart by that name.
+    pub async fn summarize_done(&self, prompt: String) -> Result<String, String> {
+        self.request("summarize_done", prompt, None).await
+    }
+
     /// Ask the model whether one line means the shell or means Claude.
     ///
     /// The deck asks this over its own WebKit bridge; this is the same
@@ -951,7 +889,7 @@ impl LocalModelRequester {
     fn bounds(task: &str) -> (Duration, Option<Duration>) {
         match task {
             "classify" => (CLASSIFY_TIMEOUT, Some(CLASSIFY_SLOW)),
-            "summarize" => (SUMMARIZE_TIMEOUT, Some(SUMMARIZE_SLOW)),
+            "summarize" | "summarize_done" => (SUMMARIZE_TIMEOUT, Some(SUMMARIZE_SLOW)),
             _ => (REQUEST_TIMEOUT, None),
         }
     }
@@ -1200,21 +1138,32 @@ pub fn start_download(
 /// exactly as the emitter normalizes it, so what this verb prints is what the
 /// strip would wear. The raw answer rides alongside it: the two differing is the
 /// signal that the prompt is drifting and the normalizer is covering for it.
+/// `retrospective` picks the past-tense lane the idle collapse uses. Both lanes
+/// normalize identically; what differs is the instructions the app answers with
+/// and the task name the harness reads them apart by.
 pub fn request_summary(
     state: &SharedLocalModelState,
     cat: Option<broadcast::Sender<Frame>>,
     prompt: String,
+    retrospective: bool,
 ) {
     let requester = state.requester();
     tokio::spawn(async move {
         let result = match requester {
+            Some(requester) if retrospective => requester.summarize_done(prompt).await,
             Some(requester) => requester.summarize(prompt).await,
             None => Err("local model host unavailable".to_string()),
+        };
+        let task = if retrospective {
+            "summarize_done"
+        } else {
+            "summarize"
         };
         let (ok, text, error) = match result {
             Ok(raw) => {
                 let report = crate::feeds::session_overview::headline_register_report(&raw);
                 info!(
+                    task,
                     %raw,
                     headline = %report.text,
                     normalized = report.normalized,
@@ -1225,7 +1174,7 @@ pub fn request_summary(
                 (true, Some(report.text), None)
             }
             Err(error) => {
-                warn!(%error, "local model summarize failed");
+                warn!(task, %error, "local model summarize failed");
                 (false, None, Some(error))
             }
         };
@@ -1234,6 +1183,7 @@ pub fn request_summary(
             &cat,
             serde_json::json!({
                 "action": "local_model_summarize_result",
+                "task": task,
                 "ok": ok,
                 "text": text,
                 "error": error,
@@ -1478,32 +1428,29 @@ mod tests {
         assert!(CATALOG[0].recommended, "the recommended entry ranks first");
     }
 
-    /// The transition a real user lands in: they installed the old recommended
-    /// pack, the catalog was reordered under them, and `auto` must follow the
-    /// catalog rather than their install order.
+    /// A stamp recording a rank the catalog no longer agrees with is corrected.
     ///
-    /// `resolveRoute`'s `auto` branch takes `installed().first`, sorted by the
-    /// rank recorded in each pack's stamp — so without the reconcile they keep
-    /// being routed to the retired pack indefinitely.
+    /// The rank lives in the stamp because `auto` resolves through it: the
+    /// Swift store sorts installed packs by the rank each recorded at install
+    /// time and never re-reads the catalog. So a catalog edit that moves a
+    /// pack — or, as here, one that shortens the list under it — leaves a
+    /// machine routing by an order that no longer exists until this runs.
     #[test]
-    fn a_reordered_catalog_reranks_packs_already_on_disk() {
+    fn a_stale_recorded_rank_is_reconciled_to_the_catalog() {
         let root = temp_root();
-        // Stamp both shipping packs with the ranks they had before the ruling:
-        // the incumbent first, the winner behind it.
-        let (winner_rank, winner) = catalog_entry("qwen3-4b-instruct-2507-4bit").unwrap();
-        let (retired_rank, retired) = catalog_entry("ternary-bonsai-8b-2bit").unwrap();
-        assert_eq!(winner_rank, 0, "the winner ranks first in the catalog");
-        write_stamp(&root, retired, 0).unwrap();
-        write_stamp(&root, winner, 1).unwrap();
+        let (rank, entry) = catalog_entry("qwen3-4b-instruct-2507-4bit").unwrap();
+        assert_eq!(rank, 0, "the shipping pack ranks first");
+        // Stamped where it sat while the catalog still carried the packs the
+        // bake-off ruled out.
+        write_stamp(&root, entry, 3).unwrap();
 
-        assert_eq!(reconcile_catalog_ranks(&root), 2, "both stamps were stale");
-        assert_eq!(read_stamp(&root, winner.id).unwrap().catalog_rank, winner_rank);
-        assert_eq!(read_stamp(&root, retired.id).unwrap().catalog_rank, retired_rank);
+        assert_eq!(reconcile_catalog_ranks(&root), 1, "the stamp was stale");
+        assert_eq!(read_stamp(&root, entry.id).unwrap().catalog_rank, rank);
 
         // Idempotent, and it never touches what a verification established.
-        let before = read_stamp(&root, winner.id).unwrap();
+        let before = read_stamp(&root, entry.id).unwrap();
         assert_eq!(reconcile_catalog_ranks(&root), 0);
-        let after = read_stamp(&root, winner.id).unwrap();
+        let after = read_stamp(&root, entry.id).unwrap();
         assert_eq!(before.hf_revision, after.hf_revision);
         assert_eq!(before.verified_at, after.verified_at);
         assert_eq!(before.files.len(), after.files.len());
@@ -1513,11 +1460,12 @@ mod tests {
 
     #[test]
     fn file_url_pins_the_revision() {
-        let (_, entry) = catalog_entry("ternary-bonsai-8b-2bit").unwrap();
-        let url = entry.file_url(DEFAULT_BASE_URL, &entry.files[1]);
+        let (_, entry) = catalog_entry("qwen3-4b-instruct-2507-4bit").unwrap();
+        let config = entry.files.iter().find(|f| f.name == "config.json").unwrap();
+        let url = entry.file_url(DEFAULT_BASE_URL, config);
         assert_eq!(
             url,
-            "https://huggingface.co/prism-ml/Ternary-Bonsai-8B-mlx-2bit/resolve/9260b24298e4211e804663e9f519962cf59f34be/config.json"
+            "https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit/resolve/50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b/config.json"
         );
     }
 

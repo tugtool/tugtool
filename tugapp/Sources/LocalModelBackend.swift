@@ -15,6 +15,9 @@ struct LocalModelRequest {
         /// absent is the base classify prompt, unchanged.
         case classify(text: String, labels: [String], grammar: String?)
         case summarize(prompt: String)
+        /// A settled session's retrospective — the same digest shape answered in
+        /// the past tense, once the stretch of work has come to rest.
+        case summarizeDone(prompt: String)
         case generate(prompt: String, maxTokens: Int?)
         case availability
         case prewarm
@@ -24,9 +27,21 @@ struct LocalModelRequest {
             switch self {
             case .classify: return "classify"
             case .summarize: return "summarize"
+            case .summarizeDone: return "summarize_done"
             case .generate: return "generate"
             case .availability: return "availability"
             case .prewarm: return "prewarm"
+            }
+        }
+
+        /// Whether this kind answers from a prompt profile. `availability` and
+        /// `prewarm` perform no inference and carry no instructions, and
+        /// resolving a profile for them would put a route lookup on the path
+        /// that fires on every window focus.
+        var usesInstructions: Bool {
+            switch self {
+            case .classify, .summarize, .summarizeDone, .generate: return true
+            case .availability, .prewarm: return false
             }
         }
 
@@ -35,7 +50,7 @@ struct LocalModelRequest {
         var inputChars: Int {
             switch self {
             case .classify(let text, _, let grammar): return text.count + (grammar?.count ?? 0)
-            case .summarize(let prompt): return prompt.count
+            case .summarize(let prompt), .summarizeDone(let prompt): return prompt.count
             case .generate(let prompt, _): return prompt.count
             case .availability, .prewarm: return 0
             }

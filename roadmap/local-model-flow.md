@@ -110,7 +110,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 **Resolution:** OPEN — resolved by #step-7; the sweep is the resolution mechanism, decided in advance.
 
-#### [Q02] Is the 6-bit LFM2.5 quant worth a lane? (OPEN — decided cheaply in #step-8) {#q02-lfm-6bit}
+#### [Q02] Is the 6-bit LFM2.5 quant worth a lane? (DECIDED — no lane; the 8-bit failed priority 1) {#q02-lfm-6bit}
 
 **Question:** `mlx-community/LFM2.5-1.2B-Instruct-6bit` (0.96 GB) sits between the failed 4-bit and the candidate 8-bit.
 
@@ -118,7 +118,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 **Plan to resolve:** Decide at #step-8 from the 8-bit's first classify run: add the 6-bit lane only if the 8-bit passes priority 1 but the size criterion would be decisive against a larger winner. Default is to skip it.
 
-**Resolution:** OPEN — decided in #step-8 by the stated rule.
+**Resolution:** DECIDED — no 6-bit lane. The rule made the lane conditional on the 8-bit passing priority 1, and it did not, on either profile. The stated default (skip) therefore stands, decided by the rule written before the numbers rather than by the numbers. Recorded for a future attempt: mlx-community's 6-bit carries the same `TokenizersBackend` tokenizer that blocks its 8-bit sibling, but Liquid's own `LFM2.5-1.2B-Instruct-MLX-6bit` (0.96 GB) reads clean at this pin.
 
 #### [Q03] Does the retrospective need its own verb list? (DECIDED — past forms extend `verbs.txt`) {#q03-retrospective-verbs}
 
@@ -337,23 +337,53 @@ Not run: `ternary-bonsai-8b-2bit` (retired, stays `offered: false`), `lfm25-1-2b
 
 A pack that needs its own profile to compete is scored on that profile, named in the tables; the profile's authoring cost and drift surface count against it in prose in the ruling, not as a numbered criterion.
 
-**Table T03: Classify half — filled by #step-9** {#t03-classify-results}
+**Table T03: Classify half** {#t03-classify-results}
 
-| pack | profile | scored | accuracy | own false SHELL (all) | own false SHELL (maybe band) | false PROMPT | shell recall | prompt recall | median ms |
+| pack | profile | scored | accuracy | own false SHELL (all) | own false SHELL (maybe band) | post-veto false SHELL | false PROMPT | shell recall | prompt recall | median ms |
+|---|---|---|---|---|---|---|---|---|---|---|
+| qwen3-4b-instruct-2507-4bit | default | 99/99 | 88/99 | **1** | 0 | **0** | 11 | 37/48 | 51/51 | 626 |
+| lfm25-1-2b-instruct-8bit | default | 87/99 | 77/87 | **14** | 5 | **1** | 9 | 33/42 | 44/45 | 423 |
+| lfm25-1-2b-instruct-8bit | lfm-small | 98/99 | 97/98 | **36** | 6 | **1** | 0 | 48/48 | 49/50 | 218 |
+| lfm25-8b-a1b-4bit | — | not scored | — | — | — | — | — | — | — | — |
+
+`scored` is cases answered, not cases put: the 8-bit dropped 12 on the default profile by exceeding the 60 s timeout, which is itself a fact about the pack. `lfm-small`'s 97/98 accuracy is the deck's veto working, not the model — the pack answered SHELL to nearly everything (`false PROMPT` 0, shell recall 48/48), which is why the criterion that ranks first is the pack's *own* count and not accuracy. `lfm25-8b-a1b-4bit` has no row because it never loaded (#step-8).
+
+**Table T04: Register half (intents)** {#t04-register-results}
+
+| pack | profile | all rules | within budget | verb first | rescues | refused | copied | mean chars | median ms |
 |---|---|---|---|---|---|---|---|---|---|
-| | | | | | | | | | |
+| qwen3-4b-instruct-2507-4bit | default | **10/13** | 13/13 | 11/13 | 0 | 1/13 | 0 | 47.1 | 1653 |
+| lfm25-1-2b-instruct-8bit | default | **5/13** | 12/13 | 5/13 | 1 | 2/13 | 0 | 34.2 | 428 |
 
-**Table T04: Register half (intents) — filled by #step-9** {#t04-register-results}
+The 8-bit's 2/13 refusal rate is not the good number it looks like. It answered `Fix` (3 characters), `Fix app-debug`, and `Fixing file completion issues`; a headline carrying no claim gives the grounding gate nothing to refuse. Its `verb_first` 5/13 is the gerund the register was written against — `Fixing`, not `Fix` — and the two it *was* refused for are a truncation and an outright invention (`Resolve keymap shortcuts`, for a session about the overview cadence gate).
 
-| pack | profile | all rules | rescues | refused | copied | mean chars | median ms |
+**Table T05: Retrospective** {#t05-retrospective-results}
+
+| pack | profile | all rules | within budget | verb first | rescues | refused | median ms |
 |---|---|---|---|---|---|---|---|
-| | | | | | | | |
+| qwen3-4b-instruct-2507-4bit | default | **11/13** | 12/13 | 12/13 | 3 | 2/13 | 1652 |
+| lfm25-1-2b-instruct-8bit | default | **2/13** | 11/13 | 11/13 | 5 | **10/13** | 424 |
 
-**Table T05: Retrospective — filled by #step-9** {#t05-retrospective-results}
+This is the lane where the 8-bit's failure is unmistakable, because writing full sentences gives the gate something to check. It returned `Fixed keymap conflicts and badge accuracy issues` for the Sparkle self-update session and `Fixed keymap conflicts and badge accuracy` for the local-model onboarding one — the same invented answer for unrelated digests, which is the canned-response failure the 4-bit sibling showed in the historical run. Ten of thirteen refused.
 
-| pack | profile | register (retrospective mode) | refused | median ms |
-|---|---|---|---|---|
-| | | | | |
+#### The ruling {#the-ruling}
+
+**`qwen3-4b-instruct-2507-4bit` holds the offered place.** Walking Table T02 in order, on this phase's pipelines:
+
+1. **The pack's own false SHELL.** The incumbent reached for the executing verdict once in 99 lines, and the deck's veto caught it: zero lines would have run. The 1.2B reached for it 14 times on the default profile and 36 on the profile written to rescue it, and in both runs one line cleared the veto and would have executed — `rg --frobnicate TODO src`, a line meant for Claude. Under the asymmetry doctrine that is not a rate to weigh, it is an event: the wrong SHELL cannot be taken back. The bake-off is decided here, and nothing below can reopen it.
+2. **Grounding refusal and copied examples.** Incumbent 1/13 intents and 2/13 retrospectives; candidate 2/13 and 10/13. Neither pack copied a prompt example. See T04's note on why the candidate's intent figure flatters it.
+3. **Normalizer rescues.** Incumbent 0 intents, 3 retrospectives. Candidate 1 and 5.
+4. **Size.** The candidate wins: 1.25 GB against 2.28 GB. This is the tie-break on 1–3, and 1–3 are not tied. The MoE pack's 4.78 GB never had to be argued — it does not load.
+5. **Latency.** The candidate wins, and not narrowly: 218–423 ms against 626 ms classifying, 424 ms against 1653 ms summarizing. It is fast at being wrong.
+6. **Raw register pass rate.** Incumbent 10/13 and 11/13; candidate 5/13 and 2/13.
+
+The candidate wins two criteria, both of them the two that were ranked last on purpose.
+
+**On the profile.** `lfm-small` was authored under the one mid-bake-off authoring [P06] sanctions, against a diagnosed failure rather than a hunch: every one of the 14 lines the pack wrongly called SHELL opened on a token that also names a program — `make`, `sort`, `split`, `join`, `write`, `say`, `cut`, `yes` — which is a model reading the first word and stopping. The rewrite compressed the framing, led with the decisive test, and stacked minimal pairs sharing an opener. It made the pack's own count worse by a factor of two and a half. Leading with the SHELL rule and putting the SHELL half of every pair first taught a 1.2B that SHELL is the default answer, and it answered SHELL to nearly everything. The profile was removed rather than retuned: a second and third variant would be tuning until the number looked good, which is the practice the fixed-criteria discipline exists to prevent, and `overrides` ships empty. What the exercise bought is the record above, which is worth more than an empty table.
+
+**On the LFM family.** The rescue is over. Experiment A ran and lost on the criterion that ranks first; Experiment B ran as `lfm-small` and lost harder; Experiment C never loaded at this pin. The 1.2B pack stays in the catalog for anyone already holding it and ships to nobody.
+
+**Against the historical ruling.** This agrees with the qwen ruling recorded in the trust plan, which is worth stating plainly *because* it agrees: the pipelines changed underneath it — 64-character headlines, a re-weighted digest, rewritten prompts, a grammar-armed Maybe band, a retrospective lane that did not exist — so this is a fresh ruling that happens to land in the same place, not the old one still standing. [P01] declared every prior number historical, and none was consulted.
 
 #### Bake-off protocol {#bakeoff-protocol}
 
@@ -499,17 +529,17 @@ State Zone Mapping is deliberately omitted: no new frontend state exists in any 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | The 64-character register | pending | — |
-| #step-2 | Current-ask digest and corpus regeneration | pending | — |
-| #step-3 | The idle collapse | pending | — |
-| #step-4 | Maybe-band corpus population | pending | — |
-| #step-5 | The prompt rewrites — classify pair, summarize, retrospective | pending | — |
-| #step-6 | Per-pack prompt profiles | pending | — |
-| #step-7 | Grounding threshold re-sweep | pending | — |
-| #step-8 | Candidate packs — catalog, staging, install | pending | — |
-| #step-9 | The bake-off and the ruling | pending | — |
-| #step-10 | Catalog end-state and doc retirement | pending | — |
-| #step-11 | Integration checkpoint — live app | pending | — |
+| #step-1 | The 64-character register | done | `0660b0cae` |
+| #step-2 | Current-ask digest and corpus regeneration | done | `b6cf3d0e4` |
+| #step-3 | The idle collapse | done | `f85237163` |
+| #step-4 | Maybe-band corpus population | done | `28ab7358e` |
+| #step-5 | The prompt rewrites — classify pair, summarize, retrospective | done | `cdccb6c4f` |
+| #step-6 | Per-pack prompt profiles | done | `c4604d2ee` |
+| #step-7 | Grounding threshold re-sweep | done | `73bfd589b` |
+| #step-8 | Candidate packs — catalog, staging, install | done | `e8c16e85c` |
+| #step-9 | The bake-off and the ruling | done | `20d06bc23` |
+| #step-10 | Catalog end-state and doc retirement | done | `a5ed8622d` |
+| #step-11 | Integration checkpoint — live app | done | `c92b1fd89` |
 
 ---
 
@@ -802,6 +832,18 @@ State Zone Mapping is deliberately omitted: no new frontend state exists in any 
 - [ ] `cd tugrust && cargo nextest run` green; `bun test` green; `bunx tsc --noEmit` clean; `bunx vite build` clean.
 - [ ] `just model-classify` exit 0; `just model-eval` clean on the shipping pack in both modes; `just model-liveness` passes.
 - [ ] No live headline — intent or retrospective — misdescribes the work. A single misdescription is a phase failure, not a rounding error.
+
+#### What #step-11 verified, and what it could not {#step-11-record}
+
+Mechanically green, all on the shipping pack: `cargo nextest run` 1772 passed, `bun test` 5907 passed with 0 failures, `bunx tsc --noEmit` and `bunx vite build` clean, the prompt/corpus contamination sweep clean over 9 examples across both lanes, `analyze.py --self-test` 13/13. `just model-classify` exits 0 at 88/99 with one own false SHELL that the veto catches and a Maybe band scored 17/17 over 17 cases. `just model-eval` 10/13 and `just model-eval-done` 11/13, both with zero copied examples, reproducing the #step-9 captures exactly. `just model-liveness` PASS. The derived app-test selection for the phase's accumulated diff is 11 files, all green.
+
+The standing probe set routes through the whole composed pipeline — grader band, synopsis for a Maybe, model verdict, then the deck's own veto — and both historical false-SHELL lines reach Claude: the `tokei` line by the veto refusing the model's SHELL, the task-list line by the model answering PROMPT itself. `make test`, `rg TODO src`, and `head Justfile` route to the shell. Two Maybe-band lines (`git commit --amend-message "wip"`, `ls --sort=size`) carry `grammar=true` and are ruled SHELL. `git status` routes to Claude — a false PROMPT, one of the eleven this pack is recorded as making, costing one keystroke.
+
+**Not verified here, and deliberately not:** the live-session half — a dozen 64ch intents read against real work, a fresh ask re-aiming the intent, a settled session collapsing to a retrospective, and resumed work yielding it back. There is no headless path to it: the control socket exposes no session-submit action, so nothing can drive a real turn from a script, and a 30-second idle collapse cannot live inside an app-test. `just model-stats` reports all four rates including the collapse line, and three of them read empty for the same reason — they count OVERVIEW frames, which only a real session emits.
+
+That gap is not a harness that needs writing. The last exit criterion is that no live headline misdescribes the work, and whether a headline describes a session well is a judgement with no ground truth — the rubric scores register, the gate scores grounding, and neither can score *right*. It is read by a person using the build.
+
+---
 
 ---
 
