@@ -86,6 +86,7 @@ import {
   type TugListViewCellRenderer,
   type TugListViewDataSource,
 } from "@/components/tugways/tug-list-view";
+import { taskRowState } from "@/lib/code-session-store/indicator-liveness";
 import type {
   TaskItem,
   TaskListState,
@@ -300,22 +301,6 @@ class TaskListDataSource implements TugListViewDataSource {
 // ---------------------------------------------------------------------------
 // Cell renderer
 // ---------------------------------------------------------------------------
-
-/**
- * Resolve a task status × the session's idle gate onto the
- * indicator's `state`. The role falls out of the indicator's
- * state→role default (running → action, completed → success,
- * stopped → inherit). Same vocabulary the popover uses so the two
- * surfaces read identically.
- */
-function taskRowState(
-  status: TaskStatus,
-  idle: boolean,
-): TugProgressIndicatorState {
-  if (status === "completed") return "completed";
-  if (status === "in_progress") return idle ? "stopped" : "running";
-  return "stopped";
-}
 
 function TaskRowIcon({
   status,

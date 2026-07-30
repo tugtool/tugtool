@@ -113,18 +113,18 @@ describe("selectWorkItems", () => {
 describe("workCellPose — merged truth table", () => {
   const noTasks = { hasTasks: false, allTasksComplete: false, isIdle: true };
 
-  test("an active goal is running regardless of idle", () => {
-    expect(workCellPose([], goal(), noTasks, false)).toBe("running");
+  test("an active goal does not run the cell — a goal is a condition, not work", () => {
+    expect(workCellPose([], goal(), noTasks, false)).toBe("stopped");
   });
 
   test("a running job beats idle demotion", () => {
     expect(workCellPose([job({ jobId: "r1" })], null, noTasks, false)).toBe("running");
   });
 
-  test("a pending scheduled row pulses", () => {
+  test("a pending scheduled row rests quiet — nothing is executing yet", () => {
     expect(
       workCellPose([job({ jobId: "w1", kind: "wakeup", status: "scheduled" })], null, noTasks, false),
-    ).toBe("running");
+    ).toBe("stopped");
   });
 
   test("a failed job holds aborted, not linger-gated", () => {

@@ -244,8 +244,12 @@ export interface TugProgressIndicatorProps
    * Lifecycle state. `running` animates the variant's canonical
    * indeterminate motion; the other four states paint a static pose.
    * `aborted` always renders in the danger tone regardless of `role`.
+   *
+   * Defaults to `stopped` — motion is opt-in, because a running glyph
+   * asserts that work is executing right now. Say `running` (or supply a
+   * `phaseVisual` that resolves to it) when that is true.
    * @selector [data-state="running"] | [data-state="paused"] | [data-state="stopped"] | [data-state="completed"] | [data-state="aborted"]
-   * @default "running"
+   * @default "stopped"
    */
   state?: TugProgressIndicatorState;
 
@@ -432,10 +436,16 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
     // Resolve state first (explicit > phaseVisual > default), then role
     // (explicit > phaseVisual > default-from-state). State implies role
     // by default — see `defaultRoleForState`.
+    //
+    // The default is `stopped`: motion is opt-in. A breathing glyph is a
+    // claim that work is executing this instant, and nothing that declines
+    // to say so is entitled to make it — so a caller that supplies neither
+    // `state` nor a `phaseVisual` mapping gets stillness, and a phase a
+    // `phaseVisual` forgot to handle settles rather than breathing forever.
     const phaseDerived =
       phase !== undefined && phaseVisual !== undefined ? phaseVisual(phase) : undefined;
     const effectiveState: TugProgressIndicatorState =
-      state ?? phaseDerived?.state ?? "running";
+      state ?? phaseDerived?.state ?? "stopped";
     const effectiveRole: TugProgressIndicatorRole =
       role ?? phaseDerived?.role ?? defaultRoleForState(effectiveState);
 

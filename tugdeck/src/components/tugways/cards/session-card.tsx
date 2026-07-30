@@ -793,6 +793,7 @@ function SessionRestoring({
               <TugProgressIndicator
                 variant="spinner"
                 size={14}
+                state="running"
                 aria-label={spinnerLabel}
               />
             </span>

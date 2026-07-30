@@ -105,7 +105,7 @@ function demoPhaseVisual(phase: string): TugProgressIndicatorPhaseVisual {
     case "offline":
       return { role: "danger", state: "aborted" };
     case "awaiting_approval":
-      return { role: "caution", state: "running" };
+      return { role: "caution", state: "paused" };
     case "streaming":
       return { role: "success", state: "running" };
     case "idle":
@@ -311,12 +311,16 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
         {/* Variants ---------------------------------------------------- */}
         <section className="cg-section">
           <TugLabel className="cg-section-title">
-            Variants — seven glyphs, default role/state
+            Variants — seven glyphs, default role, running
           </TugLabel>
           <div className="gpi-grid">
             {VARIANTS.map((v) => (
               <GalleryCell key={v} caption={v} wide={v === "bar"}>
-                <TugProgressIndicator variant={v} size={v === "bar" ? 6 : 20} />
+                <TugProgressIndicator
+                  variant={v}
+                  size={v === "bar" ? 6 : 20}
+                  state="running"
+                />
               </GalleryCell>
             ))}
           </div>
@@ -473,7 +477,12 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
           <div className="gpi-grid">
             {ROLES.map((r) => (
               <GalleryCell key={r} caption={r}>
-                <TugProgressIndicator variant="ring" size={20} role={r} />
+                <TugProgressIndicator
+                  variant="ring"
+                  size={20}
+                  role={r}
+                  state="running"
+                />
               </GalleryCell>
             ))}
           </div>

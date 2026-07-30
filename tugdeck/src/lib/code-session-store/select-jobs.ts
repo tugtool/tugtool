@@ -713,23 +713,28 @@ export function countJobs(jobs: readonly JobItem[]): JobCounts {
  * runs between turns, so an idle session must not demote a running
  * dot (the one semantic divergence from the TASKS cell).
  *
- *  - empty ledger          → `stopped` (quiet placeholder)
- *  - any running/scheduled → `running` (pulse — a scheduled wakeup is
- *                            pending work even though nothing executes)
- *  - else any failed       → `aborted` (danger; holds until cleared or
- *                            superseded by a new job)
- *  - else                  → `completed`
+ *  - empty ledger    → `stopped` (quiet placeholder)
+ *  - any running     → `running` (the one pose that claims execution)
+ *  - else any failed → `aborted` (danger; holds until cleared or
+ *                      superseded by a new job)
+ *  - else scheduled  → `stopped` — a wakeup promised for a future time is
+ *                      not executing, and the cell's count already reports
+ *                      it. See `indicator-liveness`.
+ *  - else            → `completed`
  */
 export function jobsCellPose(
   jobs: readonly JobItem[],
 ): "stopped" | "running" | "completed" | "aborted" {
   if (jobs.length === 0) return "stopped";
   let anyFailed = false;
+  let anyScheduled = false;
   for (const j of jobs) {
-    if (j.status === "running" || j.status === "scheduled") return "running";
+    if (j.status === "running") return "running";
     if (j.status === "failed") anyFailed = true;
+    if (j.status === "scheduled") anyScheduled = true;
   }
-  return anyFailed ? "aborted" : "completed";
+  if (anyFailed) return "aborted";
+  return anyScheduled ? "stopped" : "completed";
 }
 
 /**

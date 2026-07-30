@@ -106,8 +106,8 @@ export const SESSION_PHASE_LABELS: Record<SessionPhaseKey, string> = {
  * Mapping:
  *
  *  - `offline`, `errored`        → `{ role: danger,  state: aborted }`
- *  - `restoring`, `interrupting`,
- *    `awaiting_approval`         → `{ role: caution, state: running }`
+ *  - `restoring`, `interrupting` → `{ role: caution, state: running }`
+ *  - `awaiting_approval`         → `{ role: caution, state: paused }`
  *  - active stream phases        → `{ role: action,  state: running }`
  *  - `idle`                      → `{ role: inherit, state: stopped }`
  *
@@ -123,8 +123,13 @@ export function sessionSessionPhaseVisual(phaseKey: string): TugProgressIndicato
       return { role: "danger", state: "aborted" };
     case "restoring":
     case "interrupting":
-    case "awaiting_approval":
       return { role: "caution", state: "running" };
+    case "awaiting_approval":
+      // `paused`, not `running`: the session is blocked on the user and
+      // nothing is executing, so the glyph holds a still, full-size,
+      // caution-tinted pose rather than breathing indefinitely on behalf
+      // of work that is not happening. See `indicator-liveness`.
+      return { role: "caution", state: "paused" };
     case "submitting":
     case "awaiting_first_token":
     case "streaming":

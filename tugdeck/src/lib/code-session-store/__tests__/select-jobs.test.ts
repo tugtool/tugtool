@@ -442,12 +442,14 @@ describe("scheduled rows", () => {
     expect(mixed.finished).toBe(1);
   });
 
-  test("jobsCellPose pulses on a scheduled-only ledger", () => {
-    expect(jobsCellPose([wakeup("w")])).toBe("running");
-    // Scheduled outranks a past failure, like running does.
+  test("jobsCellPose rests quiet on a scheduled-only ledger", () => {
+    // A wakeup promised for a future time is not executing, so the cell
+    // holds the quiet pose; the row's countdown carries "later, not now".
+    expect(jobsCellPose([wakeup("w")])).toBe("stopped");
+    // A past failure still nags past a scheduled row.
     expect(
       jobsCellPose([wakeup("w"), job({ jobId: "f", status: "failed", endedAtMs: 1 })]),
-    ).toBe("running");
+    ).toBe("aborted");
   });
 
   test("composeJobsSummary renders the scheduled bucket between watching and done", () => {

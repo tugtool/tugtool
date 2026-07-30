@@ -158,9 +158,11 @@ export interface WorkChecklistPose {
 /**
  * The WORK cell's indicator pose — the merged grammar (Spec S03):
  *
- *  1. any running job, pending scheduled row, or ACTIVE GOAL → `running`
- *     (jobs/goals never idle-demote — [D102]'s divergence, preserved
- *     for the merged cell's live half);
+ *  1. any RUNNING job → `running` (jobs never idle-demote — [D102]'s
+ *     divergence, preserved for the merged cell's live half). A scheduled
+ *     row and an active goal are NOT running: neither is executing, and
+ *     both are already reported by the cell's count. See
+ *     `indicator-liveness`;
  *  2. else any failed job → `aborted` (holds until cleared, [D102] —
  *     NOT linger-gated: a failure nags red until the user clears it);
  *  3. else checklist semantics WITH [D100]'s idle demotion: in-flight
@@ -177,7 +179,6 @@ export function workCellPose(
   checklist: WorkChecklistPose,
   recentlyCompleted: boolean,
 ): "stopped" | "running" | "completed" | "aborted" {
-  if (goalIsActive(goal)) return "running";
   const jobsPose = jobsCellPose(jobs);
   if (jobsPose === "running" || jobsPose === "aborted") return jobsPose;
   if (checklist.hasTasks) {

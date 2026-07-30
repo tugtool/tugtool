@@ -120,14 +120,20 @@ describe("sessionSessionPhaseVisual — role/state mapping", () => {
     });
   });
 
-  test.each([
-    "restoring",
-    "interrupting",
-    "awaiting_approval",
-  ] as const)("%s → caution/running", (key) => {
-    expect(sessionSessionPhaseVisual(key)).toEqual({
+  test.each(["restoring", "interrupting"] as const)(
+    "%s → caution/running",
+    (key) => {
+      expect(sessionSessionPhaseVisual(key)).toEqual({
+        role: "caution",
+        state: "running",
+      });
+    },
+  );
+
+  test("awaiting_approval → caution/paused — blocked on the user, not executing", () => {
+    expect(sessionSessionPhaseVisual("awaiting_approval")).toEqual({
       role: "caution",
-      state: "running",
+      state: "paused",
     });
   });
 

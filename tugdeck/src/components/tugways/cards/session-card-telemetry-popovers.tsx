@@ -79,6 +79,11 @@ import {
   type TugProgressIndicatorState,
 } from "@/components/tugways/tug-progress-indicator";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import {
+  goalRowState,
+  jobRowState,
+  taskRowState,
+} from "@/lib/code-session-store/indicator-liveness";
 import type { TaskStatus } from "@/lib/code-session-store/select-task-list";
 import {
   composeTaskCopyText,
@@ -791,26 +796,6 @@ export function StateChangeLogPopoverContent({
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a task status × the session's idle gate onto the
- * indicator's `state`. The role falls out of the indicator's
- * state→role default (running → action, completed → success,
- * stopped → inherit).
- *
- *  - `pending`     → stopped   (quiet muted dot)
- *  - `in_progress` → running   (action-colored dot + ring pulse)
- *                     idle session demotes to stopped
- *  - `completed`   → completed (success-colored filled dot)
- */
-function taskRowState(
-  status: TaskStatus,
-  idle: boolean,
-): TugProgressIndicatorState {
-  if (status === "completed") return "completed";
-  if (status === "in_progress") return idle ? "stopped" : "running";
-  return "stopped";
-}
-
-/**
  * `TASKS` popup — opened from the `TASKS` cell in the status row.
  * Renders the full assembled task list ([D100]) as popup-list item
  * rows, each led by a {@link TugProgressIndicator} pulsing dot. Each
@@ -923,30 +908,6 @@ function jobTurnIndex(
       (m) => m.kind === "tool_use" && m.toolUseId === job.toolUseId,
     ),
   );
-}
-
-/**
- * Map a job's status onto the row indicator's pose. Failed rows take
- * the `aborted` pose (danger tone); stopped rows read quiet. NO idle
- * demotion — a background job genuinely runs between turns, so a
- * running row keeps its motion regardless of session phase (the one
- * deliberate divergence from {@link taskRowState}).
- */
-function jobRowState(status: JobStatus): TugProgressIndicatorState {
-  switch (status) {
-    case "running":
-    case "scheduled":
-      // A scheduled wakeup is pending work — it keeps the pulsing pose
-      // even though nothing executes yet (the countdown carries the
-      // "later, not now" distinction in the row label).
-      return "running";
-    case "completed":
-      return "completed";
-    case "failed":
-      return "aborted";
-    case "stopped":
-      return "stopped";
-  }
 }
 
 /**
@@ -1296,12 +1257,6 @@ export function JobsPopoverContent({
 // ---------------------------------------------------------------------------
 
 /** The goal row's dot pose. */
-function goalRowState(goal: GoalState): TugProgressIndicatorState {
-  if (goal.status === "active") return "running";
-  if (goal.status === "achieved") return "completed";
-  return "stopped";
-}
-
 /**
  * `WORK` popup — opened from the `WORK` cell, the single surface over
  * every trackable unit of session work ([P02]/[P03] of
