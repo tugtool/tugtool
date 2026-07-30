@@ -33,6 +33,12 @@
  * then measures the consequence: a fixed-position probe planted inside a frame
  * must resolve against the viewport, not against the pane.
  *
+ * A slot assignment carries a fourth rule. It raises the card it slots, and
+ * the raise is a precondition of the motion rather than its epilogue — a frame
+ * that rose only at the end would spend the whole crossing underneath the
+ * panes it is on its way to sitting in front of. The converse is asserted too:
+ * z-order moves nothing, so a bare raise must arm no settle window.
+ *
  * Scenario:
  *   1. Seed a two-up deck with a pinned Lens on the right.
  *   2. Flip the Lens to the left. Mid-window: the container wears
@@ -41,10 +47,13 @@
  *      frames sit where `imposeRect` says.
  *   4. Flip back. Assert the no-residue rule a second time, then plant the
  *      fixed-position probe.
- *   5. Retarget: a second change dispatched inside the first one's window.
+ *   5. A slot assignment: the frame is already on top when its tween starts,
+ *      and a bare pane raise arms no window at all.
+ *   6. Retarget: a second change dispatched inside the first one's window.
  *      Tweens are replaced, not stacked, and the final geometry is still right.
  *
  * @covers tugdeck/src/components/chrome/deck-canvas.tsx
+ * @covers tugdeck/src/deck-manager.ts
  * @covers tugdeck/src/components/tugways/tug-pane.css
  * @covers tugdeck/src/lib/pane-flip.ts
  * @covers tugdeck/src/lib/layout-imposer.ts
@@ -205,6 +214,14 @@ async function lensWidth(app: App): Promise<number> {
   );
 }
 
+/** The resolved stacking order of a frame — the number `deck-canvas` derives
+ *  from the pane's place in the store array. */
+async function frameZIndex(app: App, paneId: string): Promise<number> {
+  return app.evalJS<number>(
+    `Number(getComputedStyle(document.querySelector('.tug-pane[data-pane-id="${paneId}"]')).zIndex)`,
+  );
+}
+
 async function frameLeft(app: App, paneId: string): Promise<number> {
   return app.evalJS<number>(
     `document.querySelector('.tug-pane[data-pane-id="${paneId}"]').getBoundingClientRect().left`,
@@ -316,6 +333,80 @@ describe.skipIf(!SHOULD_RUN)(
             expect(probeOrigin.x).toBeCloseTo(0, 0);
             expect(probeOrigin.y).toBeCloseTo(0, 0);
           }
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "assigning a slot raises the frame before it starts crossing, and a bare raise arms nothing",
+      async () => {
+        const app = await launchTugApp({
+          testName: "at0294-imposer-flip-raise",
+        });
+        try {
+          // Focus B, so p2 is the frame on top and a raise of p1 is
+          // observable: without one, A crosses to p2's slot underneath it.
+          await app.seedDeckState({ state: deckShape(), focusCardId: "B" });
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(${JSON.stringify(FRAMES)}).length === 3`,
+            { timeoutMs: 5_000 },
+          );
+          await wait(AFTER_LAND_MS);
+          const vp = await viewportWidth(app);
+          const lens = await lensWidth(app);
+          expect(await frameZIndex(app, "p1")).toBeLessThan(
+            await frameZIndex(app, "p2"),
+          );
+
+          // A bare raise reorders the panes array and moves no frame, so it
+          // must arm no settle window — one would hold every session card's
+          // notifications for the length of a motion that never happens.
+          // Raised and lowered again, so the assignment below still has a
+          // raise to make.
+          for (const paneId of ["p1", "p2"]) {
+            await app.evalJS<null>(
+              `(window.__tug.dispatchControlAction("focus-pane", { paneId: ${JSON.stringify(
+                paneId,
+              )} }), null)`,
+            );
+            await wait(120);
+            expect(await settling(app)).toBe(false);
+            expect(await frameAnimations(app)).toEqual([]);
+          }
+          expect(await frameZIndex(app, "p1")).toBeLessThan(
+            await frameZIndex(app, "p2"),
+          );
+
+          // Now the gesture the Lens's slot picker dispatches: put A at the
+          // slot B already holds. A moves, so it tweens — and by the time it
+          // does, it is already the frame on top.
+          await app.evalJS<null>(
+            `(window.__tug.dispatchControlAction("assign-slot", { cardId: "A", slot: 1 }), null)`,
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector("[data-imposer-settling]") !== null`,
+            { timeoutMs: 2_000 },
+          );
+          {
+            const census = await frameAnimations(app);
+            expect(census.map((a) => a.paneId)).toContain("p1");
+            expect(await frameZIndex(app, "p1")).toBeGreaterThan(
+              await frameZIndex(app, "p2"),
+            );
+          }
+
+          await wait(AFTER_LAND_MS);
+          expect(await settling(app)).toBe(false);
+          expect(await frameLeft(app, "p1")).toBeCloseTo(
+            expectedLeft(1, 2, vp, "right", lens),
+            0,
+          );
+          expect(await frameZIndex(app, "p1")).toBeGreaterThan(
+            await frameZIndex(app, "p2"),
+          );
         } finally {
           await app.close();
         }

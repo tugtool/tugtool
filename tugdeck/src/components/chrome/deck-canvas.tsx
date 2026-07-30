@@ -86,11 +86,21 @@ const LENS_PANE_ZINDEX = 8999;
  * pane holds which slot. Two decks with the same signature put every derived
  * frame in the same place, so a change to it is exactly the set of moments the
  * deck should cross to a new arrangement rather than cut.
+ *
+ * The pane terms are sorted, so the signature is blind to the panes array's
+ * ORDER — which is z-order, and z-order moves nothing: `imposeRect` reads a
+ * pane's slot, its width, and the span, never its place in the array. Order
+ * sensitivity here would make every pane activation — a click on a title bar —
+ * arm a settle window with no frame to move in it, holding session
+ * notifications for the length of a motion that never happens.
  */
 function arrangementSignature(state: DeckState): string {
+  const panes = state.panes
+    .map((pane) => `${pane.id}:${pane.slot ?? ""}`)
+    .sort();
   return `${state.imposition.kind ?? ""}|${state.imposition.lens}|${
     isLensPinned(state.imposition) ? "pinned" : "free"
-  }|${state.panes.map((pane) => `${pane.id}:${pane.slot ?? ""}`).join(",")}`;
+  }|${panes.join(",")}`;
 }
 
 /**

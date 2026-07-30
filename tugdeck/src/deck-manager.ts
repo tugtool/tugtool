@@ -1868,10 +1868,12 @@ export class DeckManager implements IDeckManagerStore {
    * the imposer exists to replace tab strips, so it slots cards, never whole
    * tab groups. A card already alone in its pane slots that pane in place.
    *
-   * The assignment always raises: slots are stacks, so clicking a number that
-   * another pane already holds puts this one on top of it rather than doing
-   * nothing. An imposed pane runs the canvas height, so a collapsed one
-   * expands.
+   * The assignment always raises, and raises first: slots are stacks, so
+   * clicking a number that another pane already holds puts this one on top of
+   * it rather than doing nothing — and the raise lands in its own commit ahead
+   * of the geometry, so the frame crosses to its slot over the arrangement
+   * rather than under it. An imposed pane runs the canvas height, so a
+   * collapsed one expands.
    *
    * Because the chain packs tight, a card joining it moves every pane after it
    * as well — the lifecycle ledger below covers the whole chain, not just the
@@ -1907,6 +1909,31 @@ export class DeckManager implements IDeckManagerStore {
         : null;
     const targetPaneId = detachedPaneId ?? host.id;
 
+    // Raise BEFORE the geometry, in its own commit.
+    //
+    // Assigning always raises: the slotted card becomes the active one, as a
+    // first-class activation. Doing it after the geometry commit would leave
+    // the frame crossing to its slot underneath the panes it is on its way to
+    // sitting in front of — the raise is a precondition of the motion, not its
+    // epilogue. z-order moves nothing, so this commit is not an arrangement
+    // change and arms no settle window of its own (`deck-canvas.tsx`'s
+    // `arrangementSignature`); the geometry commit below is what the imposer
+    // crosses on.
+    //
+    // A raw `activateCard` here would flip the first responder but skip the
+    // focus transfer — the outgoing card (the Lens, whose list dispatched the
+    // assign) would never save its bag, and the slotted card would never
+    // receive its focus claim (no caret until the user clicks into it).
+    // Detaching has already raised and activated the new pane, in which case
+    // this is the same-bit refresh.
+    transferFocusForActivation({
+      outgoingCardId: this.getFirstResponderCardId(),
+      incomingCardId: cardId,
+      store: this,
+      commitMutation: () => this.activateCard(cardId),
+    });
+
+    // Read the target back AFTER the raise: the flip rebuilds the panes array.
     const target = this.deckState.panes.find((p) => p.id === targetPaneId);
     if (!target) return;
 
@@ -1927,20 +1954,6 @@ export class DeckManager implements IDeckManagerStore {
     this.notify();
     for (const id of moved) this.cardLifecycle.notifyCardDidMove(id);
     this.scheduleSave();
-
-    // Assigning always raises: the slotted card becomes the active one, as a
-    // first-class activation. A raw `activateCard` here would flip the first
-    // responder but skip the focus transfer — the outgoing card (the Lens,
-    // whose list dispatched the assign) would never save its bag, and the
-    // slotted card would never receive its focus claim (no caret until the
-    // user clicks into it).
-    const outgoing = this.getFirstResponderCardId();
-    transferFocusForActivation({
-      outgoingCardId: outgoing,
-      incomingCardId: cardId,
-      store: this,
-      commitMutation: () => this.activateCard(cardId),
-    });
   }
 
   /** Per-pane position/size deltas between two pane arrays of the same shape,
