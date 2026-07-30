@@ -53,7 +53,6 @@
  *      Tweens are replaced, not stacked, and the final geometry is still right.
  *
  * @covers tugdeck/src/components/chrome/deck-canvas.tsx
- * @covers tugdeck/src/deck-manager.ts
  * @covers tugdeck/src/components/tugways/tug-pane.css
  * @covers tugdeck/src/lib/pane-flip.ts
  * @covers tugdeck/src/lib/layout-imposer.ts
