@@ -105,6 +105,7 @@ import {
 import {
   ACTIVITY_BIN_MS,
   getSessionActivityStore,
+  isRateChannel,
 } from "@/lib/session-activity-store";
 import {
   buildSessionRows,
@@ -243,12 +244,14 @@ function RowSparkline({ tugSessionId }: { tugSessionId: string }): React.ReactEl
         : [],
     [activityStore, tugSessionId],
   );
-  // Dormancy wake channel — an idle session's row costs nothing until its
-  // next activity frame, which wakes the tape in the same tick.
+  // The tape's data-event clock, filtered to rate channels — this row draws
+  // the composite of rate work, so gauge levels must not wake it.
   const subscribeActivity = useCallback(
     (wake: () => void): (() => void) =>
       activityStore !== null && tugSessionId.length > 0
-        ? activityStore.subscribeRateActivity(tugSessionId, wake)
+        ? activityStore.subscribeActivity(tugSessionId, (channel) => {
+            if (isRateChannel(channel)) wake();
+          })
         : () => {},
     [activityStore, tugSessionId],
   );

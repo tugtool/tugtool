@@ -279,9 +279,18 @@ function DemoSpark({
     },
     [phase],
   );
+  // The demo's data is synthesized from the wall clock, so its data-event
+  // clock is an explicit driver ticking at the bin cadence — the gallery
+  // stands in for the store here, generator and clock alike. Confined to
+  // this audition card; product tapes ride the activity store's events.
+  const subscribeActivity = useCallback((wake: () => void): (() => void) => {
+    const timer = window.setInterval(wake, DEMO_BIN_MS);
+    return () => window.clearInterval(timer);
+  }, []);
   return (
     <TugSparkline
       getSeries={getSeries}
+      subscribeActivity={subscribeActivity}
       binMs={DEMO_BIN_MS}
       fullScale={SPARK_FULL_SCALE}
       curve={SPARK_CURVE}

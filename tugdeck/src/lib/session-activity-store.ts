@@ -9,11 +9,18 @@
  * in tugcode ([Q05]); the deck no longer counts anything off CODE_OUTPUT.
  *
  * **State zones.** The high-churn series live only in the meters, read
- * imperatively on the consumer's timer and painted to SVG ([L02], [L06],
- * [P03]). Only membership (which sessions/channels exist) and `enabled`
- * pass through the `useSyncExternalStore` snapshot — a new session or a
- * session's first sample on a new channel ticks React; individual samples
- * never do.
+ * imperatively by consumers woken from this store's activity events and
+ * painted outside React ([L02], [L06], [P03]). Only membership (which
+ * sessions/channels exist) and `enabled` pass through the
+ * `useSyncExternalStore` snapshot — a new session or a session's first
+ * sample on a new channel ticks React; individual samples never do.
+ *
+ * **The clock.** `record()` is the only clock in the activity system:
+ * consumers never poll. A sample that passes the ingestion change gate is
+ * pushed synchronously to `subscribeActivity` listeners; a sample that
+ * doesn't (zero rate units, sub-epsilon gauge jitter) updates its meter
+ * and wakes nothing. An idle session therefore costs its consumers
+ * nothing — no timers, no animations — by construction.
  *
  * @module lib/session-activity-store
  */
@@ -133,6 +140,25 @@ export const ALL_CHANNELS: readonly ActivityChannel[] = Object.freeze(
 
 const RATE_CHANNEL_SET: ReadonlySet<string> = new Set(RATE_CHANNELS);
 
+/** Is this channel a rate (work flow) rather than a gauge (held level)?
+ *  Composite-tape consumers filter their activity events with this. */
+export function isRateChannel(channel: ActivityChannel): boolean {
+  return RATE_CHANNEL_SET.has(channel);
+}
+
+/**
+ * Gauge change gate: a gauge sample must move at least this fraction of the
+ * channel's full scale from the last *published* value before the store
+ * emits an activity event for it. This is the ingestion end of the quiet
+ * contract — sub-threshold jitter (a CPU meter breathing between 0.3% and
+ * 0.7%) updates the meter and dies right here, waking nothing downstream.
+ * The threshold is deliberately finer than the sparkline's own on-screen
+ * deadband: readouts display roughly at this grain, while each tape applies
+ * its own pixel-space test on top and stays dormant through changes too
+ * small to move a plotted pixel.
+ */
+const GAUGE_EVENT_EPSILON_FRACTION = 0.01;
+
 /**
  * How many trailing bins the rate window covers (~1s), used by
  * `intensity`/`dominant` to weigh recent contribution. Matches the
@@ -181,11 +207,21 @@ export class SessionActivityStore {
     Map<ActivityChannel, ActivityMeterLike>
   >();
   private snapshot: ActivitySnapshot = EMPTY_SNAPSHOT;
-  /** Per-session wake listeners: fired synchronously from {@link record}
-   *  when a RATE channel logs units > 0 — the sparkline dormancy wake
-   *  channel. Gauge channels (cpu/memory/disk tick continuously, active or
-   *  not) never fire these, so an idle session's tape stays asleep. */
-  private readonly rateActivityListeners = new Map<string, Set<() => void>>();
+  /** Per-session activity listeners: fired synchronously from
+   *  {@link record} when a sample passes the ingestion change gate — rate
+   *  units > 0, or a gauge moving at least
+   *  {@link GAUGE_EVENT_EPSILON_FRACTION} of full scale from its last
+   *  published value. This is the ONE clock every activity consumer
+   *  (tape, readout) runs on: no data event, no downstream work. */
+  private readonly activityListeners = new Map<
+    string,
+    Set<(channel: ActivityChannel) => void>
+  >();
+  /** Last gauge value an event was published for, per session+channel —
+   *  the change gate's reference. Compared against, and moved, only when
+   *  the gate opens, so slow drift accumulates against a fixed reference
+   *  and eventually fires instead of ratcheting under the threshold. */
+  private readonly gaugePublished = new Map<string, Map<ActivityChannel, number>>();
   /** The sticky dominant channel per session ([P05] hysteresis incumbent). */
   private readonly dominantHeld = new Map<string, ActivityChannel>();
   /** A challenger currently out-leading the incumbent, and since when. */
@@ -225,7 +261,8 @@ export class SessionActivityStore {
     this.disposers.length = 0;
     this.listeners.clear();
     this.meters.clear();
-    this.rateActivityListeners.clear();
+    this.activityListeners.clear();
+    this.gaugePublished.clear();
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -234,26 +271,30 @@ export class SessionActivityStore {
   };
 
   /**
-   * Zero-lag wake channel for `session`: `listener` runs synchronously
-   * inside the `record()` that logs rate units, so a dormant consumer wakes
-   * in the same tick its activity frame arrives ([P03] — this is imperative
-   * plumbing for the meters' timers, not React state).
+   * Zero-lag activity clock for `session`: `listener` runs synchronously
+   * inside the `record()` whose sample passes the change gate, with the
+   * channel that moved, so a dormant consumer wakes in the same tick its
+   * activity frame arrives ([P03] — this is imperative plumbing for the
+   * meters' timers, not React state). Consumers filter by channel at the
+   * subscription (a composite tape listens to rate channels; a Pulse row
+   * listens to its own) and apply any finer display-space judgment —
+   * e.g. the sparkline's plotted-pixel deadband — themselves.
    */
-  subscribeRateActivity = (
+  subscribeActivity = (
     session: string,
-    listener: () => void,
+    listener: (channel: ActivityChannel) => void,
   ): (() => void) => {
-    let set = this.rateActivityListeners.get(session);
+    let set = this.activityListeners.get(session);
     if (set === undefined) {
       set = new Set();
-      this.rateActivityListeners.set(session, set);
+      this.activityListeners.set(session, set);
     }
     set.add(listener);
     return () => {
-      const listeners = this.rateActivityListeners.get(session);
+      const listeners = this.activityListeners.get(session);
       if (listeners === undefined) return;
       listeners.delete(listener);
-      if (listeners.size === 0) this.rateActivityListeners.delete(session);
+      if (listeners.size === 0) this.activityListeners.delete(session);
     };
   };
 
@@ -284,8 +325,8 @@ export class SessionActivityStore {
     meter.record(units, atMs);
     // Only a new session / new channel ticks React ([P03]); samples don't.
     if (membershipChanged) this.recomputeMembership();
-    if (units > 0 && RATE_CHANNEL_SET.has(channel)) {
-      const wakers = this.rateActivityListeners.get(session);
+    if (this.passesChangeGate(session, channel, units)) {
+      const wakers = this.activityListeners.get(session);
       if (wakers !== undefined) {
         // Wakers do DOM work downstream (tape rebuild, WAAPI restart).
         // One throwing listener must not abort the remaining wakers or
@@ -293,7 +334,7 @@ export class SessionActivityStore {
         // frame's remaining channels.
         for (const wake of [...wakers]) {
           try {
-            wake();
+            wake(channel);
           } catch (err) {
             tugDevLogStore.error("session-activity-store", "waker threw", {
               session,
@@ -304,6 +345,33 @@ export class SessionActivityStore {
         }
       }
     }
+  }
+
+  /**
+   * The ingestion change gate: is this sample an activity *event*, or just
+   * a meter update nobody needs to be woken for? Rates: any positive count
+   * is work happening. Gauges: the level must move at least the epsilon
+   * fraction of full scale from the last published value (first sample
+   * always publishes). The published reference advances only when the gate
+   * opens, so gradual drift trips it once accumulated rather than never.
+   */
+  private passesChangeGate(
+    session: string,
+    channel: ActivityChannel,
+    value: number,
+  ): boolean {
+    if (RATE_CHANNEL_SET.has(channel)) return value > 0;
+    let published = this.gaugePublished.get(session);
+    if (published === undefined) {
+      published = new Map();
+      this.gaugePublished.set(session, published);
+    }
+    const ref = published.get(channel);
+    const epsilon =
+      ACTIVITY_DESCRIPTORS[channel].fullScale * GAUGE_EVENT_EPSILON_FRACTION;
+    if (ref !== undefined && Math.abs(value - ref) < epsilon) return false;
+    published.set(channel, value);
+    return true;
   }
 
   /** Per-bin window for one channel; empty when the channel is absent. */
@@ -426,7 +494,9 @@ export class SessionActivityStore {
     this.meters.delete(session);
     this.dominantHeld.delete(session);
     this.dominantPending.delete(session);
-    // rateActivityListeners survive: registrations belong to the subscribing
+    // A revived session id must publish its first gauge sample again.
+    this.gaugePublished.delete(session);
+    // activityListeners survive: registrations belong to the subscribing
     // component's lifecycle, and a cleared session id that records again must
     // still wake its (still-mounted) consumers.
     this.recomputeMembership();

@@ -37,32 +37,33 @@ describe("RateMeter", () => {
 });
 
 describe("GaugeMeter", () => {
-  it("holds the last value across empty bins within the TTL", () => {
-    const m = new GaugeMeter(4, 2_000);
+  it("holds the last value indefinitely — no news is no news", () => {
+    const m = new GaugeMeter(4);
     m.record(143, 1_000);
-    // 500 ms later, no new sample — the level is still held.
-    const s = m.series(1_500);
+    // Long after the last sample: the emitter only publishes on change,
+    // so the held level remains the truth until a new sample moves it.
+    const s = m.series(500_000);
     expect(s.every((v) => v === 143)).toBe(true);
-    expect(m.raw(1_500)).toBe(143);
+    expect(m.raw(500_000)).toBe(143);
   });
 
-  it("decays to zero once no sample lands within the TTL", () => {
-    const m = new GaugeMeter(4, 2_000);
+  it("falls to zero only when the emitter says so (the final zero frame)", () => {
+    const m = new GaugeMeter(4);
     m.record(143, 1_000);
-    // 2.5 s later — past the 2 s TTL.
-    expect(m.series(3_500).every((v) => v === 0)).toBe(true);
-    expect(m.raw(3_500)).toBeNull();
+    m.record(0, 60_000);
+    expect(m.series(60_000).every((v) => v === 0)).toBe(true);
+    expect(m.raw(60_000)).toBe(0);
   });
 
   it("tracks the newest sample, replacing the prior level", () => {
-    const m = new GaugeMeter(4, 2_000);
+    const m = new GaugeMeter(4);
     m.record(50, 0);
     m.record(90, 500);
     expect(m.raw(600)).toBe(90);
   });
 
   it("ignores non-finite samples", () => {
-    const m = new GaugeMeter(4, 2_000);
+    const m = new GaugeMeter(4);
     m.record(Number.NaN, 0);
     expect(m.raw(0)).toBeNull();
   });

@@ -2,30 +2,45 @@
  * TugSparkline — a stock-ticker activity graph.
  *
  * Two rules, like ticker tape:
- *  1. The tape NEVER stops and values are NEVER revised. A sample is taken on
- *     a fixed cadence and appended once as a permanent point; zero activity is
- *     a zero sample, so the line keeps printing a flat baseline that scrolls —
- *     it does not stop short.
+ *  1. Values are NEVER revised. A point, once shown, is permanent; the pen
+ *     holds the newest value flat to the right edge (the geometry's held
+ *     tail), so the line is always full edge to edge without ever stopping
+ *     short — a quiet stretch is the held value, not a gap.
  *  2. New samples write at the right edge and scroll left at a constant rate.
  *
- * Sampling is a {@link SAMPLE_MS} timer (data only); the scroll is a single
- * continuous WAAPI `translateX` composited on the GPU (Smoothie Charts' time→x
- * mapping, adapted off its rAF loop — see THIRD_PARTY_NOTICES.md, MIT). There
- * is no per-frame redraw loop: between samples the compositor does the motion.
- * Each epoch the scroll seamlessly time-rebases so coordinates stay bounded.
+ * THE DATA EVENT IS THE ONLY CLOCK. The tape never polls: the caller's
+ * `subscribeActivity` channel fires synchronously when data records, and
+ * every point the tape appends is downstream of one of those events. The
+ * only timers are finishers for work an event started, and each terminates
+ * by construction: a settle burst that keeps sampling at {@link SAMPLE_MS}
+ * until the plotted value stops moving (a rate's rolling window draining to
+ * baseline after the last datum — it empties in ~1s; a held gauge settles
+ * on the first tick), and one flat-off timeout that retires the scroll once
+ * the last change has scrolled fully off screen. An idle tape holds zero
+ * timers and zero animations because nothing is running, not because
+ * something detected quiet.
  *
- * DORMANCY. A scrolling flat baseline is pixel-identical to a static flat
- * baseline, so once the whole visible window has been flat for its full span
- * the timer and the scroll stop — zero timers, zero animations, zero style
- * invalidation while the session idles. The tape also goes dormant whenever
- * the element is not on screen (`IntersectionObserver`; a `display:none` card
- * does not intersect). Dormancy NEVER delays real activity: the caller's
- * `subscribeActivity` channel fires synchronously when data records, and the
- * wake handler rebuilds the tape from the caller's own binned history and
- * restarts the scroll in that same tick — activity lands on screen the
- * instant its frame arrives, ahead of where the old always-on 4 Hz poll
- * would have caught it. (Rule 1's "values are never revised" applies to the
- * on-screen tape; a dormant rebuild reconstructs state nobody was shown.)
+ * The scroll is a single continuous WAAPI `translateX` composited on the
+ * GPU (Smoothie Charts' time→x mapping, adapted off its rAF loop — see
+ * THIRD_PARTY_NOTICES.md, MIT). There is no per-frame redraw loop: between
+ * appends the compositor does the motion. Each epoch the scroll seamlessly
+ * time-rebases so coordinates stay bounded.
+ *
+ * DORMANCY IS THE NO-EVENT STATE. A scrolling line that isn't changing is
+ * pixel-identical to a static one, so once every change has scrolled off
+ * (the flat-off timeout) the scroll stops and the tape is inert until the
+ * next event. Change is judged in PLOT PIXELS ({@link DEADBAND_PX} against
+ * the value at the last recognized change), so a gauge holding a steady
+ * level — or jittering beneath what the plot can draw — is as dormant as a
+ * zero rate; the reference only advances on recognized change, so slow
+ * drift accumulates and eventually trips it rather than ratcheting under
+ * the threshold forever. The tape also goes dormant whenever the element
+ * is not on screen (`IntersectionObserver`; a `display:none` card does not
+ * intersect). Dormancy NEVER delays real activity: the wake handler
+ * rebuilds the tape from the caller's own binned history and restarts the
+ * scroll in the same tick the event fires. (Rule 1's "values are never
+ * revised" applies to the on-screen tape; a dormant rebuild reconstructs
+ * state nobody was shown.)
  *
  * The sampled value is a rolling ~1s output rate, so it rises smoothly with
  * activity and falls to zero (baseline) when output stops.
@@ -46,7 +61,8 @@
  *       noticed; [L27] the worker entry is released in the effect's cleanup.
  *
  * Decoupled from any data source: the caller passes `getSeries` (oldest→newest
- * bins) and the bin width; the component samples it on its own cadence.
+ * bins), the bin width, and `subscribeActivity` — the data-event clock every
+ * read is downstream of.
  *
  * @module components/tugways/tug-sparkline
  */
@@ -75,20 +91,43 @@ import { isTugMotionEnabled } from "./scale-timing";
  * right edge and scrolls off the left exactly this many seconds later.
  */
 const VISIBLE_SECONDS = 15;
-/** Sample cadence (ms) — 4 Hz. The motion between samples is WAAPI, not this. */
+/**
+ * Settle-burst cadence (ms) — how often the finisher appends while the
+ * plotted value is still moving. This is not a standing clock: the burst
+ * exists only downstream of a data event and stops itself the moment the
+ * value stops changing.
+ */
 const SAMPLE_MS = 250;
 /** Off-screen seconds kept past the left edge before a point is pruned. */
 const PRUNE_MARGIN_S = 4;
 /** Seconds the scroll runs before a seamless time-rebase + restart. */
 const EPOCH_S = 120;
 /**
- * Flat-window span (ms) after the last non-zero sample before the tape goes
- * dormant — exactly how long a datum takes to scroll fully off, so dormancy
- * begins only once the screen is provably a flat line edge to edge.
+ * Flat-window span (ms) after the last recognized change before the scroll
+ * retires — exactly how long a datum takes to scroll fully off, so the tape
+ * goes inert only once the screen is provably unchanging edge to edge.
  */
 const DORMANT_AFTER_MS = (VISIBLE_SECONDS + PRUNE_MARGIN_S) * 1000;
 /** Window over which the plotted rate is summed (a rolling per-second rate). */
 const RATE_WINDOW_MS = 1_000;
+/**
+ * Change recognition, in PLOT PIXELS: a sample must move the line at least
+ * this far from the value at the last recognized change to count as change
+ * at all. Anything smaller cannot be read off a graph this size — a gauge
+ * jittering beneath it is drawn (the tape never lies) but keeps neither the
+ * settle burst nor the scroll alive. Divided by the plot amplitude at use,
+ * so the same knob is honest across every sparkline geometry.
+ */
+const DEADBAND_PX = 2;
+/**
+ * Consecutive unchanged settle ticks before the burst declares the value
+ * settled and stops itself. Necessary but NOT sufficient: the burst must
+ * also outlive the rolling window's drain (see the burst's stop condition)
+ * — a clamped or gently-curved plot holds a constant pixel value while the
+ * window underneath is still draining, and stopping on stability alone
+ * would freeze the tape at that level instead of drawing the decay.
+ */
+const SETTLE_TICKS = 2;
 
 /**
  * Response curve: maps the rate as a fraction of full scale (`x = rate /
@@ -290,14 +329,13 @@ export function TugSparkline({
   /** Current window oldest→newest; the last element is the still-open bin. */
   getSeries: (nowMs: number) => number[];
   /**
-   * Zero-lag dormancy wake channel. When provided, the tape stops its timer
-   * and scroll after {@link DORMANT_AFTER_MS} of flat baseline; this callback
-   * must then fire (synchronously with the data write) the moment new
-   * activity records so the tape wakes in the same tick. Without it the tape
-   * never idles out — only visibility can pause it, and re-entering view
-   * always resumes live.
+   * The data-event clock — the tape's ONLY clock. `wake` must fire
+   * synchronously with each data write that matters to this tape (the
+   * caller filters channels); every append, the settle burst, and the
+   * scroll's retirement are all downstream of it. A tape whose events stop
+   * goes inert by construction; the next event wakes it in the same tick.
    */
-  subscribeActivity?: (wake: () => void) => () => void;
+  subscribeActivity: (wake: () => void) => () => void;
   /**
    * Optional dominant-channel selector, sampled on the same loop as
    * `getSeries` ([P05]). Its return (a channel name, or null when idle) is
@@ -386,10 +424,32 @@ export function TugSparkline({
     const tape: SparklinePoint[] = []; // append-only while live; never mutated
     let t0 = Date.now();
     let anim: Animation | null = null;
-    let timer: number | null = null;
     let dormant = false;
     let inView = true;
-    let lastNonZeroAt = 0;
+    /**
+     * Change recognition state: the plotted value at the last recognized
+     * change, and when it was recognized. The reference advances only when
+     * the deadband is cleared, so slow drift accumulates against a fixed
+     * point and eventually registers instead of ratcheting under the
+     * threshold sample after sample.
+     */
+    const deadband = DEADBAND_PX / amplitude;
+    let refV = 0;
+    let lastChangeAt = 0;
+    /** The two finishers. Each terminates on its own; events only reset them. */
+    let settleTimer: number | null = null;
+    let settledTicks = 0;
+    let flatOffTimer: number | null = null;
+    /**
+     * When the last data event arrived. The settle burst must run at least
+     * the rolling window's span past this before it may stop: until every
+     * bin the last event touched has aged out, the plotted value has a
+     * future the pixels haven't shown yet — even if it happens to be
+     * holding still right now (a burst past full scale clamps flat at the
+     * top while the window drains under it).
+     */
+    let lastEventAt = 0;
+    const drainMs = RATE_WINDOW_MS + binMs;
 
     // The current rolling rate: sum of the most recent `rateBins` buckets,
     // taken as a fraction of full scale, shaped by `curve`, then clamped. The
@@ -414,13 +474,17 @@ export function TugSparkline({
       painterRef.current?.refreshColors(t0);
     };
 
-    // One sample → one permanent point at "now" (the right edge), then redraw.
+    // One append → one permanent point at "now" (the right edge), then
+    // redraw. Every call is downstream of a data event: the wake path and
+    // the settle burst are the only callers.
     let stampedChannel: string | null = null;
-    const sample = (): void => {
-      const now = Date.now();
+    const appendPoint = (now: number): void => {
       if (!motion) t0 = now;
       const v = sampleRate(now);
-      if (v > 0) lastNonZeroAt = now;
+      if (Math.abs(v - refV) >= deadband) {
+        refV = v;
+        lastChangeAt = now;
+      }
       tape.push({ t: now, v });
       redraw();
       // Stamp the dominant channel for CSS tinting ([P05]) — only on change,
@@ -429,13 +493,12 @@ export function TugSparkline({
       if (getColorChannel !== undefined && container !== null) {
         const channel = getColorChannel(now);
         if (channel !== stampedChannel) {
-          // A dominant-channel CHANGE is activity — the tint is about
-          // to move, so hold the tape awake. A steady return is not: a
-          // fixed-hue consumer (the Pulse card rows) is always
-          // non-null, and treating that as activity would lock those
-          // tapes out of flat-dormancy forever. Real drawn activity
-          // already bumps via v > 0 above.
-          lastNonZeroAt = now;
+          // A dominant-channel CHANGE is on-screen change — the tint is
+          // about to move, so it holds the scroll alive like any drawn
+          // change. A steady return is not: a fixed-hue consumer (the
+          // Pulse card rows) is always non-null, and treating that as
+          // change would lock those tapes out of dormancy forever.
+          lastChangeAt = now;
           stampedChannel = channel;
           if (channel === null) container.removeAttribute("data-activity-channel");
           else container.setAttribute("data-activity-channel", channel);
@@ -443,14 +506,6 @@ export function TugSparkline({
           // color has just changed under the canvas.
           repaintColors();
         }
-      }
-      // The window has been flat edge to edge and a wake channel exists —
-      // stop the tape. A static flat line is the same pixels.
-      if (
-        subscribeActivity !== undefined &&
-        now - lastNonZeroAt >= DORMANT_AFTER_MS
-      ) {
-        enterDormant(now);
       }
     };
 
@@ -491,29 +546,103 @@ export function TugSparkline({
       for (let dt = DORMANT_AFTER_MS; dt > binSpan; dt -= SAMPLE_MS) {
         tape.push({ t: now - dt, v: 0 });
       }
+      // Change-scan the real points: the reference starts at the first
+      // reconstructed value (a level held through the whole window is not
+      // change — the zero-seed step at the window's left edge is a seam of
+      // reconstruction, not data) and advances exactly as the live path
+      // would have, so lastChangeAt lands where the deadband was last
+      // genuinely cleared.
+      let seeded = false;
       for (let i = 0; i < vals.length; i++) {
         let sum = 0;
         for (let j = Math.max(0, i - rateBins + 1); j <= i; j++) sum += vals[j];
         const v = Math.min(1, Math.max(0, curve(sum / fullScale)));
         const t = now - (vals.length - 1 - i) * binMs;
-        if (vals[i] > 0) lastNonZeroAt = Math.max(lastNonZeroAt, t);
+        if (!seeded) {
+          refV = v;
+          seeded = true;
+        } else if (Math.abs(v - refV) >= deadband) {
+          refV = v;
+          lastChangeAt = Math.max(lastChangeAt, t);
+        }
         tape.push({ t, v });
       }
     };
 
-    const stopTimer = (): void => {
-      if (timer !== null) {
-        window.clearInterval(timer);
-        timer = null;
+    const stopSettle = (): void => {
+      if (settleTimer !== null) {
+        window.clearInterval(settleTimer);
+        settleTimer = null;
+      }
+    };
+    const stopFlatOff = (): void => {
+      if (flatOffTimer !== null) {
+        window.clearTimeout(flatOffTimer);
+        flatOffTimer = null;
       }
     };
 
-    // Freeze in place: no timer, no animation, one static redraw of the
-    // current (flat, or hidden) picture. Idempotent.
+    // Finisher 1 — the settle burst. Keeps appending at SAMPLE_MS while the
+    // plotted value is still moving, and stops itself after SETTLE_TICKS
+    // unchanged ticks. This finishes what a data event starts: a rate's
+    // rolling window draining to baseline after the last datum (~1s), a
+    // gauge stepping to its new hold (one tick). Events reset the quiet
+    // count, so continuous activity holds the burst open at exactly the
+    // old sampler's cadence — and the instant activity stops, it ends.
+    const startSettle = (): void => {
+      settledTicks = 0;
+      if (settleTimer !== null) return;
+      settleTimer = window.setInterval(() => {
+        const now = Date.now();
+        const prev = tape.length > 0 ? tape[tape.length - 1].v : 0;
+        appendPoint(now);
+        const cur = tape[tape.length - 1].v;
+        if (Math.abs(cur - prev) < deadband) {
+          settledTicks += 1;
+          // Stop only when the value is stable AND the last event's whole
+          // window has drained: a plot clamped at full scale (or riding a
+          // gentle curve) holds still while the sum under it is still
+          // falling, and a stability-only stop would freeze that level on
+          // screen instead of drawing the decay to rest.
+          if (settledTicks >= SETTLE_TICKS && now - lastEventAt >= drainMs) {
+            stopSettle();
+          }
+        } else {
+          settledTicks = 0;
+        }
+      }, SAMPLE_MS);
+    };
+
+    // Finisher 2 — the flat-off timeout. Retires the scroll once the last
+    // recognized change has scrolled fully off screen. Scheduled against
+    // lastChangeAt and re-checks on fire, so changes recognized after
+    // scheduling (settle-burst appends) push it out without rescheduling
+    // churn on every event.
+    const scheduleFlatOff = (): void => {
+      stopFlatOff();
+      const remaining = lastChangeAt + DORMANT_AFTER_MS - Date.now();
+      if (remaining <= 0) {
+        enterDormant(Date.now());
+        return;
+      }
+      flatOffTimer = window.setTimeout(() => {
+        flatOffTimer = null;
+        if (Date.now() - lastChangeAt >= DORMANT_AFTER_MS) {
+          enterDormant(Date.now());
+        } else {
+          scheduleFlatOff();
+        }
+      }, remaining + 20);
+    };
+
+    // Inert: no timers, no animation, one static redraw of the current
+    // picture. Not a detected condition — just what no-events looks like
+    // once the finishers have run out. Idempotent.
     const enterDormant = (now: number): void => {
       if (dormant) return;
       dormant = true;
-      stopTimer();
+      stopSettle();
+      stopFlatOff();
       if (anim !== null) {
         anim.onfinish = null;
         anim.cancel();
@@ -523,26 +652,46 @@ export function TugSparkline({
       redraw();
     };
 
-    // Resume live: reconstruct from data, restart the scroll and the sampler.
+    // Resume live: reconstruct from data, restart the scroll, append the
+    // point the triggering event just made true, and arm the finishers.
     // Runs synchronously inside the caller's data-write (or the visibility
     // callback), so waking never trails the activity that caused it.
     const wakeLive = (now: number): void => {
       dormant = false;
+      // A wake counts as an event for the drain clock even when it came
+      // from the visibility observer rather than the data channel — the
+      // rebuilt window deserves a full settle pass either way.
+      lastEventAt = now;
       rebuildTape(now);
       startEpoch();
-      stopTimer();
-      timer = window.setInterval(sample, SAMPLE_MS);
-      // Sample LAST: sample() may re-enter dormancy (a wake landing at
-      // the exact flat-window boundary re-reads the clock and can cross
-      // the threshold). With the animation and timer already running,
-      // that enterDormant tears both down and leaves a consistent
-      // dormant state; sampled first, it would mark dormant and then
-      // this function would start an animation and timer nothing stops.
-      sample();
+      appendPoint(now);
+      startSettle();
+      scheduleFlatOff();
     };
 
     const flatPastWindow = (now: number): boolean =>
-      subscribeActivity !== undefined && now - lastNonZeroAt >= DORMANT_AFTER_MS;
+      now - lastChangeAt >= DORMANT_AFTER_MS;
+
+    // The data event — the tape's one clock. Dormant: wake, unless the
+    // plotted value wouldn't visibly move (a below-deadband gauge event —
+    // the store's gate is finer than the plot's). Live: reset the settle
+    // burst's quiet count; the burst itself is already appending at the
+    // right cadence. Off-screen: just remember the activity so re-entry
+    // resumes live.
+    const onActivity = (): void => {
+      const now = Date.now();
+      lastEventAt = now;
+      if (!inView) {
+        lastChangeAt = now;
+        return;
+      }
+      if (dormant) {
+        if (Math.abs(sampleRate(now) - refV) < deadband) return;
+        wakeLive(now);
+        return;
+      }
+      startSettle();
+    };
 
     // Stamp the tint once at mount, dormancy-independent: a born-idle
     // tape never runs sample(), and a fixed-hue row (Pulse card) must
@@ -558,8 +707,9 @@ export function TugSparkline({
     }
     rebuildTape(Date.now());
     if (flatPastWindow(Date.now())) {
-      // Born idle: paint the static flat line once and wait for the wake
-      // channel — an idle session costs nothing from the first frame.
+      // Born inert: paint the static picture once and wait for the clock —
+      // an idle session costs nothing from the first frame. A steady gauge
+      // level is as inert as a zero rate: its line is flat at the level.
       dormant = true;
       t0 = Date.now();
       redraw();
@@ -567,16 +717,7 @@ export function TugSparkline({
       wakeLive(Date.now());
     }
 
-    // New activity recorded for this series — wake in the same tick. When
-    // off-screen, stay dormant (the observer wakes us on re-entry); just
-    // remember the activity so re-entry resumes live.
-    const unsubscribe =
-      subscribeActivity !== undefined
-        ? subscribeActivity(() => {
-            lastNonZeroAt = Date.now();
-            if (dormant && inView) wakeLive(Date.now());
-          })
-        : null;
+    const unsubscribe = subscribeActivity(onActivity);
 
     // Visibility gate: an off-screen tape (hidden card, scrolled-away row)
     // pauses outright; re-entry rebuilds from history, resuming live only
@@ -610,9 +751,10 @@ export function TugSparkline({
     subscribeThemeChange(repaintColors);
 
     return () => {
-      stopTimer();
+      stopSettle();
+      stopFlatOff();
       observer?.disconnect();
-      unsubscribe?.();
+      unsubscribe();
       unsubscribeThemeChange(repaintColors);
       if (anim !== null) {
         anim.onfinish = null;

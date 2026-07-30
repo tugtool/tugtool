@@ -88,6 +88,7 @@ import {
 import {
   ACTIVITY_BIN_MS,
   getSessionActivityStore,
+  isRateChannel,
 } from "@/lib/session-activity-store";
 import { SessionPulseCard } from "@/components/tugways/cards/pulse-card";
 import { TugPulse } from "@/components/tugways/tug-pulse";
@@ -312,12 +313,15 @@ export function SessionPulseStrip({
         : [],
     [activityStore, tugSessionId],
   );
-  // Dormancy wake channel: lets the sparkline stop entirely while this
-  // session idles, waking synchronously with its next activity frame.
+  // The tape's data-event clock, filtered to rate channels — this strip
+  // draws the composite of rate work, so gauge levels (which move whether
+  // or not the session works) must not wake it.
   const subscribeActivity = useCallback(
     (wake: () => void): (() => void) =>
       activityStore !== null && tugSessionId.length > 0
-        ? activityStore.subscribeRateActivity(tugSessionId, wake)
+        ? activityStore.subscribeActivity(tugSessionId, (channel) => {
+            if (isRateChannel(channel)) wake();
+          })
         : () => {},
     [activityStore, tugSessionId],
   );

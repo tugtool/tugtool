@@ -10,16 +10,16 @@
  *    ThroughputMeter behavior the deck used to derive locally, relocated
  *    intact so the compact strip's feel is unchanged.
  *
- *  - **gauge** (`cpu | memory | disk`): a level, not a flow. OS samples
- *    arrive at ~1 Hz into 250 ms bins, so three of every four bins are
- *    empty; zero-filling would strobe the line between its real value and
- *    zero. Instead the gauge **sample-and-holds**: it returns the last
- *    observed value for any bin within a TTL (~2× the sample interval),
- *    decaying to zero only once samples actually stop.
+ *  - **gauge** (`cpu | memory | disk`): a level, not a flow. The gauge
+ *    **sample-and-holds indefinitely** under the emitter's
+ *    no-news-is-no-news contract: tugcast publishes a gauge only when it
+ *    changes, and publishes a final zero when a session's subtree dies,
+ *    so an unchanged level simply receives no frames — the hold is the
+ *    truth, and there is no TTL to decay it into a lie.
  *
- * NOT React state: both are high-churn, mutated per frame and read
- * imperatively on the consumer's timer, painted straight to SVG ([L02],
- * [L06], [P03]).
+ * NOT React state: both are high-churn, mutated per sample and read
+ * imperatively by consumers woken from the store's activity events,
+ * painted outside React ([L02], [L06], [P03]).
  *
  * @module lib/activity-meter
  */
@@ -28,12 +28,6 @@
 export const ACTIVITY_BIN_MS = 250;
 /** Bins retained — enough for a rolling ~1s rate with headroom. */
 export const ACTIVITY_WINDOW_BINS = 40;
-/**
- * Default gauge hold: a gauge value survives this long between samples
- * before decaying to zero. ~2× the 1 Hz OS sample interval so a single
- * dropped tick doesn't blink the level off.
- */
-export const GAUGE_TTL_MS = 2_100;
 
 /** Shared surface both meter kinds expose to the store. */
 export interface ActivityMeterLike {
@@ -111,43 +105,32 @@ export class RateMeter implements ActivityMeterLike {
 }
 
 /**
- * Gauge meter: sample-and-hold. Holds the last observed value for `ttlMs`,
- * returning it for every bin in the window so the sparkline draws a flat
- * level at the current reading; once no sample has landed within the TTL
- * the level decays to zero.
+ * Gauge meter: sample-and-hold, held INDEFINITELY. The emitter's contract
+ * is "no news is no news": tugcast's resource sampler publishes a gauge
+ * channel only when its value changes, and publishes one final zero frame
+ * when a session's subtree dies — so between frames the held level IS the
+ * truth, and a time-based decay here would turn a steady reading into a
+ * lie. The level moves on the next sample or falls to the emitter's final
+ * zero; it never expires on its own.
  */
 export class GaugeMeter implements ActivityMeterLike {
   private readonly windowBins: number;
-  private readonly ttlMs: number;
   private latestValue: number | null = null;
-  private latestAtMs = 0;
 
-  constructor(
-    windowBins: number = ACTIVITY_WINDOW_BINS,
-    ttlMs: number = GAUGE_TTL_MS,
-  ) {
+  constructor(windowBins: number = ACTIVITY_WINDOW_BINS) {
     this.windowBins = windowBins;
-    this.ttlMs = ttlMs;
   }
 
-  record(value: number, atMs: number): void {
+  record(value: number, _atMs: number): void {
     if (!Number.isFinite(value)) return;
     this.latestValue = value;
-    this.latestAtMs = atMs;
   }
 
-  series(nowMs: number): number[] {
-    const held = this.heldValue(nowMs);
-    return new Array<number>(this.windowBins).fill(held);
+  series(_nowMs: number): number[] {
+    return new Array<number>(this.windowBins).fill(this.latestValue ?? 0);
   }
 
-  raw(nowMs: number): number | null {
-    if (this.latestValue === null) return null;
-    return nowMs - this.latestAtMs <= this.ttlMs ? this.latestValue : null;
-  }
-
-  private heldValue(nowMs: number): number {
-    if (this.latestValue === null) return 0;
-    return nowMs - this.latestAtMs <= this.ttlMs ? this.latestValue : 0;
+  raw(_nowMs: number): number | null {
+    return this.latestValue;
   }
 }

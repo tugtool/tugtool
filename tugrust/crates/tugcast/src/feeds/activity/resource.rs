@@ -19,6 +19,28 @@ use crate::feeds::session_scoped::SessionScopedFeed;
 /// least one session has a live pid, so an idle tugcast does no sysinfo work.
 const SAMPLE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// No news is no news: a gauge channel rides a frame only when it moved at
+/// least this much from the value last published for it. An unchanged (or
+/// sub-threshold jittering) gauge sends nothing, and a frame with no moved
+/// channels is not sent at all — the wire is silent for an idle session, and
+/// the deck holds the last published level as the truth until told
+/// otherwise. The thresholds are wire-level dedup, deliberately finer than
+/// any display grain downstream: CPU below half a percent of one core, and
+/// memory below 4 MiB, cannot be read off any Tug surface.
+const CPU_PUBLISH_EPSILON_PCT: f32 = 0.5;
+const RSS_PUBLISH_EPSILON_BYTES: u64 = 4 * 1024 * 1024;
+
+/// The gauge values last published for one session — the change gate's
+/// reference. Advances only when a channel is published, so slow drift
+/// accumulates against a fixed point and eventually fires.
+#[derive(Debug, Clone, Copy, Default)]
+struct PublishedGauges {
+    cpu_pct: f32,
+    rss_bytes: u64,
+    disk_read_bps: u64,
+    disk_write_bps: u64,
+}
+
 /// One process's contribution to a subtree sum: its own CPU% and resident
 /// memory. `cpu_pct` follows sysinfo's convention (100 == one core saturated;
 /// a multi-core process may exceed 100).
@@ -147,15 +169,49 @@ fn snapshot_processes(system: &System) -> ProcMap {
         .collect()
 }
 
+/// Has a CPU reading moved enough from its last published value to be news?
+fn cpu_moved(published: f32, current: f32) -> bool {
+    (current - published).abs() >= CPU_PUBLISH_EPSILON_PCT
+}
+
+/// Has a resident-memory reading moved enough to be news?
+fn rss_moved(published: u64, current: u64) -> bool {
+    published.abs_diff(current) >= RSS_PUBLISH_EPSILON_BYTES
+}
+
+/// The final frame for a departed session: every gauge at zero. Sent once
+/// when a session leaves the live set, so the deck's held levels fall to
+/// rest instead of freezing at the last reading — silence afterward means
+/// "still zero", per the no-news contract.
+fn zeroed_gauge_channels() -> serde_json::Map<String, serde_json::Value> {
+    let mut channels = serde_json::Map::new();
+    channels.insert("cpu_pct".into(), serde_json::json!(0.0_f32));
+    channels.insert("rss_bytes".into(), serde_json::json!(0_u64));
+    #[cfg(target_os = "macos")]
+    {
+        channels.insert("disk_read_bps".into(), serde_json::json!(0_u64));
+        channels.insert("disk_write_bps".into(), serde_json::json!(0_u64));
+    }
+    channels
+}
+
 /// Per-session OS sampler task ([P10]). On each 1 Hz tick it asks the
 /// supervisor for every session with a live tugcode child, and — only if
 /// there is at least one — refreshes the full process table once, builds the
 /// parent map, and for each session walks its child pid's subtree, summing
 /// CPU% + memory. The `(pid, start_time)` reuse-guard ([P20]) rejects a
-/// recycled or dead pid, publishing a zero sample so the deck gauge decays
+/// recycled or dead pid, attributing zero so the deck gauge falls to rest
 /// rather than misattributing another process's work. Samples ride the
 /// ACTIVITY feed as gauge channels ([P09]), session-tagged by the
 /// `SessionScopedFeed` splice.
+///
+/// NO NEWS IS NO NEWS: a channel is published only when it moved past its
+/// epsilon from the value last published for it (first observation always
+/// publishes), a frame with no moved channels is not sent, and a session
+/// leaving the live set gets one final all-zero frame. The deck holds each
+/// gauge's last published level indefinitely on the strength of this
+/// contract — an idle session costs the wire, and every client downstream
+/// of it, nothing.
 pub async fn run_resource_sampler(
     supervisor: Arc<AgentSupervisor>,
     activity: SessionScopedFeed,
@@ -166,6 +222,8 @@ pub async fn run_resource_sampler(
     // sampler can difference them into a bytes/sec gauge ([P11]).
     #[cfg(target_os = "macos")]
     let mut disk_last: HashMap<u32, disk::DiskCounters> = HashMap::new();
+    // The change gate's per-session reference: what the wire last said.
+    let mut published: HashMap<String, PublishedGauges> = HashMap::new();
     let mut ticker = tokio::time::interval(SAMPLE_INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -173,6 +231,23 @@ pub async fn run_resource_sampler(
             _ = cancel.cancelled() => return,
             _ = ticker.tick() => {
                 let live = supervisor.live_session_processes().await;
+                // Departed sessions get their final zero frame — before the
+                // empty-gate below, so the last session's death still flushes.
+                let live_ids: HashSet<&str> =
+                    live.iter().map(|s| s.tug_session_id.as_str()).collect();
+                let departed: Vec<String> = published
+                    .keys()
+                    .filter(|id| !live_ids.contains(id.as_str()))
+                    .cloned()
+                    .collect();
+                for id in departed {
+                    published.remove(&id);
+                    let payload =
+                        serde_json::json!({ "channels": zeroed_gauge_channels() });
+                    if let Ok(bytes) = serde_json::to_vec(&payload) {
+                        activity.publish(id.as_str(), &bytes);
+                    }
+                }
                 // Gate the (relatively expensive) full refresh to ticks where
                 // at least one session actually has a live pid ([Q02]).
                 if live.is_empty() {
@@ -206,14 +281,27 @@ pub async fn run_resource_sampler(
                         }
                     }
 
+                    // The change gate: only moved channels ride the frame,
+                    // and the reference advances exactly when they do.
+                    let prev = published.get(session.tug_session_id.as_str()).copied();
+                    let first = prev.is_none();
+                    let mut next = prev.unwrap_or_default();
                     let mut channels = serde_json::Map::new();
-                    channels.insert("cpu_pct".into(), serde_json::json!(usage.cpu_pct));
-                    channels.insert("rss_bytes".into(), serde_json::json!(usage.rss_bytes));
+                    if first || cpu_moved(next.cpu_pct, usage.cpu_pct) {
+                        channels.insert("cpu_pct".into(), serde_json::json!(usage.cpu_pct));
+                        next.cpu_pct = usage.cpu_pct;
+                    }
+                    if first || rss_moved(next.rss_bytes, usage.rss_bytes) {
+                        channels.insert("rss_bytes".into(), serde_json::json!(usage.rss_bytes));
+                        next.rss_bytes = usage.rss_bytes;
+                    }
 
                     // Disk I/O (macOS only, [P11]/[Q03]): sum each subtree pid's
                     // per-tick counter delta. A pid's first observation seeds a
                     // baseline and contributes zero (its cumulative counter is
-                    // since process start, not since this window).
+                    // since process start, not since this window). The gauge is
+                    // already a per-tick delta, so its change gate is exact
+                    // equality — an idle subtree's 0 B/s repeats and is silent.
                     #[cfg(target_os = "macos")]
                     {
                         let mut read_bps = 0u64;
@@ -228,10 +316,20 @@ pub async fn run_resource_sampler(
                             }
                             disk_last.insert(pid, cur);
                         }
-                        channels.insert("disk_read_bps".into(), serde_json::json!(read_bps));
-                        channels.insert("disk_write_bps".into(), serde_json::json!(write_bps));
+                        if first || read_bps != next.disk_read_bps {
+                            channels.insert("disk_read_bps".into(), serde_json::json!(read_bps));
+                            next.disk_read_bps = read_bps;
+                        }
+                        if first || write_bps != next.disk_write_bps {
+                            channels.insert("disk_write_bps".into(), serde_json::json!(write_bps));
+                            next.disk_write_bps = write_bps;
+                        }
                     }
 
+                    if channels.is_empty() {
+                        continue;
+                    }
+                    published.insert(session.tug_session_id.to_string(), next);
                     let payload = serde_json::json!({ "channels": channels });
                     if let Ok(bytes) = serde_json::to_vec(&payload) {
                         activity.publish(session.tug_session_id.as_str(), &bytes);
@@ -380,6 +478,34 @@ mod tests {
         let d2 = non_negative_delta(last, shrunk);
         assert_eq!(d2.read, 0);
         assert_eq!(d2.write, 0);
+    }
+
+    #[test]
+    fn change_gate_suppresses_sub_epsilon_jitter_and_passes_real_moves() {
+        // CPU breathing under half a percent is not news; a real move is.
+        assert!(!cpu_moved(37.2, 37.5));
+        assert!(cpu_moved(37.2, 38.0));
+        // Memory jitter under 4 MiB is not news; a real allocation is.
+        assert!(!rss_moved(500_000_000, 500_000_000 + 1024 * 1024));
+        assert!(rss_moved(500_000_000, 500_000_000 + 8 * 1024 * 1024));
+        // The gate compares against the last PUBLISHED value, so drift that
+        // ratchets in sub-epsilon steps still fires once accumulated: the
+        // caller only advances the reference when a channel publishes.
+        let published = 37.2_f32;
+        assert!(!cpu_moved(published, 37.5)); // reference stays 37.2
+        assert!(cpu_moved(published, 37.8)); // accumulated drift crosses
+    }
+
+    #[test]
+    fn a_departed_session_flushes_every_gauge_to_zero() {
+        let channels = zeroed_gauge_channels();
+        assert_eq!(channels.get("cpu_pct").and_then(|v| v.as_f64()), Some(0.0));
+        assert_eq!(channels.get("rss_bytes").and_then(|v| v.as_u64()), Some(0));
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(channels.get("disk_read_bps").and_then(|v| v.as_u64()), Some(0));
+            assert_eq!(channels.get("disk_write_bps").and_then(|v| v.as_u64()), Some(0));
+        }
     }
 
     #[test]

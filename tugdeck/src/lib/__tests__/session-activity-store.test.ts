@@ -114,35 +114,56 @@ describe("SessionActivityStore", () => {
     expect(store.getSnapshot().sessions.has(S)).toBe(false);
   });
 
-  it("subscribeRateActivity wakes synchronously on rate units, never on gauges or zeros", () => {
+  it("subscribeActivity wakes on rate units with the channel, never on zeros", () => {
     const store = newStore();
-    let wakes = 0;
-    const unsubscribe = store.subscribeRateActivity(S, () => {
-      wakes += 1;
+    const woke: string[] = [];
+    const unsubscribe = store.subscribeActivity(S, (channel) => {
+      woke.push(channel);
     });
-    // Gauge samples tick whether or not the session is doing anything —
-    // they must not wake a dormant consumer.
-    store.record(S, "cpu", 55, 1_000);
-    store.record(S, "memory", 1024, 1_000);
-    expect(wakes).toBe(0);
     // A zero-unit rate sample is silence, not activity.
     store.record(S, "text", 0, 1_250);
-    expect(wakes).toBe(0);
+    expect(woke).toEqual([]);
     // Real rate work wakes, synchronously within record().
     store.record(S, "text", 120, 1_500);
-    expect(wakes).toBe(1);
+    expect(woke).toEqual(["text"]);
     // Another session's activity never crosses over.
     store.record("other", "text", 120, 1_500);
-    expect(wakes).toBe(1);
+    expect(woke).toEqual(["text"]);
     unsubscribe();
     store.record(S, "text", 120, 1_750);
-    expect(wakes).toBe(1);
+    expect(woke).toEqual(["text"]);
   });
 
-  it("rate-activity listeners survive clearSession (a revived id still wakes)", () => {
+  it("gauge events pass the change gate: first sample, then epsilon moves only", () => {
+    const store = newStore();
+    const woke: string[] = [];
+    store.subscribeActivity(S, (channel) => {
+      woke.push(channel);
+    });
+    // First sample establishes the published reference — and is an event
+    // (a consumer must learn the opening level).
+    store.record(S, "cpu", 50, 1_000);
+    expect(woke).toEqual(["cpu"]);
+    // Sub-epsilon jitter (cpu fullScale 100 → epsilon 1) updates the meter
+    // but wakes nothing.
+    store.record(S, "cpu", 50.4, 1_250);
+    store.record(S, "cpu", 49.7, 1_500);
+    expect(woke).toEqual(["cpu"]);
+    // Drift accumulates against the PUBLISHED reference, not the previous
+    // sample — 0.6 steps ratchet across the threshold and fire once crossed.
+    store.record(S, "cpu", 50.6, 1_750);
+    expect(woke).toEqual(["cpu"]);
+    store.record(S, "cpu", 51.2, 2_000);
+    expect(woke).toEqual(["cpu", "cpu"]);
+    // A real move fires immediately.
+    store.record(S, "cpu", 80, 2_250);
+    expect(woke).toEqual(["cpu", "cpu", "cpu"]);
+  });
+
+  it("activity listeners survive clearSession (a revived id still wakes)", () => {
     const store = newStore();
     let wakes = 0;
-    store.subscribeRateActivity(S, () => {
+    store.subscribeActivity(S, () => {
       wakes += 1;
     });
     store.record(S, "text", 10, 1_000);
@@ -150,6 +171,21 @@ describe("SessionActivityStore", () => {
     store.clearSession(S);
     store.record(S, "text", 10, 2_000);
     expect(wakes).toBe(2);
+  });
+
+  it("clearSession resets the gauge reference — a revived session republishes", () => {
+    const store = newStore();
+    const woke: string[] = [];
+    store.subscribeActivity(S, (channel) => {
+      woke.push(channel);
+    });
+    store.record(S, "cpu", 50, 1_000);
+    expect(woke).toEqual(["cpu"]);
+    store.clearSession(S);
+    // Same level as before the clear: still an event, because the revived
+    // session's consumers rebuilt from empty history.
+    store.record(S, "cpu", 50, 2_000);
+    expect(woke).toEqual(["cpu", "cpu"]);
   });
 
   it("raw() returns a held gauge value with its unit, null for rate/absent", () => {

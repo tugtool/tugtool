@@ -104,13 +104,20 @@ const SPARK_WIDTH = 248;
  * (the Grafana stat anatomy: text zone over graph zone).
  */
 const SPARK_HEIGHT = 26;
-/** Readout repaint cadence — fast enough that the eased number glides. */
+/** Readout repaint cadence while gliding — fast enough that the eased
+ *  number reads as motion. Not a standing clock: the glide burst runs only
+ *  downstream of an activity event and stops when the string converges. */
 const READOUT_PAINT_MS = 250;
 /** EMA weight per paint (~1s time constant at the paint cadence) — the value
  *  eases toward its target instead of snapping tick-to-tick. */
 const READOUT_EMA_ALPHA = 0.25;
 /** Below this eased value with no live signal, the row reads as idle. */
 const IDLE_EPSILON = 0.5;
+/** Consecutive no-write paints before the glide burst declares the readout
+ *  converged and stops its timer. The displayed string is rounded, so it
+ *  settles long before the underlying EMA float does — once it has held
+ *  still this long there is nothing left to animate. */
+const READOUT_SETTLE_TICKS = 4;
 
 function formatBytesPerSec(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB/s`;
@@ -167,22 +174,21 @@ function PulseRow({
   // Fix the line's hue to this channel's descriptor color (the endpoint tie).
   const getColorChannel = useCallback((): string => channel, [channel]);
 
-  // Dormancy wake channel — RATE rows only: `subscribeRateActivity`
-  // publishes exactly the activity a rate row draws, so with the card
-  // open and the session idle these rows stop cold instead of holding
-  // a 4Hz timer + WAAPI scroll each. Gauge rows (cpu/memory/disk tick
-  // whether or not the session works) MUST stay `undefined`: the store
-  // never wakes on gauge samples, so a gauge row given this channel
-  // would flat-dorm and freeze while its live reading moved.
+  // The row's data-event clock: the store's change-gated activity feed,
+  // filtered to this row's own channel. Rate and gauge rows ride the same
+  // wire — the store publishes a gauge event only when the level moves
+  // past its ingestion epsilon, so an idle session's gauge rows are as
+  // silent as its rate rows, and a moving gauge still wakes its tape.
   const subscribeActivity = useMemo(() => {
-    if (descriptor.kind !== "rate") return undefined;
     return (wake: () => void): (() => void) => {
       const store = getSessionActivityStore();
       return store !== null
-        ? store.subscribeRateActivity(session, wake)
+        ? store.subscribeActivity(session, (moved) => {
+            if (moved === channel) wake();
+          })
         : () => {};
     };
-  }, [session, descriptor.kind]);
+  }, [session, channel]);
 
   // Live value, eased toward its target and written imperatively ([L06]) so it
   // glides instead of snapping tick-to-tick. Opens at the true value (no
@@ -190,20 +196,28 @@ function PulseRow({
   // the channel's unit when activity stops — an idle session does no work, so
   // its resting value is 0, not a "no data" dash. Never touches React state
   // ([P03]).
+  //
+  // The data event is the only clock. Easing needs a repaint cadence, so a
+  // glide BURST runs at READOUT_PAINT_MS — but only downstream of an
+  // activity event, and only until the displayed string stops changing.
+  // The no-write gate below doubles as the termination condition: once the
+  // rounded string has held still for READOUT_SETTLE_TICKS paints there is
+  // nothing left to animate, and the burst stops itself. An idle row holds
+  // no timer at all; the next event paints synchronously and re-arms it.
   useEffect(() => {
     let eased = 0;
     let seeded = false;
     // What was last written to the DOM. The eased value keeps drifting by
-    // fractions forever, but the string the reader sees settles; writing it
+    // fractions after the reader's rounded string has settled; writing it
     // again replaces the text node, dirties style, and schedules a rendering
     // update for a display that did not change. Both writes are gated, not
     // just the text — an attribute set to the value it already holds is
     // delivered as a mutation too.
     let painted: string | null = null;
     let paintedIdle: string | null = null;
-    const paint = (): void => {
+    const paint = (): boolean => {
       const el = valueRef.current;
-      if (el === null) return;
+      if (el === null) return false;
       const target = numericFor(session, channel, Date.now());
       const goal = target ?? 0;
       if (!seeded) {
@@ -215,18 +229,55 @@ function PulseRow({
       const idle = target === null && eased < IDLE_EPSILON;
       const text = formatValue(channel, idle ? 0 : eased);
       const idleFlag = idle ? "true" : "false";
+      let wrote = false;
       if (text !== painted) {
         el.textContent = text;
         painted = text;
+        wrote = true;
       }
       if (idleFlag !== paintedIdle) {
         el.dataset.idle = idleFlag;
         paintedIdle = idleFlag;
+        wrote = true;
+      }
+      return wrote;
+    };
+    let timer: number | null = null;
+    let quietTicks = 0;
+    const stopGlide = (): void => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
       }
     };
+    const startGlide = (): void => {
+      quietTicks = 0;
+      if (timer !== null) return;
+      timer = window.setInterval(() => {
+        if (paint()) {
+          quietTicks = 0;
+        } else if (++quietTicks >= READOUT_SETTLE_TICKS) {
+          stopGlide();
+        }
+      }, READOUT_PAINT_MS);
+    };
     paint();
-    const timer = window.setInterval(paint, READOUT_PAINT_MS);
-    return () => window.clearInterval(timer);
+    // The mount burst settles the opening value (and, for a rate row with
+    // recent history, rides the rolling window down to rest).
+    startGlide();
+    const store = getSessionActivityStore();
+    const unsubscribe =
+      store !== null
+        ? store.subscribeActivity(session, (moved) => {
+            if (moved !== channel) return;
+            paint();
+            startGlide();
+          })
+        : null;
+    return () => {
+      stopGlide();
+      unsubscribe?.();
+    };
   }, [session, channel]);
 
   return (
