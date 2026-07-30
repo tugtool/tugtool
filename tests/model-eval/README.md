@@ -1,14 +1,17 @@
 # model-eval — what the local model writes, and what it costs
 
-The PULSE strip's bright leading run is a **session headline**, written by the on-device model. This directory answers three different questions about it against a running Tug instance, sharing one piece of plumbing (`harness.py`: send a digest over the control socket, read the answer back out of the log).
+The on-device model does two jobs: it writes the **session headline** on the PULSE strip's bright leading run, and it decides whether an unprefixed line in the composer means the **shell** or means Claude. This directory asks four questions about those two jobs against a running Tug instance, sharing one piece of plumbing (`harness.py`: send the input over the control socket, read the answer back out of the log).
 
 | Question | Command | Answers |
 |---|---|---|
-| Is it in **register**? | `just model-eval` | Are the headlines headlines — verb-first, six words, no articles? Scored over twelve frozen digests. |
+| Is the headline in **register**? | `just model-eval` | Are the headlines headlines — verb-first, six words, no articles? Scored over twelve frozen digests. |
+| Does routing **run the wrong thing**? | `just model-classify` | Over 71 labeled lines: how often a line meant for Claude was executed. |
 | Is it **alive**? | `just model-liveness` | Does one digest come back at all, non-empty, inside the `summarize` ceiling? Skips with exit 0 without a pack. |
 | Is it **fast enough**? | `just model-stats` | Over accumulated logs: per-task outcomes, duration percentiles, normalizer work rate, headline change rate. |
 
 Register is the standing answer to "did that prompt edit make things better or worse?", which no unit test can tell you. Liveness is a smoke test. Stats is a batch read over real usage and says nothing useful until there is some.
+
+Only one of the four is a **gate**, and only in one direction: `model-classify` is the sole harness here with ground truth, and it fails on a line that was wrongly executed while merely reporting a command that was wrongly sent to Claude. The asymmetry is the feature's, not the harness's — see `shell-line-classifier.ts`. Everything about the headline is a rate, because there is no ground truth for "what is this session working on".
 
 ```bash
 just app-debug        # then, once it is up:
@@ -52,6 +55,8 @@ cd tugrust && TUG_REGENERATE_DIGESTS=1 cargo nextest run -p tugcast corpus_diges
 This exists because the corpus that came before it — six real digests under `~/bonsai-eval/digests` — silently went stale: it was written against `The user asked:` while the shipping code moved to `What the user asked for:`. Scoring a model on bytes it will never see is worse than not scoring it. Living in the repo and being pinned to the real function is what stops that recurring.
 
 Six entries are real sessions from this project, re-rendered into today's shape. Six are synthetic, each pinned to a defect this feature actually shipped with — `parts-list-tail` is the label headline that started all this, `conversation-only` is the tool-free session that couldn't get a headline at all, `tools-without-prompts` is an unresolved identity.
+
+**The corpus and the prompt's examples must stay disjoint.** They were not, for as long as both existed: six of the eight examples in `LocalModelPrompts.summarize` had been drafted from these digests, so five of the twelve carried their own expected answer in the instructions. A model could score the whole rubric by copying, and one did — `Author command-line calculator` and `Explain Maxwell's equations` came back against exactly the digests they were drawn from, while production was emitting the same strings against sessions that had nothing to do with either. That is why a harness reporting 13/13 sat over a feature the strip was visibly getting wrong. `run.py` now refuses to score a contaminated pair: if an example's words all appear in one digest, it names both and exits without spending inference. Adding a corpus entry means checking that no example describes it, and the check is the run.
 
 ## The rubric
 

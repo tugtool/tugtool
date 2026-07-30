@@ -74,6 +74,19 @@ enum LocalModelConfig {
 /// byte-identical across the second and third. The catalog's recorded overview
 /// scores refer to a wording older than all three.
 ///
+/// The fourth pass changed only the example block, and for a reason that has
+/// nothing to do with register: six of the eight examples, and the negative
+/// example, described entries in `tests/model-eval/corpus` — they had been
+/// drafted from it. Five of the twelve digests therefore had their expected
+/// answer sitting verbatim in the instructions, so a model could score the
+/// register harness by copying and did: `Author command-line calculator`,
+/// `Fix download resume restart` and `Explain Maxwell's equations` came back
+/// against exactly the digests they were drawn from, and the label the block
+/// held up as the failure to avoid was emitted as an answer. Every example and
+/// every proper name here is now absent from every digest, which is the
+/// property that makes a score mean something. Keep it that way: an example
+/// drawn from the corpus is an answer key, not a demonstration.
+///
 /// Those scores are not being refreshed, because a fixed-corpus summary score
 /// says nothing about whether the strip works — there is no ground truth for
 /// "what is this session working on". What the feature is held to instead:
@@ -144,21 +157,21 @@ enum LocalModelPrompts {
     NO "the", "a", "an". NO "and" — use a comma, or cut the second half.
     NO trailing detail. Name the work, not the parts it is made of.
     SENTENCE CASE, like a sentence: only the first word is capitalized. \
-    Proper names keep their capitals — Lens, Maxwell, Rust, Sparkle.
+    Proper names keep their capitals — Lens, Finder, Keychain, CodeMirror.
     No period. No quotes.
 
     A headline with no verb is a label, and a label is a failure. \
-    "Command-line calculator with Makefile and README" is a label. \
-    "Author command-line calculator" is a headline.
+    "Schema migration with version bump and backfill" is a label. \
+    "Wire schema migration backfill" is a headline.
 
     Hunt focus drift in Lens
-    Author command-line calculator
-    Wire overview cadence gate
-    Fix download resume restart
-    Port shell router to async
+    Author snippet picker route
+    Wire changeset attribution tap
+    Fix cursor loss after descend
+    Port sparkline decode off thread
     Salvage corrupted changes ledger
-    Explain Maxwell's equations
-    Bundle tmux from source
+    Explain checkpoint contention
+    Bundle CJK subsets for release
 
     Output only the headline.
     """

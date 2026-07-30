@@ -1456,6 +1456,21 @@ app-test-covers-check:
 model-eval INSTANCE="debug-main":
     @python3 tests/model-eval/run.py {{INSTANCE}}
 
+# Score shell routing against a RUNNING instance: did that line mean the shell?
+#
+# The one local-model harness with ground truth, so unlike `model-eval` it is a
+# gate rather than a rate — and the gate is one-sided. It fails only on a false
+# SHELL, the verdict that already ran a command nobody asked for; a command sent
+# to Claude instead costs one keystroke and is reported without failing.
+#
+# Run it after touching `LocalModelPrompts.classify`, the verdict parse in
+# `LocalModelService`, or `shell-line-classifier.ts`.
+#
+#   just model-classify
+#   just model-classify release-main
+model-classify INSTANCE="debug-main":
+    @python3 tests/model-eval/classify.py {{INSTANCE}}
+
 # Is the live local-model path answering, and inside its ceiling?
 #
 # On-demand, not CI: it needs a downloaded pack and real hardware. Without
