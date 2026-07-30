@@ -335,7 +335,17 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         // A persisted value outside the bounds (e.g. from a future range
         // change) is clamped, not discarded — the next zoom action
         // re-writes the clamped value back to defaults.
-        if let saved = UserDefaults.standard.object(forKey: MainWindow.pageZoomDefaultsKey) as? Double {
+        //
+        // The app-test harness pins 1.0 instead of restoring. Native
+        // gestures are posted in CSS viewport coordinates and land through
+        // `CoordMapping.viewportToScreen`; a non-unity zoom scales every
+        // landing away from its target, and the error grows with distance
+        // from the origin, so a stray ⌘+ in one app-test window silently
+        // mis-aims every gesture in every later run. Test geometry is the
+        // harness's to control, not a persisted user preference's.
+        if ProcessInfo.processInfo.environment["TUGAPP_APP_TEST"] == "1" {
+            webView.pageZoom = 1.0
+        } else if let saved = UserDefaults.standard.object(forKey: MainWindow.pageZoomDefaultsKey) as? Double {
             let clamped = max(MainWindow.minPageZoom, min(MainWindow.maxPageZoom, CGFloat(saved)))
             webView.pageZoom = clamped
         }

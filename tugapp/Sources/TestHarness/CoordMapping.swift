@@ -96,14 +96,26 @@ enum CoordMapping {
     /// bug was clicks landing near the window's BOTTOM instead of
     /// near the TOP). The fix is "don't pre-flip; trust convert".
     ///
+    /// A CSS px is `pageZoom` view points, so a viewport coord must be
+    /// scaled by the zoom before it enters AppKit's view-local space.
+    /// Skipping this makes every gesture land at `1 / pageZoom` of its
+    /// target — an error proportional to the distance from the view
+    /// origin, so points near the top-left look almost right while
+    /// points further down miss their element entirely.
+    ///
     /// - Parameter viewportPoint: DOM-space coord, Y-down origin top-left.
     /// - Parameter webView: the live WKWebView owning the document.
     /// - Returns: CG-space screen coord ready for `CGEvent.post`, or
     ///   nil for out-of-bounds or detached-window cases.
     static func viewportToScreen(_ viewportPoint: CGPoint, in webView: WKWebView) -> CGPoint? {
+        let zoom = webView.pageZoom > 0 ? webView.pageZoom : 1.0
         let viewSize = webView.bounds.size
-        guard viewportPoint.x >= 0, viewportPoint.x <= viewSize.width,
-              viewportPoint.y >= 0, viewportPoint.y <= viewSize.height else {
+        let viewLocal = CGPoint(
+            x: viewportPoint.x * zoom,
+            y: viewportPoint.y * zoom,
+        )
+        guard viewLocal.x >= 0, viewLocal.x <= viewSize.width,
+              viewLocal.y >= 0, viewLocal.y <= viewSize.height else {
             return nil
         }
         guard let window = webView.window else { return nil }
@@ -111,7 +123,7 @@ enum CoordMapping {
         // Pass viewport (Y-down) directly to convert. WKWebView's
         // content coordinate system is Y-down, so the `convert` call
         // flips Y into the window's Y-up system for us.
-        let windowPoint = webView.convert(viewportPoint, to: nil)
+        let windowPoint = webView.convert(viewLocal, to: nil)
         let screenAppKitPoint = window.convertToScreen(
             NSRect(origin: windowPoint, size: .zero),
         ).origin
