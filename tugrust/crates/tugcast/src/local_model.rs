@@ -76,6 +76,12 @@ impl CatalogEntry {
 /// artifacts — is deliberately absent: MLX never reads it, so it is never
 /// downloaded. Every `sha256` here was computed from the exact bytes that
 /// were scored during bring-up.
+///
+/// An entry is only listable if its `config.json` `model_type` is registered in
+/// mlx-swift-examples' `LLMModelFactory`; the Swift backend imports MLXLLM and
+/// resolves the architecture from that registry, so an unregistered pack fails
+/// the load rather than degrading. `mistral3` and `gemma4` are absent upstream,
+/// which rules out the Ministral 3 and Gemma 4 families at the current pin.
 pub const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
         id: "ternary-bonsai-8b-2bit",
@@ -187,6 +193,59 @@ pub const CATALOG: &[CatalogEntry] = &[
         total_bytes: 2278969697,
         context_window: 262144,
         notes: "General-purpose 4B instruct pack held in reserve.",
+    },
+    CatalogEntry {
+        id: "lfm25-1-2b-instruct-4bit",
+        display_name: "LFM2.5 1.2B Instruct",
+        recommended: false,
+        offered: false,
+        hf_repo: "mlx-community/LFM2.5-1.2B-Instruct-4bit",
+        hf_revision: "125e006d991147f3b432249d1bdf0821987f12b0",
+        files: &[
+            ModelFile {
+                name: "chat_template.jinja",
+                sha256: "f05bf4b967dc993bdc7a2fe6e43759ee218eb0eb340d68b063e1c4f8ad148176",
+                bytes: 1783,
+            },
+            ModelFile {
+                name: "config.json",
+                sha256: "3201758c1b68e92a8102583626b0d76f70ff4c6fc2e2b99d32e96cdbe6788cea",
+                bytes: 1572,
+            },
+            ModelFile {
+                name: "generation_config.json",
+                sha256: "5ffd97da1dec4308543894569662d96e923ed01f7a9d8c7ff5aea7f800738cbd",
+                bytes: 132,
+            },
+            ModelFile {
+                name: "model.safetensors.index.json",
+                sha256: "3074009e9be56358bf8edc25354572cbca2b5a625e02f8a2c2789a656f51f5a1",
+                bytes: 23414,
+            },
+            ModelFile {
+                name: "model.safetensors",
+                sha256: "d837f243744bbdbe7dd032f90b482a1c45d5b6035b25c1d7804d0f4c74b5c004",
+                bytes: 658540250,
+            },
+            ModelFile {
+                name: "special_tokens_map.json",
+                sha256: "742aefe2b7dec496e8caffdba03a75d0c1a9925d53bd3f3e0d388c96b591b6f4",
+                bytes: 434,
+            },
+            ModelFile {
+                name: "tokenizer.json",
+                sha256: "df1d8d5ec5d091b460562ffd545e4a5e91d17d4a0db7ebe733be34ed374377bd",
+                bytes: 4733389,
+            },
+            ModelFile {
+                name: "tokenizer_config.json",
+                sha256: "2a52ec012d3df831ba434b081bef3726a6ee22501f062ad8353c557a0cfa0d01",
+                bytes: 92225,
+            },
+        ],
+        total_bytes: 663393199,
+        context_window: 128000,
+        notes: "On-device instruct pack, a third the download of the others.",
     },
 ];
 
