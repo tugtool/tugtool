@@ -1,6 +1,6 @@
 ## Imposer pane motion — the walk-free FLIP settle {#imposer-pane-motion}
 
-**Purpose:** Replace the imposer's arrangement-settle motion — today a CSS transition of `left`/`top`/`bottom`/`width` that relayouts every moving pane on every frame — with a FLIP-style, fully-accelerated, transform-only tween run through **TugAnimator**, paying two compositing walks per gesture (start and land) and zero per frame. Whether a data-clock freeze is also needed is decided by measurement, not assumed. This is S5 of `roadmap/jul30-perf-brief.md#s5-imposer`.
+**Purpose:** Replace the imposer's arrangement-settle motion — previously a CSS transition of `left`/`top`/`bottom`/`width` that relayouted every moving pane on every frame — with a FLIP-style, fully-accelerated, transform-only tween run through **TugAnimator**, paying a fixed handful of compositing walks per gesture and zero per frame. (Measured: three walks per gesture, not the two the animation alone accounts for — React's commit of the new geometry is the third; see the brief's S5 record.) The data-clock freeze was decided by measurement, not assumed — [Q02] ruled it in, and the notification hold shipped as Step 7. This is S5 of `roadmap/jul30-perf-brief.md#s5-imposer`.
 
 ---
 
@@ -236,7 +236,7 @@ For the cold reader — what exists today and where:
 
 #### Why two walks per gesture is the floor, and why that's fine {#two-walks}
 
-The start walk is forced: starting a transform animation dirties compositing once (and is also the walk that inserts the journey envelope into the overlap map — `computeExtentOfTransformAnimation` is *how* the remaining frames are free). The land walk is the inverse: the animation ends, the layer's promotion drops, geometry is re-validated. Between them, a completely accelerated effect does not tick (`ticksContinuouslyWhileActive()` false) and nothing dirties compositing bits, so `updateCompositingLayers` never runs. [D4] prices two walks at gesture edges as honest interactive cost; the disease was only ever per-frame.
+The start walk is forced: starting a transform animation dirties compositing once (and is also the walk that inserts the journey envelope into the overlap map — `computeExtentOfTransformAnimation` is *how* the remaining frames are free). The land walk is the inverse: the animation ends, the layer's promotion drops, geometry is re-validated. Between them, a completely accelerated effect does not tick (`ticksContinuouslyWhileActive()` false) and nothing dirties compositing bits, so `updateCompositingLayers` never runs. [D4] prices two walks at gesture edges as honest interactive cost; the disease was only ever per-frame. (The lab measurement then priced a full gesture at *three* walks — React's own commit of the new geometry dirties compositing before either tween exists. The floor argued here is the animation's share; the commit's walk exists with or without motion.)
 
 **Spec S01: The qualifying tween** {#s01-qualifying-tween}
 
@@ -516,16 +516,16 @@ Both measurements are gBCR in viewport coordinates; deltas are CSS px in the sam
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Settle motion is translate-only WAAPI in the qualifying form, created through TugAnimator; the `left/top/bottom/width` and rail transitions are gone from `tug-pane.css` (grep + app-test census).
-- [ ] No inline-transform residue after repeated settles, and portaled/fixed surfaces inside a pane still position against the viewport ([P07].4 app-test).
-- [ ] App-test green: during/after census, end geometry vs the numeric twin, retarget (including the post-inset-change flip).
-- [ ] Lab record in the brief: steady-state walk ≤ noise, two-walk edges, frame budget held; [Q01] and [Q02] resolved on measurement.
-- [ ] If [Q02] ruled the freeze in: hold semantics proven at the store layer (0 notifies held → 1 flush, state-equal to control; watchdog) and the live-turn re-measurement recorded.
-- [ ] Quiet contract: settled deck shows zero imposer-owned animations, timers, or retained transitions (census); reduced motion cuts with no fade.
+- [x] Settle motion is translate-only WAAPI in the qualifying form, created through TugAnimator; the `left/top/bottom/width` and rail transitions are gone from `tug-pane.css` (grep + app-test census).
+- [x] No inline-transform residue after repeated settles, and portaled/fixed surfaces inside a pane still position against the viewport ([P07].4 app-test).
+- [x] App-test green: during/after census, end geometry vs the numeric twin, retarget (including the post-inset-change flip) — `at0294`.
+- [x] Lab record in the brief: steady-state walk ≤ noise (idle exactly zero), gesture-edge walks priced (three per gesture — the React commit is the third), frame budget held; [Q01] and [Q02] resolved on measurement.
+- [x] [Q02] ruled the freeze in: hold semantics proven at the store layer (`code-session-store/__tests__/notification-hold.test.ts` — 0 notifies held → 1 flush, state-equal to control; watchdog; local-immediate; coalesce-timer absorption) and the live-turn re-measurement recorded (settle + held 386 vs settle-alone 327, 95% of the interaction penalty recovered).
+- [x] Quiet contract: settled deck shows zero imposer-owned animations, timers, or retained transitions (census); reduced motion cuts with no fade — and neither measures nor holds (the snap is the settle).
 
 **Acceptance tests:**
-- [ ] `cd tugdeck && bun test` (pane-flip suite included; hold suite if shipped) green.
-- [ ] `just app-test tests/app-test/atNNNN-imposer-flip-settle.test.ts` → PASS.
+- [x] `cd tugdeck && bun test` (pane-flip and hold suites included) green.
+- [x] `just app-test tests/app-test/at0294-imposer-flip-settle.test.ts` → PASS.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

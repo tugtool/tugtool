@@ -2102,6 +2102,15 @@ export class CodeSessionStore {
    */
   holdNotifications(capMs: number): void {
     this._held = true;
+    // A coalesce flush armed before the hold would fire a frame into it
+    // and publish mid-window — the exact commit the holder asked to
+    // keep out. Absorb it: the timer is cancelled and the reductions it
+    // carried ride the release flush instead.
+    if (this._trailingNotify !== null) {
+      this.timerSource.clearTimeout(this._trailingNotify);
+      this._trailingNotify = null;
+      this._foldPending += 1;
+    }
     if (this._holdWatchdog !== null) {
       this.timerSource.clearTimeout(this._holdWatchdog);
     }

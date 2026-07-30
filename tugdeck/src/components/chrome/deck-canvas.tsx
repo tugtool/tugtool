@@ -815,6 +815,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       // eye actually is. Cancelling comes after the measurement, and is safe at
       // any moment because the tween's last keyframe is no transform at all:
       // there is no wrong pose to snap to.
+      // Under reduced motion there will be no tween: the layout snap IS the
+      // settle. Measuring would force a layout for rects nobody reads, and
+      // holding would defer session notifications against a commit-during-
+      // animation cost that cannot arise without an animation — so both are
+      // skipped, while cancelling any straggler tween stays unconditional.
+      const motion = isTugMotionEnabled();
       const firstRects = settleFirstRectsRef.current;
       firstRects.clear();
       for (const frame of el.querySelectorAll<HTMLElement>(
@@ -825,7 +831,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         if (frame.hasAttribute("data-gesture")) continue;
         const paneId = frame.getAttribute("data-pane-id");
         if (paneId === null) continue;
-        firstRects.set(paneId, frame.getBoundingClientRect());
+        if (motion) firstRects.set(paneId, frame.getBoundingClientRect());
         const running = settleTweensRef.current.get(paneId);
         if (running !== undefined) {
           running.anim.cancel("snap-to-end");
@@ -845,7 +851,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       // The cap is generous against the window it guards — it is a
       // wedge guard, not a second clock, and firing it early would
       // reintroduce the very commit the hold is here to keep out.
-      holdSessions(Math.max(2 * windowMs, 1000));
+      if (motion) holdSessions(Math.max(2 * windowMs, 1000));
 
       if (settleTimerRef.current !== null) {
         window.clearTimeout(settleTimerRef.current);

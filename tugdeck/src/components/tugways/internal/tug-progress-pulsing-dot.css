@@ -84,8 +84,10 @@
  * Core Animation expresses a segment's easing as a cubic Bézier, a
  * multi-stop `linear()` is not one, and WebKit answers by blending the
  * animation on the main thread (see the note above those blocks — 18.0% vs
- * 0.9% on a 100-glyph bench). The knob is `breathKeyframes` in the
- * component, which regenerates all three blocks from one turn value.
+ * 0.9% on a 100-glyph bench). This is the qualifying-form easing rule of
+ * `tuglaws/animation-doctrine.md`, learned here first. The knob is
+ * `breathKeyframes` in the component, which regenerates all three blocks
+ * from one turn value.
  *
  *  - `tugx-progress-pulsing-dot-breathe` — the dot, `--…-dot-scale-min`
  *    → `1` → back. The stops run 0 → 1 → 0 across the cycle, a cosine leg
@@ -377,9 +379,13 @@
    travel simply ceased to exist, which is the pop this pair of attributes
    exists to prevent.
 
-   No `will-change`. It was measured inert here: the promotion it asks for
-   buys nothing the poses do not already establish, and 200 hinted layers on a
-   Lens column is a compositing walk nobody is paid for. */
+   No `will-change`. It is irrelevant to the cost that matters — the whole-page
+   compositing walk is triggered by per-frame style commits, not by an
+   element's compositing status, so hinting changes nothing about whether an
+   animation walks (`tuglaws/animation-doctrine.md`). The refusal stands on the
+   multiplier instead: hinted layers still cost backing memory and mounted
+   layer population, and 200 of them on a Lens column raises the price of
+   every walk anything else causes. */
 .tug-progress-pulsing-dot[data-breathing] .tug-progress-pulsing-dot-dot,
 .tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring {
   animation-duration: var(--tugx-progress-pulsing-dot-period);
@@ -466,7 +472,9 @@
 
 /* The shape lives HERE, in the stops — not in an easing function.
  *
- * That is not a style preference, it is the difference between this glyph
+ * This is the qualifying-form easing rule of `tuglaws/animation-doctrine.md`,
+ * and this file is where it was learned. It is not a style preference; it is
+ * the difference between this glyph
  * costing 28% of the main thread and costing under 1%. The envelope used to be
  * carried by 14-to-21-stop `linear()` easings over two-stop keyframes, which
  * made the timing a single-variable knob and read beautifully. It also made

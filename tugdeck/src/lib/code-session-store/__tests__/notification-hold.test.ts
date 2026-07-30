@@ -285,6 +285,46 @@ describe("notification hold — quiet while held, one flush at release", () => {
     expect(snapshotAtLastNotify).not.toBe(pinned);
   });
 
+  it("absorbs a coalesce flush armed before the hold rather than letting it publish mid-window", () => {
+    const { store, conn, notifies, pendingTimers } = makeStore();
+
+    // One steady-state delta past the streaming transition arms the
+    // ~frame-cadence trailing flush (the transition itself publishes
+    // immediately, so the timer only exists from the delta after it).
+    startLiveTurn(store, conn);
+    delta(conn, 2);
+    const timersBefore = pendingTimers();
+    const before = notifies();
+
+    // Holding cancels that timer and folds what it carried into the
+    // hold, then arms the watchdog — one out, one in. Without the
+    // absorption the count would grow by one, and the stale flush would
+    // fire a frame into the window and publish the one commit the
+    // holder asked to keep out.
+    store.holdNotifications(10_000);
+    expect(pendingTimers()).toBe(timersBefore);
+
+    delta(conn, 3);
+    expect(notifies()).toBe(before);
+
+    store.releaseNotifications();
+    expect(notifies()).toBe(before + 1);
+  });
+
+  it("a hold opened onto a pending coalesce flush still flushes on release even with no further events", () => {
+    const { store, conn, notifies } = makeStore();
+
+    startLiveTurn(store, conn);
+    delta(conn, 2);
+    const before = notifies();
+    store.holdNotifications(10_000);
+
+    // Nothing else arrives. The absorbed flush's reductions must still
+    // reach listeners — the release publishes them.
+    store.releaseNotifications();
+    expect(notifies()).toBe(before + 1);
+  });
+
   it("holds the streaming firehose too, not just whole-turn frames", () => {
     const { store, conn, notifies, pendingTimers } = makeStore();
 

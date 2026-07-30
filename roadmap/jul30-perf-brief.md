@@ -90,7 +90,7 @@ TugProgressIndicator's `wave` variant: three phase-locked `scaleY` bars, 960ms, 
 
 ### S5 — Imposer pane motion {#s5-imposer}
 
-**Status: motion landed and measured 2026-07-30 on a release build of `tugdash/imposer-flip`; the freeze is ruled IN by measurement and is the remaining work.** Plan and step ledger: `roadmap/imposer-pane-motion.md`.
+**Status: done — motion and the notification hold both landed and measured 2026-07-30 (release build of `tugdash/imposer-flip`, since joined to `main`).** Plan and step ledger: `roadmap/imposer-pane-motion.md`.
 
 The premise line below — "an in-page transform on a pane root is a whole-page walk per frame" — is superseded by I1's law and by the numbers here. It holds only for non-qualifying forms.
 
@@ -215,7 +215,7 @@ Standing items, re-ranked, not part of the five surfaces:
 - [x] S2: **done** — the Pulse system is event-clocked end to end ([D7]) and the wire honors no-news-is-no-news ([D8]): idle → zero sparkline/readout timers, zero animation objects, zero gauge frames; live rows unaffected (settle burst runs at the old live cadence); user-verified on the debug build including the end-of-turn decay. Unit + app-tests green (`at0230`, `at0292`, `at0293`).
 - [ ] S3: settled deck → zero dot animations by gating; running dot on the 12k bench → walk ≤ noise, motion design intact.
 - [ ] S4: stuck footers root-caused and fixed; all turn-end falling edges verifiably still the wave; running wave → walk ≤ noise.
-- [ ] S5: kink-the-hose pane move holds frame budget on the heavy deck; zero idle contribution between gestures; correct catch-up after unkink.
+- [x] S5: **done** — arrangement motion is measured FLIP through TugAnimator (idle walk exactly zero between gestures; settle + held commits 386 walk samples vs 327 settle-alone, frame budget held at the settle's own median); catch-up is the hold's single release flush, deferred never dropped (store-layer tests + 66/66 commits landed in the lab run). App-test `at0294`, hold tests in `code-session-store/__tests__/notification-hold.test.ts`.
 - [ ] I1 verdict recorded: minimal qualifying form + minimal disqualifying delta, ×3 medians, confirmed on release-main.
 - [ ] Release-main unattended idle ≤ **1.5%** ×3 (medians, D5 method) with the full working deck mounted and all sessions at rest.
 - [ ] `tuglaws/animation-doctrine.md` written and indexed; animation-API primitive layer landed or explicitly scoped into its own follow-up plan.
