@@ -433,3 +433,53 @@ Two pieces of standing infrastructure landed 2026-07-29 evening, replacing all f
 - **A cautionary artifact:** a synthetic `mousedown` with no `pointerup` (driving the Lens via eval) wedged `selection-guard`'s `runAutoscrollTick` into a permanent 60/s rAF loop — 0.9% → 3.0% busy from the wake alone. Zero rAF-service frames in any of release-main's samples, so it is not the residual — but it is a real latent wedge (tracking ends only on `pointerup`; a lost one pins a frame-rate loop forever) and deserves a watchdog (stop the loop when no pointer has moved for a few seconds of zero-delta ticks).
 
 **What the lab could not reproduce: the 5.8%.** A light real deck profiles at 0.9%; release-main profiles at 5.8% with intermittent `DocumentTimeline` scheduling and `KeyframeEffect` transform frames. The delta is deck content — most plausibly live/waking Pulse tapes plus several heavy session cards' layer trees. The next measurement is now one rebuild away: rebuild release-main (picks up the ungated tugcast), flip `diag/eval` on it, and census the real deck directly — running animations, entry/pin counts, and an rAF trap, taken on the exact surface that misses the target.
+
+#### The overlap-map law — what the idle burn actually is {#record-overlap-law}
+
+Measured 2026-07-30 on release-main (the real working deck: 3 session cards, 177 transcript entries, ~29–41 running animations at idle), through `/api/eval` with `diag/eval` flipped on. Every number below is `sample`-derived from the raw call trees, itemized by `Page::updateRendering` phase offset, with no-op baselines interleaved between conditions.
+
+**The law.** A running **`transform`** animation forces `computeCompositingRequirements` over the entire page's layer tree on every frame. A running **`opacity`** animation does not. `will-change` is irrelevant to both. The mechanism is the `LayerOverlapMap`: a transform changes a layer's geometry, so the map is rebuilt, and the rebuild's cheap path (`traverseUnchangedSubtree`) still visits every layer — there is no subtree pruning for it. Cost is therefore **(any transform animation running) × (total mounted layer population)**.
+
+| probe (one 6×16px span, `body` level) | walk | `traverseUnchangedSubtree` |
+|---|---|---|
+| none | 6 | 81 |
+| `transform` + `will-change: transform` | 39 | 220 |
+| `transform`, no `will-change` | 38 | 221 |
+| `opacity`, no `will-change` | 9 | 91 |
+| `opacity` + `will-change: opacity` | 9 | 35 |
+
+**Population is the multiplier.** Same single transform probe, varying only how much deck is mounted:
+
+| mounted | probe | walk |
+|---|---|---|
+| 3 cards / 177 entries | — | **0** |
+| 3 cards / 177 entries | 1 | **85** |
+| 1 card | 1 | 20 |
+| 0 transcripts | 1 | 7 |
+
+Static content is free at any size; the walk is zero whenever nothing animates. The transcripts carry **26,374 layer-minting elements** of 61,676 — `position: relative` 12,666, `overflow` 9,175, `position: sticky` 1,713, `z-index` 1,986, `contain: content` 789, `transform` 136.
+
+**The walk is a threshold, not a proportion — this is the actionable part.** Round-robin, three repeats per condition, medians:
+
+| condition | running anims | `updateRendering` | walk |
+|---|---|---|---|
+| baseline | ~27 | 179 | **112** |
+| wave bars off | ~26 | 167 | 98 |
+| pulsing dots off | ~4 | 127 | 66 |
+| **all animations off** | 2 | 70 | **9** |
+
+One transform animation on this deck costs a walk of 85; all ~30 of them cost 112. Removing a subset buys almost nothing — **idle must reach zero running transform animations for the term to disappear.** Partial motion budgets are not a strategy here.
+
+**Two corrections to `#record-real-deck-after`.**
+
+- The claim that a style dirty "re-proves" the rest of the deck was wrong in mechanism and was never evidenced. WebKit's style invalidation is properly scoped here and is not being defeated. What is global is the overlap map, by construction.
+- **Sticky pins are exonerated.** Forcing all 174 `.tug-transcript-entry__pin` to `position: static` left the walk unchanged (77 → 70, against a clean re-baseline of 58). The sticky-population theory in `#record-real-deck-after` is refuted; do not spend work on it.
+
+The caret-blink fix in `#record-real-deck` was correct and remains correct — it animates **opacity**, which this law prices at zero.
+
+**Method notes, dearly bought.**
+
+- **`sample` on release-main is not a controlled environment.** Other live sessions move the no-op baseline by more than the effect under test: one run's three all-suppressed baselines read 16 / 27 / 103. Any single-window A/B on this deck is worthless. Interleave baselines, repeat, take medians — and discard runs whose baselines disagree.
+- **An occluded window does no rendering work at all.** A lab bench of 12,200 layer-minting boxes crossed with 30 transform animations returned `updateRendering` 0 in every condition, because the lab window was behind the developer's. Confirm the window is unoccluded before believing any lab measurement — which also makes the 0.9% in `#record-lab` suspect for the same reason.
+- **WAAPI `pause()` is not a null operation.** Pausing an accelerated animation demotes it off the compositor and applies its pose on the main thread; pausing a subset made the walk *worse* than baseline. Suppress with `animation: none` via a probe stylesheet instead.
+- **`calc(var(--…))` in keyframe values is not an acceleration defeater.** 100 glyphs, var-based stops vs the identical numbers as literals: `updateRendering` 26 vs 33, `setAnimatedPropertiesInStyle` 7 vs 14. Identical within noise. The pulsing dot's keyframe authoring is not the problem.
