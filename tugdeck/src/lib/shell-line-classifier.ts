@@ -13,6 +13,16 @@
  * was writing a sentence that happens to start with its name — is a judgement
  * about English, and the model makes it.
  *
+ * Between: tugcast's grammar grader (the `tuggram` crate, reached over the
+ * `shell_grammar` verb) asks *does the whole line name things that exist, and do
+ * its tokens fit what the program can be shown to accept?* It refines within the
+ * candidates {@link isShellCandidate} admits, doing what the deck cannot: lexing
+ * past the first token, resolving every segment head of a pipeline, and stating
+ * a `stat` on a path-shaped opener the deck can only take on faith.
+ * {@link modelCallForBand} is what its four bands mean here — and note that none
+ * of them routes: the grader can withhold the model (`no`) or arm it with the
+ * program's documentation (`maybe`), never decide.
+ *
  * After: {@link vetoesShellVerdict} asks *is this line shaped like English?* and
  * can refuse to honor a `shell` verdict. It can only refuse; see its own doc for
  * why that makes it a different instrument from the rules described next.
@@ -47,6 +57,50 @@
  *
  * @module lib/shell-line-classifier
  */
+
+/**
+ * How strong tugcast's grammar grader found the evidence that a line is a shell
+ * command (`tuggram`, served over the `shell_grammar` verb).
+ *
+ * The bands measure **evidence, not validity**. `no` requires evidence of
+ * absence — the line lexed cleanly and something in it names nothing that
+ * exists — and nothing else produces one. A stale catalog, a wrapper script, a
+ * flag from a newer release all degrade `yes` toward `maybe`, never toward
+ * `no`, so grammar drift costs one band of caution and can never swallow a real
+ * command.
+ */
+export type GrammarBand = "yes" | "maybe" | "no" | "unknown";
+
+/**
+ * What the grader's band means for the model call — the third fact source in
+ * this module's bracket, and the only one that can spend or save inference.
+ *
+ * Read what this does *not* do. No band routes to the shell: `yes` still asks
+ * the model, because `make the watch loop resilient` is a syntactically valid
+ * `make` invocation and grammar validity is not intent (which is exactly why
+ * the shape rules that decided *toward* shell were removed from this module).
+ * The grader's only unilateral decision is `no` → Claude, which falls in the
+ * direction doubt is supposed to fall here.
+ */
+export function modelCallForBand(
+  band: GrammarBand,
+): "skip" | "ask" | "ask-with-grammar" {
+  switch (band) {
+    // Something in the line names nothing on this machine. Asking the model
+    // would spend a round trip on a question already answered.
+    case "no":
+      return "skip";
+    // A real command the grammar can't confirm. The model decides, holding the
+    // program's own documentation.
+    case "maybe":
+      return "ask-with-grammar";
+    // A clean parse, and a resolving command nothing knows the grammar of.
+    // Both are the pre-grader question, asked the pre-grader way.
+    case "yes":
+    case "unknown":
+      return "ask";
+  }
+}
 
 /** A leading `NAME=value` environment-assignment token (skipped to find the command). */
 const ENV_ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/;
@@ -202,15 +256,25 @@ export class ShellVerdictCache {
 
   private readonly entries = new Map<string, "shell" | "prompt">();
 
-  get(text: string): "shell" | "prompt" | undefined {
-    return this.entries.get(text);
+  /**
+   * A verdict formed while reading the program's documentation is not the same
+   * answer as one formed without it, so the two are remembered separately for
+   * the same draft.
+   */
+  private static key(text: string, withGrammar: boolean): string {
+    return withGrammar ? ` grammar ${text}` : text;
   }
 
-  set(text: string, verdict: "shell" | "prompt"): void {
+  get(text: string, withGrammar = false): "shell" | "prompt" | undefined {
+    return this.entries.get(ShellVerdictCache.key(text, withGrammar));
+  }
+
+  set(text: string, verdict: "shell" | "prompt", withGrammar = false): void {
+    const key = ShellVerdictCache.key(text, withGrammar);
     // Re-insert so a repeatedly-consulted draft stays hot rather than aging out
     // behind drafts that were asked about once.
-    this.entries.delete(text);
-    this.entries.set(text, verdict);
+    this.entries.delete(key);
+    this.entries.set(key, verdict);
     while (this.entries.size > ShellVerdictCache.capacity) {
       const oldest = this.entries.keys().next();
       if (oldest.done === true) break;

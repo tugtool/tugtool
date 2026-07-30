@@ -25,7 +25,14 @@ ANSWER = re.compile(r"raw=(?P<raw>.*?) headline=(?P<headline>.*?)(?= normalized=
 # The classify verdict, logged with the line it judged. The text may contain
 # anything including `verdict=`, so the verdict is anchored to end of line and
 # the text takes whatever precedes it.
-VERDICT = re.compile(r"text=(?P<text>.*) verdict=(?P<verdict>\w+)\s*$")
+# `grammar=` records which classify prompt ran and was added after this regex
+# was first written. Anchoring `verdict=` to end-of-line made every answered
+# line invisible the moment a field landed behind it, and the harness read that
+# as the model never answering — so the tail is optional and the whole match no
+# longer depends on `verdict` being last.
+VERDICT = re.compile(
+    r"text=(?P<text>.*?) verdict=(?P<verdict>\w+)(?: grammar=(?P<grammar>\w+))?\s*$"
+)
 
 INSTANCES = Path.home() / "Library/Application Support/Tug/instances"
 MODELS = Path.home() / "Library/Application Support/Tug/models"
@@ -81,8 +88,13 @@ def ask(digest: str, instance: str, path: Path, timeout: float) -> tuple[str, st
     return None
 
 
-def verdicts(path: Path) -> list[tuple[str, str]]:
-    """Every `(line, verdict)` the instance has classified, oldest first."""
+def verdicts(path: Path) -> list[tuple[str, str, bool]]:
+    """Every `(line, verdict, read_the_documentation)` classified, oldest first.
+
+    The third element says which classify prompt answered. The two variants ask
+    different questions, so a score that could not tell them apart would be
+    averaging two measurements.
+    """
     if not path.exists():
         return []
     out = []
@@ -92,13 +104,17 @@ def verdicts(path: Path) -> list[tuple[str, str]]:
             continue
         m = VERDICT.search(line)
         if m:
-            out.append((m.group("text").strip(), m.group("verdict").strip()))
+            out.append((
+                m.group("text").strip(),
+                m.group("verdict").strip(),
+                m.group("grammar") == "true",
+            ))
     return out
 
 
 def ask_classify(
-    text: str, instance: str, path: Path, timeout: float
-) -> tuple[str, int] | None:
+    text: str, instance: str, path: Path, timeout: float, grammar: str | None = None
+) -> tuple[str, int, bool] | None:
     """Put one line to the classifier and read the verdict back out of the log.
 
     Same shape as `ask`, and for the same reason: the answer is taken from the
@@ -109,12 +125,20 @@ def ask_classify(
     A single-line draft is the only thing the deck ever classifies, so a text
     carrying a newline would not be a case the feature can see; nothing here
     guards against one, because the corpus is the only caller.
+
+    `grammar` is the program's own documentation, sent for a Maybe-band line so
+    the app composes its documentation-bearing classify prompt. A synopsis is
+    multi-line and full of `=`, which `-p` survives because the param parser
+    splits on the FIRST `=` only.
     """
     before = len(verdicts(path))
     started = time.monotonic()
+    params = ["-p", f"text={text}"]
+    if grammar:
+        params += ["-p", f"grammar={grammar}"]
     proc = subprocess.run(
         ["tugutil", "host", "tell", "local_model_classify",
-         "--instance", instance, "-p", f"text={text}"],
+         "--instance", instance, *params],
         capture_output=True, text=True,
     )
     if proc.returncode != 0:
@@ -124,7 +148,8 @@ def ask_classify(
         time.sleep(0.2)
         got = verdicts(path)
         if len(got) > before:
-            return got[-1][1], round((time.monotonic() - started) * 1000)
+            _, verdict, read_docs = got[-1]
+            return verdict, round((time.monotonic() - started) * 1000), read_docs
     return None
 
 

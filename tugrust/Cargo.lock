@@ -2541,6 +2541,7 @@ dependencies = [
  "tugchanges-core",
  "tugcore",
  "tugdash-core",
+ "tuggram",
  "tuglog",
  "tugutil-core",
  "ureq",
@@ -2614,6 +2615,15 @@ dependencies = [
  "tugcast-core",
  "tugcore",
  "tuglog",
+]
+
+[[package]]
+name = "tuggram"
+version = "0.8.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

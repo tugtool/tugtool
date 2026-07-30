@@ -135,6 +135,7 @@ import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
 import type { SideQuestionStore } from "@/lib/side-question-store";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
 import type { PathCommandsStore } from "@/lib/path-commands-store";
+import type { ShellGrammarStore } from "@/lib/shell-grammar-store";
 import type { PendingContextStore } from "@/lib/pending-context-store";
 import { deriveSessionCardBannerSpec, humanizeErrorSummary } from "./session-card-banner-spec";
 import { TransientNoticeController } from "./transient-notice-controller";
@@ -463,6 +464,7 @@ export interface SessionCardServices {
   shellSessionStore: ShellSessionStore;
   /** Login-PATH command set for the shell-line classifier ([P08]). */
   pathCommandsStore: PathCommandsStore;
+  shellGrammarStore: ShellGrammarStore;
   /** `±`-route Changes controller — selection + commit/draft triggers ([P07]). */
   changesController: ChangesRouteController;
   /** Staged shell / `/btw` context queue — consumed at send, surfaced to the
@@ -2320,7 +2322,7 @@ export function SessionCardBody({
   renderTurnTrailing,
   footerContent,
 }: SessionCardBodyProps) {
-  const { codeSessionStore, shellSessionStore, pathCommandsStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, changesController, pendingContextStore, entryDelegateRef } = services;
+  const { codeSessionStore, shellSessionStore, pathCommandsStore, shellGrammarStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, changesController, pendingContextStore, entryDelegateRef } = services;
 
   // One Find session per card body — the transcript-search state for the `⌕`
   // route. Owned here so it is in scope for both the prompt entry (query +
@@ -4239,6 +4241,7 @@ export function SessionCardBody({
               codeSessionStore={codeSessionStore}
               shellSessionStore={shellSessionStore}
               pathCommandsStore={pathCommandsStore}
+              shellGrammarStore={shellGrammarStore}
               findSession={findSession}
               commitMode={commitModeController}
               // A rejected drop / paste (unsupported, oversize, or

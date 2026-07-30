@@ -1,6 +1,10 @@
 import { describe, it, expect } from "bun:test";
 
-import { isShellCandidate, ShellVerdictCache } from "../shell-line-classifier";
+import {
+  isShellCandidate,
+  modelCallForBand,
+  ShellVerdictCache,
+} from "../shell-line-classifier";
 
 // A representative login-PATH set. The precondition keys the first command token
 // against this; a line opening on anything else cannot be a command.
@@ -193,6 +197,30 @@ describe("isShellCandidate — gates", () => {
   });
 });
 
+describe("modelCallForBand — what a grade means for the model call", () => {
+  it("withholds the model only on evidence of absence", () => {
+    expect(modelCallForBand("no")).toBe("skip");
+  });
+
+  it("arms the model with documentation exactly when grammar could not confirm", () => {
+    expect(modelCallForBand("maybe")).toBe("ask-with-grammar");
+  });
+
+  it("asks the plain question on a clean parse and on no evidence alike", () => {
+    // A `yes` still asks: `make the watch loop resilient` is a valid `make`
+    // invocation, and grammar validity is not intent. An `unknown` is the
+    // pre-grader question asked the pre-grader way.
+    expect(modelCallForBand("yes")).toBe("ask");
+    expect(modelCallForBand("unknown")).toBe("ask");
+  });
+
+  it("never routes — no band reaches the shell on the grader's authority", () => {
+    const decisions = (["yes", "maybe", "no", "unknown"] as const).map(modelCallForBand);
+    expect(decisions).not.toContain("route");
+    expect(new Set(decisions)).toEqual(new Set(["ask", "ask-with-grammar", "skip"]));
+  });
+});
+
 describe("ShellVerdictCache", () => {
   it("remembers a verdict by exact draft text", () => {
     const cache = new ShellVerdictCache();
@@ -221,6 +249,19 @@ describe("ShellVerdictCache", () => {
     cache.set("one more", "prompt");
     expect(cache.get("keep me")).toBe("shell");
     expect(cache.get("filler 0")).toBeUndefined();
+  });
+
+  it("remembers the grammar-bearing answer apart from the plain one", () => {
+    // A verdict formed while reading the program's documentation is a
+    // different answer to a different question, so it cannot stand in for the
+    // plain one or be overwritten by it.
+    const cache = new ShellVerdictCache();
+    cache.set("git stauts", "prompt", true);
+    expect(cache.get("git stauts", true)).toBe("prompt");
+    expect(cache.get("git stauts")).toBeUndefined();
+    cache.set("git stauts", "shell");
+    expect(cache.get("git stauts")).toBe("shell");
+    expect(cache.get("git stauts", true)).toBe("prompt");
   });
 
   it("clears wholesale", () => {

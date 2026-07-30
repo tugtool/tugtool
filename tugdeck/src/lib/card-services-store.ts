@@ -43,6 +43,7 @@ import { HooksInventoryStore } from "./hooks-inventory-store";
 import { SideQuestionStore } from "./side-question-store";
 import { ShellSessionStore } from "./shell-session-store";
 import { PathCommandsStore } from "./path-commands-store";
+import { ShellGrammarStore } from "./shell-grammar-store";
 import { PendingContextStore } from "./pending-context-store";
 import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
@@ -127,6 +128,12 @@ export interface CardServices {
    * reply lands.
    */
   readonly pathCommandsStore: PathCommandsStore;
+  /**
+   * The command-grammar grader tugcast serves over the same `SHELL_OUTPUT`
+   * feed. Request-per-line rather than requested at bind, because what it
+   * grades is the draft being typed.
+   */
+  readonly shellGrammarStore: ShellGrammarStore;
   /**
    * The `±`-route Changes controller ([P07]) — a filtered, selection-aware
    * projection over the app-level `ChangesetAllStore` (0x24) scoped to this
@@ -529,6 +536,15 @@ class CardServicesStore {
     );
     pathCommandsStore.request();
 
+    // Command-grammar grading for the same classifier. Shares the shell
+    // session's SHELL_OUTPUT feed; nothing to request at bind, since a grade is
+    // about one typed line.
+    const shellGrammarStore = new ShellGrammarStore(
+      shellSessionFeedStore,
+      FeedId.SHELL_OUTPUT,
+      binding.tugSessionId,
+    );
+
     // `±`-route Changes controller ([P07]): a filtered projection over the
     // app-level `ChangesetAllStore` singleton — NO new FeedStore (the
     // per-workspace CHANGESET feed 0x23 is retired). Scoped to this card's
@@ -636,6 +652,7 @@ class CardServicesStore {
       shellSessionStore,
       shellSessionFeedStore,
       pathCommandsStore,
+      shellGrammarStore,
       changesController,
       pendingContextStore,
       fileCompletionProvider,
@@ -663,6 +680,7 @@ class CardServicesStore {
     services.sideQuestionFeedStore.dispose();
     services.shellSessionStore.dispose();
     services.pathCommandsStore.dispose();
+    services.shellGrammarStore.dispose();
     services.shellSessionFeedStore.dispose();
     services.changesController.dispose();
     services.pendingContextStore.dispose();

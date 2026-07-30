@@ -1,0 +1,14 @@
+[package]
+name = "tuggram"
+description = "Shell command-grammar grader — bands a typed line against the login PATH and a baked command catalog"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

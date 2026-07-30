@@ -16,80 +16,372 @@
     "Every line here was really put to the model: the set was recovered from the",
     "`local model classify answered` lines in the accumulated tugcast logs. The",
     "two long prose entries are the false SHELL verdicts from real use on",
-    "2026-07-29 that opened this investigation — both ran."
+    "2026-07-29 that opened this investigation — both ran.",
+    "",
+    "Some cases carry a `band`: the grade `tuggram` must give that line against",
+    "the committed catalog and `data/corpus-commands.txt`, asserted hermetically",
+    "by `cargo nextest run -p tuggram corpus`. A band is recorded only where it is",
+    "stable; a line whose grade depends on what a machine happens to have",
+    "installed carries none.",
+    "",
+    "Most `band: no` entries were authored rather than recovered, because the",
+    "No band is invisible to a corpus built the way this one was: every recovered",
+    "line REACHED the model, so every recovered opener resolved. They open on",
+    "words no machine has as a program. Four recovered cases carry the label too,",
+    "opening on `please`, `why`, `how` and `can`. Note what none of them",
+    "measure — in",
+    "production `isShellCandidate` refuses these before the grader ever sees them,",
+    "so the inference they save here was already being saved. What the grader",
+    "genuinely adds is an unresolving pipeline tail and a path-shaped opener that",
+    "does not exist, and neither fits this corpus's one-command-per-case shape;",
+    "both are verified against the live app instead."
   ],
   "cases": [
-    { "text": "ls", "label": "shell" },
-    { "text": "whoami", "label": "shell" },
-    { "text": "uptime", "label": "shell" },
-    { "text": "ps aux", "label": "shell" },
-    { "text": "git status", "label": "shell" },
-    { "text": "git commit -m \"fix crash\"", "label": "shell" },
-    { "text": "cargo nextest run", "label": "shell" },
-    { "text": "brew install jq", "label": "shell" },
-    { "text": "docker ps -a", "label": "shell" },
-    { "text": "killall Dock", "label": "shell" },
-    { "text": "./setup.sh", "label": "shell" },
-    { "text": "cal 2026", "label": "shell" },
-    { "text": "du src", "label": "shell" },
-    { "text": "dirname src", "label": "shell" },
-    { "text": "basename Justfile", "label": "shell" },
-    { "text": "cksum Justfile", "label": "shell" },
-    { "text": "stat Justfile", "label": "shell" },
-    { "text": "file Justfile", "label": "shell" },
-    { "text": "head Justfile", "label": "shell" },
-    { "text": "tail Justfile", "label": "shell" },
-    { "text": "less README", "label": "shell" },
-    { "text": "open .", "label": "shell" },
-    { "text": "which bun", "label": "shell" },
-    { "text": "man git", "label": "shell" },
-    { "text": "make test", "label": "shell" },
-    { "text": "time make", "label": "shell" },
-    { "text": "time cargo build", "label": "shell" },
-    { "text": "touch scratch", "label": "shell" },
-    { "text": "sort names", "label": "shell" },
-    { "text": "split notes.txt", "label": "shell" },
-    { "text": "join a.txt b.txt", "label": "shell" },
-    { "text": "last reboot", "label": "shell" },
-    { "text": "who -b", "label": "shell" },
-    { "text": "write kocienda", "label": "shell" },
-    { "text": "say hello", "label": "shell" },
-
-    { "text": "head back to the previous approach", "label": "prompt" },
-    { "text": "tail the log and tell me what you see", "label": "prompt" },
-    { "text": "open a PR for this", "label": "prompt" },
-    { "text": "make the button bigger", "label": "prompt" },
-    { "text": "make sure the tests pass", "label": "prompt" },
-    { "text": "man that build took forever", "label": "prompt" },
-    { "text": "sort out the merge conflict", "label": "prompt" },
-    { "text": "sort these imports alphabetically", "label": "prompt" },
-    { "text": "split this function into two", "label": "prompt" },
-    { "text": "join the two lists before sorting", "label": "prompt" },
-    { "text": "last time this worked was before the refactor", "label": "prompt" },
-    { "text": "who owns this code path", "label": "prompt" },
-    { "text": "write kocienda a summary of the outage", "label": "prompt" },
-    { "text": "write me a haiku about summertime", "label": "prompt" },
-    { "text": "write me a commit message for this diff", "label": "prompt" },
-    { "text": "write a test for the classifier", "label": "prompt" },
-    { "text": "say more about that tradeoff", "label": "prompt" },
-    { "text": "time to refactor this module", "label": "prompt" },
-    { "text": "touch base on the roadmap", "label": "prompt" },
-    { "text": "top priority is the crash on launch", "label": "prompt" },
-    { "text": "file a bug about the crash", "label": "prompt" },
-    { "text": "find the memory leak", "label": "prompt" },
-    { "text": "find out why it crashed", "label": "prompt" },
-    { "text": "test the parser", "label": "prompt" },
-    { "text": "test whether this handles unicode", "label": "prompt" },
-    { "text": "build the project", "label": "prompt" },
-    { "text": "cut the duplication in these two files", "label": "prompt" },
-    { "text": "look at the failing test and tell me why", "label": "prompt" },
-    { "text": "please add a docstring here", "label": "prompt" },
-    { "text": "why is the build failing?", "label": "prompt" },
-    { "text": "what does this function do?", "label": "prompt" },
-    { "text": "how do I fix this null pointer bug?", "label": "prompt" },
-    { "text": "can you summarize the diff?", "label": "prompt" },
-    { "text": "yes and also fix the warning", "label": "prompt" },
-    { "text": "count the number of lines of code with tokei", "label": "prompt" },
-    { "text": "make a task list (not a markdown list) to write a c program to make a command-line calculator. set it up with a makefile and a README.", "label": "prompt" }
+    {
+      "text": "ls",
+      "label": "shell"
+    },
+    {
+      "text": "whoami",
+      "label": "shell"
+    },
+    {
+      "text": "uptime",
+      "label": "shell"
+    },
+    {
+      "text": "ps aux",
+      "label": "shell"
+    },
+    {
+      "text": "git status",
+      "label": "shell"
+    },
+    {
+      "text": "git commit -m \"fix crash\"",
+      "label": "shell"
+    },
+    {
+      "text": "cargo nextest run",
+      "label": "shell"
+    },
+    {
+      "text": "brew install jq",
+      "label": "shell"
+    },
+    {
+      "text": "docker ps -a",
+      "label": "shell"
+    },
+    {
+      "text": "killall Dock",
+      "label": "shell"
+    },
+    {
+      "text": "./setup.sh",
+      "label": "shell"
+    },
+    {
+      "text": "cal 2026",
+      "label": "shell"
+    },
+    {
+      "text": "du src",
+      "label": "shell"
+    },
+    {
+      "text": "dirname src",
+      "label": "shell"
+    },
+    {
+      "text": "basename Justfile",
+      "label": "shell"
+    },
+    {
+      "text": "cksum Justfile",
+      "label": "shell"
+    },
+    {
+      "text": "stat Justfile",
+      "label": "shell"
+    },
+    {
+      "text": "file Justfile",
+      "label": "shell"
+    },
+    {
+      "text": "head Justfile",
+      "label": "shell"
+    },
+    {
+      "text": "tail Justfile",
+      "label": "shell"
+    },
+    {
+      "text": "less README",
+      "label": "shell"
+    },
+    {
+      "text": "open .",
+      "label": "shell"
+    },
+    {
+      "text": "which bun",
+      "label": "shell"
+    },
+    {
+      "text": "man git",
+      "label": "shell"
+    },
+    {
+      "text": "make test",
+      "label": "shell"
+    },
+    {
+      "text": "time make",
+      "label": "shell"
+    },
+    {
+      "text": "time cargo build",
+      "label": "shell"
+    },
+    {
+      "text": "touch scratch",
+      "label": "shell"
+    },
+    {
+      "text": "sort names",
+      "label": "shell"
+    },
+    {
+      "text": "split notes.txt",
+      "label": "shell"
+    },
+    {
+      "text": "join a.txt b.txt",
+      "label": "shell"
+    },
+    {
+      "text": "last reboot",
+      "label": "shell"
+    },
+    {
+      "text": "who -b",
+      "label": "shell"
+    },
+    {
+      "text": "write kocienda",
+      "label": "shell"
+    },
+    {
+      "text": "say hello",
+      "label": "shell"
+    },
+    {
+      "text": "head back to the previous approach",
+      "label": "prompt"
+    },
+    {
+      "text": "tail the log and tell me what you see",
+      "label": "prompt"
+    },
+    {
+      "text": "open a PR for this",
+      "label": "prompt"
+    },
+    {
+      "text": "make the button bigger",
+      "label": "prompt"
+    },
+    {
+      "text": "make sure the tests pass",
+      "label": "prompt"
+    },
+    {
+      "text": "man that build took forever",
+      "label": "prompt"
+    },
+    {
+      "text": "sort out the merge conflict",
+      "label": "prompt"
+    },
+    {
+      "text": "sort these imports alphabetically",
+      "label": "prompt"
+    },
+    {
+      "text": "split this function into two",
+      "label": "prompt"
+    },
+    {
+      "text": "join the two lists before sorting",
+      "label": "prompt"
+    },
+    {
+      "text": "last time this worked was before the refactor",
+      "label": "prompt"
+    },
+    {
+      "text": "who owns this code path",
+      "label": "prompt"
+    },
+    {
+      "text": "write kocienda a summary of the outage",
+      "label": "prompt"
+    },
+    {
+      "text": "write me a haiku about summertime",
+      "label": "prompt"
+    },
+    {
+      "text": "write me a commit message for this diff",
+      "label": "prompt"
+    },
+    {
+      "text": "write a test for the classifier",
+      "label": "prompt"
+    },
+    {
+      "text": "say more about that tradeoff",
+      "label": "prompt"
+    },
+    {
+      "text": "time to refactor this module",
+      "label": "prompt"
+    },
+    {
+      "text": "touch base on the roadmap",
+      "label": "prompt"
+    },
+    {
+      "text": "top priority is the crash on launch",
+      "label": "prompt"
+    },
+    {
+      "text": "file a bug about the crash",
+      "label": "prompt"
+    },
+    {
+      "text": "find the memory leak",
+      "label": "prompt"
+    },
+    {
+      "text": "find out why it crashed",
+      "label": "prompt"
+    },
+    {
+      "text": "test the parser",
+      "label": "prompt"
+    },
+    {
+      "text": "test whether this handles unicode",
+      "label": "prompt"
+    },
+    {
+      "text": "build the project",
+      "label": "prompt"
+    },
+    {
+      "text": "cut the duplication in these two files",
+      "label": "prompt"
+    },
+    {
+      "text": "look at the failing test and tell me why",
+      "label": "prompt"
+    },
+    {
+      "text": "please add a docstring here",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "why is the build failing?",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "what does this function do?",
+      "label": "prompt"
+    },
+    {
+      "text": "how do I fix this null pointer bug?",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "can you summarize the diff?",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "yes and also fix the warning",
+      "label": "prompt"
+    },
+    {
+      "text": "count the number of lines of code with tokei",
+      "label": "prompt"
+    },
+    {
+      "text": "make a task list (not a markdown list) to write a c program to make a command-line calculator. set it up with a makefile and a README.",
+      "label": "prompt"
+    },
+    {
+      "text": "explain this stack trace",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "summarize what changed in the last hour",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "refactor the reconnect logic",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "investigate why the socket drops",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "rewrite this loop without the index",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "describe what the grader does",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "clarify the difference between the two bands",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "simplify the submit path",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "untangle these two responsibilities",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "reconsider the caching strategy",
+      "label": "prompt",
+      "band": "no"
+    },
+    {
+      "text": "yes",
+      "label": "shell"
+    },
+    {
+      "text": "sleep 5",
+      "label": "shell"
+    }
   ]
 }

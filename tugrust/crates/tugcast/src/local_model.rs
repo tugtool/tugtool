@@ -937,8 +937,13 @@ impl LocalModelRequester {
     /// The deck asks this over its own WebKit bridge; this is the same
     /// question reachable from the socket, so the verdict can be observed
     /// without a composer in the loop.
-    pub async fn classify(&self, text: String) -> Result<String, String> {
-        self.request("classify", text, None).await
+    ///
+    /// `grammar` is the program's own condensed documentation, attached by the
+    /// command-grammar grader when it could not confirm the line against it.
+    /// The app picks its prompt by whether this is present, so the harness can
+    /// drive both variants from here.
+    pub async fn classify(&self, text: String, grammar: Option<String>) -> Result<String, String> {
+        self.request_with("classify", text, None, grammar).await
     }
 
     /// The ceiling and the slow threshold for one task, in one place, so a
@@ -957,6 +962,16 @@ impl LocalModelRequester {
         prompt: String,
         max_tokens: Option<u32>,
     ) -> Result<String, String> {
+        self.request_with(task, prompt, max_tokens, None).await
+    }
+
+    async fn request_with(
+        &self,
+        task: &str,
+        prompt: String,
+        max_tokens: Option<u32>,
+        grammar: Option<String>,
+    ) -> Result<String, String> {
         let (timeout, _) = Self::bounds(task);
         let id = format!("lm-{}", self.next_id.fetch_add(1, Ordering::Relaxed));
         let body = serde_json::json!({
@@ -966,6 +981,7 @@ impl LocalModelRequester {
             "task": task,
             "prompt": prompt,
             "max_tokens": max_tokens,
+            "grammar": grammar,
         });
         let line = serde_json::to_string(&body).map_err(|e| format!("{e}"))?;
 
@@ -1236,11 +1252,13 @@ pub fn request_classification(
     state: &SharedLocalModelState,
     cat: Option<broadcast::Sender<Frame>>,
     text: String,
+    grammar: Option<String>,
 ) {
     let requester = state.requester();
+    let has_grammar = grammar.is_some();
     tokio::spawn(async move {
         let result = match requester {
-            Some(requester) => requester.classify(text.clone()).await,
+            Some(requester) => requester.classify(text.clone(), grammar).await,
             None => Err("local model host unavailable".to_string()),
         };
         // No elapsed here: `local model call` already timed this request from
@@ -1248,11 +1266,16 @@ pub fn request_classification(
         // to wonder which is authoritative.
         let (ok, verdict, error) = match result {
             Ok(verdict) => {
-                info!(%text, %verdict, "local model classify answered");
+                info!(
+                    %text,
+                    %verdict,
+                    grammar = has_grammar,
+                    "local model classify answered"
+                );
                 (true, Some(verdict), None)
             }
             Err(error) => {
-                warn!(%text, %error, "local model classify failed");
+                warn!(%text, %error, grammar = has_grammar, "local model classify failed");
                 (false, None, Some(error))
             }
         };

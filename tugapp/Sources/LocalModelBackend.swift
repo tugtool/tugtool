@@ -9,7 +9,11 @@ import MLXLMCommon
 /// the tugcast control socket — decode into this same type.
 struct LocalModelRequest {
     enum Kind {
-        case classify(text: String, labels: [String])
+        /// `grammar` is the program's own condensed documentation, supplied by
+        /// the command-grammar grader when it could not confirm the line
+        /// against it. Present selects the documentation-bearing prompt;
+        /// absent is the base classify prompt, unchanged.
+        case classify(text: String, labels: [String], grammar: String?)
         case summarize(prompt: String)
         case generate(prompt: String, maxTokens: Int?)
         case availability
@@ -30,7 +34,7 @@ struct LocalModelRequest {
         /// turnaround the logs later show.
         var inputChars: Int {
             switch self {
-            case .classify(let text, _): return text.count
+            case .classify(let text, _, let grammar): return text.count + (grammar?.count ?? 0)
             case .summarize(let prompt): return prompt.count
             case .generate(let prompt, _): return prompt.count
             case .availability, .prewarm: return 0

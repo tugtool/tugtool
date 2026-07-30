@@ -1245,7 +1245,10 @@ extension MainWindow: WKScriptMessageHandler {
             switch task {
             case "classify":
                 let labels = (body["labels"] as? [String]) ?? ["shell", "prompt"]
-                kind = (body["text"] as? String).map { .classify(text: $0, labels: labels) }
+                let grammar = body["grammar"] as? String
+                kind = (body["text"] as? String).map {
+                    .classify(text: $0, labels: labels, grammar: grammar)
+                }
             case "summarize":
                 kind = (body["prompt"] as? String).map { .summarize(prompt: $0) }
             case "generate":

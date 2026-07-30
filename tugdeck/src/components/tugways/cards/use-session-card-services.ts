@@ -214,6 +214,7 @@ export function useSessionCardServices(cardId: string): SessionCardServices | nu
       sideQuestionStore: services.sideQuestionStore,
       shellSessionStore: services.shellSessionStore,
       pathCommandsStore: services.pathCommandsStore,
+      shellGrammarStore: services.shellGrammarStore,
       changesController: services.changesController,
       pendingContextStore: services.pendingContextStore,
       entryDelegateRef,

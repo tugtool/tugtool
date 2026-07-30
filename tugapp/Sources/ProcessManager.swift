@@ -583,7 +583,10 @@ class ProcessManager {
             case "generate":
                 kind = .generate(prompt: prompt, maxTokens: maxTokens)
             case "classify":
-                kind = .classify(text: prompt, labels: ["shell", "prompt"])
+                // The program's documentation when the caller is driving the
+                // grammar-bearing variant; absent is the base classify prompt.
+                let grammar = (msg.data["grammar"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                kind = .classify(text: prompt, labels: ["shell", "prompt"], grammar: grammar)
             default:
                 sendLocalModelResult(id: id, ok: false, text: nil, error: "unsupported task \(task)")
                 return

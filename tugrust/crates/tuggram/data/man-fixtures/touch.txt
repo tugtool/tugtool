@@ -1,0 +1,107 @@
+TOUCH(1)                               General Commands Manual                              TOUCH(1)
+
+NNAAMMEE
+     ttoouucchh – change file access and modification times
+
+SSYYNNOOPPSSIISS
+     ttoouucchh [--AA _[_-_]_[_[_h_h_]_m_m_]_S_S] [--aacchhmm] [--rr _f_i_l_e] [--tt _[_[_C_C_]_Y_Y_]_M_M_D_D_h_h_m_m_[_._S_S_]]
+           [--dd _Y_Y_Y_Y_-_M_M_-_D_D_T_h_h_:_m_m_:_S_S_[_._f_r_a_c_]_[_t_z_]] _f_i_l_e _._._.
+
+DDEESSCCRRIIPPTTIIOONN
+     The ttoouucchh utility sets the modification and access times of files.  If any file does not exist,
+     it is created with default permissions.
+
+     By default, ttoouucchh changes both modification and access times.  The --aa and --mm flags may be used
+     to select the access time or the modification time individually.  Selecting both is equivalent
+     to the default.  By default, the timestamps are set to the current time.  The --dd and --tt flags
+     explicitly specify a different time, and the --rr flag specifies to set the times those of the
+     specified file.  The --AA flag adjusts the values by a specified amount.
+
+     The following options are available:
+
+     --AA      Adjust the access and modification time stamps for the file by the specified value.
+             This flag is intended for use in modifying files with incorrectly set time stamps.
+
+             The argument is of the form “[-][[hh]mm]SS” where each pair of letters represents the
+             following:
+
+                   _-       Make the adjustment negative: the new time stamp is set to be before the
+                           old one.
+                   _h_h      The number of hours, from 00 to 99.
+                   _m_m      The number of minutes, from 00 to 59.
+                   _S_S      The number of seconds, from 00 to 59.
+
+             The --AA flag implies the --cc flag: if any file specified does not exist, it will be
+             silently ignored.
+
+     --aa      Change the access time of the file.  The modification time of the file is not changed
+             unless the --mm flag is also specified.
+
+     --cc      Do not create the file if it does not exist.  The ttoouucchh utility does not treat this as
+             an error.  No error messages are displayed and the exit value is not affected.
+
+     --dd      Change the access and modification times to the specified date time instead of the
+             current time of day.  The argument is of the form “YYYY-MM-DDThh:mm:SS[.frac][tz]”
+             where the letters represent the following:
+                   _Y_Y_Y_Y    At least four decimal digits representing the year.
+                   _M_M, _D_D, _h_h, _m_m, _S_S
+                           As with --tt time.
+                   _T       The letter T or a space is the time designator.
+                   _._f_r_a_c   An optional fraction, consisting of a period or a comma followed by one
+                           or more digits.  The number of significant digits depends on the kernel
+                           configuration and the filesystem, and may be zero.
+                   _t_z      An optional letter Z indicating the time is in UTC.  Otherwise, the time
+                           is assumed to be in local time.  Local time is affected by the value of
+                           the TZ environment variable.
+
+     --hh      If the file is a symbolic link, change the times of the link itself rather than the
+             file that the link points to.  Note that --hh implies --cc and thus will not create any new
+             files.
+
+     --mm      Change the modification time of the file.  The access time of the file is not changed
+             unless the --aa flag is also specified.
+
+     --rr      Use the access and modifications times from the specified file instead of the current
+             time of day.
+
+     --tt      Change the access and modification times to the specified time instead of the current
+             time of day.  The argument is of the form “[[CC]YY]MMDDhhmm[.SS]” where each pair of
+             letters represents the following:
+
+                   _C_C      The first two digits of the year (the century).
+                   _Y_Y      The second two digits of the year.  If “YY” is specified, but “CC” is
+                           not, a value for “YY” between 69 and 99 results in a “CC” value of 19.
+                           Otherwise, a “CC” value of 20 is used.
+                   _M_M      The month of the year, from 01 to 12.
+                   _D_D      the day of the month, from 01 to 31.
+                   _h_h      The hour of the day, from 00 to 23.
+                   _m_m      The minute of the hour, from 00 to 59.
+                   _S_S      The second of the minute, from 00 to 60.
+
+             If the “CC” and “YY” letter pairs are not specified, the values default to the current
+             year.  If the “SS” letter pair is not specified, the value defaults to 0.
+
+EEXXIITT SSTTAATTUUSS
+     The ttoouucchh utility exits 0 on success, and >0 if an error occurs.
+
+CCOOMMPPAATTIIBBIILLIITTYY
+     The obsolescent form of ttoouucchh, where a time format is specified as the first argument, is
+     supported.  When no --rr or --tt option is specified, there are at least two arguments, and the
+     first argument is a string of digits either eight or ten characters in length, the first
+     argument is interpreted as a time specification of the form “MMDDhhmm[YY]”.
+
+     The “MM”, “DD”, “hh” and “mm” letter pairs are treated as their counterparts specified to the
+     --tt option.  If the “YY” letter pair is in the range 39 to 99, the year is set to 1939 to 1999,
+     otherwise, the year is set in the 21st century.
+
+SSEEEE AALLSSOO
+     utimensat(2)
+
+SSTTAANNDDAARRDDSS
+     The ttoouucchh utility is expected to be a superset of the IEEE Std 1003.2 (“POSIX.2”)
+     specification.
+
+HHIISSTTOORRYY
+     A ttoouucchh utility appeared in Version 7 AT&T UNIX.
+
+macOS 15.6                                  June 1, 2018                                  macOS 15.6

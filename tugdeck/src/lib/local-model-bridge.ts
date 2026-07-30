@@ -119,13 +119,25 @@ function request(
 /**
  * Classify one line as a shell command or a natural-language prompt.
  * `null` means "no opinion" — the caller keeps whatever it would have done.
+ *
+ * `grammar` is the program's own condensed documentation, sent when the
+ * grammar grader could not confirm the line against it (the `maybe` band). Its
+ * presence selects a second prompt on the host side that judges the line
+ * against that documentation; its absence is the base classify prompt,
+ * unchanged.
  */
 export async function requestClassify(
   text: string,
+  grammar?: string,
   timeoutMs?: number,
 ): Promise<"shell" | "prompt" | null> {
   const result = await request(
-    { task: "classify", text, labels: ["shell", "prompt"] },
+    {
+      task: "classify",
+      text,
+      labels: ["shell", "prompt"],
+      ...(grammar === undefined ? {} : { grammar }),
+    },
     timeoutMs,
   );
   if (result === null || !result.ok) return null;

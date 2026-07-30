@@ -90,6 +90,22 @@ describe("with a host", () => {
     expect(await pending).toBe("shell");
   });
 
+  test("classify omits the grammar field entirely when there is none", () => {
+    // Absence selects the base classify prompt on the host side, so an
+    // undefined grammar must not ride along as an explicit key.
+    void requestClassify("git status");
+    expect("grammar" in (posted[0] ?? {})).toBe(false);
+  });
+
+  test("classify carries the program documentation when the grader supplied it", async () => {
+    const pending = requestClassify("git stauts", "git — the version control system");
+    expect(posted[0]?.task).toBe("classify");
+    expect(posted[0]?.text).toBe("git stauts");
+    expect(posted[0]?.grammar).toBe("git — the version control system");
+    answer({ ok: true, verdict: "prompt" });
+    expect(await pending).toBe("prompt");
+  });
+
   test("concurrent requests resolve independently", async () => {
     const first = requestClassify("git status");
     const second = requestClassify("why is the build failing?");
@@ -113,11 +129,11 @@ describe("with a host", () => {
   });
 
   test("a silent host times out to null", async () => {
-    expect(await requestClassify("git status", 20)).toBeNull();
+    expect(await requestClassify("git status", undefined, 20)).toBeNull();
   });
 
   test("a reply that arrives after the timeout is dropped", async () => {
-    const pending = requestClassify("git status", 20);
+    const pending = requestClassify("git status", undefined, 20);
     expect(await pending).toBeNull();
     // The late answer must not throw, and must not resolve anything.
     answer({ ok: true, verdict: "shell" });

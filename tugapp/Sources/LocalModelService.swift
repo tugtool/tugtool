@@ -167,6 +167,36 @@ enum LocalModelPrompts {
     read the config and tell me what changed => PROMPT
     """
 
+    /// The classify rules, plus the program's own documentation to check the
+    /// line against.
+    ///
+    /// This is the `maybe` band of the command-grammar grader: the first word
+    /// names a real program and the grader could not account for what follows
+    /// against the grammar it has baked in. Reading a synopsis and checking a
+    /// line against it is evidence-checking rather than judgement, which is the
+    /// task shape a small on-device pack is demonstrably better at.
+    ///
+    /// `{{GRAMMAR}}` is substituted with the synopsis at call time. Everything
+    /// before it is `classify` verbatim — this is an *additive* second constant
+    /// under the freeze rule above, not an edit to the base prompt, so the
+    /// base's comparability lineage is untouched and this one starts its own.
+    /// A future bake-off has to score both.
+    static let classifyWithGrammar = classify + """
+
+
+    The program's own documentation, from this machine:
+
+    {{GRAMMAR}}
+
+    Judge the line against this documentation. If what follows the first word \
+    reads as arguments this documentation accepts, answer SHELL. If it reads \
+    as an English request the documentation gives no meaning to, answer PROMPT. \
+    When in doubt, answer PROMPT.
+    """
+
+    /// The placeholder [`classifyWithGrammar`] substitutes the synopsis into.
+    static let grammarPlaceholder = "{{GRAMMAR}}"
+
     static let summarize = """
     You write the headline for a live coding session. The digest comes in \
     labeled sections. Headline the section labeled "What it is doing right \
@@ -324,6 +354,12 @@ final class LocalModelService {
             TugLog.field("output_chars", reply.ok ? (reply.text ?? reply.verdict ?? "").count : 0),
             TugLog.field("model", await mlx.residentId() ?? "none"),
         ]
+        // Which classify prompt ran. The two variants ask different questions
+        // and are not comparable, so an eval reading these lines has to be able
+        // to tell them apart.
+        if case .classify(_, _, let grammar) = request.kind {
+            fields.append(TugLog.field("grammar", grammar != nil))
+        }
         if let threshold = Self.slowThresholdMs[task], elapsed > threshold {
             fields.append(TugLog.field("slow", true))
         }
@@ -380,7 +416,7 @@ final class LocalModelService {
             await route.backend.prewarm()
             return LocalModelReply(ok: true, availability: await availability())
 
-        case .classify(let text, let labels):
+        case .classify(let text, let labels, let grammar):
             // Classify runs between Return and the line going somewhere, so it
             // is the one task that must never block on a load. Loading weights
             // takes seconds; the caller's whole budget is smaller than that, so
@@ -394,8 +430,16 @@ final class LocalModelService {
                 await mlx.loadInBackground(model: model)
                 return .failure("local model not resident")
             }
+            // The grammar-bearing variant is chosen by the presence of the
+            // documentation, not by a flag: the grader attaches a synopsis
+            // exactly when it wants the model to read one. The output budget is
+            // unchanged — this adds input tokens only, and bounded ones.
+            let instructions = grammar.map {
+                LocalModelPrompts.classifyWithGrammar.replacingOccurrences(
+                    of: LocalModelPrompts.grammarPlaceholder, with: $0)
+            } ?? LocalModelPrompts.classify
             let job = LocalModelJob(
-                instructions: LocalModelPrompts.classify,
+                instructions: instructions,
                 input: text,
                 maxTokens: LocalModelPrompts.classifyMaxTokens,
                 temperature: 0)

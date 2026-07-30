@@ -142,7 +142,13 @@ import type { HistoryEntry } from "@/lib/prompt-history-store";
 import { DEFAULT_ROUTE } from "@/lib/route-constants";
 import type { PathCommandsStore } from "@/lib/path-commands-store";
 import {
+  GRADE_SUBMIT_WAIT_MS,
+  type ShellGrammarStore,
+  UNKNOWN_GRADE,
+} from "@/lib/shell-grammar-store";
+import {
   isShellCandidate,
+  modelCallForBand,
   ShellVerdictCache,
   vetoesShellVerdict,
 } from "@/lib/shell-line-classifier";
@@ -699,6 +705,14 @@ export interface TugPromptEntryProps {
    */
   pathCommandsStore?: PathCommandsStore;
   /**
+   * The command-grammar grader tugcast serves, consulted between the PATH
+   * precondition and the model ([P06]). Optional exactly as
+   * {@link PromptEntryProps.pathCommandsStore} is — hosts without a shell (the
+   * gallery) omit it, and an absent store grades every line `unknown`, which is
+   * the pre-grader path.
+   */
+  shellGrammarStore?: ShellGrammarStore;
+  /**
    * `⌕`-route Find session store. Holds the live query, options, match set,
    * and active index for transcript search. While the Find route is active the
    * editor doc is mirrored into `findSession.setQuery`; Return advances the
@@ -1023,6 +1037,7 @@ export const TugPromptEntry = React.forwardRef<
     codeSessionStore,
     shellSessionStore,
     pathCommandsStore,
+    shellGrammarStore,
     findSession,
     commitMode,
     onAttachmentError,
@@ -2005,6 +2020,7 @@ export const TugPromptEntry = React.forwardRef<
         // the end of a submit) is where they go.
         if (update.state.doc.length === 0) {
           verdictCacheRef.current.clear();
+          shellGrammarStoreRef.current?.clear();
           pendingVerdictRef.current = null;
         }
 
@@ -2042,6 +2058,10 @@ export const TugPromptEntry = React.forwardRef<
                 // and returned to can be cold again; this is a no-op when the
                 // model is already loaded.
                 prewarmLocalModel();
+                // Grade alongside the classify request, not before it. Both
+                // round trips run concurrently, so the grade is warm by submit
+                // without ever putting its latency in front of the model's.
+                void shellGrammarStoreRef.current?.request(text);
                 const promise = requestClassify(text);
                 pendingVerdictRef.current = { text, promise };
                 void promise.then((verdict) => {
@@ -2154,6 +2174,8 @@ export const TugPromptEntry = React.forwardRef<
   shellSessionStoreRef.current = shellSessionStore;
   const pathCommandsStoreRef = useRef(pathCommandsStore);
   pathCommandsStoreRef.current = pathCommandsStore;
+  const shellGrammarStoreRef = useRef(shellGrammarStore);
+  shellGrammarStoreRef.current = shellGrammarStore;
 
   // Card-scoped dispatch for locally-handled slash commands. A bare
   // `/command` matching the local registry is routed to the host-supplied
@@ -2496,42 +2518,61 @@ export const TugPromptEntry = React.forwardRef<
         pathCommandsStoreRef.current?.getSnapshot() ?? null,
       )
     ) {
-      let verdict = verdictCacheRef.current.get(submitText) ?? null;
-      if (verdict === null) {
-        // Either the typing debounce already asked and the model hasn't
-        // answered, or Return beat the debounce and nobody has asked yet. Both
-        // resolve the same way: one request for this exact line, awaited for a
-        // bounded moment.
-        const inFlight = pendingVerdictRef.current;
-        let asked: Promise<"shell" | "prompt" | null>;
-        if (inFlight !== null && inFlight.text === submitText) {
-          asked = inFlight.promise;
-        } else {
-          // A debounce timer that hasn't fired would ask the same question a
-          // second time; the submit supersedes it.
-          if (verdictDebounceRef.current !== null) {
-            window.clearTimeout(verdictDebounceRef.current);
-            verdictDebounceRef.current = null;
+      // Grade before asking. The typing debounce normally has the answer
+      // cached already, so this resolves instantly; the bounded wait is only
+      // for the case where Return beat the debounce, and it expires to
+      // `unknown`, which is the pre-grader path.
+      const grammarStore = shellGrammarStoreRef.current;
+      const grade =
+        grammarStore === undefined
+          ? UNKNOWN_GRADE
+          : await grammarStore.requestWithin(submitText, GRADE_SUBMIT_WAIT_MS);
+      const modelCall = modelCallForBand(grade.band);
+      // `skip` means something in the line names nothing on this machine, so
+      // the model has nothing to add: fall through to Claude, no round trip.
+      if (modelCall !== "skip") {
+        const grammar =
+          modelCall === "ask-with-grammar" ? grade.synopsis : undefined;
+        const withGrammar = grammar !== undefined;
+        let verdict = verdictCacheRef.current.get(submitText, withGrammar) ?? null;
+        if (verdict === null) {
+          // Either the typing debounce already asked and the model hasn't
+          // answered, or Return beat the debounce and nobody has asked yet. Both
+          // resolve the same way: one request for this exact line, awaited for a
+          // bounded moment.
+          const inFlight = pendingVerdictRef.current;
+          let asked: Promise<"shell" | "prompt" | null>;
+          // The in-flight request the debounce fired carries no documentation,
+          // so it cannot stand in for the grammar-bearing question.
+          if (!withGrammar && inFlight !== null && inFlight.text === submitText) {
+            asked = inFlight.promise;
+          } else {
+            // A debounce timer that hasn't fired would ask the same question a
+            // second time; the submit supersedes it.
+            if (verdictDebounceRef.current !== null) {
+              window.clearTimeout(verdictDebounceRef.current);
+              verdictDebounceRef.current = null;
+            }
+            asked = requestClassify(submitText, grammar);
           }
-          asked = requestClassify(submitText);
+          verdict = await Promise.race([
+            asked,
+            new Promise<null>((resolve) => {
+              window.setTimeout(() => resolve(null), VERDICT_SUBMIT_WAIT_MS);
+            }),
+          ]);
         }
-        verdict = await Promise.race([
-          asked,
-          new Promise<null>((resolve) => {
-            window.setTimeout(() => resolve(null), VERDICT_SUBMIT_WAIT_MS);
-          }),
-        ]);
-      }
-      // Only an explicit `shell` verdict routes. A `prompt`, a failed request,
-      // and an expired wait are all the same answer: send it to Claude.
-      //
-      // The verdict is vetoed here rather than where it is cached, so the cache
-      // stays a faithful record of what the model said and every path into the
-      // shell — cached verdict, fresh answer, awaited in-flight one — passes the
-      // same gate on the way through.
-      if (verdict === "shell" && !vetoesShellVerdict(submitText)) {
-        routeToShell();
-        return;
+        // Only an explicit `shell` verdict routes. A `prompt`, a failed request,
+        // and an expired wait are all the same answer: send it to Claude.
+        //
+        // The verdict is vetoed here rather than where it is cached, so the cache
+        // stays a faithful record of what the model said and every path into the
+        // shell — cached verdict, fresh answer, awaited in-flight one — passes the
+        // same gate on the way through.
+        if (verdict === "shell" && !vetoesShellVerdict(submitText)) {
+          routeToShell();
+          return;
+        }
       }
     }
 

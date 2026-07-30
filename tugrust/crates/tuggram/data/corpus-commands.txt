@@ -1,0 +1,52 @@
+# The command set the hermetic corpus test grades against.
+#
+# `cargo nextest run -p tuggram corpus` must not depend on what this machine
+# happens to have installed, so it never sweeps a live PATH. This file is the
+# injected set: every corpus opener that really names a program, hand-reviewed.
+# The test unions it with the committed catalog's own names and asserts that
+# every case NOT labeled `band: no` has an opener the union resolves.
+#
+# An opener deliberately absent from this file is how a `band: no` case is
+# expressed. Adding a name here is a claim that the word is a real program.
+basename
+brew
+build
+cal
+cargo
+cksum
+count
+cut
+dirname
+docker
+du
+file
+find
+git
+head
+join
+killall
+last
+less
+look
+ls
+make
+man
+open
+ps
+say
+sleep
+sort
+split
+stat
+tail
+test
+time
+top
+touch
+uptime
+what
+which
+who
+whoami
+write
+yes

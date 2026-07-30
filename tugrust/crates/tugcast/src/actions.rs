@@ -237,11 +237,21 @@ pub async fn dispatch_action(
             let cat = stream_outputs
                 .get(&FeedId::CONTROL)
                 .map(|(tx, _)| tx.clone());
-            let text = serde_json::from_slice::<serde_json::Value>(raw_payload)
-                .ok()
+            let payload = serde_json::from_slice::<serde_json::Value>(raw_payload).ok();
+            let text = payload
+                .as_ref()
                 .and_then(|v| v.get("text")?.as_str().map(str::to_owned));
+            // The program's documentation, when the caller is driving the
+            // grammar-bearing variant. Absent means the base classify prompt.
+            let grammar = payload
+                .as_ref()
+                .and_then(|v| v.get("grammar")?.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned);
             match text {
-                Some(text) => crate::local_model::request_classification(local_model, cat, text),
+                Some(text) => {
+                    crate::local_model::request_classification(local_model, cat, text, grammar)
+                }
                 None => info!("dispatch_action: local_model_classify missing text"),
             }
         }

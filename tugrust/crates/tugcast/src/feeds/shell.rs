@@ -115,6 +115,14 @@ enum ShellInput {
     PathCommands {
         tug_session_id: String,
     },
+    // `shell_grammar` grades one typed line against the login-PATH set, the
+    // baked command catalog, and this session's working directory. The reply is
+    // one `shell_grammar` SHELL_OUTPUT frame echoing `line`, so the deck can
+    // match an answer to the draft it asked about.
+    ShellGrammar {
+        tug_session_id: String,
+        line: String,
+    },
 }
 
 fn now_ms() -> u64 {
@@ -141,11 +149,6 @@ fn resolve_exec_shell() -> String {
 // PATH command set ([P08], Spec S02)
 // ---------------------------------------------------------------------------
 
-/// Wall-clock cap on the login-PATH probe. The probe is a non-interactive
-/// `printf` — cheap — so a stall past this means the login shell wedged on rc
-/// baggage; fall back to tugcast's own `$PATH`.
-const PATH_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-
 /// Upper bound on the serialized `commands` array. A login PATH holds ~2–5k
 /// names (tens of KB); past this the set is truncated to a sorted prefix and a
 /// warning is logged, so a pathological PATH can never blow the transport cap.
@@ -155,88 +158,16 @@ const PATH_COMMANDS_SERIALIZED_CAP: usize = 512 * 1024;
 /// changes within a tugcast run, so the readdir sweep runs once.
 static PATH_COMMANDS: std::sync::OnceLock<Arc<Vec<String>>> = std::sync::OnceLock::new();
 
-/// Resolve the user's login `$PATH`: spawn `$SHELL -lc 'printf %s "$PATH"'`
-/// when `$SHELL` is bash/zsh (the same gate as the exec shell), else — or on
-/// probe failure / timeout — fall back to tugcast's own `$PATH`. Not the
-/// interactive per-session shell child: that is lazily spawned and can wedge on
-/// rc baggage; a non-interactive login probe is cheap, safe, and PATH-accurate.
-fn probe_login_path() -> String {
-    if let Ok(sh) = std::env::var("SHELL") {
-        let leaf = sh.rsplit('/').next().unwrap_or("");
-        if leaf == "bash" || leaf == "zsh" {
-            if let Some(p) = run_path_probe(&sh) {
-                return p;
-            }
-        }
-    }
-    std::env::var("PATH").unwrap_or_default()
-}
-
-/// Run the login-shell PATH probe with a hard timeout. A background thread runs
-/// the blocking `Command`; `recv_timeout` bounds the wait so a wedged login
-/// shell can't stall the caller. Returns the trimmed `$PATH`, or `None` on
-/// failure / non-zero exit / empty output / timeout.
-fn run_path_probe(shell: &str) -> Option<String> {
-    let shell = shell.to_string();
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let out = std::process::Command::new(&shell)
-            .args(["-lc", "printf %s \"$PATH\""])
-            .output();
-        let _ = tx.send(out);
-    });
-    match rx.recv_timeout(PATH_PROBE_TIMEOUT) {
-        Ok(Ok(output)) if output.status.success() => String::from_utf8(output.stdout)
-            .ok()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
-        _ => None,
-    }
-}
-
-/// Sweep the login-PATH directories for executable command names, resolving the
-/// login `$PATH` first. Runs once, cached process-wide.
-fn compute_path_commands() -> Vec<String> {
-    command_names_in_path(&probe_login_path())
-}
-
-/// Sweep a `:`-separated PATH string for executable command names: readdir each
-/// existing entry, keep regular files with an executable bit, dedupe and sort (a
-/// `BTreeSet` gives both). Pure over the filesystem — the unit seam.
-fn command_names_in_path(path: &str) -> Vec<String> {
-    use std::collections::BTreeSet;
-    use std::os::unix::fs::PermissionsExt;
-
-    let mut set: BTreeSet<String> = BTreeSet::new();
-    for dir in path.split(':').filter(|d| !d.is_empty()) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            // `metadata` follows symlinks, so a symlinked executable (the norm
-            // for Homebrew shims) counts; a broken link errors out and is
-            // skipped. Keep regular files with any executable bit set.
-            let Ok(meta) = entry.metadata() else {
-                continue;
-            };
-            if meta.is_file() && meta.permissions().mode() & 0o111 != 0 {
-                if let Some(name) = entry.file_name().to_str() {
-                    set.insert(name.to_string());
-                }
-            }
-        }
-    }
-    set.into_iter().collect()
-}
-
-/// The cached login-PATH command set, computed once. `spawn_blocking` keeps the
-/// readdir sweep + probe off the async dispatcher; the result is stored in the
-/// process-wide `OnceLock`.
+/// The cached login-PATH command set, computed once. The probe and the readdir
+/// sweep live in `tuggram`, which is also what grades a typed line against the
+/// set — so the deck's precondition and the grader's resolution can never be
+/// looking at two different PATHs. `spawn_blocking` keeps the sweep off the
+/// async dispatcher; the result is stored in the process-wide `OnceLock`.
 async fn path_command_set() -> Arc<Vec<String>> {
     if let Some(cached) = PATH_COMMANDS.get() {
         return Arc::clone(cached);
     }
-    let computed = tokio::task::spawn_blocking(compute_path_commands)
+    let computed = tokio::task::spawn_blocking(tuggram::compute_path_commands)
         .await
         .unwrap_or_default();
     // A concurrent request may have set it first; `set` then errors and we take
@@ -280,6 +211,55 @@ fn emit_path_commands(output: &SessionScopedFeed, tug_session_id: &str, commands
 }
 
 // ---------------------------------------------------------------------------
+// Command-grammar grading
+// ---------------------------------------------------------------------------
+
+/// Grade one line and emit the reply frame.
+///
+/// The grade runs on `spawn_blocking` because head resolution can `stat` a
+/// path-shaped command word. `cwd` is the session's own working directory —
+/// never tugcast's, which is wherever the host launched it and says nothing
+/// about where the user's shell is standing — and `None` means no shell child
+/// has spawned yet, which the grader reads as "could not check" rather than as
+/// "does not exist".
+async fn emit_shell_grammar(
+    output: &SessionScopedFeed,
+    tug_session_id: &str,
+    line: String,
+    commands: Arc<Vec<String>>,
+    cwd: Option<String>,
+) {
+    let graded = {
+        let line = line.clone();
+        tokio::task::spawn_blocking(move || {
+            let cwd = cwd.map(PathBuf::from);
+            tuggram::grade(
+                &line,
+                &tuggram::CommandSet::new_sorted(&commands),
+                cwd.as_deref(),
+            )
+        })
+        .await
+    };
+    let Ok(graded) = graded else {
+        warn!(%tug_session_id, "shell grammar: grading task failed");
+        return;
+    };
+    let mut payload = json!({
+        "type": "shell_grammar",
+        "tug_session_id": tug_session_id,
+        "line": line,
+        "band": graded.band.as_str(),
+    });
+    // Only a Maybe carries documentation — it is what arms the model when
+    // grammar alone could not tell.
+    if let Some(synopsis) = graded.synopsis {
+        payload["synopsis"] = json!(synopsis);
+    }
+    emit(output, tug_session_id, payload);
+}
+
+// ---------------------------------------------------------------------------
 // Per-session shell child
 // ---------------------------------------------------------------------------
 
@@ -289,6 +269,11 @@ fn emit_path_commands(output: &SessionScopedFeed, tug_session_id: &str, commands
 #[derive(Default)]
 struct SessionShared {
     pid: Option<i32>,
+    /// Where this session's shell is standing, as of its last settled exchange.
+    /// `None` until a shell child has actually spawned — which is what the
+    /// grader needs to tell "this relative path does not exist" from "there is
+    /// no directory to look in yet".
+    cwd: Option<String>,
     /// Set by the dispatcher when it reaps the in-flight exchange for a `kill`.
     /// The signal reaches the group differently across platforms — the shell
     /// may die (EOF → no exit code) or its foreground child may die (128+SIGTERM)
@@ -572,7 +557,11 @@ async fn shell_session_task(
             match spawn_session_shell(&spawn_cwd, &marker, &tug_session_id).await {
                 Ok((sh, pid, notice)) => {
                     child = Some(sh);
-                    shared.lock().unwrap().pid = Some(pid);
+                    {
+                        let mut g = shared.lock().unwrap();
+                        g.pid = Some(pid);
+                        g.cwd = Some(cwd.clone());
+                    }
                     if notice.is_some() {
                         pending_notice = notice;
                     }
@@ -640,6 +629,7 @@ async fn shell_session_task(
         }
         if let Some(c) = &cwd_after {
             cwd = c.clone();
+            shared.lock().unwrap().cwd = Some(cwd.clone());
         }
         let settled_at = now_ms();
         let duration_ms = settled_at.saturating_sub(started_at);
@@ -681,8 +671,12 @@ async fn shell_session_task(
         // respawns fresh in the project dir ([Q04] restart-fresh).
         if reaped {
             child = None;
-            shared.lock().unwrap().pid = None;
             cwd = spawn_cwd.to_string_lossy().to_string();
+            let mut g = shared.lock().unwrap();
+            g.pid = None;
+            // The next exec respawns in the project dir, so that is where the
+            // session now stands.
+            g.cwd = Some(cwd.clone());
         }
     }
 
@@ -802,6 +796,18 @@ async fn run_dispatcher(
             ShellInput::PathCommands { tug_session_id } => {
                 let commands = path_command_set().await;
                 emit_path_commands(&output, &tug_session_id, &commands);
+            }
+            // Grade one line against the same cached PATH set the deck's own
+            // precondition came from, plus this session's working directory.
+            ShellInput::ShellGrammar {
+                tug_session_id,
+                line,
+            } => {
+                let commands = path_command_set().await;
+                let cwd = sessions
+                    .get(&tug_session_id)
+                    .and_then(|s| s.shared.lock().unwrap().cwd.clone());
+                emit_shell_grammar(&output, &tug_session_id, line, commands, cwd).await;
             }
         }
     }
@@ -1176,43 +1182,8 @@ mod tests {
         got
     }
 
-    #[test]
-    fn command_names_in_path_dedupes_and_sorts() {
-        use std::os::unix::fs::PermissionsExt;
-        let a = tempfile::tempdir().unwrap();
-        let b = tempfile::tempdir().unwrap();
-        let exe = |dir: &std::path::Path, name: &str| {
-            let p = dir.join(name);
-            std::fs::write(&p, b"#!/bin/sh\n").unwrap();
-            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
-        };
-        // `zed` in both dirs (dedupe); `apple` non-executable (skipped).
-        exe(a.path(), "zed");
-        exe(a.path(), "git");
-        exe(b.path(), "zed");
-        exe(b.path(), "cargo");
-        let plain = b.path().join("apple");
-        std::fs::write(&plain, b"data").unwrap();
-        std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o644)).unwrap();
-
-        let path = format!("{}:{}", a.path().display(), b.path().display());
-        let names = command_names_in_path(&path);
-        assert_eq!(names, vec!["cargo", "git", "zed"]);
-    }
-
-    #[test]
-    fn command_names_in_path_skips_missing_and_empty_segments() {
-        // A nonexistent dir and empty segments are tolerated, not fatal.
-        let names = command_names_in_path("/no/such/dir::");
-        assert!(names.is_empty());
-    }
-
-    #[test]
-    fn run_path_probe_bogus_shell_returns_none() {
-        // A shell that can't spawn fails fast → None, so `probe_login_path`
-        // falls back to tugcast's own `$PATH`.
-        assert_eq!(run_path_probe("/nonexistent/shell/binary"), None);
-    }
+    // The PATH probe and the readdir sweep are `tuggram`'s and are covered by
+    // its own unit tests; what this module owns is the frame round trip.
 
     #[tokio::test]
     async fn path_commands_round_trip_over_the_feed() {
@@ -1244,5 +1215,173 @@ mod tests {
         let second = drive_path_commands(vec![path_commands_frame("s2")], "s2", 1).await;
         assert_eq!(second.len(), 1);
         assert_eq!(second[0]["commands"], first);
+    }
+
+    // ── shell_grammar ──────────────────────────────────────────────────────
+
+    fn grammar_frame(sid: &str, line: &str) -> Frame {
+        Frame::new(
+            FeedId::SHELL_INPUT,
+            json!({ "type": "shell_grammar", "tug_session_id": sid, "line": line })
+                .to_string()
+                .into_bytes(),
+        )
+    }
+
+    /// Drive the dispatcher and collect the first `count` `shell_grammar`
+    /// output frames for `sid`.
+    async fn drive_grammar(frames: Vec<Frame>, sid: &str, count: usize) -> Vec<serde_json::Value> {
+        let output = SessionScopedFeed::new(FeedId::SHELL_OUTPUT, 256, LagPolicy::Warn);
+        let mut rx = output.subscribe();
+        let (tx, in_rx) = mpsc::channel(64);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_dispatcher(
+            in_rx,
+            output.clone(),
+            None,
+            cancel.clone(),
+            Duration::from_secs(3),
+        ));
+        for f in frames {
+            tx.send(f).await.unwrap();
+        }
+        let mut got = Vec::new();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        while got.len() < count {
+            match tokio::time::timeout_at(deadline, rx.recv()).await {
+                Ok(Ok(frame)) => {
+                    let v = payload_json(&frame);
+                    if v["tug_session_id"] == sid && v["type"] == "shell_grammar" {
+                        got.push(v);
+                    }
+                }
+                _ => break,
+            }
+        }
+        cancel.cancel();
+        drop(tx);
+        let _ = handle.await;
+        got
+    }
+
+    #[tokio::test]
+    async fn shell_grammar_round_trips_every_band_over_the_feed() {
+        let got = drive_grammar(
+            vec![
+                grammar_frame("s1", "git status"),
+                grammar_frame("s1", "git stauts"),
+                grammar_frame("s1", "frobnicate the thing"),
+                grammar_frame("s1", "echo `date`"),
+            ],
+            "s1",
+            4,
+        )
+        .await;
+        assert_eq!(got.len(), 4);
+        let bands: Vec<&str> = got.iter().map(|v| v["band"].as_str().unwrap()).collect();
+        assert_eq!(bands, ["yes", "maybe", "no", "unknown"]);
+    }
+
+    #[tokio::test]
+    async fn shell_grammar_echoes_the_line_and_carries_a_synopsis_only_on_maybe() {
+        let got = drive_grammar(
+            vec![
+                grammar_frame("s1", "git stauts"),
+                grammar_frame("s1", "git status"),
+            ],
+            "s1",
+            2,
+        )
+        .await;
+        assert_eq!(got[0]["line"], "git stauts");
+        assert!(got[0]["synopsis"].as_str().unwrap().contains("git"));
+        assert_eq!(got[1]["line"], "git status");
+        assert!(got[1]["synopsis"].is_null());
+    }
+
+    #[tokio::test]
+    async fn shell_grammar_replies_are_scoped_to_the_asking_session() {
+        let got = drive_grammar(
+            vec![
+                grammar_frame("s1", "git status"),
+                grammar_frame("s2", "frobnicate x"),
+            ],
+            "s2",
+            1,
+        )
+        .await;
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0]["line"], "frobnicate x");
+        assert_eq!(got[0]["band"], "no");
+    }
+
+    #[tokio::test]
+    async fn a_relative_path_grades_unknown_until_the_session_has_a_shell() {
+        // No exec has run, so there is no working directory to resolve `./x`
+        // against. Absence of validation is not evidence of absence.
+        let got = drive_grammar(vec![grammar_frame("s1", "./probe.sh")], "s1", 1).await;
+        assert_eq!(got[0]["band"], "unknown");
+    }
+
+    #[tokio::test]
+    async fn a_relative_path_grades_against_the_session_cwd_once_one_exists() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("probe.sh");
+        std::fs::write(&script, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let output = SessionScopedFeed::new(FeedId::SHELL_OUTPUT, 256, LagPolicy::Warn);
+        let mut rx = output.subscribe();
+        let (tx, in_rx) = mpsc::channel(64);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_dispatcher(
+            in_rx,
+            output.clone(),
+            None,
+            cancel.clone(),
+            Duration::from_secs(5),
+        ));
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+
+        // One exec establishes the session's cwd. Wait for it to settle: a
+        // grade asked while an exec is still in flight legitimately sees no cwd
+        // yet, which is a different case from the one under test here.
+        tx.send(exec_frame(
+            "s1",
+            "e1",
+            ":",
+            Some(&dir.path().to_string_lossy()),
+        ))
+        .await
+        .unwrap();
+        loop {
+            let Ok(Ok(frame)) = tokio::time::timeout_at(deadline, rx.recv()).await else {
+                panic!("exec never settled");
+            };
+            if payload_json(&frame)["type"] == "exchange_complete" {
+                break;
+            }
+        }
+
+        tx.send(grammar_frame("s1", "./probe.sh")).await.unwrap();
+        tx.send(grammar_frame("s1", "./nosuch.sh")).await.unwrap();
+        let mut got = Vec::new();
+        while got.len() < 2 {
+            let Ok(Ok(frame)) = tokio::time::timeout_at(deadline, rx.recv()).await else {
+                break;
+            };
+            let v = payload_json(&frame);
+            if v["type"] == "shell_grammar" {
+                got.push(v);
+            }
+        }
+        cancel.cancel();
+        drop(tx);
+        let _ = handle.await;
+
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0]["band"], "unknown", "it resolves but has no grammar");
+        assert_eq!(got[1]["band"], "no");
     }
 }

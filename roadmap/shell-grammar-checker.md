@@ -44,7 +44,7 @@ The insight this plan builds on: nearly every command has a grammar we can know 
 - Grading is fast: the `grade()` call itself completes in well under a millisecond on corpus-length lines (asserted informally; no benchmark harness — the function is table lookups and one lex pass).
 - The Maybe prompt is bounded: every baked synopsis ≤ `SYNOPSIS_CHAR_CAP` (Spec S03), asserted by a catalog integrity test, so classify prefill stays within the latency budget the 2s submit wait allows.
 - The submit-time cost of grading is bounded: `GRADE_SUBMIT_WAIT_MS = 150` ([P06]), and it is normally zero because the debounce prefetches — verified in Step 9 against the live app.
-- All grading behavior is pinned by `cargo nextest run -p tuggram` with no app, no model, and no network — provable by running the suite with `PATH=/nonexistent`.
+- All grading behavior is pinned by `cargo nextest run -p tuggram` with no app, no model, and no network — provable by running the built test binary under `env -i` with an empty PATH and HOME (see #step-7 for why the check cannot go through `cargo` itself).
 
 #### Scope {#scope}
 
@@ -459,15 +459,15 @@ No React render reads either — routing is a submit-time act, so nothing here e
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | The tuggram crate: lexer and resolution bands | pending | — |
-| #step-2 | Catalog schema, embedded load, Yes/Maybe grading | pending | — |
-| #step-3 | The harvester and the committed catalog | pending | — |
-| #step-4 | tugcast serves shell_grammar | pending | — |
-| #step-5 | Deck: grammar store and band handling | pending | — |
-| #step-6 | Swift: the grammar-bearing classify | pending | — |
-| #step-7 | Corpus: band labels and No-band cases | pending | — |
-| #step-8 | Harness: score the composed pipeline | pending | — |
-| #step-9 | Integration checkpoint — live routing | pending | — |
+| #step-1 | The tuggram crate: lexer and resolution bands | done | `71c9ac3f8` |
+| #step-2 | Catalog schema, embedded load, Yes/Maybe grading | done | `a2f579836` |
+| #step-3 | The harvester and the committed catalog | done | `1508a9f40` |
+| #step-4 | tugcast serves shell_grammar | done | `1508a9f40` |
+| #step-5 | Deck: grammar store and band handling | done | `1508a9f40` |
+| #step-6 | Swift: the grammar-bearing classify | done | `1508a9f40` |
+| #step-7 | Corpus: band labels and No-band cases | done | `d618e67fc` |
+| #step-8 | Harness: score the composed pipeline | done | `99eb9fd0d` |
+| #step-9 | Integration checkpoint — live routing | done | verification only |
 
 #### Step 1: The tuggram crate: lexer and resolution bands {#step-1}
 
@@ -654,7 +654,7 @@ No React render reads either — routing is a submit-time act, so nothing here e
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tuggram`
-- [ ] The suite passes with the login PATH emptied (`env PATH=/nonexistent cargo nextest run -p tuggram`), proving hermeticity rather than asserting it
+- [ ] The suite passes with the environment stripped, proving hermeticity rather than asserting it. Not through `cargo`, which needs `rustc` on the PATH to run at all — build first, then run the test binary with nothing: `cargo build --tests -p tuggram && env -i PATH=/nonexistent HOME=/nonexistent target/debug/deps/tuggram-*`
 
 ---
 
