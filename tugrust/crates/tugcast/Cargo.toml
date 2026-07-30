@@ -59,6 +59,10 @@ tokio = { workspace = true, features = ["test-util"] }
 tower = { workspace = true }
 tokio-tungstenite = { workspace = true }
 http-body-util = { workspace = true }
+# Captures the bytes a log line actually comes out as, so the field shapes
+# `tests/model-eval/analyze.py` parses are pinned against the emitting call site
+# rather than against a fixture someone copied by hand.
+tracing-subscriber = { workspace = true }
 
 # Feature flag for real-claude integration tests. These tests spawn a
 # real `claude` (tugcode) subprocess and must NEVER run in standard

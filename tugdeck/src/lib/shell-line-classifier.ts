@@ -3,15 +3,19 @@
  * unprefixed, atom-free, single-line draft means the shell or means Claude
  * (Spec S03, [P09]).
  *
- * This module does not decide anything about intent. It answers one factual
- * question — {@link isShellCandidate} — and the local model answers the rest.
+ * This module does not decide anything about intent. It brackets the model's
+ * judgement from both sides with facts, and the model decides between them.
  *
- * The fact is: *does the first word name a program that exists on this
- * machine?* That is checkable against the login PATH, and when the answer is no
- * the line cannot be a command, so no inference is spent on it. Everything past
- * that point — whether the person meant to RUN that program or was writing a
- * sentence that happens to start with its name — is a judgement about English,
- * and the model makes it.
+ * Before: {@link isShellCandidate} asks *does the first word name a program that
+ * exists on this machine?* That is checkable against the login PATH, and when
+ * the answer is no the line cannot be a command, so no inference is spent on it.
+ * Everything past that point — whether the person meant to RUN that program or
+ * was writing a sentence that happens to start with its name — is a judgement
+ * about English, and the model makes it.
+ *
+ * After: {@link vetoesShellVerdict} asks *is this line shaped like English?* and
+ * can refuse to honor a `shell` verdict. It can only refuse; see its own doc for
+ * why that makes it a different instrument from the rules described next.
  *
  * An earlier revision tried to make that judgement here, with a stopword list,
  * a list of "ambiguous" openers, and a token-count rule. Those were guesses
@@ -94,6 +98,93 @@ export function isShellCandidate(
   return (
     first.startsWith("./") || first.startsWith("~/") || /^\/[^/]+\//.test(first)
   );
+}
+
+/** A quoted span — the message of `git commit -m "fix the thing for me"`. */
+const QUOTED_SPAN = /'[^']*'|"[^"]*"/g;
+
+/**
+ * Words a command line has essentially no use for and prose can hardly avoid.
+ * One of these, standing as its own token outside quotes and outside a flag, is
+ * enough on its own.
+ */
+const PROSE_MARKERS = new Set([
+  "the", "a", "an",
+  "i", "it", "me", "my", "you", "this", "that", "these", "those", "them",
+]);
+
+/**
+ * Weaker prose signals. Each is plausible enough as a command argument that
+ * length has to corroborate it before it counts.
+ */
+const PROSE_HINTS = new Set([
+  "of", "for", "about", "into", "with", "from", "and", "or", "but",
+  "is", "are", "was", "do", "does", "should", "please",
+  "why", "what", "how", "when",
+]);
+
+/**
+ * Tokens past which a line is longer than any command in the routing corpus,
+ * whose longest case is three. Well clear of it, because real commands run
+ * longer than the corpus does: `rg -n --hidden --glob '!target' TODO src tests`
+ * is seven tokens and is a command.
+ */
+const COMMAND_TOKEN_CEILING = 6;
+
+/**
+ * Whether a `shell` verdict for this line must not be honored — the line is
+ * shaped like English, whatever the model called it.
+ *
+ * This can only ever decline to execute. It never produces a `shell` verdict and
+ * is never consulted on a `prompt` one, and that is what separates it from the
+ * stopword, ambiguous-opener, and token-count rules this module used to carry.
+ * Those decided *toward* shell: they let the classifier answer `which bun` and
+ * `open .` by itself and hand the model only the leftovers, taking the
+ * irreversible decision away from the model without adding any safety. A veto is
+ * the opposite instrument. It cannot pre-empt anything toward shell because it
+ * has no power to route there; it only adds one more degraded path to the list
+ * this module already keeps, all of which resolve to Claude. The asymmetry is
+ * unchanged — the shell is still reached only by an explicit `shell` verdict,
+ * and now that verdict also has to survive this.
+ *
+ * Quoted spans are removed before anything else, so a command carrying prose as
+ * an argument survives: `git commit -m "fix the thing for me"` is a command.
+ *
+ * Two signals cost a real command a keystroke. A trailing `?` on a glob
+ * (`ls file?`) reads as a question, and an unquoted English word as a literal
+ * argument (`rg the src`) reads as prose. Both resolve to Claude, which is the
+ * direction doubt is supposed to fall here.
+ */
+export function vetoesShellVerdict(text: string): boolean {
+  const bare = text.replace(QUOTED_SPAN, " ");
+
+  // A question mark closing the line, or a period closing a sentence inside it.
+  // The period must follow a word character, which is what tells a sentence
+  // break (`calculator. set it up`) from a path (`./setup.sh`, `notes.txt`) and
+  // from a bare `.` argument (`find . -name x`).
+  if (/[A-Za-z]\?\s*$/.test(bare)) return true;
+  if (/[A-Za-z0-9]\.\s+[a-z]/.test(bare)) return true;
+
+  const tokens = bare.split(/\s+/).filter((t) => t.length > 0);
+
+  let hint = false;
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    // Neither a flag nor a flag's value is prose, whatever it spells. This is
+    // also what keeps `awk -F, file` clear of the comma test below.
+    if (token.startsWith("-")) continue;
+    if (i > 0 && tokens[i - 1]!.startsWith("-")) continue;
+
+    // A comma joining two multi-word clauses. Interior commas that punctuate an
+    // argument rather than a sentence (`sort -k1,3`) are not followed by space.
+    if (token.endsWith(",") && i >= 2 && tokens.length - i >= 3) return true;
+
+    const word = token.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/g, "");
+    if (PROSE_MARKERS.has(word)) return true;
+    if (PROSE_HINTS.has(word)) hint = true;
+  }
+
+  return hint && tokens.length > COMMAND_TOKEN_CEILING;
 }
 
 /**

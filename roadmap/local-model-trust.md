@@ -95,7 +95,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Does pairing the summarize examples with inputs actually reduce lifting, or only change which strings get lifted? (OPEN) {#q01-pairing-effect}
+#### [Q01] Does pairing the summarize examples with inputs actually reduce lifting, or only change which strings get lifted? (DECIDED) {#q01-pairing-effect}
 
 **Question:** `classify`'s paired-example block does not produce lifting; `summarize`'s unpaired block does. Is pairing the cause of that difference, or is it confounded by the two tasks' different output spaces (one closed label vs open prose)?
 
@@ -108,9 +108,9 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 **Plan to resolve:** Step 6 measures `copied examples N/13` for all three packs against both the old and new prompt wording. `run.py` already reports this line, so the comparison is a direct read.
 
-**Resolution:** OPEN — resolved by #step-6.
+**Resolution:** **DECIDED — pairing works.** On the unpaired prompt the gate refused 13 of 13 `lfm25` answers; on the paired one, 5. `qwen`'s copied-example count went 1/13 to 0/13 and both its remaining refusals changed from example lifts to tool-name openers. The rewrite stays. See [#bakeoff-results].
 
-#### [Q02] What grounding threshold refuses the real defects without refusing good headlines? (OPEN) {#q02-grounding-threshold}
+#### [Q02] What grounding threshold refuses the real defects without refusing good headlines? (DECIDED) {#q02-grounding-threshold}
 
 **Question:** Spec S01 requires "at least half the headline's content words appear in the digest". Is one-half right? A good headline may legitimately use a synonym the digest never spells (`Salvage corrupted changes ledger` against a digest that says *recover*).
 
@@ -123,9 +123,11 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 **Plan to resolve:** Spike in-thread during #step-4. The inputs already exist: the 13 frozen digests, the headlines each pack produced against them (recorded by `run.py --json`), and the real defective answers in List L01. Sweep the threshold over that set and pick the value that rejects every entry in L01 while accepting every headline a human reads as correct. Record the chosen value and the sweep in the step's commit.
 
-**Resolution:** OPEN — resolved by #step-4.
+**Resolution:** **DECIDED — two thirds of the subject words**, swept in #step-4 over the 13 frozen digests and the real defective answers rather than argued.
 
-#### [Q03] Can a 1.2B pack hold six-word register under a paired-example prompt? (OPEN) {#q03-lfm-capacity}
+The band is one word wide. Correct headlines ground no worse than 2/3 (`Explain maxwell equations and primality` against `conversation-only` is the tightest); the surviving defects ground 3/5 (`Fix typing lag in command-line calculator` against `parts-list-tail`, which really was about a command-line calculator — the words it invents are the ones that matter) and 1/3. So one half accepts a real defect and three quarters refuses a correct headline: two thirds is simultaneously the loosest value that refuses every defect and the strictest that accepts every correct one. Pinned by `the_grounding_threshold_is_the_loosest_that_still_refuses_the_defects`, because a constant that narrow is not safe as a comment.
+
+#### [Q03] Can a 1.2B pack hold six-word register under a paired-example prompt? (DECIDED) {#q03-lfm-capacity}
 
 **Question:** `lfm25-1-2b-instruct-4bit` is a third the parameters of the incumbent. Its two smoke answers were in register (`Wire local_model test run`, 4 words, verb-first), but two answers is not a measurement, and a paired-example prompt is longer and more structured than the current one.
 
@@ -133,13 +135,17 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 **Plan to resolve:** #step-6 scores all 13 digests. Watch normalizer rescue count specifically — a pack that passes the rubric only after `headline_register_report` rewrites it is drifting, and the rescue count sees that where the pass rate does not.
 
-**Resolution:** OPEN — resolved by #step-6.
+**Resolution:** **DECIDED — no.** `lfm25` holds register 3/13 under the paired prompt, down from 10/13 on the shorter unpaired one, and lifted one example phrase across three unrelated digests. Size and latency cannot buy that back. See [#bakeoff-results].
 
 #### [Q04] Should a retired-but-installed pack keep answering? (DECIDED) {#q04-retired-pack-behavior}
 
 **Question:** When the catalog demotes a pack to `offered: false`, a user who already installed it keeps a pack that is downloadable, selectable, and `auto`-eligible. Is that the desired behavior?
 
-**Resolution:** DECIDED — yes, unchanged. The `CatalogEntry` docstring already states the intent ("a non-offered entry is otherwise fully supported… it simply is not part of the first-run choice"), `resolveRoute` honors an explicit pick literally, and `local-model-store.ts` already wires a `local_model_delete` control frame so the bytes are reclaimable from the existing UI. No new affordance is needed; #step-7 only verifies that `auto` resolves to the new winner for a user holding both, which follows from `catalog_rank` ordering.
+**Resolution:** DECIDED — yes, unchanged. The `CatalogEntry` docstring already states the intent ("a non-offered entry is otherwise fully supported… it simply is not part of the first-run choice"), `resolveRoute` honors an explicit pick literally, and `local-model-store.ts` already wires a `local_model_delete` control frame so the bytes are reclaimable from the existing UI. No new affordance is needed.
+
+**But the second half of this — "`auto` resolves to the new winner, which follows from `catalog_rank` ordering" — was wrong, and #step-7's inspection found it.** It does not follow. `catalog_rank` is copied into each pack's `tug-manifest.json` **at install time**, precisely so the Swift service can order packs without knowing the catalog, and `resolveRoute`'s `auto` branch takes `LocalModelStore.installed().first` sorted by *that recorded* rank. Reordering `CATALOG` therefore does not reorder what is already on disk: a user who installed the old recommended pack keeps a stamp claiming rank 0 and keeps being routed to the retired pack indefinitely. Swift cannot re-derive the rank — not knowing the catalog is the whole reason the field exists.
+
+`reconcile_catalog_ranks` in `local_model.rs` closes it, rewriting a drifted rank and nothing else. It runs once from `main`, gated on `TUG_INSTANCE_ID` naming a real instance, because the models directory is shared machine-wide and the integration tests spawn this binary.
 
 ---
 
@@ -342,25 +348,60 @@ Filled in by #step-3 (classify half) and #step-6 (register half). Both halves mu
 
 **Table T03: Classify half — filled by #step-3** {#t03-classify-results}
 
-| pack | accuracy | false SHELL | false PROMPT | shell recall | prompt recall | `refused` | median ms |
-|---|---|---|---|---|---|---|---|
-| `ternary-bonsai-8b-2bit` | | | | | | | |
-| `qwen3-4b-instruct-2507-4bit` | | | | | | | |
-| `lfm25-1-2b-instruct-4bit` | | | | | | | |
+Taken on `debug-tugdash-model-trust` (the dash's own debug instance; `debug-main` was not running). `false SHELL` is what production would have run — the model's verdict after the veto — and it is what the exit code answers. `pack's own` is the unfiltered model verdict, which is the Table T02 priority-1 discriminator now that the veto clears all three.
+
+| pack | scored | accuracy | false SHELL | pack's own false SHELL | false PROMPT | shell recall | prompt recall | median ms |
+|---|---|---|---|---|---|---|---|---|
+| `ternary-bonsai-8b-2bit` | 70/71 | 67/70 | **0** | 2 | 3 | 31/34 | 36/36 | 828 |
+| `qwen3-4b-instruct-2507-4bit` | 71/71 | 66/71 | **0** | 1 | 5 | 30/35 | 36/36 | 636 |
+| `lfm25-1-2b-instruct-4bit` | 70/71 | 66/70 | **0** | **17** | 4 | 31/35 | 35/35 | 427 |
 
 Pre-change reference, taken against the old parse and no veto, on the decontaminated prompt: `bonsai` 66/71 with 2 false SHELL, 3 false PROMPT, 32/35 shell recall, 623 ms; `qwen` 65/71 with 1 false SHELL, 5 false PROMPT, 30/35 shell recall, 416 ms.
 
+**What removed each false SHELL: the veto, not the parse.** The parse fix removed none. Both packs with recorded baselines answer classify with a bare label — 5 characters for `shell`, 6 for `prompt`, visible as `output_chars` on the app's own request line — so the ordered-`contains` pathology has no answer to fire on, and `qwen`'s post-parse numbers came back identical to its pre-change baseline in every field. Probing `bonsai` directly on both real 2026-07-29 lines returned a clean single-token `shell` for each. The parse fix is a structural guard against a class of answer neither shipping pack produces; the veto is what made the gate pass.
+
+**`lfm25` is disqualified on Table T02 priority 1.** It called 17 of 35 prose lines `shell`. Every one was refused by the veto, so nothing would have run — but a pack that reaches for the irreversible verdict on half the prose it sees is leaning on the veto as its classifier rather than being checked by it, and priority 1 is about the pack's own judgement for exactly this reason. Its 427 ms median and 0.66 GB download cannot buy that back, because size and latency rank fourth and fifth.
+
+**The harness could not see the veto until this step changed it.** `classify.py` drives the control socket, so its reach ends at `LocalModelService` — the deck, where `vetoesShellVerdict` lives, is not on that path. The success criterion "zero false SHELL" was therefore unreachable by construction, the same blind spot [#harness-reach] records for the grounding gate and `model-eval`. `classify.py` now applies the real veto by running `tests/model-eval/veto-filter.ts` through bun and reports both numbers; the rules are imported, never re-expressed in Python.
+
+On this corpus the veto is total: it refuses all 36 prose-labeled lines and none of the 35 commands. That is a strong result and also a limit on what the corpus can still discriminate — post-veto false SHELL is now 0 for any pack, so priority 1 has to be read off the `pack's own` column.
+
 **Table T04: Register half — filled by #step-6** {#t04-register-results}
 
-| pack | `all rules` | rescues | `copied examples` (new prompt) | `copied examples` (old prompt) | mean words | median ms |
-|---|---|---|---|---|---|---|
-| `ternary-bonsai-8b-2bit` | | | | | | |
-| `qwen3-4b-instruct-2507-4bit` | | | | | | |
-| `lfm25-1-2b-instruct-4bit` | | | | | | |
+Both halves taken on the paired-example prompt from #step-5. **Refused** is the grounding gate run over each pack's own 13 answers — the number `model-eval` cannot see, obtained by running the real `ground_headline` over `run.py --json` captures.
 
-Pre-change reference, on the decontaminated prompt with unpaired examples: `bonsai` 12/13 with 5 rescues, mean 5.4 words, 1034 ms, and one outright tool-line copy (`parts-list-tail` → `Bash make`); `qwen` 12/13 with 0 rescues, mean 4.5 words, 620 ms, and 1/13 copied examples.
+| pack | `all rules` | rescues | **refused** | refused (old prompt) | `copied examples` | mean words | median ms |
+|---|---|---|---|---|---|---|---|
+| `ternary-bonsai-8b-2bit` | 11/13 | 3 | **2/13** | 3/13 | 0/13 | 5.0 | 1647 |
+| `qwen3-4b-instruct-2507-4bit` | 9/13 | 0 | **2/13** | 2/13 | 0/13 | 4.5 | 1245 |
+| `lfm25-1-2b-instruct-4bit` | 3/13 | 1 | **5/13** | 13/13 | 0/13 | 3.8 | 422 |
 
-**The ruling** — written by #step-6, walking Table T02 in order and naming where the packs separated.
+Old-prompt reference, same instance, unpaired examples: `bonsai` 12/13 with 5 rescues and 0/13 copied; `qwen` 12/13 with 0 rescues and **1/13** copied (`Fix cursor loss after descend` against `tools-without-prompts` — example #4, verbatim); `lfm25` 10/13 with 2 rescues and 0/13 copied.
+
+**[Q01] resolved: pairing works, and `copied examples` was measuring the wrong thing.** The `lfm25` column is the whole answer — on the unpaired prompt the gate refused **13 of 13**, because it returned `Wire schema migration backfill` or `Fixing schema migration` for *every digest in the corpus*, including `conversation-only` and `parts-list-tail`. `run.py` scored that run `copied examples 0/13` and `all rules 10/13`. The register harness called the pack healthy while it was emitting one lifted string thirteen times. Pairing took it to 5/13. `qwen`'s copied count went 1/13 → 0/13 and, more tellingly, the *character* of its two refusals changed completely: they were prompt-example lifts (`Fix cursor loss after descend`, `Wire filetree cursor loss`) and are now both tool-name openers (`Write mlxspike fetch script`, `Write local-model-investigations.md`). Lifting is gone from the front-runner; what is left is the intent/activity collapse, which is a different failure with a different fix.
+
+`copied examples` under-reports by construction: `lifted()` matches the whole word set, so `Fixing keymap conflicts` against the example `Resolve keymap shortcut conflicts` scores as clean. Every lift this bake-off found was found by the gate, not by the count. That is the case for [P05] made in numbers — the grounding rule subsumes lift detection and does it better.
+
+**[Q03] resolved: no.** `lfm25` holds register 3/13 under the paired prompt, down from 10/13 on the shorter unpaired one — a longer, more structured prompt is exactly what a 1.2B pack cannot hold. It answered `two-goals-one-session` with the single word `Fix`, `conversation-only` with `Fix the session`, and `Fixing keymap conflicts` — a phrase lifted straight out of an example — for three unrelated digests. Its 422 ms median and 0.66 GB download are real, and they are not close to enough.
+
+**The cost of the rewrite, stated plainly.** `bonsai` and `qwen` both lost raw register: 12/13 → 11/13 and 12/13 → 9/13. Part of that is off-list verbs scoring as misses on purpose (`qwen` opened with `Launch` and `Fire`, neither on `verbs.txt`), part is real (`Hardened Tug app auto update flow` is past tense; `Build calc with make and readme` uses `and`). Summarize latency also roughly doubled, because six paired digests are a much longer instruction than eight bare lines — `qwen` 631 ms → 1245 ms, well inside `SUMMARIZE_TIMEOUT` and off the user's critical path, but not free. Raw register ranks sixth in Table T02 deliberately: it is the number that reported 13/13 over a prompt that was leaking answers.
+
+#### The ruling {#the-ruling}
+
+**`qwen3-4b-instruct-2507-4bit` ships.** Walking Table T02 in order:
+
+1. **False SHELL.** `qwen` 1, `bonsai` 2, `lfm25` 17. `qwen` wins and `lfm25` is disqualified outright — a pack that reaches for the executing verdict on half the prose it sees is being saved by the veto rather than checked by it.
+2. **Grounding refusals + copied examples.** `bonsai` 2/13, `qwen` 2/13, `lfm25` 5/13. A tie at the top. `qwen`'s two are tool-name openers and `bonsai`'s two are borderline ungrounded paraphrases (`Fix tmux static build checksum failure` against a digest that says the checksum step failed on a gzip); neither pack lifts examples any more.
+3. **Normalizer rescues.** `qwen` 0, `lfm25` 1, `bonsai` 3. `qwen` wins clearly — it writes headlines that are already in register rather than ones the normalizer has to cut down, and rescue count is exactly the drift the pass rate hides.
+4. **Download size.** `lfm25` 0.66 GB would win, and cannot: it lost at priority 1. `qwen` 2.28 GB edges `bonsai` 2.31 GB, which is not a real difference.
+5. **Latency.** `qwen` 1245 ms summarize / 636 ms classify beats `bonsai` 1647 / 828 on both. `lfm25` is fastest and disqualified.
+6. **Raw register.** `bonsai` 11/13, `qwen` 9/13. The one criterion `bonsai` wins, and the one ranked last on purpose.
+
+So the packs separated at **priority 1 and priority 3**: `lfm25` is out on the irreversible-error criterion, and `qwen` beats `bonsai` on register drift while tying on grounding. `bonsai` wins only the criterion this plan trusts least.
+
+This **agrees** with the earlier two-pack read, which had `qwen` ahead on rescues (0 vs 5) and latency and behind on nothing that mattered. What has changed is the confidence: that read was taken against a prompt whose examples were answer keys, and `qwen`'s single copied example was the visible symptom. On a paired, decontaminated prompt it copies nothing.
+
+**Sampling parameters: unchanged, deliberately.** `Qwen3-4B-Instruct-2507`'s card recommends temperature 0.7 / top-p 0.8 for open-ended generation. `LocalModelJob` sends temperature 0 for both tasks and keeps doing so. Classify has an 8-token budget and one correct answer out of two; summarize has 24 tokens and is scored by harnesses that must reproduce. Sampling would buy variety in a place where variety is the defect — and it would make `just model-classify`'s one-sided gate non-deterministic, which is the last property to trade away.
 
 ---
 
@@ -532,14 +573,14 @@ Two harness gotchas, both previously hit: the tugcast log file is named for the 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Exact-token verdict parse | pending | — |
-| #step-2 | PROMPT-only shell-shape veto | pending | — |
-| #step-3 | Routing bake-off — collect classify numbers for three packs | pending | — |
-| #step-4 | Grounding gate in Rust | pending | — |
-| #step-5 | Paired-example summarize prompt | pending | — |
-| #step-6 | Register bake-off and the ruling | pending | — |
-| #step-7 | Catalog: promote the winner, retire the rest | pending | — |
-| #step-8 | Integration checkpoint — live app, real session | pending | — |
+| #step-1 | Exact-token verdict parse | done | `861b75314` |
+| #step-2 | PROMPT-only shell-shape veto | done | `b4df43794` |
+| #step-3 | Routing bake-off — collect classify numbers for three packs | done | `48d9856a0` |
+| #step-4 | Grounding gate in Rust | done | `60519f7bc` |
+| #step-5 | Paired-example summarize prompt | done | `8db8b8015` |
+| #step-6 | Register bake-off and the ruling | done | `7f66a048a` |
+| #step-7 | Catalog: promote the winner, retire the rest | done | `610f2119f` |
+| #step-8 | Integration checkpoint — live app, real session | partial | see [#step-8-status] |
 
 ---
 
@@ -797,6 +838,29 @@ Two harness gotchas, both previously hit: the tugcast log file is named for the 
 - [ ] `cd tugrust && cargo nextest run` green; `bun test` green; `bunx tsc --noEmit` clean; `bunx vite build` succeeds.
 - [ ] `just model-classify debug-main` exit 0; `just model-eval debug-main` shows `copied examples 0/13`; `just model-liveness debug-main` passes.
 - [ ] No headline observed during the live session misdescribes the work. A single misdescription is a phase failure, not a rounding error — that is what "trustworthy" means here.
+
+---
+
+#### Step 8 status — what is verified and what is owed {#step-8-status}
+
+**Verified.**
+
+- `cd tugrust && cargo nextest run` — 1682/1682, zero warnings.
+- `bun test` — 5874 pass, 0 fail across 691 files.
+- `bunx tsc --noEmit` clean; `bunx vite build` clean.
+- `just model-classify` for the shipping pack — exit 0, prompt recall 36/36, zero false SHELL.
+- `just model-eval` for the shipping pack — `copied examples 0/13`.
+- `just model-liveness` — PASS.
+- Both real 2026-07-29 false-SHELL lines refused, and `git status` / `make test` / `rg TODO src` / `head Justfile` / `cargo nextest run` / `ls -la` all pass the veto untouched, run through the shipping `isShellCandidate` + `vetoesShellVerdict`.
+- `auto` resolves to the winner on a machine holding all three packs, after the rank reconcile fires at launch.
+
+**Owed, and not to be reported as done.**
+
+- **App-test re-verification.** The core tier showed 6 failures while the app-test bundle was loading multi-gigabyte weights on every launch (`auto` began resolving to an installed pack). That load is now gated off under `TUGAPP_APP_TEST=1`, but the tier has **not** been re-run since, so those 6 are unexplained rather than fixed. Candidates were `harness-smoke/smoke-native`, `at0001`, `at0016`, `at0201`, `at0216`, `at0253` — a focus/gesture cluster, which is the shape memory pressure and timing produce.
+- **The live headline read.** A dozen ticks against real work, judged by a human — the check no harness performs and the one the original complaint came from. It needs someone driving the app.
+- **The two live rate readings** from `just model-stats`: grounding refusal rate below ~20% of ticks, and headline change rate not regressed, with **two or more sessions** live so the emit-slot contention path is exercised. The report renders both sections correctly but this instance has produced no overviews yet.
+
+The refusal rate has a measured stand-in: run over each pack's real answers to the 13 frozen digests, the gate refuses **2/13 (15%)** for both surviving packs, under the ~20% bound, with every refusal a genuine defect. That is not the live number and does not substitute for it.
 
 ---
 

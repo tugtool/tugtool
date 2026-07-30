@@ -187,25 +187,72 @@ def main() -> int:
             hits = sum(1 for f in normalized if f.get(flag) == "true")
             print(f"  {flag:11s} {hits}/{n}  ({100 * hits / n:.0f}%)")
 
+    # How often the grounding gate refused a headline the digest did not support,
+    # and by which rule. A gate that never fires is not protecting anything; one
+    # that fires constantly is refusing the model's ordinary work, and the answer
+    # to that is the threshold, not more refusals.
+    summarized = sum(1 for _, rest, _ in parsed if "session overview: summarized" in rest)
+    refused = [f for _, rest, f in parsed if "session overview: headline refused" in rest]
+    print("\ngrounding refusal rate over summarize answers")
+    if not summarized:
+        print("  (no overviews in this window)")
+    else:
+        n = len(refused)
+        print(f"  refused     {n}/{summarized}  ({100 * n / summarized:.0f}%)")
+        rules: dict[str, int] = {}
+        for f in refused:
+            rules[f.get("rule", "?")] = rules.get(f.get("rule", "?"), 0) + 1
+        for rule, hits in sorted(rules.items(), key=lambda kv: -kv[1]):
+            print(f"    {rule:22s} {hits}")
+
+    # What the one corrective re-ask bought. The denominator is re-asks *reached*,
+    # not refusals: a re-ask skipped because another session was waiting for the
+    # emit slot did not fail, it never ran, and counting it as a failure would
+    # make a busy emitter look like a broken correction.
+    reasks = [f for _, rest, f in parsed if "session overview: headline reask" in rest]
+    attempted = [f for f in reasks if f.get("reask") in ("rescued", "failed")]
+    skipped = sum(1 for f in reasks if f.get("reask") == "skipped")
+    rescued = sum(1 for f in attempted if f.get("reask") == "rescued")
+    print("\nre-ask rescue rate")
+    if not reasks:
+        print("  (no refusals to re-ask about in this window)")
+    else:
+        if attempted:
+            print(f"  rescued     {rescued}/{len(attempted)}  ({100 * rescued / len(attempted):.0f}%)")
+        else:
+            print("  rescued     0/0  (every refusal was on a contended emit slot)")
+        print(f"  skipped     {skipped}   — the emit slot was contended")
+
     # The standing read on whether the headline is still tracking the work: a
     # summarize whose answer repeated the last one is discarded before it is
     # emitted, so a low ratio means the headline has gone constant again. It was
     # 16/47 when the headline was frozen by its own prompt.
-    summarized = sum(1 for _, rest, _ in parsed if "session overview: summarized" in rest)
+    #
+    # A refusal is now a third reason not to emit, so the shortfall is broken out:
+    # a rate that fell because the gate went quiet is a different failure from one
+    # that fell because the model repeated itself.
     emitted = sum(1 for _, rest, _ in parsed if "session overview: emitted" in rest)
     print("\nheadline change rate (emitted / summarized)")
     if summarized:
         print(f"  {emitted}/{summarized}  ({100 * emitted / summarized:.0f}%)"
               f"   — 16/47 (34%) is the frozen-headline baseline")
+        held = len(refused) - rescued
+        if held:
+            print(f"  of the {summarized - emitted} not emitted, {held} were refused by the gate")
     else:
         print("  (no overviews in this window)")
 
     return 0
 
 
-# Captured from real files, one of each shape the report depends on — including
-# a line with `slow=true` present and one with it absent, and the older
-# quoted-value form the caller side used before it moved to display formatting.
+# One of each shape the report depends on — including a line with `slow=true`
+# present and one with it absent, and the older quoted-value form the caller side
+# used before it moved to display formatting.
+#
+# The local-model lines are captured from real log files. The grounding-gate lines
+# are captured from the emitting call site by a Rust test, which is the stronger
+# pin: it re-derives the bytes on every run, so a field that stopped being
+# countable fails there rather than turning into a zero here.
 SAMPLES = [
     ("2026-07-29T02:55:53.336913Z  INFO tugapp::local_model: local model request "
      "task=classify transport=socket outcome=ok elapsed_ms=2291 input_chars=2 "
@@ -241,6 +288,29 @@ SAMPLES = [
      "overview: emitted session=4eb21996-9a77-4528-a854-53081ec7bc66 beat=51 receivers=1",
      "tugcast::feeds::session_overview",
      {"beat": "51", "receivers": "1"}),
+    # The two grounding-gate lines. Their field shapes are pinned on the Rust
+    # side by `the_refusal_log_lines_carry_analyzer_readable_fields`, which
+    # captures what the call site actually emits — `rule` and `reask` space-free
+    # so they can be counted, the headline quoted so its spaces survive the split.
+    ("2026-07-30T03:24:11.100200Z  INFO tugcast::feeds::session_overview: session "
+     "overview: headline refused session=s1 rule=ungrounded "
+     'headline="Wire schema migration backfill" detail="backfill migration schema"',
+     "tugcast::feeds::session_overview",
+     {"session": "s1", "rule": "ungrounded",
+      "headline": "Wire schema migration backfill",
+      "detail": "backfill migration schema"}),
+    ("2026-07-30T03:24:11.100310Z  INFO tugcast::feeds::session_overview: session "
+     'overview: headline reask session=s1 reask=failed headline=""',
+     "tugcast::feeds::session_overview",
+     {"session": "s1", "reask": "failed", "headline": ""}),
+    ("2026-07-30T03:24:11.100420Z  INFO tugcast::feeds::session_overview: session "
+     'overview: headline reask session=s2 reask=rescued headline="Harden the watch loop"',
+     "tugcast::feeds::session_overview",
+     {"session": "s2", "reask": "rescued", "headline": "Harden the watch loop"}),
+    ("2026-07-30T03:24:11.100530Z  INFO tugcast::feeds::session_overview: session "
+     "overview: headline reask session=s3 reask=skipped",
+     "tugcast::feeds::session_overview",
+     {"session": "s3", "reask": "skipped"}),
 ]
 
 

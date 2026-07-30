@@ -81,7 +81,14 @@ def example_lines() -> list[str]:
     Recognized by shape rather than by position: a short line, no terminal
     punctuation, no line-continuation backslash, opening on a word from
     `verbs.txt`. That is the shape of an example and of nothing else in the
-    block, so adding a rule or reordering the examples does not break this.
+    block, so adding a rule, reordering the examples, or pairing each one with
+    the digest it answers does not break this.
+
+    Both sides of the verb test are stemmed. `words()` stems, so a raw
+    comparison against it silently missed every verb the stemmer shortens —
+    `resolve` reads as `resolv`, `wire` as `wir`, `bundle` as `bundl` — and an
+    example opening on one of those was invisible here, and therefore invisible
+    to `lifted` and to `contamination`, the two checks this function feeds.
     """
     verbs = words(VERBS.read_text())
     out = []
@@ -90,7 +97,7 @@ def example_lines() -> list[str]:
         if not line or line.endswith("\\") or line[-1] in ".:\"":
             continue
         parts = line.split()
-        if 2 <= len(parts) <= 6 and parts[0].lower() in verbs:
+        if 2 <= len(parts) <= 6 and stem(parts[0].strip(TRIM).lower()) in verbs:
             out.append(line)
     return out
 

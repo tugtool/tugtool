@@ -21,7 +21,6 @@
  *   bun scripts/select-tests.ts <path>...        # explicit changed paths
  *   bun scripts/select-tests.ts --print          # print the selection, run nothing
  *   bun scripts/select-tests.ts --check          # lint: @covers present, resolving, and scoped
- *   bun scripts/select-tests.ts --allow-large    # emit a selection that exceeds MAX_SELECTED
  *
  * Selected test filenames go to stdout, one per line (feed straight to `just app-test`).
  * Reasons, advisories, and diagnostics go to stderr.
@@ -30,9 +29,13 @@
  *
  * A derived selection is only useful if it stays small. Past MAX_SELECTED files the run
  * stops being "the tests for my change" and becomes a sweep in disguise — twenty minutes
- * of serialized Tug.app launches nobody asked for. So the budget is a REFUSAL, not a
- * warning: over it, this script emits no filenames and exits EXIT_OVER_BUDGET, and the
- * caller must either narrow the diff or opt in explicitly with `--allow-large`.
+ * of serialized Tug.app launches nobody asked for. So the budget is a REFUSAL, and it is
+ * final: over it, this script emits no filenames and exits EXIT_OVER_BUDGET.
+ *
+ * There is deliberately NO opt-in flag. A budget with an override is not a budget — the
+ * override becomes the habit, and every over-budget run gets waved through with a reason
+ * that felt good at the time. Narrow the diff, or name the handful of tests you actually
+ * mean. MAX_SELECTED is the limit.
  *
  * `--check` enforces the same ceiling ahead of time: no single source path may fan out to
  * more than MAX_SELECTED tests. Today's hub files already exceed it and are recorded in
@@ -172,7 +175,6 @@ const args = process.argv.slice(2);
 const printOnly = args.includes("--print");
 const checkOnly = args.includes("--check");
 const holesOnly = args.includes("--holes");
-const allowLarge = args.includes("--allow-large");
 const explicit = args.filter((a) => !a.startsWith("--"));
 
 const coverage = testFiles().map(readCoverage);
@@ -342,15 +344,13 @@ if (tripped.length > 0) {
 
 // The budget refusal. Deliberately AFTER the per-test reasons above, so an over-budget
 // caller still sees exactly what would have run and why before deciding.
-if (!printOnly && !allowLarge && selected.length > MAX_SELECTED) {
+if (!printOnly && selected.length > MAX_SELECTED) {
     process.stderr.write(
         `\n[select-tests] REFUSED — ${selected.length} test files exceeds the ${MAX_SELECTED}-file\n` +
             `               selection budget. That is ~${Math.round((selected.length * 15) / 60)} minutes of\n` +
             `               serialized Tug.app launches, which is a sweep, not a scoped run.\n\n` +
             `               Narrow the diff, or name the few tests you actually want:\n` +
-            `                 just app-test <file>...\n` +
-            `               Or opt in deliberately:\n` +
-            `                 just app-test-changed --allow-large\n`,
+            `                 just app-test <file>...\n`,
     );
     process.exit(EXIT_OVER_BUDGET);
 }

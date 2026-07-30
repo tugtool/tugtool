@@ -80,6 +80,26 @@ Grounding: [Headlinese](https://en.wikipedia.org/wiki/Headlinese) · [Cambridge 
 
 The known weakness it will not catch: a digest carries up to 40 tool lines against as few as one or two prompts, and the model can let recent tool shape outweigh the stated goal. `app-self-update` is the live example — the session asked for DMG self-update and the headline lands elsewhere. Fixing that is a digest-composition question, not a prompt one.
 
+**The grounding gate is out of this harness's reach.** `ground_headline` in `tugrust/crates/tugcast/src/feeds/session_overview.rs` refuses a headline the digest does not support, and nothing about that refusal is visible here. There are two summarize log lines from two different files: the requester's, in `local_model.rs`, which is what `harness.py` scrapes and therefore what these scores are computed from — and `session overview: summarized`, in `session_overview.rs`, which is inside the emit path where the gate lives. The gate fires strictly after the line this harness reads.
+
+That split is deliberate rather than unfortunate. Reimplementing the gate's rules in `run.py` would put a second copy of them next to the first, and the copy is what goes stale while reporting that all is well — the same failure that once left this corpus scoring bytes the shipping code no longer produced. So the gate is verified in two places instead: **correctness** by Rust unit tests over these same thirteen digests plus every real defective answer (`cargo nextest run -p tugcast session_overview`), and **live behavior** by `just model-stats`, which reports a grounding refusal rate broken down by rule and a re-ask rescue rate.
+
+What this harness still tells you about the gate is the one thing it is best placed to: `copied examples N/13` measures how often the model lifts a prompt example, which is upstream of the gate and is exactly the signal for whether the gate is being asked to work hard.
+
+The same asymmetry applied to `classify.py` until it was fixed differently — see [Routing](#routing).
+
+## Routing
+
+`classify.py` is the other half of the local model's job and the only harness here with **ground truth**: `classify-corpus.json` holds 71 labeled lines, 35 that meant the shell and 36 that meant Claude, recovered from real logs. So it is a gate rather than a rate — and a one-sided one. It fails only on a **false SHELL**, the verdict that already ran a command nobody asked for; a command sent to Claude instead costs one keystroke and is reported without failing.
+
+It reports two false-SHELL numbers, because they answer different questions.
+
+The **gate** is about what production would have run. The model's verdict alone is not that: a `shell` verdict has to survive `vetoesShellVerdict` in `tugdeck/src/lib/shell-line-classifier.ts` before anything executes, and that veto lives in the deck — one layer past the control socket this harness drives. Left unaccounted for, the harness would have been structurally unable to observe the thing the routing work exists to fix. So `veto-filter.ts` runs the shipping veto over the corpus through bun and `classify.py` applies it before scoring. The rules are imported, never re-expressed in Python, for the same reason the grounding gate has no Python twin.
+
+The **pack's own false SHELL** count is reported unfiltered alongside it. On this corpus the veto is total — it refuses all 36 prose lines and none of the 35 commands — so every pack scores zero after it, and the unfiltered count is what still separates one pack from another. A pack that reaches for the executing verdict on half the prose it sees is leaning on the veto as its classifier rather than being checked by it.
+
+What this does **not** measure: the deck refuses to ask about a line whose first word is not an installed program, so in production some of this prose never reaches the model at all. Every case is sent regardless — a precondition that happens to cover for a bad verdict today is not the same as a good verdict.
+
 ## Liveness
 
 `liveness.py` sends one digest through the real path and fails only on the three facts that mean the feature is not working: no answer within the timeout, an empty headline, or an answer slower than the `summarize` ceiling. It reports the normalizer's verdict without failing on it — that is register drift, which `model-eval` is the instrument for.
@@ -92,4 +112,11 @@ Both preconditions **skip with exit 0** and name the remedy: no installed pack (
 
 It reports per-task outcomes and duration percentiles against the slow thresholds and ceilings, how many bridge classifies answered past the deck's 2000ms give-up (which the deck does not log itself), the normalizer's work rate, and the **headline change rate** — emitted overviews over summarized ones. That last number is the standing read on whether the headline is still tracking the work: it was 16/47 when the headline was frozen by a prompt asking for the session's lifetime goal, and a return toward that ratio means the subject has drifted back.
 
-Parsed-line counts are printed per file, so a format drift shows as a zero rather than as silence. `python3 tests/model-eval/analyze.py --self-test` checks the parser against captured real lines of every shape it depends on.
+It also reports the two numbers that make the grounding gate observable:
+
+- **grounding refusal rate**, broken down by which rule fired. A gate that never fires is not protecting anything; one that fires constantly is refusing the model's ordinary work, and the answer to that is the threshold, not more refusals.
+- **re-ask rescue rate**. A refusal re-asks once with the rejected answer named — but only when no other session is waiting for the emit slot, since one emit runs at a time and an unconditional re-ask would let one refusing session hold the slot while every queued session went stale. The denominator is therefore re-asks *reached*, not refusals: a skipped one never ran and must not count as a failure.
+
+Because a refusal is a third reason not to emit, the change-rate line breaks out how much of its shortfall was refusals. A rate that fell because the gate went quiet is a different failure from one that fell because the model repeated itself, and only the second is the drift the number was invented to watch.
+
+Parsed-line counts are printed per file, so a format drift shows as a zero rather than as silence. `python3 tests/model-eval/analyze.py --self-test` checks the parser against lines of every shape it depends on. The gate's two lines are additionally pinned on the Rust side by `the_refusal_log_lines_carry_analyzer_readable_fields`, which captures what the call site actually emits — a field the analyzer counts has to be space-free, and a headline carrying spaces has to arrive quoted, or it would parse as its first word and silently report a plausible number.

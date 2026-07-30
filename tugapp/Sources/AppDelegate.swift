@@ -160,6 +160,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // nothing else. The load runs off the launch path, and shell routing
         // is unusable until it finishes, so every millisecond it starts sooner
         // is one less during which a typed command routes the wrong way.
+        //
+        // Under the app-test harness this resolves to no model at all and costs
+        // nothing — see `LocalModelService.resolveRoute`.
         LocalModelService.shared.prewarmIfWanted()
         lap("localModel prewarm requested")
 

@@ -141,7 +141,11 @@ import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 import { DEFAULT_ROUTE } from "@/lib/route-constants";
 import type { PathCommandsStore } from "@/lib/path-commands-store";
-import { isShellCandidate, ShellVerdictCache } from "@/lib/shell-line-classifier";
+import {
+  isShellCandidate,
+  ShellVerdictCache,
+  vetoesShellVerdict,
+} from "@/lib/shell-line-classifier";
 import { useLocalModelReady } from "@/lib/local-model-store";
 import { prewarm as prewarmLocalModel, requestClassify } from "@/lib/local-model-bridge";
 import { BANG_COMMANDS, matchBangCommandLine } from "@/lib/bang-commands";
@@ -2520,7 +2524,12 @@ export const TugPromptEntry = React.forwardRef<
       }
       // Only an explicit `shell` verdict routes. A `prompt`, a failed request,
       // and an expired wait are all the same answer: send it to Claude.
-      if (verdict === "shell") {
+      //
+      // The verdict is vetoed here rather than where it is cached, so the cache
+      // stays a faithful record of what the model said and every path into the
+      // shell — cached verdict, fresh answer, awaited in-flight one — passes the
+      // same gate on the way through.
+      if (verdict === "shell" && !vetoesShellVerdict(submitText)) {
         routeToShell();
         return;
       }

@@ -918,6 +918,284 @@ pub fn headline_register_report(raw: &str) -> HeadlineReport {
     }
 }
 
+/// Headings under which a digest line describes activity rather than intent.
+///
+/// The tool-name and restatement rules read only these sections. `compose_digest`
+/// writes the user's own prompts under `What the user asked for:` in the same
+/// `- ` form, and reading those as activity would put the user's verbs into the
+/// tool-name set — an ask opening `fix the lag` would make every legitimate
+/// `Fix …` headline unemittable for that session.
+const ACTIVITY_HEADINGS: &[&str] = &[
+    "What the session has been doing:",
+    "What it is doing right now:",
+];
+
+/// Words that carry none of a headline's subject, so whether the digest spells
+/// them says nothing about whether the headline came from it.
+const GROUNDING_STOPWORDS: &[&str] = &[
+    "the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "by", "for",
+    "with", "from", "into", "its", "it", "this", "that", "after", "before",
+];
+
+/// How much of a headline's subject the digest must account for.
+///
+/// Read as a fraction: `GROUNDED_MIN_NUMERATOR / GROUNDED_MIN_DENOMINATOR` of the
+/// content words after the opening verb.
+///
+/// Swept over the thirteen frozen digests and the real defective answers. Correct
+/// headlines ground no worse than two thirds; the surviving defects ground three
+/// fifths and one third. Two thirds is therefore both the loosest value that
+/// refuses every defect and the strictest that accepts every correct headline,
+/// and the band between them is one word wide — which is why the sweep is pinned
+/// by a test rather than left as a comment.
+const GROUNDED_MIN_NUMERATOR: usize = 2;
+const GROUNDED_MIN_DENOMINATOR: usize = 3;
+
+/// How many words an activity line may carry beyond a headline's subject and
+/// still count as the line that headline restates.
+///
+/// The tool name itself is one of them, so the slack is small on purpose. Its job
+/// is to keep a long `Name(target)` — a commit message, a multi-flag grep — from
+/// containing a headline's whole subject by coincidence.
+const RESTATEMENT_SLACK: usize = 3;
+
+/// Punctuation trimmed off a word before comparison. The same set `run.py` uses,
+/// so the Rust gate and the Python contamination check agree about what a word is.
+const GROUNDING_TRIM: &str = ".,:;!?\"'`()[]<>";
+
+/// Appended to the digest on the one corrective re-ask.
+///
+/// The correction rides on the digest because the instruction text is a
+/// compile-time constant in the Swift service and the digest is the only
+/// per-request input. Temperature is 0, so naming the rejected answer is the only
+/// thing that can make the second answer differ from the first.
+const GROUNDING_CORRECTION: &str = "\nThat is not what happened. This answer was rejected and must not be repeated:";
+
+/// Whether a headline is derived from the digest it claims to describe.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GroundingVerdict {
+    Grounded,
+    Ungrounded {
+        /// Which rule refused it. A static string so it can go straight into a
+        /// log field the batch analyzer counts.
+        rule: &'static str,
+        /// What in particular tripped the rule, for the log and for the re-ask.
+        detail: String,
+    },
+}
+
+/// A crude stem, enough that `restart` matches `restarts` and `resumed`.
+///
+/// A port of `stem()` in `tests/model-eval/run.py`, blunt on purpose and blunt
+/// in the same way. Surface-form comparison is not sufficient: the first version
+/// of the contamination check compared surface forms and let two of six known
+/// leaks through.
+fn stem(word: &str) -> &str {
+    for suffix in ["ing", "ed", "es", "s"] {
+        if word.len() > suffix.len() + 2 && word.ends_with(suffix) {
+            return word[..word.len() - suffix.len()].trim_end_matches('e');
+        }
+    }
+    word.trim_end_matches('e')
+}
+
+/// A text reduced to comparable words, in order.
+///
+/// Splits on whitespace and on the characters that join words inside one token —
+/// hyphen, slash, underscore — so `command-line` and `session_overview`
+/// contribute their parts. Follows `words()` in `run.py`, minus its set collapse:
+/// the first word has to stay identifiable because it is the verb.
+///
+/// Parentheses split here where `run.py` only trims them at a token's ends,
+/// because this function reads activity lines and `run.py` does not. `tool_line`
+/// writes `Name(target)`, so without the split the first word of every target
+/// arrives glued to the tool name — `Bash(cargo` — and no headline can ever
+/// match it. That would silently weaken the restatement rule, which exists
+/// precisely to catch a headline that repeats a target.
+fn content_words(text: &str) -> Vec<String> {
+    text.split(|c: char| {
+        c.is_whitespace() || c == '-' || c == '/' || c == '_' || c == '(' || c == ')'
+    })
+        .filter_map(|raw| {
+            let bare = raw
+                .trim_matches(|c: char| GROUNDING_TRIM.contains(c))
+                .to_lowercase();
+            let stemmed = stem(&bare);
+            (!stemmed.is_empty()).then(|| stemmed.to_string())
+        })
+        .collect()
+}
+
+/// The tool name an activity item opens with, if it is shaped like one.
+///
+/// `Name(target)` as `tool_line` writes it, or a bare `Name` for a tool called
+/// with no recognized target field. The shape test — a leading capital, no
+/// whitespace, nothing but word characters — is what keeps the user's own words
+/// out even inside an activity section: `compose_digest` synthesizes a *right
+/// now* section holding the newest ask **verbatim** when a stretch was re-aimed
+/// without acting yet, so prose appears under an activity heading by design, and
+/// section-awareness alone would not exclude it. It also excludes a shell beat
+/// (`$ cargo test`) and a prose beat (`said: …`), neither of which is a tool.
+fn tool_name_of(item: &str) -> Option<String> {
+    let head = match item.find('(') {
+        Some(open) if item.ends_with(')') => &item[..open],
+        _ => item,
+    };
+    let first = head.chars().next()?;
+    if !first.is_uppercase() {
+        return None;
+    }
+    if !head.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+    Some(stem(&head.to_lowercase()).to_string())
+}
+
+/// Every activity line in the digest that names a tool, as (stemmed name, line).
+fn digest_tool_activity(digest: &str) -> Vec<(String, &str)> {
+    let mut out = Vec::new();
+    let mut in_activity = false;
+    for line in digest.lines() {
+        if line.ends_with(':') && !line.starts_with("- ") {
+            in_activity = ACTIVITY_HEADINGS.contains(&line);
+            continue;
+        }
+        if !in_activity {
+            continue;
+        }
+        if let Some(item) = line.strip_prefix("- ") {
+            if let Some(name) = tool_name_of(item) {
+                out.push((name, item));
+            }
+        }
+    }
+    out
+}
+
+/// The tool names a digest's activity lines mention.
+fn digest_tool_names(digest: &str) -> HashSet<String> {
+    digest_tool_activity(digest)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
+}
+
+/// Whether the digest supports this headline, and if not, which rule refused it.
+///
+/// The normalizer imposes register and never checks truth; this is the other
+/// half. It runs on the normalized text, so it judges the string the strip would
+/// actually wear, and it refuses rather than rewrites — rewriting would be
+/// paraphrase, which is a second model with none of the first one's context, and
+/// a gate that edits can introduce a new falsehood where a gate that declines
+/// cannot.
+///
+/// Rules fire in order, first match winning:
+///
+/// 1. **empty** — nothing left after register. Checked here so the gate is total
+///    over its input and no caller needs a pre-check.
+/// 2. **tool-name opener** — the headline opens on a tool the digest names, which
+///    means the intent line is restating the activity line.
+/// 3. **path-bearing** — a token holding a `/` or `clip`'s `…` marker. A bare
+///    filename is allowed: `score.py`'s rubric exempts identifiers and dotted
+///    paths as proper names, and the gate must not contradict the rubric.
+/// 4. **activity restatement** — the subject is contained in one tool line. Only
+///    tool lines, because restating a *synthesized ask* line is the correct
+///    behavior — that line exists precisely so the headline follows the new
+///    directive rather than the old background.
+/// 5. **ungrounded** — too little of the subject appears anywhere in the digest.
+///
+/// The opening word is exempt from grounding throughout: it is the verb, and a
+/// digest of tool lines will rarely contain one. `Salvage` does not appear in a
+/// digest about a corrupted ledger.
+///
+/// No copy of the prompt's example list is needed or wanted. Every example is
+/// disjoint from every corpus digest, so a lifted example's words are by
+/// definition absent from the digest and rule 5 already rejects it; a duplicated
+/// list here would go stale the first time the Swift string was edited.
+pub fn ground_headline(headline: &str, digest: &str) -> GroundingVerdict {
+    let headline = headline.trim();
+    if headline.is_empty() {
+        return GroundingVerdict::Ungrounded {
+            rule: "empty",
+            detail: String::new(),
+        };
+    }
+
+    let words = content_words(headline);
+    let Some(verb) = words.first() else {
+        return GroundingVerdict::Ungrounded {
+            rule: "empty",
+            detail: String::new(),
+        };
+    };
+
+    if digest_tool_names(digest).contains(verb) {
+        return GroundingVerdict::Ungrounded {
+            rule: "tool-name-opener",
+            detail: verb.clone(),
+        };
+    }
+
+    for token in headline.split_whitespace() {
+        if token.contains('/') || token.contains('…') {
+            return GroundingVerdict::Ungrounded {
+                rule: "path-bearing",
+                detail: token.to_string(),
+            };
+        }
+    }
+
+    let stopwords: HashSet<&str> = GROUNDING_STOPWORDS.iter().map(|w| stem(w)).collect();
+    let subject: HashSet<&String> = words
+        .iter()
+        .skip(1)
+        .filter(|word| !stopwords.contains(word.as_str()))
+        .collect();
+    // A headline that is nothing but a verb and stopwords has no subject to
+    // ground. The register normalizer's word budget already bounds it, and there
+    // is no claim in it that the digest could contradict.
+    if subject.is_empty() {
+        return GroundingVerdict::Grounded;
+    }
+
+    for (_, line) in digest_tool_activity(digest) {
+        let line_words: HashSet<String> = content_words(line).into_iter().collect();
+        // Restatement means the headline says the same thing the line says, so
+        // containment only counts when the two are about the same size. A
+        // word-rich target — a commit message, a long grep — contains a great
+        // many subjects by accident, and letting it match refuses good headlines:
+        // `Investigate local model roadmap` is a fair headline for a session
+        // whose activity includes `Bash(tugutil commit --message "plan(new):
+        // roadmap/local-model-inv)`, and nothing about it restates that command.
+        if line_words.len() > subject.len() + RESTATEMENT_SLACK {
+            continue;
+        }
+        if subject.iter().all(|word| line_words.contains(*word)) {
+            return GroundingVerdict::Ungrounded {
+                rule: "activity-restatement",
+                detail: line.to_string(),
+            };
+        }
+    }
+
+    let have: HashSet<String> = content_words(digest).into_iter().collect();
+    let grounded = subject.iter().filter(|word| have.contains(**word)).count();
+    if grounded * GROUNDED_MIN_DENOMINATOR < subject.len() * GROUNDED_MIN_NUMERATOR {
+        let mut missing: Vec<&str> = subject
+            .iter()
+            .filter(|word| !have.contains(**word))
+            .map(|word| word.as_str())
+            .collect();
+        missing.sort_unstable();
+        return GroundingVerdict::Ungrounded {
+            rule: "ungrounded",
+            detail: missing.join(" "),
+        };
+    }
+
+    GroundingVerdict::Grounded
+}
+
 /// Bring a headline within the word budget by dropping its tail.
 ///
 /// Cuts at the earliest joiner in range, so the whole tail goes rather than
@@ -1056,6 +1334,42 @@ struct EmitJob {
     last_digest: Option<String>,
     jsonl: Option<PathBuf>,
     local_model: SharedLocalModelState,
+    /// Whether a refused headline may be re-asked. Decided on the loop, because
+    /// the spawned task cannot see the queue and reading it across the loop
+    /// boundary would be a lock held over the emit.
+    ///
+    /// One emit is in flight at a time across all sessions and the summarize
+    /// timeout is 6 s, so an unconditional re-ask would let one refusing session
+    /// hold the only slot for twice that while every queued session waits. A
+    /// refusal would then cost liveliness globally, which is the opposite of what
+    /// the re-ask exists to protect.
+    may_reask: bool,
+}
+
+/// What the one corrective re-ask did, for the rescue rate.
+///
+/// A grounded headline has no variant here and logs no re-ask line at all, so
+/// the rescue rate's denominator is re-asks *reached* rather than ticks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reask {
+    /// A refusal, but another session was waiting for the emit slot.
+    Skipped,
+    /// Asked again; the second answer was refused too, or the call failed.
+    Failed,
+    /// Asked again; the second answer was grounded.
+    Rescued,
+}
+
+impl Reask {
+    /// A space-free token, because `analyze.py` splits log fields on whitespace
+    /// unless the value is quoted.
+    fn as_str(self) -> &'static str {
+        match self {
+            Reask::Skipped => "skipped",
+            Reask::Failed => "failed",
+            Reask::Rescued => "rescued",
+        }
+    }
 }
 
 /// What an emit task hands back to the loop.
@@ -1071,7 +1385,8 @@ struct EmitOutcome {
     /// success, so a digest the model never saw retries once the model
     /// returns instead of dying to the digest-unchanged dedup.
     seen_digest: Option<String>,
-    /// The normalized headline, when the model produced one.
+    /// The normalized headline, when the model produced one the digest supports.
+    /// A refused headline leaves this `None`, so the previous headline stands.
     headline: Option<String>,
     /// The model was absent or failed — arm the back-off.
     failed: bool,
@@ -1334,6 +1649,8 @@ fn spawn_next(
             activity,
             recent_activity,
             asked,
+            // Read after the pop: nobody is left behind this emit.
+            may_reask: queue.is_empty(),
         };
         *in_flight = Some((session_id, tokio::spawn(run_emit(job))));
     }
@@ -1354,6 +1671,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
         last_digest,
         jsonl,
         local_model,
+        may_reask,
     } = job;
     let mut outcome = EmitOutcome {
         session_id: session_id.clone(),
@@ -1426,7 +1744,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
     // the request deadline is a transport timeout, far above the point at
     // which a headline stops being worth having.
     let started = Instant::now();
-    match requester.summarize(digest.clone()).await {
+    let report = match requester.summarize(digest.clone()).await {
         Ok(text) => {
             let report = headline_register_report(&text);
             info!(
@@ -1439,8 +1757,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
                 clipped = report.clipped,
                 "session overview: summarized",
             );
-            outcome.seen_digest = Some(digest);
-            outcome.headline = Some(report.text);
+            report
         }
         Err(error) => {
             warn!(
@@ -1450,8 +1767,74 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
                 "session overview: summarize failed",
             );
             outcome.failed = true;
+            return outcome;
         }
+    };
+    // The model answered, so it saw this digest — record it whether or not the
+    // answer survives the gate, or the next tick re-summarizes evidence that has
+    // not changed. On the re-ask below this stays the *original* digest: the
+    // correction is appended for the model's benefit only.
+    outcome.seen_digest = Some(digest.clone());
+
+    let refusal = match ground_headline(&report.text, &digest) {
+        GroundingVerdict::Grounded => {
+            outcome.headline = Some(report.text);
+            return outcome;
+        }
+        GroundingVerdict::Ungrounded { rule, detail } => {
+            info!(
+                session = %session_id,
+                rule = %rule,
+                headline = ?report.text,
+                detail = ?detail,
+                "session overview: headline refused",
+            );
+            (rule, detail)
+        }
+    };
+
+    if !may_reask {
+        info!(
+            session = %session_id,
+            reask = %Reask::Skipped.as_str(),
+            "session overview: headline reask",
+        );
+        return outcome;
     }
+
+    // Grounded against the original digest, never against the corrected one —
+    // the correction quotes the rejected headline, so grounding the second answer
+    // against it would let the model pass by repeating itself.
+    let corrected = format!(
+        "{digest}{GROUNDING_CORRECTION} {}\nIt failed because: {} {}\n",
+        report.text, refusal.0, refusal.1,
+    );
+    let second = requester.summarize(corrected).await;
+    let reask = match second {
+        Ok(text) => {
+            let report = headline_register_report(&text);
+            match ground_headline(&report.text, &digest) {
+                GroundingVerdict::Grounded => {
+                    outcome.headline = Some(report.text);
+                    Reask::Rescued
+                }
+                GroundingVerdict::Ungrounded { .. } => Reask::Failed,
+            }
+        }
+        Err(error) => {
+            warn!(%error, session = %session_id, "session overview: reask failed");
+            Reask::Failed
+        }
+    };
+    // Debug-formatted so the text arrives quoted: `analyze.py` reads a field's
+    // value as space-free unless it is quoted, and a bare headline would parse as
+    // its first word with the rest silently dropped.
+    info!(
+        session = %session_id,
+        reask = %reask.as_str(),
+        headline = ?outcome.headline.as_deref().unwrap_or_default(),
+        "session overview: headline reask",
+    );
     outcome
 }
 
@@ -1698,6 +2081,271 @@ mod tests {
             checked += 1;
         }
         assert!(checked >= 12, "corpus shrank to {checked} entries");
+    }
+
+    /// One frozen corpus digest, by name.
+    fn digest(name: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../tests/model-eval/corpus")
+            .join(format!("{name}.digest.txt"));
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+    }
+
+    fn refusal(headline: &str, name: &str) -> (&'static str, String) {
+        match ground_headline(headline, &digest(name)) {
+            GroundingVerdict::Grounded => {
+                panic!("{headline:?} was accepted against {name}, expected a refusal")
+            }
+            GroundingVerdict::Ungrounded { rule, detail } => (rule, detail),
+        }
+    }
+
+    fn assert_grounded(headline: &str, name: &str) {
+        if let GroundingVerdict::Ungrounded { rule, detail } =
+            ground_headline(headline, &digest(name))
+        {
+            panic!("{headline:?} refused against {name} by {rule} ({detail})");
+        }
+    }
+
+    /// Every defective headline recorded during the 2026-07-29 measurement pass,
+    /// against a real digest, with the rule that has to catch it.
+    #[test]
+    fn the_real_defective_headlines_are_refused() {
+        // A tool line copied straight through as the intent line.
+        assert_eq!(refusal("Bash make", "parts-list-tail").0, "tool-name-opener");
+        // The mid-token truncation seen on the strip. `…` is `clip`'s marker.
+        assert_eq!(
+            refusal("Write jul29-p…", "tools-without-prompts").0,
+            "path-bearing"
+        );
+        assert_eq!(
+            refusal("Write /tmp/calc/calc.c", "tools-without-prompts").0,
+            "path-bearing"
+        );
+        // Prompt examples returned verbatim. The examples are disjoint from every
+        // digest, so grounding catches them with no copy of the example list.
+        assert_eq!(
+            refusal("Fix cursor loss after descend", "tools-without-prompts").0,
+            "ungrounded"
+        );
+        assert_eq!(
+            refusal("Wire schema migration backfill", "parts-list-tail").0,
+            "ungrounded"
+        );
+        // The `lag/2a4460f9` cluster, against the digest of the session that was
+        // actually about a command-line calculator.
+        for headline in [
+            "Fix lagging editor input",
+            "Fix sed command lagging",
+            "Fix typing lag in command-line calculator",
+        ] {
+            assert_eq!(refusal(headline, "parts-list-tail").0, "ungrounded");
+        }
+    }
+
+    /// The false-positive guard. A correct headline for each frozen digest must
+    /// survive, or the gate buys truth with silence.
+    #[test]
+    fn a_correct_headline_survives_every_frozen_digest() {
+        for (headline, name) in [
+            ("Harden app termination for Sparkle updates", "app-self-update"),
+            ("Explain maxwell equations and primality", "conversation-only"),
+            ("Diagnose debug splash screen hang", "debug-launch-stuck"),
+            ("Repair file completion path canonicalization", "file-completion-paths"),
+            ("Chase composer typing lag", "fresh-directive"),
+            ("Plan local model onboarding for TugSetup", "local-model-onboarding"),
+            ("Evaluate Bonsai models for local scribe", "local-model-scribe"),
+            ("Audit theme token contrast budgets", "noun-pile-bait"),
+            ("Bundle tmux statically from source", "one-line-goal"),
+            ("Author a command line calculator in C", "parts-list-tail"),
+            ("Instrument the splash screen teardown block", "splash-screen-stall"),
+            ("Trace session overview cadence gate", "tools-without-prompts"),
+            ("Fix download resume and port shell router", "two-goals-one-session"),
+        ] {
+            assert_grounded(headline, name);
+        }
+    }
+
+    /// The threshold in `GROUNDED_MIN_*` is a choice, so it is pinned by the
+    /// cases that rule the neighbouring values out rather than by assertion.
+    ///
+    /// Looser (one half) accepts a real defect: `Fix typing lag in command-line
+    /// calculator` grounds 3 of its 5 subject words against `parts-list-tail`,
+    /// because that session really was about a command-line calculator — the
+    /// words it invents are the ones that matter. Stricter (three quarters)
+    /// refuses correct headlines that reach for one word the digest spells
+    /// differently, which is the staleness the gate must not buy.
+    #[test]
+    fn the_grounding_threshold_is_the_loosest_that_still_refuses_the_defects() {
+        // Two thirds is what ships.
+        assert_eq!(GROUNDED_MIN_NUMERATOR, 2);
+        assert_eq!(GROUNDED_MIN_DENOMINATOR, 3);
+
+        let ratio = |headline: &str, name: &str| -> (usize, usize) {
+            let digest = digest(name);
+            let words = content_words(headline);
+            let stopwords: HashSet<&str> =
+                GROUNDING_STOPWORDS.iter().map(|w| stem(w)).collect();
+            let subject: HashSet<&String> = words
+                .iter()
+                .skip(1)
+                .filter(|w| !stopwords.contains(w.as_str()))
+                .collect();
+            let have: HashSet<String> = content_words(&digest).into_iter().collect();
+            (subject.iter().filter(|w| have.contains(**w)).count(), subject.len())
+        };
+
+        // A defect that one half would accept and two thirds refuses.
+        let (grounded, total) = ratio("Fix typing lag in command-line calculator", "parts-list-tail");
+        assert!(grounded * 2 >= total, "one half would accept {grounded}/{total}");
+        assert!(grounded * 3 < total * 2, "two thirds must refuse {grounded}/{total}");
+
+        // A correct headline that three quarters would refuse and two thirds keeps.
+        let (grounded, total) = ratio("Explain maxwell equations and primality", "conversation-only");
+        assert!(grounded * 4 < total * 3, "three quarters would refuse {grounded}/{total}");
+        assert!(grounded * 3 >= total * 2, "two thirds must accept {grounded}/{total}");
+    }
+
+    /// The refusal rate the gate would produce over real model answers, printed
+    /// rather than asserted.
+    ///
+    /// Reads `/tmp/register-<pack>.json` as written by `run.py --json`, so it is a
+    /// no-op wherever those captures are absent — which is everywhere except a
+    /// machine that has just run the register bake-off. It exists because the
+    /// refusal rate is otherwise only observable from a live session, and a
+    /// threshold chosen against thirteen hand-written correct headlines deserves a
+    /// look at what the models actually write.
+    ///
+    ///   cargo nextest run -p tugcast the_refusal_rate --nocapture
+    #[test]
+    fn the_refusal_rate_over_captured_answers() {
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../tests/model-eval/corpus");
+        let mut looked = 0;
+        for entry in std::fs::read_dir("/tmp").into_iter().flatten().flatten() {
+            let path = entry.path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            if !name.starts_with("register-") || !name.ends_with(".json") {
+                continue;
+            }
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            // `run.py --json` writes the scored rows as a bare array; each row
+            // carries `name` (the corpus entry) and `headline` (the normalized
+            // answer) among the rubric's own fields.
+            let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&raw) else {
+                continue;
+            };
+            looked += 1;
+            let mut refused = 0;
+            let mut total = 0;
+            for row in rows {
+                let Some(case) = row.get("name").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let Some(headline) = row.get("headline").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let Ok(digest) = std::fs::read_to_string(corpus.join(format!("{case}.digest.txt")))
+                else {
+                    continue;
+                };
+                total += 1;
+                if let GroundingVerdict::Ungrounded { rule, detail } =
+                    ground_headline(headline, &digest)
+                {
+                    refused += 1;
+                    println!("REFUSED {name} {case}: {headline:?} — {rule} ({detail})");
+                }
+            }
+            if total > 0 {
+                println!("RATE {name}: {refused}/{total} refused");
+            }
+        }
+        if looked == 0 {
+            println!("no /tmp/register-*.json captures; nothing to rate");
+        }
+    }
+
+    /// A bare filename is a proper name, not a path — `score.py`'s rubric exempts
+    /// identifiers and dotted paths, and the gate must not contradict it.
+    #[test]
+    fn a_bare_filename_is_allowed_where_a_path_is_not() {
+        assert_grounded("Trace session_overview.rs cadence gate", "tools-without-prompts");
+        assert_eq!(
+            refusal("Trace tugcast/src/feeds cadence gate", "tools-without-prompts").0,
+            "path-bearing"
+        );
+    }
+
+    /// The digest's own activity lines are the tool-name set, so a new Claude
+    /// tool needs no change here.
+    #[test]
+    fn tool_names_come_from_activity_lines_only() {
+        let names = digest_tool_names(&digest("parts-list-tail"));
+        assert_eq!(
+            names,
+            ["writ", "bash"].iter().map(|s| s.to_string()).collect()
+        );
+
+        // `fresh-directive`'s *right now* section is the newest ask, verbatim,
+        // under an activity heading — which is what makes the shape test load
+        // bearing rather than section-awareness alone.
+        let names = digest_tool_names(&digest("fresh-directive"));
+        assert_eq!(
+            names,
+            ["read", "edit", "bash"].iter().map(|s| s.to_string()).collect()
+        );
+        for ask_word in ["good", "now", "chase", "typing", "lag", "composer"] {
+            assert!(!names.contains(ask_word), "{ask_word} entered the tool-name set");
+        }
+    }
+
+    /// The poisoned-set regression, direct: `Fix` is the most common opener in
+    /// the corpus by a wide margin, and an unscoped parse would make it
+    /// unemittable for any session whose ask happens to open on the same word.
+    #[test]
+    fn an_ask_verb_does_not_become_a_tool_name() {
+        let digest = compose_digest(
+            &["fix the typing lag in the composer".to_string()],
+            &["Read(tugdeck/src/components/tugways/tug-prompt-entry.tsx)".to_string()],
+            1,
+            false,
+        )
+        .expect("describes something");
+        assert_eq!(
+            digest_tool_names(&digest),
+            ["read"].iter().map(|s| s.to_string()).collect()
+        );
+        assert_eq!(ground_headline("Fix composer typing lag", &digest), GroundingVerdict::Grounded);
+    }
+
+    /// Restating one tool line is the intent/activity collapse the strip showed:
+    /// the intent line says what the digest already said the session is doing,
+    /// instead of naming what it is for.
+    #[test]
+    fn restating_a_single_tool_line_is_refused() {
+        // Every word but the verb comes from `Bash(cargo nextest run
+        // session_overview)`, which is one activity line of this digest.
+        assert_eq!(
+            refusal("Trace cargo nextest session overview", "tools-without-prompts").0,
+            "activity-restatement"
+        );
+        // The words that make a headline about *purpose* rather than about the
+        // command are exactly what keeps it clear of the rule.
+        assert_grounded("Trace session overview cadence gate", "tools-without-prompts");
+    }
+
+    /// An empty headline is the gate's business too, so no caller needs a
+    /// pre-check for it.
+    #[test]
+    fn an_empty_headline_is_refused_by_the_gate_itself() {
+        for text in ["", "   ", "\n"] {
+            assert_eq!(refusal(text, "one-line-goal").0, "empty");
+        }
     }
 
     /// The live failure this budget exists for: the model obeyed every other
@@ -2991,12 +3639,12 @@ mod tests {
     /// conversational session sat at zero frames forever and never got there.
     #[tokio::test(start_paused = true)]
     async fn a_session_with_no_tool_use_still_gets_an_overview() {
-        let mut h = start(Some("Explaining Maxwell's equations."), true, true, true);
+        let mut h = start(Some("Harden the watch loop."), true, true, true);
         tokio::time::sleep(Duration::from_millis(50)).await;
         h.code_tx.send(turn_complete_frame("s1")).unwrap();
         let overview = next_overview(&mut h.pulse_rx).await.expect("an overview");
         assert_eq!(overview["kind"], "overview");
-        assert_eq!(overview["text"], "Explaining Maxwell's equations");
+        assert_eq!(overview["text"], "Harden the watch loop");
         assert_eq!(overview["scopes"], serde_json::json!(["s1"]));
     }
 
@@ -3006,7 +3654,7 @@ mod tests {
     /// nor a cadence advance.
     #[tokio::test(start_paused = true)]
     async fn a_shell_only_session_still_gets_an_overview() {
-        let mut h = start(Some("Building the workspace."), true, true, true);
+        let mut h = start(Some("Harden the watch loop."), true, true, true);
         tokio::time::sleep(Duration::from_millis(50)).await;
         let started = serde_json::json!({
             "tug_session_id": "s1", "type": "exchange_started", "exchange_id": "e1",
@@ -3020,7 +3668,7 @@ mod tests {
             .unwrap();
         let overview = next_overview(&mut h.pulse_rx).await.expect("an overview");
         assert_eq!(overview["kind"], "overview");
-        assert_eq!(overview["text"], "Building the workspace");
+        assert_eq!(overview["text"], "Harden the watch loop");
         assert_eq!(overview["scopes"], serde_json::json!(["s1"]));
     }
 
@@ -3098,13 +3746,23 @@ mod tests {
             .expect("the host is alive")
     }
 
+    /// The next summarize request, or `None` once the host has gone quiet — for
+    /// counting how many requests a stretch produced rather than awaiting a
+    /// known number of them.
+    async fn next_digest_opt(rx: &mut tokio::sync::mpsc::Receiver<String>) -> Option<String> {
+        tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .ok()
+            .flatten()
+    }
+
     /// The proper-coast defect, pinned: a submission landing mid-quiet-stretch
     /// — full floor unexpired, burst nowhere near — emits at the first tick
     /// past the forced floor instead of waiting out the cadence.
     #[tokio::test(start_paused = true)]
     async fn a_mid_stretch_submission_re_aims_within_the_forced_floor() {
         let mut h = start_cadenced(
-            Some("Answering the new ask."),
+            Some("Harden the watch loop."),
             true,
             true,
             true,
@@ -3124,12 +3782,135 @@ mod tests {
         assert_eq!(overview["scopes"], serde_json::json!(["s1"]));
     }
 
+    /// A headline the digest does not support is re-asked once, with the
+    /// rejected answer named, and if the second answer fails too nothing is
+    /// emitted — the previous headline stands rather than a wrong one replacing
+    /// it. The canned host answers the same thing both times, which is what a
+    /// blind retry at temperature 0 would do and why the correction has to name
+    /// the failure.
+    #[tokio::test(start_paused = true)]
+    async fn a_refused_headline_is_re_asked_once_then_held() {
+        let mut h = start(Some("Wire schema migration backfill."), true, true, true);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
+        let mut digests = h.digests.take().unwrap();
+
+        let first = next_digest(&mut digests).await;
+        assert!(!first.contains(GROUNDING_CORRECTION));
+        let second = next_digest(&mut digests).await;
+        assert!(second.starts_with(&first), "the re-ask keeps the original digest");
+        assert!(second.contains(GROUNDING_CORRECTION));
+        assert!(second.contains("Wire schema migration backfill"));
+
+        // Two summarize calls and no third, and no frame from either.
+        assert!(next_overview(&mut h.pulse_rx).await.is_none());
+    }
+
+    /// The two refusal lines, as bytes, so the shapes `analyze.py` parses are
+    /// pinned against the call site that emits them.
+    ///
+    /// The analyzer reads a field's value as space-free unless it is quoted, so a
+    /// countable field carrying a space would parse as its first word with the
+    /// rest dropped — silently, reporting a plausible number. `rule` and `reask`
+    /// must therefore be single tokens and the headline text must arrive quoted.
+    #[tokio::test(start_paused = true)]
+    async fn the_refusal_log_lines_carry_analyzer_readable_fields() {
+        use std::sync::{Arc as StdArc, Mutex as StdMutex};
+        use tracing_subscriber::fmt::MakeWriter;
+
+        #[derive(Clone)]
+        struct Buffer(StdArc<StdMutex<Vec<u8>>>);
+        impl std::io::Write for Buffer {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl<'a> MakeWriter<'a> for Buffer {
+            type Writer = Buffer;
+            fn make_writer(&'a self) -> Self::Writer {
+                self.clone()
+            }
+        }
+
+        let sink = Buffer(StdArc::new(StdMutex::new(Vec::new())));
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(sink.clone())
+            .with_ansi(false)
+            .without_time()
+            .finish();
+        let captured = {
+            let _guard = tracing::subscriber::set_default(subscriber);
+            let mut h = start(Some("Wire schema migration backfill."), true, true, true);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
+            let mut digests = h.digests.take().unwrap();
+            next_digest(&mut digests).await;
+            next_digest(&mut digests).await;
+            assert!(next_overview(&mut h.pulse_rx).await.is_none());
+            String::from_utf8(sink.0.lock().unwrap().clone()).unwrap()
+        };
+
+        let refused = captured
+            .lines()
+            .find(|l| l.contains("headline refused"))
+            .unwrap_or_else(|| panic!("no refusal line in:\n{captured}"));
+        let reask = captured
+            .lines()
+            .find(|l| l.contains("headline reask"))
+            .unwrap_or_else(|| panic!("no reask line in:\n{captured}"));
+
+        // Space-free countable fields.
+        assert!(refused.contains("rule=ungrounded"), "{refused}");
+        assert!(reask.contains("reask=failed"), "{reask}");
+        // Quoted text, so a headline holding spaces survives the field split.
+        assert!(
+            refused.contains("headline=\"Wire schema migration backfill\""),
+            "{refused}"
+        );
+        assert!(reask.contains("headline=\"\""), "{reask}");
+    }
+
+    /// The re-ask is skipped whenever another session is waiting for the emit
+    /// slot. One emit runs at a time across all sessions, so an unconditional
+    /// re-ask would let one refusing session hold the only slot for twice the
+    /// summarize timeout while every queued session went stale behind it.
+    ///
+    /// Two sessions come due together. The first is spawned with the second
+    /// still queued, so it may not re-ask; the second is spawned with nothing
+    /// behind it, so it may. Exactly one corrected digest therefore reaches the
+    /// host, not two.
+    #[tokio::test(start_paused = true)]
+    async fn a_contended_emit_slot_skips_the_re_ask() {
+        let mut h = start(Some("Wire schema migration backfill."), true, true, true);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
+        h.code_tx.send(tool_use_frame("s2", "cargo test")).unwrap();
+        let mut digests = h.digests.take().unwrap();
+
+        let mut seen = Vec::new();
+        while let Some(digest) = next_digest_opt(&mut digests).await {
+            seen.push(digest);
+        }
+        let corrected = seen.iter().filter(|d| d.contains(GROUNDING_CORRECTION)).count();
+        assert_eq!(
+            corrected, 1,
+            "one session re-asked and one was contended; saw {} digests",
+            seen.len()
+        );
+        assert_eq!(seen.len(), 3, "two first asks and one re-ask");
+        assert!(next_overview(&mut h.pulse_rx).await.is_none());
+    }
+
     /// The recency boundary is turn-relative: a new ask empties "right now",
     /// demotes the old turn's lines to background, and rides last in the
     /// prompt section as the current directive.
     #[tokio::test(start_paused = true)]
     async fn a_new_ask_resets_right_now_and_rides_last_in_the_digest() {
-        let mut h = start(Some("Refocusing on the parser."), true, true, true);
+        let mut h = start(Some("Harden the watch loop."), true, true, true);
         tokio::time::sleep(Duration::from_millis(50)).await;
         h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
         let mut digests = h.digests.take().unwrap();
@@ -3360,7 +4141,7 @@ mod tests {
     /// next frame starts fresh — no stale background rides along.
     #[tokio::test(start_paused = true)]
     async fn an_idle_session_is_pruned_at_the_retention_window() {
-        let mut h = start(Some("Building again."), true, true, true);
+        let mut h = start(Some("Harden the watch loop."), true, true, true);
         tokio::time::sleep(Duration::from_millis(50)).await;
         h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
         let mut digests = h.digests.take().unwrap();
@@ -3389,7 +4170,7 @@ mod tests {
             floor: Duration::from_secs(3_000),
             forced_floor: FORCED_EMIT_FLOOR,
         };
-        let mut h = start_cadenced(Some("Running commands."), true, true, true, cadence);
+        let mut h = start_cadenced(Some("Harden the watch loop."), true, true, true, cadence);
         tokio::time::sleep(Duration::from_millis(50)).await;
         let exec = |n: u32| {
             let body = serde_json::json!({
@@ -3489,7 +4270,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_prose_only_session_emits_within_the_idle_period() {
         let mut h = start_cadenced(
-            Some("Explaining the cadence."),
+            Some("Run the emitter on a clock."),
             true,
             true,
             true,
@@ -3510,7 +4291,7 @@ mod tests {
         tokio::time::sleep(IDLE_PERIOD).await;
         let overview = next_overview(&mut h.pulse_rx).await.expect("an overview");
         assert_eq!(overview["kind"], "overview");
-        assert_eq!(overview["text"], "Explaining the cadence");
+        assert_eq!(overview["text"], "Run the emitter on a clock");
         assert_eq!(overview["scopes"], serde_json::json!(["s1"]));
     }
 

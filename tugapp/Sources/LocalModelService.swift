@@ -87,17 +87,43 @@ enum LocalModelConfig {
 /// property that makes a score mean something. Keep it that way: an example
 /// drawn from the corpus is an answer key, not a demonstration.
 ///
+/// The fifth pass paired the examples with the digests they answer, the shape
+/// `classify` had used since its own retune. The unpaired block that preceded it
+/// showed eight bare headlines and no inputs, and what a model reads in a list of
+/// answers with no questions is available content: 85% of 1123 real headlines
+/// opened with `Fix`, and 13% returned a string out of the block itself — the
+/// label held up as the failure to avoid among them. Every example now carries a
+/// miniature digest in the real section headings and the real `Name(target)`
+/// activity form, so the pairing is visible. Two of them exist for particular
+/// failures: one whose *right now* section is a tool line, answered by naming
+/// what the work is for rather than which command ran; and one whose *right now*
+/// section is the newest ask verbatim, which is what `compose_digest` synthesizes
+/// when a session has been re-aimed but has not acted yet.
+///
 /// Those scores are not being refreshed, because a fixed-corpus summary score
 /// says nothing about whether the strip works — there is no ground truth for
 /// "what is this session working on". What the feature is held to instead:
-/// `headline_register` in `session_overview.rs`, which imposes the form in Rust
-/// whatever the model answers; `tests/model-eval` (`just model-eval`), which
+/// `headline_register_report` in `session_overview.rs`, which imposes the form in
+/// Rust whatever the model answers; `ground_headline` beside it, which refuses a
+/// headline the digest does not support and is the only check that reads the
+/// answer against its own evidence; `tests/model-eval` (`just model-eval`), which
 /// scores the register of real headlines against a live instance; and liveness
 /// and turnaround (`roadmap/archive/local-model-liveness-brief.md`).
 ///
-/// The freeze rule above still holds and is doing a different job: it keeps
-/// catalog entries comparable on identical wording, and it makes editing one of
-/// these strings a deliberate act rather than a drive-by.
+/// The freeze rule above still holds, doing a narrower job than it used to claim.
+/// It no longer protects the scores recorded in `CatalogEntry.notes` — those refer
+/// to wordings four rewrites old and are stale beyond repair. What it protects is
+/// that a comparison is a comparison: every pack in one bake-off is scored on
+/// identical wording, the same corpus, the same normalizer. Editing one of these
+/// strings invalidates the current bake-off and obliges re-running it, which is
+/// what makes the edit a deliberate act rather than a drive-by.
+///
+/// Keeping every example disjoint from `tests/model-eval/corpus` is now load
+/// bearing twice over. It is what lets `run.py` call a match a lift, and it is
+/// what lets `ground_headline` catch a lifted example with no copy of this list
+/// in Rust: disjoint means a lifted example's words are absent from the digest,
+/// which the grounding rule already rejects. A rule stated in two places drifts;
+/// this way it is stated once, here.
 enum LocalModelPrompts {
     static let classify = """
     You label one line a developer typed into a dev tool. Answer with exactly \
@@ -160,18 +186,69 @@ enum LocalModelPrompts {
     Proper names keep their capitals — Lens, Finder, Keychain, CodeMirror.
     No period. No quotes.
 
-    A headline with no verb is a label, and a label is a failure. \
-    "Schema migration with version bump and backfill" is a label. \
-    "Wire schema migration backfill" is a headline.
+    EVERY WORD MUST COME FROM THE DIGEST YOU WERE GIVEN. Never name a tool — \
+    Bash, Edit, Read, Write, Grep — and never write a path or a file's \
+    location. Those say which command ran; the headline says what the work is \
+    for.
 
-    Hunt focus drift in Lens
-    Author snippet picker route
-    Wire changeset attribution tap
-    Fix cursor loss after descend
-    Port sparkline decode off thread
-    Salvage corrupted changes ledger
-    Explain checkpoint contention
-    Bundle CJK subsets for release
+    A headline with no verb is a label, and a label is a failure. \
+    "Ligature fallback for monospace fonts" is a label. \
+    "Repair ligature fallback in monospace" is a headline.
+
+    Below are digests and the headline each one earns. Read the pairing: the \
+    headline uses that digest's own words, and no others.
+
+    DIGEST:
+    What the user asked for:
+    - the keyboard shortcuts are fighting each other, sort it out
+    What it is doing right now:
+    - Read(keymap.ts)
+    - Edit(keymap.ts)
+    HEADLINE:
+    Resolve keymap shortcut conflicts
+
+    DIGEST:
+    What the session has been doing:
+    - Read(reconnect.ts)
+    - said: Every dropped socket retries at once, so the server sees a storm.
+    What it is doing right now:
+    - Edit(reconnect.ts)
+    HEADLINE:
+    Throttle websocket reconnect storm
+
+    DIGEST:
+    What the user asked for:
+    - the badge count stays wrong after things are marked read
+    What it is doing right now:
+    - Bash(bun test notification-badge)
+    HEADLINE:
+    Fix stale notification badge count
+
+    DIGEST:
+    What the session has been doing:
+    - Read(/opt/render/glyph-atlas/atlas.rs)
+    - said: The atlas reallocates on every resize instead of reusing pages.
+    What it is doing right now:
+    - Edit(/opt/render/glyph-atlas/atlas.rs)
+    HEADLINE:
+    Prune glyph atlas reallocation
+
+    DIGEST:
+    What the user asked for:
+    - add the image paste path
+    - forget that, undo is coalescing far too much
+    What it is doing right now:
+    - forget that, undo is coalescing far too much
+    HEADLINE:
+    Tighten undo coalescing
+
+    DIGEST:
+    What the user asked for:
+    - walk me through how oauth refresh tokens rotate
+    What it is doing right now:
+    - said: A refresh token is exchanged once and replaced, so replay fails.
+    HEADLINE:
+    Explain oauth refresh token rotation
 
     Output only the headline.
     """
@@ -200,6 +277,10 @@ enum LocalModelPrompts {
 final class LocalModelService {
 
     static let shared = LocalModelService()
+
+    /// Whether this process is one of the app-test harness's app launches.
+    /// Same signal `AppDelegate` reads; see `resolveRoute`.
+    static let isAppTestHarness = ProcessInfo.processInfo.environment["TUGAPP_APP_TEST"] == "1"
 
     private let mlx = MLXLocalModelBackend()
     private let backends: [LocalModelBackend]
@@ -400,6 +481,19 @@ final class LocalModelService {
     /// holding. Without that, a delete or a switch away would leave multiple
     /// gigabytes of weights resident until the idle timer happened to fire.
     private func resolveRoute() async -> Route? {
+        // The app-test harness never has a local model, whatever this machine
+        // happens to hold. Each test launches its own app against a fresh empty
+        // tugbank, so the selection reads as `auto` and would resolve to an
+        // installed pack — several gigabytes of weights into a process that
+        // lives for a few seconds, once per test file, and `classify` starts
+        // that load in the background even when it answers `not resident`.
+        //
+        // Answering "no model" is not a special case invented for tests. It is
+        // the ordinary state of a machine that has not opted into the download,
+        // it is the contract `at0280-local-model-absent` pins, and no app-test
+        // can depend on anything else.
+        guard !Self.isAppTestHarness else { return nil }
+
         let selection = LocalModelConfig.selection()
         guard selection != LocalModelConfig.declined else {
             await mlx.unload()
@@ -454,12 +548,22 @@ final class LocalModelService {
     /// The classify contract is prompt-and-parse, not constrained decoding, so
     /// an answer that names no label is a failure rather than a guess — the
     /// caller degrades instead of acting on a coin flip.
+    ///
+    /// A label matches only as a whole token: the answer is split on everything
+    /// that is not a letter or a digit and each piece is compared
+    /// case-insensitively. An answer naming two different labels is a failure
+    /// too, because nothing in the answer prefers one of them over the other.
     static func verdict(from output: String, labels: [String]) -> String? {
-        let upper = output.uppercased()
-        for label in labels where upper.contains(label.uppercased()) {
-            return label
+        let wanted = Set(labels.map { $0.lowercased() })
+        var found: String?
+        for piece in output.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }) {
+            let token = String(piece)
+            guard wanted.contains(token) else { continue }
+            if let found, found != token { return nil }
+            found = token
         }
-        return nil
+        guard let found else { return nil }
+        return labels.first { $0.lowercased() == found }
     }
 
     static func firstLine(_ text: String) -> String {

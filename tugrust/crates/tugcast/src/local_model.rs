@@ -72,6 +72,20 @@ impl CatalogEntry {
 
 /// The models Tug ships knowledge of, in preference order.
 ///
+/// Order is the mechanism, not decoration: `catalog_rank` is position, and a user
+/// on `auto` resolves to the first entry they have installed. Exactly one entry is
+/// `offered`, because two multi-gigabyte downloads is not a configuration this app
+/// asks anyone to accept.
+///
+/// `qwen3-4b-instruct-2507-4bit` holds that place on a three-way bake-off across
+/// both jobs, decided against criteria fixed before the numbers were taken. It
+/// reached for the executing SHELL verdict once in 36 prose lines where the other
+/// two reached 2 and 17 times, and it needed the register normalizer zero times in
+/// 13 headlines where the incumbent needed it three. The two entries below it lost
+/// on those, not on size or speed, and they stay here fully supported —
+/// downloadable, selectable, `auto`-eligible once installed — because a user who
+/// already has one should not be stranded by a ruling made after they installed it.
+///
 /// Repo furniture — `README.md`, `LICENSE`, `.gitattributes`, evaluation
 /// artifacts — is deliberately absent: MLX never reads it, so it is never
 /// downloaded. Every `sha256` here was computed from the exact bytes that
@@ -84,53 +98,10 @@ impl CatalogEntry {
 /// which rules out the Ministral 3 and Gemma 4 families at the current pin.
 pub const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
-        id: "ternary-bonsai-8b-2bit",
-        display_name: "Ternary Bonsai 8B",
-        recommended: true,
-        offered: true,
-        hf_repo: "prism-ml/Ternary-Bonsai-8B-mlx-2bit",
-        hf_revision: "9260b24298e4211e804663e9f519962cf59f34be",
-        files: &[
-            ModelFile {
-                name: "chat_template.jinja",
-                sha256: "30a75d10e60b57e2f260420163dd59720dacf9f63b9a8de070d65dd80a7b30f7",
-                bytes: 4063,
-            },
-            ModelFile {
-                name: "config.json",
-                sha256: "c9a8bbb4b2b682d0e2d2bf4f537d699e1a569d757b2918c480e82a0c77b060ba",
-                bytes: 3118,
-            },
-            ModelFile {
-                name: "model.safetensors",
-                sha256: "f43270cbae86830b7eecb25bb8a0a0a005a81f180b68868dc39c755cebfff362",
-                bytes: 2303661704,
-            },
-            ModelFile {
-                name: "model.safetensors.index.json",
-                sha256: "178ab2bf39b603d669f730e569045e69886e117a392f4c75cd148f1733add0b4",
-                bytes: 64065,
-            },
-            ModelFile {
-                name: "tokenizer.json",
-                sha256: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506",
-                bytes: 11422650,
-            },
-            ModelFile {
-                name: "tokenizer_config.json",
-                sha256: "579073f506a3f85caed232bb91617cfb93028408d1f43ffaf66f3fc1aee9a9af",
-                bytes: 348,
-            },
-        ],
-        total_bytes: 2315155948,
-        context_window: 65536,
-        notes: "Enhances command parsing & session summaries.",
-    },
-    CatalogEntry {
         id: "qwen3-4b-instruct-2507-4bit",
         display_name: "Qwen3 4B Instruct",
-        recommended: false,
-        offered: false,
+        recommended: true,
+        offered: true,
         hf_repo: "mlx-community/Qwen3-4B-Instruct-2507-4bit",
         hf_revision: "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
         files: &[
@@ -192,7 +163,50 @@ pub const CATALOG: &[CatalogEntry] = &[
         ],
         total_bytes: 2278969697,
         context_window: 262144,
-        notes: "General-purpose 4B instruct pack held in reserve.",
+        notes: "Reads your command lines and writes your session headlines.",
+    },
+    CatalogEntry {
+        id: "ternary-bonsai-8b-2bit",
+        display_name: "Ternary Bonsai 8B",
+        recommended: false,
+        offered: false,
+        hf_repo: "prism-ml/Ternary-Bonsai-8B-mlx-2bit",
+        hf_revision: "9260b24298e4211e804663e9f519962cf59f34be",
+        files: &[
+            ModelFile {
+                name: "chat_template.jinja",
+                sha256: "30a75d10e60b57e2f260420163dd59720dacf9f63b9a8de070d65dd80a7b30f7",
+                bytes: 4063,
+            },
+            ModelFile {
+                name: "config.json",
+                sha256: "c9a8bbb4b2b682d0e2d2bf4f537d699e1a569d757b2918c480e82a0c77b060ba",
+                bytes: 3118,
+            },
+            ModelFile {
+                name: "model.safetensors",
+                sha256: "f43270cbae86830b7eecb25bb8a0a0a005a81f180b68868dc39c755cebfff362",
+                bytes: 2303661704,
+            },
+            ModelFile {
+                name: "model.safetensors.index.json",
+                sha256: "178ab2bf39b603d669f730e569045e69886e117a392f4c75cd148f1733add0b4",
+                bytes: 64065,
+            },
+            ModelFile {
+                name: "tokenizer.json",
+                sha256: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506",
+                bytes: 11422650,
+            },
+            ModelFile {
+                name: "tokenizer_config.json",
+                sha256: "579073f506a3f85caed232bb91617cfb93028408d1f43ffaf66f3fc1aee9a9af",
+                bytes: 348,
+            },
+        ],
+        total_bytes: 2315155948,
+        context_window: 65536,
+        notes: "2-bit ternary 8B pack. Superseded; kept for anyone already holding it.",
     },
     CatalogEntry {
         id: "lfm25-1-2b-instruct-4bit",
@@ -245,7 +259,7 @@ pub const CATALOG: &[CatalogEntry] = &[
         ],
         total_bytes: 663393199,
         context_window: 128000,
-        notes: "On-device instruct pack, a third the download of the others.",
+        notes: "1.2B on-device pack, a third the download. Too small for headline work.",
     },
 ];
 
@@ -336,6 +350,52 @@ pub fn is_installed(root: &Path, entry: &CatalogEntry) -> bool {
             .map(|meta| meta.len() == file.bytes)
             .unwrap_or(false)
     })
+}
+
+/// Bring every installed pack's recorded `catalog_rank` back in line with the
+/// catalog, and report how many had drifted.
+///
+/// The rank is copied into the stamp at install time so the Swift service can
+/// order packs without knowing the catalog — which means reordering `CATALOG`
+/// does *not* reorder what is already on disk. Without this, a user who installed
+/// the old recommended pack keeps a stamp claiming rank 0 forever, and
+/// `resolveRoute`'s `auto` branch — which takes `installed().first`, sorted by the
+/// stamp's rank — hands them the retired pack no matter what the catalog now says.
+/// A ruling that only applies to people who install after it is not a ruling.
+///
+/// Only the rank is rewritten. The revision, the file digests and `verified_at`
+/// are facts about bytes that were checked once, and nothing here re-checks them.
+///
+/// Called once from `main`, not from `LocalModelState::shared_default` — the
+/// state is constructed wherever a router is, including in tests, and this writes
+/// to the shared models directory that every instance on the machine reads.
+pub fn reconcile_catalog_ranks(root: &Path) -> usize {
+    let mut fixed = 0;
+    for (rank, entry) in CATALOG.iter().enumerate() {
+        let Some(stamp) = read_stamp(root, entry.id) else {
+            continue;
+        };
+        let was = stamp.catalog_rank;
+        if was == rank {
+            continue;
+        }
+        let updated = Stamp {
+            catalog_rank: rank,
+            ..stamp
+        };
+        if let Ok(text) = serde_json::to_string_pretty(&updated) {
+            if fs::write(stamp_path(root, entry.id), text).is_ok() {
+                info!(
+                    model = entry.id,
+                    was,
+                    now = rank,
+                    "local model: catalog rank reconciled",
+                );
+                fixed += 1;
+            }
+        }
+    }
+    fixed
 }
 
 /// Write the stamp that marks a pack installed. Call only after every file has
@@ -1382,6 +1442,50 @@ mod tests {
             1,
             "exactly one recommended entry"
         );
+        // One pack ships. Two multi-gigabyte downloads is not a configuration
+        // this app asks anyone to accept, so a second `offered` entry is a
+        // mistake rather than a choice.
+        assert_eq!(
+            CATALOG.iter().filter(|e| e.offered).count(),
+            1,
+            "exactly one offered entry"
+        );
+        // `auto` resolves by position, so the shipping pack has to be first or
+        // a user on `auto` who holds two packs gets the retired one.
+        assert!(CATALOG[0].recommended, "the recommended entry ranks first");
+    }
+
+    /// The transition a real user lands in: they installed the old recommended
+    /// pack, the catalog was reordered under them, and `auto` must follow the
+    /// catalog rather than their install order.
+    ///
+    /// `resolveRoute`'s `auto` branch takes `installed().first`, sorted by the
+    /// rank recorded in each pack's stamp — so without the reconcile they keep
+    /// being routed to the retired pack indefinitely.
+    #[test]
+    fn a_reordered_catalog_reranks_packs_already_on_disk() {
+        let root = temp_root();
+        // Stamp both shipping packs with the ranks they had before the ruling:
+        // the incumbent first, the winner behind it.
+        let (winner_rank, winner) = catalog_entry("qwen3-4b-instruct-2507-4bit").unwrap();
+        let (retired_rank, retired) = catalog_entry("ternary-bonsai-8b-2bit").unwrap();
+        assert_eq!(winner_rank, 0, "the winner ranks first in the catalog");
+        write_stamp(&root, retired, 0).unwrap();
+        write_stamp(&root, winner, 1).unwrap();
+
+        assert_eq!(reconcile_catalog_ranks(&root), 2, "both stamps were stale");
+        assert_eq!(read_stamp(&root, winner.id).unwrap().catalog_rank, winner_rank);
+        assert_eq!(read_stamp(&root, retired.id).unwrap().catalog_rank, retired_rank);
+
+        // Idempotent, and it never touches what a verification established.
+        let before = read_stamp(&root, winner.id).unwrap();
+        assert_eq!(reconcile_catalog_ranks(&root), 0);
+        let after = read_stamp(&root, winner.id).unwrap();
+        assert_eq!(before.hf_revision, after.hf_revision);
+        assert_eq!(before.verified_at, after.verified_at);
+        assert_eq!(before.files.len(), after.files.len());
+
+        fs::remove_dir_all(&root).ok();
     }
 
     #[test]

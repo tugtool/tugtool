@@ -79,6 +79,26 @@ async fn main() {
         Err(e) => warn!(error = %e, "failed to write bundle-path marker"),
     }
 
+    // Bring installed packs' recorded catalog ranks back in line with the
+    // catalog. The rank is stamped at install time so the Swift service can
+    // order packs without knowing the catalog, which means reordering the
+    // catalog does not reorder what is already on disk — and `auto` reads the
+    // recorded one, so without this a user keeps being routed to a pack the
+    // catalog has since retired.
+    //
+    // Only for a real instance. The models directory is shared by every
+    // instance on the machine, and the integration tests spawn this binary —
+    // a test run must not rewrite what the user has installed. Same reasoning,
+    // and same signal, as the bundle-path marker above.
+    if tugcore::instance::instance_id().is_some() {
+        if let Some(root) = local_model::models_root() {
+            match local_model::reconcile_catalog_ranks(&root) {
+                0 => {}
+                n => info!(packs = n, "local model: catalog ranks reconciled"),
+            }
+        }
+    }
+
     // Create own process group so the app can kill tugcast + all children
     // (tugcode, bun) with a single kill(-pgid, SIGTERM). Without this,
     // children become orphans when the app force-kills tugcast.
