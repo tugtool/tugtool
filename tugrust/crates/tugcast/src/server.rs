@@ -439,6 +439,7 @@ fn changes_write_error(status: StatusCode, message: &str) -> Response {
 async fn eval_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(router): State<FeedRouter>,
+    bank: Option<Extension<Arc<TugbankClient>>>,
     body: Bytes,
 ) -> Response {
     if !addr.ip().is_loopback() {
@@ -449,11 +450,31 @@ async fn eval_handler(
             .into_response();
     }
 
-    // Eval is dev-mode only
-    if router.dev_state.load().is_none() {
+    // Eval runs in dev mode, or on any instance whose operator has set
+    // the diagnostics opt-in on this instance's bank:
+    //
+    //   PUT /api/defaults/diag/eval {"kind":"bool","value":true}
+    //
+    // (delete the key to revoke). Loopback-only either way — the
+    // opt-in exists so a release deck can be inspected with the same
+    // instruments as a dev one, without shipping an always-open door.
+    let mut allowed = router.dev_state.load().is_some();
+    if !allowed {
+        if let Some(Extension(client)) = bank {
+            let read = tokio::task::spawn_blocking(move || client.get("diag", "eval")).await;
+            allowed = match read {
+                Ok(Ok(Some(tugbank_core::Value::Bool(b)))) => b,
+                Ok(Ok(Some(tugbank_core::Value::String(s)))) => s == "1" || s == "true",
+                _ => false,
+            };
+        }
+    }
+    if !allowed {
         return (
             StatusCode::FORBIDDEN,
-            axum::Json(serde_json::json!({"status": "error", "message": "eval requires dev mode"})),
+            axum::Json(
+                serde_json::json!({"status": "error", "message": "eval requires dev mode or the diag/eval opt-in"}),
+            ),
         )
             .into_response();
     }
