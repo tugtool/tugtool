@@ -3255,16 +3255,16 @@ export function SessionCardBody({
   // DO, since nothing visible changed. Native compaction happens in place —
   // there is no session swap to mask, so every outcome dismisses immediately.
   // [L02] store state via `useSyncExternalStore`.
+  const getCompactionProgress = useCallback(
+    () => compactionProgressStore.getFor(cardId),
+    [cardId],
+  );
   const compactionProgress = useSyncExternalStore(
     compactionProgressStore.subscribe,
-    compactionProgressStore.getSnapshot,
+    getCompactionProgress,
   );
   useEffect(() => {
-    if (
-      compactionProgress === null ||
-      compactionProgress.outcome === null ||
-      compactionProgress.cardId !== cardId
-    ) {
+    if (compactionProgress === null || compactionProgress.outcome === null) {
       return;
     }
     const notify = paneBulletinRef.current;
@@ -3274,7 +3274,7 @@ export function SessionCardBody({
       notify?.danger(compactionProgress.failureReason ?? "Compaction failed");
     }
     // "succeeded" → the divider + summary block speak for themselves.
-    compactionProgressStore.clear();
+    compactionProgressStore.clear(cardId);
   }, [compactionProgress, cardId]);
 
   // A Mode / Model / Effort change must not race a running turn ([source→
@@ -3406,7 +3406,7 @@ export function SessionCardBody({
         // path ([Q01]); the session stays intact. The watcher unsubscribes at
         // the active → null transition; the store is already settled here.
         codeSessionStore.interrupt();
-        compactionProgressStore.cancel();
+        compactionProgressStore.cancel(cardId);
       };
 
       const unsubscribe = codeSessionStore.subscribe(() => {
@@ -3439,18 +3439,19 @@ export function SessionCardBody({
           return;
         }
         if (sawInk) {
-          compactionProgressStore.succeed();
+          compactionProgressStore.succeed(cardId);
           return;
         }
         if (interrupted) {
           // Interrupted by Escape / Stop (not the Cancel button): settle
           // canceled, session intact.
-          compactionProgressStore.cancel();
+          compactionProgressStore.cancel(cardId);
           return;
         }
         // Turn settled with no compaction — refused (too-short session) or
         // errored. Surface the reason; the refusal text is already in the turn.
         compactionProgressStore.fail(
+          cardId,
           snap.lastError?.message ?? "Compaction didn't run — session left intact",
         );
       });
@@ -3481,7 +3482,11 @@ export function SessionCardBody({
         title: "Compacting",
         icon: "Archive",
         content: (close) => (
-          <CompactionProgressSheet close={close} onCancel={onCancel} />
+          <CompactionProgressSheet
+            cardId={cardId}
+            close={close}
+            onCancel={onCancel}
+          />
         ),
       });
       // Sent as a substrate, not a flat line: the command is a leading

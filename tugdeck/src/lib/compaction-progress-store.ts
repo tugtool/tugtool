@@ -10,13 +10,19 @@
  * and the sheet that renders off the same store. The card watches the terminal
  * `outcome` to raise the closing bulletin and `clear`.
  *
+ * Every mutator is keyed by `cardId`, and the snapshot is a map of the runs
+ * currently open. Each card owns its own `codeSessionStore`, so any number of
+ * cards can be compacting at once; a per-card key is what keeps a second
+ * `/compact` from overwriting the first's run, and keeps one card's `clear`
+ * from dropping another card's sheet.
+ *
  * The run's lifetime is this store's, NOT the sheet's: the card's watcher is
  * subscribed here, so a sheet dismissed early (Escape, a host unmount) leaves
  * the compaction running and still settling into the transcript.
  *
- * `null` snapshot = idle (no compaction, no sheet). A non-null snapshot with
- * `outcome === null` is a run in flight; a non-null snapshot with a terminal
- * `outcome` is a just-settled run awaiting the card's bulletin + `clear`.
+ * No entry for a card = idle (no compaction, no sheet). An entry with
+ * `outcome === null` is a run in flight; an entry with a terminal `outcome` is
+ * a just-settled run awaiting that card's bulletin + `clear`.
  *
  * Both manual `/compact` and native auto-compaction stream a `compact_boundary`,
  * but only a manual `/compact` opens this run — the progress sheet and closing
@@ -30,17 +36,16 @@
 export type CompactionOutcome = "succeeded" | "canceled" | "failed";
 
 export interface CompactionProgress {
-  /**
-   * The card that initiated the run. The store is a global singleton, so
-   * the closing bulletin is scoped to this card — other dev cards observe
-   * the same state but only the initiator reacts.
-   */
-  readonly cardId: string;
   /** Terminal outcome, or `null` while the run is still in flight. */
   readonly outcome: CompactionOutcome | null;
   /** Human-readable reason when `outcome === "failed"`, else `null`. */
   readonly failureReason: string | null;
 }
+
+/** Every open run, keyed by the card that started it. */
+export type CompactionRuns = ReadonlyMap<string, CompactionProgress>;
+
+const NO_RUNS: CompactionRuns = new Map();
 
 /**
  * What every pulse surface says for the length of a `/compact` run — the
@@ -49,21 +54,18 @@ export interface CompactionProgress {
  */
 export const COMPACTING_PULSE_TEXT = "Compacting context…";
 
-/** Whether `snapshot` is a run still in flight, started from `cardId`. */
+/** Whether `runs` holds a still-in-flight run for `cardId`. */
 export function isCompactingCard(
-  snapshot: CompactionProgress | null,
+  runs: CompactionRuns,
   cardId: string | undefined,
 ): boolean {
-  return (
-    cardId !== undefined &&
-    snapshot !== null &&
-    snapshot.cardId === cardId &&
-    snapshot.outcome === null
-  );
+  if (cardId === undefined) return false;
+  const run = runs.get(cardId);
+  return run !== undefined && run.outcome === null;
 }
 
 class CompactionProgressStore {
-  private state: CompactionProgress | null = null;
+  private state: CompactionRuns = NO_RUNS;
   private readonly listeners = new Set<() => void>();
 
   subscribe = (listener: () => void): (() => void) => {
@@ -74,41 +76,61 @@ class CompactionProgressStore {
   };
 
   /** Stable between notifications — safe for `useSyncExternalStore`. */
-  getSnapshot = (): CompactionProgress | null => this.state;
+  getSnapshot = (): CompactionRuns => this.state;
+
+  /**
+   * This card's run, or `null` when it has none. Stable between notifications
+   * (entries are replaced, never mutated), so it is safe to read directly as a
+   * `useSyncExternalStore` snapshot.
+   */
+  getFor = (cardId: string): CompactionProgress | null =>
+    this.state.get(cardId) ?? null;
 
   /** Open an in-flight run for `cardId`. */
   begin(cardId: string): void {
-    this.state = { cardId, outcome: null, failureReason: null };
+    this.write(cardId, { outcome: null, failureReason: null });
+  }
+
+  /** Mark the card's run succeeded (compaction ink observed in place). */
+  succeed(cardId: string): void {
+    this.settle(cardId, "succeeded", null);
+  }
+
+  /** Mark the card's run canceled (user interrupted the compaction). */
+  cancel(cardId: string): void {
+    this.settle(cardId, "canceled", null);
+  }
+
+  /** Mark the card's run failed, carrying a reason for the closing bulletin. */
+  fail(cardId: string, reason: string): void {
+    this.settle(cardId, "failed", reason);
+  }
+
+  /** Drop this card's run — dismisses its sheet and ends the run. */
+  clear(cardId: string): void {
+    if (!this.state.has(cardId)) return;
+    const next = new Map(this.state);
+    next.delete(cardId);
+    this.state = next;
     this.emit();
   }
 
-  /** Mark the run succeeded (compaction ink observed in place). */
-  succeed(): void {
-    this.settle("succeeded", null);
-  }
-
-  /** Mark the run canceled (user interrupted the compaction). */
-  cancel(): void {
-    this.settle("canceled", null);
-  }
-
-  /** Mark the run failed, carrying a reason for the closing bulletin. */
-  fail(reason: string): void {
-    this.settle("failed", reason);
-  }
-
-  /** Reset to idle — drops the sheet and ends the run. */
-  clear(): void {
-    if (this.state === null) return;
-    this.state = null;
-    this.emit();
-  }
-
-  private settle(outcome: CompactionOutcome, failureReason: string | null): void {
+  private settle(
+    cardId: string,
+    outcome: CompactionOutcome,
+    failureReason: string | null,
+  ): void {
     // Settle only an in-flight run; a second terminal call is a no-op so
     // racing paths (Cancel button vs. the turn settling) can't double-fire.
-    if (this.state === null || this.state.outcome !== null) return;
-    this.state = { ...this.state, outcome, failureReason };
+    const run = this.state.get(cardId);
+    if (run === undefined || run.outcome !== null) return;
+    this.write(cardId, { outcome, failureReason });
+  }
+
+  private write(cardId: string, run: CompactionProgress): void {
+    const next = new Map(this.state);
+    next.set(cardId, run);
+    this.state = next;
     this.emit();
   }
 

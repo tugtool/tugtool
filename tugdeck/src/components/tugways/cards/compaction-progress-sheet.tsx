@@ -37,6 +37,12 @@ import { compactionProgressStore } from "@/lib/compaction-progress-store";
 import "./compaction-progress-sheet.css";
 
 export interface CompactionProgressSheetProps {
+  /**
+   * The card whose run this sheet shows. The store holds one run per card —
+   * several cards can be compacting at once — so the sheet reads its own key
+   * and is untouched by another card's run settling.
+   */
+  cardId: string;
   /** Dismiss the host sheet (from `useTugSheet`'s content callback). */
   close: () => void;
   /**
@@ -47,12 +53,17 @@ export interface CompactionProgressSheetProps {
 }
 
 export function CompactionProgressSheet({
+  cardId,
   close,
   onCancel,
 }: CompactionProgressSheetProps): React.ReactElement | null {
+  const getProgress = React.useCallback(
+    () => compactionProgressStore.getFor(cardId),
+    [cardId],
+  );
   const progress = useSyncExternalStore(
     compactionProgressStore.subscribe,
-    compactionProgressStore.getSnapshot,
+    getProgress,
   );
 
   // The run owns the sheet's lifetime: once the store clears (the card has

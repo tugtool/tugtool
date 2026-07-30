@@ -229,9 +229,9 @@ export function SessionPulseStrip({
   codeSessionStore: CodeSessionStore;
   /**
    * The owning card — the scope of the compaction pin ({@link
-   * COMPACTING_ENTRY}). `compactionProgressStore` is an app-wide
-   * singleton that names its initiating card, so only that card's strip
-   * wears the pin. Omitted in gallery / fixture mounts (no pin).
+   * COMPACTING_ENTRY}). `compactionProgressStore` is an app-wide singleton
+   * holding one run per initiating card, so only that card's strip wears the
+   * pin. Omitted in gallery / fixture mounts (no pin).
    */
   cardId?: string;
   /**
