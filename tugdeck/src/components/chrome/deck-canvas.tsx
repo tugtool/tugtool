@@ -18,7 +18,8 @@
  */
 
 import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, useLayoutEffect } from "react";
-import { animate } from "@/components/tugways/tug-animator";
+import { animate, type TugAnimation } from "@/components/tugways/tug-animator";
+import { getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
@@ -41,11 +42,12 @@ import { selectionGuard } from "@/components/tugways/selection-guard";
 import { copySelectionAsPlainText } from "@/lib/copy-as-plain-text";
 import { openFileInCard } from "@/lib/open-file-in-card";
 import { openPathInOS } from "@/lib/os-open";
+import { cardServicesStore } from "@/lib/card-services-store";
+import { flipDelta, springKeyframes } from "@/lib/pane-flip";
 import {
   isLensPinned,
   resolvePlacement,
   IMPOSITION_GAP_PX,
-  IMPOSITION_SETTLE_EASING,
   IMPOSITION_SETTLE_MS,
 } from "@/lib/layout-imposer";
 
@@ -685,10 +687,19 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // ---------------------------------------------------------------------------
   // A change to the ARRANGEMENT moves derived frames without anyone touching
   // them: the Lens crossing to the other side, an N-up swap, the pin coming
-  // back, a card sent to another slot. The container wears
-  // `data-imposer-settling` for the duration and the frames transition rather
-  // than cut (`tug-pane.css`). Appearance only, written straight to the DOM,
-  // never through React state ([L06]).
+  // back, a card sent to another slot. The frames cross to their new places
+  // rather than cutting, and the crossing is FLIP: React commits the final
+  // geometry in one layout pass, and each moved frame is then tweened by a
+  // transform that starts at the inverse of the move and ends at nothing.
+  // Appearance only, written straight to the DOM, never through React state
+  // ([L06]); the motion itself goes through TugAnimator ([L13]).
+  //
+  // FLIP rather than a transition on `left`/`top`/`width` because transitioning
+  // layout properties re-runs layout for every moving frame on every frame of
+  // the motion. A transform tween in the accelerated form (`lib/pane-flip.ts`
+  // holds the rules) costs one compositing walk when it starts, one when it
+  // ends, and nothing in between — see
+  // `roadmap/jul30-perf-brief.md#i1-sparkline-exception`.
   //
   // The trigger is a signature over exactly what the imposer reads — the
   // record, plus which pane holds which slot. Watching the record alone would
@@ -696,52 +707,150 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // land inside some earlier change's window, and a gesture that sometimes
   // crosses and sometimes jumps is worse than one that always jumps.
   //
-  // The arming is driven off the STORE, not off a render, and that is
-  // load-bearing. WebKit will not start a transition on a property whose
-  // covering `transition-property` arrives in the same style change as the
-  // value — and a layout effect runs after React has already written the new
-  // `left`, so arming there puts both in one change and the frame cuts. A store
-  // subscriber runs before the re-render it causes, so the attribute lands, the
-  // read below flushes it as a style change of its own, and the geometry
-  // arrives into a transition that is already in force. (This is why the
-  // pointer path used to work and the keyboard path did not: a pointer-down
-  // activates a pane, which armed the settle one style change early by
-  // accident.)
+  // The work is split across a store subscriber and a layout effect because
+  // FLIP needs both sides of the commit. A store subscriber runs BEFORE the
+  // re-render it causes, so it is the only place that can see where the frames
+  // are now (First); the layout effect runs after the commit and before paint,
+  // so it is where they can be measured in their new places (Last). Nothing is
+  // painted between the two, which is what makes the inversion invisible.
   //
-  // The timing lives in one place: `IMPOSITION_SETTLE_MS` and
-  // `IMPOSITION_SETTLE_EASING` are written onto the container as the two CSS
-  // knobs, and the timer reads the RESOLVED duration back — so overriding
-  // `--tugx-imposer-settle-duration` on the container retimes the transition
-  // and the attribute together, and overriding
-  // `--tugx-imposer-settle-easing` reshapes it.
-  const arrangementRef = useRef(arrangementSignature(deckState));
+  // The timing lives in one place: `IMPOSITION_SETTLE_MS` reaches CSS as
+  // `--tugx-imposer-settle-duration` and the resolved value is read back, so an
+  // override on the container retimes the tween and the attribute together.
+  // What `animate()` is handed is that RAW number, because TugAnimator scales
+  // its own durations by `getTugTiming()`; the window timer is handed the
+  // scaled product, so the two can never disagree.
+  const arrangement = arrangementSignature(deckState);
+  const arrangementRef = useRef(arrangement);
   const settleTimerRef = useRef<number | null>(null);
+  /** Where each non-gesturing frame sat before the commit, by pane id. */
+  const settleFirstRectsRef = useRef<Map<string, DOMRect>>(new Map());
+  /** The tween running on each frame, by pane id — DOM zone, never React state. */
+  const settleTweensRef = useRef<
+    Map<string, { el: HTMLElement; anim: TugAnimation }>
+  >(new Map());
+  /** The raw (unscaled) settle duration read back for the current gesture. */
+  const settleDurationRef = useRef(IMPOSITION_SETTLE_MS);
+
+  // Hold every session card's notifications for the length of the
+  // gesture, and release them on the same edges the tweens land on.
+  //
+  // A React commit landing INSIDE the window is not merely one more
+  // commit: measured on release, the settle alone cost 343 walk samples
+  // and a commit stream alone 654, but the two together cost 1809 —
+  // 81% above their sum, with median frame delivery going 17ms to 20ms
+  // and four times the dropped frames
+  // (`roadmap/jul30-perf-brief.md#s5-imposer`). A commit while a
+  // transform animation is running dirties compositing with the
+  // animation's extent already reserved, which forces exactly the
+  // recompute that reservation exists to avoid.
+  //
+  // Nothing is dropped — the events reduce and run their effects as
+  // they arrive, and only the React notification waits, flushing once
+  // at release. The cap is the store's own guard against a holder that
+  // never comes back; release below is what normally ends it.
+  const holdSessions = useCallback((capMs: number) => {
+    cardServicesStore.forEachCodeSessionStore((store) => {
+      store.holdNotifications(capMs);
+    });
+  }, []);
+  const releaseSessions = useCallback(() => {
+    cardServicesStore.forEachCodeSessionStore((store) => {
+      store.releaseNotifications();
+    });
+  }, []);
+
+  // Drop a frame's tween registration and, crucially, the inline `transform`
+  // TugAnimator leaves on it.
+  //
+  // TugAnimator commits an animation's final value into `el.style` when it
+  // completes — unconditionally, whatever `fill` says, and `cancel()` in
+  // snap-to-end mode takes the same path. Here that final value is
+  // `translate(0px, 0px)`, and React will never remove it: `transform` is not
+  // among the style keys TugPane renders, and React only clears keys it set
+  // itself. A frame left wearing any transform is a containing block for its
+  // `position: fixed` descendants — and TugSheet portals into the frame, while
+  // completion popups, alerts, and banners all position from viewport
+  // coordinates — so the residue would offset every one of them by the pane's
+  // origin, and only after the first arrangement change. Removing it is not
+  // tidiness; it is what keeps the frame's geometry the store's to own ([L09]).
+  //
+  // Idempotent by construction, because it runs more than once per frame: the
+  // completion handler, the window sweep, and effect teardown all call it, and
+  // a cancelled tween's handler lands a microtask later — after a replacement
+  // tween may already have been registered, which is why the registry entry is
+  // only dropped when it still belongs to the animation that finished.
+  const clearFlipRef = useRef(
+    (paneId: string, el: HTMLElement, anim: TugAnimation | null): void => {
+      const entry = settleTweensRef.current.get(paneId);
+      if (anim === null || entry?.anim === anim) {
+        settleTweensRef.current.delete(paneId);
+      }
+      el.style.removeProperty("transform");
+    },
+  );
+
   useEffect(() => {
+    const clearFlip = clearFlipRef.current;
     const arm = (): void => {
       const el = containerRef.current;
       if (el === null) return;
       const next = arrangementSignature(store.getSnapshot());
       if (next === arrangementRef.current) return;
       arrangementRef.current = next;
+
+      // First: where every frame the imposer may move is right now. A running
+      // tween's transform is included in the rect, which is the point — a
+      // second arrangement change mid-motion starts its tween from where the
+      // eye actually is. Cancelling comes after the measurement, and is safe at
+      // any moment because the tween's last keyframe is no transform at all:
+      // there is no wrong pose to snap to.
+      const firstRects = settleFirstRectsRef.current;
+      firstRects.clear();
+      for (const frame of el.querySelectorAll<HTMLElement>(
+        ".tug-pane[data-pane-id]",
+      )) {
+        // A pane under the pointer writes its own `left`/`top` every frame;
+        // motion on top of a pointer lags the pointer.
+        if (frame.hasAttribute("data-gesture")) continue;
+        const paneId = frame.getAttribute("data-pane-id");
+        if (paneId === null) continue;
+        firstRects.set(paneId, frame.getBoundingClientRect());
+        const running = settleTweensRef.current.get(paneId);
+        if (running !== undefined) {
+          running.anim.cancel("snap-to-end");
+          clearFlip(paneId, frame, running.anim);
+        }
+      }
+
       el.style.setProperty(
         "--tugx-imposer-settle-duration",
         `${IMPOSITION_SETTLE_MS}ms`,
       );
-      el.style.setProperty(
-        "--tugx-imposer-settle-easing",
-        IMPOSITION_SETTLE_EASING,
-      );
       el.setAttribute("data-imposer-settling", "");
-      // Reading the resolved duration back flushes the style change the
-      // attribute just made — which is the point, not a side effect.
-      const duration = readSettleMs(el);
+      const settleMs = readSettleMs(el);
+      settleDurationRef.current = settleMs;
+      const windowMs = settleMs * getTugTiming();
+
+      // The cap is generous against the window it guards — it is a
+      // wedge guard, not a second clock, and firing it early would
+      // reintroduce the very commit the hold is here to keep out.
+      holdSessions(Math.max(2 * windowMs, 1000));
+
       if (settleTimerRef.current !== null) {
         window.clearTimeout(settleTimerRef.current);
       }
       settleTimerRef.current = window.setTimeout(() => {
         settleTimerRef.current = null;
         el.removeAttribute("data-imposer-settling");
-      }, duration);
+        releaseSessions();
+        // Every tween should have finished and swept itself by now. The sweep
+        // is what guarantees no frame keeps the inline residue if one didn't.
+        for (const [paneId, entry] of [...settleTweensRef.current]) {
+          entry.anim.cancel("snap-to-end");
+          clearFlip(paneId, entry.el, entry.anim);
+        }
+      }, windowMs);
     };
     const unsubscribe = store.subscribe(arm);
     return () => {
@@ -749,8 +858,72 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       if (settleTimerRef.current !== null) {
         window.clearTimeout(settleTimerRef.current);
       }
+      // Unmounting mid-gesture leaves neither a running tween nor a
+      // transform — nor a card whose notifications nobody will release.
+      releaseSessions();
+      for (const [paneId, entry] of [...settleTweensRef.current]) {
+        entry.anim.cancel("snap-to-end");
+        clearFlip(paneId, entry.el, entry.anim);
+      }
+      settleFirstRectsRef.current.clear();
+      containerRef.current?.removeAttribute("data-imposer-settling");
     };
-  }, [store]);
+  }, [store, holdSessions, releaseSessions]);
+
+  // Last, and the tween. Declared AFTER the inset effect above, and that order
+  // is load-bearing: React runs layout effects in declaration order, and the
+  // inset effect writes the `--tug-imposer-inset-*` values every imposed
+  // frame's `left` calc resolves against. Measuring Last before the fresh
+  // insets land would tween every Lens side flip from a stale delta.
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    const firstRects = settleFirstRectsRef.current;
+    if (el === null || firstRects.size === 0) {
+      firstRects.clear();
+      return;
+    }
+    // Reduced motion: the layout has already snapped, and that IS the settle.
+    // The check is made here rather than left to TugAnimator, which would
+    // strip the spatial keyframes and substitute an opacity fade — a flash on
+    // every frame, all of which already sit where they belong.
+    if (!isTugMotionEnabled()) {
+      firstRects.clear();
+      return;
+    }
+    const clearFlip = clearFlipRef.current;
+    const duration = settleDurationRef.current;
+    for (const frame of el.querySelectorAll<HTMLElement>(
+      ".tug-pane[data-pane-id]",
+    )) {
+      const paneId = frame.getAttribute("data-pane-id");
+      if (paneId === null) continue;
+      const firstRect = firstRects.get(paneId);
+      if (firstRect === undefined) continue;
+      if (frame.hasAttribute("data-gesture")) continue;
+      const { dx, dy } = flipDelta(firstRect, frame.getBoundingClientRect());
+      // A frame that did not move gets no animation at all.
+      if (dx === 0 && dy === 0) continue;
+      const anim = animate(frame, springKeyframes(dx, dy), {
+        // Raw ms: TugAnimator scales by getTugTiming() itself.
+        duration,
+        // A keyword easing, because the curve rides in the keyframe offsets —
+        // `lib/pane-flip.ts` says why a sampled `linear()` cannot be used here.
+        easing: "linear",
+        // No retained effect after the tween ends ([D6]).
+        fill: "none",
+        composite: "replace",
+        key: "imposer-flip",
+        slotCancelMode: "snap-to-end",
+      });
+      settleTweensRef.current.set(paneId, { el: frame, anim });
+      // Both arms: `finished` rejects under hold-at-current, and while this
+      // surface never asks for that mode, a bare `.then` would turn a future
+      // edit into an unhandled rejection.
+      const done = (): void => clearFlip(paneId, frame, anim);
+      anim.finished.then(done, done);
+    }
+    firstRects.clear();
+  }, [arrangement]);
 
   // Where each imposed pane sits. A slot's anchor is a pure function of the
   // kind and the slot — no pane's place depends on any other's, and the Lens's

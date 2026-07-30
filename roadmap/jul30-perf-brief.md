@@ -90,7 +90,55 @@ TugProgressIndicator's `wave` variant: three phase-locked `scaleY` bars, 960ms, 
 
 ### S5 — Imposer pane motion {#s5-imposer}
 
-Whole-pane animation under the layout imposer. Under the overlap law, an in-page transform on a pane root is a whole-page walk per frame — but this is gesture-time interactive cost ([D4]-honest), and the plan is to make each frame as close to free as the page model allows via the **kink-the-hose sequence**:
+**Status: motion landed and measured 2026-07-30 on a release build of `tugdash/imposer-flip`; the freeze is ruled IN by measurement and is the remaining work.** Plan and step ledger: `roadmap/imposer-pane-motion.md`.
+
+The premise line below — "an in-page transform on a pane root is a whole-page walk per frame" — is superseded by I1's law and by the numbers here. It holds only for non-qualifying forms.
+
+**What the settle is now.** Layout snaps in one commit and the crossing is a FLIP transform tween per moved frame, authored in I1's qualifying form and run through TugAnimator (`tugdeck/src/lib/pane-flip.ts`, `deck-canvas.tsx`). The old motion transitioned `left`/`top`/`bottom`/`width` and crossed the pinned Lens by interpolating a registered custom property that `left` re-read through a `calc()` — per-frame *layout*, a cost class above the walk.
+
+**Instrument.** Release builds cannot run the app-test harness (`window.__tug` is installed only under `__tugTestMode`, whose `WKUserScript` is `#if DEBUG`-gated in Swift). `window.tugdeck.lab` — `dispatch` and `seedDeck`, both thin wrappers over paths the app already runs — makes a release scenario scriptable through `/api/eval`, which stays behind the `diag/eval` default. Scene: two imposed panes + pinned Lens, 4,000 composited boxes planted inside the two moving subtrees. Runners are checked in under `diag/imposer-*.sh`. Statistic is samples in `RenderLayerCompositor::computeCompositingRequirements`, [D5] discipline throughout (unoccluded, interleaved, ×3, medians, leading sample integers).
+
+**The walk is per-gesture, not per-frame — the falsifiable form.** A fixed 4s window with only the *number* of arrangement changes varying. Per-frame cost would read flat across all three; it tracks gestures and nothing else:
+
+| gestures in the window | walk samples (×3) | median | per gesture |
+|---|---|---|---|
+| 0 (idle) | 0, 0, 0 | **0** | — |
+| 4 | 128, 119, 139 | 128 | 32.0 |
+| 8 | 285, 290, 308 | 290 | 36.3 |
+| 16 | 669, 692, 658 | 669 | 41.8 |
+
+Idle is exactly zero across every run — the quiet contract, measured. The forcing probe (the same frames driven by per-frame rAF transform mutation, the disqualifying form) read **2622** in the same window against the settle's 290, which is what proves the instrument is live rather than dead: without it, "the settle measured near-zero" and "the probe is broken" are the same reading.
+
+**Correction to the plan's floor: three walks per gesture, not two.** At ~11 samples per walk (from the forcing probe's 2622 over ~240 frames), 32–42 samples per gesture is three walks, not two. The plan counted the animation's start and land and missed the third: React's own commit of the new geometry dirties compositing before either tween exists. The mild rise with cadence (32.0 → 41.8) is retargeting — at a 250ms cadence gestures land inside the 300ms window and each cancel-and-restart adds a pair.
+
+**[Q01] nested transform animations — accepted, not load-bearing.** 48 infinite accelerated scale loops planted inside the moving panes, same 8-gesture window: 365 → 399 median (+9%), with p95 frame delivery unchanged. Bounded, no layer-count explosion, no escalation warranted.
+
+**[Q02] the freeze — RULED IN, superadditively.** Three-way attribution over the same window, 67 real deck-store commits (`focus-pane` alternating, validated as landing — the first attempt used `cycleCard`, which is a no-op when every pane holds one card, and measured an empty condition):
+
+| condition | walk median | dropped frames >25ms (×3) | median frame |
+|---|---|---|---|
+| settle alone | 343 | 10, 10, 11 | 17 ms |
+| commits alone | 654 | 23, 26, 29 | 17 ms |
+| settle + commits | **1809** | **39, 43, 45** | **20 ms** |
+
+Additive prediction 997; actual 1809 — **81% superadditive**. A commit landing *inside* the gesture window costs far more than the same commit landing outside it, because it dirties compositing while an animation extent is reserved and forces the recompute the reservation exists to avoid. The motion degrades with it: median frame delivery 17 → 20ms and four times the settle's dropped-frame rate. This is precisely the cost the kink-the-hose sequence was hypothesized to prevent, so the hold ships (`roadmap/imposer-pane-motion.md#step-7`).
+
+(The frame threshold is >25ms, not >16.7ms: this panel is 60Hz and delivers a median 17ms interval *at rest*, so a 16.7ms threshold marks ~60% of an idle page late.)
+
+**What the hold buys, measured after it shipped.** Same scene, with a fourth condition in which the commit driver defers while the container wears `data-imposer-settling` and flushes when the window closes — deferred, never dropped, which is exactly `CodeSessionStore.holdNotifications`'s contract:
+
+| condition | walk median | dropped frames >25ms | median frame | commits landed |
+|---|---|---|---|---|
+| settle alone | 327 | 12, 7, 5 | 17 ms | 0 |
+| commits alone | 578 | 17, 18, 19 | 17 ms | 66 |
+| settle + commits | 1556 | 52, 56, 57 | 21 ms | 66 |
+| **settle + held** | **386** | **15, 15, 13** | **17 ms** | **66** (59 deferred) |
+
+Holding through the window recovers **95% of the interaction penalty** — 1556 back down to 386, within noise of the settle's own 327 — returns frame delivery to its settle-alone median, and cuts dropped frames from ~55 to ~14. Every one of the 66 commits still landed; 59 of them simply waited. p95 rises slightly against settle-alone (31 vs 23) because the flush at window close is a burst, which is the honest shape of deferral and is well inside budget.
+
+One scoping note, so the number is not read for more than it says. This condition defers at the *driver*, because the driver is a **local** deck-store action and the store's hold deliberately never defers local-origin events — a user's own gesture must not look ignored. What ships holds **wire-origin** session-store notifications, the streaming-card token traffic that is the real-world source of mid-window commits, and needs a live turn to produce. So the table measures what suppressing mid-window commits is *worth*; the store's hold is that suppression applied to the path that carries it in production, and its semantics are pinned at the store layer by `code-session-store/__tests__/notification-hold.test.ts`.
+
+The original sequence, for the record:
 
 1. **Freeze** — halt feed/store delivery to the card(s) in the moving pane (the same muscle HMR/replay gating already exercises); let React commit and layout fully settle so nothing dirties mid-gesture. In [D7] terms the whole sequence is the event clock at pane scale: freezing IS suspending the pane's data clock, and with every surface event-driven (S1–S4), suspending the clock provably silences the pane — there are no standing timers left inside it to tick through the drag.
 2. **Promote** — the settled pane becomes one static composited layer (its content neither paints nor re-lays-out during the move).

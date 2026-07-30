@@ -9,7 +9,7 @@
 | Field | Value |
 |------|-------|
 | Owner | kocienda |
-| Status | draft |
+| Status | complete — all steps landed; measured on release |
 | Target branch | main (interactive) or dash worktree per user's call |
 | Last updated | 2026-07-30 |
 
@@ -92,7 +92,7 @@ The fix is the classic FLIP inversion: React commits the final geometry in one r
 
 **Plan to resolve:** Step 6's lab session runs the scripted settle with a live turn (wave + dot running inside the moving pane) and compares layer counts and walk cost against the settled-pane run. Accept if the delta is transient and bounded; only escalate to a design change on proof.
 
-**Resolution:** OPEN — measured in Step 6, accepted or escalated on the numbers.
+**Resolution:** **RESOLVED — accepted.** 48 infinite accelerated scale loops planted inside the moving panes, over the same 8-gesture 4s window: walk median 365 → 399 (+9%), p95 frame delivery unchanged, no layer-count explosion. Bounded and transient, as hoped; no design change. Numbers in `roadmap/jul30-perf-brief.md#s5-imposer`.
 
 #### [Q02] Is the notification freeze needed at all? (OPEN → resolve by measurement in Step 6) {#q02-freeze-needed}
 
@@ -102,7 +102,9 @@ The fix is the classic FLIP inversion: React commits the final geometry in one r
 
 **Plan to resolve:** Step 6 measures the settle with a live streaming turn in a moving pane, freeze absent: frame budget and walk counts in the window, interleaved against a settled-pane baseline. If the commits break frame budget, Step 7 ships the hold; if not, Step 7 closes as not-needed and the brief's S5 record says so with numbers.
 
-**Resolution:** OPEN — ruled by Step 6's numbers; Step 7 is conditional on it.
+**Resolution:** **RESOLVED — the freeze ships.** Three-way attribution over a 4s window with 8 gestures and 67 validated deck-store commits: settle alone walk 343 / 10 dropped frames; commits alone 654 / 26; both **1809 / 43**. Additive prediction is 997, so the interaction is **81% superadditive** — a commit landing inside the gesture window dirties compositing while the animation's extent is reserved, forcing exactly the recompute the reservation exists to avoid. Median frame delivery degrades 17ms → 20ms with four times the dropped-frame rate. Machinery with a wedge risk may not ship on an unmeasured premise; this one is measured. Step 7 is unconditional now.
+
+**A note on how nearly this went the other way.** The first pass at this measurement drove commits with `cycleCard`, which cycles cards *within* a pane — and every pane in the scene holds one card, so it was a no-op. That run showed no delta and would have closed Step 7 as not-needed. The condition now asserts the deck state actually moved (`activePaneId` flips) before believing its own numbers. A driver that silently does nothing and a change that genuinely costs nothing produce the same reading; only the assertion tells them apart.
 
 ---
 
@@ -335,13 +337,13 @@ Both measurements are gBCR in viewport coordinates; deltas are CSS px in the sam
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | FLIP math module | pending | — |
-| #step-2 | FLIP orchestration via TugAnimator | pending | — |
-| #step-3 | CSS transition removal + static rail | pending | — |
-| #step-4 | Integration checkpoint: build + selective tests | pending | — |
-| #step-5 | App-test: scripted settle | pending | — |
-| #step-6 | Lab measurement + brief record + freeze verdict | pending | — |
-| #step-7 | Notification hold (CONDITIONAL on [Q02]) | pending | — |
+| #step-1 | FLIP math module | done | `8287798cd` |
+| #step-2 | FLIP orchestration via TugAnimator | done | `c6b2607e6` (with #step-3) |
+| #step-3 | CSS transition removal + static rail | done | `c6b2607e6` (with #step-2) |
+| #step-4 | Integration checkpoint: build + selective tests | done | verification only |
+| #step-5 | App-test: scripted settle | done | `797648b56` (`at0294`) |
+| #step-6 | Lab measurement + brief record + freeze verdict | done | see below |
+| #step-7 | Notification hold (**ruled IN** by [Q02]) | done | see commit below |
 
 #### Step 1: FLIP math module {#step-1}
 
@@ -468,8 +470,10 @@ Both measurements are gBCR in viewport coordinates; deltas are CSS px in the sam
 
 **Artifacts:** S5 record + checked exit box in `roadmap/jul30-perf-brief.md`; the S5 section's "whole-page walk per frame" premise line updated to cite the I1 law; [Q01]/[Q02] resolutions recorded in this plan
 
+**How the settle gets driven on a release build (found during the implementation run):** `window.__tug` is **not available** on release — `attachTugTestSurface` is a no-op unless `window.__tugTestMode` is set, and the `WKUserScript` that sets it is `#if DEBUG`-gated in `tugapp/Sources/TestHarness/TestHarnessUserScript.swift`, so no tugbank default can turn it on. `/api/eval` is available (`PUT /api/defaults/diag/eval {"kind":"bool","value":true}` on the instance's port, then `POST /api/eval {"code": "…"}`), and it reaches the real DOM — so the way to script an arrangement change is a real click on the Lens's Layouts picker (`document.querySelector('[data-testid="lens-layouts-kind"] [data-radio-value="two-up"]').click()`), which runs the genuine React handler and control-action path. `window.tugdeck.diag` (`getDeckState`, `listCardIds`, `captureCardState`) is available for reading state back. What `/api/eval` cannot do is *build* the deck: a fresh release instance starts at onboarding with zero panes, so the heavy deck this step measures on has to be a real one the user is already working in, or one stood up by hand first.
+
 **Tasks:**
-- [ ] On the idle-hunt dash-release lab (rebuild from the branch under test; newest-WebContent-by-start-time to find the PID): scripted settles on a heavy deck, sampled — walk delta ≤ noise vs interleaved baselines in tween steady state; two-walk gesture edges visible and priced.
+- [ ] On a dash-release lab instance rebuilt from the branch under test (newest-WebContent-by-start-time to find the PID): scripted settles on a heavy deck, sampled — walk delta ≤ noise vs interleaved baselines in tween steady state; two-walk gesture edges visible and priced.
 - [ ] [Q01]: repeat with a live turn running inside a moving pane (wave + dot); record layer-count and walk deltas; accept or escalate on the numbers; mark Q01 resolved here.
 - [ ] [Q02]: same live-turn run, freeze absent — measure mid-window React-commit cost (frame times in the gesture window vs the settled-pane run). Rule: frame budget held → Step 7 closes as not-needed; broken → Step 7 ships. Record the verdict and numbers in this plan and the brief.
 - [ ] Frame budget: no settle-attributable main-thread frame over ~16.7ms in the gesture window (sample or Instruments, method noted in the record).

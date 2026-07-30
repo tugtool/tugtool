@@ -9,7 +9,8 @@ import { setConnection } from "./lib/connection-singleton";
 import { TugbankClient } from "./lib/tugbank-client";
 import { setTugbankClient } from "./lib/tugbank-singleton";
 import { DeckManager, type TerminationVerdict } from "./deck-manager";
-import { initActionDispatch } from "./action-dispatch";
+import { dispatchAction, initActionDispatch } from "./action-dispatch";
+import type { DeckState } from "./layout-tree";
 import { initHostMenuState } from "./lib/host-menu-state";
 import { initRecentDocuments } from "./lib/recent-documents";
 import { installUpdateBridge } from "./lib/update-bridge";
@@ -117,6 +118,16 @@ declare global {
         getCardState(cardId: string): unknown;
         captureCardState(cardId: string): unknown;
         registeredComponentKeys(cardId: string): string[];
+      };
+      /**
+       * Measurement surface — the two write-capable moves a profiling
+       * session needs to stand up a scenario on a build it cannot run
+       * the DEBUG test harness against. See the attach site for why
+       * this is here and what it does not widen.
+       */
+      lab: {
+        dispatch(action: string, payload?: Record<string, unknown>): void;
+        seedDeck(state: unknown, focusCardId?: string): void;
       };
     };
     /**
@@ -654,6 +665,54 @@ if (!container) {
       registeredComponentKeys: (cardId: string) => {
         const reg = deck.peekComponentStatePreservationRegistry(cardId);
         return reg ? Array.from(reg.keys()) : [];
+      },
+    },
+
+    /**
+     * Measurement surface — the two write-capable moves a profiling
+     * session needs, and nothing else.
+     *
+     * A performance question about a shipped surface has to be asked of
+     * a RELEASE build: a debug build's timings are not the product's,
+     * and the perf program's discipline says so outright. But the app
+     * test harness cannot reach a release build — `window.__tug` is
+     * installed only when `__tugTestMode` is set, and the
+     * `WKUserScript` that sets it is `#if DEBUG`-gated in
+     * `TestHarnessUserScript.swift`, so no runtime opt-in can open it.
+     * That left release measurable only by hand: stand up a deck
+     * through the UI, then drive the gesture through the UI, with the
+     * scenario differing run to run. These two methods make a release
+     * scenario scriptable and therefore repeatable, which is what makes
+     * an interleaved A/B mean anything.
+     *
+     * Both are deliberately thin: `dispatch` is the same entry point
+     * every menu item and every control in the app already calls, and
+     * `seedDeck` is `DeckManager.seedDeckState`, which is documented as
+     * callable outside test mode and issues no tugbank I/O of its own.
+     * Neither is a parallel code path — a scripted scenario exercises
+     * exactly what a user's gesture would.
+     *
+     * On what this does and does not widen. It adds no REMOTE reach:
+     * the remote door is `POST /api/eval`, which stays shut behind the
+     * `diag/eval` tugbank default and is unchanged here. In-page, the
+     * trust assumption is the one `diag` above already states — Tug.app
+     * loads its own bundle into a same-origin `WKWebView` — and page
+     * script could already drive any of this by synthesizing clicks on
+     * real controls. What is new is convenience for a developer who has
+     * already opened that door, not a door.
+     */
+    lab: {
+      /** Run a control action exactly as a menu item or control would. */
+      dispatch: (action: string, payload?: Record<string, unknown>) => {
+        dispatchAction({ ...payload, action });
+      },
+      /**
+       * Replace the deck's state wholesale. The caller passes a
+       * fully-formed `DeckState`; there is no merge with what was
+       * there. Used to stand a known scenario up before measuring it.
+       */
+      seedDeck: (state: unknown, focusCardId?: string) => {
+        deck.seedDeckState({ state: state as DeckState, focusCardId });
       },
     },
   };

@@ -728,6 +728,23 @@ class CardServicesStore {
     return Array.from(this._services.values());
   };
 
+  /**
+   * Run `fn` against every live card's session store.
+   *
+   * Narrower than {@link allServices} on purpose. A caller that wants to
+   * act on the stores' lifecycle — hold their notifications for the
+   * length of a gesture, say — has no business holding the services
+   * bags, which carry the connection, the shell session, and the
+   * composer's staged attachments. Handing out the one thing asked for
+   * keeps that caller from growing a reach it never needed.
+   */
+  forEachCodeSessionStore = (fn: (store: CodeSessionStore) => void): void => {
+    this._ensureInitialized();
+    for (const services of this._services.values()) {
+      fn(services.codeSessionStore);
+    }
+  };
+
   getByTugSessionId = (tugSessionId: string): CardServices | null => {
     this._ensureInitialized();
     for (const services of this._services.values()) {
