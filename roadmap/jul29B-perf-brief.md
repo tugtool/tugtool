@@ -398,3 +398,23 @@ Expected post-rebuild shape: `DocumentTimeline` gone from the schedulers, `updat
 
 - **TugListView's per-cell ResizeObserver** — the other half of the RO gather. A skipped cell cannot resize (it is not laid out), so cells could be unobserved while skipped and re-observed on `contentvisibilityautostatechange` (initial delivery re-measures, which is exactly the stamping contract) — but the width-invalidation stamp-strip path must re-observe too, and that machinery is load-bearing; it deserves its own careful pass.
 - **`tug-label` truncation ROs** (one per JS-ellipsis label) and the `use-clamp-overflow` / `use-is-multiline` / `block-chrome` populations — same per-observation tax, smaller populations, same hoisting pattern available.
+
+#### Verified after rebuild {#record-real-deck-after}
+
+Three unattended idle samples on the rebuilt release bundle (pid 86153, built 18:32; bundle confirmed to carry `linear` hold-stop blink keyframes and the pin-stack controller):
+
+| | Before | After |
+|---|---|---|
+| Idle busy | 9.1 / 8.3 / 7.8% (mean **8.4%**) | 6.0 / 5.8 / 5.5% (mean **5.8%**) |
+| `CaretAnimator` as scheduler | 16 hits | **0** |
+| `updateIntersectionObservations` | 37 samples | **1** |
+| `updateResizeObservations` | 65 samples | **3–6** |
+| `Style::TreeResolver::resolve` | 5–6% of busy | 5–6% of busy |
+
+**31% off idle busy, and both predicted mechanisms confirmed dead** — the caret animator no longer schedules a rendering update at all, and the transcript's observer tax is gone. Every prediction in `#record-real-deck` held except one: style resolve did not fall, because it was never the caret's alone.
+
+**What the residual is, and why it is now a different problem.** The remaining 5.8% is dominated by one term: `computeCompositingRequirements` → `traverseUnchangedSubtree`, 19–24% of busy at 25–54 samples per window, reached through `resolveStyle → updateCompositingLayersAfterStyleChange`. `DocumentTimeline` still schedules (5 hits in one of three windows) and `KeyframeEffect::setAnimatedPropertiesInStyle` / `computeExtentOfTransformAnimation` are present, so **a transform keyframe loop is still running somewhere on the deck** — the pulsing dot's breath, on whatever glyph is live. Each tick resolves style, and each style resolve drags a full compositing-requirements walk over the whole layer tree.
+
+That walk is the last big term, and it is a function of layer population — the hypothesis [H6] recorded as refuted. **[H6] should be read as refuted only for the fixture deck it was tested on.** The dose-response injected 4,000 stacking contexts into a deck whose walk was 37 samples; the real deck's walk is 25–54 samples out of a much smaller busy budget, reached by a different path. The population that matters here is specifically **compositing-overlap candidates**, and this codebase mints one per transcript entry by design: `.tug-transcript-entry__pin` is `position: sticky` on every entry, which the primitive's own docstring already identifies as the reason the icon and header were merged into one sticky wrapper. Hundreds of entries per card, walked on every animation tick.
+
+Two candidate directions, neither yet tested: stop the tick (find and accelerate or eliminate the remaining transform loop on an idle deck), or shrink the walk (make off-screen entries non-sticky, so a skipped cell contributes no overlap candidate). The first is cheaper to try and should go first.
