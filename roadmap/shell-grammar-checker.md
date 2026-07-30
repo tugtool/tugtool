@@ -38,11 +38,13 @@ The insight this plan builds on: nearly every command has a grammar we can know 
 
 - Composed pipeline on the routing corpus: **zero executed false SHELL** (`just model-classify` exit code, which already applies the veto; after this plan it also applies the grade) — measured with the shipping pack.
 - Shell recall does not collapse: corpus lines labeled `shell` that route to the shell ≥ the pre-grader post-veto baseline for the same pack (qwen baseline: 30/35 shell, 35/36 prompt).
-- The No band spends zero inference: `classify.py` reports how many corpus cases were decided without a model call, and every No-band case labeled `prompt` scores correct with no inference spent.
-- No corpus line labeled `shell` grades **No** on the dev machine (a shell line whose opener doesn't resolve would be a grader defect there; asserted by a Rust test over the corpus).
+- The No band spends zero inference: `classify.py` reports how many corpus cases were decided without a model call, and every No-band case labeled `prompt` scores correct with no inference spent. The report must separate cases `isShellCandidate` would have filtered anyway from the two populations the grader genuinely adds (#no-band-real-scope), or the number overstates what production gains.
+- The two new No populations are closed: an unresolving pipeline-tail segment (`git status | frobnicate`) and a non-existent path-shaped opener (`./nonexistent.sh`, session cwd known) both route to Claude with no model call — verified live in Step 9, since neither is reachable through the corpus's single-command cases.
+- No corpus line labeled `shell` grades **No**, measured two ways: hermetically against the injected command set in `cargo nextest` (Step 7), and against this machine's real login PATH in the Step 8 harness run. The first is the regression gate; the second is the reality check.
 - Grading is fast: the `grade()` call itself completes in well under a millisecond on corpus-length lines (asserted informally; no benchmark harness — the function is table lookups and one lex pass).
 - The Maybe prompt is bounded: every baked synopsis ≤ `SYNOPSIS_CHAR_CAP` (Spec S03), asserted by a catalog integrity test, so classify prefill stays within the latency budget the 2s submit wait allows.
-- All grading behavior is pinned by `cargo nextest run -p tuggram` with no app, no model, and no network.
+- The submit-time cost of grading is bounded: `GRADE_SUBMIT_WAIT_MS = 150` ([P06]), and it is normally zero because the debounce prefetches — verified in Step 9 against the live app.
+- All grading behavior is pinned by `cargo nextest run -p tuggram` with no app, no model, and no network — provable by running the suite with `PATH=/nonexistent`.
 
 #### Scope {#scope}
 
@@ -64,7 +66,7 @@ The insight this plan builds on: nearly every command has a grammar we can know 
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- **The `model-trust` dash must land first** (`/join model-trust`). This plan builds directly on work that exists only on `tugdash/model-trust`: `vetoesShellVerdict` and its single call site, the exact-token `verdict(from:labels:)` parse, `tests/model-eval/veto-filter.ts`, and the classify harness's veto-aware scoring. Do not start implementation until those are on main.
+- **SATISFIED** — the `model-trust` dash landed on main as `25ab4714d` (2026-07-30). This plan builds directly on what it carried: `vetoesShellVerdict` and its single call site in `performSubmit`, the exact-token `verdict(from:labels:)` parse, `tests/model-eval/veto-filter.ts`, and the classify harness's veto-aware scoring. All present on main; verify with `grep -c vetoesShellVerdict tugdeck/src/lib/shell-line-classifier.ts` (expect 2) before starting.
 - A dash worktree for this plan (created by `/tugplug:implement`, named by the user's gesture — never on the implementer's initiative on main).
 
 #### Constraints {#constraints}
@@ -243,8 +245,11 @@ This plan uses the devise-skeleton v4 anchor and label conventions: explicit `{#
 - Every path that could be wrong resolves toward Claude; the shell remains reachable only through an explicit model verdict plus the veto — the module's founding asymmetry, restated with the grader in place.
 - Caching the grade beside the verdict cache keeps the submit path's added latency to one debounce-amortized round trip.
 
+**The wait is bounded small, because it is in series ahead of the verdict wait.** `GRADE_SUBMIT_WAIT_MS = 150`. The existing typing debounce already fires the classify request; it must fire the grade request *first and concurrently*, so by the time Return is pressed the grade is normally cached and the submit-time wait is zero. The 150ms is only for the case where Return beats the debounce. It must stay far below `VERDICT_SUBMIT_WAIT_MS` (2s) because the two waits **add**: a grade wait as generous as the verdict wait would double the worst-case pause between Return and the line going somewhere, which is the one user-visible cost this whole feature is supposed to reduce. An expired grade wait resolves to Unknown, which is today's path.
+
 **Implications:**
 - The verdict cache key must incorporate whether a grammar rode along (a verdict formed with documentation is not the same answer as one formed without); simplest is to cache by exact text as today and also cache the band per text, invalidating together.
+- The debounce must issue the grade request alongside the classify request, not after it — a serial debounce would put the grade's latency in front of the classify's on every keystroke.
 - State zone mapping in [#state-zone-mapping].
 
 ---
@@ -253,7 +258,7 @@ This plan uses the devise-skeleton v4 anchor and label conventions: explicit `{#
 
 #### The current flow, end to end (what this plan modifies) {#current-flow}
 
-Production routing (all on `tugdash/model-trust`, landing to main as a prerequisite):
+Production routing as it stands on main today (the `model-trust` work landed as `25ab4714d`):
 
 1. Session bind: `PathCommandsStore.request()` (`tugdeck/src/lib/path-commands-store.ts`) sends `{type:"path_commands", tug_session_id}` on `SHELL_INPUT`; tugcast (`feeds/shell.rs`) resolves the login PATH once per process (`probe_login_path` → `command_names_in_path`, cached in a `OnceLock`, capped by `PATH_COMMANDS_SERIALIZED_CAP`) and replies with a `path_commands` frame on `SHELL_OUTPUT`.
 2. Typing (debounced) and submit: `isShellCandidate(text, commands)` — env-assign prefix skipped, first token in the set or path-shaped (`./`, `~/`, absolute-with-interior-slash). Null set → false (safety net).
@@ -266,6 +271,21 @@ The grader inserts between 2 and 3, and its Maybe output threads through 3, 4, a
 #### Why the corpus can't see the No band today {#corpus-no-band-blindness}
 
 `classify-corpus.json`'s cases were recovered from `local model classify answered` log lines — every one of them *reached* the model, which means every opener resolved on PATH at recording time. The band the grader decides alone (No) is therefore invisible to the current corpus by construction. Step 7 adds explicitly-labeled No-band cases (prose with non-resolving openers, the population `isShellCandidate` already filters in production) so the composed harness exercises all four bands, and the report separates "correct with zero inference" from "correct via the model."
+
+#### What the No band actually buys in production (narrower than it looks) {#no-band-real-scope}
+
+Read this before writing Step 5 or judging the harness numbers, because the harness and production see completely different No-band populations.
+
+`isShellCandidate` runs **first** and passes a line only when the first token is in the login-PATH command set **or** is path-shaped (`./x`, `~/x`, `/a/b`). So ordinary prose — `fix the flaky reconnect test`, `explain this error` — is already refused by the deck without any round trip, and the grader never sees it. The grader cannot be what saves that inference; the deck has saved it since the feature shipped.
+
+The No band therefore fires on exactly two populations in production, and both are genuinely new:
+
+1. **A non-head segment that doesn't resolve.** `git status | frobnicate`, `cargo build && deploy-it`. `isShellCandidate` only ever examined the *first* token; the grader lexes the whole line and resolves every segment head. This is a real false-SHELL vector the current stack cannot see at all.
+2. **A path-shaped opener that doesn't exist.** `./build.sh` when there is no `build.sh`. The deck accepts every `./x` on faith because it cannot stat; the grader stats (Spec S07) and refuses. Note the interaction with S07's cwd rule — with no session cwd yet, this grades Unknown rather than No, so this population is only reachable once the session has a shell.
+
+The harness (`classify.py`) deliberately sends every corpus case regardless of `isShellCandidate`, so its No-band count will be much larger than production's and must not be read as inference saved in the real app. Step 8's report should say which No-band cases would have been filtered by `isShellCandidate` anyway, so the number means something.
+
+None of this weakens the plan — the Maybe band (arming the model with the program's own documentation) was always the larger prize, and these two No populations close a real gap. But a reader who expects No to be the headline saving will misread every number in Step 8.
 
 #### The harvest sources, in preference order {#harvest-sources}
 
@@ -281,10 +301,10 @@ Each catalog entry records its `source` and harvested `version` (when determinab
 
 **Spec S01: The band grading algorithm** {#s01-grading-algorithm}
 
-Input: the trimmed single-line text, the login-PATH command set, the builtin list (S02), the catalog. Output: `Graded { band, synopsis: Option<String>, command: Option<String> }`.
+Input: the trimmed single-line text, the login-PATH command set, the builtin list (S02), the catalog, and `cwd: Option<&Path>` — the shell session's tracked working directory (see Spec S07). Output: `Graded { band, synopsis: Option<String>, command: Option<String> }`.
 
 1. **Lex.** Strip a leading `NAME=value` env-assign prefix per segment. Tokenize with shell-aware quoting (single, double, backslash). Split into simple-command segments on `|`, `&&`, `||`, `;`. A line the lexer cannot confidently segment (unbalanced quote, heredoc `<<`, process substitution, backtick/`$(` substitution) → **Unknown**. Substitutions are Unknown, not an attempt to lex inside them.
-2. **Resolve each segment head.** A head resolves if it is in the command set, in the builtin list, or is path-shaped (`./x`, `~/x`, `/a/b`) **and stats to an existing executable file** (the stat is the capability the deck-side check lacks). Any head that fails to resolve → the whole line is **No**.
+2. **Resolve each segment head.** A head resolves if it is in the command set, in the builtin list, or is path-shaped and stats to an existing executable file. Path-shaped heads split by what they are relative to (Spec S07): `/a/b` and `~/x` are position-independent and stat directly; `./x` and any bare-relative path are relative to the **shell session's** cwd, not tugcast's process cwd, and stat only when a `cwd` was supplied. **A relative head with no `cwd` available grades Unknown, never No** — an un-checkable path is absence of validation, not evidence of absence, which is the [P02] rule applied to the one input the grader may be missing. Any head that resolves to nothing (with the check actually performed) → the whole line is **No**.
 3. **Grade each resolved segment.** No catalog entry for the head → **Unknown**. With an entry: walk the tokens — known subcommand descends into its sub-grammar; a token matching a known flag (or a flag's declared value) is consumed; a positional token is checked against the entry's positional policy (`free` = anything allowed, `files` = anything allowed, `none` = positional tokens are a mismatch, `enum:[…]` = must match). Every token accounted for → **Yes**. Any unaccounted token (unknown flag, unknown subcommand, positional where `none`) → **Maybe**.
 4. **Combine.** The line's band is the weakest segment's: No < Unknown < Maybe < Yes. A Maybe line's synopsis is the first Maybe segment's entry synopsis.
 
@@ -341,6 +361,20 @@ The final tie-break sentence repeats the base prompt's doubt rule on purpose —
 
 `positionals` ∈ `"free" | "files" | "none" | {"enum":[…]}`. `files` and `free` are graded identically (anything allowed) but recorded distinctly for future tightening. A name with no grammar payload is not written to the catalog at all (absence = Unknown).
 
+**Spec S07: Which working directory a relative path resolves against** {#s07-cwd-contract}
+
+`grade()` takes `cwd: Option<&Path>` and never consults the process's own working directory — tugcast's cwd is wherever the host launched it and has nothing to do with where the user's shell is standing.
+
+The cwd comes from the shell session state `feeds/shell.rs` already maintains: each exec's trailing `<marker>\t<code>\t<cwd>` line yields `cwd_after`, which is stored on the session and reported to the deck. Because the `shell_grammar` request carries `tug_session_id` (Spec S04), the handler looks the session up and passes its current cwd.
+
+Three cases, and the third is the one that matters:
+
+- **Absolute (`/usr/bin/true`) and tilde (`~/bin/x`)** — position-independent. Stat directly; `cwd` is not consulted.
+- **Relative (`./build.sh`, `bin/tool`) with a cwd known** — stat against the session cwd.
+- **Relative with no cwd known** — no shell child has spawned yet in this session, so there is no cwd to resolve against. Grade **Unknown**. This is [P02] applied to a missing input: the grader could not perform the check, which is not the same as performing it and finding nothing. Grading No here would silently swallow `./build.sh` as prose in exactly the situation where a user is most likely to type it — the first command of a fresh session.
+
+This is strictly more capability than the deck has today: `isShellCandidate` accepts any `./x` on faith because the deck cannot stat. The grader can, so it should — but only when it actually holds the cwd.
+
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
 | State | Zone (appearance / local-data / structure) | Mechanism | Law |
@@ -376,7 +410,8 @@ No React render reads either — routing is a submit-time act, so nothing here e
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `Band`, `Graded`, `grade` | enum/struct/fn | `tuggram/src/lib.rs` | pure over (line, command set, builtins, catalog) |
+| `Band`, `Graded`, `grade` | enum/struct/fn | `tuggram/src/lib.rs` | pure over (line, command set, builtins, catalog, `cwd: Option<&Path>`) — never reads the process cwd (Spec S07) |
+| `GRADE_SUBMIT_WAIT_MS` | const | `tugdeck/src/lib/shell-grammar-store.ts` | 150ms; in series ahead of `VERDICT_SUBMIT_WAIT_MS`, so deliberately far below it ([P06]) |
 | `probe_login_path`, `command_names_in_path` | fn (moved) | `tuggram/src/lib.rs` | tugcast re-uses; single statement of PATH resolution |
 | `shell_grammar` verb handling | match arm | `tugcast/src/feeds/shell.rs` | mirrors `path_commands` request/reply |
 | `requestClassify(text, grammar?)` | fn (widened) | `tugdeck/src/lib/local-model-bridge.ts` | optional `grammar` in the posted body |
@@ -447,11 +482,12 @@ No React render reads either — routing is a submit-time act, so nothing here e
 **Tasks:**
 - [ ] Workspace member + crate scaffolding; move the PATH-resolution functions; keep tugcast green against the re-export.
 - [ ] Implement the lexer per Spec S01 step 1 (quoting, env-assign prefixes, segment split, Unknown on substitutions/heredocs/unbalanced quotes).
-- [ ] Implement head resolution per Spec S01 step 2, including the executable-stat on path-shaped heads; builtin list per Spec S02.
+- [ ] Implement head resolution per Spec S01 step 2 and the cwd contract in Spec S07: `grade()` takes `cwd: Option<&Path>` and never reads the process cwd; absolute and `~/` heads stat directly; relative heads stat against the supplied cwd; a relative head with `cwd: None` grades Unknown, not No. Builtin list per Spec S02.
 
 **Tests:**
 - [ ] Lexer table tests: quoting, pipes, `&&`/`;`, env prefixes, the Unknown constructs.
-- [ ] Resolution tests over an injected command set (no real PATH in unit tests): No on unresolved heads, No on a pipeline with one bad head, Unknown on resolved-no-catalog, stat behavior via a tempdir script.
+- [ ] Resolution tests over an injected command set (no real PATH in unit tests): No on unresolved heads, No on a pipeline with one bad head, Unknown on resolved-no-catalog.
+- [ ] Cwd tests (Spec S07) over a tempdir: `./x` with a cwd that holds an executable `x` resolves; the same line with a cwd that doesn't grades No; the same line with `cwd: None` grades **Unknown**; an absolute path is unaffected by cwd.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tuggram -p tugcast`
@@ -506,7 +542,7 @@ No React render reads either — routing is a submit-time act, so nothing here e
 - [ ] Integrity test passes over the real committed catalog.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo run -p tuggram --bin harvest -- --check` (regeneration is a no-op against the committed file)
+- [ ] `cd tugrust && cargo run -p tuggram --bin harvest -- --check` — regeneration is a no-op against the committed file. **This holds only on the harvest machine**, since the sweep reads the local PATH and local man pages; it is a reproducibility check for whoever regenerates the catalog, not a portable gate, and it must never run in a suite that another machine is expected to pass.
 - [ ] `cd tugrust && cargo nextest run -p tuggram`
 
 ---
@@ -517,16 +553,19 @@ No React render reads either — routing is a submit-time act, so nothing here e
 
 **Commit:** `tugcast(shell): answer a shell_grammar request with a band and a synopsis`
 
-**References:** [P01] grader in tugcast, Spec S04, (#current-flow)
+**References:** [P01] grader in tugcast, Spec S04, Spec S07, (#current-flow, #s07-cwd-contract)
 
 **Artifacts:**
-- `feeds/shell.rs`: `shell_grammar` verb → `grade()` over the cached PATH set → reply frame per Spec S04.
+- `feeds/shell.rs`: `shell_grammar` verb → `grade()` over the cached PATH set and the session's tracked cwd → reply frame per Spec S04.
 
 **Tasks:**
-- [ ] Verb parse + dispatch beside `path_commands`; grade on `spawn_blocking` if the stat can touch disk; reply echoes `line`.
+- [ ] Verb parse + dispatch beside `path_commands`; reply echoes `line`.
+- [ ] Supply the cwd per Spec S07: look the session up by `tug_session_id` and pass its current working directory — the value `feeds/shell.rs` already maintains from each exec's trailing `<marker>\t<code>\t<cwd>` line (`cwd_after`). Pass `None` when no shell child has spawned yet; never substitute the process cwd.
+- [ ] Grade on `spawn_blocking`, since head resolution can stat.
 
 **Tests:**
 - [ ] Feed round-trip tests mirroring `path_commands_round_trip_over_the_feed`: one per band, synopsis only on maybe, session scoping respected.
+- [ ] A session with no shell child yet grades `./x` **Unknown**; after an exec establishes a cwd, the same line grades against that directory (Spec S07's three cases, at the feed layer).
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast`
@@ -548,12 +587,14 @@ No React render reads either — routing is a submit-time act, so nothing here e
 - The `shell-line-classifier.ts` module docstring gains the grader's place in the bracket (a third fact source, still deciding nothing about intent).
 
 **Tasks:**
-- [ ] Store + wiring through `use-session-card-services` beside `PathCommandsStore`.
+- [ ] Store + wiring through `use-session-card-services` beside `PathCommandsStore`. **Optional exactly as `PathCommandsStore` is** — hosts without a shell (the gallery) omit it, and an absent store must grade every line Unknown, which is today's path. This is the same null-until-loaded safety posture the command set already has; do it deliberately rather than inheriting it by accident.
 - [ ] Band decision table as a pure exported function in `shell-line-classifier.ts` (`modelCallForBand(band): "skip" | "ask" | "ask-with-grammar"`), so the prompt-entry diff stays confined.
+- [ ] Fire the grade request in the debounce **alongside** the classify request, not after it ([P06]) — a serial debounce would stack grade latency in front of classify latency on every keystroke.
 - [ ] Bridge widening; cache the band beside the verdict cache, cleared together.
 
 **Tests:**
 - [ ] `bun:test`: store folding (`_ingestForTest` seam like `PathCommandsStore`), decision table, bridge body shape with/without grammar.
+- [ ] `bun:test`: an absent/unloaded grammar store yields Unknown (so the gallery and the pre-load window behave exactly as today).
 
 **Checkpoint:**
 - [ ] `bunx tsc --noEmit && bun test tugdeck/src/lib`
@@ -598,17 +639,22 @@ No React render reads either — routing is a submit-time act, so nothing here e
 
 **Artifacts:**
 - `tests/model-eval/classify-corpus.json`: optional `"band"` field on cases where the expected band is stable; ~10 new No-band cases (prose with non-resolving openers — the population the deck filters before the model today) and 2–3 Unknown-band cases (real commands with no catalog grammar); `_doc` updated.
-- A `tuggram` corpus test: read the corpus file, grade every case against the committed catalog + this machine's PATH resolution, assert every present `band` label, and assert the floor — **no `shell`-labeled line grades No**.
+- `tugrust/crates/tuggram/data/corpus-commands.txt`: the **injected** command set the corpus test grades against — the union of the committed catalog's names and every opener the corpus uses. Committed, small, hand-reviewable.
+- A `tuggram` corpus test: read the corpus file, grade every case against the committed catalog and that injected set (never a live PATH sweep, never a real stat), assert every present `band` label, and assert the floor — **no `shell`-labeled line grades No**.
+
+**The corpus test must be hermetic, and this is the whole point of the injected set.** Everything else in `cargo nextest` here runs with no app, no model, and no network; a live login-PATH sweep inside the unit suite would break that and make the result depend on what Homebrew installed this week. The same reasoning covers the stat in Spec S07: the corpus test passes `cwd: None`, so relative openers grade Unknown deterministically rather than touching the filesystem. The live-PATH reading — does the floor still hold against this machine's real command set — belongs to Step 8's harness run, which is machine-bound by nature and already reports per band.
 
 **Tasks:**
-- [ ] Label existing cases where stable (openers with curated grammars); leave PATH-dependent ones unlabeled.
+- [ ] Label existing cases where stable (openers with curated grammars); leave genuinely PATH-dependent ones unlabeled.
 - [ ] Author the new cases; keep the pairing doctrine (`_doc`) intact.
+- [ ] Author `corpus-commands.txt` and assert in the same test that it covers every corpus opener (so a new case can't silently grade No for want of a set entry).
 
 **Tests:**
-- [ ] The corpus band test above (`cargo nextest run -p tuggram corpus`).
+- [ ] The corpus band test above (`cargo nextest run -p tuggram corpus`), hermetic — no PATH sweep, no stat, `cwd: None`.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tuggram`
+- [ ] The suite passes with the login PATH emptied (`env PATH=/nonexistent cargo nextest run -p tuggram`), proving hermeticity rather than asserting it
 
 ---
 
@@ -621,7 +667,7 @@ No React render reads either — routing is a submit-time act, so nothing here e
 **References:** [P05] grammar field, [P06] deck band handling, Spec S04, (#success-criteria, #corpus-no-band-blindness)
 
 **Artifacts:**
-- `src/bin/grade.rs`: corpus lines on stdin → `{"line": {"band": …, "synopsis": …}}` JSON on stdout — the deterministic seam `classify.py` shells, mirroring `veto-filter.ts`.
+- `src/bin/grade.rs`: corpus lines on stdin → `{"line": {"band": …, "synopsis": …}}` JSON on stdout — the deterministic seam `classify.py` shells, mirroring `veto-filter.ts`. It grades against the **live** login PATH (unlike Step 7's hermetic test), because the harness's job is to read reality. `classify.py` builds it once (`cargo build -p tuggram --bin grade`) and invokes the built binary, never `cargo run` per call — a cold rebuild inside the scoring loop would dominate the run's wall time and be mistaken for model latency.
 - `classify.py`: grade every case first; No-band cases are scored without a model call; Yes/Unknown cases drive the tell as today; Maybe cases drive it with `-p grammar=<synopsis>`; the veto applies to every SHELL verdict as today. Report per band: case counts, accuracy, inference spent; the gate (exit code) is composed zero-executed-false-SHELL; the pack's own unfiltered false SHELL is still reported alongside.
 
 **Tasks:**
@@ -645,7 +691,12 @@ No React render reads either — routing is a submit-time act, so nothing here e
 **References:** (#success-criteria, #r02-maybe-latency, #r05-prompt-entry-churn)
 
 **Tasks:**
-- [ ] `just app-debug`; in the live card: a No line (`fix the flaky reconnect test` — `fix` resolves on some machines; verify with a genuinely non-resolving opener) goes to Claude with no classify log line; a Yes line (`git status`) routes to the shell; a Maybe line (`git stauts`) produces a `grammar=true` classify log line; an Unknown line behaves exactly as before.
+- [ ] `just app-debug`; in the live card, exercise each band with a line that actually reaches the grader (see #no-band-real-scope — plain prose is filtered by `isShellCandidate` before grading, so it does **not** test the No band):
+  - **No** — `git status | frobnicate` (head resolves so the deck asks; the pipeline tail does not, so the grader refuses). Expect: routes to Claude, and **no** `local model classify answered` line in the tugcast log for it.
+  - **No, second population** — `./nonexistent-script.sh` in a session that has already run one shell command (so a cwd is tracked). Same expectation.
+  - **Yes** — `git status` routes to the shell, with a classify log line carrying `grammar=false`.
+  - **Maybe** — `git stauts` produces a classify log line carrying `grammar=true`.
+  - **Unknown** — a resolving command with no catalog entry behaves exactly as it does today.
 - [ ] Read Maybe-band classify latency from the answered log lines; confirm p95 comfortably inside the 2s deadline, else tune `SYNOPSIS_CHAR_CAP` down.
 - [ ] Run the named app-test selection (within the 20-file budget, chosen here, not at run time): `at0216-shell-exchange.test.ts`, `at0280-local-model-absent.test.ts`, `at0000-smoke.test.ts`, `at0204-prompt-entry-text-surface.test.ts` via `just app-test <files>`.
 
@@ -667,7 +718,7 @@ No React render reads either — routing is a submit-time act, so nothing here e
 
 - [ ] `just model-classify` composed gate passes: zero executed false SHELL, shell recall ≥ 30/35, all four bands exercised (Step 8 report).
 - [ ] `cargo nextest run -p tuggram` pins lexing, grading, catalog integrity, and the corpus band floor with no inference.
-- [ ] The committed catalog regenerates as a no-op (`harvest -- --check`).
+- [ ] The committed catalog regenerates as a no-op on the harvest machine (`harvest -- --check`; see #step-3 for why this is not portable).
 - [ ] Live behavior verified per Step 9, including Maybe-band latency inside the deadline.
 - [ ] The `shell-line-classifier.ts` docstring and the `LocalModelService.swift` freeze docstring both state the grader's place accurately.
 
@@ -687,5 +738,5 @@ No React render reads either — routing is a submit-time act, so nothing here e
 |------------|--------------|
 | Composed routing gate | `just model-classify` exit 0 with the Step 8 report shape |
 | Grader hermeticity | `cargo nextest run -p tuggram` green offline |
-| Catalog reproducibility | `cargo run -p tuggram --bin harvest -- --check` |
+| Catalog reproducibility (harvest machine only) | `cargo run -p tuggram --bin harvest -- --check` |
 | Live pipeline | Step 9 walkthrough + named app-tests `VERDICT: PASS` |
