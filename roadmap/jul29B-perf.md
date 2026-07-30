@@ -725,7 +725,7 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 - [x] M4 verdict written with process-count and cross-stall evidence — yes on the engine, OUT on policy (brief `#record-m4`).
 - [x] Idle attribution closed arithmetically (±25% from both arms independently) with every waker named (brief `#record-idle`).
 - [x] at0292 (idle silence: 0 DOM writes/s settled) committed and green.
-- [ ] **Release idle busy ≤1.5% ×3 — owed.** Needs an idle release deck; see #step-12.
+- [ ] **Release idle busy ≤1.5% ×3 — MISSED.** Measured 9.1% / 8.3% / 7.8% on an unattended release deck, mean 8.4% against a 8.3% starting point: no measurable change. Attributed — style invalidation, which this phase's work attacks, is only 0.5% of wall on the real deck (brief `#record-release`).
 - [x] at0293 committed and green — **on frame gap**, p50 17 / p95 18. The originally budgeted keystroke→post-paint p50 < 9ms was unreachable in principle at 60Hz ([P08], amended).
 - [x] After-layout walk under typing attributed: **[H6] refuted** by dose-response; containment never productized because the hypothesis it served died (brief `#record-typing`).
 - [x] Sparkline tape painted in a worker. **Pulse card eyeball still owed** (R03).

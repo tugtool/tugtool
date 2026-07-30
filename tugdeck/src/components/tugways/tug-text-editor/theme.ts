@@ -315,21 +315,27 @@ export const tugTheme: Extension = EditorView.theme({
     pointerEvents: "none",
   },
 
-  // Caret blink animation — `steps(1)` produces the same hard
-  // on/off cadence WebKit's native caret uses. Driven by the
-  // layer's own animation declaration so the keyframes only run
-  // while the editor is focused. Two animation names alternated on
-  // each selection change would let us restart the blink cycle
-  // (CM6's `cm-blink` / `cm-blink2` pattern), but for the substrate
-  // a single keyframe is sufficient — the layer rebuilds on each
-  // selectionSet, which restarts the animation implicitly.
+  // Caret blink animation — hard on/off holds expressed as paired
+  // keyframe stops with `linear` easing, never `steps()`. Core
+  // Animation expresses a segment's easing as a cubic bezier; a step
+  // timing function is not one, and WebKit answers by declining to
+  // accelerate the animation — which puts an infinite loop on the
+  // main thread, ticking style resolution (and the whole-tree
+  // compositing walk behind it) on every otherwise-idle deck that has
+  // a focused composer. Sampled hold stops are the same cadence by
+  // construction and Core Animation runs them natively: each hold is
+  // a constant segment, and the 0.1% ramps between them span ~1ms of
+  // the cycle — a cut to the eye. Driven by the layer's own animation
+  // declaration so the keyframes only run while the editor is
+  // focused; the layer rebuilds on each selectionSet, which restarts
+  // the animation implicitly.
   "&.cm-focused > .cm-scroller > .tug-text-editor-caret-layer": {
-    animation: "tug-text-editor-caret-blink 1.2s steps(1) infinite",
+    animation: "tug-text-editor-caret-blink 1.2s linear infinite",
   },
 
   "@keyframes tug-text-editor-caret-blink": {
-    "0%": { opacity: 1 },
-    "50%": { opacity: 0 },
+    "0%, 49.9%": { opacity: 1 },
+    "50%, 99.9%": { opacity: 0 },
     "100%": { opacity: 1 },
   },
 

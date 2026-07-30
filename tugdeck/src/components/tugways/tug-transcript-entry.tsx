@@ -36,28 +36,33 @@
  * consumes the variable `--tugx-pin-stack-top` to telescope BELOW the
  * entry header rather than overlap it.
  *
- * To make that work, this primitive's `useLayoutEffect` registers a
- * `ResizeObserver` on the rendered `__pin` element and writes the
- * live measured height to `--tugx-pin-stack-top` on the entry root
- * via `style.setProperty`. The variable cascades to descendants so any
- * sticky header in the body can stack underneath without each consumer
- * needing to query the entry's geometry. The observer disconnect lives
- * in the effect cleanup; height changes (timestamp re-render,
- * identifier swap, WKWebView pageZoom shift) re-fire the observer
- * and the variable stays accurate.
+ * To make that work, every mounted entry joins its scroller's shared
+ * {@link PinStackController}, which measures ONE representative pin
+ * (all pins under one scroller share the same one-line header
+ * geometry) and writes the height to `--tugx-pin-stack-top` on the
+ * scroll container via `style.setProperty`. The variable cascades to
+ * every entry's descendants so any sticky header in the body can
+ * stack underneath without each consumer needing to query the
+ * entry's geometry. The same controller stamps `data-stuck` on
+ * whichever pins are displaced by their sticky positioning, computed
+ * on the scroll event rather than observed per entry — the controller
+ * docstring carries the cost argument. Entries with no scroll
+ * ancestor fall back to a local per-entry measurement onto the root.
  *
  * Laws:
- *  - [L03] the ResizeObserver registration runs in `useLayoutEffect`
- *    (before paint) so the first sticky pass in the children sees a
- *    correct offset rather than a one-frame-late value.
- *  - [L06] the variable is written to DOM via `style.setProperty`,
- *    never to React state. Appearance flows through CSS, not renders.
+ *  - [L03] registration runs in `useLayoutEffect` (before paint) so
+ *    the first sticky pass in the children sees a correct offset
+ *    rather than a one-frame-late value.
+ *  - [L06] the variable and the stuck flag are written to DOM via
+ *    `style.setProperty` / `dataset`, never to React state.
+ *    Appearance flows through CSS, not renders.
  *  - [L19] file pair, module docstring, exported props interface,
  *    `data-slot="tug-transcript-entry"` on the root.
  *  - [L20] component-token sovereignty — only `--tugx-transcript-*`
  *    drives variant differences; `--tugx-pin-stack-top` is the
  *    contract this primitive WRITES (entry-header height), not a
  *    redefinition of any neighbor's slot.
+ *  - [L27] joining the controller returns the release that leaves it.
  */
 
 import "./tug-transcript-entry.css";
@@ -235,6 +240,209 @@ export function formatTurnAddress(address: TurnAddress): string {
 }
 
 // ---------------------------------------------------------------------------
+// Pin-stack controller — shared per scroll container
+// ---------------------------------------------------------------------------
+
+/**
+ * One entry's stake in its scroller's shared pin-stack controller: the
+ * entry root (the pin's natural resting position) and the sticky `__pin`
+ * wrapper (measured for the height variable, stamped `data-stuck`).
+ */
+interface PinStackRegistration {
+  root: HTMLElement;
+  pin: HTMLElement;
+}
+
+/**
+ * Gap between the entry header's bottom edge and the pinned chrome
+ * below it. Descendant sticky chrome pins at
+ * `top: var(--tugx-pin-stack-top, 0)`; with sub-pixel header heights
+ * (font line-height + padding rarely lands on an integer pixel
+ * boundary, especially under WKWebView pageZoom), `offsetHeight`
+ * rounds down, so a strict `top = height` leaves the chrome
+ * overlapping the entry by < 1px. `Math.ceil` plus this gap keeps the
+ * chrome a few px below the entry header rather than slipping under it.
+ */
+const PIN_TIER_GAP_PX = 4;
+
+/**
+ * Displacement below which a pin counts as resting. A stuck pin sits
+ * at the scroller's top edge, pushed below its natural first-child
+ * position in the entry root; sub-pixel layout jitter never reaches
+ * a full pixel.
+ */
+const PIN_STUCK_EPSILON_PX = 1;
+
+/**
+ * ONE ResizeObserver observation and ONE scroll listener per scroll
+ * container, however many entries it hosts.
+ *
+ * Both jobs were previously per-entry — a ResizeObserver on every pin
+ * for the `--tugx-pin-stack-top` measurement, an IntersectionObserver
+ * on every pin for stuck detection. WebKit charges observation
+ * bookkeeping on every rendering update, observed element by observed
+ * element (`gatherObservations` reads each box, IO geometry-maps each
+ * target), so a deck of restored transcripts paid hundreds of
+ * per-update reads while sitting perfectly still. Hoisted here, the
+ * idle cost is zero:
+ *
+ *  - **Height** is one observation. Every pin in a scroller is the
+ *    same one-line header under the same tokens, so one representative
+ *    pin's height is the stack offset for all of them, written once
+ *    on the scroller and inherited by every entry. (The scroller's
+ *    own selector-based default — see `session-card.css` — stays the
+ *    static fallback; the inline write wins on the same element.)
+ *  - **Stuck state** only changes when the scroller scrolls, so it is
+ *    computed on the scroll event, coalesced to one pass per frame. A
+ *    pin displaced below its natural position IS the stuck state
+ *    (`pin.top > root.top + ε`) — no sentinel geometry, no per-update
+ *    observer walk. Pins inside skipped `content-visibility: auto`
+ *    cells are excluded via `checkVisibility` BEFORE any rect read:
+ *    geometry queries force layout of skipped subtrees, and a pass
+ *    that un-skipped the whole transcript every scroll frame would
+ *    cost more than the observers it replaces.
+ *
+ * `data-stuck="true"` is stamped only while stuck and removed
+ * otherwise — the CSS keys on the `"true"` value alone, and absent
+ * attributes cost no mutation delivery at mount.
+ */
+class PinStackController {
+  private readonly registrations = new Set<PinStackRegistration>();
+  private readonly observer: ResizeObserver;
+  private observed: PinStackRegistration | null = null;
+  private measureRaf = 0;
+  private stuckRaf = 0;
+  private readonly onScroll = (): void => {
+    this.scheduleStuckPass();
+  };
+
+  constructor(private readonly scroller: HTMLElement) {
+    // rAF-coalesced like the per-entry observer before it: the write
+    // sets a CSS var consumed by sticky descendant chrome, whose
+    // relayout can queue further observer notifications within the
+    // same delivery pass ("ResizeObserver loop completed with
+    // undelivered notifications").
+    this.observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (entry === undefined) return;
+      const boxes = entry.borderBoxSize;
+      const height =
+        boxes !== undefined && boxes.length > 0
+          ? boxes[0].blockSize
+          : entry.contentRect.height;
+      cancelAnimationFrame(this.measureRaf);
+      this.measureRaf = requestAnimationFrame(() => {
+        // A pin can measure 0 without being wrong — its card hidden in
+        // a background pane. Never publish that; the last real value
+        // (or the static CSS fallback) stands, and the observer fires
+        // again when the box comes back.
+        if (height > 0) {
+          this.scroller.style.setProperty(
+            "--tugx-pin-stack-top",
+            `${Math.ceil(height) + PIN_TIER_GAP_PX}px`,
+          );
+        }
+        this.scheduleStuckPass();
+      });
+    });
+    scroller.addEventListener("scroll", this.onScroll, { passive: true });
+  }
+
+  register(reg: PinStackRegistration): void {
+    this.registrations.add(reg);
+    if (this.observed === null) {
+      this.observed = reg;
+      this.observer.observe(reg.pin);
+    }
+    this.scheduleStuckPass();
+  }
+
+  /** Returns true when the controller emptied and disposed itself. */
+  unregister(reg: PinStackRegistration): boolean {
+    this.registrations.delete(reg);
+    if (this.observed === reg) {
+      this.observer.unobserve(reg.pin);
+      this.observed = null;
+      const next = this.registrations.values().next();
+      if (!next.done) {
+        this.observed = next.value;
+        this.observer.observe(next.value.pin);
+      }
+    }
+    if (this.registrations.size > 0) return false;
+    this.scroller.removeEventListener("scroll", this.onScroll);
+    this.observer.disconnect();
+    cancelAnimationFrame(this.measureRaf);
+    cancelAnimationFrame(this.stuckRaf);
+    this.scroller.style.removeProperty("--tugx-pin-stack-top");
+    return true;
+  }
+
+  private scheduleStuckPass(): void {
+    if (this.stuckRaf !== 0) return;
+    this.stuckRaf = requestAnimationFrame(() => {
+      this.stuckRaf = 0;
+      for (const reg of this.registrations) {
+        let stuck = false;
+        if (
+          reg.pin.checkVisibility({
+            contentVisibilityAuto: true,
+            visibilityProperty: true,
+          })
+        ) {
+          stuck =
+            reg.pin.getBoundingClientRect().top >
+            reg.root.getBoundingClientRect().top + PIN_STUCK_EPSILON_PX;
+        }
+        if (stuck) {
+          if (reg.pin.dataset.stuck !== "true") reg.pin.dataset.stuck = "true";
+        } else if (reg.pin.dataset.stuck !== undefined) {
+          delete reg.pin.dataset.stuck;
+        }
+      }
+    });
+  }
+}
+
+const pinStackControllers = new Map<HTMLElement, PinStackController>();
+
+/** Nearest overflow-scrolling ancestor — the pin's sticky containing scrollport. */
+function findScrollAncestor(el: HTMLElement): HTMLElement | null {
+  let p: HTMLElement | null = el.parentElement;
+  while (p !== null && p !== document.body) {
+    const overflowY = getComputedStyle(p).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") return p;
+    p = p.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Join the scroller's shared controller. Returns the release, [L27]-style,
+ * or null when the entry has no scroll ancestor (gallery hosts, bare test
+ * mounts) and the caller should fall back to a local measurement.
+ */
+function registerPinStackEntry(
+  root: HTMLElement,
+  pin: HTMLElement,
+): (() => void) | null {
+  const scroller = findScrollAncestor(pin);
+  if (scroller === null) return null;
+  let controller = pinStackControllers.get(scroller);
+  if (controller === undefined) {
+    controller = new PinStackController(scroller);
+    pinStackControllers.set(scroller, controller);
+  }
+  const registration: PinStackRegistration = { root, pin };
+  controller.register(registration);
+  return () => {
+    if (controller.unregister(registration)) {
+      pinStackControllers.delete(scroller);
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -260,55 +468,33 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const pinRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Write `--tugx-pin-stack-top` = live pinned-block height onto the
-  // entry root. See the module docstring for the full pin-stack
-  // contract. [L03] useLayoutEffect runs before paint so the first
-  // sticky pass in the children sees the right offset. [L06] DOM write,
-  // not React state — appearance flows through CSS variables.
+  // Join the scroller's shared pin-stack controller: one observer
+  // measurement (`--tugx-pin-stack-top` on the scroller) and one
+  // scroll-driven stuck pass (`data-stuck` on the pin) for every entry
+  // the scroller hosts. See PinStackController for the full contract.
+  // [L03] useLayoutEffect runs before paint so registration precedes
+  // the first sticky pass in the children. [L06] the height variable
+  // and the stuck flag are DOM writes, never React state. [L27] the
+  // registration returns its release.
   React.useLayoutEffect(() => {
     const root = rootRef.current;
     const header = pinRef.current;
     if (root === null || header === null) return;
-    // Tier-gap: descendant sticky chrome (wrapper-chrome header,
-    // body-kind identity / actions / find rows) pins at
-    // `top: var(--tugx-pin-stack-top, 0)` — i.e. the chrome's TOP
-    // edge lands at the entry header's BOTTOM edge. With sub-pixel
-    // header heights (font line-height + padding rarely lands on an
-    // integer pixel boundary, especially under WKWebView pageZoom),
-    // `offsetHeight` rounds down, so a strict `top = offsetHeight`
-    // leaves the chrome overlapping the entry by < 1px. Adding a
-    // small tier-gap (and using `Math.ceil` on the float-precise
-    // measurement) guarantees the chrome sits a few px below the
-    // entry header rather than slipping under it.
-    const TIER_GAP_PX = 4;
-    const write = (px: number): void => {
-      root.style.setProperty(
-        "--tugx-pin-stack-top",
-        `${Math.ceil(px) + TIER_GAP_PX}px`,
-      );
-    };
-    // NOTE: do NOT seed synchronously here with
-    // `header.getBoundingClientRect()`. That forced layout read, run in
-    // each entry's mount `useLayoutEffect` and interleaved with the
-    // `style.setProperty` write below, makes an all-rich transcript
-    // mount O(n²): every entry's read forces a full reflow of the
-    // growing document that the previous entry's write just dirtied
-    // (212 entries ≈ 14s). The `ResizeObserver` below fires an initial
-    // callback on `observe()` with the real height — rAF-coalesced, so
-    // all entries' writes batch into one reflow — and the static
-    // `--tugx-pin-stack-top` CSS fallback covers the one frame before it
-    // lands. Measured: ~14s → sub-second on the 212-row session.
-    // Coalesce the callback write via rAF to avoid "ResizeObserver loop
-    // completed with undelivered notifications" — the write sets a CSS
-    // var consumed by sticky descendant chrome, whose relayout can queue
-    // a sibling observer notification within the same delivery pass.
+    const release = registerPinStackEntry(root, header);
+    if (release !== null) return release;
+
+    // No scroll ancestor (gallery hosts, bare test mounts): nothing can
+    // stick, so stuck detection is moot, but descendant chrome still
+    // reads the height variable — measure this entry's own pin onto its
+    // root. NOTE: no synchronous `getBoundingClientRect` seed. That
+    // forced layout read, interleaved per-entry with the write below,
+    // makes an all-rich transcript mount O(n²); the ResizeObserver's
+    // initial delivery provides the real height rAF-coalesced, and the
+    // static CSS fallback covers the frame before it lands.
     let rafId = 0;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (entry === undefined) return;
-      // `borderBoxSize` is the box-model height the browser laid out
-      // (matches `offsetHeight`); fall back to `contentRect.height` for
-      // older WebKit if the property isn't available.
       const boxes = entry.borderBoxSize;
       const next =
         boxes !== undefined && boxes.length > 0
@@ -316,88 +502,16 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
           : entry.contentRect.height;
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        write(next);
+        root.style.setProperty(
+          "--tugx-pin-stack-top",
+          `${Math.ceil(next) + PIN_TIER_GAP_PX}px`,
+        );
       });
     });
     observer.observe(header);
-
-    // Stuck detection — the pin wrapper's `::after` obscuring strip
-    // (which paints the pin-stack tier gap in header background) must
-    // render ONLY while the wrapper is actually pinned. At rest the
-    // strip would paint 4px of header background over the top of the
-    // body's first block (visible as a clipped tool-block header now
-    // that the body sits at the tight 1px margin). CSS cannot observe
-    // stuck state, so the observer writes `data-stuck` and the strip's
-    // CSS keys on it.
-    //
-    // The classic sticky-sentinel trick: with the scroll ancestor as
-    // root and a -1px top rootMargin, a fully-visible header reports
-    // ratio 1; the moment it pins, its top pixel leaves the inset root
-    // and the ratio drops below 1. Ratio also drops when the header
-    // crosses the root's BOTTOM edge (entry scrolling in from below),
-    // so stuck additionally requires the header's top at (or above)
-    // the root's top. Fires only on threshold crossings — no per-frame
-    // scroll work.
-    const scroller = ((): HTMLElement | null => {
-      let p: HTMLElement | null = header.parentElement;
-      while (p !== null && p !== document.body) {
-        const overflowY = getComputedStyle(p).overflowY;
-        if (overflowY === "auto" || overflowY === "scroll") return p;
-        p = p.parentElement;
-      }
-      return null;
-    })();
-    let stuckObserver: IntersectionObserver | null = null;
-    if (scroller !== null) {
-      stuckObserver = new IntersectionObserver(
-        (records) => {
-          const record = records[records.length - 1];
-          if (record === undefined) return;
-          const rootTop = record.rootBounds?.top ?? 0;
-          const stuck =
-            record.intersectionRatio < 1 &&
-            record.boundingClientRect.top <= rootTop + 1;
-          header.dataset.stuck = stuck ? "true" : "false";
-        },
-        { root: scroller, threshold: [1], rootMargin: "-1px 0px 0px 0px" },
-      );
-      stuckObserver.observe(header);
-    }
-
-    // Offscreen-skip interplay: when the entry rides inside a
-    // `content-visibility: auto` list cell, a skip strands the stuck
-    // observer — WebKit stops delivering intersection updates for
-    // descendants of a skipped subtree and does not reliably resume
-    // them on re-render, freezing `data-stuck` at its pre-skip value
-    // (a stale obscuring strip). The cell announces skip transitions
-    // via `contentvisibilityautostatechange`: while skipped the pin
-    // cannot be visually stuck (nothing renders), and on re-render an
-    // unobserve/observe cycle forces a fresh initial IO delivery that
-    // recomputes the honest state.
-    const cvHost = root.closest(".tug-list-view-cell");
-    const onCvStateChange = (event: Event): void => {
-      const skipped =
-        (event as Event & { skipped?: boolean }).skipped === true;
-      if (skipped) {
-        header.dataset.stuck = "false";
-      } else if (stuckObserver !== null) {
-        stuckObserver.unobserve(header);
-        stuckObserver.observe(header);
-      }
-    };
-    cvHost?.addEventListener(
-      "contentvisibilityautostatechange",
-      onCvStateChange,
-    );
-
     return () => {
       cancelAnimationFrame(rafId);
       observer.disconnect();
-      stuckObserver?.disconnect();
-      cvHost?.removeEventListener(
-        "contentvisibilityautostatechange",
-        onCvStateChange,
-      );
     };
   }, []);
 

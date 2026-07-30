@@ -460,12 +460,12 @@
   --tugx-list-view-padding-block-end: var(--tug-space-2xl);
   --tugx-list-view-scroll-padding-end: var(--tug-space-2xl);
 
-  /* Static fallback for the entry-header pin offset. The
-   * `TugTranscriptEntry` ResizeObserver writes the live measured
-   * header height onto the entry root via inline style, which
-   * always wins over this selector-based default. But if the JS
-   * write hasn't happened yet (mount race) or fails for any
-   * reason, descendants still see a sensible non-zero value here
+  /* Static fallback for the entry-header pin offset. The shared
+   * PinStackController in `tug-transcript-entry.tsx` writes the live
+   * measured header height onto this scroll container via inline
+   * style, which always wins over this selector-based default. But
+   * if the JS write hasn't happened yet (mount race) or fails for
+   * any reason, descendants still see a sensible non-zero value here
    * — and the wrapper-chrome / fenced-code / file-actions stack
    * pins below the entry header rather than sliding under it. */
   --tugx-pin-stack-top: 36px;

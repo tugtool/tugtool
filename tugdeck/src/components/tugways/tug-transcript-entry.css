@@ -211,16 +211,17 @@ body {
  * the pinned block's visible bottom) in the header's own background
  * color so the body content scrolling under it can't peek through. The
  * pseudo is absolutely positioned so it doesn't change the wrapper's
- * `offsetHeight` — the `ResizeObserver` in `tug-transcript-entry.tsx`
- * keeps measuring the un-extended height, and the chrome /
- * actions / find rows pin exactly at `height + TIER_GAP_PX`, flush
- * with the bottom of this strip.
+ * `offsetHeight` — the shared PinStackController in
+ * `tug-transcript-entry.tsx` keeps measuring the un-extended height,
+ * and the chrome / actions / find rows pin exactly at
+ * `height + PIN_TIER_GAP_PX`, flush with the bottom of this strip.
  *
- * Keyed on `data-stuck` (written by the IntersectionObserver in the
- * .tsx pair): the strip exists only while the wrapper is actually
- * pinned. At rest it would paint header background over the top 4px
- * of the body's first block — with the tight 1px body margin that
- * visibly clips a first tool block's header. */
+ * Keyed on `data-stuck` (stamped by the controller's scroll-driven
+ * pass in the .tsx pair; absent while resting): the strip exists only
+ * while the wrapper is actually pinned. At rest it would paint header
+ * background over the top 4px of the body's first block — with the
+ * tight 1px body margin that visibly clips a first tool block's
+ * header. */
 .tug-transcript-entry__pin[data-stuck="true"]::after {
   content: "";
   position: absolute;

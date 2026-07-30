@@ -348,3 +348,53 @@ Three gates committed: at0291 (the instruments see what they claim), at0292 (a s
 2. **The sparkline eyeball** (Risk R03). Screenshots confirm the tapes paint their staircase and area fill; stroke weight and fill alpha at real sizes are a human call.
 
 **And one hypothesis is now the live one.** The audited card showed 241 walk samples at 1,603 stacking contexts; this deck shows 37 at 4,117. Population is ruled out, so the next candidate is **composited layers — actual backing stores** — which script cannot count and the Web Inspector Layers tab reports directly, with reasons, on the user's own deck. That is where the typing charge resumes.
+
+### The release re-baseline — missed, and why {#record-release}
+
+Measured 2026-07-29 on release `dev.tugtool.app` (pid 31066, launched 17:50:27 from a bundle carrying `sparkline-render-worker-BbpLUs38.js`), three spaced 5s idle samples with the deck genuinely unattended — the sampling ran from a backgrounded shell so the driving session's own card was at rest for every window.
+
+| Sample | Busy | `updateRendering` | compositing walk | `Style::TreeResolver::resolve` |
+|---|---|---|---|---|
+| 1 | 9.1% | 87% | 18% | 5% |
+| 2 | 8.3% | 86% | 24% | 6% |
+| 3 | 7.8% | 87% | 25% | 6% |
+
+Mean **8.4%** against a **8.3%** starting point and a **≤1.5%** target. **The exit criterion is missed, and the phase's landed work produced no measurable change on the real deck.** Three earlier samples taken while a tool call was in flight read 17.7% / 9.0% / 10.5% and are recorded only to mark how much a driving session costs; they are not the baseline.
+
+**Why the fixture wins did not transfer.** Converting the frame shares to wall time on sample 3 (797 samples/s): `updateRendering` is 6.75% of wall, the compositing walk 1.9%, and style resolution **0.5%**. The pulse change-gate and the sparkline worker both attack style invalidation. Style invalidation on the real idle deck is half a percent — that was the entire ceiling on that line of work, and the fixture deck's 5.5% → 2.8% was a real win against a cost the real deck barely pays. The fixture deck's burn is style-shaped; the real deck's is not.
+
+**What the residual actually is.** Of the 6.75% inside `updateRendering`, roughly 1.9% is the compositing-requirements walk and 0.5% is style; the remaining **~4.3% is unattributed by this instrument** — layout, paint, and layer flush, none of which the script names.
+
+**The one measurement that would decide the next move, and cannot currently be taken.** `busy = updates/s × cost/update` has two unknowns and this instrument constrains only their product. At 6.75% wall, `updateRendering` is either running ~60×/s at ~1.1ms each — something is animating continuously and the fix is to stop the loop — or ~7×/s at ~10ms each, in which case the fix is to make each update cheaper. Those imply opposite work. The waker and mutation censuses built this phase answer it directly, but they are exposed only under `import.meta.env.DEV || window.__tugTestMode`, so **they cannot be run against a release deck.** Ungating them behind an explicit opt-in (a launch flag or a Maker gesture, not a build mode) is the prerequisite for any further attribution on the surface that actually matters.
+
+### The real deck attributed from the raw sample trees {#record-real-deck}
+
+The paragraph above was written before reading the raw `sample` call trees the profile script had been summarizing — they were in `/tmp` the whole time, and they answer everything the ungated censuses would have. From the three unattended idle samples of 2026-07-29 (release, pid 31066):
+
+**Where a rendering update's time goes** (sample 1, 241 `updateRendering` samples by phase offset):
+
+| Phase | Share |
+|---|---|
+| style resolve → `updateCompositingLayersAfterStyleChange` → `traverseUnchangedSubtree` recursion | 32% |
+| `Document::updateResizeObservations` — `gatherObservations` reading `contentBoxSize` per observed element | 32% |
+| `Document::updateIntersectionObservations` — `localToContainerQuad` per target | 15% |
+| post-position layout | 7% |
+| `updateEventRegionsRecursive` | 5% |
+
+Half of every update is **observer bookkeeping WebKit performs per observed element on every update**, whether or not anything resized or moved. The style-resolve→compositing-walk pair only runs when style was dirtied — so it names a per-frame style dirtier.
+
+**Who schedules the updates** (every application-level `scheduleRenderingUpdate` caller across all three samples): `CaretAnimator` (16 hits) and `DocumentTimeline` (12 hits). Nothing else. The deck at idle is woken by caret blinking and animation resolution, a few times a second, and each wake pays the tree-sized taxes above. That closes the arithmetic at ~4–6 updates/s × ~10–15ms.
+
+**The DocumentTimeline driver:** `tug-text-editor-caret-blink 1.2s steps(1) infinite` — the composer's caret-layer blink. Core Animation cannot express step timing, WebKit declines to accelerate, and the loop ticks style resolution on the main thread — dragging the full compositing walk behind it — on any idle deck with a focused composer, which is every real deck. (The typing A/B that "exonerated" blink was correct for typing: the typing attribute sets `animation: none`. At idle it runs.)
+
+**Fixes landed 2026-07-29** (uncommitted on `main`, pending user rebuild):
+
+1. **Caret blink → compositor** (`tug-text-editor/theme.ts`): `steps(1)` replaced with sampled hold-stop keyframes (`0%,49.9% / 50%,99.9%`) under `linear` easing — the same trick `breathKeyframes` uses, for the same measured reason (the pulsing-dot bench: 18.0% → 0.9%). Kills the idle style dirty AND the 32% compositing walk that only ran because style was dirtied.
+2. **Pin-stack observers hoisted** (`tug-transcript-entry.tsx`): the per-entry ResizeObserver (pin height) and per-entry IntersectionObserver (stuck detection) replaced by ONE shared controller per scroll container — one RO observation (pins are uniform per scroller; the height is written on the scroller and inherited), and stuck state computed on the scroll event from sticky displacement (`pin.top > root.top + 1px`), gated by `checkVisibility({contentVisibilityAuto})` so skipped cells are never rect-read (geometry queries force layout of skipped subtrees). Idle observer tax from transcript entries: zero.
+
+Expected post-rebuild shape: `DocumentTimeline` gone from the schedulers, `updateCompositingLayersAfterStyleChange` near zero at idle, `updateIntersectionObservations` collapsed, `updateResizeObservations` roughly halved (TugListView's per-cell height RO remains — see below). Verification: `scripts/perf-resize-profile.sh dev.tugtool.app idle 5` ×3 unattended, then read the schedulers out of the raw sample file.
+
+**Remaining per-update taxes, documented as the next candidates, not yet done:**
+
+- **TugListView's per-cell ResizeObserver** — the other half of the RO gather. A skipped cell cannot resize (it is not laid out), so cells could be unobserved while skipped and re-observed on `contentvisibilityautostatechange` (initial delivery re-measures, which is exactly the stamping contract) — but the width-invalidation stamp-strip path must re-observe too, and that machinery is load-bearing; it deserves its own careful pass.
+- **`tug-label` truncation ROs** (one per JS-ellipsis label) and the `use-clamp-overflow` / `use-is-multiline` / `block-chrome` populations — same per-observation tax, smaller populations, same hoisting pattern available.
