@@ -193,6 +193,14 @@ function PulseRow({
   useEffect(() => {
     let eased = 0;
     let seeded = false;
+    // What was last written to the DOM. The eased value keeps drifting by
+    // fractions forever, but the string the reader sees settles; writing it
+    // again replaces the text node, dirties style, and schedules a rendering
+    // update for a display that did not change. Both writes are gated, not
+    // just the text — an attribute set to the value it already holds is
+    // delivered as a mutation too.
+    let painted: string | null = null;
+    let paintedIdle: string | null = null;
     const paint = (): void => {
       const el = valueRef.current;
       if (el === null) return;
@@ -205,8 +213,16 @@ function PulseRow({
         eased += READOUT_EMA_ALPHA * (goal - eased);
       }
       const idle = target === null && eased < IDLE_EPSILON;
-      el.textContent = formatValue(channel, idle ? 0 : eased);
-      el.dataset.idle = idle ? "true" : "false";
+      const text = formatValue(channel, idle ? 0 : eased);
+      const idleFlag = idle ? "true" : "false";
+      if (text !== painted) {
+        el.textContent = text;
+        painted = text;
+      }
+      if (idleFlag !== paintedIdle) {
+        el.dataset.idle = idleFlag;
+        paintedIdle = idleFlag;
+      }
     };
     paint();
     const timer = window.setInterval(paint, READOUT_PAINT_MS);

@@ -125,10 +125,8 @@
 /* The line reads clean over the tinted block; the area fill stays quiet
  * context so a flat gauge never reads as a solid slab ([Tufte data-ink]).
  * Scoped to the card — the compact strip keeps its own weight. */
-.session-pulse-card-spark .tug-sparkline-area {
-  opacity: 0.1;
-}
-.session-pulse-card-spark .tug-sparkline-line {
-  opacity: 1;
-  stroke-width: 1.25;
+.session-pulse-card-spark {
+  --tugx-sparkline-area-alpha: 0.1;
+  --tugx-sparkline-line-alpha: 1;
+  --tugx-sparkline-line-width: 1.25;
 }

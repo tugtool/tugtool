@@ -58,20 +58,13 @@
   will-change: transform;
 }
 
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tug-sparkline-line {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  opacity: 0.85;
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tug-sparkline-area {
-  fill: currentColor;
-  stroke: none;
-  opacity: 0.16;
+/* The tape's pixels. Line and area used to be an SVG polyline/polygon pair
+   picking up `currentColor` and a fixed opacity from here; the canvas has no
+   cascade, so those four values moved into `lib/sparkline-geometry.ts` and the
+   component resolves this element's `color` and posts it to the render worker
+   on mount, on a theme swap, and when the channel tint above changes. The
+   rules that remain are the ones the cascade still owns. */
+.tug-sparkline-canvas {
+  display: block;
 }
 

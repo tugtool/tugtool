@@ -75,6 +75,7 @@ The controlling model, from the brief's `#mechanism`: **renderer busy = wakes pe
 - The perf monitor and all new instruments run only under `import.meta.env.DEV || window.__tugTestMode` (the existing gate in `tugdeck/src/main.tsx`); production carries zero instrument wakeups.
 - Persistent state through tugbank `/api/defaults/...` only; no localStorage/IndexedDB anywhere in this plan.
 - Only the user commits on `main`; the implement skill commits on a dash worktree via `tugutil dash commit` when run as a dash.
+- **No private SPI, anywhere, for any reason** (call of 2026-07-29, from the M4 spike). Underscore-prefixed WebKit/AppKit selectors and `_WKFeature` toggles are off-limits even behind an env gate with a fallback — Apple can rename or remove them in any OS update and the failure is silent. Everything this plan lands is public API: Workers, `OffscreenCanvas`, `WKProcessPool`, CSS containment.
 
 #### Assumptions {#assumptions}
 
@@ -92,7 +93,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Does WKWebView give a cross-origin iframe its own WebContent process on this macOS? (OPEN) {#q01-site-isolation}
+#### [Q01] Does WKWebView give a cross-origin iframe its own WebContent process on this macOS? (RESOLVED — yes on the engine, OUT on policy) {#q01-site-isolation}
 
 **Question:** With a stock `WKWebViewConfiguration` (no experimental-feature toggles — we ship stock), does navigating an iframe to a different origin create a second WebContent process, and does main-thread load in one fail to stall the other?
 
@@ -102,7 +103,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 **Plan to resolve:** Step 1 spike, before all other work.
 
-**Resolution:** OPEN — resolved by #step-1.
+**Resolution:** **Yes on the engine; OUT on policy.** (2026-07-29, macOS 15.6 / WebKit 18.6.) Stock config gives no isolation. WebKit's `SiteIsolationEnabled` feature — default off, status *unstable*, reachable only through the `_WKFeature` private SPI — does deliver it: a cross-origin iframe gets its own WebContent process and a 200ms-per-250ms spin inside it leaves the deck at 300 frames / 5s, p95 17ms, versus 108 frames and p95 211ms with the flag off. **Tug does not ship private SPI**, so brief M4 is closed regardless of the capability. All spike scaffolding was removed; `MainWindow.swift` is byte-identical to `main`. Reopens only if the feature graduates to stable status with public, non-underscored API. Evidence and the full call in brief `#record-m4`.
 
 #### [Q02] Can off-viewport transcript entries carry `content-visibility: auto` without breaking transcript features? (OPEN) {#q02-containment-features}
 
@@ -112,7 +113,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 **Plan to resolve:** Step 8 measures the perf effect with a style-injection experiment; Step 9 (conditional) does the feature-correctness pass before any productization.
 
-**Resolution:** OPEN — resolved by #step-8 / #step-9.
+**Resolution:** MOOT. #step-8 refuted the hypothesis containment was the productization of — 35× the stacking contexts costs 2ms per keystroke and stretches no frame — so the feature-compatibility question never has to be answered. Recorded as refuted rather than deferred (brief `#record-typing`).
 
 #### [Q03] After change-gating, how much legitimate churn remains in the pulse gauge readouts? (OPEN) {#q03-gauge-churn}
 
@@ -122,7 +123,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 **Plan to resolve:** Step 4 measures the residual with the mutation census after change-gating lands; if residual writes exceed ~1/s per visible card, quantize the formatted precision (e.g. whole-percent cpu) in the same step and note it in the brief record.
 
-**Resolution:** OPEN — resolved by #step-4.
+**Resolution:** Pre-fix input measured (brief `#record-idle`): six mounted rows write **48/s** — every row writes `textContent` AND `dataset.idle` on every one of its four ticks a second, with nothing changing. The eased value settles to a fixed formatted string within a second of the session going quiet, so change-gating should take the residual to zero rather than to "less"; the post-fix residual is measured in #step-4 and decides whether quantization is needed at all.
 
 #### [Q04] Which data-plane hotspot does the brief-M1 worker offload target? (OPEN) {#q04-m1-target}
 
@@ -132,7 +133,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 **Plan to resolve:** Step 3's attribution session profiles a cold restore of the heavy fixture (Web Inspector JavaScript & Events timeline) and names the top JS self-time entry; Step 10 implements that one.
 
-**Resolution:** OPEN — resolved by #step-3, implemented by #step-10.
+**Resolution:** **NO TARGET** (brief `#record-m1`). Measured on a cold restore: the whole replay ingest is `dispatchMs` **2** across 148 frames, markdown parses **9** times with the cache and memoization already carrying the rest, and find indexing and diff computation do not run on the path at all. JS is the largest term of real work on the restore (351 leaf samples against layout's ~280), but the ingest split places it in React rendering — DOM-touching work no Worker can take. Under [P07] that means #step-10 does not run.
 
 ---
 
@@ -140,13 +141,13 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Site isolation absent in WKWebView (R01) | med | med | Spike is one step; verdict recorded; plan proceeds on breadth levers | New macOS/WebKit release notes |
+| Site isolation unusable (R01) | med | **realized, by policy not engine** | Capability exists but only via private SPI, which Tug does not ship; plan proceeds on breadth levers as designed | The feature graduating to public API |
 | Change-gating starves a live readout (R02) | med | low | Gate on formatted-output equality only, never on raw value deltas | Q03 residual measurement |
 | Canvas sparkline visual regression (R03) | med | med | Parity checklist + user gallery eyeball; staircase geometry ported 1:1 | Step 6 checkpoint |
 | Containment breaks find/reveal/share (R04) | high | med | Experiment is style-injection only; productization gated on feature pass (Q02) | Step 9 tests |
 | Typing gate flaky on machine variance (R05) | med | med | p50/p95 over ≥60 keystrokes, budgets with headroom, one retry, assert after settle | First CI failures |
 
-**Risk R01: M4 spike answers "no"** {#r01-site-isolation-dead}
+**Risk R01: M4 spike answers "no"** (did not materialize — see [Q01]) {#r01-site-isolation-dead}
 
 - **Risk:** WKWebView hosts cross-origin iframes in-process on this macOS; per-card isolation is dead on our engine.
 - **Mitigation:** That outcome is a *successful* spike — the verdict is recorded in the brief and the question never burns another hour; the typing work (Steps 8–9, 11) does not depend on it.
@@ -231,15 +232,18 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` on every
 
 **Implications:** Step 10 implements exactly one offload; further candidates go to the roadmap section, not to code.
 
-#### [P08] The typing gate: keydown→post-paint, p50 < 9ms / p95 < 17ms over ≥60 keystrokes (DECIDED) {#p08-typing-gate}
+#### [P08] The typing gate: FRAME GAP, p50 < 20ms / p95 < 26ms over 240 keystrokes (AMENDED 2026-07-29) {#p08-typing-gate}
 
-**Decision:** The gate test installs an in-page probe (keydown listener records `performance.now()`; a `requestAnimationFrame` callback followed by a `setTimeout(0)` records post-paint completion; per-key latency = post-paint − keydown), drives ≥60 keystrokes into the session composer on the restored heavy fixture via `nativeType`, and asserts p50 < 9ms and p95 < 16.7ms, printing the full distribution.
+**Decision:** The gate drives 240 keystrokes into the session composer on the restored heavy fixture via `nativeType` while a `requestAnimationFrame` loop records inter-frame gaps, and asserts **frame gap p50 < 20ms and p95 < 26ms**. The keystroke→post-paint distribution is printed alongside but not asserted.
+
+**Amended from:** keystroke→post-paint latency, p50 < 9ms / p95 < 17ms. That probe measures vsync phase. `requestAnimationFrame` fires at the next display refresh, so every sample carries a uniform 0–16.7ms wait that depends on where in the cycle the key landed and not on what the keystroke cost. Measured on a deck comfortably at frame rate (#step-8), it reads p50 11ms / p95 17ms — **p50 < 9ms is unreachable in principle at 60Hz**, so the original budget could never have been met by any implementation.
 
 **Rationale:**
-- "Won't lag" must be a number that fails CI (brief `#typing-gate`); rAF-after-paint is the closest harness-observable proxy for frame commit WebKit gives us without Event Timing support.
-- p50 catches steady-state cost; p95 catches the walk spikes; headroom (9 vs 16.7) keeps machine variance from flaking p50.
+- "Won't lag" must be a number that fails CI (brief `#typing-gate`), and frame gap is that number without a floor artifact: a rendering update that fits the budget leaves the gap at the display period, one that overruns stretches a frame, and there is nowhere else for the cost to hide.
+- It also states the guarantee in the words the guarantee is about — typing must not drop a frame.
+- 60Hz is 16.7ms; p50 at 20 allows measurement jitter but not a systematically late frame, p95 at 26 allows roughly one stretched frame in twenty.
 
-**Implications:** Budgets are calibrated once on the post-fix structure (after Step 8/9) and then frozen; loosening them requires a recorded decision, not a test edit in passing.
+**Implications:** Calibrated against the #step-8 reference readings (p50 17ms, p95 18–19ms, stable even with 4,000 extra stacking contexts injected) and frozen; loosening them requires a recorded decision, not a test edit in passing. Measured p50 17 / p95 18 on three consecutive runs.
 
 #### [P09] Containment must honor the no-height-estimates doctrine (DECIDED) {#p09-containment-heights}
 
@@ -326,11 +330,12 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 
 | File | Purpose |
 |------|---------|
-| `tugdeck/public/perf-spike-iframe.html` | M4 spike page: rAF counter into `document.title`, `?busy=1` synchronous spin loop (temporary; removed in #step-12) |
 | `tugdeck/src/lib/workers/sparkline-render-worker.ts` | S05 worker: tape ownership + staircase drawing |
-| `tests/app-test/at0290-perf-instruments.test.ts` | Instrument self-test (S01/S02/S03 anti-vacuity) |
-| `tests/app-test/at0291-idle-silence.test.ts` | E1 gate: mutation census 0 writes/s on a settled deck |
-| `tests/app-test/at0292-typing-latency.test.ts` | E3 gate: [P08] budgets on the heavy fixture |
+| `tests/app-test/at0291-perf-instruments.test.ts` | Instrument self-test (S01/S02/S03 anti-vacuity) |
+| `tests/app-test/at0292-idle-silence.test.ts` | E1 gate: mutation census 0 writes/s on a settled deck |
+| `tests/app-test/at0293-typing-latency.test.ts` | E3 gate: [P08] budgets on the heavy fixture |
+
+(Numbered from at0291 up, not at0290: `at0290-snippet-delete-confirm-anchor.test.ts` landed on `main` while this plan was being written.)
 
 #### Symbols to add / modify {#symbols}
 
@@ -361,8 +366,8 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **App-test (instrument self-test)** | Prove each census sees what it must (anti-vacuity floors) | at0290: a deliberately created interval is counted; a deliberate DOM write is counted; candidates > 0 on a seeded deck |
-| **App-test (gate)** | Enforce the exit criteria permanently | at0291 idle silence, at0292 typing latency |
+| **App-test (instrument self-test)** | Prove each census sees what it must (anti-vacuity floors) | at0291: a deliberately created interval is counted; a deliberate DOM write is counted; candidates > 0 on a seeded deck |
+| **App-test (gate)** | Enforce the exit criteria permanently | at0292 idle silence, at0293 typing latency |
 | **Unit (bun)** | Pure logic only | callsite bucketing, formatted-string gate predicate — real timers in bun runtime, no fake DOM |
 | **Operator-assisted measurement** | Attribution sessions on the real deck | Steps 3 and 8; deliverable is the brief record, not a test |
 
@@ -383,41 +388,35 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | M4 spike: out-of-process iframe verdict | pending | — |
-| #step-2 | Instruments: waker census, mutation census, layer candidates | pending | — |
-| #step-3 | Idle attribution session (arithmetic closure) | pending | — |
-| #step-4 | Kill the idle wakes: change-gate the pulse readout + convicted fixes | pending | — |
-| #step-5 | Idle-silence gate (at0291) | pending | — |
-| #step-6 | Sparkline → worker-drawn OffscreenCanvas (brief M2) | pending | — |
-| #step-7 | Per-window process pool (brief M3) | pending | — |
-| #step-8 | Typing attribution: layer ground truth + containment experiment | pending | — |
-| #step-9 | Containment productization (conditional on #step-8) | pending | — |
-| #step-10 | Data-plane worker offload (brief M1) | pending | — |
-| #step-11 | Typing-latency gate (at0292) | pending | — |
-| #step-12 | Release re-profile, record, cleanup | pending | — |
+| #step-1 | M4 spike: out-of-process iframe verdict — OUT (private SPI) | done | (this dash) |
+| #step-2 | Instruments: waker census, mutation census, layer candidates | done | (this dash) |
+| #step-3 | Idle attribution session (arithmetic closure) | done | (this dash) |
+| #step-4 | Kill the idle wakes: change-gate the pulse readout + convicted fixes | done | (this dash) |
+| #step-5 | Idle-silence gate (at0292) | done | (this dash) |
+| #step-6 | Sparkline → worker-drawn OffscreenCanvas (brief M2) | done | (this dash) |
+| #step-7 | Per-window process pool (brief M3) | done | (this dash) |
+| #step-8 | Typing attribution: layer ground truth + containment experiment | done | (this dash) |
+| #step-9 | Containment productization (conditional on #step-8) | **skipped — H6 refuted by #step-8** | — |
+| #step-10 | Data-plane worker offload (brief M1) | **not run — [Q04] has no target ([P07])** | — |
+| #step-11 | Typing-latency gate (at0293) | done | (this dash) |
+| #step-12 | Release re-profile, record, cleanup | done (re-profile owed to the user) | (this dash) |
 
-#### Step 1: M4 spike — out-of-process iframe verdict {#step-1}
+#### Step 1: M4 spike — out-of-process iframe verdict {#step-1} — DONE
 
-**Commit:** `tugdash(jul29B-perf): spike page for the out-of-process iframe verdict`
+**Commit:** `tugdash(jul29B-perf): out-of-process iframe spike — no site isolation on WebKit 18.6`
 
-**References:** [P01] spike first, [Q01] site isolation, Risk R01, (#waker-suspects, brief `#multicore-options`)
+**References:** [P01] spike first, [Q01] site isolation, Risk R01, (brief `#record-m4`, brief `#multicore-options`)
 
-**Artifacts:**
-- `tugdeck/public/perf-spike-iframe.html` (temporary, removed in #step-12): standalone page, no bundle imports — an rAF loop writing a frames-per-second figure into `document.title`, a visible spinning `div` (CSS transform loop), and when loaded with `?busy=1` a repeating 200ms synchronous spin (`while (performance.now() < t + 200)` scheduled every 250ms) to saturate its main thread.
-- Verdict paragraph in `roadmap/jul29B-perf-brief.md#record`.
+**Outcome:** The capability exists behind WebKit's `SiteIsolationEnabled` feature (default off, status *unstable*, private `_WKFeature` SPI) and measurably works — with it on, a cross-origin iframe gets its own WebContent process and a 200ms-per-250ms spin inside it leaves the deck at 300 frames / 5s, p95 17ms, against 108 frames and p95 211ms with it off. **Closed OUT on policy: Tug does not ship private SPI.** All scaffolding removed in the same step; `MainWindow.swift` is byte-identical to `main`. Full A/B and the call in brief `#record-m4`.
 
-**Tasks:**
-- [ ] Add the spike page; verify it is served in dev (vite serves `public/` at root) and by the debug app's origin.
-- [ ] With the debug app running, inject the cross-origin iframe from the app-test harness or Web Inspector console: the deck's origin is `http://127.0.0.1:<port>` and `http://localhost:<port>/perf-spike-iframe.html?busy=1` is the same server on a different origin — no second server needed. (`document.body.appendChild(Object.assign(document.createElement("iframe"), { src: … }))`.)
-- [ ] Observation A (process): `pgrep -fl 'WebKit.WebContent' | wc -l` before and after the iframe loads, attributing by Tug's cache path via `lsof` as `scripts/perf-resize-profile.sh` does. Second process appears → out-of-process; count unchanged → in-process.
-- [ ] Observation B (stall): with `?busy=1` active, measure the deck's own responsiveness — `window.tugPerfMonitor.snapshot()` drift stalls over 30s, and typed input feel. If out-of-process, deck stalls must not correlate with the iframe's busy loop; if in-process, they will, confirming Observation A.
-- [ ] Write the verdict (yes/no, evidence, WebKit/macOS version) into the brief record; if yes, add a follow-on line to #roadmap for the per-card isolation design pass — do not start it.
-
-**Tests:**
-- [ ] None committed (spike; verdict is the artifact).
+**Method notes, if this is ever revisited (i.e. the feature graduates to public API):**
+- Spike page: rAF fps counter plus a `?busy=1` mode spinning 200ms synchronously every 250ms; injected as a fixed-position iframe and measured against the deck's own rAF inter-frame gaps over 5s per stage.
+- Cross origin without a second server: the deck is served at `http://127.0.0.1:<port>`; `http://localhost:<port>` is the same server, different origin. Keep a **same-origin busy control** — it is what separates "isolated" from "the iframe just wasn't costly".
+- **CSP first.** The deck is `default-src 'self'` with no `frame-src`, which blocks the iframe before any engine behavior is observable. The first run of this spike read as a hard "no isolation" purely because of that. Any probe must assert the iframe actually loaded.
+- **Swift changes need `just build-app`.** `just app-test` refreshes the deck bundle and re-signs but does not recompile the app; the first flag-on run measured a binary without the hook and produced a convincing false negative, caught only because an expected log line was missing.
 
 **Checkpoint:**
-- [ ] The brief record contains the verdict with both observations' numbers; `bunx vite build` still clean.
+- [x] Brief record carries the A/B, the policy call, and the reopen condition; working tree clean of spike artifacts.
 
 ---
 
@@ -431,19 +430,19 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 
 **Artifacts:**
 - S01/S02/S03 implemented in `tugdeck/src/lib/perf-monitor.ts`; exposure added to `window.tugPerfMonitor` in `tugdeck/src/main.tsx` inside the existing dev/test gate, plus the `?wakerCensus=1` boot-arm flag (S01 blind-spot mitigation).
-- `tests/app-test/at0290-perf-instruments.test.ts` with `@covers tugdeck/src/lib/perf-monitor.ts` (extend `ACCEPTED_FANOUT` if `just app-test-covers-check` objects — at0288/at0289 already cover this file).
+- `tests/app-test/at0291-perf-instruments.test.ts` with `@covers tugdeck/src/lib/perf-monitor.ts` (extend `ACCEPTED_FANOUT` if `just app-test-covers-check` objects — at0288/at0289 already cover this file).
 
 **Tasks:**
-- [ ] Implement S01 with the documented pre-existing-timer blind spot noted in the fn docstring; wrappers must pass through return values and `clearInterval`/`cancelAnimationFrame` identity.
-- [ ] Implement S02 (Promise-based window; observer disconnected in a `finally`).
-- [ ] Implement S03 fields on `LayerTreeProbe`; document "candidate = upper-bound proxy".
-- [ ] at0290: (a) arm census, create a 50ms interval via `evalJS`, read ≥ its expected fires ±1 and its callsite bucket non-empty, clear it; (b) run `mutationCensus(1000)` across a deliberate `textContent` write and assert it is counted in `byTarget` under the right bucket, then across a quiet window on the same DOM and assert near-zero; (c) seed `gallery-tug-progress-indicator` (constants as in `at0288`) and assert `renderLayerCandidates > 0` and `> ` the empty-deck reading.
+- [x] Implement S01 with the documented pre-existing-timer blind spot noted in the fn docstring; wrappers must pass through return values and `clearInterval`/`cancelAnimationFrame` identity.
+- [x] Implement S02 (Promise-based window; observer disconnected in a `finally`).
+- [x] Implement S03 fields on `LayerTreeProbe`; document "candidate = upper-bound proxy".
+- [x] at0291: (a) arm census, create a 50ms interval via `evalJS`, read ≥ its expected fires ±1 and its callsite bucket non-empty, clear it; (b) run `mutationCensus(1000)` across a deliberate `textContent` write and assert it is counted in `byTarget` under the right bucket, then across a quiet window on the same DOM and assert near-zero; (c) seed `gallery-tug-progress-indicator` (constants as in `at0288`) and assert `renderLayerCandidates > 0` and `> ` the empty-deck reading.
 
 **Tests:**
-- [ ] `just app-test at0290-perf-instruments.test.ts` green.
+- [x] `just app-test at0291-perf-instruments.test.ts` green.
 
 **Checkpoint:**
-- [ ] `bunx tsc --noEmit` (tugdeck) clean; `bunx vite build` clean; `just app-test-covers-check` clean; at0290 green.
+- [x] `bunx tsc --noEmit` (tugdeck) clean; `bunx vite build` clean; `just app-test-covers-check` clean; at0291 green. `main.tsx` changed, so the core tier ran too (20/20, 39/39).
 
 ---
 
@@ -460,16 +459,16 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 - The named brief-M1 hotspot ([Q04]): top JS self-time entry from a cold heavy-fixture restore, Web Inspector JavaScript & Events timeline.
 
 **Tasks:**
-- [ ] Operator-assisted: on the user's heavy deck (debug build for censuses; release bundle + `sample` for the busy numbers), run the three instruments and one `scripts/perf-resize-profile.sh dev.tugtool.app idle 5` triplet; subtract the perf monitor's own heartbeat on debug readings.
-- [ ] Convict/absolve each Table T01 row; name any waker outside the table.
-- [ ] Record the residual-churn measurement that resolves [Q03]'s input (pre-fix readout write rate).
-- [ ] Profile one cold restore of `session-transcript-basic`; record the top-3 JS self-time entries and name the [Q04] target.
+- [x] Ran the three instruments and `scripts/perf-resize-profile.sh` against one parked deck in two arms (pulse detail closed / open). The app-test bundle has its own id, `dev.tugtool.app.apptest`, so the sampler finds its WebContent process cleanly with the user's own instances running — that is what made both sides of the arithmetic measurable on the same deck instead of across two.
+- [x] Convicted/absolved every Table T01 row; no waker appeared outside the table.
+- [x] Recorded the pre-fix readout write rate for [Q03].
+- [ ] The [Q04] cold-restore JS profile — deferred with its reason; see the resolution under [Q04].
 
 **Tests:**
-- [ ] None (docs-only step; [P02]).
+- [x] None (docs-only step; [P02]).
 
 **Checkpoint:**
-- [ ] The closure computation is in the record and lands within ±25%, or the discrepancy is itself named as a finding with a follow-up hypothesis. Every row of T01 carries a verdict.
+- [x] The closure lands within ±25% from both arms independently (predicted 1.0% vs 1.1%; predicted 4.0% vs 3.7%), on a measured ~10ms per rendering update. Every T01 row carries a verdict. The one gap — this deck rests at 1.6% against the release baseline's 8.3% — is named in the record as a scope limit rather than papered over, and the clean release re-baseline is #step-12's.
 
 ---
 
@@ -487,19 +486,19 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 - [Q03] resolution: post-fix residual writes/s measured; if > ~1/s per visible card, quantize the gauge display precision in the same commit and record the choice.
 
 **Tasks:**
-- [ ] Implement the change gate ([P04]: compare formatted output, never raw values — R02).
-- [ ] Re-run `mutationCensus(3000)` on a mounted, idle Pulse card; record before/after in the brief.
-- [ ] Apply the other convicted fixes from Step 3's table.
+- [x] Implemented the change gate on BOTH writes ([P04]: compare formatted output, never raw values — R02). `dataset.idle` was as unconditional as `textContent`.
+- [x] Re-ran the census on a mounted, idle Pulse card; before/after in brief `#record-idle-fix` (64 → 15.2 writes/s, readout contribution zero, busy 5.5% → 3.9%).
+- [x] The other convicted row (H2, the two never-dorming gauge tapes) is deliberately deferred to #step-6 rather than fixed twice — its `points` string genuinely changes every sample, so the gate has to be a canonicalized flat form authored against the drawing path that survives. Named in the record.
 
 **Tests:**
-- [ ] Extend the existing Pulse-covering app-test selection (`just app-test-changed` will derive it via `@covers`) — all green.
+- [x] `just app-test-changed` green.
 
 **Checkpoint:**
-- [ ] `bunx vite build` clean; `just app-test-changed` green; brief record carries the before/after writes/s.
+- [x] `bunx tsc --noEmit` and `bunx vite build` clean; `just app-test-changed` green; brief record carries the before/after writes/s.
 
 ---
 
-#### Step 5: Idle-silence gate — at0291 {#step-5}
+#### Step 5: Idle-silence gate — at0292 {#step-5}
 
 **Depends on:** #step-4
 
@@ -508,17 +507,18 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 **References:** [P04] idle contract, Spec S02, (#success-criteria), brief `[E1]`
 
 **Artifacts:**
-- `tests/app-test/at0291-idle-silence.test.ts` (`@covers` the pulse card, `perf-monitor.ts`): seeds a deck with a Pulse card and a restored `session-transcript-basic` session card (cold restore, `waitForTranscriptSettled`), waits a settle window, then asserts `mutationCensus(3000)` reads `totalWrites === 0` and `readWakerCensus(3000)` shows no interval firing into a DOM-writing callsite bucket (assert on the census tables printed for diagnosis).
+- `tests/app-test/at0292-idle-silence.test.ts` (`@covers` the pulse card, `perf-monitor.ts`): seeds a deck with a Pulse card and a restored `session-transcript-basic` session card (cold restore, `waitForTranscriptSettled`), waits a settle window, then asserts `mutationCensus(3000)` reads `totalWrites === 0` and `readWakerCensus(3000)` shows no interval firing into a DOM-writing callsite bucket (assert on the census tables printed for diagnosis).
 
 **Tasks:**
-- [ ] Write the test with an anti-vacuity floor: before the quiet window, perform one deliberate write and assert the census counts it (the instrument is alive), then measure the real window.
-- [ ] Account for the app-test transient-workspace constraint (changeset entries live ~2s): let that churn finish inside the settle window before the measured window opens.
+- [x] Anti-vacuity floor in place: a deliberate write must be counted before the quiet window is trusted, and the transcript's dot population is asserted so an empty restore cannot pass by having nothing to write.
+- [x] 4s settle window clears the transient workspace's changeset churn before the 3s measured window opens.
+- [x] The waker assertion is scoped to repeating INTERVALS — the perf monitor's own heartbeat is a dev/test-only `setTimeout` chain and would otherwise make the gate unsatisfiable on the build that can run it.
 
 **Tests:**
-- [ ] `just app-test at0291-idle-silence.test.ts` green three consecutive runs (flake check).
+- [x] `just app-test at0292-idle-silence.test.ts` green three consecutive runs.
 
 **Checkpoint:**
-- [ ] at0291 green ×3; `just app-test-covers-check` clean.
+- [x] at0292 green ×3 (0 writes in 3,000ms every run); `just app-test-covers-check` clean.
 
 ---
 
@@ -534,18 +534,21 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 - `tugdeck/src/lib/workers/sparkline-render-worker.ts` (S05); `tug-sparkline.tsx` converted (SVG elements out, one `<canvas>` in the track; all lifecycle/dormancy/scroll logic untouched); `tug-sparkline.css` adjusted if the SVG selectors referenced element types.
 
 **Tasks:**
-- [ ] Port `redraw()`'s staircase geometry into the worker verbatim (flat hold, step, held tail, area to baseline); draw at `devicePixelRatio`.
-- [ ] Resolve line/area colors on the main thread from the container's computed style at init, on theme change, and on `data-activity-channel` change; post `colors` messages (R03).
-- [ ] Wire the worker with the same bundler pattern as `image-downsample-worker.ts` (`new Worker(new URL(…), { type: "module" })` — copy its wiring, it is the proven path through vite).
-- [ ] Instance registry keyed by id; `dispose` on effect cleanup ([L27]).
-- [ ] Fallback: if `transferControlToOffscreen` is unavailable (it is not expected to be — the downsample worker proves support), render on-main into the same canvas with the same drawing module; one code path for geometry either way.
+- [x] Staircase ported verbatim into `lib/sparkline-geometry.ts`, drawn at `devicePixelRatio`, shared by the worker and the on-main fallback so there is one implementation.
+- [x] Colors resolved on the main thread at mount, on theme change (`subscribeThemeChange`), and on `data-activity-channel` change; the Pulse card's per-consumer weights became `--tugx-sparkline-*` knobs with their defaults at point of use (R03).
+- [x] Wired with the `image-downsample-worker.ts` pattern; vite emits `sparkline-render-worker-*.js` as its own chunk.
+- [x] Instance registry keyed by id; `dispose` on cleanup ([L27]).
+- [x] Fallback path present and sharing the same geometry module.
+- [x] **Departure from S05, deliberate:** every draw carries the whole tape plus `t0` rather than appending one sample. The main thread owns both, and shipping them together makes a divergent picture impossible. Recorded in brief `#record-m2`.
+- [x] **Departure from the plan's structure:** canvas ownership is its own effect keyed on geometry, because `transferControlToOffscreen` may be called once per element.
 
 **Tests:**
-- [ ] `just app-test-changed` (derives Pulse/sparkline coverage via `@covers`) green.
-- [ ] at0291 still green (the conversion must not add wakes).
+- [x] `just app-test-changed` green.
+- [x] at0292 still green — the conversion added no wakes.
 
 **Checkpoint:**
-- [ ] `bunx vite build` clean; `just app-test-changed` green; at0291 green; **user gallery eyeball** of the Pulse card live + dormant (R03 residual) — record their verdict before commit.
+- [x] `bunx tsc --noEmit` and `bunx vite build` clean (worker chunk emitted); `just app-test-changed` green; at0292 green. Measured 15.2 → **0 DOM writes/s** and 3.9% → **2.8%** busy with the pulse detail open.
+- [ ] **User gallery eyeball** of the Pulse card live + dormant (R03 residual) — still owed. A screenshot confirms the tapes paint their staircase and area fill; stroke weight and fill alpha at real sizes are the user's call.
 
 ---
 
@@ -561,15 +564,15 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 - `MainWindow.swift`: the window's `WKWebViewConfiguration` gets an instance-owned `WKProcessPool` (`config.processPool = WKProcessPool()` beside the existing configuration setup).
 
 **Tasks:**
-- [ ] Implement; confirm no interaction with the DEBUG test-harness user-script injection path.
-- [ ] Verify: `just app-debug`, launch, `pgrep -fl 'WebKit.WebContent'` attributed via Tug's cache path shows exactly one WebContent process for the window; app boots to a working deck.
-- [ ] Note in the brief record: groundwork landed; user-visible payoff arrives with multi-window support (single-window app today, one `MainWindow` construction in `AppDelegate.swift`).
+- [x] Implemented above the DEBUG harness user-script block, so the injection path is untouched.
+- [x] Verified: exactly one WebContent process carries the app's WebKit cache directory while a deck is parked.
+- [x] Recorded in brief `#record-m3`, including that the payoff is deferred to multi-window.
 
 **Tests:**
-- [ ] `just app-test-smoke` green (boot-path change → the curated smoke trio is the right scope; a CORE TIER ADVISED advisory from `app-test-changed`, if any, is answered with `just app-test`).
+- [x] `just app-test-smoke` green (3/3).
 
 **Checkpoint:**
-- [ ] Debug and release builds succeed; smoke green; process count verified.
+- [x] `just build-app` clean; smoke green; process count verified at 1.
 
 ---
 
@@ -586,20 +589,27 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 - H6 verdict: does shrinking the walked tree collapse the after-layout walk (241+61 baseline)?
 
 **Tasks:**
-- [ ] Idle wakes are already silenced (#step-5 dependency), so the typing profile is unpolluted — note this in the record's method line.
-- [ ] Run the A/B; record after-layout walk samples, total busy, and the S04 probe's latency distribution in both arms (the probe exists as an evalJS snippet ahead of its gate).
-- [ ] Preliminary [Q02] feature probe in the containment arm: run a transcript find, a reveal-scroll, and a share gesture by hand; note breakage candidates for Step 9.
-- [ ] If the containment arm does NOT move the walk, name the next hypothesis from the Layers-tab evidence (scroller layers, overlay ancestors forcing root-wide invalidation) and record it — Step 9 is then skipped and its ledger row marked accordingly.
+- [x] Ran the containment A/B and found it cannot bite: the corpus's heaviest fixture renders **5** transcript entries, all in or near the viewport, so `content-visibility: auto` skips nothing. That is the first finding, not a failed attempt.
+- [x] Tested the hypothesis by **dose-response instead** — inject overlapping, visible, `z-index`-stacked boxes and re-measure. 118 → 4,117 stacking contexts (2.5× the audited card) costs 2ms per keystroke, moves `computeCompositingRequirements` from 29 to 37 samples, and stretches no frame.
+- [x] Named the next hypothesis: **composited layers (backing stores), not RenderLayers** — a Web Inspector Layers-tab reading on the user's own deck, since script cannot count them.
+- [x] Marked #step-9 skipped in the ledger.
 
 **Tests:**
-- [ ] None (docs-only; [P02]).
+- [x] None (docs-only; [P02]).
 
 **Checkpoint:**
-- [ ] The record contains both arms' numbers and a stated verdict; [Q02]'s feature-probe notes exist if Step 9 proceeds.
+- [x] Both arms' numbers and a stated verdict are in brief `#record-typing`. [Q02] is moot — its feature probe was never needed because the hypothesis it served did not survive.
+
+**Also found, and it changes #step-11:** the [P08] probe measures vsync phase. `requestAnimationFrame` fires at the next display refresh, so keystroke→post-paint carries a uniform 0–16.7ms wait unrelated to the keystroke's cost; on a deck comfortably at frame rate it reads p50 11ms / p95 17ms, which makes **p50 < 9ms unreachable in principle**. The gate must be rebuilt on inter-frame gap during a burst — no floor, and it states the real guarantee (typing must not drop a frame).
 
 ---
 
-#### Step 9: Containment productization (conditional) {#step-9}
+#### Step 9: Containment productization (conditional) — SKIPPED {#step-9}
+
+**Not run.** #step-8 refuted [H6] by dose-response: 35× the stacking-context population, past 2.5× the audited card's, costs 2ms per keystroke and stretches no frame. Containment was the productization of that hypothesis; with the hypothesis dead there is nothing to productize, and shipping `content-visibility` against transcript features ([Q02], Risk R04) would have been risk bought for no measured return. The typing charge moves to the composited-layer hypothesis named in brief `#record-typing`. Everything below is left as authored, for the record of what was planned.
+
+<details><summary>Original step, unrun</summary>
+
 
 **Depends on:** #step-8
 
@@ -622,7 +632,16 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 
 ---
 
-#### Step 10: Data-plane worker offload (brief M1) {#step-10}
+</details>
+
+---
+
+#### Step 10: Data-plane worker offload (brief M1) — NOT RUN {#step-10}
+
+**Not run, under [P07].** [Q04] came back with no hotspot: replay ingest costs 2ms, markdown parses 9 times, and the other two candidates never execute on the restore path (brief `#record-m1`). An offload built against those numbers would have moved two milliseconds and added a permanent thread boundary. The restore *is* layout-bound — 125 leaf samples in flex layout alone — which is a real finding for a later phase and not a threading problem. Everything below is left as authored.
+
+<details><summary>Original step, unrun</summary>
+
 
 **Depends on:** #step-3
 
@@ -645,7 +664,11 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 
 ---
 
-#### Step 11: Typing-latency gate — at0292 {#step-11}
+</details>
+
+---
+
+#### Step 11: Typing-latency gate — at0293 {#step-11}
 
 **Depends on:** #step-8, #step-9
 
@@ -654,17 +677,19 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 **References:** [P08] typing gate, Spec S04, Risk R05, (#success-criteria), brief `[E3]`
 
 **Artifacts:**
-- `tests/app-test/at0292-typing-latency.test.ts` (`@covers` the session composer surface + `perf-monitor.ts` if the probe graduates into it): S04 probe, ≥60 keystrokes via `nativeType` into the focused composer on the restored heavy fixture, budgets asserted, distribution printed.
+- `tests/app-test/at0293-typing-latency.test.ts`: frame-gap probe, 240 keystrokes via `nativeType` into the focused composer on the restored heavy fixture, budgets asserted, both distributions printed.
 
 **Tasks:**
-- [ ] Calibrate once on the post-Step-9 structure; freeze budgets ([P08]); space synthetic gestures with settle delays per the first-responder harness constraint.
-- [ ] One retry on budget failure (R05), with both distributions printed when the retry differs.
+- [x] Rebuilt the gate on frame gap per the amended [P08] — the specced latency probe measures vsync phase and its budget was unreachable.
+- [x] Calibrated against #step-8's reference readings and frozen; bursts spaced with settle delays per the first-responder harness constraint.
+- [x] One retry on budget failure (R05), with both distributions printed when the retry differs.
+- [x] Floors so it cannot pass vacuously: dot population, keystrokes actually delivered, composer text actually grown, frame loop actually sampled.
 
 **Tests:**
-- [ ] `just app-test at0292-typing-latency.test.ts` green three consecutive runs.
+- [x] `just app-test at0293-typing-latency.test.ts` green three consecutive runs — p50 17ms, p95 18ms, max 18–23ms.
 
 **Checkpoint:**
-- [ ] at0292 green ×3; `just app-test-covers-check` clean.
+- [x] at0293 green ×3; `just app-test-covers-check` clean.
 
 ---
 
@@ -678,18 +703,16 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 
 **Artifacts:**
 - Brief `#record` closed: three idle samples on a fresh user-built release bundle (`just app-release`; verify the bundle's JS/CSS carry this plan's changes before sampling — the prior phase was once burned by profiling a stale bundle), typing-gate numbers, every exit line answered.
-- `tugdeck/public/perf-spike-iframe.html` deleted.
 
 **Tasks:**
-- [ ] `scripts/perf-resize-profile.sh dev.tugtool.app idle 5` ×3 on the release bundle; target ≤1.5% (#success-criteria); read the `applyKeyframeEffects` line through the known false positive before believing any verdict.
-- [ ] If the target misses, the miss is attributed with the censuses before this step closes — an unexplained miss reopens Step 3, and the ledger says so.
-- [ ] Remove the spike page; confirm zero `zz-`/spike artifacts remain (`ls tugdeck/public/ tests/app-test/`).
+- [ ] **Owed to the user, not done here.** The release re-profile needs a genuinely idle release deck and a fresh release bundle. Building one from this worktree quits a running release instance, and the user is using theirs; sampling the live one mid-session reads 12.5% and is not an idle baseline. Run `scripts/perf-resize-profile.sh dev.tugtool.app idle 5` ×3 after landing, on a deck nobody is driving, and read the `applyKeyframeEffects` line through its known false positive.
+- [x] All `zz-` probes removed. `tugdeck/public/spike.html` remains and is **not** this phase's — it is tracked on `main` from an older atoms-as-`img` spike (`3632c1bf6`), out of scope here.
 
 **Tests:**
-- [ ] `just app-test at0290 at0291 at0292` green as a set.
+- [x] `just app-test at0291 at0292 at0293` green as a set.
 
 **Checkpoint:**
-- [ ] All #exit-criteria boxes checkable with evidence in the brief record; `bunx vite build` clean; the three gates green.
+- [x] `bunx tsc --noEmit` and `bunx vite build` clean; the three gates green together; brief `#record-close` states what landed and what is owed.
 
 ---
 
@@ -699,18 +722,18 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] M4 verdict written with process-count and cross-stall evidence (brief record).
-- [ ] Idle attribution closed arithmetically (±25%) with every waker named.
-- [ ] at0291 (idle silence: 0 DOM writes/s settled) committed and green.
-- [ ] Release idle busy ≤1.5% ×3 samples on a verified-fresh bundle.
-- [ ] at0292 (typing: p50 < 9ms, p95 < 17ms, ≥60 keys, heavy fixture) committed and green.
-- [ ] After-layout walk under typing attributed; containment verdict recorded (landed or refuted).
-- [ ] Sparkline tape painted in a worker; Pulse card visually blessed by the user.
-- [ ] Per-window process pool landed and verified; M1 offload landed against the named hotspot.
-- [ ] Spike page removed; brief record complete.
+- [x] M4 verdict written with process-count and cross-stall evidence — yes on the engine, OUT on policy (brief `#record-m4`).
+- [x] Idle attribution closed arithmetically (±25% from both arms independently) with every waker named (brief `#record-idle`).
+- [x] at0292 (idle silence: 0 DOM writes/s settled) committed and green.
+- [ ] **Release idle busy ≤1.5% ×3 — owed.** Needs an idle release deck; see #step-12.
+- [x] at0293 committed and green — **on frame gap**, p50 17 / p95 18. The originally budgeted keystroke→post-paint p50 < 9ms was unreachable in principle at 60Hz ([P08], amended).
+- [x] After-layout walk under typing attributed: **[H6] refuted** by dose-response; containment never productized because the hypothesis it served died (brief `#record-typing`).
+- [x] Sparkline tape painted in a worker. **Pulse card eyeball still owed** (R03).
+- [x] Per-window process pool landed and verified. **M1 offload NOT landed — [Q04] has no target**, and [P07] forbids a speculative one (brief `#record-m1`).
+- [x] Brief record complete through `#record-close`. No `zz-` artifacts remain.
 
 **Acceptance tests:**
-- [ ] `just app-test at0290-perf-instruments.test.ts at0291-idle-silence.test.ts at0292-typing-latency.test.ts`
+- [ ] `just app-test at0291-perf-instruments.test.ts at0292-idle-silence.test.ts at0293-typing-latency.test.ts`
 - [ ] `just app-test-covers-check`
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
@@ -723,8 +746,8 @@ The worker owns the tape array and the staircase geometry (ported verbatim from 
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Idle silence | at0291 green; mutation census 0 writes/s |
+| Idle silence | at0292 green; mutation census 0 writes/s |
 | Idle explained | closure arithmetic in brief record, ±25% |
-| Typing gated | at0292 green ×3 |
+| Typing gated | at0293 green ×3 |
 | Release number | `perf-resize-profile.sh` idle ≤1.5% ×3 |
 | Multicore IN list | M1/M2/M3 commits in ledger; M4 verdict recorded; M5 zero commits |

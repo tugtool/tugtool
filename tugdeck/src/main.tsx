@@ -60,7 +60,11 @@ import {
   animationCensus,
   getPerfMonitorSnapshot,
   layerTreeProbe,
+  mutationCensus,
+  readWakerCensus,
   startPerfMonitor,
+  startWakerCensus,
+  stopWakerCensus,
 } from "./lib/perf-monitor";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
@@ -327,18 +331,33 @@ if (!container) {
     // carry the monitor's 1 Hz wakeup; see lib/perf-monitor.ts for the
     // budgets it guards.
     startPerfMonitor();
+    // `?wakerCensus=1` arms the waker census before the deck boots. The
+    // census only attributes registrations made after it starts, so a
+    // timer armed during boot is invisible to a census started later —
+    // an attribution session hard-reloads with this flag to see them.
+    if (new URLSearchParams(window.location.search).get("wakerCensus") === "1") {
+      startWakerCensus();
+    }
     (
       window as unknown as {
         tugPerfMonitor?: {
           snapshot: typeof getPerfMonitorSnapshot;
           animationCensus: typeof animationCensus;
           layerTreeProbe: typeof layerTreeProbe;
+          startWakerCensus: typeof startWakerCensus;
+          readWakerCensus: typeof readWakerCensus;
+          stopWakerCensus: typeof stopWakerCensus;
+          mutationCensus: typeof mutationCensus;
         };
       }
     ).tugPerfMonitor = {
       snapshot: getPerfMonitorSnapshot,
       animationCensus,
       layerTreeProbe,
+      startWakerCensus,
+      readWakerCensus,
+      stopWakerCensus,
+      mutationCensus,
     };
   }
   if (import.meta.env.DEV) {

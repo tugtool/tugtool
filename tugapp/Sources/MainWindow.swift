@@ -292,6 +292,14 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         let config = WKWebViewConfiguration()
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         config.userContentController = contentController
+        // A process pool owned by this window, not shared. WebKit hosts
+        // web views from the same pool in the same WebContent process, so
+        // a second deck window built through this initializer would share
+        // one main thread with the first and each would stall the other.
+        // Constructing the pool here makes the isolation structural, so it
+        // cannot be lost later by an unrelated change; the app builds one
+        // window today, so nothing observable changes yet.
+        config.processPool = WKProcessPool()
 
         // Allow localhost access
         if #available(macOS 14.0, *) {

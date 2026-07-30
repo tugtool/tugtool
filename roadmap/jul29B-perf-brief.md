@@ -156,4 +156,195 @@ Order matters: the M4 spike before everything (its verdict completes the IN list
 
 ## Record {#record}
 
-*(filled as steps close)*
+### M4 verdict — site isolation works, behind an unstable WebKit feature flag reached by private SPI {#record-m4}
+
+**Answer: yes, with a flag.** Stock `WKWebViewConfiguration` hosts a cross-origin iframe in the deck's own WebContent process — that part of the first measurement stands. But WebKit 18.6 ships a feature named `SiteIsolationEnabled`, described in its own metadata as *"Put cross-origin iframes in a different process"*, defaulting off. Turned on, it does exactly that, and the isolation is complete: a cross-origin iframe burning 200ms of every 250ms leaves the deck at a **flawless 60fps**.
+
+Measured on macOS 15.6 (24G84), Safari/WebKit 18.6.
+
+| Stage | Flag off — procs / frames per 5s / p95 gap | Flag on — procs / frames per 5s / p95 gap |
+|---|---|---|
+| Baseline, no iframe | 14 · 300 · 17ms | 14 · 300 · 17ms |
+| Cross-origin iframe, idle | 14 · 300 · 18ms | **15** · 300 · 18ms |
+| Cross-origin iframe, `?busy=1` | 14 · **108** · **211ms** | **15** · **300** · **17ms** |
+| Same-origin iframe, `?busy=1` (control) | 14 · 84 · 210ms | 14 · 84 · 211ms |
+
+Every cell corroborates the same story. With the flag on, the cross-origin load spawns a **fifteenth** WebContent process and the deck's frame delivery is untouched — 300 frames in 5s, zero gaps over 100ms, indistinguishable from having no iframe at all. The same-origin control still stalls (84 frames, p95 211ms) and the process count drops back to 14, which is the correct behavior: same origin, same process. A bug or a measurement artifact would not reproduce that asymmetry.
+
+**How it is turned on.** `SiteIsolationEnabled` is reachable through the `_WKFeature` SPI — enumerate `+[WKPreferences _features]`, find the feature whose `key` is `SiteIsolationEnabled`, and call `-[WKPreferences _setEnabled:forFeature:]` on the configuration's preferences before the `WKWebView` is constructed. No private headers are needed; selectors resolve at runtime. The spike's implementation is `MainWindow.enableSiteIsolation(on:)`, gated behind `TUG_SPIKE_SITE_ISOLATION=1`.
+
+**What "unstable" means here, and why this is not yet a green light.**
+
+- The feature's status field reads **1 (unstable)** — below internal, developer, preview, and stable. WebKit's own site-isolation deep dive described the work as "step 2 of 3" as of January 2025, with the remaining step being *fixing the functionality that site isolation breaks*. We would be adopting a feature its authors do not consider finished.
+- It is **private SPI**. Selector-based access dodges the compile-time dependency but not the risk: Apple can rename, re-status, or remove the feature in any macOS update, and a silent failure degrades to "no isolation" (which the spike's own logging catches, but only if we keep watching).
+- Turning it on changes cross-origin iframe semantics **globally** for the web view, not just for surfaces we opt in. Anything else the deck ever frames inherits it.
+
+**The architectural cost is the real gate, not the flag.** The flag makes per-card threading *possible*; it does not make it cheap. Every Session card moved into a cross-origin iframe loses the shared DOM and the shared React tree, which means the focus engine, the pane model, theme tokens, selection, drag, and the deck-trace ring all have to cross a `postMessage` boundary. That is a rearchitecture of the deck's core, not a perf tweak — and it should be judged as one, on its own brief, against what it would actually buy.
+
+**Side finding, worth keeping.** The deck's CSP (`tugdeck/index.html`) is `default-src 'self'` with no `frame-src`, so a cross-origin iframe is blocked outright before any engine behavior is observable — the first run of this spike read as a hard "no isolation" purely because of it. The measurement needs a temporary `frame-src 'self' http://localhost:*` allowance, reverted afterward. Any future revisit must relax CSP first or it will misread a CSP refusal as an engine answer.
+
+**Disposition: M4 is OUT, on policy.** Call made 2026-07-29, immediately on reading the above: **Tug does not ship private SPI.** Not conditionally, not behind a flag, not with a fallback path — a feature Apple can rename or remove in any OS update, whose failure mode is silent, is not a foundation this product builds on. The engine capability is real and the measurement stands; the delivery mechanism disqualifies it. All spike scaffolding was removed in the same step and `MainWindow.swift` is byte-identical to `main`.
+
+**What would reopen it:** `SiteIsolationEnabled` graduating to a *stable* status with public API — a `WKWebViewConfiguration` or `WKPreferences` property with no leading underscore. Worth a look on each macOS major. Nothing short of that.
+
+**Consequences for the plan.** [Q01] closes **YES on the engine, OUT on policy**. Risk R01 did not materialize but is moot. Nothing else in the plan depended on the answer either way — Steps 2–12 stand as written, and the multicore work that remains (brief M1/M2/M3) is public API throughout: Workers, `OffscreenCanvas`, and `WKProcessPool`.
+
+---
+
+### Idle attribution — the mechanism model closes, and the transcript is innocent {#record-idle}
+
+Measured 2026-07-29 on the app-test bundle (`dev.tugtool.app.apptest`, its own WebContent process, so `perf-resize-profile.sh` samples it cleanly with the user's own instances running). One deck: `session-transcript-basic` restored through the production picker → spawn → reveal path, 32 pulsing dots, 1,468 elements. Two arms of the same deck, both after a 4s settle, censuses and `sample` taken over the same parked window. Reproduced across two independent launches with identical waker and write counts.
+
+**Arm A — deck at rest, pulse detail closed.**
+
+| Quantity | Reading |
+|---|---|
+| Wakers | **1/s**, and it is the perf monitor's own 1Hz heartbeat (dev/test only — it does not exist in a release build) |
+| DOM writes | **0 in 5,000ms** — childList 0, attributes 0, characterData 0 |
+| Main-thread busy | 1.6% (71/4,379 samples) |
+| `updateRendering` | 48 samples = **1.1%** |
+| `computeCompositingRequirements` | 1 sample |
+| `Style::TreeResolver::resolve` | 2 samples |
+
+**A restored heavy transcript at rest is already silent.** Zero product wakers, zero DOM writes. Whatever burns the release deck's idle budget, it is not the transcript — that page of the investigation is closed.
+
+**Arm B — the same deck with the pulse detail popover open (6 channel rows).**
+
+| Quantity | Reading | Decomposition |
+|---|---|---|
+| Wakers | **33/s** | 24/s = 6 × 250ms readout intervals at one callsite (**[H1]**, 6 rows × 4Hz). 8/s = 2 × 250ms sparkline samplers (**[H2]**, the two gauge rows that never dorm; the four rate rows dormed correctly). 1/s = the dev heartbeat. |
+| DOM writes | **64/s** (320 in 5,000ms) | 240 on `span.session-pulse-card-value` = 6 rows × 4Hz × 5s × **2 writes each** — `textContent` (120 childList) and `dataset.idle` (120 of the 200 attributes). 40 `polyline.tug-sparkline-line` + 40 `polygon.tug-sparkline-area` = 2 live tapes × 4Hz × 5s. |
+| Main-thread busy | 5.5% (216/3,927) | |
+| `updateRendering` | 144 samples = **3.7%** | |
+
+**The arithmetic closes.** Both arms agree on one constant: **a rendering update on this tree costs ~10ms.** Arm A: 48 `updateRendering` samples over 5s at ~1 update/s (the lone heartbeat) → 10ms each; predicted busy 1.0% against 1.1% measured. Arm B: every waker sits on the same 250ms grid, so the eight timers coalesce into ~4 rendering updates/s → predicted 4.0% against 3.7% measured. Both inside ±25%, from opposite ends of a 3.5× range. `busy = rendering updates per second × cost per update` is the right model, and the cost term is now a measured number rather than an assumption.
+
+**T01 verdicts.**
+
+| # | Suspect | Verdict |
+|---|---|---|
+| 1 | Pulse readout paint ([H1]) | **CONVICTED, exactly as charged.** 4Hz × rows, and *two* unconditional writes per tick, not one — `dataset.idle` is as ungated as `textContent`. 48 writes/s of the 64. |
+| 2 | Gauge sparklines never dorm ([H2]) | **CONVICTED, and the dormancy design is vindicated in the same breath** — the four rate rows dormed to zero; only the two gauge rows held their 4Hz timer. 16 writes/s. |
+| 3 | Shared 1Hz telemetry tick ([H3]) | **ABSOLVED at idle.** Subscriber-gated and absent from both arms' censuses. |
+| 4 | `useLifecycleTick` ([H4]) | **ABSOLVED.** Turn-gated; absent from both arms. |
+| 5 | Non-timer wakes ([H5]) | **ABSOLVED on this deck.** Arm A reads 0 writes/s and 1 waker/s, which leaves no room for a hidden IntersectionObserver or WebSocket-driven commit at rest. |
+
+**Scope limit, stated plainly.** This deck rests at 1.6%; the release baseline in `#top` is 8.3%, measured on the user's own deck with surfaces this one does not mount. The model says that gap is ~7 additional rendering updates per second, which two or three live readout surfaces would produce — but *which* surfaces is not established here, and a release-bundle idle sample taken while a session is streaming reads 12.5% and is not an idle baseline at all. The clean release re-baseline belongs to the last step of the plan, on a deck the user is not driving. What Steps 4–5 fix is convicted on its own numbers regardless: 64 writes/s and 32 wakes/s from surfaces that are displaying nothing changing.
+
+**Layer ground truth, banked for the typing charge.** Same deck: **535 RenderLayer candidates against 118 stacking contexts** — a 4.5× gap, and the first direct evidence for **[H6]**. The candidate histogram is not led by anything exotic: 61 `button.tug-button-size-xs`, 43 + 38 `svg.lucide` icons, 32 + 32 dot spans, and five separate 28-count buckets that are the per-tool-call header's own children (`div.tool-call-header`, `span.tool-call-header-name`, `-detail`, `-timing`, and its chevron). Every tool call in the transcript contributes roughly a dozen layer candidates through ordinary positioned and clipping boxes. That is the population the after-layout walk recurses over, and it explains cleanly why removing 28 sticky headers moved nothing.
+
+**[Q04] — deferred, with reason.** The brief-M1 worker offload wants the top JS self-time entry on a cold restore, which is a Web Inspector JavaScript & Events timeline reading and not automatable. It is also the item [P07] most wants evidence for: on this deck `updateRendering` is 67–68% of busy in both arms and JS self-time does not appear at all. Named in the plan's ledger as pending its own measurement rather than guessed at.
+
+### Idle fix — the readout writes only on change {#record-idle-fix}
+
+Same deck, same two-arm method, same 5s windows. `PulseRow`'s paint now holds the last written string and the last written idle flag and writes neither unless it differs. Both are gated: `dataset.idle` was as unconditional as `textContent`, and an attribute set to the value it already holds is delivered as a mutation just the same.
+
+| Pulse detail open, session idle | Before | After |
+|---|---|---|
+| DOM writes | 64/s | **15.2/s** |
+| `span.session-pulse-card-value` | 240 in 5s | **absent** |
+| childList mutations | 120 in 5s | **0** |
+| Main-thread busy | 5.5% | **3.9%** |
+| `updateRendering` samples | 144 | 126 |
+
+The readout's contribution is **zero**, not merely smaller — the eased value drifts by fractions forever, but the string a reader sees settles within a second of the session going quiet, and the gate compares the string. **[Q03] resolves with no product change required:** there is no residual churn to quantize, so the gauges keep their full precision.
+
+Worth recording because it was not a foregone conclusion: removing 48 writes/s moved busy by 1.6 points even though the surviving wakers still land on the same 250ms grid and still force a rendering update. Style invalidation on six rows was not being fully absorbed by coalescing.
+
+**What is left, and where it goes.** The residual 15.2 writes/s is entirely the two gauge sparkline tapes (`polyline.tug-sparkline-line` + `polygon.tug-sparkline-area`, 2 tapes × 4Hz), which never dorm by design — the store does not wake on gauge samples, so giving them the rate rows' wake channel would freeze a live reading. Their `points` string genuinely changes on every sample, so a naive equality gate buys nothing; the fix is a canonicalized flat form, and it belongs with **brief M2** where the drawing path is being replaced anyway. Designing that gate twice, once against the SVG path and once against the canvas one, would be waste. Recorded here so the remainder is named rather than quietly dropped.
+
+Note also that this cost only exists while the pulse **detail popover is open**. A resting deck with the popover closed reads 0 writes/s (Arm A), which is why the idle-silence gate is satisfiable today.
+
+### M3 — per-window process pool, groundwork landed {#record-m3}
+
+`MainWindow`'s `WKWebViewConfiguration` now constructs its own `WKProcessPool` instead of taking WebKit's shared default. Web views built from the same pool are hosted in the same WebContent process, so a second deck window built through this initializer would have shared one main thread with the first and each would have stalled the other — the isolation is now structural and cannot be lost later by an unrelated change.
+
+Verified 2026-07-29: with the app parked on a restored deck, exactly one WebContent process carries the app's WebKit cache directory (matched via `lsof`, since WebContent is launchd-owned and has no parent link back to the app). Smoke trio green.
+
+**Payoff is deferred, honestly.** Tug.app builds one window today — one `MainWindow` construction in `AppDelegate.swift` — so this changes nothing a user can measure. It is the cheap half of brief M3; the half that pays arrives with multi-window support. Public API throughout.
+
+### Typing attribution — H6 is refuted, and the probe has a floor {#record-typing}
+
+Measured 2026-07-29 on the same restored `session-transcript-basic` deck, composer focused, 240 synthetic keystrokes per arm through `nativeType`, `sample` taken during the bursts.
+
+**The containment experiment could not be run as designed, and that is itself the first finding.** The fixture corpus tops out at `session-transcript-basic`: 29 tool calls, but only **5 transcript entries** and 1,468 elements. `content-visibility: auto` on five entries, all in or near the viewport, skips nothing — measured, and it moved neither latency nor the walk. The corpus cannot reproduce the deck the 65.9% typing figure came from (1,603 stacking contexts against this deck's 118), so subtraction has no room to work here.
+
+**So the hypothesis was tested by dose-response instead: add layers rather than remove them.** Each arm injects N absolutely-positioned, mutually overlapping, `z-index`-stacked boxes into the transcript subtree — real geometry, real overlap, genuinely visible (a first pass used a `visibility: hidden` host, which WebKit could legitimately skip; the numbers below are the visible arm).
+
+| Injected | RenderLayer candidates | Stacking contexts | latency p50 / p95 | frame gap p50 / p95 | `computeCompositingRequirements` |
+|---|---|---|---|---|---|
+| 0 | 535 | 118 | 11 / 17 ms | 17 / 18 ms | 29 samples |
+| +1,500 | 2,036 | 1,617 | 12 / 18 ms | 17 / 18 ms | — |
+| +4,000 | 4,536 | 4,117 | 13 / 18 ms | 17 / 19 ms | 37 samples |
+
+**[H6] is refuted.** Thirty-five times the stacking contexts — past 4,000, which is **2.5× the audited card's 1,603** — costs 2ms per keystroke, eight sample-slices in the walk, and **does not stretch a single frame**: frame-gap p50 sits at 17ms in every arm, which is vsync. The after-layout compositing walk is not a function of RenderLayer or stacking-context population, and the prior phase's null result on 28 sticky headers was not a scale problem after all. Removing tree breadth is not the lever.
+
+**Which reopens the question the audited card posed, sharper than before.** That card showed 241 + 61 walk samples at 1,603 stacking contexts. This deck shows 37 at 4,117. Population cannot be the difference, so it is *what the layers are*: the plausible next hypothesis is **composited layers — actual backing stores — rather than RenderLayers**, a number script cannot read and the Web Inspector Layers tab reports directly with per-layer reasons. That is a human-instrument reading on the user's own deck, and it is where the typing charge goes next. Nothing in this plan should spend further effort on breadth.
+
+**Consequence: [Q02] is moot and #step-9 does not run.** Containment was the productization of a hypothesis that did not survive. Recorded as refuted, not deferred.
+
+**The [P08] probe has a floor, and the budgets were written without it.** `requestAnimationFrame` fires at the next vsync, so keystroke→post-paint includes a uniform 0–16.7ms wait that has nothing to do with the work the keystroke caused. On a deck that is comfortably hitting frame rate this probe reads **p50 11ms, p95 17ms** — meaning the p50 < 9ms budget is not merely unmet, it is **unreachable in principle** at 60Hz, and p95 < 17ms is measuring vsync phase rather than the app.
+
+The honest instrument is the one this session added alongside it: **inter-frame gap during a typing burst**. A rendering update that overruns the frame budget stretches a frame and shows up nowhere else; one that fits does not. It has no floor artifact, and it states the guarantee in the words the guarantee is actually about — *typing must not drop a frame*. The gate should be built on frame gap; the recalibration is #step-11's, with the numbers above as the reference reading.
+
+### M2 — the tape is painted in a worker {#record-m2}
+
+`TugSparkline`'s `<svg>` polyline/polygon pair is now a `<canvas>` whose context is transferred to one shared render worker (`lib/workers/sparkline-render-worker.ts`). The staircase geometry moved verbatim into `lib/sparkline-geometry.ts` and is shared by the worker and the on-main fallback, so there is only ever one implementation of the tape's shape. Everything that needs the DOM or the stores stayed on the main thread: the sample timer, the dormancy protocol, the WAAPI scroll on `.tug-sparkline-track`, the `IntersectionObserver` gate, and the `data-activity-channel` stamp.
+
+| Pulse detail open, session idle | Before the phase | After change-gating | After the worker |
+|---|---|---|---|
+| DOM writes | 64/s | 15.2/s | **0/s** |
+| Main-thread busy | 5.5% | 3.9% | **2.8%** |
+| `updateRendering` samples | 144 | 126 | 73 |
+
+**Zero DOM writes with the pulse detail open.** The tape's 15.2 writes/s — the residual [H2] left standing by the change gate — are gone entirely, because a worker's canvas commit reaches the compositor without touching the page. The deck's floor at rest is 1.6%, so an open pulse card now costs 1.2 points where it cost 3.9.
+
+Note what did **not** change: the wakers. Still 33/s, because the timers still fire — they simply do no DOM work now. That is the shape of the whole finding this phase: the wake only costs when it dirties something.
+
+**Design notes worth keeping.**
+
+- **Whole tape per draw, not one appended sample.** The plan specced an `append`-style protocol; shipping one instead. The main thread owns the tape and the epoch origin `t0` (the same number the WAAPI translate is measured from), so posting both together makes it impossible for the two threads to hold different pictures. A few dozen points at 4Hz is far below the cost of the style invalidation it replaces.
+- **The canvas is keyed on its geometry.** `transferControlToOffscreen` may be called once per element, so canvas ownership is its own `useLayoutEffect` scoped to width/height, and the element carries a matching `key`. Folded into the tape effect it would have thrown the second time a caller passed a fresh `getSeries`.
+- **Four values moved out of CSS.** A canvas has no cascade, so the line/area color and opacities are read from computed style on mount, on a theme swap (`subscribeThemeChange` — a callback set, not an observer), and when the channel stamp moves. The Pulse card's per-consumer weights became `--tugx-sparkline-{line,area}-alpha` and `--tugx-sparkline-line-width`, declared nowhere by default so an ancestor override always wins.
+
+**Visual verification is partial.** A screenshot of the PULSE design card shows both strip tapes drawing the staircase with its area fill, so the conversion paints. Stroke weight and fill alpha at real sizes are the user's eyeball to bless (**Risk R03** residual) — that check is still owed.
+
+### M1 — no target, so no offload {#record-m1}
+
+[Q04] asked which data-plane hotspot earns the first worker. Measured on a cold restore of `session-transcript-basic`, 2026-07-29:
+
+| Instrument | Reading |
+|---|---|
+| Replay ingest (`getSessionPerf().lastReplay`) | 148 frames, **`dispatchMs` 2**, `reduceMs` 2, 1 fold, 2 commits, 11ms wall |
+| Markdown parse counters | **9 parses** across 7 identities, 3 cache hits, 20 memo hits |
+| `sample`, leaf-attributed over the restore | JS (JIT) 351, `RenderBlock::layout` 114, flex layout 125, paint 58 |
+
+None of the three candidates is a hotspot. The reducer costs two milliseconds for the whole replay; markdown parses nine times, with the parse-once cache and row memoization already carrying the rest; find indexing and diff computation do not run on this path at all.
+
+JS *is* the largest single term of real work on the restore (351 leaf samples against layout's ~280) — but the ingest measurement places it downstream of the store, in React rendering and reconciliation, and that is DOM-touching work a Worker cannot take. There is no seam here.
+
+**[P07] applies as written: no named hotspot, no offload.** #step-10 does not run. This is the discipline working, not a gap — an offload built against these numbers would have moved two milliseconds and added a thread boundary to the restore path forever.
+
+Worth noting what the numbers *do* say about the restore: it is layout-bound, on a tree whose flex layout alone is 125 leaf samples. That is a real finding for a later phase, and it is not a threading problem.
+
+### Phase close — what landed, what is still owed {#record-close}
+
+**Landed and measured**, all on the restored `session-transcript-basic` deck sampled through the app-test bundle's own WebContent process:
+
+| | Before | After |
+|---|---|---|
+| Deck at rest, DOM writes | 0/s | 0/s (already silent — the transcript was never the burn) |
+| Pulse detail open, DOM writes | 64/s | **0/s** |
+| Pulse detail open, busy | 5.5% | **2.8%** |
+| Typing, frame gap p50 / p95 | — | **17ms / 18ms**, gated |
+
+Three gates committed: at0291 (the instruments see what they claim), at0292 (a settled deck writes nothing), at0293 (typing does not stretch a frame). at0292 reopens its measured window once before failing — one window in roughly eight caught the tail of the transient workspace's changeset churn, and a deck that is genuinely writing fails both windows.
+
+**Two hypotheses died, which is most of what this phase bought.** [H6] — the after-layout walk is a function of layer population — is refuted by dose-response, so no further effort should go to tree breadth. And [Q04] found no worker target: the replay ingest costs 2ms. Both were IN lists before this phase and are closed lists after it.
+
+**Still owed, and neither is mine to do:**
+
+1. **The release re-baseline.** Every number here is from a controlled deck that rests at 1.6%; the 8.3% baseline in `#top` is the user's own deck, with surfaces this corpus cannot mount. The model says that gap is ~7 additional rendering updates per second at the measured ~10ms each. Confirming it needs `scripts/perf-resize-profile.sh dev.tugtool.app idle 5` on a genuinely idle release deck — one nobody is driving. A sample taken mid-session reads 12.5% and means nothing.
+2. **The sparkline eyeball** (Risk R03). Screenshots confirm the tapes paint their staircase and area fill; stroke weight and fill alpha at real sizes are a human call.
+
+**And one hypothesis is now the live one.** The audited card showed 241 walk samples at 1,603 stacking contexts; this deck shows 37 at 4,117. Population is ruled out, so the next candidate is **composited layers — actual backing stores** — which script cannot count and the Web Inspector Layers tab reports directly, with reasons, on the user's own deck. That is where the typing charge resumes.

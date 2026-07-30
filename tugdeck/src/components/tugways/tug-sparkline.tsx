@@ -30,11 +30,20 @@
  * The sampled value is a rolling ~1s output rate, so it rises smoothly with
  * activity and falls to zero (baseline) when output stops.
  *
+ * WHERE THE PIXELS ARE MADE. The tape is a `<canvas>` whose context is
+ * transferred to a shared render worker, so the four-times-a-second geometry
+ * write happens off the main thread and commits to the compositor without
+ * waking the page. Everything that needs the DOM or the stores stays here:
+ * the sample timer, dormancy, the WAAPI scroll, the visibility gate, and
+ * resolving colors from computed style. The geometry itself lives in
+ * `lib/sparkline-geometry.ts` and is shared with the on-main fallback, so
+ * there is only ever one staircase implementation.
+ *
  * Laws: [L13] motion is a WAAPI transform, never an rAF/timer-driven frame
- *       loop (the timer samples data, it does not animate); [L06] geometry is
- *       written straight to SVG attributes — no React state; [L03] setup in
+ *       loop (the timer samples data, it does not animate); [L06] appearance
+ *       is painted and DOM-attributed — no React state; [L03] setup in
  *       `useLayoutEffect`; [L19] `.tsx`/`.css` pair; [L21] adapted algorithm
- *       noticed.
+ *       noticed; [L27] the worker entry is released in the effect's cleanup.
  *
  * Decoupled from any data source: the caller passes `getSeries` (oldest→newest
  * bins) and the bin width; the component samples it on its own cadence.
@@ -46,6 +55,18 @@ import "./tug-sparkline.css";
 
 import React, { useLayoutEffect, useRef } from "react";
 
+import {
+  drawSparkline,
+  pruneSparklineTape,
+  SPARKLINE_AREA_ALPHA,
+  SPARKLINE_LINE_ALPHA,
+  SPARKLINE_LINE_WIDTH,
+  type SparklineColors,
+  type SparklineGeometry,
+  type SparklinePoint,
+} from "@/lib/sparkline-geometry";
+import type { SparklineWorkerRequest } from "@/lib/workers/sparkline-render-worker";
+import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import { isTugMotionEnabled } from "./scale-timing";
 
 /**
@@ -121,11 +142,137 @@ export const sparklineCurves = {
       1 - Math.exp(-k * x),
 };
 
-interface TickPoint {
-  /** Sample time, ms — fixed forever once written. */
-  t: number;
-  /** Value 0..1 of full scale — fixed forever once written. */
-  v: number;
+/**
+ * The shared render worker, built on first use and kept for the page's life —
+ * one thread for every tape, not one per tape. Null when the platform cannot
+ * transfer a canvas, which routes every instance to the on-main fallback.
+ */
+let renderWorker: Worker | null | undefined;
+let nextSparklineId = 1;
+
+function sparklineWorker(): Worker | null {
+  if (renderWorker !== undefined) return renderWorker;
+  renderWorker =
+    typeof Worker !== "undefined" &&
+    typeof HTMLCanvasElement !== "undefined" &&
+    typeof HTMLCanvasElement.prototype.transferControlToOffscreen === "function"
+      ? new Worker(
+          new URL("@/lib/workers/sparkline-render-worker.ts", import.meta.url),
+          { type: "module" },
+        )
+      : null;
+  return renderWorker;
+}
+
+/**
+ * A claimed canvas plus whichever thread is drawing on it. The two paths are
+ * the same code either way — `lib/sparkline-geometry.ts` owns the staircase —
+ * so a platform without transferable canvases loses the thread, not the
+ * picture.
+ */
+interface Painter {
+  draw(tape: readonly SparklinePoint[], t0: number, now: number): void;
+  /** Re-read the resolved color and weights, then repaint. */
+  refreshColors(t0: number): void;
+  release(): void;
+}
+
+/**
+ * Read what the cascade still owns. The line and area were `currentColor`
+ * with fixed opacities in CSS; a canvas has no cascade, so the resolved values
+ * are read here and re-posted only when they can have changed — a theme swap,
+ * or the dominant-channel stamp moving the container's `color`. Reading
+ * computed style forces a style resolution, which is precisely what this
+ * conversion exists to keep off the sample loop.
+ */
+function resolveSparklineColors(container: HTMLElement | null): SparklineColors {
+  const fallback: SparklineColors = {
+    line: "currentColor",
+    area: "currentColor",
+    lineAlpha: SPARKLINE_LINE_ALPHA,
+    areaAlpha: SPARKLINE_AREA_ALPHA,
+    lineWidth: SPARKLINE_LINE_WIDTH,
+  };
+  if (container === null) return fallback;
+  const style = getComputedStyle(container);
+  // Weight knobs a consumer may retune — the Pulse card's rows draw a
+  // brighter line over a quieter fill than the compact strip does. Declared
+  // nowhere by default, so an ancestor's override always wins and the
+  // fallback lives at point of use.
+  const num = (prop: string, dflt: number): number => {
+    const raw = style.getPropertyValue(prop).trim();
+    if (raw === "") return dflt;
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : dflt;
+  };
+  return {
+    line: style.color,
+    area: style.color,
+    lineAlpha: num("--tugx-sparkline-line-alpha", SPARKLINE_LINE_ALPHA),
+    areaAlpha: num("--tugx-sparkline-area-alpha", SPARKLINE_AREA_ALPHA),
+    lineWidth: num("--tugx-sparkline-line-width", SPARKLINE_LINE_WIDTH),
+  };
+}
+
+function makePainter(
+  canvas: HTMLCanvasElement,
+  container: HTMLElement | null,
+  geometry: SparklineGeometry,
+): Painter {
+  let colors = resolveSparklineColors(container);
+  const worker = sparklineWorker();
+
+  if (worker !== null) {
+    const id = nextSparklineId++;
+    const offscreen = canvas.transferControlToOffscreen();
+    const init: SparklineWorkerRequest = {
+      kind: "init",
+      id,
+      canvas: offscreen,
+      colors,
+      ...geometry,
+    };
+    worker.postMessage(init, [offscreen]);
+    let tapeSnapshot: SparklinePoint[] = [];
+    return {
+      draw(tape, t0, now) {
+        tapeSnapshot = tape.slice();
+        worker.postMessage({
+          kind: "tape",
+          id,
+          points: tapeSnapshot,
+          t0,
+          now,
+        } satisfies SparklineWorkerRequest);
+      },
+      refreshColors(t0) {
+        colors = resolveSparklineColors(container);
+        worker.postMessage({
+          kind: "colors",
+          id,
+          colors,
+          t0,
+        } satisfies SparklineWorkerRequest);
+      },
+      release() {
+        worker.postMessage({ kind: "dispose", id } satisfies SparklineWorkerRequest);
+      },
+    };
+  }
+
+  const ctx = canvas.getContext("2d");
+  let last: { tape: readonly SparklinePoint[]; t0: number } = { tape: [], t0: 0 };
+  return {
+    draw(tape, t0) {
+      last = { tape, t0 };
+      if (ctx !== null) drawSparkline(ctx, geometry, colors, tape, t0);
+    },
+    refreshColors(t0) {
+      colors = resolveSparklineColors(container);
+      if (ctx !== null) drawSparkline(ctx, geometry, colors, last.tape, t0);
+    },
+    release() {},
+  };
 }
 
 export function TugSparkline({
@@ -173,40 +320,76 @@ export function TugSparkline({
 }): React.ReactElement {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
-  const lineRef = useRef<SVGPolylineElement | null>(null);
-  const areaRef = useRef<SVGPolygonElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  /**
+   * The painter, claimed by the effect below and used by the tape effect
+   * after it. A ref, not state — nothing renders from it ([L06]).
+   */
+  const painterRef = useRef<Painter | null>(null);
 
   // Scroll speed derived from the single time-span knob and the width.
   const pxPerSec = width / VISIBLE_SECONDS;
   const epochPx = EPOCH_S * pxPerSec;
   const svgWidth = Math.ceil(width + epochPx + 8);
+  // The 1px line is drawn inside an overflow:hidden box. Painting the zero
+  // baseline flush at the bottom edge (height - 0.5) leaves its stroke one
+  // sub-pixel from the clip, so some bar heights / device-pixel ratios round
+  // it away. Reserve a 1px floor so the baseline and the area's bottom always
+  // stay inside the box.
+  const FLOOR = 1;
+  const baselineY = height - FLOOR - 0.5;
+  const amplitude = height - FLOOR - 1;
+
+  /**
+   * Claim the canvas. This is its own effect, scoped to the geometry alone,
+   * because `transferControlToOffscreen` may be called exactly once per
+   * element — folded into the tape effect it would throw the second time a
+   * caller passed a fresh `getSeries`. The canvas carries a `key` built from
+   * the same geometry, so the only run that could meet a spent element is one
+   * where React has already replaced it.
+   */
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null) return;
+
+    const dpr = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
+    const geometry: SparklineGeometry = {
+      width,
+      svgWidth,
+      height,
+      dpr,
+      baselineY,
+      amplitude,
+      pxPerSec,
+      retainMs: DORMANT_AFTER_MS,
+    };
+    canvas.width = Math.ceil(svgWidth * dpr);
+    canvas.height = Math.ceil(height * dpr);
+    canvas.style.width = `${svgWidth}px`;
+    canvas.style.height = `${height}px`;
+
+    const painter = makePainter(canvas, containerRef.current, geometry);
+    painterRef.current = painter;
+    return () => {
+      painter.release();
+      painterRef.current = null;
+    };
+  }, [width, height, svgWidth, pxPerSec, baselineY, amplitude]);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
     const track = trackRef.current;
-    const line = lineRef.current;
-    const area = areaRef.current;
-    if (track === null || line === null || area === null) return;
+    if (track === null) return;
 
     const motion = isTugMotionEnabled();
-    // The 1px line is drawn inside an overflow:hidden box. Painting the zero
-    // baseline flush at the bottom edge (height - 0.5) leaves its stroke one
-    // sub-pixel from the clip, so some bar heights / device-pixel ratios round
-    // it away. Reserve a 1px floor so the baseline and the area's bottom always
-    // stay inside the box.
-    const FLOOR = 1;
-    const baselineY = height - FLOOR - 0.5;
-    const amplitude = height - FLOOR - 1;
     const rateBins = Math.max(1, Math.round(RATE_WINDOW_MS / binMs));
-    const tape: TickPoint[] = []; // append-only while live; points never mutated
+    const tape: SparklinePoint[] = []; // append-only while live; never mutated
     let t0 = Date.now();
     let anim: Animation | null = null;
     let timer: number | null = null;
     let dormant = false;
     let inView = true;
     let lastNonZeroAt = 0;
-
-    const yOf = (v: number): number => baselineY - v * amplitude;
 
     // The current rolling rate: sum of the most recent `rateBins` buckets,
     // taken as a fraction of full scale, shaped by `curve`, then clamped. The
@@ -221,39 +404,14 @@ export function TugSparkline({
       return Math.min(1, Math.max(0, curve(sum / fullScale)));
     };
 
-    const xOf = (t: number): number => width + ((t - t0) / 1000) * pxPerSec;
-
     const redraw = (): void => {
       const now = Date.now();
-      const cutoff = now - (VISIBLE_SECONDS + PRUNE_MARGIN_S) * 1000;
-      while (tape.length > 0 && tape[0].t < cutoff) tape.shift();
-      if (tape.length === 0) {
-        line.setAttribute("points", "");
-        area.setAttribute("points", "");
-        return;
-      }
-      // Sample-and-hold STAIRCASE: each value is held flat until the next
-      // sample, then steps. Because the held value is drawn flat, when the
-      // next sample lands that segment is ALREADY flat at that value — it
-      // freezes unchanged. Nothing left of the newest sample ever moves.
-      const pts: string[] = [];
-      pts.push(`${xOf(tape[0].t).toFixed(1)},${yOf(tape[0].v).toFixed(1)}`);
-      for (let i = 1; i < tape.length; i++) {
-        const x = xOf(tape[i].t).toFixed(1);
-        pts.push(`${x},${yOf(tape[i - 1].v).toFixed(1)}`); // flat hold to here
-        pts.push(`${x},${yOf(tape[i].v).toFixed(1)}`); // step to new value
-      }
-      // Held tail: the pen draws the current value flat PAST the right edge,
-      // so the edge is always covered — no empty gap, no pop.
-      const lastV = yOf(tape[tape.length - 1].v).toFixed(1);
-      pts.push(`${svgWidth.toFixed(1)},${lastV}`);
+      pruneSparklineTape(tape, now, DORMANT_AFTER_MS);
+      painterRef.current?.draw(tape, t0, now);
+    };
 
-      line.setAttribute("points", pts.join(" "));
-      const firstX = pts[0].slice(0, pts[0].indexOf(","));
-      area.setAttribute(
-        "points",
-        `${firstX},${baselineY} ${pts.join(" ")} ${svgWidth},${baselineY}`,
-      );
+    const repaintColors = (): void => {
+      painterRef.current?.refreshColors(t0);
     };
 
     // One sample → one permanent point at "now" (the right edge), then redraw.
@@ -281,6 +439,9 @@ export function TugSparkline({
           stampedChannel = channel;
           if (channel === null) container.removeAttribute("data-activity-channel");
           else container.setAttribute("data-activity-channel", channel);
+          // The stamp is what the tint CSS selects on, so the resolved
+          // color has just changed under the canvas.
+          repaintColors();
         }
       }
       // The window has been flat edge to edge and a wake channel exists —
@@ -392,6 +553,7 @@ export function TugSparkline({
       stampedChannel = mountChannel;
       if (mountChannel !== null) {
         container.setAttribute("data-activity-channel", mountChannel);
+        repaintColors();
       }
     }
     rebuildTape(Date.now());
@@ -442,10 +604,16 @@ export function TugSparkline({
         : null;
     if (observer !== null && container !== null) observer.observe(container);
 
+    // A theme swap changes the resolved `color` the canvas painted with.
+    // This is a callback set, not a timer or an observer — it costs nothing
+    // at rest.
+    subscribeThemeChange(repaintColors);
+
     return () => {
       stopTimer();
       observer?.disconnect();
       unsubscribe?.();
+      unsubscribeThemeChange(repaintColors);
       if (anim !== null) {
         anim.onfinish = null;
         anim.cancel();
@@ -474,10 +642,14 @@ export function TugSparkline({
       aria-hidden
     >
       <div ref={trackRef} className="tug-sparkline-track">
-        <svg width={svgWidth} height={height}>
-          <polygon ref={areaRef} className="tug-sparkline-area" points="" />
-          <polyline ref={lineRef} className="tug-sparkline-line" points="" />
-        </svg>
+        {/* Keyed on the geometry it will be transferred with: a canvas can be
+            handed to a worker once, so a geometry change must arrive as a new
+            element rather than a second transfer of a spent one. */}
+        <canvas
+          key={`${svgWidth}x${height}`}
+          ref={canvasRef}
+          className="tug-sparkline-canvas"
+        />
       </div>
     </div>
   );
