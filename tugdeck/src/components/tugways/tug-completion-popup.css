@@ -151,6 +151,17 @@ body {
   cursor: default;
 }
 
+/* Stands where the list would: same seam and rhythm as a row, but prose
+   rather than a path, and unselectable — there is nothing to open. */
+.tug-completion-popup-empty {
+  padding: var(--tug-space-md) var(--tug-space-xl);
+  border-top: 1px solid var(--tugx-completion-popup-border);
+  /* @tug-renders-on: --tugx-completion-popup-bg */
+  color: var(--tugx-completion-popup-placeholder);
+  font-size: var(--tug-font-size-sm);
+  cursor: default;
+}
+
 .tug-completion-popup-row[data-selected="true"] {
   /* @tug-renders-on: --tugx-completion-popup-row-sel-bg */
   background-color: var(--tugx-completion-popup-row-sel-bg);

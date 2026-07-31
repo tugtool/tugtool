@@ -65,6 +65,7 @@ function parseResponsePayload(payload: unknown): FileTreeResultSnapshot | null {
  */
 export class FileTreeStore {
   private _snapshot: FileTreeResultSnapshot = { ...EMPTY_SNAPSHOT };
+  private _responded = false;
   private _listeners: Set<() => void> = new Set();
   private _unsubscribeFeed: (() => void) | null = null;
   private _lastPayloadRef: unknown = undefined;
@@ -102,9 +103,23 @@ export class FileTreeStore {
     if (!parsed) return;
 
     this._snapshot = parsed;
+    this._responded = true;
     for (const listener of this._listeners) {
       listener();
     }
+  }
+
+  /**
+   * Whether any FILETREE response has landed for this workspace yet.
+   *
+   * The initial snapshot is indistinguishable from a real empty answer — both
+   * are `{query: "", results: []}` — so a caller that wants to say "this
+   * directory has no files" rather than leave a blank panel has to know the
+   * backend actually answered. Flips once and stays true for the store's life;
+   * a store is per-workspace, so a root change builds a fresh one.
+   */
+  hasResponded(): boolean {
+    return this._responded;
   }
 
   /** Subscribe to store updates. Returns an unsubscribe function. */

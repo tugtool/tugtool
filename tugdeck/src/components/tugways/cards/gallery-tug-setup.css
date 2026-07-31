@@ -65,6 +65,7 @@
    * hops as a step grows. */
   --tug-setup-row-h: 60px;
   --tug-setup-row-offer-h: 96px;
+  --tug-setup-row-dir-h: 104px;
   --tug-setup-dot: 14px;
   --tug-setup-headline-gap: 10px;
 }
@@ -85,6 +86,10 @@
 
 .cg-setup-step[data-step="local-ai"] {
   min-height: var(--tug-setup-row-offer-h);
+}
+
+.cg-setup-step[data-step="project-dir"] {
+  min-height: var(--tug-setup-row-dir-h);
 }
 
 .cg-setup-step[data-status="pending"] {
@@ -132,9 +137,15 @@
   gap: var(--tug-space-sm);
 }
 
-.cg-setup-step-body .tug-progress-indicator {
+.cg-setup-step-body .tug-progress-indicator,
+.cg-setup-step-body .tug-file-chooser {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.cg-setup-step[data-step="project-dir"] .cg-setup-step-body {
+  margin-top: var(--tug-space-sm);
+  gap: var(--tug-space-md);
 }
 
 .cg-setup-step-body .tug-progress-indicator-value .tug-label {

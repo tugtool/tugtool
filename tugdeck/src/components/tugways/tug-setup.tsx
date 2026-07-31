@@ -620,24 +620,41 @@ export function TugSetup(): ReactElement {
         detail: projectDirConfirmed ? projectPathValue : storedProjectPath,
       };
     }
-    const chooser = (
-      <TugFileChooser
-        value={projectPathValue}
-        onChange={setProjectPathDraft}
-        base={projectPathValue !== "" ? projectPathValue : (hostFacts?.home ?? "/")}
-        kind="directory"
-        onSubmit={handleConfirmProjectDir}
-        disabled={projectDirBusy}
-        aria-label="Projects folder"
-      />
+    // The chooser and its confirm button ride the body together on one
+    // full-width line, rather than the button hanging in the row's action
+    // slot. The action slot would take a fixed column out of the row's width,
+    // and the field — the thing this step is actually about — would get what
+    // was left. On its own line it gets the whole row.
+    const chooser = (label: string): ReactElement => (
+      <>
+        <TugFileChooser
+          value={projectPathValue}
+          onChange={setProjectPathDraft}
+          base={projectPathValue !== "" ? projectPathValue : (hostFacts?.home ?? "/")}
+          kind="directory"
+          size="md"
+          onSubmit={handleConfirmProjectDir}
+          disabled={projectDirBusy}
+          aria-label="Projects folder"
+        />
+        <TugPushButton
+          size="sm"
+          emphasis={projectDirError !== null ? "outlined" : "filled"}
+          role={projectDirError !== null ? "danger" : "action"}
+          disabled={projectDirBusy}
+          onClick={handleConfirmProjectDir}
+        >
+          {label}
+        </TugPushButton>
+      </>
     );
     if (projectDirBusy) {
       return {
         key,
         status: "busy",
         label: "Choose your projects folder",
-        body: chooser,
-        cta: { label: "Creating…", onClick: handleConfirmProjectDir },
+        detail: "Creating the folder…",
+        body: chooser("Creating…"),
       };
     }
     if (projectDirError !== null) {
@@ -646,17 +663,15 @@ export function TugSetup(): ReactElement {
         status: "error",
         label: "Choose your projects folder",
         detail: `Couldn't create ${projectDirError}.`,
-        body: chooser,
-        cta: { label: "Retry", onClick: handleConfirmProjectDir },
+        body: chooser("Retry"),
       };
     }
     return {
       key,
       status: "active",
       label: "Choose your projects folder",
-      detail: "Tug opens here when nothing else is in front — you can change it later in Settings.",
-      body: chooser,
-      cta: { label: "Use This Folder", onClick: handleConfirmProjectDir },
+      detail: "Tug opens here when nothing else is in front.",
+      body: chooser("Use This Folder"),
     };
   })();
 

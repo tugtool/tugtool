@@ -42,7 +42,7 @@ import { TugCompletionPopup } from "@/components/tugways/tug-completion-popup";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
-import { probeDirExistence } from "@/lib/dir-existence";
+import { probeDirs } from "@/lib/dir-existence";
 import type { TugbankClient } from "@/lib/tugbank-client";
 import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
 import { FeedId } from "@/protocol";
@@ -108,6 +108,40 @@ function workspaceFilter(workspaceKey: string): FeedStoreFilter {
 /** A path's last component — what the bar and the switcher name it by. */
 function leafName(path: string): string {
   return path.replace(/\/+$/, "").split("/").pop() ?? "";
+}
+
+/**
+ * Menu labels for `paths`, one per path, in order.
+ *
+ * A leaf name alone is the right label right up until two candidates share
+ * one — `~/src/tugtool` beside a worktree's `tugtool` reads as the same place
+ * twice. When leaves collide, every colliding entry grows parent segments
+ * until it is distinct, so the menu never shows two identical rows that go
+ * somewhere different. Entries whose leaf is already unique keep the short
+ * label — disambiguation is paid for only where it is needed.
+ */
+export function switcherLabels(paths: readonly string[]): string[] {
+  const trimmed = paths.map((p) => p.replace(/\/+$/, ""));
+  const leaves = trimmed.map(leafName);
+  const collides = leaves.map(
+    (leaf, i) => leaves.some((other, j) => j !== i && other === leaf),
+  );
+  return trimmed.map((path, i) => {
+    if (!collides[i]) return leaves[i];
+    const segments = path.split("/").filter((s) => s !== "");
+    // Grow leftward until this label is unlike every other colliding one.
+    for (let take = 2; take <= segments.length; take += 1) {
+      const label = segments.slice(-take).join("/");
+      const unique = trimmed.every((other, j) => {
+        if (j === i || !collides[j]) return true;
+        const otherSegments = other.split("/").filter((s) => s !== "");
+        return otherSegments.slice(-take).join("/") !== label;
+      });
+      if (unique) return label;
+    }
+    // Identical tails all the way up: the full path is the only honest label.
+    return path;
+  });
 }
 
 /**
@@ -297,9 +331,14 @@ function OpenQuicklyBody(): React.ReactElement {
   //
   // The candidate list is built once, when the popup opens (Risk R01): the
   // frontmost binding, the default directory, then recent projects. Deriving
-  // it per keystroke would race deck reordering under the user's hands. The
-  // existence filter is a round trip, so the list arrives a beat after the
-  // popup and the control renders with what it has.
+  // it per keystroke would race deck reordering under the user's hands.
+  //
+  // The one round trip does double duty. It drops directories that no longer
+  // exist, and it collapses spellings that name the same directory: the same
+  // tree reached through a mount and its symlink is two entries in recents but
+  // one place, and the menu must not offer it twice. Only the server can say
+  // they are the same ([L29]), so the answer comes back with the existence
+  // check rather than being guessed here.
   const [candidates, setCandidates] = useState<string[]>(() =>
     rootCandidates(bindingRef.current?.projectDir ?? null, defaultPath, client),
   );
@@ -308,11 +347,23 @@ function OpenQuicklyBody(): React.ReactElement {
     if (didFilterRef.current) return;
     didFilterRef.current = true;
     let cancelled = false;
-    void probeDirExistence(candidates).then((exists) => {
+    void probeDirs(candidates).then(({ exists, canonical }) => {
       if (cancelled) return;
-      // Absent from the map means unknown (probe failure, or past the
-      // server's batch cap) — keep those, like the picker does.
-      setCandidates((prev) => prev.filter((p) => exists[p] !== false));
+      setCandidates((prev) => {
+        const seen = new Set<string>();
+        return prev.filter((path) => {
+          // Absent from the map means unknown (probe failure, or past the
+          // server's batch cap) — keep those, like the picker does.
+          if (exists[path] === false) return false;
+          // Unresolved paths fall back to their own spelling as identity, so
+          // a probe failure degrades to the old string dedup rather than
+          // collapsing everything into one entry.
+          const identity = canonical[path] ?? path.replace(/\/+$/, "");
+          if (seen.has(identity)) return false;
+          seen.add(identity);
+          return true;
+        });
+      });
     });
     return () => {
       cancelled = true;
@@ -320,6 +371,11 @@ function OpenQuicklyBody(): React.ReactElement {
     // Built once per popup open; `candidates` is the seed it reads, not a
     // dependency that should re-run it.
   }, []);
+
+  const candidateLabels = useMemo(
+    () => switcherLabels(candidates),
+    [candidates],
+  );
 
   const switcherId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
@@ -340,15 +396,18 @@ function OpenQuicklyBody(): React.ReactElement {
       <ResponderScope>
         <div ref={responderRef as (el: HTMLDivElement | null) => void}>
           <TugPopupButton
-            label={leafName(activePath ?? "")}
+            label={
+              candidateLabels[candidates.indexOf(activePath ?? "")] ??
+              leafName(activePath ?? "")
+            }
             aria-label="Search directory"
             size="sm"
             senderId={switcherId}
             data-testid={SWITCHER_MENU}
-            items={candidates.map((path) => ({
+            items={candidates.map((path, i) => ({
               action: TUG_ACTIONS.SELECT_VALUE,
               value: path,
-              label: leafName(path),
+              label: candidateLabels[i],
             }))}
           />
         </div>
@@ -361,6 +420,21 @@ function OpenQuicklyBody(): React.ReactElement {
   // directory while its acquisition is still in flight.
   const projectLeaf = leafName(activePath ?? projectDir ?? "");
 
+  // What an empty result list means, answered at the moment it is rendered.
+  // A directory Tug just created for you is genuinely empty, and a blank
+  // panel there reads as a hang rather than as an answer — so say so. Before
+  // the search backend has answered there is nothing to report yet, and the
+  // panel stays bare rather than flashing "no files" at a directory that has
+  // plenty.
+  const emptyLabel = useCallback((): string | null => {
+    const store = stackRef.current?.fileTreeStore;
+    if (store === undefined || !store.hasResponded()) return null;
+    if (store.getSnapshot().query !== "") return `No files matching that name`;
+    return projectLeaf !== ""
+      ? `No files in ${projectLeaf}`
+      : "This folder is empty";
+  }, [projectLeaf]);
+
   return (
     <TugCompletionPopup
       placeholder={
@@ -371,6 +445,7 @@ function OpenQuicklyBody(): React.ReactElement {
       onDismiss={closeOpenQuickly}
       accessory={switcher}
       dismissGuard={dismissGuard}
+      emptyLabel={emptyLabel}
     />
   );
 }

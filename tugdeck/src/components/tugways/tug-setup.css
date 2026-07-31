@@ -40,6 +40,12 @@
    * one-line rows keep, and held constant across the offer, the download, and
    * the result so the panel never hops between them. */
   --tug-setup-row-offer-h: 96px;
+  /* The projects-folder row carries a real control, not prose: label, one
+   * line of detail, and a full-width path field with its confirm button. Sized
+   * to seat those three on the same ~10px margins the one-line rows keep, and
+   * held constant across choose / creating / failed / chosen so the panel
+   * never hops as the step settles. */
+  --tug-setup-row-dir-h: 104px;
   /* Dot diameter (mirrors DOT_SIZE in tug-setup.tsx) + the headline gap; used
    * to indent the detail line so it aligns under the label, not the dot. */
   --tug-setup-dot: 14px;
@@ -58,6 +64,10 @@
 
 .tug-setup-step[data-step="local-ai"] {
   min-height: var(--tug-setup-row-offer-h);
+}
+
+.tug-setup-step[data-step="project-dir"] {
+  min-height: var(--tug-setup-row-dir-h);
 }
 
 .tug-setup-step[data-status="pending"] {
@@ -134,15 +144,18 @@
 }
 
 /* The projects-folder chooser takes the row's full slack, the same claim the
- * download bar makes. It sits taller than the 6px bar the body was first sized
- * for, so it gets a little breathing room above the row's baseline block. */
+ * download bar makes; its confirm button keeps its intrinsic width beside it.
+ * The body sits taller here than the 6px download bar it was first sized for,
+ * so it gets its own gap above — the detail line is prose about the control,
+ * and they should not read as one block. */
 .tug-setup-step-body .tug-file-chooser {
   flex: 1 1 auto;
   min-width: 0;
 }
 
 .tug-setup-step[data-step="project-dir"] .tug-setup-step-body {
-  padding-top: var(--tug-space-xs);
+  margin-top: var(--tug-space-sm);
+  gap: var(--tug-space-md);
 }
 
 .tug-setup-step-action {

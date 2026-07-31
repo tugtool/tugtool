@@ -290,13 +290,26 @@ function buildFlow(
   // default. Read-only here: the spike drives states from the picker, not from
   // what is typed.
   const projectDirChooser = (
-    <TugFileChooser
-      value={PROJECT_DIR}
-      onChange={() => {}}
-      base={PROJECT_DIR}
-      kind="directory"
-      aria-label="Projects folder"
-    />
+    label: string,
+    failed = false,
+  ): React.ReactElement => (
+    <>
+      <TugFileChooser
+        value={PROJECT_DIR}
+        onChange={() => {}}
+        base={PROJECT_DIR}
+        kind="directory"
+        size="md"
+        aria-label="Projects folder"
+      />
+      <TugPushButton
+        size="sm"
+        emphasis={failed ? "outlined" : "filled"}
+        role={failed ? "danger" : "action"}
+      >
+        {label}
+      </TugPushButton>
+    </>
   );
   const installed = install({
     status: "done",
@@ -491,10 +504,8 @@ function buildFlow(
           localAiDone,
           projectDir({
             status: "active",
-            detail:
-              "Tug opens here when nothing else is in front — you can change it later in Settings.",
-            body: projectDirChooser,
-            cta: { label: "Use This Folder", onClick: () => go("project_dir_creating") },
+            detail: "Tug opens here when nothing else is in front.",
+            body: projectDirChooser("Use This Folder"),
           }),
           open({ status: "pending", detail: "Choose your projects folder." }),
         ],
@@ -507,8 +518,8 @@ function buildFlow(
           localAiDone,
           projectDir({
             status: "busy",
-            body: projectDirChooser,
-            cta: { label: "Creating…", onClick: () => go("ready_to_open") },
+            detail: "Creating the folder…",
+            body: projectDirChooser("Creating…"),
           }),
           open({ status: "pending", detail: "Choose your projects folder." }),
         ],
@@ -522,8 +533,7 @@ function buildFlow(
           projectDir({
             status: "error",
             detail: `Couldn't create ${PROJECT_DIR}.`,
-            body: projectDirChooser,
-            cta: { label: "Retry", onClick: () => go("project_dir_creating") },
+            body: projectDirChooser("Retry", true),
           }),
           open({ status: "pending", detail: "Choose your projects folder." }),
         ],

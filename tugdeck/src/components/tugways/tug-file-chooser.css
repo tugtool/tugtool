@@ -22,15 +22,27 @@ input.tug-file-chooser-input {
   -moz-osx-font-smoothing: auto;
 }
 
-/* Square picker button matching the sm input's height (an explicit box —
+/* Square picker button matching the input's height (an explicit box —
    aspect-ratio collapses under flexbox). A touch of right margin sets it off
-   from the input. The descendant selector beats the button's own size class. */
+   from the input. The descendant selector beats the button's own size class,
+   which is why the square has to be restated per size rather than left to
+   TugPushButton: the three values mirror tug-input.css's sm / md / lg. */
 .tug-file-chooser [data-slot="tug-file-chooser-browse"] {
   flex-shrink: 0;
   width: 1.75rem;
   height: 1.75rem;
   padding: 0;
   margin-right: var(--tug-space-2xs);
+}
+
+.tug-file-chooser-size-md [data-slot="tug-file-chooser-browse"] {
+  width: 2rem;
+  height: 2rem;
+}
+
+.tug-file-chooser-size-lg [data-slot="tug-file-chooser-browse"] {
+  width: 2.25rem;
+  height: 2.25rem;
 }
 
 /* The completion overlay shows directory paths verbatim, in monospace, undoing

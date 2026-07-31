@@ -209,7 +209,10 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
         size={size}
         autoFocus={autoFocus}
         disabled={disabled}
-        className={`tug-file-chooser${className !== undefined ? ` ${className}` : ""}`}
+        // The size modifier rides the class list because TugComboBox takes a
+        // fixed prop set and forwards no arbitrary attributes; the square
+        // Browse button's box is restated per size in the CSS.
+        className={`tug-file-chooser tug-file-chooser-size-${size}${className !== undefined ? ` ${className}` : ""}`}
         inputClassName="tug-file-chooser-input"
         overlaySlot="tug-file-chooser-overlay"
         focusGroup={focusGroup}

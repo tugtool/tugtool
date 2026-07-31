@@ -17,15 +17,21 @@
  *   a card on a deck that has none. at0213 covers the same popup with no
  *   workspace at all; this one covers it with a workspace nothing bound.
  *
- * Gating
- * ------
- * `describe.skipIf(!SHOULD_RUN)`. CI and `bun x tsc --noEmit` runs without
- * `TUGAPP_APP_TEST=1` skip every test.
- *
  *   A second test drives the in-bar directory switcher: with the default
  *   directory and a recent project both on offer, picking the recent one must
  *   swap the search root — and the popup must survive its own menu opening,
  *   which portals outside the panel and so looks like focus leaving.
+ *
+ *   A third covers what the bar owes the user about the places it offers: two
+ *   spellings of one directory are one entry, two different directories that
+ *   share a leaf name are told apart, an empty directory says so instead of
+ *   showing a blank panel, and the popup keeps Tab so the switcher is
+ *   reachable without the mouse.
+ *
+ * Gating
+ * ------
+ * `describe.skipIf(!SHOULD_RUN)`. CI and `bun x tsc --noEmit` runs without
+ * `TUGAPP_APP_TEST=1` skip every test.
  *
  * @covers tugdeck/src/components/chrome/open-quickly-overlay.tsx
  * @covers tugdeck/src/lib/default-workspace-store.ts
@@ -34,7 +40,13 @@
  * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "bun:test";
 import { launchTugApp, type App } from "./_harness";
@@ -291,6 +303,88 @@ describe.skipIf(!SHOULD_RUN)(
           await app.close();
           rmSync(dir, { recursive: true, force: true });
           rmSync(other, { recursive: true, force: true });
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "the switcher names each place once, and an empty directory says so",
+      async () => {
+        // Three recents that exercise the two ways a menu of leaf names lies:
+        // `b/proj` is a symlink to `a/proj` — one directory, two spellings,
+        // and only the server can tell; `c/proj` is a different directory
+        // that happens to share the leaf. The default directory is empty.
+        const base = mkdtempSync(`${tmpdir()}/at0306-places-`);
+        mkdirSync(`${base}/tug`);
+        mkdirSync(`${base}/a/proj`, { recursive: true });
+        writeFileSync(`${base}/a/proj/alpha.txt`, "x\n");
+        mkdirSync(`${base}/b`);
+        symlinkSync(`${base}/a/proj`, `${base}/b/proj`);
+        mkdirSync(`${base}/c/proj`, { recursive: true });
+
+        const app = await launchTugApp({
+          testName: "at0306-open-quickly-places",
+        });
+        try {
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(OVERLAY_ROOT)}) !== null`,
+            { timeoutMs: 20000 },
+          );
+          await app.evalJS<null>(
+            `(window.__tug.setTugbankValue("dev.tugtool.app", "default-project-path", { kind: "string", value: ${JSON.stringify(`${base}/tug`)} }),
+              window.__tug.setTugbankValue("dev.tugtool.dev", "recent-projects", { kind: "json", value: { paths: [
+                ${JSON.stringify(`${base}/a/proj`)},
+                ${JSON.stringify(`${base}/b/proj`)},
+                ${JSON.stringify(`${base}/c/proj`)}
+              ] } }), null)`,
+          );
+
+          await app.evalJS<null>(
+            `(window.__tug.dispatchControlAction("open-quickly"), null)`,
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(SWITCHER)}) !== null`,
+            { timeoutMs: 8000 },
+          );
+
+          // The default directory is empty — say so rather than showing a
+          // blank panel that reads as a hang.
+          await app.waitForCondition<boolean>(
+            `(document.querySelector('[data-slot="tug-completion-popup-empty"]')
+               || {}).textContent === "No files in tug"`,
+            { timeoutMs: 15000 },
+          );
+
+          // The popup keeps Tab, so the browser's own order reaches the
+          // switcher. Without this the engine's focus walk advances the key
+          // view to a focusable behind the popup, and the resulting blur
+          // dismisses it — the switcher would be mouse-only.
+          expect(
+            await app.evalJS<string | null>(
+              `document.querySelector('[data-slot="tug-completion-popup"]')
+                 .getAttribute("data-tug-tab-consume")`,
+            ),
+          ).toBe("true");
+
+          await app.click(SWITCHER);
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) !== null`,
+            { timeoutMs: 8000 },
+          );
+          const items = JSON.parse(
+            await app.evalJS<string>(
+              `JSON.stringify(Array.from(document.querySelectorAll(${JSON.stringify(SWITCHER_ITEMS)}))
+                 .map(function (el) { return (el.textContent || "").trim(); }))`,
+            ),
+          ) as string[];
+
+          // The symlink collapsed into its target: three recents, two places.
+          // The two real `proj` directories are told apart by their parents.
+          expect(items).toEqual(["tug", "a/proj", "c/proj"]);
+        } finally {
+          await app.close();
+          rmSync(base, { recursive: true, force: true });
         }
       },
       TEST_TIMEOUT_MS,

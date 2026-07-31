@@ -52,6 +52,7 @@ import { Search } from "lucide-react";
 import "./tug-completion-popup.css";
 
 import { TugInput } from "./tug-input";
+import { TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import type { CompletionItem, CompletionProvider } from "@/lib/tug-text-types";
 
@@ -73,6 +74,18 @@ export interface TugCompletionPopupProps {
    * the field and focus reaching it does not dismiss.
    */
   accessory?: React.ReactNode;
+  /**
+   * Shown in place of the result list when the provider returns nothing — "no
+   * files here", as opposed to the blank panel that reads as "still thinking".
+   * Returning `null` renders nothing, which is what a caller that cannot yet
+   * tell the two apart should do.
+   *
+   * A callback rather than a string because the answer depends on state the
+   * popup does not own (has the search backend answered yet?) and is read at
+   * render time — the same render the provider's notification triggers, so the
+   * two can never disagree about whether results are in.
+   */
+  emptyLabel?: () => string | null;
   /**
    * Consulted before every non-Escape dismissal. Return `true` to hold the
    * popup open — what an {@link accessory} whose own menu is portalled
@@ -111,6 +124,22 @@ function renderLabel(
   return parts;
 }
 
+/** The empty-result panel, or nothing when the caller has no answer to give. */
+function renderEmpty(
+  emptyLabel: (() => string | null) | undefined,
+): React.ReactElement | null {
+  const text = emptyLabel?.() ?? null;
+  if (text === null) return null;
+  return (
+    <div
+      className="tug-completion-popup-empty"
+      data-slot="tug-completion-popup-empty"
+    >
+      {text}
+    </div>
+  );
+}
+
 export function TugCompletionPopup({
   placeholder = "Open Quickly",
   provider,
@@ -118,6 +147,7 @@ export function TugCompletionPopup({
   onDismiss,
   accessory,
   dismissGuard,
+  emptyLabel,
 }: TugCompletionPopupProps): React.ReactElement {
   const overlayRoot = useCanvasOverlay();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -230,6 +260,14 @@ export function TugCompletionPopup({
         data-slot="tug-completion-popup"
         role="dialog"
         aria-label={placeholder}
+        // The popup owns Tab while it is up ({@link TAB_CONSUME_ATTRIBUTE}).
+        // Without this the engine's capture-phase focus walk advances the key
+        // view to a focusable BEHIND the popup, which pulls DOM focus out of
+        // the field — and the blur dismisses the popup. Declaring the seam
+        // hands Tab back to the browser, whose native order runs field →
+        // accessory inside the panel, so Tab reaches the directory switcher
+        // and Shift-Tab returns to the field.
+        {...{ [TAB_CONSUME_ATTRIBUTE]: "true" }}
       >
         <div className="tug-completion-popup-field">
           <Search className="tug-completion-popup-field-icon" aria-hidden />
@@ -279,7 +317,9 @@ export function TugCompletionPopup({
               </li>
             ))}
           </ul>
-        ) : null}
+        ) : (
+          renderEmpty(emptyLabel)
+        )}
       </div>
     </div>,
     overlayRoot,
