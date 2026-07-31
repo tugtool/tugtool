@@ -84,7 +84,10 @@ import React from "react";
 import type { PropertyStore } from "@/components/tugways/property-store";
 import { ensureParsed } from "@/lib/markdown/parse-cache";
 import { recordRowParse } from "@/lib/markdown/parse-counters";
-import { annotateTranscript } from "@/lib/annotator/annotate-transcript";
+import {
+  annotateElement,
+  containerAwaitsVerdicts,
+} from "@/lib/annotator/annotate-content";
 import type { AnnotationContext } from "@/lib/annotator/types";
 import { useAnnotationScope } from "@/components/tugways/annotation-scope";
 import {
@@ -306,18 +309,34 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
     };
   }, [streamingStore, streamingPath]);
 
-  // Re-annotate when the context changes identity — the on-resume catalog
-  // race. The render effects above mark at block *build* time; a finalized
-  // block is hash-stable and never rebuilt, so if the transcript replayed
-  // from JSONL before the handshake catalog landed, its slash-command spans
-  // were built unmarked. This effect re-runs the pass over the
-  // already-rendered DOM once the catalog arrives — an idempotent
-  // add/remove sync, no DOM rebuild (scroll anchor preserved). Runs after
-  // the render effects so the container is populated. [L06] DOM-only.
+  // Re-mark already-rendered DOM when an annotation input arrives late.
+  // The render effects above mark at block *build* time (the full
+  // `annotateContent` pass, link detection included); this effect owns the
+  // two late-arrival cases, both entity-only re-marks over unchanged DOM —
+  // never a second link-detection or `normalize()` walk:
+  //
+  //  1. Context identity change — the on-resume catalog race, a cwd or
+  //     binding arriving. Rare, and legitimately global: every block
+  //     re-marks, which is exactly this effect re-running per instance.
+  //  2. A resolver verdict batch. Frequent while answers drain, so it is
+  //     *gated*: the pass stamps `data-tugx-awaiting` on containers that
+  //     met a pending verdict, and a batch re-marks only those. A block
+  //     whose references are all settled costs nothing per batch, and a
+  //     transcript with nothing outstanding costs nothing at all.
+  //
+  // Runs after the render effects so the container is populated. [L06]
+  // DOM-only; [L03] layout effect so the marks precede any gesture.
   React.useLayoutEffect(() => {
     const el = containerRef.current;
     if (el === null || annotation === undefined) return;
-    annotateTranscript(el, annotation);
+    annotateElement(el, annotation);
+    const subscribe = annotation.subscribe;
+    if (subscribe === undefined) return;
+    return subscribe(() => {
+      const target = containerRef.current;
+      if (target === null || !containerAwaitsVerdicts(target)) return;
+      annotateElement(target, annotation);
+    });
   }, [annotation]);
 
   return (

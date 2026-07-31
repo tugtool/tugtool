@@ -28,9 +28,14 @@
  *
  * **Honesty under failure.** The feed is shared with Open Quickly, so a
  * query the user fires mid-flight can land on top of ours. An answer that
- * does not match the question is ignored, and a question that goes
- * unanswered past a deadline returns to `unknown` — never `missing`. The
- * one thing this must never do is manufacture a link.
+ * does not match the question is ignored. A question that goes unanswered
+ * past a deadline is retried a bounded number of times — silently, from
+ * inside the queue, with the verdict still `pending` — and then recorded
+ * as a terminal `unknown`, never `missing`. Terminal matters: an
+ * unanswered question must not forget its verdict, because a forgotten
+ * verdict is re-asked by the very re-annotation its forgetting triggers,
+ * and that loop never converges. The one thing this must never do is
+ * manufacture a link.
  *
  * @module lib/annotator/file-name-resolution
  */
@@ -47,8 +52,16 @@ import { getConnection } from "../connection-singleton";
 import type { TugConnection } from "../../connection";
 import type { PathVerdict } from "./path-resolution";
 
-/** How long one query may go unanswered before it is retried later. */
+/** How long one query may go unanswered before it is re-queued. */
 const QUERY_TIMEOUT_MS = 4000;
+
+/**
+ * How many times one name is asked before its verdict is recorded as a
+ * terminal `unknown`. Retries exist because the feed is shared — a user's
+ * Open Quickly query can land on top of ours and eat the slot — not
+ * because asking harder makes an index answer differently.
+ */
+const MAX_QUERY_ATTEMPTS = 3;
 
 const UNKNOWN: PathVerdict = { state: "unknown" };
 const PENDING: PathVerdict = { state: "pending" };
@@ -96,6 +109,7 @@ function trimTrailingSlash(path: string): string {
  */
 export class FileNameResolutionStore {
   private readonly verdicts = new Map<string, PathVerdict>();
+  private readonly attempts = new Map<string, number>();
   private readonly queue: string[] = [];
   private readonly listeners = new Set<() => void>();
   private readonly feedStore: FeedStore;
@@ -129,8 +143,8 @@ export class FileNameResolutionStore {
   /**
    * What is known about `name` right now. Synchronous by contract — the
    * annotator's DOM pass calls this for every filename candidate it meets.
-   * A name never asked about is queued and reported `pending`; the answer
-   * bumps the version, and the re-annotation pass asks again.
+   * A name never asked about is queued and reported `pending` — the state
+   * that marks its container as awaiting; the answer's batch re-marks it.
    */
   lookup = (name: string): PathVerdict => {
     const known = this.verdicts.get(name);
@@ -160,12 +174,21 @@ export class FileNameResolutionStore {
     this.inFlight = next;
     this.timeoutHandle = setTimeout(() => {
       // Unanswered: the shared feed may have carried someone else's
-      // answer over ours. Forget the verdict so a later pass re-asks,
-      // rather than recording a "no" the index never gave.
+      // answer over ours. Re-queue a bounded number of times, then record
+      // a terminal `unknown`. Never delete the verdict and never notify —
+      // `pending` and `unknown` paint identically, so there is nothing to
+      // re-mark, and a deleted entry would be re-asked by the next pass
+      // forever.
       this.timeoutHandle = null;
-      this.verdicts.delete(next);
       this.inFlight = null;
-      this.notify();
+      const tried = (this.attempts.get(next) ?? 0) + 1;
+      if (tried < MAX_QUERY_ATTEMPTS) {
+        this.attempts.set(next, tried);
+        this.queue.push(next);
+      } else {
+        this.attempts.delete(next);
+        this.verdicts.set(next, UNKNOWN);
+      }
       this.pump();
     }, QUERY_TIMEOUT_MS);
     this.fileTree.sendQuery(next, this.projectDir);
@@ -182,6 +205,7 @@ export class FileNameResolutionStore {
       this.timeoutHandle = null;
     }
     this.inFlight = null;
+    this.attempts.delete(pendingQuery);
     const match = bestIndexMatch(snapshot.results, pendingQuery);
     this.verdicts.set(
       pendingQuery,

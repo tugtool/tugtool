@@ -76,9 +76,9 @@ describe("chunkPaths", () => {
 });
 
 describe("verdicts settle on the real store", () => {
-  test("an unseen path is unknown, and asking does not answer it", () => {
+  test("an unseen path is pending — queued, awaited, not yet answered", () => {
     const store = new PathResolutionStore();
-    expect(store.lookup("/repo/a.ts", null)).toEqual({ state: "unknown" });
+    expect(store.lookup("/repo/a.ts", null)).toEqual({ state: "pending" });
   });
 
   test("a confirmed path carries the canonical form the endpoint returned", () => {

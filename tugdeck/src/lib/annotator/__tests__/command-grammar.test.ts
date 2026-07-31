@@ -1,7 +1,7 @@
 /**
  * Pure-logic coverage for the annotator's command grammars.
  *
- * The DOM pass (`annotateTranscript`) marks `<code>` spans and requires a
+ * The DOM pass (`annotateContent`) marks `<code>` spans and requires a
  * real DOM at runtime — it's validated in the real app (the transcript
  * command gestures), not via fake-DOM render tests (project policy: no
  * jsdom / happy-dom).

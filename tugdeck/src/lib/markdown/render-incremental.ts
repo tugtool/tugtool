@@ -61,7 +61,7 @@
  * @module lib/markdown/render-incremental
  */
 
-import { annotateTranscript } from "@/lib/annotator/annotate-transcript";
+import { annotateContent } from "@/lib/annotator/annotate-content";
 import type { AnnotationContext } from "@/lib/annotator/types";
 import { DEFAULT_BLOCK_TRANSFORMERS } from "./block-transformers";
 import { enhanceFencedCode } from "./enhance-fenced-code";
@@ -208,7 +208,7 @@ function buildBlockElement(
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   enhanceImg(el);
-  annotateTranscript(el, annotation);
+  annotateContent(el, annotation);
   enhanceTable(el);
   void enhanceMath(el);
   void enhanceMermaid(el);
@@ -225,7 +225,7 @@ function updateBlockElement(
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   enhanceImg(el);
-  annotateTranscript(el, annotation);
+  annotateContent(el, annotation);
   enhanceTable(el);
   void enhanceMath(el);
   void enhanceMermaid(el);

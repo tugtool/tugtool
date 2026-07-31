@@ -40,6 +40,7 @@ import {
   NO_COMMIT_VERDICT,
 } from "@/lib/annotator/commit-resolution";
 import { makeReferenceResolver } from "@/lib/annotator/resolve-reference";
+import { VerdictBatcher } from "@/lib/annotator/verdict-batching";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { annotationFromEvent } from "@/lib/annotator/annotation-element";
 import { annotationEntryFor } from "@/lib/annotator/registry";
@@ -115,10 +116,16 @@ export function useKnownSlashCommand(
  * surface in the transcript; a surface that renders markdown *outside*
  * the transcript passes none and gets the state-free entity kinds only.
  *
- * The context object's identity is what re-annotation keys on
- * (`TugMarkdownBlock`'s re-run effect), so it is memoized on its inputs:
- * a new object means an input genuinely changed and the already-rendered
- * ink must be re-marked, not that a parent re-rendered.
+ * The context object's identity is deliberately **stable across verdict
+ * arrivals**. Identity changes only when a real input changes — the
+ * command catalog, the session cwd, the project binding — which is the
+ * everything-must-re-mark case, and those changes are rare and bounded.
+ * Verdicts instead travel through `context.subscribe` (a coalescing
+ * {@link VerdictBatcher} over the three resolver stores), so an answer
+ * about one path re-marks only the containers still awaiting one and
+ * never re-renders the transcript. Folding resolver versions into the
+ * memo here is the mistake that once re-annotated *and re-rendered* every
+ * block per answer; nothing here reads a version.
  */
 export function useAnnotationContext(
   sessionMetadataStore: SessionMetadataStore | undefined,
@@ -152,29 +159,6 @@ export function useAnnotationContext(
   const workspaceKey = binding?.workspaceKey ?? null;
   const names = fileNameResolverFor(projectDir, workspaceKey);
   const commits = commitResolverFor(projectDir, workspaceKey);
-  // Verdicts arrive asynchronously, long after the ink they belong to was
-  // painted. Folding each resolver's version into the context's identity
-  // is what turns an arrival into a re-annotation: the version changes,
-  // the context is a new object, and the block's re-run effect marks the
-  // references that just came back confirmed.
-  const pathVersion = useSyncExternalStore(
-    pathResolutionStore.subscribe,
-    pathResolutionStore.version,
-  );
-  const nameVersion = useSyncExternalStore(
-    useCallback(
-      (listener: () => void) => names?.subscribe(listener) ?? (() => {}),
-      [names],
-    ),
-    useCallback(() => names?.version() ?? 0, [names]),
-  );
-  const commitVersion = useSyncExternalStore(
-    useCallback(
-      (listener: () => void) => commits?.subscribe(listener) ?? (() => {}),
-      [commits],
-    ),
-    useCallback(() => commits?.version() ?? 0, [commits]),
-  );
   const resolvePath = useMemo(
     () => makeReferenceResolver({ paths: pathResolutionStore, names, cwd }),
     [names, cwd],
@@ -183,26 +167,27 @@ export function useAnnotationContext(
     () => (sha: string) => commits?.lookup(sha) ?? NO_COMMIT_VERDICT,
     [commits],
   );
+  // Verdicts arrive asynchronously, long after the ink they belong to was
+  // painted. They travel as batched notifications, not as context
+  // identity: consumers subscribe and re-mark only the containers still
+  // awaiting an answer. The batcher attaches to the stores lazily, so it
+  // needs no effect-cleanup of its own — the last consumer's unsubscribe
+  // detaches it.
+  const subscribe = useMemo(() => {
+    const sources = [pathResolutionStore, names, commits].filter(
+      (source): source is NonNullable<typeof source> => source !== null,
+    );
+    return new VerdictBatcher(sources).subscribe;
+  }, [names, commits]);
   return useMemo(
     () => ({
       isKnownSlashCommand,
       resolvePath,
       resolveCommit,
       commitRoot: projectDir,
+      subscribe,
     }),
-    // The versions are dependencies, not fields: the pass reads verdicts
-    // through the resolvers, but a new verdict has to produce a new
-    // context object or nothing would re-mark the waiting ink.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      isKnownSlashCommand,
-      resolvePath,
-      resolveCommit,
-      projectDir,
-      pathVersion,
-      nameVersion,
-      commitVersion,
-    ],
+    [isKnownSlashCommand, resolvePath, resolveCommit, projectDir, subscribe],
   );
 }
 

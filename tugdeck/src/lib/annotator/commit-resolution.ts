@@ -9,15 +9,19 @@
  *
  * The shape mirrors the other resolvers: `lookup` is synchronous and
  * answers from cache, an unseen sha is queued and reported `pending`, and
- * the answer bumps a version so the pass re-runs over ink already painted.
- * Commits are immutable, so a verdict is cached for the app's life and a
- * repeat pass costs nothing.
+ * the answer notifies so the waiting ink re-marks. Commits are immutable,
+ * so a verdict is cached for the app's life and a repeat pass costs
+ * nothing.
  *
  * Queries drain one at a time. The response feed is shared and single-slot
  * — every client sees every answer — so correlation is by `requestId`, and
  * a frame that answers someone else's question is ignored rather than
- * mistaken for ours. An unanswered question returns to `unknown`, never to
- * `missing`: an unreachable tugcast means we don't know.
+ * mistaken for ours. An unanswered question is retried a bounded number of
+ * times (silently, verdict still `pending`) and then recorded as a
+ * terminal `unknown`, never `missing`: an unreachable tugcast means we
+ * don't know. Terminal, because a forgotten verdict is re-asked by the
+ * very re-annotation its forgetting triggers, and that loop never
+ * converges.
  *
  * @module lib/annotator/commit-resolution
  */
@@ -28,8 +32,15 @@ import { getConnection } from "../connection-singleton";
 import type { TugConnection } from "../../connection";
 import { parseGitCommitFilesPayload } from "../git-commit-files-store";
 
-/** How long one query may go unanswered before it is retried later. */
+/** How long one query may go unanswered before it is re-queued. */
 const QUERY_TIMEOUT_MS = 8000;
+
+/**
+ * How many times one sha is asked before its verdict is recorded as a
+ * terminal `unknown` — the shared response feed can drop an answer, but
+ * an unreachable tugcast will not become reachable by asking harder.
+ */
+const MAX_QUERY_ATTEMPTS = 3;
 
 /** What is known about a commit-sha candidate. */
 export type CommitVerdict =
@@ -49,6 +60,7 @@ const MISSING: CommitVerdict = { state: "missing" };
 /** One project's commit-verdict cache. */
 export class CommitResolutionStore {
   private readonly verdicts = new Map<string, CommitVerdict>();
+  private readonly attempts = new Map<string, number>();
   private readonly queue: string[] = [];
   private readonly listeners = new Set<() => void>();
   private readonly feedStore: FeedStore;
@@ -104,19 +116,31 @@ export class CommitResolutionStore {
     if (sha === undefined) return;
     const connection = getConnection();
     if (connection === null) {
-      // No transport: forget the verdict so a later pass asks again.
-      this.verdicts.delete(sha);
-      this.notify();
+      // No transport: a terminal don't-know, silently — `pending` and
+      // `unknown` paint identically, and a deleted verdict would be
+      // re-asked by the next pass forever. Keep draining the queue; every
+      // entry meets the same answer.
+      this.verdicts.set(sha, UNKNOWN);
+      this.pump();
       return;
     }
     this.sequence += 1;
     const requestId = `annotator-${this.storeKey}-${this.sequence}`;
     this.inFlight = { sha, requestId };
     this.timeoutHandle = setTimeout(() => {
+      // Unanswered: re-queue a bounded number of times, then record a
+      // terminal `unknown`. Never delete and never notify — see the
+      // module doc on convergence.
       this.timeoutHandle = null;
-      this.verdicts.delete(sha);
       this.inFlight = null;
-      this.notify();
+      const tried = (this.attempts.get(sha) ?? 0) + 1;
+      if (tried < MAX_QUERY_ATTEMPTS) {
+        this.attempts.set(sha, tried);
+        this.queue.push(sha);
+      } else {
+        this.attempts.delete(sha);
+        this.verdicts.set(sha, UNKNOWN);
+      }
       this.pump();
     }, QUERY_TIMEOUT_MS);
     const query = { root: this.projectDir, requestId, sha };
@@ -140,9 +164,10 @@ export class CommitResolutionStore {
       this.timeoutHandle = null;
     }
     this.inFlight = null;
-    // No repo means the question was unanswerable, not answered "no" —
-    // forget it rather than record a verdict the project cannot support.
-    if (parsed.no_repo) this.verdicts.delete(pending.sha);
+    this.attempts.delete(pending.sha);
+    // No repo means the question was unanswerable, not answered "no" — a
+    // terminal don't-know, and silent: nothing painted changes.
+    if (parsed.no_repo) this.verdicts.set(pending.sha, UNKNOWN);
     else {
       // `git show` on a sha that does not resolve produces nothing, so an
       // empty file list is how "not a commit here" arrives.
@@ -152,8 +177,8 @@ export class CommitResolutionStore {
           ? MISSING
           : { state: "confirmed", paths: parsed.files.map((f) => f.path) },
       );
+      this.notify();
     }
-    this.notify();
     this.pump();
   }
 

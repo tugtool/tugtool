@@ -1,5 +1,5 @@
 /**
- * Shared vocabulary for the Transcript Annotator.
+ * Shared vocabulary for the content annotator.
  *
  * An **annotation** is an actionable entity in transcript ink: a URL, an
  * email address, a command line, a file path. Every annotation has a
@@ -76,4 +76,17 @@ export interface AnnotationContext {
    * bound to no project — then no sha resolves, and the field is unused.
    */
   commitRoot: string | null;
+  /**
+   * Verdict arrivals, batched. A consumer whose container met a `pending`
+   * verdict subscribes here and re-runs the pass per batch — only over
+   * containers still awaiting an answer, which is what keeps one answer
+   * from provoking a walk of every block. The context object itself stays
+   * identity-stable across verdicts; identity changes only when a real
+   * input changes (catalog, cwd, project binding), which is the
+   * everything-must-re-mark case.
+   *
+   * Optional: a hand-built context (tests, fixtures) without one simply
+   * never re-marks, which is correct for static content.
+   */
+  subscribe?: (listener: () => void) => () => void;
 }

@@ -1,5 +1,5 @@
 /**
- * `annotateTranscript` — the Transcript Annotator's DOM pass.
+ * `annotateContent` — the content annotator's DOM pass.
  *
  * Walks a rendered markdown block and marks every actionable entity it
  * finds, so the transcript reads as a hypertext document: URLs and email
@@ -22,6 +22,21 @@
  *     already painted, so the pass must be add/remove-correct over
  *     already-annotated DOM: a span that no longer qualifies loses its
  *     marks, and a span that changed families re-marks cleanly.
+ *
+ * **Two ops, split by what provoked them.** `annotateContent` is the
+ * full pass for DOM whose `innerHTML` was just written: it detects bare
+ * links, rejoins the text nodes that detection split, and then marks
+ * entities. `annotateElement` is the entity pass alone, for re-marking
+ * DOM that has *not* changed — a resolver verdict arriving for ink
+ * already painted. Re-running link detection and `normalize()` over
+ * unchanged DOM is pure waste, so the re-mark path never does.
+ *
+ * **Verdict waits are recorded on the DOM.** A pass that met a `pending`
+ * verdict stamps its container `data-tugx-awaiting`, and a pass that met
+ * none clears it. That flag is how per-container invalidation works: when
+ * a verdict batch arrives, only containers still awaiting one re-run the
+ * pass ({@link containerAwaitsVerdicts}), so an answer about one block
+ * never provokes a walk of every block.
  *
  * **Two tiers.** Anchor tagging is state-free and runs for every markdown
  * consumer. Everything else needs live state (the command catalog), which
@@ -58,9 +73,12 @@
  *
  * Laws: [L06] appearance via CSS/DOM, never React state.
  *
- * @module lib/annotator/annotate-transcript
+ * @module lib/annotator/annotate-content
  */
 
+// The one place the third-party link-detection library is named. The
+// feature vocabulary everywhere else is the annotator's own; see
+// `annotateBareLinks`.
 import linkifyElement from "linkify-element";
 import type { Opts } from "linkifyjs";
 
@@ -75,6 +93,10 @@ import {
   isUnambiguousInProse,
   scanPathReferences,
 } from "./detect-path-reference";
+import {
+  recordContentPass,
+  recordElementPass,
+} from "./annotate-counters";
 import { scanCommitShas } from "./detect-commit-sha";
 import {
   classifyInlineCode,
@@ -159,15 +181,9 @@ function annotateInlineCode(
 function annotatePathsInText(
   container: HTMLElement,
   context: AnnotationContext,
-): void {
-  // Rejoin adjacent text nodes first. Link detection tokenizes before it
-  // validates, so a filename whose extension is also a top-level domain —
-  // `notes.md`, `deploy.sh`, `index.io` — gets split out into its own text
-  // node even though it is refused as a link. The path around it would
-  // then be scanned in halves, and the half ending at the separator reads
-  // as a directory. Normalizing puts the run back together.
-  container.normalize();
-  for (const { node, inCode } of collectTextNodes(container)) {
+): number {
+  const sites = collectTextNodes(container);
+  for (const { node, inCode } of sites) {
     const text = node.data;
     if (text.trim() === "") continue;
     const matches: TextRunMatch[] = [];
@@ -190,6 +206,7 @@ function annotatePathsInText(
     matches.sort((a, b) => a.start - b.start);
     wrapMatchesInTextNode(node, matches);
   }
+  return sites.length;
 }
 
 /**
@@ -261,23 +278,87 @@ function annotateAnchors(container: HTMLElement): void {
 }
 
 /**
- * Annotate every actionable entity in `container`'s rendered markdown.
+ * The attribute a pass leaves on a container that met a `pending` verdict
+ * — the DOM-held record of "this ink is waiting on an answer". Verdict
+ * batches re-annotate only containers that carry it.
+ */
+export const AWAITING_ATTRIBUTE = "data-tugx-awaiting";
+
+/**
+ * Whether `container` (or any annotated child block inside it) is still
+ * waiting on a resolver verdict. This is the per-container gate a verdict
+ * batch is filtered through: a container with nothing outstanding is not
+ * walked again.
+ */
+export function containerAwaitsVerdicts(container: HTMLElement): boolean {
+  return (
+    container.hasAttribute(AWAITING_ATTRIBUTE) ||
+    container.querySelector(`[${AWAITING_ATTRIBUTE}]`) !== null
+  );
+}
+
+/**
+ * A context whose resolver calls are counted: every `pending` verdict the
+ * pass meets bumps the count, which is what decides whether the container
+ * gets the awaiting flag. The wrapper is context-shaped so the pass
+ * functions need no second protocol.
+ */
+function trackAwaits(context: AnnotationContext): {
+  context: AnnotationContext;
+  waits: () => number;
+} {
+  let count = 0;
+  const tracked: AnnotationContext = {
+    ...context,
+    resolvePath: (reference) => {
+      const verdict = context.resolvePath(reference);
+      if (verdict.state === "pending") count += 1;
+      return verdict;
+    },
+    resolveCommit: (sha) => {
+      const verdict = context.resolveCommit(sha);
+      if (verdict.state === "pending") count += 1;
+      return verdict;
+    },
+  };
+  return { context: tracked, waits: () => count };
+}
+
+/**
+ * Detect bare URLs and email addresses in text and mark the resulting
+ * anchors. Runs only when `container`'s HTML was just written — detection
+ * rewrites text into anchors, and its tokenizer splits text nodes at
+ * anything domain-shaped (a filename whose extension is also a top-level
+ * domain: `notes.md`, `deploy.sh`, `index.io`) even when the match is
+ * refused. The `normalize()` rejoins those runs so the entity scan that
+ * follows sees whole paths, not halves that read as directories.
+ */
+function annotateBareLinks(container: HTMLElement): void {
+  linkifyElement(container, LINKIFY_OPTS);
+  container.normalize();
+  annotateAnchors(container);
+}
+
+/**
+ * Annotate every actionable entity in `container`'s freshly rendered
+ * markdown — the full pass, for DOM whose `innerHTML` was just written.
  *
  * Without a `context`, only the state-free kinds are marked: bare URLs
  * and email addresses in text become anchors. With one, inline `<code>`
- * command spans are marked too.
+ * command spans and text references are marked too.
  *
  * Idempotent and re-runnable over already-annotated DOM — safe to call
- * again when an input changes (the on-resume case: the transcript replays
- * from JSONL before the handshake catalog lands, so the first pass sees an
- * empty catalog and a later pass marks the slash spans once it arrives).
+ * again when the content changes (the streaming case: every delta rewrites
+ * the block's HTML and this re-marks it atomically). For re-marking DOM
+ * that has *not* changed — a verdict arriving for ink already painted —
+ * use {@link annotateElement}, which skips link detection entirely.
  */
-export function annotateTranscript(
+export function annotateContent(
   container: HTMLElement,
   context?: AnnotationContext,
 ): void {
-  linkifyElement(container, LINKIFY_OPTS);
-  annotateAnchors(container);
+  recordContentPass();
+  annotateBareLinks(container);
   if (context === undefined) return;
   annotateElement(container, context);
 }
@@ -295,16 +376,29 @@ export function annotateTranscript(
  * `useAnnotatedElement`, and the marks, the CSS affordance, the click and
  * the context menu all follow from the same DOM contract.
  *
- * Link detection is deliberately not part of this. Linkifying rewrites
+ * Link detection is deliberately not part of this. Detection rewrites
  * text into anchors, which is right for prose a markdown renderer owns and
  * wrong for a component's own children — a component is entitled to assume
- * the DOM it rendered is the DOM it has.
+ * the DOM it rendered is the DOM it has. It is also why the verdict-driven
+ * re-mark path comes here rather than to {@link annotateContent}: the DOM
+ * did not change, so there is nothing new to detect.
  */
 export function annotateElement(
   container: HTMLElement,
   context: AnnotationContext,
 ): void {
-  dropStaleWraps(container, context);
-  annotateInlineCode(container, context);
-  annotatePathsInText(container, context);
+  const started = performance.now();
+  // This pass supersedes any narrower pass that stamped a child block
+  // (the streaming render annotates per built block); stale child flags
+  // would keep the container re-annotating after its waits resolved.
+  for (const flagged of container.querySelectorAll(`[${AWAITING_ATTRIBUTE}]`)) {
+    flagged.removeAttribute(AWAITING_ATTRIBUTE);
+  }
+  const tracked = trackAwaits(context);
+  dropStaleWraps(container, tracked.context);
+  annotateInlineCode(container, tracked.context);
+  const nodes = annotatePathsInText(container, tracked.context);
+  if (tracked.waits() > 0) container.setAttribute(AWAITING_ATTRIBUTE, "");
+  else container.removeAttribute(AWAITING_ATTRIBUTE);
+  recordElementPass(performance.now() - started, nodes);
 }

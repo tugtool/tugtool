@@ -29,7 +29,7 @@
  * @covers tugdeck/src/lib/annotator/detect-commit-sha.ts
  * @covers tugdeck/src/lib/annotator/commit-resolution.ts
  * @covers tugdeck/src/lib/annotator/registry.ts
- * @covers tugdeck/src/lib/annotator/annotate-transcript.ts
+ * @covers tugdeck/src/lib/annotator/annotate-content.ts
  * @covers tugdeck/src/components/tugways/cards/transcript-host-helpers.ts
  */
 

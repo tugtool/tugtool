@@ -12,18 +12,21 @@
  * and over. A probe per pass would issue the same question dozens of
  * times per second. Instead `lookup` is synchronous and answers from
  * cache: a path it has never seen is recorded as wanted and returns
- * `unknown`, a short debounce later the accumulated wants go out as one
+ * `pending`, a short debounce later the accumulated wants go out as one
  * deduped batch, and the verdicts land in a cache that every subsequent
  * pass reads for free. Steady state does no network work at all.
  *
  * Verdict arrival bumps a version and notifies listeners, which is what
  * drives the re-annotation pass that turns a newly-confirmed path into a
- * link over already-rendered ink.
+ * link over already-rendered ink. Only a real answer notifies: a lost one
+ * changes nothing painted, so it stays silent.
  *
- * **Honesty under failure.** A transport error returns candidates to
- * `unknown`, never to `confirmed` and never to `missing`: an unreachable
- * server means we don't know, and the next pass may ask again. The one
- * thing this must never do is manufacture a link.
+ * **Honesty under failure.** A transport error records candidates as a
+ * terminal `unknown`, never `confirmed` and never `missing`: an
+ * unreachable server means we don't know. Terminal, not forgotten — a
+ * forgotten verdict is re-asked by the very re-annotation its forgetting
+ * triggers, and that loop never converges. The one thing this must never
+ * do is manufacture a link.
  *
  * The endpoint rejects relative paths outright, so a relative candidate is
  * joined against the session cwd first. Until the cwd arrives — it is null
@@ -176,19 +179,21 @@ export class PathResolutionStore {
    * What is known about `rawPath` right now, resolving it against `cwd`
    * first. Synchronous by contract — the annotator's DOM pass calls this
    * for every path candidate it meets. A path this has never seen is
-   * recorded as wanted and reported `unknown`; the probe that follows
-   * bumps the version, and the re-annotation pass asks again.
+   * recorded as wanted and reported `pending` — the state that marks its
+   * container as awaiting an answer; the probe's answer bumps the version
+   * and re-marks the waiting ink.
    */
   lookup(rawPath: string, cwd: string | null): PathVerdict {
     const resolved = resolveCandidate(rawPath, cwd);
     // A relative candidate with no cwd yet: parked, not asked. The cwd's
-    // arrival re-runs the pass, which asks again with something to
-    // resolve against.
+    // arrival changes the annotation context, which re-runs the pass with
+    // something to resolve against.
     if (resolved === null) return UNKNOWN;
     const known = this.verdicts.get(resolved);
     if (known !== undefined) return known;
+    this.verdicts.set(resolved, PENDING);
     this.want(resolved);
-    return UNKNOWN;
+    return PENDING;
   }
 
   /** Subscribe to verdict arrivals. Returns the unsubscribe. */
@@ -207,8 +212,10 @@ export class PathResolutionStore {
 
   /**
    * Record a probe's answer. A path the response did not mention (past
-   * the endpoint's cap, or dropped) returns to `unknown` so a later pass
-   * can ask again rather than being told something false.
+   * the endpoint's cap, or dropped) is recorded as a terminal `unknown` —
+   * silently, since nothing painted changes — rather than forgotten, so
+   * the next pass does not re-ask a question the transport already failed
+   * to answer.
    */
   applyProbeResult(paths: readonly string[], result: ProbeResult | null): void {
     let changed = false;
@@ -216,12 +223,7 @@ export class PathResolutionStore {
       const next = verdictFor(path, result);
       const prev = this.verdicts.get(path);
       if (next === null) {
-        // Unknown again: drop the entry entirely so the next lookup
-        // re-wants it.
-        if (prev !== undefined) {
-          this.verdicts.delete(path);
-          changed = true;
-        }
+        this.verdicts.set(path, UNKNOWN);
         continue;
       }
       if (
@@ -249,13 +251,15 @@ export class PathResolutionStore {
     }, FLUSH_DELAY_MS);
   }
 
-  /** Send every accumulated want, in batches the endpoint accepts. */
+  /**
+   * Send every accumulated want, in batches the endpoint accepts. The
+   * wants are already `pending` (set at lookup), so nothing is notified
+   * here — only answers are.
+   */
   private async flush(): Promise<void> {
     const paths = Array.from(this.wanted);
     this.wanted.clear();
     if (paths.length === 0) return;
-    for (const path of paths) this.verdicts.set(path, PENDING);
-    this.notify();
     for (const chunk of chunkPaths(paths)) {
       this.applyProbeResult(chunk, await probePaths(chunk));
     }

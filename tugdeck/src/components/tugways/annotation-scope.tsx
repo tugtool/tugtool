@@ -33,7 +33,10 @@
 
 import React from "react";
 
-import { annotateElement } from "@/lib/annotator/annotate-transcript";
+import {
+  annotateElement,
+  containerAwaitsVerdicts,
+} from "@/lib/annotator/annotate-content";
 import type { AnnotationContext } from "@/lib/annotator/types";
 
 const AnnotationScopeContext = React.createContext<AnnotationContext | null>(
@@ -77,8 +80,10 @@ export function useAnnotationScope(): AnnotationContext | null {
  *
  * `deps` names what the element's text is derived from, so the scan re-runs
  * when the text changes rather than on every render of an ancestor. The
- * annotator inputs are always a dependency: a verdict arriving late is
- * exactly the case where already-painted ink has to be marked again.
+ * annotator inputs are always a dependency. A verdict arriving late does
+ * not change the context's identity — it arrives through the context's
+ * batched subscription, and re-marks this element only while the element
+ * is still awaiting an answer (`data-tugx-awaiting`).
  */
 export function useAnnotatedElement<T extends HTMLElement>(
   deps: React.DependencyList = [],
@@ -89,6 +94,13 @@ export function useAnnotatedElement<T extends HTMLElement>(
     const element = ref.current;
     if (element === null || context === null) return;
     annotateElement(element, context);
+    const subscribe = context.subscribe;
+    if (subscribe === undefined) return;
+    return subscribe(() => {
+      const target = ref.current;
+      if (target === null || !containerAwaitsVerdicts(target)) return;
+      annotateElement(target, context);
+    });
     // `deps` is the caller's declaration of what its text derives from;
     // spreading it is the whole point of the parameter.
     // eslint-disable-next-line react-hooks/exhaustive-deps

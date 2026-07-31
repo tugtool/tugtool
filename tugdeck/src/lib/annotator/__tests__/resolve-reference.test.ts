@@ -172,14 +172,15 @@ describe("makeReferenceResolver — who gets asked", () => {
 
   test("an unanswered filesystem probe is not escalated to the index", () => {
     // Asking both would spend an index query racing an answer already on
-    // its way, and the index queue is single-file. Not-yet-answered means
-    // wait; the next pass asks again.
+    // its way, and the index queue is single-file. A queued probe reports
+    // `pending` — the state that marks its container as awaiting — and the
+    // answer's batch re-marks it.
     const resolve = makeReferenceResolver({
       paths: new PathResolutionStore(),
       names: seededNames({ "lib/a.ts": "/repo/lib/a.ts" }),
       cwd: "/repo",
     });
-    expect(resolve(pathRef("lib/a.ts"))).toEqual({ state: "unknown" });
+    expect(resolve(pathRef("lib/a.ts"))).toEqual({ state: "pending" });
   });
 
   test("with no cwd to resolve against, a relative path goes to the index", () => {
