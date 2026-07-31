@@ -306,8 +306,9 @@ struct PromptCache {
     /// Bytes parsed so far — always at a line boundary, so a partial trailing
     /// line (the writer mid-append) is left for the next refresh.
     offset: u64,
-    /// The session's first prompt, pinned: it never changes and it is the
-    /// standing goal the digest leads with.
+    /// The current stretch's first prompt, pinned as the standing goal the
+    /// digest leads with. It changes only at an idle barrier, which clears it
+    /// so the next stretch's opening ask takes the slot.
     first: Option<String>,
     /// The most recent prompts, oldest evicted.
     recent: VecDeque<String>,
@@ -362,6 +363,15 @@ impl PromptCache {
             self.recent.push_back(prompt);
         }
         self.offset += last_newline as u64 + 1;
+    }
+
+    /// Drop every ask read so far while keeping the read position. The asks
+    /// behind an idle barrier belong to a finished request; the preserved
+    /// offset means they are gone for good rather than re-read on the next
+    /// refresh.
+    fn barrier(&mut self) {
+        self.first = None;
+        self.recent.clear();
     }
 
     /// The digest's prompt set: the pinned first prompt, then the recent ones
@@ -435,6 +445,16 @@ struct SessionState {
     /// Cleared by any beat, so a session that resumes and settles again
     /// collapses again.
     collapsed: bool,
+    /// The session has come to rest since the last human act. Unlike
+    /// `settled_at`, no machinery beat clears this — trailing prose or a
+    /// snapshot replay can un-settle the collapse clock, but the rest still
+    /// happened, and the next human act crosses the idle barrier because of
+    /// it.
+    rested: bool,
+    /// How many idle barriers this session has crossed. An emit snapshots the
+    /// epoch at spawn; an outcome carrying an older epoch describes a
+    /// finished stretch and lands nothing.
+    barrier_epoch: u64,
     /// Activity lines recorded since the last collapse was marked. A settled
     /// stretch with none has nothing new to say it did, which is what keeps a
     /// session that merely reconnects from re-announcing old work.
@@ -460,6 +480,8 @@ impl SessionState {
             beat: 0,
             settled_at: None,
             collapsed: false,
+            rested: false,
+            barrier_epoch: 0,
             activity_since_collapse: 0,
         }
     }
@@ -472,9 +494,30 @@ impl SessionState {
     /// an open block nor clears the dedup set; those stay keyed to
     /// CODE_OUTPUT turn frames.
     fn human_act(&mut self) {
+        if self.rested {
+            self.cross_idle_barrier();
+        }
         self.activity_since_emit = 0;
         self.fire_asap = true;
         self.resume();
+    }
+
+    /// A human act on a session that has been at rest starts a new stretch,
+    /// and the idle boundary behind it is hard: nothing before it may appear
+    /// in a summary again. The finished stretch's activity, cached asks,
+    /// pending ask, and standing digest all drop, and the epoch bump
+    /// invalidates any emit still in flight from before the barrier. The read
+    /// offset inside the prompt cache survives, so asks the cache already
+    /// consumed stay behind the barrier instead of being re-read.
+    fn cross_idle_barrier(&mut self) {
+        self.activity.clear();
+        self.activity_since_emit = 0;
+        self.activity_since_collapse = 0;
+        self.prompts.barrier();
+        self.pending_ask = None;
+        self.last_digest = None;
+        self.rested = false;
+        self.barrier_epoch += 1;
     }
 
     /// The session is working again: it is no longer at rest, and whatever it
@@ -538,6 +581,7 @@ impl SessionState {
             SessionBeat::Turn | SessionBeat::Shell(None) => {
                 self.collapsed = false;
                 self.settled_at = Some(now);
+                self.rested = true;
             }
             _ => self.resume(),
         }
@@ -1587,6 +1631,10 @@ struct EmitJob {
     /// doing. Chosen on the loop by the collapse arm; the task carries it into
     /// the digest, the requester, the gate, and back out on the outcome.
     retrospective: bool,
+    /// The session's barrier epoch at spawn. Echoed on the outcome so the
+    /// loop can tell an emit that predates an idle barrier from one that
+    /// still describes the current stretch.
+    barrier_epoch: u64,
 }
 
 /// What the one corrective re-ask did, for the rescue rate.
@@ -1637,6 +1685,10 @@ struct EmitOutcome {
     /// the loop a retrospective was attempted and answered, which is when the
     /// collapse is marked — see `apply_emit_outcome`.
     retrospective: bool,
+    /// Echoed from the job. An outcome whose epoch is behind the session's
+    /// crossed an idle barrier in flight: it describes a finished stretch,
+    /// and only its cache's read position survives the landing.
+    barrier_epoch: u64,
 }
 
 /// Run the emitter until cancelled.
@@ -1915,6 +1967,7 @@ fn spawn_next(
             // Read after the pop: nobody is left behind this emit.
             may_reask: queue.is_empty(),
             retrospective,
+            barrier_epoch: state.barrier_epoch,
         };
         *in_flight = Some((session_id, tokio::spawn(run_emit(job))));
     }
@@ -1937,6 +1990,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
         local_model,
         may_reask,
         retrospective,
+        barrier_epoch,
     } = job;
     let mut outcome = EmitOutcome {
         session_id: session_id.clone(),
@@ -1946,6 +2000,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
         headline: None,
         failed: false,
         retrospective,
+        barrier_epoch,
     };
     let mode = if retrospective {
         GroundingMode::Retrospective
@@ -2154,6 +2209,7 @@ fn apply_emit_outcome(
         headline,
         failed,
         retrospective,
+        barrier_epoch,
     } = outcome;
     if failed {
         // The back-off is process-wide. The queued sessions behind this one
@@ -2169,6 +2225,18 @@ fn apply_emit_outcome(
     let Some(state) = sessions.get_mut(&session_id) else {
         return;
     };
+    // An emit that crossed an idle barrier in flight describes a finished
+    // stretch, and the barrier is hard: no digest, no collapse mark, no
+    // headline. Only the cache's read position survives — with its asks
+    // dropped — because losing the offset would make the next refresh
+    // re-read the whole transcript and haul the old stretch back in.
+    if barrier_epoch != state.barrier_epoch {
+        let mut cache = cache;
+        cache.barrier();
+        state.prompts = cache;
+        debug!(session = %session_id, "session overview: emit predates idle barrier");
+        return;
+    }
     state.prompts = cache;
     if let Some(ask) = caught_up_ask {
         if state.pending_ask.as_ref() == Some(&ask) {
@@ -3732,6 +3800,90 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// The barrier drops the asks but keeps the read position, so a
+    /// consumed ask is gone for good rather than re-read on the next
+    /// refresh, while an ask appended after the barrier arrives normally.
+    #[test]
+    fn the_prompt_cache_barrier_forgets_asks_but_not_its_place() {
+        let path = cache_tmp("barrier");
+        std::fs::write(&path, format!("{}\n", user_line("the finished request"))).unwrap();
+        let mut cache = PromptCache::default();
+        cache.refresh(&path);
+        assert_eq!(cache.first.as_deref(), Some("the finished request"));
+
+        cache.barrier();
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(format!("{}\n", user_line("the new request")).as_bytes())
+            .unwrap();
+        cache.refresh(&path);
+        assert_eq!(
+            cache.digest_prompts(),
+            ["the new request"].map(String::from),
+            "only the new stretch's ask may survive the barrier"
+        );
+        assert_eq!(
+            cache.first.as_deref(),
+            Some("the new request"),
+            "the new stretch's opening ask takes the pinned slot"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// An emit that crossed the idle barrier in flight lands nothing: its
+    /// headline never publishes, its digest and collapse mark never record,
+    /// and its cache comes back with only the read position intact.
+    #[test]
+    fn an_emit_from_behind_the_barrier_lands_only_the_read_offset() {
+        let mut sessions = HashMap::new();
+        let mut state = SessionState::new(Instant::now());
+        state.barrier_epoch = 1;
+        sessions.insert("s1".to_string(), state);
+
+        let mut cache = PromptCache::default();
+        cache.offset = 42;
+        cache.first = Some("the finished request".to_string());
+        cache.recent.push_back("the finished request".to_string());
+        let outcome = EmitOutcome {
+            session_id: "s1".to_string(),
+            cache,
+            caught_up_ask: None,
+            seen_digest: Some("the old digest".to_string()),
+            headline: Some("Doing the finished thing".to_string()),
+            failed: false,
+            retrospective: true,
+            barrier_epoch: 0,
+        };
+        let (pulse_tx, mut pulse_rx) = broadcast::channel(8);
+        apply_emit_outcome(
+            outcome,
+            &mut sessions,
+            &mut BackOff::new(),
+            &mut VecDeque::new(),
+            &mut HashSet::new(),
+            &pulse_tx,
+        );
+
+        let state = &sessions["s1"];
+        assert_eq!(state.prompts.offset, 42, "the read position survives");
+        assert!(
+            state.prompts.first.is_none() && state.prompts.recent.is_empty(),
+            "the asks do not"
+        );
+        assert!(state.last_digest.is_none());
+        assert!(
+            !state.collapsed,
+            "a stale retrospective must not mark the new stretch collapsed"
+        );
+        assert!(
+            pulse_rx.try_recv().is_err(),
+            "no headline may publish from behind the barrier"
+        );
+    }
+
     #[test]
     fn a_partial_trailing_line_waits_for_its_newline() {
         let path = cache_tmp("partial");
@@ -4577,6 +4729,68 @@ mod tests {
         assert_eq!(state.pending_ask.as_deref(), Some("and check the floor"));
     }
 
+    /// A return to idle is a hard barrier: the next human act starts a new
+    /// stretch, and nothing from the finished one — activity, pending ask,
+    /// standing digest — may appear in a summary again.
+    #[test]
+    fn a_human_act_after_rest_crosses_the_idle_barrier() {
+        let mut state = SessionState::new(Instant::now());
+        state.record_now(SessionBeat::Tool("Bash(cargo test)".to_string()));
+        state.pending_ask = Some("fix the parser".to_string());
+        state.last_digest = Some("the old digest".to_string());
+        state.record_now(SessionBeat::Turn);
+        let epoch = state.barrier_epoch;
+
+        state.human_act();
+        assert!(
+            state.activity.is_empty(),
+            "the finished stretch's lines must not survive the barrier: {:?}",
+            state.activity
+        );
+        assert!(state.pending_ask.is_none());
+        assert!(state.last_digest.is_none());
+        assert_eq!(state.barrier_epoch, epoch + 1);
+    }
+
+    /// Machinery beats after the rest — trailing prose, a snapshot replay —
+    /// un-settle the collapse clock, but the rest still happened: the next
+    /// human act crosses the barrier all the same, and the twitch's own
+    /// lines fall behind it too.
+    #[test]
+    fn machinery_beats_after_rest_do_not_disarm_the_barrier() {
+        let mut state = SessionState::new(Instant::now());
+        state.record_now(SessionBeat::Tool("Bash(cargo test)".to_string()));
+        state.record_now(SessionBeat::Turn);
+        state.observe_now(CodeOutputEvent::Prose {
+            msg_id: "m1".to_string(),
+            block_index: 0,
+            is_partial: false,
+            text: "One trailing remark after the turn already ended, long enough to record."
+                .to_string(),
+        });
+        assert!(state.settled_at.is_none(), "the twitch un-settled the clock");
+
+        state.human_act();
+        assert!(
+            state.activity.is_empty(),
+            "the barrier drops the stretch and its trailing twitch alike: {:?}",
+            state.activity
+        );
+    }
+
+    /// An act on a session that never came to rest is steering, not a new
+    /// request — the stretch's history stays.
+    #[test]
+    fn a_mid_stretch_act_keeps_its_history() {
+        let mut state = SessionState::new(Instant::now());
+        state.record_now(SessionBeat::Tool("Bash(cargo test)".to_string()));
+        let epoch = state.barrier_epoch;
+
+        state.human_act();
+        assert_eq!(state.activity.len(), 1);
+        assert_eq!(state.barrier_epoch, epoch);
+    }
+
     /// The unsummarized-digest fix, pinned: a digest the model never saw is
     /// not recorded, so the identical digest emits once the host returns
     /// instead of dying to the digest-unchanged dedup.
@@ -5118,6 +5332,7 @@ mod tests {
             local_model: state.clone(),
             may_reask: false,
             retrospective: true,
+            barrier_epoch: 0,
         })
         .await;
         assert_eq!(digests.recv().await.as_deref(), Some(composed.as_str()));
