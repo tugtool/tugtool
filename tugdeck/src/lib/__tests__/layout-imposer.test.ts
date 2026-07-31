@@ -313,13 +313,14 @@ describe("imposeStyle", () => {
 });
 
 describe("imposeLensStyle", () => {
+  const WIDTH = "var(--tug-lens-width, 420px)";
   const PIN =
-    "calc(var(--tugx-lens-rail) * (100% - 420px - 5px)" +
+    `calc(var(--tugx-lens-rail) * (100% - ${WIDTH} - 5px)` +
     " + (1 - var(--tugx-lens-rail)) * 5px)";
 
   test("pins the Lens to its side, a gap in on three edges and deeper below", () => {
     expect(imposeLensStyle("left", 420, false) as Record<string, unknown>).toEqual({
-      width: "420px",
+      width: WIDTH,
       height: "auto",
       top: "5px",
       "--tugx-lens-rail": 0,
@@ -327,7 +328,7 @@ describe("imposeLensStyle", () => {
       bottom: "32px",
     });
     expect(imposeLensStyle("right", 420, false) as Record<string, unknown>).toEqual({
-      width: "420px",
+      width: WIDTH,
       height: "auto",
       top: "5px",
       "--tugx-lens-rail": 1,
@@ -368,8 +369,22 @@ describe("imposeLensStyle", () => {
     expect(collapsed.bottom).toBeUndefined();
   });
 
-  test("the width is the pane's own, verbatim", () => {
-    expect(imposeLensStyle("left", 987, false).width).toBe("987px");
+  // The width a drag rewrites is a property, and the pin is written over the
+  // SAME expression: on the right rail the pin is `100% - width - gap`, so a
+  // width that moved without the pin moving would move the pinned edge — the
+  // one edge the Lens holds. One property feeding both makes that impossible.
+  test("the width is a property the pin reads, over the pane's own as fallback", () => {
+    const style = imposeLensStyle("left", 987, false);
+    expect(style.width).toBe("var(--tug-lens-width, 987px)");
+    expect(String(style.left)).toContain("var(--tug-lens-width, 987px)");
+  });
+
+  test("the fallback is the pane's own width, so an unwritten property changes nothing", () => {
+    for (const w of [260, 420, 987]) {
+      expect(imposeLensStyle("right", w, false).width).toBe(
+        `var(--tug-lens-width, ${w}px)`,
+      );
+    }
   });
 });
 

@@ -183,6 +183,26 @@ export const IMPOSITION_SETTLE_MS = 300;
  */
 export const LENS_RAIL_PROPERTY = "--tugx-lens-rail";
 
+/**
+ * The pinned Lens's live width, as a CSS length on the frames' containing
+ * block (`deck-canvas.tsx` writes it).
+ *
+ * The width is the one number a Lens edge drag changes, and it is an input to
+ * three expressions at once: the Lens's own pin on a right-side deck (`100% -
+ * width - gap`), the band the chain is imposed across, and the frame's own
+ * `width`. Carried as a property rather than baked into each of them, the drag
+ * writes it once and the browser re-resolves all three in the same reflow — so
+ * the pinned edge holds and the cards re-impose live, with no measurement and
+ * no per-frame JavaScript ([L06]).
+ *
+ * Deliberately unregistered: every expression reading it supplies the
+ * React-known width as the `var()` fallback, so a frame that renders before the
+ * property is written lands on exactly the geometry it would have had. A
+ * registered property has an initial value instead of an absence, and the
+ * fallback would never be reached.
+ */
+export const LENS_WIDTH_PROPERTY = "--tug-lens-width";
+
 /** The gaps as CSS lengths, for the calc expressions below. */
 const GAP = `${IMPOSITION_GAP_PX}px`;
 const GAP_BOTTOM = `${IMPOSITION_GAP_BOTTOM_PX}px`;
@@ -426,6 +446,15 @@ export function imposeStyle(
  * carries the frame across. Interpolating the rail instead would re-resolve
  * `left` — and re-run layout — on every frame of the crossing.
  *
+ * The width is read from {@link LENS_WIDTH_PROPERTY} rather than written as a
+ * length, and the pin is written in terms of the same expression. On a
+ * right-side deck the pin IS the width (`100% - width - gap`), so a width that
+ * changes without the pin changing means the pinned edge is the one that moves
+ * — which is precisely backwards: the deck edge is what the Lens holds, and the
+ * dragged edge is the only one a resize may move. One property feeding both
+ * makes that true by construction rather than by the drag remembering to
+ * update two numbers.
+ *
  * A collapsed Lens keeps its side and top pins and releases the bottom one, so
  * the window-shade bar sits a gap below the canvas top — the same treatment
  * {@link imposeStyle} gives a collapsed chain link.
@@ -436,13 +465,14 @@ export function imposeLensStyle(
   collapsed: boolean,
 ): React.CSSProperties {
   const rail = side === "right" ? 1 : 0;
+  const width = `var(${LENS_WIDTH_PROPERTY}, ${paneWidth}px)`;
   const style: Record<string, string | number> = {
-    width: `${paneWidth}px`,
+    width,
     height: "auto",
     top: GAP,
     [LENS_RAIL_PROPERTY]: rail,
     left:
-      `calc(var(${LENS_RAIL_PROPERTY}) * (100% - ${paneWidth}px - ${GAP})` +
+      `calc(var(${LENS_RAIL_PROPERTY}) * (100% - ${width} - ${GAP})` +
       ` + (1 - var(${LENS_RAIL_PROPERTY})) * ${GAP})`,
   };
   if (!collapsed) style.bottom = GAP_BOTTOM;

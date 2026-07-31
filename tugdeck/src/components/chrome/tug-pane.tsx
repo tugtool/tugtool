@@ -50,6 +50,7 @@ import {
   imposeLensStyle,
   type LensSide,
   IMPOSITION_GAP_PX,
+  LENS_WIDTH_PROPERTY,
   type ImposedPlacement,
 } from "@/lib/layout-imposer";
 import { TugButton } from "@/components/tugways/internal/tug-button";
@@ -1975,15 +1976,31 @@ export function TugPane({
   // lives in the deck manager's card-moved handler, keeping this pane
   // lens-agnostic.
   //
+  // The width is written as `LENS_WIDTH_PROPERTY` on the frames' container
+  // rather than onto this frame, because the width is not this frame's alone:
+  // a right-side Lens is pinned by an expression that SUBTRACTS its width from
+  // the canvas, and the band the cards ride is inset by it. Writing the frame's
+  // own `width` moves only the dragged edge's box and leaves those two
+  // expressions on the width the last render baked in — the Lens's pinned edge
+  // walks off the deck edge it is supposed to hold, and the cards do not learn
+  // the rail moved until pointer-up. One property write feeds all three, and
+  // the browser resolves them together: the pinned edge holds and the
+  // arrangement re-imposes under the moving edge, live ([L06]).
+  //
   // The exposed edge snaps with Option held, exactly like any other pane
-  // edge: the Lens is the moving side and every other pane is a stationary
-  // snap target. [D01, D03, D04]
+  // edge: the Lens is the moving side and every other pane is a snap target.
+  // Those targets are re-measured per frame rather than snapshotted at gesture
+  // start — under live re-imposition a card's edge moves as the Lens grows, and
+  // a guide drawn from a start-of-gesture rect would mark an alignment that is
+  // no longer there. [D01, D03, D04]
   const handleLensResizeStart = useCallback(
     (event: React.PointerEvent) => {
       event.preventDefault();
       event.stopPropagation();
       if (!frameRef.current) return;
       const frame: HTMLDivElement = frameRef.current;
+      const container = frame.parentElement;
+      if (!container) return;
 
       const zoom = getTugZoom() || 1;
       const startClientX = event.clientX;
@@ -1998,14 +2015,13 @@ export function TugPane({
       // motion grows it.
       const growSign = lensSide === "left" ? 1 : -1;
 
-      // Snap targets and geometry, snapshotted once at gesture start. The
-      // pinned edge is measured rather than derived from `position`, which
-      // the pinned Lens does not use.
-      const canvasBounds = frame.parentElement?.getBoundingClientRect() ?? null;
-      const otherRects = snapshotCardRects(canvasBounds, id, zoom).map((r) => r.rect);
+      // The pinned edge is measured rather than derived from `position`, which
+      // the pinned Lens does not use. It is a fixed number for the gesture:
+      // the deck edge the Lens holds is the one thing this drag may not move.
+      const canvasBounds = container.getBoundingClientRect();
       const guideEdgeOffsets = measureGuideEdgeOffsets(frame, zoom);
       const frameRect = frame.getBoundingClientRect();
-      const canvasLeft = canvasBounds ? canvasBounds.left : 0;
+      const canvasLeft = canvasBounds.left;
       const pinnedEdge =
         lensSide === "left"
           ? (frameRect.left - canvasLeft) / zoom
@@ -2038,7 +2054,7 @@ export function TugPane({
         const exposedEdge = pinnedEdge + growSign * next;
         const snapResult = computeResizeSnap(
           lensSide === "left" ? { right: exposedEdge } : { left: exposedEdge },
-          otherRects,
+          snapshotCardRects(canvasBounds, id, zoom).map((r) => r.rect),
           -IMPOSITION_GAP_PX,
         );
         const snapped = lensSide === "left" ? snapResult.right : snapResult.left;
@@ -2049,17 +2065,14 @@ export function TugPane({
           );
         }
 
-        const container = frame.parentElement;
-        if (container) {
-          syncGuideElements(resizeGuideEls, snapResult.guides, container, guideEdgeOffsets);
-        }
+        syncGuideElements(resizeGuideEls, snapResult.guides, container, guideEdgeOffsets);
         return next;
       };
 
       const apply = (): void => {
         rafId = null;
         width = computeWidth();
-        frame.style.width = `${width}px`;
+        container.style.setProperty(LENS_WIDTH_PROPERTY, `${width}px`);
       };
 
       const onPointerMove = (e: PointerEvent): void => {
@@ -2082,7 +2095,10 @@ export function TugPane({
         // Final width with snap applied, THEN clear the guides. [D03]
         width = computeWidth();
         clearGuideElements(resizeGuideEls);
-        frame.style.width = `${width}px`;
+        // The property stays as the gesture left it. The commit re-renders the
+        // Lens at this width and `DeckCanvas` writes the same number back, so
+        // there is no frame where the deck reads the pre-gesture width.
+        container.style.setProperty(LENS_WIDTH_PROPERTY, `${width}px`);
         onCardMoved(id, position, { width, height: size.height });
       };
 

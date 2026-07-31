@@ -49,6 +49,7 @@ import {
   resolvePlacement,
   IMPOSITION_GAP_PX,
   IMPOSITION_SETTLE_MS,
+  LENS_WIDTH_PROPERTY,
 } from "@/lib/layout-imposer";
 
 // ---- DeckCanvasProps ----
@@ -667,6 +668,14 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // below do; packing on a stored width below the floor would run the chain
   // under the Lens's real edge. `resolveSpan` adds the identical gap, so the
   // numeric twin and the CSS agree by construction ([P05]).
+  //
+  // The width itself is published as `LENS_WIDTH_PROPERTY` and the insets are
+  // written as expressions over it, so the Lens frame's own pin and the band
+  // the chain rides read ONE number. A width drag rewrites that one property
+  // (`TugPane`'s `handleLensResizeStart`) and the whole arrangement re-resolves
+  // in the browser's next reflow: the Lens grows off its own pinned edge and
+  // the cards re-impose live under the moving edge, which is the same response
+  // the deck already gives a window resize.
   const lensRenderWidth =
     lensPane === undefined || lensSide === null
       ? 0
@@ -678,19 +687,23 @@ export function DeckCanvas(_props: DeckCanvasProps) {
               .map((card) => card.componentId),
           ).min.width,
         );
-  const lensInset = lensRenderWidth === 0 ? 0 : lensRenderWidth + IMPOSITION_GAP_PX;
+  const lensInset =
+    lensRenderWidth === 0
+      ? "0px"
+      : `calc(var(${LENS_WIDTH_PROPERTY}) + ${IMPOSITION_GAP_PX}px)`;
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    el.style.setProperty(LENS_WIDTH_PROPERTY, `${lensRenderWidth}px`);
     el.style.setProperty(
       "--tug-imposer-inset-left",
-      lensSide === "left" ? `${lensInset}px` : "0px",
+      lensSide === "left" ? lensInset : "0px",
     );
     el.style.setProperty(
       "--tug-imposer-inset-right",
-      lensSide === "right" ? `${lensInset}px` : "0px",
+      lensSide === "right" ? lensInset : "0px",
     );
-  }, [lensSide, lensInset]);
+  }, [lensSide, lensInset, lensRenderWidth]);
 
   // ---------------------------------------------------------------------------
   // Settling into a new arrangement
