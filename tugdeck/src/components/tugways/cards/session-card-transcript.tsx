@@ -163,6 +163,7 @@ import {
 } from "@/components/tugways/cards/turn-entry-markdown";
 import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selection";
 import { COMMAND_CLASS } from "@/lib/markdown/enhance-commands";
+import { attachSelectionExtension } from "@/components/tugways/selection-extension";
 import { SessionJumpToBottomButton } from "@/components/tugways/cards/session-jump-to-bottom-button";
 import {
   SessionTranscriptTopRow,
@@ -1988,6 +1989,19 @@ export const SessionTranscriptHost = forwardRef<
     responseStore.bind(el);
     return () => responseStore.unbind();
   }, [responseStore]);
+
+  // Base/extent selection extension over transcript content. A shift-click
+  // or shift-drag re-places the extent and leaves the base where the last
+  // unshifted press put it, at that press's granularity (character / word /
+  // paragraph). Unshifted gestures stay native; the controller records what
+  // they establish. Delegated on the transcript root so it covers every
+  // rendered row with one listener.
+  // [L03] — the listener must be live before any press it services.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (root === null) return;
+    return attachSelectionExtension(root);
+  }, []);
 
   // Clickable commands ([P03]/[P06]). A click on a `.tugx-md-cmd` span —
   // tagged by `enhance-commands` when its inline `<code>` parsed as a

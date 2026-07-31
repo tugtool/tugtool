@@ -54,6 +54,47 @@ import type { DomSelectionSnapshot } from "../../layout-tree";
  * unmount/remount as long as the content structure is unchanged (same content,
  * re-mounted — Phase 5b contract).
  */
+/**
+ * Which end of a selection is the extent.
+ *
+ * `"forward"` means the base is the range start and the extent is the range
+ * end (the user selected left-to-right / top-to-bottom); `"backward"` is the
+ * reverse. A bare `Range` cannot express this — its endpoints are always in
+ * document order — so the direction travels alongside it through publish,
+ * paint, and snapshot restore. Losing it turns a backward selection into a
+ * forward one, which moves the base to the other end and sends the next
+ * shift-extension the wrong way.
+ */
+export type SelectionDirection = "forward" | "backward";
+
+/**
+ * A card's published selection: the Range plus the base/extent orientation
+ * that the Range alone cannot carry.
+ */
+interface CardSelection {
+  readonly range: Range;
+  readonly direction: SelectionDirection;
+}
+
+/**
+ * Read the base/extent orientation of a live DOM `Selection`.
+ *
+ * Returns `"forward"` for a collapsed selection and for any selection whose
+ * anchor is not comparable to its focus, matching the neutral orientation a
+ * bare `Range` implies.
+ */
+export function domSelectionDirection(sel: Selection): SelectionDirection {
+  const { anchorNode, focusNode } = sel;
+  if (anchorNode === null || focusNode === null) return "forward";
+  if (anchorNode === focusNode) {
+    return sel.focusOffset < sel.anchorOffset ? "backward" : "forward";
+  }
+  const position = anchorNode.compareDocumentPosition(focusNode);
+  return (position & Node.DOCUMENT_POSITION_PRECEDING) !== 0
+    ? "backward"
+    : "forward";
+}
+
 export interface SavedSelection {
   /** Index path from boundary root to anchor node (array of child indices). */
   anchorPath: number[];
@@ -277,7 +318,7 @@ class SelectionGuard {
   // them identically, so there is no reason to distinguish. Readable
   // from tests via {@link getCardRange}; components publish via
   // {@link updateCardDomSelection}.
-  private cardRanges: Map<string, Range> = new Map();
+  private cardRanges: Map<string, CardSelection> = new Map();
 
   // Whether CSS.highlights is available.
   private highlightsAvailable = false;
@@ -429,11 +470,15 @@ class SelectionGuard {
    * "store" from "paint" keeps the component publish API stable while
    * the paint implementation evolves.
    */
-  updateCardDomSelection(cardId: string, range: Range | null): void {
+  updateCardDomSelection(
+    cardId: string,
+    range: Range | null,
+    direction: SelectionDirection = "forward",
+  ): void {
     if (range === null) {
       this.cardRanges.delete(cardId);
     } else {
-      this.cardRanges.set(cardId, range);
+      this.cardRanges.set(cardId, { range, direction });
     }
     this.updatePaint({ changedCardId: cardId });
   }
@@ -447,7 +492,15 @@ class SelectionGuard {
    * reads `cardRanges` indirectly through {@link updatePaint}.
    */
   getCardRange(cardId: string): Range | undefined {
-    return this.cardRanges.get(cardId);
+    return this.cardRanges.get(cardId)?.range;
+  }
+
+  /**
+   * Read the base/extent orientation published alongside a card's Range.
+   * Returns `undefined` when the card has no published selection.
+   */
+  getCardSelectionDirection(cardId: string): SelectionDirection | undefined {
+    return this.cardRanges.get(cardId)?.direction;
   }
 
   /**
@@ -503,7 +556,10 @@ class SelectionGuard {
     // `window.getSelection()` via the full-rebuild branch. The
     // hint optimization only makes sense for live caret moves, not
     // restore.
-    this.cardRanges.set(cardId, range);
+    this.cardRanges.set(cardId, {
+      range,
+      direction: snapshot.direction ?? "forward",
+    });
     this.updatePaint();
   }
 
@@ -589,7 +645,7 @@ class SelectionGuard {
 
     // Full rebuild: clear the highlight, walk cardRanges, and repopulate.
     this.inactiveHighlight.clear();
-    for (const [cardId, range] of this.cardRanges) {
+    for (const [cardId, { range }] of this.cardRanges) {
       if (
         !document.contains(range.startContainer) ||
         !document.contains(range.endContainer)
@@ -620,17 +676,24 @@ class SelectionGuard {
     // a Range, leave native selection alone — the user's click or
     // interactive selection is the source of truth.
     if (focusedCardId !== null) {
-      const range = this.cardRanges.get(focusedCardId);
-      if (range !== undefined) {
+      const entry = this.cardRanges.get(focusedCardId);
+      if (entry !== undefined) {
         const sel = window.getSelection();
         if (sel !== null) {
+          // Base first, extent second — a backward selection restores with
+          // its base at the range END, so the next shift-extension or
+          // shift-arrow pivots on the end the user actually anchored.
+          const { range, direction } = entry;
+          const base =
+            direction === "backward"
+              ? ([range.endContainer, range.endOffset] as const)
+              : ([range.startContainer, range.startOffset] as const);
+          const extent =
+            direction === "backward"
+              ? ([range.startContainer, range.startOffset] as const)
+              : ([range.endContainer, range.endOffset] as const);
           try {
-            sel.setBaseAndExtent(
-              range.startContainer,
-              range.startOffset,
-              range.endContainer,
-              range.endOffset,
-            );
+            sel.setBaseAndExtent(base[0], base[1], extent[0], extent[1]);
           } catch {
             // Offsets may be out of range if the DOM mutated between
             // the publish and this paint. Best-effort only — a later
@@ -833,7 +896,7 @@ class SelectionGuard {
     // This covers the case where the browser Selection was cleared
     // (e.g., the user clicked `user-select: none` chrome) but the card
     // still has a selection the owning component has published.
-    const publishedRange = this.cardRanges.get(cardId);
+    const publishedRange = this.cardRanges.get(cardId)?.range;
     if (publishedRange) {
       const startNode = publishedRange.startContainer;
       const endNode = publishedRange.endContainer;

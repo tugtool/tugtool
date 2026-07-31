@@ -130,13 +130,16 @@ describe("selection-persistence grep contracts (Step 15)", () => {
     expect(hits.length).toBe(0);
   });
 
-  it("setBaseAndExtent( appears only in selection-guard.ts and text-selection-adapter.ts", () => {
+  it("setBaseAndExtent( appears only in selection-guard.ts, text-selection-adapter.ts, and selection-extension.ts", () => {
     // selection-guard: drag-clip focus pin + `restoreCardDomSelection`
     //   paint path + `updatePaint` native-selection sync.
     // text-selection-adapter: word-at-point click place-caret.
+    // selection-extension: shift-click / shift-drag extent placement, the
+    //   one path that must express base-before-extent ordering directly.
     const allowlist = new Set<string>([
       "components/tugways/selection-guard.ts",
       "components/tugways/text-selection-adapter.ts",
+      "components/tugways/selection-extension.ts",
     ]);
     const hits = scanFor("setBaseAndExtent(", allowlist);
     if (hits.length > 0) {

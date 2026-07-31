@@ -249,6 +249,7 @@ export function captureDomSelection(
     anchorOffset: range.startOffset,
     focusPath,
     focusOffset: range.endOffset,
+    direction: selectionGuard.getCardSelectionDirection(cardId) ?? "forward",
   };
 }
 

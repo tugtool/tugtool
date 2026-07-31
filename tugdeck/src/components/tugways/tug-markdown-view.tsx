@@ -76,7 +76,10 @@ import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface
 import { useOptionalResponder } from "@/components/tugways/use-responder";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { selectionGuard } from "@/components/tugways/selection-guard";
+import {
+  domSelectionDirection,
+  selectionGuard,
+} from "@/components/tugways/selection-guard";
 import { useCardId, useCardStatePreservation } from "@/components/tugways/use-card-state-preservation";
 import { lex_blocks, parse_to_html } from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 
@@ -1297,7 +1300,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       const range = sel.getRangeAt(0);
       const ca = range.commonAncestorContainer;
       if (ca !== root && !root.contains(ca)) return;
-      selectionGuard.updateCardDomSelection(cardId, range);
+      selectionGuard.updateCardDomSelection(
+        cardId,
+        range,
+        domSelectionDirection(sel),
+      );
     };
 
     root.ownerDocument.addEventListener("selectionchange", onSelectionChange);

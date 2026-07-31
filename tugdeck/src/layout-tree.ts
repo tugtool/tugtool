@@ -190,6 +190,14 @@ export interface DomSelectionSnapshot {
   anchorOffset: number;
   focusPath: readonly number[];
   focusOffset: number;
+  /**
+   * Which end of the range the user anchored on. `"forward"` (the default
+   * for bags written before the field existed) puts the base at the range
+   * start; `"backward"` puts it at the range end. Restore re-establishes the
+   * base/extent orientation from it, so a shift-extension after a restore
+   * pivots on the end the user actually anchored.
+   */
+  direction?: "forward" | "backward";
 }
 
 /**
