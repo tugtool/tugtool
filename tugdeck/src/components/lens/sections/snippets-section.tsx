@@ -964,10 +964,13 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
         {snippets.length === 0 ? (
           // Empty label instead of the list — an empty `flex: 1` list would grow
           // and open a gap under the band (see the Sessions section).
-          <div className="snippets-empty">None</div>
+          <div className="lens-section-empty snippets-empty">None</div>
         ) : dataSource.numberOfItems() === 0 ? (
           // Distinct from "None": there ARE snippets, the filter is hiding them.
-          <div className="snippets-empty" data-testid="lens-snippets-no-matches">
+          <div
+            className="lens-section-empty snippets-empty"
+            data-testid="lens-snippets-no-matches"
+          >
             No matches
           </div>
         ) : (

@@ -1061,6 +1061,11 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Tests:** `at0296-lens-row-is-the-handle.test.ts`.
 - **Summary:** There is no reorder grip in the Lens: a press anywhere on a row that is not one of its controls arms a carry, and travel past the threshold engages it. The gate asserts the absence directly — every other assertion here would still pass with a grip present — and then pins the hard case, the Snippets row, whose incipit is ALSO a native HTML5 drag source into a session prompt. One surface, two drags, told apart by axis: a vertical drag reorders (the DOM order moves AND `snippets.json` commits it), a horizontal one of the same length leaves the order untouched, which is the assertion that fails if the axis arbitration is dropped and the carry starts swallowing the drag-out.
 
+#### [AT0297] A Lens section's empty label is one row tall
+- **Status:** ✅ open (regression gate).
+- **Tests:** `at0297-lens-empty-label-row-height.test.ts`.
+- **Summary:** "None" is rendered instead of the list, so it stands in for the section's first row and must stand at that row's height — a Text Files section holding nothing must not be a taller band than the same section holding one file. The label's box is authored once for all three sections (`.lens-section-empty`) against a stated height that copies the one-line row's natural height; this gate is where the copy is checked against the original, measuring a real file row and then the label that replaces it in the same list frame.
+
 ## Maintenance
 
 This file is append-only for the tag list. Status fields update as fixes land or regress. Removing a tag requires a documented decision and a successor tag noted inline (`[M{NN}] superseded by [M{MM}] — see ...`).

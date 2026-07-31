@@ -413,7 +413,10 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
         // and open a gap under the band (see the Sessions section). "No
         // matches" is the distinct filtered-to-zero face: there ARE open files,
         // the filter is hiding them.
-        <div className="text-files-empty" data-testid="lens-text-files-empty">
+        <div
+          className="lens-section-empty text-files-empty"
+          data-testid="lens-text-files-empty"
+        >
           {dataSource.unfilteredCount() > 0 ? "No matches" : "None"}
         </div>
       ) : (

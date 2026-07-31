@@ -69,14 +69,8 @@
   background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
 }
 
-/* Terse, centered empty label — matches the Sessions / Text Files empty states
-   so all three Lens sections read the same when empty. */
-.snippets-empty {
-  padding: 8px 10px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--tug7-element-global-text-normal-subtle-rest);
-}
+/* The empty label's size, tone and row-height box are `.lens-section-empty`'s
+   (`lens-content.css`) — shared by all three sections. */
 
 /* The reorder-drag lift on the TugListRow root while it is being dragged. The
    row layout itself (content / copy / delete) comes from TugListRow. */

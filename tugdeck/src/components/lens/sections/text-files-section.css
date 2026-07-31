@@ -120,11 +120,6 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* Terse, centered empty label — matches the Snippets section's empty state
-   (size, tone) so all three Lens sections read the same when empty. */
-.text-files-empty {
-  padding: 8px 10px;
-  text-align: center;
-  color: var(--tug7-element-global-text-normal-subtle-rest);
-  font-size: 12px;
-}
+/* The empty label's size, tone and row-height box are `.lens-section-empty`'s
+   (`lens-content.css`) — shared by all three sections, so an empty Text Files
+   section reads exactly like an empty Snippets one. */

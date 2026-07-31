@@ -31,6 +31,10 @@ body {
      carried by its own surface — so the column they held is given back and the
      content itself comes out to this edge. */
   --tugx-lens-row-inset-end: 4px;
+
+  /* The height a section's empty label stands at — the height of one one-line
+     row, so "None" occupies the row it stands in for. */
+  --tugx-lens-empty-block-size: 28px;
 }
 
 .lens-content {
@@ -98,4 +102,24 @@ body {
    the row component's own token, and the list passes it down by cascade. */
 .lens-content .lens-oneline-list {
   --tugx-list-row-padding-block: 2px;
+}
+
+/* ---- A section's empty label ----
+   "None" (or "No matches") is rendered INSTEAD of the list, so it stands in
+   for the list's first row and stands at exactly that row's height: a section
+   with nothing in it is a section showing one row's worth of nothing, not a
+   taller band than the section beside it holding a file. One rule for all
+   three sections, since a label that stood at a different height in each would
+   make the rail's empty states disagree about what "empty" looks like.
+
+   The height is the one-line row's own natural height and is pinned equal to a
+   real row's by at0297. */
+.lens-content .lens-section-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--tugx-lens-empty-block-size);
+  padding-inline: 10px;
+  font-size: 12px;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
 }

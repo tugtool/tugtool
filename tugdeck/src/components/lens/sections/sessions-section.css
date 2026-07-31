@@ -73,14 +73,8 @@
   z-index: 2;
 }
 
-/* Terse, centered empty label — matches the Snippets / Text Files empty states
-   so all three Lens sections read the same when empty. */
-.sessions-card-empty {
-  padding: 8px 10px;
-  text-align: center;
-  color: var(--tug7-element-global-text-normal-subtle-rest);
-  font-size: 12px;
-}
+/* The empty label's size, tone and row-height box are `.lens-section-empty`'s
+   (`lens-content.css`) — shared by all three sections. */
 
 /* How the row divides its width — which line the dot, the slots, and the
    sparkline ride, and what each costs the text beside it — is

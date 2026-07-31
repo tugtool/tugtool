@@ -448,7 +448,10 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
         // list would grow to fill the section and push the label down, opening a
         // gap under the band (and paint an empty framed box). "No matches" is
         // the distinct filtered-to-zero face.
-        <div className="sessions-card-empty" data-testid="lens-sessions-empty">
+        <div
+          className="lens-section-empty sessions-card-empty"
+          data-testid="lens-sessions-empty"
+        >
           {dataSource.unfilteredCount() > 0 ? "No matches" : "None"}
         </div>
       ) : (
