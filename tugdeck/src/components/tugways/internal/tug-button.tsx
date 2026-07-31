@@ -377,6 +377,15 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    */
   persistentDefaultRing?: boolean;
   /**
+   * Opt out of the emphasis-derived default-button registration ([D02]). A
+   * `filled` / `primary` action button is Return's home by convention, which is
+   * right for a CTA and wrong for a floating affordance that merely borrows the
+   * filled look — a scroll-to-latest arrow is not what Return means anywhere on
+   * the surface, and while it is registered it swallows every Return-submit in
+   * the scope (an editor's submit chord defers to the chain's default button).
+   */
+  neverDefaultButton?: boolean;
+  /**
    * Whether clicking promotes the responder chain and moves browser focus to
    * the button. Default `false` — the button dispatches its action and leaves
    * focus undisturbed (the no-steal-on-click half of the old `refuse` bundle).
@@ -462,6 +471,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   focusOrder = 0,
   focusPolicy,
   persistentDefaultRing = false,
+  neverDefaultButton = false,
   stealsFocusOnClick = false,
   ...rest
 }: TugButtonProps, ref) {
@@ -624,6 +634,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // scope's Return-home by convention, with no opt-in (the common case — a lone
   // Save / Open / Submit CTA).
   const isDefaultButton =
+    !neverDefaultButton &&
     (emphasis === "filled" || emphasis === "primary") &&
     isSemanticRole &&
     role === "action" &&

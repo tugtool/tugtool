@@ -19,6 +19,8 @@
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
  * @covers tugdeck/src/components/tugways/chrome/session-question-dialog.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-jump-to-bottom-button.tsx
+ * @covers tugdeck/src/components/tugways/internal/tug-button.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/question-summary-list.tsx
  * @covers tugdeck/src/components/tugways/tug-list-row.css
@@ -49,6 +51,10 @@ const OPTION_CELLS = `${OPTIONS} .tug-list-view-cell`;
 const OPTION_ROWS = `${OPTIONS} [data-slot="tug-list-row"]`;
 const OLD_DEADZONE = `${CARD} [data-slot="session-question-dialog-scope"]`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
+// The current question's free-text answer field ("or type your own answer…") —
+// the CM6 substrate the wizard's [K3] Shift-Return submit chord runs through.
+const FREE_TEXT = `${DIALOG} .session-question-dialog-freetext-field`;
+const FREE_TEXT_CONTENT = `${FREE_TEXT} .cm-content`;
 
 // Single- and multi-select options are the SAME flush TugListView now (the
 // component unified both arities onto one item-group). So the "radio" fixtures
@@ -542,6 +548,85 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
           q2Text.includes("Precedence + parens"),
           `Enter advanced to Q2 (current options now: ${q2Text.slice(0, 60)})`,
         ).toBe(true);
+
+        process.stdout.write("VERDICT: PASS\n");
+      } catch (err) {
+        process.stdout.write("VERDICT: FAIL\n");
+        const tail = app.tailLog(200);
+        if (tail !== "") {
+          process.stderr.write(`\n[at0146-question-dialog-keyboard] log tail:\n${tail}\n`);
+        }
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "free-text answer: Shift-Return advances the wizard, not some other filled button",
+    async () => {
+      const app = await launchTugApp({ testName: "at0146-question-dialog-keyboard" });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindSession("A", { tugSessionId: SID });
+        await app.awaitEngineReady("A");
+        await app.driveSession("A", { op: "send", text: "ask me something" });
+        await ingestQuestion(app, controlRequestForwardMultiQuestion());
+
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
+          { timeoutMs: 6000 },
+        );
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 4000 },
+        );
+
+        // Tab within the trap until the free-text field holds the key view.
+        let onField = false;
+        for (let i = 0; i < 10 && !onField; i += 1) {
+          await app.nativeKey("Tab");
+          await sleep(150);
+          onField = await hasAttr(app, FREE_TEXT, "data-key-view-kbd");
+        }
+        expect(onField, "Tab reaches the free-text answer field").toBe(true);
+
+        // The field takes real typing (the caret is in the CM6 document).
+        await app.nativeType("my own answer");
+        await sleep(250);
+        const typed = await app.evalJS<string>(
+          `(document.querySelector(${JSON.stringify(FREE_TEXT_CONTENT)})||{}).textContent || ""`,
+        );
+        expect(typed, "the field holds the typed answer").toBe("my own answer");
+
+        // The editor's submit chord defers to the scope's default button when one
+        // is registered. Record every click so a stray default-button activation
+        // (e.g. the transcript's filled "Scroll to latest" affordance) is caught
+        // as itself, not as a silent no-advance.
+        await app.evalJS<boolean>(
+          `(function(){window.__at0146Clicks=[];document.addEventListener("click",function(e){var t=e.target;window.__at0146Clicks.push((t.getAttribute&&t.getAttribute("aria-label"))+"|"+(t.textContent||"").slice(0,24));},true);return true;})()`,
+        );
+
+        // [K3] Shift-Return commits the typed answer and advances to Q2.
+        await app.nativeKey("Return", ["shift"]);
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && (el.textContent||"").indexOf("Precedence + parens") !== -1;})()`,
+          { timeoutMs: 4000 },
+        );
+        const clicks = await app.evalJS<string>(
+          `JSON.stringify(window.__at0146Clicks)`,
+        );
+        expect(
+          clicks,
+          "Shift-Return runs the field's own submit, activating no other button",
+        ).toBe("[]");
 
         process.stdout.write("VERDICT: PASS\n");
       } catch (err) {

@@ -56,6 +56,11 @@ export const SessionJumpToBottomButton = React.forwardRef<
       size="sm"
       rounded="full"
       icon={<ArrowDown />}
+      // The filled look is weight, not a CTA claim: Return never means "scroll
+      // to latest", and the button is mounted the whole time the transcript is
+      // up (visibility is CSS), so registering it would make it the card's
+      // standing Return's-home and swallow every editor submit chord.
+      neverDefaultButton
       aria-label="Scroll to latest"
       onClick={onClick}
     />
