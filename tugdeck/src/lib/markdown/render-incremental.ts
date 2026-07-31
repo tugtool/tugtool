@@ -61,13 +61,13 @@
  * @module lib/markdown/render-incremental
  */
 
+import { annotateTranscript } from "@/lib/annotator/annotate-transcript";
+import type { AnnotationContext } from "@/lib/annotator/types";
 import { DEFAULT_BLOCK_TRANSFORMERS } from "./block-transformers";
 import { enhanceFencedCode } from "./enhance-fenced-code";
 import { enhanceImg } from "./enhance-img";
-import { enhanceLinks } from "./enhance-links";
 import { enhanceMath } from "./enhance-math";
 import { enhanceMermaid } from "./enhance-mermaid";
-import { enhanceCommands } from "./enhance-commands";
 import { enhanceTable } from "./enhance-table";
 import {
   parseMarkdownToSanitizedBlocks,
@@ -121,14 +121,13 @@ export interface ReconcilePlan {
 
 /**
  * Options for {@link renderIncremental}: the markdown parse options plus
- * the optional slash-command clickability predicate. When
- * `isKnownSlashCommand` is set, inline `<code>` spans that parse as a
- * known slash command are tagged for the transcript's click-to-run
- * gesture (see `enhance-commands`); omitting it — every
- * non-transcript consumer — skips command enhancement entirely.
+ * the optional annotation context. Every render is annotated for the
+ * state-free entity kinds (URLs, email addresses); supplying a context
+ * opts this consumer into the kinds that need live session state, such as
+ * the transcript's clickable command spans (see `lib/annotator`).
  */
 export interface RenderIncrementalOptions extends ParseMarkdownOptions {
-  isKnownSlashCommand?: (name: string) => boolean;
+  annotation?: AnnotationContext;
 }
 
 /** Outcome of one {@link renderIncremental} call. */
@@ -200,7 +199,7 @@ const BLOCK_CLASS = "tugx-md-block";
  */
 function buildBlockElement(
   block: SanitizedMarkdownBlock,
-  isKnownSlashCommand?: (name: string) => boolean,
+  annotation?: AnnotationContext,
 ): HTMLDivElement {
   const el = document.createElement("div");
   el.className = BLOCK_CLASS;
@@ -209,33 +208,27 @@ function buildBlockElement(
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   enhanceImg(el);
-  enhanceLinks(el);
+  annotateTranscript(el, annotation);
   enhanceTable(el);
   void enhanceMath(el);
   void enhanceMermaid(el);
-  if (isKnownSlashCommand !== undefined) {
-    enhanceCommands(el, isKnownSlashCommand);
-  }
   return el;
 }
 
 function updateBlockElement(
   el: HTMLElement,
   block: SanitizedMarkdownBlock,
-  isKnownSlashCommand?: (name: string) => boolean,
+  annotation?: AnnotationContext,
 ): void {
   el.dataset.blockType = block.type;
   el.dataset.contentHash = block.contentHash.toString();
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   enhanceImg(el);
-  enhanceLinks(el);
+  annotateTranscript(el, annotation);
   enhanceTable(el);
   void enhanceMath(el);
   void enhanceMermaid(el);
-  if (isKnownSlashCommand !== undefined) {
-    enhanceCommands(el, isKnownSlashCommand);
-  }
 }
 
 /**
@@ -312,11 +305,7 @@ export function renderIncremental(
     transformers: options?.transformers ?? DEFAULT_BLOCK_TRANSFORMERS,
   };
   const blocks = parseMarkdownToSanitizedBlocks(text, mergedOptions);
-  return renderIncrementalFromBlocks(
-    container,
-    blocks,
-    options?.isKnownSlashCommand,
-  );
+  return renderIncrementalFromBlocks(container, blocks, options?.annotation);
 }
 
 /**
@@ -335,7 +324,7 @@ export function renderIncremental(
 export function renderIncrementalFromBlocks(
   container: HTMLElement,
   blocks: ReadonlyArray<SanitizedMarkdownBlock>,
-  isKnownSlashCommand?: (name: string) => boolean,
+  annotation?: AnnotationContext,
 ): RenderResult {
   // Snapshot existing children once. The reconciler's contract is
   // that it owns every child of `container` (no foreign nodes); the
@@ -371,10 +360,10 @@ export function renderIncrementalFromBlocks(
     if (child === undefined) {
       // Defensive: state and DOM disagreed (unexpected). Treat the
       // missing slot as an append so the new content still lands.
-      container.appendChild(buildBlockElement(blocks[i], isKnownSlashCommand));
+      container.appendChild(buildBlockElement(blocks[i], annotation));
       continue;
     }
-    updateBlockElement(child, blocks[i], isKnownSlashCommand);
+    updateBlockElement(child, blocks[i], annotation);
   }
 
   // Phase 2 — append new wrappers beyond the previous length.
@@ -383,7 +372,7 @@ export function renderIncrementalFromBlocks(
     i < prevHashes.length + plan.appendCount;
     i += 1
   ) {
-    container.appendChild(buildBlockElement(blocks[i], isKnownSlashCommand));
+    container.appendChild(buildBlockElement(blocks[i], annotation));
   }
 
   // Phase 3 — remove trailing wrappers past the new length. Walked

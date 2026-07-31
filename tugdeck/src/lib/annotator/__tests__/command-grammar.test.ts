@@ -1,10 +1,10 @@
 /**
- * Pure-logic coverage for `enhance-commands`.
+ * Pure-logic coverage for the annotator's command grammars.
  *
- * The DOM pass (`enhanceCommands`) tags `<code>` spans and requires a real
- * DOM at runtime — it's validated in the real app (the transcript command
- * gestures), not via fake-DOM render tests (project policy: no jsdom /
- * happy-dom).
+ * The DOM pass (`annotateTranscript`) marks `<code>` spans and requires a
+ * real DOM at runtime — it's validated in the real app (the transcript
+ * command gestures), not via fake-DOM render tests (project policy: no
+ * jsdom / happy-dom).
  *
  * This file pins the *pure* grammars — `parseSlashCommandLine` and
  * `parseShellCommandLine` — the strict matchers that decide which code
@@ -19,7 +19,7 @@ import { describe, expect, test } from "bun:test";
 import {
   parseSlashCommandLine,
   parseShellCommandLine,
-} from "../enhance-commands";
+} from "../command-grammar";
 
 describe("parseSlashCommandLine — accepts well-formed command lines", () => {
   test("bare command", () => {

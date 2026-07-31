@@ -14,6 +14,7 @@
 import "virtual:tug-active-theme.css";
 import "./globals.css";
 import "../styles/chrome.css";
+import "../styles/tug-annotation.css";
 import "@xterm/xterm/css/xterm.css";
 
 if (import.meta.hot) {

@@ -1009,7 +1009,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
         // A clicked link to anything other than the app's own origin opens
         // in the system browser, never inside our webview — a transcript URL
-        // (markdown link or a bare URL linkified by `enhance-links.ts`) must
+        // (markdown link or a bare URL the transcript annotator linkified) must
         // not navigate the app away from the Session card. Same-origin http(s)
         // navigation (e.g. an in-page `#fragment`) is left to load normally.
         if navigationAction.navigationType == .linkActivated,
@@ -1030,7 +1030,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
     /// Schemes a transcript link is allowed to hand to the system handler.
     /// DOMPurify already strips dangerous URI schemes (`javascript:`,
-    /// `data:`) from rendered markdown, and `enhance-links.ts` only emits
+    /// `data:`) from rendered markdown, and the transcript annotator only emits
     /// http(s); this allowlist is the host-side backstop so a clicked link
     /// can only reach the browser, mail, or phone handler — never an
     /// arbitrary registered URL scheme.

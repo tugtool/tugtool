@@ -4,7 +4,7 @@
  *
  * A backticked slash command in assistant prose (e.g.
  * `` `/tugplug:implement roadmap/find-route.md` ``) whose name is in the
- * live command catalog is tagged `.tugx-md-cmd`; a click seeds the
+ * live command catalog is marked `.tugx-annotation`; a click seeds the
  * composer with a ready-to-run, atomized draft.
  *
  * This drives the actual render/interaction (no fake DOM):
@@ -20,6 +20,9 @@
  *   3. A click on the tagged span seeds the composer: the editor holds the
  *      argument text (`roadmap/find-route.md`) plus a command chip, is the
  *      focused first responder, and the card is on the Code route.
+ *   4. A right-click on the same span offers Insert into Composer, which
+ *      puts the command line in as literal text — the indirect gesture,
+ *      distinguishable from the seed by the literal `/name args` string.
  *
  * The second test covers the SUBMITTED command — the user's own row. On
  * reload a slash command replays as claude's `<command-name>` envelope,
@@ -30,6 +33,7 @@
  *
  * @covers tugdeck/src/lib/slash-commands.ts
  * @covers tugdeck/src/lib/markdown/
+ * @covers tugdeck/src/lib/annotator/
  * @covers tugdeck/src/lib/command-atom.ts
  * @covers tugdeck/src/components/tugways/tug-markdown-block.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
@@ -153,7 +157,7 @@ const spanStateJS = (needle: string) => `JSON.stringify((function(){
   if (!el) return { found: false };
   return {
     found: true,
-    tagged: el.classList.contains('tugx-md-cmd'),
+    tagged: el.classList.contains("tugx-annotation"),
     cmd: el.getAttribute('data-slash-command'),
     args: el.getAttribute('data-slash-args'),
   };
@@ -228,7 +232,7 @@ describe.skipIf(!SHOULD_RUN)("AT0225: clickable slash commands", () => {
 
         // --- 3. Click the tagged span → the composer seeds --------------
         await app.click(
-          `[data-card-id="A"] code.tugx-md-cmd[data-slash-command="${KNOWN_CMD}"]`,
+          `[data-card-id="A"] code.tugx-annotation[data-slash-command="${KNOWN_CMD}"]`,
         );
 
         // The editor holds the argument text and a command chip (an <img>
@@ -256,6 +260,41 @@ describe.skipIf(!SHOULD_RUN)("AT0225: clickable slash commands", () => {
         );
         expect(route === null || route === "❯" || route.indexOf("❯") !== -1).toBe(
           true,
+        );
+
+        // --- 4. Right-click → Insert into Composer ----------------------
+        // The indirect gesture: instead of seeding a ready-to-run draft,
+        // the command's literal text goes into the composer as something to
+        // talk about. The click above seeded an atomized chip plus its
+        // argument, so the whole command line as literal text is what
+        // distinguishes this path from that one.
+        const SPAN = `[data-card-id="A"] code.tugx-annotation[data-slash-command="${KNOWN_CMD}"]`;
+        await app.evalJS(
+          `(() => { const el = document.querySelector(${JSON.stringify(SPAN)}); if (el) el.scrollIntoView({ block: "center" }); return !!el; })()`,
+        );
+        await app.nativeRightClickAtElement(SPAN);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-item-action="insert-into-composer"]') !== null`,
+          { timeoutMs: 4000 },
+        );
+        const itemPoint = await app.evalJS<{ x: number; y: number } | null>(
+          `(() => {
+            const item = document.querySelector('[data-item-action="insert-into-composer"]');
+            if (item === null) return null;
+            const r = item.getBoundingClientRect();
+            return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+          })()`,
+        );
+        expect(itemPoint).not.toBeNull();
+        await app.nativeClick(itemPoint as { x: number; y: number });
+
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var cm = document.querySelector(${JSON.stringify(PROMPT_INPUT)});
+            if (!cm) return false;
+            return (cm.textContent || '').indexOf(${JSON.stringify(`/${KNOWN_CMD} ${ARG}`)}) !== -1;
+          })()`,
+          { timeoutMs: 8000 },
         );
 
         process.stdout.write("VERDICT: PASS\n");
@@ -306,12 +345,12 @@ describe.skipIf(!SHOULD_RUN)("AT0225: clickable slash commands", () => {
         // The envelope rebuilds as a command chip whose host span carries
         // the command tag — no inline `<code>` involved.
         await app.waitForCondition<boolean>(
-          `document.querySelector('[data-card-id="A"] [data-slot="tug-atom-markdown-body"] span.tug-atom-chip-host.tugx-md-cmd') !== null`,
+          `document.querySelector('[data-card-id="A"] [data-slot="tug-atom-markdown-body"] span.tug-atom-chip-host.tugx-annotation') !== null`,
           { timeoutMs: 8000 },
         );
         const tagged = JSON.parse(
           await app.evalJS<string>(`JSON.stringify((function(){
-            var el = document.querySelector('[data-card-id="A"] [data-slot="tug-atom-markdown-body"] span.tug-atom-chip-host.tugx-md-cmd');
+            var el = document.querySelector('[data-card-id="A"] [data-slot="tug-atom-markdown-body"] span.tug-atom-chip-host.tugx-annotation');
             return {
               cmd: el.getAttribute('data-slash-command'),
               args: el.getAttribute('data-slash-args'),

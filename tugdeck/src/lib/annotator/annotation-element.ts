@@ -1,0 +1,132 @@
+/**
+ * The DOM face of an annotation: stamping one onto an element, and
+ * reading one back off the element a gesture landed on.
+ *
+ * Everything an interaction layer needs to know about an annotated
+ * element is in its class and dataset, which is what lets a delegated
+ * listener on the transcript root service ink it never rendered — prose
+ * the annotator marked, a tool header a component stamped, a chip host
+ * grafted in after the fact. They are indistinguishable here by design.
+ *
+ * The decision logic these functions carry out lives in `payloads.ts` and
+ * is pure; this module is the thin DOM shell over it.
+ *
+ * @module lib/annotator/annotation-element
+ */
+
+import {
+  ANNOTATION_DATASET_KEYS,
+  annotationOpensSurface,
+  datasetForPayload,
+  payloadFromDataset,
+  type AnnotationDataset,
+  type AnnotationPayload,
+} from "./payloads";
+import { ANNOTATION_CLASS, type AnnotationKind } from "./types";
+
+/** An annotation resolved from the DOM: the element and what it carries. */
+export interface ResolvedAnnotation {
+  element: HTMLElement;
+  payload: AnnotationPayload;
+}
+
+/**
+ * Mark `element` as an annotation carrying `payload`. Idempotent: the
+ * dataset is synced, not merely added, so an element that changed kind
+ * sheds the keys of the kind it left behind.
+ */
+export function stampAnnotation(
+  element: HTMLElement,
+  payload: AnnotationPayload,
+): void {
+  const next: AnnotationDataset = datasetForPayload(payload);
+  for (const key of ANNOTATION_DATASET_KEYS) {
+    if (next[key] === undefined) delete element.dataset[key];
+  }
+  element.classList.add(ANNOTATION_CLASS);
+  element.dataset.tugAnnotation = payload.kind;
+  for (const [key, value] of Object.entries(next)) {
+    element.dataset[key] = value;
+  }
+  // An annotation that opens another surface must not take focus or
+  // activate its own pane on the way: the target card claims both, and
+  // whatever the user was typing in keeps its caret. Stamped here rather
+  // than by each surface, so every file reference is protected the same
+  // way whoever produced it.
+  if (annotationOpensSurface(payload.kind)) {
+    element.dataset.tugFocus = "refuse";
+    element.dataset.noActivate = "";
+  } else {
+    delete element.dataset.tugFocus;
+    delete element.dataset.noActivate;
+  }
+}
+
+/**
+ * Mark `element` as an annotation of `kind` whose payload the DOM already
+ * holds — the anchor case, where `href` *is* the URL or address. Stamping
+ * a second copy of it into the dataset would create two places for one
+ * value to live; {@link readAnnotation} reads the href instead.
+ */
+export function stampAnnotationKind(
+  element: HTMLElement,
+  kind: AnnotationKind,
+): void {
+  element.classList.add(ANNOTATION_CLASS);
+  element.dataset.tugAnnotation = kind;
+}
+
+/**
+ * Remove every trace of an annotation from `element`. Safe on an element
+ * that never carried one.
+ */
+export function clearAnnotation(element: HTMLElement): void {
+  if (element.dataset.tugAnnotation === undefined) return;
+  element.classList.remove(ANNOTATION_CLASS);
+  delete element.dataset.tugAnnotation;
+  delete element.dataset.tugFocus;
+  delete element.dataset.noActivate;
+  for (const key of ANNOTATION_DATASET_KEYS) delete element.dataset[key];
+}
+
+/**
+ * Read the annotation `element` carries, or `null` when it carries none
+ * (or carries a half-stamped one — a partial payload is not actionable).
+ *
+ * An anchor is its own payload: `linkify-element` produces a real `<a>`
+ * whose `href` already holds the URL or `mailto:` address, so the
+ * annotation stamps no duplicate copy of a value the DOM is already
+ * storing. This is where that asymmetry is resolved, once.
+ */
+export function readAnnotation(element: HTMLElement): AnnotationPayload | null {
+  const kind = element.dataset.tugAnnotation as AnnotationKind | undefined;
+  if (kind === undefined) return null;
+  const record: AnnotationDataset = {};
+  for (const key of ANNOTATION_DATASET_KEYS) {
+    const value = element.dataset[key];
+    if (value !== undefined) record[key] = value;
+  }
+  if (element instanceof HTMLAnchorElement) {
+    const href = element.getAttribute("href") ?? "";
+    if (kind === "url" && record.url === undefined) record.url = href;
+    if (kind === "email" && record.email === undefined) {
+      record.email = href.replace(/^mailto:/i, "");
+    }
+  }
+  return payloadFromDataset(kind, record);
+}
+
+/**
+ * Resolve the annotation a pointer event landed on by walking up from the
+ * event target, or `null` when the gesture missed every annotation.
+ */
+export function annotationFromEvent(
+  event: MouseEvent,
+): ResolvedAnnotation | null {
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+  const element = target.closest<HTMLElement>(`.${ANNOTATION_CLASS}`);
+  if (element === null) return null;
+  const payload = readAnnotation(element);
+  return payload === null ? null : { element, payload };
+}

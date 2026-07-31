@@ -38,9 +38,11 @@
  *    text-entry surface ([#bk-conformance] item 2); path *filtering*
  *    is deferred to the future Find redesign. PathListBlock renders
  *    zero `<input>` / `<textarea>` elements.
- *  - Make rows interactive. Paths are display-only here; a
- *    click-to-open-in-filetree affordance is a deferred follow-on
- *    (same deferral as `EditToolBlock`'s filetree link).
+ *  - Own row interaction. A row stamps the annotator's file-path
+ *    annotation and the transcript's delegated layer supplies the click
+ *    and the context menu, so a Glob result opens exactly the way a path
+ *    written in assistant prose does. No handler, and no responder, is
+ *    added here.
  *  - Box itself into a fixed-height inner scroller. A glob / grep
  *    result is bounded (Glob caps at 100); rendering it inline and
  *    letting the transcript scroll keeps the layout honest. A fold
@@ -81,6 +83,7 @@ import {
 } from "lucide-react";
 
 import { MiddleEllipsisPath } from "@/components/tugways/blocks/middle-ellipsis-path";
+import { ANNOTATION_CLASS } from "@/lib/annotator/types";
 import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import {
@@ -333,9 +336,22 @@ const PathCell: TugListViewCellRenderer<PathListDataSource> = ({
 }: TugListViewCellProps<PathListDataSource>) => {
   const path = dataSource.pathAt(index);
   const Icon = ICON_BY_KIND[iconKindForPath(path)];
+  // Born confirmed: the tool that produced this list just found the file.
+  // A relative path is left un-annotated rather than guessed at — the
+  // annotation's contract is a path that opens.
+  const annotated = path.startsWith("/");
 
   return (
-    <div className="tugx-paths-row" data-slot="path-list-row">
+    <div
+      className={
+        annotated ? `tugx-paths-row ${ANNOTATION_CLASS}` : "tugx-paths-row"
+      }
+      data-slot="path-list-row"
+      data-tug-annotation={annotated ? "file-path" : undefined}
+      data-path={annotated ? path : undefined}
+      data-tug-focus={annotated ? "refuse" : undefined}
+      data-no-activate={annotated ? "" : undefined}
+    >
       <Icon size={14} aria-hidden="true" />
       <MiddleEllipsisPath path={path} />
     </div>

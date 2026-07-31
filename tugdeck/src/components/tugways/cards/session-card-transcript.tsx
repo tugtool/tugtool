@@ -93,7 +93,7 @@ import {
 } from "lucide-react";
 import {
   useSessionModelName,
-  useKnownSlashCommand,
+  useAnnotationContext,
   formatTranscriptTimestamp,
   useTranscriptCellMenu,
   type CopyMarkdownResolver,
@@ -162,7 +162,13 @@ import {
   turnEntryToMarkdown,
 } from "@/components/tugways/cards/turn-entry-markdown";
 import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selection";
-import { COMMAND_CLASS } from "@/lib/markdown/enhance-commands";
+import type { AnnotationContext } from "@/lib/annotator/types";
+import { AnnotationScope } from "@/components/tugways/annotation-scope";
+import { annotationFromEvent } from "@/lib/annotator/annotation-element";
+import {
+  annotationEntryFor,
+  type AnnotationDispatchContext,
+} from "@/lib/annotator/registry";
 import { attachSelectionExtension } from "@/components/tugways/selection-extension";
 import { SessionJumpToBottomButton } from "@/components/tugways/cards/session-jump-to-bottom-button";
 import {
@@ -312,7 +318,7 @@ const UserMessageCell = React.memo(function UserMessageCell({
   // Known-command gate for a slash command the user wrote in backticks.
   // Subscribed HERE in the cell, like the assistant row does, so the host
   // renderer lambda stays identity-stable ([L02]/[L26]).
-  const isKnownSlashCommand = useKnownSlashCommand(sessionMetadataStore);
+  const annotation = useAnnotationContext(sessionMetadataStore);
   // Address the row by its true session turn: the window's turn offset plus
   // the row's window-relative turn index ([L02]/[P04]). The user row carries
   // the `#u{turn}` address on its attribution row; image-atom captions carry
@@ -391,7 +397,7 @@ const UserMessageCell = React.memo(function UserMessageCell({
     : undefined;
   const hasBody = text.length > 0;
   const { ResponderScope, cellProps, bodyRef, menu } =
-    useTranscriptCellMenu();
+    useTranscriptCellMenu({ codeSessionStore });
   // Z1 — invoke the per-turn trailing renderer for this row half.
   // `row.turnKey` is set by the data source on every row (committed
   // and in-flight); the user row carries no `turn` payload while
@@ -407,6 +413,7 @@ const UserMessageCell = React.memo(function UserMessageCell({
   const hasTrailing = trailing !== null && trailing !== undefined;
   return (
     <ResponderScope>
+      <AnnotationScope value={annotation}>
       <div {...cellProps}>
         <TugTranscriptEntry
           participant="user"
@@ -432,7 +439,7 @@ const UserMessageCell = React.memo(function UserMessageCell({
                 text={text}
                 atoms={atoms}
                 address={address}
-                isKnownSlashCommand={isKnownSlashCommand}
+                annotation={annotation}
               />
               <TugAttachmentPreview
                 address={address}
@@ -470,6 +477,7 @@ const UserMessageCell = React.memo(function UserMessageCell({
         />
       </div>
       {menu}
+      </AnnotationScope>
     </ResponderScope>
   );
 }, transcriptCellPropsEqual);
@@ -848,11 +856,10 @@ interface CodeRowBodyProps {
    */
   committed?: boolean;
   /**
-   * Clickability gate for inline slash-command spans in this turn's
-   * `assistant_text` prose — forwarded to `TugMarkdownBlock`. See
-   * `useKnownSlashCommand`.
+   * Annotator inputs for this turn's `assistant_text` prose — forwarded
+   * to `TugMarkdownBlock`. See `useAnnotationContext`.
    */
-  isKnownSlashCommand?: (name: string) => boolean;
+  annotation?: AnnotationContext;
 }
 
 /**
@@ -911,7 +918,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   awaitingToolUseId,
   turnInterrupted = false,
   committed = false,
-  isKnownSlashCommand,
+  annotation,
 }) => {
   // Partition tool_use Messages into top-level vs nested per
   // `parentToolUseId` ([#step-17-5]). Subagent children render
@@ -1041,7 +1048,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
             streamingPath={path}
             className="session-card-transcript-code-body"
             findable
-            isKnownSlashCommand={isKnownSlashCommand}
+            annotation={annotation}
           />
         </StreamedTextGate>,
       );
@@ -1178,7 +1185,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
   // Known-command gate for clickable slash commands in this turn's prose
   // ([L02] via the metadata store's catalog). Subscribed HERE in the cell,
   // like `modelName`, so the host renderer lambda stays identity-stable.
-  const isKnownSlashCommand = useKnownSlashCommand(sessionMetadataStore);
+  const annotation = useAnnotationContext(sessionMetadataStore);
   // Address the row by its true session turn ([L02]/[P04]). The assistant
   // row carries one `#a{turn}` address on its attribution row (a wake/cron
   // turn is the assistant speaking, so it is `#a` too); the inline messages
@@ -1340,7 +1347,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
     [],
   );
   const { ResponderScope, cellProps, bodyRef, menu } =
-    useTranscriptCellMenu(resolveCopyMarkdown);
+    useTranscriptCellMenu({ resolveCopyMarkdown, codeSessionStore });
 
   // A compaction-only turn (a `/compact`, or an auto-compact boundary) is not
   // the model speaking — it is a session-meta event. Render it as a standalone
@@ -1389,6 +1396,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
 
   return (
     <ResponderScope>
+      <AnnotationScope value={annotation}>
       <div {...cellProps}>
         {/* Foot height-reservation floor [L22/L06/L23] — wraps the whole
             entry so the inflight footer (thinking indicator) is held
@@ -1442,7 +1450,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
                   turnKey={turnKey}
                   streamingStore={streamingStore}
                   session={codeSessionStore}
-                  isKnownSlashCommand={isKnownSlashCommand}
+                  annotation={annotation}
                   awaitingToolUseId={
                     // Id-join the live pending dialog to its tool row so
                     // that row's lifecycle dot reads `awaiting` ([Q01]).
@@ -1526,6 +1534,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
         </div>
       </div>
       {menu}
+      </AnnotationScope>
     </ResponderScope>
   );
 }, transcriptCellPropsEqual);
@@ -2003,39 +2012,55 @@ export const SessionTranscriptHost = forwardRef<
     return attachSelectionExtension(root);
   }, []);
 
-  // Clickable commands ([P03]/[P06]). A click on a `.tugx-md-cmd` span —
-  // tagged by `enhance-commands` when its inline `<code>` parsed as a
-  // *known* slash command or a project shell command — activates this card
-  // and parks a ready-to-run draft on the code-session store. A slash
-  // command (`data-slash-command`) seeds itself; a shell command
-  // (`data-shell-command`, e.g. `just launch-debug`) seeds into the Code
-  // route as a one-shot `/shell <command>`. Delegated on the transcript
-  // root so it covers every rendered markdown block with a single listener.
+  // Annotation gestures. One delegated listener on the transcript root
+  // services every actionable entity the annotator marked, whatever
+  // surface produced it: the registry decides what a click on a given kind
+  // does, so a new entity kind costs nothing here. A kind with no
+  // registered click behavior (URLs and email addresses — real anchors
+  // whose native navigation the host already routes correctly) falls
+  // through untouched.
   // [L03] — the listener must be live before any click it services.
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (root === null) return;
+    const dispatchContext: AnnotationDispatchContext = {
+      activateCard: () => deck.activateCard(cardId),
+      codeSessionStore,
+    };
     const onClick = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const span = target.closest<HTMLElement>(`.${COMMAND_CLASS}`);
-      if (span === null) return;
+      // Modified clicks fall through so text selection and the platform's
+      // own link gestures keep working.
+      if (event.button !== 0 || event.metaKey || event.shiftKey) return;
+      const hit = annotationFromEvent(event);
+      if (hit === null) return;
+      // An anchor navigates itself, and the host's navigation delegate
+      // routes it to the system browser — acting on it here too would
+      // open it twice.
+      if (hit.element instanceof HTMLAnchorElement) return;
       // Ignore a click that is the tail of a text drag-selection over the
-      // span — only a plain, collapsed-selection click seeds the command.
+      // annotation — only a plain, collapsed-selection click acts.
       const selection = window.getSelection();
       if (selection !== null && !selection.isCollapsed) return;
-      const slashName = span.dataset.slashCommand;
-      const shellCommand = span.dataset.shellCommand;
-      if (slashName !== undefined) {
-        deck.activateCard(cardId);
-        codeSessionStore.insertCommandDraft(slashName, span.dataset.slashArgs ?? "");
-      } else if (shellCommand !== undefined) {
-        deck.activateCard(cardId);
-        codeSessionStore.insertCommandDraft("shell", shellCommand);
-      }
+      const entry = annotationEntryFor(hit.payload.kind);
+      entry?.primaryClick?.(hit.payload, dispatchContext);
+    };
+    // An annotation that opens something must not let the press move DOM
+    // focus (the composer's caret would go with it). The kinds that need
+    // that protection declare it on the element; the rest are left alone
+    // so a press inside prose still starts a selection.
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0 || event.metaKey || event.shiftKey) return;
+      const hit = annotationFromEvent(event);
+      if (hit === null) return;
+      if (hit.element.dataset.noActivate === undefined) return;
+      event.preventDefault();
     };
     root.addEventListener("click", onClick);
-    return () => root.removeEventListener("click", onClick);
+    root.addEventListener("mousedown", onMouseDown);
+    return () => {
+      root.removeEventListener("click", onClick);
+      root.removeEventListener("mousedown", onMouseDown);
+    };
   }, [cardId, codeSessionStore, deck]);
 
   // Deferred-content hold ([P03] as amended: progressive AFFORDANCE,

@@ -28,6 +28,10 @@
 import React from "react";
 
 import { PropertyStore } from "@/components/tugways/property-store";
+import type { AnnotationContext } from "@/lib/annotator/types";
+import { pathResolutionStore } from "@/lib/annotator/path-resolution";
+import { makeReferenceResolver } from "@/lib/annotator/resolve-reference";
+import { NO_COMMIT_VERDICT } from "@/lib/annotator/commit-resolution";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { SessionThinkingBlock } from "@/components/tugways/chrome/session-thinking-block";
 import { BlockChrome } from "@/components/tugways/blocks/block-chrome";
@@ -78,23 +82,34 @@ const SOURCE_RICH = [
   "const y = 1;",
   "```",
 ].join("\n");
-// Command-bearing message ([enhance-commands]): inline `<code>` spans that
-// `enhanceCommands` tags as clickable commands — two project shell commands
-// (`just` / `tug`) and one known slash command (`/diff`). Cell D passes
-// `isKnownSlashCommand` so the enhancer actually runs, giving at0237 real
-// `.tugx-md-cmd` spans to right-click.
+// Command-bearing message: inline `<code>` spans the annotator marks as
+// clickable commands — two project shell commands (`just` / `tugutil`) and
+// one known slash command (`/diff`). Cell D passes an annotation context so
+// the command pass actually runs, giving at0237 real command spans to
+// right-click.
 const SOURCE_CMD =
   "Run `just launch-debug` to start, `tugutil dash join --preview` to preview, and `/diff HEAD` to inspect.";
 
 /**
- * Known-command predicate for cell D — only `diff` among the slash
- * commands (so `/diff HEAD` tags and an arbitrary `/whatever` would not).
- * Shell commands (`just` / `tug`) need no predicate; the
- * leading tool name is their whole gate.
+ * Annotation context for cell D. Only `diff` is a known slash command (so
+ * `/diff HEAD` marks and an arbitrary `/whatever` would not). Shell
+ * commands (`just` / `tugutil`) need no catalog; the leading tool name is
+ * their whole gate.
  */
-function isKnownSlashCommandForFixture(name: string): boolean {
-  return name === "diff";
-}
+const FIXTURE_ANNOTATION: AnnotationContext = {
+  isKnownSlashCommand: (name) => name === "diff",
+  // The fixture has no session — no cwd to resolve against and no project
+  // to search — so the real resolvers are wired up and simply answer
+  // nothing. Using them rather than a stand-in keeps the fixture on the
+  // same path the app takes.
+  resolvePath: makeReferenceResolver({
+    paths: pathResolutionStore,
+    names: null,
+    cwd: null,
+  }),
+  resolveCommit: () => NO_COMMIT_VERDICT,
+  commitRoot: null,
+};
 
 /**
  * GalleryTranscriptCopy — mounts the real transcript COPY wiring over a
@@ -131,10 +146,10 @@ export function GalleryTranscriptCopy(): React.ReactElement {
 
   // Two cells, each its own responder scope — mirrors the real
   // transcript's one-scope-per-row shape.
-  const cellA = useTranscriptCellMenu(resolveCopyMarkdown);
-  const cellB = useTranscriptCellMenu(resolveCopyMarkdown);
-  const cellC = useTranscriptCellMenu(resolveCopyMarkdown);
-  const cellD = useTranscriptCellMenu(resolveCopyMarkdown);
+  const cellA = useTranscriptCellMenu({ resolveCopyMarkdown });
+  const cellB = useTranscriptCellMenu({ resolveCopyMarkdown });
+  const cellC = useTranscriptCellMenu({ resolveCopyMarkdown });
+  const cellD = useTranscriptCellMenu({ resolveCopyMarkdown });
 
   // App-test probe: run the production serializer over the *current*
   // selection deterministically (no native ⌘C / selection-sync concern),
@@ -233,10 +248,9 @@ export function GalleryTranscriptCopy(): React.ReactElement {
         {cellC.menu}
       </cellC.ResponderScope>
 
-      {/* Cell D — command spans (`enhance-commands`) for the command
-          right-click Copy / Copy as Plain Text path (at0237). Passes
-          `isKnownSlashCommand` so the enhancer tags the inline `<code>`
-          commands with `.tugx-md-cmd` + their datasets. */}
+      {/* Cell D — command spans for the command right-click Copy / Copy as
+          Plain Text path (at0237). Passes an annotation context so the
+          annotator marks the inline `<code>` commands. */}
       <cellD.ResponderScope>
         <div {...cellD.cellProps}>
           <div
@@ -249,7 +263,7 @@ export function GalleryTranscriptCopy(): React.ReactElement {
               streamingStore={streamingStore}
               streamingPath={PATH_CMD}
               className="session-card-transcript-code-body"
-              isKnownSlashCommand={isKnownSlashCommandForFixture}
+              annotation={FIXTURE_ANNOTATION}
             />
           </div>
         </div>

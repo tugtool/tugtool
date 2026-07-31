@@ -58,10 +58,10 @@ import {
   type AtomSegment,
 } from "@/lib/tug-atom-img";
 import { hasLeadingCommandAtom } from "@/lib/command-atom";
-import {
-  COMMAND_CLASS,
-  parseSlashCommandLine,
-} from "@/lib/markdown/enhance-commands";
+import { parseSlashCommandLine } from "@/lib/annotator/command-grammar";
+import { stampAnnotation } from "@/lib/annotator/annotation-element";
+import { payloadForAtom } from "@/lib/annotator/payloads";
+import type { AnnotationContext } from "@/lib/annotator/types";
 import { buildSlashCommandLine } from "@/lib/slash-commands";
 import { decorateChipLabel } from "./tug-atom-text-body";
 import type { TurnAddress } from "../tug-transcript-entry";
@@ -138,12 +138,12 @@ function injectAtomHosts(root: HTMLElement, atomCount: number): HTMLElement[] {
  * `/command` the user *submitted* carries the same gesture a `/command`
  * the assistant *wrote in backticks* does.
  *
- * The assistant path gets this from `enhanceCommands`, which walks inline
+ * The assistant path gets this from the annotator, which walks inline
  * `<code>` spans. A submitted command isn't code — it's a command atom
- * plus its argument atoms, portalled in as chips — so nothing in the
- * rendered markdown for `enhanceCommands` to find. Stamping the same
- * class + `data-slash-*` dataset here means the transcript root's single
- * delegated click listener services both without knowing the difference.
+ * plus its argument atoms, portalled in as chips — so there is nothing in
+ * the rendered markdown for that pass to find. Stamping the same
+ * annotation here means the transcript root's single delegated click
+ * listener services both without knowing the difference.
  *
  * The command line is reconstructed through {@link buildSlashCommandLine}
  * (atoms expand to their values) and split by the same
@@ -175,9 +175,36 @@ function tagLeadingCommandHost(
     buildSlashCommandLine(text, positioned),
   );
   if (parsed === null) return;
-  host.classList.add(COMMAND_CLASS);
-  host.dataset.slashCommand = parsed.name;
-  host.dataset.slashArgs = parsed.args;
+  stampAnnotation(host, {
+    kind: "slash-command",
+    name: parsed.name,
+    args: parsed.args,
+  });
+}
+
+/**
+ * Stamp the annotation each atom host carries, so a chip the user
+ * attached is as actionable in the transcript as the same thing written
+ * in prose: a file chip opens its file, a link chip opens its URL.
+ *
+ * Which atom types get which annotation is {@link payloadForAtom}'s call,
+ * shared with the plain-text renderer so the two transcript atom
+ * surfaces cannot drift.
+ */
+function tagAtomHosts(
+  hosts: ReadonlyArray<HTMLElement>,
+  atoms: ReadonlyArray<AtomSegment>,
+): void {
+  for (let i = 0; i < hosts.length; i += 1) {
+    const host = hosts[i];
+    const atom = atoms[i];
+    if (atom === undefined) continue;
+    // The leading submitted-command chip already carries its own
+    // annotation.
+    if (host.dataset.tugAnnotation !== undefined) continue;
+    const payload = payloadForAtom(atom);
+    if (payload !== null) stampAnnotation(host, payload);
+  }
 }
 
 export interface TugAtomMarkdownBodyProps {
@@ -196,13 +223,12 @@ export interface TugAtomMarkdownBodyProps {
    */
   address?: TurnAddress;
   /**
-   * Clickability gate for inline slash-command spans in this body's
-   * prose — a command the user wrote inside backticks rather than
-   * submitted as an atom. Forwarded to `TugMarkdownBlock`, which runs
-   * `enhanceCommands`. The submitted-command chip needs no predicate;
-   * see {@link tagLeadingCommandHost}.
+   * Annotator inputs for this body's prose — the gate on a command the
+   * user wrote inside backticks rather than submitted as an atom.
+   * Forwarded to `TugMarkdownBlock`. The submitted-command chip needs no
+   * gate; see {@link tagLeadingCommandHost}.
    */
-  isKnownSlashCommand?: (name: string) => boolean;
+  annotation?: AnnotationContext;
   /** Forwarded to the root element. */
   className?: string;
   /** Forwarded to the root element (test anchor). */
@@ -221,7 +247,7 @@ export const TugAtomMarkdownBody = React.forwardRef<
     text,
     atoms,
     address,
-    isKnownSlashCommand,
+    annotation,
     className,
     "data-testid": dataTestid,
   },
@@ -242,6 +268,7 @@ export const TugAtomMarkdownBody = React.forwardRef<
     if (root === null) return;
     const hosts = injectAtomHosts(root, atoms.length);
     tagLeadingCommandHost(hosts, text, atoms);
+    tagAtomHosts(hosts, atoms);
     setMounts(
       hosts.map((host, i) => ({ host, atom: atoms[i], key: `atom-${i}` })),
     );
@@ -281,7 +308,7 @@ export const TugAtomMarkdownBody = React.forwardRef<
         key={text}
         initialText={text}
         className="session-card-transcript-code-body"
-        isKnownSlashCommand={isKnownSlashCommand}
+        annotation={annotation}
         findable
       />
       {mounts.map(({ host, atom, key }) =>

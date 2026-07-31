@@ -84,7 +84,9 @@ import React from "react";
 import type { PropertyStore } from "@/components/tugways/property-store";
 import { ensureParsed } from "@/lib/markdown/parse-cache";
 import { recordRowParse } from "@/lib/markdown/parse-counters";
-import { enhanceCommands } from "@/lib/markdown/enhance-commands";
+import { annotateTranscript } from "@/lib/annotator/annotate-transcript";
+import type { AnnotationContext } from "@/lib/annotator/types";
+import { useAnnotationScope } from "@/components/tugways/annotation-scope";
 import {
   renderIncremental,
   renderIncrementalFromBlocks,
@@ -143,20 +145,24 @@ export interface TugMarkdownBlockProps {
   findable?: boolean;
 
   /**
-   * Clickability gate for inline command `<code>` spans. When set, a code
-   * span that parses as a known slash command (this predicate returns
-   * `true` for its bare name) or as a project shell command
-   * (`just`/`tugutil`/`tugdash`) is tagged for the transcript's command
-   * gestures (`enhance-commands`). Omit — every non-transcript host — and
-   * no command enhancement runs.
+   * Live inputs for the entity kinds the annotator can only mark with
+   * session state — commands, verified paths, commits. Every render
+   * annotates the state-free kinds (URLs, email addresses) regardless.
+   *
+   * Usually omitted: a block rendered anywhere inside an
+   * {@link AnnotationScope} picks the context up from there, so nested
+   * markdown does not depend on every intervening component agreeing to
+   * forward a prop. Pass it explicitly only to override the scope. A
+   * block outside any scope, with no prop, marks the state-free kinds
+   * only — the gallery and non-transcript hosts.
    *
    * Delivered to the imperative render closures via a ref, NOT closed
    * over directly: the streaming render effect's deps are
    * `[streamingStore, streamingPath]`, so a captured prop would be stale
-   * — the ref keeps the predicate current at the mount build (which tags
+   * — the ref keeps the context current at the mount build (which marks
    * finalized blocks) and at every streaming delta.
    */
-  isKnownSlashCommand?: (name: string) => boolean;
+  annotation?: AnnotationContext;
 }
 
 export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
@@ -165,17 +171,27 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
   streamingPath = DEFAULT_STREAMING_PATH,
   className,
   findable = false,
-  isKnownSlashCommand,
+  annotation: annotationProp,
 }) => {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
-  // The slash-command predicate is read from a ref inside the render
-  // closures below, never closed over directly: the streaming effect's
-  // deps are `[streamingStore, streamingPath]`, so a captured prop would
-  // be stale. Reassigned every render so the closures see the live
-  // predicate (see the `isKnownSlashCommand` prop doc).
-  const predicateRef = React.useRef(isKnownSlashCommand);
-  predicateRef.current = isKnownSlashCommand;
+  // A markdown block inside an annotation scope is annotated whether or
+  // not whoever rendered it passed the context down. That fallback is the
+  // point: a subagent's prose is markdown nested several components below
+  // the transcript cell, and every intermediate renderer would have had to
+  // agree to forward a prop it does not otherwise care about. It did not,
+  // so subagent output was skipped wholesale. Outside a scope this is
+  // `null` and nothing changes for the gallery and non-transcript hosts.
+  const scopedAnnotation = useAnnotationScope();
+  const annotation = annotationProp ?? scopedAnnotation ?? undefined;
+
+  // The annotation context is read from a ref inside the render closures
+  // below, never closed over directly: the streaming effect's deps are
+  // `[streamingStore, streamingPath]`, so a captured prop would be stale.
+  // Reassigned every render so the closures see the live context (see the
+  // `annotation` prop doc).
+  const annotationRef = React.useRef(annotation);
+  annotationRef.current = annotation;
 
   // Static `initialText` mode — runs once at mount, never again.
   // Skipped entirely when `streamingStore` is set; the streaming
@@ -197,13 +213,7 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
     // Parse-economy counter: `renderIncremental` skips the parse
     // entirely for empty text, so only non-empty renders count.
     if (text !== "") recordRowParse("static");
-    renderIncremental(
-      el,
-      text,
-      predicateRef.current === undefined
-        ? undefined
-        : { isKnownSlashCommand: predicateRef.current },
-    );
+    renderIncremental(el, text, { annotation: annotationRef.current });
     // Empty deps — `initialText` changes after mount are intentionally
     // ignored per the [#md-block-api] mount-once contract. A consumer
     // that wants to swap content remounts via a fresh React key.
@@ -250,7 +260,7 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
       // an emptied parse cache costs at most one extra parse, never a
       // duplicate-append.
       const blocks = ensureParsed(streamingStore, streamingPath, text);
-      renderIncrementalFromBlocks(el, blocks, predicateRef.current);
+      renderIncrementalFromBlocks(el, blocks, annotationRef.current);
     };
 
     // G1 — render the store's current value before paint. The
@@ -296,20 +306,19 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
     };
   }, [streamingStore, streamingPath]);
 
-  // Re-tag clickable commands when the known-command predicate changes
-  // identity — the on-resume catalog race. The render effects above tag at
-  // block *build* time; a finalized block is hash-stable and never
-  // rebuilt, so if the transcript replayed from JSONL before the handshake
-  // catalog landed, its slash-command spans were built untagged. This
-  // effect re-runs `enhanceCommands` over the already-rendered DOM once the
-  // catalog (and thus the predicate) arrives — an idempotent add/remove
-  // sync, no DOM rebuild (scroll anchor preserved). Runs after the render
-  // effects so the container is populated. [L06] DOM-only.
+  // Re-annotate when the context changes identity — the on-resume catalog
+  // race. The render effects above mark at block *build* time; a finalized
+  // block is hash-stable and never rebuilt, so if the transcript replayed
+  // from JSONL before the handshake catalog landed, its slash-command spans
+  // were built unmarked. This effect re-runs the pass over the
+  // already-rendered DOM once the catalog arrives — an idempotent
+  // add/remove sync, no DOM rebuild (scroll anchor preserved). Runs after
+  // the render effects so the container is populated. [L06] DOM-only.
   React.useLayoutEffect(() => {
     const el = containerRef.current;
-    if (el === null || isKnownSlashCommand === undefined) return;
-    enhanceCommands(el, isKnownSlashCommand);
-  }, [isKnownSlashCommand]);
+    if (el === null || annotation === undefined) return;
+    annotateTranscript(el, annotation);
+  }, [annotation]);
 
   return (
     <div

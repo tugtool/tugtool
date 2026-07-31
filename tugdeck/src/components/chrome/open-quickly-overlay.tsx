@@ -44,9 +44,13 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { probeDirs } from "@/lib/dir-existence";
 import type { TugbankClient } from "@/lib/tugbank-client";
-import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
+import { FeedStore } from "@/lib/feed-store";
 import { FeedId } from "@/protocol";
-import { FileTreeStore } from "@/lib/filetree-store";
+import {
+  FileTreeStore,
+  resolveAgainstRoot,
+  workspaceFeedFilter,
+} from "@/lib/filetree-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { parseFileLocationQuery } from "@/lib/file-location-query";
 import { getDeckStore } from "@/lib/deck-store-registry";
@@ -84,26 +88,6 @@ const MAX_ROOT_CANDIDATES = 7;
 
 /** `data-testid` on the switcher's menu content; its presence is "menu open". */
 const SWITCHER_MENU = "open-quickly-switcher-menu";
-
-/**
- * Join the project root with a FILETREE result. FILETREE indexes
- * project-relative POSIX paths, so an absolute path — what
- * {@link openFileInCard} needs — is `root` + `/` + the result.
- */
-function resolveAgainstRoot(root: string, relative: string): string {
-  const base = root.replace(/\/+$/, "");
-  const rel = relative.replace(/^\/+/, "");
-  return `${base}/${rel}`;
-}
-
-/** FILETREE feed filter scoping frames to one workspace. */
-function workspaceFilter(workspaceKey: string): FeedStoreFilter {
-  return (_feedId, decoded) =>
-    typeof decoded === "object" &&
-    decoded !== null &&
-    "workspace_key" in decoded &&
-    (decoded as { workspace_key: unknown }).workspace_key === workspaceKey;
-}
 
 /** A path's last component — what the bar and the switcher name it by. */
 function leafName(path: string): string {
@@ -253,7 +237,7 @@ function OpenQuicklyBody(): React.ReactElement {
         connection,
         [FeedId.FILETREE],
         undefined,
-        workspaceFilter(root.workspaceKey),
+        workspaceFeedFilter(root.workspaceKey),
       );
       const fileTreeStore = new FileTreeStore(
         feedStore,

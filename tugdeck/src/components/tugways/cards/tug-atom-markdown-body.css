@@ -12,19 +12,24 @@
   white-space: nowrap;
 }
 
-/* Clickable command chip — the host span of a submitted `/command` atom,
-   tagged by `tagLeadingCommandHost` with the same class + `data-slash-*`
-   dataset `enhance-commands` puts on an inline `<code>` command. Resting
-   appearance is the ordinary chip; only hover reveals interactivity, the
-   same rule the prose command follows.
+/* Clickable chip — the host span of an atom the annotator found something
+   to do with: a submitted `/command`, a file, a directory, a link, an
+   image. Resting appearance is the ordinary chip; only hover reveals
+   interactivity, the same rule the prose command follows.
 
    The underline is a `box-shadow` rather than `text-decoration`: the host
    span contains a single atomic inline (the chip `<svg>`), which text
-   decoration skips, and a `border-bottom` would grow the line box. */
-.tug-atom-chip-host.tugx-md-cmd {
+   decoration skips, and a `border-bottom` would grow the line box.
+
+   Keyed on the *presence* of an annotation rather than on a list of
+   kinds. A chip carries the attribute only when the annotator found
+   something to do with it, so "annotated" and "actionable" are the same
+   fact — and a kind added later gets the affordance instead of silently
+   rendering as an inert chip that looks identical to a live one. */
+.tug-atom-chip-host[data-tug-annotation] {
   cursor: pointer;
 }
-.tug-atom-chip-host.tugx-md-cmd:hover {
+.tug-atom-chip-host[data-tug-annotation]:hover {
   box-shadow: 0 1px 0 0 var(--tugx-md-link-color-hover);
 }
 

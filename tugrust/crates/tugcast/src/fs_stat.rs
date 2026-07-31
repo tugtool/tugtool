@@ -30,12 +30,20 @@ pub(crate) const MAX_STAT_PATHS: usize = 64;
 /// What kind of filesystem entry counts as "exists" for a probe. Defaults to
 /// `File` so the Text-card MRU caller (which omits the field) is unchanged; the
 /// session picker's project-path recents send `Dir`.
+///
+/// `Any` asks the looser question the transcript annotator needs: not "is this
+/// an openable regular file?" but "is there something here at all?" A reference
+/// in ink can name a directory, a symlink, a hard link, or a device node, and
+/// all of them are real things worth pointing at — refusing them because they
+/// are not `is_file()` would leave true references inert. Callers that need the
+/// stricter reading keep asking for it.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum StatKind {
     #[default]
     File,
     Dir,
+    Any,
 }
 
 /// Request body for `POST /api/fs/stat`.
@@ -57,13 +65,24 @@ pub(crate) struct StatRequest {
 fn stat_paths(paths: &[String], kind: StatKind) -> Value {
     let mut exists = Map::new();
     let mut canonical = Map::new();
+    let mut is_dir = Map::new();
     for raw in paths.iter().take(MAX_STAT_PATHS) {
         let reachable = match guard_absolute_path(raw) {
             Ok(resolved) => {
+                // `metadata` follows symlinks, so a link to a real target
+                // reports the target's kind — which is the right reading for
+                // "can I point at this?".
                 let matched = std::fs::metadata(&resolved)
-                    .map(|md| match kind {
-                        StatKind::File => md.is_file(),
-                        StatKind::Dir => md.is_dir(),
+                    .map(|md| {
+                        let matched = match kind {
+                            StatKind::File => md.is_file(),
+                            StatKind::Dir => md.is_dir(),
+                            StatKind::Any => true,
+                        };
+                        if matched && md.is_dir() {
+                            is_dir.insert(raw.clone(), Value::Bool(true));
+                        }
+                        matched
                     })
                     .unwrap_or(false);
                 if matched {
@@ -78,7 +97,10 @@ fn stat_paths(paths: &[String], kind: StatKind) -> Value {
         };
         exists.insert(raw.clone(), Value::Bool(reachable));
     }
-    json!({ "exists": exists, "canonical": canonical })
+    // `is_dir` carries only the reachable directories: a caller asking the
+    // loose question needs to know which of its hits are folders, because
+    // opening one is a different gesture from opening a file.
+    json!({ "exists": exists, "canonical": canonical, "isDir": is_dir })
 }
 
 /// Handle `POST /api/fs/stat`. Restricted to loopback.
@@ -165,6 +187,51 @@ mod tests {
         assert_eq!(body["exists"][missing.to_string_lossy().as_ref()], false);
         // A reachable directory carries its resolved canonical form.
         assert!(body["canonical"][dir.path().to_string_lossy().as_ref()].is_string());
+    }
+
+    #[test]
+    fn stat_any_kind_accepts_whatever_is_there() {
+        // The annotator's question is "is there something here?", so a
+        // directory and a symlink both count — and the answer says which
+        // hits are directories, since opening one is a different gesture.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("here.txt");
+        std::fs::write(&file, "x").unwrap();
+        let link = dir.path().join("link.txt");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        let missing = dir.path().join("gone");
+
+        let body = stat_paths(
+            &[
+                dir.path().to_string_lossy().into_owned(),
+                file.to_string_lossy().into_owned(),
+                link.to_string_lossy().into_owned(),
+                missing.to_string_lossy().into_owned(),
+            ],
+            StatKind::Any,
+        );
+        assert_eq!(body["exists"][dir.path().to_string_lossy().as_ref()], true);
+        assert_eq!(body["exists"][file.to_string_lossy().as_ref()], true);
+        assert_eq!(body["exists"][link.to_string_lossy().as_ref()], true);
+        assert_eq!(body["exists"][missing.to_string_lossy().as_ref()], false);
+
+        assert_eq!(body["isDir"][dir.path().to_string_lossy().as_ref()], true);
+        assert!(body["isDir"].get(file.to_string_lossy().as_ref()).is_none());
+        // A symlink to a file is a file: `metadata` follows the link.
+        assert!(body["isDir"].get(link.to_string_lossy().as_ref()).is_none());
+    }
+
+    #[test]
+    fn stat_any_kind_still_refuses_what_the_guard_refuses() {
+        let body = stat_paths(
+            &[
+                "relative/path.txt".to_string(),
+                "/tmp/../etc/passwd".to_string(),
+            ],
+            StatKind::Any,
+        );
+        assert_eq!(body["exists"]["relative/path.txt"], false);
+        assert_eq!(body["exists"]["/tmp/../etc/passwd"], false);
     }
 
     #[test]

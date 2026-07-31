@@ -120,8 +120,8 @@ export const TUG_ACTIONS = {
   //              handler for this — dispatching is a silent no-op
   //              until a control wires it up.
   // COPY_COMMAND: payload — none. Copy the command span the right-click
-  //              landed on (a `.tugx-md-cmd` in a transcript cell — see
-  //              `enhance-commands`), preserving its code formatting:
+  //              landed on (a command span in a transcript cell — see the
+  //              annotator), preserving its code formatting:
   //              `text/plain` = the command in Markdown backticks,
   //              `text/html` = a `<code>` element. Menu-only (no keyboard
   //              binding); the handler reads the span text sampled at
@@ -131,11 +131,29 @@ export const TUG_ACTIONS = {
   // COPY_COMMAND_AS_PLAIN_TEXT: payload — none. Like COPY_COMMAND but the
   //              bare command text only (`text/plain`, no backticks, no
   //              `text/html`) — the terminal-paste-friendly variant.
+  // COPY_ANNOTATION_VALUE: payload — none. Copy the canonical value of the
+  //              annotation the right-click landed on — the URL, the email
+  //              address, the file path. Plain text only; the generalization
+  //              of COPY_COMMAND_AS_PLAIN_TEXT to the kinds that have no
+  //              code formatting to preserve. Menu-only; like the command
+  //              copies, the handler reads the value sampled at menu-open
+  //              time rather than the live selection, so it copies the
+  //              WHOLE value regardless of any sub-word the browser
+  //              smart-selected.
+  // INSERT_INTO_COMPOSER: payload — none. Send the sampled annotation's
+  //              canonical value back into the conversation: activate the
+  //              card, then insert the value into the prompt composer at
+  //              the caret. Menu-only. This is the "indirect action" every
+  //              annotation kind offers — a URL, a path, or a command line
+  //              becomes something to talk about rather than something to
+  //              follow.
   CUT:                 "cut",
   COPY:                "copy",
   COPY_AS_PLAIN_TEXT:  "copy-as-plain-text",
   COPY_COMMAND:        "copy-command",
   COPY_COMMAND_AS_PLAIN_TEXT: "copy-command-as-plain-text",
+  COPY_ANNOTATION_VALUE: "copy-annotation-value",
+  INSERT_INTO_COMPOSER: "insert-into-composer",
   PASTE:               "paste",
   PASTE_AS_QUOTE:      "paste-as-quote",
   PASTE_AS_PLAIN_TEXT: "paste-as-plain-text",
@@ -506,6 +524,12 @@ export const TUG_ACTIONS = {
   //                         host bridge (`openPathInOS`). Dispatched by
   //                         file-reference context menus; handled by
   //                         DeckCanvas (deck-level, card-independent).
+  // OPEN_IMAGE_PREVIEW:     payload — `value: string` (an atom id). Open
+  //                         the full-resolution lightbox for an image
+  //                         carried as bytes rather than as a file, at
+  //                         whichever attachment strip holds that atom
+  //                         (`lib/attachment-preview-open.ts`). Dispatched
+  //                         by the transcript's image-atom annotations.
   CLOSE:                  "close",
   CLOSE_ALL:              "close-all",
   MINIMIZE:               "minimize",
@@ -536,6 +560,7 @@ export const TUG_ACTIONS = {
   //                         `action-dispatch.ts`; both call `openDiffInCard`.
   OPEN_DIFF:              "open-diff",
   REVEAL_IN_FINDER:       "reveal-in-finder",
+  OPEN_IMAGE_PREVIEW:     "open-image-preview",
 
   // ---- Dev session management ----
   //

@@ -10,11 +10,36 @@
  * @module lib/filetree-store
  */
 
-import type { FeedStore } from "./feed-store";
+import type { FeedStore, FeedStoreFilter } from "./feed-store";
 import type { FeedIdValue } from "../protocol";
 import { FeedId } from "../protocol";
 import type { CompletionProvider, CompletionItem } from "./tug-text-types";
 import { getConnection } from "./connection-singleton";
+
+/**
+ * Join the project root with a FILETREE result. FILETREE indexes
+ * project-relative POSIX paths, so an absolute path — what opening a file
+ * needs — is `root` + `/` + the result.
+ */
+export function resolveAgainstRoot(root: string, relative: string): string {
+  const base = root.replace(/\/+$/, "");
+  const rel = relative.replace(/^\/+/, "");
+  return `${base}/${rel}`;
+}
+
+/**
+ * FILETREE feed filter scoping frames to one workspace. Tugcast tags every
+ * response with the `workspace_key` it answered for, and the feed is
+ * shared, so a consumer that searches one project must drop frames that
+ * answered another's query.
+ */
+export function workspaceFeedFilter(workspaceKey: string): FeedStoreFilter {
+  return (_feedId, decoded) =>
+    typeof decoded === "object" &&
+    decoded !== null &&
+    "workspace_key" in decoded &&
+    (decoded as { workspace_key: unknown }).workspace_key === workspaceKey;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

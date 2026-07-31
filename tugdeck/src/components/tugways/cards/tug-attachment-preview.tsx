@@ -73,6 +73,7 @@ import { useControlDispatch } from "@/components/tugways/use-control-dispatch";
 import { ResponderChainContext } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { writeImageToNativeClipboard } from "@/lib/tug-native-clipboard";
+import { registerAttachmentPreviewOpener } from "@/lib/attachment-preview-open";
 
 // ---------------------------------------------------------------------------
 // Strip props
@@ -325,6 +326,21 @@ export const TugAttachmentPreview = React.forwardRef<
     },
     [showSheet, atoms, bytesStore, deletable, dispatchRemove],
   );
+
+  // A transcript image chip is an annotation, and its click reaches the
+  // delegated layer — a plain function that cannot call `useTugSheet`. So
+  // the strip offers itself: asked for an atom it holds, it opens the same
+  // lightbox a thumbnail click opens. Registered in a layout effect
+  // ([L03]) because the gesture that asks can land in the frame the strip
+  // first paints.
+  React.useLayoutEffect(() => {
+    return registerAttachmentPreviewOpener((atomId) => {
+      const index = atoms.findIndex((a) => a.id === atomId);
+      if (index === -1) return false;
+      openPreview(atoms[index] as AtomSegment, index);
+      return true;
+    });
+  }, [atoms, openPreview]);
 
   // Empty atoms → no DOM. The host surface sees no strip contribution.
   if (tiles.length === 0) return null;

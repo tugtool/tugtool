@@ -26,7 +26,27 @@ import {
   type TextSelectionAdapter,
 } from "@/components/tugways/text-selection-adapter";
 import { transcriptMarkdownToHtml } from "@/lib/markdown/transcript-copy-html";
-import { COMMAND_CLASS } from "@/lib/markdown/enhance-commands";
+import { dispatchAction } from "@/action-dispatch";
+import { revealDirectoryInFinder, revealPathInFinder } from "@/lib/os-open";
+import { openAttachmentPreview } from "@/lib/attachment-preview-open";
+import { useDeckManager } from "@/deck-manager-context";
+import { useCardId } from "@/components/tugways/use-card-state-preservation";
+import type { CodeSessionStore } from "@/lib/code-session-store";
+import type { AnnotationContext } from "@/lib/annotator/types";
+import { pathResolutionStore } from "@/lib/annotator/path-resolution";
+import { fileNameResolverFor } from "@/lib/annotator/file-name-resolution";
+import {
+  commitResolverFor,
+  NO_COMMIT_VERDICT,
+} from "@/lib/annotator/commit-resolution";
+import { makeReferenceResolver } from "@/lib/annotator/resolve-reference";
+import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
+import { annotationFromEvent } from "@/lib/annotator/annotation-element";
+import { annotationEntryFor } from "@/lib/annotator/registry";
+import {
+  annotationValue,
+  type AnnotationPayload,
+} from "@/lib/annotator/payloads";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
@@ -58,9 +78,9 @@ export function useSessionModelName(
  * Build a predicate over the *known* slash-command set: claude's live
  * catalog (`SessionMetadataStore.slashCommands`) unioned with the dev
  * card's locally-handled commands (`LOCAL_SLASH_COMMANDS`). The transcript
- * passes this to `TugMarkdownBlock` to gate which inline `<code>` command
- * spans become clickable (`enhance-commands`) — the strict known-list
- * gate, not a loose regex.
+ * transcript feeds this to the annotator to gate which inline `<code>`
+ * command spans become clickable — the strict known-list gate, not a
+ * loose regex.
  *
  * [L02] — the catalog is read through `useSyncExternalStore`. The predicate
  * identity is memoized on the catalog array (stable between store changes,
@@ -87,6 +107,103 @@ export function useKnownSlashCommand(
     for (const cmd of LOCAL_SLASH_COMMANDS) set.add(cmd.name);
     return (name: string) => set.has(name);
   }, [catalog]);
+}
+
+/**
+ * Assemble the transcript's {@link AnnotationContext} — the live inputs
+ * the annotator needs beyond the DOM it walks. Handed to every markdown
+ * surface in the transcript; a surface that renders markdown *outside*
+ * the transcript passes none and gets the state-free entity kinds only.
+ *
+ * The context object's identity is what re-annotation keys on
+ * (`TugMarkdownBlock`'s re-run effect), so it is memoized on its inputs:
+ * a new object means an input genuinely changed and the already-rendered
+ * ink must be re-marked, not that a parent re-rendered.
+ */
+export function useAnnotationContext(
+  sessionMetadataStore: SessionMetadataStore | undefined,
+): AnnotationContext {
+  const isKnownSlashCommand = useKnownSlashCommand(sessionMetadataStore);
+  const cwd = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) =>
+        sessionMetadataStore ? sessionMetadataStore.subscribe(listener) : () => {},
+      [sessionMetadataStore],
+    ),
+    useCallback(
+      () => sessionMetadataStore?.getSnapshot().cwd ?? null,
+      [sessionMetadataStore],
+    ),
+  );
+  // The card's own project — not the frontmost one — since this
+  // transcript's references belong to the session it is showing. Its
+  // `projectDir` is the file index's search root and its `workspaceKey`
+  // scopes the shared FILETREE feed.
+  const cardId = useCardId();
+  const binding = useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    useCallback(
+      () =>
+        cardId === null ? undefined : cardSessionBindingStore.getBinding(cardId),
+      [cardId],
+    ),
+  );
+  const projectDir = binding?.projectDir ?? null;
+  const workspaceKey = binding?.workspaceKey ?? null;
+  const names = fileNameResolverFor(projectDir, workspaceKey);
+  const commits = commitResolverFor(projectDir, workspaceKey);
+  // Verdicts arrive asynchronously, long after the ink they belong to was
+  // painted. Folding each resolver's version into the context's identity
+  // is what turns an arrival into a re-annotation: the version changes,
+  // the context is a new object, and the block's re-run effect marks the
+  // references that just came back confirmed.
+  const pathVersion = useSyncExternalStore(
+    pathResolutionStore.subscribe,
+    pathResolutionStore.version,
+  );
+  const nameVersion = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => names?.subscribe(listener) ?? (() => {}),
+      [names],
+    ),
+    useCallback(() => names?.version() ?? 0, [names]),
+  );
+  const commitVersion = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => commits?.subscribe(listener) ?? (() => {}),
+      [commits],
+    ),
+    useCallback(() => commits?.version() ?? 0, [commits]),
+  );
+  const resolvePath = useMemo(
+    () => makeReferenceResolver({ paths: pathResolutionStore, names, cwd }),
+    [names, cwd],
+  );
+  const resolveCommit = useMemo(
+    () => (sha: string) => commits?.lookup(sha) ?? NO_COMMIT_VERDICT,
+    [commits],
+  );
+  return useMemo(
+    () => ({
+      isKnownSlashCommand,
+      resolvePath,
+      resolveCommit,
+      commitRoot: projectDir,
+    }),
+    // The versions are dependencies, not fields: the pass reads verdicts
+    // through the resolvers, but a new verdict has to produce a new
+    // context object or nothing would re-mark the waiting ink.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      isKnownSlashCommand,
+      resolvePath,
+      resolveCommit,
+      projectDir,
+      pathVersion,
+      nameVersion,
+      commitVersion,
+    ],
+  );
 }
 
 /**
@@ -214,10 +331,39 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * The canonical text of the annotation a menu handler was invoked for, or
+ * `null` when the menu was not opened over one (or the payload carries
+ * nothing to act on).
+ */
+function sampledAnnotationValue(payload: AnnotationPayload | null): string | null {
+  if (payload === null) return null;
+  const value = annotationValue(payload);
+  return value === "" ? null : value;
+}
+
+/** What a transcript cell hands its context menu. */
+export interface TranscriptCellMenuOptions {
+  /**
+   * Reconstructs markdown for the cell's current selection. Omitted by the
+   * user row, which is plain text by design.
+   */
+  resolveCopyMarkdown?: CopyMarkdownResolver;
+  /**
+   * The session whose composer an annotation's Insert into Composer item
+   * seeds. Omitted by a fixture with no live session; the item is then not
+   * offered.
+   */
+  codeSessionStore?: CodeSessionStore;
+}
+
 // Exported for the copy-wiring app-test fixture (`gallery-transcript-copy`),
 // which mounts this exact hook over a static body so `just app-test` drives
 // the real ⌘C / menu-Copy path. Not part of the card's public API otherwise.
-export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver): {
+export function useTranscriptCellMenu({
+  resolveCopyMarkdown,
+  codeSessionStore,
+}: TranscriptCellMenuOptions = {}): {
   ResponderScope: React.FC<{ children: React.ReactNode }>;
   cellProps: TranscriptCellProps;
   bodyRef: React.MutableRefObject<HTMLElement | null>;
@@ -225,21 +371,27 @@ export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver
 } {
   const bodyRef = useRef<HTMLElement | null>(null);
   const adapterRef = useRef<TextSelectionAdapter | null>(null);
+  // Insert into Composer brings the annotation's own card forward before
+  // it types into it. Both come from context rather than props: every
+  // transcript cell already renders inside the deck and its card host, so
+  // threading them down through the cell tree would be ceremony.
+  const deck = useDeckManager();
+  const cardId = useCardId();
   // Live-ref the resolver ([L07]) so `handleCopy` keeps a stable
   // identity while always invoking the latest closure (which captures
   // the current messages / store).
   const resolveCopyRef = useRef(resolveCopyMarkdown);
   resolveCopyRef.current = resolveCopyMarkdown;
 
-  // The full text of the `.tugx-md-cmd` command span the current
-  // right-click landed on, sampled by `extraEntries` at menu-open time and
-  // read by the command-copy handlers when the user picks Copy / Copy as
-  // Plain Text. `null` when the right-click was not on a command span.
-  // Reading the span text (not the DOM selection) is what makes the copy
-  // the WHOLE command regardless of any sub-word WebKit smart-selected on
-  // the right-click. Menu-only: no keyboard path reads it, and every menu
-  // open refreshes it, so there is no stale-value risk.
-  const contextCommandRef = useRef<string | null>(null);
+  // The annotation the current right-click landed on, sampled by
+  // `extraEntries` at menu-open time and read by the menu's handlers when
+  // the user picks an item. `null` when the right-click missed every
+  // annotation. Reading the annotation's own payload (not the DOM
+  // selection) is what makes a Copy copy the WHOLE value regardless of any
+  // sub-word WebKit smart-selected on the right-click. Menu-only: no
+  // keyboard path reads it, and every menu open refreshes it, so there is
+  // no stale-value risk.
+  const contextAnnotationRef = useRef<AnnotationPayload | null>(null);
 
   // Build the adapter once the body element is available. Re-runs
   // whenever the body element identity changes (rare for inline-rendered
@@ -327,26 +479,96 @@ export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver
     };
   }, []);
 
-  // Copy the right-clicked command span, code formatting preserved: the
+  // Copy the right-clicked command, code formatting preserved: the
   // `text/plain` flavor is the command wrapped in Markdown backticks and
   // the `text/html` flavor is a `<code>` element — mirroring how a copied
   // transcript selection carries markdown + rendered HTML ([P05]). Reads
-  // the whole command from `contextCommandRef` (sampled at menu-open time),
-  // so it never narrows to a smart-selected sub-word. Synchronous (no
+  // the whole command from the annotation sampled at menu-open time, so it
+  // never narrows to a smart-selected sub-word. Synchronous (no
   // continuation) so the clipboard write stays inside the activation
   // gesture, like `handleCopy`.
   const handleCopyCommand = useCallback((): ActionHandlerResult => {
-    const cmd = contextCommandRef.current;
-    if (cmd === null || cmd === "") return;
+    const cmd = sampledAnnotationValue(contextAnnotationRef.current);
+    if (cmd === null) return;
     writeCopyClipboard("`" + cmd + "`", `<code>${escapeHtml(cmd)}</code>`);
   }, []);
 
   // Copy the right-clicked command as bare text — no backticks, no
   // `text/html` flavor — the terminal-paste-friendly variant.
   const handleCopyCommandPlain = useCallback((): ActionHandlerResult => {
-    const cmd = contextCommandRef.current;
-    if (cmd === null || cmd === "") return;
+    const cmd = sampledAnnotationValue(contextAnnotationRef.current);
+    if (cmd === null) return;
     writeCopyClipboard(cmd, null);
+  }, []);
+
+  // Copy the right-clicked annotation's canonical value as bare text — the
+  // URL, the address, the path. The kinds that route here have no code
+  // formatting to preserve, so there is no `text/html` flavor.
+  const handleCopyAnnotationValue = useCallback((): ActionHandlerResult => {
+    const value = sampledAnnotationValue(contextAnnotationRef.current);
+    if (value === null) return;
+    writeCopyClipboard(value, null);
+  }, []);
+
+  // Send the right-clicked annotation's value back into the conversation.
+  // Brings the card forward first, so the composer the text lands in is the
+  // one the user is looking at. Returns a continuation so the insert
+  // happens after the menu's activation blink, like Select All — the
+  // composer takes the caret, and doing that mid-blink fights the menu's
+  // own teardown.
+  const handleInsertIntoComposer = useCallback((): ActionHandlerResult => {
+    const value = sampledAnnotationValue(contextAnnotationRef.current);
+    if (value === null || codeSessionStore === undefined) return;
+    return () => {
+      if (cardId !== null) deck.activateCard(cardId);
+      codeSessionStore.insertSnippet(value, null);
+    };
+  }, [cardId, codeSessionStore, deck]);
+
+  // Open in Editor / Show in Finder for the right-clicked file annotation.
+  // These live on the cell rather than riding the deck-level chain
+  // handlers because a menu item carries no value — the path comes from
+  // the annotation sampled at menu-open time. Opening goes out through
+  // the action registry (not the chain), so this handler doesn't
+  // re-enter itself.
+  const handleOpenAnnotatedFile = useCallback((): ActionHandlerResult => {
+    const payload = contextAnnotationRef.current;
+    if (payload === null || payload.kind !== "file-path") return;
+    const action: Record<string, unknown> = {
+      action: TUG_ACTIONS.OPEN_FILE,
+      path: payload.path,
+    };
+    if (payload.line !== undefined) action.line = payload.line;
+    if (payload.endLine !== undefined) action.endLine = payload.endLine;
+    dispatchAction(action);
+  }, []);
+
+  const handleRevealAnnotatedFile = useCallback((): ActionHandlerResult => {
+    const payload = contextAnnotationRef.current;
+    // Revealing a file opens the folder around it; a directory is already
+    // that folder, so the two take different routes to the same gesture.
+    if (payload?.kind === "file-path") revealPathInFinder(payload.path);
+    else if (payload?.kind === "directory") revealDirectoryInFinder(payload.path);
+  }, []);
+
+  const handleOpenAnnotatedDiff = useCallback((): ActionHandlerResult => {
+    const payload = contextAnnotationRef.current;
+    if (payload === null || payload.kind !== "commit-sha") return;
+    dispatchAction({
+      action: TUG_ACTIONS.OPEN_DIFF,
+      descriptor: {
+        kind: "commit",
+        root: payload.root,
+        sha: payload.sha,
+        paths: payload.paths,
+      },
+    });
+  }, []);
+
+  const handleOpenImagePreview = useCallback((): ActionHandlerResult => {
+    const payload = contextAnnotationRef.current;
+    if (payload === null || payload.kind !== "image") return;
+    openAttachmentPreview(payload.atomId);
   }, []);
 
   const responderId = useId();
@@ -356,44 +578,44 @@ export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver
       [TUG_ACTIONS.COPY]: handleCopy,
       [TUG_ACTIONS.COPY_COMMAND]: handleCopyCommand,
       [TUG_ACTIONS.COPY_COMMAND_AS_PLAIN_TEXT]: handleCopyCommandPlain,
+      [TUG_ACTIONS.COPY_ANNOTATION_VALUE]: handleCopyAnnotationValue,
+      [TUG_ACTIONS.INSERT_INTO_COMPOSER]: handleInsertIntoComposer,
+      [TUG_ACTIONS.OPEN_FILE]: handleOpenAnnotatedFile,
+      [TUG_ACTIONS.REVEAL_IN_FINDER]: handleRevealAnnotatedFile,
+      [TUG_ACTIONS.OPEN_IMAGE_PREVIEW]: handleOpenImagePreview,
+      [TUG_ACTIONS.OPEN_DIFF]: handleOpenAnnotatedDiff,
       [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
     },
   });
 
-  // A right-click on a command span (`.tugx-md-cmd`) resolves the whole
-  // command into `contextCommandRef` and offers Copy / Copy as Plain Text
-  // for it; `hideStandardItems` (below) drops the standard block so those
-  // two are the ONLY items — no second, selection-scoped Copy that would
-  // copy a smart-selected sub-word instead of the full command.
-  const commandFromEvent = useCallback((event: MouseEvent): string | null => {
-    const target = event.target;
-    if (!(target instanceof Element)) return null;
-    const span = target.closest<HTMLElement>(`.${COMMAND_CLASS}`);
-    if (span === null) return null;
-    const cmd = span.textContent?.trim() ?? "";
-    return cmd === "" ? null : cmd;
-  }, []);
-
+  // A right-click on an annotation samples its payload and offers the
+  // items its kind registers. Whether those items replace the standard
+  // text-menu block or sit below it is the kind's call
+  // (`suppressStandardItems`): a command replaces it, because a
+  // selection-scoped Copy beside Copy-the-command would copy whatever
+  // sub-word the browser smart-selected; a kind whose items don't collide
+  // appends, so a right-click inside a selection keeps Copy / Select All.
   const extraEntries = useCallback(
     (event: MouseEvent): TugEditorContextMenuEntry[] => {
-      const cmd = commandFromEvent(event);
-      contextCommandRef.current = cmd;
-      if (cmd === null) return [];
-      return [
-        { action: TUG_ACTIONS.COPY_COMMAND, label: "Copy" },
-        {
-          action: TUG_ACTIONS.COPY_COMMAND_AS_PLAIN_TEXT,
-          label: "Copy as Plain Text",
-        },
-      ];
+      const hit = annotationFromEvent(event);
+      contextAnnotationRef.current = hit?.payload ?? null;
+      if (hit === null) return [];
+      const entries =
+        annotationEntryFor(hit.payload.kind)?.menuEntries(hit.payload) ?? [];
+      // A surface with no live session can't seed a composer, so it doesn't
+      // offer to.
+      return codeSessionStore === undefined
+        ? entries.filter((e) => e.action !== TUG_ACTIONS.INSERT_INTO_COMPOSER)
+        : entries;
     },
-    [commandFromEvent],
+    [codeSessionStore],
   );
 
-  const hideStandardItems = useCallback(
-    (event: MouseEvent): boolean => commandFromEvent(event) !== null,
-    [commandFromEvent],
-  );
+  const hideStandardItems = useCallback((event: MouseEvent): boolean => {
+    const hit = annotationFromEvent(event);
+    if (hit === null) return false;
+    return annotationEntryFor(hit.payload.kind)?.suppressStandardItems ?? false;
+  }, []);
 
   // The shared hook owns menuState, the contextmenu pipeline, and
   // the menu render. We feed it the adapter (read live from the ref

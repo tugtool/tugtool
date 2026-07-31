@@ -41,7 +41,7 @@ import { cardDragCoordinator } from "@/card-drag-coordinator";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { copySelectionAsPlainText } from "@/lib/copy-as-plain-text";
 import { openFileInCard } from "@/lib/open-file-in-card";
-import { openPathInOS } from "@/lib/os-open";
+import { revealPathInFinder } from "@/lib/os-open";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { flipDelta, springKeyframes } from "@/lib/pane-flip";
 import {
@@ -401,10 +401,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       },
       [TUG_ACTIONS.REVEAL_IN_FINDER]: (event: ActionEvent) => {
         if (typeof event.value !== "string" || event.value === "") return;
-        // The host's `openPath` bridge opens a `folder` kind in Finder;
-        // showing the file's parent directory is the reveal.
-        const parent = event.value.replace(/\/[^/]*$/, "");
-        openPathInOS(parent === "" ? "/" : parent, "folder");
+        revealPathInFinder(event.value);
       },
       [TUG_ACTIONS.SHOW_SETTINGS]: (_event: ActionEvent) => {
         // ⌘, — open (or raise) the Settings singleton card. This

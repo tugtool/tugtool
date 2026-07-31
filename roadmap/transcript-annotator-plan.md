@@ -394,16 +394,16 @@ annotateTranscript(container: HTMLElement, context?: AnnotationContext): void
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Annotator core absorbs the enhance passes | pending | — |
-| #step-2 | Dataset contract + registry + delegated interaction | pending | — |
-| #step-3 | Composer/copy actions for every kind | pending | — |
-| #step-4 | Path-reference detector | pending | — |
-| #step-5 | Path resolution store | pending | — |
-| #step-6 | File-path annotations in prose, end-to-end | pending | — |
-| #step-7 | ToolFileRef convergence | pending | — |
-| #step-8 | Atom convergence | pending | — |
-| #step-9 | PathListBlock rows | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
+| #step-1 | Annotator core absorbs the enhance passes | done | `6136cda9b` |
+| #step-2 | Dataset contract + registry + delegated interaction | done | `d824c7516` |
+| #step-3 | Composer/copy actions for every kind | done | `e78e983f1` |
+| #step-4 | Path-reference detector | done | `c3d515017` |
+| #step-5 | Path resolution store | done | `913335648` |
+| #step-6 | File-path annotations in prose, end-to-end | done | `94901faea` |
+| #step-7 | ToolFileRef convergence | done | `f9ea6dee9` |
+| #step-8 | Atom convergence | done | `6566f3d5a` |
+| #step-9 | PathListBlock rows | done | `ebf5b4679` |
+| #step-10 | Integration checkpoint | done | verification only |
 
 #### Step 1: Annotator core absorbs the enhance passes {#step-1}
 

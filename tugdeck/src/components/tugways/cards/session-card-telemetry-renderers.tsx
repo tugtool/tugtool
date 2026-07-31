@@ -50,7 +50,7 @@ import { CardIdContext } from "@/lib/card-id-context";
 import { TugPlacard } from "@/components/tugways/tug-placard";
 import { TugStatusCell } from "@/components/tugways/tug-status-cell";
 import { SideQuestionBody } from "@/components/tugways/cards/side-question-overlay";
-import { useKnownSlashCommand } from "@/components/tugways/cards/transcript-host-helpers";
+import { useAnnotationContext } from "@/components/tugways/cards/transcript-host-helpers";
 import {
   TugProgressIndicator,
   type TugProgressIndicatorState,
@@ -613,7 +613,7 @@ export const SessionTelemetryStatusRow = React.forwardRef<
 
   // Command-span enhancement for the `/btw` answer markdown — the same known-
   // command gate the main transcript passes to its `TugMarkdownBlock`.
-  const isKnownSlashCommand = useKnownSlashCommand(sessionMetadataStore);
+  const annotation = useAnnotationContext(sessionMetadataStore);
 
   // On-trigger anchoring: the cell's CENTER within the placard's positioned
   // container — the `.session-card-status-bar` padding box (the placard's
@@ -1020,7 +1020,7 @@ export const SessionTelemetryStatusRow = React.forwardRef<
               : placard.key === "work"
                 ? workPopover
                 : sideQuestionStore !== undefined
-                  ? <SideQuestionBody store={sideQuestionStore} isKnownSlashCommand={isKnownSlashCommand} pendingContextStore={pendingContextStore} />
+                  ? <SideQuestionBody store={sideQuestionStore} annotation={annotation} pendingContextStore={pendingContextStore} />
                   : null;
 
   // Flat 5-cell flex row — STATE + TIME + TOKENS + CONTEXT + WORK as

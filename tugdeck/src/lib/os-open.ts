@@ -54,6 +54,30 @@ export function openPathInOS(path: string, kind: OsOpenKind = "file"): void {
  * opens an ordinary tab. The `noopener` feature keeps the opened page from
  * reaching back into `window.opener`.
  */
+/**
+ * Show a file in the Finder. The host's `openPath` bridge opens a
+ * `folder` kind in Finder, so revealing a file means opening the
+ * directory that contains it.
+ *
+ * Shared by every surface that offers Show in Finder — the deck-level
+ * chain handler and the transcript's file annotations — so they cannot
+ * drift on what "reveal" means.
+ */
+export function revealPathInFinder(path: string): void {
+  const parent = path.replace(/\/[^/]*$/, "");
+  openPathInOS(parent === "" ? "/" : parent, "folder");
+}
+
+/**
+ * Show a directory in the Finder — the directory itself, opened, rather
+ * than its parent with the directory selected. Distinct from
+ * {@link revealPathInFinder}, which reveals a *file* and so must open the
+ * folder containing it; here the target already is the folder.
+ */
+export function revealDirectoryInFinder(path: string): void {
+  openPathInOS(path === "" ? "/" : path, "folder");
+}
+
 export function openUrlInOS(url: string): void {
   window.open(url, "_blank", "noopener,noreferrer");
 }

@@ -1,0 +1,41 @@
+/**
+ * tug-annotation.css — what an annotation looks like, wherever it appears.
+ *
+ * The annotator marks entities on any surface that asks: rendered
+ * markdown, a tool-call header, a result row. The mark is the same DOM
+ * contract everywhere (`data-tug-annotation` plus, for a run the annotator
+ * split out of surrounding text, `data-tugx-wrapped`), so its appearance
+ * belongs in one global sheet rather than being re-stated by each surface.
+ * A surface that wants something different overrides it; a surface that
+ * wants nothing special gets the affordance for free, which is the point —
+ * a new block kind becomes clickable by being annotated, not by also
+ * remembering to style it.
+ *
+ * Surfaces with their own chip-shaped treatment for whole-element
+ * annotations (inline `<code>` in `tug-markdown-view.css`, atom chips in
+ * `tug-atom-markdown-body.css`) keep those; this sheet governs the
+ * split-out runs, which have no element of their own to inherit from.
+ *
+ * **Resting-plain.** An annotated run inside prose shows no underline at
+ * rest. Transcript paragraphs are dense with filenames, and painting each
+ * one as a link turns a paragraph into a field of links — the affordance
+ * appears under the pointer instead, which is where it is needed.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] appearance lives in CSS keyed off DOM attributes; no React
+ *    state participates in whether an annotation looks clickable.
+ *  - [L16] every colour-only rule names its rendering surface.
+ *  - [L17] tokens resolve to a `--tugx-md-*` / `--tug7-*` base in one hop.
+ */
+
+/* A run the annotator split out of surrounding text and marked as
+   actionable. Resting appearance is exactly the prose around it. */
+[data-tugx-wrapped][data-tug-annotation] {
+  cursor: pointer;
+}
+
+/* @tug-renders-on: the surrounding surface's own background */
+[data-tugx-wrapped][data-tug-annotation]:hover {
+  color: var(--tugx-md-link-color-hover);
+  text-decoration: var(--tugx-md-link-decoration);
+}

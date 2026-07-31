@@ -10,22 +10,28 @@
  * on a transparent surface — no box, no fill, no border. The full path
  * is the hover tooltip.
  *
- * The ref is a LINK into the Text card: a primary click dispatches the
- * `open-file` action (`{ path, line? }` through `dispatchAction`), so
- * the file the assistant just read or edited opens in an editor —
- * reusing an existing Text card bound to the same path. A right-click
- * offers Open in Editor / Show in Finder via `TugContextMenu` (chain
- * actions carrying the path as `value`, handled by DeckCanvas).
+ * The ref is a LINK into the Text card, but it owns none of that
+ * behavior: it stamps the annotator's file-path annotation and the
+ * transcript's delegated layer supplies the gesture — the same click and
+ * the same context menu a file path written in assistant prose gets.
+ * There is one interaction path for every file reference in the
+ * transcript, and this is one of its sources rather than a parallel
+ * implementation of it.
  *
- * Focus discipline: the ref carries `data-tug-focus="refuse"` so
- * clicking it never steals first-responder status from wherever the
- * user is typing — the Text card claims focus itself through the
- * activation path, exactly like any other card activation.
+ * Born confirmed: the tool this header describes just read or wrote this
+ * file, which is stronger evidence than any probe. It carries no
+ * existence check and never waits on one.
+ *
+ * Focus discipline (`data-tug-focus="refuse"`, `data-no-activate`, and
+ * the mousedown default suppressed) rides the annotation itself, stamped
+ * by the annotator for every kind that opens another surface — so
+ * clicking this never steals first-responder status from wherever the
+ * user is typing.
  *
  * Laws:
  *  - [L06] appearance is pure CSS + inherited tokens; no React state.
- *  - [L11] the ref is a control — it emits `open-file`; the deck level
- *    owns the state the action mutates.
+ *  - [L11] the ref is a control — it declares itself a file reference;
+ *    the deck level owns the state acting on it mutates.
  *  - [L19] file pair (`.tsx` + `.css`), exported props, `data-slot`.
  *
  * @module components/tugways/blocks/tool-file-ref
@@ -33,13 +39,12 @@
 
 import "./tool-file-ref.css";
 
-import React, { useCallback } from "react";
+import React from "react";
 import { FileText } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { dispatchAction } from "@/action-dispatch";
-import { TugContextMenu } from "@/components/tugways/tug-context-menu";
-import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { ANNOTATION_CLASS } from "@/lib/annotator/types";
+import { datasetForPayload } from "@/lib/annotator/payloads";
 
 export interface ToolFileRefProps {
   /**
@@ -49,8 +54,8 @@ export interface ToolFileRefProps {
   path: string;
   /**
    * 1-based line the reference points at (e.g. a Read's `offset`).
-   * Carried on the `open-file` dispatch so the editor lands on the
-   * relevant line, not just the file. Ignored when {@link range} is set.
+   * Carried on the annotation so the editor lands on the relevant line,
+   * not just the file. Ignored when {@link range} is set.
    */
   line?: number;
   /**
@@ -90,79 +95,54 @@ export function ToolFileRef({
 }: ToolFileRefProps): React.ReactElement {
   const name = fileRefBasename(path);
 
-  const handleClick = useCallback(
-    (event: React.MouseEvent) => {
-      // Plain primary click only — modified clicks fall through so
-      // text selection gestures over the header stay intact.
-      if (event.button !== 0 || event.metaKey || event.shiftKey) return;
-      const payload: Record<string, unknown> = {
-        action: TUG_ACTIONS.OPEN_FILE,
-        path,
-      };
-      if (range !== undefined) {
-        // Jump to and flash the changed line(s).
-        payload.line = range.startLine;
-        payload.endLine = range.endLine;
-      } else if (line !== undefined) {
-        payload.line = line;
-      }
-      dispatchAction(payload);
-    },
-    [path, line, range],
+  // A cited range wins over a bare line, so a click flashes exactly the
+  // lines the tool changed.
+  const dataset = datasetForPayload(
+    range !== undefined
+      ? {
+          kind: "file-path",
+          path,
+          line: range.startLine,
+          endLine: range.endLine,
+        }
+      : line !== undefined
+        ? { kind: "file-path", path, line }
+        : { kind: "file-path", path },
   );
 
-  const handleMouseDown = useCallback((event: React.MouseEvent) => {
-    // Belt-and-suspenders alongside `data-no-activate` (which stops host-
-    // pane activation): suppress WebKit's mousedown focus default for the
-    // primary open gesture so the click never pulls DOM focus onto this
-    // transcript. Same guard the transcript's cwd click uses (see
-    // `session-card-transcript`). Modified/secondary clicks fall through so
-    // text-selection gestures over the header still work.
-    if (event.button !== 0 || event.metaKey || event.shiftKey) return;
-    event.preventDefault();
-  }, []);
-
   return (
-    <TugContextMenu<string>
-      items={[
-        {
-          action: TUG_ACTIONS.OPEN_FILE,
-          value: path,
-          label: "Open in Editor",
-        },
-        {
-          action: TUG_ACTIONS.REVEAL_IN_FINDER,
-          value: path,
-          label: "Show in Finder",
-        },
-      ]}
+    <span
+      className={cn(
+        "tool-file-ref",
+        "tool-file-ref--link",
+        ANNOTATION_CLASS,
+        className,
+      )}
+      title={path}
+      data-slot={dataSlot}
+      // Opts the basename into transcript Find — header text, searchable in
+      // both collapse states. The icon span holds an SVG with no text
+      // nodes, so the unit's text is exactly the basename, which is what
+      // `tool-header-projection` projects. The full path is the tooltip
+      // only, and Find matches what is displayed.
+      data-tugx-findable=""
+      data-tug-annotation="file-path"
+      data-path={dataset.path}
+      data-line={dataset.line}
+      data-end-line={dataset.endLine}
+      data-tug-focus="refuse"
+      // Opening a file activates the TARGET card's pane; this ref must
+      // not also activate its OWN host pane. `pane-focus-controller`'s
+      // capture-phase pointerdown listener walks up for `data-no-activate`
+      // and short-circuits — without it the host pane activates on
+      // pointerdown and the target pane, activated by the click, flashes
+      // active then loses it back to the host.
+      data-no-activate=""
     >
-      <span
-        className={cn("tool-file-ref", "tool-file-ref--link", className)}
-        title={path}
-        data-slot={dataSlot}
-        // Opts the basename into transcript Find — header text, searchable in
-        // both collapse states. The icon span holds an SVG with no text
-        // nodes, so the unit's text is exactly the basename, which is what
-        // `tool-header-projection` projects. The full path is the tooltip
-        // only, and Find matches what is displayed.
-        data-tugx-findable=""
-        data-tug-focus="refuse"
-        // Opening a file activates the TARGET card's pane; this ref must
-        // not also activate its OWN host pane. `pane-focus-controller`'s
-        // capture-phase pointerdown listener walks up for `data-no-activate`
-        // and short-circuits — without it the host pane activates on
-        // pointerdown and the target pane, activated by the click, flashes
-        // active then loses it back to the host.
-        data-no-activate=""
-        onMouseDown={handleMouseDown}
-        onClick={handleClick}
-      >
-        <span className="tool-file-ref-icon" aria-hidden="true">
-          {icon ?? <FileText />}
-        </span>
-        {name}
+      <span className="tool-file-ref-icon" aria-hidden="true">
+        {icon ?? <FileText />}
       </span>
-    </TugContextMenu>
+      {name}
+    </span>
   );
 }

@@ -409,17 +409,33 @@ body {
   border-radius: var(--tugx-md-inline-code-radius);
 }
 
-/* Clickable command — an inline `<code>` span that parsed as a *known*
-   slash command or a project shell command (`enhance-commands` tags it
-   with this class plus `data-slash-command`/`data-slash-args` or
-   `data-shell-command`). The transcript's delegated click listener turns a
-   click into a ready-to-run draft, and a right-click offers Copy / Copy as
-   Plain Text. Resting appearance is the ordinary inline-code chip; only
-   hover reveals interactivity (pointer + link-colored underline). */
-.tugx-md-block code.tugx-md-cmd {
+/* Clickable command — an inline `<code>` span the annotator marked as a
+   *known* slash command or a project shell command. The transcript's
+   delegated click listener turns a click into a ready-to-run draft, and a
+   right-click offers Copy / Copy as Plain Text. Resting appearance is the
+   ordinary inline-code chip; only hover reveals interactivity (pointer +
+   link-colored underline). */
+.tugx-md-block code[data-tug-annotation="slash-command"],
+.tugx-md-block code[data-tug-annotation="shell-command"] {
   cursor: pointer;
 }
-.tugx-md-block code.tugx-md-cmd:hover {
+.tugx-md-block code[data-tug-annotation="slash-command"]:hover,
+.tugx-md-block code[data-tug-annotation="shell-command"]:hover {
+  color: var(--tugx-md-link-color-hover);
+  text-decoration: var(--tugx-md-link-decoration);
+}
+
+/* Verified file path — an inline `<code>` span the annotator confirmed
+   points at a file that exists. A click opens it in a Text card. Same
+   resting-plain / hover-reveals-interactivity rule the commands follow, so
+   the transcript reads as prose until the pointer says otherwise. An
+   unverified path carries no annotation at all and never matches here.
+   Paths the annotator split out of running prose are not `<code>` spans
+   and take their appearance from `styles/tug-annotation.css`. */
+.tugx-md-block code[data-tug-annotation="file-path"] {
+  cursor: pointer;
+}
+.tugx-md-block code[data-tug-annotation="file-path"]:hover {
   color: var(--tugx-md-link-color-hover);
   text-decoration: var(--tugx-md-link-decoration);
 }

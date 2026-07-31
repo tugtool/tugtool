@@ -177,6 +177,13 @@ body {
   background: var(--tugx-block-row-hover-bg);
 }
 
+/* A row whose path the annotator marked opens on click, so the pointer
+   says so. The row already lights on hover; the cursor is the only
+   addition — a result list reads as a list, not as a wall of links. */
+.tugx-paths-row[data-tug-annotation="file-path"] {
+  cursor: pointer;
+}
+
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-paths-row svg {
   flex: 0 0 auto;

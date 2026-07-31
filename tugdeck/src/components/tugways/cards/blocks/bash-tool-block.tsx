@@ -76,6 +76,8 @@ import "./bash-tool-block.css";
 
 import React from "react";
 
+import { useAnnotatedElement } from "@/components/tugways/annotation-scope";
+
 import {
   TerminalBlock,
   type TerminalData,
@@ -290,6 +292,8 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     [terminalData],
   );
 
+  const commandRef = useAnnotatedElement<HTMLElement>([bashInput.command]);
+
   // The command renders on the header's wrapping command row. While the
   // block is collapsed it clamps to `--tugx-toolheader-clamp-lines` via the
   // shared `tool-call-header-clamp` class (a long heredoc would otherwise
@@ -299,8 +303,12 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
   // header text, so it stays searchable while the block is collapsed;
   // `tool-header-projection` projects it in both states. (The commit-receipt
   // variant replaces the command row entirely, and projects only its name.)
+  // The paths inside the command line are annotated in place, so a file a
+  // command names opens on a click like a file named anywhere else. The
+  // ref scans the rendered `<code>`; the command text is its only input.
   const command = bashInput.command !== undefined ? (
     <code
+      ref={commandRef}
       data-slot="bash-tool-block-command"
       className="tool-call-header-clamp"
       data-tugx-findable=""

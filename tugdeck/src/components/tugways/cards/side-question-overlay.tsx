@@ -27,6 +27,7 @@
 import React, { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { Bot, Check, CloudUpload, User, X } from "lucide-react";
 
+import type { AnnotationContext } from "@/lib/annotator/types";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -44,12 +45,12 @@ import "./side-question-overlay.css";
 export interface SideQuestionBodyProps {
   store: SideQuestionStore;
   /**
-   * Clickability gate for inline command `<code>` spans in the answer
-   * markdown — the same predicate the main transcript passes to its
-   * {@link TugMarkdownBlock} so `/btw` answers get the identical command
-   * enhancement. Omit to render answers with no command chips.
+   * Annotator inputs for the answer markdown — the same context the main
+   * transcript passes to its {@link TugMarkdownBlock}, so `/btw` answers
+   * are annotated identically. Omit and answers carry only the state-free
+   * entity kinds.
    */
-  isKnownSlashCommand?: (name: string) => boolean;
+  annotation?: AnnotationContext;
   /**
    * Staged-context queue. When set, each answered side question shows an
    * Add-to-context toggle that stages the Q/A pair to ride the next `❯`
@@ -98,13 +99,13 @@ function composeZoneCopyText(exchanges: readonly SideQuestionExchange[]): string
 function SideQuestionExchangeRow({
   exchange,
   onDismiss,
-  isKnownSlashCommand,
+  annotation,
   pendingContextStore,
   staged,
 }: {
   exchange: SideQuestionExchange;
   onDismiss: (id: string) => void;
-  isKnownSlashCommand?: (name: string) => boolean;
+  annotation?: AnnotationContext;
   pendingContextStore?: PendingContextStore;
   /** Whether this exchange is currently staged for the next submission. */
   staged: boolean;
@@ -148,7 +149,7 @@ function SideQuestionExchangeRow({
               // transition; a re-ask is a new exchange with a new id/key).
               initialText={exchange.answer ?? ""}
               className="side-question-markdown"
-              isKnownSlashCommand={isKnownSlashCommand}
+              annotation={annotation}
             />
           ) : exchange.phase === "loading" ? (
             <TugProgressIndicator
@@ -232,7 +233,7 @@ function SideQuestionExchangeRow({
  */
 export function SideQuestionBody({
   store,
-  isKnownSlashCommand,
+  annotation,
   pendingContextStore,
 }: SideQuestionBodyProps): React.ReactElement {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
@@ -286,7 +287,7 @@ export function SideQuestionBody({
               key={ex.id}
               exchange={ex}
               onDismiss={(id) => store.dismiss(id)}
-              isKnownSlashCommand={isKnownSlashCommand}
+              annotation={annotation}
               pendingContextStore={pendingContextStore}
               staged={stagedRefs.has(ex.id)}
             />

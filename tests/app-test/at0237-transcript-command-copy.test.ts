@@ -3,19 +3,19 @@
  * Copy / Copy as Plain Text path, end to end.
  *
  * Drives the actual affordance the user triggers on a transcript command
- * span (`enhance-commands` → `.tugx-md-cmd`): a right-click opens the cell's
+ * span (the annotator marks it `.tugx-annotation`): a right-click opens the cell's
  * `useTranscriptCellMenu` context menu, whose Copy / Copy as Plain Text
  * items dispatch `copy-command` / `copy-command-as-plain-text` to the cell
  * responder → the command-copy handlers → the clipboard. The handlers copy
  * the WHOLE command (read from the span), never a smart-selected sub-word.
  * The `gallery-transcript-copy` fixture's cell D mounts a real
- * `TugMarkdownBlock` with `isKnownSlashCommand`, so `enhanceCommands` tags
+ * `TugMarkdownBlock` with an annotation context, so the annotator marks
  * the inline `<code>` commands in real DOM.
  *
  * Asserts:
- *  - **enhancer tagging**: a project shell command (`just launch-debug`,
- *    `tugutil dash join --preview`) gets `.tugx-md-cmd` + `data-shell-command`;
- *    a known slash command (`/diff HEAD`) gets `.tugx-md-cmd` +
+ *  - **annotator marking**: a project shell command (`just launch-debug`,
+ *    `tugutil dash join --preview`) gets `.tugx-annotation` + `data-shell-command`;
+ *    a known slash command (`/diff HEAD`) gets `.tugx-annotation` +
  *    `data-slash-command` / `data-slash-args`;
  *  - **Copy** (rich): `text/plain` = the whole command in Markdown
  *    backticks, `text/html` = a `<code>` element;
@@ -27,6 +27,8 @@
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
  * @covers tugdeck/src/lib/copy-as-plain-text.ts
+ * @covers tugdeck/src/lib/annotator/
+ * @covers tugdeck/src/components/tugways/cards/transcript-host-helpers.ts
  * @covers tugdeck/src/lib/command-atom.ts
  * @covers tugdeck/src/components/tugways/tug-context-menu.tsx
  * @covers tugdeck/src/lib/transcript-export.ts
@@ -73,15 +75,15 @@ const INSTALL_CLIPBOARD_CAPTURE = `(function(){
   return typeof navigator.clipboard.write === "function" && typeof ClipboardItem !== "undefined";
 })()`;
 
-/** Read the class + command datasets off the `.tugx-md-cmd` span whose text === `cmd`. */
+/** Read the class + command datasets off the `.tugx-annotation` span whose text === `cmd`. */
 function tagInfoScript(cmd: string): string {
   return `(function(){
-    var spans = document.querySelectorAll('${CELL_D} code.tugx-md-cmd');
+    var spans = document.querySelectorAll('${CELL_D} code.tugx-annotation');
     for (var i = 0; i < spans.length; i++){
       if ((spans[i].textContent || "").trim() === ${JSON.stringify(cmd)}){
         var d = spans[i].dataset;
         return {
-          hasClass: spans[i].classList.contains("tugx-md-cmd"),
+          hasClass: spans[i].classList.contains("tugx-annotation"),
           shell: d.shellCommand === undefined ? null : d.shellCommand,
           slash: d.slashCommand === undefined ? null : d.slashCommand,
           slashArgs: d.slashArgs === undefined ? null : d.slashArgs,
@@ -149,7 +151,7 @@ describe.skipIf(!SHOULD_RUN)(
           );
           // The enhancer runs at block build; wait for the shell span to be tagged.
           await app.waitForCondition<boolean>(
-            `document.querySelector('${CELL_D} code.tugx-md-cmd[data-shell-command]') !== null`,
+            `document.querySelector('${CELL_D} code.tugx-annotation[data-shell-command]') !== null`,
             { timeoutMs: 6000 },
           );
 

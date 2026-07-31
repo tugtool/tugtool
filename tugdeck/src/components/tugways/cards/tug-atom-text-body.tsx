@@ -43,6 +43,12 @@ import {
   type AtomSegment,
 } from "@/lib/tug-atom-img";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
+import {
+  annotationOpensSurface,
+  dataAttributesForPayload,
+  payloadForAtom,
+} from "@/lib/annotator/payloads";
+import { ANNOTATION_CLASS } from "@/lib/annotator/types";
 import type { TurnAddress } from "../tug-transcript-entry";
 
 // ---------------------------------------------------------------------------
@@ -204,7 +210,7 @@ export const TugAtomTextBody = React.forwardRef<
         // The shared `.tug-atom-chip { vertical-align: middle }`
         // class centres the chip in the line-box; the line-height
         // floor above guarantees the box is at least atom-tall.
-        return (
+        const chip = (
           <TugAtomChip
             key={`a-${i}`}
             className="tug-atom-chip"
@@ -212,6 +218,29 @@ export const TugAtomTextBody = React.forwardRef<
             label={displayLabel}
             value={seg.atom.value}
           />
+        );
+        // A chip whose atom names something actionable — a file, a link —
+        // wears the annotation, so the transcript's delegated layer gives
+        // it the same gestures the markdown renderer's chips get. The
+        // wrapper exists only to carry that dataset; chips with nothing to
+        // act on render bare, exactly as before.
+        const payload = payloadForAtom(seg.atom);
+        if (payload === null) return chip;
+        return (
+          <span
+            key={`a-${i}`}
+            className={ANNOTATION_CLASS}
+            data-tug-annotation={payload.kind}
+            {...dataAttributesForPayload(payload)}
+            data-tug-focus={
+              annotationOpensSurface(payload.kind) ? "refuse" : undefined
+            }
+            data-no-activate={
+              annotationOpensSurface(payload.kind) ? "" : undefined
+            }
+          >
+            {chip}
+          </span>
         );
       })}
     </span>
