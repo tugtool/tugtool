@@ -22,7 +22,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use crate::catalog::catalog;
-    use crate::{grade, Band, CommandSet};
+    use crate::{Band, CommandSet, grade};
 
     const CORPUS_JSON: &str = include_str!("../../../../tests/model-eval/classify-corpus.json");
     const CORPUS_COMMANDS: &str = include_str!("../data/corpus-commands.txt");
@@ -137,7 +137,10 @@ mod tests {
             .into_iter()
             .filter(|c| c.band.as_deref() == Some("no"))
             .collect();
-        assert!(authored.len() >= 10, "the No band needs cases to exercise it");
+        assert!(
+            authored.len() >= 10,
+            "the No band needs cases to exercise it"
+        );
         for case in authored {
             assert_eq!(band_of(&case.text, &names), Band::No, "{:?}", case.text);
         }

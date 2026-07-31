@@ -289,10 +289,7 @@ mod tests {
             tokens("git commit -m \"fix the crash\""),
             vec![vec!["git", "commit", "-m", "fix the crash"]]
         );
-        assert_eq!(
-            tokens("rg 'a b' src"),
-            vec![vec!["rg", "a b", "src"]]
-        );
+        assert_eq!(tokens("rg 'a b' src"), vec![vec!["rg", "a b", "src"]]);
     }
 
     #[test]
@@ -315,10 +312,7 @@ mod tests {
             heads("make || echo failed"),
             Some(vec!["make".into(), "echo".into()])
         );
-        assert_eq!(
-            heads("cd /tmp; ls"),
-            Some(vec!["cd".into(), "ls".into()])
-        );
+        assert_eq!(heads("cd /tmp; ls"), Some(vec!["cd".into(), "ls".into()]));
         assert_eq!(heads("sleep 5 &"), Some(vec!["sleep".into()]));
     }
 

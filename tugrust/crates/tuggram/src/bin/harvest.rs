@@ -40,7 +40,13 @@ use tuggram::harvest::{distill_help, distill_man, merge};
 /// Directories a `--help` probe may run a binary out of. Everything here ships
 /// with the system or with a package manager; a binary somewhere else on the
 /// PATH is the user's own and is never executed.
-const DEFAULT_PROBE_DIRS: &[&str] = &["/bin", "/usr/bin", "/sbin", "/usr/sbin", "/opt/homebrew/bin"];
+const DEFAULT_PROBE_DIRS: &[&str] = &[
+    "/bin",
+    "/usr/bin",
+    "/sbin",
+    "/usr/sbin",
+    "/opt/homebrew/bin",
+];
 
 /// Wall-clock cap on one `man` render or one `--help` probe.
 const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(10);
@@ -159,7 +165,7 @@ fn parse_args() -> Result<Options, String> {
             "--help" | "-h" => {
                 return Err(
                     "usage: harvest [--check] [--probe-help] [--allow-dir DIR] [--out PATH]".into(),
-                )
+                );
             }
             other => return Err(format!("unknown argument: {other}")),
         }
@@ -212,7 +218,10 @@ fn probe_help(name: &str, allowed: &[PathBuf]) -> Option<String> {
         .map(|dir| dir.join(name))
         .find(|p| p.is_file())?;
     let mut command = Command::new(&path);
-    command.arg("--help").env_clear().env("PATH", "/usr/bin:/bin");
+    command
+        .arg("--help")
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin");
     let output = run_bounded(&mut command)?;
     let text = String::from_utf8_lossy(&output).to_string();
     if text.trim().is_empty() {
@@ -252,11 +261,7 @@ fn run_bounded(command: &mut Command) -> Option<Vec<u8>> {
     };
     // Stdout reached EOF, so the child is done writing and this returns at once.
     let status = child.wait().ok()?;
-    if status.success() {
-        Some(buffer)
-    } else {
-        None
-    }
+    if status.success() { Some(buffer) } else { None }
 }
 
 /// Serialize the catalog deterministically, and refuse to write one that would

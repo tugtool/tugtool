@@ -120,76 +120,74 @@ impl CatalogEntry {
 ///   configuration requires and decodes by key.
 ///
 /// Check both against a candidate's raw files before spending a download.
-pub const CATALOG: &[CatalogEntry] = &[
-    CatalogEntry {
-        id: "qwen3-4b-instruct-2507-4bit",
-        display_name: "Qwen3 4B Instruct",
-        recommended: true,
-        offered: true,
-        hf_repo: "mlx-community/Qwen3-4B-Instruct-2507-4bit",
-        hf_revision: "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
-        files: &[
-            ModelFile {
-                name: "added_tokens.json",
-                sha256: "c0284b582e14987fbd3d5a2cb2bd139084371ed9acbae488829a1c900833c680",
-                bytes: 707,
-            },
-            ModelFile {
-                name: "chat_template.jinja",
-                sha256: "40c21f34cf67d8c760ef72f8ad3ae5afad514299d4b06e91dd9a8d705af7b541",
-                bytes: 4040,
-            },
-            ModelFile {
-                name: "config.json",
-                sha256: "574349e5a343236546fda55e4744a76e181f534182d7dc60ff1bad7e7a502849",
-                bytes: 938,
-            },
-            ModelFile {
-                name: "generation_config.json",
-                sha256: "835fffe355c9438e7a25be099b3fccaa98350b83451f9fd2d99512e74f1ade48",
-                bytes: 238,
-            },
-            ModelFile {
-                name: "merges.txt",
-                sha256: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
-                bytes: 1671853,
-            },
-            ModelFile {
-                name: "model.safetensors",
-                sha256: "2a73c6c248601ab904e035548abd8e6abb65ea27dcb5f342fb0a8910eb44173f",
-                bytes: 2263022417,
-            },
-            ModelFile {
-                name: "model.safetensors.index.json",
-                sha256: "388d811b8b7c2608dd04cce1bcb04a8bf715d19b42790894e6d3427ff429a777",
-                bytes: 63964,
-            },
-            ModelFile {
-                name: "special_tokens_map.json",
-                sha256: "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd",
-                bytes: 613,
-            },
-            ModelFile {
-                name: "tokenizer.json",
-                sha256: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-                bytes: 11422654,
-            },
-            ModelFile {
-                name: "tokenizer_config.json",
-                sha256: "4397cc477eb6d79715ccd2000accd6b3531928f30029665832fa1b255f24d2b9",
-                bytes: 5440,
-            },
-            ModelFile {
-                name: "vocab.json",
-                sha256: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
-                bytes: 2776833,
-            },
-        ],
-        total_bytes: 2278969697,
-        context_window: 262144,
-        notes: "Reads your command lines and writes your session headlines.",
-    },
-];
+pub const CATALOG: &[CatalogEntry] = &[CatalogEntry {
+    id: "qwen3-4b-instruct-2507-4bit",
+    display_name: "Qwen3 4B Instruct",
+    recommended: true,
+    offered: true,
+    hf_repo: "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+    hf_revision: "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+    files: &[
+        ModelFile {
+            name: "added_tokens.json",
+            sha256: "c0284b582e14987fbd3d5a2cb2bd139084371ed9acbae488829a1c900833c680",
+            bytes: 707,
+        },
+        ModelFile {
+            name: "chat_template.jinja",
+            sha256: "40c21f34cf67d8c760ef72f8ad3ae5afad514299d4b06e91dd9a8d705af7b541",
+            bytes: 4040,
+        },
+        ModelFile {
+            name: "config.json",
+            sha256: "574349e5a343236546fda55e4744a76e181f534182d7dc60ff1bad7e7a502849",
+            bytes: 938,
+        },
+        ModelFile {
+            name: "generation_config.json",
+            sha256: "835fffe355c9438e7a25be099b3fccaa98350b83451f9fd2d99512e74f1ade48",
+            bytes: 238,
+        },
+        ModelFile {
+            name: "merges.txt",
+            sha256: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+            bytes: 1671853,
+        },
+        ModelFile {
+            name: "model.safetensors",
+            sha256: "2a73c6c248601ab904e035548abd8e6abb65ea27dcb5f342fb0a8910eb44173f",
+            bytes: 2263022417,
+        },
+        ModelFile {
+            name: "model.safetensors.index.json",
+            sha256: "388d811b8b7c2608dd04cce1bcb04a8bf715d19b42790894e6d3427ff429a777",
+            bytes: 63964,
+        },
+        ModelFile {
+            name: "special_tokens_map.json",
+            sha256: "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd",
+            bytes: 613,
+        },
+        ModelFile {
+            name: "tokenizer.json",
+            sha256: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            bytes: 11422654,
+        },
+        ModelFile {
+            name: "tokenizer_config.json",
+            sha256: "4397cc477eb6d79715ccd2000accd6b3531928f30029665832fa1b255f24d2b9",
+            bytes: 5440,
+        },
+        ModelFile {
+            name: "vocab.json",
+            sha256: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+            bytes: 2776833,
+        },
+    ],
+    total_bytes: 2278969697,
+    context_window: 262144,
+    notes: "Reads your command lines and writes your session headlines.",
+}];
 
 /// Look up a catalog entry and its rank (position, 0 = recommended default).
 pub fn catalog_entry(id: &str) -> Option<(usize, &'static CatalogEntry)> {
@@ -1346,7 +1344,6 @@ pub fn tenant_enabled(bank: Option<&tugbank_core::TugbankClient>, key: &str) -> 
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1468,7 +1465,11 @@ mod tests {
     #[test]
     fn file_url_pins_the_revision() {
         let (_, entry) = catalog_entry("qwen3-4b-instruct-2507-4bit").unwrap();
-        let config = entry.files.iter().find(|f| f.name == "config.json").unwrap();
+        let config = entry
+            .files
+            .iter()
+            .find(|f| f.name == "config.json")
+            .unwrap();
         let url = entry.file_url(DEFAULT_BASE_URL, config);
         assert_eq!(
             url,

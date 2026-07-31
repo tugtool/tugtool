@@ -22,7 +22,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::catalog::{Entry, Grammar, PositionalKind, Positionals, Source, SYNOPSIS_CHAR_CAP};
+use crate::catalog::{Entry, Grammar, PositionalKind, Positionals, SYNOPSIS_CHAR_CAP, Source};
 
 /// Strip the backspace-overstrike sequences `man` uses for bold and underline
 /// (`X\bX` for bold, `_\bX` for underline) so the text is plain.
@@ -141,7 +141,12 @@ fn looks_like_a_value(word: &str, in_synopsis: bool) -> bool {
 
 /// Every flag the page mentions, plus the subset that appears to swallow the
 /// following word as its value.
-fn scan_flags(text: &str, in_synopsis: bool, flags: &mut BTreeSet<String>, values: &mut BTreeSet<String>) {
+fn scan_flags(
+    text: &str,
+    in_synopsis: bool,
+    flags: &mut BTreeSet<String>,
+    values: &mut BTreeSet<String>,
+) {
     for line in text.lines() {
         let words: Vec<&str> = line.split_whitespace().collect();
         for (i, word) in words.iter().enumerate() {
@@ -257,7 +262,10 @@ pub fn distill_man(name: &str, rendered: &str) -> Option<Entry> {
     } else {
         format!("Usage: {}", synopsis_section.replace('\n', "\n       "))
     };
-    let flag_list = format!("Flags: {}", flags.iter().cloned().collect::<Vec<_>>().join(" "));
+    let flag_list = format!(
+        "Flags: {}",
+        flags.iter().cloned().collect::<Vec<_>>().join(" ")
+    );
     let synopsis = compose_synopsis(vec![description, usage, flag_list], &trailer);
 
     Some(Entry {
@@ -295,7 +303,10 @@ pub fn distill_help(name: &str, help_text: &str) -> Option<Entry> {
         .take(4)
         .collect::<Vec<_>>()
         .join("\n");
-    let flag_list = format!("Flags: {}", flags.iter().cloned().collect::<Vec<_>>().join(" "));
+    let flag_list = format!(
+        "Flags: {}",
+        flags.iter().cloned().collect::<Vec<_>>().join(" ")
+    );
     let trailer = format!("({name}, read from its own --help)");
     let synopsis = compose_synopsis(vec![head, flag_list], &trailer);
 

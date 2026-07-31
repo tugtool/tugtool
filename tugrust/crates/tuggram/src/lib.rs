@@ -54,10 +54,10 @@ pub mod harvest;
 pub mod lex;
 
 pub use catalog::{
-    catalog, Catalog, Entry, Grammar, PositionalKind, PositionalVerdict, Positionals, Source,
-    SYNOPSIS_CHAR_CAP,
+    Catalog, Entry, Grammar, PositionalKind, PositionalVerdict, Positionals, SYNOPSIS_CHAR_CAP,
+    Source, catalog,
 };
-pub use lex::{lex, Segment};
+pub use lex::{Segment, lex};
 
 // ---------------------------------------------------------------------------
 // Bands
@@ -136,7 +136,9 @@ impl<'a> CommandSet<'a> {
 
     /// Whether the login PATH holds a command by this name.
     pub fn contains(&self, name: &str) -> bool {
-        self.names.binary_search_by(|n| n.as_str().cmp(name)).is_ok()
+        self.names
+            .binary_search_by(|n| n.as_str().cmp(name))
+            .is_ok()
     }
 
     pub fn len(&self) -> usize {
@@ -230,7 +232,9 @@ fn resolve_head(head: &str, commands: &CommandSet, cwd: Option<&Path>) -> Resolu
 fn stat_resolution(path: &Path) -> Resolution {
     use std::os::unix::fs::PermissionsExt;
     match std::fs::metadata(path) {
-        Ok(meta) if meta.is_file() && meta.permissions().mode() & 0o111 != 0 => Resolution::Resolved,
+        Ok(meta) if meta.is_file() && meta.permissions().mode() & 0o111 != 0 => {
+            Resolution::Resolved
+        }
         _ => Resolution::Absent,
     }
 }
@@ -540,10 +544,7 @@ mod tests {
 
     #[test]
     fn one_bad_head_in_a_pipeline_settles_the_whole_line() {
-        assert_eq!(
-            band_of("git status | frobnicate", &["git"], None),
-            Band::No
-        );
+        assert_eq!(band_of("git status | frobnicate", &["git"], None), Band::No);
         assert_eq!(
             band_of("cargo build && deploy-it", &["cargo"], None),
             Band::No
@@ -568,7 +569,10 @@ mod tests {
     fn a_line_the_lexer_refuses_is_unknown_never_no() {
         // Every one of these opens on a word that names nothing, so a lex that
         // succeeded would grade No. The refusal is what protects them.
-        assert_eq!(band_of("echo `nosuchthing`", &["echo"], None), Band::Unknown);
+        assert_eq!(
+            band_of("echo `nosuchthing`", &["echo"], None),
+            Band::Unknown
+        );
         assert_eq!(band_of("nosuchthing 'unbalanced", &[], None), Band::Unknown);
         assert_eq!(band_of("cat <<EOF", &["cat"], None), Band::Unknown);
     }
@@ -722,10 +726,7 @@ mod tests {
     fn value_flags_swallow_their_argument() {
         // `-m` takes the next token, so `resilient` is the only positional and
         // `git commit` accepts file positionals.
-        assert_eq!(
-            graded("git commit -m resilient", &["git"]).band,
-            Band::Yes
-        );
+        assert_eq!(graded("git commit -m resilient", &["git"]).band, Band::Yes);
         // The same token as a bare word instead would be an unknown subcommand.
         assert_eq!(graded("git resilient", &["git"]).band, Band::Maybe);
     }
@@ -771,7 +772,10 @@ mod tests {
 
     #[test]
     fn a_resolving_command_the_catalog_does_not_know_is_unknown() {
-        assert_eq!(graded("ffmpeg -i in.mov out.mp4", &["ffmpeg"]).band, Band::Unknown);
+        assert_eq!(
+            graded("ffmpeg -i in.mov out.mp4", &["ffmpeg"]).band,
+            Band::Unknown
+        );
     }
 
     #[test]

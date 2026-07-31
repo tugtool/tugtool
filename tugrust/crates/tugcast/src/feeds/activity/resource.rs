@@ -503,8 +503,14 @@ mod tests {
         assert_eq!(channels.get("rss_bytes").and_then(|v| v.as_u64()), Some(0));
         #[cfg(target_os = "macos")]
         {
-            assert_eq!(channels.get("disk_read_bps").and_then(|v| v.as_u64()), Some(0));
-            assert_eq!(channels.get("disk_write_bps").and_then(|v| v.as_u64()), Some(0));
+            assert_eq!(
+                channels.get("disk_read_bps").and_then(|v| v.as_u64()),
+                Some(0)
+            );
+            assert_eq!(
+                channels.get("disk_write_bps").and_then(|v| v.as_u64()),
+                Some(0)
+            );
         }
     }
 

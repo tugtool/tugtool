@@ -1164,8 +1164,8 @@ const ACTIVITY_HEADINGS: &[&str] = &[
 /// Words that carry none of a headline's subject, so whether the digest spells
 /// them says nothing about whether the headline came from it.
 const GROUNDING_STOPWORDS: &[&str] = &[
-    "the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "by", "for",
-    "with", "from", "into", "its", "it", "this", "that", "after", "before",
+    "the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "by", "for", "with", "from",
+    "into", "its", "it", "this", "that", "after", "before",
 ];
 
 /// How much of a headline's subject the digest must account for.
@@ -1211,7 +1211,8 @@ const GROUNDING_TRIM: &str = ".,:;!?\"'`()[]<>";
 /// compile-time constant in the Swift service and the digest is the only
 /// per-request input. Temperature is 0, so naming the rejected answer is the only
 /// thing that can make the second answer differ from the first.
-const GROUNDING_CORRECTION: &str = "\nThat is not what happened. This answer was rejected and must not be repeated:";
+const GROUNDING_CORRECTION: &str =
+    "\nThat is not what happened. This answer was rejected and must not be repeated:";
 
 /// Whether a headline is derived from the digest it claims to describe.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2534,8 +2535,7 @@ mod tests {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../tests/model-eval/corpus")
             .join(format!("{name}.digest.txt"));
-        std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
     }
 
     fn refusal(headline: &str, name: &str) -> (&'static str, String) {
@@ -2560,7 +2560,10 @@ mod tests {
     #[test]
     fn the_real_defective_headlines_are_refused() {
         // A tool line copied straight through as the intent line.
-        assert_eq!(refusal("Bash make", "parts-list-tail").0, "tool-name-opener");
+        assert_eq!(
+            refusal("Bash make", "parts-list-tail").0,
+            "tool-name-opener"
+        );
         // The mid-token truncation seen on the strip. `…` is `clip`'s marker.
         assert_eq!(
             refusal("Write jul29-p…", "tools-without-prompts").0,
@@ -2596,19 +2599,43 @@ mod tests {
     #[test]
     fn a_correct_headline_survives_every_frozen_digest() {
         for (headline, name) in [
-            ("Trace release version tags for self update", "app-self-update"),
-            ("Explain maxwell equations and primality", "conversation-only"),
+            (
+                "Trace release version tags for self update",
+                "app-self-update",
+            ),
+            (
+                "Explain maxwell equations and primality",
+                "conversation-only",
+            ),
             ("Diagnose debug splash screen hang", "debug-launch-stuck"),
-            ("Repair file completion path canonicalization", "file-completion-paths"),
+            (
+                "Repair file completion path canonicalization",
+                "file-completion-paths",
+            ),
             ("Chase composer typing lag", "fresh-directive"),
-            ("Plan local model onboarding for TugSetup", "local-model-onboarding"),
-            ("Evaluate Bonsai models for local scribe", "local-model-scribe"),
+            (
+                "Plan local model onboarding for TugSetup",
+                "local-model-onboarding",
+            ),
+            (
+                "Evaluate Bonsai models for local scribe",
+                "local-model-scribe",
+            ),
             ("Audit theme token contrast budgets", "noun-pile-bait"),
             ("Bundle tmux statically from source", "one-line-goal"),
             ("Author a command line calculator in C", "parts-list-tail"),
-            ("Instrument the splash screen teardown block", "splash-screen-stall"),
-            ("Trace session overview cadence gate", "tools-without-prompts"),
-            ("Fix download resume and port shell router", "two-goals-one-session"),
+            (
+                "Instrument the splash screen teardown block",
+                "splash-screen-stall",
+            ),
+            (
+                "Trace session overview cadence gate",
+                "tools-without-prompts",
+            ),
+            (
+                "Fix download resume and port shell router",
+                "two-goals-one-session",
+            ),
         ] {
             assert_grounded(headline, name);
         }
@@ -2637,35 +2664,68 @@ mod tests {
         let ratio = |headline: &str, name: &str| -> (usize, usize) {
             let digest = digest(name);
             let words = content_words(headline);
-            let stopwords: HashSet<&str> =
-                GROUNDING_STOPWORDS.iter().map(|w| stem(w)).collect();
+            let stopwords: HashSet<&str> = GROUNDING_STOPWORDS.iter().map(|w| stem(w)).collect();
             let subject: HashSet<&String> = words
                 .iter()
                 .skip(1)
                 .filter(|w| !stopwords.contains(w.as_str()))
                 .collect();
             let have: HashSet<String> = content_words(&digest).into_iter().collect();
-            (subject.iter().filter(|w| have.contains(**w)).count(), subject.len())
+            (
+                subject.iter().filter(|w| have.contains(**w)).count(),
+                subject.len(),
+            )
         };
 
         // A defect that one half would accept and two thirds refuses.
-        let (grounded, total) = ratio("Fix typing lag in command-line calculator", "parts-list-tail");
-        assert!(grounded * 2 >= total, "one half would accept {grounded}/{total}");
-        assert!(grounded * 3 < total * 2, "two thirds must refuse {grounded}/{total}");
+        let (grounded, total) = ratio(
+            "Fix typing lag in command-line calculator",
+            "parts-list-tail",
+        );
+        assert!(
+            grounded * 2 >= total,
+            "one half would accept {grounded}/{total}"
+        );
+        assert!(
+            grounded * 3 < total * 2,
+            "two thirds must refuse {grounded}/{total}"
+        );
 
         // A correct headline that three quarters would refuse and two thirds keeps.
-        let (grounded, total) = ratio("Explain maxwell equations and primality", "conversation-only");
-        assert!(grounded * 4 < total * 3, "three quarters would refuse {grounded}/{total}");
-        assert!(grounded * 3 >= total * 2, "two thirds must accept {grounded}/{total}");
+        let (grounded, total) = ratio(
+            "Explain maxwell equations and primality",
+            "conversation-only",
+        );
+        assert!(
+            grounded * 4 < total * 3,
+            "three quarters would refuse {grounded}/{total}"
+        );
+        assert!(
+            grounded * 3 >= total * 2,
+            "two thirds must accept {grounded}/{total}"
+        );
 
         // The resident model's own 64-character answer for `one-line-goal`, a
         // fair reading of a session that found the tmux mirror serving gzip
         // where the script expected xz. It carries six subject words to the
         // hand-written headline's three and still sits on the same edge.
-        let (grounded, total) = ratio("Fix tmux static bundle gzip to xz mismatch", "one-line-goal");
-        assert_eq!((grounded, total), (4, 6), "the sweep's captured edge case moved");
-        assert!(grounded * 4 < total * 3, "three quarters would refuse {grounded}/{total}");
-        assert!(grounded * 3 >= total * 2, "two thirds must accept {grounded}/{total}");
+        let (grounded, total) = ratio(
+            "Fix tmux static bundle gzip to xz mismatch",
+            "one-line-goal",
+        );
+        assert_eq!(
+            (grounded, total),
+            (4, 6),
+            "the sweep's captured edge case moved"
+        );
+        assert!(
+            grounded * 4 < total * 3,
+            "three quarters would refuse {grounded}/{total}"
+        );
+        assert!(
+            grounded * 3 >= total * 2,
+            "two thirds must accept {grounded}/{total}"
+        );
     }
 
     /// A digest writes filenames and a 56-character headline has room to name
@@ -2679,7 +2739,10 @@ mod tests {
     /// need a value loose enough to admit the three-fifths defect.
     #[test]
     fn a_headline_grounds_against_a_filename_the_digest_only_spells_dotted() {
-        assert_grounded("Audit theme contrast in nocturne and aria css", "noun-pile-bait");
+        assert_grounded(
+            "Audit theme contrast in nocturne and aria css",
+            "noun-pile-bait",
+        );
         assert_grounded(
             "Diagnose splash screen stall from vite config hold",
             "splash-screen-stall",
@@ -2687,7 +2750,10 @@ mod tests {
         // The whole token survives beside its parts, so a headline naming the
         // file exactly still matches — the reason the dot is not simply added
         // to the split set.
-        assert_eq!(content_words("Read(calc.c)"), ["read", "calc.c", "calc", "c"]);
+        assert_eq!(
+            content_words("Read(calc.c)"),
+            ["read", "calc.c", "calc", "c"]
+        );
     }
 
     /// The refusal rate the gate would produce over real model answers, printed
@@ -2708,7 +2774,10 @@ mod tests {
         let mut looked = 0;
         for entry in std::fs::read_dir("/tmp").into_iter().flatten().flatten() {
             let path = entry.path();
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default();
             if !name.starts_with("register-") || !name.ends_with(".json") {
                 continue;
             }
@@ -2772,9 +2841,16 @@ mod tests {
     /// identifiers and dotted paths, and the gate must not contradict it.
     #[test]
     fn a_bare_filename_is_allowed_where_a_path_is_not() {
-        assert_grounded("Trace session_overview.rs cadence gate", "tools-without-prompts");
+        assert_grounded(
+            "Trace session_overview.rs cadence gate",
+            "tools-without-prompts",
+        );
         assert_eq!(
-            refusal("Trace tugcast/src/feeds cadence gate", "tools-without-prompts").0,
+            refusal(
+                "Trace tugcast/src/feeds cadence gate",
+                "tools-without-prompts"
+            )
+            .0,
             "path-bearing"
         );
     }
@@ -2795,10 +2871,16 @@ mod tests {
         let names = digest_tool_names(&digest("fresh-directive"));
         assert_eq!(
             names,
-            ["read", "edit", "bash"].iter().map(|s| s.to_string()).collect()
+            ["read", "edit", "bash"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
         );
         for ask_word in ["good", "now", "chase", "typing", "lag", "composer"] {
-            assert!(!names.contains(ask_word), "{ask_word} entered the tool-name set");
+            assert!(
+                !names.contains(ask_word),
+                "{ask_word} entered the tool-name set"
+            );
         }
     }
 
@@ -2832,12 +2914,19 @@ mod tests {
         // Every word but the verb comes from `Bash(cargo nextest run
         // session_overview)`, which is one activity line of this digest.
         assert_eq!(
-            refusal("Trace cargo nextest session overview", "tools-without-prompts").0,
+            refusal(
+                "Trace cargo nextest session overview",
+                "tools-without-prompts"
+            )
+            .0,
             "activity-restatement"
         );
         // The words that make a headline about *purpose* rather than about the
         // command are exactly what keeps it clear of the rule.
-        assert_grounded("Trace session overview cadence gate", "tools-without-prompts");
+        assert_grounded(
+            "Trace session overview cadence gate",
+            "tools-without-prompts",
+        );
     }
 
     /// An empty headline is the gate's business too, so no caller needs a
@@ -2861,7 +2950,9 @@ mod tests {
             "Author command-line calculator"
         );
         assert_eq!(
-            headline_register("Salvage corrupted ledger and harden every writable open path in tugcore"),
+            headline_register(
+                "Salvage corrupted ledger and harden every writable open path in tugcore"
+            ),
             "Salvage corrupted ledger"
         );
     }
@@ -3650,8 +3741,9 @@ mod tests {
     /// overrun is the clip's to report and the trim's to keep quiet about.
     #[test]
     fn an_overrun_with_no_joiner_reports_a_clip_and_no_trim() {
-        let report =
-            headline_register_report("Fix aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff");
+        let report = headline_register_report(
+            "Fix aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff",
+        );
         assert!(report.clipped);
         assert!(!report.trimmed);
         assert!(report.normalized);
@@ -3681,7 +3773,13 @@ mod tests {
 
     #[test]
     fn the_frame_is_a_scoped_overview_pulse_line() {
-        let frame = overview_frame("sess-1", "Wiring the watch loop.", 3, 1_700_000_000_000, None);
+        let frame = overview_frame(
+            "sess-1",
+            "Wiring the watch loop.",
+            3,
+            1_700_000_000_000,
+            None,
+        );
         assert_eq!(frame.feed_id, FeedId::PULSE);
         let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
         assert_eq!(body["type"], "pulse");
@@ -3872,9 +3970,11 @@ mod tests {
         state.barrier_epoch = 1;
         sessions.insert("s1".to_string(), state);
 
-        let mut cache = PromptCache::default();
-        cache.offset = 42;
-        cache.first = Some("the finished request".to_string());
+        let mut cache = PromptCache {
+            offset: 42,
+            first: Some("the finished request".to_string()),
+            ..Default::default()
+        };
         cache.recent.push_back("the finished request".to_string());
         let outcome = EmitOutcome {
             session_id: "s1".to_string(),
@@ -4578,7 +4678,10 @@ mod tests {
         let first = next_digest(&mut digests).await;
         assert!(!first.contains(GROUNDING_CORRECTION));
         let second = next_digest(&mut digests).await;
-        assert!(second.starts_with(&first), "the re-ask keeps the original digest");
+        assert!(
+            second.starts_with(&first),
+            "the re-ask keeps the original digest"
+        );
         assert!(second.contains(GROUNDING_CORRECTION));
         assert!(second.contains("Wire schema migration backfill"));
 
@@ -4675,9 +4778,13 @@ mod tests {
         while let Some(digest) = next_digest_opt(&mut digests).await {
             seen.push(digest);
         }
-        let corrected = seen.iter().filter(|d| d.contains(GROUNDING_CORRECTION)).count();
+        let corrected = seen
+            .iter()
+            .filter(|d| d.contains(GROUNDING_CORRECTION))
+            .count();
         assert_eq!(
-            corrected, 1,
+            corrected,
+            1,
             "one session re-asked and one was contended; saw {} digests",
             seen.len()
         );
@@ -4859,7 +4966,10 @@ mod tests {
             text: "One trailing remark after the turn already ended, long enough to record."
                 .to_string(),
         });
-        assert!(state.settled_at.is_none(), "the twitch un-settled the clock");
+        assert!(
+            state.settled_at.is_none(),
+            "the twitch un-settled the clock"
+        );
 
         state.human_act();
         assert!(
@@ -5313,7 +5423,11 @@ mod tests {
         h.code_tx.send(turn_complete_frame("s1")).unwrap();
         tokio::time::sleep(Duration::from_secs(60)).await;
         let attempts = drain_retrospective_attempts(&mut digests);
-        assert_eq!(attempts.len(), 1, "the second stretch earns one, and one only");
+        assert_eq!(
+            attempts.len(),
+            1,
+            "the second stretch earns one, and one only"
+        );
         assert!(attempts[0].contains("- Bash(cargo test)"));
     }
 
@@ -5479,14 +5593,11 @@ mod tests {
             &["Bash(bun test keymap)".to_string()],
         )
         .unwrap();
-        let (rule, _) = match ground_headline(
-            "Ran bun test keymap",
-            &digest,
-            GroundingMode::Retrospective,
-        ) {
-            GroundingVerdict::Ungrounded { rule, detail } => (rule, detail),
-            GroundingVerdict::Grounded => panic!("a restated activity line was accepted"),
-        };
+        let (rule, _) =
+            match ground_headline("Ran bun test keymap", &digest, GroundingMode::Retrospective) {
+                GroundingVerdict::Ungrounded { rule, detail } => (rule, detail),
+                GroundingVerdict::Grounded => panic!("a restated activity line was accepted"),
+            };
         assert_eq!(rule, "activity-restatement");
     }
 
@@ -5497,7 +5608,10 @@ mod tests {
                 "make the watch loop resilient".to_string(),
                 "look at the parser instead".to_string(),
             ],
-            &["Bash(cargo build)".to_string(), "Edit(parser.rs)".to_string()],
+            &[
+                "Bash(cargo build)".to_string(),
+                "Edit(parser.rs)".to_string(),
+            ],
         )
         .unwrap();
         assert_eq!(
