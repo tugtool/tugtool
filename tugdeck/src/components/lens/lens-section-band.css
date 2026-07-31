@@ -52,11 +52,11 @@
      inline edges answer to different things. The leading one is where the
      band's glyph and title start, and it lines up with the rows' own inset. The
      trailing one is the LENS'S RIGHT EDGE — shared with every row's reorder
-     handle through `--tugx-lens-grip-inset-end` (`lens-content.css`), so a
-     band's handle and the handles on the rows under it sit on one vertical
-     instead of the band's standing two steps further in. */
+     row through `--tugx-lens-row-inset-end` (`lens-content.css`), so a band's
+     fold chevron and the trailing controls on the rows under it sit on one
+     vertical instead of the band's standing two steps further in. */
   --tugx-block-strip-padding: var(--tugx-lens-band-padding-block, 10px)
-    var(--tugx-lens-grip-inset-end) var(--tugx-lens-band-padding-block, 10px)
+    var(--tugx-lens-row-inset-end) var(--tugx-lens-band-padding-block, 10px)
     var(--tug-space-md);
 }
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
@@ -106,8 +106,8 @@
   pointer-events: none;
 }
 
-/* The grip shows the grabbing cursor while its section is being dragged. */
-.lens-section[data-dragging="true"] .block-grip {
+/* The band shows the grabbing cursor while its section is being carried. */
+.lens-section[data-dragging="true"] > .tool-call-header {
   cursor: grabbing;
 }
 
@@ -121,7 +121,7 @@
    right call for the transcript tool header, whose actions are fixed-size icon
    buttons with nothing to give — but a Lens band's cluster leads with a filter
    field that has a whole text lane to spare, and holding the cluster rigid
-   pushed the drag grip past the pane's edge. Shrinking is scoped to the section
+   pushed the fold chevron past the pane's edge. Shrinking is scoped to the section
    altitude, and the field absorbs all of it: every other item in the cluster is
    pinned rigid below, so the field is the only thing that narrows — down to its
    own floor, after which the band overflows as before. */

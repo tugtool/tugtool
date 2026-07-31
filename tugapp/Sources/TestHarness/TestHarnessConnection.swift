@@ -743,12 +743,14 @@ final class TestHarnessConnection {
             let clickCount = (verbObj["clickCount"] as? Int) ?? 1
             let downDelay = (verbObj["mouseDownDelayMs"] as? Int) ?? 20
             let upDelay = (verbObj["mouseUpDelayMs"] as? Int) ?? 20
+            let activateFirst = (verbObj["activateFirst"] as? Bool) ?? true
             try handlers.nativeClick(
                 viewportPoint: vp,
                 button: button,
                 clickCount: clickCount,
                 mouseDownDelayMs: downDelay,
                 mouseUpDelayMs: upDelay,
+                activateFirst: activateFirst,
             )
 
         case "nativeDoubleClick":

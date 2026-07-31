@@ -90,15 +90,6 @@ body {
   min-inline-size: 0;
 }
 
-/* Furniture on the name line takes its height from the line, never the other
-   way round: the grip's own glyph box is taller than the name's line box, and
-   left to itself it would make the name line — and the row — grow by a pixel or
-   two. Same fixed-box-with-visible-overflow treatment as the indicator below. */
-.tug-session-row-grip {
-  block-size: 1em;
-  overflow: visible;
-}
-
 /* The indicator, when it rides the name line. A fixed advance with visible
    overflow: the box charges the line for `--tugx-session-row-dot-advance` and
    the indicator inside it is centered at its own size, free to breathe past
@@ -114,8 +105,7 @@ body {
   margin-inline-end: var(--tugx-session-row-name-gap);
 }
 
-.tug-session-row-slots,
-.tug-session-row-grip {
+.tug-session-row-slots {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -126,8 +116,7 @@ body {
    with no imposition active — costs the name line nothing, not even its
    margin. The slot is passed unconditionally by the mount site, because
    whether there IS an arrangement is the picker's own business to answer. */
-.tug-session-row-slots:empty,
-.tug-session-row-grip:empty {
+.tug-session-row-slots:empty {
   display: none;
 }
 
@@ -172,17 +161,15 @@ body {
 }
 
 /* ── `reveal` — furniture that costs nothing at rest ─────────────────────
-   The slots and the grip ride the name line and are BOTH hidden and
-   zero-width until the row is engaged. At rest the name gets the entire row;
-   on engage the furniture claims its width back from the name, which is the
-   only text on the row that can afford to give it (it is short, and it is the
-   one string the reader already knows).
+   The slots are BOTH hidden and zero-width until the row is engaged. At rest
+   the name gets the entire row; on engage the slots claim their width back
+   from the name, which is the only text on the row that can afford to give it
+   (it is short, and it is the one string the reader already knows).
 
    Engagement is the same four states the row primitive's own trailing reveal
    uses — hover, focus within, selected, and the list view's keyboard cursor —
    so a row reveals identically to the pointer and to the keyboard. */
-.tug-session-row[data-fit="reveal"] .tug-session-row-slots,
-.tug-session-row[data-fit="reveal"] .tug-session-row-grip {
+.tug-session-row[data-fit="reveal"] .tug-session-row-slots {
   inline-size: 0;
   margin-inline-start: 0;
   overflow: hidden;
@@ -195,13 +182,7 @@ body {
 .tug-session-row[data-fit="reveal"][data-selected="true"] .tug-session-row-slots,
 .tug-list-view-cell[data-key-cursor]
   .tug-session-row[data-fit="reveal"]
-  .tug-session-row-slots,
-.tug-session-row[data-fit="reveal"]:hover .tug-session-row-grip,
-.tug-session-row[data-fit="reveal"]:focus-within .tug-session-row-grip,
-.tug-session-row[data-fit="reveal"][data-selected="true"] .tug-session-row-grip,
-.tug-list-view-cell[data-key-cursor]
-  .tug-session-row[data-fit="reveal"]
-  .tug-session-row-grip {
+  .tug-session-row-slots {
   inline-size: auto;
   margin-inline-start: var(--tugx-session-row-name-gap);
   overflow: visible;

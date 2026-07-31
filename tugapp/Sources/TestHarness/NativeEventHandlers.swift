@@ -239,15 +239,32 @@ final class NativeEventHandlers {
     /// and up events; `mouseUpDelayMs` sleeps after the up. Both
     /// default to 20ms — enough for WebKit to process the events
     /// in order without racing the test's next RPC.
+    ///
+    /// `activateFirst` is the default because the app under test is normally
+    /// already frontmost. A test that models a click into the backgrounded app
+    /// passes false: the click that brings an app forward is a different event
+    /// from an ordinary one, and activating first erases the case under test.
     func nativeClick(
         viewportPoint: CGPoint,
         button: MouseButton = .left,
         clickCount: Int = 1,
         mouseDownDelayMs: Int = 20,
         mouseUpDelayMs: Int = 20,
+        activateFirst: Bool = true,
     ) throws {
-        activateSelf()
+        if activateFirst { activateSelf() }
         let screenPoint = try resolveScreenPoint(viewportPoint)
+        if !activateFirst {
+            // An activation click has to arrive the way a user's does, with the
+            // cursor already at the point. A posted button event carries its
+            // own position, but WindowServer routes a click into a background
+            // application by where the cursor actually is — post without
+            // warping and the click reaches no window at all, so the app never
+            // comes forward. The activating path is the only one that needs
+            // this; the ordinary path already owns the frontmost window.
+            CGWarpMouseCursorPosition(screenPoint)
+            sleepMs(20)
+        }
 
         guard let down = CGEvent(
             mouseEventSource: source,

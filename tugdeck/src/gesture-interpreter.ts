@@ -119,6 +119,9 @@ export interface GestureInterpreterHost {
 let current: GestureClassification | null = null;
 let nextGestureId = 1;
 
+/** The installed host, for entry points that arrive outside the pointer stream. */
+let installedHost: GestureInterpreterHost | null = null;
+
 /** The live gesture's classification, or `null` between gestures. */
 export function currentGesture(): GestureClassification | null {
   return current;
@@ -213,8 +216,19 @@ function placementIsSuppressedByPolicy(el: Element | null): boolean {
   return marked?.getAttribute(PLACEMENT_POLICY_ATTRIBUTE) === "suppress";
 }
 
+/**
+ * What classification reads off a gesture. A real `MouseEvent` /
+ * `PointerEvent` satisfies it structurally; the host's activation click
+ * (which has a point but no event) synthesizes one.
+ */
+interface GestureInput {
+  target: EventTarget | null;
+  button: number;
+  metaKey: boolean;
+}
+
 function classify(
-  event: MouseEvent,
+  event: GestureInput,
   host: GestureInterpreterHost,
   extraReasons: string[],
 ): GestureClassification {
@@ -519,6 +533,8 @@ export function installGestureInterpreter(
     current = null;
   }
 
+  installedHost = host;
+
   // The resync pair registers FIRST so a healed pointerdown is classified
   // before `onMouseDown` reads the record.
   document.addEventListener("pointerdown", trackPointerDown, { capture: true });
@@ -547,5 +563,39 @@ export function installGestureInterpreter(
     document.removeEventListener("dragend", onGestureAbandoned, { capture: true });
     current = null;
     pendingActivation = null;
+    installedHost = null;
   };
+}
+
+/**
+ * Activate whatever sits under a viewport point, for the macOS host's
+ * click-through activation: the click that brings a backgrounded Tug.app
+ * forward is consumed by AppKit and never reaches the document, so the host
+ * hands the point here and the deck activates the pane/card the user aimed at.
+ *
+ * The point runs through the same `classify` the pointer stream uses, so every
+ * activation rule holds — a `[data-no-activate]` control, a pane-modal scrim, a
+ * point outside every pane. Only the activation half is realized: an activation
+ * click places no caret and presses nothing, and a point on the canvas
+ * background leaves the current selection alone rather than deselecting.
+ *
+ * Returns the activated card id, or `null` when the point activates nothing.
+ */
+export function activateAtViewportPoint(
+  clientX: number,
+  clientY: number,
+): string | null {
+  const host = installedHost;
+  if (host === null) return null;
+  const target = document.elementFromPoint(clientX, clientY);
+  if (target === null) return null;
+  const classification = classify(
+    { target, button: 0, metaKey: false },
+    host,
+    ["host-activation-click"],
+  );
+  const transfer = classification.activationTransfer;
+  if (transfer === null) return null;
+  host.activate(transfer);
+  return transfer.incomingCardId;
 }

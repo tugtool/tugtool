@@ -28,14 +28,6 @@
   min-block-size: 0;
 }
 
-/* A filtered list shows only part of the arrangement, so drag-reorder has no
-   coherent drop order to commit — hide the grips while the filter is on rather
-   than offering a gesture that would do the wrong thing. */
-.text-files-list-wrap[data-filter-active="true"] .block-grip {
-  visibility: hidden;
-  pointer-events: none;
-}
-
 /* The reorder-drag lift on the row while it is being dragged. */
 .text-files-row[data-dragging="true"] {
   opacity: 0.6;
@@ -54,12 +46,13 @@
   --tugx-list-view-padding-block: 0;
   /* THE SAME ROW METRICS THE SESSIONS LIST USES — not a coincidence and not
      free to drift. A Text Files row and a Sessions row are the same shape (a
-     leading glyph, a name, the slot picker, a grip), and they stack one above
-     the other in the same narrow column, so every one of those four has to land
-     on one vertical line down the Lens. The inline padding places the leading
-     glyph and, at the far edge, the grip; the leading column's width places the
-     name; the name's `flex: 1` places the picker. Change any of these here and
-     you must change them in `sessions-section.css` too. */
+     leading glyph, a name, the slot picker), and they stack one above the
+     other in the same narrow column, so every one of those three has to land on
+     one vertical line down the Lens. The inline padding places the leading
+     glyph; the leading column's width places the name; the name's `flex: 1`
+     places the picker, which stops at the rail's own trailing edge
+     (`lens-content.css`). Change any of these here and you must change them in
+     `sessions-section.css` too. */
   --tugx-list-row-padding-inline: var(--tug-space-md);
   --tugx-list-row-indicator-gutter: 0px;
 }

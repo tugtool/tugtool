@@ -208,19 +208,15 @@
   background-color: var(--tugx-pane-bg);
 }
 
-/* The Lens places every row's reorder handle itself, in one rule over all three
-   of its lists (`.lens-content .tug-list-row-grip`), and that placement is what
-   sets where a row's content has to stop. Restated here — the same two knobs,
-   so a tune moves both — because a rail auditioning the handle at the row's own
-   padding instead of at the list frame is auditioning a row the Lens does not
-   have. This is the third of the three Lens facts the rail reproduces; if a
-   fourth ever appears, the rail needs it too. */
-.gpd-rail .tug-list-row-grip {
-  align-self: center;
-  margin-inline-start: var(--tugx-lens-grip-gap);
-  margin-inline-end: calc(
-    var(--tugx-lens-grip-inset-end) - var(--tugx-list-row-padding-inline)
-  );
+/* The Lens pulls every row's trailing content out to one vertical, in a single
+   rule over all three of its lists (`.lens-content .tug-list-row`), and that is
+   what sets where a row's furniture has to stop. Restated here — the same knob,
+   so a tune moves both — because a rail whose slots and tape stop at the row's
+   own reading inset instead of at the list frame is auditioning a row the Lens
+   does not have. This is the third of the three Lens facts the rail reproduces;
+   if a fourth ever appears, the rail needs it too. */
+.gpd-rail .tug-list-row {
+  padding-inline-end: var(--tugx-lens-row-inset-end);
 }
 
 /* ── The fit audition ────────────────────────────────────────────────── */

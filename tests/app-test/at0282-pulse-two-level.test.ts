@@ -164,7 +164,7 @@ async function lensLineCount(app: App, sid: string): Promise<number> {
        var el = document.querySelector(${JSON.stringify(row)});
        if (el === null) return -1;
        return el.querySelectorAll(
-         ".session-row-headline, .tug-pulse-line"
+         ".tug-session-row-name-line, .tug-pulse-line"
        ).length;
      })()`,
   );
@@ -188,25 +188,25 @@ async function lensRowGeometry(
     nameLeft: number;
     intentLeft: number;
     activityLeft: number;
-    dotTop: number;
-    nameLineTop: number;
+    dotCenter: number;
+    nameLineCenter: number;
   } | null>(
     `(function(){
        var row = document.querySelector(${JSON.stringify(lensRow(sid))});
        if (row === null) return null;
-       var name = row.querySelector(".session-row-headline .tug-list-row-title");
+       var name = row.querySelector(".tug-session-row-name-line .tug-list-row-title");
        var intent = row.querySelector('[data-slot="tug-pulse-headline"]');
        var activity = row.querySelector('[data-slot="tug-pulse-activity"]');
-       var nameLine = row.querySelector(".session-row-headline");
-       var dot = row.parentElement.querySelector(".tug-list-row-leading");
+       var nameLine = row.querySelector(".tug-session-row-name-line");
+       var dot = row.querySelector(".tug-session-row-dot");
        if (name === null || intent === null || activity === null) return null;
        if (nameLine === null || dot === null) return null;
        return {
          nameLeft: name.getBoundingClientRect().left,
          intentLeft: intent.getBoundingClientRect().left,
          activityLeft: activity.getBoundingClientRect().left,
-         dotTop: dot.getBoundingClientRect().top,
-         nameLineTop: nameLine.getBoundingClientRect().top,
+         dotCenter: dot.getBoundingClientRect().top + dot.getBoundingClientRect().height / 2,
+         nameLineCenter: nameLine.getBoundingClientRect().top + nameLine.getBoundingClientRect().height / 2,
        };
      })()`,
   );
@@ -349,16 +349,19 @@ describe.skipIf(!SHOULD_RUN)("AT0282: the PULSE reads at two levels", () => {
           await lensRowHeight(app, SID_B),
         );
 
-        // 4. The row's geometry. All three lines start on ONE vertical — a
-        //    zero-width strut that still collects a flex gap indented the two
-        //    pulse lines past the name and was invisible to every other check
-        //    here. And the phase dot tops out with the NAME line, because the
-        //    dot reports the session's phase and the name says which session.
+        // 4. The row's geometry, in the shipping `inset` fit. The phase dot
+        //    rides ON the name line — it reports the session's phase and the
+        //    name says which session — so the NAME starts one dot-advance in
+        //    while both PULSE lines start at the row's own inset and keep the
+        //    whole leading column. The two PULSE lines are on one vertical
+        //    with each other; the name is deliberately not on it. The dot is
+        //    CENTERED on the name line rather than topped out with it — its box
+        //    is one em inside a line box that is taller than one em.
         const geo = await lensRowGeometry(app, SID_A);
         expect(geo).not.toBeNull();
-        expect(Math.abs(geo!.intentLeft - geo!.nameLeft)).toBeLessThan(0.51);
-        expect(Math.abs(geo!.activityLeft - geo!.nameLeft)).toBeLessThan(0.51);
-        expect(Math.abs(geo!.dotTop - geo!.nameLineTop)).toBeLessThan(0.51);
+        expect(Math.abs(geo!.activityLeft - geo!.intentLeft)).toBeLessThan(0.51);
+        expect(geo!.nameLeft).toBeGreaterThan(geo!.intentLeft + 4);
+        expect(Math.abs(geo!.dotCenter - geo!.nameLineCenter)).toBeLessThan(0.51);
       } finally {
         await app.close();
         rmTempTugbank(tugbankPath);

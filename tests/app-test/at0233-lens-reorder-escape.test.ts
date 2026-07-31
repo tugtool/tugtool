@@ -4,10 +4,11 @@
  * they currently are — the test reads them live, nothing is hardcoded).
  *
  * Scenarios:
- *   1. Drag the second rail section's grip above the first; assert the
+ *   1. Drag the second rail section's BAND above the first; assert the
  *      two swap in the DOM and `dev.tugtool.lens/sectionOrder` persists
- *      the new relative order. The section kinds and their default order
- *      are read from the live rail — nothing is hardcoded, so the test
+ *      the new relative order. There is no grip: the band is its own handle,
+ *      so the grab point is its title. The section kinds and their default
+ *      order are read from the live rail — nothing is hardcoded, so the test
  *      survives changes to the default section order.
  *   2. Focus the Lens (its sections give it real focusable content),
  *      then Escape; assert the previously-focused card is restored (the
@@ -34,8 +35,10 @@ const TEST_TIMEOUT_MS = 60_000;
 const SECTIONS = ".lens-sections .lens-section[data-lens-section]";
 const sectionSel = (kind: string): string =>
   `.lens-section[data-lens-section="${kind}"]`;
-const gripSel = (kind: string): string =>
-  `${sectionSel(kind)} [data-testid="lens-section-grip"]`;
+// The band is the handle, and its title is the part of it that is neither a
+// button nor the filter field — the surface a user actually grabs.
+const bandGrabSel = (kind: string): string =>
+  `${sectionSel(kind)} .tool-call-header-name`;
 
 async function dispatch(app: App, action: string): Promise<void> {
   await app.dispatchControlAction(action);
@@ -94,10 +97,10 @@ describe.skipIf(!SHOULD_RUN)(
             const before = await domOrder(app);
             const [first, second] = before;
 
-            // Drag the second section's grip to just below the top of the
+            // Drag the second section's band to just below the top of the
             // first section so it lands at index 0, above `first`.
             const firstBounds = await app.getElementBounds(sectionSel(first));
-            await app.nativeDragElement(gripSel(second), {
+            await app.nativeDragElement(bandGrabSel(second), {
               x: Math.round(firstBounds.x + firstBounds.width / 2),
               y: Math.round(firstBounds.y + 4),
             });
@@ -157,9 +160,9 @@ describe.skipIf(!SHOULD_RUN)(
               y: Math.round(firstBounds.y + 4),
             };
 
-            // Press + drag the second grip toward the top of the first, HOLDING
+            // Press + drag the second band toward the top of the first, HOLDING
             // (no release) so the mid-drag FLIP visuals can be observed.
-            await app.nativeDragElementWithoutRelease(gripSel(second), target);
+            await app.nativeDragElementWithoutRelease(bandGrabSel(second), target);
 
             // Mid-drag: the dragged band is ghosted (`data-dragging`) and the
             // drop caret is revealed in the opened gap ([P08]).

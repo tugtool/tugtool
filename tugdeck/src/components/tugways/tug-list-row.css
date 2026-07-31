@@ -394,14 +394,6 @@ body {
   gap: var(--tugx-list-row-trailing-gap);
 }
 
-/* Trailing-most reorder grip. Outside the trailing span, so no reveal
-   policy applies to it: the handle holds the row's right edge at rest. */
-.tug-list-row-grip {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-}
-
 /* ---- Title / subtitle ----
    Title and string subtitles render through `TugLabel`, which owns
    their font-size (via the `size` prop) and truncation (via
@@ -589,7 +581,7 @@ body {
   background-color: var(--tugx-list-row-selected-pressed-bg);
 }
 
-.tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active))::after {
+.tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active))::after {
   opacity: 1;
   transition-duration: var(--tug-motion-duration-instant);
 }
@@ -600,8 +592,8 @@ body {
    saturated fill. The flip is instant both ways — it rides the press's arrival
    and steps aside at the release, leaving the fade to the fill, which is what
    the eye is following. */
-.tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)) .tug-list-row-content,
-.tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)) .tug-list-row-content .tug-label {
+.tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active)) .tug-list-row-content,
+.tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active)) .tug-list-row-content .tug-label {
   color: var(--tugx-list-row-pressed-text);
 }
 

@@ -3,7 +3,7 @@
  * drag ([P08]).
  *
  * A thin accent hairline the drag handler positions in the gap at the target
- * index while a grip-drag is live. It is a single persistently-mounted
+ * index while a reorder drag is live. It is a single persistently-mounted
  * element whose position + visibility the {@link useBlockReorder} handler
  * drives IMPERATIVELY (inline `top` + a `data-visible` attribute) so nothing
  * about the drag re-renders React mid-gesture ([L06]/[L08]) — the caret is

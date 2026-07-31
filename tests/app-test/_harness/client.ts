@@ -976,6 +976,16 @@ export interface NativeClickOptions {
   clickCount?: number;
   mouseDownDelayMs?: number;
   mouseUpDelayMs?: number;
+  /**
+   * Whether to activate the app before posting the click (default true). The
+   * app-under-test is normally already frontmost, and activating first keeps a
+   * stray z-order lag from sending the post to whatever window sits above.
+   *
+   * Pass `false` to model a click that arrives while the app is in the
+   * background — the click that brings it forward is a different event from an
+   * ordinary one, and activating first would erase exactly the case under test.
+   */
+  activateFirst?: boolean;
 }
 
 export interface NativeDragOptions {
@@ -1517,6 +1527,8 @@ function buildNativeClickParams(
     params.mouseDownDelayMs = opts.mouseDownDelayMs;
   if (opts?.mouseUpDelayMs !== undefined)
     params.mouseUpDelayMs = opts.mouseUpDelayMs;
+  if (opts?.activateFirst !== undefined)
+    params.activateFirst = opts.activateFirst;
   return params;
 }
 

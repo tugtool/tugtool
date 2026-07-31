@@ -3974,6 +3974,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       new Map(),
     );
 
+    // A pointerdown a finer gesture affordance claimed (`defaultPrevented` —
+    // a Lens row arming its carry). Selection does not commit on that press,
+    // because the press may be about to become a drag; it commits on the
+    // CLICK instead, which only arrives if the gesture stayed a click. A drag
+    // swallows its own trailing click, so it selects nothing.
+    const deferredSelectIndexRef = React.useRef<number | null>(null);
+
     function getCellCallbacks(index: number): CellCallbacks {
       const registry = cellCallbacksRef.current;
       const cached = registry.get(index);
@@ -4044,18 +4051,25 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // mousedown `preventDefault` eats the click).
         //
         // A `defaultPrevented` pointerdown belongs to a finer gesture
-        // affordance that claimed the pointer before it bubbled here — a
-        // reorder grip's pointer-capture drag — and is not a row-selection
-        // gesture: a grip drag must reorder without selecting (for a session
-        // row, `onSelect` fronts the bound card mid-drag).
+        // affordance that claimed the pointer before it bubbled here — a Lens
+        // row arming its own reorder carry — and cannot be read as a
+        // row-selection gesture YET, because it does not know which it is: a
+        // carry must reorder without selecting (for a session row, `onSelect`
+        // fronts the bound card mid-drag), while a press that never travels
+        // is an ordinary click and must select as one. So the selection is
+        // deferred to the click rather than dropped, and the drag's swallowed
+        // click is what makes a real carry select nothing.
         //
         // Selection is list state and commits whether or not the focus engine
         // is running; only the cursor / key-view half below is engine state.
         if (!e.defaultPrevented) {
+          deferredSelectIndexRef.current = null;
           delegateRef.current?.onSelect?.(index);
           if (selectionRequiredRef.current || focusEngineActiveRef.current) {
             setSelectedIndex(index);
           }
+        } else {
+          deferredSelectIndexRef.current = index;
         }
         if (!focusEngineActiveRef.current) return;
         // The gesture's own placement decision governs the engine half. The
@@ -4093,7 +4107,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // what distinguishes the two and keeps a consumer's `onSelect` from
       // firing twice for one pointer gesture.
       const clickCb = (e: React.MouseEvent<HTMLDivElement>): void => {
-        if (e.detail !== 0) return;
+        // A pointer click whose pointerdown was claimed (and therefore did not
+        // select) is this row's selection arriving late — the gesture turned
+        // out to be a click after all. One-shot.
+        const deferred = deferredSelectIndexRef.current === index;
+        if (deferred) deferredSelectIndexRef.current = null;
+        if (e.detail !== 0 && !deferred) return;
         if (!cellIsPickable()) return;
         // A click in the open editor's cell is the editor's, not a re-selection
         // of the container's row (mirrors the pointerdown guard).

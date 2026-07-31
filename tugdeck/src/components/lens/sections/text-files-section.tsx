@@ -12,8 +12,8 @@
  * own close guard runs; it is reachable by descending onto the row
  * (ArrowRight), ahead of the slot picker.
  *
- * Rows carry the same trailing reorder grip the Sessions and Snippets rows do,
- * driven by the shared `useBlockReorder` FLIP and committing to `lensStore`'s
+ * A row is carried to reorder it, exactly as the Sessions and Snippets rows
+ * are — the shared `useBlockReorder` FLIP, committing to `lensStore`'s
  * `textFileOrder` on drop.
  *
  * Laws: [L02] deck + recents enter React through `useSyncExternalStore` (in the
@@ -56,7 +56,6 @@ import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { LENS_LIST_PRESENTATION } from "@/components/lens/lens-list-presentation";
 import { SlotPicker } from "@/components/lens/slot-picker";
-import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { useBlockReorder } from "@/components/lens/block-reorder";
 import { lensStore } from "@/lib/lens-store/lens-store";
@@ -88,10 +87,10 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 const ROW_SELECTOR = ".text-files-row[data-text-card-id]";
 const ROW_KIND_ATTR = "data-text-card-id";
 
-/** Row verbs the section body hands the module-level cell — the reorder grip
- *  and the close box. */
+/** Row verbs the section body hands the module-level cell — the reorder and
+ *  the close box. */
 interface TextFilesCellContextValue {
-  onGripPointerDown: (cardId: string, event: React.PointerEvent) => void;
+  onRowPointerDown: (cardId: string, event: React.PointerEvent) => void;
   onClose: (cardId: string) => void;
 }
 const TextFilesCellContext =
@@ -175,13 +174,9 @@ function FileRow({
           }}
         />
       }
-      grip={
-        ctx !== null ? (
-          <BlockGrip
-            onPointerDown={(e) => ctx.onGripPointerDown(cardId, e)}
-          />
-        ) : undefined
-      }
+      // The row is its own reorder handle — a vertical drag from anywhere on
+      // it that is not the close box or the slot picker carries it ([P08]).
+      onPointerDown={(e) => ctx?.onRowPointerDown(cardId, e)}
     >
       {/* The path is the row's hover title: `TugListRow` owns the `title` prop
           as row text, so the tooltip rides the content column instead. */}
@@ -359,13 +354,13 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
     return { onSelect: activate, onActivate: activate };
   }, [dataSource]);
 
-  // Reorder by grip: commit on drop. Rows match by `data-text-card-id`;
-  // the FLIP animates the row, the store commit persists the new user order.
-  // Newly opened files (absent from `textFileOrder`) stay at the bottom until
-  // the user moves them.
+  // Reorder by carrying the row: commit on drop. Rows match by
+  // `data-text-card-id`; the FLIP animates the row, the store commit persists
+  // the new user order. Newly opened files (absent from `textFileOrder`) stay
+  // at the bottom until the user moves them.
   const listWrapRef = useRef<HTMLDivElement | null>(null);
   const caretRef = useRef<HTMLDivElement | null>(null);
-  const { onGripPointerDown: beginGripReorder } = useBlockReorder({
+  const { onRowPointerDown: beginRowReorder } = useBlockReorder({
     containerRef: listWrapRef,
     caretRef,
     getVisibleOrder: () => dataSource.visibleOrder(),
@@ -376,13 +371,13 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
   // Reorder is unavailable while a filter is active: the drop order describes
   // only the VISIBLE rows and `setTextFileOrder` persists the whole
   // arrangement, so committing a partial order would scramble the hidden rows.
-  // The grips hide via `data-filter-active` + CSS ([L06]); the handler no-ops.
-  const onGripPointerDown = useCallback(
+  // The gesture is simply never armed while the filter is on.
+  const onRowPointerDown = useCallback(
     (cardId: string, event: React.PointerEvent): void => {
       if (filtering) return;
-      beginGripReorder(cardId, event);
+      beginRowReorder(cardId, event);
     },
-    [filtering, beginGripReorder],
+    [filtering, beginRowReorder],
   );
   // The close box names the card it closes — `close-tab` carrying the row's own
   // `cardId`, walked from that card up to its host pane. This is the tab ×'s
@@ -407,8 +402,8 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
     [chain],
   );
   const cellContext = useMemo<TextFilesCellContextValue>(
-    () => ({ onGripPointerDown, onClose }),
-    [onGripPointerDown, onClose],
+    () => ({ onRowPointerDown, onClose }),
+    [onRowPointerDown, onClose],
   );
 
   return (

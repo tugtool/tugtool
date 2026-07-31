@@ -2,31 +2,35 @@
  * at0257-lens-session-reorder.test.ts — drag-to-reorder for the Lens Sessions
  * section, plus the new-session-lands-at-the-bottom overlay.
  *
- * The Sessions list is fed by `cardSessionBindingStore` in bind order; a
- * per-row `BlockGrip` drives the shared `useBlockReorder` FLIP, whose drop
- * commits a persisted user order (`dev.tugtool.lens/sessionOrder`) that
- * `buildSessionRows` applies. Sessions absent from that order sort to the
- * bottom, so a session bound AFTER a reorder never disturbs the arrangement.
+ * The Sessions list is fed by `cardSessionBindingStore` in bind order; the ROW
+ * ITSELF is the handle — there is no grip — and a vertical drag from its own
+ * surface drives the shared `useBlockReorder` FLIP, whose drop commits a
+ * persisted user order (`dev.tugtool.lens/sessionOrder`) that `buildSessionRows`
+ * applies. Sessions absent from that order sort to the bottom, so a session
+ * bound AFTER a reorder never disturbs the arrangement.
  *
  * Scenarios:
- *   1. Bind three session cards (A, B, C); drag C's grip above A. Assert the
- *      DOM row order puts C first and `sessionOrder` persists C before A.
+ *   1. Bind three session cards (A, B, C); drag C's row above A. Assert the
+ *      DOM row order puts C first and `sessionOrder` persists C before A, and
+ *      that the drag did NOT front a card — a carried row is not a picked one.
  *   2. Bind a fourth session (D) after the reorder; assert it lands LAST,
  *      leaving the reordered set intact.
- *   3. Drag a grip far BELOW the list; assert the dragged row stays clamped
+ *   3. Drag a row far BELOW the list; assert the dragged row stays clamped
  *      within the list container instead of following the pointer out of it.
  *   4. Measure a row cell against the list's frame: it must reach it at both
- *      ends, with the grip standing a hair inside the trailing one. The row
- *      divider is the cell's bottom border, so anything holding the cell off
- *      the frame — list padding, a reserved scrollbar gutter — is a divider
- *      that stops short at one end, and nothing about the end state says which.
+ *      ends, with the row's own trailing content (the activity tape) standing a
+ *      hair inside the trailing one — the column the grip used to hold, given
+ *      back. The row divider is the cell's bottom border, so anything holding
+ *      the cell off the frame — list padding, a reserved scrollbar gutter — is a
+ *      divider that stops short at one end, and nothing about the end state says
+ *      which.
  *
  * @covers tugdeck/src/components/lens/lens-content.css
  * @covers tugdeck/src/components/lens/sections/sessions-section.css
  * @covers tugdeck/src/components/lens/sections/sessions-section.tsx
  * @covers tugdeck/src/components/lens/block-reorder.ts
  * @covers tugdeck/src/lib/lens-store/
- * @covers tugdeck/src/components/tugways/body-kinds/affordances/block-grip.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-row.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -48,8 +52,6 @@ const ROWS = `${LIST} .session-row-content[data-session-id]`;
 const DRAGGING = `${WRAP} .session-row-content[data-dragging="true"]`;
 const rowSel = (sessionId: string): string =>
   `${LIST} .session-row-content[data-session-id="${sessionId}"]`;
-const gripSel = (sessionId: string): string =>
-  `${rowSel(sessionId)} [data-slot="block-grip"]`;
 
 function sessionDeck() {
   const card = (id: string) => ({
@@ -119,15 +121,17 @@ describe.skipIf(!SHOULD_RUN)("at0257 — Lens Sessions reorder + bottom-append",
             "test-session-C",
           ]);
 
-          // The fronted card before the drag — a grip gesture must not change
-          // it (the trailing click must never activate a row).
+          // The fronted card before the drag — a carry must not change it (the
+          // trailing click must never activate a row).
           const activeBefore = await app.evalJS<string | null>(
             `window.__tug.getActiveCardId()`,
           );
 
-          // Drag C's grip to just below A's top edge → C lands at index 0.
+          // Drag C's ROW to just below A's top edge → C lands at index 0. The
+          // grab point is the row's own middle, which is the whole gesture
+          // under test: no handle, just the row.
           const aBounds = await app.getElementBounds(rowSel("test-session-A"));
-          await app.nativeDragElement(gripSel("test-session-C"), {
+          await app.nativeDragElement(rowSel("test-session-C"), {
             x: Math.round(aBounds.x + aBounds.width / 2),
             y: Math.round(aBounds.y + 4),
           });
@@ -144,8 +148,8 @@ describe.skipIf(!SHOULD_RUN)("at0257 — Lens Sessions reorder + bottom-append",
             after.indexOf("test-session-A"),
           );
 
-          // The grip drag reordered the rows but did NOT front the row under
-          // the release point (the trailing click was swallowed).
+          // The carry reordered the rows but did NOT front the row under the
+          // release point (the trailing click was swallowed).
           const activeAfter = await app.evalJS<string | null>(
             `window.__tug.getActiveCardId()`,
           );
@@ -186,7 +190,7 @@ describe.skipIf(!SHOULD_RUN)("at0257 — Lens Sessions reorder + bottom-append",
   );
 
   test(
-    "a grip dragged far below the list stays clamped within the list bounds",
+    "a row dragged far below the list stays clamped within the list bounds",
     async () => {
       const tugbankPath = mkTempTugbank();
       try {
@@ -214,7 +218,7 @@ describe.skipIf(!SHOULD_RUN)("at0257 — Lens Sessions reorder + bottom-append",
 
           // Aim FAR below the list — past the bottom of the whole rail.
           const wrap = await app.getElementBounds(WRAP);
-          await app.nativeDragElementWithoutRelease(gripSel("test-session-A"), {
+          await app.nativeDragElementWithoutRelease(rowSel("test-session-A"), {
             x: Math.round(wrap.x + wrap.width / 2),
             y: Math.round(wrap.y + wrap.height + 400),
           });
@@ -252,7 +256,7 @@ describe.skipIf(!SHOULD_RUN)("at0257 — Lens Sessions reorder + bottom-append",
   );
 
   test(
-    "rows run to the list frame at both ends, and the grip sits at the trailing one",
+    "rows run to the list frame at both ends, and the tape sits at the trailing one",
     async () => {
       const tugbankPath = mkTempTugbank();
       try {
@@ -285,30 +289,31 @@ describe.skipIf(!SHOULD_RUN)("at0257 — Lens Sessions reorder + bottom-append",
           const edges = await app.evalJS<{
             leading: number;
             trailing: number;
-            gripInset: number;
+            tapeInset: number;
           }>(
             `(function(){
               var list = document.querySelector(${JSON.stringify(LIST)});
               var cell = list.querySelector(".tug-list-view-cell");
-              var grip = cell.querySelector('[data-slot="block-grip"]');
+              var tape = cell.querySelector(".sessions-monitor-spark");
               var cs = getComputedStyle(list);
               var lr = list.getBoundingClientRect();
               var cr = cell.getBoundingClientRect();
-              var gr = grip.getBoundingClientRect();
+              var tr = tape.getBoundingClientRect();
               return {
                 leading: cr.left - (lr.left + parseFloat(cs.borderLeftWidth)),
                 trailing: (lr.right - parseFloat(cs.borderRightWidth)) - cr.right,
-                gripInset: cr.right - gr.right,
+                tapeInset: cr.right - tr.right,
               };
             })()`,
           );
           console.log("[at0257] row edges:", JSON.stringify(edges));
           expect(edges.leading).toBeCloseTo(0, 0);
           expect(edges.trailing).toBeCloseTo(0, 0);
-          // The grip stands at the trailing frame, a hair in — not a whole row
-          // inset in from it, and not out past it.
-          expect(edges.gripInset).toBeGreaterThan(0);
-          expect(edges.gripInset).toBeLessThanOrEqual(6);
+          // The row's trailing content stands at the trailing frame, a hair in
+          // — not a whole row inset in from it, and not out past it. This is
+          // the grip's old column, handed to the tape.
+          expect(edges.tapeInset).toBeGreaterThan(0);
+          expect(edges.tapeInset).toBeLessThanOrEqual(6);
         } finally {
           await app.close();
         }

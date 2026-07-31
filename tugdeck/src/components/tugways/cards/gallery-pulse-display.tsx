@@ -18,11 +18,15 @@
  *
  * The card's other question is the Lens session row's PACKING — how one
  * rail's width is divided between the phase indicator, the session name, the
- * layout slots, the reorder grip, and the PULSE's three parts. Those frames
- * mount the real {@link TugSessionRow} with the real indicator, slots, grip,
- * and tape inside it, one frame per {@link TugSessionRowFit}, and the fit meter
- * measures what each proposal actually hands the two runs rather than arguing
- * it. Rolling a fit out is changing `TUG_SESSION_ROW_DEFAULT_FIT`.
+ * layout slots, and the PULSE's three parts. Those frames mount the real
+ * {@link TugSessionRow} with the real indicator, slots, and tape inside it, one
+ * frame per {@link TugSessionRowFit}, and the fit meter measures what each
+ * proposal actually hands the two runs rather than arguing it. Rolling a fit
+ * out is changing `TUG_SESSION_ROW_DEFAULT_FIT`.
+ *
+ * The row carries no reorder handle: a Lens row is carried by its own surface
+ * (`block-reorder`), so there is no trailing column of furniture and every fit
+ * below is auditioned with the row's content running out to the rail's edge.
  *
  * Fixtures are hand-authored; the sparklines are the real `TugSparkline` fed
  * a deterministic synthetic series so the frames read live without a session
@@ -59,7 +63,6 @@ import {
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugSlotLayout } from "@/components/tugways/tug-slot-layout";
 import type { TugSlotState } from "@/components/tugways/tug-slot";
-import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
 import { sessionSessionPhaseVisual } from "@/lib/code-session-store/session-phase-visual";
 
 // ---------------------------------------------------------------------------
@@ -192,11 +195,11 @@ const LIFECYCLE_ROWS: readonly SessionFixture[] = [
  */
 const FIT_BLURB: Record<TugSessionRowFit, string> = {
   gutter:
-    "What ships today. The indicator holds a column of its own, so all three lines start past it; the slots ride the name, the tape rides the activity, the grip holds a column at the far edge.",
+    "The indicator holds a column of its own, so all three lines start past it; the slots ride the name and the tape rides the activity. The shape the others are measured against.",
   inset:
     "The indicator moves onto the name line. The two PULSE lines start at the row's own inset and gain the whole leading column — the widest single reclamation available, and it costs nothing but the dot's advance on one line.",
   reveal:
-    "The slots and the grip join the indicator on the name line and carry no width until the row is engaged. At rest every line runs the full rail; the furniture claims its width back from the name, which is the one string the reader already knows.",
+    "The slots carry no width until the row is engaged. At rest every line runs the full rail; on engage the slots claim their width back from the name, which is the one string the reader already knows.",
   wash: "The tape leaves the flow and paints behind the PULSE at the trailing edge. The activity keeps the width the sparkline was spending — the line that needed it most, since a path identifies itself at the end.",
   duplex:
     "Both levels share one line, read as the session card's strip reads them. Three lines become two, and the activity gets a whole line minus the intent rather than a line minus the tape.",
@@ -385,13 +388,14 @@ function Band({
 /**
  * A Lens session row — the REAL {@link TugSessionRow}, with every part it
  * carries supplied by the real component the Lens supplies: the phase
- * indicator, the slot layout, the reorder grip, and a sparkline. Only the
- * strings and the series are fixtures. So a fit judged here is a fit that
- * ships; there is no gallery drawing of a row.
+ * indicator, the slot layout, and a sparkline. Only the strings and the series
+ * are fixtures. So a fit judged here is a fit that ships; there is no gallery
+ * drawing of a row.
  *
- * The frame is the Lens rail at its usual width, and it declares the two row
- * knobs `lens-sessions-list` declares — the row inset and the zeroed indicator
- * gutter — so widths read here are widths the Lens has.
+ * The frame is the Lens rail at its usual width, and it declares the row knobs
+ * `lens-sessions-list` declares — the reading inset, the zeroed indicator
+ * gutter, and the rail's trailing edge — so widths read here are widths the
+ * Lens has.
  */
 function SessionFrame({
   fit,
@@ -421,7 +425,6 @@ function SessionFrame({
         }
         name={fixture.name}
         slots={<TugSlotLayout count={3} states={SLOT_STATES} size="sm" />}
-        grip={<BlockGrip />}
         intent={fixture.intent}
         activity={fixture.activity}
         sparkline={
@@ -775,18 +778,20 @@ export function GalleryPulseDisplay(): React.ReactElement {
         title="Lens — how the session row packs"
         blurb={
           <>
-            A session row carries <strong>six</strong> things and has one
+            A session row carries <strong>five</strong> things and has one
             rail&apos;s width to spend on them: the phase indicator, the
-            session&apos;s name, the layout slots, the reorder grip, and the
-            PULSE&apos;s three parts — intent, activity, and the tape. Three of
-            those are text that would rather not be cut; the rest is
-            fixed-width furniture that takes its width off the top before the
-            text gets any. Each fit below is one proposal about where the
-            furniture goes, rendered by the real <code>TugSessionRow</code> with
-            the real indicator, slots, grip, and tape in it — so the fit
-            approved here is the fit the Lens wears, by construction. Every fit
-            shows the same two sessions: an everyday one, then the one that does
-            not fit.
+            session&apos;s name, the layout slots, and the PULSE&apos;s three
+            parts — intent, activity, and the tape. Three of those are text that
+            would rather not be cut; the rest is fixed-width furniture that
+            takes its width off the top before the text gets any. There is no
+            sixth: the reorder handle that used to hold a trailing column is
+            gone, because the row is carried by its own surface, and the content
+            runs out to the rail&apos;s edge in its place. Each fit below is one
+            proposal about where the remaining furniture goes, rendered by the
+            real <code>TugSessionRow</code> with the real indicator, slots, and
+            tape in it — so the fit approved here is the fit the Lens wears, by
+            construction. Every fit shows the same two sessions: an everyday
+            one, then the one that does not fit.
           </>
         }
       >

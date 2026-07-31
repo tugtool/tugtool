@@ -201,6 +201,64 @@ private final class WaveProgressView: NSView {
     }
 }
 
+/// The deck's web view, with click-through on activation.
+///
+/// A click into a backgrounded app is the app's to interpret. AppKit's default
+/// — a view that refuses first mouse — discards it above the window entirely
+/// (it never reaches `NSWindow.sendEvent`), so the deck comes forward with
+/// whatever card was active when the app was backgrounded, no matter which card
+/// the user aimed at. Accepting first mouse is what makes the event reachable.
+///
+/// The click is then consumed here rather than handed to the page: `mouseDown`
+/// reports the location and returns without calling super, and the rest of the
+/// gesture is swallowed with it so the page never sees an unpaired release. The
+/// deck realizes the activation half only — the click that raises the app makes
+/// the card under it active, and does not press the button or place the caret
+/// it happens to land on. Every later click is an ordinary one.
+private final class ClickThroughWebView: WKWebView {
+    /// Receives the activating click's location in window coordinates.
+    var onActivationClick: ((NSPoint) -> Void)?
+
+    /// The event AppKit asked about in `acceptsFirstMouse`, identified by event
+    /// number. AppKit asks that question for exactly one event — the click that
+    /// arrives while the app or the window is inactive — so matching the number
+    /// in `mouseDown` names the activating click precisely. A clock-based guess
+    /// cannot: the activation notification lands before the click, so any time
+    /// window wide enough to cover the real event also swallows an ordinary
+    /// click made moments after a ⌘-Tab.
+    private var firstMouseEventNumber: Int?
+
+    private var swallowingGesture = false
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        firstMouseEventNumber = event?.eventNumber
+        return true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if firstMouseEventNumber == event.eventNumber {
+            firstMouseEventNumber = nil
+            swallowingGesture = true
+            onActivationClick?(event.locationInWindow)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if swallowingGesture { return }
+        super.mouseDragged(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if swallowingGesture {
+            swallowingGesture = false
+            return
+        }
+        super.mouseUp(with: event)
+    }
+}
+
 /// Main window containing the WKWebView for tugdeck dashboard
 class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     private var webView: WKWebView!
@@ -316,7 +374,11 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         }
         #endif
 
-        webView = WKWebView(frame: .zero, configuration: config)
+        let clickThroughWebView = ClickThroughWebView(frame: .zero, configuration: config)
+        clickThroughWebView.onActivationClick = { [weak self] location in
+            self?.forwardActivationClick(at: location)
+        }
+        webView = clickThroughWebView
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = false
@@ -413,6 +475,32 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
         self.contentView = containerView
         // Background color is set by AppDelegate after init, not here.
+    }
+
+    // MARK: - Click-through activation
+
+    /// Convert a window-local AppKit point into viewport (CSS) coordinates and
+    /// hand it to the deck. `WKWebView` is a flipped view, so `convert` returns
+    /// the Y-down, top-left-origin point the DOM uses; a CSS px is `pageZoom`
+    /// view points, so the result is scaled back out of the zoom (the inverse
+    /// of `CoordMapping.viewportToScreen`). Points outside the web view — the
+    /// title bar, the resize margins — activate nothing.
+    private func forwardActivationClick(at locationInWindow: NSPoint) {
+        let viewLocal = webView.convert(locationInWindow, from: nil)
+        guard webView.bounds.contains(viewLocal) else { return }
+        let zoom = webView.pageZoom > 0 ? webView.pageZoom : 1.0
+        let x = viewLocal.x / zoom
+        let y = viewLocal.y / zoom
+        webView.evaluateJavaScript(
+            "window.__tugBridge?.onActivationClick?.(\(x), \(y))",
+        ) { _, error in
+            if let error = error {
+                NSLog(
+                    "MainWindow: evaluateJavaScript failed for onActivationClick: %@",
+                    error.localizedDescription,
+                )
+            }
+        }
     }
 
     /// Load URL in webview

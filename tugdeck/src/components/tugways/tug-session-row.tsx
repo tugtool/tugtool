@@ -1,14 +1,18 @@
 /**
  * TugSessionRow — one session, as a row.
  *
- * A session's row carries six things and has one line's width to spend on
- * them: the phase indicator, the session's name, the layout-imposer slots,
- * the reorder grip, and the PULSE's three parts (intent, activity, and the
- * activity sparkline). The name and the two PULSE runs are all text that
- * would rather not be cut, and the other four are fixed-width furniture that
- * takes its width off the top. How that width is divided is the row's whole
- * design problem, and this component is where it is decided — once, for every
- * surface that shows a session.
+ * A session's row carries five things and has one line's width to spend on
+ * them: the phase indicator, the session's name, the layout-imposer slots, and
+ * the PULSE's three parts (intent, activity, and the activity sparkline). The
+ * name and the two PULSE runs are all text that would rather not be cut, and
+ * the other two are fixed-width furniture that takes its width off the top.
+ * How that width is divided is the row's whole design problem, and this
+ * component is where it is decided — once, for every surface that shows a
+ * session.
+ *
+ * There is no reorder handle among them. A Lens row is carried by its own
+ * surface (`block-reorder`), so the furniture that used to hold the trailing
+ * column is gone and every part of the row sits at the row's own edge.
  *
  * The component is PRESENTATIONAL. Every part arrives as a node: the
  * indicator is the caller's `TugProgressIndicator`, the slots are the
@@ -22,17 +26,16 @@
  * width for a specific line:
  *
  *  - `gutter` — the indicator holds a leading column of its own, the slots
- *    ride the name line, the sparkline rides the activity line, the grip
- *    holds a trailing column. Every line starts past the indicator column.
- *    The shape this component was factored out of; kept as the thing the
- *    others are measured against.
+ *    ride the name line, the sparkline rides the activity line. Every line
+ *    starts past the indicator column. The shape this component was factored
+ *    out of; kept as the thing the others are measured against.
  *  - `inset` — the indicator moves ONTO the name line, so the two PULSE
  *    lines start at the row's own inset and gain the whole leading column.
  *    THE DESIGN OF RECORD (see {@link TUG_SESSION_ROW_DEFAULT_FIT}).
- *  - `reveal` — `inset`, plus the slots and the grip move onto the name line
- *    and carry no width until the row is engaged (hovered, selected, holding
- *    focus, or under the keyboard cursor). At rest the name has the full row
- *    and the PULSE lines have the full row.
+ *  - `reveal` — `inset`, plus the slots carry no width until the row is
+ *    engaged (hovered, selected, holding focus, or under the keyboard
+ *    cursor). At rest the name has the full row and the PULSE lines have the
+ *    full row.
  *  - `wash` — `inset`, plus the sparkline leaves the flow: it paints behind
  *    the PULSE lines at the trailing edge, so the activity keeps the width
  *    the tape was spending.
@@ -156,9 +159,6 @@ export interface TugSessionRowProps
   /** The layout-imposer slots — the arrangement affordance. */
   slots?: React.ReactNode;
 
-  /** The reorder grip. */
-  grip?: React.ReactNode;
-
   /** The PULSE's headline — the session's standing goal. */
   intent?: React.ReactNode;
 
@@ -182,7 +182,6 @@ export const TugSessionRow = React.forwardRef<
     indicator,
     name,
     slots,
-    grip,
     intent,
     activity,
     sparkline,
@@ -193,11 +192,6 @@ export const TugSessionRow = React.forwardRef<
   ref,
 ) {
   const indicatorInline = INLINE_INDICATOR_FITS.has(fit);
-  // `reveal` is the fit whose whole proposal is that the furniture costs
-  // nothing at rest, so its slots and grip ride the name line where this
-  // component can put them under an engagement rule. Every other fit leaves
-  // the grip in the row's own trailing-most column.
-  const furnitureOnNameLine = fit === "reveal";
   // `wash` takes the tape out of the flow, so it is not the PULSE's trailing
   // accessory there — it is painted behind the lines instead.
   const sparklineInFlow = fit !== "wash";
@@ -210,7 +204,6 @@ export const TugSessionRow = React.forwardRef<
       data-fit={fit}
       selected={selected}
       leading={indicatorInline ? undefined : indicator}
-      grip={furnitureOnNameLine ? undefined : grip}
       {...rest}
     >
       <span className="tug-session-row-lines">
@@ -223,9 +216,6 @@ export const TugSessionRow = React.forwardRef<
           </TugLabel>
           {slots !== undefined && slots !== null ? (
             <span className="tug-session-row-slots">{slots}</span>
-          ) : null}
-          {furnitureOnNameLine && grip !== undefined && grip !== null ? (
-            <span className="tug-session-row-grip">{grip}</span>
           ) : null}
         </span>
         {/* The PULSE. Nothing about how it reads is decided here: `TugPulse`

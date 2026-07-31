@@ -32,14 +32,6 @@
   min-block-size: 0;
 }
 
-/* A filtered list shows only part of the document, so drag-reorder has no
-   coherent drop order to commit — hide the grips while the filter is on rather
-   than offering a gesture that would do the wrong thing. */
-.snippets-list-wrap[data-filter-active="true"] .block-grip {
-  visibility: hidden;
-  pointer-events: none;
-}
-
 /* Doubled selector so these overrides beat the base `.tug-list-view`
    rules regardless of bundle order. The list is this section's scroller: it
    fills the section's flex share and scrolls its rows internally. Edge-to-edge:
@@ -87,7 +79,7 @@
 }
 
 /* The reorder-drag lift on the TugListRow root while it is being dragged. The
-   row layout itself (grip / content / delete) comes from TugListRow. */
+   row layout itself (content / copy / delete) comes from TugListRow. */
 .snippet-row-content[data-dragging="true"] {
   opacity: 0.6;
   z-index: 2;

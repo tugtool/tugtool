@@ -13,6 +13,7 @@ import { dispatchAction, initActionDispatch } from "./action-dispatch";
 import type { DeckState } from "./layout-tree";
 import { initHostMenuState } from "./lib/host-menu-state";
 import { initRecentDocuments } from "./lib/recent-documents";
+import { installActivationClickBridge } from "./lib/activation-click-bridge";
 import { installUpdateBridge } from "./lib/update-bridge";
 import { cardServicesStore } from "./lib/card-services-store";
 import { restoreSessions } from "./lib/session-restore";
@@ -443,6 +444,13 @@ if (!container) {
   // bulletin. Installed after the provider tree is mounted so the first
   // push has a Toaster to land in. See `lib/update-bridge.ts`.
   installUpdateBridge();
+
+  // Receive the host's click-through activation point: the click that brings a
+  // backgrounded Tug.app forward never reaches the document, so the host hands
+  // its location here and the deck activates the pane/card under it. Installed
+  // after the deck is mounted so the gesture interpreter is live.
+  // See `lib/activation-click-bridge.ts`.
+  installActivationClickBridge();
 
   // Install `window.__tug` test-harness surface when
   // `window.__tugTestMode === true`. The attach is a no-op otherwise;

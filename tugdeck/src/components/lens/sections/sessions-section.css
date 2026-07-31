@@ -82,8 +82,8 @@
   font-size: 12px;
 }
 
-/* How the row divides its width — which line the dot, the slots, the grip, and
-   the sparkline ride, and what each costs the text beside it — is
+/* How the row divides its width — which line the dot, the slots, and the
+   sparkline ride, and what each costs the text beside it — is
    `tug-session-row.css`'s, not this file's. Nothing about the row's packing is
    authored here, so the Lens cannot drift from the fit the gallery approved. */
 
