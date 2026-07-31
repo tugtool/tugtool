@@ -16,8 +16,15 @@
  * per LINE, which is also the only correct grain: a query term cannot span a
  * newline.
  *
+ * **Annotated.** This is prose, and prose in a transcript names things — a
+ * commit message body is mostly backticked paths. So it opts into the content
+ * annotator (`useAnnotatedElement`), which marks the entities in the text it
+ * renders. Inert outside an {@link AnnotationScope}, so a consumer painting
+ * this somewhere with no session behind it is unaffected.
+ *
  * Laws: [L06] every tone comes from the shared highlight classes and the
- * component's own CSS; nothing here is React state.
+ * component's own CSS; nothing here is React state. [L03] the annotation pass
+ * runs in a layout effect, before any gesture can land on it.
  *
  * @module components/tugways/tug-markdown-text
  */
@@ -28,6 +35,7 @@ import { useMemo, useSyncExternalStore } from "react";
 import type React from "react";
 
 import { renderFilterHighlightSpans } from "@/components/tugways/filter-highlight";
+import { useAnnotatedElement } from "@/components/tugways/annotation-scope";
 import {
   getMarkdownGrammarRevision,
   subscribeMarkdownGrammars,
@@ -66,8 +74,16 @@ export function TugMarkdownText({
     () => applyMarkdownTextStyle(text),
     [text, grammarRevision],
   );
+  // The rendered text is what the annotator scans, so the pass re-runs when
+  // that text changes — including the filter query, which rewrites the spans
+  // the marks are split out of.
+  const annotatedRef = useAnnotatedElement<HTMLDivElement>([
+    lines,
+    highlightQuery,
+  ]);
   return (
     <div
+      ref={annotatedRef}
       className={
         className !== undefined ? `tug-markdown-text ${className}` : "tug-markdown-text"
       }

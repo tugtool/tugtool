@@ -72,6 +72,14 @@ export interface FilterHighlightSpan {
   text: string;
   /** The run's own class(es). Empty for an unstyled run. */
   className: string;
+  /**
+   * The run is inline code, and renders as a real `<code>` element rather
+   * than a `<span>`. The tone is the same either way — the element is what
+   * carries the *meaning*, which the content annotator reads: code is where
+   * a bare relative path is a genuine file reference rather than a word that
+   * happens to look like one.
+   */
+  code?: boolean;
 }
 
 /**
@@ -100,14 +108,22 @@ export function renderFilterHighlightSpans(
     span: FilterHighlightSpan,
     key: number,
     children: React.ReactNode,
-  ): React.ReactNode =>
-    span.className === "" ? (
+  ): React.ReactNode => {
+    if (span.code === true) {
+      return (
+        <code key={key} className={span.className === "" ? undefined : span.className}>
+          {children}
+        </code>
+      );
+    }
+    return span.className === "" ? (
       children
     ) : (
       <span key={key} className={span.className}>
         {children}
       </span>
     );
+  };
 
   if (ranges.length === 0) {
     return <>{spans.map((span, i) => wrap(span, i, span.text))}</>;

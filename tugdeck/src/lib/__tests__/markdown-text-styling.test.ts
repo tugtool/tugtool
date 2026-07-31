@@ -334,7 +334,12 @@ describe("applyMarkdownTextStyle", () => {
         text: line.slice(r.start, r.end),
         className: r.className,
       }));
-      const filtered = viaFilter[i].spans.filter((s) => s.className !== "");
+      // Compare the styling alone: `code` is a separate reading of the same
+      // runs (from the parse tree, not the highlighter) and has no
+      // counterpart in `highlightRunsByLine`'s output.
+      const filtered = viaFilter[i].spans
+        .filter((s) => s.className !== "")
+        .map((s) => ({ text: s.text, className: s.className }));
       expect(filtered).toEqual(direct);
     }
   });

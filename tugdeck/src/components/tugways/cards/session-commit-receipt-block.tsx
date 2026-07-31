@@ -27,6 +27,7 @@ import type React from "react";
 import { CommitShaText } from "@/components/tugways/commit-sha-text";
 import { CommitMessage } from "@/components/tugways/commit-presentation";
 import { CommitChangesList } from "@/components/tugways/tug-changes-list";
+import { useAnnotatedElement } from "@/components/tugways/annotation-scope";
 import { BlockChrome } from "../blocks/block-chrome";
 import { ToolBlockHistoryCollapse } from "../blocks/collapse-context";
 import "@/components/tugways/commit-presentation.css";
@@ -159,6 +160,12 @@ function CommitReceipt({
   // like the Bash header's command line; the body (when there is one) follows
   // below it, above the file list.
   const subject = message.split("\n", 1)[0];
+  // A commit subject names what it touched (`tugdash(annotator-perf): …`), and
+  // the scope tag often IS a path. Annotated like the Bash header's command
+  // line, whose `<code>` this mirrors. The sha beside it is deliberately NOT
+  // annotated — `CommitShaText` already owns every pointer gesture on it for
+  // its own copy menu.
+  const subjectRef = useAnnotatedElement<HTMLElement>([subject]);
   const body = message.slice(subject.length).replace(/^\n+/, "").replace(/\s+$/, "");
   // The short sha stands where a tool block's verb would: the commit's name is
   // its hash, then a single space, then the subject — the same identity line
@@ -169,7 +176,7 @@ function CommitReceipt({
     <span className="commit-receipt-header">
       <CommitShaText sha={sha} />
       {" "}
-      <code className="commit-receipt-summary">{subject}</code>
+      <code ref={subjectRef} className="commit-receipt-summary">{subject}</code>
     </span>
   );
   return (

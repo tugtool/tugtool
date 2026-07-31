@@ -607,6 +607,7 @@ interface ShellTurnCellProps {
   codeSessionStore: CodeSessionStore;
   shellSessionStore: ShellSessionStore;
   pendingContextStore: PendingContextStore;
+  sessionMetadataStore: SessionMetadataStore;
 }
 const ShellTurnCell = React.memo(function ShellTurnCell({
   index,
@@ -615,7 +616,15 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
   codeSessionStore,
   shellSessionStore,
   pendingContextStore,
+  sessionMetadataStore,
 }: ShellTurnCellProps) {
+  // A shell row is transcript ink like any other — a `/commit` receipt's
+  // message body names the files it landed, a command's output names the
+  // paths it touched. The scope was mounted around the user and assistant
+  // cells only, so nothing in a shell row could annotate no matter what
+  // opted in ([L02] — the context reads its stores through
+  // `useSyncExternalStore`).
+  const annotation = useAnnotationContext(sessionMetadataStore);
   // Re-render on staged-queue changes so the Add-to-context toggle reflects
   // the live staged state ([L02]).
   const pendingSnapshot = useSyncExternalStore(
@@ -654,6 +663,7 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
   // outcome is the receipt itself).
   const isGitRow = matchesCommitReceipt(message.command);
   return (
+    <AnnotationScope value={annotation}>
     <div
       className="session-card-transcript-shell-row"
       data-slot="session-transcript-shell-row"
@@ -737,6 +747,7 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
         controls={isGitRow ? undefined : <SessionZ1B participant="shell" turn={turn} />}
       />
     </div>
+    </AnnotationScope>
   );
 }, transcriptCellPropsEqual);
 
@@ -1968,10 +1979,11 @@ export const SessionTranscriptHost = forwardRef<
           codeSessionStore={codeSessionStore}
           shellSessionStore={shellSessionStore}
           pendingContextStore={pendingContextStore}
+          sessionMetadataStore={sessionMetadataStore}
         />
       );
     },
-    [codeSessionStore, shellSessionStore, pendingContextStore],
+    [codeSessionStore, shellSessionStore, pendingContextStore, sessionMetadataStore],
   );
   const cellRenderers = useMemo<
     Record<string, TugListViewCellRenderer<SessionTranscriptDataSource>>

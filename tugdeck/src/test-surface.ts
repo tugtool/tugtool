@@ -292,6 +292,11 @@ export interface SeedDeckStateArgs {
  *  - `loadPrevious` — `store.loadPrevious(amount)`; pages older turns above
  *    the loaded window (the response replay bracket is then injected via
  *    `ingestFrame`). Exercises backward paging and the prepend path.
+ *  - `shellExchange` — settle a completed `$`-route exchange row
+ *    (`store.ingestShellExchange` with `phase: "complete"`). The shell feed
+ *    is a different store from the one `ingestFrame` reaches, so a shell row
+ *    — and the command blocks that claim one, like the `/commit` receipt —
+ *    is otherwise only reachable by executing a real command.
  */
 export type SessionDriveAction =
   | { op: "send"; text: string; atoms?: AtomSegment[]; suppress?: boolean }
@@ -299,7 +304,16 @@ export type SessionDriveAction =
   | { op: "interrupt" }
   | { op: "transportClose" }
   | { op: "transportReconnect" }
-  | { op: "loadPrevious"; amount: number | "all" };
+  | { op: "loadPrevious"; amount: number | "all" }
+  | {
+      op: "shellExchange";
+      exchangeId: string;
+      command: string;
+      output: string;
+      cwd: string;
+      exitCode?: number;
+      startedAtMs?: number;
+    };
 
 /**
  * Viewport-relative DOMRect shape returned by
@@ -1738,6 +1752,21 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         case "loadPrevious":
           store.loadPrevious(action.amount);
           return;
+        case "shellExchange": {
+          const startedAtMs = action.startedAtMs ?? Date.now();
+          store.ingestShellExchange({
+            phase: "complete",
+            exchangeId: action.exchangeId,
+            command: action.command,
+            output: action.output,
+            exitCode: action.exitCode ?? 0,
+            cwd: action.cwd,
+            cwdAfter: null,
+            startedAtMs,
+            settledAtMs: startedAtMs,
+          });
+          return;
+        }
         default: {
           const exhaustive: never = action;
           throw new Error(
