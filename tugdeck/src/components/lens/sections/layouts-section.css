@@ -67,7 +67,13 @@
 
 /* Picture beside name, on one line. The miniature holds a fixed width — a
    scale drawing has to be the same scale in every option — and the name takes
-   whatever is left. TUNE the picture's size here. */
+   whatever is left. TUNE the picture's size here.
+
+   The width is set by the DENSEST arrangement offered, not by the roomiest:
+   the six-up picture divides its band into six blocks and the seams between
+   them, and a picture narrow enough to leave those blocks under a couple of
+   device pixels stops reading as cards at all. Every other option is drawn
+   at the same scale because they are drawings of the same deck. */
 .layouts-section-option {
   display: flex;
   flex-direction: row;
@@ -79,7 +85,7 @@
 
 .layouts-section-option .layout-mini {
   flex: 0 0 auto;
-  inline-size: 62px;
+  inline-size: 76px;
 }
 
 .layouts-section-option-label {

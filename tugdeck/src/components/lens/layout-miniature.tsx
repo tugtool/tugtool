@@ -37,8 +37,25 @@ const FREE_CARD_PCT = 46;
 const GAP_PCT = 2;
 
 /** The space between two cards, in percent of the miniature. Wider than the
- *  imposition gap: at this scale the seam has to survive a device pixel. */
+ *  imposition gap: at this scale the seam has to survive a device pixel.
+ *
+ *  It is a ceiling rather than a constant — see {@link cardGapFor}. */
 const CARD_GAP_PCT = 3.5;
+
+/**
+ * The seam between two blocks, given how many share the band.
+ *
+ * The seam is exaggerated because a real imposition gap drawn to scale is a
+ * fraction of a pixel. The exaggeration is affordable while the cards are wide;
+ * at six-up, five seams at the full width would spend nearly a quarter of the
+ * band on air and leave blocks too thin to read as cards. So the seam is capped
+ * at a share of each block: it may never grow past a fifth of the space one
+ * card gets, which holds it visible in the sparse arrangements and lets it give
+ * way in the dense ones.
+ */
+function cardGapFor(count: number, band: number): number {
+  return Math.min(CARD_GAP_PCT, band / (count * 5));
+}
 
 export interface LayoutMiniatureProps {
   /** The N-up rule to draw, or `null` for no imposition (one free card). */
@@ -71,15 +88,16 @@ export function LayoutMiniature({
   const band = Math.max(0, field - GAP_PCT * 2);
   // One card has no share to compute — it keeps its own width, which the
   // picture states as a lone block rather than a block filling the band.
+  const cardGap = cardGapFor(count, band);
   const cardPct =
     count < 2
       ? (band * FREE_CARD_PCT) / 100
-      : (band - CARD_GAP_PCT * (count - 1)) / count;
+      : (band - cardGap * (count - 1)) / count;
   // One card stands in the middle of the field — the imposer's own one-up
   // special case (`travelFraction` gives its single slot half the travel), and
   // equally the picture for a deck drawn with no imposition at all.
   const offsetFor = (k: number): number =>
-    count < 2 ? (band - cardPct) / 2 : k * (cardPct + CARD_GAP_PCT);
+    count < 2 ? (band - cardPct) / 2 : k * (cardPct + cardGap);
   return (
     <span
       className="layout-mini"

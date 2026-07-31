@@ -12,6 +12,7 @@ import {
 import { FeedId } from "../protocol";
 import type { ActionEvent } from "../components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { IMPOSITION_KINDS } from "@/lib/layout-imposer";
 
 // Minimal mock DeckManager.
 // addCard, showSingletonCard, and prepareForReload are stubs that record
@@ -1010,10 +1011,12 @@ describe("initActionDispatch: imposition verbs", () => {
 
   it("passes each valid kind through to the deck", () => {
     const { impositions } = wire();
-    for (const kind of ["two-up", "three-up", "four-up"]) {
+    // Every kind the imposer offers, so a new arrangement is covered here the
+    // day it is added rather than the day someone remembers this list.
+    for (const kind of IMPOSITION_KINDS) {
       dispatchAction({ action: "set-imposition", kind });
     }
-    expect(impositions).toEqual(["two-up", "three-up", "four-up"]);
+    expect(impositions).toEqual([...IMPOSITION_KINDS]);
   });
 
   it("passes an explicit null through — that is how the feature turns off", () => {
@@ -1024,7 +1027,7 @@ describe("initActionDispatch: imposition verbs", () => {
 
   it("refuses a kind it does not recognize", () => {
     const { impositions } = wire();
-    for (const kind of ["five-up", "", undefined, 3, {}]) {
+    for (const kind of ["seven-up", "", undefined, 3, {}]) {
       dispatchAction({ action: "set-imposition", kind });
     }
     expect(impositions).toEqual([]);

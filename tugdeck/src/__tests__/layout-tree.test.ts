@@ -1210,7 +1210,7 @@ describe("imposition wire format", () => {
   test("an unreadable kind restores under the default arrangement", () => {
     const blob = {
       version: 4,
-      imposition: "five-up",
+      imposition: "seven-up",
       cards: [impositionCard("c1")],
       panes: [impositionPane("p1", "c1", { slot: 1 })],
     };

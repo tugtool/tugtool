@@ -37,15 +37,17 @@ describe("kinds", () => {
     expect(slotCount("two-up")).toBe(2);
     expect(slotCount("three-up")).toBe(3);
     expect(slotCount("four-up")).toBe(4);
+    expect(slotCount("five-up")).toBe(5);
+    expect(slotCount("six-up")).toBe(6);
   });
 
   test("IMPOSITION_KINDS ascends by slot count", () => {
-    expect(IMPOSITION_KINDS.map(slotCount)).toEqual([1, 2, 3, 4]);
+    expect(IMPOSITION_KINDS.map(slotCount)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
-  test("isImpositionKind narrows only the four kinds", () => {
+  test("isImpositionKind narrows only the kinds offered", () => {
     for (const kind of IMPOSITION_KINDS) expect(isImpositionKind(kind)).toBe(true);
-    for (const bogus of ["five-up", "", "TWO-UP", null, undefined, 2, {}]) {
+    for (const bogus of ["seven-up", "", "TWO-UP", null, undefined, 2, {}]) {
       expect(isImpositionKind(bogus)).toBe(false);
     }
   });
@@ -69,6 +71,7 @@ describe("clampSlot", () => {
     expect(clampSlot("two-up", 3)).toBe(1);
     expect(clampSlot("three-up", 7)).toBe(2);
     expect(clampSlot("four-up", 4)).toBe(3);
+    expect(clampSlot("six-up", 9)).toBe(5);
   });
 
   test("clamps below zero", () => {
@@ -209,6 +212,26 @@ describe("imposeRect", () => {
     for (const o of overlaps) expect(o).toBeCloseTo(500 - 490 / 3, 9);
     const last = rects[3];
     expect(last.position.x + last.size.width).toBeCloseTo(FULL.width - GAP, 9);
+  });
+
+  // A kind is a slot COUNT and nothing else — one rule places all of them — so
+  // an arrangement added to the picker needs no geometry of its own. This runs
+  // over whatever the imposer currently offers, so the day a seven-up appears
+  // it is held to the same two ends.
+  test("every kind's chain runs the band end to end", () => {
+    for (const kind of IMPOSITION_KINDS) {
+      const n = slotCount(kind);
+      // One-up is the documented exception: its single anchor has no ends to
+      // space against, so it takes half the travel and stands centered.
+      if (n === 1) continue;
+      const width = (FULL.width - GAP * 2) / n;
+      const rects = Array.from({ length: n }, (_, k) =>
+        imposeRect(resolvePlacement(kind, k), width, FULL),
+      );
+      expect(rects[0].position.x).toBe(GAP);
+      const last = rects[n - 1];
+      expect(last.position.x + last.size.width).toBeCloseTo(FULL.width - GAP, 9);
+    }
   });
 
   test("an overlapping arrangement never reaches under the Lens", () => {

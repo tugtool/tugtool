@@ -3,7 +3,7 @@
  *
  * In printing, *imposition* is the arrangement of pages onto the press sheet so
  * that each one lands at its correct position. The imposer does the same for
- * deck panes: an **imposition** (one-up / two-up / three-up / four-up) defines numbered
+ * deck panes: an **imposition** (one-up through six-up) defines numbered
  * **slots**, and a pane assigned to a slot is placed at that slot's position in
  * a chain of cards running across the canvas.
  *
@@ -78,7 +78,13 @@ import type React from "react";
 
 
 /** The active N-up rule. */
-export type ImpositionKind = "one-up" | "two-up" | "three-up" | "four-up";
+export type ImpositionKind =
+  | "one-up"
+  | "two-up"
+  | "three-up"
+  | "four-up"
+  | "five-up"
+  | "six-up";
 
 /** Which side of the deck the Lens holds. */
 export type LensSide = "left" | "right";
@@ -130,6 +136,8 @@ export const IMPOSITION_KINDS: readonly ImpositionKind[] = [
   "two-up",
   "three-up",
   "four-up",
+  "five-up",
+  "six-up",
 ];
 
 /**
@@ -221,7 +229,7 @@ export function isImpositionKind(value: unknown): value is ImpositionKind {
   );
 }
 
-/** How many slots the kind defines: 1, 2, 3, or 4. */
+/** How many slots the kind defines: 1 through 6. */
 export function slotCount(kind: ImpositionKind): number {
   switch (kind) {
     case "one-up":
@@ -232,6 +240,10 @@ export function slotCount(kind: ImpositionKind): number {
       return 3;
     case "four-up":
       return 4;
+    case "five-up":
+      return 5;
+    case "six-up":
+      return 6;
   }
 }
 

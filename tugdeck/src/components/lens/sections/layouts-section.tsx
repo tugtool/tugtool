@@ -85,6 +85,8 @@ const KIND_LABELS: Record<ImpositionKind, string> = {
   "two-up": "Two Up",
   "three-up": "Three Up",
   "four-up": "Four Up",
+  "five-up": "Five Up",
+  "six-up": "Six Up",
 };
 
 /** The two sides, in the order the control offers them. */
