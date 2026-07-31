@@ -306,6 +306,14 @@ struct PromptCache {
     /// Bytes parsed so far — always at a line boundary, so a partial trailing
     /// line (the writer mid-append) is left for the next refresh.
     offset: u64,
+    /// The cache has taken its first look at the file. On that first look,
+    /// the transcript already on disk is history from before this cache
+    /// existed — behind an unknown number of idle barriers — so only a
+    /// trailing run of unanswered asks survives it (see [`Self::refresh`]).
+    /// Without this, a restarted process reads every finished stretch's asks
+    /// into the digest, and the summary reaches back across every barrier
+    /// ever crossed.
+    primed: bool,
     /// The current stretch's first prompt, pinned as the standing goal the
     /// digest leads with. It changes only at an idle barrier, which clears it
     /// so the next stretch's opening ask takes the slot.
@@ -324,15 +332,27 @@ impl PromptCache {
             return;
         };
         let len = meta.len();
-        if len == self.offset {
-            return;
-        }
         if len < self.offset {
-            // The file shrank — rewritten, not appended. Start over.
+            // The file shrank — rewritten, not appended. The rewritten
+            // transcript is as unseen as a pre-existing one: start over and
+            // read it as a first look.
             self.offset = 0;
+            self.primed = false;
             self.first = None;
             self.recent.clear();
         }
+        if len == self.offset {
+            self.primed = true;
+            return;
+        }
+        // A first look reads under the barrier doctrine: a non-prompt record
+        // is a response, and every ask above a response was answered on a
+        // stretch this cache never watched — behind an unknown number of
+        // idle barriers, and out of bounds. Only the trailing run of asks
+        // nothing has answered yet is the live stretch's. Bytes appended
+        // after the first look were watched being written, so they read
+        // plainly.
+        let priming = !self.primed;
         let Ok(file) = std::fs::File::open(jsonl) else {
             return;
         };
@@ -352,6 +372,10 @@ impl PromptCache {
         for line in complete.lines() {
             let Some(prompt) = crate::scribe::prompt_from_jsonl_line(line, 0, MAX_PROMPT_CHARS)
             else {
+                if priming {
+                    self.first = None;
+                    self.recent.clear();
+                }
                 continue;
             };
             if self.first.is_none() {
@@ -363,6 +387,7 @@ impl PromptCache {
             self.recent.push_back(prompt);
         }
         self.offset += last_newline as u64 + 1;
+        self.primed = true;
     }
 
     /// Drop every ask read so far while keeping the read position. The asks
@@ -3758,6 +3783,9 @@ mod tests {
     #[test]
     fn the_prompt_cache_reads_only_appended_bytes() {
         let path = cache_tmp("append");
+        std::fs::write(&path, "").unwrap();
+        let mut cache = PromptCache::default();
+        cache.refresh(&path);
         std::fs::write(
             &path,
             format!(
@@ -3767,7 +3795,6 @@ mod tests {
             ),
         )
         .unwrap();
-        let mut cache = PromptCache::default();
         cache.refresh(&path);
         let first_len = std::fs::metadata(&path).unwrap().len();
         assert_eq!(cache.offset, first_len);
@@ -3806,8 +3833,10 @@ mod tests {
     #[test]
     fn the_prompt_cache_barrier_forgets_asks_but_not_its_place() {
         let path = cache_tmp("barrier");
-        std::fs::write(&path, format!("{}\n", user_line("the finished request"))).unwrap();
+        std::fs::write(&path, "").unwrap();
         let mut cache = PromptCache::default();
+        cache.refresh(&path);
+        std::fs::write(&path, format!("{}\n", user_line("the finished request"))).unwrap();
         cache.refresh(&path);
         assert_eq!(cache.first.as_deref(), Some("the finished request"));
 
@@ -3884,15 +3913,72 @@ mod tests {
         );
     }
 
+    /// A transcript that predates the cache is behind an unknown number of
+    /// idle barriers: every ask a response follows was answered on a stretch
+    /// this process never watched, and a restarted process must not haul it
+    /// back into the digest. Only a trailing ask nothing has answered — the
+    /// live stretch's opening — survives the first look, and lines appended
+    /// after it read plainly, responses and all.
+    #[test]
+    fn a_first_look_keeps_only_the_trailing_unanswered_asks() {
+        let path = cache_tmp("first-look");
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n{}\n{}\n",
+                user_line("a request finished long ago"),
+                r#"{"type":"assistant","message":{}}"#,
+                user_line("the live request, not yet answered")
+            ),
+        )
+        .unwrap();
+        let mut cache = PromptCache::default();
+        cache.refresh(&path);
+        assert_eq!(
+            cache.offset,
+            std::fs::metadata(&path).unwrap().len(),
+            "the first look consumes the whole file"
+        );
+        assert_eq!(
+            cache.digest_prompts(),
+            ["the live request, not yet answered"].map(String::from),
+            "only the unanswered trailing ask survives the first look"
+        );
+
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(
+                format!(
+                    "{}\n{}\n",
+                    r#"{"type":"assistant","message":{}}"#,
+                    user_line("a follow-up")
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        cache.refresh(&path);
+        assert_eq!(
+            cache.digest_prompts(),
+            ["the live request, not yet answered", "a follow-up"].map(String::from),
+            "watched appends read plainly; a response no longer clears"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
     #[test]
     fn a_partial_trailing_line_waits_for_its_newline() {
         let path = cache_tmp("partial");
         let complete = format!("{}\n", user_line("the whole first line"));
         let partial = user_line("a line still being written");
         let (head, tail) = partial.split_at(30);
-        std::fs::write(&path, format!("{complete}{head}")).unwrap();
+        std::fs::write(&path, "").unwrap();
 
         let mut cache = PromptCache::default();
+        cache.refresh(&path);
+        std::fs::write(&path, format!("{complete}{head}")).unwrap();
         cache.refresh(&path);
         assert_eq!(
             cache.offset as usize,
@@ -3920,6 +4006,9 @@ mod tests {
     #[test]
     fn a_shrunk_file_resets_and_repins() {
         let path = cache_tmp("shrunk");
+        std::fs::write(&path, "").unwrap();
+        let mut cache = PromptCache::default();
+        cache.refresh(&path);
         std::fs::write(
             &path,
             format!(
@@ -3929,7 +4018,6 @@ mod tests {
             ),
         )
         .unwrap();
-        let mut cache = PromptCache::default();
         cache.refresh(&path);
         assert_eq!(cache.first.as_deref(), Some("the original goal"));
 
@@ -3946,6 +4034,7 @@ mod tests {
     fn a_missing_file_leaves_the_cache_untouched() {
         let mut cache = PromptCache {
             offset: 42,
+            primed: true,
             first: Some("pinned".to_string()),
             recent: VecDeque::from(["recent".to_string()]),
         };
@@ -3961,6 +4050,7 @@ mod tests {
         // and the goal is not stated twice.
         let cache = PromptCache {
             offset: 0,
+            primed: true,
             first: Some("the goal".to_string()),
             recent: VecDeque::from(["the goal".to_string()]),
         };
@@ -3969,6 +4059,7 @@ mod tests {
         // An older session: first + the recents, oldest of the middle gone.
         let cache = PromptCache {
             offset: 0,
+            primed: true,
             first: Some("the goal".to_string()),
             recent: VecDeque::from([
                 "a course correction".to_string(),
