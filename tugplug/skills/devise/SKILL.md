@@ -1,6 +1,6 @@
 ---
 name: devise
-description: Devise an implementation plan in-thread — clarify the idea, write it against the devise skeleton, validate it — ready for /tugplug:implement
+description: Devise an implementation plan in-thread — clarify the idea, write it against the devise skeleton, validate it — ready for /tugplug:vet and /tugplug:implement
 argument-hint: "[idea] [→ output-path]"
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, AskUserQuestion
@@ -112,10 +112,18 @@ paths, symbols, and findings.
 
 ### 5. Hand off
 
-Tell the user the plan is ready, name the exact path you wrote, and point them at
-`/tugplug:implement <plan-path>`. Don't start implementing from the devise skill
-— authoring and implementing are separate steps (as is committing the plan to git,
-which the user owns).
+Tell the user the plan is ready and name the exact path you wrote. Then give them both
+next moves as literal, clickable commands — each one written out in full so the user can
+click it in the transcript and run it as-is:
+
+- `/tugplug:vet <plan-path>` — assess the plan against the tuglaws and the real code
+  before building anything.
+- `/tugplug:implement <plan-path>` — drive the plan to a tested build.
+
+Write both on their own lines with the real path substituted in; never abbreviate the
+path or leave a placeholder. Don't start vetting or implementing from the devise skill
+— authoring, vetting, and implementing are separate steps (as is committing the plan to
+git, which the user owns).
 
 ## Guardrails
 
