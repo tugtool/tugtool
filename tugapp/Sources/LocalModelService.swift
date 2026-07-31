@@ -224,7 +224,7 @@ enum LocalModelPrompts {
     START WITH A VERB, in the plain command form: Fix, Author, Draft, Wire, \
     Trace, Port, Audit, Bundle, Salvage, Explain. Pick the verb that fits the \
     work. Not "Fixing", not "Building" — Fix, Build.
-    ROOM FOR ABOUT 64 CHARACTERS — one short line. Say the work in as many \
+    ROOM FOR ABOUT 56 CHARACTERS — one short line. Say the work in as many \
     words as that takes and no more. Shorter is better when it is not vaguer.
     NO "the", "a", "an". NO "and" — use a comma, or cut the second half.
     NO trailing detail. Name the work, not the parts it is made of.
@@ -374,7 +374,7 @@ enum LocalModelPrompts {
     """
 
     static let classifyMaxTokens = 8
-    /// A headline budget, not a sentence budget. The strip clips at 64
+    /// A headline budget, not a sentence budget. The strip clips at 56
     /// characters (`MAX_HEADLINE_CHARS` in `session_overview.rs`), and 40
     /// tokens comfortably covers that — enough that a legal headline is never
     /// truncated mid-word, few enough that the model cannot spend latency

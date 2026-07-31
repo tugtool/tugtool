@@ -12,7 +12,7 @@ Every check traces to a rule of newspaper headline register:
                 have no subject to name (the session is the implied subject), so
                 the verb leads, in the plain command form — or, for a
                 retrospective, in the past form.
-  within_budget 64 characters, the room the strip gives a headline. Compression
+  within_budget 56 characters, the room the strip gives a headline. Compression
                 is the register's defining constraint, and this is the only
                 measure of it: a headline that says the work in ten short words
                 is a headline, and counting words instead once cut those.
@@ -55,7 +55,7 @@ VERBS, PAST_VERBS = _verb_sections()
 
 ARTICLE = re.compile(r"\b(the|a|an)\b", re.I)
 AND = re.compile(r"\band\b", re.I)
-MAX_CHARS = 64
+MAX_CHARS = 56
 
 # A capitalized word mid-headline is only a violation if it is ordinary prose.
 # Identifiers and proper names legitimately keep their capitals, so anything

@@ -4,7 +4,7 @@ The on-device model does two jobs: it writes the **session headline** on the PUL
 
 | Question | Command | Answers |
 |---|---|---|
-| Is the headline in **register**? | `just model-eval` | Are the headlines headlines — verb-first, inside 64 characters, no articles? Scored over twelve frozen digests. |
+| Is the headline in **register**? | `just model-eval` | Are the headlines headlines — verb-first, inside 56 characters, no articles? Scored over twelve frozen digests. |
 | Does routing **run the wrong thing**? | `just model-classify` | Over 71 labeled lines: how often a line meant for Claude was executed. |
 | Is it **alive**? | `just model-liveness` | Does one digest come back at all, non-empty, inside the `summarize` ceiling? Skips with exit 0 without a pack. |
 | Is it **fast enough**? | `just model-stats` | Over accumulated logs: per-task outcomes, duration percentiles, normalizer work rate, headline change rate. |

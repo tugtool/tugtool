@@ -132,9 +132,9 @@ const MIN_SENTENCE_CHARS: usize = 20;
 /// PulseLine doctrine: one line, and it has to fit the strip as a *headline* —
 /// the bright leading run of the strip's single row, not a sentence about the
 /// session. This is the register's only budget: a headline is whatever says the
-/// work in the room 64 characters gives it, at whatever word count that takes.
+/// work in the room 56 characters gives it, at whatever word count that takes.
 /// A tuning value; the live matrix may move it.
-const MAX_HEADLINE_CHARS: usize = 64;
+const MAX_HEADLINE_CHARS: usize = 56;
 
 /// Joiners a headline's dispensable tail hangs from.
 ///
@@ -1236,7 +1236,7 @@ fn stem(word: &str) -> &str {
 /// proper name — so splitting it away would leave a headline naming the file
 /// exactly with nothing to match. Emitting both is what lets a headline reading
 /// `nocturne` ground against a digest that only ever writes
-/// `Read(tugdeck/styles/themes/nocturne.css)`, which at 64 characters is a
+/// `Read(tugdeck/styles/themes/nocturne.css)`, which at 56 characters is a
 /// common correct shape and was refused outright at six words.
 fn content_words(text: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -2643,7 +2643,7 @@ mod tests {
         assert!(grounded * 3 >= total * 2, "two thirds must accept {grounded}/{total}");
     }
 
-    /// A digest writes filenames and a 64-character headline has room to name
+    /// A digest writes filenames and a 56-character headline has room to name
     /// one, so a dotted token has to contribute the parts a headline says.
     ///
     /// Found by the re-sweep, not by reasoning: two of the resident model's
@@ -2845,8 +2845,8 @@ mod tests {
     /// say the work and fit the strip. Nothing touches it now.
     #[test]
     fn a_many_worded_headline_inside_the_budget_is_left_alone() {
-        let headline = "Wire the grammar grader bands into the composed submit path";
-        assert_eq!(headline.split_whitespace().count(), 10);
+        let headline = "Wire grader bands into composed submit path for shell";
+        assert_eq!(headline.split_whitespace().count(), 9);
         assert!(headline.chars().count() <= MAX_HEADLINE_CHARS);
         assert_eq!(headline_register(headline), headline);
     }
@@ -2857,7 +2857,7 @@ mod tests {
             "Fix pulse overview never emitting",
             "Port shell router to async",
             "Hunt focus drift in Lens",
-            // Exactly at the budget, joiner and all.
+            // A joiner inside the budget is not a cut site.
             "Wire cadence gate and emit line",
         ] {
             assert_eq!(headline_register(headline), headline);

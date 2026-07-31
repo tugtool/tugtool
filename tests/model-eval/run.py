@@ -64,7 +64,7 @@ def words(text: str) -> set[str]:
 
     `nocturne.css` yields `nocturne`, `css`, and itself, matching
     `content_words` in `session_overview.rs`: a digest writes filenames and a
-    64-character headline has room to name one, so a check that only saw the
+    56-character headline has room to name one, so a check that only saw the
     dotted whole would call an example decontaminated because it wrote
     `nocturne` where the digest wrote `nocturne.css`.
     """
@@ -124,8 +124,8 @@ def example_lines() -> list[str]:
     Anchored on the marker rather than on the shape of the line, because the
     prompt's paired format puts one there and nothing else does. The version
     before this recognized an example by being 2-6 words long and opening on a
-    known verb, which was the old six-word headline budget in disguise: at 64
-    characters an example can run nine or ten words, and every one of those
+    known verb, which was the old six-word headline budget in disguise: at 56
+    characters an example can run eight or nine words, and every one of those
     would have vanished from `lifted` and from `contamination` — the two checks
     this function feeds — while both kept reporting all clear.
 
