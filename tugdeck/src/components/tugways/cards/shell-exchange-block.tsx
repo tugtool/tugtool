@@ -121,9 +121,12 @@ export function ShellExchangeBlock({
   // Auto-route escape hatch ([P09]): a one-click "send this as a message
   // instead" for a row the PATH classifier routed here from the prompt entry.
   // Rendered whenever the row was auto-routed, in-flight or settled, so the
-  // undo is reachable the instant the row appears. The paper plane is
-  // deliberately NOT `cloud-upload`: this fires a turn now with the user's
-  // original text, where add-to-context stages this row's output for later.
+  // undo is reachable the instant the row appears. Icon-only at the Copy /
+  // chevron scale, so the header stays one matched cluster of glyphs — the
+  // label rides the tooltip. The paper plane is deliberately NOT
+  // `cloud-upload`: with no visible labels, the glyph carries the whole
+  // distinction — this fires a turn now with the user's original text, where
+  // add-to-context stages this row's output for later.
   const sendAsMessageButton =
     message.autoRouted === true && onSendAsMessage !== undefined ? (
       <TugPushButton
@@ -134,15 +137,13 @@ export function ShellExchangeBlock({
             node={sendAsMessageIconNode as LucideIconNode}
           />
         }
-        subtype="icon-text"
+        subtype="icon"
         emphasis="ghost"
         size="xs"
         aria-label="Send the original text to Claude as a message instead"
-        title="Auto-routed to the shell — send the original text as a message instead"
+        title="Send as message"
         onClick={onSendAsMessage}
-      >
-        Send as message
-      </TugPushButton>
+      />
     ) : null;
   const headerActions =
     sendAsMessageButton !== null || addContextButton !== null ? (
