@@ -116,7 +116,7 @@ This plan uses explicit `{#anchor}` headings, `[P##]` plan-local decisions, `[Q#
 
 **Plan to resolve:** Read `open-file-in-card.ts` and the `DeckManager` card-add path during #step-7; fix whatever assumes a non-empty deck; the #step-8 app-test asserts the empty-deck commit end-to-end.
 
-**Resolution:** OPEN — carried by #step-7 tasks.
+**Resolution:** DECIDED — no change needed. `openFileInCard`'s docblock states it outright ("When the deck has no Text card yet, `reuse`/`newTab` fall through to `new`"), and the code matches: `findFrontmostTextCard` returns null on an empty deck, the `target !== "new"` branch is guarded on `frontmost !== null`, and the tail runs `store.addCard("text", seed)`. Confirmed end-to-end by the #step-8 app-test.
 
 ---
 
@@ -357,17 +357,17 @@ New helpers in `tugdeck/src/settings-api.ts`, placed beside `readSetupSeen`/`put
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | settings-api helpers + resolver | pending | — |
-| #step-2 | Settings card General tab | pending | — |
-| #step-3 | Picker seed-chain insertion | pending | — |
-| #step-4 | tugcast `POST /api/fs/mkdir` | pending | — |
-| #step-5 | TugSetup project-dir step | pending | — |
-| #step-6 | tugcast workspace acquire/release | pending | — |
-| #step-7 | Open Quickly unconditional + fallback root | pending | — |
-| #step-8 | Integration checkpoint: empty-deck Open Quickly | pending | — |
-| #step-9 | `TugCompletionPopup` accessory slot | pending | — |
-| #step-10 | In-bar directory switcher | pending | — |
-| #step-11 | Final integration checkpoint | pending | — |
+| #step-1 | settings-api helpers + resolver | done | `16f17697b` |
+| #step-2 | Settings card General tab | done | `72d105c1a` |
+| #step-3 | Picker seed-chain insertion | done | `0e50b9d79` |
+| #step-4 | tugcast `POST /api/fs/mkdir` | done | `dacc67905` |
+| #step-5 | TugSetup project-dir step | done | `9e423c7da` |
+| #step-6 | tugcast workspace acquire/release | done | `697c29c99` |
+| #step-7 | Open Quickly unconditional + fallback root | done | `ed945c096` |
+| #step-8 | Integration checkpoint: empty-deck Open Quickly | done | `53256a6d4` |
+| #step-9 | `TugCompletionPopup` accessory slot | done | `924a5ebc1` |
+| #step-10 | In-bar directory switcher | done | `64d3a9862` |
+| #step-11 | Final integration checkpoint | done | `391f6aee9` (verification only) |
 
 #### Step 1: settings-api helpers + resolver {#step-1}
 

@@ -3,14 +3,13 @@
  * Quickly, ⇧⌘O → `open-quickly` control → OpenQuicklyOverlay →
  * TugCompletionPopup).
  *
- * Drives the wiring the headless harness can exercise faithfully: the
- * control opens the deck-global popup, the search field claims focus,
- * registers as a chain responder, and accepts input, and every dismissal
- * path (Escape, outside click) closes it. The FILETREE-backed result list
- * and the file-open commit depend on a bound workspace the headless harness
- * can't provide (the same limit that makes at0051 drive `/` completion, not
- * `@`); the `FileTreeStore` provider is covered by its own tests and the
- * live app, and the `file:line` query parsing by
+ * This file covers the popup's own behavior with no search root: the control
+ * opens the deck-global popup, the search field claims focus, registers as a
+ * chain responder, and accepts input, and every dismissal path (Escape,
+ * outside click) closes it. The FILETREE-backed result list and the file-open
+ * commit need a registered workspace, which at0306 provides by pointing the
+ * default project directory at a temp tree — so the two files together cover
+ * the popup end to end. The `file:line` query parsing is covered by
  * `file-location-query.test.ts`.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.

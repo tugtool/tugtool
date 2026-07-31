@@ -595,10 +595,19 @@ pub(crate) fn build_app(
         .route("/api/changesets", get(changesets_handler))
         .route("/api/draft", post(draft_handler))
         .route("/api/changes-write", post(changes_write_handler))
+        .route(
+            "/api/workspace/acquire",
+            post(crate::workspace_api::post_workspace_acquire),
+        )
+        .route(
+            "/api/workspace/release",
+            post(crate::workspace_api::post_workspace_release),
+        )
         .route("/api/permissions", get(crate::permissions::get_permissions))
         .route("/api/permissions/rule", post(crate::permissions::post_rule))
         .route("/api/fs/complete", get(crate::fs_complete::get_fs_complete))
         .route("/api/fs/read", get(crate::fs_read::get_fs_read))
+        .route("/api/fs/mkdir", post(crate::fs_mkdir::post_fs_mkdir))
         .route("/api/fs/stat", post(crate::fs_stat::post_fs_stat))
         .route(
             "/api/fs/write",

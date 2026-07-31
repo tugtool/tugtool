@@ -71,6 +71,20 @@ body {
   padding: var(--tug-space-lg) var(--tug-space-xl);
 }
 
+/* The optional trailing control (Open Quickly's directory switcher). It keeps
+   its intrinsic width at the right end of the bar; the field takes the slack.
+   Inside the panel, so Tab reaches it after the field and focus landing on it
+   is not "focus left the popup". */
+.tug-completion-popup-accessory {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  /* The bar's own gap already separates it from the field; this keeps the
+     control from crowding the panel's right padding when its label is long. */
+  max-width: 45%;
+  min-width: 0;
+}
+
 .tug-completion-popup-field-icon {
   flex-shrink: 0;
   width: var(--tug-icon-size-lg);

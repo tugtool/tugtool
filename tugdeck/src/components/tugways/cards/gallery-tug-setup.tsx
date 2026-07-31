@@ -29,6 +29,7 @@ import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
+import { TugFileChooser } from "@/components/tugways/tug-file-chooser";
 import {
   TugProgressIndicator,
   type TugProgressIndicatorRole,
@@ -44,6 +45,9 @@ import {
 const OFFER_NAME = "Qwen3 4B Instruct";
 const OFFER_BYTES = 2_278_969_697;
 const OFFER_NOTES = "Enhances command parsing & session summaries.";
+
+/** The prefill the projects-folder scenarios show. */
+const PROJECT_DIR = "/Users/ken/tug";
 import "./gallery.css";
 import "./gallery-tug-setup.css";
 
@@ -214,6 +218,9 @@ type Scenario =
   | "local_ai_canceled"
   | "local_ai_failed"
   | "local_ai_skipped"
+  | "project_dir_choose"
+  | "project_dir_creating"
+  | "project_dir_failed"
   | "ready_to_open"
   | "continue_working"
   | "complete"
@@ -232,6 +239,9 @@ const SCENARIOS: { key: Scenario; label: string }[] = [
   { key: "local_ai_canceled", label: "On-device AI canceled" },
   { key: "local_ai_failed", label: "On-device AI failed" },
   { key: "local_ai_skipped", label: "On-device AI skipped" },
+  { key: "project_dir_choose", label: "Projects folder" },
+  { key: "project_dir_creating", label: "Projects folder creating" },
+  { key: "project_dir_failed", label: "Projects folder failed" },
   { key: "ready_to_open", label: "Ready to open" },
   { key: "continue_working", label: "Continue working" },
   { key: "complete", label: "Complete" },
@@ -269,6 +279,39 @@ function buildFlow(
     label: "Start a Claude Code session",
     status: "pending",
     ...overrides,
+  });
+  const projectDir = (overrides: Partial<SetupStepModel>): SetupStepModel => ({
+    key: "project-dir",
+    label: "Choose your projects folder",
+    status: "pending",
+    ...overrides,
+  });
+  // The real step's body — a directory chooser prefilled with the resolved
+  // default. Read-only here: the spike drives states from the picker, not from
+  // what is typed.
+  const projectDirChooser = (
+    <TugFileChooser
+      value={PROJECT_DIR}
+      onChange={() => {}}
+      base={PROJECT_DIR}
+      kind="directory"
+      aria-label="Projects folder"
+    />
+  );
+  const installed = install({
+    status: "done",
+    label: "Claude Code installed",
+    detail: "Claude Code is ready.",
+  });
+  const signedIn = signin({
+    status: "done",
+    label: "Logged in as ken@example.com",
+    detail: "Claude Max plan",
+  });
+  const localAiDone = localAi({
+    status: "done",
+    label: "On-device AI",
+    detail: "Skipped.",
   });
 
   switch (scenario) {
@@ -435,15 +478,63 @@ function buildFlow(
         steps: [
           install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
           signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
-          localAi({ status: "done", label: "On-device AI", detail: "Skipped." }),
-          open({ status: "active", detail: "Open a Session card to get started", cta: { label: "Open a Session Card" } }),
+          localAiDone,
+          projectDir({}),
+          open({ status: "pending", detail: "Choose your projects folder." }),
+        ],
+      };
+    case "project_dir_choose":
+      return {
+        steps: [
+          installed,
+          signedIn,
+          localAiDone,
+          projectDir({
+            status: "active",
+            detail:
+              "Tug opens here when nothing else is in front — you can change it later in Settings.",
+            body: projectDirChooser,
+            cta: { label: "Use This Folder", onClick: () => go("project_dir_creating") },
+          }),
+          open({ status: "pending", detail: "Choose your projects folder." }),
+        ],
+      };
+    case "project_dir_creating":
+      return {
+        steps: [
+          installed,
+          signedIn,
+          localAiDone,
+          projectDir({
+            status: "busy",
+            body: projectDirChooser,
+            cta: { label: "Creating…", onClick: () => go("ready_to_open") },
+          }),
+          open({ status: "pending", detail: "Choose your projects folder." }),
+        ],
+      };
+    case "project_dir_failed":
+      return {
+        steps: [
+          installed,
+          signedIn,
+          localAiDone,
+          projectDir({
+            status: "error",
+            detail: `Couldn't create ${PROJECT_DIR}.`,
+            body: projectDirChooser,
+            cta: { label: "Retry", onClick: () => go("project_dir_creating") },
+          }),
+          open({ status: "pending", detail: "Choose your projects folder." }),
         ],
       };
     case "ready_to_open":
       return {
         steps: [
-          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
-          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
+          installed,
+          signedIn,
+          localAiDone,
+          projectDir({ status: "done", label: "Projects folder", detail: PROJECT_DIR }),
           open({
             status: "active",
             detail: "Open a Session card to get started",
@@ -470,8 +561,10 @@ function buildFlow(
     case "complete":
       return {
         steps: [
-          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
-          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
+          installed,
+          signedIn,
+          localAiDone,
+          projectDir({ status: "done", label: "Projects folder", detail: PROJECT_DIR }),
           open({ status: "done", detail: "Opening Session card…" }),
         ],
       };

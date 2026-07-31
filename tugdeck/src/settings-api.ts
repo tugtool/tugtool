@@ -337,6 +337,73 @@ export function putLocalModelDeclined(declined: boolean): void {
   });
 }
 
+/** tugbank domain/key holding the app-wide default project directory. */
+export const DEFAULT_PROJECT_PATH_DOMAIN = "dev.tugtool.app";
+export const DEFAULT_PROJECT_PATH_KEY = "default-project-path";
+
+/** Leaf directory name appended to the home directory when nothing is set. */
+export const DEFAULT_PROJECT_DIR_LEAF = "tug";
+
+/**
+ * Read the **explicit** default project directory — the path the user chose in
+ * TugSetup or Settings ▸ General — or null when the key was never written.
+ *
+ * Explicit and resolved are different values and callers must pick
+ * deliberately. The session picker's seed chain uses the explicit value, so an
+ * unset key falls through to the Swift `initial-project-path` launch hint
+ * rather than being shadowed by a computed `~/tug`. Everything that needs a
+ * directory to actually operate on — Open Quickly's fallback root, the setup
+ * step's prefill — uses {@link resolveDefaultProjectPath}.
+ *
+ * Stored under `dev.tugtool.app` / `default-project-path` (Value::String).
+ */
+export function readDefaultProjectPath(client: TugbankClient): string | null {
+  const entry = client.get(
+    DEFAULT_PROJECT_PATH_DOMAIN,
+    DEFAULT_PROJECT_PATH_KEY,
+  );
+  if (entry && entry.kind === "string" && typeof entry.value === "string") {
+    return entry.value;
+  }
+  return null;
+}
+
+/**
+ * Persist the default project directory to tugbank under `dev.tugtool.app` /
+ * `default-project-path`. Fire-and-forget, mirroring `putTheme`.
+ */
+export function putDefaultProjectPath(path: string): void {
+  fetch(
+    `/api/defaults/${DEFAULT_PROJECT_PATH_DOMAIN}/${DEFAULT_PROJECT_PATH_KEY}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "string", value: path }),
+    },
+  ).catch((err) => {
+    console.warn("[settings] PUT default-project-path failed:", err);
+  });
+}
+
+/**
+ * Resolve the default project directory: the explicit value when set, else
+ * `<home>/tug`. Returns null only when nothing is set and the host's home
+ * directory is not yet known (host facts still in flight) — callers defer.
+ *
+ * The computed `<home>/tug` is never written back to tugbank; it stays a
+ * read-side fallback so users who will never re-run setup get the feature
+ * without a migration, and so the explicit tier stays meaningfully empty.
+ */
+export function resolveDefaultProjectPath(
+  client: TugbankClient,
+  home: string | null,
+): string | null {
+  const explicit = readDefaultProjectPath(client);
+  if (explicit !== null && explicit !== "") return explicit;
+  if (home === null || home === "") return null;
+  return `${home.replace(/\/+$/, "")}/${DEFAULT_PROJECT_DIR_LEAF}`;
+}
+
 /**
  * PUT a single per-card state bag to tugbank under `dev.tugtool.deck.cardstate/{cardId}`.
  *

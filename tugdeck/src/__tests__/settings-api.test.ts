@@ -10,6 +10,8 @@
  * - putFocusedCardId sends correct URL and body format (mock fetch)
  * - readCardStates returns populated Map for known card IDs
  * - readCardStates skips missing entries
+ * - readDefaultProjectPath / resolveDefaultProjectPath explicit-vs-resolved
+ *   precedence, and putDefaultProjectPath's wire shape (mock fetch)
  */
 
 import { describe, test, expect, mock, afterEach } from "bun:test";
@@ -30,6 +32,9 @@ import {
   pruneOrphanedCardDefaults,
   CARD_KEYED_DOMAINS,
   SESSION_RECENT_PROJECTS_MAX,
+  readDefaultProjectPath,
+  putDefaultProjectPath,
+  resolveDefaultProjectPath,
 } from "../settings-api";
 import type { CardStateBag } from "../layout-tree";
 import type { TugbankClient, TaggedValue } from "../lib/tugbank-client";
@@ -678,5 +683,89 @@ describe("capDurableCardState — strip in-flight attachment bytes", () => {
     const out = capDurableCardState(bag);
     expect((out.content as Record<string, unknown>).attachmentBytes).toBeUndefined();
     expect((out.regionScroll!.r.meta as Record<string, unknown>).cellHeights).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// default project directory
+// ---------------------------------------------------------------------------
+
+describe("default project directory", () => {
+  afterEach(() => {
+    mock.restore();
+  });
+
+  test("readDefaultProjectPath returns the stored string", () => {
+    const client = makeMockClient({
+      "dev.tugtool.app": {
+        "default-project-path": { kind: "string", value: "/Users/x/code" },
+      },
+    });
+    expect(readDefaultProjectPath(client)).toBe("/Users/x/code");
+  });
+
+  test("readDefaultProjectPath returns null when unset", () => {
+    expect(readDefaultProjectPath(makeMockClient())).toBeNull();
+  });
+
+  test("readDefaultProjectPath ignores a non-string entry", () => {
+    const client = makeMockClient({
+      "dev.tugtool.app": {
+        "default-project-path": { kind: "bool", value: true },
+      },
+    });
+    expect(readDefaultProjectPath(client)).toBeNull();
+  });
+
+  test("resolveDefaultProjectPath prefers the explicit value over home", () => {
+    const client = makeMockClient({
+      "dev.tugtool.app": {
+        "default-project-path": { kind: "string", value: "/Users/x/code" },
+      },
+    });
+    expect(resolveDefaultProjectPath(client, "/Users/x")).toBe("/Users/x/code");
+  });
+
+  test("resolveDefaultProjectPath falls back to <home>/tug when unset", () => {
+    expect(resolveDefaultProjectPath(makeMockClient(), "/Users/x")).toBe(
+      "/Users/x/tug",
+    );
+  });
+
+  test("resolveDefaultProjectPath tolerates a trailing slash on home", () => {
+    expect(resolveDefaultProjectPath(makeMockClient(), "/Users/x/")).toBe(
+      "/Users/x/tug",
+    );
+  });
+
+  test("resolveDefaultProjectPath returns null with no explicit value and no home", () => {
+    expect(resolveDefaultProjectPath(makeMockClient(), null)).toBeNull();
+  });
+
+  test("an empty explicit value reads through to the home fallback", () => {
+    const client = makeMockClient({
+      "dev.tugtool.app": { "default-project-path": { kind: "string", value: "" } },
+    });
+    expect(resolveDefaultProjectPath(client, "/Users/x")).toBe("/Users/x/tug");
+  });
+
+  test("putDefaultProjectPath PUTs a string-tagged body to the app domain", () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: url as string, init: init ?? {} });
+      return makeResponse(200, {});
+    }) as unknown as typeof fetch;
+
+    putDefaultProjectPath("/Users/x/code");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(
+      "/api/defaults/dev.tugtool.app/default-project-path",
+    );
+    expect(calls[0].init.method).toBe("PUT");
+    expect(JSON.parse(calls[0].init.body as string)).toEqual({
+      kind: "string",
+      value: "/Users/x/code",
+    });
   });
 });

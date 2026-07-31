@@ -195,7 +195,13 @@ import { useTugbankValue } from "@/lib/use-tugbank-value";
 import { useHostFacts } from "@/lib/host-facts-store";
 import { probeDirExistence } from "@/lib/dir-existence";
 import { requestLogout } from "@/lib/logout-store";
-import { putSessionRecentProjects, putFindOptions, readFindOptions } from "@/settings-api";
+import {
+  putSessionRecentProjects,
+  putFindOptions,
+  readFindOptions,
+  DEFAULT_PROJECT_PATH_DOMAIN,
+  DEFAULT_PROJECT_PATH_KEY,
+} from "@/settings-api";
 import {
   useSessionLedger,
   getSessionLedgerStore,
@@ -1404,6 +1410,15 @@ function SessionProjectPickerForm({
     "",
   );
 
+  // The user's chosen default project directory (Settings ▸ General, or the
+  // TugSetup step). Outranks the Swift hint in the seed chain below.
+  const defaultProjectPath = useTugbankValue(
+    DEFAULT_PROJECT_PATH_DOMAIN,
+    DEFAULT_PROJECT_PATH_KEY,
+    parseString,
+    "",
+  );
+
   // Reliable fallback for the seed when there is no Swift hint: the backend
   // home directory (the browser can't know it). See the seed effect below.
   const hostFacts = useHostFacts();
@@ -1453,9 +1468,15 @@ function SessionProjectPickerForm({
   );
 
   // One-shot seed so first open isn't a dead-end: if the input is empty,
-  // prefer the most-recent project, then the Swift-provided hint, then the
-  // backend home directory. Skipped once a value is present so later tugbank /
-  // host-facts ticks can't overwrite a user edit.
+  // prefer the most-recent project, then the user's default project directory,
+  // then the Swift-provided hint, then the backend home directory. Skipped once
+  // a value is present so later tugbank / host-facts ticks can't overwrite a
+  // user edit.
+  //
+  // The default tier reads the *explicit* setting, never the `<home>/tug`
+  // resolution: an unset key falls through to the Swift hint (which seeds the
+  // repo source tree on debug builds) instead of being shadowed by a computed
+  // path the user never chose.
   useLayoutEffect(() => {
     if (didSeedPathRef.current) return;
     if (path !== "") {
@@ -1467,11 +1488,16 @@ function SessionProjectPickerForm({
       setPath(recents[0]);
       return;
     }
-    const seed = initialProjectPath !== "" ? initialProjectPath : (hostFacts?.home ?? "");
+    const seed =
+      defaultProjectPath !== ""
+        ? defaultProjectPath
+        : initialProjectPath !== ""
+          ? initialProjectPath
+          : (hostFacts?.home ?? "");
     if (seed === "") return;
     didSeedPathRef.current = true;
     setPath(seed);
-  }, [path, recents, initialProjectPath, hostFacts]);
+  }, [path, recents, defaultProjectPath, initialProjectPath, hostFacts]);
 
   // Session selection. Owned here, read by cells via context. Open
   // resolves submission per [Spec S02].

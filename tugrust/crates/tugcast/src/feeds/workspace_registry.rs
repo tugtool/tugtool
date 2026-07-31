@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use thiserror::Error;
@@ -158,6 +158,22 @@ pub struct WorkspaceEntry {
     /// `Relaxed` ordering is sufficient — the atomic is belt-and-suspenders
     /// for visibility, not for cross-thread correctness ([D08]).
     pub ref_count: AtomicUsize,
+    /// True when every holder of this entry acquired it only to browse the
+    /// directory — the Open Quickly fallback root and its directory switcher,
+    /// which need an index and a watcher but are not opening a *project*.
+    ///
+    /// Browse-only entries are filtered out of [`WorkspaceRegistry::project_dirs`],
+    /// so they never reach the account-global changeset aggregate. Without the
+    /// filter, the first ⇧⌘O on an empty deck would make `~/tug` appear in the
+    /// Changes card — and, since it is usually not a repository, appear there
+    /// wearing an "Initialize git" affordance. Browsing must not mutate the
+    /// Changes view.
+    ///
+    /// The flag is one-way: a session `get_or_create` on the same directory
+    /// clears it permanently, because a real project binding outranks a browse
+    /// hold and the entry must show up in the aggregate from then on. Mutated
+    /// only under the `WorkspaceRegistry::inner` mutex, so `Relaxed` suffices.
+    pub browse_only: AtomicBool,
 }
 
 impl WorkspaceEntry {
@@ -179,6 +195,7 @@ impl WorkspaceEntry {
         ft_response_tx: tokio::sync::broadcast::Sender<Frame>,
         changeset_all_bump: Arc<tokio::sync::Notify>,
         gh_response_tx: tokio::sync::broadcast::Sender<Frame>,
+        browse_only: bool,
     ) -> Arc<Self> {
         // Derive a per-entry child cancel token. Firing this child tears
         // down just this workspace's tasks; the parent (process-wide)
@@ -261,6 +278,7 @@ impl WorkspaceEntry {
             git_watch_task,
             cancel,
             ref_count: AtomicUsize::new(1),
+            browse_only: AtomicBool::new(browse_only),
         })
     }
 }
@@ -362,6 +380,40 @@ impl WorkspaceRegistry {
         project_dir: &Path,
         cancel: CancellationToken,
     ) -> Result<Arc<WorkspaceEntry>, WorkspaceError> {
+        self.acquire(project_dir, cancel, false)
+    }
+
+    /// Look up or construct the workspace entry for `project_dir` as a
+    /// **browse-only** hold — an index + watcher for a directory the user is
+    /// searching (Open Quickly's fallback root and its directory switcher),
+    /// not a project they have opened.
+    ///
+    /// Identical to [`get_or_create`] in every respect except that a freshly
+    /// constructed entry is marked [`WorkspaceEntry::browse_only`], which keeps
+    /// it out of [`project_dirs`] and therefore out of the changeset aggregate.
+    /// Acquiring a directory that a session already holds does **not** demote
+    /// it — the flag only ever moves from set to clear.
+    ///
+    /// Refcounting is shared with the session path: a browse hold and a session
+    /// binding on the same directory are two references to one entry, and the
+    /// entry survives until both release.
+    ///
+    /// [`get_or_create`]: WorkspaceRegistry::get_or_create
+    /// [`project_dirs`]: WorkspaceRegistry::project_dirs
+    pub fn acquire_for_browse(
+        &self,
+        project_dir: &Path,
+        cancel: CancellationToken,
+    ) -> Result<Arc<WorkspaceEntry>, WorkspaceError> {
+        self.acquire(project_dir, cancel, true)
+    }
+
+    fn acquire(
+        &self,
+        project_dir: &Path,
+        cancel: CancellationToken,
+        browse_only: bool,
+    ) -> Result<Arc<WorkspaceEntry>, WorkspaceError> {
         // 1. Validate existence + directory-ness.
         let metadata =
             std::fs::metadata(project_dir).map_err(|e| WorkspaceError::InvalidProjectDir {
@@ -391,7 +443,15 @@ impl WorkspaceRegistry {
 
         if let Some(existing) = map.get(&workspace_key) {
             existing.ref_count.fetch_add(1, Ordering::Relaxed);
-            return Ok(Arc::clone(existing));
+            // A session binding promotes a browse-only entry into the open
+            // project set for good; a browse hold never demotes one.
+            let promoted = !browse_only && existing.browse_only.swap(false, Ordering::Relaxed);
+            let entry = Arc::clone(existing);
+            drop(map);
+            if promoted {
+                self.changeset_all_bump.notify_one();
+            }
+            return Ok(entry);
         }
 
         let entry = WorkspaceEntry::new(
@@ -401,12 +461,16 @@ impl WorkspaceRegistry {
             self.ft_response_tx.clone(),
             Arc::clone(&self.changeset_all_bump),
             self.gh_response_tx.clone(),
+            browse_only,
         );
         map.insert(workspace_key, Arc::clone(&entry));
         drop(map);
         // A fresh project joined the open set — recompute the aggregate now
-        // so its section shows immediately instead of after the poll.
-        self.changeset_all_bump.notify_one();
+        // so its section shows immediately instead of after the poll. A
+        // browse-only entry is not in that set, so it skips the bump.
+        if !browse_only {
+            self.changeset_all_bump.notify_one();
+        }
         Ok(entry)
     }
 
@@ -416,10 +480,15 @@ impl WorkspaceRegistry {
     /// entry was created with (used for display and as the `git init` target);
     /// `workspace_key` is the canonical key. Sorted by `project_dir` so the
     /// aggregate frame's project order is stable for diff-suppression.
+    ///
+    /// Browse-only entries ([`WorkspaceEntry::browse_only`]) are excluded: a
+    /// directory the user is searching through Open Quickly is not a project
+    /// they have opened, and must not appear in the Changes card.
     pub fn project_dirs(&self) -> Vec<(PathBuf, String)> {
         let map = self.inner.lock().expect("WorkspaceRegistry mutex poisoned");
         let mut dirs: Vec<(PathBuf, String)> = map
             .values()
+            .filter(|e| !e.browse_only.load(Ordering::Relaxed))
             .map(|e| (e.project_dir.clone(), e.workspace_key.as_ref().to_string()))
             .collect();
         dirs.sort_by(|a, b| a.0.cmp(&b.0));
@@ -565,6 +634,7 @@ impl WorkspaceRegistry {
         // new count is 0 — time to tear down.
         let prev = entry.ref_count.fetch_sub(1, Ordering::Relaxed);
         if prev == 1 {
+            let was_browse_only = entry.browse_only.load(Ordering::Relaxed);
             entry.cancel.cancel();
             map.remove(key);
             // The Arc<WorkspaceEntry> we just removed drops here, and
@@ -572,8 +642,11 @@ impl WorkspaceRegistry {
             // their own as the cancel token propagates.
             drop(map);
             // A project left the open set — recompute the aggregate now so
-            // its section drops immediately instead of after the poll.
-            self.changeset_all_bump.notify_one();
+            // its section drops immediately instead of after the poll. A
+            // browse-only entry was never in that set, so it skips the bump.
+            if !was_browse_only {
+                self.changeset_all_bump.notify_one();
+            }
         }
         Ok(())
     }
@@ -924,6 +997,138 @@ mod tests {
         assert_eq!(routed.query, "bare-query");
         assert!(routed.root.is_none());
 
+        drain_and_drop(registry, cancel).await;
+    }
+
+    // ---- Browse-only acquisition ----
+
+    #[tokio::test]
+    async fn browse_only_entries_are_hidden_from_project_dirs() {
+        let session_dir = TempDir::new().expect("session tempdir");
+        let browse_dir = TempDir::new().expect("browse tempdir");
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+
+        let session = registry
+            .get_or_create(session_dir.path(), cancel.clone())
+            .expect("session workspace");
+        let browsed = registry
+            .acquire_for_browse(browse_dir.path(), cancel.clone())
+            .expect("browse workspace");
+
+        assert!(!session.browse_only.load(Ordering::Relaxed));
+        assert!(browsed.browse_only.load(Ordering::Relaxed));
+        assert_eq!(
+            registry.inner_for_test().len(),
+            2,
+            "both entries live in the registry and route FILETREE queries"
+        );
+
+        let dirs = registry.project_dirs();
+        assert_eq!(
+            dirs.len(),
+            1,
+            "only the session workspace reaches the changeset aggregate"
+        );
+        assert_eq!(dirs[0].1, session.workspace_key.as_ref());
+
+        drop(session);
+        drop(browsed);
+        drain_and_drop(registry, cancel).await;
+    }
+
+    #[tokio::test]
+    async fn a_browsed_directory_is_still_routable() {
+        // The whole point of the full workspace route: a browse hold gets a
+        // real entry, so `find_entry_by_path` (and therefore FILETREE query
+        // routing) resolves it exactly like a session's project.
+        let browse_dir = TempDir::new().expect("browse tempdir");
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+        let browsed = registry
+            .acquire_for_browse(browse_dir.path(), cancel.clone())
+            .expect("browse workspace");
+
+        let found = registry
+            .find_entry_by_path(browse_dir.path())
+            .expect("browse-only entry must still be routable");
+        assert!(Arc::ptr_eq(&browsed, &found));
+
+        drop(browsed);
+        drop(found);
+        drain_and_drop(registry, cancel).await;
+    }
+
+    #[tokio::test]
+    async fn a_session_binding_promotes_a_browsed_directory_for_good() {
+        let dir = TempDir::new().expect("create tempdir");
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+
+        let browsed = registry
+            .acquire_for_browse(dir.path(), cancel.clone())
+            .expect("browse workspace");
+        assert!(registry.project_dirs().is_empty());
+
+        // A session opens the same directory: one entry, two refs, visible.
+        let session = registry
+            .get_or_create(dir.path(), cancel.clone())
+            .expect("session workspace");
+        assert!(Arc::ptr_eq(&browsed, &session));
+        assert_eq!(session.ref_count.load(Ordering::Relaxed), 2);
+        assert_eq!(registry.project_dirs().len(), 1);
+
+        // A later browse hold must not demote it back out of the aggregate.
+        let browsed_again = registry
+            .acquire_for_browse(dir.path(), cancel.clone())
+            .expect("second browse hold");
+        assert_eq!(
+            registry.project_dirs().len(),
+            1,
+            "browse-only is one-way: a re-browse never hides an open project"
+        );
+
+        drop(browsed);
+        drop(session);
+        drop(browsed_again);
+        drain_and_drop(registry, cancel).await;
+    }
+
+    #[tokio::test]
+    async fn releasing_a_browse_hold_tears_the_entry_down() {
+        let dir = TempDir::new().expect("create tempdir");
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+
+        let browsed = registry
+            .acquire_for_browse(dir.path(), cancel.clone())
+            .expect("browse workspace");
+        let key = browsed.workspace_key.clone();
+        let entry_cancel = browsed.cancel.clone();
+        drop(browsed);
+
+        registry.release(&key).expect("release to zero");
+        assert_eq!(registry.inner_for_test().len(), 0);
+        assert!(entry_cancel.is_cancelled());
+
+        drain_and_drop(registry, cancel).await;
+    }
+
+    #[tokio::test]
+    async fn acquire_for_browse_rejects_a_missing_directory() {
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+        let result = registry.acquire_for_browse(
+            Path::new("/nonexistent/browse-target-xyz-123"),
+            cancel.clone(),
+        );
+        match result {
+            Ok(_) => panic!("expected InvalidProjectDir"),
+            Err(WorkspaceError::InvalidProjectDir { reason, .. }) => {
+                assert_eq!(reason, "does_not_exist");
+            }
+            Err(other) => panic!("expected InvalidProjectDir, got {other:?}"),
+        }
         drain_and_drop(registry, cancel).await;
     }
 

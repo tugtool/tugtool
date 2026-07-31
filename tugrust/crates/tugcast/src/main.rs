@@ -10,6 +10,7 @@ mod dev;
 mod external_sessions;
 mod feeds;
 mod fs_complete;
+mod fs_mkdir;
 mod fs_read;
 mod fs_stat;
 mod fs_write;
@@ -32,6 +33,7 @@ mod shell_ledger;
 mod snippets;
 mod terminal_registry;
 mod turn_engine;
+mod workspace_api;
 
 #[cfg(test)]
 mod integration_tests;

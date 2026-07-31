@@ -30,7 +30,6 @@
 import type { DeckState } from "../layout-tree";
 import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./card-session-binding-store";
-import { frontmostProjectBinding } from "./frontmost-project";
 
 /**
  * Edit-menu capability block: per-action enablement for the native
@@ -330,9 +329,11 @@ export interface MenuStatePayload {
    */
   recentDocuments: string[];
   /**
-   * Whether Open Quickly is available — true iff the frontmost card
-   * belongs to a project (its session binding has a `projectDir`). Gates
-   * File ▸ Open Quickly.
+   * Whether Open Quickly is available. Always true: the frontmost card's
+   * project is the search root when there is one, and the user's default
+   * project directory is the root when there is not — so there is no deck
+   * state in which the command has nowhere to look. Gates File ▸ Open
+   * Quickly, which keeps the field so the host contract is unchanged.
    */
   openQuickly: boolean;
 }
@@ -489,8 +490,9 @@ export class HostMenuStatePublisher {
       file,
       edit: this.editCapabilities,
       recentDocuments: this.recentDocuments,
-      // Open Quickly is available when the frontmost card is in a project.
-      openQuickly: frontmostProjectBinding()?.projectDir ? true : false,
+      // Open Quickly always has a root: the frontmost card's project, or the
+      // default project directory when no card is bound.
+      openQuickly: true,
     };
     const serialized = JSON.stringify(payload);
     if (serialized === this.lastSent) return;

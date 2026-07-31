@@ -14,14 +14,18 @@
  *      may decline. Offers what the catalog marks `offered`; Download hands
  *      the acquisition to tugcast, Skip records that the offer was waved away
  *      so the wizard stops asking.
- *   4. Open your first session — pops the first Session card. First-run only:
+ *   4. Choose your projects folder — a path chooser prefilled with `~/tug`.
+ *      Confirming creates the directory and writes it to tugbank as the
+ *      app-wide default project directory.
+ *   5. Open your first session — pops the first Session card. First-run only:
  *      a set-up user whose deck goes empty mid-life is left alone with it.
  *
- * The on-device AI step gates the one below it: whether a local model is
- * installed decides where command and summary work runs, so the answer is
- * settled — downloaded or skipped — before the wizard hands over a session.
- * "Settled" is not "finished with Tug": the acquisition lives in tugcast, so a
- * quit mid-download is picked back up by its startup auto-resume.
+ * Both middle steps gate the one below them. Whether a local model is
+ * installed decides where command and summary work runs, and where projects
+ * live decides what Open Quickly and the session picker reach for — so both
+ * answers are settled before the wizard hands over a session. "Settled" is not
+ * "finished with Tug": the model acquisition lives in tugcast, so a quit
+ * mid-download is picked back up by its startup auto-resume.
  *
  * Two ways in. The wizard opens itself when setup isn't done (the steps above),
  * and the Tug-menu "Set Up Tug…" item opens it on demand on an app that is
@@ -71,7 +75,15 @@ import {
   readSetupSuppressed,
   putSetupSeen,
   putLocalModelDeclined,
+  putDefaultProjectPath,
+  DEFAULT_PROJECT_PATH_DOMAIN,
+  DEFAULT_PROJECT_PATH_KEY,
+  DEFAULT_PROJECT_DIR_LEAF,
 } from "@/settings-api";
+import { useTugbankValue } from "@/lib/use-tugbank-value";
+import { useHostFacts } from "@/lib/host-facts-store";
+import { makeDirectory } from "@/lib/fs-mkdir";
+import type { TaggedValue } from "@/lib/tugbank-client";
 import {
   getLocalModelStore,
   useLocalModel,
@@ -90,6 +102,7 @@ import {
 } from "./tug-setup-copy";
 import { TugPushButton } from "./tug-push-button";
 import { TugIconButton } from "./tug-icon-button";
+import { TugFileChooser } from "./tug-file-chooser";
 import {
   TugProgressIndicator,
   type TugProgressIndicatorRole,
@@ -125,6 +138,14 @@ const PROGRESS_BAR_HEIGHT = 6;
  * give up after 10 minutes (a late `claude_auth_result` still wins).
  */
 const SIGN_IN_TIMEOUT_MS = 600_000;
+
+/** Read the explicit default project path out of a tugbank entry. */
+function parseProjectPath(entry: TaggedValue | undefined): string {
+  if (entry && entry.kind === "string" && typeof entry.value === "string") {
+    return entry.value;
+  }
+  return "";
+}
 
 /** Map a step status onto the dot's role + state ([D02]/[D106]). */
 function dotVisual(status: StepStatus): {
@@ -228,6 +249,31 @@ export function TugSetup(): ReactElement {
   // the `setup-declined` flag written to tugbank.
   const [declinedLocalAi, setDeclinedLocalAi] = useState(false);
 
+  // The projects-folder step. The stored path is external state [L02]; the
+  // chooser's in-flight text is a draft that exists only until the user
+  // confirms, and `null` means "showing the resolved default".
+  const storedProjectPath = useTugbankValue(
+    DEFAULT_PROJECT_PATH_DOMAIN,
+    DEFAULT_PROJECT_PATH_KEY,
+    parseProjectPath,
+    "",
+  );
+  const hostFacts = useHostFacts();
+  const resolvedProjectPath =
+    storedProjectPath !== ""
+      ? storedProjectPath
+      : hostFacts?.home
+        ? `${hostFacts.home.replace(/\/+$/, "")}/${DEFAULT_PROJECT_DIR_LEAF}`
+        : "";
+  const [projectPathDraft, setProjectPathDraft] = useState<string | null>(null);
+  const projectPathValue = projectPathDraft ?? resolvedProjectPath;
+  // Confirmed during this wizard's lifetime — the same latch shape the
+  // local-AI skip uses, so an on-demand revisit can change the answer and
+  // still see the row settle.
+  const [projectDirConfirmed, setProjectDirConfirmed] = useState(false);
+  const [projectDirBusy, setProjectDirBusy] = useState(false);
+  const [projectDirError, setProjectDirError] = useState<string | null>(null);
+
   const forced = import.meta.env.DEV ? SESSION_FORCE_SETUP : false;
   const forcedLoggedIn = forced === "open_session";
   const forcedReason =
@@ -275,7 +321,12 @@ export function TugSetup(): ReactElement {
   // durable tugbank flag, not a latch that should outlive the wizard it was
   // clicked in.
   useEffect(() => {
-    if (onDemand) setDeclinedLocalAi(false);
+    if (onDemand) {
+      setDeclinedLocalAi(false);
+      setProjectDirConfirmed(false);
+      setProjectDirError(null);
+      setProjectPathDraft(null);
+    }
   }, [onDemand]);
 
   // Sign-in safety net: the CLI's `claude auth login` blocks on its own browser
@@ -338,6 +389,22 @@ export function TugSetup(): ReactElement {
   const handleSkipLocalAi = (): void => {
     putLocalModelDeclined(true);
     setDeclinedLocalAi(true);
+  };
+  const handleConfirmProjectDir = (): void => {
+    const path = projectPathValue.trim();
+    if (path === "") return;
+    setProjectDirBusy(true);
+    setProjectDirError(null);
+    void makeDirectory(path).then((created) => {
+      setProjectDirBusy(false);
+      if (!created) {
+        setProjectDirError(path);
+        return;
+      }
+      putDefaultProjectPath(path);
+      setProjectPathDraft(null);
+      setProjectDirConfirmed(true);
+    });
   };
   const handleOpenSession = (): void => {
     deck.addCard("session");
@@ -534,6 +601,67 @@ export function TugSetup(): ReactElement {
   const localAiShown = (firstRun || showingOnDemand) && localAiStep !== null;
   const localAiSettled = !localAiShown || localAiStep?.status === "done";
 
+  // Where the user's projects live. Always ends up persisted explicitly: the
+  // session picker's seed chain reads the explicit value, so a post-setup user
+  // who never touches Settings still gets their folder rather than falling
+  // through to the launch hint.
+  const projectDirStep: Step = (() => {
+    const key = "project-dir";
+    if (!effectiveLoggedIn) {
+      return { key, status: "pending", label: "Choose your projects folder" };
+    }
+    // Settled: confirmed just now, or already chosen on a previous run. An
+    // on-demand visit is the gesture for changing it, so it re-opens there.
+    if (projectDirConfirmed || (storedProjectPath !== "" && !showingOnDemand)) {
+      return {
+        key,
+        status: "done",
+        label: "Projects folder",
+        detail: projectDirConfirmed ? projectPathValue : storedProjectPath,
+      };
+    }
+    const chooser = (
+      <TugFileChooser
+        value={projectPathValue}
+        onChange={setProjectPathDraft}
+        base={projectPathValue !== "" ? projectPathValue : (hostFacts?.home ?? "/")}
+        kind="directory"
+        onSubmit={handleConfirmProjectDir}
+        disabled={projectDirBusy}
+        aria-label="Projects folder"
+      />
+    );
+    if (projectDirBusy) {
+      return {
+        key,
+        status: "busy",
+        label: "Choose your projects folder",
+        body: chooser,
+        cta: { label: "Creating…", onClick: handleConfirmProjectDir },
+      };
+    }
+    if (projectDirError !== null) {
+      return {
+        key,
+        status: "error",
+        label: "Choose your projects folder",
+        detail: `Couldn't create ${projectDirError}.`,
+        body: chooser,
+        cta: { label: "Retry", onClick: handleConfirmProjectDir },
+      };
+    }
+    return {
+      key,
+      status: "active",
+      label: "Choose your projects folder",
+      detail: "Tug opens here when nothing else is in front — you can change it later in Settings.",
+      body: chooser,
+      cta: { label: "Use This Folder", onClick: handleConfirmProjectDir },
+    };
+  })();
+
+  const projectDirSettled = projectDirStep.status === "done";
+
   const openStep: Step = !effectiveLoggedIn
     ? // Pending (logged-out) preview: with cards already open — the
       // logout-with-work case — this reads "Continue working" and re-login
@@ -546,7 +674,14 @@ export function TugSetup(): ReactElement {
           label: "Start a Claude Code session",
           detail: "Add or skip on-device AI.",
         }
-      : {
+      : !projectDirSettled
+        ? {
+            key: "open",
+            status: "pending",
+            label: "Start a Claude Code session",
+            detail: "Choose your projects folder.",
+          }
+        : {
           key: "open",
           status: "active",
           label: "Start a Claude Code session",
@@ -585,6 +720,7 @@ export function TugSetup(): ReactElement {
           // On demand the on-device-AI row is the point of the visit, so it
           // shows outside a first run too.
           ...(localAiShown && localAiStep !== null ? [localAiStep] : []),
+          projectDirStep,
           // …and the "open your first session" row is dead weight on a deck
           // that already has work in it; Done takes its place.
           ...(dismissible ? [] : [openStep]),

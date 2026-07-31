@@ -11,7 +11,10 @@
  * Dismissal is deliberately easy ([the popup is not a modal trap]): a
  * click anywhere outside the panel, moving focus off the field, or Escape
  * all dismiss. Return opens the highlighted row; ↑/↓ move the highlight;
- * a row click opens it directly.
+ * a row click opens it directly. A caller that puts an `accessory` on the bar
+ * whose own menu portals outside the panel passes a `dismissGuard` to hold
+ * the popup open while that menu is up — the one seam in the easy-dismissal
+ * rule, and Escape is exempt from it.
  *
  * It portals into the canvas overlay root ([L25]) so it floats above every
  * pane, escaping their `overflow: hidden`. The field owns focus while open —
@@ -64,6 +67,19 @@ export interface TugCompletionPopupProps {
   onCommit: (item: CompletionItem) => void;
   /** Dismiss without opening (Escape, outside click, focus leaving). */
   onDismiss: () => void;
+  /**
+   * Optional trailing control on the search bar — Open Quickly's directory
+   * switcher. It renders inside the panel, so it is a natural Tab stop after
+   * the field and focus reaching it does not dismiss.
+   */
+  accessory?: React.ReactNode;
+  /**
+   * Consulted before every non-Escape dismissal. Return `true` to hold the
+   * popup open — what an {@link accessory} whose own menu is portalled
+   * OUTSIDE the panel needs, since focus landing in that menu looks like
+   * focus leaving the popup. Escape always dismisses.
+   */
+  dismissGuard?: () => boolean;
 }
 
 /**
@@ -100,6 +116,8 @@ export function TugCompletionPopup({
   provider,
   onCommit,
   onDismiss,
+  accessory,
+  dismissGuard,
 }: TugCompletionPopupProps): React.ReactElement {
   const overlayRoot = useCanvasOverlay();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -182,14 +200,16 @@ export function TugCompletionPopup({
 
   // Focus leaving the field dismisses — unless it moved to a control
   // inside the panel (the row-click path keeps focus via preventDefault,
-  // so in practice this fires only on a real focus shift away).
+  // so in practice this fires only on a real focus shift away), or the
+  // guard is holding the popup open for an accessory's portalled menu.
   const onBlur = useCallback(
     (e: React.FocusEvent<HTMLInputElement>) => {
       const next = e.relatedTarget as Node | null;
       if (next !== null && panelRef.current?.contains(next)) return;
+      if (dismissGuard?.() === true) return;
       onDismiss();
     },
-    [onDismiss],
+    [onDismiss, dismissGuard],
   );
 
   return createPortal(
@@ -199,7 +219,9 @@ export function TugCompletionPopup({
       // A press outside the panel dismisses. mousedown (not click) so it
       // beats the field's blur race and feels immediate.
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onDismiss();
+        if (e.target !== e.currentTarget) return;
+        if (dismissGuard?.() === true) return;
+        onDismiss();
       }}
     >
       <div
@@ -224,6 +246,14 @@ export function TugCompletionPopup({
             onKeyDown={onKeyDown}
             onBlur={onBlur}
           />
+          {accessory !== undefined ? (
+            <div
+              className="tug-completion-popup-accessory"
+              data-slot="tug-completion-popup-accessory"
+            >
+              {accessory}
+            </div>
+          ) : null}
         </div>
         {items.length > 0 ? (
           <ul
