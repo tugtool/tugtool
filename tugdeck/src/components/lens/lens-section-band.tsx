@@ -1,6 +1,6 @@
 /**
  * lens-section-band.tsx — one Lens section: a band (glyph + title + live
- * collapsed-summary + fold chevron + grip) over an internally-scrolling body.
+ * collapsed-summary + fold chevron) over an internally-scrolling body.
  *
  * The band is a {@link BlockStrip} at `altitude="section"` ([P02]): the same
  * header-shell primitive the transcript tool-call header wears, one altitude
@@ -22,10 +22,13 @@
  * `lens-section-content` — never off the filtered count, which would disable
  * the field the moment a query narrowed to nothing.
  *
- * Clicking the band (anywhere except its buttons / the grip / the filter field)
- * focuses the section's list: it expands a collapsed section and lands the key
- * view on the section's focus group via a keyboard `place()`, so the band is
- * a one-click route to keyboard navigation of its items.
+ * Clicking the band (anywhere except its buttons / the filter field) focuses
+ * the section's list: it expands a collapsed section and lands the key view on
+ * the section's focus group via a keyboard `place()`, so the band is a
+ * one-click route to keyboard navigation of its items. DRAGGING the band
+ * vertically carries the whole section to a new place in the stack — the band
+ * is its own handle, so nothing is set aside at the right edge for one
+ * ([P08]). The two gestures are told apart by travel, in `block-reorder`.
  *
  * Collapse is persisted via `lensStore.setCollapsed`; the expand/collapse
  * appearance is a `data-collapsed` attribute + CSS ([L06]). A collapsed
@@ -43,7 +46,6 @@
 import React from "react";
 import { lensStore } from "@/lib/lens-store/lens-store";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
-import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { TugFilterField } from "@/components/tugways/tug-filter-field";
 import { useFocusManager } from "@/components/tugways/use-focusable";
@@ -77,34 +79,32 @@ export interface LensSectionProps {
   def: LensSectionDefinition;
   host: LensSectionHost;
   collapsed: boolean;
-  /** Begin a drag-reorder from this section's grip (DOM-only preview,
-   *  committed on drop by the owning `LensContent`). */
-  onGripPointerDown?: (kind: string, event: React.PointerEvent) => void;
+  /** Arm a drag-reorder from the band itself (DOM-only preview, committed on
+   *  drop by the owning `LensContent`). */
+  onBandPointerDown?: (kind: string, event: React.PointerEvent) => void;
 }
 
 export function LensSection({
   def,
   host,
   collapsed,
-  onGripPointerDown,
+  onBandPointerDown,
 }: LensSectionProps): React.ReactElement {
   const focusManager = useFocusManager();
 
   // Band click → focus this section's list. Filtered to the band's inert
-  // surface: clicks on the fold chevron, header-action buttons, or the drag
-  // grip keep their own meaning. Expanding a collapsed section first means
-  // the list mounts before the key view lands; the placement realizes
-  // immediately against a mounted focusable and arms a late-mount resume for
-  // one still mounting — both orderings land the ring.
+  // surface: clicks on the fold chevron or the header-action buttons keep
+  // their own meaning. Expanding a collapsed section first means the list
+  // mounts before the key view lands; the placement realizes immediately
+  // against a mounted focusable and arms a late-mount resume for one still
+  // mounting — both orderings land the ring. A click that concluded a
+  // reorder drag never arrives here at all: `block-reorder` swallows it.
   const onBandClick = React.useCallback(
     (event: React.MouseEvent<HTMLDivElement>): void => {
       const target = event.target as HTMLElement | null;
       // The filter field is part of the band's chrome, not its inert surface —
       // a click into it must land the caret there, not yank focus to the list.
-      if (
-        target?.closest('button, .block-grip, [data-slot="tug-filter-field"]') !==
-        null
-      ) {
+      if (target?.closest('button, [data-slot="tug-filter-field"]') !== null) {
         return;
       }
       if (collapsed) lensStore.setCollapsed(def.kind, false);
@@ -163,15 +163,12 @@ export function LensSection({
         dataTestid="lens-section-band"
         dataCollapsed={collapsed}
         onClick={onBandClick}
-        // Drag grip — the band's right edge, past the fold chevron; starts a
-        // reorder drag ([P04]/[P08]).
-        grip={
-          onGripPointerDown !== undefined ? (
-            <BlockGrip
-              data-testid="lens-section-grip"
-              onPointerDown={(e) => onGripPointerDown(def.kind, e)}
-            />
-          ) : undefined
+        // The band IS the handle: a vertical drag from anywhere on it that is
+        // not a control carries the section ([P08]).
+        onPointerDown={
+          onBandPointerDown !== undefined
+            ? (e) => onBandPointerDown(def.kind, e)
+            : undefined
         }
         leading={
           <span className="tool-call-header-leading" aria-hidden="true">

@@ -21,20 +21,16 @@
 
 body {
   /* ── The Lens's right edge ────────────────────────────────────────────
-     Where every reorder handle in the rail stops, measured in from the list
-     frame: the band headers' and every list row's, one number for all of
-     them, so the whole right edge of the Lens is one vertical. TUNE HERE.
-     The rows carried 4px and the band headers `--tug-space-md` before these
-     were one number; the bands moved in to meet the rows. */
-  --tugx-lens-grip-inset-end: 4px;
-  /* Extra air before a handle, ON TOP of the row's own inter-slot flex gap
-     (`--tugx-list-row-gap`, 6px) — the two together are what separates the
-     handle from whatever trailing control precedes it, so a slot picker never
-     reads as ending in a grip. This is the only slack in the row's trailing
-     furniture, and it is charged to EVERY line of a multi-line row: on a
-     Sessions row each pixel here is a pixel the sparkline and both PULSE runs
-     do not get. 3px keeps ~9px of total air. TUNE HERE. */
-  --tugx-lens-grip-gap: 3px;
+     Where the trailing content of everything in the rail stops, measured in
+     from the list frame: the band headers' chevron and every list row's last
+     control, one number for all of them, so the whole right edge of the Lens
+     is one vertical. TUNE HERE.
+
+     This used to be where the reorder handles stopped, and everything else
+     stopped a handle's width short of it. There are no handles now — a row is
+     carried by its own surface — so the column they held is given back and the
+     content itself comes out to this edge. */
+  --tugx-lens-row-inset-end: 4px;
 }
 
 .lens-content {
@@ -66,33 +62,28 @@ body {
 
 /* Section + band styling lives in lens-section-band.css. */
 
-/* The reorder handle on every Lens list row, wherever the row is authored.
-   Three things, one rule, so the three sections cannot drift apart:
+/* The trailing edge of every Lens list row, wherever the row is authored. One
+   rule, so the three sections cannot drift apart: whatever inline inset a list
+   gives its rows for READING (Sessions and Text Files one step in, Snippets
+   two), the far edge is the same vertical for all of them, shared with the
+   band headers above them.
 
-   - centered on the WHOLE row, not on its first line — a three-line Sessions
-     row and a one-line Snippets row then wear the handle at the same relative
-     spot;
-   - a wider gap before it than the row's own inter-slot gap, so the handle
-     stands apart from whatever trailing control precedes it (the slot picker
-     must never read as ending in a grip);
-   - tucked back out through the row's whole inline inset and then in by the
-     end inset below, so the handle sits at the LIST FRAME rather than a
-     row-inset in from it — and sits at the SAME place whatever inset the row
-     carries, since the three lists do not agree on one (Sessions and Text
-     Files are one step in, Snippets two).
+   The leading inset is untouched — it is where the eye starts each line, and
+   the three lists are entitled to differ on it. The trailing one is not a
+   reading edge at all: it is where the row's furniture stops, and furniture
+   that stops in three different places down one narrow rail reads as three
+   lists that happen to be stacked rather than as one Lens. Every pixel given
+   back here is a pixel of the Sessions row's sparkline and both PULSE runs,
+   since the trailing column is charged to all three of that row's lines. */
+.lens-content .tug-list-row {
+  padding-inline-end: var(--tugx-lens-row-inset-end);
+}
 
-   The two numbers are the knobs below. They are the whole right edge of the
-   Lens: the end inset is where every handle in the rail stops, rows and band
-   headers alike, and the gap is the only slack between a row's content and its
-   handle — every pixel taken off it is a pixel the Sessions row's sparkline
-   and PULSE runs get, since the handle's column is charged to all three of
-   that row's lines. */
-.lens-content .tug-list-row-grip {
-  align-self: center;
-  margin-inline-start: var(--tugx-lens-grip-gap);
-  margin-inline-end: calc(
-    var(--tugx-lens-grip-inset-end) - var(--tugx-list-row-padding-inline)
-  );
+/* A row being carried is not a row being read: suppress selection in the
+   container for the length of the drag, since the gesture begins as a plain
+   press on text ([L06] — `block-reorder` stamps the attribute). */
+.lens-content [data-reordering="true"] {
+  user-select: none;
 }
 
 /* ---- The Lens's one-line lists ----

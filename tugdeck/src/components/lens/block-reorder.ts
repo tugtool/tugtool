@@ -2,10 +2,21 @@
  * block-reorder.ts — `useBlockReorder`, the FLIP drag lifecycle for Lens
  * section reordering ([P08], Spec S01).
  *
- * Replaces the old bare flex-`order` preview with hand-rolled FLIP visuals,
- * all DOM/CSS with a single store write on drop:
+ * The whole row is the handle. There is no grip: a pointerdown anywhere on a
+ * row that is not a control ARMS a drag, and travel past
+ * {@link DRAG_THRESHOLD_PX} ENGAGES it. Below the threshold the gesture is
+ * still a click, so a row keeps its click and its double-click; past it the
+ * row is being carried. Distance is what tells the two apart, rather than
+ * which pixels were pressed — which is what lets one surface answer to both.
  *
- *  - **pointerdown on a grip** ghosts the dragged `.lens-section`
+ * Where a row's surface is ALSO a native drag source (a snippet's incipit,
+ * dragged into a session prompt) the axis arbitrates as well: the list is a
+ * column, so a vertical act is the carry and a horizontal one is the drag-out
+ * (see `nativeDragSource`).
+ *
+ * The lifecycle, all DOM/CSS with a single store write on drop:
+ *
+ *  - **engage** ghosts the dragged `.lens-section`
  *    (`data-dragging` → opacity/scale/raised-z/`pointer-events:none`, the CSS
  *    lives in `lens-section-band.css`) and snapshots the visible order + each
  *    section's rect.
@@ -46,6 +57,30 @@ const SETTLE_CLEAR_MS = SETTLE_MS + 60;
 const SECTION_SELECTOR = ".lens-section[data-lens-section]";
 const KIND_ATTR = "data-lens-section";
 
+/**
+ * How far the pointer travels before a press on a row becomes a carry. Under
+ * it the gesture is still a click — which is the whole reason the row can be
+ * both the thing you pick and the thing you drag.
+ */
+const DRAG_THRESHOLD_PX = 4;
+
+/**
+ * Parts of a row that own the pointer themselves: the slot picker, a close
+ * box, a copy button, the band's fold chevron and filter field. A press on one
+ * of these is that control's gesture and never arms a reorder — which is what
+ * "the whole row except its controls" means, stated once.
+ */
+const CONTROL_SELECTOR = [
+  "button",
+  "a[href]",
+  "input",
+  "textarea",
+  "select",
+  '[role="button"]',
+  '[contenteditable="true"]',
+  '[data-slot="tug-filter-field"]',
+].join(", ");
+
 export interface UseBlockReorderOptions {
   /** The `.lens-sections` container (the sections' offset parent + the caret's). */
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -63,11 +98,29 @@ export interface UseBlockReorderOptions {
   selector?: string;
   /** Attribute on each child holding its stable key. Defaults to the Lens one. */
   kindAttr?: string;
+  /**
+   * The row's content is ALSO a native HTML5 drag source (a snippet's incipit,
+   * dragged into a session prompt). Canceling a pointerdown suppresses the
+   * mousedown the browser starts that drag from, so an arm on such a row must
+   * leave the browser's defaults alone and arbitrate at `dragstart` instead.
+   *
+   * The cost of not claiming the press is that the enclosing list commits its
+   * selection immediately rather than on the click — which is what a snippet
+   * row wants anyway, since selecting one costs nothing. A row whose selection
+   * is expensive (a Sessions row fronts its card) leaves this off, and its
+   * selection waits to find out whether the press was a click.
+   */
+  nativeDragSource?: boolean;
 }
 
 export interface UseBlockReorder {
-  /** Begin a reorder drag from `kind`'s grip. */
-  onGripPointerDown: (kind: string, event: React.PointerEvent) => void;
+  /**
+   * Arm a reorder from `kind`'s own row surface. Wire it to the row's
+   * `onPointerDown`: presses on the row's controls are ignored, and the drag
+   * engages only once the pointer has travelled vertically past the threshold,
+   * so the row's click / double-click / native drag-out are all untouched.
+   */
+  onRowPointerDown: (kind: string, event: React.PointerEvent) => void;
 }
 
 export function useBlockReorder({
@@ -77,6 +130,7 @@ export function useBlockReorder({
   commit,
   selector = SECTION_SELECTOR,
   kindAttr = KIND_ATTR,
+  nativeDragSource = false,
 }: UseBlockReorderOptions): UseBlockReorder {
   // Latest-ref mirrors so the stable callback reads current inputs ([L07]).
   const getVisibleOrderRef = React.useRef(getVisibleOrder);
@@ -88,12 +142,14 @@ export function useBlockReorder({
 
   const draggingRef = React.useRef(false);
 
-  const onGripPointerDown = React.useCallback(
-    (kind: string, event: React.PointerEvent) => {
+  // Engage: the pointer has committed to a carry. Everything below runs from
+  // the ORIGINAL pointerdown position, so the row picks up where it was
+  // pressed rather than jumping to where the threshold was crossed.
+  const beginDrag = React.useCallback(
+    (kind: string, startY: number, currentY: number) => {
       if (draggingRef.current) return;
       const container = containerRef.current;
       if (container === null) return;
-      event.preventDefault();
 
       const visible = getVisibleOrderRef.current();
       const dragIndex = visible.indexOf(kind);
@@ -128,12 +184,17 @@ export function useBlockReorder({
 
       const dragged = sections[dragIndex];
       const caret = caretRef.current;
-      const startY = event.clientY;
       let targetIndex = dragIndex;
 
       draggingRef.current = true;
       dragged.setAttribute("data-dragging", "true");
       dragged.style.transition = "none";
+      // The press that started this was a plain press on text, so it may have
+      // begun a selection and the browser would keep extending it for the
+      // length of the carry. Drop what it took and suppress selection in the
+      // container until the drop ([L06] — an attribute plus a CSS rule).
+      container.setAttribute("data-reordering", "true");
+      window.getSelection()?.removeAllRanges();
 
       const shiftFor = (i: number, target: number): number => {
         if (i === dragIndex) return 0;
@@ -183,15 +244,16 @@ export function useBlockReorder({
       const clampDy = (dy: number): number =>
         Math.max(minDy, Math.min(maxDy, dy));
 
-      const onMove = (ev: PointerEvent): void => {
-        const dy = clampDy(ev.clientY - startY);
+      const moveTo = (clientY: number): void => {
+        const dy = clampDy(clientY - startY);
         dragged.style.transform = `translateY(${dy}px) scale(0.99)`;
-        const t = computeTarget(ev.clientY);
+        const t = computeTarget(clientY);
         if (t !== targetIndex) {
           targetIndex = t;
           applyShift(t);
         }
       };
+      const onMove = (ev: PointerEvent): void => moveTo(ev.clientY);
 
       const clearInline = (): void => {
         for (const el of sections) {
@@ -208,6 +270,7 @@ export function useBlockReorder({
           el.style.transform = "";
         }
         dragged.removeAttribute("data-dragging");
+        container.removeAttribute("data-reordering");
         caret?.removeAttribute("data-visible");
         window.setTimeout(() => {
           for (const el of sections) el.style.transition = "";
@@ -225,6 +288,7 @@ export function useBlockReorder({
 
         clearInline();
         dragged.removeAttribute("data-dragging");
+        container.removeAttribute("data-reordering");
         caret?.removeAttribute("data-visible");
 
         flushSync(() => commitRef.current(newVisible));
@@ -250,12 +314,12 @@ export function useBlockReorder({
         });
       };
 
-      // A grip gesture is a DRAG, never a row activation — but the pointerup
+      // An engaged carry is a DRAG, never a row activation — but the pointerup
       // still spawns a trailing `click` on the cell under the pointer, which the
-      // list would read as a select/activate (e.g. front the session card).
-      // Swallow that one click at capture phase so the grip never activates a
-      // row, whether the pointer moved or not. One-shot: it removes itself the
-      // moment it fires, and a post-up fallback clears it if no click follows.
+      // list would read as a select/activate (e.g. front the session card, or
+      // focus a band's list). Swallow that one click at capture phase so a drop
+      // never activates a row. One-shot: it removes itself the moment it fires,
+      // and a post-up fallback clears it if no click follows.
       const swallowNextClick = (ev: MouseEvent): void => {
         ev.preventDefault();
         ev.stopImmediatePropagation();
@@ -296,9 +360,91 @@ export function useBlockReorder({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
       window.addEventListener("keydown", onKey, true);
+
+      // The move that engaged the drag is spent — it was consumed deciding
+      // this IS a drag — so replay it here. Without it a gesture whose whole
+      // travel arrives in one move (a synthesized drag, a fast flick) would
+      // engage and then never be told where the pointer went.
+      moveTo(currentY);
     },
-    [containerRef, caretRef],
+    [containerRef, caretRef, selector, kindAttr],
   );
 
-  return { onGripPointerDown };
+  // Arm: a press on the row's own surface. Nothing has been decided yet — the
+  // gesture is still a click until the pointer says otherwise.
+  const onRowPointerDown = React.useCallback(
+    (kind: string, event: React.PointerEvent) => {
+      if (draggingRef.current) return;
+      if (event.button !== 0) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest(CONTROL_SELECTOR) !== null) {
+        return;
+      }
+      // Claim the press. The enclosing list reads `defaultPrevented` as "this
+      // gesture has not decided what it is yet" and holds its selection until
+      // the click, so a carry never selects the row it is carrying. Skipped on
+      // a row that is also a native drag source — see `nativeDragSource`.
+      if (!nativeDragSource) event.preventDefault();
+
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let dx = 0;
+      let dy = 0;
+      let armed = true;
+
+      const disarm = (): void => {
+        armed = false;
+        window.removeEventListener("pointermove", onArmMove);
+        window.removeEventListener("pointerup", disarm);
+        window.removeEventListener("dragstart", onDragStart, true);
+      };
+      const engage = (currentY: number): void => {
+        disarm();
+        beginDrag(kind, startY, currentY);
+      };
+
+      // Travel decides. On an ordinary row there is nothing else the press
+      // could become, so any travel past the threshold is the carry — a
+      // diagonal drag from a row's left edge toward the middle of the list is
+      // a carry like any other. Only where a SECOND drag shares the surface
+      // does the axis have a job: there, a vertical act is the carry (the list
+      // is a column) and a horizontal one is handed back to the drag-out.
+      function onArmMove(ev: PointerEvent): void {
+        dx = ev.clientX - startX;
+        dy = ev.clientY - startY;
+        if (!nativeDragSource) {
+          if (Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) engage(ev.clientY);
+          return;
+        }
+        if (Math.abs(dy) >= DRAG_THRESHOLD_PX && Math.abs(dy) > Math.abs(dx)) {
+          engage(ev.clientY);
+        } else if (Math.abs(dx) >= DRAG_THRESHOLD_PX) {
+          disarm();
+        }
+      }
+
+      // A Snippets row's incipit is ALSO a native drag source (drop the text
+      // into a session prompt), and the browser decides to start that drag on
+      // its own few pixels of movement — which can land before this arm has
+      // seen enough to engage. So the two gestures are arbitrated here, on the
+      // same axis rule: a vertical press-and-move is the reorder's, and the
+      // native drag is refused so the arm survives to engage; a horizontal one
+      // is the drag-out's, and the arm stands down.
+      function onDragStart(ev: DragEvent): void {
+        if (!armed) return;
+        if (Math.abs(dy) > Math.abs(dx)) {
+          ev.preventDefault();
+          return;
+        }
+        disarm();
+      }
+
+      window.addEventListener("pointermove", onArmMove);
+      window.addEventListener("pointerup", disarm);
+      window.addEventListener("dragstart", onDragStart, true);
+    },
+    [beginDrag, nativeDragSource],
+  );
+
+  return { onRowPointerDown };
 }

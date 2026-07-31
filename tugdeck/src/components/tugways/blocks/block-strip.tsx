@@ -6,7 +6,7 @@
  * `entry`), and the Lens section bands (`LensSection`, altitude
  * `section`). One calm row of slots:
  *
- *   leading  name?  detail …  trailing…  | actions  [grip?]
+ *   leading  name?  detail …  trailing…  | actions
  *
  * The strip owns only the row STRUCTURE and the three span wrappers it is
  * the sole author of — the name span, the detail span, and the actions
@@ -47,13 +47,6 @@ export interface BlockStripProps {
    * pick up the `block-strip.css` overrides.
    */
   altitude?: BlockAltitude;
-  /**
-   * Trailing-most slot — a drag grip ({@link BlockGrip}), rendered past
-   * the actions cluster at the strip's right edge. Absent (the
-   * leaf/entry default) ⇒ nothing in the row, so the right edge aligns
-   * identically to a strip with no grip.
-   */
-  grip?: React.ReactNode;
   /**
    * The pre-composed leading node — the lifecycle dot
    * (`tool-call-header-dot`) or a caller-wrapped leading glyph span
@@ -113,10 +106,16 @@ export interface BlockStripProps {
   /**
    * Click handler on the strip root. A caller that treats the whole band
    * as an affordance (the Lens section bands focus their section's list)
-   * wires it here; slot contents that own their own clicks (buttons, the
-   * grip) stop propagation or are filtered by the caller.
+   * wires it here; slot contents that own their own clicks (buttons) stop
+   * propagation or are filtered by the caller.
    */
   onClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  /**
+   * Pointerdown handler on the strip root. A caller that makes the whole
+   * strip draggable (the Lens section bands are carried to reorder) wires it
+   * here and does its own filtering of presses that landed on a control.
+   */
+  onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void;
 }
 
 /**
@@ -128,7 +127,6 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
   function BlockStrip(
     {
       altitude = "leaf",
-      grip,
       leading,
       name,
       nameFindable = false,
@@ -141,6 +139,7 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
       dataPhase,
       dataCollapsed,
       onClick,
+      onPointerDown,
     },
     ref,
   ) {
@@ -154,6 +153,7 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
         data-collapsed={dataCollapsed ? "true" : undefined}
         className={className}
         onClick={onClick}
+        onPointerDown={onPointerDown}
       >
         {/* The lifecycle dot or a caller-wrapped leading glyph. */}
         {leading}
@@ -174,8 +174,6 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
         {/* Trailing actions cluster — the strip owns the span so the pipe
             rule + gap discipline is shared at every altitude. */}
         <span className="tool-call-header-actions">{actions}</span>
-        {/* Trailing-most drag grip ([P04]); absent at leaf/entry. */}
-        {grip}
       </div>
     );
   },

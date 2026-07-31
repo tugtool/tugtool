@@ -23,9 +23,9 @@
  *     walks under the cursor keys.
  *   - **A narrow Lens keeps its band whole (E):** with the rail at its minimum
  *     width, the field gives its own width and every band still ends with its
- *     drag grip inside the band. Fails if the field holds its dial width under
- *     pressure — the row then overflows and pushes the grip out past the rail's
- *     edge, where it cannot be grabbed.
+ *     actions cluster inside the band. Fails if the field holds its dial width
+ *     under pressure — the row then overflows and pushes the fold chevron out
+ *     past the rail's edge, where it cannot be clicked.
  *   - **An empty section's filter is inert (F):** a band whose list has no items
  *     at all disables its field and registers no focus stop for it. The pair
  *     with (B) is the point: emptiness disables, filtered-emptiness never does.
@@ -247,18 +247,18 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
 
           // (E) The rail opened at its MINIMUM width (seeded above), which is
           // the narrowest the user can drag it to. Every band must still end
-          // with its grip inside the band's own box, and the field must be the
-          // thing that gave — narrower than its resting dial width.
+          // with its actions cluster inside the band's own box, and the field
+          // must be the thing that gave — narrower than its resting dial width.
           const bands = await app.evalJS<
             { kind: string; overflow: number }[]
           >(`Array.prototype.map.call(
             document.querySelectorAll('.lens-section'),
             function (section) {
               var band = section.querySelector('.tool-call-header');
-              var grip = band.querySelector('.block-grip');
+              var actions = band.querySelector('.tool-call-header-actions');
               return {
                 kind: section.getAttribute('data-lens-section'),
-                overflow: grip.getBoundingClientRect().right
+                overflow: actions.getBoundingClientRect().right
                   - (band.getBoundingClientRect().right - parseFloat(getComputedStyle(band).paddingRight)),
               };
             }

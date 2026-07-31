@@ -25,7 +25,9 @@
  *    in list mode so the editor's CM6 undo wins while typing). Each display
  *    row also carries a hover-reveal delete button for the pointer.
  *  - A row's incipit is draggable into a session prompt (native HTML5 drag,
- *    `snippetDragStart`); the grip reorders (commit on drop, [Q02]).
+ *    `snippetDragStart`); dragging the row VERTICALLY reorders instead
+ *    (commit on drop, [Q02]). One surface, two drags, told apart by axis in
+ *    `block-reorder`.
  *
  * One cell kind (`"snippet"`) branches display/editor on `editingId` — never
  * two kinds for one row ([L26]). Laws: [L02] store via `useSyncExternalStore`;
@@ -71,7 +73,6 @@ import {
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
-import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
 import { LENS_LIST_PRESENTATION } from "@/components/lens/lens-list-presentation";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { useBlockReorder } from "@/components/lens/block-reorder";
@@ -134,7 +135,7 @@ function copySnippetText(text: string): void {
 
 /** Row verbs provided by the section body to the module-level cell. */
 interface SnippetsCellContextValue {
-  onGripPointerDown: (id: string, event: React.PointerEvent) => void;
+  onRowPointerDown: (id: string, event: React.PointerEvent) => void;
   /** Open the destructive-delete confirm popover anchored to the row. */
   onRequestDelete: (id: string, anchorEl: HTMLElement) => void;
 }
@@ -190,10 +191,10 @@ function SnippetsHeaderActions(): React.ReactElement {
  */
 const ROW_ACTION_FOCUS_GROUP = "lens-snippet-row-actions";
 
-/** The display row on the shared `TugListRow` chrome: the reorder grip leads,
- *  the draggable incipit is the content column, and a hover-reveal delete is
- *  the trailing accessory. Row padding / hover / divider / caret come from the
- *  row + the enclosing flush `TugListView`. */
+/** The display row on the shared `TugListRow` chrome: the draggable incipit is
+ *  the content column and a hover-reveal copy / delete pair is the trailing
+ *  accessory. The row is also its own reorder handle. Row padding / hover /
+ *  divider / caret come from the row + the enclosing flush `TugListView`. */
 function SnippetDisplayRow({
   snippet,
   selected,
@@ -221,13 +222,10 @@ function SnippetDisplayRow({
       className="snippet-row-content"
       data-snippet-id={snippet.id}
       selected={selected}
-      grip={
-        ctx !== null ? (
-          <BlockGrip
-            onPointerDown={(e) => ctx.onGripPointerDown(snippet.id, e)}
-          />
-        ) : undefined
-      }
+      // The row is its own reorder handle. A VERTICAL drag carries it; a
+      // horizontal one is left to the incipit's native drag-out below, which
+      // is why the two can share the same surface ([P08]).
+      onPointerDown={(e) => ctx?.onRowPointerDown(snippet.id, e)}
       trailing={
         ctx !== null ? (
           <>
@@ -616,7 +614,7 @@ function SnippetEditorRow({
       : null;
 
   // The open card: the snippet's own row stays as the card HEADER (selection
-  // fill, grip, copy / close), and the editor is the WELL beneath it. The two
+  // fill, copy / close), and the editor is the WELL beneath it. The two
   // compose as one full-width card whose edges are the list's existing lines —
   // no border of its own, so no nested rectangles are possible.
   return (
@@ -636,13 +634,7 @@ function SnippetEditorRow({
         className="snippet-editor-header"
         data-snippet-id={snippet.id}
         selected
-        grip={
-          ctx !== null ? (
-            <BlockGrip
-              onPointerDown={(e) => ctx.onGripPointerDown(snippet.id, e)}
-            />
-          ) : undefined
-        }
+        onPointerDown={(e) => ctx?.onRowPointerDown(snippet.id, e)}
         trailing={
           <>
             <TugIconButton
@@ -851,34 +843,37 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     [dataSource, store],
   );
 
-  // Reorder by grip: commit on drop ([Q02]). Rows are matched by their stable
-  // `data-snippet-id`; the FLIP animates the row content, the store commit
-  // reorders the document.
-  const { onGripPointerDown: beginGripReorder } = useBlockReorder({
+  // Reorder by carrying the row: commit on drop ([Q02]). Rows are matched by
+  // their stable `data-snippet-id`; the FLIP animates the row content, the
+  // store commit reorders the document.
+  const { onRowPointerDown: beginRowReorder } = useBlockReorder({
     containerRef: listWrapRef,
     caretRef,
     getVisibleOrder: () => snapshot.doc.snippets.map((s) => s.id),
     commit: (order) => store.setOrder([...order]),
     selector: ROW_SELECTOR,
     kindAttr: ROW_KIND_ATTR,
+    // The incipit is a native drag source into a session prompt, so the arm
+    // must not cancel the press the browser starts that drag from.
+    nativeDragSource: true,
   });
   // Reorder is unavailable while a filter is active: the drop order the drag
   // computes describes the VISIBLE rows, and `store.setOrder` expects the whole
   // document — there is no coherent way to splice a partial order back in. The
-  // grips hide via `data-filter-active` + CSS ([L06]) and the handler no-ops.
-  const onGripPointerDown = useCallback(
+  // gesture is simply never armed while the filter is on.
+  const onRowPointerDown = useCallback(
     (id: string, event: React.PointerEvent): void => {
       if (filtering) return;
-      beginGripReorder(id, event);
+      beginRowReorder(id, event);
     },
-    [filtering, beginGripReorder],
+    [filtering, beginRowReorder],
   );
   const cellContext = useMemo<SnippetsCellContextValue>(
     () => ({
-      onGripPointerDown,
+      onRowPointerDown,
       onRequestDelete: (id, anchorEl) => setPendingDelete({ id, anchorEl }),
     }),
-    [onGripPointerDown],
+    [onRowPointerDown],
   );
 
   // The keyboard's current row — the movement cursor's cell (`data-key-cursor`),

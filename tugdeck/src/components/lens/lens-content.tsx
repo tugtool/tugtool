@@ -15,7 +15,7 @@
  * Responsibilities:
  *   - Derive the section order from `lensStore` over the registered
  *     sections ([L02] via `useSyncExternalStore`).
- *   - Drag-reorder sections from their grips: a DOM-only live preview
+ *   - Drag-reorder sections by carrying their bands: a DOM-only live preview
  *     (flex `order`) during the drag, committing `lensStore.setSectionOrder`
  *     only on drop ([P08], [L06]/[L08]).
  *   - Keep the FocusManager group-walk order in lock-step with the
@@ -119,9 +119,9 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderKey, focusManager, cardId]);
 
-  // Drag-reorder from a section grip: FLIP visuals (ghost + close-up + drop
-  // caret + settle), DOM/CSS only, committing the store on drop ([P08]).
-  const { onGripPointerDown } = useBlockReorder({
+  // Drag-reorder by carrying the band itself: FLIP visuals (ghost + close-up +
+  // drop caret + settle), DOM/CSS only, committing the store on drop ([P08]).
+  const { onRowPointerDown } = useBlockReorder({
     containerRef: sectionsRef,
     caretRef,
     getVisibleOrder: () =>
@@ -177,7 +177,7 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
                 def={def}
                 host={host}
                 collapsed={collapsed.has(kind)}
-                onGripPointerDown={onGripPointerDown}
+                onBandPointerDown={onRowPointerDown}
               />
             );
           })}

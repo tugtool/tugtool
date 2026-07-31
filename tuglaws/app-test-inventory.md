@@ -1056,6 +1056,11 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Tests:** `at0290-snippet-delete-confirm-anchor.test.ts`.
 - **Summary:** A Snippets row's ✕ is a hover reveal and the confirm popover it raises covers the row it came from, so a ✕-anchored popover loses its anchor while open, re-resolves, and hops away from the pointer about to answer it. The anchor is the ROW, which outlives the question: the popover's rect is sampled repeatedly and holds (within a pixel of subpixel height rounding), it is centered on the row's midpoint and sits above it (`data-side="top"`, arrow pointing down), and its center is nowhere near the trailing-edge ✕ — the assertion that actually catches an anchor regression, since the harness leaves the clicked row SELECTED and a selected row keeps its accessories revealed, so the collapse never occurs under test. Also gates the size: a controlled-mode confirm carries `data-anchored="external"` and drops the trigger-width floor, so the box is narrower than the full-width row it is anchored to.
 
+#### [AT0296] The Lens row is the handle
+- **Status:** ✅ open (regression gate).
+- **Tests:** `at0296-lens-row-is-the-handle.test.ts`.
+- **Summary:** There is no reorder grip in the Lens: a press anywhere on a row that is not one of its controls arms a carry, and travel past the threshold engages it. The gate asserts the absence directly — every other assertion here would still pass with a grip present — and then pins the hard case, the Snippets row, whose incipit is ALSO a native HTML5 drag source into a session prompt. One surface, two drags, told apart by axis: a vertical drag reorders (the DOM order moves AND `snippets.json` commits it), a horizontal one of the same length leaves the order untouched, which is the assertion that fails if the axis arbitration is dropped and the carry starts swallowing the drag-out.
+
 ## Maintenance
 
 This file is append-only for the tag list. Status fields update as fixes land or regress. Removing a tag requires a documented decision and a successor tag noted inline (`[M{NN}] superseded by [M{MM}] — see ...`).
