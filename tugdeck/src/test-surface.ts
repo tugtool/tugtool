@@ -63,6 +63,10 @@ import {
   snapshotRowParseCounters,
   type RowParseCountersSnapshot,
 } from "./lib/markdown/parse-counters";
+import {
+  annotateCounters,
+  type AnnotateCountersSnapshot,
+} from "./lib/annotator/annotate-counters";
 
 // ---------------------------------------------------------------------------
 // Public types (`TugTestSurface`)
@@ -847,6 +851,7 @@ export interface TugTestSurface {
     liveTurn: LiveTurnPerf | null;
     lastLiveTurn: LiveTurnPerf | null;
     rowParse: RowParseCountersSnapshot;
+    annotate: AnnotateCountersSnapshot;
   };
 
   /**
@@ -1789,6 +1794,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       liveTurn: LiveTurnPerf | null;
       lastLiveTurn: LiveTurnPerf | null;
       rowParse: RowParseCountersSnapshot;
+      annotate: AnnotateCountersSnapshot;
     } {
       const services = cardServicesStore.getServices(cardId);
       if (services === null) {
@@ -1800,6 +1806,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       return {
         ...services.codeSessionStore._getPerfForDevPanel(),
         rowParse: snapshotRowParseCounters(),
+        annotate: annotateCounters(),
       };
     },
 

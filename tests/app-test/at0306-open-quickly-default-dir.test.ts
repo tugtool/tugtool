@@ -24,9 +24,15 @@
  *
  *   A third covers what the bar owes the user about the places it offers: two
  *   spellings of one directory are one entry, two different directories that
- *   share a leaf name are told apart, an empty directory says so instead of
- *   showing a blank panel, and the popup keeps Tab so the switcher is
- *   reachable without the mouse.
+ *   share a leaf name are told apart, and an empty directory says so instead
+ *   of showing a blank panel.
+ *
+ *   A fourth drives the switcher with REAL key events end to end — Tab opens
+ *   the menu, Escape returns the keyboard to the field, arrows + Return swap
+ *   the root, and typing then narrows the new one. Real keys because the two
+ *   ways this broke were both invisible to synthetic ones: macOS omits
+ *   buttons from the native Tab order unless Full Keyboard Access is on, and
+ *   the engine reclaims DOM focus from any control marked focus-refusing.
  *
  * Gating
  * ------
@@ -382,6 +388,114 @@ describe.skipIf(!SHOULD_RUN)(
           // The symlink collapsed into its target: three recents, two places.
           // The two real `proj` directories are told apart by their parents.
           expect(items).toEqual(["tug", "a/proj", "c/proj"]);
+        } finally {
+          await app.close();
+          rmSync(base, { recursive: true, force: true });
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "the switcher is reachable and operable from the keyboard alone",
+      async () => {
+        // Driven with REAL key events, because every failure this pins was
+        // invisible to a synthetic one: macOS skips buttons in the native Tab
+        // order unless Full Keyboard Access is on, and the engine reclaims DOM
+        // focus from any control that refuses it. Both only show up when a
+        // real Tab lands in a real app.
+        const base = mkdtempSync(`${tmpdir()}/at0306-keys-`);
+        mkdirSync(`${base}/tug`);
+        writeFileSync(`${base}/tug/${MARKER}`, "in the default\n");
+        mkdirSync(`${base}/other`);
+        writeFileSync(`${base}/other/${OTHER_MARKER}`, "elsewhere\n");
+
+        const app = await launchTugApp({ testName: "at0306-open-quickly-keys" });
+        try {
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(OVERLAY_ROOT)}) !== null`,
+            { timeoutMs: 20000 },
+          );
+          await app.evalJS<null>(
+            `(window.__tug.setTugbankValue("dev.tugtool.app", "default-project-path", { kind: "string", value: ${JSON.stringify(`${base}/tug`)} }),
+              window.__tug.setTugbankValue("dev.tugtool.dev", "recent-projects", { kind: "json", value: { paths: [${JSON.stringify(`${base}/other`)}] } }),
+              null)`,
+          );
+          await app.evalJS<null>(
+            `(window.__tug.dispatchControlAction("open-quickly"), null)`,
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(SWITCHER)}) !== null`,
+            { timeoutMs: 10000 },
+          );
+          const fieldHasFocus = `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`;
+          await app.waitForCondition<boolean>(fieldHasFocus, {
+            timeoutMs: 8000,
+          });
+
+          // Tab opens the menu outright — no intermediate focus stop on the
+          // trigger, which the engine would take back anyway.
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) !== null`,
+            { timeoutMs: 8000 },
+          );
+          // The popup is still up: opening its own menu must not read as the
+          // field losing focus.
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(POPUP)}) !== null`,
+            ),
+          ).toBe(true);
+
+          // Escape closes the menu and hands the keyboard back to the field —
+          // not to the engine's key sink, which would leave a visible popup
+          // that swallows every keystroke.
+          await app.nativeKey("Escape");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) === null`,
+            { timeoutMs: 8000 },
+          );
+          await app.waitForCondition<boolean>(fieldHasFocus, {
+            timeoutMs: 8000,
+          });
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(POPUP)}) !== null`,
+            ),
+          ).toBe(true);
+
+          // Reopen and pick the second entry with arrows + Return.
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) !== null`,
+            { timeoutMs: 8000 },
+          );
+          await app.nativeKey("ArrowDown");
+          await app.nativeKey("ArrowDown");
+          await app.nativeKey("Enter");
+
+          // The root swapped, and the field has the keyboard again.
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(INPUT)})
+               .getAttribute("placeholder") === "Open Quickly in other"`,
+            { timeoutMs: 10000 },
+          );
+          await app.waitForCondition<boolean>(fieldHasFocus, {
+            timeoutMs: 8000,
+          });
+
+          // …and it really is the keyboard: typing narrows the new root.
+          await typeIntoField(app, "at0306-");
+          await app.waitForCondition<boolean>(
+            `(function () {
+               var rows = Array.from(document.querySelectorAll(${JSON.stringify(ROWS)}))
+                 .map(function (el) { return el.textContent || ""; });
+               return rows.length > 0 &&
+                 rows.some(function (t) { return t.indexOf(${JSON.stringify(OTHER_MARKER)}) !== -1; });
+             })()`,
+            { timeoutMs: 15000 },
+          );
         } finally {
           await app.close();
           rmSync(base, { recursive: true, force: true });
