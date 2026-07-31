@@ -68,6 +68,28 @@
  * property can *transition* between two arrangements; one that switches from
  * `right` to `left` can only cut.
  *
+ * ## The space allocator
+ *
+ * The placement rule takes the band as given, so whatever the band's width
+ * leaves over shows up as slack between the cards: a deck a little too wide
+ * spreads them apart, a deck a little too narrow overlaps them. Nothing inside
+ * the rule can absorb that — card widths belong to the panes, and an offset is a
+ * pure function of the band.
+ *
+ * One number can. The pinned Lens is the band's other end, so its width and the
+ * band's are the same quantity read from opposite sides. The **space allocator**
+ * ({@link allocateLensWidth}) treats it as flexible within
+ * {@link LENS_FLEX_FRACTION} of the width the user chose, and picks the value
+ * that puts every seam in the chain on one imposition gap — a closed-form
+ * least-squares fit, since each seam is linear in the band. Out of range, it
+ * declines and the user's width stands.
+ *
+ * The deck asks for that at three moments and no others: a Layouts-section pick,
+ * a settled manual window resize, and a settled OS-driven one. A card joining or
+ * leaving a slot is deliberately not one of them — a single card is not enough
+ * to move the Lens, and the deck must never feel like it is rearranging itself
+ * under the user's hands.
+ *
  * Pure module: no DOM, store, or React runtime imports — the same discipline as
  * `snap.ts`. (`React.CSSProperties` below is a type-only import.)
  *
@@ -427,6 +449,146 @@ export function imposeStyle(
     fraction === 0 ? "0px" : `${fraction} * max(0px, ${band} - ${paneWidth}px)`;
   style.left = `calc(0% + ${INSET_LEFT} + ${GAP} + ${offset})`;
   return style;
+}
+
+/* ---------------------------------------------------------------------------
+ * The space allocator
+ * ---------------------------------------------------------------------------*/
+
+/**
+ * How far the allocator may flex the Lens from the width the user chose, as a
+ * fraction of it.
+ *
+ * Sized from what the residual actually costs at real card widths. A seam off
+ * by `d` needs a band correction of `d / (fⱼ₊₁ − fⱼ)` — twice `d` at the
+ * half-stride that three-up and five-up-every-other produce — so an arrangement
+ * of 800px cards standing 30px apart wants the Lens 45–60px wider. A tenth of
+ * the 420px default width is 42px: it declined exactly the cases that look most
+ * obviously repairable, by a few pixels. A fifth covers them and still stops
+ * well short of a width the user would read as the deck rearranging itself.
+ *
+ * {@link AllocatorInput.minWidth} clips the low end independently, so widening
+ * this cannot push the Lens under its floor.
+ */
+export const LENS_FLEX_FRACTION = 0.2;
+
+/**
+ * How long the canvas must hold still before a resize counts as settled and the
+ * allocator re-tunes (`deck-canvas.tsx`). Lives here so the imposer's tuning
+ * surface stays in one module, beside {@link IMPOSITION_SETTLE_MS}.
+ */
+export const RESIZE_RETUNE_QUIET_MS = 200;
+
+/** Everything {@link allocateLensWidth} reads. All lengths in layout px. */
+export interface AllocatorInput {
+  /** The canvas (frames' container) client width. */
+  canvasWidth: number;
+  /** The active kind; its slot count defines the travel fractions. */
+  kind: ImpositionKind;
+  /**
+   * The occupied slots and the width each one renders at — the RENDER width,
+   * already raised to the stack's size floor, since that is the width the chain
+   * actually paints. Duplicates are folded by taking the widest.
+   */
+  occupied: readonly { slot: number; width: number }[];
+  /** The width the user chose, which the flex range is centred on. */
+  preferredWidth: number;
+  /** The hard floor the Lens may not go below. */
+  minWidth: number;
+}
+
+/**
+ * The width the pinned Lens should render at so the imposed chain tiles evenly.
+ *
+ * ## What is being solved
+ *
+ * A slot is an anchor at a fixed fraction of the band, and a pane's width is its
+ * own — so the slack between two adjacent imposed cards is whatever the band's
+ * width leaves over. Choose an arrangement on a wide deck and the cards stand
+ * apart; narrow the window slightly and the same arrangement overlaps. Neither
+ * is wrong, but neither is what the eye wants either, and no number in the
+ * placement rule can fix it: card widths belong to the panes ([L09]) and the
+ * offsets are pure functions of the band.
+ *
+ * The Lens's width is the one quantity that can absorb the residual, because it
+ * *is* the band's other end: `band = canvasWidth − lensWidth − 3 × gap` (the
+ * Lens stands a gap off the canvas edge, and the chain is inset one gap at each
+ * end of what is left). Flexing the Lens a little moves every seam at once.
+ *
+ * ## The solve
+ *
+ * With `fⱼ` the travel fraction of the j-th occupied slot and `wⱼ` its render
+ * width, the seam between neighbours `j` and `j+1` is linear in the band:
+ *
+ * ```
+ *   seamⱼ(B) = aⱼ·B + cⱼ      aⱼ = fⱼ₊₁ − fⱼ      cⱼ = fⱼwⱼ − fⱼ₊₁wⱼ₊₁ − wⱼ
+ * ```
+ *
+ * so the band that puts every seam as close to one imposition gap as it can is
+ * a plain least-squares fit with a closed form — no iteration, no measurement:
+ *
+ * ```
+ *   B* = Σ aⱼ(gap − cⱼ) / Σ aⱼ²        L* = canvasWidth − 3·gap − B*
+ * ```
+ *
+ * For the common case — uniform card widths at an even stride, e.g. five-up
+ * with slots 1, 3 and 5 — the fit is exact and every seam lands on the gap.
+ * Irregular occupancy has no band that tiles it exactly; the fit spreads the
+ * error, which usually lands out of range and reverts.
+ *
+ * ## When it declines
+ *
+ * The result is only used if it lands within {@link LENS_FLEX_FRACTION} of the
+ * preferred width and above `minWidth`. Otherwise the preferred width is
+ * returned unchanged: a half-corrected 100px gap reads as nothing at all, while
+ * the classic even spread at least reads as intentional. Fewer than two
+ * occupied slots has no seam to solve for, and also returns preferred.
+ *
+ * Total by construction: never throws, and always returns a finite width —
+ * `preferredWidth` is the universal fallback.
+ */
+export function allocateLensWidth(input: AllocatorInput): number {
+  const { canvasWidth, kind, occupied, preferredWidth, minWidth } = input;
+  if (!Number.isFinite(preferredWidth) || preferredWidth <= 0) return preferredWidth;
+  if (!Number.isFinite(canvasWidth) || !Number.isFinite(minWidth)) return preferredWidth;
+
+  // Fold duplicate slots by the widest pane standing there, and order the chain
+  // left to right — the seams below are between neighbours in that order.
+  const widest = new Map<number, number>();
+  for (const entry of occupied) {
+    if (!Number.isFinite(entry.width) || !Number.isFinite(entry.slot)) return preferredWidth;
+    const slot = clampSlot(kind, entry.slot);
+    const held = widest.get(slot);
+    if (held === undefined || entry.width > held) widest.set(slot, entry.width);
+  }
+  const chain = [...widest.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([slot, width]) => ({ slot, width }));
+  if (chain.length < 2) return preferredWidth;
+
+  const count = slotCount(kind);
+  let numerator = 0;
+  let denominator = 0;
+  for (let j = 0; j < chain.length - 1; j += 1) {
+    const near = chain[j];
+    const far = chain[j + 1];
+    const fNear = travelFraction({ slot: near.slot, count });
+    const fFar = travelFraction({ slot: far.slot, count });
+    const a = fFar - fNear;
+    const c = fNear * near.width - fFar * far.width - near.width;
+    numerator += a * (IMPOSITION_GAP_PX - c);
+    denominator += a * a;
+  }
+  if (denominator <= 0) return preferredWidth;
+
+  const band = numerator / denominator;
+  const allocated = Math.round(canvasWidth - IMPOSITION_GAP_PX * 3 - band);
+  if (!Number.isFinite(allocated)) return preferredWidth;
+
+  const low = Math.max(minWidth, Math.round(preferredWidth * (1 - LENS_FLEX_FRACTION)));
+  const high = Math.round(preferredWidth * (1 + LENS_FLEX_FRACTION));
+  if (allocated < low || allocated > high) return preferredWidth;
+  return allocated;
 }
 
 /**

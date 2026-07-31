@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | kocienda |
-| Status | draft |
+| Status | implemented |
 | Target branch | main |
 | Last updated | 2026-07-31 |
 
@@ -374,13 +374,13 @@ Normative rules:
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Resize click threshold — stop the stealth eviction | pending | — |
-| #step-2 | The space-allocator solver | pending | — |
-| #step-3 | Re-tune plumbing: moment 1 (Layouts pick) | pending | — |
-| #step-4 | Settled-resize observer: moments 2–3 | pending | — |
-| #step-5 | Settle FLIP for re-tunes (signature term) | pending | — |
-| #step-6 | Allocator app-test | pending | — |
-| #step-7 | Integration checkpoint | pending | — |
+| #step-1 | Resize click threshold — stop the stealth eviction | done | 5d32356ff |
+| #step-2 | The space-allocator solver | done | f75f9bef8 |
+| #step-3 | Re-tune plumbing: moment 1 (Layouts pick) | done | 3fe20b00b |
+| #step-4 | Settled-resize observer: moments 2–3 | done | e4ddddaab |
+| #step-5 | Settle FLIP for re-tunes (signature term) | done | e4ddddaab (folded with Step 4) |
+| #step-6 | Allocator app-test | done | c6a152686 |
+| #step-7 | Integration checkpoint | done | 49ce06493 |
 
 #### Step 1: Resize click threshold — stop the stealth eviction {#step-1}
 

@@ -50,6 +50,7 @@ import {
   IMPOSITION_GAP_PX,
   IMPOSITION_SETTLE_MS,
   LENS_WIDTH_PROPERTY,
+  RESIZE_RETUNE_QUIET_MS,
 } from "@/lib/layout-imposer";
 
 // ---- DeckCanvasProps ----
@@ -83,10 +84,30 @@ const CARD_ZINDEX_BASE = 1;
 const LENS_PANE_ZINDEX = 8999;
 
 /**
- * Everything the imposer reads, as one string: the imposition record and which
- * pane holds which slot. Two decks with the same signature put every derived
- * frame in the same place, so a change to it is exactly the set of moments the
- * deck should cross to a new arrangement rather than cut.
+ * The width the pinned Lens PAINTS at: its stored width raised to its stack's
+ * size floor. A stored width below the floor is a number the frame never shows,
+ * so packing the band on it would run the chain under the Lens's real edge.
+ * Zero when there is no pinned Lens to inset the band.
+ */
+function lensRenderWidthOf(state: DeckState): number {
+  const lensPane = findLensPane(state);
+  if (lensPane === undefined || !isLensPinned(state.imposition)) return 0;
+  return Math.max(
+    lensPane.size.width,
+    getStackSizePolicy(
+      state.cards
+        .filter((card) => lensPane.cardIds.includes(card.id))
+        .map((card) => card.componentId),
+    ).min.width,
+  );
+}
+
+/**
+ * Everything the imposer reads, as one string: the imposition record, which
+ * pane holds which slot, and the pinned Lens's width. Two decks with the same
+ * signature put every derived frame in the same place, so a change to it is
+ * exactly the set of moments the deck should cross to a new arrangement rather
+ * than cut.
  *
  * The pane terms are sorted, so the signature is blind to the panes array's
  * ORDER — which is z-order, and z-order moves nothing: `imposeRect` reads a
@@ -94,6 +115,13 @@ const LENS_PANE_ZINDEX = 8999;
  * sensitivity here would make every pane activation — a click on a title bar —
  * arm a settle window with no frame to move in it, holding session
  * notifications for the length of a motion that never happens.
+ *
+ * The Lens width is a term because the space allocator can change it with the
+ * arrangement otherwise untouched — a settled window resize re-solves the width
+ * and nothing else — and every imposed frame moves when it does. Without the
+ * term that motion would cut. It changes on a Lens edge drag too, which arms a
+ * window whose tweens are all no-ops: the drag wrote the width live, so each
+ * frame's first and last rects are the same one.
  */
 function arrangementSignature(state: DeckState): string {
   const panes = state.panes
@@ -101,7 +129,7 @@ function arrangementSignature(state: DeckState): string {
     .sort();
   return `${state.imposition.kind ?? ""}|${state.imposition.lens}|${
     isLensPinned(state.imposition) ? "pinned" : "free"
-  }|${panes.join(",")}`;
+  }|${lensRenderWidthOf(state)}|${panes.join(",")}`;
 }
 
 /**
@@ -658,8 +686,13 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // pane may still be dragged there. The two insets reach CSS as custom
   // properties on the frames' own containing block, so an imposed frame's
   // `calc()` tracks a window resize or a Lens width drag with no JavaScript at
-  // all ([L06]). This is why the deck observes no resizes at all: the browser
-  // does the reflow.
+  // all ([L06]). This is why a resize costs the deck nothing while it is
+  // happening: the browser does the reflow, and no code here runs per frame.
+  //
+  // The one exception is the settled-resize observer below, which runs no
+  // geometry of its own and only after the canvas has stopped moving. The live
+  // path stays pure CSS, and it must stay that way — nothing else may be hung
+  // off that observer.
   //
   // The inset is the Lens's width plus one gap, because the Lens is itself
   // imposed a gap off the canvas edge — its near edge is that far in. The
@@ -676,17 +709,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // in the browser's next reflow: the Lens grows off its own pinned edge and
   // the cards re-impose live under the moving edge, which is the same response
   // the deck already gives a window resize.
-  const lensRenderWidth =
-    lensPane === undefined || lensSide === null
-      ? 0
-      : Math.max(
-          lensPane.size.width,
-          getStackSizePolicy(
-            cards
-              .filter((card) => lensPane.cardIds.includes(card.id))
-              .map((card) => card.componentId),
-          ).min.width,
-        );
+  const lensRenderWidth = lensRenderWidthOf(deckState);
   const lensInset =
     lensRenderWidth === 0
       ? "0px"
@@ -704,6 +727,55 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       lensSide === "right" ? lensInset : "0px",
     );
   }, [lensSide, lensInset, lensRenderWidth]);
+
+  // ---------------------------------------------------------------------------
+  // Settled-resize re-tune
+  // ---------------------------------------------------------------------------
+  // A new canvas width is a new band, and the Lens width that made the chain
+  // tile evenly at the old one may not at the new one. So the space allocator
+  // gets a third moment beside the Layouts pick: the canvas came to rest at a
+  // size it was not at before — because the user dragged the window edge, or
+  // because the OS resized it (a display change, a space move).
+  //
+  // Both are the same event as far as the deck is concerned, and neither is
+  // observed WHILE it happens: the timer restarts on every observation and only
+  // its expiry asks the store to re-tune, so a drag of the window edge runs the
+  // pure-CSS path throughout and re-tunes once, when the hand stops. Observing
+  // the container rather than `window` also catches host chrome that resizes
+  // the canvas without a window resize event.
+  //
+  // `ResizeObserver` reports the current size as soon as it starts observing.
+  // That one is swallowed — a deck that re-tuned as it appeared would rearrange
+  // itself under the user at the worst possible moment, before they had touched
+  // anything ([L03]: registration and its cleanup live in a layout effect; the
+  // timer is a ref, not React state).
+  const retuneTimerRef = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let seenInitial = false;
+    const observer = new ResizeObserver(() => {
+      if (!seenInitial) {
+        seenInitial = true;
+        return;
+      }
+      if (retuneTimerRef.current !== null) {
+        window.clearTimeout(retuneTimerRef.current);
+      }
+      retuneTimerRef.current = window.setTimeout(() => {
+        retuneTimerRef.current = null;
+        store.retuneLensAllocation();
+      }, RESIZE_RETUNE_QUIET_MS);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      if (retuneTimerRef.current !== null) {
+        window.clearTimeout(retuneTimerRef.current);
+        retuneTimerRef.current = null;
+      }
+    };
+  }, [store]);
 
   // ---------------------------------------------------------------------------
   // Settling into a new arrangement

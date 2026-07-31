@@ -185,11 +185,13 @@ async function viewportWidth(app: App): Promise<number> {
  * canvas minus the Lens's side, the band is the span inset by a gap at each
  * end, and the slot rides `slot / (count - 1)` of the leftover travel.
  *
- * `lensWidth` is MEASURED rather than taken from the seed. A pane renders at
- * its stored width raised to its stack's size floor, and the Lens card's floor
- * is above the width seeded here — so the seeded number is not the number the
- * band is inset by. The slot arithmetic is what this checks; the floor is
- * `at0284`'s business.
+ * `lensWidth` is MEASURED rather than taken from the seed, and re-measured at
+ * each assertion rather than once at rest. A pane renders at its stored width
+ * raised to its stack's size floor, and an arrangement change re-runs the space
+ * allocator, which may hand the Lens a different width than the one seeded here
+ * — so neither the seeded number nor an earlier reading is the number the band
+ * is inset by. The slot arithmetic is what this checks; the width the Lens
+ * arrives at is `at0303`'s business, and the floor is `at0284`'s.
  */
 function expectedLeft(
   slot: number,
@@ -248,7 +250,6 @@ describe.skipIf(!SHOULD_RUN)(
           await wait(AFTER_LAND_MS);
 
           const vp = await viewportWidth(app);
-          const lens = await lensWidth(app);
 
           // --- Settle one: the Lens crosses to the left. -------------------
           await setLensSide(app, "left");
@@ -285,14 +286,17 @@ describe.skipIf(!SHOULD_RUN)(
 
           // And the frames are where the imposer says, not a tween's length
           // short of it.
-          expect(await frameLeft(app, "p1")).toBeCloseTo(
-            expectedLeft(0, 2, vp, "left", lens),
-            0,
-          );
-          expect(await frameLeft(app, "p2")).toBeCloseTo(
-            expectedLeft(1, 2, vp, "left", lens),
-            0,
-          );
+          {
+            const lens = await lensWidth(app);
+            expect(await frameLeft(app, "p1")).toBeCloseTo(
+              expectedLeft(0, 2, vp, "left", lens),
+              0,
+            );
+            expect(await frameLeft(app, "p2")).toBeCloseTo(
+              expectedLeft(1, 2, vp, "left", lens),
+              0,
+            );
+          }
 
           // --- Settle two: back to the right. ------------------------------
           // The residue only appears after a settle has completed, so a
@@ -304,7 +308,7 @@ describe.skipIf(!SHOULD_RUN)(
             expect(Object.values(inline).every((v) => v === "")).toBe(true);
           }
           expect(await frameLeft(app, "p1")).toBeCloseTo(
-            expectedLeft(0, 2, vp, "right", lens),
+            expectedLeft(0, 2, vp, "right", await lensWidth(app)),
             0,
           );
 
@@ -427,7 +431,6 @@ describe.skipIf(!SHOULD_RUN)(
           );
           await wait(AFTER_LAND_MS);
           const vp = await viewportWidth(app);
-          const lens = await lensWidth(app);
 
           // Two changes inside one window. The second measures each frame's
           // live visual rect — which includes the running tween's transform —
@@ -455,7 +458,7 @@ describe.skipIf(!SHOULD_RUN)(
           // One-up puts every imposed frame at the same centred place, and the
           // Lens now holds the left — so the retarget landed on the arrangement
           // the LAST change asked for, not the first.
-          const centred = expectedLeft(0, 1, vp, "left", lens);
+          const centred = expectedLeft(0, 1, vp, "left", await lensWidth(app));
           expect(await frameLeft(app, "p1")).toBeCloseTo(centred, 0);
           expect(await frameLeft(app, "p2")).toBeCloseTo(centred, 0);
         } finally {

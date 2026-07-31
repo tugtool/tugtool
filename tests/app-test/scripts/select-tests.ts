@@ -100,6 +100,15 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     "tugdeck/src/components/tugways/tug-text-editor/state-preservation.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/theme.ts": 30,
     "tugdeck/src/card-state-orchestrator.ts": 21,
+    // The deck's own store: every test that seeds a deck, opens or closes a card,
+    // or asserts pane geometry goes through it. Same structural coupling as the
+    // pane frame below.
+    "tugdeck/src/deck-manager.ts": 21,
+    // The pane frame itself: every test that drives a card through its title bar,
+    // its handles, its close control, or its geometry names it, because there is no
+    // smaller surface those gestures live on. The coupling is structural rather than
+    // sloppy declaration.
+    "tugdeck/src/components/chrome/tug-pane.tsx": 21,
 };
 
 interface TestCoverage {

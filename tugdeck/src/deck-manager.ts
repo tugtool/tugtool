@@ -44,6 +44,7 @@ import { LENS_CARD_ID } from "./lib/lens-card-id";
 import { findLensPane } from "./deck-store-selectors";
 import { getTugbankClient } from "./lib/tugbank-singleton";
 import { lensStore } from "./lib/lens-store/lens-store";
+import { MIN_LENS_WIDTH_PX } from "./lib/lens-store/types";
 import { TugConnection } from "./connection";
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -73,6 +74,7 @@ import type {
   MovePaneOptions,
 } from "./deck-manager-store";
 import {
+  allocateLensWidth,
   clampSlot,
   slotCount,
   isLensPinned,
@@ -1182,22 +1184,129 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Commit a new imposition record, bracketing it with the move ledger for
-   * every pane whose geometry the record derives — the slotted panes and the
-   * Lens. Their frames all move at once and none of them through a gesture, so
-   * the lifecycle has to hear about it from here.
+   * The width the pinned Lens should stand at for a given arrangement — the
+   * space allocator's answer — or `null` when the allocator does not apply.
+   *
+   * It does not apply unless the Lens is open, pinned, and there is an
+   * arrangement for it to stand at the end of: a floating or closed Lens is not
+   * the band's other end, and with no kind there is no chain to tile.
+   *
+   * The widths handed to the solver are RENDER widths, raised to each stack's
+   * size floor exactly as `TugPane` and `DeckCanvas` raise them. A chain solved
+   * on stored widths below the floor would tile a picture the deck never paints.
    */
-  private _reimpose(imposition: DeckImposition): void {
-    const lensPaneId = findLensPane(this.deckState)?.id;
-    const moved = this.deckState.panes
-      .filter((p) => p.slot !== undefined || p.id === lensPaneId)
-      .map((p) => p.activeCardId);
+  private _allocatedLensWidth(
+    panes: readonly TugPaneState[],
+    imposition: DeckImposition,
+  ): number | null {
+    const kind = imposition.kind;
+    if (kind === undefined || !isLensPinned(imposition)) return null;
+    const lensPaneId = findLensPane({ ...this.deckState, panes: [...panes] })?.id;
+    if (lensPaneId === undefined) return null;
+    const canvasWidth = this.container.clientWidth;
+    if (!canvasWidth) return null;
+
+    const cardsById = new Map<string, CardState>();
+    for (const card of this.deckState.cards) cardsById.set(card.id, card);
+    const renderWidth = (pane: TugPaneState): number =>
+      Math.max(
+        pane.size.width,
+        getStackSizePolicy(
+          pane.cardIds
+            .map((cid) => cardsById.get(cid)?.componentId)
+            .filter((cid): cid is string => cid !== undefined),
+        ).min.width,
+      );
+
+    const occupied = panes
+      .filter((pane) => pane.slot !== undefined)
+      .map((pane) => ({ slot: pane.slot as number, width: renderWidth(pane) }));
+
+    return allocateLensWidth({
+      canvasWidth,
+      kind,
+      occupied,
+      preferredWidth: lensStore.getSnapshot().widthPx,
+      minWidth: MIN_LENS_WIDTH_PX,
+    });
+  }
+
+  /**
+   * Commit an imposition record and the panes it derives geometry for,
+   * bracketing both with the lifecycle ledger. Every slotted pane's frame moves
+   * — the imposition record is what places them — and the Lens moves with them,
+   * so the ledger is built from the fact of the chain rather than from a diff of
+   * stored positions, which imposition never writes.
+   *
+   * The space allocator runs here, on the panes and imposition being committed
+   * rather than on the ones being replaced, so a kind change is solved against
+   * the arrangement it is turning into. Its answer is written into the Lens
+   * pane's `size.width` — the live width — and deliberately NOT through
+   * `movePane`, whose Lens mirror is what makes `lensStore.widthPx` mean "the
+   * width the user chose". An allocation routed through that mirror would
+   * quietly overwrite the preference it is supposed to flex around.
+   */
+  private _commitImposition(
+    imposition: DeckImposition,
+    panes: readonly TugPaneState[],
+  ): void {
+    const lensPane = findLensPane({ ...this.deckState, panes: [...panes] });
+    const allocated = this._allocatedLensWidth(panes, imposition);
+    const lensResized =
+      lensPane !== undefined &&
+      allocated !== null &&
+      Math.abs(allocated - lensPane.size.width) >= 1;
+    const nextPanes = lensResized
+      ? panes.map((pane) =>
+          pane.id === lensPane.id
+            ? { ...pane, size: { ...pane.size, width: allocated } }
+            : pane,
+        )
+      : [...panes];
+
+    const moved = nextPanes
+      .filter((pane) => pane.slot !== undefined || pane.id === lensPane?.id)
+      .map((pane) => pane.activeCardId);
 
     for (const cardId of moved) this.cardLifecycle.notifyCardWillMove(cardId);
-    this.deckState = { ...this.deckState, imposition };
+    if (lensResized) this.cardLifecycle.notifyCardWillResize(lensPane.activeCardId);
+    this.deckState = { ...this.deckState, panes: nextPanes, imposition };
     this.notify();
+    if (lensResized) this.cardLifecycle.notifyCardDidResize(lensPane.activeCardId);
     for (const cardId of moved) this.cardLifecycle.notifyCardDidMove(cardId);
     this.scheduleSave();
+  }
+
+  /**
+   * Re-solve the pinned Lens's width for the arrangement as it stands, and
+   * commit it if it changed. A no-op when the allocator does not apply or its
+   * answer is the width already showing.
+   *
+   * This is the entry the settled-resize observer calls: the canvas got a new
+   * size, so the band the chain rides did too, and the width that tiled it
+   * before may not tile it now. Re-clicking the active Cards option comes
+   * through here as well — re-asserting the arrangement is the user's way of
+   * asking for the seams back after a card joined or left the chain, which is
+   * deliberately not a re-tune of its own.
+   */
+  retuneLensAllocation(): void {
+    const imposition = this.deckState.imposition;
+    const panes = this.deckState.panes;
+    const lensPane = findLensPane(this.deckState);
+    if (lensPane === undefined) return;
+    const allocated = this._allocatedLensWidth(panes, imposition);
+    if (allocated === null) return;
+    if (Math.abs(allocated - lensPane.size.width) < 1) return;
+    this._commitImposition(imposition, panes);
+  }
+
+  /**
+   * Commit a new imposition record, moving every pane whose geometry it
+   * derives. The Lens returns to its pin through here, and the space allocator
+   * re-solves its width for the arrangement being committed.
+   */
+  private _reimpose(imposition: DeckImposition): void {
+    this._commitImposition(imposition, this.deckState.panes);
   }
 
   /**
@@ -1792,12 +1901,14 @@ export class DeckManager implements IDeckManagerStore {
    * Either way the Lens returns to its pin: choosing an arrangement is choosing
    * one the Lens stands at the end of. A Lens dragged loose and left there is
    * put back by any choice in the Layouts section, which is why an unchanged
-   * kind is not simply a no-op.
+   * kind is not simply a no-op — it also re-runs the space allocator, which is
+   * how the user asks for even seams back after a card joined or left the chain.
    */
   setImposition(kind: ImpositionKind | null): void {
     const current = this.deckState.imposition.kind;
     if (current === (kind ?? undefined)) {
       this.pinLens();
+      this.retuneLensAllocation();
       return;
     }
     const lensCardId = findLensPane(this.deckState)?.activeCardId;
@@ -1844,21 +1955,10 @@ export class DeckManager implements IDeckManagerStore {
       const clamped = clampSlot(kind, pane.slot);
       return clamped === pane.slot ? pane : { ...pane, slot: clamped };
     });
-    // A kind change can clamp slots, which re-orders the chain and shifts
-    // every pane in it — the move is CSS, so no stored `position` changes and
-    // the ledger has to be built from the fact of the chain, not from a diff.
-    const moved = panes
-      .filter((pane) => pane.slot !== undefined || pane.activeCardId === lensCardId)
-      .map((pane) => pane.activeCardId);
-    for (const cardId of moved) this.cardLifecycle.notifyCardWillMove(cardId);
-    this.deckState = {
-      ...this.deckState,
+    this._commitImposition(
+      { ...this.deckState.imposition, kind, lensPinned: true },
       panes,
-      imposition: { ...this.deckState.imposition, kind, lensPinned: true },
-    };
-    this.notify();
-    for (const cardId of moved) this.cardLifecycle.notifyCardDidMove(cardId);
-    this.scheduleSave();
+    );
   }
 
   /**

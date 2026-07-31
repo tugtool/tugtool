@@ -706,9 +706,10 @@ const SNAP_GUIDE_LINE_PX = 2;
  * An imposed frame is positioned by CSS pins (`left`/`right` against the rail
  * inset, `top`/`bottom` against the canvas), which the drag and resize
  * machines' per-frame writes would fight. Both gestures release the pane from
- * its slot, so both start by converting it here: the DOM keeps showing exactly
- * what the user was looking at, and the commit that follows carries
- * `evictSlot`, so React re-renders in free mode consistent with the DOM.
+ * its slot at the moment they become a move — not at pointer-down — by
+ * converting it here: the DOM keeps showing exactly what the user was looking
+ * at, and the commit that follows carries `evictSlot`, so React re-renders in
+ * free mode consistent with the DOM.
  *
  * Seeding the gesture from this measurement rather than from `position` matters
  * — an imposed pane's stored position holds stale last-known values, so a
@@ -736,12 +737,13 @@ function releaseImposedFrame(
 }
 
 /**
- * How far the pointer must travel before a title-bar press is a move.
+ * How far the pointer must travel before a press becomes a gesture — on the
+ * title bar (drag), on a resize handle, and on the Lens's deck-facing edge.
  *
  * Under this, the press is a click: it focuses the pane and commits nothing.
  * The distinction matters most for a pane whose geometry is derived — a slotted
- * card, or the pinned Lens — because committing a move is what releases it from
- * the arrangement, and that should take an actual drag.
+ * card, or the pinned Lens — because committing a move or a resize is what
+ * releases it from the arrangement, and that should take an actual drag.
  */
 const DRAG_MOVE_THRESHOLD_PX = 3;
 
@@ -1828,15 +1830,17 @@ export function TugPane({
       const resizeCanvasBounds = frame.parentElement?.getBoundingClientRect() ?? null;
 
       // Resizing releases an imposed pane from its slot, exactly as dragging
-      // does, so it converts to free pixel geometry first and the machine below
-      // seeds from that measurement rather than from stale stored geometry.
-      const released = derivedRef.current
-        ? releaseImposedFrame(frame, resizeCanvasBounds)
-        : null;
-      const startLeft = released?.x ?? position.x;
-      const startTop = released?.y ?? position.y;
-      const startW = released?.width ?? size.width;
-      const startH = released?.height ?? size.height;
+      // does — and on the same terms: only once the pointer has travelled far
+      // enough for the gesture to be a resize rather than a click. Until the
+      // latch below sets, nothing here has written to the frame, so the
+      // release's measurement at latch time sees the same rect it would have
+      // seen at pointer-down.
+      let resizeMoved = false;
+      let released: { x: number; y: number; width: number; height: number } | null = null;
+      let startLeft = position.x;
+      let startTop = position.y;
+      let startW = size.width;
+      let startH = size.height;
       const resizeOtherCardRects = snapshotCardRects(resizeCanvasBounds, id, resizeZoom);
       const resizeOtherRects = resizeOtherCardRects.map((r) => r.rect);
 
@@ -1844,6 +1848,28 @@ export function TugPane({
       let latestResizeModifier = event.nativeEvent.altKey;
       let resizeRafId: number | null = null;
       let resizeActive = true;
+
+      /**
+       * Answer whether the gesture has become a resize, latching it the first
+       * time the pointer travels past the threshold. A derived pane converts to
+       * free pixel geometry at that moment, and the machine re-seeds from the
+       * measurement rather than from stale stored geometry.
+       */
+      function latchResizeMove(pointer: { x: number; y: number }): boolean {
+        if (resizeMoved) return true;
+        const travelled = Math.hypot(pointer.x - startX, pointer.y - startY);
+        if (travelled < DRAG_MOVE_THRESHOLD_PX) return false;
+        resizeMoved = true;
+        if (derivedRef.current) {
+          const frozen = releaseImposedFrame(frame, resizeCanvasBounds);
+          released = frozen;
+          startLeft = frozen.x;
+          startTop = frozen.y;
+          startW = frozen.width;
+          startH = frozen.height;
+        }
+        return true;
+      }
 
       function computeAndApplyResize(pointer: { x: number; y: number }, snapModifier: boolean): {
         left: number; top: number; width: number; height: number;
@@ -1910,6 +1936,7 @@ export function TugPane({
       function applyResizeFrame() {
         resizeRafId = null;
         if (!resizeActive) return;
+        if (!latchResizeMove(latestResizePointer)) return;
         const r = computeAndApplyResize(latestResizePointer, latestResizeModifier);
         frame.style.left = `${r.left}px`;
         frame.style.top = `${r.top}px`;
@@ -1939,6 +1966,18 @@ export function TugPane({
 
         // Re-enable height transition now that the resize gesture is complete. [D07]
         frame.removeAttribute("data-gesture");
+
+        // The pointer never travelled, so this was a click on a resize handle.
+        // Nothing was resized and nothing is committed — in particular a
+        // derived pane keeps the slot or the pin it started with. The handles
+        // overhang the frame into the imposition gap, so a stray click on the
+        // seam between two imposed cards is easy to make; committing here
+        // would evict a card from its slot at a pixel-identical rect, and the
+        // arrangement would only visibly break at the next canvas change.
+        if (!latchResizeMove({ x: e.clientX, y: e.clientY })) {
+          clearGuideElements(resizeGuideEls);
+          return;
+        }
 
         // Compute final resize with snap applied first, THEN clear guides. [D03]
         const r = computeAndApplyResize({ x: e.clientX, y: e.clientY }, e.altKey);
@@ -2034,6 +2073,17 @@ export function TugPane({
       let latestX = startClientX;
       let latestAlt = event.altKey;
       let rafId: number | null = null;
+      let lensResizeMoved = false;
+
+      // The deck-facing edge is a handle like any other: under the move
+      // threshold the press is a click, which states no width and commits
+      // nothing.
+      const latchLensResizeMove = (clientX: number): boolean => {
+        if (lensResizeMoved) return true;
+        if (Math.abs(clientX - startClientX) < DRAG_MOVE_THRESHOLD_PX) return false;
+        lensResizeMoved = true;
+        return true;
+      };
 
       const computeWidth = (): number => {
         // Convert the visual pointer delta to layout space via zoom, then
@@ -2071,6 +2121,7 @@ export function TugPane({
 
       const apply = (): void => {
         rafId = null;
+        if (!latchLensResizeMove(latestX)) return;
         width = computeWidth();
         container.style.setProperty(LENS_WIDTH_PROPERTY, `${width}px`);
       };
@@ -2092,6 +2143,10 @@ export function TugPane({
         frame.removeAttribute("data-gesture");
         latestX = e.clientX;
         latestAlt = e.altKey;
+        if (!latchLensResizeMove(latestX)) {
+          clearGuideElements(resizeGuideEls);
+          return;
+        }
         // Final width with snap applied, THEN clear the guides. [D03]
         width = computeWidth();
         clearGuideElements(resizeGuideEls);

@@ -185,6 +185,14 @@ export interface IDeckManagerStore {
   toggleLensPane: () => void;
 
   /**
+   * Re-solve the pinned Lens's width so the imposed chain tiles evenly, and
+   * commit it if it changed (the space allocator, `lib/layout-imposer.ts`).
+   * A no-op when the Lens is closed or floating, when no arrangement is
+   * active, or when the answer is the width already showing.
+   */
+  retuneLensAllocation: () => void;
+
+  /**
    * Add a new card to an existing pane. Returns the new card id, or
    * null if the pane or registration is not found. The new card
    * becomes the pane's active card.
