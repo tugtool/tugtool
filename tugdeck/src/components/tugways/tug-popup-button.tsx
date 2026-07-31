@@ -325,6 +325,9 @@ export function TugPopupButton<V extends TugPopupButtonPayload = never>({
       role="option"
       size={size}
       trailingIcon={<ChevronDown size={12} />}
+      // The macOS popup-button key contract: ↓ / ↑ and any printable character
+      // open the menu, alongside Space / Return.
+      menuTrigger
       className={className}
       aria-label={ariaLabel}
       focusGroup={focusGroup}

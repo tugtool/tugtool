@@ -36,6 +36,11 @@
  *   buttons from the native Tab order, and an engine-routed stop parks the
  *   key sink rather than holding focus itself.
  *
+ *   A fifth pins the rest of the popup-button key contract and the two exits
+ *   that belong to the surface rather than the field: ↓ and a printable
+ *   character open the switcher's menu, Escape unwinds menu-then-popup from
+ *   wherever the ring rests, and `NSApp.deactivate()` dismisses.
+ *
  * Gating
  * ------
  * `describe.skipIf(!SHOULD_RUN)`. CI and `bun x tsc --noEmit` runs without
@@ -46,6 +51,8 @@
  * @covers tugdeck/src/lib/host-menu-state.ts
  * @covers tugdeck/src/lib/open-file-in-card.ts
  * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
+ * @covers tugdeck/src/components/tugways/tug-popup-button.tsx
+ * @covers tugdeck/src/components/tugways/internal/tug-button.tsx
  */
 
 import {
@@ -495,6 +502,106 @@ describe.skipIf(!SHOULD_RUN)(
              })()`,
             { timeoutMs: 15000 },
           );
+        } finally {
+          await app.close();
+          rmSync(base, { recursive: true, force: true });
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "the switcher is a popup button, and Escape and an app switch close the popup",
+      async () => {
+        // The keys a macOS popup button owes the keyboard beyond Space and
+        // Return — ↓ and any printable character open its menu — plus the two
+        // ways out that are the surface's, not the field's: Escape resolves
+        // against the popup's own focus mode from wherever the ring is
+        // resting, and the app going inactive takes the popup with it.
+        const base = mkdtempSync(`${tmpdir()}/at0306-esc-`);
+        mkdirSync(`${base}/tug`);
+        writeFileSync(`${base}/tug/${MARKER}`, "in the default\n");
+        mkdirSync(`${base}/other`);
+        writeFileSync(`${base}/other/${OTHER_MARKER}`, "elsewhere\n");
+
+        const app = await launchTugApp({ testName: "at0306-open-quickly-esc" });
+        const ring = `(function () {
+          var el = document.querySelector("[data-key-view-kbd]");
+          return el === null ? "(none)" : (el.getAttribute("data-slot") || el.tagName);
+        })()`;
+        const menuOpen = `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) !== null`;
+        const popupUp = `document.querySelector(${JSON.stringify(POPUP)}) !== null`;
+        try {
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(OVERLAY_ROOT)}) !== null`,
+            { timeoutMs: 20000 },
+          );
+          await app.evalJS<null>(
+            `(window.__tug.setTugbankValue("dev.tugtool.app", "default-project-path", { kind: "string", value: ${JSON.stringify(`${base}/tug`)} }),
+              window.__tug.setTugbankValue("dev.tugtool.dev", "recent-projects", { kind: "json", value: { paths: [${JSON.stringify(`${base}/other`)}] } }),
+              null)`,
+          );
+
+          const openPopupOnSwitcher = async (): Promise<void> => {
+            await app.evalJS<null>(
+              `(window.__tug.dispatchControlAction("open-quickly"), null)`,
+            );
+            await app.waitForCondition<boolean>(
+              `document.querySelector(${JSON.stringify(SWITCHER)}) !== null`,
+              { timeoutMs: 10000 },
+            );
+            await app.waitForCondition<boolean>(`${ring} === "tug-input"`, {
+              timeoutMs: 8000,
+            });
+            await app.nativeKey("Tab");
+            await app.waitForCondition<boolean>(`${ring} === "tug-button"`, {
+              timeoutMs: 8000,
+            });
+          };
+
+          await openPopupOnSwitcher();
+
+          // ↓ opens the menu — the engine hands the arrow to the trigger
+          // because the trigger claims it, instead of walking the ring away.
+          await app.nativeKey("ArrowDown");
+          await app.waitForCondition<boolean>(menuOpen, { timeoutMs: 8000 });
+
+          // Escape with the menu up closes just the menu: the menu's mode is
+          // on top of the popup's, and the ladder unwinds one at a time.
+          await app.nativeKey("Escape");
+          await app.waitForCondition<boolean>(`!(${menuOpen})`, {
+            timeoutMs: 8000,
+          });
+          expect(await app.evalJS<boolean>(popupUp)).toBe(true);
+
+          // A printable character opens it too — the engine's delegated key
+          // channel, since no earlier stage claims a bare letter.
+          await app.nativeKey("o");
+          await app.waitForCondition<boolean>(menuOpen, { timeoutMs: 8000 });
+          await app.nativeKey("Escape");
+          await app.waitForCondition<boolean>(`!(${menuOpen})`, {
+            timeoutMs: 8000,
+          });
+
+          // Escape with the menu closed and the ring still on the switcher
+          // closes the POPUP. This is the one the field's own keydown handler
+          // could never answer: it has no focus and sees no key.
+          await app.waitForCondition<boolean>(`${ring} === "tug-button"`, {
+            timeoutMs: 8000,
+          });
+          await app.nativeKey("Escape");
+          await app.waitForCondition<boolean>(`!(${popupUp})`, {
+            timeoutMs: 8000,
+          });
+
+          // The app yielding frontmost takes the popup with it — driven by the
+          // real `NSApp.deactivate()`, through the real AppDelegate lifecycle
+          // frame, not a synthesized blur.
+          await openPopupOnSwitcher();
+          await app.simulateAppResign();
+          await app.waitForCondition<boolean>(`!(${popupUp})`, {
+            timeoutMs: 8000,
+          });
         } finally {
           await app.close();
           rmSync(base, { recursive: true, force: true });

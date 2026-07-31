@@ -8,26 +8,35 @@
  * `FileTreeStore` provider drops straight in. It renders no data source of
  * its own; the caller supplies the provider and handles commit.
  *
- * Dismissal is deliberately easy ([the popup is not a modal trap]): a
- * click anywhere outside the panel, moving focus off the field, or Escape
- * all dismiss. Return opens the highlighted row; ↑/↓ move the highlight;
- * a row click opens it directly. A caller that puts an `accessory` on the bar
- * whose own menu portals outside the panel passes a `dismissGuard` to hold
- * the popup open while that menu is up — the one seam in the easy-dismissal
- * rule, and Escape is exempt from it.
+ * Dismissal is deliberately easy: a click anywhere outside the panel, moving
+ * focus off the field, Escape, or the app going inactive all dismiss. Return
+ * opens the highlighted row; ↑/↓ move the highlight; a row click opens it
+ * directly. A caller that puts an `accessory` on the bar whose own menu portals
+ * outside the panel passes a `dismissGuard` to hold the popup open while that
+ * menu is up — the one seam in the easy-dismissal rule, and Escape and the
+ * app-switch are exempt from it.
  *
  * It portals into the canvas overlay root ([L25]) so it floats above every
- * pane, escaping their `overflow: hidden`. It is a lightweight popover, NOT a
- * focus-mode trap (`focus-language.md`): no mode is pushed, and dismissal
- * stays easy.
+ * pane, escaping their `overflow: hidden`.
  *
- * Its stops are nonetheless authored into the focus engine, in
+ * It pushes a focus mode for as long as it is open (`focus-language.md`, the
+ * CFRunLoop model), which buys two things a floating surface needs and cannot
+ * get any other way. Its Tab walk is contained to its own stops, so Tab cycles
+ * field ↔ accessory instead of walking out of a surface that is still up. And
+ * Escape resolves against the mode: the engine's Escape ladder is the single
+ * arbiter, and a surface that registers no `onEscapeDismiss` gets no Escape at
+ * all — which is exactly what "Escape does nothing, and the keyboard beeps"
+ * looked like from the accessory, where no field handler could stand in. Escape
+ * belongs to the whole surface, not to whichever control the ring happens to be
+ * resting on.
+ *
+ * Its stops are authored into the focus engine, in
  * {@link COMPLETION_POPUP_FOCUS_GROUP} — the field at order 0 and the optional
  * `accessory` at order 1 — and the popup seeds the key view onto the field
  * ([P12] surface default-seed). That is the whole of its keyboard story, and
  * it is not optional decoration: a control with no `focusGroup` is a
- * native-only stop, and `Tab` walks straight past it and out of the popup,
- * whose blur then dismisses it. The field is a text surface, so the engine
+ * native-only stop that the walk never reaches, and reads as "Tab skips it".
+ * The field is a text surface, so the engine
  * grants it real DOM focus; the accessory is engine-routed, so the engine
  * parks `activeElement` on its key sink while the key view rests there — see
  * `onBlur`, which must not read that park as the keyboard leaving.
@@ -61,8 +70,10 @@ import { Search } from "lucide-react";
 import "./tug-completion-popup.css";
 
 import { TugInput } from "./tug-input";
+import { useFocusTrap } from "./use-focus-trap";
 import { useSeedKeyView } from "./use-focusable";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
+import { getAppLifecycle } from "@/lib/app-lifecycle";
 import type { CompletionItem, CompletionProvider } from "@/lib/tug-text-types";
 
 /**
@@ -206,6 +217,28 @@ export function TugCompletionPopup({
     return provider.subscribe(() => pull());
   }, [provider, pull]);
 
+  // The popup's own focus mode, for as long as it is open. `onEscapeDismiss`
+  // is what puts this surface on the engine's Escape ladder — the single
+  // arbiter — so Escape closes the popup from anywhere inside it, including
+  // from the accessory, where no field keydown handler can reach.
+  const { FocusModeScope } = useFocusTrap({
+    active: true,
+    onEscapeDismiss: onDismiss,
+  });
+
+  // The app going inactive dismisses. A search popup is a transient act on the
+  // frontmost window; leaving it up behind a switched-away app strands it over
+  // whatever the user comes back to. Read from the app's own lifecycle channel
+  // (`applicationWillResignActive`, forwarded by the real `AppDelegate`) rather
+  // than a `window` blur, which also fires for focus moving inside the app.
+  // Unconditional — the `dismissGuard`'s job is to survive the accessory's own
+  // menu taking focus, not an app switch.
+  useEffect(() => {
+    const lifecycle = getAppLifecycle();
+    if (lifecycle === null) return;
+    return lifecycle.observeApplicationWillResignActive(() => onDismiss());
+  }, [onDismiss]);
+
   // Seed the engine key view onto the field so typing lands there immediately
   // and Tab moves the key view from there ([P12] surface default-seed). The
   // field is a text surface, so the engine grants it real DOM focus; the
@@ -302,67 +335,69 @@ export function TugCompletionPopup({
         onDismiss();
       }}
     >
-      <div
-        ref={panelRef}
-        className="tug-completion-popup"
-        data-slot="tug-completion-popup"
-        role="dialog"
-        aria-label={placeholder}
-      >
-        <div className="tug-completion-popup-field">
-          <Search className="tug-completion-popup-field-icon" aria-hidden />
-          <TugInput
-            ref={inputRef}
-            className="tug-completion-popup-input"
-            borderless
-            type="text"
-            spellCheck={false}
-            autoComplete="off"
-            placeholder={placeholder}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onKeyDown}
-            onBlur={onBlur}
-            focusGroup={COMPLETION_POPUP_FOCUS_GROUP}
-            focusOrder={COMPLETION_POPUP_FIELD_ORDER}
-          />
-          {accessory !== undefined ? (
-            <div
-              className="tug-completion-popup-accessory"
-              data-slot="tug-completion-popup-accessory"
-            >
-              {accessory}
-            </div>
-          ) : null}
-        </div>
-        {items.length > 0 ? (
-          <ul
-            className="tug-completion-popup-list"
-            data-slot="tug-completion-popup-list"
-            role="listbox"
-          >
-            {items.map((item, i) => (
-              <li
-                key={item.label + i}
-                data-index={i}
-                data-selected={i === selected ? "true" : undefined}
-                className="tug-completion-popup-row"
-                role="option"
-                aria-selected={i === selected}
-                onMouseMove={() => setSelected(i)}
-                // Keep focus in the field so onBlur doesn't dismiss before
-                // the click opens the row.
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => commit(item)}
+      <FocusModeScope>
+        <div
+          ref={panelRef}
+          className="tug-completion-popup"
+          data-slot="tug-completion-popup"
+          role="dialog"
+          aria-label={placeholder}
+        >
+          <div className="tug-completion-popup-field">
+            <Search className="tug-completion-popup-field-icon" aria-hidden />
+            <TugInput
+              ref={inputRef}
+              className="tug-completion-popup-input"
+              borderless
+              type="text"
+              spellCheck={false}
+              autoComplete="off"
+              placeholder={placeholder}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
+              onBlur={onBlur}
+              focusGroup={COMPLETION_POPUP_FOCUS_GROUP}
+              focusOrder={COMPLETION_POPUP_FIELD_ORDER}
+            />
+            {accessory !== undefined ? (
+              <div
+                className="tug-completion-popup-accessory"
+                data-slot="tug-completion-popup-accessory"
               >
-                {renderLabel(item.label, item.matches)}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          renderEmpty(emptyLabel)
-        )}
-      </div>
+                {accessory}
+              </div>
+            ) : null}
+          </div>
+          {items.length > 0 ? (
+            <ul
+              className="tug-completion-popup-list"
+              data-slot="tug-completion-popup-list"
+              role="listbox"
+            >
+              {items.map((item, i) => (
+                <li
+                  key={item.label + i}
+                  data-index={i}
+                  data-selected={i === selected ? "true" : undefined}
+                  className="tug-completion-popup-row"
+                  role="option"
+                  aria-selected={i === selected}
+                  onMouseMove={() => setSelected(i)}
+                  // Keep focus in the field so onBlur doesn't dismiss before
+                  // the click opens the row.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => commit(item)}
+                >
+                  {renderLabel(item.label, item.matches)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            renderEmpty(emptyLabel)
+          )}
+        </div>
+      </FocusModeScope>
     </div>,
     overlayRoot,
   );

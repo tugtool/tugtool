@@ -72,6 +72,26 @@ import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 
 // ---- Types ----
 
+/**
+ * The open control TugPopupMenu hands down to its trigger.
+ *
+ * A trigger that is a focus-engine key view has keys delivered to it by the
+ * engine, not by the browser, and it has to be able to act on them. Without
+ * this it could only reach the menu by synthesizing a press on itself — a
+ * guess at whichever DOM event Radix happens to listen on, and a lie about
+ * what the user did. `open()` is the same state transition the pointer takes.
+ *
+ * `null` outside a TugPopupMenu, which is the ordinary case for every button
+ * that is not a menu trigger.
+ */
+export interface TugPopupMenuTriggerHandle {
+  /** Open the menu. Idempotent — opening an open menu is a no-op. */
+  open: () => void;
+}
+
+export const TugPopupMenuTriggerContext =
+  React.createContext<TugPopupMenuTriggerHandle | null>(null);
+
 /** A single selectable item in a TugPopupMenu. */
 export interface TugPopupMenuItem {
   /** Unique identifier for this item. Passed to onSelect when clicked. */
@@ -258,6 +278,13 @@ export function TugPopupMenu({
   function handleOpenChange(next: boolean): void {
     setOpen(next);
   }
+
+  // Handed to the trigger through context so an engine-routed key view can open
+  // the menu by moving the state, not by faking a press on itself.
+  const openHandle = React.useMemo<TugPopupMenuTriggerHandle>(
+    () => ({ open: () => setOpen(true) }),
+    [],
+  );
 
   // Chain manager — null when rendered outside a ResponderChainProvider
   // (standalone previews, unit tests that don't mount a provider). In
@@ -474,6 +501,7 @@ export function TugPopupMenu({
   }
 
   return (
+    <TugPopupMenuTriggerContext.Provider value={openHandle}>
     <DropdownMenuPrimitive.Root open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuPrimitive.Trigger asChild>
         {trigger}
@@ -494,5 +522,6 @@ export function TugPopupMenu({
         </DropdownMenuPrimitive.Content>
       </DropdownMenuPrimitive.Portal>
     </DropdownMenuPrimitive.Root>
+    </TugPopupMenuTriggerContext.Provider>
   );
 }

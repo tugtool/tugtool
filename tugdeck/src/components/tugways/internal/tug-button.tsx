@@ -23,6 +23,7 @@ import { useFocusable, useFocusManager } from "../use-focusable";
 import type { FocusPolicy } from "../focus-manager";
 import { CardIdContext } from "@/lib/card-id-context";
 import { TugStableOverlay } from "./tug-stable-overlay";
+import { TugPopupMenuTriggerContext } from "./tug-popup-menu";
 
 // ---- No-op constants for useSyncExternalStore when chain is inactive ----
 // Module-level stable references prevent React from seeing new function
@@ -392,6 +393,27 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    * Set `true` for the rare button that should itself become first responder.
    */
   stealsFocusOnClick?: boolean;
+  /**
+   * This button's act opens a menu it is the trigger for — declare the macOS
+   * popup-button keyboard contract on top of the plain act.
+   *
+   * A popup button on macOS is not a two-key control. `Space` / `Return` open
+   * it, and so do `↓` / `↑`, and so does any printable character. Without this
+   * the engine's spatial plane owns the arrows and nothing at all owns the
+   * letters, and the control reads as a dead end with two magic keys — the
+   * "arrow never beeps" rule of `focus-language.md` applied to a leaf.
+   *
+   * The declaration is what makes the delivery possible: `captures` claims the
+   * vertical arrows so the engine hands them to this element rather than moving
+   * the ring ({@link KeyViewBehavior}), and `onKey` is the engine's delegated
+   * channel for the printable characters no other stage claims. Both decline
+   * while the menu is open — an open menu owns its own keys, including Radix's
+   * type-ahead.
+   *
+   * Set by {@link TugPopupButton}; a bespoke trigger passing its own
+   * {@link TugPopupMenu} sets it too.
+   */
+  menuTrigger?: boolean;
 }
 
 // ---- Border-radius ----
@@ -473,6 +495,8 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   persistentDefaultRing = false,
   neverDefaultButton = false,
   stealsFocusOnClick = false,
+  menuTrigger = false,
+  onKeyDown: onKeyDownProp,
   ...rest
 }: TugButtonProps, ref) {
   // `role` is overloaded. For 99% of call sites it's a semantic theming
@@ -604,13 +628,82 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // returned `focusableRef` writes `data-tug-focusable` so the engine can land
   // the key view on this button and paint the ring on keyboard focus.
   const autoFocusId = React.useId();
+
+  // ---- The popup-button key contract ([P01] behavior, `menuTrigger`) ----
+  //
+  // "Is my menu up?" is read off the DOM rather than mirrored in React state:
+  // Radix stamps `data-state` on the trigger, and that attribute IS the open
+  // state ([L22] observe, don't duplicate). Both halves below decline while it
+  // is open, so an open menu keeps every key — its own type-ahead included.
+  const menuIsOpen = React.useCallback(
+    () => internalButtonRef.current?.getAttribute("data-state") === "open",
+    [],
+  );
+  // A bare printable character — one grapheme, no chord. Space is a single
+  // character too and is deliberately NOT one: it belongs to the act tier, and
+  // claiming it here would swallow the very keydown the engine delivers to
+  // carry the act out.
+  const isTypeAheadKey = React.useCallback(
+    (e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean }) =>
+      e.key.length === 1 && e.key !== " " && !e.metaKey && !e.ctrlKey && !e.altKey,
+    [],
+  );
+  // The menu's own open control, handed down by TugPopupMenu. Moving its state
+  // is the whole mechanism — no synthesized press, no guess about which DOM
+  // event the menu primitive listens on.
+  const menuHandle = React.useContext(TugPopupMenuTriggerContext);
+  const openMenu = React.useCallback(() => {
+    menuHandle?.open();
+  }, [menuHandle]);
+  const menuTriggerBehavior = React.useCallback(() => {
+    if (!menuTrigger) return null;
+    return {
+      container: "none" as const,
+      // Claim the vertical arrows so the engine delivers them here instead of
+      // walking the ring off this control.
+      captures: (k: { key: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean }) =>
+        (k.key === "ArrowDown" || k.key === "ArrowUp") &&
+        k.metaKey !== true &&
+        k.ctrlKey !== true &&
+        k.altKey !== true &&
+        !menuIsOpen(),
+      onKey: (e: KeyboardEvent) => {
+        if (menuIsOpen() || !isTypeAheadKey(e)) return false;
+        openMenu();
+        return true;
+      },
+    };
+  }, [menuTrigger, menuIsOpen, isTypeAheadKey, openMenu]);
+
   const { focusableRef } = useFocusable({
     id: autoFocusId,
     group: focusGroup ?? "",
     order: focusOrder,
     policy: focusPolicy,
     register: focusGroup !== undefined,
+    behavior: menuTriggerBehavior,
   });
+
+  // The arrows, once the engine has delivered them here (that delivery is what
+  // `captures` above buys). Composed ahead of the caller's handler, never
+  // instead of it — the menu primitive's own trigger keydown still runs.
+  const handleKeyDown = React.useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (
+        menuTrigger &&
+        (e.key === "ArrowDown" || e.key === "ArrowUp") &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !menuIsOpen()
+      ) {
+        e.preventDefault();
+        openMenu();
+      }
+      onKeyDownProp?.(e);
+    },
+    [menuTrigger, menuIsOpen, openMenu, onKeyDownProp],
+  );
 
   // ---- Default-button registration ([L03]) ----
   //
@@ -1052,6 +1145,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       aria-busy={loading ? "true" : undefined}
       aria-disabled={ariaDisabled}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       className={buttonClassName}
       data-rounded={resolvedRounded}
       {...rest}
