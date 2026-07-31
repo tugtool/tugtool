@@ -34,8 +34,14 @@
 body {
   /* Air between the row's lines — the name line to the PULSE. The PULSE's own
      internal leading is baseline-to-baseline and lives in `tug-pulse.css`;
-     this is only the step into it. TUNE HERE for row density. */
-  --tugx-session-row-line-gap: 5px;
+     this is only the step into it. TUNE HERE for row density.
+
+     It is the row's height as well as its air: the lines are a content-sized
+     column, so whatever this gives up the row gives up with it. The PULSE
+     belongs to the name above it — it reports on that session and nothing
+     else — and the gap that made it read as a separate paragraph was buying
+     that separation with two pixels off every row in the rail. */
+  --tugx-session-row-line-gap: 3px;
   /* Air along the name line, between the indicator, the name, and the
      furniture past it. */
   --tugx-session-row-name-gap: 8px;
