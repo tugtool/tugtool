@@ -44,6 +44,7 @@ const SESSION_PHASE_KEYS: readonly SessionPhaseKey[] = [
   "restoring",
   "interrupting",
   "idle",
+  "background",
   "submitting",
   "awaiting_first_token",
   "streaming",
@@ -70,6 +71,9 @@ const TOOL_CALL_PHASES: readonly ToolCallPhase[] = [
 const EXECUTING_SESSION_PHASES: ReadonlySet<string> = new Set([
   "restoring",
   "interrupting",
+  // A backgrounded agent runs after its launching turn commits. The turn
+  // is over; the work is not. That is executing, so it breathes.
+  "background",
   "submitting",
   "awaiting_first_token",
   "streaming",

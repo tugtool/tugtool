@@ -1,11 +1,12 @@
 /**
  * session-phase-visual — unit tests for the pure mapping from a
- * CodeSession's (phase × transportState × interruptInFlight) triple
- * onto the {@link TugProgressIndicator} phase / phaseLabels /
- * phaseVisual API.
+ * CodeSession's (phase × transportState × interruptInFlight × running
+ * jobs) state onto the {@link TugProgressIndicator} phase /
+ * phaseLabels / phaseVisual API.
  *
- * Pins the precedence chain (offline > restoring > interrupt > phase),
- * every phase branch, and the human-readable label resolution.
+ * Pins the precedence chain (offline > restoring > interrupt >
+ * background-over-idle > phase), every phase branch, and the
+ * human-readable label resolution.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -105,6 +106,50 @@ describe("sessionSessionPhaseKey — phase fallback", () => {
   });
 });
 
+describe("sessionSessionPhaseKey — background work promotes idle", () => {
+  test("idle with a running job reads 'background', not 'idle'", () => {
+    expect(
+      sessionSessionPhaseKey(input({ phase: "idle", runningJobCount: 1 })),
+    ).toBe("background");
+  });
+
+  test("idle with no running jobs stays 'idle'", () => {
+    expect(
+      sessionSessionPhaseKey(input({ phase: "idle", runningJobCount: 0 })),
+    ).toBe("idle");
+  });
+
+  test("an omitted count makes no background claim", () => {
+    // The persisted state-change log replays historical triples with no
+    // ledger to consult; absent must not read as work.
+    expect(sessionSessionPhaseKey(input({ phase: "idle" }))).toBe("idle");
+  });
+
+  test("errored keeps its own key even with a job still running", () => {
+    expect(
+      sessionSessionPhaseKey(input({ phase: "errored", runningJobCount: 2 })),
+    ).toBe("errored");
+  });
+
+  test("transport degradation still dominates background work", () => {
+    expect(
+      sessionSessionPhaseKey(
+        input({
+          phase: "idle",
+          transportState: "offline",
+          runningJobCount: 3,
+        }),
+      ),
+    ).toBe("offline");
+  });
+
+  test("a turn in flight keeps its own phase, jobs or not", () => {
+    expect(
+      sessionSessionPhaseKey(input({ phase: "streaming", runningJobCount: 1 })),
+    ).toBe("streaming");
+  });
+});
+
 describe("sessionSessionPhaseVisual — role/state mapping", () => {
   test("offline → danger/aborted", () => {
     expect(sessionSessionPhaseVisual("offline")).toEqual({
@@ -151,6 +196,19 @@ describe("sessionSessionPhaseVisual — role/state mapping", () => {
     });
   });
 
+  test("background → agent/running — executing, in its own tone", () => {
+    expect(sessionSessionPhaseVisual("background")).toEqual({
+      role: "agent",
+      state: "running",
+    });
+  });
+
+  test("background is tonally distinct from a live turn", () => {
+    expect(sessionSessionPhaseVisual("background").role).not.toBe(
+      sessionSessionPhaseVisual("streaming").role,
+    );
+  });
+
   test("idle → inherit/stopped", () => {
     expect(sessionSessionPhaseVisual("idle")).toEqual({
       role: "inherit",
@@ -180,6 +238,7 @@ describe("SESSION_PHASE_LABELS — human-readable labels", () => {
     ["offline", "Disconnected"],
     ["restoring", "Reconnecting"],
     ["interrupting", "Interrupting"],
+    ["background", "Active"],
   ] as const)("key %s resolves to %s", (key, expected) => {
     expect(SESSION_PHASE_LABELS[key]).toBe(expected);
   });

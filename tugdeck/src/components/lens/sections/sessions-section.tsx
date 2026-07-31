@@ -2,7 +2,7 @@
  * The Lens **Sessions** section — a read-only session *monitor* rendered as a
  * `TugListView`. One row per open session card, stacked (L1):
  *
- *   [dot] <session name>                   <slot layout>   [grip]
+ *   [dot] <session name>                         <slot layout>
  *   <standing goal>
  *   <latest pulse line>                        <activity sparkline>
  *
@@ -22,10 +22,10 @@
  * The name is resolved exactly like the Session card's title-bar chip
  * (`sessionCardTitleOverride`). The row itself is `TugSessionRow`, the shared
  * component the Pulse Display gallery card auditions its fits on: how the row
- * divides its one line's width between the indicator, the name, the slots, the
- * grip, and the PULSE's three parts is that component's decision, so what the
- * gallery approves is what the Lens wears, by construction rather than by two
- * files agreeing.
+ * divides its one line's width between the indicator, the name, the slots, and
+ * the PULSE's three parts is that component's decision, so what the gallery
+ * approves is what the Lens wears, by construction rather than by two files
+ * agreeing.
  *
  * Laws: [L02] every store enters React through `useSyncExternalStore`; [L06]
  * appearance (cursor ring, selection, dot/sparkline) is CSS on engine
@@ -54,7 +54,6 @@ import {
   getFilterVersion,
   subscribeFilterQuery,
 } from "@/components/lens/lens-filter-store";
-import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
 import { SlotPicker } from "@/components/lens/slot-picker";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { useBlockReorder } from "@/components/lens/block-reorder";
@@ -86,6 +85,7 @@ import {
   sessionSessionPhaseVisual,
   type SessionPhaseInput,
 } from "@/lib/code-session-store/session-phase-visual";
+import { countRunningJobs } from "@/lib/code-session-store/select-jobs";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import {
   COMPACTING_PULSE_TEXT,
@@ -152,9 +152,9 @@ function useSessionsFilterQuery(): string {
   return getFilterQuery(SECTION_KIND);
 }
 
-/** Row verbs the section body hands the module-level cell — the reorder grip. */
+/** Row verbs the section body hands the module-level cell — the reorder. */
 interface SessionsCellContextValue {
-  onGripPointerDown: (id: string, event: React.PointerEvent) => void;
+  onRowPointerDown: (id: string, event: React.PointerEvent) => void;
 }
 const SessionsCellContext =
   React.createContext<SessionsCellContextValue | null>(null);
@@ -212,6 +212,7 @@ function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
           phase: snap.phase,
           transportState: snap.transportState,
           interruptInFlight: snap.interruptInFlight,
+          runningJobCount: countRunningJobs(snap.jobs),
         }
       : OFFLINE_PHASE_INPUT;
   return (
@@ -271,11 +272,11 @@ function RowSparkline({ tugSessionId }: { tugSessionId: string }): React.ReactEl
 }
 
 /** One monitor row: the shared `TugSessionRow`, fed live nodes. Every
- *  decision about how the row packs — which line the dot, the slots, the grip,
- *  and the sparkline ride, and what each costs the text beside it — belongs to
- *  that component and is auditioned in the Pulse Display gallery card, so what
- *  ships here is what was chosen there. This function's whole job is to supply
- *  the six parts from the stores. The `TugListView` cell wrapper still owns
+ *  decision about how the row packs — which line the dot, the slots, and the
+ *  sparkline ride, and what each costs the text beside it — belongs to that
+ *  component and is auditioned in the Pulse Display gallery card, so what ships
+ *  here is what was chosen there. This function's whole job is to supply the
+ *  five parts from the stores. The `TugListView` cell wrapper still owns
  *  cursor / selection / click. */
 function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
   const ctx = React.useContext(SessionsCellContext);
@@ -310,13 +311,9 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
       indicator={<RowPhaseDot cardId={row.cardId} />}
       name={renderFilterHighlight(displayName, filterQuery)}
       slots={<SlotPicker cardId={row.cardId} />}
-      grip={
-        ctx !== null ? (
-          <BlockGrip
-            onPointerDown={(e) => ctx.onGripPointerDown(row.tugSessionId, e)}
-          />
-        ) : undefined
-      }
+      // The row is its own reorder handle — a vertical drag from anywhere on
+      // it that is not the slot picker carries it ([P08]).
+      onPointerDown={(e) => ctx?.onRowPointerDown(row.tugSessionId, e)}
       intent={pulse.enabled && overview !== null ? overview.text : undefined}
       activity={pulseText ?? undefined}
       sparkline={<RowSparkline tugSessionId={row.tugSessionId} />}
@@ -378,13 +375,13 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
   // band's filter field turns on: a section filtered to zero still has items.
   const hasItems = dataSource.unfilteredCount() > 0;
 
-  // Reorder by grip: commit on drop ([Q02]). Rows match by their stable
-  // `data-session-id`; the FLIP animates the row content, the store commit
-  // persists the new user order. New sessions (absent from `sessionOrder`)
-  // stay at the bottom until the user moves them.
+  // Reorder by carrying the row: commit on drop ([Q02]). Rows match by their
+  // stable `data-session-id`; the FLIP animates the row content, the store
+  // commit persists the new user order. New sessions (absent from
+  // `sessionOrder`) stay at the bottom until the user moves them.
   const listWrapRef = useRef<HTMLDivElement | null>(null);
   const caretRef = useRef<HTMLDivElement | null>(null);
-  const { onGripPointerDown: beginGripReorder } = useBlockReorder({
+  const { onRowPointerDown: beginRowReorder } = useBlockReorder({
     containerRef: listWrapRef,
     caretRef,
     getVisibleOrder: () => dataSource.visibleOrder(),
@@ -394,18 +391,18 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
   });
   // Reorder is unavailable while a filter is active: the drop order describes
   // only the VISIBLE rows and `setSessionOrder` persists the whole arrangement,
-  // so committing a partial order would scramble the hidden rows. The grips
-  // hide via `data-filter-active` + CSS ([L06]) and the handler no-ops.
-  const onGripPointerDown = useCallback(
+  // so committing a partial order would scramble the hidden rows. The gesture
+  // is simply never armed — with no grip there is no affordance to hide.
+  const onRowPointerDown = useCallback(
     (id: string, event: React.PointerEvent): void => {
       if (filtering) return;
-      beginGripReorder(id, event);
+      beginRowReorder(id, event);
     },
-    [filtering, beginGripReorder],
+    [filtering, beginRowReorder],
   );
   const cellContext = useMemo<SessionsCellContextValue>(
-    () => ({ onGripPointerDown }),
-    [onGripPointerDown],
+    () => ({ onRowPointerDown }),
+    [onRowPointerDown],
   );
 
   // Publish what this band holds: `navigable` so the Lens skips it for the

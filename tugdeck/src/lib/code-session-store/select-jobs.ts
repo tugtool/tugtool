@@ -678,6 +678,22 @@ export interface JobCounts {
   finished: number;
 }
 
+/**
+ * How many jobs are executing right now — the canonical answer to "is
+ * this session still doing work?", used by any surface that has to
+ * decide that without building the whole {@link JobCounts} struct.
+ *
+ * `"scheduled"` rows are excluded: a wakeup promised for a future time
+ * is pending, not executing, and a session holding only those is
+ * genuinely idle. A running `"monitor"` counts like any other kind —
+ * the session has an errand outstanding either way.
+ */
+export function countRunningJobs(jobs: readonly JobItem[]): number {
+  let running = 0;
+  for (const j of jobs) if (j.status === "running") running += 1;
+  return running;
+}
+
 export function countJobs(jobs: readonly JobItem[]): JobCounts {
   let running = 0;
   let watching = 0;

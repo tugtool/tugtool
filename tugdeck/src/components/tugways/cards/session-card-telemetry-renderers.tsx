@@ -97,6 +97,7 @@ import { useTaskListState } from "@/lib/code-session-store/hooks/use-task-list-s
 import { useJobsState } from "@/lib/code-session-store/hooks/use-jobs-state";
 import {
   countJobs,
+  countRunningJobs,
   jobsOwnedByTurn,
 } from "@/lib/code-session-store/select-jobs";
 import { goalIsActive } from "@/lib/code-session-store/select-goal";
@@ -568,9 +569,12 @@ export const SessionTelemetryPhase: React.FC<SessionTelemetryProps> = ({
  * response". Flanking the value, pinned to either end of the value
  * area, are two label-less `TugProgressIndicator` pulsing-dot glyphs
  * — their dot + pulsing ring read
- * `phase × transportState × interruptInFlight` (resolved via
- * `sessionSessionPhaseKey` + `sessionSessionPhaseVisual`) and give the
- * cell the live motion a static figure cannot.
+ * `phase × transportState × interruptInFlight × running jobs`
+ * (resolved via `sessionSessionPhaseKey` +
+ * `sessionSessionPhaseVisual`) and give the cell the live motion a
+ * static figure cannot. Running jobs are an input because a turn can
+ * commit while the agents it launched keep working: that session reads
+ * "Active", not "Idle".
  *
  * The WORK cell unifies the [D100] todo list, the [D102]
  * background-jobs ledger (`useJobsState`), and the `/goal` under one
@@ -844,6 +848,9 @@ export const SessionTelemetryStatusRow = React.forwardRef<
     phase: snap.phase,
     transportState: snap.transportState,
     interruptInFlight: snap.interruptInFlight,
+    // A committed turn can leave agents running behind it; without this
+    // the cell would read "Idle" over live work.
+    runningJobCount: countRunningJobs(jobsLedger),
   };
   const statePhaseKey = sessionSessionPhaseKey(indicatorState);
   // STATE cell value — the human-readable phase title. The two
