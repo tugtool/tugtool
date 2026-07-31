@@ -73,7 +73,7 @@ describe("toolCallPhaseVisual — every branch", () => {
     [ToolCallPhase, TugProgressIndicatorRole, TugProgressIndicatorState]
   > = [
     ["in_flight", "action", "running"],
-    ["awaiting", "caution", "paused"],
+    ["awaiting", "caution", "running"],
     ["success", "success", "completed"],
     ["error", "danger", "aborted"],
     ["interrupted", "danger", "aborted"],

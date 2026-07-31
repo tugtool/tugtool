@@ -175,10 +175,10 @@ describe("sessionSessionPhaseVisual — role/state mapping", () => {
     },
   );
 
-  test("awaiting_approval → caution/paused — blocked on the user, not executing", () => {
+  test("awaiting_approval → caution/running — the turn is open, parked on the user", () => {
     expect(sessionSessionPhaseVisual("awaiting_approval")).toEqual({
       role: "caution",
-      state: "paused",
+      state: "running",
     });
   });
 

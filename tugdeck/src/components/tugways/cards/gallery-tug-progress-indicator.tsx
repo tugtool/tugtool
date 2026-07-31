@@ -105,7 +105,7 @@ function demoPhaseVisual(phase: string): TugProgressIndicatorPhaseVisual {
     case "offline":
       return { role: "danger", state: "aborted" };
     case "awaiting_approval":
-      return { role: "caution", state: "paused" };
+      return { role: "caution", state: "running" };
     case "streaming":
       return { role: "success", state: "running" };
     case "idle":

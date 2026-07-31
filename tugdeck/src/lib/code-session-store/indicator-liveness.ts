@@ -8,11 +8,11 @@
  * a pose:
  *
  *  - `running`   — work is executing this instant. Breathes.
- *  - `paused`    — blocked on a human act, and cannot proceed until one
- *                  arrives. Still, full-size, and substantial on the
- *                  presence ladder (0.7): it reads as *waiting on you*
- *                  rather than as idle, which is the whole reason the
- *                  state exists.
+ *  - `paused`    — blocked, and cannot proceed until something outside the
+ *                  runtime arrives. Still, full-size, and substantial on
+ *                  the presence ladder (0.7). Nothing maps to it today:
+ *                  the waits this app actually has are waits on the USER,
+ *                  and those pulse — see below.
  *  - `stopped`   — not executing. Covers "never started", "deferred to a
  *                  clock", and "no longer relevant" alike. Recedes.
  *  - `completed` — finished, successfully.
@@ -21,10 +21,19 @@
  * The distinction this module exists to hold is between *executing* and
  * *pending*, which are not the same thing and were conflated at four
  * independent call sites before this module existed. A question waiting
- * on the user, a cron scheduled for tomorrow, and a goal set an hour ago
- * are all pending; none of them is executing; none of them may breathe.
- * They differ from each other, though, and the difference is what they
- * are waiting on — a human (`paused`) or nothing at all (`stopped`).
+ * a cron scheduled for tomorrow and a goal set an hour ago are pending;
+ * neither is executing; neither may breathe. They rest at `stopped`,
+ * because what they are waiting on is a clock or an occasion — nothing a
+ * person can walk over and answer.
+ *
+ * **Waiting on the USER is the exception, and it moves.** A turn parked on
+ * an approval is open — submitted, not committed, resuming the instant the
+ * user answers — and so is the tool call that dialog is blocked on. That is
+ * not pending in the sense above: the work is underway and the user is
+ * standing in it. It is also the one condition in the app whose entire
+ * purpose is to be noticed, from a Lens rail across the room, so it takes
+ * the caution tone AND the pulse. Every yellow dot in the app says the same
+ * thing the same way: answer me.
  *
  * Deriving `state` anywhere but here is how that conflation happened the
  * first time. New indicator surfaces add a function to this module rather

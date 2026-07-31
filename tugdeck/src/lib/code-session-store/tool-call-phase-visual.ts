@@ -22,7 +22,7 @@
  * Mapping ([D03] of roadmap/block-header.md):
  *
  *   - `in_flight`   → `{ state: running,   role: action }`  (blue — work in flight)
- *   - `awaiting`    → `{ state: paused,    role: caution }` (yellow — held on a dialog, not executing)
+ *   - `awaiting`    → `{ state: running,   role: caution }` (yellow — held on a dialog, and pulsing to say so)
  *   - `success`     → `{ state: completed, role: success }` (green — finished)
  *   - `error`       → `{ state: aborted,   role: danger }`  (red — failed)
  *   - `interrupted` → `{ state: aborted,   role: danger }`  (red — canceled)
@@ -144,13 +144,13 @@ export function toolCallPhaseVisual(
     case "in_flight":
       return { role: "action", state: "running" };
     case "awaiting":
-      // `paused` while a permission/question dialog blocks the call: the
-      // tool is not executing, so the dot holds a still, full-size pose
-      // under the caution tint instead of breathing. `paused` sits high on
-      // the presence ladder for exactly this reason — it stays substantial
-      // because it still wants an answer. Mirrors
-      // `sessionSessionPhaseVisual`'s `awaiting_approval` mapping.
-      return { role: "caution", state: "paused" };
+      // A permission/question dialog is blocked on this call, so the dot
+      // pulses in the caution tint: it is the call the user has to answer
+      // before anything moves, and every yellow dot in the app says that
+      // the same way. Mirrors `sessionSessionPhaseVisual`'s
+      // `awaiting_approval` mapping, which is the same wait seen from the
+      // session's end.
+      return { role: "caution", state: "running" };
     case "success":
       return { role: "success", state: "completed" };
     case "error":

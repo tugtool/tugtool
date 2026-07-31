@@ -65,12 +65,16 @@ const TOOL_CALL_PHASES: readonly ToolCallPhase[] = [
 ];
 
 /**
- * The session phases during which the runtime is actually executing.
- * Everything else — idle, blocked on the user, dead — must not breathe.
+ * The session phases during which the TURN is in flight. Everything else —
+ * idle, dead — must not breathe.
  */
 const EXECUTING_SESSION_PHASES: ReadonlySet<string> = new Set([
   "restoring",
   "interrupting",
+  // The turn was submitted and has not committed: it is parked on the user
+  // and resumes the moment they answer. Open, therefore breathing — and this
+  // is the state that most needs to be seen from across the room.
+  "awaiting_approval",
   // A backgrounded agent runs after its launching turn commits. The turn
   // is over; the work is not. That is executing, so it breathes.
   "background",
@@ -130,10 +134,11 @@ describe("the liveness rule — only executing work breathes", () => {
     }
   });
 
-  it("breathes for exactly the tool-call phase that is executing", () => {
+  it("breathes for the tool-call phases that are in flight or asking", () => {
+    const live: ReadonlySet<string> = new Set(["in_flight", "awaiting"]);
     for (const phase of TOOL_CALL_PHASES) {
-      const live = toolCallPhaseVisual(phase).state === "running";
-      expect([phase, live]).toEqual([phase, phase === "in_flight"]);
+      const breathes = toolCallPhaseVisual(phase).state === "running";
+      expect([phase, breathes]).toEqual([phase, live.has(phase)]);
     }
   });
 
@@ -144,27 +149,30 @@ describe("the liveness rule — only executing work breathes", () => {
   });
 });
 
-describe("blocked-on-a-human is `paused`, not motion and not idle", () => {
-  it("holds the session's awaiting-approval dot at the substantial pose", () => {
+describe("waiting on the user pulses, wherever it is seen from", () => {
+  // One wait, two vantage points — the session's dot in the Lens and the
+  // blocked call's dot in the transcript. Both are yellow and both move, so
+  // a user who learns the signal in one place reads it in the other.
+  it("pulses the session's awaiting-approval dot, in the caution tone", () => {
     expect(sessionSessionPhaseVisual("awaiting_approval")).toEqual({
       role: "caution",
-      state: "paused",
+      state: "running",
     });
   });
 
-  it("holds a dialog-blocked tool call at the same pose", () => {
+  it("pulses a dialog-blocked tool call's dot, in the same tone", () => {
     expect(toolCallPhaseVisual("awaiting")).toEqual({
       role: "caution",
-      state: "paused",
+      state: "running",
     });
   });
 
-  it("keeps `paused` distinct from the quiet states", () => {
-    // `paused` must never collapse into `stopped`: the two say different
-    // things (waiting on you vs. nothing to wait for) and the presence
-    // ladder draws them at different sizes.
+  it("never lets either collapse into a quiet state", () => {
     expect(sessionSessionPhaseVisual("awaiting_approval").state).not.toBe(
       sessionSessionPhaseVisual("idle").state,
+    );
+    expect(toolCallPhaseVisual("awaiting").state).not.toBe(
+      toolCallPhaseVisual("idle").state,
     );
   });
 });

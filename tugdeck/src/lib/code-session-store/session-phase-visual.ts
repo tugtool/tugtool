@@ -137,7 +137,7 @@ export const SESSION_PHASE_LABELS: Record<SessionPhaseKey, string> = {
  *
  *  - `offline`, `errored`        → `{ role: danger,  state: aborted }`
  *  - `restoring`, `interrupting` → `{ role: caution, state: running }`
- *  - `awaiting_approval`         → `{ role: caution, state: paused }`
+ *  - `awaiting_approval`         → `{ role: caution, state: running }`
  *  - active stream phases        → `{ role: action,  state: running }`
  *  - `background`                → `{ role: agent,   state: running }`
  *  - `idle`                      → `{ role: inherit, state: stopped }`
@@ -162,11 +162,12 @@ export function sessionSessionPhaseVisual(phaseKey: string): TugProgressIndicato
     case "interrupting":
       return { role: "caution", state: "running" };
     case "awaiting_approval":
-      // `paused`, not `running`: the session is blocked on the user and
-      // nothing is executing, so the glyph holds a still, full-size,
-      // caution-tinted pose rather than breathing indefinitely on behalf
-      // of work that is not happening. See `indicator-liveness`.
-      return { role: "caution", state: "paused" };
+      // The turn is IN FLIGHT — opened, parked on the user, and resuming the
+      // instant they answer — so the session's dot pulses, in caution rather
+      // than the working tone. This is the state most in need of being seen
+      // from across the room, and a still glyph is the one thing that cannot
+      // be. See `indicator-liveness`.
+      return { role: "caution", state: "running" };
     case "background":
       return { role: "agent", state: "running" };
     case "submitting":
