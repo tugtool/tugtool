@@ -12,15 +12,17 @@
  *    there unchanged for however long the session stays quiet.
  *  - it has never spoken at all. Nothing has happened since it was made.
  *
- * Both become a sentence with a time in it and the same closing word:
- * `Completed at 4:12 PM. Ready.` / `Created at Jun 17, 6:11 AM. Ready.` The
- * time is what turns a stale-looking line into a fact — a row that says
- * `Done` reads the same after five seconds and five hours — and `Ready.`
- * is what the state actually is, said in the same breath.
+ * Both become a sentence with a date and a time in it and the same closing
+ * word: `Completed at Jul 30, 7:15 PM. Ready.` / `Created at Jun 17, 6:11 AM.
+ * Ready.` The stamp is what turns a stale-looking line into a fact — a row
+ * that says `Done` reads the same after five seconds and five hours — and
+ * `Ready.` is what the state actually is, said in the same breath.
  *
- * The clock is short for today and carries the date otherwise, because a
- * resumed session may have been created weeks ago and `6:11 AM` alone would
- * be a lie about which morning.
+ * The DAY is always there, never dropped for a timestamp that happens to be
+ * today's. A rail of resting rows is read by comparing them to each other, and
+ * a column where some rows carry a day and some do not is a column the eye has
+ * to sort before it can compare — and the one row that stayed short is exactly
+ * the one whose day the reader then has to infer.
  *
  * @module lib/pulse-line/resting-line
  */
@@ -36,22 +38,26 @@ export const TURN_DONE_MARKER = "Done";
 const READY = "Ready.";
 
 /**
- * Wall clock for a resting line: `4:12 PM` when the timestamp is on `now`'s
- * calendar day, `Jun 17, 6:11 AM` when it is not. Locale-formatted, so a
- * 24-hour locale gets its own clock.
+ * Wall stamp for a resting line: `Jun 17, 6:11 AM`. Locale-formatted, so a
+ * 24-hour locale gets its own clock and a locale that writes the day first
+ * gets that.
+ *
+ * The day and the clock are formatted separately and joined here rather than
+ * asked for in one call: a single `toLocaleString` for both writes its own
+ * connective — `Jun 17 at 6:11 AM` — and the sentence around this already
+ * supplies one, which lands as `Created at Jun 17 at 6:11 AM`.
  */
-export function formatRestingClock(atMs: number, now: Date): string {
+export function formatRestingStamp(atMs: number): string {
   const at = new Date(atMs);
-  const sameDay =
-    at.getFullYear() === now.getFullYear() &&
-    at.getMonth() === now.getMonth() &&
-    at.getDate() === now.getDate();
-  return at.toLocaleString(
-    undefined,
-    sameDay
-      ? { hour: "numeric", minute: "2-digit" }
-      : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
-  );
+  const day = at.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  const clock = at.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${day}, ${clock}`;
 }
 
 /**
@@ -59,8 +65,8 @@ export function formatRestingClock(atMs: number, now: Date): string {
  * `atMs` is that beat's own timestamp, so the sentence dates the completion
  * rather than the render.
  */
-export function completedRestingLine(atMs: number, now: Date): string {
-  return `Completed at ${formatRestingClock(atMs, now)}. ${READY}`;
+export function completedRestingLine(atMs: number): string {
+  return `Completed at ${formatRestingStamp(atMs)}. ${READY}`;
 }
 
 /**
@@ -70,12 +76,9 @@ export function completedRestingLine(atMs: number, now: Date): string {
  * A null `createdAtMs` is the window before the session ledger answers. The
  * line still reads as the state it is; it just cannot date it yet.
  */
-export function createdRestingLine(
-  createdAtMs: number | null,
-  now: Date,
-): string {
+export function createdRestingLine(createdAtMs: number | null): string {
   if (createdAtMs === null) return READY;
-  return `Created at ${formatRestingClock(createdAtMs, now)}. ${READY}`;
+  return `Created at ${formatRestingStamp(createdAtMs)}. ${READY}`;
 }
 
 /**
@@ -90,11 +93,8 @@ export function createdRestingLine(
 export function restingActivityText(
   latest: { text: string; atMs: number } | null,
   createdAtMs: number | null,
-  now: Date,
 ): string {
-  if (latest === null) return createdRestingLine(createdAtMs, now);
-  if (latest.text === TURN_DONE_MARKER) {
-    return completedRestingLine(latest.atMs, now);
-  }
+  if (latest === null) return createdRestingLine(createdAtMs);
+  if (latest.text === TURN_DONE_MARKER) return completedRestingLine(latest.atMs);
   return latest.text;
 }

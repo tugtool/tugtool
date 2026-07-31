@@ -346,7 +346,7 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
     ? null
     : isCompactingCard(compaction, row.cardId)
       ? COMPACTING_PULSE_TEXT
-      : restingActivityText(latest, createdAtMs, new Date());
+      : restingActivityText(latest, createdAtMs);
   return (
     <TugSessionRow
       className="session-row-content"
