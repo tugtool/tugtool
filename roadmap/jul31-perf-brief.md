@@ -6,7 +6,7 @@ The scope is deliberately open. What follows is one gesture, measured hard; whet
 
 **The headline:** opening a snippet editor in the Lens costs **255ms** on a deck carrying three session cards, and **45ms** on an empty one. An arrow key through the same list, in the same document, costs **5ms**. Whatever the editor itself costs is not the story — the same gesture in the same code gets five times more expensive as the rest of the document grows.
 
-**Status:** measured and localized, not explained to the bottom and not fixed. No code change is proposed yet — two were tried and both reverted (see [#dead-ends]). Next: [W1] land the harness, then [W2] price style recalc against layout ([#work]). Last updated 2026-07-31.
+**Status:** root-caused and fixed, fix in the working tree pending discussion. The bill was a full-document style invalidation from CodeMirror's style injector rewriting its `<style>` tag on every editor mount — priced in isolation at ~100ms on this deck, paid twice per open ([#root-cause]). With the two-part fix, the gesture drops from 280/276/270ms to 61/45/41ms — the empty-deck number, on the loaded deck. The durable form of the fix is the open course-of-action question. Last updated 2026-07-31.
 
 
 ## The report {#report}
@@ -64,6 +64,30 @@ That is the next thing to measure, and it decides the shape of the fix: if the c
 
 Two framings to keep separate while investigating: making the *flush cheaper* (transcripts stop being expensive to walk) versus making the *gesture not force one* (nothing on the mount path reads geometry synchronously). The second is narrower but fragile for the reason in [#mechanism] — it only holds while every reader on the path stays disciplined.
 
+**Answered — see [#root-cause].** Neither framing turned out to be the right one: the flush was expensive because the gesture was *invalidating the whole document's style*, and the invalidation, not the walk, was the thing to remove.
+
+
+## Root cause and fix {#root-cause}
+
+The discriminating experiment the earlier ablations never ran: price *bare* mutations on the loaded deck, no gesture attached. All of them are free — a plain div into a transcript (0–3ms), a div into the Lens (0ms), a `div.snippet-editor` decoy that flips the `:has()` anchors (0ms), a root attribute write (0ms), a body padding toggle forcing a document-wide position shift (~1ms), even inserting a *fresh* stylesheet (3ms — WebKit scopes invalidation for added sheets to the new rules' matches). The deck is not generically pathological, and scrubbing all 51 `:has()` rules from the live stylesheets moved the gesture only ~15ms. Whatever was expensive was something the real open does that none of these do.
+
+The mutation log had it: on every open, twice, something outside the Lens rewrote a `<style>` element's contents (`STYLE +1/-1`). A **content rewrite of an existing sheet** is the one invalidation WebKit cannot scope — full style-resolver rebuild, full-document recalc — and it is invisible to a rule-count check because the rewrite nets zero rules, which is exactly how [#ruled-out] measured "stylesheet injection" and cleared it. Priced in isolation: rewriting CodeMirror's `<style>` tag with **byte-identical text** costs **102ms** on this deck. Paid once inside the commit (collected by the forced read — the 104ms in [#mechanism]) and once after it (collected by the frame), that is the whole anomaly.
+
+The rewriter is `style-mod`, CodeMirror's style injector. Two defects compose:
+
+1. **style-mod's document path rewrites unconditionally.** Its constructed-stylesheet path (`insertRule`, incremental, scoped) is gated on `!root.head`, so it only ever serves shadow roots. For a document it maintains a `<style>` tag and its `mount()` reassigns the tag's entire `textContent` on *every* call — even when not a single module changed. Every `new EditorView` calls mount.
+2. **Every editor was born with a fresh style module.** `tug-text-editor.tsx` seeded its typography-revision compartment with a per-instance `EditorView.theme({})` — correct for *reconfigures* (the fresh prefix is the re-measure signal) but pointless at birth, and it made every mount genuinely register a new module besides.
+
+The fix is one line each, and both are required: guard style-mod's rewrite (`if (this.styleTag.textContent != text)`), and share one module-level `EditorView.theme({})` as the initial revision marker so a new editor registers nothing new. The guard alone fails because a fresh empty module still appends a newline to the sheet text; the hoist alone fails because mount rewrites even with zero new modules.
+
+| Condition (loaded deck, 34k elements) | keydown → usable |
+|---|---|
+| Return, before | **280 / 276 / 270 ms** |
+| Return, after both fixes | **61 / 45 / 41 ms** |
+| forced-read bill inside the commit | 102ms → **1ms** |
+
+The reach is wider than the snippet editor: *every* `EditorView` construction anywhere — session prompt entries, the text card, code views — paid the same two rewrites, scaled by whatever the deck happened to be carrying.
+
 
 ## Work {#work}
 
@@ -79,6 +103,8 @@ Two framings to keep separate while investigating: making the *flush cheaper* (t
 Assertions should be ratios and structure, never wall-clock budgets — a millisecond threshold on a shared machine is a flake. `@covers` is required (`just app-test-covers-check`), and it runs selectively, never in a sweep.
 
 **[W2] Price style recalc against layout on the transcript subtrees** — the question in [#open-question], and the thing that decides the fix's shape. Wants W1 in place first.
+
+**Status of both:** the scratch was rebuilt (it lives again as `tests/app-test/at9997-scratch-snippet-heavy-deck.test.ts`, now carrying the bare-mutation pricing probes, the gesture mutation log, the `:has()` scrub knob, and the identical-rewrite probe), and its first two runs answered [W2] and produced [#root-cause]. What remains of [W1] is promoting it from a scratch number to a kept instrument.
 
 
 ## Dead ends, recorded {#dead-ends}

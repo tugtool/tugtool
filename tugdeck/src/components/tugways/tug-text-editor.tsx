@@ -289,6 +289,17 @@ const readOnlyCompartment = new Compartment();
 const markdownStylingCompartment = new Compartment();
 
 /**
+ * The initial revision marker, shared by every editor instance. Only a
+ * *reconfigure* needs a freshly-minted prefix (the facet comparison is
+ * what flips `mustMeasureContent`); the value the view is BORN with
+ * carries no such signal, so all views can share one module. Sharing it
+ * keeps a new editor's construction from registering a new style module
+ * with style-mod, whose document-mode mount rewrites its whole
+ * `<style>` tag — a full-document style invalidation per editor mount.
+ */
+const initialTypographyRevTheme: Extension = EditorView.theme({});
+
+/**
  * Reconfigurable geometry-revision marker.
  *
  * Holds an empty `EditorView.theme({})` extension whose contributed
@@ -1069,13 +1080,10 @@ function buildExtensions(
     // is async). Placed with the compartments so it sits below the keymap /
     // theme precedence; it never contributes a keymap of its own by design.
     markdownStylingCompartment.of([]),
-    // Initial revision marker. Each `EditorView.theme({})` mints
-    // a fresh style-module prefix; subsequent reconfigures
-    // produce a new prefix → the `theme` facet's value differs
-    // → CM6 flips `mustMeasureContent = true` → next measure
-    // pass refreshes the heightOracle from the live computed
-    // styles. See `typographyRevCompartment` docstring above.
-    typographyRevCompartment.of(EditorView.theme({})),
+    // Initial revision marker — the shared instance, deliberately not a
+    // fresh `EditorView.theme({})`. Reconfigures mint fresh prefixes; the
+    // birth value never needs to. See `initialTypographyRevTheme`.
+    typographyRevCompartment.of(initialTypographyRevTheme),
     // Typeahead first so its `Prec.highest` keymap sees Enter / Tab /
     // Arrows / Escape before the Step 4 keymap when a session is
     // active. When inactive, every branch returns `false` and the
