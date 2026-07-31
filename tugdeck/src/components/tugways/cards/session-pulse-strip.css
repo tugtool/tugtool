@@ -67,12 +67,16 @@
   line-height: 1;
   border-radius: var(--tug-radius-sm, 4px);
   background-color: transparent;
-  color: var(--tug7-element-global-text-normal-muted-rest);
   font-family: inherit;
-  /* The label's size is the PULSE's, not this strip's: `TugPulse` computes
-     the label's vertical position from it. */
+  /* The label's VOICE is the PULSE's, not this strip's — size, tracking, and
+     tone all come from `tug-pulse.css`. The size because `TugPulse` computes
+     the label's vertical position from it; the other two because the stacked
+     layout's stand-in says this same word in this same voice, and the two
+     have to be one decision. What is left here is the pill: its box, its
+     hover, and its ring. */
+  color: var(--tugx-pulse-legend-color);
   font-size: var(--tugx-pulse-legend-size);
-  letter-spacing: 0.18em;
+  letter-spacing: var(--tugx-pulse-legend-tracking);
   flex: 0 0 auto;
   cursor: pointer;
   transition: background-color 0.1s ease;

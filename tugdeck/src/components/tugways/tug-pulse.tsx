@@ -91,11 +91,21 @@ const SEPARATOR = "›";
  * so a PULSE occupies the same space whether or not the session it reports on
  * has an intent or an operation running yet.
  *
- * Both are ordinary content, set exactly like the level they stand in for —
- * there is no placeholder voice, because a stand-in wearing its own weight or
- * tone would be the reader's one inconsistent line.
+ * The activity's stand-in is ordinary content, set exactly like the run it
+ * stands in for: a lifecycle word wearing its own weight or tone would be the
+ * reader's one inconsistent second run.
+ *
+ * The headline's is the one exception, and it is the same word the legend
+ * says. Where the legend exists it is already saying it, so the run stays
+ * empty; where it does not — the stacked layout, which has no legend at all —
+ * the stand-in speaks FOR the legend, and it is set as one: the small tracked
+ * label, not a goal in headline register. A rail row before its session's
+ * first overview then reads as the same band the Z2 strip opens with, rather
+ * than as a session whose stated goal is the word PULSE.
  */
-const HEADLINE_FALLBACK = "PULSE";
+const HEADLINE_FALLBACK = (
+  <span className="tug-pulse-headline-stand-in">PULSE</span>
+);
 const ACTIVITY_FALLBACK = "None";
 
 /** What a middle truncation puts between the two surviving ends. */

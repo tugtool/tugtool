@@ -102,6 +102,8 @@ import {
   usePulse,
   usePulseOverview,
 } from "@/lib/pulse-store";
+import { restingActivityText } from "@/lib/pulse-line/resting-line";
+import { useSessionLedger } from "@/lib/session-ledger-store";
 import {
   ACTIVITY_BIN_MS,
   getSessionActivityStore,
@@ -235,6 +237,37 @@ function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
   );
 }
 
+/**
+ * When the session was made — the date half of the row's resting line.
+ *
+ * Same two sources, in the same order, as the Z2 control bar's "Session
+ * created" metadata: the dev session ledger's `created_at` is the authority
+ * (it is present at zero turns, which is exactly the state a resting row is
+ * reporting on), with the replay-derived anchor covering the window before
+ * the ledger answers. Null until one of them does.
+ */
+function useSessionCreatedAtMs(
+  cardId: string,
+  tugSessionId: string,
+  projectDir: string,
+): number | null {
+  const services = useSyncExternalStore(cardServicesStore.subscribe, () =>
+    cardServicesStore.getServices(cardId),
+  );
+  const store = services?.codeSessionStore ?? null;
+  const replayCreatedAtMs = useSyncExternalStore(
+    store?.subscribe ?? NOOP_SUBSCRIBE,
+    store !== null
+      ? () => store.getSnapshot().sessionCreatedAtMs
+      : () => null,
+    () => null,
+  );
+  const ledger = useSessionLedger(projectDir);
+  const ledgerCreatedAtMs =
+    ledger.rows.find((r) => r.session_id === tugSessionId)?.created_at ?? null;
+  return ledgerCreatedAtMs ?? replayCreatedAtMs;
+}
+
 /** The per-row activity sparkline over the session's composite series. */
 function RowSparkline({ tugSessionId }: { tugSessionId: string }): React.ReactElement {
   const activityStore = getSessionActivityStore();
@@ -297,13 +330,23 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
     compactionProgressStore.subscribe,
     compactionProgressStore.getSnapshot,
   );
+  // The session's creation time — the date the resting line carries when the
+  // session has never spoken.
+  const createdAtMs = useSessionCreatedAtMs(
+    row.cardId,
+    row.tugSessionId,
+    row.projectDir,
+  );
+  // What the activity level says. A live beat is the beat; the two absences —
+  // a finished turn's bare `Done` marker, and a session with no beats at all —
+  // become the resting reading, which dates itself and says what the state is
+  // (see `resting-line`). The row is a monitor, so those two are what it wears
+  // most of the time.
   const pulseText = !pulse.enabled
     ? null
     : isCompactingCard(compaction, row.cardId)
       ? COMPACTING_PULSE_TEXT
-      : latest !== null
-        ? latest.text
-        : null;
+      : restingActivityText(latest, createdAtMs, new Date());
   return (
     <TugSessionRow
       className="session-row-content"

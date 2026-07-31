@@ -83,6 +83,12 @@ body {
      agree exactly). Dial toward 0.516 — the x-height — if the label reads
      high against a headline with few capitals. */
   --tugx-pulse-legend-center-ratio: 0.698;
+  /* The label's tracking and tone. Declared here rather than at the strip
+     because the LABEL is the PULSE's own voice: the Z2 pill and the stacked
+     layout's stand-in are the same word saying the same thing, and a number
+     kept in two files is a number that ends up different in two files. */
+  --tugx-pulse-legend-tracking: 0.18em;
+  --tugx-pulse-legend-color: var(--tug7-element-global-text-normal-muted-rest);
 
   /* ── The separator between them ─────────────────────────────────────── */
   --tugx-pulse-sep-gap: 0.45em;
@@ -98,6 +104,19 @@ body {
      of each line's box, so a two-line block is exactly two steps tall and
      the last line keeps (step − first baseline) of descender room. */
   --tugx-pulse-stacked-baseline-step: 16px;
+  /* What the stacked lines stop short of at the trailing edge — the width of
+     the accessory riding the last one, plus whatever air it keeps.
+
+     The accessory is a flex item on ITS line, so that line stops short of it
+     by layout. The lines above it have no such item and would otherwise run
+     the full width and pass beneath it — the accessory is taller than a line
+     box and lifted above its own besides, so a long run really does end up
+     under it. This is what the other lines reserve so they don't.
+
+     0 by default: a PULSE with no accessory has nothing to stop short of, and
+     the component cannot know a node's width. The mount site declares it,
+     because the mount site is what supplied the accessory. */
+  --tugx-pulse-stacked-trailing-reserve: 0px;
   /* How far the trailing accessory is LIFTED off its own line. TUNE HERE.
      The tape is centered on the activity's line box, which is typographically
      correct and reads a touch low: it is the bottom-most thing in the block,
@@ -216,6 +235,18 @@ body {
   font-weight: var(--tugx-pulse-headline-weight);
   letter-spacing: var(--tugx-pulse-headline-tracking);
   color: var(--tugx-pulse-headline-color);
+}
+
+/* The headline's stand-in — the word the legend would have said, set as the
+   legend rather than as a goal. It inherits the headline's face and its line
+   box (so the line's height and baseline are exactly where they were, and the
+   run keeps its ellipsis) and overrides only the three things that make the
+   label a label: size, tracking, and tone. */
+/* @tug-renders-on var(--tugx-pane-bg) */
+.tug-pulse-headline-stand-in {
+  font-size: var(--tugx-pulse-legend-size);
+  letter-spacing: var(--tugx-pulse-legend-tracking);
+  color: var(--tugx-pulse-legend-color);
 }
 
 /* ── Which run gives way on a short bar ──────────────────────────────────
@@ -342,6 +373,14 @@ body {
   align-self: baseline;
   inline-size: 0;
   block-size: var(--tugx-pulse-stacked-first-baseline);
+}
+
+/* Every line ABOVE the one carrying the accessory stops short of it — see the
+   knob. The accessory's own line needs no rule: it holds the accessory as a
+   flex item and its runs stop at it by layout. So the whole block ends on one
+   vertical, and no run passes under the tape. */
+.tug-pulse[data-layout="stacked"] .tug-pulse-line:not(:last-child) {
+  padding-inline-end: var(--tugx-pulse-stacked-trailing-reserve);
 }
 
 /* The tape's lift off its own line — see the knob's own note above. A

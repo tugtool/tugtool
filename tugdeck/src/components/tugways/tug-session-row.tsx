@@ -121,13 +121,59 @@ export const TUG_SESSION_ROW_DEFAULT_FIT: TugSessionRowFit = "inset";
 export const TUG_SESSION_ROW_INDICATOR_SIZE = 28;
 
 /**
- * The activity tape's size on a session row. Declared here for the same reason
- * as the indicator's: the tape is a fixed-width accessory whose width comes
- * straight off the activity run's, so the number belongs to the row's packing
- * rather than to whichever surface mounts it.
+ * The activity tape's size on a session row, before scale. Declared here for
+ * the same reason as the indicator's: the tape is a fixed-width accessory
+ * whose width comes straight off the activity run's, so the number belongs to
+ * the row's packing rather than to whichever surface mounts it.
  */
-export const TUG_SESSION_ROW_SPARK_WIDTH = 64;
-export const TUG_SESSION_ROW_SPARK_HEIGHT = 18;
+const SPARK_BASE_WIDTH = 64;
+const SPARK_BASE_HEIGHT = 18;
+
+/**
+ * Symmetric scale on the tape. **TUNE HERE** — this is the one knob for how
+ * big the row's sparkline is, and both axes move together so the graph never
+ * distorts.
+ *
+ * It is a number rather than a CSS custom property because the tape is a
+ * canvas drawn at device resolution for the size it is given: a CSS transform
+ * would scale the pixels it already painted (a soft, resampled line) instead
+ * of painting fewer, and it would leave the flex item occupying the width it
+ * gave up. Scaling the size itself does both.
+ *
+ * At 1 — the size of record. The tape is a graph read at a glance from a
+ * rail, and it is already small; scaling it down to buy the text width
+ * costs more legibility than the text gains, and the width the runs need
+ * comes from {@link TUG_SESSION_ROW_SPARK_RESERVE} keeping them off the tape
+ * rather than from shrinking it.
+ *
+ * The scroll speed is derived from the width (`VISIBLE_SECONDS` in
+ * `tug-sparkline`), so a narrower tape shows the same span more tightly; it
+ * does not change what is on screen.
+ */
+export const TUG_SESSION_ROW_SPARK_SCALE = 1;
+
+export const TUG_SESSION_ROW_SPARK_WIDTH = Math.round(
+  SPARK_BASE_WIDTH * TUG_SESSION_ROW_SPARK_SCALE,
+);
+export const TUG_SESSION_ROW_SPARK_HEIGHT = Math.round(
+  SPARK_BASE_HEIGHT * TUG_SESSION_ROW_SPARK_SCALE,
+);
+
+/**
+ * The tape's width, published to this component's own stylesheet.
+ *
+ * The tape rides the SECOND stacked line, so that line reserves its width by
+ * flex layout and stops short of it on its own. The FIRST does not — the
+ * headline runs the whole row and truncates at the row's edge, which puts a
+ * long goal straight under a tape that is taller than its own line box and
+ * lifted above it besides. So the first line has to be told what to stop
+ * short of, and the number it must stop short of is the one right above:
+ * declared in TS because the tape's size is, read from CSS because that is
+ * where the stopping is done. One source, two readers.
+ */
+const SPARK_ADVANCE_STYLE = {
+  "--tugx-session-row-spark-advance": `${TUG_SESSION_ROW_SPARK_WIDTH}px`,
+} as React.CSSProperties;
 
 /** Fits that carry the indicator inline on the name line rather than in a
  *  leading column of its own. */
@@ -187,6 +233,7 @@ export const TugSessionRow = React.forwardRef<
     sparkline,
     selected,
     className,
+    style,
     ...rest
   },
   ref,
@@ -200,6 +247,7 @@ export const TugSessionRow = React.forwardRef<
     <TugListRow
       ref={ref}
       className={cn("tug-session-row", className)}
+      style={{ ...SPARK_ADVANCE_STYLE, ...style }}
       data-slot="tug-session-row"
       data-fit={fit}
       selected={selected}

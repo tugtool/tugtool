@@ -28,6 +28,12 @@
  *      else here would catch: a zero-width strut still collects its
  *      container's flex gap, which indented the two pulse lines past the name
  *      while every other assertion in this file stayed green.
+ *   5. **Neither line runs under the tape.** The activity line holds the
+ *      sparkline as a flex item and stops short of it by layout; the headline
+ *      above holds nothing, and without a reserve it runs the row's full width
+ *      straight beneath a graph that is taller than a line box and lifted
+ *      above its own besides. Measured with a goal too long for any rail
+ *      width, which is the only state in which it shows.
  *
  * **The frames are real, the commentator is not.** `publishPulseFrame` hands
  * the store bytes in the emitter's own shape and they go through the
@@ -42,6 +48,8 @@
  * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
  * @covers tugdeck/src/components/lens/sections/sessions-section.tsx
  * @covers tugdeck/src/components/tugways/tug-pulse.css
+ * @covers tugdeck/src/components/tugways/tug-session-row.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-row.css
  * @covers tugdeck/src/components/lens/sections/sessions-section.css
  * @covers tugdeck/src/lib/pulse-store.ts
  * @covers tugdeck/src/test-surface.ts
@@ -172,7 +180,7 @@ async function lensLineCount(app: App, sid: string): Promise<number> {
 
 /**
  * A Lens row's geometry, in one read: the left edge of each of its three
- * lines, and the top of the phase dot against the top of the name line.
+ * lines, and the center of the phase dot against the center of the name line.
  */
 async function lensRowGeometry(
   app: App,
@@ -181,8 +189,8 @@ async function lensRowGeometry(
   nameLeft: number;
   intentLeft: number;
   activityLeft: number;
-  dotTop: number;
-  nameLineTop: number;
+  dotCenter: number;
+  nameLineCenter: number;
 } | null> {
   return app.evalJS<{
     nameLeft: number;
@@ -207,6 +215,40 @@ async function lensRowGeometry(
          activityLeft: activity.getBoundingClientRect().left,
          dotCenter: dot.getBoundingClientRect().top + dot.getBoundingClientRect().height / 2,
          nameLineCenter: nameLine.getBoundingClientRect().top + nameLine.getBoundingClientRect().height / 2,
+       };
+     })()`,
+  );
+}
+
+/**
+ * Where a Lens row's two PULSE runs end, and where its tape begins. The tape
+ * is taller than the line box it rides and lifted above it besides, so a run
+ * that reaches the tape's left edge is a run printed under a graph.
+ */
+async function lensTrailingGeometry(
+  app: App,
+  sid: string,
+): Promise<{
+  intentRight: number;
+  activityRight: number;
+  sparkLeft: number;
+} | null> {
+  return app.evalJS<{
+    intentRight: number;
+    activityRight: number;
+    sparkLeft: number;
+  } | null>(
+    `(function(){
+       var row = document.querySelector(${JSON.stringify(lensRow(sid))});
+       if (row === null) return null;
+       var intent = row.querySelector('[data-slot="tug-pulse-headline"]');
+       var activity = row.querySelector('[data-slot="tug-pulse-activity"]');
+       var spark = row.querySelector('[data-slot="tug-sparkline"]');
+       if (intent === null || activity === null || spark === null) return null;
+       return {
+         intentRight: intent.getBoundingClientRect().right,
+         activityRight: activity.getBoundingClientRect().right,
+         sparkLeft: spark.getBoundingClientRect().left,
        };
      })()`,
   );
@@ -362,6 +404,41 @@ describe.skipIf(!SHOULD_RUN)("AT0282: the PULSE reads at two levels", () => {
         expect(Math.abs(geo!.activityLeft - geo!.intentLeft)).toBeLessThan(0.51);
         expect(geo!.nameLeft).toBeGreaterThan(geo!.intentLeft + 4);
         expect(Math.abs(geo!.dotCenter - geo!.nameLineCenter)).toBeLessThan(0.51);
+
+        // 5. Neither PULSE line runs under the tape. The activity line holds
+        //    the tape as a flex item and stops short of it by layout; the
+        //    headline above has no such item and would run the row's full
+        //    width, straight beneath a graph that is taller than a line box
+        //    and lifted above its own besides. Give the control row a goal too
+        //    long for any rail width — the state that fails — and measure both
+        //    runs against the tape's leading edge.
+        await publishPulse(app, {
+          type: "pulse",
+          kind: "overview",
+          text:
+            "Reworking the session overview cadence gate so a long standing " +
+            "goal cannot be cut by the tape beside it",
+          scopes: [SID_B],
+          beat: 2,
+          at: 1_700_000_000_003,
+        });
+        await app.waitForCondition<boolean>(
+          `(function(){
+             var el = document.querySelector(${JSON.stringify(lensIntent(SID_B))});
+             return el !== null && el.textContent.indexOf("Reworking") === 0;
+           })()`,
+          { timeoutMs: 10_000 },
+        );
+        const trailing = await lensTrailingGeometry(app, SID_B);
+        expect(trailing).not.toBeNull();
+        expect(trailing!.sparkLeft).toBeGreaterThan(0);
+        expect(trailing!.intentRight).toBeLessThan(trailing!.sparkLeft);
+        expect(trailing!.activityRight).toBeLessThan(trailing!.sparkLeft);
+        // Both lines end on ONE vertical, so the block reads as a block —
+        // the headline stops where the activity's own layout stops it.
+        expect(
+          Math.abs(trailing!.intentRight - trailing!.activityRight),
+        ).toBeLessThan(0.51);
       } finally {
         await app.close();
         rmTempTugbank(tugbankPath);

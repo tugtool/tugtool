@@ -20,9 +20,10 @@
  *  - [L19] component authoring guide — file pair, docstring,
  *    `data-slot="tug-session-row"`.
  *  - [L20] token sovereignty — owns `--tugx-session-row-*`. It declares
- *    `TugPulse`'s geometry knobs on the pulse's OWN element in the `duplex`
- *    fit, which is that component's documented mount-site override, and
- *    reaches into no other component's internals.
+ *    `TugPulse`'s geometry knobs on the pulse's OWN element — the `duplex`
+ *    fit's bar height and baseline, and the stacked layout's tape lift and
+ *    trailing reserve — which is that component's documented mount-site
+ *    override, and reaches into no other component's internals.
  *
  * The row's `flush` variant is transparent and paints no foreground of its
  * own — the name and the PULSE runs carry their own colors from their own
@@ -44,6 +45,29 @@ body {
      this advance into the row's block padding. Raise it only if a ring is
      visibly clipping something. */
   --tugx-session-row-dot-advance: 20px;
+  /* How far the PULSE's lines start inside the row's own leading edge, in the
+     fits where the indicator rides the name line. TUNE HERE.
+
+     The top line sets the margin. With the dot on the name line, the row's
+     leading edge is where the dot's BOX starts — and the dot itself is a small
+     disc centered in a much larger ring of breath, so its ink begins several
+     pixels in. PULSE lines flush to that edge therefore start left of the
+     first mark above them and read as hanging outside the margin the row just
+     set. This is the correction, and it is deliberately smaller than the
+     dot's whole advance: aligning the lines to the NAME would indent the
+     reading by a fifth of a rail-width row, which the activity run cannot
+     afford. Set to 0 for the old flush edge. */
+  --tugx-session-row-pulse-inset: 8px;
+  /* How far the tape is LIFTED off the activity line it rides. TUNE HERE.
+     Positive raises it, negative drops it; a transform, so no baseline, line
+     box, or row height moves with it — only the tape.
+
+     The row's own name for `TugPulse`'s `--tugx-pulse-stacked-trailing-rise`,
+     declared on the row's pulse element below (that component's documented
+     mount-site override). The knob is aliased rather than reached for so the
+     row's tuning numbers read together here, and so tuning the Lens rail
+     cannot move a tape on some other stacked mount. */
+  --tugx-session-row-spark-rise: 3px;
   /* The `wash` fit's tape, painted behind the PULSE instead of beside it. It
      must read as a texture under the type, not as a chart the eye tries to
      follow, so it is held well back. */
@@ -125,7 +149,43 @@ body {
    so the row primitive renders no leading column and every line — the name
    and both PULSE runs — starts at the row's own inline padding. That reclaimed
    gutter is the fit's whole proposal, and it is bought by the rules above
-   rather than by a rule here. */
+   rather than by a rule here.
+
+   The PULSE then takes a small inset off that edge — see the knob. Not in the
+   `gutter` fit, where the leading column already indents every line past the
+   dot and a second inset would only push the reading further right. It is
+   padding rather than a margin so the trailing accessory keeps the row's own
+   far edge: the tape is pinned to the end of the line, and only the start of
+   the reading moves. */
+.tug-session-row[data-fit="inset"] .tug-pulse,
+.tug-session-row[data-fit="reveal"] .tug-pulse,
+.tug-session-row[data-fit="wash"] .tug-pulse,
+.tug-session-row[data-fit="duplex"] .tug-pulse {
+  padding-inline-start: var(--tugx-session-row-pulse-inset);
+}
+
+/* Two numbers handed to `TugPulse` under the row's own names — the tape's
+   lift and what the lines must stop short of. Declared on the pulse's own
+   element, which is that component's documented mount-site override.
+
+   The reserve is the tape's own advance plus the gap it already keeps from
+   the run beside it, so BOTH lines stop on one vertical a clear few pixels
+   off the tape — the headline no longer runs under a graph it cannot be read
+   through, and the two lines end where each other ends.
+
+   Not in the `wash` fit: there the tape leaves the flow deliberately so the
+   lines can have its width, and reserving it back is the one thing that fit
+   exists to not do. */
+.tug-session-row:not([data-fit="wash"]) .tug-pulse[data-layout="stacked"] {
+  --tugx-pulse-stacked-trailing-rise: var(--tugx-session-row-spark-rise);
+  --tugx-pulse-stacked-trailing-reserve: calc(
+    var(--tugx-session-row-spark-advance) + var(--tugx-pulse-trailing-gap)
+  );
+}
+
+.tug-session-row[data-fit="wash"] .tug-pulse[data-layout="stacked"] {
+  --tugx-pulse-stacked-trailing-rise: var(--tugx-session-row-spark-rise);
+}
 
 /* ── `wash` — the tape behind the type ───────────────────────────────────
    The sparkline leaves the flow and paints at the trailing edge, under the
