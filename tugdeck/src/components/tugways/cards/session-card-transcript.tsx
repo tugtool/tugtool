@@ -697,15 +697,10 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
           <ShellBlockFrame collapsible={!isGitRow} toolUseId={message.exchangeId}>
             <CommandBlock
               message={message}
-              // Share ([P08]): compose the fenced text at click time and
-              // park it on the shell store; the prompt entry consumes it
-              // (route flip + editor seed) — never auto-sent.
-              onShare={() =>
-                shellSessionStore.requestShare(composeShellShareText(message))
-              }
-              // Add-to-context ([P08], staged): stage / un-stage the same
-              // fenced text on the pending-context queue so it rides the next
-              // `❯` submission as attributed `#s{n}` context.
+              // Add-to-context ([P08]): stage / un-stage the fenced text on
+              // the pending-context queue so it rides the next `❯` submission
+              // as attributed `#s{n}` context. The one path into Claude's
+              // context from a shell row.
               staged={staged}
               onToggleContext={() => {
                 if (staged) {
@@ -719,10 +714,10 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
                   });
                 }
               }}
-              // Send to Claude instead ([P09]): undo a classifier auto-route by
+              // Send as message ([P09]): undo a classifier auto-route by
               // dispatching the raw command as a Claude turn (queues mid-turn).
               // Only rendered for an auto-routed row.
-              onSendToClaude={() => codeSessionStore.send(message.command, [])}
+              onSendAsMessage={() => codeSessionStore.send(message.command, [])}
             />
           </ShellBlockFrame>
         }

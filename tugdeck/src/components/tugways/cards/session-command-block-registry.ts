@@ -43,19 +43,18 @@ import { ShellExchangeBlock } from "./shell-exchange-block";
  */
 export interface CommandBlockProps {
   message: ShellExchangeMessage;
-  /** Share gesture ([P08]) — omitted where no prompt entry can consume it. */
-  onShare?: () => void;
   /**
-   * Add-to-context toggle ([P08], the staged variant): stage this exchange to
-   * ride the next `❯` submission as attributed context, or un-stage it.
-   * Omitted where no staged-context queue is available.
+   * Add-to-context toggle ([P08]): stage this exchange to ride the next `❯`
+   * submission as attributed context, or un-stage it. The one path from a
+   * shell row into Claude's context. Omitted where no staged-context queue
+   * is available.
    */
   onToggleContext?: () => void;
   /**
-   * Send the original command to Claude instead ([P09]) — the auto-route undo.
-   * Rendered only for a `message.autoRouted` row.
+   * Send the original command to Claude as a message instead ([P09]) — the
+   * auto-route undo. Rendered only for a `message.autoRouted` row.
    */
-  onSendToClaude?: () => void;
+  onSendAsMessage?: () => void;
   /** Whether this exchange is currently staged (drives the toggle's pose). */
   staged?: boolean;
 }

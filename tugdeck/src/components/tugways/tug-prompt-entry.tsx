@@ -623,31 +623,28 @@ export function buildCommitModeState(message: string): TugTextEditingState {
 }
 
 /**
- * The document insertion a consumed shell share applies ([P08]) —
- * `insert` at offset `from` (end of the current doc).
+ * An end-of-doc insertion — `insert` at offset `from`.
  */
-export interface ShellShareInsertion {
+export interface AppendInsertion {
   from: number;
   insert: string;
 }
 
 /**
- * Apply a shell share gesture ([P08]): compute the editor insertion for
- * the shared text — Claude's to receive once the user edits and sends. An
- * effectively empty editor takes the share text as-is; a mid-compose draft
- * gets it appended on its own line, never clobbered. (Code is the only
- * resting mode now, so the gesture no longer flips any route — it just
- * seeds the editor.)
+ * Compute the end-of-doc insertion for text arriving from outside the
+ * editor — today a snippet dropped from the Lens with no resolvable drop
+ * offset. An effectively empty editor takes the text as-is; a mid-compose
+ * draft gets it appended on its own line, never clobbered.
  *
  * Pure over the doc facts and exported so the unit tests pin the insertion
  * without a live editor.
  */
-export function applyShellShare(
-  shareText: string,
+export function applyAppendInsertion(
+  text: string,
   doc: { length: number; isEffectivelyEmpty: boolean },
-): ShellShareInsertion {
+): AppendInsertion {
   const insert =
-    doc.isEffectivelyEmpty || doc.length === 0 ? shareText : `\n${shareText}`;
+    doc.isEffectivelyEmpty || doc.length === 0 ? text : `\n${text}`;
   return { from: doc.length, insert };
 }
 
@@ -1312,7 +1309,7 @@ export const TugPromptEntry = React.forwardRef<
       if (snippetText !== null) {
         // Park the text on the store's slot; the `pendingSnippetInsert`
         // effect below owns the insertion (drop offset, else the
-        // `applyShellShare` append) for both this drag and the
+        // `applyAppendInsertion` append) for both this drag and the
         // double-click-a-snippet path.
         clearEntryDropState();
         codeSessionStore.insertSnippet(snippetText, {
@@ -1679,37 +1676,6 @@ export const TugPromptEntry = React.forwardRef<
     return () => el.removeEventListener("keydown", onKeyDown, true);
   }, [commitActive, exitCommitMode, cancelCommitDraft, handleCommitAutoMessage]);
 
-  // Shell share ([P08]). A Share click on an exchange row parks its
-  // composed text on the shell store; this effect observes the slot,
-  // seeds/appends the editor, and consumes. Mirrors the draft-restore
-  // effect above: [L02] the slot enters via useSyncExternalStore; [L03]
-  // useLayoutEffect so the doc change lands in the same paint; the slot
-  // survives until an editor exists to take it (no consume on a missing
-  // view), so a share is never silently dropped. Unlike draft restore, a
-  // mid-compose draft is appended to, not skipped — the user asked for this
-  // content explicitly.
-  const pendingShellShare = useSyncExternalStore(
-    shellSessionStore?.subscribe ?? NOOP_SUBSCRIBE,
-    () => shellSessionStore?.getSnapshot().pendingShare ?? null,
-  );
-  useLayoutEffect(() => {
-    if (pendingShellShare === null || shellSessionStore === undefined) return;
-    const editor = textEditorRef.current;
-    const view = editor?.view() ?? null;
-    if (editor === null || view === null) return;
-    const { from, insert } = applyShellShare(pendingShellShare.text, {
-      length: view.state.doc.length,
-      isEffectivelyEmpty: isEffectivelyEmpty(view),
-    });
-    view.dispatch({
-      changes: { from, insert },
-      selection: { anchor: from + insert.length },
-      scrollIntoView: true,
-    });
-    shellSessionStore.consumePendingShare();
-    editor.focus();
-  }, [pendingShellShare, shellSessionStore]);
-
   // Command insert ([P03]/[P04]). A click on a known slash command in the
   // transcript parks `{ name, args }` on the code-session store; this
   // effect observes the slot, seeds the editor with the atomized command —
@@ -1742,8 +1708,8 @@ export const TugPromptEntry = React.forwardRef<
   // Snippet insert ([P05]). A snippet dragged from the Lens onto the prompt
   // entry (or double-clicked) parks `{ text, at }` here; this effect inserts
   // the text — at the drop offset when `at` resolves, else appended (empty
-  // editor takes it as-is, non-empty on a new line, the `applyShellShare`
-  // rule) — then consumes. Mirrors the share effect: [L02] slot via the
+  // editor takes it as-is, non-empty on a new line, the
+  // `applyAppendInsertion` rule) — then consumes. [L02] slot via the
   // snapshot; [L03] useLayoutEffect so the doc change lands in one paint; the
   // slot survives until an editor exists (no consume on a missing view) so a
   // drop is never silently dropped.
@@ -1766,12 +1732,12 @@ export const TugPromptEntry = React.forwardRef<
       from = offset;
       insert = text;
     } else {
-      const share = applyShellShare(text, {
+      const appended = applyAppendInsertion(text, {
         length: view.state.doc.length,
         isEffectivelyEmpty: isEffectivelyEmpty(view),
       });
-      from = share.from;
-      insert = share.insert;
+      from = appended.from;
+      insert = appended.insert;
     }
     view.dispatch({
       changes: { from, insert },

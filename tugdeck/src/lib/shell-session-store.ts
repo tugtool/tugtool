@@ -40,21 +40,12 @@ export interface ShellSessionSnapshot {
   cwd: string | null;
   /** The in-flight exchange, or `null` when idle. */
   inflight: ShellInflight | null;
-  /**
-   * A share gesture waiting for the prompt entry to consume ([P08]).
-   * The Share affordance on an exchange row composes the fenced
-   * command/output text and parks it here; the prompt entry observes
-   * the slot, flips the route to `❯`, seeds the editor, and calls
-   * `consumePendingShare`. Never auto-sent — the user edits and sends.
-   */
-  pendingShare: { text: string } | null;
 }
 
 const EMPTY_SNAPSHOT: ShellSessionSnapshot = {
   live: false,
   cwd: null,
   inflight: null,
-  pendingShare: null,
 };
 
 export class ShellSessionStore {
@@ -226,25 +217,6 @@ export class ShellSessionStore {
         }),
       ),
     );
-  }
-
-  /**
-   * Park a composed share text for the prompt entry to consume ([P08]).
-   * A second share before the first is consumed overwrites it — the
-   * newest gesture wins.
-   */
-  requestShare(text: string): void {
-    this._set({ ...this._snapshot, pendingShare: { text } });
-  }
-
-  /**
-   * Clear the pending share after the prompt entry applies it.
-   * Idempotent — a call while the slot is already `null` is a
-   * ref-stable no-op and produces no listener notification.
-   */
-  consumePendingShare(): void {
-    if (this._snapshot.pendingShare === null) return;
-    this._set({ ...this._snapshot, pendingShare: null });
   }
 
   /** Kill the running command — reaps the shell's process group ([Q03]). */

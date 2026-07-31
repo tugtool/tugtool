@@ -25,7 +25,7 @@
  */
 
 import React, { useLayoutEffect, useRef, useSyncExternalStore } from "react";
-import { Bot, Check, Plus, User, X } from "lucide-react";
+import { Bot, Check, CloudUpload, User, X } from "lucide-react";
 
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
@@ -183,6 +183,17 @@ function SideQuestionExchangeRow({
               role="action"
               size="2xs"
               data-tug-focus="refuse"
+              // The glyph rides the button's own icon slot, not the label
+              // content — the slot is what aligns it with the COPY button
+              // beside it (an icon dropped into `children` lays out as inline
+              // text and sits a couple of pixels low).
+              icon={
+                staged ? (
+                  <Check size={12} strokeWidth={2} aria-hidden />
+                ) : (
+                  <CloudUpload size={12} strokeWidth={2} aria-hidden />
+                )
+              }
               aria-pressed={staged}
               aria-label={
                 staged
@@ -203,7 +214,6 @@ function SideQuestionExchangeRow({
                 }
               }}
             >
-              {staged ? <Check size={12} strokeWidth={2} aria-hidden /> : <Plus size={12} strokeWidth={2} aria-hidden />}
               {staged ? "In context" : "Add to context"}
             </TugPushButton>
           ) : null}

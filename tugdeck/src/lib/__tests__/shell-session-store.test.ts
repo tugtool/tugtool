@@ -284,33 +284,3 @@ describe("applyRestoredShellExchanges — restore interleave ([P07])", () => {
   });
 });
 
-describe("share slot ([P08])", () => {
-  test("requestShare parks the text; consumePendingShare clears it", () => {
-    const { store } = setup();
-    expect(store.getSnapshot().pendingShare).toBeNull();
-    store.requestShare("```\n$ ls\n[exit 0]\n```\n");
-    expect(store.getSnapshot().pendingShare).toEqual({ text: "```\n$ ls\n[exit 0]\n```\n" });
-    store.consumePendingShare();
-    expect(store.getSnapshot().pendingShare).toBeNull();
-  });
-
-  test("a second share before consume overwrites — newest gesture wins", () => {
-    const { store } = setup();
-    store.requestShare("first");
-    store.requestShare("second");
-    expect(store.getSnapshot().pendingShare).toEqual({ text: "second" });
-  });
-
-  test("consume on an empty slot is a ref-stable no-op (no notification)", () => {
-    const { store } = setup();
-    const before = store.getSnapshot();
-    let notified = 0;
-    const unsubscribe = store.subscribe(() => {
-      notified += 1;
-    });
-    store.consumePendingShare();
-    expect(store.getSnapshot()).toBe(before);
-    expect(notified).toBe(0);
-    unsubscribe();
-  });
-});

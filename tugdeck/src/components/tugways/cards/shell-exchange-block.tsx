@@ -5,7 +5,7 @@
  * other tool block ([D05]/[D111]): a `BlockChrome` header carrying the command
  * (the `$` prompt sigil + the command text, in the header — not a bespoke line
  * above the block, exactly as `BashToolBlock` puts its command in the header),
- * a right-aligned Share + Copy affordance cluster, and an embedded
+ * a right-aligned Add-to-context + Copy affordance cluster, and an embedded
  * `TerminalBlock` body for the combined output. The exchange's exit status and
  * duration are NOT drawn inside the block — they ride the Z1B end-state row
  * below it (`SessionZ1B participant="shell"`), the same place a Claude turn shows
@@ -18,16 +18,15 @@
  *
  * While the exchange is in flight the header's lifecycle dot pulses (the
  * standard streaming signal) and there is no body; once it settles the body
- * mounts with the final output. Share ([P08]) is the only path into Claude's
- * context and appears once settled.
+ * mounts with the final output. Add-to-context ([P08]) is the only path into
+ * Claude's context and appears once settled.
  */
 
 import type React from "react";
 import {
-  ArrowDownToLine as shareIconNode,
   Check as checkIconNode,
-  CornerUpRight as sendToClaudeIconNode,
-  Plus as plusIconNode,
+  CloudUpload as addToContextIconNode,
+  Send as sendAsMessageIconNode,
 } from "lucide";
 
 import { TerminalBlock } from "../body-kinds/terminal-block";
@@ -42,32 +41,10 @@ import { BlockChrome } from "../blocks/block-chrome";
 import { deriveShellExchangeView } from "./shell-exchange-view";
 import "./shell-exchange-block.css";
 
-/** Icon-only Share affordance — matches the header's Copy/chevron button
- *  scale so the actions cluster reads as one matched row. The
- *  `arrow-down-to-line` glyph reads as "pull this down into the composer". */
-function ShellShareButton({ onShare }: { onShare: () => void }): React.ReactElement {
-  return (
-    <TugPushButton
-      data-slot="shell-exchange-share"
-      icon={
-        <TugSpriteIcon
-          name="arrow-down-to-line"
-          node={shareIconNode as LucideIconNode}
-        />
-      }
-      subtype="icon"
-      emphasis="ghost"
-      size="xs"
-      aria-label="Share exchange with Claude"
-      title="Share exchange with Claude"
-      onClick={onShare}
-    />
-  );
-}
-
 /** Icon-only Add-to-context toggle — stage this exchange to ride the next `❯`
- *  submission as attributed context, or un-stage it. Matches the Share/Copy
- *  scale so the header actions read as one matched cluster. */
+ *  submission as attributed context, or un-stage it. Matches the Copy/chevron
+ *  scale so the header actions read as one matched cluster. `cloud-upload` is
+ *  the one glyph for this gesture everywhere it appears ([P08]). */
 function ShellAddToContextButton({
   staged,
   onToggle,
@@ -81,8 +58,8 @@ function ShellAddToContextButton({
       aria-pressed={staged}
       icon={
         <TugSpriteIcon
-          name={staged ? "check" : "plus"}
-          node={(staged ? checkIconNode : plusIconNode) as LucideIconNode}
+          name={staged ? "check" : "cloud-upload"}
+          node={(staged ? checkIconNode : addToContextIconNode) as LucideIconNode}
         />
       }
       subtype="icon"
@@ -101,22 +78,19 @@ function ShellAddToContextButton({
 
 export function ShellExchangeBlock({
   message,
-  onShare,
   onToggleContext,
-  onSendToClaude,
+  onSendAsMessage,
   staged = false,
 }: {
   message: ShellExchangeMessage;
-  /** Share gesture ([P08]) — omitted where no prompt entry can consume it. */
-  onShare?: () => void;
-  /** Add-to-context toggle ([P08], staged variant) — omitted where no queue. */
+  /** Add-to-context toggle ([P08]) — omitted where no queue. */
   onToggleContext?: () => void;
   /**
-   * Send the original command to Claude instead ([P09]). Rendered only for an
-   * auto-routed row (`message.autoRouted`); dispatches the raw text via
-   * `codeSessionStore.send`, undoing a classifier misroute in one click.
+   * Send the original command to Claude as a message instead ([P09]). Rendered
+   * only for an auto-routed row (`message.autoRouted`); dispatches the raw text
+   * via `codeSessionStore.send`, undoing a classifier misroute in one click.
    */
-  onSendToClaude?: () => void;
+  onSendAsMessage?: () => void;
   /** Whether this exchange is currently staged. */
   staged?: boolean;
 }): React.ReactElement {
@@ -138,48 +112,43 @@ export function ShellExchangeBlock({
     </code>
   );
 
-  // Share + Add-to-context are settled-exchange gestures ([P08]) — an in-flight
+  // Add-to-context is a settled-exchange gesture ([P08]) — an in-flight
   // exchange has no output or exit to compose yet.
-  const shareButton =
-    onShare !== undefined && !view.inFlight ? (
-      <ShellShareButton onShare={onShare} />
-    ) : null;
   const addContextButton =
     onToggleContext !== undefined && !view.inFlight ? (
       <ShellAddToContextButton staged={staged} onToggle={onToggleContext} />
     ) : null;
-  // Auto-route attribution ([P09]): a `→ shell` marker + a one-click "send to
-  // Claude instead" for a row the PATH classifier routed here from the prompt
-  // entry. Rendered whenever the row was auto-routed, in-flight or settled, so
-  // the undo is reachable the instant the row appears.
-  const sendToClaudeButton =
-    message.autoRouted === true && onSendToClaude !== undefined ? (
+  // Auto-route escape hatch ([P09]): a one-click "send this as a message
+  // instead" for a row the PATH classifier routed here from the prompt entry.
+  // Rendered whenever the row was auto-routed, in-flight or settled, so the
+  // undo is reachable the instant the row appears. The paper plane is
+  // deliberately NOT `cloud-upload`: this fires a turn now with the user's
+  // original text, where add-to-context stages this row's output for later.
+  const sendAsMessageButton =
+    message.autoRouted === true && onSendAsMessage !== undefined ? (
       <TugPushButton
-        data-slot="shell-exchange-send-to-claude"
+        data-slot="shell-exchange-send-as-message"
         icon={
           <TugSpriteIcon
-            name="corner-up-right"
-            node={sendToClaudeIconNode as LucideIconNode}
+            name="send"
+            node={sendAsMessageIconNode as LucideIconNode}
           />
         }
         subtype="icon-text"
         emphasis="ghost"
         size="xs"
-        aria-label="Send the original text to Claude instead"
-        title="Auto-routed to the shell — send the original text to Claude instead"
-        onClick={onSendToClaude}
+        aria-label="Send the original text to Claude as a message instead"
+        title="Auto-routed to the shell — send the original text as a message instead"
+        onClick={onSendAsMessage}
       >
-        → shell · Send to Claude
+        Send as message
       </TugPushButton>
     ) : null;
   const headerActions =
-    sendToClaudeButton !== null ||
-    shareButton !== null ||
-    addContextButton !== null ? (
+    sendAsMessageButton !== null || addContextButton !== null ? (
       <>
-        {sendToClaudeButton}
+        {sendAsMessageButton}
         {addContextButton}
-        {shareButton}
       </>
     ) : null;
 
