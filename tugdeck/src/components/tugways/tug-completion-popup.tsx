@@ -17,11 +17,20 @@
  * rule, and Escape is exempt from it.
  *
  * It portals into the canvas overlay root ([L25]) so it floats above every
- * pane, escaping their `overflow: hidden`. The field owns focus while open —
- * so this is a lightweight popover, NOT a focus-mode trap
- * (`focus-language.md`): there is no key-view seed or spatial ring to
- * register; the field's own browser focus and blur drive open/commit/
- * dismiss.
+ * pane, escaping their `overflow: hidden`. It is a lightweight popover, NOT a
+ * focus-mode trap (`focus-language.md`): no mode is pushed, and dismissal
+ * stays easy.
+ *
+ * Its stops are nonetheless authored into the focus engine, in
+ * {@link COMPLETION_POPUP_FOCUS_GROUP} — the field at order 0 and the optional
+ * `accessory` at order 1 — and the popup seeds the key view onto the field
+ * ([P12] surface default-seed). That is the whole of its keyboard story, and
+ * it is not optional decoration: a control with no `focusGroup` is a
+ * native-only stop, and `Tab` walks straight past it and out of the popup,
+ * whose blur then dismisses it. The field is a text surface, so the engine
+ * grants it real DOM focus; the accessory is engine-routed, so the engine
+ * parks `activeElement` on its key sink while the key view rests there — see
+ * `onBlur`, which must not read that park as the keyboard leaving.
  *
  * The field is a {@link TugInput}, not a bare `<input>`, so it registers as
  * a chain responder and carries the substrate CUT / COPY / PASTE /
@@ -52,9 +61,22 @@ import { Search } from "lucide-react";
 import "./tug-completion-popup.css";
 
 import { TugInput } from "./tug-input";
-import { TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
+import { useSeedKeyView } from "./use-focusable";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import type { CompletionItem, CompletionProvider } from "@/lib/tug-text-types";
+
+/**
+ * The focus group the popup's own stops are authored into. Exported because
+ * the `accessory` is caller-supplied: the caller has to name the same group
+ * for its control to join this popup's Tab walk.
+ */
+export const COMPLETION_POPUP_FOCUS_GROUP = "tug-completion-popup";
+
+/** The search field's order in {@link COMPLETION_POPUP_FOCUS_GROUP}. */
+export const COMPLETION_POPUP_FIELD_ORDER = 0;
+
+/** The trailing accessory's order in {@link COMPLETION_POPUP_FOCUS_GROUP}. */
+export const COMPLETION_POPUP_ACCESSORY_ORDER = 1;
 
 export interface TugCompletionPopupProps {
   /** Placeholder shown in the empty search field. */
@@ -70,8 +92,14 @@ export interface TugCompletionPopupProps {
   onDismiss: () => void;
   /**
    * Optional trailing control on the search bar — Open Quickly's directory
-   * switcher. It renders inside the panel, so it is a natural Tab stop after
-   * the field and focus reaching it does not dismiss.
+   * switcher.
+   *
+   * Author it into {@link COMPLETION_POPUP_FOCUS_GROUP} at
+   * {@link COMPLETION_POPUP_ACCESSORY_ORDER} (pass `focusGroup` / `focusOrder`
+   * to the control). That is what puts it in the engine's Tab walk — a control
+   * with neither is a native-only stop and reads as "Tab skips it"
+   * (`focus-language.md`, Authoring contract). The popup seeds the key view on
+   * the field, so Tab moves it to the accessory and back.
    */
   accessory?: React.ReactNode;
   /**
@@ -178,10 +206,16 @@ export function TugCompletionPopup({
     return provider.subscribe(() => pull());
   }, [provider, pull]);
 
-  // Claim focus on open so typing lands in the field immediately.
-  useLayoutEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  // Seed the engine key view onto the field so typing lands there immediately
+  // and Tab moves the key view from there ([P12] surface default-seed). The
+  // field is a text surface, so the engine grants it real DOM focus; the
+  // accessory is engine-routed and the engine parks the sink when the key view
+  // reaches it. Both are the engine's writes — the popup never calls `.focus()`
+  // itself (`focus-language.md`, "Raw `.focus()` is legal only inside a granted
+  // window").
+  useSeedKeyView(
+    `${COMPLETION_POPUP_FOCUS_GROUP}:${COMPLETION_POPUP_FIELD_ORDER}`,
+  );
 
   // Keep the highlighted row in view as the selection moves.
   useLayoutEffect(() => {
@@ -199,84 +233,6 @@ export function TugCompletionPopup({
     },
     [onCommit],
   );
-
-  /** The accessory's focusable control, if the caller supplied one. */
-  const accessoryControl = useCallback((): HTMLElement | null => {
-    const slot = panelRef.current?.querySelector<HTMLElement>(
-      '[data-slot="tug-completion-popup-accessory"]',
-    );
-    return (
-      slot?.querySelector<HTMLElement>(
-        'button:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ) ?? null
-    );
-  }, []);
-
-  // Tab opens the accessory's menu. It does NOT move DOM focus to the
-  // accessory first, which is the shape this went through twice before
-  // landing here:
-  //
-  //   - Native Tab is not an option. On macOS, WebKit's sequential focus
-  //     navigation visits buttons only when Full Keyboard Access is on — off
-  //     (the default), Tab walks straight past the accessory and off the end
-  //     of the popup, and the field's blur dismisses it. The popup vanishes
-  //     out from under anyone who reaches for Tab.
-  //   - Focusing the accessory explicitly does not hold either. A control
-  //     trigger carries `data-tug-focus="refuse"` — it sits outside the key
-  //     loop by construction — so the engine reclaims DOM focus to the key
-  //     sink the moment it lands there, and the trigger is focused for one
-  //     frame and then is not.
-  //
-  // So Tab skips the intermediate stop entirely: one keystroke opens the
-  // menu, whose own focus scope legitimately owns the keyboard while it is
-  // up (arrows to move, Return to pick, Escape to close), and the field keeps
-  // DOM focus the whole time. Radix opens its trigger on pointer-down, so
-  // that is the gesture synthesized here.
-  //
-  // Handled on the panel rather than the field so it fires wherever focus
-  // sits inside the popup. With no accessory, Tab is left alone.
-  const onPanelKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.key !== "Tab" || e.metaKey || e.ctrlKey || e.altKey) return;
-      const control = accessoryControl();
-      if (control === null) return;
-      e.preventDefault();
-      for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
-        control.dispatchEvent(
-          new (type.startsWith("pointer") ? PointerEvent : MouseEvent)(type, {
-            bubbles: true,
-            cancelable: true,
-            composed: true,
-            button: 0,
-          }),
-        );
-      }
-      setAccessoryMenuOpen(true);
-    },
-    [accessoryControl],
-  );
-
-  // Take the keyboard back when the accessory's menu closes.
-  //
-  // The menu's focus scope restores focus to whatever owned it before the
-  // menu opened — which, from the engine's point of view, is its key sink,
-  // not this popup's field. Left alone the popup would still be on screen
-  // with the keyboard somewhere else, and the next keystroke would go
-  // nowhere. The reclaim is scoped to a menu we opened and armed only while
-  // one is up, so it can never fight a real dismissal.
-  const [accessoryMenuOpen, setAccessoryMenuOpen] = useState(false);
-  useEffect(() => {
-    if (!accessoryMenuOpen) return;
-    const onFocusIn = (): void => {
-      if (dismissGuard?.() === true) return; // menu still up
-      setAccessoryMenuOpen(false);
-      if (panelRef.current?.contains(document.activeElement) !== true) {
-        inputRef.current?.focus();
-      }
-    };
-    document.addEventListener("focusin", onFocusIn, true);
-    return () => document.removeEventListener("focusin", onFocusIn, true);
-  }, [accessoryMenuOpen, dismissGuard]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -306,14 +262,28 @@ export function TugCompletionPopup({
     [items, selected, commit, onDismiss],
   );
 
-  // Focus leaving the field dismisses — unless it moved to a control
-  // inside the panel (the row-click path keeps focus via preventDefault,
-  // so in practice this fires only on a real focus shift away), or the
-  // guard is holding the popup open for an accessory's portalled menu.
+  // Focus leaving the field dismisses — with three exceptions, each a case
+  // where the keyboard has not actually left the popup:
+  //
+  //  - it moved to a control inside the panel (the row-click path keeps focus
+  //    via preventDefault, so in practice this fires only on a real shift);
+  //  - it moved to the engine's key sink. The sink is the engine holding the
+  //    keyboard, never the user focused on a control (`focus-language.md`,
+  //    "The router is the target"), and it is exactly where the engine parks
+  //    `activeElement` when Tab moves the key view onto the engine-routed
+  //    accessory. Reading that park as "focus left" is what made Tab dismiss
+  //    the popup;
+  //  - the caller's `dismissGuard` is holding it open for a portalled menu.
   const onBlur = useCallback(
     (e: React.FocusEvent<HTMLInputElement>) => {
       const next = e.relatedTarget as Node | null;
       if (next !== null && panelRef.current?.contains(next)) return;
+      if (
+        next instanceof Element &&
+        next.closest("[data-tug-key-sink]") !== null
+      ) {
+        return;
+      }
       if (dismissGuard?.() === true) return;
       onDismiss();
     },
@@ -338,14 +308,6 @@ export function TugCompletionPopup({
         data-slot="tug-completion-popup"
         role="dialog"
         aria-label={placeholder}
-        // The popup owns Tab while it is up ({@link TAB_CONSUME_ATTRIBUTE}).
-        // Without this the engine's capture-phase focus walk advances the key
-        // view to a focusable BEHIND the popup, which pulls DOM focus out of
-        // the field — and the blur dismisses the popup. Declaring the seam
-        // yields Tab to this panel, which moves focus itself in
-        // `onPanelKeyDown`.
-        {...{ [TAB_CONSUME_ATTRIBUTE]: "true" }}
-        onKeyDown={onPanelKeyDown}
       >
         <div className="tug-completion-popup-field">
           <Search className="tug-completion-popup-field-icon" aria-hidden />
@@ -361,6 +323,8 @@ export function TugCompletionPopup({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             onBlur={onBlur}
+            focusGroup={COMPLETION_POPUP_FOCUS_GROUP}
+            focusOrder={COMPLETION_POPUP_FIELD_ORDER}
           />
           {accessory !== undefined ? (
             <div

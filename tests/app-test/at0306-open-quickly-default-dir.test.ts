@@ -27,12 +27,14 @@
  *   share a leaf name are told apart, and an empty directory says so instead
  *   of showing a blank panel.
  *
- *   A fourth drives the switcher with REAL key events end to end — Tab opens
- *   the menu, Escape returns the keyboard to the field, arrows + Return swap
- *   the root, and typing then narrows the new one. Real keys because the two
- *   ways this broke were both invisible to synthetic ones: macOS omits
- *   buttons from the native Tab order unless Full Keyboard Access is on, and
- *   the engine reclaims DOM focus from any control marked focus-refusing.
+ *   A fourth drives the switcher with REAL key events, asserting against the
+ *   ENGINE's marks rather than `document.activeElement`: Tab moves the ring
+ *   from the field to the switcher, Space opens its menu, arrows move the
+ *   highlight, Return commits, and Tab returns the ring to the field with the
+ *   keyboard really in it. Real keys and engine marks because every failure
+ *   here was invisible to synthetic events watching DOM focus — macOS omits
+ *   buttons from the native Tab order, and an engine-routed stop parks the
+ *   key sink rather than holding focus itself.
  *
  * Gating
  * ------
@@ -362,17 +364,6 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 15000 },
           );
 
-          // The popup keeps Tab, so the browser's own order reaches the
-          // switcher. Without this the engine's focus walk advances the key
-          // view to a focusable behind the popup, and the resulting blur
-          // dismisses it — the switcher would be mouse-only.
-          expect(
-            await app.evalJS<string | null>(
-              `document.querySelector('[data-slot="tug-completion-popup"]')
-                 .getAttribute("data-tug-tab-consume")`,
-            ),
-          ).toBe("true");
-
           await app.click(SWITCHER);
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) !== null`,
@@ -399,11 +390,14 @@ describe.skipIf(!SHOULD_RUN)(
     test(
       "the switcher is reachable and operable from the keyboard alone",
       async () => {
-        // Driven with REAL key events, because every failure this pins was
-        // invisible to a synthetic one: macOS skips buttons in the native Tab
-        // order unless Full Keyboard Access is on, and the engine reclaims DOM
-        // focus from any control that refuses it. Both only show up when a
-        // real Tab lands in a real app.
+        // Driven with REAL key events and asserted against the ENGINE's own
+        // marks, because every failure this pins was invisible otherwise. The
+        // popup's two stops are authored into one focus group
+        // (`focus-language.md`, Authoring contract): the field is a text
+        // surface the engine grants real DOM focus, the switcher is
+        // engine-routed so the engine parks its key sink while the ring rests
+        // there. Watching `activeElement` alone would call that park "focus
+        // left the popup" — which is exactly the bug that made Tab dismiss it.
         const base = mkdtempSync(`${tmpdir()}/at0306-keys-`);
         mkdirSync(`${base}/tug`);
         writeFileSync(`${base}/tug/${MARKER}`, "in the default\n");
@@ -411,6 +405,11 @@ describe.skipIf(!SHOULD_RUN)(
         writeFileSync(`${base}/other/${OTHER_MARKER}`, "elsewhere\n");
 
         const app = await launchTugApp({ testName: "at0306-open-quickly-keys" });
+        /** The `data-slot` of whatever currently wears the keyboard ring. */
+        const ring = `(function () {
+          var el = document.querySelector("[data-key-view-kbd]");
+          return el === null ? "(none)" : (el.getAttribute("data-slot") || el.tagName);
+        })()`;
         try {
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(OVERLAY_ROOT)}) !== null`,
@@ -428,35 +427,22 @@ describe.skipIf(!SHOULD_RUN)(
             `document.querySelector(${JSON.stringify(SWITCHER)}) !== null`,
             { timeoutMs: 10000 },
           );
-          const fieldHasFocus = `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`;
-          await app.waitForCondition<boolean>(fieldHasFocus, {
+
+          // The popup seeds the key view onto its field, and the field being a
+          // text surface means the engine grants it real DOM focus.
+          await app.waitForCondition<boolean>(`${ring} === "tug-input"`, {
             timeoutMs: 8000,
           });
-
-          // Tab opens the menu outright — no intermediate focus stop on the
-          // trigger, which the engine would take back anyway.
-          await app.nativeKey("Tab");
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) !== null`,
-            { timeoutMs: 8000 },
-          );
-          // The popup is still up: opening its own menu must not read as the
-          // field losing focus.
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector(${JSON.stringify(POPUP)}) !== null`,
+              `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`,
             ),
           ).toBe(true);
 
-          // Escape closes the menu and hands the keyboard back to the field —
-          // not to the engine's key sink, which would leave a visible popup
-          // that swallows every keystroke.
-          await app.nativeKey("Escape");
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) === null`,
-            { timeoutMs: 8000 },
-          );
-          await app.waitForCondition<boolean>(fieldHasFocus, {
+          // Tab advances the engine's walk to the switcher. The popup must
+          // survive the park that comes with an engine-routed stop.
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(`${ring} === "tug-button"`, {
             timeoutMs: 8000,
           });
           expect(
@@ -465,27 +451,40 @@ describe.skipIf(!SHOULD_RUN)(
             ),
           ).toBe(true);
 
-          // Reopen and pick the second entry with arrows + Return.
-          await app.nativeKey("Tab");
+          // Space opens the menu, and the menu is LIVE to the keyboard: the
+          // engine must not synthesize the act onto the trigger underneath it,
+          // or Return re-toggles the trigger instead of picking a row.
+          await app.nativeKey(" ");
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) !== null`,
             { timeoutMs: 8000 },
           );
+          const highlighted = `(function () {
+            var el = document.querySelector(${JSON.stringify(SWITCHER_MENU)} + " .tug-menu-item[data-highlighted]");
+            return el === null ? "(none)" : (el.textContent || "").trim();
+          })()`;
+          await app.waitForCondition<boolean>(`${highlighted} === "tug"`, {
+            timeoutMs: 8000,
+          });
           await app.nativeKey("ArrowDown");
-          await app.nativeKey("ArrowDown");
+          await app.waitForCondition<boolean>(`${highlighted} === "other"`, {
+            timeoutMs: 8000,
+          });
+
+          // Return commits the highlighted row: the root swaps.
           await app.nativeKey("Enter");
-
-          // The root swapped, and the field has the keyboard again.
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(INPUT)})
                .getAttribute("placeholder") === "Open Quickly in other"`,
             { timeoutMs: 10000 },
           );
-          await app.waitForCondition<boolean>(fieldHasFocus, {
+
+          // Tab returns the ring to the field, which gets real DOM focus back
+          // — and it really is the keyboard: typing narrows the new root.
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(`${ring} === "tug-input"`, {
             timeoutMs: 8000,
           });
-
-          // …and it really is the keyboard: typing narrows the new root.
           await typeIntoField(app, "at0306-");
           await app.waitForCondition<boolean>(
             `(function () {

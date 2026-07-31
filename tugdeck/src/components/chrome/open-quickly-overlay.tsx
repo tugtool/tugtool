@@ -38,7 +38,11 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import { TugCompletionPopup } from "@/components/tugways/tug-completion-popup";
+import {
+  TugCompletionPopup,
+  COMPLETION_POPUP_FOCUS_GROUP,
+  COMPLETION_POPUP_ACCESSORY_ORDER,
+} from "@/components/tugways/tug-completion-popup";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
@@ -388,6 +392,11 @@ function OpenQuicklyBody(): React.ReactElement {
             size="sm"
             senderId={switcherId}
             data-testid={SWITCHER_MENU}
+            // Into the popup's own focus group, so the engine's Tab walk moves
+            // the key view here from the field and Space/Return open the menu
+            // through the key-view delegation channel.
+            focusGroup={COMPLETION_POPUP_FOCUS_GROUP}
+            focusOrder={COMPLETION_POPUP_ACCESSORY_ORDER}
             items={candidates.map((path, i) => ({
               action: TUG_ACTIONS.SELECT_VALUE,
               value: path,

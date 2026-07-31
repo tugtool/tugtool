@@ -448,6 +448,20 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // Already holding real focus: the native pipeline is live, leave it be.
       const active = document.activeElement;
       if (active !== null && leaf.contains(active)) return false;
+      // Same rule, for a surface that is PORTALLED rather than nested. A
+      // trapped surface on top of the stack owns the keyboard; when the key
+      // view is not a member of that mode it belongs to a mode below — a
+      // popup button whose own menu is now open. Its menu holds real DOM
+      // focus somewhere else in the tree, so the containment check above
+      // cannot see it, and synthesizing the act here would deliver Return to
+      // the trigger (re-toggling it) instead of to the highlighted item. The
+      // surface on top gets the key; the leaf underneath does not.
+      if (
+        focusManager.currentFocusModeTrapped() &&
+        !focusManager.currentModeMember(focusManager.keyView())
+      ) {
+        return false;
+      }
       const forwarded = new KeyboardEvent("keydown", {
         key: event.key,
         code: event.code,

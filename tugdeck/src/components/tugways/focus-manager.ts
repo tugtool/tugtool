@@ -3425,6 +3425,9 @@ export class FocusManager {
   currentFocusModeTrapped(): boolean {
     return this.activeContext().currentFocusModeTrapped();
   }
+  currentModeMember(id: string | null): boolean {
+    return this.activeContext().currentModeMember(id);
+  }
   currentFocusModeEscapeExits(): boolean {
     return this.activeContext().currentFocusModeEscapeExits();
   }
