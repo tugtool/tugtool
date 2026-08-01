@@ -758,8 +758,9 @@ export class App {
   driveSession(
     cardId: string,
     action: client.SessionDriveAction,
+    opts?: EvalJsOptions,
   ): Promise<void> {
-    return client.driveSession(this as HarnessCaller, cardId, action);
+    return client.driveSession(this as HarnessCaller, cardId, action, opts);
   }
 
   /**

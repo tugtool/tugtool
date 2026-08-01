@@ -19,6 +19,19 @@
  *                 with a :not() exemption hole (NEVER !important overlays —
  *                 roadmap/animation-islands.md#artifact) — churn-only
  *
+ *   tool-churn-hot    tool_use→tool_result pairs at cadence into A, whose
+ *                     held-open tool keeps a running dot standing — does the
+ *                     turn/tool lifecycle restart or re-resolve a persistent
+ *                     running glyph? (E1/E2)
+ *   tool-churn-cold   the same pairs into C, no standing glyph — each pair
+ *                     mints, runs, settles, and static-swaps its own dot; the
+ *                     settle-crossing machinery under churn (E3)
+ *   tool-churn-quiet  tool-churn-hot with the quiet sheet on — churn-only
+ *
+ * Every ingest RPC runs behind a client-side timeout race AND a server-side
+ * evalJS budget; every cadence loop carries a hard iteration cap (the 34k
+ * stream-hot run hung forever on one ingestFrame that never returned).
+ *
  * Not a regression test — an instrument. The kept regression test lands in
  * Phase 3 once the channel is named.
  *
@@ -41,6 +54,17 @@ const BLOCKS_PER_SESSION = Number(process.env.AT9996_BLOCKS ?? "60");
 const CADENCE_MS = Number(process.env.AT9996_CADENCE_MS ?? "50");
 /** Seconds each cell holds while the meter counts. */
 const CELL_SECS = Number(process.env.AT9996_CELL_SECS ?? "8");
+/** Milliseconds per tool_use→tool_result pair in the tool-churn cells. */
+const TOOL_CHURN_MS = Number(process.env.AT9996_TOOL_CHURN_MS ?? "400");
+/** Client-side ceiling on any single ingest RPC. */
+const INGEST_TIMEOUT_MS = 10_000;
+/** Skip arming the in-page meter (no rAF heartbeat) — external sampler only. */
+const NO_METER = process.env.AT9996_NO_METER === "1";
+/** Comma-separated cell names to run; empty = the full matrix. */
+const ONLY_CELLS = (process.env.AT9996_CELLS ?? "")
+  .split(",")
+  .map((c) => c.trim())
+  .filter(Boolean);
 
 const SESSIONS = ["A", "B", "C"] as const;
 
@@ -284,6 +308,55 @@ const QUIET_ON = `(function () {
   return document.getAnimations().filter(function (a) { return a.playState === "running"; }).length;
 })()`;
 
+/** Suppress ONE animation family; id'd so it can be removed. */
+const familyQuiet = (id: string, selector: string): string => `(function () {
+  var s = document.createElement("style");
+  s.id = "at9996-family-${id}";
+  s.textContent = ${JSON.stringify(`${selector} { animation: none !important; }`)};
+  document.head.appendChild(s);
+  return true;
+})()`;
+
+const familyQuietOff = (id: string): string => `(function () {
+  var s = document.getElementById("at9996-family-${id}");
+  if (s) s.remove();
+  return true;
+})()`;
+
+/** Inject N isolated fixed-position probe divs running a given animation.
+ *  Literal or var()-driven keyframes, chosen period — the null-hypothesis
+ *  rig: no Tug component, no ancestors, just WebKit and a keyframes loop. */
+const probeOn = (
+  n: number,
+  periodMs: number,
+  useVar: boolean,
+): string => `(function () {
+  var s = document.createElement("style");
+  s.id = "at9996-probe-style";
+  s.textContent = [
+    ${JSON.stringify("")} + (${useVar}
+      ? ":root { --at9996-min: 0.72; } @keyframes at9996-probe { 0% { transform: scale(var(--at9996-min)); } 50% { transform: scale(1); } 100% { transform: scale(var(--at9996-min)); } }"
+      : "@keyframes at9996-probe { 0% { transform: scale(0.72); } 50% { transform: scale(1); } 100% { transform: scale(0.72); } }"),
+    ".at9996-probe { position: fixed; top: 4px; width: 8px; height: 8px; border-radius: 99px; background: #f0f; animation: at9996-probe ${periodMs}ms linear infinite; }",
+  ].join("\\n");
+  document.head.appendChild(s);
+  for (var i = 0; i < ${n}; i++) {
+    var d = document.createElement("div");
+    d.className = "at9996-probe at9996-exempt";
+    d.style.left = (4 + i * 12) + "px";
+    d.style.animationDelay = (-i * ${periodMs} / ${n}) + "ms";
+    document.body.appendChild(d);
+  }
+  return document.getAnimations().filter(function (a) { return a.playState === "running"; }).length;
+})()`;
+
+const PROBE_OFF = `(function () {
+  document.querySelectorAll(".at9996-probe").forEach(function (d) { d.remove(); });
+  var s = document.getElementById("at9996-probe-style");
+  if (s) s.remove();
+  return true;
+})()`;
+
 const QUIET_OFF = `(function () {
   var s = document.getElementById("at9996-quiet");
   if (s) s.remove();
@@ -292,7 +365,7 @@ const QUIET_OFF = `(function () {
 
 describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
   test(
-    "cell matrix: settled / glyphs-idle / stream-hot / stream-cold / stream-quiet",
+    "cell matrix: settled / glyphs-idle / stream-{hot,cold,quiet} / tool-churn-{hot,cold,quiet}",
     async () => {
       const tugbankPath = mkTempTugbank();
       seedTugbankForLaunch(tugbankPath);
@@ -310,6 +383,58 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
           );
         }
 
+        /** Race an RPC against a client-side deadline — a transport that
+         *  swallows the response fails the cell instead of hanging the run. */
+        const withDeadline = async <T>(
+          p: Promise<T>,
+          label: string,
+        ): Promise<T> => {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const guard = new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `[at9996] RPC deadline: ${label} exceeded ${INGEST_TIMEOUT_MS}ms`,
+                  ),
+                ),
+              INGEST_TIMEOUT_MS,
+            );
+          });
+          try {
+            return await Promise.race([p, guard]);
+          } finally {
+            clearTimeout(timer);
+          }
+        };
+
+        // A blown deadline inside a cell's drive loop is recorded, not
+        // fatal — an external sampler attached to the WebContent process can
+        // stall a single RPC, and one lost frame must not void the matrix.
+        // Seeding stays fatal: a cell run against a half-seeded deck lies.
+        let ingestTimeouts = 0;
+        const ingest = async (
+          cardId: string,
+          decoded: Record<string, unknown>,
+          label: string,
+          opts?: { tolerant?: boolean },
+        ): Promise<void> => {
+          try {
+            await withDeadline(
+              app.driveSession(
+                cardId,
+                { op: "ingestFrame", feedId: FEED_CODE_OUTPUT, decoded },
+                { timeoutMs: INGEST_TIMEOUT_MS },
+              ),
+              label,
+            );
+          } catch (err) {
+            if (!opts?.tolerant) throw err;
+            ingestTimeouts++;
+            console.log(`[at9996] TOLERATED ${String(err)}`);
+          }
+        };
+
         // Settled transcript weight in every card.
         for (const id of SESSIONS) {
           const sid = `at9996-${id}`;
@@ -324,10 +449,9 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
               { length: Math.min(PER_MSG, BLOCKS_PER_SESSION - n) },
               (_, k) => blockText(id, n + k),
             ).join("\n\n");
-            await app.driveSession(id, {
-              op: "ingestFrame",
-              feedId: FEED_CODE_OUTPUT,
-              decoded: {
+            await ingest(
+              id,
+              {
                 type: "assistant_text",
                 tug_session_id: sid,
                 msg_id: `${sid}-m${n}`,
@@ -336,7 +460,8 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
                 rev: 0,
                 seq: n,
               },
-            });
+              `seed ${id} block ${n}`,
+            );
           }
         }
         await app.waitForCondition<boolean>(
@@ -354,7 +479,10 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
           name: string,
           during?: () => Promise<void>,
         ): Promise<void> => {
-          await app.evalJS<boolean>(ARM_METER);
+          if (ONLY_CELLS.length > 0 && !ONLY_CELLS.includes(name)) return;
+          if (!NO_METER)
+            await withDeadline(app.evalJS<boolean>(ARM_METER), `arm ${name}`);
+          const timeouts0 = ingestTimeouts;
           const t0 = Date.now();
           if (during) {
             await during();
@@ -363,10 +491,28 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
           } else {
             await hold(CELL_SECS * 1000);
           }
-          const meter = await app.evalJS<Record<string, unknown>>(READ_METER);
-          const census = await app.evalJS<Record<string, number>>(CENSUS);
-          const weight = await app.evalJS<Record<string, number>>(WEIGHT);
-          report[name] = { meter, census, weight, t0, t1: Date.now() };
+          const meter = NO_METER
+            ? {}
+            : await withDeadline(
+                app.evalJS<Record<string, unknown>>(READ_METER),
+                `read ${name}`,
+              );
+          const census = await withDeadline(
+            app.evalJS<Record<string, number>>(CENSUS),
+            `census ${name}`,
+          );
+          const weight = await withDeadline(
+            app.evalJS<Record<string, number>>(WEIGHT),
+            `weight ${name}`,
+          );
+          report[name] = {
+            meter,
+            census,
+            weight,
+            ingestTimeouts: ingestTimeouts - timeouts0,
+            t0,
+            t1: Date.now(),
+          };
           console.log(`[at9996] CELL ${name} t0=${t0} t1=${Date.now()}`);
           console.log(`[at9996] ${name} → ${JSON.stringify({ meter, census, weight })}`);
         };
@@ -377,38 +523,151 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
           return async () => {
             const sid = `at9996-${cardId}`;
             const untilMs = Date.now() + CELL_SECS * 1000;
+            const maxIters = Math.ceil((CELL_SECS * 1000) / CADENCE_MS) + 20;
+            // The harness RPC transport wedges permanently when a single
+            // evalJS payload crosses ~8KB (reproduced twice, both at rev
+            // 162). Real frames ride the tugcast socket, not this pipe, so
+            // the lab caps the growing message and rolls to a new msg_id —
+            // same commit cadence, bounded payload.
             let text = "";
             let rev = 0;
-            while (Date.now() < untilMs) {
+            let roll = 0;
+            while (Date.now() < untilMs && rev < maxIters) {
+              if (text.length > 4000) {
+                text = "";
+                roll += 1;
+              }
               text += ` token${rev} lorem ipsum dolor sit amet consectetur`;
               rev += 1;
-              await app.driveSession(cardId, {
-                op: "ingestFrame",
-                feedId: FEED_CODE_OUTPUT,
-                decoded: {
+              await ingest(
+                cardId,
+                {
                   type: "assistant_text",
                   tug_session_id: sid,
-                  msg_id: `${sid}-${msgTag}`,
+                  msg_id: `${sid}-${msgTag}-r${roll}`,
                   text,
                   is_partial: true,
                   rev,
                   seq: BLOCKS_PER_SESSION + 10,
                 },
-              });
+                `stream ${msgTag} rev ${rev}`,
+                { tolerant: true },
+              );
               await hold(CADENCE_MS);
             }
           };
         };
 
-        // Cell 1 — settled floor.
+        /** tool_use→tool_result pairs at TOOL_CHURN_MS cadence — the
+         *  turn/tool lifecycle the stream cells never exercised. Each pair
+         *  mints a running header dot, terminates it, and drives the
+         *  settle→static crossing. */
+        const toolChurn = (
+          cardId: string,
+          tag: string,
+          pairMs: number = TOOL_CHURN_MS,
+        ) => {
+          return async () => {
+            const sid = `at9996-${cardId}`;
+            const untilMs = Date.now() + CELL_SECS * 1000;
+            const maxIters = Math.ceil((CELL_SECS * 1000) / pairMs) + 8;
+            let i = 0;
+            while (Date.now() < untilMs && i < maxIters) {
+              const tuId = `${sid}-${tag}-tu${i}`;
+              await ingest(
+                cardId,
+                {
+                  type: "tool_use",
+                  tug_session_id: sid,
+                  msg_id: `${sid}-${tag}-m${i}`,
+                  tool_use_id: tuId,
+                  tool_name: "Bash",
+                  input: {
+                    command: `echo churn ${i}`,
+                    description: `churn pair ${i}`,
+                  },
+                  seq: BLOCKS_PER_SESSION + 100 + i * 2,
+                },
+                `tool_use ${tag}#${i}`,
+                { tolerant: true },
+              );
+              await hold(pairMs / 2);
+              await ingest(
+                cardId,
+                {
+                  type: "tool_result",
+                  tug_session_id: sid,
+                  tool_use_id: tuId,
+                  output: `churn ${i} done`,
+                  is_error: false,
+                  seq: BLOCKS_PER_SESSION + 101 + i * 2,
+                },
+                `tool_result ${tag}#${i}`,
+                { tolerant: true },
+              );
+              await hold(pairMs / 2);
+              i++;
+            }
+          };
+        };
+
+        const quietOff = async () => {
+          await app.evalJS<boolean>(QUIET_OFF);
+          await hold(750);
+        };
+
+        // Cell 0 — the true floor: idle deck, zero running animations.
+        await app.evalJS<number>(QUIET_ON);
+        await runCell("settled-quiet");
+        await quietOff();
+
+        // Cell 1 — settled floor (the deck's baseline indicator animations
+        // run; nothing else happens). Against settled-quiet this isolates
+        // what merely HAVING running glyphs costs at weight.
         await runCell("settled");
+
+        // Family bisection at idle: suppress one animation family at a time
+        // and let the external sampler say which one ticks the main thread.
+        await app.evalJS<boolean>(
+          familyQuiet("wave", ".tug-progress-wave-bar"),
+        );
+        await runCell("settled-nowave");
+        await app.evalJS<boolean>(familyQuietOff("wave"));
+        await hold(750);
+
+        await app.evalJS<boolean>(
+          familyQuiet(
+            "dot",
+            ".tug-progress-pulsing-dot-dot, .tug-progress-pulsing-dot-ring, .tug-progress-pulsing-dot::after",
+          ),
+        );
+        await runCell("settled-nodot");
+        await app.evalJS<boolean>(familyQuietOff("dot"));
+        await hold(750);
+
+        // Null-hypothesis probes: the deck's own animations all suppressed,
+        // 12 isolated fixed divs running literal keyframes at 1s vs 10s
+        // periods, then var()-driven keyframes at 1s. Iteration-boundary
+        // servicing predicts ~10x fewer style resolves at 10s; software
+        // (per-frame) animation predicts ~60/s regardless; var() keyframes
+        // forcing software predicts the third cell exploding.
+        await app.evalJS<number>(QUIET_ON);
+        await app.evalJS<number>(probeOn(12, 1000, false));
+        await runCell("probe-literal-1s");
+        await app.evalJS<boolean>(PROBE_OFF);
+        await app.evalJS<number>(probeOn(12, 10000, false));
+        await runCell("probe-literal-10s");
+        await app.evalJS<boolean>(PROBE_OFF);
+        await app.evalJS<number>(probeOn(12, 1000, true));
+        await runCell("probe-var-1s");
+        await app.evalJS<boolean>(PROBE_OFF);
+        await quietOff();
 
         // Stand up running glyphs in A: an unresolved tool call renders a
         // running header dot.
-        await app.driveSession("A", {
-          op: "ingestFrame",
-          feedId: FEED_CODE_OUTPUT,
-          decoded: {
+        await ingest(
+          "A",
+          {
             type: "tool_use",
             tug_session_id: "at9996-A",
             msg_id: "at9996-A-tool1",
@@ -417,7 +676,8 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
             input: { command: "sleep 600", description: "hold a running dot" },
             seq: BLOCKS_PER_SESSION + 1,
           },
-        });
+          "hold-open tool_use A",
+        );
         await app.waitForCondition<boolean>(
           `document.querySelectorAll("[data-card-id='A'] .tug-progress-pulsing-dot[data-state='running']:not([data-static])").length >= 1`,
           { timeoutMs: 10_000 },
@@ -435,10 +695,105 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
         // Cell 5 — churn in A with all animations suppressed: churn-only.
         await app.evalJS<number>(QUIET_ON);
         await runCell("stream-quiet", streamInto("A", "quiet"));
-        await app.evalJS<boolean>(QUIET_OFF);
+        await quietOff();
+
+        // Cell 6 — tool lifecycle beside the standing running glyph in A.
+        await runCell("tool-churn-hot", toolChurn("A", "churnA"));
+
+        // Cell 7 — tool lifecycle in C, no standing glyph: each pair mints,
+        // settles, and static-swaps its own dot.
+        await runCell("tool-churn-cold", toolChurn("C", "churnC"));
+
+        // Cell 8 — the same lifecycle in A with animations suppressed.
+        await app.evalJS<number>(QUIET_ON);
+        await runCell("tool-churn-quiet", toolChurn("A", "churnQ"));
+        await quietOff();
+
+        // Cell 9 — pairs at quarter cadence into C: the next tool_use lands
+        // while the previous dot is still mid-settle. The interruption path
+        // the happy-path cells never exercise.
+        await runCell("tool-churn-fast", toolChurn("C", "fast", TOOL_CHURN_MS / 4));
+
+        // Cell 10 — the real shape of a working turn: partial text streaming
+        // into A WHILE tools churn in A. Commits land in the same subtree as
+        // minting/settling dots.
+        await runCell("turn-mix", async () => {
+          await Promise.all([
+            streamInto("A", "mix")(),
+            toolChurn("A", "mixT")(),
+          ]);
+        });
+
+        /** Full turn cycles at a period: send → text → turn_complete → gap.
+         *  The only channel that crosses the PERSISTENT dots (session status,
+         *  wave footer) — inside a turn they run through tool_work and
+         *  streaming alike and never settle. A period under the 260ms settle
+         *  promotes those dots mid-settle every cycle. */
+        const turnCycle = (cardId: string, tag: string, periodMs: number) => {
+          return async () => {
+            const sid = `at9996-${cardId}`;
+            const untilMs = Date.now() + CELL_SECS * 1000;
+            const maxIters = Math.ceil((CELL_SECS * 1000) / periodMs) + 8;
+            let i = 0;
+            while (Date.now() < untilMs && i < maxIters) {
+              try {
+                await withDeadline(
+                  app.driveSession(
+                    cardId,
+                    { op: "send", text: `cycle ${tag} ${i}` },
+                    { timeoutMs: INGEST_TIMEOUT_MS },
+                  ),
+                  `send ${tag}#${i}`,
+                );
+              } catch (err) {
+                ingestTimeouts++;
+                console.log(`[at9996] TOLERATED ${String(err)}`);
+              }
+              await ingest(
+                cardId,
+                {
+                  type: "assistant_text",
+                  tug_session_id: sid,
+                  msg_id: `${sid}-${tag}-t${i}`,
+                  text: `cycle ${i} reply`,
+                  is_partial: false,
+                  rev: 0,
+                  seq: BLOCKS_PER_SESSION + 500 + i * 2,
+                },
+                `cycle text ${tag}#${i}`,
+                { tolerant: true },
+              );
+              await hold(periodMs / 2);
+              await ingest(
+                cardId,
+                {
+                  type: "turn_complete",
+                  tug_session_id: sid,
+                  msg_id: `${sid}-${tag}-t${i}`,
+                  result: "success",
+                  seq: BLOCKS_PER_SESSION + 501 + i * 2,
+                },
+                `turn_complete ${tag}#${i}`,
+                { tolerant: true },
+              );
+              await hold(periodMs / 2);
+              i++;
+            }
+          };
+        };
+
+        // Cell 11 — turn cycling with room to settle: 260ms settle + grace
+        // completes inside the 500ms gap. The clean boundary crossing.
+        await runCell("turn-cycle", turnCycle("C", "cyc", 1000));
+
+        // Cell 12 — turn cycling under the settle: the next send promotes
+        // the status dot while its settle transition is mid-flight.
+        await runCell("turn-cycle-fast", turnCycle("C", "cycF", 300));
 
         console.log(`[at9996] REPORT ${JSON.stringify(report)}`);
-        expect(Object.keys(report).length).toBe(5);
+        expect(Object.keys(report).length).toBe(
+          ONLY_CELLS.length > 0 ? ONLY_CELLS.length : 18,
+        );
       } finally {
         await app.close();
       }
