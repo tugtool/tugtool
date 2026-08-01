@@ -45,6 +45,8 @@ export function registerLensCard(): void {
     contentFactory: (cardId: string) => <LensContent cardId={cardId} />,
     defaultMeta: { title: "Lens", closable: true },
     hidden: true,
+    // The mirror does not reflect itself.
+    lensGroup: "none",
     sizePolicy: {
       min: { width: MIN_LENS_WIDTH_PX, height: 240 },
       preferred: { width: DEFAULT_LENS_WIDTH_PX, height: 900 },

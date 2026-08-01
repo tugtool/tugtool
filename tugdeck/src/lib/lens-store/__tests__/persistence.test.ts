@@ -77,6 +77,43 @@ describe("LensStore — persistence", () => {
     expect(put!.body).toEqual({ kind: "json", value: ["telemetry"] });
   });
 
+  it("setCardsRowOrder PUTs the whole record, not just the group", async () => {
+    lensStore.setCardsRowOrder("files", ["card-a", "card-b"]);
+    await Promise.resolve();
+    const put = captured.find(
+      (c) =>
+        c.method === "PUT" && c.url.endsWith(`/${LENS_KEYS.CARDS_ROW_ORDER}`),
+    );
+    expect(put).toBeDefined();
+    expect(put!.body).toEqual({
+      kind: "json",
+      value: { sessions: [], files: ["card-a", "card-b"], tools: [] },
+    });
+  });
+
+  it("setCardGroupCollapsed PUTs the collapsed-group json array", async () => {
+    lensStore.setCardGroupCollapsed("tools", true);
+    await Promise.resolve();
+    const put = captured.find(
+      (c) =>
+        c.method === "PUT" &&
+        c.url.endsWith(`/${LENS_KEYS.CARDS_COLLAPSED_GROUPS}`),
+    );
+    expect(put).toBeDefined();
+    expect(put!.body).toEqual({ kind: "json", value: ["tools"] });
+  });
+
+  it("a card-order write never touches the legacy keys", async () => {
+    lensStore.setCardsRowOrder("sessions", ["s1"]);
+    await Promise.resolve();
+    const legacy = captured.filter(
+      (c) =>
+        c.url.endsWith(`/${LENS_KEYS.SESSION_ORDER}`) ||
+        c.url.endsWith(`/${LENS_KEYS.TEXT_FILE_ORDER}`),
+    );
+    expect(legacy).toEqual([]);
+  });
+
   it("a no-op mutation issues no PUT", async () => {
     lensStore.setCollapsed("log", false); // never collapsed → no change
     await Promise.resolve();

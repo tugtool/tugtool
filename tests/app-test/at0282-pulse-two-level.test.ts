@@ -46,11 +46,11 @@
  * therefore no goal anywhere. The two tests must never disagree.
  *
  * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
- * @covers tugdeck/src/components/lens/sections/sessions-section.tsx
+ * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  * @covers tugdeck/src/components/tugways/tug-pulse.css
  * @covers tugdeck/src/components/tugways/tug-session-row.tsx
  * @covers tugdeck/src/components/tugways/tug-session-row.css
- * @covers tugdeck/src/components/lens/sections/sessions-section.css
+ * @covers tugdeck/src/components/lens/sections/cards-section.css
  * @covers tugdeck/src/lib/pulse-store.ts
  * @covers tugdeck/src/test-surface.ts
  */
@@ -75,7 +75,7 @@ const CARD_B = '[data-card-id="B"]';
 const STRIP_B = `${CARD_B} [data-slot="session-pulse-strip"]`;
 
 const lensRow = (sid: string): string =>
-  `.lens-sessions-list .session-row-content[data-session-id="${sid}"]`;
+  `.lens-cards-list .session-row-content[data-session-id="${sid}"]`;
 const lensIntent = (sid: string): string =>
   `${lensRow(sid)} [data-slot="tug-pulse-headline"]`;
 

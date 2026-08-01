@@ -1,0 +1,753 @@
+/**
+ * cards-data-source.ts — the `TugListView` data source for the Lens **Cards**
+ * section: a pane-first mirror of the deck canvas, grouped by kind.
+ *
+ * The deck's data model is pane-first — a pane owns an ordered `cardIds` and
+ * one `activeCardId` — and this projection says so rather than flattening it.
+ * The top level of the list is always a *pane*:
+ *
+ *  - A **single-card pane** borrows its card's identity, name, and row
+ *    rendering wholesale. There is no chevron, no disclosure, no indent, and
+ *    nothing to expand: the row IS the card's row. This is the invariant the
+ *    whole section exists to honor.
+ *  - A **multi-card pane** renders one pane row followed by one indented
+ *    subrow per card, in `cardIds` order, unconditionally visible. There is no
+ *    per-pane fold state anywhere in this file, and none is coming — a heavy
+ *    stack is handled by collapsing its *group*.
+ *
+ * Rows are emitted per group in {@link GROUP_ORDER}. A group with no pane rows
+ * emits nothing at all, not an empty header. A collapsed group emits its
+ * header and nothing else — the header is the way back.
+ *
+ * Everything here is pure over its inputs and resolvers, so the whole model is
+ * exercised by `__tests__/cards-data-source.test.ts` with no registry, no
+ * stores, and no DOM.
+ *
+ * Laws:
+ *  - [L02] external state via `useSyncExternalStore` — this IS such a store
+ *    (`subscribe` + `getVersion`); the hook mints one stable instance per
+ *    lifetime and notifies from `useLayoutEffect` ([L03]).
+ *  - [L19] component authoring — module docstring, exported types.
+ *
+ * @module components/lens/sections/cards-data-source
+ */
+
+import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
+
+import { getRegistration } from "@/card-registry";
+import type {
+  TugListViewCellRole,
+  TugListViewDataSource,
+} from "@/components/tugways/tug-list-view";
+import type { CardState, DeckState, TugPaneState } from "@/layout-tree";
+import { findLensPane } from "@/deck-store-selectors";
+import type { CardSessionBinding } from "@/lib/card-session-binding-store";
+import { getDeckStore } from "@/lib/deck-store-registry";
+import {
+  getOpenFileViewCard,
+  getOpenFileViewCardsVersion,
+  subscribeOpenFileViewCards,
+} from "@/lib/file-view-open-registry";
+import type { LensCardsRowOrder } from "@/lib/lens-store/types";
+import { sessionCardTitleOverride } from "@/lib/session-card-title";
+import { sessionNameStore } from "@/lib/session-name-store";
+import { sessionTagStore } from "@/lib/session-tag-store";
+import {
+  getOpenTextCard,
+  getOpenTextCardsVersion,
+  subscribeOpenTextCards,
+} from "@/lib/text-card-open-registry";
+import { filterAndRank, filterQueryMatch } from "@/lib/text-match";
+
+import { GROUP_ORDER, resolveLensGroup, type LensCardsGroup } from "./cards-groups";
+
+// ---------------------------------------------------------------------------
+// Path helpers — the display vocabulary shared by every file-kind row
+// ---------------------------------------------------------------------------
+
+/** The trailing filename of a path (`/a/b/c.txt` → `c.txt`). */
+export function basename(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i >= 0 ? path.slice(i + 1) : path;
+}
+
+/** The directory portion of a path (`/a/b/c.txt` → `/a/b`), or "" at root. */
+export function dirname(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i > 0 ? path.slice(0, i) : "";
+}
+
+/**
+ * Abbreviate a macOS home prefix (`/Users/<name>`) to `~` for display. It lives
+ * beside `basename` rather than in the section so the data source can match on
+ * exactly the string the row shows — typing `~/src` finds the row, and the
+ * highlight offsets land on the rendered characters.
+ */
+export function displayDir(dir: string): string {
+  return dir.replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
+}
+
+/** The abbreviated full path a row shows on hover (`~/src/proj/a.txt`). */
+export function displayPath(path: string): string {
+  const dir = dirname(path);
+  const shown = dir.length > 0 ? displayDir(dir) : "";
+  return shown.length > 0 ? `${shown}/${basename(path)}` : basename(path);
+}
+
+/** The shape {@link assignDisambiguators} needs to tell two rows apart. */
+interface Nameable {
+  readonly title: string;
+  readonly path: string | null;
+}
+
+/**
+ * The **shortest trailing directory run** that separates each entry from the
+ * others sharing its filename — one segment where one is enough (`roadmap` vs
+ * `Desktop`), more only where the near directories also match (`tugcast/src`
+ * vs `tugbank/src`) — or `null` when the filename is already unique. Two files
+ * with the same name in the same directory cannot happen, so the walk always
+ * terminates at the abbreviated full directory.
+ *
+ * Returned as a parallel array so it can be attached to whatever row shape the
+ * caller is building. Run it on the UNFILTERED set so a row's suffix does not
+ * appear and vanish as the filter narrows the list.
+ */
+export function assignDisambiguators(
+  entries: readonly Nameable[],
+): (string | null)[] {
+  const byTitle = new Map<string, Nameable[]>();
+  for (const entry of entries) {
+    const group = byTitle.get(entry.title);
+    if (group === undefined) byTitle.set(entry.title, [entry]);
+    else group.push(entry);
+  }
+  return entries.map((entry) => {
+    const group = byTitle.get(entry.title) ?? [];
+    if (group.length < 2 || entry.path === null) return null;
+    const segments = (path: string): string[] =>
+      displayDir(dirname(path))
+        .split("/")
+        .filter((s) => s !== "");
+    const mine = segments(entry.path);
+    const others: string[][] = [];
+    for (const other of group) {
+      if (other === entry || other.path === null) continue;
+      others.push(segments(other.path));
+    }
+    for (let k = 1; k <= mine.length; k += 1) {
+      const tail = mine.slice(mine.length - k).join("/");
+      const clashes = others.some(
+        (segs) => segs.slice(segs.length - k).join("/") === tail,
+      );
+      if (!clashes) return tail;
+    }
+    return mine.length > 0 ? mine.join("/") : null;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Row model
+// ---------------------------------------------------------------------------
+
+/**
+ * A card resolved for display: everything a cell needs to draw the card,
+ * independent of whether it is showing as a pane row or as a subrow.
+ */
+export interface CardIdentity {
+  readonly cardId: string;
+  readonly componentId: string;
+  readonly group: LensCardsGroup;
+  /** The name the row shows. */
+  readonly title: string;
+  /** The bound file path, for file-kind cards that have one. */
+  readonly path: string | null;
+  /** The card wears its unsaved-changes mark. Viewers are read-only, so never. */
+  readonly unsaved: boolean;
+  /** The session this card is bound to, when it is a bound session card. */
+  readonly tugSessionId: string | null;
+  /** The session's project directory, needed by the monitor cell. */
+  readonly projectDir: string | null;
+  readonly closable: boolean;
+  /** A lucide icon name from the registration, for the generic cells. */
+  readonly icon: string | null;
+}
+
+/** Which cell renderer draws a pane row. */
+export type CardsPaneRowKind =
+  | "session-pane"
+  | "file-pane"
+  | "tool-pane"
+  | "stack-pane";
+
+export type CardsRow =
+  | {
+      readonly type: "group-header";
+      readonly group: LensCardsGroup;
+      /** Pane rows in this group, after filtering. */
+      readonly count: number;
+      readonly collapsed: boolean;
+    }
+  | {
+      readonly type: "pane";
+      readonly group: LensCardsGroup;
+      readonly paneId: string;
+      /** The identity card — the pane's `activeCardId`. */
+      readonly identity: CardIdentity;
+      /** The key this row's arrangement position persists under ([P08]). */
+      readonly orderKey: string;
+      readonly cardCount: number;
+      readonly rowKind: CardsPaneRowKind;
+      readonly disambiguator: string | null;
+    }
+  | {
+      readonly type: "card";
+      readonly group: LensCardsGroup;
+      readonly paneId: string;
+      readonly identity: CardIdentity;
+      /** This card is its pane's active tab. */
+      readonly active: boolean;
+    };
+
+/** The cell renderer key `TugListView` dispatches on. */
+export function kindOfRow(row: CardsRow): string {
+  if (row.type === "group-header") return "group-header";
+  if (row.type === "card") return "subcard";
+  return row.rowKind;
+}
+
+/** A row's stable, non-colliding list id. */
+export function idOfRow(row: CardsRow): string {
+  switch (row.type) {
+    case "group-header":
+      return `header:${row.group}`;
+    case "pane":
+      return `pane:${row.paneId}`;
+    case "card":
+      return `card:${row.identity.cardId}`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Resolver seams — the registry and the open registries, injectable for tests
+// ---------------------------------------------------------------------------
+
+/** How a card's presentation is resolved. Every field defaults to the real
+ *  registry / open registries, so production passes nothing. */
+export interface CardsResolvers {
+  /** The Lens group a componentId files under, or `"none"` to omit it. */
+  group: (componentId: string) => LensCardsGroup | "none";
+  /** An open Text card's bound path. */
+  textPath: (cardId: string) => string | null;
+  /** An open Text card's buffer display name (`"Untitled-2"`). */
+  textDisplayName: (cardId: string) => string | null;
+  /** Whether an open Text card wears its unsaved-changes mark. */
+  textUnsaved: (cardId: string) => boolean;
+  /** An open viewer card's bound path. */
+  viewPath: (cardId: string) => string | null;
+  /** The label a bound session row displays. */
+  sessionLabel: (binding: CardSessionBinding) => string;
+  /** The registration's fallback title for a card with none of its own. */
+  defaultTitle: (componentId: string) => string;
+  /** The registration's lucide icon name, for the generic cells. */
+  icon: (componentId: string) => string | null;
+}
+
+export const DEFAULT_RESOLVERS: CardsResolvers = {
+  group: (componentId) => {
+    const reg = getRegistration(componentId);
+    // An unregistered componentId cannot reach a pane (the deck filters those
+    // panes out on load), but resolving it to `"none"` rather than guessing
+    // keeps a stray one out of the mirror instead of inventing a home for it.
+    return reg === undefined ? "none" : resolveLensGroup(reg);
+  },
+  textPath: (cardId) => getOpenTextCard(cardId)?.getPath() ?? null,
+  textDisplayName: (cardId) => getOpenTextCard(cardId)?.getDisplayName() ?? null,
+  textUnsaved: (cardId) => getOpenTextCard(cardId)?.hasUnsavedMark() ?? false,
+  viewPath: (cardId) => getOpenFileViewCard(cardId)?.getPath() ?? null,
+  sessionLabel: (binding) =>
+    sessionCardTitleOverride(
+      binding.projectDir,
+      sessionNameStore.getName(binding.tugSessionId),
+      sessionTagStore.getTag(binding.tugSessionId),
+      null,
+    ),
+  defaultTitle: (componentId) =>
+    getRegistration(componentId)?.defaultMeta.title ?? "",
+  icon: (componentId) =>
+    getRegistration(componentId)?.defaultMeta.icon ?? null,
+};
+
+// ---------------------------------------------------------------------------
+// Inputs
+// ---------------------------------------------------------------------------
+
+export interface LensCardsInputs {
+  readonly deck: DeckState | null;
+  /** The user's persisted per-group arrangement, by order key. */
+  readonly cardsRowOrder: LensCardsRowOrder;
+  /** Groups the user has collapsed. */
+  readonly collapsedGroups: readonly string[];
+  /** The band's filter query. Empty / whitespace → every row. */
+  readonly filterQuery: string;
+  /** Bumps when any card binds / rebinds a path in either open registry. */
+  readonly registryVersion: number;
+  readonly bindings: ReadonlyMap<string, CardSessionBinding>;
+  /**
+   * Version tokens for the name / tag stores session labels are built from.
+   * Labels are read at recompute time, so a name or tag arriving late must
+   * re-run the projection — these are how the section says "they changed".
+   */
+  readonly nameVersion: unknown;
+  readonly tagVersion: unknown;
+}
+
+/** Which cell renders a single-card pane of this group. */
+const PANE_KIND_FOR_GROUP: Readonly<Record<LensCardsGroup, CardsPaneRowKind>> = {
+  sessions: "session-pane",
+  files: "file-pane",
+  tools: "tool-pane",
+};
+
+// ---------------------------------------------------------------------------
+// The projection
+// ---------------------------------------------------------------------------
+
+/** A pane and its resolved cards, before grouping / ordering / filtering. */
+interface PaneEntry {
+  readonly pane: TugPaneState;
+  readonly identity: CardIdentity;
+  readonly cards: readonly CardIdentity[];
+  readonly orderKey: string;
+  readonly group: LensCardsGroup;
+  /**
+   * Where this pane sorts when the user has not arranged it.
+   *
+   * Deliberately NOT the pane's index in `deck.panes`: that array IS the
+   * canvas stacking order — `deck-canvas` turns it straight into z-index — so
+   * fronting a card rewrites it, and a list keyed off it would reshuffle every
+   * time the user clicked between cards. The identity card's index in
+   * `deck.cards` is insertion order and does not move, which is the same
+   * stable footing the two retired sections stood on.
+   */
+  readonly seq: number;
+}
+
+/** The strings a card is matched on — the ones the row actually shows. */
+function matchFields(identity: CardIdentity): (string | null)[] {
+  return [
+    identity.title,
+    identity.path !== null ? displayDir(dirname(identity.path)) : null,
+  ];
+}
+
+function resolveCard(
+  card: CardState,
+  group: LensCardsGroup,
+  bindings: ReadonlyMap<string, CardSessionBinding>,
+  r: CardsResolvers,
+): CardIdentity {
+  const binding = bindings.get(card.id);
+  let title: string;
+  let path: string | null = null;
+  let unsaved = false;
+
+  if (card.componentId === "text") {
+    path = r.textPath(card.id);
+    title =
+      path !== null
+        ? basename(path)
+        : r.textDisplayName(card.id) ?? (card.title || "Untitled");
+    unsaved = r.textUnsaved(card.id);
+  } else if (card.componentId === "file-view") {
+    path = r.viewPath(card.id);
+    title = path !== null ? basename(path) : card.title || "File";
+  } else if (binding !== undefined) {
+    title = r.sessionLabel(binding);
+  } else {
+    title = card.title || r.defaultTitle(card.componentId) || card.componentId;
+  }
+
+  return {
+    cardId: card.id,
+    componentId: card.componentId,
+    group,
+    title,
+    path,
+    unsaved,
+    tugSessionId: binding?.tugSessionId ?? null,
+    projectDir: binding?.projectDir ?? null,
+    closable: card.closable,
+    icon: card.icon ?? r.icon(card.componentId),
+  };
+}
+
+/**
+ * A pane's order key ([P08]): the identity that should survive a close/reopen.
+ * A stack has only its pane id; a single-card session pane keys by session so
+ * the arrangement holds across the card being closed and the session resumed;
+ * everything else keys by card id.
+ */
+function orderKeyFor(
+  pane: TugPaneState,
+  identity: CardIdentity,
+): string {
+  if (pane.cardIds.length > 1) return pane.id;
+  if (identity.tugSessionId !== null) return identity.tugSessionId;
+  return identity.cardId;
+}
+
+/**
+ * Project the deck into the Cards section's flat row list.
+ *
+ * A pane files under its **active card's** group, so a mixed-kind stack moves
+ * groups when the user fronts a different-kind tab. Same-kind stacks — the
+ * common case — never move, and a mixed one moving is honest: the row follows
+ * what the pane currently is.
+ */
+export function buildCardsRows(
+  inputs: LensCardsInputs,
+  resolvers: Partial<CardsResolvers> = {},
+): CardsRow[] {
+  const r: CardsResolvers = { ...DEFAULT_RESOLVERS, ...resolvers };
+  const deck = inputs.deck;
+  if (deck === null) return [];
+
+  const cardsById = new Map(deck.cards.map((c) => [c.id, c]));
+  const cardSeq = new Map(deck.cards.map((c, i) => [c.id, i]));
+  const lensPaneId = findLensPane(deck)?.id;
+
+  // 1. One entry per pane, filed by its active card's group.
+  const entries: PaneEntry[] = [];
+  for (const pane of deck.panes) {
+    if (pane.id === lensPaneId) continue;
+    const activeCard = cardsById.get(pane.activeCardId);
+    if (activeCard === undefined) continue;
+    const group = r.group(activeCard.componentId);
+    if (group === "none") continue;
+
+    const identity = resolveCard(activeCard, group, inputs.bindings, r);
+    const cards = pane.cardIds
+      .map((id) => cardsById.get(id))
+      .filter((c): c is CardState => c !== undefined)
+      .map((c) =>
+        c.id === activeCard.id
+          ? identity
+          : resolveCard(c, group, inputs.bindings, r),
+      );
+    entries.push({
+      pane,
+      identity,
+      cards,
+      orderKey: orderKeyFor(pane, identity),
+      group,
+      seq: cardSeq.get(activeCard.id) ?? Number.MAX_SAFE_INTEGER,
+    });
+  }
+
+  // 2. Disambiguators are computed over the UNFILTERED file-group pane rows,
+  //    so a row's trailing directory does not appear and vanish as the filter
+  //    narrows the list.
+  const fileEntries = entries.filter((e) => e.group === "files");
+  const suffixes = assignDisambiguators(fileEntries.map((e) => e.identity));
+  const disambiguatorByPane = new Map<string, string | null>();
+  fileEntries.forEach((entry, i) => {
+    disambiguatorByPane.set(entry.pane.id, suffixes[i]);
+  });
+
+  // 3. Bucket by group, then order each bucket by the user's arrangement:
+  //    ranked keys first in rank order, unranked entries trailing in deck
+  //    order — so a newly opened card lands at the bottom without disturbing
+  //    what the user arranged.
+  const buckets = new Map<LensCardsGroup, PaneEntry[]>();
+  for (const group of GROUP_ORDER) buckets.set(group, []);
+  for (const entry of entries) buckets.get(entry.group)!.push(entry);
+
+  const query = inputs.filterQuery;
+  const filtering = query.trim().length > 0;
+  const collapsed = new Set(inputs.collapsedGroups);
+  const rows: CardsRow[] = [];
+
+  for (const group of GROUP_ORDER) {
+    const bucket = buckets.get(group)!;
+    if (bucket.length === 0) continue;
+
+    const order = inputs.cardsRowOrder[group] ?? [];
+    const rank = new Map<string, number>();
+    order.forEach((key, i) => rank.set(key, i));
+    const ordered = [...bucket].sort((a, b) => {
+      const ra = rank.get(a.orderKey) ?? Number.POSITIVE_INFINITY;
+      const rb = rank.get(b.orderKey) ?? Number.POSITIVE_INFINITY;
+      return ra !== rb ? ra - rb : a.seq - b.seq;
+    });
+
+    // 4. A pane survives the filter on its OWN text or on any of its cards' —
+    //    a stack is findable by a tab buried inside it. Which subrows then
+    //    show depends on which side matched: when the pane's own text matched,
+    //    all of them (the user found the pane, so they get the pane); when only
+    //    children matched, just those children.
+    const survivors = filtering
+      ? filterAndRank(ordered, query, (entry) => [
+          ...matchFields(entry.identity),
+          ...entry.cards.flatMap((c) => matchFields(c)),
+        ])
+      : ordered;
+    if (survivors.length === 0) continue;
+
+    const isCollapsed = collapsed.has(group);
+    rows.push({
+      type: "group-header",
+      group,
+      count: survivors.length,
+      collapsed: isCollapsed,
+    });
+    if (isCollapsed) continue;
+
+    for (const entry of survivors) {
+      const multi = entry.pane.cardIds.length > 1;
+      rows.push({
+        type: "pane",
+        group,
+        paneId: entry.pane.id,
+        identity: entry.identity,
+        orderKey: entry.orderKey,
+        cardCount: entry.pane.cardIds.length,
+        rowKind: multi ? "stack-pane" : PANE_KIND_FOR_GROUP[group],
+        disambiguator: disambiguatorByPane.get(entry.pane.id) ?? null,
+      });
+      if (!multi) continue;
+
+      const paneMatched =
+        !filtering || filterQueryMatch(query, matchFields(entry.identity));
+      for (const card of entry.cards) {
+        if (
+          filtering &&
+          !paneMatched &&
+          !filterQueryMatch(query, matchFields(card))
+        ) {
+          continue;
+        }
+        rows.push({
+          type: "card",
+          group,
+          paneId: entry.pane.id,
+          identity: card,
+          active: card.cardId === entry.pane.activeCardId,
+        });
+      }
+    }
+  }
+
+  return rows;
+}
+
+/** A per-group census of pane rows, for the band's collapsed summary. */
+export type CardsCensus = Readonly<Record<LensCardsGroup, number>>;
+
+// ---------------------------------------------------------------------------
+// The data source
+// ---------------------------------------------------------------------------
+
+export class LensCardsDataSource implements TugListViewDataSource {
+  private inputs: LensCardsInputs;
+  private rows: CardsRow[] = [];
+  private readonly listeners = new Set<() => void>();
+  private readonly resolvers: Partial<CardsResolvers>;
+  private version = 0;
+
+  /** `resolvers` overrides the registry / open-registry defaults; production
+   *  passes none. Held for the source's lifetime — a resolver set is a wiring
+   *  choice, not an input that changes between recomputes. */
+  constructor(inputs: LensCardsInputs, resolvers: Partial<CardsResolvers> = {}) {
+    this.inputs = inputs;
+    this.resolvers = resolvers;
+    this.recompute();
+  }
+
+  numberOfItems(): number {
+    return this.rows.length;
+  }
+
+  idForIndex(index: number): string {
+    return idOfRow(this.rows[index]);
+  }
+
+  kindForIndex(index: number): string {
+    return kindOfRow(this.rows[index]);
+  }
+
+  /**
+   * Every row is a `"cell"`, headers included: `TugListView`'s `"header"` role
+   * is inert — skipped by the cursor and by click — and a group header here is
+   * a collapse toggle the arrow walk must reach.
+   */
+  roleForIndex(_index: number): TugListViewCellRole {
+    return "cell";
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  getVersion(): unknown {
+    return this.version;
+  }
+
+  /** Typed row access for the cell renderers. */
+  rowAt(index: number): CardsRow {
+    return this.rows[index];
+  }
+
+  /** Index of the row with this list id, or -1 when absent. */
+  indexForId(id: string): number {
+    return this.rows.findIndex((row) => idOfRow(row) === id);
+  }
+
+  /**
+   * Index of the first pane row, or -1 when the projection holds none.
+   *
+   * The section seeds the movement cursor here rather than letting the list
+   * fall back to its first cursorable row, which — headers being cursorable —
+   * would be a group header. ⌘L must land on a card, not on a collapse toggle.
+   */
+  firstPaneRowIndex(): number {
+    return this.rows.findIndex((row) => row.type === "pane");
+  }
+
+  setInputsWithoutNotify(next: LensCardsInputs): boolean {
+    if (
+      this.inputs.deck === next.deck &&
+      this.inputs.cardsRowOrder === next.cardsRowOrder &&
+      this.inputs.collapsedGroups === next.collapsedGroups &&
+      this.inputs.filterQuery === next.filterQuery &&
+      this.inputs.registryVersion === next.registryVersion &&
+      this.inputs.bindings === next.bindings &&
+      this.inputs.nameVersion === next.nameVersion &&
+      this.inputs.tagVersion === next.tagVersion
+    ) {
+      return false;
+    }
+    this.inputs = next;
+    this.recompute();
+    return true;
+  }
+
+  notifyAll(): void {
+    for (const listener of this.listeners) listener();
+  }
+
+  /** Whether a filter is narrowing the list right now. */
+  isFiltering(): boolean {
+    return this.inputs.filterQuery.trim().length > 0;
+  }
+
+  /**
+   * The order keys of the pane rows as RENDERED, in emission order — the
+   * reorder hook's `getVisibleOrder`.
+   *
+   * Derived from the projection and never from the underlying pane set:
+   * `useBlockReorder`'s `beginDrag` aborts silently, with no error and no log,
+   * if any key it is handed has no mounted element. A collapsed group emits no
+   * pane rows, so its keys must be absent here too.
+   */
+  visibleOrder(): string[] {
+    const out: string[] = [];
+    for (const row of this.rows) {
+      if (row.type === "pane") out.push(row.orderKey);
+    }
+    return out;
+  }
+
+  /** The group each order key currently belongs to — what a reorder commit
+   *  re-buckets against, so a row dropped across a boundary still orders
+   *  within its own group. */
+  groupByOrderKey(): Map<string, LensCardsGroup> {
+    const out = new Map<string, LensCardsGroup>();
+    for (const row of this.rows) {
+      if (row.type === "pane") out.set(row.orderKey, row.group);
+    }
+    return out;
+  }
+
+  /** Pane rows per group, filter or no filter — the band's summary reads this. */
+  censusByGroup(): CardsCensus {
+    const unfiltered = buildCardsRows(
+      { ...this.inputs, filterQuery: "", collapsedGroups: [] },
+      this.resolvers,
+    );
+    const out: Record<LensCardsGroup, number> = {
+      sessions: 0,
+      files: 0,
+      tools: 0,
+    };
+    for (const row of unfiltered) {
+      if (row.type === "pane") out[row.group] += 1;
+    }
+    return out;
+  }
+
+  /** How many pane rows exist, filter or no filter. */
+  unfilteredCount(): number {
+    const census = this.censusByGroup();
+    return census.sessions + census.files + census.tools;
+  }
+
+  private recompute(): void {
+    this.rows = buildCardsRows(this.inputs, this.resolvers);
+    this.version += 1;
+  }
+}
+
+const NOOP_SUBSCRIBE = (): (() => void) => () => {};
+
+/**
+ * Hook — read the deck snapshot and both open registries (all [L02] stores)
+ * and feed a stable {@link LensCardsDataSource}, notifying from a layout
+ * effect ([L03]).
+ */
+export function useLensCardsDataSource(
+  inputs: Omit<LensCardsInputs, "deck" | "registryVersion">,
+): LensCardsDataSource {
+  const deckStore = getDeckStore();
+  const deck = useSyncExternalStore(
+    deckStore?.subscribe ?? NOOP_SUBSCRIBE,
+    deckStore !== null ? deckStore.getSnapshot : () => null,
+    () => null,
+  );
+  // Recompute when a card binds / rebinds its path, so a just-opened file is
+  // titled the instant its card resolves. Both families feed the list, so both
+  // registries are watched; their versions sum into one input, which changes
+  // whenever either side moves.
+  const textVersion = useSyncExternalStore(
+    subscribeOpenTextCards,
+    getOpenTextCardsVersion,
+    getOpenTextCardsVersion,
+  );
+  const viewVersion = useSyncExternalStore(
+    subscribeOpenFileViewCards,
+    getOpenFileViewCardsVersion,
+    getOpenFileViewCardsVersion,
+  );
+
+  const ref = useRef<LensCardsDataSource | null>(null);
+  const full: LensCardsInputs = {
+    ...inputs,
+    deck,
+    registryVersion: textVersion + viewVersion,
+  };
+  if (ref.current === null) {
+    ref.current = new LensCardsDataSource(full);
+  }
+  const ds = ref.current;
+  const didChange = ds.setInputsWithoutNotify(full);
+
+  useLayoutEffect(() => {
+    if (didChange) ds.notifyAll();
+    // didChange is captured per render; intentional.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+
+  return ds;
+}

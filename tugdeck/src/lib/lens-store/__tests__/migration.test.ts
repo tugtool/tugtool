@@ -50,7 +50,7 @@ afterEach(() => {
 });
 
 describe("LensStore — section-kind migration", () => {
-  it("remaps a persisted 'changeset' kind to 'sessions' on hydrate", () => {
+  it("remaps a persisted 'changeset' kind straight to 'cards' on hydrate", () => {
     setTugbankClient(
       fakeClient({
         [LENS_KEYS.SECTION_ORDER]: jsonArray(["changeset", "log", "telemetry"]),
@@ -61,11 +61,11 @@ describe("LensStore — section-kind migration", () => {
     // getSnapshot triggers lazy _ensureInitialized -> _hydrateFromTugbank.
     const snap = lensStore.getSnapshot();
 
-    expect(snap.sectionOrder).toEqual(["sessions", "log", "telemetry"]);
-    expect(snap.collapsedSections).toEqual(["sessions"]);
+    expect(snap.sectionOrder).toEqual(["cards", "log", "telemetry"]);
+    expect(snap.collapsedSections).toEqual(["cards"]);
   });
 
-  it("remaps a persisted 'text-files' kind to 'files' on hydrate", () => {
+  it("remaps a persisted 'text-files' kind straight to 'cards' on hydrate", () => {
     setTugbankClient(
       fakeClient({
         [LENS_KEYS.SECTION_ORDER]: jsonArray([
@@ -80,13 +80,15 @@ describe("LensStore — section-kind migration", () => {
 
     const snap = lensStore.getSnapshot();
 
+    // Both the old Sessions kind and the old Text Files kind land on "cards";
+    // `resolveSectionRenderOrder` dedupes the doubled entry.
     expect(snap.sectionOrder).toEqual([
-      "sessions",
+      "cards",
       "snippets",
-      "files",
+      "cards",
       "layouts",
     ]);
-    expect(snap.collapsedSections).toEqual(["files"]);
+    expect(snap.collapsedSections).toEqual(["cards"]);
   });
 
   it("leaves unknown kinds untouched", () => {
@@ -98,5 +100,120 @@ describe("LensStore — section-kind migration", () => {
 
     const snap = lensStore.getSnapshot();
     expect(snap.sectionOrder).toEqual(["log", "telemetry", "git_history"]);
+  });
+});
+
+describe("LensStore — cardsRowOrder seeding from the legacy keys", () => {
+  it("a fresh install starts with every group empty", () => {
+    setTugbankClient(fakeClient({}));
+
+    const snap = lensStore.getSnapshot();
+
+    expect(snap.cardsRowOrder).toEqual({
+      sessions: [],
+      files: [],
+      tools: [],
+    });
+  });
+
+  it("seeds sessions and files from the two lists it supersedes", () => {
+    setTugbankClient(
+      fakeClient({
+        [LENS_KEYS.SESSION_ORDER]: jsonArray(["s2", "s1"]),
+        [LENS_KEYS.TEXT_FILE_ORDER]: jsonArray(["card-b", "card-a"]),
+      }),
+    );
+
+    const snap = lensStore.getSnapshot();
+
+    expect(snap.cardsRowOrder).toEqual({
+      sessions: ["s2", "s1"],
+      files: ["card-b", "card-a"],
+      tools: [],
+    });
+  });
+
+  it("seeds from whichever legacy list exists alone", () => {
+    setTugbankClient(
+      fakeClient({ [LENS_KEYS.SESSION_ORDER]: jsonArray(["s1"]) }),
+    );
+
+    const snap = lensStore.getSnapshot();
+
+    expect(snap.cardsRowOrder).toEqual({
+      sessions: ["s1"],
+      files: [],
+      tools: [],
+    });
+  });
+
+  it("a stored cardsRowOrder wins over the legacy keys", () => {
+    setTugbankClient(
+      fakeClient({
+        [LENS_KEYS.SESSION_ORDER]: jsonArray(["legacy"]),
+        [LENS_KEYS.TEXT_FILE_ORDER]: jsonArray(["legacy-file"]),
+        [LENS_KEYS.CARDS_ROW_ORDER]: {
+          kind: "json",
+          value: { sessions: ["s9"], files: ["f9"], tools: ["t9"] },
+        } as TaggedValue,
+      }),
+    );
+
+    const snap = lensStore.getSnapshot();
+
+    expect(snap.cardsRowOrder).toEqual({
+      sessions: ["s9"],
+      files: ["f9"],
+      tools: ["t9"],
+    });
+  });
+
+  it("a stored record missing a group reads that group as empty", () => {
+    setTugbankClient(
+      fakeClient({
+        [LENS_KEYS.CARDS_ROW_ORDER]: {
+          kind: "json",
+          value: { sessions: ["s9"] },
+        } as TaggedValue,
+      }),
+    );
+
+    const snap = lensStore.getSnapshot();
+
+    expect(snap.cardsRowOrder).toEqual({
+      sessions: ["s9"],
+      files: [],
+      tools: [],
+    });
+  });
+
+  it("a malformed group list rejects the whole record and falls back to the legacy seed", () => {
+    setTugbankClient(
+      fakeClient({
+        [LENS_KEYS.SESSION_ORDER]: jsonArray(["s1"]),
+        [LENS_KEYS.CARDS_ROW_ORDER]: {
+          kind: "json",
+          value: { sessions: ["ok"], files: [7], tools: [] },
+        } as TaggedValue,
+      }),
+    );
+
+    const snap = lensStore.getSnapshot();
+
+    expect(snap.cardsRowOrder).toEqual({
+      sessions: ["s1"],
+      files: [],
+      tools: [],
+    });
+  });
+
+  it("hydrates the collapsed-group list", () => {
+    setTugbankClient(
+      fakeClient({
+        [LENS_KEYS.CARDS_COLLAPSED_GROUPS]: jsonArray(["tools"]),
+      }),
+    );
+
+    expect(lensStore.getSnapshot().collapsedCardGroups).toEqual(["tools"]);
   });
 });

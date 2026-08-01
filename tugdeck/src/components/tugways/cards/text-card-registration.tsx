@@ -25,6 +25,7 @@ export function registerTextCard(): void {
     defaultMeta: { title: "File", icon: "FileText", closable: true },
     engineKind: "em",
     category: { label: "Files", icon: "FileText" },
+    lensGroup: "files",
     sizePolicy: {
       // Sized like the Session card so a Text card opens at the same
       // stature next to one. The 800 width floor and 800×1200 preferred

@@ -156,7 +156,7 @@ See [P15] for the scope decision and the stated stack-subrow limitation.
 
 **Implications:**
 - The only visible difference between the two cases is that a stack occupies more lines; subrows distinguish themselves by indent alone (a CSS `padding-inline-start` on `.lens-cards-subrow`).
-- Tab-sentinel cards (`settings-tab`, `help-tab`, `devtools-tab`, `permission-rules-tab`) need no special case — they arrive as subrows of whatever pane hosts them.
+- Tab-sentinel ids (`settings-tab`, `help-tab`, `devtools-tab`, `permission-rules-tab`) need no special case for a different reason than this plan first assumed: they are **not registered cards at all** and never appear in a pane's `cardIds`. Each is a `TugTabBar` tab *inside* a single card's own content (see the "non-registered sentinel" comments in `settings-card.tsx`, `help-sheet.tsx`, `permission-rules-editor.tsx`, `devtools-card.tsx`). They therefore cannot reach the Cards list in any form, as subrows or otherwise. Corrected during #step-1 against the real registry.
 
 #### [P03] Groups by kind — sessions / files / tools, fixed order, empty groups render nothing (DECIDED) {#p03-groups-by-kind}
 
@@ -416,7 +416,6 @@ See Table T02. Additional attributes: the list root `.lens-cards-list`; every pa
 | `text`, `file-view` | files | explicit `lensGroup` |
 | `diff` | files | `category.label === "Files"` |
 | `settings`, `about`, `devtools`, `hello` | tools | fallback |
-| `settings-tab`, `help-tab`, `permission-rules-tab`, `devtools-tab` | tools | fallback (reach the list as subrows of their host pane in practice) |
 | every `gallery-*` | tools | fallback |
 | `lens` | none | explicit `lensGroup` |
 
@@ -447,17 +446,17 @@ Kept deliberately: `.session-row-content[data-session-id]` (names which session 
 
 | Test | What it pins | Expected change |
 |---|---|---|
-| `at0257-lens-session-reorder` | session row drag → `sessionOrder` | selectors keep `data-session-id`; persistence assertion moves to `cardsRowOrder.sessions` |
-| `at0266-lens-filter` | per-section filter fields | **extend, do not rewrite** — scenarios A–F all drive the *Snippets* band against a seeded snippets file and stay as they are. Update the `@covers sections/` line and add one scenario for the Cards field: cross-group narrowing + header survival |
-| `at0269-lens-text-file-dirty-dot` | unsaved dot testid | testid rename (T02) |
+| `at0257-lens-session-reorder` | session row drag → `sessionOrder` | selectors keep `data-session-id`; persistence assertion reads `cardsRowOrder.sessions` out of the one record |
+| `at0266-lens-filter` | per-section filter fields | Scenarios A–E drive the *Snippets* band and are untouched. **Scenario F had to be rebuilt**, not merely re-pointed: it asserted that an *empty* filterable band disables its field, using the Files band, which this run left empty by seeding no text files. The Cards band mirrors the whole deck, so it is populated for as long as any card is open — and this test seeds a `gallery-accordion`. F is now the same rule observed as a **transition**: assert the field live, close the last card through its Lens row's close box, assert it goes disabled and unregistered. Stronger than the original, since it also catches a field that latches live once populated |
+| `at0269-lens-text-file-dirty-dot` | unsaved dot testid | testid rename (T02), **and the file itself renamed** to `at0269-lens-card-dirty-dot.test.ts` — the old vocabulary survived in the filename, which [P09] does not allow and the Success Criteria sweep catches |
 | `at0277-lens-row-accessories-keyboard` | ArrowRight descend: close → slots | class renames only; behavior identical |
 | `at0278-lens-cmdl-focus-stability` | ⌘L seed + memory | the list is one focus stop; the cursor inside it seeds to the first **pane row** ([P16]). Add an assertion that it is a pane row and not a group header |
-| `at0280-local-model-absent`, `at0282-pulse-two-level`, `at0283-pulse-typography` | monitor row content/typography | should pass unmodified (verbatim move, R01 gate); fix imports/selectors only if they reference section wrappers |
+| `at0280-local-model-absent`, `at0282-pulse-two-level`, `at0283-pulse-typography` | monitor row content/typography | The R01 gate held: all three needed only the section-wrapper selector rename (`.lens-sessions-list` → `.lens-cards-list`) that this row's own rule permits, and `at0283-pulse-typography` needed nothing at all. `at0282` and `at0283` pass. **`at0280` fails, and fails identically on `main`** — a pre-existing defect, verified by running it on the base checkout: it times out after 10s waiting for `nativeType`d text to reach the composer, in its strip phase, before it ever looks at the Lens. Out of scope for this plan; recorded rather than absorbed |
 | `at0283-list-row-striping` | `data-row-parity` bands | verify parity behavior with header cells interleaved |
 | `at0287-lens-row-action-not-a-pick` | close box ≠ row pick | class renames |
 | ~~`at0296-lens-row-is-the-handle`~~ | — | **NOT affected.** It matches `.snippet-row-content[data-snippet-id]` — a Snippets test. Verify green, change nothing |
 | ~~`at0248-lens-list-cursor-keys`~~ | — | **NOT affected.** It matches `.lens-content .lens-snippets-list` — a Snippets test. Verify green, change nothing |
-| `at0297-lens-empty-label-row-height` | empty-face row height | testid rename; single empty face for the whole section |
+| `at0297-lens-empty-label-row-height` | empty-face row height | testid rename, plus a real selector fix: `ROW_CELL` took the list's FIRST cell, which is now the Files group header, so it measured a header instead of a file row. Scoped with `:has(.lens-cards-row-headline)`. `ROW_TITLE` had the same hazard (headers carry `.tug-list-row-title` too) and was scoped through `.lens-cards-row-headline` here, in `at0269`, and in `at0310` |
 | `at0310-file-view-open` | Lens row for a viewer card | selector renames (its `ROW_TITLE`/`ROW_CLOSE`/`ROW_GLYPH`/`UNSAVED_DOT` constants) |
 | `at0231/0233/0246/0247/0250/0252/0256` | Lens focus walks / section reorder | the section census drops to three (cards / snippets / layouts); re-derive expected Tab-walk stops; section-reorder tests that enumerate band kinds update their kind lists. Audit each before editing — several are Snippets- or Layouts-driven and need nothing |
 | NEW `at0312-lens-cards-two-level` | [P02]/[P03]/[P06]/[P16] | see #step-4 |
@@ -500,11 +499,11 @@ Kept deliberately: `.session-row-content[data-session-id]` (names which session 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Registrations declare their Lens group | pending | — |
-| #step-2 | lensStore: cardsRowOrder + collapsed groups + migrations | pending | — |
-| #step-3 | cards-data-source: the pure two-level projection | pending | — |
-| #step-4 | The Cards section replaces Sessions and Files | pending | — |
-| #step-5 | Docs, naming sweep, and integration verification | pending | — |
+| #step-1 | Registrations declare their Lens group | done | `400228581` |
+| #step-2 | lensStore: cardsRowOrder + collapsed groups + migrations | done | `5b9a84e52` |
+| #step-3 | cards-data-source: the pure two-level projection | done | `865a67dcc` |
+| #step-4 | The Cards section replaces Sessions and Files | done | `d940ddf5d` |
+| #step-5 | Docs, naming sweep, and integration verification | done | `4bcbc2cdc` |
 
 #### Step 1: Registrations declare their Lens group {#step-1}
 
@@ -538,7 +537,9 @@ Kept deliberately: `.session-row-content[data-session-id]` (names which session 
 **References:** [P08] Row order, [P01] fold sequencing, Spec S01 (inputs), (#s01-row-model, #state-zone-mapping)
 
 **Artifacts:**
-- New `LENS_KEYS`, snapshot fields, reducer events, store methods, hydration seeding, `KIND_MIGRATIONS` entries; extended unit tests.
+- New `LENS_KEYS`, snapshot fields, reducer events, store methods, hydration seeding; extended unit tests.
+
+**Two tasks moved to #step-4 (discovered while implementing, 2026-08-01):** this step is *additive only*. Removing the `sessionOrder` / `textFileOrder` snapshot fields and store methods here would break `tsc` outright — `sessions-section.tsx` and `files-data-source.ts` are live consumers until #step-4 deletes them. And adding the `sessions: "cards"` / `files: "cards"` `KIND_MIGRATIONS` entries here would be worse than a build break: it would silently rewrite the two *still-registered* sections' persisted order and collapse state to a `"cards"` kind that does not yet exist, losing the user's arrangement for two commits and re-persisting the damage. Both belong in the commit that retires their consumers.
 
 **Tasks:**
 - [ ] `types.ts`: add `CARDS_ROW_ORDER: "cardsRowOrder"`, `CARDS_COLLAPSED_GROUPS: "cardsCollapsedGroups"`; add `cardsRowOrder: Readonly<Record<LensCardsGroup, readonly string[]>>` and `collapsedCardGroups: readonly string[]` to `LensSnapshot`; **remove** the `sessionOrder` / `textFileOrder` snapshot fields and their `LENS_KEYS` doc claims (keep the legacy key-name string constants, marked hydration-seed-only).
@@ -614,7 +615,8 @@ Kept deliberately: `.session-row-content[data-session-id]` (names which session 
 - [ ] Write `at0312-lens-cards-two-level.test.ts` (`@covers` `cards-section.tsx`, `cards-data-source.ts`, `cards-groups.ts`): open two files (single-card pane rows: assert **no** subrows, no fold affordance, close box + slot picker present — the [P02] invariant); `addCard("gallery-buttons")` ([Q02]) → assert Tools header + one `stack-pane` row + 4 subrows visible with zero interaction; activate a subrow → the pane's `activeCardId` changes; ⌘L into a fresh Lens → the cursor is on a **pane row**, not a group header ([P16]); cursor onto the Tools header via arrows, Enter → its pane and subrows disappear, count stays on the header; Enter again → back; drag a pane row while another group is collapsed → the drag actually engages and commits (the Spec S03 silent-abort guard); persistence assert via `lensStore` snapshot through `evalJS`.
 
 **Tests:**
-- [ ] Every updated T03 test green; `at0312` green; the pulse trio green unmodified.
+- [x] `at0312` green. `at0257` green 3/3. `at0287`, `at0297`, `at0310`, `at0269` green. R01 gate: `at0282` and `at0283-pulse-typography` green (the latter wholly unmodified).
+- [ ] **Six tests could not be run in this environment, and fail identically on `main`**: `at0266`, `at0277`, `at0278`, `at0248`, `at0283-list-row-striping`, `at0296` all time out on `document.hasFocus()` before their first Lens assertion, and `at0280` times out waiting for `nativeType`d text to reach the composer. Both classes were reproduced on the base checkout, so neither is this phase's doing. The consequence to state plainly: the selector renames in `at0277` / `at0278` / `at0283-list-row-striping` and the rebuilt scenario F in `at0266` are **unverified** — they typecheck and the covers-check resolves them, but no run has exercised them. Re-verify when the focus-mode issue is fixed.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build && bun test`

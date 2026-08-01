@@ -15,7 +15,7 @@
  *     snippets LIST must scroll internally within its section's flex share and
  *     the `.lens-sections` stack must NOT scroll — a section scrolls its own
  *     rows under its own header, and can never push another section's header
- *     out of view (Text Files stays pinned at the bottom).
+ *     out of view (Cards stays pinned at the bottom).
  *
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`).
  *

@@ -36,9 +36,12 @@ import {
   type LensEvent,
   type LensState,
 } from "./reducer";
+import type { LensCardsGroup } from "@/components/lens/sections/cards-groups";
+import { GROUP_ORDER } from "@/components/lens/sections/cards-groups";
 import {
   LENS_DOMAIN,
   LENS_KEYS,
+  type LensCardsRowOrder,
   type LensSnapshot,
 } from "./types";
 
@@ -83,13 +86,36 @@ class LensStore {
     const collapsedSections = migrateKinds(
       readStringArray(client.get(LENS_DOMAIN, LENS_KEYS.COLLAPSED_SECTIONS)),
     );
+    // Group names are a closed set, but the collapsed list is read with the
+    // same tolerant reader as every other kind list — an unknown entry is
+    // inert, and rejecting the whole value over one would lose real state.
+    const collapsedCardGroups = readStringArray(
+      client.get(LENS_DOMAIN, LENS_KEYS.CARDS_COLLAPSED_GROUPS),
+    );
+    // A user arriving from the Sessions/Files era has no `cardsRowOrder` yet
+    // but does have the two lists it supersedes, and those lists are exactly
+    // the two groups' orders. Seeding from them carries the arrangement
+    // through the swap instead of resetting it. Once `cardsRowOrder` exists
+    // the legacy keys are never consulted again.
+    const storedRowOrder = readCardsRowOrder(
+      client.get(LENS_DOMAIN, LENS_KEYS.CARDS_ROW_ORDER),
+    );
+    const cardsRowOrder =
+      storedRowOrder ??
+      (sessionOrder !== undefined || textFileOrder !== undefined
+        ? {
+            sessions: sessionOrder ?? [],
+            files: textFileOrder ?? [],
+            tools: [],
+          }
+        : undefined);
     this._dispatch(
       {
         type: "hydrate",
         ...(widthPx !== undefined ? { widthPx } : {}),
         ...(sectionOrder !== undefined ? { sectionOrder } : {}),
-        ...(sessionOrder !== undefined ? { sessionOrder } : {}),
-        ...(textFileOrder !== undefined ? { textFileOrder } : {}),
+        ...(cardsRowOrder !== undefined ? { cardsRowOrder } : {}),
+        ...(collapsedCardGroups !== undefined ? { collapsedCardGroups } : {}),
         ...(collapsedSections !== undefined ? { collapsedSections } : {}),
       },
       { persist: false },
@@ -123,11 +149,11 @@ class LensStore {
     if (prev.sectionOrder !== next.sectionOrder) {
       putJson(LENS_KEYS.SECTION_ORDER, next.sectionOrder);
     }
-    if (prev.sessionOrder !== next.sessionOrder) {
-      putJson(LENS_KEYS.SESSION_ORDER, next.sessionOrder);
+    if (prev.cardsRowOrder !== next.cardsRowOrder) {
+      putJson(LENS_KEYS.CARDS_ROW_ORDER, next.cardsRowOrder);
     }
-    if (prev.textFileOrder !== next.textFileOrder) {
-      putJson(LENS_KEYS.TEXT_FILE_ORDER, next.textFileOrder);
+    if (prev.collapsedCardGroups !== next.collapsedCardGroups) {
+      putJson(LENS_KEYS.CARDS_COLLAPSED_GROUPS, next.collapsedCardGroups);
     }
     if (prev.collapsedSections !== next.collapsedSections) {
       putJson(LENS_KEYS.COLLAPSED_SECTIONS, next.collapsedSections);
@@ -165,16 +191,25 @@ class LensStore {
     this._dispatch({ type: "set_section_order", order });
   };
 
-  /** Replace the persisted Sessions-section row order (by `tugSessionId`). Persists. */
-  setSessionOrder = (order: readonly string[]): void => {
+  /**
+   * Replace one Cards-section group's pane-row order, by order key. Other
+   * groups keep their lists and their references. Persists.
+   */
+  setCardsRowOrder = (
+    group: LensCardsGroup,
+    order: readonly string[],
+  ): void => {
     this._ensureInitialized();
-    this._dispatch({ type: "set_session_order", order });
+    this._dispatch({ type: "set_cards_row_order", group, order });
   };
 
-  /** Replace the persisted Text Files-section row order (by card id). Persists. */
-  setTextFileOrder = (order: readonly string[]): void => {
+  /** Expand/collapse one Cards-section group. Persists. */
+  setCardGroupCollapsed = (
+    group: LensCardsGroup,
+    collapsed: boolean,
+  ): void => {
     this._ensureInitialized();
-    this._dispatch({ type: "set_text_file_order", order });
+    this._dispatch({ type: "set_cards_group_collapsed", group, collapsed });
   };
 
   /** Expand/collapse a section by kind. Persists. */
@@ -226,8 +261,20 @@ function readNumber(entry: TaggedValue | undefined): number | undefined {
  * stored value.
  */
 const KIND_MIGRATIONS: Readonly<Record<string, string>> = {
-  changeset: "sessions",
-  "text-files": "files",
+  // Every retired kind maps to its TERMINAL successor, never to an
+  // intermediate one: the remap is a single pass, so a chain would strand a
+  // user whose persisted state predates the second rename. `"changeset"` and
+  // `"text-files"` both pass through kinds that are themselves now retired,
+  // and both must therefore name `"cards"` directly.
+  //
+  // The Sessions and Files sections folded into the one Cards section, so a
+  // user who had both persisted lands two `"cards"` entries in each list;
+  // `resolveSectionRenderOrder`'s `seen` set dedupes the order, and
+  // `withMembership` tolerates the doubled collapse entry.
+  changeset: "cards",
+  "text-files": "cards",
+  sessions: "cards",
+  files: "cards",
 };
 
 function migrateKinds(
@@ -264,6 +311,34 @@ function readStringArray(
     out.push(x);
   }
   return out;
+}
+
+/**
+ * Read the persisted per-group row order. Same reject-and-keep discipline as
+ * {@link readStringArray}, applied per group: a malformed group list rejects
+ * the whole record rather than half-hydrating one group's arrangement from a
+ * value the writer never produced. A group missing from the record reads as
+ * empty, so a record written before a group existed still hydrates.
+ */
+function readCardsRowOrder(
+  entry: TaggedValue | undefined,
+): LensCardsRowOrder | undefined {
+  if (!entry || entry.kind !== "json") return undefined;
+  const v = entry.value;
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
+  const record = v as Record<string, unknown>;
+  const out: Record<string, readonly string[]> = {};
+  for (const group of GROUP_ORDER) {
+    const raw = record[group];
+    if (raw === undefined) {
+      out[group] = [];
+      continue;
+    }
+    const list = readStringArray({ kind: "json", value: raw } as TaggedValue);
+    if (list === undefined) return undefined;
+    out[group] = list;
+  }
+  return out as LensCardsRowOrder;
 }
 
 /**

@@ -9,6 +9,7 @@ import { describe, it, expect } from "bun:test";
 
 import {
   createInitialState,
+  EMPTY_CARDS_ROW_ORDER,
   reduce,
   toSnapshot,
   type LensState,
@@ -89,13 +90,110 @@ describe("LensStore reducer — set_collapsed", () => {
   });
 });
 
+describe("LensStore reducer — set_cards_row_order", () => {
+  it("replaces one group's order", () => {
+    const next = reduce(fresh(), {
+      type: "set_cards_row_order",
+      group: "files",
+      order: ["a", "b"],
+    });
+    expect(next.cardsRowOrder.files).toEqual(["a", "b"]);
+  });
+
+  it("leaves the other groups' lists at the SAME reference", () => {
+    const before = fresh();
+    const next = reduce(before, {
+      type: "set_cards_row_order",
+      group: "files",
+      order: ["a"],
+    });
+    expect(next.cardsRowOrder.sessions).toBe(before.cardsRowOrder.sessions);
+    expect(next.cardsRowOrder.tools).toBe(before.cardsRowOrder.tools);
+  });
+
+  it("an equal order is a no-op (same-ref)", () => {
+    const a = reduce(fresh(), {
+      type: "set_cards_row_order",
+      group: "sessions",
+      order: ["s1", "s2"],
+    });
+    expect(
+      reduce(a, {
+        type: "set_cards_row_order",
+        group: "sessions",
+        order: ["s1", "s2"],
+      }),
+    ).toBe(a);
+  });
+
+  it("copies the incoming order so a later mutation cannot reach state", () => {
+    const incoming = ["a", "b"];
+    const next = reduce(fresh(), {
+      type: "set_cards_row_order",
+      group: "tools",
+      order: incoming,
+    });
+    incoming.push("c");
+    expect(next.cardsRowOrder.tools).toEqual(["a", "b"]);
+  });
+});
+
+describe("LensStore reducer — set_cards_group_collapsed", () => {
+  it("collapsing adds the group", () => {
+    const next = reduce(fresh(), {
+      type: "set_cards_group_collapsed",
+      group: "tools",
+      collapsed: true,
+    });
+    expect(next.collapsedCardGroups).toEqual(["tools"]);
+  });
+
+  it("expanding removes it", () => {
+    const collapsed = reduce(fresh(), {
+      type: "set_cards_group_collapsed",
+      group: "tools",
+      collapsed: true,
+    });
+    const next = reduce(collapsed, {
+      type: "set_cards_group_collapsed",
+      group: "tools",
+      collapsed: false,
+    });
+    expect(next.collapsedCardGroups).toEqual([]);
+  });
+
+  it("idempotent collapse is a no-op (same-ref)", () => {
+    const a = reduce(fresh(), {
+      type: "set_cards_group_collapsed",
+      group: "files",
+      collapsed: true,
+    });
+    expect(
+      reduce(a, {
+        type: "set_cards_group_collapsed",
+        group: "files",
+        collapsed: true,
+      }),
+    ).toBe(a);
+  });
+
+  it("group collapse and section collapse are separate lists", () => {
+    const next = reduce(fresh(), {
+      type: "set_cards_group_collapsed",
+      group: "files",
+      collapsed: true,
+    });
+    expect(next.collapsedSections).toEqual([]);
+  });
+});
+
 describe("LensStore reducer — hydrate", () => {
   it("missing fields keep the existing in-state value (same-ref)", () => {
     const seeded: LensState = {
       widthPx: 500,
       sectionOrder: ["log"],
-      sessionOrder: [],
-      textFileOrder: [],
+      cardsRowOrder: EMPTY_CARDS_ROW_ORDER,
+      collapsedCardGroups: [],
       collapsedSections: ["log"],
     };
     expect(reduce(seeded, { type: "hydrate" })).toBe(seeded);
@@ -115,8 +213,8 @@ describe("LensStore reducer — hydrate", () => {
     const seeded: LensState = {
       widthPx: 420,
       sectionOrder: ["log", "telemetry"],
-      sessionOrder: [],
-      textFileOrder: [],
+      cardsRowOrder: EMPTY_CARDS_ROW_ORDER,
+      collapsedCardGroups: [],
       collapsedSections: [],
     };
     const next = reduce(seeded, {
@@ -134,8 +232,8 @@ describe("LensStore reducer — toSnapshot", () => {
     const s: LensState = {
       widthPx: 500,
       sectionOrder: ["log", "telemetry"],
-      sessionOrder: [],
-      textFileOrder: [],
+      cardsRowOrder: EMPTY_CARDS_ROW_ORDER,
+      collapsedCardGroups: [],
       collapsedSections: ["log"],
     };
     const snap = toSnapshot(s);

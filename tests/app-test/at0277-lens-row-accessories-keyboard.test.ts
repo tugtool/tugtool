@@ -12,7 +12,7 @@
  *    ArrowRight on the cursor row descend onto them. The row's trailing cluster
  *    already reveals itself for the keyboard cursor, so the affordance is on
  *    screen before the descend arrives.
- *  - **A row's slot picker.** Same authoring, on the Sessions / Text Files rows'
+ *  - **A row's slot picker.** Same authoring, on the Cards rows'
  *    numbered slots. The deck always stands under an arrangement, so the picker
  *    is always there; a multi-slot kind is what gives it more than one position.
  *  - **The Layouts tiles.** The CARDS axis lays four options out two to a row.
@@ -67,7 +67,7 @@ const SNIPPETS = Array.from({ length: 4 }, (_, i) => ({
 
 function priorCardDeck() {
   return {
-    // A Text card, so the Lens's Text Files band has a row to descend into once
+    // A Text card, so the Lens's Cards band has a row to descend into once
     // an imposition turns its slot picker on.
     cards: [{ id: "A", componentId: "text", title: "File", closable: true }],
     panes: [
@@ -322,10 +322,10 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             { timeoutMs: 4_000 },
           );
 
-          // ---- E. Descend into a Text Files row. Its accessories run leading
+          // ---- E. Descend into a Cards file row. Its accessories run leading
           // to trailing — the close box first, then the slots — so the first
           // Right lands on the close box and the second reaches slot 1.
-          await tabUntilKbd(app, ".lens-content .lens-text-files-list");
+          await tabUntilKbd(app, ".lens-content .lens-cards-list");
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(function(){

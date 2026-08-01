@@ -30,8 +30,8 @@
  * @covers tugdeck/src/components/tugways/cards/file-view-card.tsx
  * @covers tugdeck/src/components/tugways/cards/pdf-view.tsx
  * @covers tugdeck/src/lib/pdf-runtime.ts
- * @covers tugdeck/src/components/lens/sections/files-section.tsx
- * @covers tugdeck/src/components/lens/sections/files-data-source.ts
+ * @covers tugdeck/src/components/lens/sections/cards-section.tsx
+ * @covers tugdeck/src/components/lens/sections/cards-data-source.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -50,10 +50,10 @@ const CARD_IMG = '[data-slot="file-view-card"] img.tugx-image-img';
 const CARD_PDF = '[data-slot="file-view-pdf"]';
 const CARD_PAGE = '[data-slot="file-view-pdf"] [data-slot="pdf-page"]';
 const CARD_CANVAS = `${CARD_PAGE} canvas`;
-const ROW_TITLE = ".lens-text-files-list .tug-list-row-title";
-const ROW_CLOSE = ".lens-text-files-list .text-files-row-close";
-const ROW_GLYPH = ".lens-text-files-list .text-files-row-glyph";
-const UNSAVED_DOT = '[data-testid="lens-text-file-unsaved"]';
+const ROW_TITLE = ".lens-cards-list .lens-cards-row-headline .tug-list-row-title";
+const ROW_CLOSE = ".lens-cards-list .lens-cards-row-close";
+const ROW_GLYPH = ".lens-cards-list .lens-cards-row-glyph";
+const UNSAVED_DOT = '[data-testid="lens-card-unsaved"]';
 
 const IMAGE_WIDTH = 48;
 const IMAGE_HEIGHT = 32;

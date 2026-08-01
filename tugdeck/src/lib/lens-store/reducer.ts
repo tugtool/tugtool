@@ -11,9 +11,11 @@
  * @module lib/lens-store/reducer
  */
 
+import type { LensCardsGroup } from "@/components/lens/sections/cards-groups";
 import {
   DEFAULT_LENS_WIDTH_PX,
   MIN_LENS_WIDTH_PX,
+  type LensCardsRowOrder,
   type LensSnapshot,
 } from "./types";
 
@@ -25,16 +27,24 @@ import {
 export interface LensState {
   widthPx: number;
   sectionOrder: readonly string[];
-  sessionOrder: readonly string[];
-  textFileOrder: readonly string[];
+  cardsRowOrder: LensCardsRowOrder;
+  collapsedCardGroups: readonly string[];
   collapsedSections: readonly string[];
 }
 
 export type LensEvent =
   | { type: "set_width"; widthPx: number }
   | { type: "set_section_order"; order: readonly string[] }
-  | { type: "set_session_order"; order: readonly string[] }
-  | { type: "set_text_file_order"; order: readonly string[] }
+  | {
+      type: "set_cards_row_order";
+      group: LensCardsGroup;
+      order: readonly string[];
+    }
+  | {
+      type: "set_cards_group_collapsed";
+      group: LensCardsGroup;
+      collapsed: boolean;
+    }
   | { type: "set_collapsed"; kind: string; collapsed: boolean }
   | {
       /**
@@ -46,8 +56,8 @@ export type LensEvent =
       type: "hydrate";
       widthPx?: number;
       sectionOrder?: readonly string[];
-      sessionOrder?: readonly string[];
-      textFileOrder?: readonly string[];
+      cardsRowOrder?: LensCardsRowOrder;
+      collapsedCardGroups?: readonly string[];
       collapsedSections?: readonly string[];
     };
 
@@ -55,10 +65,42 @@ export function createInitialState(): LensState {
   return {
     widthPx: DEFAULT_LENS_WIDTH_PX,
     sectionOrder: [],
-    sessionOrder: [],
-    textFileOrder: [],
+    cardsRowOrder: EMPTY_CARDS_ROW_ORDER,
+    collapsedCardGroups: [],
     collapsedSections: [],
   };
+}
+
+/** Every group present and empty — the shape a fresh install starts from. */
+export const EMPTY_CARDS_ROW_ORDER: LensCardsRowOrder = {
+  sessions: [],
+  files: [],
+  tools: [],
+};
+
+/**
+ * Merge one group's list into a row-order record, keeping BOTH the record's
+ * and every other group's list reference when nothing observable changed.
+ * Per-group stability is what lets a section that reads a single group
+ * re-render only when that group actually moved.
+ */
+function withGroupOrder(
+  record: LensCardsRowOrder,
+  group: LensCardsGroup,
+  order: readonly string[],
+): LensCardsRowOrder {
+  if (listsEqual(record[group], order)) return record;
+  return { ...record, [group]: [...order] };
+}
+
+/** Value-equality over a row-order record, group by group. */
+function rowOrdersEqual(a: LensCardsRowOrder, b: LensCardsRowOrder): boolean {
+  if (a === b) return true;
+  return (
+    listsEqual(a.sessions, b.sessions) &&
+    listsEqual(a.files, b.files) &&
+    listsEqual(a.tools, b.tools)
+  );
 }
 
 /**
@@ -113,14 +155,24 @@ export function reduce(state: LensState, event: LensEvent): LensState {
       return { ...state, sectionOrder: [...event.order] };
     }
 
-    case "set_session_order": {
-      if (listsEqual(state.sessionOrder, event.order)) return state;
-      return { ...state, sessionOrder: [...event.order] };
+    case "set_cards_row_order": {
+      const next = withGroupOrder(
+        state.cardsRowOrder,
+        event.group,
+        event.order,
+      );
+      if (next === state.cardsRowOrder) return state;
+      return { ...state, cardsRowOrder: next };
     }
 
-    case "set_text_file_order": {
-      if (listsEqual(state.textFileOrder, event.order)) return state;
-      return { ...state, textFileOrder: [...event.order] };
+    case "set_cards_group_collapsed": {
+      const next = withMembership(
+        state.collapsedCardGroups,
+        event.group,
+        event.collapsed,
+      );
+      if (next === state.collapsedCardGroups) return state;
+      return { ...state, collapsedCardGroups: next };
     }
 
     case "set_collapsed": {
@@ -153,18 +205,22 @@ export function reduce(state: LensState, event: LensEvent): LensState {
         next.sectionOrder = [...event.sectionOrder];
       }
       if (
-        event.sessionOrder !== undefined &&
-        !listsEqual(state.sessionOrder, event.sessionOrder)
+        event.cardsRowOrder !== undefined &&
+        !rowOrdersEqual(state.cardsRowOrder, event.cardsRowOrder)
       ) {
         bump();
-        next.sessionOrder = [...event.sessionOrder];
+        next.cardsRowOrder = {
+          sessions: [...event.cardsRowOrder.sessions],
+          files: [...event.cardsRowOrder.files],
+          tools: [...event.cardsRowOrder.tools],
+        };
       }
       if (
-        event.textFileOrder !== undefined &&
-        !listsEqual(state.textFileOrder, event.textFileOrder)
+        event.collapsedCardGroups !== undefined &&
+        !listsEqual(state.collapsedCardGroups, event.collapsedCardGroups)
       ) {
         bump();
-        next.textFileOrder = [...event.textFileOrder];
+        next.collapsedCardGroups = [...event.collapsedCardGroups];
       }
       if (
         event.collapsedSections !== undefined &&

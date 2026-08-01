@@ -16,6 +16,18 @@
  * @module lib/lens-store/types
  */
 
+import type { LensCardsGroup } from "@/components/lens/sections/cards-groups";
+
+/**
+ * Per-group row order for the Cards section. The group union is defined
+ * where the taxonomy lives (`cards-groups.ts`) and imported here as a type
+ * only, so the store's persisted shape cannot drift from the groups that
+ * actually render.
+ */
+export type LensCardsRowOrder = Readonly<
+  Record<LensCardsGroup, readonly string[]>
+>;
+
 /** Tugbank domain owning the Lens's persisted arrangement state. */
 export const LENS_DOMAIN = "dev.tugtool.lens";
 
@@ -23,8 +35,12 @@ export const LENS_DOMAIN = "dev.tugtool.lens";
 export const LENS_KEYS = {
   WIDTH_PX: "widthPx",
   SECTION_ORDER: "sectionOrder",
+  /** @deprecated Read on hydrate to seed `CARDS_ROW_ORDER`; never written. */
   SESSION_ORDER: "sessionOrder",
+  /** @deprecated Read on hydrate to seed `CARDS_ROW_ORDER`; never written. */
   TEXT_FILE_ORDER: "textFileOrder",
+  CARDS_ROW_ORDER: "cardsRowOrder",
+  CARDS_COLLAPSED_GROUPS: "cardsCollapsedGroups",
   COLLAPSED_SECTIONS: "collapsedSections",
 } as const;
 
@@ -51,18 +67,18 @@ export interface LensSnapshot {
   /** Persisted section order, most-preferred first. Unknown kinds tolerated. */
   sectionOrder: readonly string[];
   /**
-   * Persisted user order of Sessions-section rows, by `tugSessionId`. Sessions
-   * absent from this list (newly bound) sort AFTER the ordered set, so a new
-   * session lands at the bottom without disturbing the user's arrangement.
-   * Stale ids (closed sessions) are tolerated and ignored as sort keys.
+   * Persisted user order of the Cards section's pane rows, one list per group.
+   *
+   * A row's **order key** is the identity that should survive a close/reopen
+   * cycle, which differs by what the row represents: the bound `tugSessionId`
+   * for a single-card session pane, the card id for any other single-card
+   * pane, and the pane id for a multi-card pane (the only stable identity a
+   * stack has). Same sort rule as the lists it replaces — keys absent from
+   * the list sort AFTER the ordered set, and stale keys are ignored.
    */
-  sessionOrder: readonly string[];
-  /**
-   * Persisted user order of Text Files-section rows, by the open Text card's
-   * id. Same rule as {@link LensSnapshot.sessionOrder}: cards absent from the
-   * list sort after the ordered set, stale ids are ignored.
-   */
-  textFileOrder: readonly string[];
+  cardsRowOrder: LensCardsRowOrder;
+  /** Cards-section groups the user has collapsed. */
+  collapsedCardGroups: readonly string[];
   /** Kinds the user has collapsed (band-only). */
   collapsedSections: readonly string[];
 }

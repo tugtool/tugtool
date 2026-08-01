@@ -1,18 +1,18 @@
 /**
- * at0257-lens-session-reorder.test.ts — drag-to-reorder for the Lens Sessions
- * section, plus the new-session-lands-at-the-bottom overlay.
+ * at0257-lens-session-reorder.test.ts — drag-to-reorder for the session rows in
+ * the Lens Cards section, plus the new-session-lands-at-the-bottom overlay.
  *
- * The Sessions list is fed by `cardSessionBindingStore` in bind order; the ROW
- * ITSELF is the handle — there is no grip — and a vertical drag from its own
- * surface drives the shared `useBlockReorder` FLIP, whose drop commits a
- * persisted user order (`dev.tugtool.lens/sessionOrder`) that `buildSessionRows`
+ * The rows are fed by `cardSessionBindingStore` in bind order; the ROW ITSELF
+ * is the handle — there is no grip — and a vertical drag from its own surface
+ * drives the shared `useBlockReorder` FLIP, whose drop commits a persisted user
+ * order (`dev.tugtool.lens/cardsRowOrder.sessions`) that the Cards projection
  * applies. Sessions absent from that order sort to the bottom, so a session
  * bound AFTER a reorder never disturbs the arrangement.
  *
  * Scenarios:
  *   1. Bind three session cards (A, B, C); drag C's row above A. Assert the
- *      DOM row order puts C first and `sessionOrder` persists C before A, and
- *      that the drag did NOT front a card — a carried row is not a picked one.
+ *      DOM row order puts C first and `cardsRowOrder.sessions` persists C
+ *      before A, and that the drag did NOT front a card — a carried row is not a picked one.
  *   2. Bind a fourth session (D) after the reorder; assert it lands LAST,
  *      leaving the reordered set intact.
  *   3. Drag a row far BELOW the list; assert the dragged row stays clamped
@@ -26,8 +26,8 @@
  *      which.
  *
  * @covers tugdeck/src/components/lens/lens-content.css
- * @covers tugdeck/src/components/lens/sections/sessions-section.css
- * @covers tugdeck/src/components/lens/sections/sessions-section.tsx
+ * @covers tugdeck/src/components/lens/sections/cards-section.css
+ * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  * @covers tugdeck/src/components/lens/block-reorder.ts
  * @covers tugdeck/src/lib/lens-store/
  * @covers tugdeck/src/components/tugways/tug-session-row.tsx
@@ -46,33 +46,41 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const WRAP = ".sessions-list-wrap";
-const LIST = ".lens-sessions-list";
+const WRAP = ".lens-cards-list-wrap";
+const LIST = ".lens-cards-list";
 const ROWS = `${LIST} .session-row-content[data-session-id]`;
 const DRAGGING = `${WRAP} .session-row-content[data-dragging="true"]`;
 const rowSel = (sessionId: string): string =>
   `${LIST} .session-row-content[data-session-id="${sessionId}"]`;
 
+/**
+ * Four session cards, each in its OWN pane — which is what a user who opened
+ * four sessions actually has, and what the Cards section reorders.
+ *
+ * This fixture used to stack all four cards in one pane, which the flat
+ * Sessions list rendered as four independent rows. The Cards section is
+ * pane-first, so that same deck is now correctly ONE stack row with four
+ * subrows: one pane, one row. Four separately-carryable session rows require
+ * four panes, and that is the arrangement this test is about.
+ */
 function sessionDeck() {
-  const card = (id: string) => ({
-    id,
-    componentId: "session",
-    title: `Session ${id}`,
-    closable: true,
-  });
+  const ids = ["A", "B", "C", "D"];
   return {
-    cards: [card("A"), card("B"), card("C"), card("D")],
-    panes: [
-      {
-        id: "p1",
-        position: { x: 40, y: 40 },
-        size: { width: 560, height: 520 },
-        cardIds: ["A", "B", "C", "D"],
-        activeCardId: "A",
-        title: "",
-        acceptsFamilies: ["maker"],
-      },
-    ],
+    cards: ids.map((id) => ({
+      id,
+      componentId: "session",
+      title: `Session ${id}`,
+      closable: true,
+    })),
+    panes: ids.map((id, i) => ({
+      id: `p${i + 1}`,
+      position: { x: 40 + i * 24, y: 40 + i * 24 },
+      size: { width: 560, height: 520 },
+      cardIds: [id],
+      activeCardId: id,
+      title: "",
+      acceptsFamilies: ["maker"],
+    })),
     activePaneId: "p1",
     hasFocus: true,
   };
@@ -156,12 +164,15 @@ describe.skipIf(!SHOULD_RUN)("at0257 — Lens Sessions reorder + bottom-append",
           expect(activeAfter).toBe(activeBefore);
 
           // The reorder persisted to tugbank under the Lens domain.
-          const persisted = tugbankRead<string[]>(
+          // The order now lives per-group under one record: the Cards section
+          // keys a single-card session pane by its session id, so the sessions
+          // group holds exactly what the old `sessionOrder` key did.
+          const persisted = tugbankRead<Record<string, string[]>>(
             tugbankPath,
             "dev.tugtool.lens",
-            "sessionOrder",
+            "cardsRowOrder",
           );
-          const order = persisted?.value ?? [];
+          const order = persisted?.value?.sessions ?? [];
           expect(order.indexOf("test-session-C")).toBeLessThan(
             order.indexOf("test-session-A"),
           );
@@ -293,7 +304,12 @@ describe.skipIf(!SHOULD_RUN)("at0257 — Lens Sessions reorder + bottom-append",
           }>(
             `(function(){
               var list = document.querySelector(${JSON.stringify(LIST)});
-              var cell = list.querySelector(".tug-list-view-cell");
+              // The cell holding a SESSION row, not the group header above it —
+              // headers are cells too, and the first one in the list is the
+              // Sessions group's.
+              var cell = list.querySelector(
+                ".tug-list-view-cell:has(.session-row-content[data-session-id])"
+              );
               var tape = cell.querySelector(".sessions-monitor-spark");
               var cs = getComputedStyle(list);
               var lr = list.getBoundingClientRect();

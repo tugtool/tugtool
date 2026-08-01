@@ -1,0 +1,214 @@
+/* The Lens Cards section — a pane-first mirror of the deck canvas, rendered as
+   a TugListView of shared `TugListRow`s. The row chrome (padding, hover, the
+   flush divider, selection fill, and the movement-cursor caret) comes from
+   `TugListRow` + `TugListView`; this file styles only the section shell, the
+   group headers, and the subrow indent. Tokens only ([L06]/[L20]). */
+
+.lens-cards-section {
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  /* Fills the section body; the list inside is the scroller. */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+
+/* When the list is present, flatten the section-root's min-content so it can
+   shrink and let the list scroll; empty keeps `auto` to hold its label. */
+.lens-cards-section:has(.tug-list-view) {
+  min-block-size: 0;
+}
+
+/* The wrap is the reorder container: the `BlockDropCaret` positions absolutely
+   within it, and it is the list's flex scroller. */
+.lens-cards-list-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-block-size: 0;
+}
+
+/* The reorder-drag lift on a pane row while it is being carried. */
+.lens-cards-row[data-dragging="true"] {
+  opacity: 0.6;
+  z-index: 2;
+}
+
+/* Doubled selector so these overrides beat the base `.tug-list-view` rules
+   regardless of bundle order. The list is this section's scroller: it fills the
+   section's flex share and scrolls its rows internally.
+
+   EDGE-TO-EDGE. The list carries no margin, no frame, and no radius: its rows
+   run the full width of the Lens rail and are separated by the `flush` layout's
+   hairlines alone. A rounded, inset box inside a section that is itself a
+   bordered band drew a second rectangle around the same content — the rail
+   already says where the section starts and ends. The row inset does the whole
+   job of holding the text off the edge, and it matches the header's, so a
+   band's title and its rows start on ONE vertical line. Matches the other Lens
+   lists. */
+.tug-list-view.lens-cards-list {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  height: auto;
+  --tugx-list-view-padding-inline: 0;
+  --tugx-list-view-padding-block: 0;
+  /* The band header's inline padding, so the row content and the section title
+     share a leading edge. */
+  --tugx-list-row-padding-inline: var(--tug-space-md);
+  --tugx-list-row-indicator-gutter: 0px;
+}
+
+/* Row dividers ALWAYS show in the Lens lists — re-assert the hairline the
+   list-view's "clean selected block" rule drops around a selected / cursor row
+   ([L06]). `!important` deliberately overrides that primitive's `:has()`
+   suppression, whose specificity would otherwise win. */
+.tug-list-view.lens-cards-list[data-row-layout="flush"]
+  .tug-list-view-cell:not(:last-child) {
+  border-bottom-color: var(--tugx-list-view-divider-color) !important;
+}
+
+/* The leading column holds the close box at the width the session rows give
+   their phase dot, so the two glyphs sit on one line down the Lens and the
+   names all start at the same offset. */
+.lens-cards-list .tug-list-row-leading {
+  inline-size: 28px;
+  justify-content: center;
+}
+
+/* ── The one-line row ─────────────────────────────────────────────────────── */
+
+/* The row's one line: the glyph, the name, its disambiguating directory run,
+   the tab count, and the slot picker. Authored by hand (see `OneLineRow`) so
+   the picker rides the name line at the same height the session row's does. */
+.lens-cards-row-headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+/* The kind mark — a document, an image, a settings gear. It sits on the name
+   line and never shrinks, so the names all start at the same offset whatever
+   kind the row is. Muted: it answers "what is this" without competing with the
+   name. */
+.lens-cards-row-glyph {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* The name yields the line's slack rather than absorbing it, so its
+   disambiguating run keeps hugging it; the slack goes to the picker's leading
+   margin below. */
+.lens-cards-row-headline .tug-list-row-title {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+}
+
+/* The picker takes the line's slack, so it sits at the content column's end on
+   every row kind and the impositions read as one column down the Lens. */
+.lens-cards-row-headline .slot-picker {
+  margin-inline-start: auto;
+}
+
+/* Where this file is, shown only when its name alone would be ambiguous. Muted
+   and a step down so it reads as an annotation on the filename, never as a
+   second name; it yields its width to the filename before truncating. */
+.lens-cards-row-where {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Relative to the row's own measure, so it stays a step down from the
+     filename at whatever text size the list is tuned to. */
+  font-size: 0.9em;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* A stack's tab count. Same annotation voice as the disambiguator, and it
+   takes the line's slack so the picker still lands at the column's end. */
+.lens-cards-row-tabs {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  font-size: 0.9em;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* The unsaved-changes dot — the same `•` the card's own header wears, set just
+   off the filename and muted so the name stays the row's voice. */
+.lens-cards-row-unsaved {
+  margin-inline-start: 0.35em;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ── Group headers ────────────────────────────────────────────────────────── */
+
+/* A group header is a row like any other — it takes the same chrome, the same
+   cursor ring, the same hover. What sets it apart is its voice: smaller, upper,
+   tracked out, so it reads as a label over the rows rather than as one of
+   them. */
+.lens-cards-header .tug-list-row-title {
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+.lens-cards-header-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+/* The chevron points down when the group is open and right when it is
+   collapsed — a rotation on the attribute, never a swapped glyph ([L06]). */
+.lens-cards-header-chevron {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  transition: transform var(--tug-duration-fast, 120ms) ease;
+  transform: rotate(90deg);
+}
+
+.lens-cards-header[data-group-collapsed="true"] .lens-cards-header-chevron {
+  transform: rotate(0deg);
+}
+
+/* How many pane rows the group holds. Takes the line's slack so it sits at the
+   content column's end, where the slot pickers are. */
+.lens-cards-header-count {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ── Subrows ──────────────────────────────────────────────────────────────── */
+
+/* A card inside a multi-card pane. Indent is the ONLY thing that marks it as
+   one — there is no disclosure affordance to align to, because the outline is
+   always open. The step is one leading column, so a subrow's glyph starts where
+   its pane row's name does. */
+.lens-cards-subrow .tug-list-row-content {
+  padding-inline-start: 20px;
+}
+
+/* The empty label's size, tone and row-height box are `.lens-section-empty`'s
+   (`lens-content.css`) — shared by every section, so an empty Cards section
+   reads exactly like an empty Snippets one. */
+
+/* How the session monitor row divides its width — which line the dot, the
+   slots, and the sparkline ride, and what each costs the text beside it — is
+   `tug-session-row.css`'s, not this file's. Nothing about that row's packing is
+   authored here, so the Lens cannot drift from the fit the gallery approved. */
+
+.sessions-monitor-spark {
+  flex-shrink: 0;
+}

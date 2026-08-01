@@ -163,7 +163,7 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
             });
 
             // The product ⌘L path: focus the Lens. With a real session
-            // card open the Sessions section is non-empty, so the ⌘L
+            // card open the Cards section is non-empty, so the ⌘L
             // seed lands there first; Tab — the product walk — moves
             // the key view on to the Snippets section. Two presses: a
             // filterable band's filter field is a Tab stop of its own,

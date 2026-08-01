@@ -4,7 +4,7 @@
  *
  * ## What this gates
  *
- * The Lens **Text Files** close box acts on the file its row names. Picking that
+ * The Lens **Cards** close box acts on the file its row names. Picking that
  * row is a different gesture with a different meaning: the list's `onSelect`
  * fronts the bound card. Run them together and closing a file from the Lens
  * first hauls the about-to-close card to the front, taking activation off
@@ -32,7 +32,7 @@
  *
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/tugways/tug-list-view.css
- * @covers tugdeck/src/components/lens/sections/files-section.tsx
+ * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -45,8 +45,16 @@ import { launchTugApp } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const LIST = ".lens-text-files-list";
-const ROWS = `${LIST} .tug-list-view-cell`;
+const LIST = ".lens-cards-list";
+// The FILES group's sibling rows — the banded run. Group headers are cells
+// too, and a stack's subrows are rows of their own, so this narrows to the
+// single-card file panes whose banding the close must not disturb.
+const ROWS = `${LIST} .tug-list-view-cell:has(.lens-cards-row[data-lens-row-group="files"])`;
+/** Every row in the list, including a stack's subrows. */
+const ANY_ROW = `${LIST} .tug-list-view-cell:has(.lens-cards-row-headline)`;
+/** `two.txt`'s row: a BACKGROUND TAB, which the pane-first list renders as a
+ *  subrow of its stack — the arrangement this test's defect lives in. */
+const BACKGROUND_TAB_CLOSE = `${LIST} .lens-cards-subrow[data-lens-card-id="B"] .lens-cards-row-close`;
 
 type RowState = {
   index: number;
@@ -82,7 +90,7 @@ const TOP_PANE = `(function(){
 function deckShape() {
   return {
     cards: [
-      ...["A", "B", "C"].map((id) => ({
+      ...["A", "B", "C", "D"].map((id) => ({
         id,
         componentId: "text",
         title: id,
@@ -101,7 +109,7 @@ function deckShape() {
       })),
     ],
     panes: [
-      ...["A", "C"].map((id, i) => ({
+      ...["A", "C", "D"].map((id, i) => ({
         id: `p${id}`,
         position: { x: 40 + i * 20, y: 40 + i * 20 },
         size: { width: 420, height: 300 },
@@ -139,7 +147,7 @@ describe.skipIf(!SHOULD_RUN)("at0287 — a row action is not a row pick", () => 
     "closing a Lens text file keeps the front pane and the row banding",
     async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0287-"));
-      const files = ["one.txt", "two.txt", "three.txt"].map((name) => {
+      const files = ["one.txt", "two.txt", "three.txt", "four.txt"].map((name) => {
         const file = path.join(dir, name);
         fs.writeFileSync(file, `contents of ${name}\n`, "utf8");
         return file;
@@ -152,6 +160,7 @@ describe.skipIf(!SHOULD_RUN)("at0287 — a row action is not a row pick", () => 
             A: { content: { path: files[0], anchor: { line: 1, ch: 0 }, scrollTop: 0 } },
             B: { content: { path: files[1], anchor: { line: 1, ch: 0 }, scrollTop: 0 } },
             C: { content: { path: files[2], anchor: { line: 1, ch: 0 }, scrollTop: 0 } },
+            D: { content: { path: files[3], anchor: { line: 1, ch: 0 }, scrollTop: 0 } },
           },
           focusCardId: "G",
         });
@@ -166,11 +175,11 @@ describe.skipIf(!SHOULD_RUN)("at0287 — a row action is not a row pick", () => 
         const before = await app.evalJS<RowState[]>(READ_ROWS);
         expect(before.map((r) => r.title)).toEqual([
           "one.txt",
-          "two.txt",
           "three.txt",
+          "four.txt",
         ]);
-        // Three rows, two colors, alternating — the baseline the close must not
-        // disturb. (Whether the Lens is currently tuned TO stripes is
+        // Three sibling rows, two colors, alternating — the baseline the close
+        // must not disturb. (Whether the Lens is currently tuned TO stripes is
         // `lens-list-presentation.ts`'s call; at0283 covers the striping
         // contract itself. Here the point is only that nothing CHANGES.)
         const evenBackground = before[0]!.background;
@@ -178,21 +187,30 @@ describe.skipIf(!SHOULD_RUN)("at0287 — a row action is not a row pick", () => 
         expect(before[2]!.background).toBe(evenBackground);
         expect(await app.evalJS<string | null>(TOP_PANE)).toBe("pG");
 
-        // Close the MIDDLE file from its row's close box, with a real click at
-        // real coordinates — the pointerdown is the half that used to pick the
-        // row, so a synthetic `click()` would prove nothing.
-        await app.nativeClickAtElement(
-          `${LIST} .tug-list-view-cell[data-tug-list-cell-index="1"] .text-files-row-close`,
-        );
+        // `two.txt` is a BACKGROUND TAB — the pane it lives in is fronted by a
+        // gallery card — so the pane-first list renders it as a subrow of that
+        // stack. That is the arrangement the defect lives in: "close the active
+        // card" would close the gallery card the pane is showing, not the file
+        // the row names.
         await app.waitForCondition<boolean>(
-          `document.querySelectorAll(${JSON.stringify(ROWS)}).length === 2`,
+          `document.querySelector(${JSON.stringify(BACKGROUND_TAB_CLOSE)}) !== null`,
           { timeoutMs: 8_000 },
         );
 
-        // The named file closed — not the front card of its pane, not a
-        // neighbour — and its pane's other card is untouched.
-        const after = await app.evalJS<RowState[]>(READ_ROWS);
-        expect(after.map((r) => r.title)).toEqual(["one.txt", "three.txt"]);
+        // Close it from its row's close box, with a real click at real
+        // coordinates — the pointerdown is the half that used to pick the row,
+        // so a synthetic `click()` would prove nothing.
+        await app.nativeClickAtElement(BACKGROUND_TAB_CLOSE);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(BACKGROUND_TAB_CLOSE)}) === null`,
+          { timeoutMs: 8_000 },
+        );
+
+        // The named file closed — not the front card of its pane — and that
+        // pane's other card is untouched.
+        expect(
+          await app.evalJS<number>(`document.querySelectorAll('[data-card-id="B"]').length`),
+        ).toBe(0);
         expect(
           await app.evalJS<number>(`document.querySelectorAll('[data-card-id="H"]').length`),
         ).toBeGreaterThan(0);
@@ -200,16 +218,27 @@ describe.skipIf(!SHOULD_RUN)("at0287 — a row action is not a row pick", () => 
         // Activation never left the card the user was working in.
         expect(await app.evalJS<string | null>(TOP_PANE)).toBe("pG");
 
-        // No row was picked by the close gesture.
-        for (const row of after) {
+        // No row anywhere in the list was picked by the close gesture — the
+        // phantom selection is what stripped a row's band in the original
+        // defect, so its absence is asserted across every row, not just the
+        // file group's.
+        const anyRows = await app.evalJS<RowState[]>(
+          READ_ROWS.replace(JSON.stringify(ROWS), JSON.stringify(ANY_ROW)),
+        );
+        for (const row of anyRows) {
           expect(row.selected).toBeNull();
         }
 
-        // `three.txt` slid from index 2 to index 1 and took index 1's color
-        // with it: the band belongs to the position.
-        expect(after.map((r) => r.parity)).toEqual(["even", "odd"]);
+        // The file rows are untouched: same three, same positions, same bands.
+        const after = await app.evalJS<RowState[]>(READ_ROWS);
+        expect(after.map((r) => r.title)).toEqual([
+          "one.txt",
+          "three.txt",
+          "four.txt",
+        ]);
         expect(after[0]!.background).toBe(evenBackground);
         expect(after[1]!.background).toBe(oddBackground);
+        expect(after[2]!.background).toBe(evenBackground);
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });

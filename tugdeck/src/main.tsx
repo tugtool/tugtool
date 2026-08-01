@@ -44,14 +44,13 @@ import {
 } from "./contexts/theme-provider";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
-import { registerSessionsSection } from "./components/lens/sections/sessions-section";
 import { registerSessionCard } from "./components/tugways/cards/session-card-registration";
 import { registerAboutCard } from "./components/tugways/cards/about-card";
 import { registerSettingsCard } from "./components/tugways/cards/settings-card";
 import { registerDevtoolsCard } from "./components/devtools/devtools-card";
 import { registerLensCard } from "./components/lens/lens-register-card";
 import { registerSnippetsSection } from "./components/lens/sections/snippets-section";
-import { registerFilesSection } from "./components/lens/sections/files-section";
+import { registerCardsSection } from "./components/lens/sections/cards-section";
 import { registerLayoutsSection } from "./components/lens/sections/layouts-section";
 import { registerTextCard } from "./components/tugways/cards/text-card-registration";
 import { registerFileViewCard } from "./components/tugways/cards/file-view-card-registration";
@@ -322,9 +321,8 @@ if (!container) {
   registerLensCard();
   // Registration order is the DEFAULT Lens section order — the fallback
   // `resolveSectionRenderOrder` uses when nothing is persisted.
-  registerSessionsSection();
+  registerCardsSection();
   registerSnippetsSection();
-  registerFilesSection();
   registerLayoutsSection();
   registerTextCard();
   registerFileViewCard();

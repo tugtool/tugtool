@@ -1,5 +1,5 @@
 /**
- * at0269-lens-text-file-dirty-dot.test.ts — the Lens **Text Files** row wears
+ * at0269-lens-card-dirty-dot.test.ts — the Lens **Cards** file row wears
  * the same unsaved-changes dot the text card's own header does, on the one line
  * it now is: the filename at the Sessions rows' title scale, the directory only
  * as the row's hover title, and a close box leading the row.
@@ -17,8 +17,8 @@
  * the store layer in `text-card-store.manual.test.ts`; this test covers the
  * projection of that state into the Lens row.
  *
- * @covers tugdeck/src/components/lens/sections/files-section.tsx
- * @covers tugdeck/src/components/lens/sections/files-data-source.ts
+ * @covers tugdeck/src/components/lens/sections/cards-section.tsx
+ * @covers tugdeck/src/components/lens/sections/cards-data-source.ts
  * @covers tugdeck/src/lib/text-card-open-registry.ts
  * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
  * @covers tugdeck/src/components/tugways/tug-text-card-editor.tsx
@@ -35,11 +35,11 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const EDITOR_CONTENT = `${CARD} [data-slot="tug-text-card-editor"] .cm-content`;
-const ROW_TITLE = ".lens-text-files-list .tug-list-row-title";
-const ROW_SUBTITLE = ".lens-text-files-list .tug-list-row-subtitle";
-const ROW_HEADLINE = ".lens-text-files-list .text-files-row-headline";
-const ROW_CLOSE = ".lens-text-files-list .tug-list-row-leading .text-files-row-close";
-const DOT = '[data-testid="lens-text-file-unsaved"]';
+const ROW_TITLE = ".lens-cards-list .lens-cards-row-headline .tug-list-row-title";
+const ROW_SUBTITLE = ".lens-cards-list .tug-list-row-subtitle";
+const ROW_HEADLINE = ".lens-cards-list .lens-cards-row-headline";
+const ROW_CLOSE = ".lens-cards-list .tug-list-row-leading .lens-cards-row-close";
+const DOT = '[data-testid="lens-card-unsaved"]';
 
 const ORIGINAL = "alpha\nbeta\ngamma\n";
 
@@ -139,7 +139,7 @@ describe.skipIf(!SHOULD_RUN)("at0269 — Lens text-file dirty dot", () => {
           ),
         ).toBe(
           await app.evalJS<string>(
-            `getComputedStyle(document.querySelector('.lens-text-files-list'))
+            `getComputedStyle(document.querySelector('.lens-cards-list'))
                .getPropertyValue('--tugx-list-row-font-size').trim()`,
           ),
         );

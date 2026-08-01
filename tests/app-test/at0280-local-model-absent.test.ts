@@ -34,7 +34,7 @@
  * @covers tugdeck/src/lib/local-model-store.ts
  * @covers tugdeck/src/lib/shell-line-classifier.ts
  * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
- * @covers tugdeck/src/components/lens/sections/sessions-section.tsx
+ * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  */
 
@@ -65,7 +65,7 @@ const HEADLINE = `${CARD} [data-slot="tug-pulse-headline"]`;
 
 // The Lens's own row for the same session. Addressed the way
 // `at0257-lens-session-reorder.test.ts` addresses Sessions rows.
-const LENS_ROW = `.lens-sessions-list .session-row-content[data-session-id="${SID}"]`;
+const LENS_ROW = `.lens-cards-list .session-row-content[data-session-id="${SID}"]`;
 const LENS_INTENT = `${LENS_ROW} [data-slot="tug-pulse-headline"]`;
 
 let projectDir = "";

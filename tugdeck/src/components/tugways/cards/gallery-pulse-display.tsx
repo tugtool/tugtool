@@ -393,7 +393,7 @@ function Band({
  * drawing of a row.
  *
  * The frame is the Lens rail at its usual width, and it declares the row knobs
- * `lens-sessions-list` declares — the reading inset, the zeroed indicator
+ * `lens-cards-list` declares — the reading inset, the zeroed indicator
  * gutter, and the rail's trailing edge — so widths read here are widths the
  * Lens has.
  */

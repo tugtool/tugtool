@@ -5,7 +5,7 @@
  * ## What this gates
  *
  * Two `TugListView` presentation contracts, on the real Lens lists that use
- * them (Snippets and Text Files, both configured from
+ * them (Snippets and Cards, both configured from
  * `lens-list-presentation.ts`):
  *
  *  - **The band follows the row's absolute index, not its position in the

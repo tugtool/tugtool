@@ -5,22 +5,21 @@
  * ## What this gates
  *
  * "None" is rendered INSTEAD of the list, so it is the section's only content
- * when the section is empty. It therefore has to be one row tall: a Text Files
+ * when the section is empty. It therefore has to be one row tall: a Cards
  * section holding nothing must not be a taller band than the same section
- * holding one file. The label's box is authored once for all three sections
+ * holding one file. The label's box is authored once for every section
  * (`.lens-section-empty` in `lens-content.css`) against a stated height, and
  * that height is a copy of the one-line row's natural height — so this test is
  * where the copy is checked against the original.
  *
- * Drives the real path: a real file opened in a real Text card, so the Text
- * Files section renders a real row; the row is measured, the card is closed,
- * and the empty label that replaces it is measured in the same list frame.
+ * Drives the real path: a real file opened in a real Text card, so the Cards
+ * section renders a real file row; the row is measured, the card is closed, and
+ * the empty label that replaces it is measured in the same list frame.
  *
  * @covers tugdeck/src/components/lens/lens-content.css
- * @covers tugdeck/src/components/lens/sections/files-section.tsx
- * @covers tugdeck/src/components/lens/sections/files-section.css
+ * @covers tugdeck/src/components/lens/sections/cards-section.tsx
+ * @covers tugdeck/src/components/lens/sections/cards-section.css
  * @covers tugdeck/src/components/lens/sections/snippets-section.css
- * @covers tugdeck/src/components/lens/sections/sessions-section.css
  */
 
 import { describe, expect, test } from "bun:test";
@@ -34,10 +33,13 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const EDITOR_CONTENT =
   '[data-card-id="A"] [data-slot="tug-text-card-editor"] .cm-content';
-const ROW_CELL = ".lens-text-files-list .tug-list-view-cell";
-const ROW_TITLE = ".lens-text-files-list .tug-list-row-title";
-const ROW_CLOSE = ".lens-text-files-list .text-files-row-close";
-const EMPTY = '[data-testid="lens-text-files-empty"]';
+// The cell holding the FILE row, not the group header above it — headers are
+// cells too, and the first one in the list is the Files group's.
+const ROW_CELL =
+  ".lens-cards-list .tug-list-view-cell:has(.lens-cards-row-headline)";
+const ROW_TITLE = ".lens-cards-list .lens-cards-row-headline .tug-list-row-title";
+const ROW_CLOSE = ".lens-cards-list .lens-cards-row-close";
+const EMPTY = '[data-testid="lens-cards-empty"]';
 
 function deckShape() {
   return {
@@ -60,7 +62,7 @@ function deckShape() {
 
 describe.skipIf(!SHOULD_RUN)("at0297 — empty label is one row tall", () => {
   test(
-    "the Text Files 'None' label is exactly as tall as a file row",
+    "the Cards 'None' label is exactly as tall as a file row",
     async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0297-"));
       const file = path.join(dir, "manual.txt");

@@ -66,7 +66,7 @@ const SNIPPETS = Array.from({ length: 4 }, (_, i) => ({
 
 function priorCardDeck() {
   return {
-    // A Text card: the prior card ⌘L stashes, and the Text Files row whose
+    // A Text card: the prior card ⌘L stashes, and the Cards row whose
     // slot picker the drive assigns from.
     cards: [{ id: "A", componentId: "text", title: "File", closable: true }],
     panes: [
@@ -180,12 +180,12 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
           // first-class exit). The ⌘L return restores the descend exactly.
           await app.dispatchControlAction("set-imposition", { kind: "two-up" });
           await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-text-files-list [data-slot="tug-slot"]') !== null`,
+            `document.querySelector('.lens-cards-list [data-slot="tug-slot"]') !== null`,
             { timeoutMs: 3_000 },
           );
           for (let i = 0; i < 8; i += 1) {
             const on = await app.evalJS<boolean>(
-              `document.querySelector('.lens-text-files-list[data-key-view-kbd]') !== null`,
+              `document.querySelector('.lens-cards-list[data-key-view-kbd]') !== null`,
             );
             if (on) break;
             await app.nativeKey("Tab");

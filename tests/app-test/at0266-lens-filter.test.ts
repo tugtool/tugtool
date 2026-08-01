@@ -67,10 +67,11 @@ const MATCHING_FRAGMENT = "zebra";
 const ABSENT_FRAGMENT = "qqzzxx";
 
 const SNIPPETS_SECTION = '.lens-section[data-lens-section="snippets"]';
-/** The Text Files band — this test seeds no text files, so it is the empty
- *  section whose filter must be inert. */
-const EMPTY_SECTION = '.lens-section[data-lens-section="files"]';
-const EMPTY_FILTER_INPUT = `${EMPTY_SECTION} [data-testid="lens-section-filter"] input`;
+/** The Cards band. It starts populated (this run seeds one card), and closing
+ *  that card is what empties it — the transition scenario (F) rides. */
+const CARDS_SECTION = '.lens-section[data-lens-section="cards"]';
+const CARDS_FILTER_INPUT = `${CARDS_SECTION} [data-testid="lens-section-filter"] input`;
+const CARDS_ROW_CLOSE = ".lens-cards-list .lens-cards-row-close";
 const FILTER_INPUT = `${SNIPPETS_SECTION} [data-testid="lens-section-filter"] input`;
 const FILTER_CLEAR = `${SNIPPETS_SECTION} [data-testid="lens-section-filter"] button`;
 const ROW = ".lens-snippets-list .snippet-row-content[data-snippet-id]";
@@ -277,22 +278,45 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
           );
           expect(fieldWidth).toBeGreaterThan(60);
 
-          // (F) A section with no items at all — this run seeds no text files —
-          // disables its filter and drops it from the keyboard walk. The
-          // focusable attribute is the walk's own record: no attribute, no
-          // stop, so Tab passes the whole empty band by.
-          const emptyField = await app.evalJS<{
+          // (F) A section with no items at all disables its filter and drops
+          // it from the keyboard walk. The focusable attribute is the walk's
+          // own record: no attribute, no stop, so Tab passes the whole empty
+          // band by.
+          //
+          // Observed as a TRANSITION rather than a static state, because the
+          // Cards band mirrors the whole deck: it is populated for as long as
+          // any card is open, so the only way to reach genuine emptiness is to
+          // close the last one. That makes this the stronger assertion anyway —
+          // it catches a field that latches live once populated.
+          const readCardsField = (): Promise<{
             disabled: boolean;
             registered: boolean;
-          }>(`(function(){
-            var el = document.querySelector(${JSON.stringify(EMPTY_FILTER_INPUT)});
-            if (el === null) throw new Error("text-files filter input not found");
-            return {
-              disabled: el.disabled,
-              registered: el.hasAttribute("data-tug-focusable"),
-            };
-          })()`);
-          expect(emptyField).toEqual({ disabled: true, registered: false });
+          }> =>
+            app.evalJS(`(function(){
+              var el = document.querySelector(${JSON.stringify(CARDS_FILTER_INPUT)});
+              if (el === null) throw new Error("cards filter input not found");
+              return {
+                disabled: el.disabled,
+                registered: el.hasAttribute("data-tug-focusable"),
+              };
+            })()`);
+
+          expect(await readCardsField()).toEqual({
+            disabled: false,
+            registered: true,
+          });
+
+          await app.evalJS<null>(
+            `(document.querySelector(${JSON.stringify(CARDS_ROW_CLOSE)}).click(), null)`,
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector('[data-testid="lens-cards-empty"]') !== null`,
+            { timeoutMs: 8_000 },
+          );
+          expect(await readCardsField()).toEqual({
+            disabled: true,
+            registered: false,
+          });
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {
