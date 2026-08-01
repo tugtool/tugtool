@@ -2,7 +2,16 @@
 
 Successor to `roadmap/jul30-perf-brief.md` S3/S4, opened by the 2026-07-31 live-deck measurement session. The motion design is a fixed input to this work: the pulsing dot is two circles — a scale breath and an emitted ring — exactly as authored, at every size and site it ships at today. The deliverable is the engineering that lets that glyph run anywhere in the app as a true island: motion that affects nothing beyond its own box, at zero marginal cost to typing, streaming, or any other surface. No fallback forms, no reduced variants, no relocation of the glyphs. The wave inherits everything here.
 
-**Status: proposed.** Last updated 2026-07-31.
+**Status: Phase 0 done (`diag/anim-island.sh`, validated live); Phase 1 lab built (`tests/app-test/at9996-anim-island-lab.test.ts`) and partially run. Superseded as the map by `roadmap/aug01-perf-brief.md` (the six-surface round) — this document remains the island contract's definition, the walk physics, and the S3/S4 fix recipes that brief cites.** Last updated 2026-08-01.
+
+## Phase 0/1 findings so far {#findings-0731}
+
+- **Running glyphs are free at rest, at every weight tried.** Lab, 11k and 34k nodes, 36–39 running animations (dots + waves): 60fps, zero long frames, zero walk excess. jul30 S3's unchecked exit box, now measured twice.
+- **Token streaming does not implicate animations at lab weight.** stream-hot ≡ stream-cold ≡ stream-quiet (~46fps, ~85 long frames at 50ms cadence, 11k nodes): the streaming render cost is real but animation-independent, and the meter read **zero events** — no restarts, no glyph-subtree writes, no unmounts, no aged transitions. On the synthetic text-streaming path the glyph is already a perfect island.
+- **The live deck, by contrast, churns events continuously.** A 36-minute armed window on the release deck: 491 animation starts, 442 cancels — dominated by the **prompt editors' CM6 caret layer** (36 and 33 restarts on two editors) plus restarts on a session-status dot. The live deck restarts animations; the lab's text-streaming never does.
+- **Working hypothesis for the next cells:** the live burn rides the **turn/tool lifecycle**, not token flow — tool_use→tool_result cycles drive glyph state crossings (settle transitions, demotions, remounts at entry boundaries), which is exactly the event class the text-streaming cells never exercise. Next lab iteration: a `tool-churn` cell (tool_use/tool_result pairs at cadence) × dots present/suppressed, at heavy weight.
+- **Lab defect to fix first:** at 34k nodes the stream-hot cell hung on a `driveSession ingestFrame` RPC that never returned (page stayed alive — steady ~8% updateRendering / ~3% walk with glyphs running and no traffic). Each ingest needs a timeout guard, and the cell loop a hard iteration cap.
+- The caret-layer restarts are a separate confirmed finding for the typing path: the blink animation is torn down and restarted continuously at idle, and caret-reset-on-keystroke makes it per-key under typing. Needs its own cell/fix (CM6 layer rebuild vs `data-tug-text-editor-typing` suppression interaction).
 
 
 ## What the live deck measured {#evidence}
@@ -31,7 +40,7 @@ The whole-document walk on every animation event is WebCore's design, not Tug's:
 
 - **Rate → zero** is the island contract ([#contract]) — steady state emits no events.
 - **Cost → sub-millisecond** is the layer-population diet ([#p2b-diet]) — the walk is O(mounted layers) and costs 3–5ms only because the deck mounts ~26k layer-minting elements; at a 5–10× diet, even the legitimate events that always remain (work starting, tools completing, pane gestures) price below perception.
-- **The categorical guarantee** — a separate compositing scene per pane (WKWebView-per-pane, host-side Core Animation composition) — is the only hard isolation WebKit offers and is held at a decision gate ([#arch-gate]), per jul30's own deferral terms: to be reached for on measured evidence, not as an escape hatch.
+- Separate compositing scenes (WKWebView-per-pane) were tabled and **rejected by the user 2026-07-31** — recorded so it is not re-proposed. The single-page model is the model; rate and cost are the levers.
 
 ## The island contract {#contract}
 
@@ -81,10 +90,6 @@ The fixes land in the glyph's hosting and lifecycle, never its motion. All three
 
 jul30 I3, promoted from "second priority" to a co-equal track: the island contract zeroes the steady-state rate, the diet prices the events that legitimately remain. The transcript's census stands from jul30 — 26,374 layer-minting elements of 61,676 (`position: relative` 12,666, `overflow` 9,175, `position: sticky` 1,713, `z-index` 1,986, `contain: content` 789). Audit the top classes for necessity: relatives whose z-index never engages, stale positioning scaffolding, overflow clips that never clip. Each removal class gets its own A/B on the lab bench under a deliberately event-noisy probe (the multiplier is only observable while something walks). Target: a full walk on the loaded deck ≤ 1ms. No sweeping CSS rewrites on spec — class by class, measured.
 
-## The architecture gate {#arch-gate}
-
-If the exit criteria do not hold after Phases 2 and 2b, the single-page model has been measured to its limit, and the follow-up round jul30 deferred — pane-per-WKWebView with host-side Core Animation composition, a separate compositing scene per pane so one pane's compositing life cannot touch another's by construction — opens with this brief's evidence file as its input. It is a decision the user makes at the gate, not a track of this brief.
-
 ## Phase 3 — enforcement, once and for all {#p3-enforce}
 
 - **The lab test, kept.** The Phase 1 scenario lands as a checked-in app-test on the harness: synthetic streaming with running glyphs asserts walk ≤ noise, zero restarts, zero aged transitions. `@covers` the dot component and the transcript entry host. Ratios and counters, never wall-clock budgets.
@@ -98,4 +103,3 @@ If the exit criteria do not hold after Phases 2 and 2b, the single-page model ha
 - [ ] Zero animation restarts and zero aged transitions across the lab streaming run; counters live in the panel.
 - [ ] A single full compositing walk on the loaded deck priced ≤ 1ms after the diet (lab bench, D5 method).
 - [ ] Doctrine updated; jul30 S3/S4 exit boxes closed by measurement, through the lab instrument.
-- [ ] If any box above fails to close: the architecture gate ([#arch-gate]) is put to the user with the complete evidence file.
