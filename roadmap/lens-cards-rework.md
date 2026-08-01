@@ -41,6 +41,8 @@ Two further problems compound it. First, both sections flatten the deck's real t
 - A multi-card pane renders one pane row plus one always-visible indented subrow per card, with no per-pane fold control anywhere (verify: new app-test over a `gallery-buttons` stack — 4 subrows present immediately after open, zero clicks).
 - Activation flows are untouched: clicking/Enter on a session pane row fronts its card; clicking a subrow fronts that tab within its pane (verify: app-test asserts the pane's `activeCardId` changes on subrow activation).
 - Group headers are cursorable rows: arrows reach them, Enter/Space/click toggles the group's collapse, and the collapse persists across relaunch (verify: app-test + `lens-store` persistence test).
+- ⌘L into a fresh Lens lands the movement cursor on a **pane row**, never on a group header (verify: `at0312` + `at0278` assert the cursor row is not `.lens-cards-header`) — [P16].
+- Reorder engages while another group is collapsed and commits within the dragged row's own group (verify: `at0312` drag scenario; guards the Spec S03 silent-abort trap and [P15]'s clamp).
 - One filter field filters the whole Cards section across groups; groups with no matches disappear; clearing restores per-group user order (verify: app-test).
 - No occurrence of `text-files`, `data-text-card-id`, `lens-text-file`, `textFileOrder`, or `sessionOrder` remains under `tugdeck/src` or `tests/app-test` except in `lens-store` legacy-key *hydration seeding* and its migration tests (verify: `rg -n "text-files|textFileOrder|sessionOrder|lens-text-file|data-text-card-id" tugdeck/src tests/app-test`).
 - The coverage unit test walks `getAllRegistrations()` and proves every registration resolves to a group or the explicit `"none"` exclusion (verify: `bun test cards-groups`).
@@ -91,19 +93,17 @@ Two further problems compound it. First, both sections flatten the deck's real t
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Does `useBlockReorder` tolerate non-matching rows interleaved between draggable rows? (OPEN) {#q01-reorder-interleave}
+#### [Q01] Does `useBlockReorder` tolerate non-matching rows interleaved between draggable rows? (DECIDED) {#q01-reorder-interleave}
 
-**Question:** The Cards list intermixes pane rows (draggable, matched by `selector`/`kindAttr`) with group-header rows and card subrows (not draggable, not matched). `useBlockReorder` snapshots "the visible order + each section's rect" from elements matching its selector — do drop-index computation and the sibling-shift animation behave when unmatched siblings sit between matched ones?
+**Question:** The Cards list intermixes pane rows (draggable, matched by `selector`/`kindAttr`) with group-header rows and card subrows (not draggable, not matched). `useBlockReorder` snapshots the visible order + each element's rect from elements matching its selector — do drop-index computation and the sibling-shift animation behave when unmatched siblings sit between matched ones?
 
-**Why it matters:** If the hook assumes matched rows are contiguous siblings, a drag across a group boundary could compute a wrong drop index or animate headers.
+**Resolution:** DECIDED — resolved by reading `block-reorder.ts` in full during the vet pass, before any code was written. The answer has three parts, and it is **not** "polish only":
 
-**Options (if known):**
-- It already works: midpoint math is over matched elements only; unmatched siblings just don't animate. Then only the commit decomposition (Spec S03) is new work.
-- It needs a `withinGroup` constraint: clamp the candidate drop index to the dragged row's own group's contiguous range before caret placement.
+1. **Target computation is fine.** `computeTarget` walks the midpoints of matched elements only; interleaved siblings do not perturb it, and the midpoint array stays monotonic.
+2. **The sibling shift is not fine across a group boundary.** `applyShift` translates only matched elements, so a header would stay nailed in place while pane rows slid past it; and `slot` (`tops[i+1] - tops[i]`) would swallow the header's height. → clamped away by [P15].
+3. **A silent-abort trap exists and constrains the list's rendering mode.** `beginDrag` does `els.some(e => e === undefined) → return`: if any key from `getVisibleOrder()` has no *mounted* element, the drag dies with no error and no log. This makes `inline` load-bearing and makes it mandatory that `visibleOrder()` be derived from the rendered projection. → Spec S03.
 
-**Plan to resolve:** Read `block-reorder.ts` end-to-end at the top of #step-4 and drive it in the real app (drag a file pane row upward past the Files header). If clamping is needed, implement it inside the section's `commit`/`getVisibleOrder` seam first (Spec S03 already re-buckets by group at commit, which makes any drop *safe*; clamping only improves the mid-drag preview).
-
-**Resolution:** OPEN — resolved inside #step-4; the commit-time re-bucketing in Spec S03 guarantees correctness regardless, so this question only gates polish.
+See [P15] for the scope decision and the stated stack-subrow limitation.
 
 #### [Q02] What fixture makes a multi-card pane in an app-test? (DECIDED) {#q02-multicard-fixture}
 
@@ -117,7 +117,8 @@ Two further problems compound it. First, both sections flatten the deck's real t
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Reorder misbehaves across group boundaries ([Q01]) | med | med | Spec S03 re-buckets at commit; clamp preview if needed | visible caret in a foreign group mid-drag |
+| Reorder aborts silently (unmounted row in `visibleOrder()`) | high | low | Spec S03: `inline` + projection-derived order; app-test drags a row while a group is collapsed | any drag that does nothing at all |
+| Stack subrows detach from their pane row mid-drag ([P15]) | low | high (by design) | Stated limitation; drop result is correct via [P14]; follow-on recorded | user reports it as breakage rather than roughness |
 | App-test churn breaks unrelated focus-walk tests | med | high | Table T03 inventories every affected test up front; run the full lens selection each UI step | any red test in the step's selection |
 | Session monitor subscriptions multiply in one list | low | low | Cell code moves unchanged; the row count is the same rows that existed across two lists | typing-lag telemetry regression |
 | Filter semantics over two levels surprise (pane matches vs child matches) | low | med | Spec S04 fixes the rule; bun tests pin it before any UI exists | user report of a "missing" row while filtering |
@@ -134,7 +135,7 @@ Two further problems compound it. First, both sections flatten the deck's real t
 
 #### [P01] One Cards section; Sessions and Files retire; fold immediately (DECIDED) {#p01-one-cards-section}
 
-**Decision:** The Lens converges on Cards / Snippets / Layouts. The Files section becomes Cards (with files + tools groups) in one step, and Sessions folds in as a row kind in the immediately following step — no soak period between them (user decision, 2026-08-01).
+**Decision:** The Lens converges on Cards / Snippets / Layouts. Both the Sessions and the Files sections retire in **one** step (#step-4), with the session monitor arriving as a Cards row kind in the same commit — no soak period, and no intermediate state in which the two models coexist. (The user's original staging folded Sessions in "immediately after" the Files swap; once #step-3 made the projection group-agnostic, the pause between them stopped being a seam and started being a duplicated-or-degraded Lens for one commit, so it was removed — user decision, 2026-08-01.)
 
 **Rationale:**
 - The privileged-section-vs-omnibus division is a taxonomy wart; the session monitor was always a cell renderer, not a section.
@@ -195,9 +196,9 @@ Two further problems compound it. First, both sections flatten the deck's real t
 - `TugListView`'s `"header"` role is documented inert ("an inert section divider" — `tug-list-view.tsx` docstring) and is skipped by cursor and click; the user chose focusable collapse-toggles in the arrow walk.
 
 **Implications:**
-- The header cell composes `TugListRow` (list-view-usage rule 1) with the group title, a live count, and a chevron glyph reflecting collapsed state via `data-group-collapsed` + CSS ([L06]).
+- The header cell composes `TugListRow` (list-view-usage rule 1) with the group title, a live count, and a chevron glyph reflecting collapsed state via `data-group-collapsed` + CSS ([L06]). It composes the real row primitive — a hand-rolled header `div` is the tempting shortcut and an [L19]/[L20] violation.
 - A collapsed group omits its pane/card rows from the projection but keeps its header row (that is the way back).
-- The ⌘L seed still lands on `<group>:0` = index 0 of the list, which is the first group's header when content exists; acceptable — one ArrowDown reaches the first pane row, and the header is a legitimate focus stop by this decision.
+- **The cursor must never seed onto a header** — see [P16]. Making headers `"cell"`-role is what puts them in the arrow walk, and it is also what would let `TugListView`'s gain-seed land ⌘L on index 0. [P16] is the counterweight and is not optional.
 
 #### [P07] One filter for the whole section; a pane matches on its own text or any subrow's (DECIDED) {#p07-one-filter}
 
@@ -248,7 +249,32 @@ Two further problems compound it. First, both sections flatten the deck's real t
 
 #### [P14] Reorder commits re-bucket by group (DECIDED) {#p14-reorder-rebucket}
 
-**Decision:** The reorder `commit` receives the new flat visible order of pane-row order keys and decomposes it: each key is assigned to its **known** group (from the pre-drag projection), preserving relative order within that group; `lensStore.setCardsRowOrder(group, keys)` is written for the dragged row's group (others unchanged). A row dropped visually inside a foreign group therefore still orders within its own group by relative position — forgiving, and immune to [Q01]'s outcome.
+**Decision:** The reorder `commit` receives the new flat visible order of pane-row order keys and decomposes it: each key is assigned to its **known** group (from the pre-drag projection), preserving relative order within that group; `lensStore.setCardsRowOrder(group, keys)` is written for the dragged row's group (others unchanged). A row dropped visually inside a foreign group therefore still orders within its own group by relative position — forgiving, and correct regardless of what the mid-drag preview showed.
+
+#### [P15] Drags are clamped to the dragged row's own group; a stack's subrows do not travel with it (DECIDED) {#p15-drag-scope}
+
+**Decision:** The section clamps the reorder's target index to the contiguous run of pane rows belonging to the dragged row's own group, so a drag never crosses a group header. Within a group, a **multi-card pane row travels alone** — its subrows stay put for the duration of the carry and snap into place at the drop. This is a stated limitation, not a defect to chase in this phase.
+
+**Rationale (measured against `block-reorder.ts`, not assumed):**
+- `beginDrag` builds its element map from `container.querySelectorAll(selector)` — only *matched* elements. `applyShift` therefore translates only pane rows: an unmatched sibling (a group header, a subrow) never moves. Without clamping, dragging across a boundary would slide pane rows past a header that stays nailed in place.
+- `slot` is computed as `tops[dragIndex + 1] - tops[dragIndex]` — the advance between consecutive *pane rows*, which silently includes any interleaved subrow heights. Within a group that number is the right one (a stack's block genuinely occupies that much vertical space, so the gap opens correctly); across a boundary it would also swallow the header's height.
+- Clamping is a few lines in the section's own `commit` / target seam and needs no change to `block-reorder.ts`, which is shared with Snippets and the section stack.
+
+**Implications:**
+- The subrow detach is visible only while carrying a *multi-card* pane row — rare, momentary, and self-correcting at drop. Recorded as a follow-on rather than hidden.
+- [P14]'s re-bucketing stays regardless: clamping improves the preview, re-bucketing guarantees the result.
+
+#### [P16] The cursor seeds onto a pane row, never a group header (DECIDED) {#p16-cursor-seed}
+
+**Decision:** The section always passes an `initialSelectedIndex`: the remembered row (`lastSelectedRowId`) when it is still in the projection, otherwise **the index of the first pane row**. It is never left `undefined`.
+
+**Rationale:**
+- `TugListView` seeds its movement cursor on key-view gain as "`initialSelectedIndex` if cursorable, else `firstCursorableRow()`". Because [P06] makes headers `"cell"`-role, `firstCursorableRow()` is index 0 — the first group header. Left alone, every ⌘L into a fresh Lens would park the cursor on a collapse toggle instead of on a card.
+- The standing rule is that ⌘L lands the keyboard cursor on a navigable Lens *item*. A header is a control, not an item.
+
+**Implications:**
+- `LensCardsDataSource` exposes `firstPaneRowIndex(): number` (−1 when the projection holds no pane row) beside `indexForId`.
+- Asserted in `at0312` (fresh Lens, ⌘L, cursor is on a pane row) and in the `at0278` update.
 
 ---
 
@@ -265,7 +291,7 @@ The [P02] invariant is enforced by *moving*, not rewriting, the row internals:
 
 #### Focus, seed, and the responder chain {#focus-and-seed}
 
-- The section registers one focus group (`sectionFocusGroup("cards")` = `lens-section-cards`); `lens-content.tsx`'s `useSeedKeyView` seeds `lens-section-cards:0` when the section has content — with [P06] that is the first group header. `setSectionContent(host.focusGroup, { navigable, populated })` semantics unchanged: `navigable` = the projection has any row; `populated` = any pane row exists before the filter.
+- The section registers one focus group (`sectionFocusGroup("cards")` = `lens-section-cards`), and **the whole list is one focus stop within it** — `TugListView` authored into a `focusGroup` is a single item-container stop, not one stop per row. So `lens-content.tsx`'s `useSeedKeyView` seeding `lens-section-cards:0` addresses *the list*, and where the cursor lands inside it is then the list's own gain-seed — which is why [P16] exists. `setSectionContent(host.focusGroup, { navigable, populated })` semantics unchanged: `navigable` = the projection has any row; `populated` = any pane row exists before the filter.
 - Per-row descend scopes are `TugListView`'s: the close box registers in focus group `"lens-cards-row-actions"` at `focusOrder: 0` and the `SlotPicker` in `"lens-row-slots"` (unchanged constant), so ArrowRight descends onto close → slots exactly as at0277 pins today.
 - Selection memory: one module-level `lastSelectedRowId: string | null` storing the data source's row id (replaces `lastSelectedSessionId` and `lastSelectedFileId`), mapped through `initialSelectedIndex`.
 
@@ -315,7 +341,12 @@ plus `GROUP_ORDER` and `GROUP_TITLES` ([P03]). `CardRegistration.lensGroup` is a
 
 **Spec S03: Reorder seam** {#s03-reorder-seam}
 
-`useBlockReorder` options for the section: `selector: '.lens-cards-row[data-lens-row-id]'`, `kindAttr: "data-lens-row-id"`, `getVisibleOrder: () => dataSource.visibleOrder()` (flat pane-row order keys, headers/subrows excluded), `commit: (order) => …` re-bucketing per [P14]. The drag is armed only from pane rows (`onRowPointerDown` handed via cell context, as both sections do today) and never while filtering.
+`useBlockReorder` options for the section: `selector: '.lens-cards-row[data-lens-row-id]'`, `kindAttr: "data-lens-row-id"`, `getVisibleOrder: () => dataSource.visibleOrder()`, `commit: (order) => …` re-bucketing per [P14], target clamped per [P15]. The drag is armed only from pane rows (`onRowPointerDown` handed via cell context, as both retired sections do today) and never while filtering.
+
+Two non-negotiable constraints, both from `beginDrag`'s `els.some(e => e === undefined) → return` guard — a drag whose key set does not resolve 1:1 to *mounted* elements aborts silently, with no error and no log:
+
+- **The list renders `inline`.** `TugListView` windows by default and unmounts off-screen rows; a windowed Cards list would have working reorder above the fold and dead-on-arrival reorder below it, with nothing in the console to say why. Both retired sections already pass `inline`, so this is continuity, not a new cost. It is worth stating that this deliberately accepts the primitive's "a consumer that may grow unboundedly stays windowed" guidance: the unbounded case here is a 89-tab gallery stack, which is debug-only and whose group collapses.
+- **`visibleOrder()` is derived from the rendered projection**, not from the underlying pane set — it returns the order keys of exactly the pane rows the projection emitted, in emission order. Collapsed groups emit no pane rows, so their keys are absent and the guard stays satisfied. Deriving it from anything else (e.g. all panes in the deck) would make every drag abort silently while any group was collapsed.
 
 **Spec S04: Filter semantics** {#s04-filter}
 
@@ -417,18 +448,19 @@ Kept deliberately: `.session-row-content[data-session-id]` (names which session 
 | Test | What it pins | Expected change |
 |---|---|---|
 | `at0257-lens-session-reorder` | session row drag → `sessionOrder` | selectors keep `data-session-id`; persistence assertion moves to `cardsRowOrder.sessions` |
-| `at0266-lens-filter` | per-section filter fields | rewrite: one Cards filter; assert cross-group narrowing + header survival |
+| `at0266-lens-filter` | per-section filter fields | **extend, do not rewrite** — scenarios A–F all drive the *Snippets* band against a seeded snippets file and stay as they are. Update the `@covers sections/` line and add one scenario for the Cards field: cross-group narrowing + header survival |
 | `at0269-lens-text-file-dirty-dot` | unsaved dot testid | testid rename (T02) |
 | `at0277-lens-row-accessories-keyboard` | ArrowRight descend: close → slots | class renames only; behavior identical |
-| `at0278-lens-cmdl-focus-stability` | ⌘L seed + memory | seed now lands on the first group header ([P06]); update expected focus key |
+| `at0278-lens-cmdl-focus-stability` | ⌘L seed + memory | the list is one focus stop; the cursor inside it seeds to the first **pane row** ([P16]). Add an assertion that it is a pane row and not a group header |
 | `at0280-local-model-absent`, `at0282-pulse-two-level`, `at0283-pulse-typography` | monitor row content/typography | should pass unmodified (verbatim move, R01 gate); fix imports/selectors only if they reference section wrappers |
 | `at0283-list-row-striping` | `data-row-parity` bands | verify parity behavior with header cells interleaved |
 | `at0287-lens-row-action-not-a-pick` | close box ≠ row pick | class renames |
-| `at0296-lens-row-is-the-handle` | row drag arming | class renames; group-scoped commit |
+| ~~`at0296-lens-row-is-the-handle`~~ | — | **NOT affected.** It matches `.snippet-row-content[data-snippet-id]` — a Snippets test. Verify green, change nothing |
+| ~~`at0248-lens-list-cursor-keys`~~ | — | **NOT affected.** It matches `.lens-content .lens-snippets-list` — a Snippets test. Verify green, change nothing |
 | `at0297-lens-empty-label-row-height` | empty-face row height | testid rename; single empty face for the whole section |
 | `at0310-file-view-open` | Lens row for a viewer card | selector renames (its `ROW_TITLE`/`ROW_CLOSE`/`ROW_GLYPH`/`UNSAVED_DOT` constants) |
-| `at0231/0233/0246/0247/0248/0250/0252/0256` | Lens focus walks / section reorder | the section census drops to three (cards / snippets / layouts); re-derive expected Tab-walk stops; section-reorder tests that enumerate band kinds update their kind lists |
-| NEW `at0312-lens-cards-two-level` | [P02]/[P03]/[P06] | see #step-4 |
+| `at0231/0233/0246/0247/0250/0252/0256` | Lens focus walks / section reorder | the section census drops to three (cards / snippets / layouts); re-derive expected Tab-walk stops; section-reorder tests that enumerate band kinds update their kind lists. Audit each before editing — several are Snippets- or Layouts-driven and need nothing |
+| NEW `at0312-lens-cards-two-level` | [P02]/[P03]/[P06]/[P16] | see #step-4 |
 
 `@covers` housekeeping: every updated test's `@covers` lines must point at the new file names (`cards-section.tsx`, `cards-data-source.ts`, `cards-groups.ts`); `just app-test-covers-check` gates this.
 
@@ -449,8 +481,8 @@ Kept deliberately: `.session-row-content[data-session-id]` (names which session 
 |----------|---------|-------------|
 | **Unit (bun)** | `resolveLensGroup` coverage; `buildCardsRows` projection: grouping, [P04] filing, ordering, filtering, collapse omission, disambiguators, subrow emission | Steps 1–3 |
 | **Unit (bun)** | `lens-store` reducer events, hydration seeding, `KIND_MIGRATIONS` folding | Step 2 (extends existing `__tests__/{reducer,migration,persistence}.test.ts`) |
-| **Integration (app-test)** | Real-app rendering, keyboard walk, header toggles, reorder persistence, filter | Steps 4–5 |
-| **Drift Prevention** | Coverage test (T01 pins); rg-based naming sweep in checkpoints | Steps 1, 6 |
+| **Integration (app-test)** | Real-app rendering, keyboard walk, header toggles, reorder persistence, filter | Step 4 |
+| **Drift Prevention** | Coverage test (T01 pins); rg-based naming sweep in checkpoints | Steps 1, 4, 5 |
 
 #### What stays out of tests {#test-non-goals}
 
@@ -471,9 +503,8 @@ Kept deliberately: `.session-row-content[data-session-id]` (names which session 
 | #step-1 | Registrations declare their Lens group | pending | — |
 | #step-2 | lensStore: cardsRowOrder + collapsed groups + migrations | pending | — |
 | #step-3 | cards-data-source: the pure two-level projection | pending | — |
-| #step-4 | Cards section replaces Files (files + tools groups) | pending | — |
-| #step-5 | Sessions folds in; Sessions section retires | pending | — |
-| #step-6 | Docs, naming sweep, and integration verification | pending | — |
+| #step-4 | The Cards section replaces Sessions and Files | pending | — |
+| #step-5 | Docs, naming sweep, and integration verification | pending | — |
 
 #### Step 1: Registrations declare their Lens group {#step-1}
 
@@ -556,67 +587,47 @@ Kept deliberately: `.session-row-content[data-session-id]` (names which session 
 
 ---
 
-#### Step 4: Cards section replaces Files (files + tools groups) {#step-4}
+#### Step 4: The Cards section replaces Sessions and Files {#step-4}
 
 **Depends on:** #step-3
 
-**Commit:** `tugdeck(lens-cards): the Cards section replaces Files — pane-first rows, groups, header toggles`
+**Commit:** `tugdeck(lens-cards): one Cards section replaces Sessions and Files — pane-first rows, groups, header toggles`
 
-**References:** [P02] Invariant, [P06] Header cells, [P09] Naming debt, [P10] Recents retired, [P12] Stack row, [P14] Rebucket, [Q01], [Q02], Spec S03, Spec S05, Tables T02–T03, (#band, #focus-and-seed, #verbatim-moves)
+**References:** [P01] One Cards section, [P02] Invariant, [P06] Header cells, [P09] Naming debt, [P10] Recents retired, [P11] Subrows, [P12] Stack row, [P13] No dedupe, [P14] Rebucket, [P15] Drag scope, [P16] Cursor seed, [Q01] (resolved), [Q02], Spec S03, Spec S05, Risk R01, Tables T02–T03, (#band, #focus-and-seed, #verbatim-moves)
+
+**Why this is one step and not two:** after #step-3 the projection is group-agnostic — it already emits all three groups — so "Cards renders files + tools" and "Cards renders sessions too" is one piece of work, not two. Every way of pausing between them is worse than not pausing: leaving the old Sessions section registered renders every session twice at once, unregistering it early drops the monitor row (pulse lines, sparkline) for a commit, and gating the group is throwaway scaffolding. The intermediate state has no good version, so it does not exist. The app-test update volume is identical either way.
 
 **Artifacts:**
-- `cards-section.tsx`, `cards-section.css`; `files-section.*` + `files-data-source.ts` deleted; `main.tsx` swap; updated app-tests; new `at0312`.
+- `cards-section.tsx`, `cards-session-cell.tsx`, `cards-section.css`; `files-section.*`, `files-data-source.ts`, `sessions-section.*`, `sessions-data-source.ts` deleted; `main.tsx` swap; updated app-tests; new `at0312`.
 
 **Tasks:**
-- [ ] Read `tuglaws/tuglaws.md`, `tuglaws/list-view-usage.md`, `tuglaws/focus-language.md`, and `block-reorder.ts` end-to-end (resolve [Q01]) before writing UI.
-- [ ] Build `cards-section.tsx`: cell renderers for `group-header` (TugListRow: title + count + chevron via `data-group-collapsed`, activation toggles `setCardGroupCollapsed`), `file-pane` (the moved `FileRow`, renamed classes per T02), `tool-pane` (icon-resolved glyph + title + close when closable + `SlotPicker`), `stack-pane` ([P12]), `subcard` ([P11], indented, `focus-session-card` on activate, close box when closable); delegate = activate-and-remember; reorder per Spec S03; band registration per #band; `setSectionContent` per #focus-and-seed. Groups live in this step: **files + tools** (session panes are not yet emitted — gate the projection's sessions group behind a data-source input flag this step sets false, removed in #step-5).
-- [ ] `main.tsx`: replace `registerFilesSection()` with `registerCardsSection()` (Sessions registration still present this step).
-- [ ] Delete `files-section.tsx/.css`, `files-data-source.ts`, `sections/__tests__/files-data-source.test.ts` via `tugutil file rm`; delete the recents menu with them ([P10]).
-- [ ] Execute every T02 rename that touches this step's surfaces; update the T03 file-side tests (`at0266` files half, `at0269`, `at0277`, `at0287`, `at0296` if file-row-based, `at0297`, `at0310`) — selectors, testids, `@covers` lines.
-- [ ] Write `at0312-lens-cards-two-level.test.ts` (`@covers` `cards-section.tsx`, `cards-data-source.ts`, `cards-groups.ts`): open two files (single-card pane rows: assert **no** subrows, no fold affordance, close box + slot picker present — the [P02] invariant); `addCard("gallery-buttons")` ([Q02]) → assert Tools header + one `stack-pane` row + 4 subrows visible with zero interaction; activate a subrow → `activeCardId` changes; cursor onto the Tools header via arrows, Enter → subrows and pane row disappear, count stays on the header; Enter again → back; relaunch-free persistence assert via `lensStore` snapshot through `evalJS`.
+- [ ] Read `tuglaws/tuglaws.md`, `tuglaws/list-view-usage.md`, and `tuglaws/focus-language.md` before writing UI. (`block-reorder.ts` is already characterized — see [Q01]'s resolution and [P15]; no re-derivation needed.)
+- [ ] Move the session monitor cell per #verbatim-moves into `cards-session-cell.tsx` — a verbatim move (imports and the reorder-context type are the only edits), which is what makes the pulse app-tests a valid unmodified regression gate (R01).
+- [ ] Build `cards-section.tsx` with all five cell renderers at their final form: `group-header` (TugListRow: title + count + chevron via `data-group-collapsed`, activation toggles `setCardGroupCollapsed`), `session-pane` (the moved monitor cell), `file-pane` (the moved `FileRow`, renamed classes per T02), `tool-pane` (icon-resolved glyph + title + close when closable + `SlotPicker`), `stack-pane` ([P12]), `subcard` ([P11], indented, `focus-session-card` on activate, close box when closable).
+- [ ] Wire the section: delegate = activate-and-remember; `initialSelectedIndex` per [P16]; `inline` + projection-derived `visibleOrder()` + group-clamped target per Spec S03 / [P15]; band registration per #band with the full census summary; `setSectionContent` per #focus-and-seed.
+- [ ] The session pane row carries `data-lens-row-id` (= `tugSessionId`) alongside the kept `data-session-id`, so reorder flows through the uniform selector.
+- [ ] `main.tsx`: replace both `registerSessionsSection()` and `registerFilesSection()` with a single `registerCardsSection()`; drop both imports.
+- [ ] Delete `files-section.tsx/.css`, `files-data-source.ts`, `sections/__tests__/files-data-source.test.ts`, `sessions-section.tsx/.css`, `sessions-data-source.ts` via `tugutil file rm`; the recents menu goes with them ([P10]).
+- [ ] Execute the whole of Table T02.
+- [ ] Update the T03 tests: `at0257` (persistence → `cardsRowOrder.sessions`), `at0266` (add one Cards-filter scenario; its Snippets scenarios A–F are untouched), `at0269`, `at0277`, `at0278` ([P16]: the cursor seeds to a pane row, not a header), `at0287`, `at0297`, `at0310`, `at0283-list-row-striping`, and the focus-walk set (`at0231/0233/0246/0247/0250/0252/0256`) for the three-section census — auditing each before editing, since several are Snippets- or Layouts-driven and need nothing. `@covers` lines throughout.
+- [ ] Run `at0280` / `at0282-pulse-two-level` / `at0283-pulse-typography` **unmodified first** — they are the R01 visual gate. Touch them only if a section-wrapper selector fails, and call out any diff in the commit body.
+- [ ] Write `at0312-lens-cards-two-level.test.ts` (`@covers` `cards-section.tsx`, `cards-data-source.ts`, `cards-groups.ts`): open two files (single-card pane rows: assert **no** subrows, no fold affordance, close box + slot picker present — the [P02] invariant); `addCard("gallery-buttons")` ([Q02]) → assert Tools header + one `stack-pane` row + 4 subrows visible with zero interaction; activate a subrow → the pane's `activeCardId` changes; ⌘L into a fresh Lens → the cursor is on a **pane row**, not a group header ([P16]); cursor onto the Tools header via arrows, Enter → its pane and subrows disappear, count stays on the header; Enter again → back; drag a pane row while another group is collapsed → the drag actually engages and commits (the Spec S03 silent-abort guard); persistence assert via `lensStore` snapshot through `evalJS`.
 
 **Tests:**
-- [ ] Updated file-side app-tests green; `at0312` green.
+- [ ] Every updated T03 test green; `at0312` green; the pulse trio green unmodified.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build && bun test`
 - [ ] `just app-test-covers-check`
-- [ ] `just app-test-changed` (or explicitly: the T03 file-side set + `at0312`)
-- [ ] `rg -n "text-files|lens-text-file|data-text-card-id|textFileOrder" tugdeck/src tests/app-test` → only lens-store seeding + its tests remain.
+- [ ] `just app-test-changed` (or explicitly: the T03 set + `at0312`)
+- [ ] `rg -n "text-files|lens-text-file|data-text-card-id|textFileOrder|sessionOrder|sessions-section|lens-sessions" tugdeck/src tests/app-test` → only `lens-store` hydration seeding and its migration tests remain.
+- [ ] The Lens shows exactly three bands: Cards, Snippets, Layouts.
 
 ---
 
-#### Step 5: Sessions folds in; the Sessions section retires {#step-5}
+#### Step 5: Docs, naming sweep, and integration verification {#step-5}
 
 **Depends on:** #step-4
-
-**Commit:** `tugdeck(lens-cards): sessions fold into Cards as a row kind; Sessions section retires`
-
-**References:** [P01] Fold sequencing, [P02] Invariant, [P13] No dedupe, Risk R01, Table T03, (#verbatim-moves, #focus-and-seed)
-
-**Artifacts:**
-- `cards-session-cell.tsx` (verbatim move); sessions group live; `sessions-section.*` + `sessions-data-source.ts` deleted; session-side app-tests updated.
-
-**Tasks:**
-- [ ] Move the monitor cell per #verbatim-moves into `cards-session-cell.tsx`; register `"session-pane"` in the cell-renderer map; remove the step-4 sessions gate from the data source; port `sessionRowLabel` + the name/tag version inputs (already plumbed in #step-3).
-- [ ] The session pane row carries `data-lens-row-id` (= `tugSessionId`) alongside the kept `data-session-id`; reorder now flows through the uniform selector.
-- [ ] `main.tsx`: remove `registerSessionsSection()` and its import; delete `sessions-section.tsx/.css`, `sessions-data-source.ts` via `tugutil file rm`.
-- [ ] Update T03 session-side tests: `at0257` (persistence → `cardsRowOrder.sessions`), `at0266` (full rewrite to the single Cards filter), `at0278` (seed lands on the Sessions group header), `at0280`/`at0282-pulse-two-level`/`at0283-pulse-typography` (run unmodified first — R01 gate; touch only if section-wrapper selectors fail), `at0283-list-row-striping`, the focus-walk set (`at0231/0233/0246/0247/0248/0250/0252/0256`) for the new section census, and `@covers` lines throughout.
-- [ ] Update the collapsed summary to the full census (sessions now counted).
-
-**Tests:**
-- [ ] All T03 tests green; the pulse trio green **unmodified** or with selector-only diffs called out in the commit body.
-
-**Checkpoint:**
-- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build && bun test`
-- [ ] `just app-test-covers-check && just app-test-changed`
-- [ ] `rg -n "sessionOrder|sessions-section|lens-sessions" tugdeck/src tests/app-test` → only lens-store seeding + migration tests remain.
-
----
-
-#### Step 6: Docs, naming sweep, and integration verification {#step-6}
-
-**Depends on:** #step-4, #step-5
 
 **Commit:** `tugdeck(lens-cards): list-view and app-test doctrine updated for the Cards section`
 
@@ -629,7 +640,7 @@ Kept deliberately: `.session-row-content[data-session-id]` (names which session 
 - [ ] Author the dash join draft (`/tugplug:draft` style) summarizing the section swap for the user's `/join`.
 
 **Tests:**
-- [ ] `just app-test` (core tier) if any step's changes touched pre-assertion surfaces; otherwise the accumulated `app-test-changed` selection from Steps 4–5 re-run green.
+- [ ] `just app-test` (core tier) if any step's changes touched pre-assertion surfaces; otherwise #step-4's `app-test-changed` selection re-run green.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build && bun test`
@@ -645,7 +656,7 @@ Kept deliberately: `.session-row-content[data-session-id]` (names which session 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [ ] All Success Criteria pass (each names its verification).
-- [ ] Steps 1–6 committed on the dash; Step Status Ledger fully `done` with commit hashes.
+- [ ] Steps 1–5 committed on the dash; Step Status Ledger fully `done` with commit hashes.
 - [ ] `bunx tsc --noEmit`, `bunx vite build`, `bun test`, `just app-test-covers-check`, and the accumulated app-test selection all green at the final commit.
 
 **Acceptance tests:**
@@ -656,6 +667,7 @@ Kept deliberately: `.session-row-content[data-session-id]` (names which session 
 
 - [ ] "By Canvas" arrangement and sort controls for the Cards section (the M4 the pane-first model was chosen to enable).
 - [ ] Subrow drag-reorder (Lens-side tab reordering) if pane stacks become common.
+- [ ] Carry a stack's subrows with their pane row during a drag ([P15]'s stated limitation). Needs `block-reorder` to learn about grouped elements, which is why it is not in this phase.
 - [ ] Revisit [P04] if mixed-kind pane group-hopping proves weird in real usage.
 - [ ] A successor to the retired recents affordance, if its absence is ever felt ([P10]).
 
