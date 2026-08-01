@@ -65,6 +65,30 @@ describe("LensStore — section-kind migration", () => {
     expect(snap.collapsedSections).toEqual(["sessions"]);
   });
 
+  it("remaps a persisted 'text-files' kind to 'files' on hydrate", () => {
+    setTugbankClient(
+      fakeClient({
+        [LENS_KEYS.SECTION_ORDER]: jsonArray([
+          "sessions",
+          "snippets",
+          "text-files",
+          "layouts",
+        ]),
+        [LENS_KEYS.COLLAPSED_SECTIONS]: jsonArray(["text-files"]),
+      }),
+    );
+
+    const snap = lensStore.getSnapshot();
+
+    expect(snap.sectionOrder).toEqual([
+      "sessions",
+      "snippets",
+      "files",
+      "layouts",
+    ]);
+    expect(snap.collapsedSections).toEqual(["files"]);
+  });
+
   it("leaves unknown kinds untouched", () => {
     setTugbankClient(
       fakeClient({

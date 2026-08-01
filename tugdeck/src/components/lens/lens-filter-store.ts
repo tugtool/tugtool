@@ -16,7 +16,7 @@
  * re-expanding a section shows the list you left, with the field seeded from
  * here as its `defaultValue`.
  *
- * Keyed by section kind (`"snippets"`, `"sessions"`, `"text-files"`).
+ * Keyed by section kind (`"snippets"`, `"sessions"`, `"files"`).
  *
  * @module components/lens/lens-filter-store
  */

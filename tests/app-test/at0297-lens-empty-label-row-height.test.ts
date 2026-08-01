@@ -17,8 +17,8 @@
  * and the empty label that replaces it is measured in the same list frame.
  *
  * @covers tugdeck/src/components/lens/lens-content.css
- * @covers tugdeck/src/components/lens/sections/text-files-section.tsx
- * @covers tugdeck/src/components/lens/sections/text-files-section.css
+ * @covers tugdeck/src/components/lens/sections/files-section.tsx
+ * @covers tugdeck/src/components/lens/sections/files-section.css
  * @covers tugdeck/src/components/lens/sections/snippets-section.css
  * @covers tugdeck/src/components/lens/sections/sessions-section.css
  */

@@ -1,20 +1,26 @@
 /**
- * text-files-data-source.ts — the `TugListView` data source for the Lens
- * **Text Files** section: the open Text cards. Recently-open files are no
- * longer listed here — they reach the user through the section header's
- * recents menu.
+ * files-data-source.ts — the `TugListView` data source for the Lens **Files**
+ * section: the open file cards, editable and viewable alike. Recently-open
+ * files are no longer listed here — they reach the user through the section
+ * header's recents menu.
  *
  * Rows:
- *  - `"text-open"` — one per mounted Text card (`componentId === "text"`), in
- *    deck-card order. `id = "open:<cardId>"`; the bound path comes from the
- *    text-card open registry.
+ *  - `"text-open"` — one per mounted Text card (`componentId === "text"`).
+ *    The bound path and unsaved mark come from the text-card open registry.
+ *  - `"view-open"` — one per mounted viewer card (`componentId ===
+ *    "file-view"`). The bound path comes from the viewer open registry; a
+ *    viewer is read-only, so it never carries an unsaved mark.
+ *
+ * Both kinds share the row shape, the ordering, and the disambiguators —
+ * the section presents open files as one list regardless of which card
+ * family holds them. `id = "open:<cardId>"` for either.
  *
  * Laws:
  *  - [L02] external state via `useSyncExternalStore` — this IS such a store,
  *    fed the deck snapshot; the hook notifies from `useLayoutEffect` ([L03]).
  *  - [L19] component authoring — module docstring, exported types.
  *
- * @module components/lens/sections/text-files-data-source
+ * @module components/lens/sections/files-data-source
  */
 
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
@@ -31,9 +37,17 @@ import {
   getOpenTextCardsVersion,
   subscribeOpenTextCards,
 } from "@/lib/text-card-open-registry";
+import {
+  getOpenFileViewCard,
+  getOpenFileViewCardsVersion,
+  subscribeOpenFileViewCards,
+} from "@/lib/file-view-open-registry";
 
-export type TextFilesRow = {
-  readonly kind: "text-open";
+/** Which card family a row's file is open in. */
+export type FilesRowKind = "text-open" | "view-open";
+
+export type FilesRow = {
+  readonly kind: FilesRowKind;
   readonly cardId: string;
   readonly path: string | null;
   readonly title: string;
@@ -76,7 +90,7 @@ export function displayPath(path: string): string {
 }
 
 /**
- * Fill in each row's {@link TextFilesRow.disambiguator}: `null` when the
+ * Fill in each row's {@link FilesRow.disambiguator}: `null` when the
  * filename is unique among the open files, otherwise the **shortest trailing
  * directory run** that separates this row from the others sharing its name —
  * one segment where one is enough (`roadmap` vs `Desktop`), more only where the
@@ -88,9 +102,9 @@ export function displayPath(path: string): string {
  * suffix does not appear and vanish as the filter narrows the list.
  */
 export function assignDisambiguators(
-  rows: readonly TextFilesRow[],
-): TextFilesRow[] {
-  const byTitle = new Map<string, TextFilesRow[]>();
+  rows: readonly FilesRow[],
+): FilesRow[] {
+  const byTitle = new Map<string, FilesRow[]>();
   for (const row of rows) {
     const group = byTitle.get(row.title);
     if (group === undefined) byTitle.set(row.title, [row]);
@@ -122,12 +136,13 @@ export function assignDisambiguators(
   });
 }
 
-interface TextFilesInputs {
+interface FilesInputs {
   readonly deck: DeckState | null;
   /** The user's persisted row order, by card id. Empty → deck-card order. */
   readonly order: readonly string[];
-  /** Bumps when a Text card registers / unregisters / binds its path, so the
-   *  rows recompute against the newly-resolved open-card paths. */
+  /** Bumps when a card in either open registry registers / unregisters /
+   *  binds its path, so the rows recompute against the newly-resolved
+   *  open-card paths. */
   readonly registryVersion: number;
   /** The band's filter query. Empty / whitespace → every row. */
   readonly filterQuery: string;
@@ -154,14 +169,22 @@ export type OpenCardUnsavedResolver = (cardId: string) => boolean;
 const registryUnsavedResolver: OpenCardUnsavedResolver = (cardId) =>
   getOpenTextCard(cardId)?.hasUnsavedMark() ?? false;
 
+/** Resolve an open viewer card's bound path. Default reads the viewer open
+ *  registry. */
+export type OpenViewCardPathResolver = (cardId: string) => string | null;
+
+const registryViewPathResolver: OpenViewCardPathResolver = (cardId) =>
+  getOpenFileViewCard(cardId)?.getPath() ?? null;
+
 /**
- * Build the row list from the deck snapshot: one row per open Text card. Pure
- * over its resolvers — the bound path of each open card comes through
- * `resolvePath`, its untitled name through `resolveDisplayName`, and its
- * unsaved mark through `resolveUnsaved` (defaults: the open registry, re-read
- * on every recompute), so a test can inject its own. A bound card titles from
- * the path basename; an unbound one titles from its buffer name
- * (`"Untitled"`).
+ * Build the row list from the deck snapshot: one row per open file card, Text
+ * or viewer. Pure over its resolvers — the bound path of each open Text card
+ * comes through `resolvePath`, its untitled name through `resolveDisplayName`,
+ * its unsaved mark through `resolveUnsaved`, and a viewer card's path through
+ * `resolveViewPath` (defaults: the two open registries, re-read on every
+ * recompute), so a test can inject its own. A bound card titles from the path
+ * basename; an unbound Text card titles from its buffer name (`"Untitled"`).
+ * A viewer is read-only, so its row never carries an unsaved mark.
  *
  * Row order: the user's persisted `order` (by card id) first, in that order;
  * cards absent from it keep deck-card order and follow AFTER the ordered set,
@@ -169,29 +192,41 @@ const registryUnsavedResolver: OpenCardUnsavedResolver = (cardId) =>
  * arrangement. Stale ids (closed cards) are never matched. An empty / absent
  * `order` yields plain deck-card order — the same rule the Sessions rows take.
  */
-export function buildTextFilesRows(
-  inputs: Pick<TextFilesInputs, "deck"> & { readonly order?: readonly string[] },
+export function buildFilesRows(
+  inputs: Pick<FilesInputs, "deck"> & { readonly order?: readonly string[] },
   resolvePath: OpenCardPathResolver = registryPathResolver,
   resolveDisplayName: OpenCardDisplayNameResolver = registryDisplayNameResolver,
   resolveUnsaved: OpenCardUnsavedResolver = registryUnsavedResolver,
-): TextFilesRow[] {
-  const rows: TextFilesRow[] = [];
+  resolveViewPath: OpenViewCardPathResolver = registryViewPathResolver,
+): FilesRow[] {
+  const rows: FilesRow[] = [];
   const cards = inputs.deck?.cards ?? [];
   for (const card of cards) {
-    if (card.componentId !== "text") continue;
-    const path = resolvePath(card.id);
-    const title =
-      path !== null
-        ? basename(path)
-        : resolveDisplayName(card.id) ?? (card.title || "Untitled");
-    rows.push({
-      kind: "text-open",
-      cardId: card.id,
-      path,
-      title,
-      unsaved: resolveUnsaved(card.id),
-      disambiguator: null,
-    });
+    if (card.componentId === "text") {
+      const path = resolvePath(card.id);
+      const title =
+        path !== null
+          ? basename(path)
+          : resolveDisplayName(card.id) ?? (card.title || "Untitled");
+      rows.push({
+        kind: "text-open",
+        cardId: card.id,
+        path,
+        title,
+        unsaved: resolveUnsaved(card.id),
+        disambiguator: null,
+      });
+    } else if (card.componentId === "file-view") {
+      const path = resolveViewPath(card.id);
+      rows.push({
+        kind: "view-open",
+        cardId: card.id,
+        path,
+        title: path !== null ? basename(path) : card.title || "File",
+        unsaved: false,
+        disambiguator: null,
+      });
+    }
   }
   const order = inputs.order;
   const ordered =
@@ -214,13 +249,13 @@ export function buildTextFilesRows(
   return assignDisambiguators(ordered);
 }
 
-export class LensTextFilesDataSource implements TugListViewDataSource {
-  private inputs: TextFilesInputs;
-  private rows: TextFilesRow[] = [];
+export class LensFilesDataSource implements TugListViewDataSource {
+  private inputs: FilesInputs;
+  private rows: FilesRow[] = [];
   private readonly listeners = new Set<() => void>();
   private version = 0;
 
-  constructor(inputs: TextFilesInputs) {
+  constructor(inputs: FilesInputs) {
     this.inputs = inputs;
     this.recompute();
   }
@@ -253,11 +288,11 @@ export class LensTextFilesDataSource implements TugListViewDataSource {
   }
 
   /** Typed row access for the cell renderer. */
-  rowAt(index: number): TextFilesRow {
+  rowAt(index: number): FilesRow {
     return this.rows[index];
   }
 
-  setInputsWithoutNotify(next: TextFilesInputs): boolean {
+  setInputsWithoutNotify(next: FilesInputs): boolean {
     if (
       this.inputs.deck === next.deck &&
       this.inputs.order === next.order &&
@@ -285,13 +320,13 @@ export class LensTextFilesDataSource implements TugListViewDataSource {
     return this.rows.map((r) => r.cardId);
   }
 
-  /** How many open Text cards there are, filter or no filter. */
+  /** How many open file cards there are, filter or no filter. */
   unfilteredCount(): number {
-    return buildTextFilesRows(this.inputs).length;
+    return buildFilesRows(this.inputs).length;
   }
 
   private recompute(): void {
-    const rows = buildTextFilesRows(this.inputs);
+    const rows = buildFilesRows(this.inputs);
     // A row matches on its filename and on the directory AS DISPLAYED (`~/src`,
     // not `/Users/name/src`) — the row shows the directory on hover and, when
     // its name is ambiguous, as the trailing run beside the filename, so both
@@ -312,30 +347,38 @@ const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
 /**
  * Hook — read the deck snapshot (an [L02] store) and feed a stable
- * `LensTextFilesDataSource`, notifying from a layout effect.
+ * `LensFilesDataSource`, notifying from a layout effect.
  */
-export function useLensTextFilesDataSource(
+export function useLensFilesDataSource(
   filterQuery: string,
   order: readonly string[],
-): LensTextFilesDataSource {
+): LensFilesDataSource {
   const deckStore = getDeckStore();
   const deck = useSyncExternalStore(
     deckStore?.subscribe ?? NOOP_SUBSCRIBE,
     deckStore !== null ? deckStore.getSnapshot : () => null,
     () => null,
   );
-  // Recompute when a Text card binds / rebinds its path, so a just-opened
-  // file is titled the instant its card resolves.
-  const registryVersion = useSyncExternalStore(
+  // Recompute when a card binds / rebinds its path, so a just-opened file is
+  // titled the instant its card resolves. Both families feed the list, so
+  // both registries are watched; their versions sum into one input, which
+  // changes whenever either side moves.
+  const textVersion = useSyncExternalStore(
     subscribeOpenTextCards,
     getOpenTextCardsVersion,
     getOpenTextCardsVersion,
   );
+  const viewVersion = useSyncExternalStore(
+    subscribeOpenFileViewCards,
+    getOpenFileViewCardsVersion,
+    getOpenFileViewCardsVersion,
+  );
+  const registryVersion = textVersion + viewVersion;
 
-  const ref = useRef<LensTextFilesDataSource | null>(null);
+  const ref = useRef<LensFilesDataSource | null>(null);
   const inputs = { deck, order, registryVersion, filterQuery };
   if (ref.current === null) {
-    ref.current = new LensTextFilesDataSource(inputs);
+    ref.current = new LensFilesDataSource(inputs);
   }
   const ds = ref.current;
   const didChange = ds.setInputsWithoutNotify(inputs);

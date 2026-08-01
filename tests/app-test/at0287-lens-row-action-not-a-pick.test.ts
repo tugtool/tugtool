@@ -32,7 +32,7 @@
  *
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/tugways/tug-list-view.css
- * @covers tugdeck/src/components/lens/sections/text-files-section.tsx
+ * @covers tugdeck/src/components/lens/sections/files-section.tsx
  */
 
 import { describe, expect, test } from "bun:test";

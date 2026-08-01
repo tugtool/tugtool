@@ -1,16 +1,20 @@
 /**
- * text-files-section.tsx — the Lens **Text Files** section: a `TugListView`
- * over the open Text cards. One Tab stop in the Lens; arrows rove, Enter/click
- * fronts the open card (`focus-session-card`). The recently-open files (the
- * recent-documents MRU) are no longer listed here — they hang off the section
- * header's recents menu, which mirrors File ▸ Open Recent.
+ * files-section.tsx — the Lens **Files** section: a `TugListView` over the
+ * open file cards, editable and viewable alike. One Tab stop in the Lens;
+ * arrows rove, Enter/click fronts the open card (`focus-session-card`). The
+ * recently-open files (the recent-documents MRU) are no longer listed here —
+ * they hang off the section header's recents menu, which mirrors File ▸ Open
+ * Recent.
  *
- * A row is one line — the filename, with the directory reaching the user as the
- * hover title and, when two open files share a name, as a muted trailing run
- * beside it. A close box leads the row — the column the Sessions rows give
- * their phase dot — and sends `close` to that card by identity, so the file's
- * own close guard runs; it is reachable by descending onto the row
- * (ArrowRight), ahead of the slot picker.
+ * A row is one line — a kind glyph and the filename, with the directory
+ * reaching the user as the hover title and, when two open files share a name,
+ * as a muted trailing run beside it. The glyph is the only thing that tells an
+ * image apart from a text file in the list; everything else about the row
+ * — close box, slot picker, reorder, disambiguation — is identical across
+ * kinds, because to the user these are all just open files. A close box leads
+ * the row — the column the Sessions rows give their phase dot — and sends
+ * `close` to that card by identity, so the file's own close guard runs; it is
+ * reachable by descending onto the row (ArrowRight), ahead of the slot picker.
  *
  * A row is carried to reorder it, exactly as the Sessions and Snippets rows
  * are — the shared `useBlockReorder` FLIP, committing to `lensStore`'s
@@ -20,10 +24,10 @@
  * data source, and the header menu); [L06] cursor/selection appearance is CSS
  * on engine attributes; [L22] the FocusManager owns the cursor.
  *
- * @module components/lens/sections/text-files-section
+ * @module components/lens/sections/files-section
  */
 
-import "./text-files-section.css";
+import "./files-section.css";
 
 import React, {
   useCallback,
@@ -33,7 +37,7 @@ import React, {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { Clock3, FileText, X } from "lucide-react";
+import { Clock3, File, FileText, Image as ImageIcon, X } from "lucide-react";
 
 import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
@@ -71,11 +75,13 @@ import {
 } from "@/components/lens/lens-filter-store";
 import {
   basename,
-  buildTextFilesRows,
+  buildFilesRows,
   displayPath,
-  useLensTextFilesDataSource,
-  type LensTextFilesDataSource,
-} from "./text-files-data-source";
+  useLensFilesDataSource,
+  type FilesRow,
+  type LensFilesDataSource,
+} from "./files-data-source";
+import { classifyFileKind } from "@/lib/file-kinds";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
@@ -89,12 +95,12 @@ const ROW_KIND_ATTR = "data-text-card-id";
 
 /** Row verbs the section body hands the module-level cell — the reorder and
  *  the close box. */
-interface TextFilesCellContextValue {
+interface FilesCellContextValue {
   onRowPointerDown: (cardId: string, event: React.PointerEvent) => void;
   onClose: (cardId: string) => void;
 }
-const TextFilesCellContext =
-  React.createContext<TextFilesCellContextValue | null>(null);
+const FilesCellContext =
+  React.createContext<FilesCellContextValue | null>(null);
 
 /** File ▸ Open Recent caps its list at 10; the header menu mirrors that. */
 const RECENTS_MENU_LIMIT = 10;
@@ -104,13 +110,16 @@ const CLEAR_RECENTS_ITEM_ID = "\0clear-recents";
 // The section's remembered selection — the last-touched row id, mapped to a
 // cursor seed on the next Cmd-L / Tab ([P10]). Module-level so it outlives a
 // collapse toggle; valid while the Lens is a singleton card.
-let lastSelectedTextId: string | null = null;
+let lastSelectedFileId: string | null = null;
 
-/** This section's kind — the key its filter query lives under. */
-const SECTION_KIND = "text-files";
+/** This section's kind — the key its filter query lives under, and the kind
+ *  its persisted order / collapse state is stored against. It was
+ *  `"text-files"` before the section widened past text; `KIND_MIGRATIONS` in
+ *  `lens-store.ts` carries the old persisted state forward. */
+const SECTION_KIND = "files";
 
 /** The band's live filter query, read straight from the store ([L02]). */
-function useTextFilesFilterQuery(): string {
+function useFilesFilterQuery(): string {
   useSyncExternalStore(subscribeFilterQuery, getFilterVersion);
   return getFilterQuery(SECTION_KIND);
 }
@@ -145,15 +154,17 @@ function FileRow({
   hoverPath,
   disambiguator,
   unsaved,
+  glyph,
 }: {
   cardId: string;
   name: string;
   hoverPath: string;
   disambiguator: string | null;
   unsaved: boolean;
+  glyph: React.ReactElement;
 }): React.ReactElement {
-  const ctx = React.useContext(TextFilesCellContext);
-  const filterQuery = useTextFilesFilterQuery();
+  const ctx = React.useContext(FilesCellContext);
+  const filterQuery = useFilesFilterQuery();
   return (
     <TugListRow
       className="text-files-row"
@@ -184,6 +195,9 @@ function FileRow({
         className="text-files-row-headline"
         title={hoverPath.length > 0 ? hoverPath : undefined}
       >
+        <span className="text-files-row-glyph" aria-hidden="true">
+          {glyph}
+        </span>
         <TugLabel className="tug-list-row-title" size="sm" maxLines={1}>
           {renderFilterHighlight(name, filterQuery)}
           {unsaved ? (
@@ -211,10 +225,24 @@ function FileRow({
   );
 }
 
-const TextFilesCell: TugListViewCellRenderer<LensTextFilesDataSource> = ({
+/** The row's kind glyph: a text card wears the document mark, a viewer wears
+ *  the one for what it is showing. The path decides, so a viewer row's glyph
+ *  tracks the file it is bound to rather than the card family. */
+function glyphForRow(row: FilesRow): React.ReactElement {
+  if (row.kind === "text-open" || row.path === null) {
+    return <FileText size={12} />;
+  }
+  return classifyFileKind(row.path) === "image" ? (
+    <ImageIcon size={12} />
+  ) : (
+    <File size={12} />
+  );
+}
+
+const FilesCell: TugListViewCellRenderer<LensFilesDataSource> = ({
   index,
   dataSource,
-}: TugListViewCellProps<LensTextFilesDataSource>) => {
+}: TugListViewCellProps<LensFilesDataSource>) => {
   const row = dataSource.rowAt(index);
   return (
     <FileRow
@@ -223,26 +251,28 @@ const TextFilesCell: TugListViewCellRenderer<LensTextFilesDataSource> = ({
       hoverPath={row.path !== null ? displayPath(row.path) : ""}
       disambiguator={row.disambiguator}
       unsaved={row.unsaved}
+      glyph={glyphForRow(row)}
     />
   );
 };
 
-const TEXT_FILES_CELL_RENDERERS: Record<
+const FILES_CELL_RENDERERS: Record<
   string,
-  TugListViewCellRenderer<LensTextFilesDataSource>
+  TugListViewCellRenderer<LensFilesDataSource>
 > = {
-  "text-open": TextFilesCell,
+  "text-open": FilesCell,
+  "view-open": FilesCell,
 };
 
 /** Live collapsed summary: the open-file count. */
-function TextFilesCollapsedSummary(): React.ReactElement {
+function FilesCollapsedSummary(): React.ReactElement {
   const deckStore = getDeckStore();
   const deck = useSyncExternalStore(
     deckStore?.subscribe ?? (() => () => {}),
     deckStore !== null ? deckStore.getSnapshot : () => null,
     () => null,
   );
-  const open = useMemo(() => buildTextFilesRows({ deck }).length, [deck]);
+  const open = useMemo(() => buildFilesRows({ deck }).length, [deck]);
   if (open === 0) return <>No open files</>;
   return <>{`${open} open`}</>;
 }
@@ -252,7 +282,7 @@ function TextFilesCollapsedSummary(): React.ReactElement {
  *  documents MRU; picking one dispatches `open-file`, "Clear Menu" empties the
  *  list. Recents enter React via `useSyncExternalStore` ([L02]); a probe on
  *  mount drops any file deleted while the section was elsewhere. */
-function TextFilesHeaderActions(): React.ReactElement {
+function FilesHeaderActions(): React.ReactElement {
   const recents = useSyncExternalStore(
     subscribeRecentDocuments,
     getReachableRecentDocumentsSnapshot,
@@ -306,13 +336,13 @@ function TextFilesHeaderActions(): React.ReactElement {
   );
 }
 
-function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactElement {
-  const filterQuery = useTextFilesFilterQuery();
+function FilesSectionBody({ host }: { host: LensSectionHost }): React.ReactElement {
+  const filterQuery = useFilesFilterQuery();
   const textFileOrder = useSyncExternalStore(
     lensStore.subscribe,
     useCallback(() => lensStore.getSnapshot().textFileOrder, []),
   );
-  const dataSource = useLensTextFilesDataSource(filterQuery, textFileOrder);
+  const dataSource = useLensFilesDataSource(filterQuery, textFileOrder);
   const count = dataSource.numberOfItems();
   const filtering = dataSource.isFiltering();
   const listRef = useRef<TugListViewHandle>(null);
@@ -336,9 +366,9 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
   }, [host.focusGroup, hasContent, hasItems]);
 
   const initialSelectedIndex = useMemo(() => {
-    if (lastSelectedTextId === null) return undefined;
+    if (lastSelectedFileId === null) return undefined;
     for (let i = 0; i < dataSource.numberOfItems(); i += 1) {
-      if (dataSource.idForIndex(i) === lastSelectedTextId) return i;
+      if (dataSource.idForIndex(i) === lastSelectedFileId) return i;
     }
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -348,7 +378,7 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
     const activate = (index: number): void => {
       const row = dataSource.rowAt(index);
       if (row === undefined) return;
-      lastSelectedTextId = dataSource.idForIndex(index);
+      lastSelectedFileId = dataSource.idForIndex(index);
       dispatchAction({ action: "focus-session-card", cardId: row.cardId });
     };
     return { onSelect: activate, onActivate: activate };
@@ -401,7 +431,7 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
     },
     [chain],
   );
-  const cellContext = useMemo<TextFilesCellContextValue>(
+  const cellContext = useMemo<FilesCellContextValue>(
     () => ({ onRowPointerDown, onClose }),
     [onRowPointerDown, onClose],
   );
@@ -426,12 +456,12 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
           data-filter-active={filtering ? "true" : undefined}
         >
           <BlockDropCaret ref={caretRef} />
-          <TextFilesCellContext value={cellContext}>
-            <TugListView<LensTextFilesDataSource>
+          <FilesCellContext value={cellContext}>
+            <TugListView<LensFilesDataSource>
               ref={listRef}
               dataSource={dataSource}
               delegate={delegate}
-              cellRenderers={TEXT_FILES_CELL_RENDERERS}
+              cellRenderers={FILES_CELL_RENDERERS}
               scrollKey="lens-text-files"
               ringPlacement="inset"
               inline
@@ -442,22 +472,22 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
               {...LENS_LIST_PRESENTATION}
               className="lens-oneline-list lens-text-files-list"
             />
-          </TextFilesCellContext>
+          </FilesCellContext>
         </div>
       )}
     </div>
   );
 }
 
-/** Register the Text Files section. Called once at boot from `main.tsx`. */
-export function registerTextFilesSection(): void {
+/** Register the Files section. Called once at boot from `main.tsx`. */
+export function registerFilesSection(): void {
   registerLensSection({
     kind: SECTION_KIND,
-    title: "Text Files",
+    title: "Files",
     filterable: true,
     glyph: <FileText size={14} />,
-    collapsedSummary: () => <TextFilesCollapsedSummary />,
-    headerActions: () => <TextFilesHeaderActions />,
-    body: (host) => <TextFilesSectionBody host={host} />,
+    collapsedSummary: () => <FilesCollapsedSummary />,
+    headerActions: () => <FilesHeaderActions />,
+    body: (host) => <FilesSectionBody host={host} />,
   });
 }

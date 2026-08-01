@@ -1,21 +1,22 @@
 /**
- * text-files-data-source.test.ts — the Lens Text Files enumeration: one row per
- * open Text card, in deck order, plus role/id/title mapping. Pure logic over
- * `buildTextFilesRows` (with an injected path resolver — no shared registry, no
- * DOM). Recents are no longer listed here; they hang off the header menu.
+ * files-data-source.test.ts — the Lens Files enumeration: one row per open
+ * file card (Text or viewer), in deck order, plus role/id/title mapping. Pure
+ * logic over `buildFilesRows` (with injected resolvers — no shared registry,
+ * no DOM). Recents are no longer listed here; they hang off the header menu.
  */
 
 import { describe, expect, it } from "bun:test";
 
 import type { DeckState } from "@/layout-tree";
 import {
-  LensTextFilesDataSource,
+  LensFilesDataSource,
   basename,
-  buildTextFilesRows,
+  buildFilesRows,
   dirname,
   displayPath,
   type OpenCardPathResolver,
-} from "../text-files-data-source";
+  type OpenViewCardPathResolver,
+} from "../files-data-source";
 
 function deck(cardIds: ReadonlyArray<[string, string]>): DeckState {
   return {
@@ -51,7 +52,7 @@ describe("path helpers", () => {
 
 describe("disambiguating duplicate filenames", () => {
   it("leaves a unique filename unannotated", () => {
-    const rows = buildTextFilesRows(
+    const rows = buildFilesRows(
       { deck: deck([["c1", "text"], ["c2", "text"]]) },
       resolver({ c1: "/proj/a.md", c2: "/proj/b.md" }),
     );
@@ -59,7 +60,7 @@ describe("disambiguating duplicate filenames", () => {
   });
 
   it("annotates twins with the shortest trailing run that separates them", () => {
-    const rows = buildTextFilesRows(
+    const rows = buildFilesRows(
       { deck: deck([["c1", "text"], ["c2", "text"]]) },
       resolver({
         c1: "/Users/ada/src/tug/roadmap/plan.md",
@@ -70,7 +71,7 @@ describe("disambiguating duplicate filenames", () => {
   });
 
   it("takes more segments when the near directories also match", () => {
-    const rows = buildTextFilesRows(
+    const rows = buildFilesRows(
       { deck: deck([["c1", "text"], ["c2", "text"], ["c3", "text"]]) },
       resolver({
         c1: "/proj/tugcast/src/mod.rs",
@@ -86,7 +87,7 @@ describe("disambiguating duplicate filenames", () => {
   });
 
   it("annotates only the rows whose name is shared", () => {
-    const rows = buildTextFilesRows(
+    const rows = buildFilesRows(
       { deck: deck([["c1", "text"], ["c2", "text"], ["c3", "text"]]) },
       resolver({
         c1: "/proj/one/a.md",
@@ -98,7 +99,7 @@ describe("disambiguating duplicate filenames", () => {
   });
 
   it("leaves a path-less twin unannotated", () => {
-    const rows = buildTextFilesRows(
+    const rows = buildFilesRows(
       { deck: deck([["c1", "text"], ["c2", "text"]]) },
       resolver({ c1: "/proj/one/Untitled" }),
       () => "Untitled",
@@ -107,9 +108,9 @@ describe("disambiguating duplicate filenames", () => {
   });
 });
 
-describe("buildTextFilesRows", () => {
-  it("lists only text cards, in deck order", () => {
-    const rows = buildTextFilesRows(
+describe("buildFilesRows", () => {
+  it("skips cards that hold no file, in deck order", () => {
+    const rows = buildFilesRows(
       {
         deck: deck([
           ["s1", "session"],
@@ -124,7 +125,7 @@ describe("buildTextFilesRows", () => {
   });
 
   it("titles an open card from its bound path's basename", () => {
-    const rows = buildTextFilesRows(
+    const rows = buildFilesRows(
       { deck: deck([["c1", "text"]]) },
       resolver({ c1: "/proj/open.txt" }),
     );
@@ -133,7 +134,7 @@ describe("buildTextFilesRows", () => {
   });
 
   it("titles an unbound card from its buffer name (Untitled)", () => {
-    const rows = buildTextFilesRows(
+    const rows = buildFilesRows(
       { deck: deck([["c1", "text"]]) },
       resolver({}),
       (cardId) => (cardId === "c1" ? "Untitled-2" : null),
@@ -143,7 +144,7 @@ describe("buildTextFilesRows", () => {
   });
 
   it("honours the persisted order and lands unranked cards last", () => {
-    const rows = buildTextFilesRows(
+    const rows = buildFilesRows(
       {
         deck: deck([
           ["c1", "text"],
@@ -158,7 +159,7 @@ describe("buildTextFilesRows", () => {
   });
 
   it("ignores stale ids in the persisted order", () => {
-    const rows = buildTextFilesRows(
+    const rows = buildFilesRows(
       {
         deck: deck([
           ["c1", "text"],
@@ -172,7 +173,7 @@ describe("buildTextFilesRows", () => {
   });
 
   it("falls back to the card title when a path-less card has no buffer name", () => {
-    const rows = buildTextFilesRows(
+    const rows = buildFilesRows(
       { deck: deck([["c1", "text"]]) },
       resolver({}),
       () => null,
@@ -182,9 +183,9 @@ describe("buildTextFilesRows", () => {
   });
 });
 
-describe("LensTextFilesDataSource", () => {
+describe("LensFilesDataSource", () => {
   it("maps id/kind/role and bumps version on input change", () => {
-    const ds = new LensTextFilesDataSource({
+    const ds = new LensFilesDataSource({
       deck: deck([["lens-tf-uniq", "text"]]),
       order: [],
       registryVersion: 0,
@@ -214,13 +215,13 @@ describe("LensTextFilesDataSource", () => {
       order: [],
       registryVersion: 0,
     };
-    const all = new LensTextFilesDataSource({ ...base, filterQuery: "" });
+    const all = new LensFilesDataSource({ ...base, filterQuery: "" });
     expect(all.numberOfItems()).toBe(2);
 
     // Titles fall back to the card title (`"c1"` / `"c2"` from the fixture) for
     // an unbound Text card, so filter on one of those.
     const first = all.rowAt(0).title;
-    const filtered = new LensTextFilesDataSource({
+    const filtered = new LensFilesDataSource({
       ...base,
       filterQuery: first,
     });
@@ -228,8 +229,78 @@ describe("LensTextFilesDataSource", () => {
     expect(filtered.rowAt(0).title).toBe(first);
     expect(filtered.unfilteredCount()).toBe(2);
 
-    const none = new LensTextFilesDataSource({ ...base, filterQuery: "qqzzxx" });
+    const none = new LensFilesDataSource({ ...base, filterQuery: "qqzzxx" });
     expect(none.numberOfItems()).toBe(0);
     expect(none.unfilteredCount()).toBe(2);
+  });
+});
+
+describe("viewer rows", () => {
+  /** A viewer path resolver backed by a fixed map — no global registry. */
+  function viewResolver(
+    paths: Record<string, string>,
+  ): OpenViewCardPathResolver {
+    return (cardId) => paths[cardId] ?? null;
+  }
+
+  it("lists text and viewer cards together, in deck order", () => {
+    const rows = buildFilesRows(
+      {
+        deck: deck([
+          ["c-text", "text"],
+          ["c-session", "session"],
+          ["c-view", "file-view"],
+        ]),
+      },
+      resolver({ "c-text": "/a/notes.txt" }),
+      () => null,
+      () => false,
+      viewResolver({ "c-view": "/a/shot.png" }),
+    );
+    expect(rows.map((r) => [r.kind, r.title])).toEqual([
+      ["text-open", "notes.txt"],
+      ["view-open", "shot.png"],
+    ]);
+  });
+
+  it("never marks a viewer row unsaved", () => {
+    const rows = buildFilesRows(
+      { deck: deck([["c-view", "file-view"]]) },
+      resolver({}),
+      () => null,
+      // Even a resolver that says "dirty" cannot mark a viewer: the row is
+      // read-only by construction, not by what the text resolvers report.
+      () => true,
+      viewResolver({ "c-view": "/a/shot.png" }),
+    );
+    expect(rows[0].unsaved).toBe(false);
+  });
+
+  it("disambiguates across kinds when a name is shared", () => {
+    const rows = buildFilesRows(
+      {
+        deck: deck([
+          ["c-text", "text"],
+          ["c-view", "file-view"],
+        ]),
+      },
+      resolver({ "c-text": "/a/docs/logo.png" }),
+      () => null,
+      () => false,
+      viewResolver({ "c-view": "/a/art/logo.png" }),
+    );
+    expect(rows.map((r) => r.disambiguator)).toEqual(["docs", "art"]);
+  });
+
+  it("titles a viewer card from its card title until its path binds", () => {
+    const rows = buildFilesRows(
+      { deck: deck([["c-view", "file-view"]]) },
+      resolver({}),
+      () => null,
+      () => false,
+      viewResolver({}),
+    );
+    expect(rows[0].title).toBe("c-view");
+    expect(rows[0].path).toBeNull();
   });
 });

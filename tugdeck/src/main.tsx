@@ -51,9 +51,10 @@ import { registerSettingsCard } from "./components/tugways/cards/settings-card";
 import { registerDevtoolsCard } from "./components/devtools/devtools-card";
 import { registerLensCard } from "./components/lens/lens-register-card";
 import { registerSnippetsSection } from "./components/lens/sections/snippets-section";
-import { registerTextFilesSection } from "./components/lens/sections/text-files-section";
+import { registerFilesSection } from "./components/lens/sections/files-section";
 import { registerLayoutsSection } from "./components/lens/sections/layouts-section";
 import { registerTextCard } from "./components/tugways/cards/text-card-registration";
+import { registerFileViewCard } from "./components/tugways/cards/file-view-card-registration";
 import { registerDiffCard } from "./components/tugways/cards/diff-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { installSessionPlacementGlobal } from "./components/tugways/cards/session-card-placement-experiment";
@@ -323,9 +324,10 @@ if (!container) {
   // `resolveSectionRenderOrder` uses when nothing is persisted.
   registerSessionsSection();
   registerSnippetsSection();
-  registerTextFilesSection();
+  registerFilesSection();
   registerLayoutsSection();
   registerTextCard();
+  registerFileViewCard();
   registerDiffCard();
   registerGalleryCards();
 

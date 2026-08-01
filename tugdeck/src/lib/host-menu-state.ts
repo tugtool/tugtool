@@ -255,6 +255,20 @@ export interface MenuStateFileBlock {
   conflict: boolean;
 }
 
+/**
+ * A document surface that owns zoom for itself — today the viewer card's PDF
+ * branch. Its presence is what tells the host to route View ▸ Zoom In / Zoom
+ * Out / Actual Size into the deck instead of scaling the whole web view.
+ *
+ * The host owns those chords: AppKit resolves a menu key equivalent before
+ * the WKWebView sees a keydown, so a deck-side binding for the same chord
+ * can never fire and no amount of `preventDefault` reaches it. Publishing
+ * this block is therefore the only way a card can claim ⌘+ / ⌘- / ⌘0.
+ */
+export interface MenuStateDocumentBlock {
+  cardId: string;
+}
+
 /** Per-item enablement for the File menu, derived from a block. */
 export interface FileMenuGates {
   save: boolean;
@@ -321,6 +335,11 @@ export interface MenuStatePayload {
   session: MenuStateSessionBlock | null;
   /** Text-card block; null unless the active card is a Text card. */
   file: MenuStateFileBlock | null;
+  /**
+   * Document-surface block; null unless the active card hosts a surface that
+   * owns its own zoom. Routes the host's zoom commands into the deck.
+   */
+  document: MenuStateDocumentBlock | null;
   /** Edit-menu capabilities of the current first responder. */
   edit: MenuStateEditBlock;
   /**
@@ -413,6 +432,13 @@ export class HostMenuStatePublisher {
    */
   private readonly fileBlocks = new Map<string, MenuStateFileBlock>();
   /**
+   * Per-card document-surface blocks, same rider discipline. Published by
+   * the surface that owns zoom rather than by the card, so a viewer card
+   * claims the host's zoom chords only while it is actually showing a
+   * document that can be zoomed.
+   */
+  private readonly documentBlocks = new Map<string, MenuStateDocumentBlock>();
+  /**
    * Edit-menu capabilities of the current first responder. A single
    * publisher (the responder-chain provider) feeds this; defaults to
    * all-disabled until the first push.
@@ -439,6 +465,16 @@ export class HostMenuStatePublisher {
 
   clearSessionBlock(cardId: string): void {
     if (!this.sessionBlocks.delete(cardId)) return;
+    this.scheduleFlush();
+  }
+
+  setDocumentBlock(cardId: string, block: MenuStateDocumentBlock): void {
+    this.documentBlocks.set(cardId, block);
+    this.scheduleFlush();
+  }
+
+  clearDocumentBlock(cardId: string): void {
+    if (!this.documentBlocks.delete(cardId)) return;
     this.scheduleFlush();
   }
 
@@ -482,12 +518,21 @@ export class HostMenuStatePublisher {
       activeCard?.component === "text" && focusedActiveCardId !== null
         ? (this.fileBlocks.get(focusedActiveCardId) ?? null)
         : null;
+    // Keyed by card rather than by component id: the block is published by
+    // the surface that owns zoom, so the card only claims the chords while
+    // that surface is actually mounted (a viewer card showing an image does
+    // not).
+    const document =
+      focusedActiveCardId !== null
+        ? (this.documentBlocks.get(focusedActiveCardId) ?? null)
+        : null;
     const payload: MenuStatePayload = {
       panes,
       activeCard,
       selectionActive,
       session,
       file,
+      document,
       edit: this.editCapabilities,
       recentDocuments: this.recentDocuments,
       // Open Quickly always has a root: the frontmost card's project, or the
@@ -567,6 +612,22 @@ export function clearSessionMenuState(cardId: string): void {
  */
 export function publishFileMenuState(cardId: string, block: MenuStateFileBlock): void {
   activePublisher?.setFileBlock(cardId, block);
+}
+
+/**
+ * Publish a document surface's claim on the host's zoom commands. Called by
+ * the surface that owns zoom; a no-op before {@link initHostMenuState} runs.
+ */
+export function publishDocumentMenuState(
+  cardId: string,
+  block: MenuStateDocumentBlock,
+): void {
+  activePublisher?.setDocumentBlock(cardId, block);
+}
+
+/** Drop a document surface's zoom claim (surface unmount). */
+export function clearDocumentMenuState(cardId: string): void {
+  activePublisher?.clearDocumentBlock(cardId);
 }
 
 /** Drop a Text card's menu block (card unmount). */

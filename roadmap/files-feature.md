@@ -107,7 +107,30 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` headi
 
 **Plan to resolve:** Step `#step-8` opens a real multi-page PDF in the built app and evaluates scroll/zoom/selection before the M02 commit. If native is inadequate, M02 stops after the classifier/UTI work and a follow-on plan covers pdf.js.
 
-**Resolution:** OPEN — resolved by the `#step-8` spike; pdf.js explicitly deferred either way.
+**Resolution:** **Native rendering is good; native *control* does not exist.** The hands-on pass plus a probe of the plugin's surface split the question cleanly in two.
+
+Working, on real documents: page rendering, continuous scroll, and text selection.
+
+Not available, and not reachable from the deck — measured, not assumed:
+
+**Table T02: What WebKit's PDF plugin exposes to an embedding page** {#t02-pdf-plugin-surface}
+
+| Capability | Result | How it was measured |
+|---|---|---|
+| Render / scroll / select | works | hands-on, and the `#step-8` screenshot |
+| Arrow keys, PageUp/Down | **no effect** | 8 ArrowDown + 2 PageDown produced byte-identical screenshots |
+| DOM focus on the embed | **refused** | `activeElement` stays the host `div` after a scripted `.focus()`, after `tabindex="0"` + `.focus()`, and after a real native click |
+| `contextmenu` in JS | **never fires** | no listener runs — not on the embed, not on `document` |
+| Native right-click menu | none appeared | screenshot after a native right-click |
+| `#page=`, `#zoom=`, `#view=` open parameters | **ignored** | four fragments set on `src`; the view never left page 1 |
+
+The plugin is a black box: no DOM, no events, no parameters. There is nothing to hang a menu on, and nothing to command if there were. Zoom, page navigation, and the Continuous Scroll / Single Page / Two Pages modes therefore cannot be added over it at any price — and a card that refuses focus outright is an outlier in a deck whose focus language is keyboard-first ([L22]). Zoom being app-wide is the same root cause: with no card-level viewer to scope it, ⌘+ reaches WebKit's page zoom.
+
+Getting those capabilities means owning the rendering, which is the **pdf.js** follow-on this plan already anticipated (#roadmap). That is a plan-sized piece of work — lazy-loaded so only a PDF open pays the bundle, worker wiring verified under `vite build` (the tugcode wasm-embed history is the precedent for treating bundled workers as a hazard), canvas plus text layer, and chrome built from real `Tug*` components.
+
+What M02 ships meanwhile is an honest read-only reader: it renders faithfully and selects text, and it cannot be driven from the keyboard.
+
+**Superseded.** The pdf.js follow-on shipped on this same dash — see [roadmap/pdf-viewer-plan.md](pdf-viewer-plan.md). The `<embed>` is gone; the card renders PDFs itself, with the keyboard, the three page modes, a card-scoped zoom, and the right-click menu. One correction to the reasoning above: the app-wide zoom was **not** WebKit page zoom falling through for want of a card-level viewer. ⌘+ / ⌘- / ⌘0 are the host's View-menu key equivalents, which AppKit resolves before the web view is offered the keydown — so no deck-side viewer could have claimed them by rendering. The surface claims them explicitly instead, via a `menuState.document` block the host reads.
 
 ---
 
@@ -373,14 +396,14 @@ File renames use `tugutil file mv` (a repo hook blocks bare `rm`/ad-hoc paths); 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | tugcast `/api/fs/blob` streaming route | pending | — |
-| #step-2 | `file-kinds.ts` classifier | pending | — |
-| #step-3 | `file-view` card + open registry | pending | — |
-| #step-4 | Kind routing in `openFileInCard` | pending | — |
-| #step-5 | Lens: Text Files → Files | pending | — |
-| #step-6 | Swift gates + Info.plist Viewer entry | pending | — |
-| #step-7 | M01 integration checkpoint (app-test) | pending | — |
-| #step-8 | M02: PDF | pending | — |
+| #step-1 | tugcast `/api/fs/blob` streaming route | done | `87a998e9e` |
+| #step-2 | `file-kinds.ts` classifier | done | `94852a30d` |
+| #step-3 | `file-view` card + open registry | done | `2964daa8b` |
+| #step-4 | Kind routing in `openFileInCard` | done | `5f149f944` |
+| #step-5 | Lens: Text Files → Files | done | `38ebef3b9` |
+| #step-6 | Swift gates + Info.plist Viewer entry | done | `c5c619e88` |
+| #step-7 | M01 integration checkpoint (app-test) | done | `bab6e4781` |
+| #step-8 | M02: PDF | done | `883444f42` |
 
 **Milestone M01: Images** {#m01-images} — steps 1–7. **Milestone M02: PDF** {#m02-pdf} — step 8.
 

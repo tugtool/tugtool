@@ -747,6 +747,25 @@ export function initActionDispatch(
   // identical (TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE). DeckCanvas's
   // registered handler reads the focused card from its cardsRef and
   // calls store.addCardToPane(). ([D06], [D09])
+  // zoom-in / zoom-out / zoom-actual (Both): the host's View menu owns these
+  // chords — AppKit resolves a menu key equivalent before the web view sees a
+  // keydown — so a document surface that wants them publishes a
+  // `menuState.document` block and the host forwards the command here rather
+  // than scaling the whole web view. The chain then routes it to whichever
+  // surface is frontmost.
+  for (const zoomAction of [
+    TUG_ACTIONS.ZOOM_IN,
+    TUG_ACTIONS.ZOOM_OUT,
+    TUG_ACTIONS.ZOOM_ACTUAL,
+  ] as const) {
+    registerAction(zoomAction, () => {
+      responderChainManagerRef?.sendToFirstResponder({
+        action: zoomAction,
+        phase: "discrete",
+      });
+    });
+  }
+
   registerAction(TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE, () => {
     if (responderChainManagerRef) {
       responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE, phase: "discrete" });

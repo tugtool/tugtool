@@ -1,0 +1,39 @@
+/* The PDF surface. The scroller owns the scroll; inside it a content box
+   sized to the whole document holds absolutely-positioned pages, so the
+   scrollbar is right from the first frame even though only the pages near
+   the viewport are mounted. Geometry comes from `pdf-layout`, which reads
+   the document's real page sizes — nothing here estimates. */
+
+.pdf-view {
+  --tugx-pdf-page-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+  --tugx-pdf-page-background: white;
+
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 0;
+  overflow: auto;
+}
+
+.pdf-view-content {
+  position: relative;
+  margin-inline: auto;
+}
+
+.pdf-view-page {
+  position: absolute;
+  background: var(--tugx-pdf-page-background);
+  box-shadow: var(--tugx-pdf-page-shadow);
+}
+
+.pdf-view-canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+/* A page fades in once its canvas carries ink, so a scroll never shows a
+   flash of empty white where a page is still drawing. */
+.pdf-view-page[data-pdf-page-status="drawing"] .pdf-view-canvas {
+  visibility: hidden;
+}

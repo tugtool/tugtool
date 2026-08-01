@@ -365,3 +365,27 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+---
+
+## pdf.js
+
+**Source:** https://github.com/mozilla/pdf.js (`pdfjs-dist`)
+**What was adopted:** The library itself, as a runtime dependency — document parsing, page rasterization, and the text layer. Only the core display API is used; pdf.js's own viewer application, toolbar, and stylesheets are not. The `legacy` build is the one the deck loads, because the modern build calls `Map.prototype.getOrInsertComputed`, which the WebKit at the app's macOS floor does not implement.
+**Used in:** `tugdeck/src/lib/pdf-runtime.ts`, `tugdeck/src/components/tugways/cards/pdf-view.tsx` (the viewer card's PDF surface)
+
+```
+Copyright 2012 Mozilla Foundation
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```

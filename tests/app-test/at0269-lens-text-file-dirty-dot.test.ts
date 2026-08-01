@@ -17,8 +17,8 @@
  * the store layer in `text-card-store.manual.test.ts`; this test covers the
  * projection of that state into the Lens row.
  *
- * @covers tugdeck/src/components/lens/sections/text-files-section.tsx
- * @covers tugdeck/src/components/lens/sections/text-files-data-source.ts
+ * @covers tugdeck/src/components/lens/sections/files-section.tsx
+ * @covers tugdeck/src/components/lens/sections/files-data-source.ts
  * @covers tugdeck/src/lib/text-card-open-registry.ts
  * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
  * @covers tugdeck/src/components/tugways/tug-text-card-editor.tsx

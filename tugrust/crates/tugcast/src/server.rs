@@ -607,6 +607,7 @@ pub(crate) fn build_app(
         .route("/api/permissions/rule", post(crate::permissions::post_rule))
         .route("/api/fs/complete", get(crate::fs_complete::get_fs_complete))
         .route("/api/fs/read", get(crate::fs_read::get_fs_read))
+        .route("/api/fs/blob", get(crate::fs_blob::get_fs_blob))
         .route("/api/fs/mkdir", post(crate::fs_mkdir::post_fs_mkdir))
         .route("/api/fs/stat", post(crate::fs_stat::post_fs_stat))
         .route(

@@ -453,6 +453,36 @@ export const TUG_ACTIONS = {
   ADD_TAB:    "add-tab",
   REOPEN_TAB: "reopen-tab",
 
+  // ---- Document viewing ----
+  //
+  // A paged document surface — today the viewer card's PDF branch — owns
+  // these while it is the first responder. They are deliberately generic:
+  // a second paged viewer would register the same handlers rather than
+  // grow a parallel vocabulary.
+  //
+  // SCROLL_DOCUMENT: payload — `value: { axis: "horizontal" | "vertical";
+  //                  amount: "line" | "page" | "document"; direction: -1 | 1 }`.
+  //                  One action behind every navigation key, because what a
+  //                  key should do depends on the surface's current mode:
+  //                  the same ↓ scrolls in a continuously-scrolled document
+  //                  and turns the page in a paged one. The handler owns
+  //                  that reading; the binding only says how far and which
+  //                  way.
+  // SET_PAGE_MODE:   payload — `value: "continuous" | "single" | "two"`.
+  //                  How pages are grouped and laid out.
+  // ZOOM_IN / ZOOM_OUT: payload — none. Step the surface's zoom ladder.
+  // ZOOM_ACTUAL:     payload — none. Return to 1:1.
+  // ZOOM_TO_FIT:     payload — `value: "width" | "page"`. Fit the current
+  //                  page to the surface by width, or whole. A fit is stored
+  //                  as the choice rather than the scale it measured, so it
+  //                  re-fits when the surface resizes.
+  SCROLL_DOCUMENT: "scroll-document",
+  SET_PAGE_MODE: "set-page-mode",
+  ZOOM_IN: "zoom-in",
+  ZOOM_OUT: "zoom-out",
+  ZOOM_ACTUAL: "zoom-actual",
+  ZOOM_TO_FIT: "zoom-to-fit",
+
   // ---- Accordion / section ----
   //
   // TOGGLE_SECTION: payload — `value: string | string[]` (id or list of

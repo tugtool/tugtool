@@ -73,6 +73,17 @@
   min-inline-size: 0;
 }
 
+/* The kind mark — a document, an image, a PDF. It sits on the name line and
+   never shrinks, so the filenames all start at the same offset whatever kind
+   the row is. Muted: it answers "what is this" without competing with the
+   name. */
+.text-files-row-glyph {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
 /* The name yields the line's slack rather than absorbing it, so its
    disambiguating run keeps hugging it; the slack goes to the picker's leading
    margin below. The picker still ends at the content column's end — the same

@@ -104,11 +104,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// (`validateMenuItem(_:)`) and dynamic menu building read from here.
     private var menuState = MenuState.empty
 
-    /// UTIs a Text card can edit — text and everything that conforms to it
-    /// (source code, JSON, XML, Markdown, …). The Open File… / choosePath
-    /// file panels restrict to these so a binary (image, PDF, archive) can't
-    /// be chosen into an editor that only renders text.
+    /// UTIs a Text card can **edit** — text and everything that conforms to it
+    /// (source code, JSON, XML, Markdown, …). The `choosePath` bridge panel
+    /// restricts to these: its callers choose files into text contexts.
     static let editableContentTypes: [UTType] = [.text, .sourceCode, .plainText]
+
+    /// UTIs a viewer card can **display** — read-only, and enumerated one by
+    /// one rather than tested against `public.image`. Camera RAW conforms to
+    /// `public.image` but WebKit's `<img>` cannot reliably decode it, and Tug
+    /// should only offer what it can actually render. Mirrors the extension
+    /// table in `tugdeck/src/lib/file-kinds.ts` and tugcast's `fs_blob.rs`.
+    ///
+    /// AVIF has no `UTType` static, so it is constructed by identifier;
+    /// `compactMap` drops it on an OS that doesn't know the type rather than
+    /// trapping.
+    static let viewableContentTypes: [UTType] = [
+        UTType.png,
+        UTType.jpeg,
+        UTType.gif,
+        UTType.webP,
+        UTType.heic,
+        UTType.heif,
+        UTType("public.avif") ?? UTType(filenameExtension: "avif"),
+        UTType.tiff,
+        UTType.bmp,
+        UTType.ico,
+        UTType.pdf,
+    ].compactMap { $0 }
+
+    /// Everything Tug will open by any route — the union the Open File… panel
+    /// and the OS open path accept. Editing is the narrower claim; opening is
+    /// the wider one.
+    static let openableContentTypes: [UTType] =
+        editableContentTypes + viewableContentTypes
 
     // Theme menu state
     private var themeMenu: NSMenu!
@@ -596,13 +624,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         openFilesFromOS(urls)
     }
 
-    /// Open each editable text file in `urls` in a Text card — the OS open
-    /// path (Dock-icon drop, Finder "Open With", double-click). Non-text
-    /// files and folders are ignored; opens made before the deck is live
-    /// queue and flush on `bridgeFrontendReady`.
+    /// Open each supported file in `urls` — the OS open path (Dock-icon drop,
+    /// Finder "Open With", double-click). Text lands in a Text card, an image
+    /// or PDF in a viewer card; the deck routes by kind. Unsupported files and
+    /// folders are ignored; opens made before the deck is live queue and flush
+    /// on `bridgeFrontendReady`.
     func openFilesFromOS(_ urls: [URL]) {
         for url in urls where url.isFileURL {
-            guard AppDelegate.isEditableFile(url) else { continue }
+            guard AppDelegate.isOpenableFile(url) else { continue }
             let path = url.path
             if frontendHasLoadedOnce {
                 sendControl("open-file", params: ["path": path])
@@ -642,14 +671,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         window.bridgeUpdateAvailable(version: notice.version, build: notice.build)
     }
 
-    /// Whether `url` is a text file a Text card can edit — a regular file
-    /// whose UTI conforms to one of {@link editableContentTypes}. Guards
-    /// the OS open path so a folder or binary handed to the app is ignored.
-    static func isEditableFile(_ url: URL) -> Bool {
+    /// Whether `url` is a file Tug can open in any card — a regular file whose
+    /// UTI conforms to one of {@link openableContentTypes}, editable or
+    /// viewable. Guards the OS open path so a folder or an unsupported file
+    /// handed to the app is ignored.
+    ///
+    /// Conformance rather than equality on the viewable side too: a subtype
+    /// UTI (a vendor's own JPEG flavor, say) conforms to `public.jpeg` and is
+    /// the same bytes to a decoder, so it should open.
+    static func isOpenableFile(_ url: URL) -> Bool {
         guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentTypeKey]),
               values.isRegularFile == true,
               let type = values.contentType else { return false }
-        return editableContentTypes.contains { type.conforms(to: $0) }
+        return openableContentTypes.contains { type.conforms(to: $0) }
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
@@ -1266,15 +1300,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("arrange-cards", params: ["mode": "tile"])
     }
 
+    // The zoom commands go to the frontmost document surface when there is
+    // one and scale the whole web view otherwise. The branch lives at
+    // invocation rather than at menu-build time because a key equivalent
+    // fires the selector without rebuilding the menu.
+
     @objc private func actualSize(_ sender: Any?) {
+        if menuState.document != nil {
+            sendControl("zoom-actual")
+            return
+        }
         window.actualSize()
     }
 
     @objc private func zoomIn(_ sender: Any?) {
+        if menuState.document != nil {
+            sendControl("zoom-in")
+            return
+        }
         window.zoomIn()
     }
 
     @objc private func zoomOut(_ sender: Any?) {
+        if menuState.document != nil {
+            sendControl("zoom-out")
+            return
+        }
         window.zoomOut()
     }
 
@@ -1300,7 +1351,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = AppDelegate.editableContentTypes
+        panel.allowedContentTypes = AppDelegate.openableContentTypes
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             self?.sendControl("open-file", params: ["path": url.path])
@@ -1917,8 +1968,8 @@ extension AppDelegate: BridgeDelegate {
         panel.allowsMultipleSelection = false
         panel.message = wantFile ? "Choose a file" : "Choose a directory"
         panel.prompt = "Choose"
-        // A file picker only edits text: restrict to text UTIs so binaries
-        // (images, PDFs, archives) can't be chosen into a Text card.
+        // This chooser feeds text contexts only, so it stays restricted to
+        // text UTIs even though Tug can now view images and PDFs elsewhere.
         if wantFile {
             panel.allowedContentTypes = AppDelegate.editableContentTypes
         }
@@ -2216,11 +2267,15 @@ extension AppDelegate: NSMenuDelegate {
         // comparisons use a small epsilon to avoid spurious disables
         // right at the bounds.
         let epsilon: CGFloat = 0.005
+        // A document surface owns its own zoom range, which the host cannot
+        // see, so the page-zoom bounds stop being the right gate while one is
+        // frontmost — the items stay live and the surface clamps.
+        let documentZooms = menuState.document != nil
         let actualSizeItem = NSMenuItem(title: "Actual Size", action: #selector(actualSize(_:)), keyEquivalent: "0").identified("view.actualSize")
-        actualSizeItem.isEnabled = abs(zoom - MainWindow.defaultPageZoom) > epsilon
+        actualSizeItem.isEnabled = documentZooms || abs(zoom - MainWindow.defaultPageZoom) > epsilon
         menu.addItem(actualSizeItem)
         let zoomInItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "+").identified("view.zoomIn")
-        zoomInItem.isEnabled = zoom < MainWindow.maxPageZoom - epsilon
+        zoomInItem.isEnabled = documentZooms || zoom < MainWindow.maxPageZoom - epsilon
         menu.addItem(zoomInItem)
         // ⌘= alias for Zoom In — visible item displays ⌘+, this hidden
         // sibling accepts ⌘= (no-shift) for ergonomic parity with
@@ -2233,7 +2288,7 @@ extension AppDelegate: NSMenuDelegate {
         zoomInAliasItem.allowsKeyEquivalentWhenHidden = true
         menu.addItem(zoomInAliasItem)
         let zoomOutItem = NSMenuItem(title: "Zoom Out", action: #selector(zoomOut(_:)), keyEquivalent: "-").identified("view.zoomOut")
-        zoomOutItem.isEnabled = zoom > MainWindow.minPageZoom + epsilon
+        zoomOutItem.isEnabled = documentZooms || zoom > MainWindow.minPageZoom + epsilon
         menu.addItem(zoomOutItem)
     }
 
@@ -2359,6 +2414,15 @@ struct MenuState {
         let historyVisible: Bool
     }
 
+    /// A document surface's claim on the zoom commands; nil unless the
+    /// frontmost card hosts one. The claim exists because AppKit resolves a
+    /// menu key equivalent before the WKWebView sees a keydown: ⌘+ / ⌘- / ⌘0
+    /// can never be handled web-side, so a surface that wants them says so
+    /// here and the delegate forwards the command instead of scaling the page.
+    struct Document {
+        let cardId: String
+    }
+
     /// Text-card state; nil unless the active card is a Text card. Gates
     /// the classic File menu (Save / Save As… / Save a Copy… / Revert /
     /// Reload) and drives the dynamic ⇧⌘S assignment.
@@ -2422,6 +2486,10 @@ struct MenuState {
     var activeCard: ActiveCard?
     var session: Session?
     var file: File?
+    /// A frontmost surface that owns zoom for itself (the viewer card's PDF
+    /// branch). Present means View ▸ Zoom In / Zoom Out / Actual Size scale
+    /// that document instead of the whole web view.
+    var document: Document?
     var edit: Edit = .disabled
     /// Recent-document paths (newest first) for File ▸ Open Recent. The
     /// submenu delegate filters these to files that still exist.
@@ -2497,6 +2565,10 @@ struct MenuState {
                 hasPath: rawFile["hasPath"] as? Bool ?? false,
                 conflict: rawFile["conflict"] as? Bool ?? false
             )
+        }
+        if let rawDocument = payload["document"] as? [String: Any],
+           let cardId = rawDocument["cardId"] as? String {
+            document = Document(cardId: cardId)
         }
         if let rawRecents = payload["recentDocuments"] as? [String] {
             recentDocuments = rawRecents

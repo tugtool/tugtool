@@ -227,6 +227,7 @@ function readNumber(entry: TaggedValue | undefined): number | undefined {
  */
 const KIND_MIGRATIONS: Readonly<Record<string, string>> = {
   changeset: "sessions",
+  "text-files": "files",
 };
 
 function migrateKinds(

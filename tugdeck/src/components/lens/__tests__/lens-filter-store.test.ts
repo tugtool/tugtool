@@ -24,9 +24,9 @@ describe("lens-filter-store", () => {
 
   test("set / get round-trips per section kind", () => {
     setFilterQuery("snippets", "tug");
-    setFilterQuery("text-files", "css");
+    setFilterQuery("files", "css");
     expect(getFilterQuery("snippets")).toBe("tug");
-    expect(getFilterQuery("text-files")).toBe("css");
+    expect(getFilterQuery("files")).toBe("css");
     expect(getFilterQuery("sessions")).toBe("");
   });
 

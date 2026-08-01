@@ -9,6 +9,7 @@ mod defaults;
 mod dev;
 mod external_sessions;
 mod feeds;
+mod fs_blob;
 mod fs_complete;
 mod fs_mkdir;
 mod fs_read;

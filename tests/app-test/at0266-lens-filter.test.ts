@@ -69,7 +69,7 @@ const ABSENT_FRAGMENT = "qqzzxx";
 const SNIPPETS_SECTION = '.lens-section[data-lens-section="snippets"]';
 /** The Text Files band — this test seeds no text files, so it is the empty
  *  section whose filter must be inert. */
-const EMPTY_SECTION = '.lens-section[data-lens-section="text-files"]';
+const EMPTY_SECTION = '.lens-section[data-lens-section="files"]';
 const EMPTY_FILTER_INPUT = `${EMPTY_SECTION} [data-testid="lens-section-filter"] input`;
 const FILTER_INPUT = `${SNIPPETS_SECTION} [data-testid="lens-section-filter"] input`;
 const FILTER_CLEAR = `${SNIPPETS_SECTION} [data-testid="lens-section-filter"] button`;

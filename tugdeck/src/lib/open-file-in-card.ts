@@ -1,6 +1,14 @@
 /**
  * open-file-in-card.ts — the one implementation behind every
- * "open this path in a Text card" entry point.
+ * "open this path" entry point.
+ *
+ * The path's kind decides the card family: text goes to a Text card, and
+ * everything `file-kinds.ts` classifies as viewable (images, PDFs) goes to a
+ * read-only `file-view` card. Branching here means every producer — ⌘O, Open
+ * Recent, Open Quickly, Finder, transcript links, context menus — inherits the
+ * routing without knowing it exists. Both families share the reuse and
+ * open-target semantics below; a viewer just has no lines to reveal and is
+ * never dirty.
  *
  * Path-keyed reuse: a Text card already bound to `path` is activated
  * (raised + focus-claimed via `transferFocusForActivation`, so the
@@ -41,6 +49,11 @@ import {
   findTextCardByPath,
   getOpenTextCard,
 } from "./text-card-open-registry";
+import {
+  findFileViewCardByPath,
+  getOpenFileViewCard,
+} from "./file-view-open-registry";
+import { isViewableFile } from "./file-kinds";
 import { noteRecentDocument } from "./recent-documents";
 
 /** Read the deck-wide open-target default straight from the tugbank cache. */
@@ -66,34 +79,102 @@ export function readSaveMode(): SaveMode {
 }
 
 /**
- * The frontmost mounted Text card (id + host pane id), or null when the
- * deck has none. "Frontmost" = the visible (active) card of the
- * highest-z pane that shows a Text card; panes are ordered
- * back-to-front, so the last entry is topmost.
+ * The frontmost mounted card of `componentId` (id + host pane id), or null
+ * when the deck has none. "Frontmost" = the visible (active) card of the
+ * highest-z pane that shows one; panes are ordered back-to-front, so the
+ * last entry is topmost.
  */
-function findFrontmostTextCard(
+function findFrontmostCard(
   store: IDeckManagerStore,
+  componentId: string,
 ): { cardId: string; paneId: string } | null {
   const state = store.getSnapshot();
-  const textCardIds = new Set(
-    state.cards.filter((c) => c.componentId === "text").map((c) => c.id),
+  const matchingIds = new Set(
+    state.cards.filter((c) => c.componentId === componentId).map((c) => c.id),
   );
-  if (textCardIds.size === 0) return null;
+  if (matchingIds.size === 0) return null;
   // Prefer the pane's visible card, top pane first.
   for (let i = state.panes.length - 1; i >= 0; i--) {
     const pane = state.panes[i];
-    if (textCardIds.has(pane.activeCardId)) {
+    if (matchingIds.has(pane.activeCardId)) {
       return { cardId: pane.activeCardId, paneId: pane.id };
     }
   }
-  // No Text card is its pane's active card — take any, top pane first.
+  // No matching card is its pane's active card — take any, top pane first.
   for (let i = state.panes.length - 1; i >= 0; i--) {
     const pane = state.panes[i];
     for (const cid of pane.cardIds) {
-      if (textCardIds.has(cid)) return { cardId: cid, paneId: pane.id };
+      if (matchingIds.has(cid)) return { cardId: cid, paneId: pane.id };
     }
   }
   return null;
+}
+
+/**
+ * Open a viewable file (image, PDF) in a read-only `file-view` card. Mirrors
+ * the Text path: reuse the card already bound to `path`, else honor the
+ * deck-wide open target against the frontmost viewer, else a fresh card.
+ * `line` has no meaning for a viewer, so the reveal channel is absent.
+ */
+function openFileInViewerCard(store: IDeckManagerStore, path: string): void {
+  const existing = findFileViewCardByPath(path);
+  if (existing) {
+    transferFocusForActivation({
+      outgoingCardId: store.getFirstResponderCardId(),
+      incomingCardId: existing.cardId,
+      store,
+      commitMutation: () => store.activateCard(existing.cardId),
+    });
+    return;
+  }
+
+  const target = readOpenTarget();
+  const seed = { path };
+
+  if (target !== "new") {
+    const frontmost = findFrontmostCard(store, "file-view");
+    if (frontmost !== null) {
+      if (target === "reuse") {
+        // A viewer is never dirty, so the Text path's dirty guard has no
+        // analogue here — rebinding only swaps which bytes are on screen.
+        const entry = getOpenFileViewCard(frontmost.cardId);
+        if (entry !== null) {
+          transferFocusForActivation({
+            outgoingCardId: store.getFirstResponderCardId(),
+            incomingCardId: frontmost.cardId,
+            store,
+            commitMutation: () => store.activateCard(frontmost.cardId),
+          });
+          entry.openFile(path);
+          return;
+        }
+      } else {
+        // "newTab": a new viewer tab in the frontmost viewer's pane. As on
+        // the Text path, activate explicitly when the target pane sits
+        // behind another, so the file doesn't open in a background pane.
+        const outgoing = store.getFirstResponderCardId();
+        const newId = store.addCardToPane(frontmost.paneId, "file-view", seed);
+        if (newId !== null) {
+          if (store.getFirstResponderCardId() !== newId) {
+            transferFocusForActivation({
+              outgoingCardId: outgoing,
+              incomingCardId: newId,
+              store,
+              commitMutation: () => store.activateCard(newId),
+            });
+          }
+          return;
+        }
+      }
+    }
+  }
+
+  // Same save-before-activation discipline as the Text fall-through: the
+  // surface that dispatched this open — the Lens Files list, say — must save
+  // its focus bag before `addCard` activates the new card ([L23]).
+  const outgoing = store.getFirstResponderCardId();
+  if (outgoing !== null) store.invokeSaveCallback(outgoing);
+  store.addCard("file-view", seed);
 }
 
 export function openFileInCard(
@@ -104,7 +185,14 @@ export function openFileInCard(
 ): void {
   // Every real open flows through here — record it for Open Recent
   // before the card work, so drops / Open Quickly / menu all feed it.
+  // Viewed files belong in Open Recent too, so this runs for every kind.
   noteRecentDocument(path);
+
+  // The one place a path's kind decides which card family it lands in.
+  if (isViewableFile(path)) {
+    openFileInViewerCard(store, path);
+    return;
+  }
 
   const existing = findTextCardByPath(path);
   if (existing) {
@@ -132,7 +220,7 @@ export function openFileInCard(
   };
 
   if (target !== "new") {
-    const frontmost = findFrontmostTextCard(store);
+    const frontmost = findFrontmostCard(store, "text");
     if (frontmost !== null) {
       if (target === "reuse") {
         const entry = getOpenTextCard(frontmost.cardId);
