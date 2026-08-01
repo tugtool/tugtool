@@ -88,6 +88,12 @@ End with a clear ruling:
 - If the plan is **clear to implement**, say so plainly, with the confidence level and
   any watch-items to keep an eye on during the build.
 
+Whenever the verdict names a next move, write it as a literal command on its own line
+with the real plan path substituted in, **inside backticks** — command and path together
+in one span, `` `/tugplug:implement roadmap/my-plan.md` ``. The Session card only turns a
+command line into a clickable chip when it arrives as its own inline code span; written
+as bare prose it is dead text.
+
 ## Guardrails
 
 - **No sub-agents.** Read and judge in-thread.

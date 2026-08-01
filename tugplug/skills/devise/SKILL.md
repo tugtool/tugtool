@@ -121,7 +121,10 @@ click it in the transcript and run it as-is:
 - `/tugplug:implement <plan-path>` — drive the plan to a tested build.
 
 Write both on their own lines with the real path substituted in; never abbreviate the
-path or leave a placeholder. Don't start vetting or implementing from the devise skill
+path or leave a placeholder. **Write each command inside backticks**, command and path
+together in one span — `` `/tugplug:vet roadmap/my-plan.md` ``. The Session card only
+turns a command line into a clickable chip when it arrives as its own inline code span;
+written as bare prose it is dead text. Don't start vetting or implementing from the devise skill
 — authoring, vetting, and implementing are separate steps (as is committing the plan to
 git, which the user owns).
 
