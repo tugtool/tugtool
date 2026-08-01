@@ -26,15 +26,42 @@ import type { CardRegistration } from "@/card-registry";
 export type LensCardsGroup = "sessions" | "files" | "tools";
 
 /**
- * The order groups render in. Sessions above Files reproduces the order the
- * two retired sections stood in, so the section reads as a refinement of what
- * was there rather than a rearrangement.
+ * The order groups render in before the user has moved any. Sessions above
+ * Files reproduces the order the two retired sections stood in, so the section
+ * reads as a refinement of what was there rather than a rearrangement.
  */
 export const GROUP_ORDER: readonly LensCardsGroup[] = [
   "sessions",
   "files",
   "tools",
 ];
+
+/** Whether `name` is a live group — the guard the persisted order is read through. */
+export function isLensCardsGroup(name: string): name is LensCardsGroup {
+  return (GROUP_ORDER as readonly string[]).includes(name);
+}
+
+/**
+ * The groups in the order they render, given the user's persisted arrangement.
+ *
+ * Tolerant in both directions, so the persisted list never needs a migration: a
+ * name that is no longer a group is dropped, and a group the list does not
+ * mention trails the ones it does, in declaration order. Trailing rather than
+ * slotting in beside a declared neighbour is deliberate — once the user has
+ * rearranged, declaration order says nothing about where they would want a new
+ * group, and the bottom is the one place that never displaces an arrangement
+ * they made. It is also where a group they have never seen is easiest to find.
+ */
+export function orderedGroups(
+  persisted: readonly string[],
+): readonly LensCardsGroup[] {
+  const named: LensCardsGroup[] = [];
+  for (const name of persisted) {
+    if (isLensCardsGroup(name) && !named.includes(name)) named.push(name);
+  }
+  if (named.length === 0) return GROUP_ORDER;
+  return [...named, ...GROUP_ORDER.filter((g) => !named.includes(g))];
+}
 
 /** Display titles for the group header rows. */
 export const GROUP_TITLES: Readonly<Record<LensCardsGroup, string>> = {

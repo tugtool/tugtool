@@ -112,6 +112,7 @@ function inputs(
   return {
     deck: d,
     cardsRowOrder: { sessions: [], files: [], tools: [] },
+    groupOrder: [],
     collapsedGroups: [],
     filterQuery: "",
     registryVersion: 0,
@@ -376,6 +377,40 @@ describe("groups", () => {
       }),
     );
     expect(shape(rows)).toEqual(["header:files(2)-collapsed"]);
+  });
+
+  it("render in the user's arranged group order", () => {
+    const d = deck(
+      [card("g1", "settings", "Settings"), card("t1", "text"), card("s1", "session")],
+      [pane("p1", ["g1"]), pane("p2", ["t1"]), pane("p3", ["s1"])],
+    );
+    const rows = buildCardsRows(
+      inputs(d, {
+        groupOrder: ["tools", "files", "sessions"],
+        bindings: new Map([["s1", binding("sess-1")]]),
+      }),
+      resolvers({ groups: STANDARD_GROUPS, paths: { t1: "/x/a.txt" } }),
+    );
+    expect(
+      rows.filter((r) => r.type === "group-header").map((r) => r.group),
+    ).toEqual(["tools", "files", "sessions"]);
+  });
+
+  it("an arranged group with no rows still yields its place to the next", () => {
+    const d = deck(
+      [card("g1", "settings", "Settings"), card("t1", "text")],
+      [pane("p1", ["g1"]), pane("p2", ["t1"])],
+    );
+    const rows = buildCardsRows(
+      inputs(d, { groupOrder: ["tools", "sessions", "files"] }),
+      resolvers({ groups: STANDARD_GROUPS, paths: { t1: "/x/a.txt" } }),
+    );
+    expect(shape(rows)).toEqual([
+      "header:tools(1)",
+      "pane:tool-pane:Settings",
+      "header:files(1)",
+      "pane:file-pane:a.txt",
+    ]);
   });
 
   it("collapsing one group leaves the others alone", () => {

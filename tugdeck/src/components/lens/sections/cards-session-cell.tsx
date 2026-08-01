@@ -289,6 +289,7 @@ export function CardsSessionRow({
       data-session-id={tugSessionId}
       data-lens-row-id={orderKey}
       data-lens-row-group="sessions"
+      data-lens-group-run="sessions"
       indicator={<RowPhaseDot cardId={cardId} />}
       name={renderFilterHighlight(displayName, filterQuery)}
       slots={<SlotPicker cardId={cardId} />}

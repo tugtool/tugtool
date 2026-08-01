@@ -28,6 +28,7 @@ export interface LensState {
   widthPx: number;
   sectionOrder: readonly string[];
   cardsRowOrder: LensCardsRowOrder;
+  cardsGroupOrder: readonly string[];
   collapsedCardGroups: readonly string[];
   collapsedSections: readonly string[];
 }
@@ -40,6 +41,7 @@ export type LensEvent =
       group: LensCardsGroup;
       order: readonly string[];
     }
+  | { type: "set_cards_group_order"; order: readonly string[] }
   | {
       type: "set_cards_group_collapsed";
       group: LensCardsGroup;
@@ -57,6 +59,7 @@ export type LensEvent =
       widthPx?: number;
       sectionOrder?: readonly string[];
       cardsRowOrder?: LensCardsRowOrder;
+      cardsGroupOrder?: readonly string[];
       collapsedCardGroups?: readonly string[];
       collapsedSections?: readonly string[];
     };
@@ -66,6 +69,7 @@ export function createInitialState(): LensState {
     widthPx: DEFAULT_LENS_WIDTH_PX,
     sectionOrder: [],
     cardsRowOrder: EMPTY_CARDS_ROW_ORDER,
+    cardsGroupOrder: [],
     collapsedCardGroups: [],
     collapsedSections: [],
   };
@@ -165,6 +169,11 @@ export function reduce(state: LensState, event: LensEvent): LensState {
       return { ...state, cardsRowOrder: next };
     }
 
+    case "set_cards_group_order": {
+      if (listsEqual(state.cardsGroupOrder, event.order)) return state;
+      return { ...state, cardsGroupOrder: [...event.order] };
+    }
+
     case "set_cards_group_collapsed": {
       const next = withMembership(
         state.collapsedCardGroups,
@@ -214,6 +223,13 @@ export function reduce(state: LensState, event: LensEvent): LensState {
           files: [...event.cardsRowOrder.files],
           tools: [...event.cardsRowOrder.tools],
         };
+      }
+      if (
+        event.cardsGroupOrder !== undefined &&
+        !listsEqual(state.cardsGroupOrder, event.cardsGroupOrder)
+      ) {
+        bump();
+        next.cardsGroupOrder = [...event.cardsGroupOrder];
       }
       if (
         event.collapsedCardGroups !== undefined &&

@@ -35,7 +35,12 @@ import { registerFileViewCard } from "@/components/tugways/cards/file-view-card-
 import { registerDiffCard } from "@/components/tugways/cards/diff-card";
 import { registerGalleryCards } from "@/components/tugways/cards/gallery-registrations";
 
-import { GROUP_ORDER, GROUP_TITLES, resolveLensGroup } from "../cards-groups";
+import {
+  GROUP_ORDER,
+  GROUP_TITLES,
+  orderedGroups,
+  resolveLensGroup,
+} from "../cards-groups";
 
 // bun shares module state across test files, so register from scratch.
 beforeAll(() => {
@@ -116,6 +121,44 @@ describe("resolveLensGroup — totality", () => {
 describe("group order and titles", () => {
   test("groups render sessions, files, tools", () => {
     expect(GROUP_ORDER).toEqual(["sessions", "files", "tools"]);
+  });
+
+  test("no persisted arrangement renders the built-in order", () => {
+    expect(orderedGroups([])).toEqual(GROUP_ORDER);
+  });
+
+  test("a persisted arrangement is honored", () => {
+    expect(orderedGroups(["tools", "files", "sessions"])).toEqual([
+      "tools",
+      "files",
+      "sessions",
+    ]);
+  });
+
+  test("a name that is no longer a group is dropped, not rendered", () => {
+    expect(orderedGroups(["files", "changesets", "sessions"])).toEqual([
+      "files",
+      "sessions",
+      "tools",
+    ]);
+  });
+
+  test("a duplicate name is taken once", () => {
+    expect(orderedGroups(["files", "files", "sessions"])).toEqual([
+      "files",
+      "sessions",
+      "tools",
+    ]);
+  });
+
+  test("an unmentioned group trails the arrangement it was never part of", () => {
+    expect(orderedGroups(["tools", "sessions"])).toEqual([
+      "tools",
+      "sessions",
+      "files",
+    ]);
+    // Declaration order decides only among the unmentioned.
+    expect(orderedGroups(["tools"])).toEqual(["tools", "sessions", "files"]);
   });
 
   test("every group has a title", () => {

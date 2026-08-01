@@ -9,6 +9,14 @@
  * row is being carried. Distance is what tells the two apart, rather than
  * which pixels were pressed — which is what lets one surface answer to both.
  *
+ * What carries is a **block**: every element matching {@link
+ * UseBlockReorderOptions.selector} whose {@link UseBlockReorderOptions.kindAttr}
+ * holds the same key. Usually that is one element — a section, a row. Where a
+ * key names a contiguous RUN (the Cards section's group header plus every row
+ * filed under it) the whole run lifts, shifts, and settles as one thing, which
+ * is what makes a group draggable without the list needing a wrapper element to
+ * hang the group off.
+ *
  * Where a row's surface is ALSO a native drag source (a snippet's incipit,
  * dragged into a session prompt) the axis arbitrates as well: the list is a
  * column, so a vertical act is the carry and a horizontal one is the drag-out
@@ -155,26 +163,41 @@ export function useBlockReorder({
       const dragIndex = visible.indexOf(kind);
       if (dragIndex < 0) return;
 
-      // kind → element, in visible order.
-      const elByKind = new Map<string, HTMLElement>();
+      // kind → the RUN of elements carrying it, in DOM order. Usually one
+      // element per kind — a section, a row. A kind may equally name a
+      // contiguous run (the Cards section's group header plus every row filed
+      // under it), and then the whole run is what carries: one block, moving
+      // and settling as a unit. Everything below works on blocks, so the
+      // one-element case is just the degenerate one.
+      const elsByKind = new Map<string, HTMLElement[]>();
       for (const el of Array.from(
         container.querySelectorAll<HTMLElement>(selector),
       )) {
         const k = el.getAttribute(kindAttr);
-        if (k !== null) elByKind.set(k, el);
+        if (k === null) continue;
+        const run = elsByKind.get(k);
+        if (run === undefined) elsByKind.set(k, [el]);
+        else run.push(el);
       }
-      const els = visible.map((k) => elByKind.get(k));
-      if (els.some((e) => e === undefined)) return;
-      const sections = els as HTMLElement[];
+      const runs = visible.map((k) => elsByKind.get(k));
+      if (runs.some((e) => e === undefined)) return;
+      const blocks = runs as HTMLElement[][];
+      const allEls = Array.from(elsByKind.values()).flat();
 
       const n = visible.length;
       const containerRect = container.getBoundingClientRect();
       const containerTop = containerRect.top;
-      const rects = sections.map((el) => el.getBoundingClientRect());
+      // A block's box is the union of its elements' — its first element's top
+      // to its last one's bottom.
+      const rects = blocks.map((block) => {
+        const first = block[0].getBoundingClientRect();
+        const last = block[block.length - 1].getBoundingClientRect();
+        return { top: first.top, bottom: last.bottom, height: last.bottom - first.top };
+      });
       const tops = rects.map((r) => r.top);
       const bottoms = rects.map((r) => r.bottom);
       const midpoints = rects.map((r) => r.top + r.height / 2);
-      // The dragged's occupied vertical advance (height + any inter-section gap).
+      // The dragged's occupied vertical advance (height + any inter-block gap).
       const slot =
         dragIndex + 1 < n
           ? tops[dragIndex + 1] - tops[dragIndex]
@@ -182,13 +205,15 @@ export function useBlockReorder({
             ? tops[dragIndex] - tops[dragIndex - 1]
             : rects[dragIndex].height;
 
-      const dragged = sections[dragIndex];
+      const dragged = blocks[dragIndex];
       const caret = caretRef.current;
       let targetIndex = dragIndex;
 
       draggingRef.current = true;
-      dragged.setAttribute("data-dragging", "true");
-      dragged.style.transition = "none";
+      for (const el of dragged) {
+        el.setAttribute("data-dragging", "true");
+        el.style.transition = "none";
+      }
       // The press that started this was a plain press on text, so it may have
       // begun a selection and the browser would keep extending it for the
       // length of the carry. Drop what it took and suppress selection in the
@@ -207,9 +232,10 @@ export function useBlockReorder({
         for (let i = 0; i < n; i++) {
           if (i === dragIndex) continue;
           const ty = shiftFor(i, target);
-          const el = sections[i];
-          el.style.transition = `transform ${SETTLE_MS}ms ease`;
-          el.style.transform = ty === 0 ? "" : `translateY(${ty}px)`;
+          for (const el of blocks[i]) {
+            el.style.transition = `transform ${SETTLE_MS}ms ease`;
+            el.style.transform = ty === 0 ? "" : `translateY(${ty}px)`;
+          }
         }
         if (caret !== null) {
           if (target === dragIndex) {
@@ -246,7 +272,9 @@ export function useBlockReorder({
 
       const moveTo = (clientY: number): void => {
         const dy = clampDy(clientY - startY);
-        dragged.style.transform = `translateY(${dy}px) scale(0.99)`;
+        for (const el of dragged) {
+          el.style.transform = `translateY(${dy}px) scale(0.99)`;
+        }
         const t = computeTarget(clientY);
         if (t !== targetIndex) {
           targetIndex = t;
@@ -255,47 +283,52 @@ export function useBlockReorder({
       };
       const onMove = (ev: PointerEvent): void => moveTo(ev.clientY);
 
+      const carried = blocks.flat();
+
       const clearInline = (): void => {
-        for (const el of sections) {
+        for (const el of carried) {
           el.style.transition = "";
           el.style.transform = "";
         }
       };
 
-      // Animate every section from its current transform back to none, then
+      // Animate every block from its current transform back to none, then
       // clear — used for an abort or an unchanged-index drop (no commit).
       const settleBack = (): void => {
-        for (const el of sections) {
+        for (const el of carried) {
           el.style.transition = `transform ${SETTLE_MS}ms ease`;
           el.style.transform = "";
         }
-        dragged.removeAttribute("data-dragging");
+        for (const el of dragged) el.removeAttribute("data-dragging");
         container.removeAttribute("data-reordering");
         caret?.removeAttribute("data-visible");
         window.setTimeout(() => {
-          for (const el of sections) el.style.transition = "";
+          for (const el of carried) el.style.transition = "";
           draggingRef.current = false;
         }, SETTLE_CLEAR_MS);
       };
 
       // FLIP the commit: snapshot the pre-commit visual, reorder synchronously,
-      // then invert → play so each section slides from where it looked into
-      // its committed slot (jump-free across unequal heights).
+      // then invert → play so each element slides from where it looked into
+      // its committed slot (jump-free across unequal heights). Per ELEMENT
+      // rather than per block: a block's members can be re-parented into
+      // different slots by the commit, and each one still has to land without
+      // a jump.
       const settleCommit = (): void => {
         const newVisible = moveInArray(visible, dragIndex, targetIndex);
-        const first = new Map<string, number>();
-        for (const [k, el] of elByKind) first.set(k, el.getBoundingClientRect().top);
+        const first = new Map<HTMLElement, number>();
+        for (const el of allEls) first.set(el, el.getBoundingClientRect().top);
 
         clearInline();
-        dragged.removeAttribute("data-dragging");
+        for (const el of dragged) el.removeAttribute("data-dragging");
         container.removeAttribute("data-reordering");
         caret?.removeAttribute("data-visible");
 
         flushSync(() => commitRef.current(newVisible));
 
-        for (const [k, el] of elByKind) {
+        for (const el of allEls) {
           const last = el.getBoundingClientRect().top;
-          const dy = (first.get(k) ?? last) - last;
+          const dy = (first.get(el) ?? last) - last;
           el.style.transition = "none";
           el.style.transform = dy === 0 ? "" : `translateY(${dy}px)`;
         }
@@ -303,12 +336,12 @@ export function useBlockReorder({
         // then play to none on the next frame.
         void container.offsetHeight;
         requestAnimationFrame(() => {
-          for (const el of elByKind.values()) {
+          for (const el of allEls) {
             el.style.transition = `transform ${SETTLE_MS}ms ease`;
             el.style.transform = "";
           }
           window.setTimeout(() => {
-            for (const el of elByKind.values()) el.style.transition = "";
+            for (const el of allEls) el.style.transition = "";
             draggingRef.current = false;
           }, SETTLE_CLEAR_MS);
         });

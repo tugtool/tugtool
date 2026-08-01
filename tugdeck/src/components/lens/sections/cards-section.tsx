@@ -21,9 +21,10 @@
  * the mouse only the chevron toggles — the rest of the header is inert.
  *
  * The list is one Tab stop in the Lens; arrows rove the movement cursor,
- * Enter/click fronts the row's card (`focus-session-card`). Pane rows are
- * carried to reorder them via the shared `useBlockReorder` FLIP, committing to
- * `lensStore`'s `cardsRowOrder` on drop.
+ * Enter/click fronts the row's card (`focus-session-card`). Two things carry,
+ * both on the shared `useBlockReorder` FLIP: a pane row within its own group
+ * (committing `cardsRowOrder`), and a whole GROUP by its header — the header
+ * and every row under it move as one block (committing `cardsGroupOrder`).
  *
  * Laws: [L02] the deck, the open registries, the bindings, and the persisted
  * arrangement all enter React through `useSyncExternalStore`; [L06] cursor,
@@ -98,6 +99,13 @@ const SECTION_KIND = "cards";
 const ROW_SELECTOR = ".lens-cards-row[data-lens-row-id]";
 const ROW_KIND_ATTR = "data-lens-row-id";
 
+// A group's run for the GROUP reorder: its header plus every row filed under
+// it, all carrying the same group name. `useBlockReorder` treats elements
+// sharing a key as one block, so matching the run here is the whole of what
+// makes a group carry its rows with it.
+const GROUP_RUN_SELECTOR = "[data-lens-group-run]";
+const GROUP_RUN_ATTR = "data-lens-group-run";
+
 /** Focus group for a row's close box. The rows render inside `TugListView`'s
  *  per-row `FocusModeContext`, so the button registers into its own row's
  *  descend scope — the mode scopes the walk, this constant is only the
@@ -114,6 +122,7 @@ let lastSelectedRowId: string | null = null;
 interface CardsCellContextValue {
   onRowPointerDown: (orderKey: string, event: React.PointerEvent) => void;
   onClose: (cardId: string) => void;
+  onGroupPointerDown: (group: LensCardsGroup, event: React.PointerEvent) => void;
   onToggleGroup: (group: LensCardsGroup) => void;
   filterQuery: string;
 }
@@ -208,6 +217,7 @@ function OneLineRow({
           ? "lens-cards-oneline lens-cards-subrow"
           : "lens-cards-oneline lens-cards-row"
       }
+      data-lens-group-run={group}
       {...(rowId !== null
         ? { "data-lens-row-id": rowId, "data-lens-row-group": group }
         : {})}
@@ -298,12 +308,15 @@ const GroupHeaderCell: TugListViewCellRenderer<LensCardsDataSource> = ({
     <TugListRow
       className="lens-cards-header"
       data-lens-group={row.group}
+      data-lens-group-run={row.group}
       data-group-collapsed={row.collapsed ? "true" : "false"}
       data-testid="lens-cards-header"
-      // Not behavior on a presentational row — the absence of it. Both
-      // handlers exist only to keep the pointer from reaching the cell
-      // wrapper, which is what would pick the row and toggle the group.
-      onPointerDown={(e) => e.stopPropagation()}
+      // The header IS the group's drag handle: a press arms the carry of the
+      // whole run, and travel past the threshold engages it.
+      onPointerDown={(e) => ctx.onGroupPointerDown(row.group, e)}
+      // Below the threshold the press is still a click, and on a header a
+      // click is nothing — the chevron is the only thing that folds. Swallowed
+      // so the cell wrapper never reads it as a pick.
       onClick={(e) => e.stopPropagation()}
     >
       <span className="lens-cards-header-line">
@@ -527,6 +540,10 @@ function useCardsInputs(filterQuery: string): {
     lensStore.subscribe,
     useCallback(() => lensStore.getSnapshot().cardsRowOrder, []),
   );
+  const groupOrder = useSyncExternalStore(
+    lensStore.subscribe,
+    useCallback(() => lensStore.getSnapshot().cardsGroupOrder, []),
+  );
   const collapsedGroups = useSyncExternalStore(
     lensStore.subscribe,
     useCallback(() => lensStore.getSnapshot().collapsedCardGroups, []),
@@ -544,6 +561,7 @@ function useCardsInputs(filterQuery: string): {
   );
   const dataSource = useLensCardsDataSource({
     cardsRowOrder,
+    groupOrder,
     collapsedGroups,
     filterQuery,
     bindings,
@@ -642,6 +660,30 @@ function CardsSectionBody({
     [filtering, beginRowReorder, dataSource],
   );
 
+  // Reorder the GROUPS themselves, by carrying a group header. The block the
+  // hook carries is the whole run — the header and every row filed under it,
+  // all wearing the same `data-lens-group-run` — so Sessions travels with its
+  // sessions and lands as one thing. Same container, same caret, same FLIP;
+  // only the granularity differs.
+  const { onRowPointerDown: beginGroupReorder } = useBlockReorder({
+    containerRef: listWrapRef,
+    caretRef,
+    getVisibleOrder: () => dataSource.visibleGroupOrder(),
+    commit: (order) => lensStore.setCardsGroupOrder([...order]),
+    selector: GROUP_RUN_SELECTOR,
+    kindAttr: GROUP_RUN_ATTR,
+  });
+  // Unarmed while filtering, for the row reorder's reason: a group with no
+  // surviving row emits no header, so the visible order is a partial one and
+  // committing it would drop the missing group's place.
+  const onGroupPointerDown = useCallback(
+    (group: LensCardsGroup, event: React.PointerEvent): void => {
+      if (filtering) return;
+      beginGroupReorder(group, event);
+    },
+    [filtering, beginGroupReorder],
+  );
+
   // The close box names the card it closes — `close-tab` carrying the row's own
   // `cardId`, walked from that card up to its host pane. This is the tab ×'s
   // event, and for the same reason: `close` means "close the active one", which
@@ -671,8 +713,20 @@ function CardsSectionBody({
   }, []);
 
   const cellContext = useMemo<CardsCellContextValue>(
-    () => ({ onRowPointerDown, onClose, onToggleGroup, filterQuery }),
-    [onRowPointerDown, onClose, onToggleGroup, filterQuery],
+    () => ({
+      onRowPointerDown,
+      onClose,
+      onGroupPointerDown,
+      onToggleGroup,
+      filterQuery,
+    }),
+    [
+      onRowPointerDown,
+      onClose,
+      onGroupPointerDown,
+      onToggleGroup,
+      filterQuery,
+    ],
   );
 
   // A card row has no "selected but not activated" state: Space/click

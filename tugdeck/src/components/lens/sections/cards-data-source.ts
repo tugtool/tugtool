@@ -15,7 +15,9 @@
  *    per-pane fold state anywhere in this file, and none is coming — a heavy
  *    stack is handled by collapsing its *group*.
  *
- * Rows are emitted per group in {@link GROUP_ORDER}. A group with no pane rows
+ * Rows are emitted group by group, in the user's arranged order (`orderedGroups`
+ * over the persisted list, falling back to {@link GROUP_ORDER}). A group with no
+ * pane rows
  * emits nothing at all, not an empty header. A collapsed group emits its
  * header and nothing else — the header is the way back.
  *
@@ -59,7 +61,12 @@ import {
 } from "@/lib/text-card-open-registry";
 import { filterAndRank, filterQueryMatch } from "@/lib/text-match";
 
-import { GROUP_ORDER, resolveLensGroup, type LensCardsGroup } from "./cards-groups";
+import {
+  GROUP_ORDER,
+  orderedGroups,
+  resolveLensGroup,
+  type LensCardsGroup,
+} from "./cards-groups";
 
 // ---------------------------------------------------------------------------
 // Path helpers — the display vocabulary shared by every file-kind row
@@ -285,6 +292,8 @@ export interface LensCardsInputs {
   readonly deck: DeckState | null;
   /** The user's persisted per-group arrangement, by order key. */
   readonly cardsRowOrder: LensCardsRowOrder;
+  /** The user's persisted group order; empty means the built-in one. */
+  readonly groupOrder: readonly string[];
   /** Groups the user has collapsed. */
   readonly collapsedGroups: readonly string[];
   /** The band's filter query. Empty / whitespace → every row. */
@@ -467,7 +476,7 @@ export function buildCardsRows(
   const collapsed = new Set(inputs.collapsedGroups);
   const rows: CardsRow[] = [];
 
-  for (const group of GROUP_ORDER) {
+  for (const group of orderedGroups(inputs.groupOrder)) {
     const bucket = buckets.get(group)!;
     if (bucket.length === 0) continue;
 
@@ -620,6 +629,7 @@ export class LensCardsDataSource implements TugListViewDataSource {
     if (
       this.inputs.deck === next.deck &&
       this.inputs.cardsRowOrder === next.cardsRowOrder &&
+      this.inputs.groupOrder === next.groupOrder &&
       this.inputs.collapsedGroups === next.collapsedGroups &&
       this.inputs.filterQuery === next.filterQuery &&
       this.inputs.registryVersion === next.registryVersion &&
@@ -656,6 +666,20 @@ export class LensCardsDataSource implements TugListViewDataSource {
     const out: string[] = [];
     for (const row of this.rows) {
       if (row.type === "pane") out.push(row.orderKey);
+    }
+    return out;
+  }
+
+  /**
+   * The groups as RENDERED, in emission order — the group reorder hook's
+   * `getVisibleOrder`. Same derived-from-the-projection discipline as
+   * {@link visibleOrder}: a group with no rows emits no header, so it must not
+   * appear here either.
+   */
+  visibleGroupOrder(): LensCardsGroup[] {
+    const out: LensCardsGroup[] = [];
+    for (const row of this.rows) {
+      if (row.type === "group-header") out.push(row.group);
     }
     return out;
   }

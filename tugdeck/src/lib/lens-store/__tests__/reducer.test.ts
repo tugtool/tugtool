@@ -193,6 +193,7 @@ describe("LensStore reducer — hydrate", () => {
       widthPx: 500,
       sectionOrder: ["log"],
       cardsRowOrder: EMPTY_CARDS_ROW_ORDER,
+      cardsGroupOrder: [],
       collapsedCardGroups: [],
       collapsedSections: ["log"],
     };
@@ -214,6 +215,7 @@ describe("LensStore reducer — hydrate", () => {
       widthPx: 420,
       sectionOrder: ["log", "telemetry"],
       cardsRowOrder: EMPTY_CARDS_ROW_ORDER,
+      cardsGroupOrder: [],
       collapsedCardGroups: [],
       collapsedSections: [],
     };
@@ -233,6 +235,7 @@ describe("LensStore reducer — toSnapshot", () => {
       widthPx: 500,
       sectionOrder: ["log", "telemetry"],
       cardsRowOrder: EMPTY_CARDS_ROW_ORDER,
+      cardsGroupOrder: [],
       collapsedCardGroups: [],
       collapsedSections: ["log"],
     };

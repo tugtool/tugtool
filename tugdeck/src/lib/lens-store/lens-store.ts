@@ -92,6 +92,12 @@ class LensStore {
     const collapsedCardGroups = readStringArray(
       client.get(LENS_DOMAIN, LENS_KEYS.CARDS_COLLAPSED_GROUPS),
     );
+    // Same tolerance for the group ORDER: the projection filters it against
+    // the live group set on every build, so an unknown name costs nothing and
+    // a missing one falls back to its built-in position.
+    const cardsGroupOrder = readStringArray(
+      client.get(LENS_DOMAIN, LENS_KEYS.CARDS_GROUP_ORDER),
+    );
     // A user arriving from the Sessions/Files era has no `cardsRowOrder` yet
     // but does have the two lists it supersedes, and those lists are exactly
     // the two groups' orders. Seeding from them carries the arrangement
@@ -115,6 +121,7 @@ class LensStore {
         ...(widthPx !== undefined ? { widthPx } : {}),
         ...(sectionOrder !== undefined ? { sectionOrder } : {}),
         ...(cardsRowOrder !== undefined ? { cardsRowOrder } : {}),
+        ...(cardsGroupOrder !== undefined ? { cardsGroupOrder } : {}),
         ...(collapsedCardGroups !== undefined ? { collapsedCardGroups } : {}),
         ...(collapsedSections !== undefined ? { collapsedSections } : {}),
       },
@@ -151,6 +158,9 @@ class LensStore {
     }
     if (prev.cardsRowOrder !== next.cardsRowOrder) {
       putJson(LENS_KEYS.CARDS_ROW_ORDER, next.cardsRowOrder);
+    }
+    if (prev.cardsGroupOrder !== next.cardsGroupOrder) {
+      putJson(LENS_KEYS.CARDS_GROUP_ORDER, next.cardsGroupOrder);
     }
     if (prev.collapsedCardGroups !== next.collapsedCardGroups) {
       putJson(LENS_KEYS.CARDS_COLLAPSED_GROUPS, next.collapsedCardGroups);
@@ -201,6 +211,15 @@ class LensStore {
   ): void => {
     this._ensureInitialized();
     this._dispatch({ type: "set_cards_row_order", group, order });
+  };
+
+  /**
+   * Replace the Cards section's group order — the runs themselves, as carried
+   * by a group header. Persists.
+   */
+  setCardsGroupOrder = (order: readonly string[]): void => {
+    this._ensureInitialized();
+    this._dispatch({ type: "set_cards_group_order", order });
   };
 
   /** Expand/collapse one Cards-section group. Persists. */

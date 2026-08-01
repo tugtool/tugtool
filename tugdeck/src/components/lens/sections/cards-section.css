@@ -29,8 +29,9 @@
   min-block-size: 0;
 }
 
-/* The reorder-drag lift on a pane row while it is being carried. */
-.lens-cards-row[data-dragging="true"] {
+/* The reorder-drag lift on whatever is being carried — a single pane row, or
+   every row of a group when the group itself is the block. */
+.lens-cards-list [data-dragging="true"] {
   opacity: 0.6;
   z-index: 2;
 }

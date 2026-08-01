@@ -40,6 +40,7 @@ export const LENS_KEYS = {
   /** @deprecated Read on hydrate to seed `CARDS_ROW_ORDER`; never written. */
   TEXT_FILE_ORDER: "textFileOrder",
   CARDS_ROW_ORDER: "cardsRowOrder",
+  CARDS_GROUP_ORDER: "cardsGroupOrder",
   CARDS_COLLAPSED_GROUPS: "cardsCollapsedGroups",
   COLLAPSED_SECTIONS: "collapsedSections",
 } as const;
@@ -77,6 +78,15 @@ export interface LensSnapshot {
    * the list sort AFTER the ordered set, and stale keys are ignored.
    */
   cardsRowOrder: LensCardsRowOrder;
+  /**
+   * Persisted order of the Cards section's GROUPS — the runs themselves, moved
+   * by carrying a group header. Empty until the user rearranges them, and
+   * tolerant of drift in both directions: a name that is no longer a group is
+   * ignored, and a group the list does not name renders in its built-in
+   * position (`GROUP_ORDER` in `cards-groups.ts`), so adding a fourth group
+   * never needs a migration.
+   */
+  cardsGroupOrder: readonly string[];
   /** Cards-section groups the user has collapsed. */
   collapsedCardGroups: readonly string[];
   /** Kinds the user has collapsed (band-only). */
