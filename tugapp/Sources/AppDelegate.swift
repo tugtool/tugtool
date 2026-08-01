@@ -154,6 +154,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         lap("start")
 
+        // Harness pid mode: run as an accessory. A `.regular` app
+        // activates itself once it finishes launching and has a visible
+        // window — `open -g` only suppresses the initial activation
+        // request, so without this the app takes the user's focus ~10ms
+        // after `processManager.start` returns, before any test verb
+        // runs. An accessory app never activates on its own, and its
+        // windows still render, so gestures and screenshots are
+        // unaffected. Foreground tests launch in session mode and keep
+        // the regular policy.
+        if ProcessInfo.processInfo.environment["TUGAPP_NATIVE_EVENT_MODE"] == "pid" {
+            NSApp.setActivationPolicy(.accessory)
+        }
+
         TugLog.start()
 
         // Tug has no native window tabbing — cards and panes are Tug's own
