@@ -78,6 +78,17 @@
 
 /* ── The one-line row ─────────────────────────────────────────────────────── */
 
+/* THE DENSE ROW METRIC. A one-line row bottoms out on its 24px close box, so
+   the block padding is the only thing that sets its height — the same 2px the
+   Snippets list takes from `.lens-oneline-list`, which is what makes a file row
+   and a snippet row the same height down the rail. Scoped to the one-line rows
+   on purpose: the session monitor rows are three lines and keep the row
+   default's air, and the group headers keep theirs so a group reads as
+   separated from the one above it. */
+.lens-cards-list .lens-cards-oneline {
+  --tugx-list-row-padding-block: 2px;
+}
+
 /* The row's one line: the glyph, the name, its disambiguating directory run,
    the tab count, and the slot picker. Authored by hand (see `OneLineRow`) so
    the picker rides the name line at the same height the session row's does. */
@@ -165,29 +176,41 @@
   min-inline-size: 0;
 }
 
-/* The chevron points down when the group is open and right when it is
-   collapsed — a rotation on the attribute, never a swapped glyph ([L06]). */
+/* The chevron is the header's whole mouse target, so it is a real button and
+   wears a button's hover. It never shrinks, and it holds the same leading
+   column the rows' glyphs do. */
 .lens-cards-header-chevron {
-  display: flex;
   flex: 0 0 auto;
-  align-items: center;
   color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* The mark points down when the group is open and right when it is collapsed —
+   a rotation on the attribute, never a swapped glyph ([L06]). The rotation is
+   on the icon rather than the button so the hover square stays square. */
+.lens-cards-header-chevron svg {
   transition: transform var(--tug-duration-fast, 120ms) ease;
   transform: rotate(90deg);
 }
 
-.lens-cards-header[data-group-collapsed="true"] .lens-cards-header-chevron {
+.lens-cards-header[data-group-collapsed="true"] .lens-cards-header-chevron svg {
   transform: rotate(0deg);
 }
 
-/* How many pane rows the group holds. Takes the line's slack so it sits at the
-   content column's end, where the slot pickers are. */
+/* How many pane rows the group holds — ink ONLY while the group is collapsed,
+   where the number is the sole report of what the fold is hiding. Open, the
+   rows themselves are the count and a tally out at the column's end is just
+   noise. It sits against the title in the label's own bolder weight, so it
+   reads as part of the group's name rather than as a separate column. */
 .lens-cards-header-count {
   flex: 0 0 auto;
-  margin-inline-start: auto;
   font-size: 0.85em;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--tug7-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+.lens-cards-header:not([data-group-collapsed="true"]) .lens-cards-header-count {
+  display: none;
 }
 
 /* ── Subrows ──────────────────────────────────────────────────────────────── */

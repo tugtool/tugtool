@@ -16,8 +16,9 @@
  *    collapsing its *group*.
  *
  * Group headers are cursorable rows, not `TugListView`'s inert `"header"`
- * role: the arrow walk reaches them and Enter/Space/click toggles that group's
- * collapse. That choice is what makes the cursor-seed rule below necessary.
+ * role: the arrow walk reaches them and Enter/Space toggles that group's
+ * collapse. That choice is what makes the cursor-seed rule below necessary. To
+ * the mouse only the chevron toggles — the rest of the header is inert.
  *
  * The list is one Tab stop in the Lens; arrows rove the movement cursor,
  * Enter/click fronts the row's card (`focus-session-card`). Pane rows are
@@ -113,6 +114,7 @@ let lastSelectedRowId: string | null = null;
 interface CardsCellContextValue {
   onRowPointerDown: (orderKey: string, event: React.PointerEvent) => void;
   onClose: (cardId: string) => void;
+  onToggleGroup: (group: LensCardsGroup) => void;
   filterQuery: string;
 }
 const CardsCellContext = React.createContext<CardsCellContextValue | null>(null);
@@ -201,7 +203,11 @@ function OneLineRow({
   const hoverPath = identity.path !== null ? displayPath(identity.path) : "";
   return (
     <TugListRow
-      className={subrow ? "lens-cards-subrow" : "lens-cards-row"}
+      className={
+        subrow
+          ? "lens-cards-oneline lens-cards-subrow"
+          : "lens-cards-oneline lens-cards-row"
+      }
       {...(rowId !== null
         ? { "data-lens-row-id": rowId, "data-lens-row-group": group }
         : {})}
@@ -269,28 +275,53 @@ function OneLineRow({
 // Cell renderers
 // ---------------------------------------------------------------------------
 
-/** The group header: a cursorable row whose activation toggles the group's
- *  collapse. It composes `TugListRow` like every other row — the chevron's
- *  direction is a CSS response to `data-group-collapsed` ([L06]). */
+/** The group header: a cursorable row whose keyboard activation toggles the
+ *  group's collapse. It composes `TugListRow` like every other row — the
+ *  chevron's direction is a CSS response to `data-group-collapsed` ([L06]).
+ *
+ *  To the MOUSE the header body is inert: the chevron is the entire click
+ *  target, and the row swallows the pointer so no part of a label the user is
+ *  reading past can fold a group out from under them. The chevron is therefore
+ *  a real button with a button's hover, which is also what says where to aim.
+ *  Keyboard reach is unaffected — the row stays cursorable, and Enter/Space go
+ *  to the delegate. */
 const GroupHeaderCell: TugListViewCellRenderer<LensCardsDataSource> = ({
   index,
   dataSource,
 }: TugListViewCellProps<LensCardsDataSource>) => {
   const row = dataSource.rowAt(index);
+  const ctx = useCellContext();
   if (row.type !== "group-header") return null;
+  const title = GROUP_TITLES[row.group];
+  const verb = row.collapsed ? "Expand" : "Collapse";
   return (
     <TugListRow
       className="lens-cards-header"
       data-lens-group={row.group}
       data-group-collapsed={row.collapsed ? "true" : "false"}
       data-testid="lens-cards-header"
+      // Not behavior on a presentational row — the absence of it. Both
+      // handlers exist only to keep the pointer from reaching the cell
+      // wrapper, which is what would pick the row and toggle the group.
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
     >
       <span className="lens-cards-header-line">
-        <span className="lens-cards-header-chevron" aria-hidden="true">
-          <ChevronRight size={12} />
-        </span>
+        <TugIconButton
+          className="lens-cards-header-chevron"
+          icon={<ChevronRight size={12} />}
+          size="2xs"
+          aria-label={`${verb} ${title}`}
+          title={`${verb} ${title}`}
+          focusGroup={ROW_ACTION_FOCUS_GROUP}
+          focusOrder={0}
+          onClick={(e) => {
+            e?.stopPropagation();
+            ctx.onToggleGroup(row.group);
+          }}
+        />
         <TugLabel className="tug-list-row-title" size="sm" maxLines={1}>
-          {GROUP_TITLES[row.group]}
+          {title}
         </TugLabel>
         <span className="lens-cards-header-count">{row.count}</span>
       </span>
@@ -640,8 +671,8 @@ function CardsSectionBody({
   }, []);
 
   const cellContext = useMemo<CardsCellContextValue>(
-    () => ({ onRowPointerDown, onClose, filterQuery }),
-    [onRowPointerDown, onClose, filterQuery],
+    () => ({ onRowPointerDown, onClose, onToggleGroup, filterQuery }),
+    [onRowPointerDown, onClose, onToggleGroup, filterQuery],
   );
 
   // A card row has no "selected but not activated" state: Space/click

@@ -22,9 +22,11 @@
  *      headers are cursorable rows, which is exactly what would let the list's
  *      own gain-seed park the cursor on index 0 — a header. The section seeds
  *      past them deliberately, and this is where that is checked.
- *   E. **A group header toggles its group, and the count stays.** Its rows
- *      disappear, the header does not, and the count keeps reporting what the
- *      collapsed group holds.
+ *   E. **The chevron is the header's whole mouse target, and the count is the
+ *      collapsed state's voice.** Clicking the header body does nothing;
+ *      clicking the chevron folds the group. Open, the rows are the count and
+ *      the number is not ink at all; collapsed, it is the only report of what
+ *      the fold is hiding.
  *   F. **Reorder still engages while another group is collapsed.** The reorder
  *      hook aborts a drag silently — no error, no log — when any key in the
  *      visible order has no mounted element, so a collapsed group's keys must
@@ -252,36 +254,66 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
           { timeoutMs: 8_000 },
         );
 
-        // ---- E. A group header toggles its group; the count survives. ------
+        // ---- E. The chevron folds the group; the header body does not. -----
         const filesHeader = `${LIST} .lens-cards-header[data-lens-group="files"]`;
-        const filesCountBefore = await app.evalJS<string>(
-          `document.querySelector('${filesHeader} .lens-cards-header-count').innerText`,
-        );
+        // Open, the rows ARE the count. Measured as paint, not as text: an
+        // unrendered element's `innerText` falls back to `textContent`, so the
+        // number reads "1" either way and only the box tells the truth.
+        const countBox = `(function(){
+          var el = document.querySelector('${filesHeader} .lens-cards-header-count');
+          if (el === null) throw new Error("no count element");
+          return {
+            display: getComputedStyle(el).display,
+            height: el.getBoundingClientRect().height,
+          };
+        })()`;
+        expect(await app.evalJS<{ display: string; height: number }>(countBox))
+          .toEqual({ display: "none", height: 0 });
+
+        // Clicking the label does nothing at all. A group folding out from
+        // under a user who clicked a word they were reading is the whole
+        // reason the header body is inert.
         await app.evalJS<null>(
-          `(document.querySelector('${filesHeader}').click(), null)`,
+          `(document.querySelector('${filesHeader} .tug-list-row-title').click(), null)`,
+        );
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector('${filesHeader}').getAttribute("data-group-collapsed") === "true"`,
+          ),
+        ).toBe(false);
+
+        await app.evalJS<null>(
+          `(document.querySelector('${filesHeader} .lens-cards-header-chevron').click(), null)`,
         );
         await app.waitForCondition<boolean>(
           `document.querySelector('${filesHeader}[data-group-collapsed="true"]') !== null`,
           { timeoutMs: 8_000 },
         );
-        const collapsed = await app.evalJS<{ fileRows: number; count: string }>(
+        const collapsed = await app.evalJS<{
+          fileRows: number;
+          count: string;
+          countPainted: boolean;
+        }>(
           `(function(){
             var rows = Array.prototype.slice.call(
               document.querySelectorAll(${JSON.stringify(PANE_ROW)}),
             );
+            var el = document.querySelector('${filesHeader} .lens-cards-header-count');
             return {
               fileRows: rows.filter(function (r) {
                 return r.querySelector(".lens-cards-row-headline .tug-list-row-title") !== null
                   && r.textContent.indexOf("alpha.txt") !== -1;
               }).length,
-              count: document.querySelector('${filesHeader} .lens-cards-header-count').innerText,
+              count: el.innerText,
+              countPainted: el.getBoundingClientRect().height > 0,
             };
           })()`,
         );
         expect(collapsed.fileRows).toBe(0);
-        // The header stays, and still reports what the collapsed group holds —
-        // that is the way back.
-        expect(collapsed.count).toBe(filesCountBefore);
+        // The header stays, and now the number speaks: it is the only report
+        // of what the fold is hiding, and the way back.
+        expect(collapsed.count).toBe("1");
+        expect(collapsed.countPainted).toBe(true);
 
         // ---- F. Reorder engages while another group is collapsed. ----------
         //
@@ -310,9 +342,10 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
         })()`);
         expect(engaged).toBe(true);
 
-        // Re-expanding puts the group back.
+        // Re-expanding puts the group back — the chevron again, since that is
+        // the only thing the mouse can toggle.
         await app.evalJS<null>(
-          `(document.querySelector('${filesHeader}').click(), null)`,
+          `(document.querySelector('${filesHeader} .lens-cards-header-chevron').click(), null)`,
         );
         await app.waitForCondition<boolean>(
           `document.querySelector('${filesHeader}[data-group-collapsed="false"]') !== null`,
