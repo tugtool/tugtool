@@ -481,6 +481,30 @@ export interface TurnEntry {
   compactionPostTotal?: number;
 }
 
+/** One selectable answer in a {@link PendingAsk}. */
+export interface PendingAskOption {
+  /** Opaque id returned to the caller verbatim. Never shown to the user. */
+  value: string;
+  label: string;
+  description?: string;
+}
+
+/**
+ * A question put to the human by a process outside the turn stream, over
+ * tugcast's `/api/ask`. The caller blocks until it is answered.
+ *
+ * `title` and `description` are caller-supplied and rendered as plain text
+ * below chrome the caller cannot reach — a question arriving over loopback must
+ * not be able to dress itself up as one of the app's own prompts.
+ */
+export interface PendingAsk {
+  /** Correlates the answer with the blocked caller. */
+  requestId: string;
+  title: string;
+  description: string | null;
+  options: ReadonlyArray<PendingAskOption>;
+}
+
 /**
  * Decoded `control_request_forward` event from CODE_OUTPUT. Surfaced on the
  * snapshot via `pendingApproval` or `pendingQuestion` while the store is in
@@ -798,6 +822,17 @@ export interface CodeSessionSnapshot {
   canInterrupt: boolean;
   pendingApproval: ControlRequestForward | null;
   pendingQuestion: ControlRequestForward | null;
+  /**
+   * A question raised from outside the turn stream — a command-line tool asking
+   * for consent before it does something disruptive, delivered over `/api/ask`.
+   *
+   * Unlike `pendingApproval` / `pendingQuestion`, this does not come from the
+   * turn stream and does not belong to any turn: one usually arrives while the
+   * session sits idle. It therefore drives a lifecycle *overlay* and leaves
+   * `phase`, `canSubmit`, and `canInterrupt` alone — the composer stays live
+   * while the dialog is up.
+   */
+  pendingAsk: PendingAsk | null;
   /**
    * User messages submitted while a turn was running, in submit order
    * — the reducer's FIFO of held sends, drained head-first on each

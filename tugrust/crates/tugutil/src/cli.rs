@@ -335,6 +335,39 @@ pub enum HostCommands {
         check: bool,
     },
 
+    /// Ask the human a question in the Session card and print their answer
+    ///
+    /// Blocks until someone answers. Use before doing something the developer
+    /// will feel, so they get a say rather than a surprise.
+    #[command(
+        long_about = "Ask the human a question in the Session card and print their answer.\n\nRaises an inline dialog in the session named by $TUG_SESSION_ID (or the\nactive session) and blocks until it is answered. The chosen option's value\nis printed to stdout; everything else goes to stderr.\n\nExit codes:\n  0  answered — the choice is on stdout\n  2  declined, timed out, or the deck disconnected\n  3  no route to a dialog — there was nobody to ask\n\nExit 3 is deliberately distinct from a refusal: it means the question could\nnot be put, not that the answer was no. Callers decide what to do about it.\n\nExamples:\n  tugutil host ask --title 'Run the slow tests?' \\\n      --option run:Run --option cancel:Cancel\n  tugutil host ask --title 'Take the screen?' --description '3 of 12 tests' \\\n      --option run-all:'Run all':'Includes the 3 that take the screen' \\\n      --option cancel:Cancel"
+    )]
+    Ask {
+        /// The question, shown as the dialog's title
+        #[arg(long)]
+        title: String,
+
+        /// Optional supporting detail shown below the title
+        #[arg(long)]
+        description: Option<String>,
+
+        /// A selectable answer, as value:label[:description] (repeatable)
+        #[arg(long = "option", value_name = "VALUE:LABEL[:DESC]")]
+        option: Vec<String>,
+
+        /// How long to wait for an answer before giving up
+        #[arg(long, value_name = "N", default_value_t = 600)]
+        timeout_secs: u64,
+
+        /// Tugcast server port (overrides --instance and CLI discovery).
+        #[arg(long)]
+        port: Option<u16>,
+
+        /// Target a specific instance by ID.
+        #[arg(long, value_name = "ID")]
+        instance: Option<String>,
+    },
+
     /// Send an action to tugcast via HTTP POST
     ///
     /// Posts a JSON action to the tugcast /api/tell endpoint.

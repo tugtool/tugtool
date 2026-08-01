@@ -62,6 +62,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/components/tugways/component-state-preservation-registry.ts
  * @covers tugdeck/src/components/tugways/tug-switch.tsx
  * @covers tugdeck/src/components/tugways/tug-radio-group.tsx

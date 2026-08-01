@@ -62,6 +62,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/components/chrome/pane-focus-controller.ts
  * @covers tugdeck/src/components/tugways/tug-input.tsx
  * @covers tugdeck/src/components/tugways/tug-textarea.tsx

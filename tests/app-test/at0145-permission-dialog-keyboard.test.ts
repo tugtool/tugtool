@@ -34,6 +34,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/components/tugways/chrome/session-permission-dialog.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/lib/permission-mode.ts

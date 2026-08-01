@@ -13,6 +13,7 @@
  * the group before save, or the focus-key isn't emitted). Phase B failure ⇒
  * `applyBagFocus` didn't re-light the ring on restore.
  *
+ * @foreground
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/serialization.ts
  * @covers tugdeck/src/keyboard-access-store.ts

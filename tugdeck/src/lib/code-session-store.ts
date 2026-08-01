@@ -82,6 +82,7 @@ import type {
   CodeSessionSnapshot,
   InterruptReason,
   LiveMessageUsage,
+  PendingAsk,
   TurnEntry,
   SystemNote,
 } from "./code-session-store/types";
@@ -102,6 +103,7 @@ export type {
   ToolUseMessage,
   QueuedSend,
   ControlRequestForward,
+  PendingAsk,
   CostSnapshot,
   LastReplayResult,
 } from "./code-session-store/types";
@@ -424,6 +426,13 @@ export class CodeSessionStore {
   private _loadPreviousTarget = 0;
   private _listeners: Array<() => void> = [];
   private _cachedSnapshot: CodeSessionSnapshot | null = null;
+
+  /**
+   * A question from outside the turn stream, waiting on the human. Set by the
+   * pending-ask store rather than the reducer — it arrives over `/api/ask`, not
+   * over the session's wire, and belongs to no turn.
+   */
+  private _pendingAsk: PendingAsk | null = null;
   private _disposed = false;
   private _feedStoreUnsub: (() => void) | null = null;
   /**
@@ -701,6 +710,7 @@ export class CodeSessionStore {
         this.state.phase === "awaiting_approval" ||
         this.state.phase === "waking",
       pendingApproval: this.state.pendingApproval,
+      pendingAsk: this._pendingAsk,
       pendingQuestion: this.state.pendingQuestion,
       // The reducer rebuilds `queuedSends` only on enqueue / flush /
       // clear; passing the reference through unchanged preserves
@@ -2502,6 +2512,22 @@ export class CodeSessionStore {
         }
       }
     }
+  }
+
+  /**
+   * Publish a question from outside the turn stream, or clear it with `null`.
+   *
+   * Bypasses the reducer on purpose: an ask arrives over `/api/ask` rather than
+   * the session's wire, carries no turn, and must not disturb the phase
+   * machine. The publication is immediate rather than coalesced — there is
+   * exactly one of these per invocation of some command-line tool, and someone
+   * is blocked on the other end of it.
+   */
+  setPendingAsk(ask: PendingAsk | null): void {
+    if (this._pendingAsk === ask) return;
+    this._pendingAsk = ask;
+    this._cachedSnapshot = null;
+    this.notifyListeners();
   }
 
   private notifyListeners(): void {

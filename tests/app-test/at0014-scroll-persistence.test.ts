@@ -34,6 +34,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/lib/region-map.ts
  * @covers tugdeck/src/lib/smart-scroll.ts
  * @covers tugdeck/src/components/tugways/tug-markdown-view.tsx

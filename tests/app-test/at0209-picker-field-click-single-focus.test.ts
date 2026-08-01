@@ -18,6 +18,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/components/tugways/tug-combo-box.tsx
  * @covers tugdeck/src/lib/session-picker-data-source.ts
  * @covers tugdeck/src/components/tugways/focus-manager.ts

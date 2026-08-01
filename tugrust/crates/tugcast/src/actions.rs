@@ -71,6 +71,7 @@ pub async fn dispatch_action(
     stream_outputs: &HashMap<FeedId, (broadcast::Sender<Frame>, LagPolicy)>,
     shared_dev_state: &crate::dev::SharedDevState,
     pending_evals: &crate::router::PendingEvals,
+    pending_asks: &crate::router::PendingAsks,
     local_model: &crate::local_model::SharedLocalModelState,
 ) {
     match action {
@@ -102,6 +103,25 @@ pub async fn dispatch_action(
                             "dispatch_action: eval-response completed for {}",
                             request_id
                         );
+                    }
+                }
+            }
+        }
+        "ask-response" => {
+            // Complete a pending ask request. Unlike eval-response, a missing
+            // entry is unremarkable: the requester may have already timed out
+            // and gone away, and the deck has no way to know that.
+            if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(raw_payload) {
+                if let Some(request_id) = payload.get("requestId").and_then(|r| r.as_str()) {
+                    let choice = payload
+                        .get("choice")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_owned();
+                    let mut pending = pending_asks.lock().unwrap();
+                    if let Some(tx) = pending.remove(request_id) {
+                        let _ = tx.send(choice);
+                        info!("dispatch_action: ask-response completed for {}", request_id);
                     }
                 }
             }
@@ -291,6 +311,7 @@ mod tests {
         stream_outputs.insert(FeedId::CONTROL, (client_action_tx, LagPolicy::Warn));
 
         let pending_evals = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let pending_asks = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
 
         dispatch_action(
             "show-card",
@@ -299,6 +320,7 @@ mod tests {
             &stream_outputs,
             &dev_state,
             &pending_evals,
+            &pending_asks,
             &crate::local_model::LocalModelState::new(
                 std::env::temp_dir().join("tugcast-dispatch-test-models"),
                 crate::local_model::DEFAULT_BASE_URL.to_string(),
@@ -309,5 +331,73 @@ mod tests {
         let frame = client_action_rx.recv().await.unwrap();
         assert_eq!(frame.feed_id, FeedId::CONTROL);
         assert_eq!(frame.payload, br#"{"action":"show-card"}"#);
+    }
+
+    /// The deck's answer reaches the waiting requester.
+    #[tokio::test]
+    async fn test_dispatch_ask_response_resolves_pending() {
+        let (shutdown_tx, _) = mpsc::channel(1);
+        let (client_action_tx, _rx) = broadcast::channel(16);
+        let dev_state = crate::dev::new_shared_dev_state();
+
+        let mut stream_outputs = HashMap::new();
+        stream_outputs.insert(FeedId::CONTROL, (client_action_tx, LagPolicy::Warn));
+
+        let pending_evals = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let pending_asks: crate::router::PendingAsks =
+            std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        pending_asks.lock().unwrap().insert("req-1".to_owned(), tx);
+
+        dispatch_action(
+            "ask-response",
+            br#"{"action":"ask-response","requestId":"req-1","choice":"run-background-only"}"#,
+            &shutdown_tx,
+            &stream_outputs,
+            &dev_state,
+            &pending_evals,
+            &pending_asks,
+            &crate::local_model::LocalModelState::new(
+                std::env::temp_dir().join("tugcast-dispatch-test-models"),
+                crate::local_model::DEFAULT_BASE_URL.to_string(),
+            ),
+        )
+        .await;
+
+        assert_eq!(rx.await.unwrap(), "run-background-only");
+        assert!(pending_asks.lock().unwrap().is_empty());
+    }
+
+    /// An answer for a request that already timed out is dropped, not a panic.
+    #[tokio::test]
+    async fn test_dispatch_ask_response_unknown_request_is_ignored() {
+        let (shutdown_tx, _) = mpsc::channel(1);
+        let (client_action_tx, _rx) = broadcast::channel(16);
+        let dev_state = crate::dev::new_shared_dev_state();
+
+        let mut stream_outputs = HashMap::new();
+        stream_outputs.insert(FeedId::CONTROL, (client_action_tx, LagPolicy::Warn));
+
+        let pending_evals = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let pending_asks: crate::router::PendingAsks =
+            std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+
+        dispatch_action(
+            "ask-response",
+            br#"{"action":"ask-response","requestId":"gone","choice":"run-all"}"#,
+            &shutdown_tx,
+            &stream_outputs,
+            &dev_state,
+            &pending_evals,
+            &pending_asks,
+            &crate::local_model::LocalModelState::new(
+                std::env::temp_dir().join("tugcast-dispatch-test-models"),
+                crate::local_model::DEFAULT_BASE_URL.to_string(),
+            ),
+        )
+        .await;
+
+        assert!(pending_asks.lock().unwrap().is_empty());
     }
 }

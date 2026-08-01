@@ -71,6 +71,7 @@ import type {
 } from "./protocol";
 import { publishListPulseLinesOk } from "./lib/pulse-store";
 import { cardServicesStore } from "./lib/card-services-store";
+import { pendingAskStore } from "./lib/pending-ask-store";
 import { applyRestoredShellExchanges } from "./lib/shell-session-store";
 import {
   publishSessionUpdated,
@@ -325,6 +326,17 @@ export function initActionDispatch(
   // Gated twice on the tugcast side before a frame is ever broadcast: loopback
   // callers only, and dev mode only. A release instance answers `forbidden`
   // without consulting the deck at all.
+  // ask: a process outside the turn stream wants the developer's consent before
+  // it does something disruptive. Unlike `eval`, this is NOT dev-gated — it
+  // displays text and returns one of the caller's own option ids, and a
+  // consent prompt that only works on a dev build is no consent prompt.
+  //
+  // The caller is blocked on the answer, so the store answers on every path
+  // out, including "there is no session to show this on".
+  registerAction("ask", (payload) => {
+    pendingAskStore.receive(payload);
+  });
+
   registerAction("eval", (payload) => {
     const requestId = payload.requestId;
     const code = payload.code;
@@ -1364,7 +1376,20 @@ export function initActionDispatch(
   // `getAppLifecycle()` is guaranteed non-null here because
   // `DeckManager` registers the lifecycle before `initActionDispatch`
   // is called.
-  const disposers: Array<() => void> = [controlUnsub];
+  const disposers: Array<() => void> = [
+    controlUnsub,
+    // The wire to answer questions on, and the fallback target for a question
+    // that names no session.
+    pendingAskStore.init({
+      sendControlFrame: (action, payload) =>
+        connection.sendControlFrame(action, payload),
+      focusedTugSessionId: () => {
+        const cardId = deckManager.getFocusedCardId();
+        if (cardId === null) return null;
+        return cardServicesStore.getServices(cardId)?.tugSessionId ?? null;
+      },
+    }),
+  ];
   const appLifecycle = getAppLifecycle();
   if (appLifecycle !== null) {
     disposers.push(

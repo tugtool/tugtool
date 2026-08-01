@@ -29,6 +29,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/focus-transfer.ts
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/tug-text-editor/

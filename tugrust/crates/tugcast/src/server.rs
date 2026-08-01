@@ -144,6 +144,7 @@ async fn tell_handler(
         &router.stream_outputs,
         &router.dev_state,
         &router.pending_evals,
+        &router.pending_asks,
         &router.local_model,
     )
     .await;
@@ -552,6 +553,127 @@ async fn eval_handler(
     }
 }
 
+/// How long an ask waits for a human. Eval waits 30 seconds because a browser
+/// either answers immediately or is gone; an ask waits on someone noticing a
+/// dialog, so the ceiling is set where "still deciding" stops being plausible
+/// and "nobody is there" becomes the honest reading.
+const ASK_TIMEOUT_SECS: u64 = 600;
+
+/// Handle POST /api/ask requests — put a question to the human in the deck.
+///
+/// Sends the question to the deck via a CONTROL frame and blocks until someone
+/// answers it, then returns the chosen option's opaque id.
+///
+/// Deliberately NOT gated like `/api/eval`. Eval is gated because it executes
+/// arbitrary code; ask displays text and returns one of the caller's own option
+/// ids, and it has to work on a release instance — its whole purpose is to let a
+/// command-line tool get consent before doing something disruptive. Loopback is
+/// the trust boundary, and the deck confines caller-supplied text below fixed
+/// chrome so a question cannot impersonate the app's own prompts.
+async fn ask_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(router): State<FeedRouter>,
+    body: Bytes,
+) -> Response {
+    if !addr.ip().is_loopback() {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"status": "error", "message": "forbidden"})),
+        )
+            .into_response();
+    }
+
+    let payload: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"status": "error", "message": "invalid JSON"})),
+            )
+                .into_response();
+        }
+    };
+
+    let title = match payload.get("title").and_then(|t| t.as_str()) {
+        Some(t) if !t.is_empty() => t,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"status": "error", "message": "missing title field"})),
+            )
+                .into_response();
+        }
+    };
+
+    // At least one option, or there is nothing for the human to choose.
+    let options = match payload.get("options").and_then(|o| o.as_array()) {
+        Some(o) if !o.is_empty() => o.clone(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(
+                    serde_json::json!({"status": "error", "message": "missing or empty options field"}),
+                ),
+            )
+                .into_response();
+        }
+    };
+
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    {
+        let mut pending = router.pending_asks.lock().unwrap();
+        pending.insert(request_id.clone(), tx);
+    }
+
+    let ask_frame = serde_json::json!({
+        "action": "ask",
+        "requestId": request_id,
+        "sessionId": payload.get("sessionId").cloned().unwrap_or(serde_json::Value::Null),
+        "title": title,
+        "description": payload.get("description").cloned().unwrap_or(serde_json::Value::Null),
+        "options": options,
+    });
+    if let Some((broadcast_tx, _)) = router.stream_outputs.get(&FeedId::CONTROL) {
+        let frame = Frame::new(FeedId::CONTROL, serde_json::to_vec(&ask_frame).unwrap());
+        let _ = broadcast_tx.send(frame);
+    }
+
+    let secs = payload
+        .get("timeoutSecs")
+        .and_then(|t| t.as_u64())
+        .unwrap_or(ASK_TIMEOUT_SECS);
+
+    match timeout(std::time::Duration::from_secs(secs), rx).await {
+        Ok(Ok(choice)) => (
+            StatusCode::OK,
+            axum::Json(serde_json::json!({"status": "ok", "choice": choice})),
+        )
+            .into_response(),
+        Ok(Err(_)) => {
+            // Sender dropped — the deck went away mid-question.
+            let mut pending = router.pending_asks.lock().unwrap();
+            pending.remove(&request_id);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({"status": "error", "message": "deck disconnected"})),
+            )
+                .into_response()
+        }
+        Err(_) => {
+            let mut pending = router.pending_asks.lock().unwrap();
+            pending.remove(&request_id);
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                axum::Json(
+                    serde_json::json!({"status": "error", "message": "timeout waiting for answer"}),
+                ),
+            )
+                .into_response()
+        }
+    }
+}
+
 /// Build the axum application router
 ///
 /// Constructs the Router with auth, WebSocket, and API routes.
@@ -591,6 +713,7 @@ pub(crate) fn build_app(
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler))
         .route("/api/eval", post(eval_handler))
+        .route("/api/ask", post(ask_handler))
         .route("/api/host", get(crate::host::get_host))
         .route("/api/changesets", get(changesets_handler))
         .route("/api/draft", post(draft_handler))
@@ -707,5 +830,140 @@ mod tests {
         assert_ne!("reload", "reset");
         assert_ne!("show-card", "restart");
         assert_ne!("show-card", "reset");
+    }
+
+    // --- /api/ask ---------------------------------------------------------
+    //
+    // These run the real axum app over a real loopback socket, so what is under
+    // test is the route as it is actually served — including the loopback guard
+    // and the CONTROL broadcast the deck subscribes to.
+
+    /// A live app on an ephemeral loopback port, plus a CONTROL receiver
+    /// standing in for the deck's subscription and the router's ask map.
+    struct AskFixture {
+        base_url: String,
+        control_rx: tokio::sync::broadcast::Receiver<Frame>,
+        pending_asks: crate::router::PendingAsks,
+    }
+
+    /// POST a JSON body and read back `(status, parsed body)`. Spelled out
+    /// rather than using reqwest's `json` helpers, which this crate's feature
+    /// set does not enable.
+    async fn post_json(url: &str, body: &serde_json::Value) -> (u16, serde_json::Value) {
+        let response = reqwest::Client::new()
+            .post(url)
+            .header("content-type", "application/json")
+            .body(serde_json::to_string(body).unwrap())
+            .send()
+            .await
+            .unwrap();
+        let status = response.status().as_u16();
+        let text = response.text().await.unwrap();
+        (status, serde_json::from_str(&text).unwrap())
+    }
+
+    async fn serve_ask_fixture() -> AskFixture {
+        let (shutdown_tx, _shutdown_rx) = tokio::sync::mpsc::channel(1);
+        let dev_state = crate::dev::new_shared_dev_state();
+        let mut router = FeedRouter::new(
+            "test-session".to_owned(),
+            crate::auth::new_shared_auth_state_no_auth(0),
+            shutdown_tx,
+            dev_state.clone(),
+        );
+        let (control_tx, control_rx) = tokio::sync::broadcast::channel(16);
+        router.register_stream(FeedId::CONTROL, control_tx, crate::router::LagPolicy::Warn);
+        let pending_asks = router.pending_asks.clone();
+
+        let app = build_app(router, dev_state, None, None);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+
+        AskFixture {
+            base_url: format!("http://127.0.0.1:{port}"),
+            control_rx,
+            pending_asks,
+        }
+    }
+
+    fn ask_body(timeout_secs: u64) -> serde_json::Value {
+        serde_json::json!({
+            "title": "3 of 12 app-tests will take the screen",
+            "description": "at0145, at0165, at0014",
+            "timeoutSecs": timeout_secs,
+            "options": [
+                {"value": "run-all", "label": "Run all"},
+                {"value": "cancel", "label": "Cancel"},
+            ],
+        })
+    }
+
+    /// The whole round trip: the question reaches the deck, the answer comes
+    /// back on the HTTP response.
+    #[tokio::test]
+    async fn test_ask_round_trip_returns_the_choice() {
+        let mut fx = serve_ask_fixture().await;
+        let url = format!("{}/api/ask", fx.base_url);
+
+        let request = tokio::spawn(async move { post_json(&url, &ask_body(30)).await });
+
+        // Stand in for the deck: read the broadcast question, answer it.
+        let frame = fx.control_rx.recv().await.unwrap();
+        let payload: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(payload["action"], "ask");
+        assert_eq!(payload["title"], "3 of 12 app-tests will take the screen");
+        assert_eq!(payload["options"][0]["value"], "run-all");
+        let request_id = payload["requestId"].as_str().unwrap().to_owned();
+
+        let tx = fx.pending_asks.lock().unwrap().remove(&request_id).unwrap();
+        tx.send("run-all".to_owned()).unwrap();
+
+        let (status, body) = request.await.unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["choice"], "run-all");
+    }
+
+    /// Nobody answers — the caller learns that rather than blocking forever.
+    #[tokio::test]
+    async fn test_ask_times_out_and_clears_the_pending_entry() {
+        let fx = serve_ask_fixture().await;
+        let (status, body) = post_json(&format!("{}/api/ask", fx.base_url), &ask_body(1)).await;
+
+        assert_eq!(status, 504);
+        assert_eq!(body["message"], "timeout waiting for answer");
+        assert!(fx.pending_asks.lock().unwrap().is_empty());
+    }
+
+    /// A question with no options has nothing to choose and is refused.
+    #[tokio::test]
+    async fn test_ask_rejects_empty_options() {
+        let fx = serve_ask_fixture().await;
+        let (status, _) = post_json(
+            &format!("{}/api/ask", fx.base_url),
+            &serde_json::json!({"title": "hi", "options": []}),
+        )
+        .await;
+        assert_eq!(status, 400);
+    }
+
+    /// A question with no title would render as chrome with no question in it.
+    #[tokio::test]
+    async fn test_ask_rejects_missing_title() {
+        let fx = serve_ask_fixture().await;
+        let (status, _) = post_json(
+            &format!("{}/api/ask", fx.base_url),
+            &serde_json::json!({"options": [{"value": "a", "label": "A"}]}),
+        )
+        .await;
+        assert_eq!(status, 400);
     }
 }

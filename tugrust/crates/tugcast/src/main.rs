@@ -1600,6 +1600,7 @@ async fn main() {
             .clone()
             .expect("response_tx must exist when control_reader exists");
         let ctl_pending_evals = feed_router.pending_evals.clone();
+        let ctl_pending_asks = feed_router.pending_asks.clone();
         let ctl_local_model = std::sync::Arc::clone(&feed_router.local_model);
         tokio::spawn(reader.run_recv_loop(
             ctl_shutdown_tx,
@@ -1608,6 +1609,7 @@ async fn main() {
             tx,
             auth.clone(),
             ctl_pending_evals,
+            ctl_pending_asks,
             ctl_local_model,
         ));
     }

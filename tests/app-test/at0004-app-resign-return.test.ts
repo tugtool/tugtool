@@ -40,6 +40,7 @@
  * `describe.skipIf(!SHOULD_RUN)`. CI and `bun x tsc --noEmit` runs
  * without `TUGAPP_APP_TEST=1` skip every test.
  *
+ * @foreground
  * @covers tugapp/Sources/AppDelegate.swift
  * @covers tugdeck/src/lib/app-lifecycle.ts
  * @covers tugdeck/src/focus-transfer.ts

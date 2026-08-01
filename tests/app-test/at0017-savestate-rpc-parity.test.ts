@@ -22,6 +22,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/serialization.ts
  * @covers tugdeck/src/deck-manager.ts
  * @covers tugdeck/src/test-surface.ts

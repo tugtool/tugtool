@@ -122,6 +122,8 @@ pub struct FeedRouter {
     pub(crate) dev_state: crate::dev::SharedDevState,
     /// Pending eval requests awaiting browser responses.
     pub(crate) pending_evals: PendingEvals,
+    /// Pending ask requests awaiting a human answer in the deck.
+    pub(crate) pending_asks: PendingAsks,
     /// Catalog + model store for the local-model CONTROL verbs.
     pub(crate) local_model: crate::local_model::SharedLocalModelState,
 }
@@ -129,6 +131,15 @@ pub struct FeedRouter {
 /// Pending eval requests awaiting responses from the browser.
 pub(crate) type PendingEvals =
     Arc<std::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>>>;
+
+/// Pending ask requests awaiting a human answer in the deck.
+///
+/// Same shape as [`PendingEvals`], but the waits are long: an eval resolves in
+/// milliseconds, an ask sits until someone reads a dialog and clicks. The two
+/// maps are kept separate so a slow human can never occupy a slot that
+/// diagnostics tooling expects to turn over quickly.
+pub(crate) type PendingAsks =
+    Arc<std::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<String>>>>;
 
 impl FeedRouter {
     /// Create a new feed router with shared infrastructure channels.
@@ -151,6 +162,7 @@ impl FeedRouter {
             shutdown_tx,
             dev_state,
             pending_evals: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            pending_asks: Arc::new(std::sync::Mutex::new(HashMap::new())),
             local_model: crate::local_model::LocalModelState::shared_default(),
         }
     }
@@ -981,6 +993,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                                                 &router.stream_outputs,
                                                                 &router.dev_state,
                                                                 &router.pending_evals,
+                                                                &router.pending_asks,
                                                                 &router.local_model,
                                                             ).await;
                                                         }

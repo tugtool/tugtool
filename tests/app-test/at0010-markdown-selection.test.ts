@@ -46,6 +46,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/components/tugways/selection-guard.ts
  * @covers tugdeck/src/components/tugways/text-selection-adapter.ts
  * @covers tugdeck/src/components/tugways/tug-markdown-view.tsx

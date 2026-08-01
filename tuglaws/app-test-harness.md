@@ -129,9 +129,26 @@ An app-test launch, a live interactive instance (`just app-debug`, `just app-rel
 | Claude / tugcode subprocess | tugcast's own process group (`setpgid` + `kill(0)` on exit) | `tugcast/src/main.rs` |
 | **Native input / app activation / key window** | **not divisible** — these are login-session singletons, so they are serialized, not namespaced: the whole `just app-test` invocation runs under `tugutil host gate run --name apptest` | `tugcore::ports::APPTEST_GATE_PORT`, `tug::commands::gate` |
 
+### Background is the default; the screen-takers are a declared set
+
+An app-test does not take your machine. The app launches as an accessory (`NSApp.setActivationPolicy(.accessory)`, `open -g`), keyboard events are addressed to its process with `CGEvent.postToPid`, and mouse events are synthesized as `NSEvent`s and dispatched straight into its window — AppKit refuses to route mouse events to an inactive app above the window level, so going through the window is the only way in. A run happens around you while you keep working.
+
+That cannot be made universal, because for a minority of tests activation *is* the subject: app resign / become-active cycles, key-window-gated responder routing, and `document.hasFocus()` — which WebKit ties to *application* activation, not key-window status (an experiment making the window key without activating did not restore it, and broke `at0201`'s activation-click semantics). Those tests pass `foreground: true`, which restores session-tap posting and real activation, and they genuinely take the screen.
+
+**The foreground tier is declared, not inferred.** Each such file carries `@foreground` in its header docblock beside `@covers`, and `just app-test-foreground-check` fails when the tag and the launch-site option disagree in either direction. The declaration has to be static because the gate must decide *before* launching anything — a runtime signal arrives after the app already has the screen.
+
+A run containing any of them raises the question in the Session card — over `tugutil host ask` → `POST /api/ask` → an inline dialog → back — and then **runs the background tests while it waits**, saving the screen-takers for last. The run is partitioned, not gated: a test that needs no permission is never blocked by one that does. That distinction is load-bearing rather than cosmetic, and getting it wrong the first time made a bare `just app-test` hold sixteen background files behind a prompt none of them needed.
+
+Two rules about *when*, both learned the hard way:
+
+- The ask is raised **before the invocation gate is taken**, never while holding it — a run waiting on a human must not block every other worktree.
+- It is raised **immediately**, not at the moment the first screen-taker is reached. Deferring it puts the dialog on screen minutes later, after the developer has moved on, where a timeout silently means "skipped".
+
+`TUG_APPTEST_ASSUME` answers ahead of time for scripted runs and is checked before any work starts. With no instance to ask, the run proceeds after naming the screen-takers on stderr — blocking a terminal-only run that could never have shown a dialog is the worse failure.
+
 ### The invocation gate
 
-Native gestures post via `CGEvent.post(tap: .cgSessionEventTap)` and the lifecycle tests drive `NSApp.activate`/`deactivate` — keyboard focus, the frontmost window, and screen-coordinate clicks belong to the *login session*, not to any instance. No amount of per-instance namespacing makes two concurrent native-gesture runs safe; serialization is physics. The `app-test` recipe therefore re-execs its entire body under a machine-wide gate: `tugutil host gate run --name apptest --label <wtslug>`.
+The lifecycle tests drive `NSApp.activate`/`deactivate`, and foreground-tier gestures still post via `CGEvent.post(tap: .cgSessionEventTap)` — keyboard focus, the frontmost window, and screen-coordinate clicks belong to the *login session*, not to any instance. No amount of per-instance namespacing makes two concurrent native-gesture runs safe; serialization is physics. The `app-test` recipe therefore re-execs its entire body under a machine-wide gate: `tugutil host gate run --name apptest --label <wtslug>`.
 
 The gate is a **localhost port bind** (`tugcore::ports::APPTEST_GATE_PORT`, a well-known port outside every hashed window), not a lock file — this project does not use lock files. Binding is exclusive by kernel construction and the kernel frees the port on any holder death, including SIGKILL, so no stale-lock state can exist. The holder serves a live JSON greeting (`{gate, label, pid, since}`) to every connection; a queued invocation prints `gate 'apptest' held by <worktree> (pid …, since …) — waiting…` and blocks reading that connection until EOF (the holder's exit), then races to re-bind — event-driven, no polling. A non-gate listener on the port fails the greeting handshake and the acquirer errors out instead of waiting. `--no-wait` turns queueing into a fail-fast exit for scripted callers.
 

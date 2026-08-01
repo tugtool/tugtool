@@ -76,8 +76,30 @@ A `@covers` value is a repo-relative path (a trailing `/` means the whole subtre
 | `just app-test <files…>` | Exactly the named files |
 | `just app-test-all` | Every test file |
 | `just app-test-covers-check` | Lint: every test declares `@covers`, and every path resolves |
+| `just app-test-foreground-check` | Lint: `@foreground` matches which tests actually take the screen |
 
 A few paths `@covers` cannot scope, because they run before any test's first assertion: `tests/app-test/_harness/`, `tugapp/Sources/TestHarness/`, `tugdeck/src/main.tsx`, `tugdeck/index.html`. The selector prints a **CORE TIER ADVISED** advisory when it sees one changed, and the answer is `just app-test` — the ~20-file core tier, which is what "did I break everything?" actually asks. The list is deliberately tiny: ordinary components, however widely used, are covered by name and do not trip it.
+
+### `@foreground` — the tests that take over the screen
+
+App-tests run in the **background**. The app launches as an accessory, keyboard events go to its process and mouse events straight into its window, and you keep working while a run happens around you.
+
+A minority cannot work that way, because activation *is* their subject: app resign / become-active cycles, key-window-gated responder routing, `document.hasFocus()`. Those launch with `foreground: true`, which puts the app back in the activating event mode — and they really do take the screen out from under you. Each one declares itself with `@foreground` on its own docblock line, beside `@covers`:
+
+```ts
+/**
+ * at0145-permission-dialog-keyboard.test.ts — …
+ *
+ * @foreground
+ * @covers tugdeck/src/components/tugways/chrome/session-permission-dialog.tsx
+ */
+```
+
+When a run contains any of them, `just app-test` raises the question in the Session card straight away — and then **gets on with the background tests while you decide.** The screen-takers are ordered last, so by the time the answer matters it is usually already in. Nothing that needed no permission ever waits on something that did. Declining skips them; the background run happened either way, and every skipped file shows as a `SKIP` row in the summary.
+
+`TUG_APPTEST_ASSUME=all|background|cancel` answers ahead of time; scripted and non-interactive runs should set it. With no Tug instance to ask, a run proceeds after naming the tests that will take the screen — blocking a terminal-only run that could never have shown a dialog is worse than an unannounced one you started by hand.
+
+`just app-test-foreground-check` holds the declaration honest in both directions. A `foreground: true` with no tag would seize the screen unannounced, which is the real harm; a tag with no such launch would prompt about a test that was never disruptive.
 
 `just app-test` ends every run with a structured summary block whose
 last stdout line is exactly `VERDICT: PASS  (...)` or `VERDICT: FAIL

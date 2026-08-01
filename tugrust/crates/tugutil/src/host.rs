@@ -11,6 +11,14 @@ use crate::commands;
 pub fn dispatch(cmd: HostCommands, json: bool, quiet: bool) -> ExitCode {
     let result = match cmd {
         HostCommands::Init { force, check } => commands::run_init(force, check, json, quiet),
+        HostCommands::Ask {
+            title,
+            description,
+            option,
+            timeout_secs,
+            port,
+            instance,
+        } => commands::run_ask(title, description, option, timeout_secs, port, instance),
         HostCommands::Tell {
             action,
             port,

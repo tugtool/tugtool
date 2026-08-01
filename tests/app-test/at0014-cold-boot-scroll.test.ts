@@ -50,6 +50,7 @@
  * `simulateAppResign` round-trips inside one Tug.app process; this
  * file adds the cross-process variant they cannot exercise.
  *
+ * @foreground
  * @covers tugdeck/src/lib/region-map.ts
  * @covers tugdeck/src/serialization.ts
  * @covers tugdeck/src/lib/tugbank-client.ts

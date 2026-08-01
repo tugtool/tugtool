@@ -1033,6 +1033,26 @@ build-app:
 # Changed Swift / Rust / harness source? `app-test` only builds when the
 # bundle is ABSENT — use `just app-test-build` to force a fresh build.
 #
+# Tests run in the BACKGROUND and leave your machine alone. They start
+# immediately and never wait for you.
+#
+# The few whose subject is activation itself declare `@foreground` and really do
+# take over the screen. When a run contains any of those, it raises the question
+# in the Session card right away, runs every background test while you decide,
+# and saves the screen-takers for last — so by the time the answer matters, it
+# is usually already in. Declining skips them; the background run has already
+# happened either way.
+#
+# Set TUG_APPTEST_ASSUME to answer ahead of time and raise nothing:
+#
+#   TUG_APPTEST_ASSUME=all         run everything, screen-takers included
+#   TUG_APPTEST_ASSUME=background  skip the screen-takers, keep working
+#   TUG_APPTEST_ASSUME=cancel      run nothing at all
+#
+# Scripted and non-interactive runs should set it. With no Tug instance to ask,
+# a run proceeds after naming the tests that will take the screen — blocking a
+# terminal-only run that could never show a dialog is worse.
+#
 # Build the app-test bundle if missing, then run the given files (core tier if none).
 app-test *FILES:
     #!/usr/bin/env bash
@@ -1074,6 +1094,79 @@ app-test *FILES:
             echo "==> building tug (needed for the app-test gate)…"
             (cd tugrust && cargo build -p tugutil >/dev/null)
         fi
+
+        # Most tests now run in the background and are nobody's business but
+        # this shell's. A few genuinely cannot — their subject IS activation —
+        # so they launch with `foreground: true` and take the screen. Those get
+        # announced first, because a run that seizes the machine mid-thought
+        # with no warning is the thing this gate exists to prevent.
+        #
+        # The question is RAISED here and answered later. It does not block:
+        # the background tests start immediately and the screen-takers are run
+        # last, by which time the answer has usually already arrived. Anything
+        # that needed no permission must never wait on something that did.
+        #
+        # It is raised before the gate re-exec, and never while holding the
+        # gate — a run waiting on a human would otherwise block every other
+        # worktree's run for as long as the dialog sat unanswered. The asker is
+        # a detached process; the answer reaches the gated child through a file
+        # named in $TUG_APPTEST_ASK_OUT.
+        #
+        # TUG_APPTEST_ASSUME=all|background|cancel answers ahead of time and
+        # raises nothing. `cancel` is checked here, before any work starts,
+        # because as an explicit directive it means "run nothing" — whereas
+        # declining the DIALOG only skips the screen-takers, the background run
+        # having already happened.
+        if [ "${TUG_APPTEST_ASSUME:-}" = "cancel" ]; then
+            echo "==> TUG_APPTEST_ASSUME=cancel — nothing was run." >&2
+            exit 1
+        fi
+
+        if [ -z "${TUG_APPTEST_ASSUME:-}" ]; then
+            if [ -z "{{FILES}}" ]; then
+                ASK_FILES="$(cd tests/app-test && bun scripts/select-tests.ts --core)"
+            else
+                ASK_FILES="$(printf '%s\n' {{FILES}})"
+            fi
+            FG_FILES="$(cd tests/app-test && bun scripts/select-tests.ts --foreground $ASK_FILES)"
+
+            if [ -n "$FG_FILES" ]; then
+                FG_COUNT="$(printf '%s\n' "$FG_FILES" | grep -c .)"
+                ALL_COUNT="$(printf '%s\n' "$ASK_FILES" | grep -c .)"
+                BG_COUNT=$((ALL_COUNT - FG_COUNT))
+                FG_LIST="$(printf '%s\n' "$FG_FILES" | sed 's/\.test\.ts$//' | paste -sd ',' - | sed 's/,/, /g')"
+
+                # Two choices, because by the time this is answered the
+                # background run is already under way — "cancel everything" is
+                # no longer a coherent thing to offer. Declining is last, which
+                # is what the dialog preselects.
+                if [ "$BG_COUNT" -gt 0 ]; then
+                    RUN_DESC="The other $BG_COUNT are running now either way"
+                    SKIP_LABEL="Skip them"
+                else
+                    RUN_DESC="Nothing else is in this run"
+                    SKIP_LABEL="Skip them — run nothing"
+                fi
+
+                ASK_OUT="$(mktemp -t apptest-ask.XXXXXX)"
+                export TUG_APPTEST_ASK_OUT="$ASK_OUT"
+                (
+                    CHOICE="$(tugrust/target/debug/tugutil host ask \
+                        ${TUG_INSTANCE:+--instance "$TUG_INSTANCE"} \
+                        --title "$FG_COUNT app-test(s) want to take over the screen" \
+                        --description "$FG_LIST" \
+                        --option "run-all:Run them:$RUN_DESC" \
+                        --option "background:$SKIP_LABEL:Keeps the screen yours" \
+                        2>/dev/null)"
+                    ASK_STATUS=$?
+                    printf '%s\n%s\n' "$ASK_STATUS" "$CHOICE" > "$ASK_OUT.part"
+                    # Rename so the reader never sees a half-written answer.
+                    mv "$ASK_OUT.part" "$ASK_OUT.done"
+                ) &
+                disown 2>/dev/null || true
+            fi
+        fi
+
         export TUG_APPTEST_GATED=1
         exec tugrust/target/debug/tugutil host gate run --name apptest --label "$WTSLUG" -- just app-test {{FILES}}
     fi
@@ -1221,32 +1314,11 @@ app-test *FILES:
 
     FILES_INPUT="{{FILES}}"
     if [ -z "$FILES_INPUT" ]; then
-        # The CORE tier: one test per load-bearing surface, not a sweep.
-        # Everyday work should run `just app-test-changed` (coverage-derived
-        # from your diff) — this list is the broad smoke you reach for when
-        # you want a fast read on whether the app still works at all.
-        FILES=(
-            harness-smoke/smoke.test.ts                        # bridge floor: boot, handshake, close
-            harness-smoke/smoke-native.test.ts                 # native CGEvent gesture pipeline
-            harness-smoke/smoke-cold-boot.test.ts              # two-process tugbank round-trip
-            at0001-tab-switch-fc.test.ts                       # intra-pane tab switch + caret restore
-            at0003-pane-activation.test.ts                     # cross-pane activation
-            at0016-tab-close-handoff.test.ts                   # close-the-active-tab focus handoff
-            at0014-scroll-persistence.test.ts                  # region scroll across activation paths
-            at0024-prompt-state-roundtrip.test.ts              # prompt state across reload + relaunch
-            at0084-session-lifecycle-coordination.test.ts      # session lifecycle state-to-zone matrix
-            at0109-focus-ring.test.ts                          # the one app-owned focus ring
-            at0126-keyboard-ring-cold-boot.test.ts             # focus axis survives relaunch
-            at0145-permission-dialog-keyboard.test.ts          # card-modal dialog keyboard model
-            at0165-activation-first-responder.test.ts          # responder-chain accelerators
-            at0168-menu-structure.test.ts                      # menu bar structure contract
-            at0191-turns-end-to-end.test.ts                    # canonical turns through the transcript
-            at0201-session-card-activation-click-focus.test.ts # session card activation focus
-            at0209-text-card-live-autosave.test.ts             # Text card core loop on real files
-            at0216-shell-exchange.test.ts                      # $ shell route end-to-end
-            at0231-lens-toggle-focus.test.ts                   # Lens rail toggle + focus + reload
-            at0253-commit-dialog.test.ts                       # commit mode open/dismiss
-        )
+        # The CORE tier: one test per load-bearing surface, not a sweep. The
+        # list itself lives in select-tests.ts, because the pre-gate approval
+        # check above has to know which files a bare `just app-test` will run
+        # before this point in the recipe is ever reached.
+        read -r -a FILES <<< "$(bun scripts/select-tests.ts --core | tr '\n' ' ')"
         SWEEP_LABEL="core"
     else
         read -r -a FILES <<< "$FILES_INPUT"
@@ -1264,11 +1336,103 @@ app-test *FILES:
         FILES[$i]="$f"
     done
 
+    # Background tests never wait on anybody. Screen-taking ones go LAST, and
+    # the question about them is answered while the background work is already
+    # running — a test that needs no permission must never be held up by one
+    # that does.
+    #
+    # The reordering happens here rather than before the gate re-exec because
+    # that exec re-passes `{{FILES}}` — a just template variable, not a shell
+    # one — so the pre-gate shell has no way to hand a reordered list forward.
+    # It hands the pending question forward instead ($TUG_APPTEST_ASK_OUT), and
+    # this is where the answer is collected.
+    FG_FILES="$(bun scripts/select-tests.ts --foreground "${FILES[@]}")"
+    declare -a FG_QUEUE=()
+    if [ -n "$FG_FILES" ]; then
+        declare -a BG_QUEUE=()
+        for f in "${FILES[@]}"; do
+            if printf '%s\n' "$FG_FILES" | grep -qx "$f"; then
+                FG_QUEUE+=("$f")
+            else
+                BG_QUEUE+=("$f")
+            fi
+        done
+        FILES=("${BG_QUEUE[@]}" "${FG_QUEUE[@]}")
+        if [ "${#BG_QUEUE[@]}" -gt 0 ]; then
+            echo "==> running ${#BG_QUEUE[@]} background test(s) now; the ${#FG_QUEUE[@]} that take the screen come last."
+        fi
+    fi
+
+    # Collect the answer to the question raised before the gate. Called just
+    # before the first screen-taking test, so the background run has already had
+    # however long it took as thinking time. Sets FG_DECISION to run|skip.
+    FG_DECISION=""
+    resolve_foreground_decision() {
+        [ -n "$FG_DECISION" ] && return 0
+        case "${TUG_APPTEST_ASSUME:-}" in
+            all)        FG_DECISION=run;  return 0 ;;
+            background) FG_DECISION=skip; return 0 ;;
+        esac
+        local out="${TUG_APPTEST_ASK_OUT:-}"
+        if [ -z "$out" ]; then
+            FG_DECISION=run
+            return 0
+        fi
+        # The ask carries its own timeout, so this waits for it to land rather
+        # than racing it. The ceiling is a backstop against a killed asker.
+        local waited=0
+        while [ ! -f "$out.done" ]; do
+            if [ "$waited" -ge 660 ]; then
+                echo "==> the approval request never came back — skipping the screen-takers." >&2
+                FG_DECISION=skip
+                return 0
+            fi
+            [ "$waited" -eq 0 ] && echo "==> waiting on your answer about the ${#FG_QUEUE[@]} test(s) that take the screen…"
+            sleep 1
+            waited=$((waited + 1))
+        done
+        local status choice
+        status="$(sed -n '1p' "$out.done")"
+        choice="$(sed -n '2p' "$out.done")"
+        rm -f "$out.done" "$out" 2>/dev/null || true
+        case "$status:$choice" in
+            # Exit 3 is "nobody to ask", not a refusal. A terminal-only run
+            # could never have shown a dialog, and the developer typed the
+            # command themselves — so it proceeds, having said so.
+            3:*)
+                echo "==> no Tug instance to ask — these take the screen: $(printf '%s\n' "${FG_QUEUE[@]}" | sed 's/\.test\.ts$//' | paste -sd ',' - | sed 's/,/, /g')" >&2
+                FG_DECISION=run ;;
+            0:run-all)
+                FG_DECISION=run ;;
+            # Declined. Note this also covers "the deck had no card to show it
+            # on" — the store answers with the declining option rather than
+            # leaving this run blocked, so a $TUG_SESSION_ID pointing at some
+            # other instance lands here. Skipping is the safe reading either
+            # way, and the summary lists every skipped file.
+            0:*)
+                echo "==> skipping the ${#FG_QUEUE[@]} test(s) that take the screen." >&2
+                FG_DECISION=skip ;;
+            *)
+                echo "==> the approval request failed — skipping the screen-takers." >&2
+                FG_DECISION=skip ;;
+        esac
+    }
+
     declare -a RESULT_ROWS=()
     declare -a FAILURE_BLOCKS=()
     START_EPOCH="$(date +%s)"
 
     for f in "${FILES[@]}"; do
+        # The screen-takers are last in the list, so this resolves once, after
+        # every background test has already run.
+        if [ "${#FG_QUEUE[@]}" -gt 0 ] && printf '%s\n' "${FG_QUEUE[@]}" | grep -qx "$f"; then
+            resolve_foreground_decision
+            if [ "$FG_DECISION" = "skip" ]; then
+                echo "---- $f (skipped — takes the screen) ----"
+                RESULT_ROWS+=("SKIP:$f:0:0")
+                continue
+            fi
+        fi
         echo "---- $f ----"
         # bun's stdout/stderr both stream to the user's terminal AND
         # land in $TMPOUT for parsing. `tee` truncates without `-a`.
@@ -1438,6 +1602,15 @@ app-test-all:
 # Lint the @covers declarations across every app-test file.
 app-test-covers-check:
     @cd tests/app-test && bun scripts/select-tests.ts --check
+
+# A test that takes the screen declares it with `@foreground`; the app-test
+# recipe reads that declaration before it launches anything, so it can warn
+# before a run seizes the machine. The declaration is only worth trusting if
+# it matches behavior, which is what this checks — in both directions. An
+# untagged `foreground: true` seizes the screen unannounced; a tag with no
+# such launch prompts about a test that was never disruptive.
+app-test-foreground-check:
+    @cd tests/app-test && bun scripts/select-tests.ts --foreground-check
 
 # Score the local model's PULSE session headlines against a RUNNING instance.
 #

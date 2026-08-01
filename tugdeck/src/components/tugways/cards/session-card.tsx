@@ -42,6 +42,8 @@ import { getChangesetDraftStore } from "@/lib/changeset-draft-store";
 import { CommitModeController } from "@/lib/commit-mode-controller";
 import { useSessionBranch } from "@/lib/changeset-all-store";
 import { SessionTranscriptHost, type SessionTranscriptHandle } from "./session-card-transcript";
+import { AppTestAskDialog } from "../chrome/session-app-test-ask-dialog";
+import { pendingAskStore } from "@/lib/pending-ask-store";
 import { SessionChangesView } from "./session-changes/session-changes-view";
 import { SessionHistoryView } from "./session-history/session-history-view";
 import { useSessionPlacementSlots } from "./session-card-placement-experiment";
@@ -3862,6 +3864,22 @@ export function SessionCardBody({
       [cardId],
     ),
   );
+  // A question put to the developer by a process outside the turn stream, with
+  // that process blocked on the answer. The snapshot's `pendingAsk` reference
+  // is stable while one is up, so this is not a per-token re-render
+  // source ([L02]).
+  const pendingAsk = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(() => codeSessionStore.getSnapshot().pendingAsk, [codeSessionStore]),
+  );
+  const handleAskRespond = useCallback(
+    (choice: string) => {
+      if (pendingAsk === null) return;
+      pendingAskStore.respond(pendingAsk.requestId, choice);
+    },
+    [pendingAsk],
+  );
+
   // The bound session's `/rename` name and mnemonic tag — the title-bar label
   // resolves name → tag (like the Z4B chip), so subscribe to both ([L02]).
   const sessionName = useSyncExternalStore(
@@ -4084,6 +4102,29 @@ export function SessionCardBody({
                   findSession={findSession}
                   renderTurnTrailing={effectiveRenderTurnTrailing}
                 />
+                {/*
+                  A question raised from outside the turn stream (`/api/ask`),
+                  with a command-line tool blocked on the answer.
+
+                  Mounted here at session level rather than inside a turn cell
+                  like `PermissionDialog`, because an ask belongs to no turn:
+                  one usually arrives while the session sits idle, and the
+                  transcript's `isLastAssistant && !isCommitted` gating would
+                  render nothing at all in that case — leaving the caller to
+                  block until its own timeout with no dialog on screen.
+
+                  Built inline every render (no `useMemo` over the element) so
+                  Fast Refresh can swap the component; caching it would freeze
+                  the `Component` reference, the same constraint
+                  `session-card-transcript.tsx` documents for the dialogs it
+                  owns.
+                */}
+                {pendingAsk !== null ? (
+                  <AppTestAskDialog
+                    ask={pendingAsk}
+                    onRespond={handleAskRespond}
+                  />
+                ) : null}
               </div>
               {/*
                 Changes glance ([P03] revised): a bottom-anchored PASSIVE shade

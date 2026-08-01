@@ -22,6 +22,7 @@
  * activation). Pre-fix this snapped A's value back to the stale snapshot;
  * now the live empty value survives.
  *
+ * @foreground
  * @covers tugdeck/src/components/tugways/tug-input.tsx
  * @covers tugdeck/src/components/tugways/tug-textarea.tsx
  * @covers tugdeck/src/card-state-orchestrator.ts

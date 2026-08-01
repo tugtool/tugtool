@@ -16,11 +16,20 @@
  * subtree) or a glob. A changed file selects a test when it matches any of that test's
  * `@covers` values.
  *
+ * A test that takes the screen also declares that, with `@foreground` on its own docblock
+ * line. Those tests launch with `foreground: true`, which puts the app in the activating
+ * event mode; every other test runs in the background. The `app-test` recipe reads the
+ * declaration before it launches anything, so it can tell the developer that a run is
+ * about to seize the machine.
+ *
  * Usage:
  *   bun scripts/select-tests.ts                  # derive changed paths from git
  *   bun scripts/select-tests.ts <path>...        # explicit changed paths
  *   bun scripts/select-tests.ts --print          # print the selection, run nothing
  *   bun scripts/select-tests.ts --check          # lint: @covers present, resolving, and scoped
+ *   bun scripts/select-tests.ts --core           # the core tier's file list
+ *   bun scripts/select-tests.ts --foreground <f>...   # the @foreground subset of <f>...
+ *   bun scripts/select-tests.ts --foreground-check    # lint: @foreground matches behavior
  *
  * Selected test filenames go to stdout, one per line (feed straight to `just app-test`).
  * Reasons, advisories, and diagnostics go to stderr.
@@ -74,6 +83,38 @@ const CORE_TIER_TRIGGERS = [
 ];
 
 /**
+ * The CORE tier: one test per load-bearing surface, not a sweep. Everyday work should run
+ * `just app-test-changed` (coverage-derived from your diff) — this list is the broad smoke
+ * you reach for when you want a fast read on whether the app still works at all.
+ *
+ * It lives here rather than in the `justfile` because the `app-test` recipe has to know
+ * which files a bare `just app-test` will run BEFORE it takes the machine-wide gate, and
+ * the recipe's own file list is not resolved until well after that point.
+ */
+const CORE_TIER = [
+    "harness-smoke/smoke.test.ts", // bridge floor: boot, handshake, close
+    "harness-smoke/smoke-native.test.ts", // native CGEvent gesture pipeline
+    "harness-smoke/smoke-cold-boot.test.ts", // two-process tugbank round-trip
+    "at0001-tab-switch-fc.test.ts", // intra-pane tab switch + caret restore
+    "at0003-pane-activation.test.ts", // cross-pane activation
+    "at0016-tab-close-handoff.test.ts", // close-the-active-tab focus handoff
+    "at0014-scroll-persistence.test.ts", // region scroll across activation paths
+    "at0024-prompt-state-roundtrip.test.ts", // prompt state across reload + relaunch
+    "at0084-session-lifecycle-coordination.test.ts", // session lifecycle state-to-zone matrix
+    "at0109-focus-ring.test.ts", // the one app-owned focus ring
+    "at0126-keyboard-ring-cold-boot.test.ts", // focus axis survives relaunch
+    "at0145-permission-dialog-keyboard.test.ts", // card-modal dialog keyboard model
+    "at0165-activation-first-responder.test.ts", // responder-chain accelerators
+    "at0168-menu-structure.test.ts", // menu bar structure contract
+    "at0191-turns-end-to-end.test.ts", // canonical turns through the transcript
+    "at0201-session-card-activation-click-focus.test.ts", // session card activation focus
+    "at0209-text-card-live-autosave.test.ts", // Text card core loop on real files
+    "at0216-shell-exchange.test.ts", // $ shell route end-to-end
+    "at0231-lens-toggle-focus.test.ts", // Lens rail toggle + focus + reload
+    "at0253-commit-dialog.test.ts", // commit mode open/dismiss
+];
+
+/**
  * The most test files a derived selection may run without an explicit opt-in. Sized to
  * the core tier (~20 files, a few minutes): past this, selection has stopped scoping the
  * change and the caller should be the one deciding to spend the time.
@@ -114,6 +155,8 @@ const ACCEPTED_FANOUT: Record<string, number> = {
 interface TestCoverage {
     file: string;
     covers: string[];
+    /** Declared by `@foreground`: this file launches the app in the activating event mode. */
+    foreground: boolean;
 }
 
 /** Repo-relative paths of every app-test file, in run order (smoke first). */
@@ -129,17 +172,28 @@ function testFiles(): string[] {
 }
 
 const COVERS_LINE = /^\s*\*?\s*@covers\s+(\S+)/;
+const FOREGROUND_LINE = /^\s*\*?\s*@foreground\b/;
+
+/** The launch option the `@foreground` tag declares. Matched anywhere in the file body. */
+const FOREGROUND_OPTION = /\bforeground:\s*true\b/;
 
 function readCoverage(file: string): TestCoverage {
     const text = readFileSync(join(APP_TEST_DIR, file), "utf8");
     const covers: string[] = [];
+    let foreground = false;
     for (const line of text.split("\n")) {
         const m = COVERS_LINE.exec(line);
         if (m) covers.push(m[1]);
-        // @covers lines live in the header docblock; stop at the first import.
+        if (FOREGROUND_LINE.test(line)) foreground = true;
+        // Declarations live in the header docblock; stop at the first import.
         if (/^import\s/.test(line)) break;
     }
-    return { file, covers };
+    return { file, covers, foreground };
+}
+
+/** Whether a test file actually passes `foreground: true` at any launch site. */
+function launchesForeground(file: string): boolean {
+    return FOREGROUND_OPTION.test(readFileSync(join(APP_TEST_DIR, file), "utf8"));
 }
 
 /** A `@covers` value matches a changed path by subtree prefix or by glob. */
@@ -181,9 +235,68 @@ const args = process.argv.slice(2);
 const printOnly = args.includes("--print");
 const checkOnly = args.includes("--check");
 const holesOnly = args.includes("--holes");
+const coreOnly = args.includes("--core");
+const foregroundOnly = args.includes("--foreground");
+const foregroundCheck = args.includes("--foreground-check");
 const explicit = args.filter((a) => !a.startsWith("--"));
 
+if (coreOnly) {
+    for (const f of CORE_TIER) process.stdout.write(`${f}\n`);
+    process.exit(0);
+}
+
 const coverage = testFiles().map(readCoverage);
+
+/**
+ * A test filename as the corpus knows it. Callers hand us whatever their shell produced —
+ * a bare name, a `./` form, or the repo-root-relative path tab-completion generates — and
+ * all three name the same file. Matching is on the whole name, never a prefix: `at0209`
+ * alone is ambiguous between two unrelated tests.
+ */
+function normalizeTestName(name: string): string {
+    return name.replace(/^\.\//, "").replace(/^tests\/app-test\//, "");
+}
+
+if (foregroundOnly) {
+    const tagged = new Set(coverage.filter((c) => c.foreground).map((c) => c.file));
+    for (const name of explicit.map(normalizeTestName)) {
+        if (tagged.has(name)) process.stdout.write(`${name}\n`);
+    }
+    process.exit(0);
+}
+
+if (foregroundCheck) {
+    // Both directions matter, for different reasons. A tag with no launch option prompts
+    // about a test that never takes the screen — noise that trains dismissal. An option
+    // with no tag runs a screen-seizing test unannounced, which is the harm the tag exists
+    // to prevent.
+    const undeclared = coverage.filter((c) => !c.foreground && launchesForeground(c.file));
+    const overdeclared = coverage.filter((c) => c.foreground && !launchesForeground(c.file));
+
+    if (undeclared.length > 0) {
+        process.stderr.write(
+            `[select-tests] ${undeclared.length} test file(s) launch with 'foreground: true' but carry\n` +
+                `               no @foreground tag — they would seize the screen unannounced:\n`,
+        );
+        for (const c of undeclared) process.stderr.write(`  ${c.file}\n`);
+    }
+    if (overdeclared.length > 0) {
+        process.stderr.write(
+            `[select-tests] ${overdeclared.length} test file(s) declare @foreground but never launch with\n` +
+                `               'foreground: true' — they would prompt for nothing:\n`,
+        );
+        for (const c of overdeclared) process.stderr.write(`  ${c.file}\n`);
+    }
+    if (undeclared.length === 0 && overdeclared.length === 0) {
+        const n = coverage.filter((c) => c.foreground).length;
+        process.stderr.write(
+            `[select-tests] @foreground matches behavior across ${coverage.length} test files.\n` +
+                `               ${n} take the screen; the other ${coverage.length - n} run in the background.\n`,
+        );
+        process.exit(0);
+    }
+    process.exit(1);
+}
 
 /** A `@covers` value that resolves to nothing on disk can never select its test. */
 function resolvesOnDisk(pattern: string): boolean {

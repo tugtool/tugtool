@@ -45,6 +45,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/lib/app-lifecycle.ts

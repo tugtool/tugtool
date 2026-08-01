@@ -1,5 +1,6 @@
 //! CLI command implementations
 
+pub mod ask;
 pub mod changesets;
 pub mod file;
 pub mod gate;
@@ -8,6 +9,7 @@ pub mod instance;
 pub mod state_dir;
 pub mod tell;
 
+pub use ask::run_ask;
 pub use changesets::run_changesets;
 pub use file::run_file;
 pub use gate::{GateCommands, run_gate};

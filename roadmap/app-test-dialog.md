@@ -78,7 +78,9 @@ A minority of tests cannot work that way. Their subject *is* activation — app 
 
 - A developer running app-tests has the Session card visible; the dialog is worthless if unseen, but that is the normal working state.
 - Answering is fast relative to a run, so a 10-minute ask timeout is generous rather than tight.
-- The set of `@foreground` tests stays small (currently ~20 of 274 files), so the prompt is occasional and does not become noise that trains dismissal.
+- The set of `@foreground` tests stays small (22 files today — see [#foreground-inventory]).
+
+**The prompt is not occasional.** The core tier (`just app-test` with no arguments) contains four foreground files — `at0014-scroll-persistence`, `at0126-keyboard-ring-cold-boot`, `at0145-permission-dialog-keyboard`, `at0165-activation-first-responder` — so **every core-tier run prompts**. That is the most common invocation in daily use. The gate is therefore a routine interaction, not a rare one, and [R01] is the expected case rather than a tail risk. Two things follow: the dialog must be fast to answer (default selection on the safe option, confirm on Return), and [Q03] moves from "wait and see" to "watch closely from day one".
 
 ---
 
@@ -112,7 +114,7 @@ A minority of tests cannot work that way. Their subject *is* activation — app 
 
 **Plan to resolve:** Live with per-invocation asking first and see whether it actually chafes. If it does, the natural shape is an `--assume` flag the developer passes deliberately (already present per [P10] for non-interactive use) rather than implicit memory, which would risk a surprise seizure long after the decision.
 
-**Resolution:** DEFERRED — revisit after the gate has been in daily use; no follow-up plan filed yet.
+**Resolution:** DEFERRED, but on a short leash. The core tier prompts on *every* run (four of its twenty files are foreground — see [#assumptions]), so "see whether it chafes" has a predictable answer. Ship without memory, keep the safest option preselected so the routine case is one keystroke, and revisit as soon as the gate has real daily use.
 
 ---
 
@@ -124,16 +126,18 @@ A minority of tests cannot work that way. Their subject *is* activation — app 
 | Dialog raised but never visible | high | low | Session-level mount ([P05]); fail-open when no session ([P03]) | A blocked CLI with no dialog on screen |
 | Holding the apptest gate while awaiting a human | med | med | Ask before acquiring the gate ([P09]) | Another worktree reports "held by" for minutes |
 | Declaration drifts from behavior | med | med | `foreground-check` fails the build on mismatch ([P04]) | A foreground test runs unprompted |
-| New route becomes an unauthenticated control surface | high | low | Loopback-only; no code execution; payload is display text plus opaque option ids ([P02]) | Any change that lets the payload carry executable content |
+| New route becomes an unauthenticated control surface | high | low | Loopback-only; no code execution; caller text is confined below fixed provenance chrome ([P11]) | Any change that lets the payload style or replace the chrome |
+| Ask silently skipped while another run is live | med | high | Port resolution prefers `TUG_INSTANCE` / cwd and never treats multi-instance as fatal ([P03]) | A foreground run starts unprompted while a second worktree is testing |
 
 **Risk R01: The ask becomes noise and gets reflexively approved** {#r01-approval-fatigue}
 
-- **Risk:** If the foreground tier grows, the prompt fires often enough that the developer stops reading it, and the gate stops informing anything.
+- **Risk:** The prompt fires often enough that the developer stops reading it, and the gate stops informing anything. This is the **expected** case, not a tail one: four of the twenty core-tier files are foreground, so bare `just app-test` prompts every time (see [#assumptions]).
 - **Mitigation:**
   - Keep the tier small — it is a declared, checked set, so growth is visible in review.
   - The dialog names the specific files, so the content differs run to run rather than being a uniform "are you sure".
   - `just app-test-foreground-check` makes the tier's size a queryable number, worth watching.
-- **Residual risk:** Nothing prevents a burst of new foreground tests; the check reports the count but does not cap it.
+  - Make answering cheap: the safe option is preselected and Return confirms, so the routine case costs one keystroke and the developer still sees which files are involved.
+- **Residual risk:** High and accepted for now. Nothing prevents a burst of new foreground tests, and a one-keystroke confirm is exactly the shape that trains reflexive approval. If the core tier keeps prompting on every run, the answer is [Q03] (remembered answers) or shrinking the tier — not a louder dialog.
 
 **Risk R02: Fail-open hides the gate exactly when it is wanted** {#r02-fail-open}
 
@@ -185,6 +189,7 @@ A minority of tests cannot work that way. Their subject *is* activation — app 
 **Implications:**
 - The wire payload carries an optional `sessionId`.
 - The CLI distinguishes "no route to a dialog" (exit 0, proceed, notice) from "asked and not answered" (exit non-zero, cancel).
+- **Port resolution must not treat "multiple live instances" as fatal.** `resolve_port` in `tugrust/crates/tugutil/src/commands/tell.rs` falls back: explicit `--port` → `TUG_INSTANCE` → `find_for_cwd` → the single live instance → **`Err("multiple instances running")`**. During any app-test run the harness registers `apptest-<wtslug>-<uuid>` instances, so a second worktree's pre-gate ask would hit the multi-instance error, exit 3, and fail open — losing the prompt in precisely the situation where two runs are competing for the screen. The recipe therefore passes `--instance "$TUG_INSTANCE"` when it is set, and `ask.rs` treats a multi-instance registry as "pick the one matching cwd, else no route" rather than an error, filtering out instance ids beginning with `apptest-`.
 
 #### [P04] `@foreground` is a declared docblock tag, checked against behavior (DECIDED) {#p04-foreground-declaration}
 
@@ -212,17 +217,26 @@ A minority of tests cannot work that way. Their subject *is* activation — app 
 - The dialog does not participate in the `dispatchRenderInput` registry in `session-assistant-renderer-dispatch.ts` — that registry's `RenderInput` union is for turn content (`assistant_text`, `thinking`, `tool_call`, `user_text`, `permission`, `cost`), and the ask is not turn content.
 - The element must still be constructed inline every render (no `useMemo` over the element) so Fast Refresh swaps the component cleanly.
 
-#### [P06] Awaiting comes from a `pendingAsk` field feeding the existing phase branch (DECIDED) {#p06-pending-ask-phase}
+#### [P06] Awaiting comes from a lifecycle **overlay**, never from the turn phase (DECIDED) {#p06-pending-ask-phase}
 
-**Decision:** `code-session-store.ts` gains a `pendingAsk` field on its snapshot, and the existing `phase === "awaiting_approval"` branch is extended so a pending ask also yields the Awaiting phase.
+**Decision:** `pendingAsk` becomes a snapshot field on `CodeSessionStore`, and `deriveLifecycleSnapshot` (`tugdeck/src/lib/code-session-store/lifecycle-state.ts`) reports it as a new `SessionLifecycleOverlay`. The store's `state.phase` is **not** touched, and `canSubmit` / `canInterrupt` are **not** affected.
 
 **Rationale:**
-- Awaiting already exists and is already wired to telemetry (`awaitingApprovalSince`, `awaitingApprovalIntervals`, `awaitingApprovalMs`) and to the session-lifecycle zone mapping the Session card renders from. Reusing it means the ask inherits all of that for free.
-- Inventing a parallel "awaiting something else" phase would fork the lifecycle state machine, which `at0084-session-lifecycle-coordination.test.ts` pins as a state-to-zone matrix.
+
+An earlier draft of this decision said "extend the existing `phase === "awaiting_approval"` branch". Reading the code shows that would be both ineffective and actively harmful, so it is recorded here as a rejected option rather than silently dropped:
+
+- **Ineffective as stated.** `deriveLifecycleState` reads only `LifecycleStoreSignals` = `{ phase, transportState, interruptInFlight, transcript }`. It never reads `pendingApproval`. Adding a `pendingAsk` snapshot field alone changes nothing in the matrix — the AWAITING_USER row is keyed on `phase === "awaiting_approval"`, which the *reducer* sets (with a `prevPhase` save/restore) when a permission or question arrives.
+- **Harmful if actually wired.** An app-test ask normally lands on an **idle session with no live turn**. Forcing `phase = "awaiting_approval"` then makes `canSubmit` false (it requires `phase === "idle" || "errored"`) — **the composer goes dead while the dialog is up** — and makes `canInterrupt` true, lighting the Stop button on a session with no turn to stop.
+- **It inverts the law.** `tuglaws.md` [#l24] states the source→delegate rule for the turn lifecycle: `canSubmit` is the single published projection every submit affordance obeys. An app-test ask is a fact about the session's *environment*, not about a turn. Making it masquerade as a turn phase is exactly the source→delegate inversion [D01]/[D13] exist to prevent.
+
+An overlay is the mechanism the matrix already provides for "something is true about this session that is not its turn state". `SessionLifecycleSnapshot` is `{ state, overlays: ReadonlySet<SessionLifecycleOverlay>, submitButtonMode }` — the overlay set rides alongside the state rather than replacing it.
 
 **Implications:**
-- `at0084` must be re-run; if its matrix enumerates the causes of Awaiting rather than just the phase, it needs a case added.
-- The ask's Awaiting time lands in the same telemetry counters as approval time. That is acceptable and arguably correct — both are "blocked on the human" — but it means the telemetry no longer distinguishes them. Noted rather than solved.
+- Add a `pendingAsk: boolean` (or the request object) to `LifecycleStoreSignals` and a new member to `SessionLifecycleOverlay`; `deriveLifecycleState` is untouched.
+- The Z2 STATE cell shows Awaiting from the overlay. The composer stays live and the submit button keeps whatever `submitButtonMode` the real turn state dictates.
+- The matrix's own test is the pure-logic `tugdeck/src/lib/code-session-store/__tests__/lifecycle-state.test.ts`, **not** `at0084` — that is where the new overlay row is pinned. `at0084` is re-run as a regression check only.
+- `CodeSessionStore.getSnapshot` memoizes into `_cachedSnapshot`; every mutation of `pendingAsk` must null that cache or `useSyncExternalStore` will never observe the change ([L02]).
+- Because the phase is untouched, ask-Awaiting time does **not** land in `awaitingApprovalMs` and friends. The telemetry stays honest about what it counts, and the follow-on in [#roadmap] to distinguish them is no longer needed.
 
 #### [P07] Timeout and disconnect are cancels, not proceeds (DECIDED) {#p07-timeout-is-cancel}
 
@@ -248,6 +262,21 @@ A minority of tests cannot work that way. Their subject *is* activation — app 
 - Option ids are a closed set — `run-all`, `run-background-only`, `cancel` — so the recipe can branch on them without parsing prose.
 - The CLI, not the deck, owns option construction; the deck renders whatever `options` array it receives.
 
+#### [P12] The question never blocks a test that did not need it (DECIDED, supersedes the gating half of [P08]) {#p12-non-blocking-ask}
+
+**Decision:** The run is **partitioned, not gated**. Background tests start immediately and are never held up by the question. Screen-taking tests are ordered last, and the answer is collected just before the first of them. The ask itself is raised up front, in parallel with the background run, so the developer gets the question while they are still at the keyboard.
+
+**Rationale:**
+- The original design asked once per *invocation* — "does this run contain a screen-taker? then ask before anything starts". That is the wrong scope. It blocks tests that had permission by default: a bare `just app-test` held all sixteen background files behind a prompt none of them needed. The requirement was that background tests "run at will without requiring attention or approval", and invocation-scoped gating contradicts it.
+- The symptom was visible before it shipped — the [#assumptions] note that every core-tier run prompts, and the re-weighting of [R01] — and was rationalized as a UX cost rather than recognized as the wrong scope. Recorded here so the reasoning error is legible, not just the fix.
+- Asking *when reached* rather than up front was the simpler option and was rejected: the dialog would appear minutes in, after the developer had moved on, and a timeout would quietly mean "skipped". Raising it immediately keeps the question where attention is.
+
+**Implications:**
+- The asker is a detached process; the answer reaches the post-gate child through a file named in `TUG_APPTEST_ASK_OUT`, written to `<file>.part` and renamed to `<file>.done` so a reader never sees a half-written answer.
+- Declining no longer means "cancel the run" — the background half has already happened — so the dialog offers two choices, *run them* / *skip them*. `TUG_APPTEST_ASSUME=cancel` keeps its stronger meaning of "run nothing", checked before any work starts.
+- Skipped files appear as `SKIP` rows in the run summary, so a declined ask is visible in the result rather than silently narrowing coverage.
+- A selection that is *entirely* foreground degenerates correctly: there is nothing to run in parallel, so the run simply waits on the answer.
+
 #### [P09] Ask before acquiring the machine-wide gate (DECIDED) {#p09-ask-before-gate}
 
 **Decision:** The `app-test` recipe resolves its selection and runs the ask **before** the `tugutil host gate run --name apptest` re-exec, not inside it.
@@ -259,6 +288,8 @@ A minority of tests cannot work that way. Their subject *is* activation — app 
 **Implications:**
 - The recipe's existing early-exit re-exec block (`if [ "${TUG_APPTEST_GATED:-}" != "1" ]; then … exec tugutil host gate run …`) is where the ask goes — before the `exec`.
 - The chosen outcome must survive the re-exec. It is passed forward in the environment (`TUG_APPTEST_ASSUME`), which also makes the gated child skip re-asking.
+- **The selection must be resolvable pre-gate, and today it is not.** The `app-test` recipe resolves its file list *after* the gate: the gate re-exec sits near the top of the recipe, while the core-tier list is built ~150 lines further down, after `cd tests/app-test`, in the `if [ -z "$FILES_INPUT" ]` branch. So for bare `just app-test` — the most common invocation — there is no file list at the point the ask belongs. **Fix: hoist core-tier selection into `select-tests.ts` as a `--core` mode**, so both sides resolve the same list from one place and the pre-gate shell can ask about it. The recipe's `FILES` branch then calls `select-tests.ts --core` instead of carrying an inline array.
+- **The re-exec cannot rewrite the file list.** The exec line is `exec … just app-test {{FILES}}` — a *just* template variable, not a shell variable, so the pre-gate shell cannot substitute a filtered list into it. "Run background-only" therefore cannot work by editing `FILES` before the exec. The choice rides across as `TUG_APPTEST_ASSUME=background` and the **post-gate child** re-derives the filtered list by dropping its own `@foreground` files. Pre-gate asks; post-gate filters.
 
 #### [P10] A non-interactive escape hatch exists and is explicit (DECIDED) {#p10-assume-flag}
 
@@ -271,6 +302,20 @@ A minority of tests cannot work that way. Their subject *is* activation — app 
 **Implications:**
 - Documented in the `app-test` recipe's comment block alongside the existing usage lines.
 - The gated child always sees it set, so the ask happens exactly once per invocation.
+
+#### [P11] Caller text is confined below fixed provenance chrome (DECIDED) {#p11-provenance-chrome}
+
+**Decision:** `AppTestAskDialog` owns its icon and a fixed leading label identifying the request as coming from outside the app. The caller supplies only `title`, `description`, and option labels, and none of them can style, replace, or occupy the provenance row.
+
+**Rationale:**
+- [P02] deliberately declines eval's dev-mode gate so the ask works on a release instance. That is right for a consent prompt, but it means **any loopback process can raise a dialog inside the user's Session card**, and the payload is display text — which is precisely the impersonation vector. Without fixed chrome, a caller could render text that reads like a Claude permission prompt.
+- The risk table originally described the payload as "display text plus opaque option ids", as though text were inert. It is not: the whole point of the surface is that the user reads it and acts on it.
+- The mitigation is cheap and entirely presentational, so there is no reason to defer it.
+
+**Implications:**
+- The dialog is visually distinguishable from `PermissionDialog` at a glance — different `iconRole`, and a provenance line the caller cannot reach.
+- `title` and `description` render as plain strings, never as rich/HTML content, so no markup rides in from the wire.
+- This is chrome, not authentication. It raises the cost of impersonation; it does not authenticate the caller. Loopback remains the actual trust boundary.
 
 ---
 
@@ -350,13 +395,15 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 
 #### State Zone Mapping (tugdeck/tugways) {#state-zone-mapping}
 
-| State | Zone (appearance / local-data / structure) | Mechanism | Law |
+Zone assignment is governed by [L24] (state is partitioned into appearance / local data / structure); [L02] is the delivery mechanism for the local-data rows, and [L06] for the appearance row.
+
+| State | Zone (appearance / local-data / structure) | Mechanism | Laws |
 |-------|--------------------------------------------|-----------|-----|
-| `pendingAsk` (the live request) | local-data | store field on `codeSessionStore`, read via `useSyncExternalStore` | [L02] |
-| `selectedOption` (radio selection before confirm) | local-data | `useState` in `AppTestAskDialog` — pre-commit draft, never leaves the component | [L02] |
-| Session phase → Awaiting | local-data | derived in `code-session-store` from `pendingAsk` + `pendingApproval`; no separate state | [L02] |
-| Dialog visibility / mount | structure | conditional render gated on the store snapshot | [L02] |
-| Dialog styling, icon tint | appearance | CSS in `session-app-test-ask-dialog.css`; `iconRole` prop | [L06] |
+| `pendingAsk` (the live request) | local-data | store field on `codeSessionStore`, read via `useSyncExternalStore`; mutation nulls `_cachedSnapshot` | [L24], [L02] |
+| `selectedOption` (radio selection before confirm) | local-data | `useState` in `AppTestAskDialog` — pre-commit draft, never leaves the component. `TugInlineDialog` is stateless by [L24] and assigns `selectedOption` to the consumer. | [L24] |
+| Ask → Awaiting | local-data | a `SessionLifecycleOverlay` from `deriveLifecycleSnapshot`; the turn phase, `canSubmit`, and `canInterrupt` are untouched ([P06]) | [L24], [D01] |
+| Dialog visibility / mount | structure | conditional render gated on the store snapshot | [L24], [L02] |
+| Dialog styling, icon tint, provenance chrome | appearance | CSS in `session-app-test-ask-dialog.css`; `iconRole` prop; no React state ([P11]) | [L24], [L06] |
 
 ---
 
@@ -381,8 +428,10 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 | `dispatch_action` | fn (modify) | `tugrust/crates/tugcast/src/actions.rs` | New `pending_asks` param; new `"ask-response"` arm; update call sites in `control.rs`, `main.rs`, and the in-file test setup |
 | `HostCommands::Ask` | enum variant | `tugrust/crates/tugutil/src/cli.rs` | New subcommand under `pub enum HostCommands` |
 | `registerAction("ask", …)` | call | `tugdeck/src/action-dispatch.ts` | Alongside the existing `"eval"` registration |
-| `pendingAsk` | store field | `tugdeck/src/lib/code-session-store.ts` | Added to the snapshot; feeds the `awaiting_approval` phase branch ([P06]) |
-| `@foreground` parsing + `--foreground` mode | fn | `tests/app-test/scripts/select-tests.ts` | Alongside `@covers`; plus bidirectional drift check ([P04]) |
+| `getByTugSessionId` | existing fn (use) | `tugdeck/src/lib/card-services-store.ts` | **Already exists** — the lookup from wire `sessionId` to the owning card's `codeSessionStore`. Do not write a new registry. |
+| `pendingAsk` | store field | `tugdeck/src/lib/code-session-store.ts` | Added to the snapshot; must null `_cachedSnapshot` on mutation ([P06]) |
+| `SessionLifecycleOverlay` member + `LifecycleStoreSignals.pendingAsk` | type + fn (modify) | `tugdeck/src/lib/code-session-store/lifecycle-state.ts` | The Awaiting overlay ([P06]); `deriveLifecycleState` stays untouched |
+| `@foreground` parsing + `--foreground` / `--core` modes | fn | `tests/app-test/scripts/select-tests.ts` | Alongside `@covers`; plus bidirectional drift check ([P04]). `--core` hoists the core-tier list out of the `justfile` so it is resolvable pre-gate ([P09]) |
 | `app-test-foreground-check` | recipe | `justfile` | Sibling of `app-test-covers-check` |
 | `app-test` | recipe (modify) | `justfile` | Ask before the gate re-exec ([P09]); branch on `TUG_APPTEST_ASSUME` |
 
@@ -423,14 +472,14 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | `@foreground` declaration and drift check | pending | — |
-| #step-2 | tugcast `/api/ask` route and `pending_asks` | pending | — |
-| #step-3 | `tugutil host ask` CLI verb | pending | — |
-| #step-4 | Deck pending-ask store and action registration | pending | — |
-| #step-5 | `AppTestAskDialog` component | pending | — |
-| #step-6 | Session mount and Awaiting phase | pending | — |
-| #step-7 | Recipe gate | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | `@foreground` declaration and drift check | done | `29d51b9ba` |
+| #step-2 | tugcast `/api/ask` route and `pending_asks` | done | `8e9d8d1bc` |
+| #step-3 | `tugutil host ask` CLI verb | done | `f3df1550a` |
+| #step-4 | Deck pending-ask store and action registration | done | `a1597b685` |
+| #step-5 | `AppTestAskDialog` component | done | `3af10e343` |
+| #step-6 | Session mount and Awaiting phase | done | `3af10e343` |
+| #step-7 | Recipe gate | done | `d910e4e5a` |
+| #step-8 | Integration checkpoint | done | `e415bad5b` |
 
 ---
 
@@ -438,7 +487,7 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 
 **Commit:** `apptest(foreground-tag): declare screen-taking tests with @foreground and check for drift`
 
-**References:** [P04] Foreground declaration, List L01, (#why-declaration, #foreground-inventory)
+**References:** [P04] Foreground declaration, [P09] Ask before the gate, List L01, (#why-declaration, #foreground-inventory)
 
 **Artifacts:**
 - `@foreground` tags in every file from List L01.
@@ -447,8 +496,10 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 
 **Tasks:**
 - [ ] Extend the docblock parser in `select-tests.ts` to read `@foreground` alongside `@covers`.
-- [ ] Add `--foreground <files…>`: print the subset of the given files carrying the tag, one per line, stdout only.
-- [ ] Add a drift check: a file whose source contains `foreground: true` must carry `@foreground`, and vice versa. Report both directions with the offending path.
+- [ ] Add `--foreground <files…>`: print the subset of the given files carrying the tag, one per line, stdout only. Match on **full filenames**, never test-id prefixes — `at0209-picker-field-click-single-focus` (foreground) and `at0209-text-card-live-autosave` (background, core tier) share the `at0209` prefix and must not be confused.
+- [ ] Add `--core`: print the core-tier file list, one per line. Move the list verbatim out of the `justfile`'s `if [ -z "$FILES_INPUT" ]` branch (comments included) so there is exactly one definition ([P09]).
+- [ ] Point the `justfile`'s core-tier branch at `select-tests.ts --core`.
+- [ ] Add a drift check: a file whose source contains `foreground: true` must carry `@foreground`, and vice versa. Report both directions with the offending path. Exclude `_harness/index.ts`, which contains the option's *definition*, not a launch site.
 - [ ] Add `app-test-foreground-check` to the `justfile`, mirroring `app-test-covers-check`.
 - [ ] Tag every file in List L01.
 
@@ -456,10 +507,12 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 - [ ] Unit: a fixture with the tag and no `foreground: true` is reported as drift.
 - [ ] Unit: a fixture with `foreground: true` and no tag is reported as drift.
 - [ ] Unit: `--foreground` on a mixed list returns only the tagged files.
+- [ ] Unit: `--foreground` given `at0209-text-card-live-autosave.test.ts` returns nothing (prefix-collision guard).
 
 **Checkpoint:**
 - [ ] `just app-test-foreground-check` exits 0 on the real corpus.
 - [ ] `bun scripts/select-tests.ts --foreground at0001-tab-switch-fc.test.ts at0145-permission-dialog-keyboard.test.ts` prints only `at0145-permission-dialog-keyboard.test.ts`.
+- [ ] `bun scripts/select-tests.ts --core` prints the same 20 files the `justfile` listed before the hoist (diff against the pre-change recipe).
 - [ ] Temporarily delete one tag → the check exits non-zero naming that file; restore it.
 
 ---
@@ -507,13 +560,15 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 
 **Tasks:**
 - [ ] Add the `Ask` variant to `pub enum HostCommands` in `tugrust/crates/tugutil/src/cli.rs` with `--title`, `--description`, repeatable `--option`, `--timeout-secs`, `--port`, `--instance`.
-- [ ] Implement `ask.rs`: parse `value:label[:description]` options, read `TUG_SESSION_ID` from the environment, resolve the port via `resolve_port` (from `commands/tell.rs`), POST to `/api/ask` following the pattern in `commands/draft.rs`.
-- [ ] Map outcomes to exit codes per Spec S04 — notably exit `3` (proceed, no route) when the port cannot be resolved or the connection is refused ([P03]).
+- [ ] Implement `ask.rs`: parse `value:label[:description]` options, read `TUG_SESSION_ID` from the environment, resolve the port, POST to `/api/ask` following the pattern in `commands/draft.rs`.
+- [ ] **Port resolution must tolerate a busy registry** ([P03]). `resolve_port` errors when more than one instance is live, which is the normal state during any app-test run. Prefer `--port` → `TUG_INSTANCE` → `find_for_cwd`, and when several remain, ignore ids beginning with `apptest-` before deciding; if still ambiguous, report "no route" (exit 3) rather than an error.
+- [ ] Map outcomes to exit codes per Spec S04 — notably exit `3` (proceed, no route) when no port can be resolved or the connection is refused ([P03]).
 - [ ] Print only the chosen `value` on stdout; all diagnostics to stderr.
 
 **Tests:**
 - [ ] Unit: option-spec parsing, including a description containing a colon.
 - [ ] Unit: an option spec with no `:` separator is a usage error.
+- [ ] Unit: a registry holding one real instance plus two `apptest-*` instances resolves to the real one.
 - [ ] Integration: against a stub server returning a choice, stdout is exactly that value and exit is 0.
 - [ ] Integration: connection refused → exit 3, nothing on stdout.
 
@@ -539,14 +594,18 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 **Tasks:**
 - [ ] Write `pending-ask-store.ts`: hold the live request, expose `subscribe` / `getSnapshot` ([L02]), and a `respond(choice)` that clears state and calls `connection.sendControlFrame("ask-response", { requestId, choice })`.
 - [ ] Register the `"ask"` action in `tugdeck/src/action-dispatch.ts` next to the existing `"eval"` registration; validate `requestId` is a string and ignore the frame otherwise, matching eval's defensive shape.
-- [ ] Route by `sessionId` to the matching card's `codeSessionStore`; fall back to the active session when `sessionId` is null ([P03]).
-- [ ] Add `pendingAsk` to the `code-session-store` snapshot and include it in the `awaiting_approval` phase branch ([P06]).
+- [ ] Route by `sessionId` using the **existing** `cardServicesStore.getByTugSessionId` in `tugdeck/src/lib/card-services-store.ts` — do not build a second registry. Fall back to the active session when `sessionId` is null ([P03]).
+- [ ] Add `pendingAsk` to the `code-session-store` snapshot, nulling `_cachedSnapshot` on every mutation so `useSyncExternalStore` observes it ([L02]).
+- [ ] Add the overlay in `code-session-store/lifecycle-state.ts`: extend `LifecycleStoreSignals` and `SessionLifecycleOverlay`, leaving `deriveLifecycleState`, `canSubmit`, and `canInterrupt` untouched ([P06]).
 - [ ] Respond `cancel` automatically if the session is torn down while an ask is live, so the CLI is never left hanging.
 
 **Tests:**
 - [ ] Unit: an `ask` frame with a non-string `requestId` is ignored.
 - [ ] Unit: `respond` sends `ask-response` with the matching `requestId` and clears the snapshot.
-- [ ] Unit: with `pendingAsk` set, the session snapshot's phase is `awaiting_approval`.
+- [ ] Unit (in `code-session-store/__tests__/lifecycle-state.test.ts`): with `pendingAsk` set on an **idle** session, the lifecycle snapshot carries the ask overlay, `state` stays the idle row, and `submitButtonMode` is unchanged.
+- [ ] Unit: `canSubmit` stays true and `canInterrupt` stays false while an ask is pending on an idle session — the regression [P06] exists to prevent.
+
+These exercise the **real** `CodeSessionStore`, matching the existing precedent in `tugdeck/src/__tests__/` — not a hand-rolled mock store.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test src/lib/` passes.
@@ -560,14 +619,15 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 
 **Commit:** `tugdeck(ask): add AppTestAskDialog composing TugInlineDialog`
 
-**References:** [P01] Compose not author, [P08] Computed options, (#state-zone-mapping)
+**References:** [P01] Compose not author, [P08] Computed options, [P11] Provenance chrome, Risk R01, (#state-zone-mapping)
 
 **Artifacts:**
 - `tugdeck/src/components/tugways/chrome/session-app-test-ask-dialog.tsx` and its `.css`.
 
 **Tasks:**
 - [ ] Compose `TugInlineDialog` with `iconRole="caution"`, the request's `title`, its `description`, and its `options` mapped to `TugInlineDialogOption` (`{ value, label, description }`).
-- [ ] Hold the radio selection in `useState`, defaulting to the first option; render a single confirm button in the primitive's `actions` slot; own focus-on-mount on that button, as `PermissionDialog` does.
+- [ ] Add the fixed provenance chrome ([P11]): an app-owned leading label marking the request as external, which the caller's `title` / `description` cannot style or displace. Render `title` and `description` as plain strings — no rich/HTML content from the wire.
+- [ ] Hold the radio selection in `useState`, defaulting to the **safest** option (`run-background-only` when offered, else `cancel`) so the routine core-tier case is one keystroke and a mis-fire never seizes the screen ([R01]); render a single confirm button in the primitive's `actions` slot; own focus-on-mount on that button, as `PermissionDialog` does.
 - [ ] Call `respond(selectedOption)` on confirm.
 - [ ] Follow `session-permission-dialog.tsx` for structure, class naming, and the `data-slot` convention.
 - [ ] Register the component in the gallery so it is inspectable, following `gallery-tug-inline-dialog.tsx`.
@@ -596,13 +656,14 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 - [ ] Mount `AppTestAskDialog` as a sibling of `SessionTranscriptHost` inside `.session-view-pane[data-view="transcript"]` in `tugdeck/src/components/tugways/cards/session-card.tsx`.
 - [ ] Subscribe via `useSyncExternalStore` ([L02]); gate only on the pending-ask snapshot, never on `isLastAssistant` / `isCommitted` ([P05]).
 - [ ] Build the element inline every render — no `useMemo` over the element — so Fast Refresh swaps the component (the same constraint `session-card-transcript.tsx` documents for `PermissionDialog`).
-- [ ] Verify the session lifecycle zone reflects Awaiting while an ask is pending.
+- [ ] Verify the Z2 STATE cell reads Awaiting from the overlay while an ask is pending, **and** that the composer stays live and the submit button keeps its idle mode ([P06]).
 
 **Tests:**
-- [ ] Re-run `at0084-session-lifecycle-coordination.test.ts`; add a pending-ask case if its matrix enumerates Awaiting's causes.
+- [ ] The matrix assertion lives in the pure-logic `code-session-store/__tests__/lifecycle-state.test.ts` (Step 4), not here.
+- [ ] Re-run `at0084-session-lifecycle-coordination.test.ts` as a regression check — its Awaiting assertions are about the permission path and should be unaffected, which is the point.
 
 **Checkpoint:**
-- [ ] `just app-test at0084-session-lifecycle-coordination.test.ts` passes.
+- [ ] `just app-test at0084-session-lifecycle-coordination.test.ts` passes **unchanged** — if it needed edits, the overlay leaked into the turn phase and [P06] was violated.
 - [ ] `cd tugdeck && bunx vite build` succeeds.
 
 ---
@@ -619,11 +680,19 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 - Ask logic in the `app-test` recipe in `justfile`.
 
 **Tasks:**
-- [ ] In the `app-test` recipe, before the `exec tugutil host gate run …` re-exec ([P09]), normalize the file list the same way the recipe already does (strip `./` and `tests/app-test/`) and query `select-tests.ts --foreground`.
+The step has two halves on opposite sides of the re-exec; keep them straight ([P09]).
+
+**Pre-gate (asks, never filters):**
+- [ ] Resolve the selection before the `exec tugutil host gate run …` re-exec: normalize the given files the same way the recipe already does (strip `./` and `tests/app-test/`), or call `select-tests.ts --core` when `{{FILES}}` is empty (Step 1 hoisted that list).
+- [ ] Query `select-tests.ts --foreground` on the resolved list.
 - [ ] Skip everything when the foreground subset is empty, or when `TUG_APPTEST_ASSUME` is already set ([P10]).
-- [ ] Build the option list per [P08] — omit `run-background-only` when the background subset is empty — and invoke `tugutil host ask`.
-- [ ] Branch: `run-all` proceeds unchanged; `run-background-only` removes the foreground files from `FILES` and echoes the skipped names to stderr; `cancel` exits non-zero before any launch. Exit code 3 from the CLI proceeds with a stderr notice ([P03]).
-- [ ] Export the resolved outcome as `TUG_APPTEST_ASSUME` across the re-exec so the gated child does not re-ask.
+- [ ] Build the option list per [P08] — omit `run-background-only` when the background subset is empty — and invoke `tugutil host ask`, passing `--instance "$TUG_INSTANCE"` when it is set ([P03]).
+- [ ] `cancel` exits non-zero **here**, before any launch. Exit code 3 from the CLI proceeds with a stderr notice naming the foreground files ([P03], [R02]).
+- [ ] Export the answer as `TUG_APPTEST_ASSUME` so it survives the re-exec. Do **not** try to rewrite the exec's `{{FILES}}` — it is a just template variable, not a shell one.
+
+**Post-gate (filters, never asks):**
+- [ ] When `TUG_APPTEST_ASSUME=background`, drop this invocation's own `@foreground` files from `FILES` after the list is resolved, and echo the skipped names to stderr.
+- [ ] `all` proceeds unchanged.
 - [ ] Document `TUG_APPTEST_ASSUME` in the recipe's comment block.
 
 **Tests:**
@@ -686,9 +755,9 @@ Prints the chosen option's `value` to stdout on success. Exit codes: `0` answere
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] [Q03] Remembering an answer for a window of time, if per-invocation asking proves to chafe.
-- [ ] Distinguishing ask-Awaiting from approval-Awaiting in telemetry ([P06] merges them).
-- [ ] Shrinking the foreground tier by re-examining whether individual lifecycle tests truly need real activation.
+- [ ] [Q03] Remembering an answer for a window of time. Promoted from "wait and see" to **watch from day one**: the core tier prompts on every run (see [#assumptions]), so this is likely to be needed sooner than the original draft assumed.
+- [ ] Shrinking the foreground tier by re-examining whether individual lifecycle tests truly need real activation — the other lever on [R01].
+- [ ] Authenticating `/api/ask` callers. [P11] is chrome, not authentication; loopback is the only real boundary today.
 
 | Checkpoint | Verification |
 |------------|--------------|

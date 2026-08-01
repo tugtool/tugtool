@@ -52,6 +52,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/components/tugways/component-state-preservation-registry.ts
  * @covers tugdeck/src/components/tugways/tug-accordion.tsx
  * @covers tugdeck/src/serialization.ts

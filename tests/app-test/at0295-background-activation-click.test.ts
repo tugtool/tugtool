@@ -23,6 +23,7 @@
  *      selection intact. A foreground canvas click deselects; the click that
  *      merely raises the app does not.
  *
+ * @foreground
  * @covers tugapp/Sources/MainWindow.swift
  * @covers tugdeck/src/lib/activation-click-bridge.ts
  * @covers tugdeck/src/gesture-interpreter.ts

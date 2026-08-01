@@ -8,7 +8,8 @@
  *    signals (errored / replaying / interruptInFlight).
  *  - `submitButtonMode` — the matrix's Z5 column for every state, plus
  *    the TRANSPORT_DOWN (`reconnecting`) overlay effect.
- *  - `overlays` — `transport_down`.
+ *  - `overlays` — `transport_down` and `pending_ask`, including that
+ *    `pending_ask` leaves the state and Z5 column untouched.
  *  - [DT09] — `deriveLifecycleSnapshot` returns the previous reference
  *    when no matrix-relevant signal moved, a fresh one when any did.
  *  - `lifecycleSnapshotsEqual` — the structural-equality primitive.
@@ -44,6 +45,7 @@ function signals(
     transportState: "online",
     interruptInFlight: false,
     transcript: [],
+    pendingAsk: null,
     ...overrides,
   };
 }
@@ -295,6 +297,54 @@ describe("lifecycleSnapshotsEqual", () => {
         derive(signals({ phase: "streaming" })),
         derive(signals({ phase: "streaming", transportState: "offline" })),
       ),
+    ).toBe(false);
+  });
+});
+
+describe("the pending_ask overlay", () => {
+  const ASK = {
+    requestId: "req-1",
+    title: "3 of 20 app-tests will take the screen",
+    description: null,
+    options: [{ value: "run-all", label: "Run all" }],
+  };
+
+  it("rides alongside an idle session without changing its state", () => {
+    const snap = derive(signals({ pendingAsk: ASK }));
+    expect(snap.overlays.has("pending_ask")).toBe(true);
+    expect(snap.state).toBe("idle");
+  });
+
+  // The reason this is an overlay and not a phase. Routing an ask through
+  // `awaiting_approval` would flip Z5 to the disabled `awaiting_user` button,
+  // killing the composer on a session that has no turn in flight at all.
+  it("leaves the submit button alone", () => {
+    expect(derive(signals({ pendingAsk: ASK })).submitButtonMode).toEqual({
+      kind: "submit",
+      disabled: false,
+    });
+  });
+
+  it("does not disturb a live turn's state or button", () => {
+    const snap = derive(signals({ phase: "streaming", pendingAsk: ASK }));
+    expect(snap.state).toBe("streaming");
+    expect(snap.submitButtonMode).toEqual({ kind: "stop" });
+    expect(snap.overlays.has("pending_ask")).toBe(true);
+  });
+
+  it("coexists with transport_down", () => {
+    const snap = derive(signals({ pendingAsk: ASK, transportState: "offline" }));
+    expect(snap.overlays.has("pending_ask")).toBe(true);
+    expect(snap.overlays.has("transport_down")).toBe(true);
+  });
+
+  it("is absent when nothing is pending", () => {
+    expect(derive(signals()).overlays.has("pending_ask")).toBe(false);
+  });
+
+  it("makes two otherwise-identical rows unequal", () => {
+    expect(
+      lifecycleSnapshotsEqual(derive(signals()), derive(signals({ pendingAsk: ASK }))),
     ).toBe(false);
   });
 });

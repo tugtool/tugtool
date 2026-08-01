@@ -93,6 +93,7 @@ impl ControlReader {
         response_tx: mpsc::Sender<String>,
         auth: crate::auth::SharedAuthState,
         pending_evals: crate::router::PendingEvals,
+        pending_asks: crate::router::PendingAsks,
         local_model: crate::local_model::SharedLocalModelState,
     ) {
         // Extract the CONTROL broadcast sender for use throughout the recv loop.
@@ -136,6 +137,7 @@ impl ControlReader {
                                         &stream_outputs,
                                         &shared_dev_state,
                                         &pending_evals,
+                                        &pending_asks,
                                         &local_model,
                                     )
                                     .await;

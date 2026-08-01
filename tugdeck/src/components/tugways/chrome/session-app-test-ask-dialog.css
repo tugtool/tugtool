@@ -1,0 +1,55 @@
+/* @tug-pairings:
+   - --tugx-ask-provenance-color | --tugx-idialog-bg  (provenance line above the caller's own text)
+   - --tugx-ask-detail-color     | --tugx-idialog-bg  (the caller's detail line)
+*/
+
+/**
+ * session-app-test-ask-dialog.css — `AppTestAskDialog` chrome fragments.
+ *
+ * The dialog frame belongs to `TugInlineDialog` (which owns
+ * `--tugx-idialog-*`). This file owns only the two-line description slot,
+ * and its job is a security one as much as a visual one:
+ *
+ *   - `.session-app-test-ask-dialog-provenance` — the app's own line saying
+ *     where the question came from. It sits above the caller's text and the
+ *     caller cannot reach it, so a question arriving over loopback cannot
+ *     pass itself off as one of the app's prompts. Rendered smaller and
+ *     dimmer than the detail below it: it is a label, not the message.
+ *   - `.session-app-test-ask-dialog-detail` — the caller's own supporting
+ *     text, on its own line below the provenance label.
+ *
+ * Both are blocks so the two lines never run together into what could read
+ * as one sentence.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] appearance is CSS only; no React state drives any of this.
+ *  - [L17] every `--tugx-ask-*` slot resolves to a `--tug7-*` base token in
+ *    one hop.
+ *  - [L19] component-authoring guide — file pair, module docstring.
+ *  - [L20] component-token sovereignty — owns `--tugx-ask-*` and composes
+ *    no other component's tokens.
+ */
+
+.session-app-test-ask-dialog {
+  --tugx-ask-provenance-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-ask-detail-color: var(--tug7-element-global-text-normal-rest);
+  --tugx-ask-provenance-size: 0.75rem;
+  --tugx-ask-provenance-gap: 0.25rem;
+}
+
+.session-app-test-ask-dialog-provenance {
+  display: block;
+  color: var(--tugx-ask-provenance-color);
+  font-size: var(--tugx-ask-provenance-size);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.session-app-test-ask-dialog-detail {
+  display: block;
+  margin-top: var(--tugx-ask-provenance-gap);
+  color: var(--tugx-ask-detail-color);
+  /* The caller's text can be a long list of filenames — wrap it rather than
+     letting it stretch the dialog. */
+  overflow-wrap: anywhere;
+}

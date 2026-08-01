@@ -40,6 +40,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugapp/Sources/AppDelegate.swift
  * @covers tugdeck/src/lib/app-lifecycle.ts
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx

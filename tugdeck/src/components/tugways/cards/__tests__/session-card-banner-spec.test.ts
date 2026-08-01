@@ -67,6 +67,7 @@ function baseSnap(
     canSubmit: true,
     canInterrupt: false,
     pendingApproval: null,
+    pendingAsk: null,
     pendingQuestion: null,
     queuedSends: [],
     transcript: [],
