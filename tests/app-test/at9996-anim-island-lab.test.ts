@@ -28,6 +28,17 @@
  *                     settle-crossing machinery under churn (E3)
  *   tool-churn-quiet  tool-churn-hot with the quiet sheet on — churn-only
  *
+ *   caret-idle          focused prompt editor, no input — does the caret blink
+ *                       restart unprompted? (expect 1 start, 0 cancels)
+ *   caret-typing        keystroke bursts with idle-expiry gaps — the typing
+ *                       suppression's animation-name toggle (expect one
+ *                       cancel/start pair per burst, never per keystroke)
+ *   caret-focus-flip    blur/focus cycles — the .cm-focused animation gate
+ *                       (expect exactly one pair per flip, no amplification)
+ *   caret-select-cycle  select-all↔collapse cycles — CM6 LayerView's WebKit
+ *                       display toggle on the emptied marker set (expect one
+ *                       pair per cycle if the toggle convicts)
+ *
  * Every ingest RPC runs behind a client-side timeout race AND a server-side
  * evalJS budget; every cadence loop carries a hard iteration cap (the 34k
  * stream-hot run hung forever on one ingestFrame that never returned).
@@ -363,6 +374,28 @@ const QUIET_OFF = `(function () {
   return true;
 })()`;
 
+/** Race an RPC against a client-side deadline — a transport that swallows the
+ *  response fails the cell instead of hanging the run. */
+const withDeadline = async <T>(p: Promise<T>, label: string): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const guard = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `[at9996] RPC deadline: ${label} exceeded ${INGEST_TIMEOUT_MS}ms`,
+          ),
+        ),
+      INGEST_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([p, guard]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
   test(
     "cell matrix: settled / glyphs-idle / stream-{hot,cold,quiet} / tool-churn-{hot,cold,quiet}",
@@ -382,31 +415,6 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
             { timeoutMs: 8_000 },
           );
         }
-
-        /** Race an RPC against a client-side deadline — a transport that
-         *  swallows the response fails the cell instead of hanging the run. */
-        const withDeadline = async <T>(
-          p: Promise<T>,
-          label: string,
-        ): Promise<T> => {
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          const guard = new Promise<never>((_, reject) => {
-            timer = setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    `[at9996] RPC deadline: ${label} exceeded ${INGEST_TIMEOUT_MS}ms`,
-                  ),
-                ),
-              INGEST_TIMEOUT_MS,
-            );
-          });
-          try {
-            return await Promise.race([p, guard]);
-          } finally {
-            clearTimeout(timer);
-          }
-        };
 
         // A blown deadline inside a cell's drive loop is recorded, not
         // fatal — an external sampler attached to the WebContent process can
@@ -791,9 +799,175 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
         await runCell("turn-cycle-fast", turnCycle("C", "cycF", 300));
 
         console.log(`[at9996] REPORT ${JSON.stringify(report)}`);
+        // caret-* cells live in the foreground test below, so a filtered run
+        // naming them contributes nothing to this matrix.
         expect(Object.keys(report).length).toBe(
-          ONLY_CELLS.length > 0 ? ONLY_CELLS.length : 18,
+          ONLY_CELLS.length > 0
+            ? ONLY_CELLS.filter((c) => !c.startsWith("caret-")).length
+            : 18,
         );
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  // The caret cells run FOREGROUND: the blink is gated on `.cm-focused`,
+  // which CM6 derives from real DOM focus, and a background app-test
+  // window's document never has focus — `content.focus()` sets
+  // activeElement but `document.hasFocus()` stays false, `.cm-focused`
+  // never applies, and there is no animation to count. Gated behind
+  // AT9996_CARET=1 so a plain lab run never steals the screen.
+  test.skipIf(process.env.AT9996_CARET !== "1")(
+    "caret cells (foreground): idle / typing / focus-flip / select-cycle",
+    async () => {
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath);
+      const app = await launchTugApp({
+        testName: "at9996-anim-island-caret",
+        env: { TUGBANK_PATH: tugbankPath },
+        foreground: true,
+      });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        for (const id of SESSIONS) {
+          await app.waitForCondition<boolean>(
+            `window.__tug.assertHostRootRegistered(${JSON.stringify(id)})`,
+            { timeoutMs: 8_000 },
+          );
+        }
+
+        // The composer's CM6 editor mounts with the session binding — an
+        // unbound session card carries no .cm-editor to drive.
+        await app.bindSession("A", { tugSessionId: "at9996-caret-A" });
+        await app.awaitEngineReady("A", { timeoutMs: 20_000 });
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll(".cm-editor .tug-text-editor-caret-layer").length >= 1`,
+          { timeoutMs: 10_000 },
+        );
+
+        const report: Record<string, unknown> = {};
+        const hold = (ms: number) =>
+          new Promise((resolve) => setTimeout(resolve, ms));
+
+        /** In-page caret driver: an async gesture script against the first
+         *  prompt editor carrying a caret layer. Keystrokes are a keydown
+         *  dispatch (engages the typing attribute) plus execCommand — real
+         *  contenteditable input CM6 ingests as a doc change. Completion is
+         *  signalled through window.__at9996CaretDone, polled from outside;
+         *  the driver itself returns immediately (no long-held RPC). */
+        const caretDrive = (body: string): string => `(function () {
+  var eds = Array.prototype.filter.call(
+    document.querySelectorAll(".cm-editor"),
+    function (e) { return e.querySelector(".tug-text-editor-caret-layer"); });
+  var ed = eds[0];
+  if (!ed) { window.__at9996CaretDone = "no-editor"; return "no-editor"; }
+  var content = ed.querySelector(".cm-content");
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var key = function (k) { content.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true })); };
+  var type = function (ch) { key(ch); document.execCommand("insertText", false, ch); };
+  var del = function () { key("Backspace"); document.execCommand("delete", false); };
+  window.__at9996CaretDone = "";
+  (async function () {
+    ${body}
+    window.__at9996CaretDone = "done";
+  })();
+  return "started";
+})()`;
+
+        const CARET_STATE = `(function () {
+  var layers = document.querySelectorAll(".tug-text-editor-caret-layer");
+  return {
+    done: window.__at9996CaretDone,
+    editors: document.querySelectorAll(".cm-editor").length,
+    layers: layers.length,
+    focusedEditor: !!document.querySelector(".cm-editor.cm-focused"),
+    docHasFocus: document.hasFocus(),
+    activeEl: document.activeElement ? document.activeElement.className.split(" ")[0] : null,
+    blinkAnims: document.getAnimations().filter(function (a) {
+      return a.animationName === "tug-text-editor-caret-blink";
+    }).length,
+  };
+})()`;
+
+        const caretCell = async (name: string, body: string): Promise<void> => {
+          if (ONLY_CELLS.length > 0 && !ONLY_CELLS.includes(name)) return;
+          await withDeadline(app.evalJS<boolean>(ARM_METER), `arm ${name}`);
+          const t0 = Date.now();
+          await withDeadline(
+            app.evalJS<string>(caretDrive(body)),
+            `caret drive ${name}`,
+          );
+          await app.waitForCondition<boolean>(
+            `window.__at9996CaretDone !== ""`,
+            { timeoutMs: CELL_SECS * 1000 + 20_000 },
+          );
+          const left = CELL_SECS * 1000 - (Date.now() - t0);
+          if (left > 0) await hold(left);
+          const meter = await withDeadline(
+            app.evalJS<Record<string, unknown>>(READ_METER),
+            `read ${name}`,
+          );
+          const state = await withDeadline(
+            app.evalJS<Record<string, unknown>>(CARET_STATE),
+            `caret state ${name}`,
+          );
+          report[name] = { meter, state, t0, t1: Date.now() };
+          console.log(`[at9996] CARET-CELL ${name} → ${JSON.stringify({ meter, state })}`);
+          expect(state.done).toBe("done");
+        };
+
+        // Focused editor, hands off: the blink must start once (the focus)
+        // and never restart on its own.
+        await caretCell("caret-idle", `content.focus(); await sleep(300);`);
+
+        // Two keystroke bursts with idle-expiry gaps (the typing attribute
+        // clears 500ms after the last keydown). The suppression toggles
+        // animation-name; the question is one pair per burst or one per
+        // keystroke.
+        await caretCell(
+          "caret-typing",
+          `content.focus(); await sleep(400);
+    for (var i = 0; i < 15; i++) { type("x"); await sleep(80); }
+    await sleep(900);
+    for (var j = 0; j < 15; j++) { del(); await sleep(80); }
+    await sleep(900);`,
+        );
+
+        // Blur/focus cycles: the .cm-focused gate. One pair per flip is the
+        // contract; more is amplification.
+        await caretCell(
+          "caret-focus-flip",
+          `content.focus(); await sleep(300);
+    for (var i = 0; i < 6; i++) {
+      content.blur(); await sleep(200);
+      content.focus(); await sleep(200);
+    }`,
+        );
+
+        // Select-all↔collapse cycles: a non-collapsed selection empties the
+        // caret layer's marker set, and CM6's LayerView answers an emptied
+        // set with display:none on WebKit — cancelling the blink on the
+        // layer element itself. Collapse restores it: a fresh start.
+        await caretCell(
+          "caret-select-cycle",
+          `content.focus(); await sleep(300);
+    for (var i = 0; i < 8; i++) { type("s"); }
+    await sleep(700);
+    var sel = window.getSelection();
+    for (var c = 0; c < 5; c++) {
+      sel.selectAllChildren(content); await sleep(250);
+      sel.collapseToEnd(); await sleep(250);
+    }
+    await sleep(700);
+    for (var d = 0; d < 8; d++) { del(); await sleep(60); }
+    await sleep(600);`,
+        );
+
+        console.log(`[at9996] CARET-REPORT ${JSON.stringify(report)}`);
+        expect(Object.keys(report).length).toBeGreaterThan(0);
       } finally {
         await app.close();
       }
