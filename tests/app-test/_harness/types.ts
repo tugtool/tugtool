@@ -464,6 +464,22 @@ export interface LaunchTugAppOptions {
   skipAccessibilityPreflight?: boolean;
 
   /**
+   * Launch the app frontmost and route native events through the
+   * session event tap, the way a user's input arrives.
+   *
+   * Defaults to false: an app-test launches in the background and the
+   * in-app harness addresses events to its own process, so a run never
+   * takes the developer's focus, cursor, or key window.
+   *
+   * Pass `true` only for tests whose SUBJECT is activation — key-window
+   * status, app resign / become-active, responder-chain routing that
+   * AppKit gates on being active. Those cannot be observed in an
+   * inactive app. A foreground launch takes the screen for its
+   * duration, so it is the marked, minority case.
+   */
+  foreground?: boolean;
+
+  /**
    * Disable test-mode's persistence-bypass so tugbank writes from
    * `deck-manager`'s `put*Guarded` wrappers actually go through.
    * Used by cold-boot harness tests ([AT0014] scroll / focus round-trips)

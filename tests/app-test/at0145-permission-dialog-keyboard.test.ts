@@ -130,7 +130,9 @@ describe.skipIf(!SHOULD_RUN)("AT0145: PermissionDialog is card-modal", () => {
   test(
     "decomposed controls in a trap; seeded Allow; scope group; scrim; Escape denies",
     async () => {
-      const app = await launchTugApp({ testName: "at0145-permission-dialog-keyboard" });
+      // Foreground: this suite gates on `document.hasFocus()`, which
+      // WebKit ties to application activation.
+      const app = await launchTugApp({ testName: "at0145-permission-dialog-keyboard", foreground: true });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

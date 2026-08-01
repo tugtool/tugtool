@@ -7,9 +7,10 @@ import WebKit
 // MARK: - NativeEventHandlers
 //
 // Phase A native-gesture + keyboard handler set. Every verb in this
-// file posts trusted Quartz events via `CGEvent.post(tap: .cgSessionEventTap)`
-// ([D02]) using a per-instance `CGEventSource(stateID: .combinedSessionState)`
-// ([Q05]). Gestures run on the main thread; callers (the dispatch
+// file posts trusted Quartz events through the `post(_:)` router —
+// `CGEvent.post(tap: .cgSessionEventTap)` ([D02]), or
+// `CGEvent.postToPid` when `TUGAPP_NATIVE_EVENT_MODE=pid` — using a
+// per-instance `CGEventSource(stateID: .privateState)` ([Q05]). Gestures run on the main thread; callers (the dispatch
 // table in `TestHarnessConnection`) bounce through `DispatchQueue.main.async`.
 //
 // ## Why this shape
@@ -211,6 +212,96 @@ final class NativeEventHandlers {
     private weak var webView: WKWebView?
     private let source: CGEventSource?
 
+    /// `TUGAPP_NATIVE_EVENT_MODE=pid` addresses every event to this process
+    /// via `CGEvent.postToPid` instead of the session event tap. Delivery
+    /// bypasses WindowServer's frontmost-window-at-coordinate routing, so
+    /// gestures also skip self-activation — the app receives its events
+    /// while another app keeps the user's focus, cursor, and key window.
+    private let postToOwnPid: Bool =
+        ProcessInfo.processInfo.environment["TUGAPP_NATIVE_EVENT_MODE"] == "pid"
+    private let ownPid = pid_t(ProcessInfo.processInfo.processIdentifier)
+
+    /// Route an event through the mode's channel. Session-tap mode posts
+    /// everything to WindowServer (frontmost routing). Pid mode splits by
+    /// kind: keyboard events reach an inactive app via `postToPid`, but
+    /// AppKit refuses to route mouse events to an inactive app at the
+    /// application level — those are rebuilt as `NSEvent`s and dispatched
+    /// straight into the window, below the activation-gated routing.
+    private func post(_ event: CGEvent) {
+        if postToOwnPid {
+            if let nsType = mouseNSEventType(event.type) {
+                sendMouseEventToWindow(event, as: nsType)
+            } else {
+                event.postToPid(ownPid)
+            }
+        } else {
+            event.post(tap: .cgSessionEventTap)
+        }
+    }
+
+    /// The NSEvent type for a mouse CGEvent, or nil for non-mouse events.
+    private func mouseNSEventType(_ type: CGEventType) -> NSEvent.EventType? {
+        switch type {
+        case .leftMouseDown: return .leftMouseDown
+        case .leftMouseUp: return .leftMouseUp
+        case .rightMouseDown: return .rightMouseDown
+        case .rightMouseUp: return .rightMouseUp
+        case .leftMouseDragged: return .leftMouseDragged
+        case .rightMouseDragged: return .rightMouseDragged
+        default: return nil
+        }
+    }
+
+    /// Event number for synthesized mouse NSEvents. A mouse-down mints a
+    /// new number and the gesture's dragged/up events reuse it — the
+    /// pairing real gestures carry.
+    private var syntheticEventNumber: Int = 41_000
+
+    /// Rebuild a mouse CGEvent as an NSEvent located in the window and
+    /// deliver it via `window.sendEvent` on the main thread. The CG
+    /// screen coord (Y-down, primary-screen origin) is flipped back to
+    /// AppKit screen space and converted into window coords — the same
+    /// chain `CoordMapping.viewportToScreen` runs, reversed from step 5
+    /// to step 3.
+    private func sendMouseEventToWindow(_ event: CGEvent, as nsType: NSEvent.EventType) {
+        let work = { [self] in
+            guard let webView = self.webView, let window = webView.window else { return }
+            let cgPoint = event.location
+            let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+            let appKitScreen = CGPoint(x: cgPoint.x, y: primaryHeight - cgPoint.y)
+            let windowPoint = window.convertPoint(fromScreen: appKitScreen)
+            let isDown = nsType == .leftMouseDown || nsType == .rightMouseDown
+            if isDown { syntheticEventNumber += 1 }
+            let clickState = Int(event.getIntegerValueField(.mouseEventClickState))
+            guard let ns = NSEvent.mouseEvent(
+                with: nsType,
+                location: windowPoint,
+                modifierFlags: nsModifierFlags(from: event.flags),
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: syntheticEventNumber,
+                clickCount: max(1, clickState),
+                pressure: nsType == .leftMouseUp || nsType == .rightMouseUp ? 0 : 1,
+            ) else {
+                NSLog("tughost.native.sendMouseEventToWindow.failed type=%d", nsType.rawValue)
+                return
+            }
+            window.sendEvent(ns)
+        }
+        if Thread.isMainThread { work() } else { DispatchQueue.main.sync(execute: work) }
+    }
+
+    /// Map CGEvent modifier flags onto NSEvent modifier flags.
+    private func nsModifierFlags(from flags: CGEventFlags) -> NSEvent.ModifierFlags {
+        var out: NSEvent.ModifierFlags = []
+        if flags.contains(.maskCommand) { out.insert(.command) }
+        if flags.contains(.maskShift) { out.insert(.shift) }
+        if flags.contains(.maskAlternate) { out.insert(.option) }
+        if flags.contains(.maskControl) { out.insert(.control) }
+        return out
+    }
+
     init(webView: WKWebView) {
         self.webView = webView
         // Private event-state source. It keeps its OWN modifier-state table —
@@ -287,9 +378,9 @@ final class NativeEventHandlers {
             up.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
         }
 
-        down.post(tap: .cgSessionEventTap)
+        post(down)
         sleepMs(mouseDownDelayMs)
-        up.post(tap: .cgSessionEventTap)
+        post(up)
         sleepMs(mouseUpDelayMs)
     }
 
@@ -344,9 +435,9 @@ final class NativeEventHandlers {
             down.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
             up.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
         }
-        down.post(tap: .cgSessionEventTap)
+        post(down)
         sleepMs(20)
-        up.post(tap: .cgSessionEventTap)
+        post(up)
     }
 
     /// Convenience: right-button click for context-menu paths.
@@ -475,7 +566,7 @@ final class NativeEventHandlers {
             throw NativeEventError.eventCreationFailed("drag mouseDown")
         }
 
-        down.post(tap: .cgSessionEventTap)
+        post(down)
         sleepMs(mouseDownDelayMs)
 
         // Interpolated dragged events. We ALWAYS post at least one
@@ -497,7 +588,7 @@ final class NativeEventHandlers {
             ) else {
                 throw NativeEventError.eventCreationFailed("drag mouseDragged step \(i)")
             }
-            dragged.post(tap: .cgSessionEventTap)
+            post(dragged)
             // 20ms/step gives WebKit enough gap between events that
             // windowserver doesn't coalesce them in its event queue.
             // Lower values (8ms) cause all 8 drag events to merge
@@ -525,7 +616,7 @@ final class NativeEventHandlers {
             ) else {
                 throw NativeEventError.eventCreationFailed("drag mouseUp")
             }
-            up.post(tap: .cgSessionEventTap)
+            post(up)
             sleepMs(mouseUpDelayMs)
         }
     }
@@ -550,7 +641,7 @@ final class NativeEventHandlers {
         ) else {
             throw NativeEventError.eventCreationFailed("mouseDown")
         }
-        event.post(tap: .cgSessionEventTap)
+        post(event)
     }
 
     /// Individual mouse-up half. See `nativeMouseDown` caveats.
@@ -568,7 +659,7 @@ final class NativeEventHandlers {
         ) else {
             throw NativeEventError.eventCreationFailed("mouseUp")
         }
-        event.post(tap: .cgSessionEventTap)
+        post(event)
     }
 
     // MARK: - Keyboard
@@ -751,7 +842,12 @@ final class NativeEventHandlers {
     ///
     /// Safe to call from any queue. `NSApp.activate` is main-thread-
     /// only, so we marshal via a synchronous hop.
+    ///
+    /// A no-op in pid mode: `postToPid` delivery never consults
+    /// WindowServer's z-order, and activating would steal the user's
+    /// focus — the thing the mode exists to avoid.
     private func activateSelf() {
+        if postToOwnPid { return }
         if Thread.isMainThread {
             NSApp.activate(ignoringOtherApps: true)
         } else {
@@ -840,7 +936,7 @@ final class NativeEventHandlers {
         // `altKey` false, so a two-modifier binding never matches. Stamping the
         // held set makes the flags a function of what the harness asked for.
         event.flags = heldFlags
-        event.post(tap: .cgSessionEventTap)
+        post(event)
     }
 
     /// Sleep the main thread. Used between event posts to give WebKit

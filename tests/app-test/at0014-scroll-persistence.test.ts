@@ -134,7 +134,9 @@ describe.skipIf(!SHOULD_RUN)("m14: region scroll persistence on gallery-markdown
   }, TEST_TIMEOUT_MS);
 
   test("region scroll survives app resign + become-active", async () => {
-    const app = await launchTugApp({ testName: "at0014-scroll-app-cycle" });
+    // Foreground: the subject is the app resign / become-active cycle,
+    // which only happens to an app that is actually active.
+    const app = await launchTugApp({ testName: "at0014-scroll-app-cycle", foreground: true });
     try {
       await app.enableDeckTrace(true);
 

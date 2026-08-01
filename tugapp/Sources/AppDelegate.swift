@@ -182,8 +182,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         lap("resolveStartupBackgroundHex → \(bgHex)")
 
         window.updateBackgroundColor(bgHex)
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if ProcessInfo.processInfo.environment["TUGAPP_NATIVE_EVENT_MODE"] == "pid" {
+            // Harness pid mode drives the app in the background — order
+            // the window on screen without taking key status or stealing
+            // the user's active app. Making the window key here does not
+            // buy `document.hasFocus()`: WebKit ties that to application
+            // activation, and taking key status changes what an
+            // activation click means.
+            window.orderFront(nil)
+        } else {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
         lap("window visible")
 
         window.bridgeDelegate = self

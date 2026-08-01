@@ -104,6 +104,9 @@ describe.skipIf(!SHOULD_RUN)("AT0126: keyboard ring survives cold boot", () => {
               env: { TUGBANK_PATH: tugbankPath },
               skipAccessibilityPreflight: true,
               persistInTestMode: true,
+              // Foreground: the ring is captured on app resign, which only
+              // fires for an app that is actually active.
+              foreground: true,
             });
 
             await app.seedDeckState({ state: deckShape(v.componentId), focusCardId: CARD_ID });
@@ -145,6 +148,9 @@ describe.skipIf(!SHOULD_RUN)("AT0126: keyboard ring survives cold boot", () => {
               env: { TUGBANK_PATH: tugbankPath },
               skipAccessibilityPreflight: true,
               persistInTestMode: true,
+              // Foreground: the ring is captured on app resign, which only
+              // fires for an app that is actually active.
+              foreground: true,
             });
             try {
               const bagRecord: Record<string, unknown> = {};

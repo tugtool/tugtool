@@ -230,7 +230,16 @@ private final class ClickThroughWebView: WKWebView {
 
     private var swallowingGesture = false
 
+    /// Harness pid mode (`TUGAPP_NATIVE_EVENT_MODE=pid`) drives the app
+    /// without ever activating it, so every click arrives as a first
+    /// mouse. Swallowing them as activation clicks would eat the whole
+    /// test run's mouse stream — in this mode the click is an ordinary
+    /// one and passes through to the page.
+    private let harnessPidMode =
+        ProcessInfo.processInfo.environment["TUGAPP_NATIVE_EVENT_MODE"] == "pid"
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        if harnessPidMode { return true }
         firstMouseEventNumber = event?.eventNumber
         return true
     }

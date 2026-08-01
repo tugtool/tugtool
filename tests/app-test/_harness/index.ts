@@ -1664,7 +1664,8 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
     connectTimeoutMs: opts.connectTimeoutMs ?? 10000,
     connectPollMs: opts.connectPollMs ?? 100,
     env: {
-      ...process.env,
+      ...forwardableEnv(),
+      TUGAPP_NATIVE_EVENT_MODE: opts.foreground ? "session" : "pid",
       ...(opts.persistInTestMode ? { TUGAPP_PERSIST_IN_TEST_MODE: "1" } : {}),
       ...(opts.restoreInTestMode ? { TUGAPP_RESTORE_IN_TEST_MODE: "1" } : {}),
       ...(opts.keepSetup ? { TUGAPP_TEST_KEEP_SETUP: "1" } : {}),
@@ -1683,6 +1684,42 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
     instanceId,
     ephemeralInstanceId,
   };
+}
+
+/**
+ * Non-`TUG*` environment variables Tug.app needs at launch. Everything
+ * else in the harness process's environment stays out.
+ */
+const FORWARDED_ENV_KEYS = [
+  "PATH",
+  "HOME",
+  "USER",
+  "SHELL",
+  "TMPDIR",
+  "LANG",
+  "LC_ALL",
+  "NODE_ENV",
+] as const;
+
+/**
+ * The subset of the harness process's environment handed to Tug.app:
+ * every `TUG*` variable plus {@link FORWARDED_ENV_KEYS}.
+ *
+ * Deliberately NOT `...process.env`. These variables reach the app as
+ * `open --env KEY=VALUE` arguments, which puts every one of them in the
+ * launcher's argv where any process on the machine can read it via `ps`
+ * — a developer environment routinely carries API keys and tokens that
+ * have no business in a test launch.
+ */
+function forwardableEnv(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (typeof v !== "string") continue;
+    if (k.startsWith("TUG") || (FORWARDED_ENV_KEYS as readonly string[]).includes(k)) {
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 /**
@@ -1866,11 +1903,19 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
       "/usr/bin/open",
       "-n",              // new instance
       "-W",              // wait-apps (blocks until Tug.app quits)
-      // NO -g: Tug.app MUST be foreground so CGEvent.post mouse
-      // events hit its window. CGEvent events route through
+      // NO -g by default: Tug.app MUST be foreground so CGEvent.post
+      // mouse events hit its window. CGEvent events route through
       // windowserver by screen coord → window-on-top; a backgrounded
       // Tug.app sits behind whatever was active (terminal, IDE) and
       // the clicks land on the wrong app.
+      //
+      // In pid mode — the default — that routing is bypassed: the
+      // in-app harness addresses keyboard events to its own pid and
+      // dispatches mouse events straight into the window, so the app
+      // launches WITHOUT activation (-g) and the user keeps focus,
+      // cursor, and key window for the whole run. `foreground: true`
+      // tests opt back into the activating launch.
+      ...(resolved.env.TUGAPP_NATIVE_EVENT_MODE === "pid" ? ["-g"] : []),
       "--stdout", logPathForRedirect,
       "--stderr", logPathForRedirect,
       ...envArgs,

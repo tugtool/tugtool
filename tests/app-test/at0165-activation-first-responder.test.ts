@@ -282,7 +282,9 @@ describe.skipIf(!SHOULD_RUN)("AT0165: activation restores the first responder", 
   test(
     "Bug D — closing a tab in a multi-card pane lets the next tab take Cmd-W",
     async () => {
-      const app = await launchTugApp({ testName: "at0165-bugD" });
+      // Foreground: Cmd-W routing through the responder chain needs a
+      // real key window.
+      const app = await launchTugApp({ testName: "at0165-bugD", foreground: true });
       try {
         await app.enableDeckTrace(true);
         const state = {
