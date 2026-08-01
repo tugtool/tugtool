@@ -129,6 +129,15 @@ Open verdict: the wake delivery to this WebContent process is being withheld ins
 
 - **Measured exit:** the 30s clock named (which timer, whose process), or bounded as platform behavior with a filed Feedback + a Tug-side mitigation decision made explicitly (including "none available").
 
+**S9 NAMED 2026-08-01 — WebKit's WebContent memory-release path; confirmed by on-demand reproduction.** The chain, established live on the fresh post-F-A(1) release instance (launched 13:38:48, train present from launch at phase ~19.3–20.0 wall-mod-30s):
+
+1. **The stall is not a wake stall.** The corrected ambush sample (app + WebContent across a hit slot) shows the app main thread idle (2564/2631 in `mach_msg`) but the **WebContent main thread WORKING: ~970ms of the 3s window in `__CFRunLoopDoTimers → WebCore::timerFired → Document::updateStyleIfNeeded → resolveStyle → TreeResolver::resolve`** — a synchronous full-document style re-resolution, which blocks rAF and DOM timers together (the dual-ledger signature that read as "no wakeups").
+2. **No page-level trigger exists.** Across hit slots: 6 DOM mutations total (the two known 1Hz clocks), zero CSSOM writes (insertRule/deleteRule/replaceSync trapped), zero focus flips (focus/blur/focusin/focusout trapped), no 30s animation periods, no periodic fetches at the phase.
+3. **The trigger is WebKit's periodic memory monitor.** `notifyutil -p org.WebKit.lowMemory` posted at phase 4.0s — 15s off the natural slot — produced an immediate off-schedule stall pair (96ms + 397ms, ~100ms after the post). The 30.000s metronome is the monitor's measurement timer (phase-locked to WebContent launch); above the footprint threshold each tick's release purges style/selector caches, and the next scheduled recalc pays a **cold full-document re-resolve ≈ 300ms ×2 at the release deck's size**.
+4. **Both factors are necessary.** Release WebContent footprint: **1346MB** (724MB WebKit malloc dirty + 596MB graphics) — at WebKit's classic ~1.3GB conservative threshold. The near-empty debug deck (1132 nodes) shows **no ledger entry on the same notification** — the purge runs globally but only a big mounted document pays a visible recovery. Lab instances were clean because their footprint never approached the threshold, whatever their node count.
+
+**Fix levers (both ours, both real code):** (a) **footprint below threshold** so the periodic purge stops firing — the IndexedDB SessionCache (already slated for removal) and the JS-heap/graphics diet are now S9 fixes, not hygiene; (b) **shrink the cold-resolve bill** so a purge that does fire recovers cheaply — the I6 mounted-weight program (F-A containment landed; F-A(3) layer diet also cuts the 596MB graphics share). The ~10s-cadence ~55ms minor stalls remain unattributed (possibly GC); secondary. The Maker ▸ Reload phase probe is withdrawn (not a release surface); the fresh-relaunch probe (F-B 2) ran and delivered this verdict.
+
 
 ## Supporting investigations {#investigations}
 
