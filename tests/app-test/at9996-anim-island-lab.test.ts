@@ -50,6 +50,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { launchTugApp, type App } from "./_harness";
 import { mkTempTugbank, seedTugbankForLaunch } from "./_harness/tugbank-helpers";
@@ -154,6 +157,116 @@ async function seedTranscriptWeight(
     }`,
     { timeoutMs: 60_000 },
   );
+}
+
+/**
+ * Encode an absolute project dir the way claude names its per-project subdir
+ * under `~/.claude/projects/` — mirrors tugcode's `encodeProjectDir` (every
+ * character outside `[A-Za-z0-9-]` → `-`). Inline so the app-test graph does
+ * not import tugcode.
+ */
+const encodeProjectDir = (absDir: string): string =>
+  absDir.replace(/[^A-Za-z0-9-]/g, "-");
+
+/**
+ * A minimal but claude-parseable two-turn session JSONL (the at0192 shape:
+ * full `uuid`/`parentUuid`/`sessionId`/`cwd` fields, because `claude --resume`
+ * reads the same file and a thin fixture reverts the card via
+ * `resume_failed`). `cwd` must equal the resolved project dir.
+ */
+function buildResumeFixtureJsonl(cwd: string, sessionId: string): string {
+  const base = {
+    isSidechain: false,
+    userType: "external",
+    cwd,
+    sessionId,
+    version: "2.1.105",
+    gitBranch: "main",
+  };
+  const u1 = `${sessionId.slice(0, 24)}00000c01`;
+  const a1 = `${sessionId.slice(0, 24)}00000c02`;
+  const lines = [
+    {
+      ...base,
+      parentUuid: null,
+      type: "user",
+      uuid: u1,
+      timestamp: "2026-06-17T10:00:00.000Z",
+      message: { role: "user", content: [{ type: "text", text: "hello" }] },
+    },
+    {
+      ...base,
+      parentUuid: u1,
+      type: "assistant",
+      uuid: a1,
+      timestamp: "2026-06-17T10:00:01.000Z",
+      message: {
+        id: `msg-${sessionId.slice(0, 8)}`,
+        type: "message",
+        role: "assistant",
+        model: "claude-opus-5",
+        content: [{ type: "text", text: "hi there" }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: {
+          input_tokens: 1200,
+          output_tokens: 50,
+          cache_creation_input_tokens: 100,
+          cache_read_input_tokens: 8000,
+        },
+      },
+    },
+  ];
+  return lines.map((e) => JSON.stringify(e)).join("\n") + "\n";
+}
+
+/**
+ * Spawn a REAL tugcode-bound session into every lab card via
+ * `spawn_session(mode=resume)` — tugcast spawns a genuine tugcode `--resume`
+ * per card, each with a live WS feed, replaying a per-run fixture JSONL. The
+ * S9 differentiator the synthetic `bindSession` path can never cover.
+ * Returns the cleanup that removes the fixture + project dirs.
+ */
+async function seedRealResumeSessions(app: App): Promise<() => void> {
+  const projectDir = realpathSync(mkdtempSync(join(tmpdir(), "at9996-real-")));
+  const fixtureDir = join(
+    homedir(),
+    ".claude",
+    "projects",
+    encodeProjectDir(projectDir),
+  );
+  mkdirSync(fixtureDir, { recursive: true });
+  const sids: Record<string, string> = {
+    A: "a9990000-0000-4000-8000-0000000000aa",
+    B: "a9990000-0000-4000-8000-0000000000bb",
+    C: "a9990000-0000-4000-8000-0000000000cc",
+  };
+  for (const id of SESSIONS) {
+    writeFileSync(
+      join(fixtureDir, `${sids[id]}.jsonl`),
+      buildResumeFixtureJsonl(projectDir, sids[id]),
+    );
+  }
+  for (const id of SESSIONS) {
+    await app.waitForCondition<boolean>(
+      `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered(${JSON.stringify(id)})`,
+      { timeoutMs: 15_000 },
+    );
+  }
+  for (const id of SESSIONS) {
+    await app.spawnSessionResume(id, { tugSessionId: sids[id], projectDir });
+  }
+  // Replay landed = each card's transcript shows the fixture's entries.
+  for (const id of SESSIONS) {
+    await app.waitForCondition<boolean>(
+      `document.querySelectorAll('[data-card-id=${JSON.stringify(id)}] .tug-transcript-entry').length >= 2`,
+      { timeoutMs: 30_000 },
+    );
+  }
+  return () => {
+    rmSync(projectDir, { recursive: true, force: true });
+    if (existsSync(fixtureDir)) rmSync(fixtureDir, { recursive: true, force: true });
+  };
 }
 
 function deckShape() {
@@ -1055,8 +1168,13 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
       // never-interacted page gets its DOM timers 1s-aligned within ~40s
       // even in the foreground).
       const SOAK_SECS = Number(process.env.AT9996_STALL_SOAK_SECS ?? "0");
+      // Real-session knob: spawn genuine tugcode `--resume` processes (live
+      // WS feeds) into every card instead of / alongside synthetic binds —
+      // the S9 differentiator the synthetic path can never cover.
+      const STALL_REAL = process.env.AT9996_STALL_REAL === "1";
       const tugbankPath = mkTempTugbank();
       seedTugbankForLaunch(tugbankPath);
+      let cleanupReal: (() => void) | null = null;
       const app = await launchTugApp({
         testName: "at9996-anim-island-stall",
         env: { TUGBANK_PATH: tugbankPath },
@@ -1069,7 +1187,13 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
         // Weight knob: blocks per session of settled transcript before the
         // watch, so the light-vs-heavy comparison runs in the same cell.
         const STALL_WEIGHT = Number(process.env.AT9996_STALL_WEIGHT ?? "0");
-        if (STALL_WEIGHT > 0) {
+        if (STALL_REAL) {
+          cleanupReal = await seedRealResumeSessions(app);
+          // Seed one real interaction so the never-interacted foreground
+          // page can't 1s-align its DOM timers mid-watch (artifact #4).
+          await app.nativeClick({ x: 440, y: 45 }, { activateFirst: true });
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+        } else if (STALL_WEIGHT > 0) {
           await seedTranscriptWeight(app, STALL_WEIGHT, "at9996-stall");
         }
 
@@ -1131,6 +1255,7 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
         expect(out.tmrTicks).toBeGreaterThan((WATCH_MS / 10) * 0.5);
       } finally {
         await app.close();
+        if (cleanupReal !== null) cleanupReal();
       }
     },
     TEST_TIMEOUT_MS +
@@ -1194,7 +1319,12 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
   window.__at9996Typist = S;
   S.onKey = function (e) {
     var now = performance.now();
-    S.keys.push({ ms: Math.round(now - S.t0), q: Math.round(now - e.timeStamp) });
+    S.keys.push({
+      ms: Math.round(now - S.t0),
+      q: Math.round(now - e.timeStamp),
+      rep: e.repeat === true,
+      tr: e.isTrusted === true,
+    });
   };
   window.addEventListener("keydown", S.onKey, { capture: true, passive: true });
   var last = performance.now();
@@ -1246,12 +1376,21 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
   return { keys: S.keys, longs: S.longs };
 })()`);
 
-        const qs = out.keys.map((k) => k.q).sort((a, b) => a - b);
+        // Percentiles over trusted, non-autorepeat events only. Under load
+        // the poster's key-up can land late enough for macOS autorepeat to
+        // fire (`repeat: true` keydowns beyond the cadence tape), and any
+        // in-page re-dispatch would arrive untrusted with a fresh
+        // timeStamp (q ≈ 0) — both contaminate the distribution.
+        const clean = out.keys.filter((k) => k.tr && !k.rep);
+        const qs = clean.map((k) => k.q).sort((a, b) => a - b);
         const pct = (p: number): number =>
           qs.length === 0 ? -1 : qs[Math.min(qs.length - 1, Math.floor((p / 100) * qs.length))];
         const report = {
           sent,
-          recorded: qs.length,
+          recorded: out.keys.length,
+          clean: qs.length,
+          repeats: out.keys.filter((k) => k.rep).length,
+          untrusted: out.keys.filter((k) => !k.tr).length,
           q50: pct(50),
           q90: pct(90),
           q99: pct(99),

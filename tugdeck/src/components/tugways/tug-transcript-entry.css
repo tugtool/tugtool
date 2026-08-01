@@ -99,6 +99,18 @@ body {
 
 .tug-transcript-entry {
   color: var(--tugx-transcript-body-color);
+  /* Containment boundary: a mutation inside one entry must never bill
+   * layout across the rest of the transcript, and a mutation outside
+   * (the composer, sibling entries) must never force this entry's
+   * layout. Deliberately NOT `contain: size` — entries are naturally
+   * sized and the list's height index depends on real content height.
+   * The sticky `__pin` is unaffected: sticky positioning resolves
+   * against the scrollport and is already confined to this root (its
+   * containing block); only absolute/fixed descendants re-anchor here,
+   * and every positioned descendant in the entry vocabulary (the pin's
+   * `::after` strip, block-chrome overlays) anchors within the entry
+   * already. */
+  contain: layout style;
 }
 
 /* The ONE sticky element per entry: icon + attribution header pin as a
