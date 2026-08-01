@@ -51,8 +51,7 @@ body {
 /* ---- Root strip ---- */
 
 /* Sticky so the header stays visible while a mounted body scrolls, and
- * telescopes under an outer pin context via `--tugx-pin-stack-top`. Harmless
- * when collapsed (no body scrolls beneath it). */
+ * telescopes under an outer pin context via `--tugx-pin-stack-top`. */
 .tool-call-header {
   position: sticky;
   top: var(--tugx-pin-stack-top, 0);
@@ -76,6 +75,18 @@ body {
   background: var(--tugx-block-strip-bg);
   font-family: var(--tugx-block-strip-font);
   color: var(--tugx-block-header-text-color);
+}
+
+/* Collapsed ⇒ the header IS the whole block, so its sticky travel range is
+ * zero — it can never pin. Sticky would still make it a compositing
+ * candidate, and each promoted header owns a retina backing store; across a
+ * loaded deck that is hundreds of MB of graphics memory for elements that
+ * never move. `relative` (not `static`) keeps the `z-index: 1` stacking
+ * identical, and `top: auto` keeps the pin-stack offset from physically
+ * shifting the row. */
+.tool-call-header[data-collapsed="true"] {
+  position: relative;
+  top: auto;
 }
 
 /* Expanded ⇒ a body is mounted below; divide the header from it. Collapsed
