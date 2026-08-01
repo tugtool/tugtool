@@ -359,6 +359,13 @@ export function useOptionalResponder<Extra extends string = never>(
   // it at effect time to close the stale-focus timing hole.
   const currentElementRef = useRef<Element | null>(null);
 
+  // The element THIS hook last stamped with `data-responder-id`. Distinct
+  // from `currentElementRef` (which is nulled on every detach): the stamp
+  // survives a detach/attach cycle so the manager-less branch of the ref
+  // callback can tell its own stamp from another consumer's on a shared
+  // element — only the writer may un-write.
+  const stampedElementRef = useRef<Element | null>(null);
+
   // Register during the commit phase (useLayoutEffect), unregister on unmount.
   // useLayoutEffect fires synchronously after all DOM mutations but before the
   // browser paints, ensuring the responder is registered before any keyboard or
@@ -519,21 +526,39 @@ export function useOptionalResponder<Extra extends string = never>(
   //
   // `manager` is in the useCallback dependency array: on a provider
   // transition (null ↔ non-null) the callback identity changes, which
-  // triggers React's standard ref-callback lifecycle — the previous
-  // callback is called with `null` (which removes the attribute from
-  // `prev`, if the previous callback had written one) and then the
-  // new callback is called with the element (which writes the
-  // attribute only if the new manager is non-null). The DOM element
-  // itself is never replaced; only the attribute flips on transition.
-  // This is how state survives the transition — the element is the
-  // same element across provider changes.
+  // triggers React's standard ref-callback lifecycle — detach, then a
+  // re-attach through the new callback, which writes the attribute
+  // when the new manager is non-null and removes it when the manager
+  // is null. The DOM element itself is never replaced; only the
+  // attribute flips on transition. This is how state survives the
+  // transition — the element is the same element across provider
+  // changes.
+  //
+  // Idempotent under detach/attach cycles: a `null` call does no DOM work —
+  // a detached element is either about to be re-attached (an ancestor
+  // recomposed the ref, e.g. a Radix `asChild` slot, which recreates its
+  // composed ref every render) or discarded with the attribute on it. The
+  // attach call is the single writer: it removes this hook's own stamp when
+  // no manager is in scope (never another consumer's stamp on a shared
+  // element) and otherwise writes only a value that actually differs, so a
+  // re-attach to the same element under the same manager is zero DOM
+  // mutations — no style invalidation, no recalc bill.
   const responderRef = useCallback((el: Element | null) => {
-    const prev = currentElementRef.current;
-    if (prev && prev !== el) {
-      prev.removeAttribute("data-responder-id");
-    }
-    if (el && manager !== null) {
-      el.setAttribute("data-responder-id", options.id);
+    if (el) {
+      const stamped = stampedElementRef.current;
+      if (stamped && stamped !== el) {
+        stamped.removeAttribute("data-responder-id");
+        stampedElementRef.current = null;
+      }
+      if (manager !== null) {
+        if (el.getAttribute("data-responder-id") !== options.id) {
+          el.setAttribute("data-responder-id", options.id);
+        }
+        stampedElementRef.current = el;
+      } else if (stampedElementRef.current === el) {
+        el.removeAttribute("data-responder-id");
+        stampedElementRef.current = null;
+      }
     }
     currentElementRef.current = el;
   }, [options.id, manager]);

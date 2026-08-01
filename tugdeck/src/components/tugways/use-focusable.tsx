@@ -100,6 +100,13 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
   // Tracks the element the ref callback last saw, so a provider transition can
   // remove the attribute from the prior element.
   const currentElementRef = useRef<Element | null>(null);
+  // The element THIS hook last stamped. Distinct from `currentElementRef`
+  // (which is nulled on every detach): the stamp survives a detach/attach
+  // cycle so the unregistered branch below can tell "mine to remove" from
+  // "another consumer's stamp on a shared element" — several hooks may hold
+  // refs to the same DOM element (e.g. a field component composing an inner
+  // input's focusable with its own), and only the writer may un-write.
+  const stampedElementRef = useRef<Element | null>(null);
 
   // Register in the commit phase; unregister on unmount or before re-register.
   // Structural fields are in the dep array so a change re-registers; the
@@ -135,16 +142,43 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
   // only when a manager is in scope. Mirrors `useOptionalResponder`'s
   // `responderRef`: the DOM element is never replaced across a provider
   // transition, only the attribute flips.
+  //
+  // Idempotent under detach/attach cycles: a `null` call does no DOM work —
+  // a detached element is either about to be re-attached (an ancestor
+  // recomposed the ref, e.g. a Radix `asChild` slot, which recreates its
+  // composed ref every render) or discarded with the attributes on it. The
+  // attach call is the single writer: it removes this hook's own stamp when
+  // the registration is gone (provider transition to null, `register` off —
+  // never another consumer's stamp on a shared element) and otherwise writes
+  // only values that actually differ, so a re-attach to the same element with
+  // the same registration is zero DOM mutations — no style invalidation, no
+  // recalc bill.
   const focusableRef = useCallback(
     (el: Element | null) => {
-      const prev = currentElementRef.current;
-      if (prev && prev !== el) {
-        prev.removeAttribute("data-tug-focusable");
-        prev.removeAttribute("data-tug-focus-key");
-      }
-      if (el && manager !== null && register) {
-        el.setAttribute("data-tug-focusable", id);
-        if (focusKey !== null) el.setAttribute("data-tug-focus-key", focusKey);
+      if (el) {
+        const stamped = stampedElementRef.current;
+        if (stamped && stamped !== el) {
+          stamped.removeAttribute("data-tug-focusable");
+          stamped.removeAttribute("data-tug-focus-key");
+          stampedElementRef.current = null;
+        }
+        if (manager !== null && register) {
+          if (el.getAttribute("data-tug-focusable") !== id) {
+            el.setAttribute("data-tug-focusable", id);
+          }
+          if (focusKey !== null) {
+            if (el.getAttribute("data-tug-focus-key") !== focusKey) {
+              el.setAttribute("data-tug-focus-key", focusKey);
+            }
+          } else if (el.hasAttribute("data-tug-focus-key")) {
+            el.removeAttribute("data-tug-focus-key");
+          }
+          stampedElementRef.current = el;
+        } else if (stampedElementRef.current === el) {
+          el.removeAttribute("data-tug-focusable");
+          el.removeAttribute("data-tug-focus-key");
+          stampedElementRef.current = null;
+        }
       }
       currentElementRef.current = el;
     },

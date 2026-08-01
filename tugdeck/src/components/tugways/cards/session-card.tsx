@@ -3967,24 +3967,26 @@ export function SessionCardBody({
   const effectivePromptStatusContent =
     experimentSlots.promptStatusContent ?? projectStatusContent;
 
+  // Compose two ref consumers onto the card's root DOM node:
+  //   - `cardContentResponderRef` registers this element as the
+  //     card-content responder for chain dispatch.
+  //   - `sessionCardRootRef` captures the same element for the
+  //     first-mount fade-in `useLayoutEffect` declared above.
+  // Stable across renders (`useCallback`): an inline lambda gets a new
+  // identity every render, and React answers a changed ref identity with a
+  // detach/attach cycle in every commit — per-render DOM attribute churn.
+  const sessionCardRootComposedRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      sessionCardRootRef.current = el;
+      (cardContentResponderRef as (node: Element | null) => void)(el);
+    },
+    [cardContentResponderRef],
+  );
+
   return (
     <CardContentResponderScope>
       <div
-        ref={(el) => {
-          // Compose two ref consumers onto a single DOM node:
-          //   - `cardContentResponderRef` registers this element as
-          //     the card-content responder for chain dispatch.
-          //   - `sessionCardRootRef` captures the same element for the
-          //     first-mount fade-in `useLayoutEffect` declared above.
-          // The composition is inline rather than `useCallback`-wrapped
-          // because both consumers are reference-stable for this
-          // component's lifetime; React calls this lambda on mount
-          // (with the element) and on unmount (with `null`), and a
-          // one-shot identity churn doesn't trigger any re-attach
-          // observable from the consumers.
-          sessionCardRootRef.current = (el as HTMLDivElement | null);
-          (cardContentResponderRef as (node: Element | null) => void)(el);
-        }}
+        ref={sessionCardRootComposedRef}
         className="session-card"
         data-slot="session-card"
         data-testid="session-card"
