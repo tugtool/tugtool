@@ -17,10 +17,16 @@
  *     given, which is the terminal case;
  *   - the caller's text renders, but under the app's own provenance chrome, so
  *     a question arriving over loopback cannot pose as an app prompt;
+ *   - it is answerable from the keyboard: the ring seeds on Continue, arrows
+ *     cross into the options and move the selection, and Return commits;
  *   - answering it releases the caller with the chosen option's value;
- *   - the composer stays live while the dialog is up — the ask is a lifecycle
- *     overlay, not a turn phase, and a session with no turn must not end up
- *     with a dead composer and a live Stop button.
+ *   - Z5 is untouched — the ask is not a turn phase, so a session with no turn
+ *     must not end up showing a Stop button with nothing to stop;
+ *   - the entry pane stands down while the dialog is up. This is the one that
+ *     bites: `TugTextEditor`'s Return defers to the pane's default button,
+ *     which while this dialog is up is its Continue. If the composer stayed
+ *     live, a Return meant for a prompt would answer a question the developer
+ *     was not looking at.
  *
  * This test runs in the background like everything else — it takes no screen,
  * so it carries no `@foreground`.
@@ -46,6 +52,43 @@ const REPO_ROOT = resolve(import.meta.dir, "..", "..");
 const TUGUTIL = resolve(REPO_ROOT, "tugrust/target/debug/tugutil");
 
 const DIALOG = '[data-slot="session-app-test-ask-dialog"]';
+const OPTION_GROUP = `${DIALOG} [data-slot="tug-radio-group"]`;
+const OPTION_ITEMS = `${DIALOG} [data-slot="tug-radio-item"]`;
+const CONTINUE = `${DIALOG} [data-slot="tug-inline-dialog-actions"] button`;
+
+/** Whether the element matched by `selector` carries `attr`. */
+function hasAttr(app: App, selector: string, attr: string): Promise<boolean> {
+  return app.evalJS<boolean>(
+    `(function(){var el=document.querySelector(${JSON.stringify(selector)});` +
+      `return el!==null && el.hasAttribute(${JSON.stringify(attr)});})()`,
+  );
+}
+
+/** Wait for `selector` to carry `attr`, then assert it does. */
+async function expectRing(app: App, selector: string, attr: string): Promise<boolean> {
+  try {
+    await app.waitForCondition<boolean>(
+      `(function(){var el=document.querySelector(${JSON.stringify(selector)});` +
+        `return el!==null && el.hasAttribute(${JSON.stringify(attr)});})()`,
+      { timeoutMs: 4000 },
+    );
+  } catch {
+    // Fall through to the assertion so the failure names the selector.
+  }
+  return hasAttr(app, selector, attr);
+}
+
+/** The `value` of the currently checked option. */
+function checkedOption(app: App): Promise<string | null> {
+  return app.evalJS<string | null>(`(function(){
+    var items = Array.prototype.slice.call(
+      document.querySelectorAll(${JSON.stringify(OPTION_ITEMS)}));
+    var on = items.filter(function (el) {
+      return el.getAttribute("aria-checked") === "true";
+    });
+    return on.length === 1 ? (on[0].textContent || "") : null;
+  })()`);
+}
 
 function deckShape() {
   return {
@@ -149,7 +192,7 @@ describe.skipIf(!SHOULD_RUN)("at0320 — ask dialog round trip", () => {
         options: string[];
       }>(`(() => {
         const root = document.querySelector('${DIALOG}');
-        const opts = [...root.querySelectorAll('[data-slot="tug-inline-dialog-options"] button')];
+        const opts = [...root.querySelectorAll('[data-slot="tug-radio-item"]')];
         return {
           title: root.querySelector('.tug-inline-dialog-title')?.textContent ?? '',
           provenance: root.querySelector('.session-app-test-ask-dialog-provenance')?.textContent ?? '',
@@ -193,18 +236,69 @@ describe.skipIf(!SHOULD_RUN)("at0320 — ask dialog round trip", () => {
         "OVERLAY: Z5 stays an enabled Submit — the ask is not a turn phase",
       ).toBe("submit");
 
+      // --- but it IS modal for keys -----------------------------------
+      // The other half of the same coin. Z5's *mode* is untouched, and the
+      // entry pane still stands down — because `TugTextEditor` defers Return to
+      // the pane's default button, which is this dialog's Continue. A live
+      // composer here would mean a Return meant for a prompt silently answers
+      // the question with whatever is preselected.
+      expect(
+        await hasAttr(app, '[data-card-id="A"] .session-card', "data-inline-dialog-pending"),
+        "MODAL: the card is card-modal while the question is up",
+      ).toBe(true);
+      const entryInert = await app.evalJS<boolean>(`(function(){
+        var el = document.querySelector('[data-card-id="A"] .session-card-entry-pane');
+        return el !== null && getComputedStyle(el).pointerEvents === "none";
+      })()`);
+      expect(
+        entryInert,
+        "MODAL: the entry pane is inert, so Return cannot reach the composer",
+      ).toBe(true);
+
+      // --- and it is answerable from the keyboard ---------------------
+      // The safe option is preselected and the ring seeds on Continue, so the
+      // routine answer is one keystroke and a reflexive Return declines.
+      expect(
+        await checkedOption(app),
+        "SAFE DEFAULT: the declining option (last) starts checked",
+      ).toContain("Cancel");
+      expect(
+        await expectRing(app, CONTINUE, "data-key-view-kbd"),
+        "SEED: the ring opens on Continue, so Return commits",
+      ).toBe(true);
+
+      // Down crosses the seam into the options; Up returns. Neither commits.
+      await app.nativeKey("ArrowDown");
+      expect(
+        await expectRing(app, OPTION_GROUP, "data-key-view-kbd"),
+        "ARROWS: Down crosses from Continue into the option group",
+      ).toBe(true);
+
+      // Inside the group the cursor moves and Space checks the cursor row —
+      // a bog-standard TugRadioGroup. Walk up to "Run the 3 background tests".
+      await app.nativeKey("ArrowUp");
+      // Space, spelled as the character — `VirtualKeyMap` has no "Space" name.
+      await app.nativeKey(" ");
+      await app.waitForCondition<boolean>(
+        `(function(){
+          var items = Array.prototype.slice.call(
+            document.querySelectorAll(${JSON.stringify(OPTION_ITEMS)}));
+          return items.some(function (el) {
+            return el.getAttribute("aria-checked") === "true"
+              && (el.textContent || "").indexOf("background") >= 0;
+          });
+        })()`,
+        { timeoutMs: 4000 },
+      );
+      expect(
+        await checkedOption(app),
+        "ARROWS: the cursor moved and Space checked the row under it",
+      ).toContain("Run the 3 background tests");
+
       // --- answering it releases the caller ---------------------------
-      await app.evalJS(`(() => {
-        const root = document.querySelector('${DIALOG}');
-        const opts = [...root.querySelectorAll('[data-slot="tug-inline-dialog-options"] button')];
-        opts[1].click();
-      })()`);
-      await app.evalJS(`(() => {
-        const root = document.querySelector('${DIALOG}');
-        [...root.querySelectorAll('button')]
-          .find((b) => (b.textContent ?? '').includes('Continue'))
-          .click();
-      })()`);
+      // Return, from the option group — the persistent default ring means
+      // Return is Continue's wherever the keyboard rests inside the dialog.
+      await app.nativeKey("Return");
 
       const stdout = await new Response(proc.stdout).text();
       await proc.exited;

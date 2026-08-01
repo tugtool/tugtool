@@ -17,7 +17,7 @@
  * `@covers` values.
  *
  * A test that takes the screen also declares that, with `@foreground` on its own docblock
- * line. Those tests launch with `foreground: true`, which puts the app in the activating
+ * line. Those tests pass a `foreground` launch option, which puts the app in the activating
  * event mode; every other test runs in the background. The `app-test` recipe reads the
  * declaration before it launches anything, so it can tell the developer that a run is
  * about to seize the machine.
@@ -174,8 +174,15 @@ function testFiles(): string[] {
 const COVERS_LINE = /^\s*\*?\s*@covers\s+(\S+)/;
 const FOREGROUND_LINE = /^\s*\*?\s*@foreground\b/;
 
-/** The launch option the `@foreground` tag declares. Matched anywhere in the file body. */
-const FOREGROUND_OPTION = /\bforeground:\s*true\b/;
+/**
+ * The launch option the `@foreground` tag declares. Matched anywhere in the file body.
+ *
+ * Anything that is not literally `false` counts. A launch site may compute the flag
+ * (`foreground: SOAK_SECS === 0`), and a static read cannot know which way it lands — so
+ * the safe reading is "this file might take the screen, declare it." Only an explicit
+ * `foreground: false` is exempt, because that one says what it means.
+ */
+const FOREGROUND_OPTION = /\bforeground:\s*(?!false\b)\S/;
 
 function readCoverage(file: string): TestCoverage {
     const text = readFileSync(join(APP_TEST_DIR, file), "utf8");
@@ -191,7 +198,7 @@ function readCoverage(file: string): TestCoverage {
     return { file, covers, foreground };
 }
 
-/** Whether a test file actually passes `foreground: true` at any launch site. */
+/** Whether a test file passes a possibly-true `foreground` at any launch site. */
 function launchesForeground(file: string): boolean {
     return FOREGROUND_OPTION.test(readFileSync(join(APP_TEST_DIR, file), "utf8"));
 }
@@ -275,15 +282,15 @@ if (foregroundCheck) {
 
     if (undeclared.length > 0) {
         process.stderr.write(
-            `[select-tests] ${undeclared.length} test file(s) launch with 'foreground: true' but carry\n` +
+            `[select-tests] ${undeclared.length} test file(s) can launch foreground but carry\n` +
                 `               no @foreground tag — they would seize the screen unannounced:\n`,
         );
         for (const c of undeclared) process.stderr.write(`  ${c.file}\n`);
     }
     if (overdeclared.length > 0) {
         process.stderr.write(
-            `[select-tests] ${overdeclared.length} test file(s) declare @foreground but never launch with\n` +
-                `               'foreground: true' — they would prompt for nothing:\n`,
+            `[select-tests] ${overdeclared.length} test file(s) declare @foreground but never pass a\n` +
+                `               foreground launch option — they would prompt for nothing:\n`,
         );
         for (const c of overdeclared) process.stderr.write(`  ${c.file}\n`);
     }

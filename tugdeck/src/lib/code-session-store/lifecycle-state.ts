@@ -25,7 +25,7 @@
  * @module lib/code-session-store/lifecycle-state
  */
 
-import type { CodeSessionPhase, PendingAsk, TransportState } from "./types";
+import type { CodeSessionPhase, TransportState } from "./types";
 
 // ---------------------------------------------------------------------------
 // Matrix vocabulary
@@ -53,12 +53,19 @@ export type SessionLifecycleState =
  * The matrix's overlay row — an orthogonal condition that can apply on top of
  * any base state, derived from the store snapshot. An overlay says something is
  * true about the session; the state says where its turn is, and the two are
- * independent: `pending_ask` holds while the session sits idle with no turn at
- * all. The matrix's QUEUED_NEXT_TURN condition needs no derived value here —
- * it surfaces directly as transcript ghost rows off the snapshot's
+ * independent. The matrix's QUEUED_NEXT_TURN condition needs no derived value
+ * here — it surfaces directly as transcript ghost rows off the snapshot's
  * `queuedSends`.
+ *
+ * An overlay earns its place by *deriving* something: `transport_down` collapses
+ * a three-valued `transportState` into the one question consumers ask. A member
+ * that merely restates a snapshot field its consumers already hold is not a
+ * projection, it is a synonym — a `pending_ask` overlay was tried and removed on
+ * exactly that ground, since `pendingAsk` rides the same snapshot and the one
+ * consumer (the card-modal predicate in `session-card.tsx`) reads it directly.
+ * Add one back only alongside the delegate that needs it.
  */
-export type SessionLifecycleOverlay = "transport_down" | "pending_ask";
+export type SessionLifecycleOverlay = "transport_down";
 
 /**
  * The Z5 submit-button mode — the matrix's Z5 column. The `submit`
@@ -102,12 +109,6 @@ export interface LifecycleStoreSignals {
    * (a turn has committed) vs a never-used IDLE.
    */
   transcript: ReadonlyArray<unknown>;
-  /**
-   * A question raised from outside the turn stream (`/api/ask`) is waiting on
-   * the human. Feeds the `pending_ask` overlay only — never the state, and
-   * never `submitButtonMode`. Only its nullness is read.
-   */
-  pendingAsk: PendingAsk | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,12 +167,12 @@ function deriveOverlays(
   // TRANSPORT_DOWN covers both `offline` (no wire) and `restoring`
   // (wire back, binding not re-ack'd) — anything but `online`.
   if (s.transportState !== "online") overlays.add("transport_down");
-  // A question from outside the turn stream is waiting on the human. It is an
-  // overlay and not a state because it says nothing about the turn: the session
-  // is usually idle when one arrives. Routing it through `awaiting_approval`
-  // instead would make `canSubmit` false and `canInterrupt` true on a session
-  // with no turn — a dead composer and a live Stop button with nothing to stop.
-  if (s.pendingAsk !== null) overlays.add("pending_ask");
+  // A question from outside the turn stream (`/api/ask`) deliberately touches
+  // nothing here. It says nothing about the turn — the session is usually idle
+  // when one arrives — and routing it through `awaiting_approval` would make
+  // `canSubmit` false and `canInterrupt` true on a session with no turn: a dead
+  // composer and a live Stop button with nothing to stop. The dialog's modality
+  // is a card concern, handled by `inlineDialogPending` in `session-card.tsx`.
   return overlays;
 }
 

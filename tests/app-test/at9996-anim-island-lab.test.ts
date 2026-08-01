@@ -46,7 +46,11 @@
  * Not a regression test — an instrument. The kept regression test lands in
  * Phase 3 once the channel is named.
  *
+ * The caret and soak cells launch in the activating event mode, so a run of this
+ * file takes the screen.
+ *
  * @covers tugdeck/src/components/tugways/internal/tug-progress-pulsing-dot.tsx
+ * @foreground
  */
 
 import { describe, expect, test } from "bun:test";

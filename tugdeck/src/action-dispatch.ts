@@ -323,13 +323,11 @@ export function initActionDispatch(
   // `actions.rs`); without this handler the request went out and nothing ever
   // answered, so every call died on the 30s timeout.
   //
-  // Gated twice on the tugcast side before a frame is ever broadcast: loopback
-  // callers only, and dev mode only. A release instance answers `forbidden`
-  // without consulting the deck at all.
   // ask: a process outside the turn stream wants the developer's consent before
-  // it does something disruptive. Unlike `eval`, this is NOT dev-gated — it
-  // displays text and returns one of the caller's own option ids, and a
-  // consent prompt that only works on a dev build is no consent prompt.
+  // it does something disruptive. Unlike `eval` (below), this is NOT dev-gated —
+  // it displays text and returns one of the caller's own option ids, and a
+  // consent prompt that only works on a dev build is no consent prompt. tugcast
+  // clamps the caller's text and option count instead, since it gave up the gate.
   //
   // The caller is blocked on the answer, so the store answers on every path
   // out, including "there is no session to show this on".
@@ -337,6 +335,9 @@ export function initActionDispatch(
     pendingAskStore.receive(payload);
   });
 
+  // Gated twice on the tugcast side before an `eval` frame is ever broadcast:
+  // loopback callers only, and dev mode only. A release instance answers
+  // `forbidden` without consulting the deck at all.
   registerAction("eval", (payload) => {
     const requestId = payload.requestId;
     const code = payload.code;
@@ -1378,8 +1379,9 @@ export function initActionDispatch(
   // is called.
   const disposers: Array<() => void> = [
     controlUnsub,
-    // The wire to answer questions on, and the fallback target for a question
-    // that names no session.
+    // The wire to answer questions on, the fallback target for a question that
+    // names no session, and the session registry — the store holds no singleton
+    // of its own, so this is the only place the two are joined.
     pendingAskStore.init({
       sendControlFrame: (action, payload) =>
         connection.sendControlFrame(action, payload),
@@ -1388,6 +1390,15 @@ export function initActionDispatch(
         if (cardId === null) return null;
         return cardServicesStore.getServices(cardId)?.tugSessionId ?? null;
       },
+      sessionFor: (tugSessionId) => {
+        const services = cardServicesStore.getByTugSessionId(tugSessionId);
+        if (services === null) return null;
+        return {
+          tugSessionId: services.tugSessionId,
+          setPendingAsk: (ask) => services.codeSessionStore.setPendingAsk(ask),
+        };
+      },
+      observeSessions: (listener) => cardServicesStore.subscribe(listener),
     }),
   ];
   const appLifecycle = getAppLifecycle();

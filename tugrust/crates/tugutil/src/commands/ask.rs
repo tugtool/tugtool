@@ -168,7 +168,16 @@ pub fn run_ask(
                     .and_then(|m| m.as_str())
                     .unwrap_or("no answer");
                 eprintln!("tugutil host ask: {message}");
-                Ok(EXIT_DECLINED)
+                // 503 means tugcast is up but no deck is attached to show the
+                // dialog on. That is the same condition as an unreachable
+                // instance — there was nobody to ask — not a refusal, so it must
+                // not read as one. Everything else here IS an answer of sorts:
+                // a malformed request, a timeout, a deck that dropped.
+                if status == 503 {
+                    Ok(EXIT_NO_ROUTE)
+                } else {
+                    Ok(EXIT_DECLINED)
+                }
             }
         }
         Err(ureq::Error::StatusCode(code)) => {

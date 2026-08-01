@@ -559,6 +559,56 @@ async fn eval_handler(
 /// and "nobody is there" becomes the honest reading.
 const ASK_TIMEOUT_SECS: u64 = 600;
 
+/// The most questions that may be in flight at once.
+///
+/// A blocked ask holds a task and a map entry for as long as its timeout, and
+/// nothing about the endpoint is rate-limited otherwise. The ceiling is far
+/// above any real use — a human cannot be asked eight things at once — and its
+/// job is only to keep a runaway script from accumulating waits without end.
+const MAX_PENDING_ASKS: usize = 8;
+
+/// Caps on caller-supplied text, in characters.
+///
+/// The deck renders this text. Nothing stops a caller from sending a megabyte,
+/// and the dialog is card-modal for as long as it is up, so an unbounded string
+/// is an unbounded defacement of the developer's Session card. These are set
+/// where a real question comfortably fits and an attack does not.
+const MAX_TITLE_CHARS: usize = 200;
+const MAX_DESCRIPTION_CHARS: usize = 2000;
+const MAX_OPTIONS: usize = 8;
+
+/// Removes a pending ask from the map when it goes out of scope, however it
+/// goes out of scope.
+///
+/// A `Drop` impl rather than cleanup on each return path, because one exit is
+/// not a return path at all: when the caller disconnects — a `^C` on the
+/// script that asked — axum aborts the handler task mid-`await`, and no
+/// hand-written branch runs. Without this the entry would sit in the map for
+/// good, and [`MAX_PENDING_ASKS`] interrupted runs would wedge the endpoint for
+/// everyone after them.
+struct PendingAskGuard {
+    map: crate::router::PendingAsks,
+    request_id: String,
+}
+
+impl Drop for PendingAskGuard {
+    fn drop(&mut self) {
+        if let Ok(mut pending) = self.map.lock() {
+            pending.remove(&self.request_id);
+        }
+    }
+}
+
+/// Truncate on a character boundary, appending an ellipsis when it bites.
+fn clamp_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_owned();
+    }
+    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
 /// Handle POST /api/ask requests — put a question to the human in the deck.
 ///
 /// Sends the question to the deck via a CONTROL frame and blocks until someone
@@ -570,6 +620,12 @@ const ASK_TIMEOUT_SECS: u64 = 600;
 /// command-line tool get consent before doing something disruptive. Loopback is
 /// the trust boundary, and the deck confines caller-supplied text below fixed
 /// chrome so a question cannot impersonate the app's own prompts.
+///
+/// Giving up the gate is exactly why the input is clamped here and the eval
+/// path's is not. Eval can afford to trust its caller because only a dev build
+/// answers it; this runs on the machine the developer actually uses, so size,
+/// count, and duration all get ceilings ([`MAX_TITLE_CHARS`],
+/// [`MAX_OPTIONS`], [`MAX_PENDING_ASKS`], [`ASK_TIMEOUT_SECS`]).
 async fn ask_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(router): State<FeedRouter>,
@@ -605,9 +661,21 @@ async fn ask_handler(
         }
     };
 
+    let title = clamp_chars(title, MAX_TITLE_CHARS);
+
     // At least one option, or there is nothing for the human to choose.
     let options = match payload.get("options").and_then(|o| o.as_array()) {
-        Some(o) if !o.is_empty() => o.clone(),
+        Some(o) if !o.is_empty() && o.len() <= MAX_OPTIONS => o.clone(),
+        Some(o) if o.len() > MAX_OPTIONS => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": format!("at most {MAX_OPTIONS} options"),
+                })),
+            )
+                .into_response();
+        }
         _ => {
             return (
                 StatusCode::BAD_REQUEST,
@@ -619,30 +687,74 @@ async fn ask_handler(
         }
     };
 
+    let description = payload
+        .get("description")
+        .and_then(|d| d.as_str())
+        .map(|d| clamp_chars(d, MAX_DESCRIPTION_CHARS))
+        .map(serde_json::Value::String)
+        .unwrap_or(serde_json::Value::Null);
+
     let request_id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = tokio::sync::oneshot::channel();
     {
         let mut pending = router.pending_asks.lock().unwrap();
+        if pending.len() >= MAX_PENDING_ASKS {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": "too many questions already waiting",
+                })),
+            )
+                .into_response();
+        }
         pending.insert(request_id.clone(), tx);
     }
+    // From here on the entry is owned by the guard: every exit below — answer,
+    // timeout, undeliverable, or an abort that runs no code at all — clears it.
+    let _guard = PendingAskGuard {
+        map: router.pending_asks.clone(),
+        request_id: request_id.clone(),
+    };
 
     let ask_frame = serde_json::json!({
         "action": "ask",
         "requestId": request_id,
         "sessionId": payload.get("sessionId").cloned().unwrap_or(serde_json::Value::Null),
         "title": title,
-        "description": payload.get("description").cloned().unwrap_or(serde_json::Value::Null),
+        "description": description,
         "options": options,
     });
-    if let Some((broadcast_tx, _)) = router.stream_outputs.get(&FeedId::CONTROL) {
-        let frame = Frame::new(FeedId::CONTROL, serde_json::to_vec(&ask_frame).unwrap());
-        let _ = broadcast_tx.send(frame);
+
+    // Nobody listening is a distinct answer from nobody deciding. `send` reports
+    // zero receivers, and a caller that would otherwise sit out the full timeout
+    // in front of a deck that was never there deserves to hear so immediately —
+    // the CLI reads this as "no route" and proceeds rather than treating it as a
+    // refusal. Answering every blocked caller on every path is the invariant the
+    // deck-side store keeps too; this is its other end.
+    let delivered = match router.stream_outputs.get(&FeedId::CONTROL) {
+        Some((broadcast_tx, _)) => {
+            let frame = Frame::new(FeedId::CONTROL, serde_json::to_vec(&ask_frame).unwrap());
+            broadcast_tx.send(frame).is_ok()
+        }
+        None => false,
+    };
+    if !delivered {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(
+                serde_json::json!({"status": "error", "message": "no deck is connected"}),
+            ),
+        )
+            .into_response();
     }
 
+    // The caller may shorten the wait but not extend it past the ceiling.
     let secs = payload
         .get("timeoutSecs")
         .and_then(|t| t.as_u64())
-        .unwrap_or(ASK_TIMEOUT_SECS);
+        .unwrap_or(ASK_TIMEOUT_SECS)
+        .min(ASK_TIMEOUT_SECS);
 
     match timeout(std::time::Duration::from_secs(secs), rx).await {
         Ok(Ok(choice)) => (
@@ -652,8 +764,6 @@ async fn ask_handler(
             .into_response(),
         Ok(Err(_)) => {
             // Sender dropped — the deck went away mid-question.
-            let mut pending = router.pending_asks.lock().unwrap();
-            pending.remove(&request_id);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 axum::Json(serde_json::json!({"status": "error", "message": "deck disconnected"})),
@@ -661,8 +771,6 @@ async fn ask_handler(
                 .into_response()
         }
         Err(_) => {
-            let mut pending = router.pending_asks.lock().unwrap();
-            pending.remove(&request_id);
             (
                 StatusCode::GATEWAY_TIMEOUT,
                 axum::Json(
@@ -965,5 +1073,102 @@ mod tests {
         )
         .await;
         assert_eq!(status, 400);
+    }
+
+    /// Nobody is listening — say so at once instead of holding the caller for
+    /// the full timeout in front of a deck that was never there.
+    #[tokio::test]
+    async fn test_ask_with_no_deck_answers_immediately() {
+        let fx = serve_ask_fixture().await;
+        // Drop the stand-in deck's subscription: the broadcast now has zero
+        // receivers, which is exactly the "app running, no browser" case.
+        drop(fx.control_rx);
+
+        let (status, body) =
+            post_json(&format!("{}/api/ask", fx.base_url), &ask_body(600)).await;
+
+        assert_eq!(status, 503);
+        assert_eq!(body["message"], "no deck is connected");
+        assert!(fx.pending_asks.lock().unwrap().is_empty());
+    }
+
+    /// More options than a person can weigh is a malformed question, not a long
+    /// one — and the dialog would grow without bound rendering them.
+    #[tokio::test]
+    async fn test_ask_rejects_too_many_options() {
+        let fx = serve_ask_fixture().await;
+        let options: Vec<_> = (0..MAX_OPTIONS + 1)
+            .map(|i| serde_json::json!({"value": format!("v{i}"), "label": "L"}))
+            .collect();
+        let (status, _) = post_json(
+            &format!("{}/api/ask", fx.base_url),
+            &serde_json::json!({"title": "hi", "options": options}),
+        )
+        .await;
+        assert_eq!(status, 400);
+    }
+
+    /// Caller text is clamped before it reaches the deck: the dialog is
+    /// card-modal while it is up, so an unbounded string is an unbounded
+    /// defacement of the developer's card.
+    #[tokio::test]
+    async fn test_ask_clamps_caller_text() {
+        let mut fx = serve_ask_fixture().await;
+        let url = format!("{}/api/ask", fx.base_url);
+        let body = serde_json::json!({
+            "title": "T".repeat(MAX_TITLE_CHARS * 2),
+            "description": "D".repeat(MAX_DESCRIPTION_CHARS * 2),
+            "timeoutSecs": 1,
+            "options": [{"value": "a", "label": "A"}],
+        });
+        let request = tokio::spawn(async move { post_json(&url, &body).await });
+
+        let frame = fx.control_rx.recv().await.unwrap();
+        let payload: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(
+            payload["title"].as_str().unwrap().chars().count(),
+            MAX_TITLE_CHARS
+        );
+        assert_eq!(
+            payload["description"].as_str().unwrap().chars().count(),
+            MAX_DESCRIPTION_CHARS
+        );
+
+        let _ = request.await.unwrap();
+    }
+
+    /// A runaway script cannot accumulate waits without end.
+    #[tokio::test]
+    async fn test_ask_caps_concurrent_questions() {
+        let fx = serve_ask_fixture().await;
+        let url = format!("{}/api/ask", fx.base_url);
+
+        // Fill the map directly — the point under test is the admission check,
+        // not the spawning of real waiters.
+        {
+            let mut pending = fx.pending_asks.lock().unwrap();
+            for i in 0..MAX_PENDING_ASKS {
+                let (tx, _rx) = tokio::sync::oneshot::channel();
+                pending.insert(format!("filler-{i}"), tx);
+            }
+        }
+
+        let (status, body) = post_json(&url, &ask_body(1)).await;
+        assert_eq!(status, 429);
+        assert_eq!(body["message"], "too many questions already waiting");
+    }
+
+    #[test]
+    fn clamp_chars_leaves_short_text_alone() {
+        assert_eq!(clamp_chars("hello", 10), "hello");
+    }
+
+    /// Counts characters, not bytes — a multi-byte title must not be sliced
+    /// mid-codepoint.
+    #[test]
+    fn clamp_chars_counts_characters() {
+        let s = "日本語のタイトル";
+        assert_eq!(clamp_chars(s, 4).chars().count(), 4);
+        assert!(clamp_chars(s, 4).ends_with('…'));
     }
 }

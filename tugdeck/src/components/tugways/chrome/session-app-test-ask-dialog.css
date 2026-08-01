@@ -7,8 +7,9 @@
  * session-app-test-ask-dialog.css — `AppTestAskDialog` chrome fragments.
  *
  * The dialog frame belongs to `TugInlineDialog` (which owns
- * `--tugx-idialog-*`). This file owns only the two-line description slot,
- * and its job is a security one as much as a visual one:
+ * `--tugx-idialog-*`) and the option rows to `TugRadioGroup`. This file owns
+ * the two-line description slot and the group's placement, and the former's
+ * job is a security one as much as a visual one:
  *
  *   - `.session-app-test-ask-dialog-provenance` — the app's own line saying
  *     where the question came from. It sits above the caller's text and the
@@ -43,6 +44,14 @@
   font-size: var(--tugx-ask-provenance-size);
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+
+/* The option group, centered under the description like the permission
+   dialog's scope group. `TugRadioGroup` owns everything inside it ([L20]). */
+.session-app-test-ask-dialog-options {
+  margin-top: var(--tug-space-md);
+  display: flex;
+  justify-content: center;
 }
 
 .session-app-test-ask-dialog-detail {

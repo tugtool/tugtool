@@ -7,15 +7,17 @@
  * until its own timeout.
  *
  * These drive the real store through its real injected seam (`init`), capturing
- * what it puts on the wire. Coverage stops where `cardServicesStore` begins —
- * routing to a live session needs real card services and a real connection, so
- * that half is covered end-to-end by the app-test rather than by standing up a
- * fake registry here.
+ * what it puts on the wire. The session registry is injected too, so the routed
+ * paths — a live dialog, a second question arriving, a session vanishing under
+ * one — are reachable here. What is NOT reachable is whether the card actually
+ * renders and answers; that is the app-test's job (`at0320`).
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
 
 import { pendingAskStore } from "../pending-ask-store";
+import type { PendingAskSession } from "../pending-ask-store";
+import type { PendingAsk } from "../code-session-store/types";
 
 interface SentFrame {
   action: string;
@@ -25,14 +27,66 @@ interface SentFrame {
 let sent: SentFrame[] = [];
 let dispose: () => void = () => {};
 
-/** Wire the store up with no focused session, so routing always comes up empty. */
-function initWithNoSession(): void {
+/** The sessions the injected registry knows about, keyed by `tugSessionId`. */
+let sessions = new Map<string, { parked: PendingAsk | null }>();
+let sessionListeners: Array<() => void> = [];
+
+function notifySessions(): void {
+  for (const l of sessionListeners.slice()) l();
+}
+
+/** Stand a session up in the registry and return its id. */
+function addSession(tugSessionId: string): string {
+  sessions.set(tugSessionId, { parked: null });
+  notifySessions();
+  return tugSessionId;
+}
+
+/** Take a session away, as a closing card would. */
+function removeSession(tugSessionId: string): void {
+  sessions.delete(tugSessionId);
+  notifySessions();
+}
+
+function init(focused: string | null = null): void {
+  // The store is a module singleton, so a question left live by the previous
+  // test would be reaped the moment this one stands its sessions up. Drain
+  // first, while the old context can still carry the answers away.
+  for (const requestId of [...pendingAskStore.getSnapshot().keys()]) {
+    pendingAskStore.respond(requestId, "");
+  }
   dispose();
   sent = [];
+  sessions = new Map();
+  sessionListeners = [];
   dispose = pendingAskStore.init({
-    sendControlFrame: (action, payload) => sent.push({ action, payload }),
-    focusedTugSessionId: () => null,
+    sendControlFrame: (action, payload) => {
+      sent.push({ action, payload });
+    },
+    focusedTugSessionId: () => focused,
+    sessionFor: (tugSessionId): PendingAskSession | null => {
+      const entry = sessions.get(tugSessionId);
+      if (entry === undefined) return null;
+      return {
+        tugSessionId,
+        setPendingAsk: (ask) => {
+          entry.parked = ask;
+        },
+      };
+    },
+    observeSessions: (listener) => {
+      sessionListeners.push(listener);
+      return () => {
+        const i = sessionListeners.indexOf(listener);
+        if (i >= 0) sessionListeners.splice(i, 1);
+      };
+    },
   });
+}
+
+/** Wire the store up with no focused session, so routing always comes up empty. */
+function initWithNoSession(): void {
+  init(null);
 }
 
 const OPTIONS = [
@@ -98,6 +152,75 @@ describe("respond", () => {
   it("ignores an answer for a request that is not live", () => {
     pendingAskStore.respond("never-asked", "run-all");
     expect(sent).toEqual([]);
+  });
+});
+
+describe("a question that reaches a session", () => {
+  const SID = "cc-session-1";
+
+  function ask(requestId: string): void {
+    pendingAskStore.receive({ requestId, title: "t", options: OPTIONS, sessionId: SID });
+  }
+
+  beforeEach(() => {
+    init();
+    addSession(SID);
+  });
+
+  it("parks the question and answers nobody yet", () => {
+    ask("r10");
+    expect(sent).toEqual([]);
+    expect(sessions.get(SID)?.parked?.requestId).toBe("r10");
+    expect(pendingAskStore.getSnapshot().size).toBe(1);
+  });
+
+  it("clears the dialog and answers on respond", () => {
+    ask("r11");
+    pendingAskStore.respond("r11", "run-all");
+    expect(sessions.get(SID)?.parked).toBeNull();
+    expect(sent).toEqual([
+      { action: "ask-response", payload: { requestId: "r11", choice: "run-all" } },
+    ]);
+    expect(pendingAskStore.getSnapshot().size).toBe(0);
+  });
+
+  // The developer is mid-decision on the first. Swapping the dialog under them
+  // would lose that and strand the first caller with no dialog to answer it.
+  it("declines a second question rather than replacing the first", () => {
+    ask("r12");
+    ask("r13");
+    expect(sessions.get(SID)?.parked?.requestId).toBe("r12");
+    expect(sent).toEqual([
+      { action: "ask-response", payload: { requestId: "r13", choice: "cancel" } },
+    ]);
+  });
+
+  // The caller is blocked; a card going away must not leave it that way.
+  it("answers for a session that vanishes under a live question", () => {
+    ask("r14");
+    removeSession(SID);
+    expect(sent).toEqual([
+      { action: "ask-response", payload: { requestId: "r14", choice: "cancel" } },
+    ]);
+    expect(pendingAskStore.getSnapshot().size).toBe(0);
+  });
+
+  // [L02]: the map IS the snapshot, so an in-place mutation would leave every
+  // `useSyncExternalStore` consumer looking at an identical reference.
+  it("publishes a new snapshot identity on every change", () => {
+    const empty = pendingAskStore.getSnapshot();
+    ask("r15");
+    const parked = pendingAskStore.getSnapshot();
+    expect(parked).not.toBe(empty);
+    pendingAskStore.respond("r15", "run-all");
+    expect(pendingAskStore.getSnapshot()).not.toBe(parked);
+  });
+
+  it("routes to the focused session when the frame names none", () => {
+    init("cc-focused");
+    addSession("cc-focused");
+    pendingAskStore.receive({ requestId: "r16", title: "t", options: OPTIONS });
+    expect(sessions.get("cc-focused")?.parked?.requestId).toBe("r16");
   });
 });
 

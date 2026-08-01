@@ -2555,10 +2555,18 @@ export function SessionCardBody({
   // An inline dialog is modal for keys ([P06]): while one is pending the prompt
   // entry deactivates (read-only + blurred, no caret) so the dialog owns the
   // keyboard and the prompt visibly stands down. Derived from real store state
-  // ([L06]); reactivates when the dialog resolves. Both Permission and Question
-  // dialogs are modal-for-keys.
+  // ([L06]); reactivates when the dialog resolves. Permission, Question, and
+  // app-test Ask dialogs are all modal-for-keys.
+  //
+  // The ask belongs here for a reason the other two don't need spelled out:
+  // `TugTextEditor`'s Return defers to the pane's default button, which while
+  // this dialog is up is its `Continue`. Leaving the entry live would let a
+  // Return meant for the composer answer a question the developer was not
+  // looking at. Standing the entry down is what keeps Return unambiguous.
   const inlineDialogPending =
-    Boolean(codeSnap.pendingApproval) || Boolean(codeSnap.pendingQuestion);
+    Boolean(codeSnap.pendingApproval) ||
+    Boolean(codeSnap.pendingQuestion) ||
+    Boolean(codeSnap.pendingAsk);
 
   // The resume replay window deactivates the prompt the same way — a
   // session mid-reconstruction can't accept input, so no blinking

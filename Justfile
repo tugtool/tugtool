@@ -1163,6 +1163,11 @@ app-test *FILES:
                     # Rename so the reader never sees a half-written answer.
                     mv "$ASK_OUT.part" "$ASK_OUT.done"
                 ) &
+                # Hand the asker's pid forward so the gated child can reap it.
+                # `disown` detaches it from THIS shell, which `exec` is about to
+                # replace; without the pid, a ^C'd run would leave the question
+                # standing in the Session card with nobody left to hear it.
+                export TUG_APPTEST_ASK_PID=$!
                 disown 2>/dev/null || true
             fi
         fi
@@ -1362,6 +1367,20 @@ app-test *FILES:
             echo "==> running ${#BG_QUEUE[@]} background test(s) now; the ${#FG_QUEUE[@]} that take the screen come last."
         fi
     fi
+
+    # A ^C (or any other death) must not leave the question standing in the
+    # Session card with this run gone. Kill the detached asker — that drops its
+    # HTTP request, tugcast clears the pending entry, and the dialog's Escape is
+    # all that is left to tidy — and take the handoff files with it. Harmless
+    # when the answer already landed: the pid is reaped and the files are gone.
+    cleanup_pending_ask() {
+        [ -n "${TUG_APPTEST_ASK_PID:-}" ] && kill "$TUG_APPTEST_ASK_PID" 2>/dev/null
+        [ -n "${TUG_APPTEST_ASK_OUT:-}" ] && rm -f \
+            "$TUG_APPTEST_ASK_OUT" "$TUG_APPTEST_ASK_OUT.part" "$TUG_APPTEST_ASK_OUT.done" \
+            2>/dev/null
+        return 0
+    }
+    trap cleanup_pending_ask EXIT INT TERM
 
     # Collect the answer to the question raised before the gate. Called just
     # before the first screen-taking test, so the background run has already had

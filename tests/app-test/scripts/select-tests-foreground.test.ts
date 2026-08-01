@@ -109,6 +109,6 @@ describe("--foreground-check detects drift in both directions", () => {
 
         expect(r.code).toBe(1);
         expect(r.err).toContain(PREFIX_TWIN);
-        expect(r.err).toContain("declare @foreground but never launch");
+        expect(r.err).toContain("declare @foreground but never pass a");
     });
 });

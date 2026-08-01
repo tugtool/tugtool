@@ -170,15 +170,33 @@ pub fn find_by_id(instance_id: &str) -> Result<Option<Instance>, Error> {
 
 /// Find the live instance whose `bundle_path` is an ancestor of `cwd`.
 ///
-/// Used by `tugutil host tell` when no `--instance` flag is passed and the
-/// shell is inside a worktree owned by a running dev instance. The
+/// Used by `tugutil host tell` / `host ask` when no `--instance` flag is passed
+/// and the shell is inside a worktree owned by a running dev instance. The
 /// match is purely path-prefix based; the more sophisticated CLI
 /// discovery resolution in [D09] layers on top of this primitive.
+///
+/// **Both sides are resolved before comparing.** A prefix test between one
+/// resolved path and one raw path is not a comparison, it is a coin flip: on
+/// macOS `realpath(3)` expands the APFS data-volume firmlink, so a `cwd` of
+/// `/u/src/tugtool` resolves to `/System/Volumes/Data/Users/…` while a
+/// `bundle_path` recorded as `/Users/…` stays put, and the two never match
+/// however plainly they name the same directory. Resolving only the `cwd` — as
+/// this did — turned that into a silent "no instance found" whenever the two
+/// spellings disagreed.
+///
+/// This is bare `canonicalize` rather than [L29]'s `CanonicalPath::from_raw`
+/// gateway because that gateway lives in `tugcast`, which depends on this crate.
+/// It is safe here for the reason the law is strict elsewhere: these paths are
+/// compared and discarded within the call — never persisted as a key, never
+/// handed to Claude, whose on-disk layout is the form the gateway exists to
+/// agree with. Symmetry is what makes the comparison sound.
 pub fn find_for_cwd(cwd: &Path) -> Result<Option<Instance>, Error> {
-    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-    Ok(load()?
-        .into_iter()
-        .find(|i| cwd.starts_with(&i.bundle_path) || i.bundle_path.starts_with(&cwd)))
+    let resolved = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let cwd = resolved(cwd);
+    Ok(load()?.into_iter().find(|i| {
+        let bundle = resolved(&i.bundle_path);
+        cwd.starts_with(&bundle) || bundle.starts_with(&cwd)
+    }))
 }
 
 /// Alias for [`load`] — every instance returned by `load` is live by

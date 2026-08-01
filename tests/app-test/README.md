@@ -99,7 +99,9 @@ When a run contains any of them, `just app-test` raises the question in the Sess
 
 `TUG_APPTEST_ASSUME=all|background|cancel` answers ahead of time; scripted and non-interactive runs should set it. With no Tug instance to ask, a run proceeds after naming the tests that will take the screen — blocking a terminal-only run that could never have shown a dialog is worse than an unannounced one you started by hand.
 
-`just app-test-foreground-check` holds the declaration honest in both directions. A `foreground: true` with no tag would seize the screen unannounced, which is the real harm; a tag with no such launch would prompt about a test that was never disruptive.
+`just app-test-foreground-check` holds the declaration honest in both directions. A foreground launch with no tag would seize the screen unannounced, which is the real harm; a tag with no such launch would prompt about a test that was never disruptive.
+
+The check reads the launch option statically, so anything that is not literally `foreground: false` counts as a screen-taker. A computed flag (`foreground: SOAK_SECS === 0`) cannot be resolved by reading the file, and the safe reading of "it might take the screen" is to declare it.
 
 `just app-test` ends every run with a structured summary block whose
 last stdout line is exactly `VERDICT: PASS  (...)` or `VERDICT: FAIL
