@@ -155,6 +155,10 @@ describe.skipIf(!SHOULD_RUN)(
       "permission dialog stays modal + seeded across app resign → become-active",
       async () => {
         const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true,
           testName: "at0148-dialog-survives-reactivation",
         });
         try {

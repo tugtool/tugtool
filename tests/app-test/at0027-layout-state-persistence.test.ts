@@ -365,7 +365,11 @@ async function runRelaunchScenario(axis: "single" | "multiple"): Promise<void> {
 }
 
 async function runCmdTabScenario(axis: "single" | "multiple"): Promise<void> {
-  const app = await launchTugApp({ testName: `at0027-accordion-${axis}-cmd-tab` });
+  const app = await launchTugApp({
+    testName: `at0027-accordion-${axis}-cmd-tab`,
+    // Foreground: the cmd-tab cycle is a real resign / become-active pair.
+    foreground: true,
+  });
   try {
     await seedAndMount(app, axis);
 

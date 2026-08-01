@@ -39,7 +39,11 @@ const inputSel = (id: string): string =>
 
 describe.skipIf(!SHOULD_RUN)("at0136-stale-reapply-clobber", () => {
   test("clicking back into a diverged field leaves the live value untouched", async () => {
-    const app = await launchTugApp({ testName: "at0136-stale-reapply-clobber" });
+    const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true, testName: "at0136-stale-reapply-clobber" });
     try {
       await app.enableDeckTrace(true);
       await app.seedDeckState({

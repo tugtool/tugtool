@@ -74,7 +74,11 @@ async function assertCaretVisible(app: App, cardId: string): Promise<void> {
 
 describe.skipIf(!SHOULD_RUN)("m22: caret visible after every refocus path", () => {
   test("cold-boot, app-cycle, tab-switch all leave the engine root focused with document.hasFocus()", async () => {
-    const app = await launchTugApp({ testName: "at0022-caret-visibility" });
+    const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true, testName: "at0022-caret-visibility" });
     try {
       await app.enableDeckTrace(true);
 

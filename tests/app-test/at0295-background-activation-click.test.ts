@@ -87,6 +87,10 @@ describe.skipIf(!SHOULD_RUN)("at0295 — background activation click", () => {
     "the activating click activates the card under it, and leaves a canvas click's selection alone",
     async () => {
       const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true,
         testName: "at0295-background-activation-click",
       });
       try {

@@ -52,7 +52,11 @@ function inputSelectorFor(cardId: string): string {
 
 describe.skipIf(!SHOULD_RUN)("m05: app hide → unhide preserves focus + value", () => {
   test("simulateAppHide + simulateAppUnhide restores focus inside first-responder card", async () => {
-    const app = await launchTugApp({ testName: "at0005-app-hide-unhide" });
+    const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true, testName: "at0005-app-hide-unhide" });
     try {
       await app.enableDeckTrace(true);
 

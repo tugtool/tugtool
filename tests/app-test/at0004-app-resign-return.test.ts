@@ -59,7 +59,11 @@ function inputSelectorFor(cardId: string): string {
 
 describe.skipIf(!SHOULD_RUN)("m04: app resign → return-to-active preserves focus + value", () => {
   test("simulateAppResign + simulateAppBecomeActive restores focus inside first-responder card", async () => {
-    const app = await launchTugApp({ testName: "at0004-app-resign-return" });
+    const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true, testName: "at0004-app-resign-return" });
     try {
       await app.enableDeckTrace(true);
 

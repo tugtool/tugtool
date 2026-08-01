@@ -62,7 +62,11 @@ describe.skipIf(!SHOULD_RUN)("AT0078: session-card engine focus survives app-swi
   test(
     "cmd-tab away + back preserves focus on the session-card contenteditable",
     async () => {
-      const app = await launchTugApp({ testName: "at0078-dev-engine-focus" });
+      const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true, testName: "at0078-dev-engine-focus" });
       try {
         await app.enableDeckTrace(true);
 

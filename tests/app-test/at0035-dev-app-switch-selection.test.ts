@@ -59,7 +59,11 @@ const STRESS_ITERATIONS = 3;
 
 describe.skipIf(!SHOULD_RUN)("at0035-dev: session-card selection survives app resign + become-active", () => {
   test("cmd-tab away + back preserves \"llo\" selection on session-card", async () => {
-    const app = await launchTugApp({ testName: "at0035-dev-app-switch" });
+    const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true, testName: "at0035-dev-app-switch" });
     let lastIteration = -1;
     try {
       await app.enableDeckTrace(true);

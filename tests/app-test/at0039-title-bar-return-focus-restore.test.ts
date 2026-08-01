@@ -153,6 +153,10 @@ describe.skipIf(!SHOULD_RUN)(
       "title-bar-driven A→B(focus textarea)→A returns focus to A's md input",
       async () => {
         const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true,
           testName: "at0039-title-bar-return-focus-restore",
         });
         try {

@@ -45,7 +45,11 @@ const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 
 describe.skipIf(!SHOULD_RUN)("m18: async-content-race audit", () => {
   test("saveState() after seed-and-mount preserves seeded bag.content", async () => {
-    const app = await launchTugApp({ testName: "at0018-async-content-race" });
+    const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true, testName: "at0018-async-content-race" });
     try {
       await app.enableDeckTrace(true);
 

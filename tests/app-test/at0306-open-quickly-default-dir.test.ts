@@ -46,9 +46,8 @@
  *   commit, and open the popup in the same breath. Until the server's DEFAULTS
  *   frame comes back the only thing that knows the new path is the optimistic
  *   local-cache write, so without it the popup names the directory the user
- *   just replaced. It asserts the bar, not the file list — the results side of
- *   a directory the setting moved to is a separate, still-open question (see
- *   the note in the test).
+ *   just replaced. The bar must rename and the results must come from the new
+ *   directory.
  *
  * Gating
  * ------
@@ -535,7 +534,13 @@ describe.skipIf(!SHOULD_RUN)(
         mkdirSync(`${base}/other`);
         writeFileSync(`${base}/other/${OTHER_MARKER}`, "elsewhere\n");
 
-        const app = await launchTugApp({ testName: "at0306-open-quickly-esc" });
+        const app = await launchTugApp({
+          testName: "at0306-open-quickly-esc",
+          // Foreground: the final leg is a real app resign, which only
+          // happens to an app that is actually active (pid-mode default
+          // never activates).
+          foreground: true,
+        });
         const ring = `(function () {
           var el = document.querySelector("[data-key-view-kbd]");
           return el === null ? "(none)" : (el.getAttribute("data-slot") || el.tagName);
@@ -680,7 +685,19 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 8000 },
           );
           await app.focusElement(SETTINGS_FIELD);
-          await app.type(SETTINGS_FIELD, `${base}/after`);
+          // Replace, not append — the field already shows the stored path,
+          // and `app.type` types after it. (An appended path once committed a
+          // garbage directory whose leaf shadowed the real one here.)
+          await app.evalJS<null>(
+            `(function(){
+               var input = document.querySelector(${JSON.stringify(SETTINGS_FIELD)});
+               var setter = Object.getOwnPropertyDescriptor(
+                 window.HTMLInputElement.prototype, "value").set;
+               setter.call(input, ${JSON.stringify(`${base}/after`)});
+               input.dispatchEvent(new Event("input", { bubbles: true }));
+               return null;
+             })()`,
+          );
           await app.focusElement(GENERAL_TAB);
 
           // Open Quickly, right now — no waiting on the server round trip.
@@ -692,15 +709,14 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 10000 },
           );
 
-          // The file LIST is deliberately not asserted here. Searching a
-          // directory the setting was moved to — after the old default's
-          // browse hold was released — comes back "No files matching that
-          // name" for a file that is right there, while the same query in the
-          // same popup finds the old default's file instantly. That is a
-          // workspace-registry question, not a settings-plumbing one, and it
-          // is unfixed; test 2 covers a root switch made through the switcher,
-          // where both holds are live and results do arrive.
-
+          // And the search root really moved, not just the label: the file
+          // that only exists in the new directory is the one that comes back.
+          await typeIntoField(app, "at0306-");
+          await app.waitForCondition<boolean>(
+            `Array.from(document.querySelectorAll(${JSON.stringify(ROWS)}))
+               .some((el) => (el.textContent || "").indexOf(${JSON.stringify(OTHER_MARKER)}) !== -1)`,
+            { timeoutMs: 10000 },
+          );
         } finally {
           await app.close();
           rmSync(base, { recursive: true, force: true });

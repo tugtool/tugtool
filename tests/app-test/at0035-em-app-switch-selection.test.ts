@@ -185,7 +185,11 @@ async function runAppSwitchSelection(app: App, componentId: string): Promise<voi
 
 describe.skipIf(!SHOULD_RUN)("at0035-em: selection survives app resign + become-active (cmd-tab analog)", () => {
   test("gallery-prompt-entry: selection survives cmd-tab away + back", async () => {
-    const app = await launchTugApp({ testName: "at0035-em-app-switch-entry" });
+    const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true, testName: "at0035-em-app-switch-entry" });
     try {
       await runAppSwitchSelection(app, "gallery-prompt-entry");
     } finally {

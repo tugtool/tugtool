@@ -332,6 +332,10 @@ async function runAppReloadScenario(fixture: ComponentFixture): Promise<void> {
   try {
     seedTugbankForLaunch(tugbankPath);
     const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true,
       testName: `m30-${fixture.label}-app-reload`,
       env: { TUGBANK_PATH: tugbankPath },
       persistInTestMode: true,

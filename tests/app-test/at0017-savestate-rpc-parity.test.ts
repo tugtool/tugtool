@@ -43,7 +43,11 @@ function inputSelectorFor(cardId: string): string {
 
 describe.skipIf(!SHOULD_RUN)("m17: saveState RPC captures same axes as will-phase saves", () => {
   test("saveState() bag === window-blur bag for steady state", async () => {
-    const app = await launchTugApp({ testName: "at0017-savestate-rpc-parity" });
+    const app = await launchTugApp({
+    // Foreground: drives a real app resign / hide / become-active cycle,
+    // which only happens to an app that is actually active (pid-mode default
+    // never activates).
+    foreground: true, testName: "at0017-savestate-rpc-parity" });
     try {
       await app.enableDeckTrace(true);
 
