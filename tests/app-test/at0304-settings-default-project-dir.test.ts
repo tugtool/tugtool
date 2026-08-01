@@ -70,13 +70,22 @@ describe.skipIf(!SHOULD_RUN)(
         expect(await app.getElementValue(FIELD_INPUT)).toBe(dir);
         await app.focusElement(GENERAL_TAB);
 
-        // Read the value back over the defaults API.
+        // Read the value back over the defaults API. The field's write is a
+        // fire-and-forget PUT, so a single GET can beat it to the server and
+        // latch a 404 — poll until the key is there (or the poll times out and
+        // the assertion below reports the last answer).
         await app.evalJS(`(() => {
           window.__at0304 = undefined;
-          fetch("/api/defaults/dev.tugtool.app/default-project-path")
-            .then((r) => (r.ok ? r.json() : { kind: "error", value: r.status }))
-            .then((j) => { window.__at0304 = j; })
-            .catch((e) => { window.__at0304 = { kind: "error", value: String(e) }; });
+          const poll = () => {
+            fetch("/api/defaults/dev.tugtool.app/default-project-path")
+              .then((r) => (r.ok ? r.json() : { kind: "error", value: r.status }))
+              .then((j) => {
+                if (j.kind === "string") { window.__at0304 = j; return; }
+                window.setTimeout(poll, 100);
+              })
+              .catch((e) => { window.__at0304 = { kind: "error", value: String(e) }; });
+          };
+          poll();
         })()`);
         const stored = await app.waitForCondition<{
           kind: string;

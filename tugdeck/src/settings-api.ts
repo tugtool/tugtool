@@ -21,6 +21,7 @@ import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { PERMISSION_MODE_DOMAIN } from "./lib/permission-mode";
 import { MODEL_DOMAIN } from "./lib/model-domains";
+import { getTugbankClient } from "./lib/tugbank-singleton";
 import type { FindOptions } from "./lib/transcript-search";
 
 const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";
@@ -373,6 +374,16 @@ export function readDefaultProjectPath(client: TugbankClient): string | null {
  * `default-project-path`. Fire-and-forget, mirroring `putTheme`.
  */
 export function putDefaultProjectPath(path: string): void {
+  // Optimistic first, exactly like every other setting write in the app: the
+  // local cache is what `readDefaultProjectPath` reads, and until the server's
+  // DEFAULTS frame comes back around it still holds the old path. Without this
+  // an Open Quickly opened in the same breath as the commit searches the
+  // directory the user just stopped using.
+  getTugbankClient()?.setLocalValue(
+    DEFAULT_PROJECT_PATH_DOMAIN,
+    DEFAULT_PROJECT_PATH_KEY,
+    { kind: "string", value: path },
+  );
   fetch(
     `/api/defaults/${DEFAULT_PROJECT_PATH_DOMAIN}/${DEFAULT_PROJECT_PATH_KEY}`,
     {
@@ -398,7 +409,19 @@ export function resolveDefaultProjectPath(
   client: TugbankClient,
   home: string | null,
 ): string | null {
-  const explicit = readDefaultProjectPath(client);
+  return resolveProjectPathFrom(readDefaultProjectPath(client), home);
+}
+
+/**
+ * The same resolution, over an explicit value the caller already has, for a
+ * React caller that subscribes to the setting rather than reading the cache
+ * ([L02] — the subscribed read is the only one that re-renders on a change).
+ * One fallback rule, two ways in.
+ */
+export function resolveProjectPathFrom(
+  explicit: string | null,
+  home: string | null,
+): string | null {
   if (explicit !== null && explicit !== "") return explicit;
   if (home === null || home === "") return null;
   return `${home.replace(/\/+$/, "")}/${DEFAULT_PROJECT_DIR_LEAF}`;

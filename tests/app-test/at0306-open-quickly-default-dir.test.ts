@@ -41,6 +41,15 @@
  *   character open the switcher's menu, Escape unwinds menu-then-popup from
  *   wherever the ring rests, and `NSApp.deactivate()` dismisses.
  *
+ *   A sixth runs the setting and the popup together, through the real write
+ *   path: type a new default project directory into Settings ▸ General, let it
+ *   commit, and open the popup in the same breath. Until the server's DEFAULTS
+ *   frame comes back the only thing that knows the new path is the optimistic
+ *   local-cache write, so without it the popup names the directory the user
+ *   just replaced. It asserts the bar, not the file list — the results side of
+ *   a directory the setting moved to is a separate, still-open question (see
+ *   the note in the test).
+ *
  * Gating
  * ------
  * `describe.skipIf(!SHOULD_RUN)`. CI and `bun x tsc --noEmit` runs without
@@ -53,6 +62,8 @@
  * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  * @covers tugdeck/src/components/tugways/tug-popup-button.tsx
  * @covers tugdeck/src/components/tugways/internal/tug-button.tsx
+ * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
+ * @covers tugdeck/src/settings-api.ts
  */
 
 import {
@@ -602,6 +613,94 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(`!(${popupUp})`, {
             timeoutMs: 8000,
           });
+        } finally {
+          await app.close();
+          rmSync(base, { recursive: true, force: true });
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+    test(
+      "committing a new default directory in Settings re-points Open Quickly",
+      async () => {
+        // The user's flow, through the real write path: type a path into
+        // Settings ▸ General, let it commit, and open the popup in the same
+        // breath. The commit is an HTTP PUT; until the server's DEFAULTS frame
+        // comes back around, the only thing that knows the new path is the
+        // optimistic local-cache write `putDefaultProjectPath` makes. Without
+        // it the popup opens on the directory the user just replaced.
+        const base = mkdtempSync(`${tmpdir()}/at0306-live-`);
+        mkdirSync(`${base}/before`);
+        writeFileSync(`${base}/before/${MARKER}`, "the old default\n");
+        mkdirSync(`${base}/after`);
+        writeFileSync(`${base}/after/${OTHER_MARKER}`, "the new default\n");
+
+        const app = await launchTugApp({ testName: "at0306-open-quickly-live" });
+        const placeholder = `document.querySelector(${JSON.stringify(INPUT)})
+          .getAttribute("placeholder")`;
+        const GENERAL_TAB = '[data-testid="settings-card"] [role="tab"]';
+        const SETTINGS_FIELD =
+          '[data-testid="settings-default-project-dir-field"] input';
+        try {
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(OVERLAY_ROOT)}) !== null`,
+            { timeoutMs: 20000 },
+          );
+          await app.evalJS<null>(
+            `(window.__tug.setTugbankValue("dev.tugtool.app", "default-project-path", { kind: "string", value: ${JSON.stringify(`${base}/before`)} }), null)`,
+          );
+
+          // Baseline: the popup opens on the directory that is set now.
+          await app.evalJS<null>(
+            `(window.__tug.dispatchControlAction("open-quickly"), null)`,
+          );
+          await app.waitForCondition<boolean>(
+            `${placeholder} === "Open Quickly in before"`,
+            { timeoutMs: 10000 },
+          );
+          await app.nativeKey("Escape");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(POPUP)}) === null`,
+            { timeoutMs: 8000 },
+          );
+
+          // Change it the way the user does — the Settings card's own field,
+          // committed by focus leaving it (at0304 pins that write reaching
+          // tugbank; this pins what the popup does with it).
+          await app.evalJS(
+            `window.__tug.dispatchControlAction("show-card", { component: "settings" })`,
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector('[data-testid="settings-card"] [role="tablist"]') !== null`,
+            { timeoutMs: 10000 },
+          );
+          await app.click(GENERAL_TAB);
+          await app.waitForCondition<boolean>(
+            `document.querySelector('[data-testid="settings-general"]') !== null`,
+            { timeoutMs: 8000 },
+          );
+          await app.focusElement(SETTINGS_FIELD);
+          await app.type(SETTINGS_FIELD, `${base}/after`);
+          await app.focusElement(GENERAL_TAB);
+
+          // Open Quickly, right now — no waiting on the server round trip.
+          await app.evalJS<null>(
+            `(window.__tug.dispatchControlAction("open-quickly"), null)`,
+          );
+          await app.waitForCondition<boolean>(
+            `${placeholder} === "Open Quickly in after"`,
+            { timeoutMs: 10000 },
+          );
+
+          // The file LIST is deliberately not asserted here. Searching a
+          // directory the setting was moved to — after the old default's
+          // browse hold was released — comes back "No files matching that
+          // name" for a file that is right there, while the same query in the
+          // same popup finds the old default's file instantly. That is a
+          // workspace-registry question, not a settings-plumbing one, and it
+          // is unfixed; test 2 covers a root switch made through the switcher,
+          // where both holds are live and results do arrive.
+
         } finally {
           await app.close();
           rmSync(base, { recursive: true, force: true });

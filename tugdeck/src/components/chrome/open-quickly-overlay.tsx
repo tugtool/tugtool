@@ -47,7 +47,7 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { probeDirs } from "@/lib/dir-existence";
-import type { TugbankClient } from "@/lib/tugbank-client";
+import type { TaggedValue, TugbankClient } from "@/lib/tugbank-client";
 import { FeedStore } from "@/lib/feed-store";
 import { FeedId } from "@/protocol";
 import {
@@ -63,9 +63,12 @@ import { openFileInCard } from "@/lib/open-file-in-card";
 import { useHostFacts } from "@/lib/host-facts-store";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import {
-  resolveDefaultProjectPath,
+  DEFAULT_PROJECT_PATH_DOMAIN,
+  DEFAULT_PROJECT_PATH_KEY,
+  resolveProjectPathFrom,
   readSessionRecentProjects,
 } from "@/settings-api";
+import { useTugbankValue } from "@/lib/use-tugbank-value";
 import {
   acquireDefaultWorkspace,
   acquireWorkspace,
@@ -92,6 +95,17 @@ const MAX_ROOT_CANDIDATES = 7;
 
 /** `data-testid` on the switcher's menu content; its presence is "menu open". */
 const SWITCHER_MENU = "open-quickly-switcher-menu";
+
+/**
+ * The explicit default-project-path setting out of its tugbank entry, or `""`
+ * when unset. Module scope so its identity is stable across renders — a fresh
+ * closure would re-subscribe {@link useTugbankValue} on every render.
+ */
+function parseExplicitPath(entry: TaggedValue | undefined): string {
+  return entry?.kind === "string" && typeof entry.value === "string"
+    ? entry.value
+    : "";
+}
 
 /** A path's last component — what the bar and the switcher name it by. */
 function leafName(path: string): string {
@@ -180,12 +194,25 @@ function OpenQuicklyBody(): React.ReactElement {
   // `<home>/tug`) because this one has to be a real directory to search, not
   // a preference tier. Available whether or not a card is bound — the
   // switcher offers it either way.
+  //
+  // Read through `useTugbankValue` ([L02]), not a bare `client.get`: the two
+  // return the same value, but only the subscribed read re-renders when the
+  // setting changes. Settings ▸ General and this popup are both floating
+  // surfaces and are routinely on screen together — an unsubscribed read
+  // leaves the popup searching the directory the user just replaced, with no
+  // sign anything happened.
   const hostFacts = useHostFacts();
   const client = getTugbankClient();
-  const defaultPath =
-    client === null
-      ? null
-      : resolveDefaultProjectPath(client, hostFacts?.home ?? null);
+  const explicitPath = useTugbankValue(
+    DEFAULT_PROJECT_PATH_DOMAIN,
+    DEFAULT_PROJECT_PATH_KEY,
+    parseExplicitPath,
+    "",
+  );
+  const defaultPath = resolveProjectPathFrom(
+    explicitPath,
+    hostFacts?.home ?? null,
+  );
 
   // The directory picked in the switcher, or null while the popup is still on
   // whatever it opened with. Component-local: it is this popup instance's UI
@@ -317,11 +344,14 @@ function OpenQuicklyBody(): React.ReactElement {
 
   // ---- The directory switcher ----
   //
-  // The candidate list is built once, when the popup opens (Risk R01): the
-  // frontmost binding, the default directory, then recent projects. Deriving
-  // it per keystroke would race deck reordering under the user's hands.
+  // The candidate list is the frontmost binding, the default directory, then
+  // recent projects. It is NOT re-derived per keystroke (Risk R01) — that
+  // would race deck reordering under the user's hands — but it IS rebuilt
+  // when the default project directory changes, because that change is the
+  // user's own explicit act in Settings ▸ General and the menu must not go on
+  // offering the directory they just replaced.
   //
-  // The one round trip does double duty. It drops directories that no longer
+  // The round trip does double duty. It drops directories that no longer
   // exist, and it collapses spellings that name the same directory: the same
   // tree reached through a mount and its symlink is two entries in recents but
   // one place, and the menu must not offer it twice. Only the server can say
@@ -330,16 +360,19 @@ function OpenQuicklyBody(): React.ReactElement {
   const [candidates, setCandidates] = useState<string[]>(() =>
     rootCandidates(bindingRef.current?.projectDir ?? null, defaultPath, client),
   );
-  const didFilterRef = useRef(false);
   useEffect(() => {
-    if (didFilterRef.current) return;
-    didFilterRef.current = true;
+    const seeded = rootCandidates(
+      bindingRef.current?.projectDir ?? null,
+      defaultPath,
+      client,
+    );
+    setCandidates(seeded);
     let cancelled = false;
-    void probeDirs(candidates).then(({ exists, canonical }) => {
+    void probeDirs(seeded).then(({ exists, canonical }) => {
       if (cancelled) return;
-      setCandidates((prev) => {
-        const seen = new Set<string>();
-        return prev.filter((path) => {
+      const seen = new Set<string>();
+      setCandidates(
+        seeded.filter((path) => {
           // Absent from the map means unknown (probe failure, or past the
           // server's batch cap) — keep those, like the picker does.
           if (exists[path] === false) return false;
@@ -350,15 +383,16 @@ function OpenQuicklyBody(): React.ReactElement {
           if (seen.has(identity)) return false;
           seen.add(identity);
           return true;
-        });
-      });
+        }),
+      );
     });
     return () => {
       cancelled = true;
     };
-    // Built once per popup open; `candidates` is the seed it reads, not a
-    // dependency that should re-run it.
-  }, []);
+    // `client` is the process-long singleton and `bindingRef` is captured at
+    // open; the default directory is the only thing here that moves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultPath]);
 
   const candidateLabels = useMemo(
     () => switcherLabels(candidates),
