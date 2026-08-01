@@ -151,6 +151,40 @@ jul30 I3, promoted co-equal ([animation-islands.md#p2b-diet](animation-islands.m
 **Measured 2026-08-01 (the synthetic typist settles the floor question):** the `AT9996_TYPIST=1` cell (real postToPid keys through the actual input pipeline, deterministic burst/pause cadence, in-page q ledger) reads **q50=1ms q90=2ms q99=5ms, 0 of 300 keys over 25ms on a near-empty deck** vs **q50=16ms q90=48ms q99=91ms, 76 of 300 over 25ms at 81k nodes** (weight knob 500 blocks/session). The release deck's standing q50 of 9–10ms is therefore **deck-weight cost, not input-pipeline floor** — the pipeline floor is ~1ms. Per-keystroke latency scales hard with mounted weight; I6 is the fix surface and the typist cell is its regression meter (lab synthetic content amplifies harder than release content — compare shapes, not absolutes). The structural-idle claim splits cleanly: baseline typing q IS structural with weight (confirmed); the 30s wake-stall train is NOT (S9, instance-scoped).
 
 
+## The fix program — containment first {#fix-program}
+
+Written 2026-08-02 after the second attribution round, on the user's directive: **measurement is over; the instruments run only as before/after gates on real diffs.** The felt lag decomposes into exactly two named remainders, and the plan below is code changes, in order of leverage, each with its meter and its go/no-go.
+
+**What is settled (do not re-derive):** writer #1 shipped and verified (census 277→10, q99 375→25ms, WebContent 29.8→8.6%; guarded by at0312). Writer #2 closed as no-defect (observer effect; clocks/badges gate correctly to in-flight work). The keystroke floor is **~1ms** (typist cell, near-empty deck); the release deck's 9–10ms q50 with a 48–91ms tail at weight is **I6 mounted-weight cost** — style invalidation from a keystroke is resolved across the whole ~76k-node deck because nothing bounds it. The 30s wake-stall train (S9) is instance-scoped, cause unnamed, NOT weight/age/load/display-link. Maker ▸ Reload is **not a test surface** — it does not exist in release builds, and release instances are the only performance surface.
+
+### F-A — settled-entry containment (the program's spine) {#fa-containment}
+
+The change: bound style/layout invalidation at transcript-entry boundaries so a keystroke in the composer stops billing the transcripts. Two CSS-level mechanisms, landed as separate, separately-verified diffs:
+
+1. **`contain: layout style` on the settled transcript entry boundary** (and audit the card/pane boundaries for the same). Scope: `tugdeck` transcript entry chrome; cross-check `tuglaws/component-authoring.md` + pane-model before touching structure; name the laws in the commit.
+2. **`content-visibility: auto` on offscreen settled entries**, so entries outside the viewport skip rendering work entirely. This is CSS containment, NOT JS windowing — the no-height-estimates rule bans estimated cell heights in JS layout, but `contain-intrinsic-size` placeholders need explicit care in review: they must never produce visible scroll jumps. Watch items: scroll anchoring, reveal-scroll paths (sticky-header clearance), find-in-page, the screenshot probe, selection across hidden entries.
+
+**Meter (mandatory, per diff):** typist cell A/B at `AT9996_TYPIST_WEIGHT=500` — the regression number is q50/q90 at weight. Success = heavy-deck q50 collapses toward the floor (target: ≤3ms at 81k lab nodes, tail q99 ≤25ms); then one live confirmation on the release deck. `bunx vite build` before declaring any diff done; app-tests selective via `just app-test-changed`.
+
+**Order within F-A:** (1) `contain` on settled entries → measure; (2) `content-visibility` on offscreen settled entries → measure; (3) only if the residual justifies it, the layer diet proper (position:relative/overflow/z-index census from jul30). Each step lands only if its meter moves; a step that doesn't move q is reverted, not accumulated.
+
+### F-B — S9, two bounded probes then a decision {#fb-s9-probes}
+
+No open-ended hunt. Exactly two discriminators remain, then a verdict is written either way:
+
+1. **Lab instance with REAL tugcode-bound sessions** (the one differentiator never tested — the stall/typist cells bind synthetic sessions). One run, autonomous, `AT9996_STALL` machinery. If the train appears: bisect by subsystem (feeds off, SessionCache off) inside the lab — note the IndexedDB SessionCache is already slated for removal, so if implicated the fix is sanctioned deletion.
+2. **Fresh-relaunch phase check on the release instance** — the next time the user relaunches Tug.app in normal life (no special gesture), arm the dual ledger and read whether the train exists from launch with the real workspace, and at what phase. Launch-time phase → process-lifetime clock; absent at first then appearing later → accumulation, bisect by uptime.
+
+If neither reproduces or names it: write the S9 verdict as environment-specific platform behavior, file the Feedback, close the surface. F-A independently blunts the stall's felt impact (a cheap recovery frame hurts less even unfixed).
+
+### F-C — carried fix work, unblocked by F-A {#fc-carried}
+
+- **F1 (narrow):** stop remounting persistent status/wave glyphs at turn boundaries (S3 exit's one open lifecycle item).
+- **tugcast standing burn:** ~13–18% CPU at idle from the 1Hz sysinfo full-process refresh while any session pid lives (`feeds/activity/resource.rs`) — gate or coarsen the refresh; measure with `ps` before/after.
+- **S8 realism check** stays parked behind F-A: re-price streaming at realistic cadence AFTER containment, since containment changes the bill.
+
+**Exit for the program:** typing on the loaded release deck reads within noise of the empty-deck floor on the typist cell, confirmed once live; S9 either named+fixed or verdict-closed; the instruments demoted to regression gates.
+
 ## Exit criteria {#exit}
 
 - [ ] Tool-churn cell names the live event channel; S3/S4 fixes land with the cell green: zero restarts, zero aged transitions, zero glyph remounts, walk ≤ noise with full motion running at heavy weight.
