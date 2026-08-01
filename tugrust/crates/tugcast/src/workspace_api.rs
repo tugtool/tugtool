@@ -44,25 +44,31 @@ pub(crate) struct ReleaseRequest {
 }
 
 /// The shared loopback + supervisor-presence preflight. `Ok` carries the
-/// supervisor; `Err` is the response to return as-is.
+/// supervisor; `Err` is the response to return as-is, boxed because an
+/// `axum::Response` is far larger than the reference in the `Ok` arm and every
+/// caller pays for the widest variant.
 fn guard(
     addr: SocketAddr,
     router: &FeedRouter,
-) -> Result<&crate::feeds::agent_supervisor::AgentSupervisor, Response> {
+) -> Result<&crate::feeds::agent_supervisor::AgentSupervisor, Box<Response>> {
     if !addr.ip().is_loopback() {
-        return Err((
-            StatusCode::FORBIDDEN,
-            axum::Json(json!({ "status": "error", "message": "forbidden" })),
-        )
-            .into_response());
+        return Err(Box::new(
+            (
+                StatusCode::FORBIDDEN,
+                axum::Json(json!({ "status": "error", "message": "forbidden" })),
+            )
+                .into_response(),
+        ));
     }
     match router.supervisor.as_ref() {
         Some(sup) => Ok(sup),
-        None => Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            axum::Json(json!({ "status": "error", "message": "no supervisor" })),
-        )
-            .into_response()),
+        None => Err(Box::new(
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::Json(json!({ "status": "error", "message": "no supervisor" })),
+            )
+                .into_response(),
+        )),
     }
 }
 
@@ -74,7 +80,7 @@ pub(crate) async fn post_workspace_acquire(
 ) -> Response {
     let sup = match guard(addr, &router) {
         Ok(sup) => sup,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     // Same path guard as the /api/fs handlers: relative, ..-traversing, and
     // secret-denylisted paths never reach the registry.
@@ -121,7 +127,7 @@ pub(crate) async fn post_workspace_release(
 ) -> Response {
     let sup = match guard(addr, &router) {
         Ok(sup) => sup,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let key = WorkspaceKey::from_canonical(&request.workspace_key);
     match sup.registry.release(&key) {

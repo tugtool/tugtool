@@ -58,10 +58,19 @@ pub(crate) struct StatRequest {
 /// `{ "exists": { path: bool }, "canonical": { path: canonicalPath } }`
 /// payload. `kind` selects whether a file or a directory counts as reachable.
 /// `canonical` carries the resolved form (via the same `resolve_to_claude_form`
-/// a Text card binds on open) for every reachable entry, so the caller can
-/// normalize its stored paths and dedupe them against open cards' canonical
+/// a Text card binds on open) for every path the guard accepts, so the caller
+/// can normalize its stored paths and dedupe them against open cards' canonical
 /// paths. Pure over the filesystem, synchronous — the handler runs it under
 /// `spawn_blocking`.
+///
+/// Existence and canonical form are separate answers. A path that does not
+/// exist yet still has one — `resolve_to_claude_form` rewrites a symlinked or
+/// synthetic prefix without needing the leaf to be there — and the frontend
+/// needs it, because [L29] binds the path it is about to **persist**, not only
+/// the ones it can stat. The default project directory is exactly that case:
+/// it is settable before it exists and created on first use. Only a path the
+/// guard refuses (relative, traversing, secret-denylisted) has no entry here,
+/// so `canonical` present still means "this is a path Tug will touch".
 fn stat_paths(paths: &[String], kind: StatKind) -> Value {
     let mut exists = Map::new();
     let mut canonical = Map::new();
@@ -69,10 +78,14 @@ fn stat_paths(paths: &[String], kind: StatKind) -> Value {
     for raw in paths.iter().take(MAX_STAT_PATHS) {
         let reachable = match guard_absolute_path(raw) {
             Ok(resolved) => {
+                canonical.insert(
+                    raw.clone(),
+                    Value::String(resolved.to_string_lossy().into_owned()),
+                );
                 // `metadata` follows symlinks, so a link to a real target
                 // reports the target's kind — which is the right reading for
                 // "can I point at this?".
-                let matched = std::fs::metadata(&resolved)
+                std::fs::metadata(&resolved)
                     .map(|md| {
                         let matched = match kind {
                             StatKind::File => md.is_file(),
@@ -84,14 +97,7 @@ fn stat_paths(paths: &[String], kind: StatKind) -> Value {
                         }
                         matched
                     })
-                    .unwrap_or(false);
-                if matched {
-                    canonical.insert(
-                        raw.clone(),
-                        Value::String(resolved.to_string_lossy().into_owned()),
-                    );
-                }
-                matched
+                    .unwrap_or(false)
             }
             Err(_) => false,
         };
@@ -150,14 +156,30 @@ mod tests {
         );
         assert_eq!(body["exists"][present.to_string_lossy().as_ref()], true);
         assert_eq!(body["exists"][missing.to_string_lossy().as_ref()], false);
-        // A reachable file carries its resolved canonical form; a missing one
-        // does not.
+        // Both carry a resolved canonical form: existence and canonical form
+        // are separate answers, and a caller persisting a not-yet-created path
+        // still has to route it through the gateway ([L29]).
         assert!(body["canonical"][present.to_string_lossy().as_ref()].is_string());
-        assert!(
-            body["canonical"]
-                .get(missing.to_string_lossy().as_ref())
-                .is_none()
-        );
+        assert!(body["canonical"][missing.to_string_lossy().as_ref()].is_string());
+    }
+
+    #[test]
+    fn stat_canonicalizes_a_path_that_does_not_exist_yet() {
+        // The default project directory is settable before it exists and
+        // created on first use, so the frontend must be able to canonicalize
+        // it at the moment it persists it.
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("not-created-yet");
+        let raw = missing.to_string_lossy().into_owned();
+
+        let body = stat_paths(std::slice::from_ref(&raw), StatKind::Dir);
+        assert_eq!(body["exists"][&raw], false);
+        assert!(body["canonical"][&raw].is_string());
+
+        // A path the guard refuses has no canonical form at all — "canonical
+        // present" still means "a path Tug will touch".
+        let refused = stat_paths(&["relative/path".to_string()], StatKind::Dir);
+        assert!(refused["canonical"].get("relative/path").is_none());
     }
 
     #[test]

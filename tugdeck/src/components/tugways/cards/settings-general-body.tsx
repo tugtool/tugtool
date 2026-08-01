@@ -10,15 +10,26 @@
  * in the field as a placeholder so the user sees what they will get without
  * the resolved path being written back as if they had chosen it.
  *
+ * **The field never comes to rest on a value tugbank doesn't hold.** A path
+ * shown in a settled field is a claim about what Tug will do — Open Quickly
+ * names that directory in its search bar — so an edit that merely *looks*
+ * finished is a lie the user has no way to see. Local state exists only while
+ * the user is actively typing; the moment the field settles (a completion
+ * accepted, Enter, focus leaving, the native picker returning) the value is
+ * written and the field goes back to displaying the store. A write that is
+ * refused takes the field back with it rather than leaving the typing on
+ * screen looking saved.
+ *
  * Laws: the stored path is external state read through `useTugbankValue`
  * ([L02] via `useSyncExternalStore`); only the in-flight edit is component
- * `useState`, and it exists only between a keystroke and its commit; layout
- * lives in settings-general-body.css [L06].
+ * `useState`; the stored path is canonicalized server-side before it is
+ * written ([L29] — it is a persisted key, matched against project bindings and
+ * recents); layout lives in settings-general-body.css [L06].
  *
  * @module components/tugways/cards/settings-general-body
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TugBox } from "../tug-box";
 import { TugLabel } from "../tug-label";
 import { TugFileChooser } from "../tug-file-chooser";
@@ -58,8 +69,8 @@ export function SettingsGeneralBody() {
   );
 
   // The in-flight edit, or null when the field is showing the stored value.
-  // Typing forks a draft; committing (Enter, or focus leaving the field)
-  // writes it and drops back to reading the store.
+  // Typing forks a draft; settling writes it and drops back to reading the
+  // store, so a draft can only ever exist under the user's hands.
   const [draft, setDraft] = useState<string | null>(null);
   const value = draft ?? stored;
 
@@ -81,24 +92,27 @@ export function SettingsGeneralBody() {
     };
   }, [value, resolvedFallback]);
 
-  const commit = useCallback(() => {
-    if (draft === null) return;
-    const trimmed = draft.trim();
-    setDraft(null);
-    if (trimmed === stored) return;
-    putDefaultProjectPath(trimmed);
-  }, [draft, stored]);
+  // Guards a settle against a later one: two settles can be in flight (accept
+  // then blur), and the older write must not clear a draft the user has since
+  // started, nor land after the newer value.
+  const settleSeq = useRef(0);
 
-  // Commit when focus leaves the whole field (input or Browse… button) for
-  // something outside it — a click elsewhere in the panel must not silently
-  // discard what was typed.
-  const handleBlur = useCallback(
-    (event: React.FocusEvent<HTMLDivElement>) => {
-      const next = event.relatedTarget;
-      if (next instanceof Node && event.currentTarget.contains(next)) return;
-      commit();
+  // The field settled on `next` — write it, then drop the draft so the field
+  // reads the store again. Whatever the store ends up holding is what shows:
+  // a canonicalized spelling, or the previous value if the write was refused.
+  const settle = useCallback(
+    (next: string) => {
+      const trimmed = next.trim();
+      const seq = (settleSeq.current += 1);
+      if (trimmed === stored) {
+        setDraft(null);
+        return;
+      }
+      void putDefaultProjectPath(trimmed).then(() => {
+        if (seq === settleSeq.current) setDraft(null);
+      });
     },
-    [commit],
+    [stored],
   );
 
   return (
@@ -111,7 +125,6 @@ export function SettingsGeneralBody() {
       >
         <div
           className="settings-general-field"
-          onBlur={handleBlur}
           data-testid="settings-default-project-dir-field"
         >
           <TugFileChooser
@@ -119,7 +132,7 @@ export function SettingsGeneralBody() {
             onChange={setDraft}
             base={value !== "" ? value : home ?? "/"}
             kind="directory"
-            onSubmit={commit}
+            onSettle={settle}
             placeholder={resolvedFallback}
             aria-label="Default project directory"
           />

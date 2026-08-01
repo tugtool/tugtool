@@ -28,6 +28,10 @@
  *   - Escape closes the list (and only the list — it stops there);
  *   - Enter with the list closed calls `onSubmit` (the consumer's commit).
  *
+ * `onChange` reports every value the input passes through; `onSettle` reports
+ * the ones it comes to *rest* on. A consumer whose value is durable writes on
+ * `onSettle` — see its doc.
+ *
  * A caller-supplied `accessory` slots a trailing control beside the field (the
  * "escape hatch" — e.g. a native folder picker button). Each item may carry a
  * `trailing` accessory (e.g. a per-row delete), whose clicks neither commit the
@@ -119,6 +123,22 @@ export interface TugComboBoxProps {
   normalizeOnClose?: (value: string) => string;
   /** Fired on Enter when the list is closed — the consumer's commit. */
   onSubmit?: () => void;
+  /**
+   * Fired with the resting value every time the field comes to rest — an item
+   * accepted (by Enter, Tab, or click), Enter on the closed list, or focus
+   * leaving. The value has already been through {@link normalizeOnClose}.
+   *
+   * This is the callback for a field whose value IS something durable (a
+   * setting, a stored path): typing is an in-flight edit, and `onSettle` is
+   * where that edit stops being in-flight and has to be written. Without it a
+   * consumer has to guess which of `onChange`'s many reasons ended the edit,
+   * and a finished-looking field can hold a value nothing ever stored.
+   *
+   * A descend does not settle — the user is still navigating. May fire more
+   * than once for the same resting value (accept then blur), so consumers must
+   * be idempotent.
+   */
+  onSettle?: (value: string) => void;
   /** Fired when the list opens / closes. */
   onOpenChange?: (open: boolean) => void;
   placeholder?: string;
@@ -161,6 +181,7 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
       leadingAccessory,
       normalizeOnClose,
       onSubmit,
+      onSettle,
       onOpenChange,
       placeholder,
       "aria-label": ariaLabel,
@@ -347,11 +368,21 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
       reqSeqRef.current += 1; // drop any in-flight fetch's open
     }, []);
 
+    // The field has come to rest on `next` — report it in the same shape the
+    // close normalizer produces, so a consumer that stores the value stores
+    // what the field will be showing rather than a transient spelling.
+    const settle = useCallback(
+      (next: string) => {
+        onSettle?.(normalizeOnClose !== undefined ? normalizeOnClose(next) : next);
+      },
+      [onSettle, normalizeOnClose],
+    );
+
     const acceptItem = useCallback(
       (item: TugComboBoxItem) => {
         if (item.descendable === true) {
           // Stay armed so the value-change effect refetches + re-opens; keep
-          // focus for navigation.
+          // focus for navigation. Not a settle — still navigating.
           armedRef.current = true;
           onChange(item.value);
           inputRef.current?.focus();
@@ -359,9 +390,10 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
           armedRef.current = false;
           onChange(item.value);
           closeMenu();
+          settle(item.value);
         }
       },
-      [onChange, closeMenu],
+      [onChange, closeMenu, settle],
     );
 
     // Notify the consumer when the list opens/closes.
@@ -447,6 +479,7 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
                 event.preventDefault();
                 onChange(item.value);
                 closeMenu();
+                settle(item.value);
               }
               return;
             }
@@ -471,9 +504,22 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
         if (event.key === "Enter") {
           event.preventDefault();
           onSubmit?.();
+          settle(value);
         }
       },
-      [open, items, activeIndex, acceptItem, closeMenu, onChange, onSubmit, menuMode, openMenu],
+      [
+        open,
+        items,
+        activeIndex,
+        acceptItem,
+        closeMenu,
+        onChange,
+        onSubmit,
+        menuMode,
+        openMenu,
+        settle,
+        value,
+      ],
     );
 
     const onFocus = useCallback(() => {
@@ -483,11 +529,13 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
     const onBlur = useCallback(() => {
       // A blur means focus genuinely left the field (a row-anchored modal that
       // steals focus is anchored to the STABLE field element, so letting the
-      // list close here never strands its anchor) — close the list.
+      // list close here never strands its anchor) — close the list, and the
+      // value the user walked away from is the resting one.
       focusedRef.current = false;
       armedRef.current = false;
       setOpen(false);
-    }, []);
+      settle(value);
+    }, [settle, value]);
 
     // User typed — arm so the seed/fetch effects open the list, and switch the
     // seed from "show all" to filtering by what's now typed.

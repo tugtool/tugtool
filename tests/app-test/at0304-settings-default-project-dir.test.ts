@@ -12,6 +12,14 @@
  *   surface the field's PUT went through, so the assertion covers the real
  *   write path rather than in-process store state.
  *
+ *   What comes back is the path's CANONICAL spelling, not the string typed:
+ *   the setting is a persisted key, matched against project bindings and
+ *   recents, so it routes through the server's canonicalization gateway before
+ *   it is stored ([L29]). Under a symlinked tmpdir (`/var` → `/private/var`)
+ *   the two differ, which is what makes this assertion worth making. The field
+ *   then shows the stored spelling — a settled field displays what tugbank
+ *   holds and nothing else.
+ *
  *   The read is a fetch parked on a window global and polled by
  *   `waitForCondition`, because the harness's `evalJS` is synchronous and
  *   cannot await a promise.
@@ -23,10 +31,13 @@
  *
  * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
  * @covers tugdeck/src/components/tugways/cards/settings-card.tsx
+ * @covers tugdeck/src/components/tugways/tug-combo-box.tsx
+ * @covers tugdeck/src/components/tugways/tug-file-chooser.tsx
+ * @covers tugdeck/src/lib/dir-existence.ts
  * @covers tugdeck/src/settings-api.ts
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
@@ -63,8 +74,9 @@ describe.skipIf(!SHOULD_RUN)(
           `document.querySelector('[data-testid="settings-general"]') !== null`,
         );
 
-        // Type the path, then move focus to the tab bar. The field commits on
-        // focus leaving it, so the write happens without an Enter press.
+        // Type the path, then move focus to the tab bar. Focus leaving is one
+        // of the gestures that settles the field, so the write happens without
+        // an Enter press.
         await app.focusElement(FIELD_INPUT);
         await app.type(FIELD_INPUT, dir);
         expect(await app.getElementValue(FIELD_INPUT)).toBe(dir);
@@ -95,7 +107,15 @@ describe.skipIf(!SHOULD_RUN)(
           { timeoutMs: 5000 },
         );
         expect(stored.kind).toBe("string");
-        expect(stored.value).toBe(dir);
+        expect(stored.value).toBe(realpathSync(dir));
+
+        // The field settles on what tugbank holds — the canonical spelling it
+        // just took, not the string that was typed at it.
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FIELD_INPUT)}).value ===
+             ${JSON.stringify(realpathSync(dir))}`,
+          { timeoutMs: 8000 },
+        );
       } finally {
         await app.close();
         rmSync(dir, { recursive: true, force: true });

@@ -395,16 +395,20 @@ export function TugSetup(): ReactElement {
     if (path === "") return;
     setProjectDirBusy(true);
     setProjectDirError(null);
-    void makeDirectory(path).then((created) => {
-      setProjectDirBusy(false);
-      if (!created) {
-        setProjectDirError(path);
-        return;
-      }
-      putDefaultProjectPath(path);
-      setProjectPathDraft(null);
-      setProjectDirConfirmed(true);
-    });
+    void makeDirectory(path)
+      .then((created) => (created ? putDefaultProjectPath(path) : null))
+      .then((storedPath) => {
+        setProjectDirBusy(false);
+        // Confirmed means tugbank holds it. A directory we made but couldn't
+        // record is not a setting, and the step must not tick over as if the
+        // choice took.
+        if (storedPath === null) {
+          setProjectDirError(path);
+          return;
+        }
+        setProjectPathDraft(null);
+        setProjectDirConfirmed(true);
+      });
   };
   const handleOpenSession = (): void => {
     deck.addCard("session");

@@ -42,12 +42,13 @@
  *   wherever the ring rests, and `NSApp.deactivate()` dismisses.
  *
  *   A sixth runs the setting and the popup together, through the real write
- *   path: type a new default project directory into Settings ▸ General, let it
- *   commit, and open the popup in the same breath. Until the server's DEFAULTS
- *   frame comes back the only thing that knows the new path is the optimistic
- *   local-cache write, so without it the popup names the directory the user
- *   just replaced. The bar must rename and the results must come from the new
- *   directory.
+ *   path and a real gesture: type a partial path into Settings ▸ General,
+ *   accept the completion with Return, and open the popup in the same breath.
+ *   Accepting is where the user stops choosing, so it is where the value has
+ *   to reach tugbank — in canonical form ([L29]) — and where the field has to
+ *   stop showing anything else. Then the bar must rename and the results must
+ *   come from the new directory, which they only can if the local cache was
+ *   written ahead of the server's DEFAULTS frame.
  *
  * Gating
  * ------
@@ -62,6 +63,9 @@
  * @covers tugdeck/src/components/tugways/tug-popup-button.tsx
  * @covers tugdeck/src/components/tugways/internal/tug-button.tsx
  * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
+ * @covers tugdeck/src/components/tugways/tug-combo-box.tsx
+ * @covers tugdeck/src/components/tugways/tug-file-chooser.tsx
+ * @covers tugdeck/src/lib/dir-existence.ts
  * @covers tugdeck/src/settings-api.ts
  */
 
@@ -70,6 +74,7 @@ import {
   mkdirSync,
   writeFileSync,
   rmSync,
+  realpathSync,
   symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -626,14 +631,23 @@ describe.skipIf(!SHOULD_RUN)(
       TEST_TIMEOUT_MS,
     );
     test(
-      "committing a new default directory in Settings re-points Open Quickly",
+      "choosing a new default directory in Settings re-points Open Quickly",
       async () => {
-        // The user's flow, through the real write path: type a path into
-        // Settings ▸ General, let it commit, and open the popup in the same
-        // breath. The commit is an HTTP PUT; until the server's DEFAULTS frame
-        // comes back around, the only thing that knows the new path is the
-        // optimistic local-cache write `putDefaultProjectPath` makes. Without
-        // it the popup opens on the directory the user just replaced.
+        // The user's flow, end to end, with nothing synthesized in the middle:
+        // type a partial path into Settings ▸ General, accept the completion
+        // with a real Return, and open the popup in the same breath.
+        //
+        // Accepting is the gesture that has to write. It is where the user
+        // stops choosing, and a field that comes to rest there while tugbank
+        // still holds the old path is the whole defect this test exists for —
+        // the popup went on naming a directory the user had visibly replaced.
+        // So this asserts both halves: the store really changed (to the
+        // CANONICAL spelling — the path is a persisted key, [L29]), and the
+        // field shows exactly what the store holds.
+        //
+        // Then the popup, immediately: until the server's DEFAULTS frame comes
+        // back around, the only thing that knows the new path is the local
+        // cache write `putDefaultProjectPath` makes once the PUT lands.
         const base = mkdtempSync(`${tmpdir()}/at0306-live-`);
         mkdirSync(`${base}/before`);
         writeFileSync(`${base}/before/${MARKER}`, "the old default\n");
@@ -669,9 +683,7 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 8000 },
           );
 
-          // Change it the way the user does — the Settings card's own field,
-          // committed by focus leaving it (at0304 pins that write reaching
-          // tugbank; this pins what the popup does with it).
+          // Change it the way the user does — the Settings card's own field.
           await app.evalJS(
             `window.__tug.dispatchControlAction("show-card", { component: "settings" })`,
           );
@@ -685,20 +697,65 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 8000 },
           );
           await app.focusElement(SETTINGS_FIELD);
-          // Replace, not append — the field already shows the stored path,
-          // and `app.type` types after it. (An appended path once committed a
-          // garbage directory whose leaf shadowed the real one here.)
+          // Type a PARTIAL path — replacing the field's contents, since the
+          // field already shows the stored path and `app.type` types after it.
+          // Partial so the completion list has something to offer, which is
+          // what the real gesture ends on.
           await app.evalJS<null>(
             `(function(){
                var input = document.querySelector(${JSON.stringify(SETTINGS_FIELD)});
                var setter = Object.getOwnPropertyDescriptor(
                  window.HTMLInputElement.prototype, "value").set;
-               setter.call(input, ${JSON.stringify(`${base}/after`)});
+               setter.call(input, ${JSON.stringify(`${base}/aft`)});
                input.dispatchEvent(new Event("input", { bubbles: true }));
                return null;
              })()`,
           );
-          await app.focusElement(GENERAL_TAB);
+          await app.waitForCondition<boolean>(
+            `Array.from(document.querySelectorAll(".tug-combo-box-item"))
+               .some((el) => (el.textContent || "").indexOf("after") !== -1)`,
+            { timeoutMs: 8000 },
+          );
+
+          // Accept it with a real Return. This is the settle: the field stops
+          // being an edit and the value has to reach tugbank.
+          await app.nativeKey("Return");
+
+          // tugbank really holds it, read back over the same HTTP surface the
+          // write went through — and in the CANONICAL spelling, which under a
+          // symlinked tmpdir (`/var` → `/private/var`) is not the string that
+          // was typed. A write that skipped the gateway fails here ([L29]).
+          // Polled on a window global because `evalJS` can't await.
+          const canonicalAfter = `${realpathSync(base)}/after`;
+          await app.evalJS(`(() => {
+            window.__at0306 = undefined;
+            const poll = () => {
+              fetch("/api/defaults/dev.tugtool.app/default-project-path")
+                .then((r) => (r.ok ? r.json() : { kind: "error", value: r.status }))
+                .then((j) => {
+                  if (j.kind === "string" && j.value !== ${JSON.stringify(`${base}/before`)}) {
+                    window.__at0306 = j;
+                    return;
+                  }
+                  window.setTimeout(poll, 100);
+                })
+                .catch((e) => { window.__at0306 = { kind: "error", value: String(e) }; });
+            };
+            poll();
+          })()`);
+          const stored = await app.waitForCondition<{ value: string }>(
+            `window.__at0306`,
+            { timeoutMs: 15000 },
+          );
+          expect(stored.value).toBe(canonicalAfter);
+
+          // And the field shows what the store holds — no settled field ever
+          // displays a path tugbank doesn't have.
+          expect(
+            await app.evalJS<string>(
+              `document.querySelector(${JSON.stringify(SETTINGS_FIELD)}).value`,
+            ),
+          ).toBe(canonicalAfter);
 
           // Open Quickly, right now — no waiting on the server round trip.
           await app.evalJS<null>(

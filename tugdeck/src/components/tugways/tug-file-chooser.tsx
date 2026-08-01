@@ -11,7 +11,9 @@
  *   - ↑/↓ move the highlight, the mouse follows it;
  *   - Enter accepts the highlighted match; Tab accepts, and a directory then
  *     descends (the list stays open on its children);
- *   - Escape closes the list; Enter with the list closed calls `onSubmit`.
+ *   - Escape closes the list; Enter with the list closed calls `onSubmit`;
+ *   - the field settles (`onSettle`) on a path the user finished choosing —
+ *     a completion accepted, Enter, focus leaving, or the picker returning.
  *
  * `kind` selects what's offered + what the picker returns: `directory` (default)
  * lists only directories; `file` lists files too (directories still appear so
@@ -54,6 +56,12 @@ export interface TugFileChooserProps {
   kind?: CompletionKind;
   /** Fired on Enter when the completion list is closed — the consumer's commit. */
   onSubmit?: () => void;
+  /**
+   * Fired with the resting path each time the field settles — a completion
+   * accepted, Enter, focus leaving, or the native picker returning a choice.
+   * See {@link TugComboBoxProps.onSettle}; a caller storing the path writes here.
+   */
+  onSettle?: (value: string) => void;
   /** Fired when the completion list opens / closes (e.g. to hide a sibling list). */
   onOpenChange?: (open: boolean) => void;
   placeholder?: string;
@@ -126,6 +134,7 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
       base,
       kind = "directory",
       onSubmit,
+      onSettle,
       onOpenChange,
       placeholder,
       "aria-label": ariaLabel,
@@ -170,9 +179,15 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
     const browse = useCallback(() => {
       const hint = value.trim() !== "" ? value.trim() : base;
       void pickPath(kind, hint).then((path) => {
-        if (path !== null) onChange(path);
+        if (path === null) return;
+        // Choosing in the native panel is a finished act, not a keystroke: the
+        // panel closes on a path the user picked deliberately, and focus comes
+        // back to a field that is already done. It settles on the spot — there
+        // is no later gesture that would.
+        onChange(path);
+        onSettle?.(path);
       });
-    }, [value, base, kind, onChange]);
+    }, [value, base, kind, onChange, onSettle]);
 
     const browseButton = showPicker ? (
       <TugPushButton
@@ -203,6 +218,7 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
         leadingAccessory={browseButton}
         normalizeOnClose={normalizeOnClose}
         onSubmit={onSubmit}
+        onSettle={onSettle}
         onOpenChange={onOpenChange}
         placeholder={placeholder}
         aria-label={ariaLabel}

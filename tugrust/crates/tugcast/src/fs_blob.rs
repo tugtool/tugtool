@@ -359,7 +359,11 @@ mod tests {
             "bytes=50-10", // end before start
             "bytes=-0",
         ] {
-            assert_eq!(parse_range(spec, 1000), RangeRequest::Unsatisfiable, "{spec}");
+            assert_eq!(
+                parse_range(spec, 1000),
+                RangeRequest::Unsatisfiable,
+                "{spec}"
+            );
         }
         assert_eq!(parse_range("bytes=0-0", 0), RangeRequest::Unsatisfiable);
     }
@@ -463,7 +467,11 @@ mod tests {
 
     #[test]
     fn secret_paths_are_denied_by_the_shared_guard() {
-        for denied in ["/project/.env", "/home/user/.ssh/id_rsa.png", "/tmp/server.pem"] {
+        for denied in [
+            "/project/.env",
+            "/home/user/.ssh/id_rsa.png",
+            "/tmp/server.pem",
+        ] {
             let err = guard_absolute_path(denied).unwrap_err();
             assert_eq!(err.0, StatusCode::FORBIDDEN, "expected denial for {denied}");
         }

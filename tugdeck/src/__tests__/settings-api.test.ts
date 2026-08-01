@@ -749,23 +749,75 @@ describe("default project directory", () => {
     expect(resolveDefaultProjectPath(client, "/Users/x")).toBe("/Users/x/tug");
   });
 
-  test("putDefaultProjectPath PUTs a string-tagged body to the app domain", () => {
+  /**
+   * Stand in for tugcast: `/api/fs/stat` answers with `canonicalOf` (absent ⇒
+   * the gateway refuses the path), everything else with 200. Returns the call
+   * log so a test can assert what was sent where.
+   */
+  function mockPathServer(
+    canonicalOf: Record<string, string>,
+    putStatus = 200,
+  ): { url: string; init: RequestInit }[] {
     const calls: { url: string; init: RequestInit }[] = [];
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: url as string, init: init ?? {} });
-      return makeResponse(200, {});
+      if ((url as string) === "/api/fs/stat") {
+        const body = JSON.parse((init?.body as string) ?? "{}") as {
+          paths?: string[];
+        };
+        const canonical: Record<string, string> = {};
+        for (const p of body.paths ?? []) {
+          if (canonicalOf[p] !== undefined) canonical[p] = canonicalOf[p];
+        }
+        return makeResponse(200, { exists: {}, canonical });
+      }
+      return makeResponse(putStatus, {});
     }) as unknown as typeof fetch;
+    return calls;
+  }
 
-    putDefaultProjectPath("/Users/x/code");
+  test("putDefaultProjectPath PUTs the canonical path to the app domain", async () => {
+    // The typed spelling reaches the gateway; the canonical one is what gets
+    // stored ([L29] — this is a persisted key).
+    const calls = mockPathServer({ "/u/src/code": "/Users/x/src/code" });
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe(
+    const stored = await putDefaultProjectPath("/u/src/code");
+
+    expect(stored).toBe("/Users/x/src/code");
+    expect(calls.map((c) => c.url)).toEqual([
+      "/api/fs/stat",
       "/api/defaults/dev.tugtool.app/default-project-path",
-    );
-    expect(calls[0].init.method).toBe("PUT");
+    ]);
+    expect(calls[1].init.method).toBe("PUT");
+    expect(JSON.parse(calls[1].init.body as string)).toEqual({
+      kind: "string",
+      value: "/Users/x/src/code",
+    });
+  });
+
+  test("putDefaultProjectPath stores nothing when the gateway won't resolve the path", async () => {
+    const calls = mockPathServer({});
+
+    expect(await putDefaultProjectPath("relative/code")).toBeNull();
+    // No PUT: a path that skipped the gateway is never persisted.
+    expect(calls.map((c) => c.url)).toEqual(["/api/fs/stat"]);
+  });
+
+  test("putDefaultProjectPath reports a rejected write rather than claiming it stored", async () => {
+    mockPathServer({ "/Users/x/code": "/Users/x/code" }, 500);
+    expect(await putDefaultProjectPath("/Users/x/code")).toBeNull();
+  });
+
+  test("putDefaultProjectPath clears the setting without a gateway round trip", async () => {
+    const calls = mockPathServer({});
+
+    expect(await putDefaultProjectPath("")).toBe("");
+    expect(calls.map((c) => c.url)).toEqual([
+      "/api/defaults/dev.tugtool.app/default-project-path",
+    ]);
     expect(JSON.parse(calls[0].init.body as string)).toEqual({
       kind: "string",
-      value: "/Users/x/code",
+      value: "",
     });
   });
 });

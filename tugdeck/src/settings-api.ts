@@ -22,6 +22,7 @@ import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { PERMISSION_MODE_DOMAIN } from "./lib/permission-mode";
 import { MODEL_DOMAIN } from "./lib/model-domains";
 import { getTugbankClient } from "./lib/tugbank-singleton";
+import { canonicalizeDirPath } from "./lib/dir-existence";
 import type { FindOptions } from "./lib/transcript-search";
 
 const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";
@@ -371,29 +372,63 @@ export function readDefaultProjectPath(client: TugbankClient): string | null {
 
 /**
  * Persist the default project directory to tugbank under `dev.tugtool.app` /
- * `default-project-path`. Fire-and-forget, mirroring `putTheme`.
+ * `default-project-path`, and resolve with the value that is now stored — the
+ * canonical spelling of `path`, `""` when the setting was cleared, or **null**
+ * when nothing was stored at all.
+ *
+ * Awaited, not fire-and-forget, and the local cache is written only after the
+ * server has taken the value. This setting is displayed back to the user by
+ * the field that sets it and by Open Quickly's search bar, so a write that
+ * silently didn't land would leave both of them naming a directory Tug is not
+ * using. The caller shows what this resolves with, never what it asked for.
+ *
+ * The path is canonicalized through the server gateway first ([L29]): it is a
+ * persisted key, compared against project bindings and recent projects to
+ * decide whether two entries name one directory, so it may not be stored in
+ * whatever spelling the user happened to type. A path the gateway won't
+ * resolve is not stored — a refusal, reported as null.
  */
-export function putDefaultProjectPath(path: string): void {
-  // Optimistic first, exactly like every other setting write in the app: the
-  // local cache is what `readDefaultProjectPath` reads, and until the server's
-  // DEFAULTS frame comes back around it still holds the old path. Without this
-  // an Open Quickly opened in the same breath as the commit searches the
-  // directory the user just stopped using.
+export async function putDefaultProjectPath(
+  path: string,
+): Promise<string | null> {
+  const canonical = path === "" ? "" : await canonicalizeDirPath(path);
+  if (canonical === null) {
+    tugDevLogStore.warn("settings", "default-project-path not canonical", {
+      path,
+    });
+    return null;
+  }
+  try {
+    const response = await fetch(
+      `/api/defaults/${DEFAULT_PROJECT_PATH_DOMAIN}/${DEFAULT_PROJECT_PATH_KEY}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "string", value: canonical }),
+      },
+    );
+    if (!response.ok) {
+      tugDevLogStore.warn("settings", "PUT default-project-path rejected", {
+        status: response.status,
+      });
+      return null;
+    }
+  } catch (err) {
+    tugDevLogStore.warn("settings", "PUT default-project-path failed", {
+      error: String(err),
+    });
+    return null;
+  }
+  // Reflect it locally now that the server holds it: the local cache is what
+  // `readDefaultProjectPath` reads, and the server's DEFAULTS frame comes back
+  // around a beat later. Without this an Open Quickly opened in the same breath
+  // as the commit searches the directory the user just stopped using.
   getTugbankClient()?.setLocalValue(
     DEFAULT_PROJECT_PATH_DOMAIN,
     DEFAULT_PROJECT_PATH_KEY,
-    { kind: "string", value: path },
+    { kind: "string", value: canonical },
   );
-  fetch(
-    `/api/defaults/${DEFAULT_PROJECT_PATH_DOMAIN}/${DEFAULT_PROJECT_PATH_KEY}`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "string", value: path }),
-    },
-  ).catch((err) => {
-    console.warn("[settings] PUT default-project-path failed:", err);
-  });
+  return canonical;
 }
 
 /**

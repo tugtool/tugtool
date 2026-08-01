@@ -71,7 +71,13 @@ describe.skipIf(!SHOULD_RUN)("AT0209: clicking the picker path field is a single
   test(
     "a click moves the ring to the field; the sessions list never keeps a second ring",
     async () => {
-      const app = await launchTugApp({ testName: "at0209-picker-field-click-single-focus" });
+      // Foreground: a native click that must land as a real first-mouse
+      // activation click, which only reaches an app that is actually active
+      // (pid-mode default never activates).
+      const app = await launchTugApp({
+        testName: "at0209-picker-field-click-single-focus",
+        foreground: true,
+      });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

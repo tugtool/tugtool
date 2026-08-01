@@ -40,6 +40,9 @@ export async function probeDirExistence(
  * spelling was used at the time. Only the server can resolve them ([L29] — the
  * frontend never mints a canonical form of its own), so a caller that needs
  * identity rather than existence asks for it here.
+ *
+ * A path carries a canonical form whether or not it exists; the two answers are
+ * independent. Callers that want only the reachable ones filter on `exists`.
  */
 export async function probeDirs(
   paths: readonly string[],
@@ -79,4 +82,22 @@ export async function probeDirs(
   } catch {
     return { exists: {}, canonical: {} };
   }
+}
+
+/**
+ * The canonical spelling of one directory path — the [L29] gateway for a
+ * frontend caller that is about to **persist** a path rather than merely
+ * display it.
+ *
+ * Returns null when the server can't answer: a path it refuses (relative,
+ * traversing, secret-denylisted) or a failed round trip. A caller persisting a
+ * path must treat that as a refusal to store, not as permission to store the
+ * raw spelling — a raw path may be used only for the syscall that produced it.
+ */
+export async function canonicalizeDirPath(
+  path: string,
+): Promise<string | null> {
+  if (path === "") return null;
+  const { canonical } = await probeDirs([path]);
+  return canonical[path] ?? null;
 }

@@ -773,6 +773,9 @@ export function spawnSessionResume(
  *  - `interrupt` — `store.interrupt()`.
  *  - `transportClose` / `transportReconnect` — drive the transport
  *    overlay.
+ *  - `shellExchange` — settle a completed `$`-route exchange row. The
+ *    shell feed is a different store from the one `ingestFrame` reaches,
+ *    so a shell row is otherwise only reachable by running a command.
  */
 export type SessionDriveAction =
   | { op: "send"; text: string; atoms?: unknown[]; suppress?: boolean }
@@ -782,7 +785,16 @@ export type SessionDriveAction =
   | { op: "transportReconnect" }
   // Page older turns above the loaded window; inject the response replay
   // bracket via `ingestFrame` afterward.
-  | { op: "loadPrevious"; amount: number | "all" };
+  | { op: "loadPrevious"; amount: number | "all" }
+  | {
+      op: "shellExchange";
+      exchangeId: string;
+      command: string;
+      output: string;
+      cwd: string;
+      exitCode?: number;
+      startedAtMs?: number;
+    };
 
 /**
  * Drive a bound session card's `CodeSessionStore` one step through the
