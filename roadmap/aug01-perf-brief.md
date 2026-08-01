@@ -108,6 +108,27 @@ New surface, opened by the lab's cleanest null: at a 50ms cadence the streaming 
 
 **Note 2026-08-01:** the typing-lag attribution run (see S7 findings) demotes S8 from prime suspect to contributor — the keystroke queue delay is standing (q50 10ms with no token flow required), driven by chrome write churn, not the streaming path. S8's realism check stays open, but it prices a spike on top of the S7×I6 floor, not the floor itself.
 
+### S9 — the 30s wake-stall train {#s9-wake-stall}
+
+Opened 2026-08-01, second attribution round, chasing the felt hitch that survived writer #1. The live release deck's WebContent stops receiving main-thread wakeups for a **pair of ~330ms windows (~650ms total) every 30.000s**, metronomic — 22 consecutive rounds without a miss, phase-locked at :05.78/:35.78, consistent to within a second with the WebContent process's launch time (09:58:35). During the dead window rAF **and** an armed 8ms `setTimeout` chain stall together, so a keystroke landing there neither paints nor runs timers — this is the felt hitch, and it retroactively explains the pre-fix run's q99=375ms outliers and the "stall cluster" previously mis-attributed to a turn boundary (the node jump was coincident, the clock was not).
+
+What it is **not**, each refuted by direct instrument:
+
+- **Not page/JS work** — `sample` across the ambushed stall shows the WebContent main thread parked in the run-loop mach wait (~130ms of busy in a 3s window), every JSC/heap/worker thread parked, no GC burn.
+- **Not the app or GPU process working** — both sampled across ambushed stalls, both idle; the only activity is the ordinary RemoteLayerTree commit queue.
+- **Not machine-wide scheduling** — a host Python 4ms-sleep probe records zero >50ms gaps across 70s while the deck stalls twice on schedule.
+- **Not maskable by CPU load** — 4 saturated cores for 70s, full-size stalls dead on phase.
+- **Not the display link going cold** — a held CVDisplayLink probe changed nothing (an apparent attenuation in round 1 was a `slice(-4)` read artifact; the full train shows no missed slot).
+- **Not runningboardd/assertion churn, not Wi-Fi** — no runningboardd lines at stall instants; airportd's RSSI/LQM tick is 5s-periodic, a coincidental overlap.
+
+Open verdict: the wake delivery to this WebContent process is being withheld inside the WebKit/macOS platform layer (mk_timer coalescing, opportunistic-scheduler alignment, or the UI-process rendering heartbeat), on a 30s clock armed at process start. Deck weight still multiplies the *recovery* cost (I6: the post-stall frame on 76k nodes) even if the dead window is environmental.
+
+**Soak 2026-08-01:** a fresh instance aged 30 minutes in the background (light deck), activated, then watched 150s — clean. Process age to 30 min is eliminated alongside weight; the differentiators left standing are real tugcode-bound sessions with live WS feeds, the release page's longer accumulated state (1.5h+, 2.0GB), and IndexedDB SessionCache.
+
+**Lab elimination 2026-08-01 (`AT9996_STALL=1` cell, foreground, 8ms-timer-chain primary signal):** three watches on fresh Tug.app instances — light deck (95s), 33k nodes / 3 bound sessions (95s), and **81k nodes / 3 bound sessions / 150s = five train slots, i.e. MORE than release weight** — all clean: zero >200ms gaps on either ledger, only 51–58ms recalc jitter at 81k. And the decisive simultaneity: while the lab instance rendered gap-free in the foreground, the release deck's train ticked on schedule in the background (11:21:35.8, 11:22:05.8 — same wall clock, same machine, one WebKit app stalling and one clean). **Deck weight is refuted as the stall's cause; the train is release-instance process state, not platform-universal and not structural-by-weight.** Remaining differentiators, untested: process/page age (release WebContent was 1.5h old, 2.0GB RSS), real tugcode-bound sessions with live WS feeds vs the lab's synthetic binds, accumulated JS heap / IndexedDB SessionCache, window/screen placement. Cheapest next probes: a long-lived lab soak (30+ min, catches age), and a Maker ▸ Reload phase test on the release deck (new page, same process — if the train's phase follows the reload, the clock is page-scoped; if it holds :05.78, process-scoped).
+
+- **Measured exit:** the 30s clock named (which timer, whose process), or bounded as platform behavior with a filed Feedback + a Tug-side mitigation decision made explicitly (including "none available").
+
 
 ## Supporting investigations {#investigations}
 
@@ -119,11 +140,15 @@ The Phase-0 instruments, brought to the standard the cells need: a per-ingest RP
 
 **Status 2026-08-01 (second update):** the caret cells shipped (foreground test in at9996 behind `AT9996_CARET=1` — see S6b findings for why background instances can never see a caret animation). Two new live-deck instruments joined the kit from the typing-lag run, both `/api/eval`-armed and disarmable: the **keystroke ledger** (`q`/`r1`/`r2` per keydown + long-frame ring + 2s activity snapshots, epoch-joinable with the walk sampler) and the **5s mutation census** (writes by type:attribute @ target path — the S7 write-hygiene instrument). Arm scripts must keep listener references for disarm — the S6b restart ledger's anonymous listeners are stranded on the live page until the next reload (harmless, but the lesson is standing).
 
+**Status 2026-08-01 (third update):** the `/tmp`-scripted live-deck probes are folded into `diag/deck-probes/` (kb-arm/kb-read/kb-mutations/kb-attr-trace/dual-arm/idle-arm, each with an arm one-liner in its header; all `/api/eval`-armed, all disarmable). Two additions to the kit: the **dual rAF+timer ledger** (`dual-arm.js` — a gap in BOTH ledgers = main-thread wake stall, the S9 instrument) and the **`AT9996_STALL=1` idle-watch cell** in at9996 (foreground, weight knob `AT9996_STALL_WEIGHT`, duration `AT9996_STALL_SECS`). New standing instrument artifact (#4): **a background app-test window throttles DOM timers toward 1s alignment**, which starves any timer-chain instrument — wake-stall and timer-cadence cells must run `foreground: true`, same class as the caret tier's focus gate; and a foreground page with **no user interaction ever** can also get 1s-aligned within ~40s (WebKit interactivity heuristic) — seed at least one real interaction (the weight-seeding's bind/drive suffices) before a timer-sensitive watch. Also standing: **the live deck can never be measured at "true idle" from inside a session it hosts** — the observing session's own streaming is deck activity (clocks, badges, pulse strip); idle claims need the lab or a between-turns window.
+
 ### I6 — layer-population diet {#i6-diet}
 
 jul30 I3, promoted co-equal ([animation-islands.md#p2b-diet](animation-islands.md#p2b-diet)): the walk is O(mounted layers) and 3–5ms only because the deck mounts ~26k layer-minting elements; the events that legitimately remain (work starts, tool completions, pane gestures) should price below perception. Class-by-class A/B on the lab bench under a deliberately event-noisy probe; census stands from jul30 (`position: relative` 12,666, `overflow` 9,175, sticky 1,713, z-index 1,986). Target: one full walk on the loaded deck ≤ 1ms. No sweeping CSS rewrites on spec.
 
 **Note 2026-08-01:** the live deck measured **76k nodes** during the typing-lag run — 2.3× the lab's heavy weight; I6's per-recalc/per-walk cost is the multiplier on every S7 write (see S7 findings). The diet's target now has a felt-latency denominator: q50 on real typing.
+
+**Measured 2026-08-01 (the synthetic typist settles the floor question):** the `AT9996_TYPIST=1` cell (real postToPid keys through the actual input pipeline, deterministic burst/pause cadence, in-page q ledger) reads **q50=1ms q90=2ms q99=5ms, 0 of 300 keys over 25ms on a near-empty deck** vs **q50=16ms q90=48ms q99=91ms, 76 of 300 over 25ms at 81k nodes** (weight knob 500 blocks/session). The release deck's standing q50 of 9–10ms is therefore **deck-weight cost, not input-pipeline floor** — the pipeline floor is ~1ms. Per-keystroke latency scales hard with mounted weight; I6 is the fix surface and the typist cell is its regression meter (lab synthetic content amplifies harder than release content — compare shapes, not absolutes). The structural-idle claim splits cleanly: baseline typing q IS structural with weight (confirmed); the 30s wake-stall train is NOT (S9, instance-scoped).
 
 
 ## Exit criteria {#exit}

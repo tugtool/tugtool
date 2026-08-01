@@ -51,7 +51,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { launchTugApp } from "./_harness";
+import { launchTugApp, type App } from "./_harness";
 import { mkTempTugbank, seedTugbankForLaunch } from "./_harness/tugbank-helpers";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
@@ -96,6 +96,64 @@ function blockText(session: string, n: number): string {
     "",
     "That is the whole of the rule.",
   ].join("\n");
+}
+
+/**
+ * Bind every lab session and settle `blocks` markdown blocks of transcript
+ * into each, ten blocks per message. The deck's rendered weight scales
+ * roughly linearly (500 blocks/session ≈ 81k nodes on the standard
+ * three-card shape).
+ */
+async function seedTranscriptWeight(
+  app: App,
+  blocks: number,
+  prefix: string,
+): Promise<void> {
+  for (const id of SESSIONS) {
+    await app.waitForCondition<boolean>(
+      `window.__tug.assertHostRootRegistered(${JSON.stringify(id)})`,
+      { timeoutMs: 8_000 },
+    );
+  }
+  for (const id of SESSIONS) {
+    const sid = `${prefix}-${id}`;
+    await app.bindSession(id, { tugSessionId: sid });
+    await app.awaitEngineReady(id, { timeoutMs: 20_000 });
+    await app.driveSession(id, { op: "send", text: "go" });
+    const PER_MSG = 10;
+    for (let n = 0; n < blocks; n += PER_MSG) {
+      const text = Array.from(
+        { length: Math.min(PER_MSG, blocks - n) },
+        (_, k) => blockText(id, n + k),
+      ).join("\n\n");
+      await withDeadline(
+        app.driveSession(
+          id,
+          {
+            op: "ingestFrame",
+            feedId: FEED_CODE_OUTPUT,
+            decoded: {
+              type: "assistant_text",
+              tug_session_id: sid,
+              msg_id: `${sid}-m${n}`,
+              text,
+              is_partial: false,
+              rev: 0,
+              seq: n,
+            },
+          },
+          { timeoutMs: INGEST_TIMEOUT_MS },
+        ),
+        `${prefix} seed ${id} block ${n}`,
+      );
+    }
+  }
+  await app.waitForCondition<boolean>(
+    `document.querySelectorAll(".tugx-md-block").length >= ${
+      SESSIONS.length * Math.ceil(blocks / 10)
+    }`,
+    { timeoutMs: 60_000 },
+  );
 }
 
 function deckShape() {
@@ -968,6 +1026,242 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
 
         console.log(`[at9996] CARET-REPORT ${JSON.stringify(report)}`);
         expect(Object.keys(report).length).toBeGreaterThan(0);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  // Idle watch for the 30s wake-stall train (live-deck finding, 2026-08-01):
+  // the release deck's WebContent stops receiving main-thread wakeups — rAF
+  // AND an armed 8ms setTimeout chain together — for a ~330ms pair every
+  // 30.000s, phase-locked to process launch, unmasked by CPU load, with every
+  // thread in every process of the WebKit family parked. This cell asks
+  // whether a fresh instance with a light deck grows its own train (platform
+  // behavior) or stays clean (release-instance state). The 8ms timer chain is
+  // the primary signal. Foreground is mandatory: a background window
+  // throttles DOM timers toward 1s alignment, which starves the chain and
+  // floods the gap ledger — the same class of artifact as the caret tier's
+  // focus gate.
+  test.skipIf(process.env.AT9996_STALL !== "1")(
+    "stall probe: does a fresh idle instance grow the 30s wake-stall train?",
+    async () => {
+      // Soak mode: age the instance in the background before the watch —
+      // the release train's remaining differentiators include process age.
+      // Launch stays background during the soak (no 30-minute screen
+      // seizure); a nativeClick activates the app just before arming, which
+      // simultaneously satisfies WebKit's interaction heuristic (a
+      // never-interacted page gets its DOM timers 1s-aligned within ~40s
+      // even in the foreground).
+      const SOAK_SECS = Number(process.env.AT9996_STALL_SOAK_SECS ?? "0");
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath);
+      const app = await launchTugApp({
+        testName: "at9996-anim-island-stall",
+        env: { TUGBANK_PATH: tugbankPath },
+        foreground: SOAK_SECS === 0,
+      });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+
+        // Weight knob: blocks per session of settled transcript before the
+        // watch, so the light-vs-heavy comparison runs in the same cell.
+        const STALL_WEIGHT = Number(process.env.AT9996_STALL_WEIGHT ?? "0");
+        if (STALL_WEIGHT > 0) {
+          await seedTranscriptWeight(app, STALL_WEIGHT, "at9996-stall");
+        }
+
+        if (SOAK_SECS > 0) {
+          await new Promise((resolve) => setTimeout(resolve, SOAK_SECS * 1_000));
+          await app.nativeClick({ x: 440, y: 45 }, { activateFirst: true });
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+        }
+
+        const armed = await app.evalJS<string>(`(function () {
+  if (window.__at9996Stall) return "already-armed";
+  var S = { t0: performance.now(), epoch: Date.now() - performance.now(),
+            raf: [], tmr: [], rafTicks: 0, tmrTicks: 0, stopped: false };
+  window.__at9996Stall = S;
+  var lastRaf = performance.now();
+  function loop(ts) {
+    if (S.stopped) return;
+    var gap = ts - lastRaf;
+    if (gap > 50) S.raf.push({ gap: Math.round(gap), wall: Math.round(S.epoch + ts) });
+    lastRaf = ts; S.rafTicks++;
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  var lastTmr = performance.now();
+  function tick() {
+    if (S.stopped) return;
+    var now = performance.now();
+    var gap = now - lastTmr;
+    if (gap > 50) S.tmr.push({ gap: Math.round(gap), wall: Math.round(S.epoch + now) });
+    lastTmr = now; S.tmrTicks++;
+    setTimeout(tick, 8);
+  }
+  setTimeout(tick, 8);
+  return "armed";
+})()`);
+        expect(armed).toBe("armed");
+
+        const WATCH_MS = Number(process.env.AT9996_STALL_SECS ?? "95") * 1_000;
+        await new Promise((resolve) => setTimeout(resolve, WATCH_MS));
+
+        const out = await app.evalJS<{
+          tmrTicks: number;
+          rafTicks: number;
+          tmr: Array<{ gap: number; wall: number }>;
+          raf: Array<{ gap: number; wall: number }>;
+          vis: string;
+          focus: boolean;
+        }>(`(function () {
+  var S = window.__at9996Stall;
+  S.stopped = true;
+  return { tmrTicks: S.tmrTicks, rafTicks: S.rafTicks,
+           tmr: S.tmr.slice(0, 200), raf: S.raf.slice(0, 200),
+           nodes: document.querySelectorAll("*").length,
+           vis: document.visibilityState, focus: document.hasFocus() };
+})()`);
+        console.log(`[at9996] STALL-REPORT ${JSON.stringify(out)}`);
+        // The instrument must have been alive the whole watch — a wedged
+        // timer chain would fake a clean report.
+        expect(out.tmrTicks).toBeGreaterThan((WATCH_MS / 10) * 0.5);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS +
+      (Number(process.env.AT9996_STALL_SOAK_SECS ?? "0") +
+        Number(process.env.AT9996_STALL_SECS ?? "95")) *
+        1_000,
+  );
+
+  // Synthetic typist: replays a human burst/pause cadence into the focused
+  // composer with REAL key events — the harness's postToPid path posts
+  // CGEvents that traverse the actual input pipeline, so keydown queue delay
+  // q (handler entry minus event.timeStamp) measures the same latency the
+  // user feels. An in-page dispatchEvent stamps timeStamp at dispatch and
+  // can never measure q. Cadence parameterized from the 2026-08-01 live
+  // ledger runs: bursts of 6–12 keys at 140–220ms inter-key, 0.6–3s pauses
+  // between bursts, an occasional 5–8s think pause (~3.7 keys/s sustained).
+  // Deterministic via an LCG so a regression run replays the same tape.
+  // Foreground mandatory: real keys land at the key window, and the caret
+  // path needs real document focus.
+  test.skipIf(process.env.AT9996_TYPIST !== "1")(
+    "synthetic typist: keystroke q percentiles under a human cadence",
+    async () => {
+      const WEIGHT = Number(process.env.AT9996_TYPIST_WEIGHT ?? "0");
+      const KEYS_TARGET = Number(process.env.AT9996_TYPIST_KEYS ?? "300");
+      const SEED = Number(process.env.AT9996_TYPIST_SEED ?? "1");
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath);
+      const app = await launchTugApp({
+        testName: "at9996-anim-island-typist",
+        env: { TUGBANK_PATH: tugbankPath },
+        foreground: true,
+      });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        if (WEIGHT > 0) {
+          await seedTranscriptWeight(app, WEIGHT, "at9996-typist");
+        } else {
+          await app.waitForCondition<boolean>(
+            `window.__tug.assertHostRootRegistered("A")`,
+            { timeoutMs: 8_000 },
+          );
+          await app.bindSession("A", { tugSessionId: "at9996-typist-A" });
+          await app.awaitEngineReady("A", { timeoutMs: 20_000 });
+        }
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll(".cm-editor .cm-content").length >= 1`,
+          { timeoutMs: 10_000 },
+        );
+
+        // Land the keyboard in the composer with a real activation click.
+        await app.nativeClickAtElement(".cm-editor .cm-content");
+        await app.waitForCondition<boolean>(
+          `!!document.querySelector(".cm-editor.cm-focused")`,
+          { timeoutMs: 8_000 },
+        );
+
+        const armed = await app.evalJS<string>(`(function () {
+  if (window.__at9996Typist) return "already-armed";
+  var S = { t0: performance.now(), keys: [], longs: [], stopped: false };
+  window.__at9996Typist = S;
+  S.onKey = function (e) {
+    var now = performance.now();
+    S.keys.push({ ms: Math.round(now - S.t0), q: Math.round(now - e.timeStamp) });
+  };
+  window.addEventListener("keydown", S.onKey, { capture: true, passive: true });
+  var last = performance.now();
+  function loop(ts) {
+    if (S.stopped) return;
+    var gap = ts - last;
+    if (gap > 50) S.longs.push({ ms: Math.round(ts - S.t0), gap: Math.round(gap) });
+    last = ts;
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  return "armed";
+})()`);
+        expect(armed).toBe("armed");
+
+        // Deterministic cadence tape.
+        let lcg = SEED >>> 0;
+        const rand = (): number => {
+          lcg = (Math.imul(lcg, 1664525) + 1013904223) >>> 0;
+          return lcg / 4294967296;
+        };
+        const between = (lo: number, hi: number): number =>
+          lo + rand() * (hi - lo);
+        const POOL = "the quick brown fox jumps over the lazy dog and then some more words for the tape ";
+        const hold = (ms: number) =>
+          new Promise((resolve) => setTimeout(resolve, ms));
+
+        let sent = 0;
+        let poolIx = 0;
+        while (sent < KEYS_TARGET) {
+          const burst = Math.round(between(6, 12));
+          for (let k = 0; k < burst && sent < KEYS_TARGET; k++) {
+            const ch = POOL[poolIx % POOL.length];
+            poolIx++;
+            await app.nativeType(ch);
+            sent++;
+            await hold(between(140, 220));
+          }
+          await hold(rand() < 0.12 ? between(5_000, 8_000) : between(600, 3_000));
+        }
+
+        const out = await app.evalJS<{
+          keys: Array<{ ms: number; q: number }>;
+          longs: Array<{ ms: number; gap: number }>;
+        }>(`(function () {
+  var S = window.__at9996Typist;
+  S.stopped = true;
+  window.removeEventListener("keydown", S.onKey, { capture: true });
+  return { keys: S.keys, longs: S.longs };
+})()`);
+
+        const qs = out.keys.map((k) => k.q).sort((a, b) => a - b);
+        const pct = (p: number): number =>
+          qs.length === 0 ? -1 : qs[Math.min(qs.length - 1, Math.floor((p / 100) * qs.length))];
+        const report = {
+          sent,
+          recorded: qs.length,
+          q50: pct(50),
+          q90: pct(90),
+          q99: pct(99),
+          qMax: qs[qs.length - 1] ?? -1,
+          over25: qs.filter((q) => q > 25).length,
+          longs: out.longs.filter((l) => l.gap > 100),
+        };
+        console.log(`[at9996] TYPIST-REPORT ${JSON.stringify(report)}`);
+        // Real keys must actually have traversed the pipeline into the page.
+        expect(qs.length).toBeGreaterThan(sent * 0.9);
       } finally {
         await app.close();
       }
