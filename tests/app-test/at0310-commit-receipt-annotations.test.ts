@@ -24,6 +24,14 @@
  * a reference is trusted where it is marked as code, not everywhere it is
  * path-shaped.
  *
+ * And a third state between the two: a backticked path the endpoint
+ * probed and refused. It stays plain text like the unbackticked one — no
+ * file, nothing to open — but carries a "File not found" title, so a
+ * definite miss is distinguishable from a reference nobody ever answered
+ * for.
+ *
+ * @covers tugdeck/src/lib/annotator/wrap-matches.ts
+ * @covers tugdeck/src/lib/annotator/annotate-content.ts
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
  * @covers tugdeck/src/components/tugways/cards/session-commit-receipt-block.tsx
@@ -53,6 +61,17 @@ const SID = "test-session-A";
  */
 const CODED_PATH = "lib/verdict-batching.ts";
 const BARE_PATH = "lib/annotate-counters.ts";
+
+/**
+ * A path that does not exist. **Absolute**, and that is load-bearing: a
+ * relative miss escalates to the project file index, which can only
+ * report `unknown` for a workspace it has not indexed — and `unknown` is
+ * deliberately silent. An absolute path is a complete address, so
+ * `fs/stat`'s "no" is the whole answer and the miss is definite. It is
+ * also the shape the case was reported in: a `/tmp` scratch file written
+ * by one tool call and gone by the time the reader hovers it.
+ */
+const ABSENT_PATH = "/tmp/at0310-nowhere-at-all.ts";
 
 let projectDir = "";
 
@@ -99,6 +118,7 @@ function commitOutput(): string {
     "",
     `- add \`${CODED_PATH}\` to coalesce resolver notifications`,
     `- add ${BARE_PATH} and the regression test`,
+    `- drop \`${ABSENT_PATH}\` on the way through`,
   ].join("\n");
 }
 
@@ -118,6 +138,22 @@ const bodySpanJS = (needle: string) => `JSON.stringify((function(){
     found: true,
     kind: el.getAttribute('data-tug-annotation'),
     path: el.getAttribute('data-path'),
+  };
+})())`;
+
+/** Read one receipt-body run's missing-mark state by its exact text. */
+const missingMarkJS = (needle: string) => `JSON.stringify((function(){
+  var root = document.querySelector(
+    '[data-card-id="A"] [data-slot="commit-receipt-detail"]');
+  if (!root) return { rooted: false };
+  var el = Array.from(root.querySelectorAll('[data-tugx-missing]')).find(
+    function(n){ return (n.textContent || '') === ${JSON.stringify(needle)}; });
+  if (!el) return { rooted: true, found: false };
+  return {
+    rooted: true,
+    found: true,
+    title: el.getAttribute('title'),
+    annotated: el.hasAttribute('data-tug-annotation'),
   };
 })())`;
 
@@ -192,6 +228,20 @@ describe.skipIf(!SHOULD_RUN)(
           ) as { rooted: boolean; found: boolean };
           expect(bare.rooted).toBe(true);
           expect(bare.found).toBe(false);
+
+          // A backticked path the endpoint probed and refused says so.
+          // It is NOT an annotation — there is no file to open — it is a
+          // title, so hovering distinguishes "looked, not there" from the
+          // silence of a reference nobody could answer for.
+          await app.waitForCondition<boolean>(
+            `(function(){ var s = ${missingMarkJS(ABSENT_PATH)}; return JSON.parse(s).found === true; })()`,
+            { timeoutMs: 30_000 },
+          );
+          const absent = JSON.parse(
+            await app.evalJS<string>(missingMarkJS(ABSENT_PATH)),
+          ) as { title: string; annotated: boolean };
+          expect(absent.title).toBe("File not found");
+          expect(absent.annotated).toBe(false);
 
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {

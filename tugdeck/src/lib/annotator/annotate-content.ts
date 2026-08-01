@@ -59,6 +59,14 @@
  * file, so prose that merely looks path-shaped costs one cached lookup and
  * stays plain text.
  *
+ * **A refusal can still be worth saying.** A gate that only ever produces
+ * silence makes its two very different answers look identical: a path the
+ * endpoint probed and found absent reads exactly like one nobody ever
+ * asked about. So a *definite* miss carries a `title` — the reference
+ * stays plain text and unannotated, because there is no file to open, but
+ * hovering says {@link MISSING_TITLE}. Only `missing` earns it. `unknown`
+ * stays silent, because "we don't know" is not a claim about the disk.
+ *
  * **Scope guards.** `<a>` subtrees are skipped by linkify itself (no
  * double-wrapping a markdown-authored link); `CODE`/`PRE` subtrees are
  * skipped for links (a URL inside code is content, not a link to
@@ -107,6 +115,7 @@ import { AUTOLINK_CLASS, type AnnotationContext } from "./types";
 import { hasUrlScheme } from "./url-grammar";
 import {
   collectTextNodes,
+  MISSING_ATTRIBUTE,
   unwrapMatch,
   wrapMatchesInTextNode,
   WRAPPED_ATTRIBUTE,
@@ -189,11 +198,14 @@ function annotatePathsInText(
     const matches: TextRunMatch[] = [];
     for (const reference of scanPathReferences(text)) {
       if (!inCode && !isUnambiguousInProse(reference)) continue;
-      const payload = payloadForReference(
-        reference,
-        context.resolvePath(reference),
-      );
-      if (payload === null) continue;
+      const verdict = context.resolvePath(reference);
+      const payload = payloadForReference(reference, verdict);
+      // A reference the endpoint answered for and refused is wrapped
+      // anyway — not annotated, just titled, so hovering says the file
+      // isn't there instead of leaving the reader to wonder whether the
+      // annotator even looked. Every other refusal (never asked, still
+      // asking, nobody to ask) stays bare: it is not a claim.
+      if (payload === null && verdict.state !== "missing") continue;
       matches.push({ start: reference.start, end: reference.end, payload });
     }
     for (const found of scanCommitShas(text)) {
@@ -236,6 +248,10 @@ function payloadForCommit(
  * nothing. It exists because the resolvers are allowed to forget: a lost
  * answer returns a path to `unknown` rather than asserting it is missing,
  * and a link whose file has stopped resolving should stop being a link.
+ *
+ * A missing-mark is swept the same way and for the same reason — the
+ * "File not found" tooltip is a claim about the filesystem, so it lasts
+ * exactly as long as the verdict behind it.
  */
 function dropStaleWraps(
   container: HTMLElement,
@@ -245,19 +261,21 @@ function dropStaleWraps(
     `[${WRAPPED_ATTRIBUTE}]`,
   );
   for (const element of wrapped) {
+    const missingMark = element.hasAttribute(MISSING_ATTRIBUTE);
     const annotation = readAnnotation(element);
     // Only path wraps are re-checked here; a kind whose truth cannot
     // change (a commit) has nothing to re-check.
-    if (annotation?.kind !== "file-path" && annotation?.kind !== "directory") {
-      continue;
-    }
-    const reference = detectPathReference(element.textContent ?? "");
     if (
-      reference !== null &&
-      context.resolvePath(reference).state === "confirmed"
+      !missingMark &&
+      annotation?.kind !== "file-path" &&
+      annotation?.kind !== "directory"
     ) {
       continue;
     }
+    const reference = detectPathReference(element.textContent ?? "");
+    const state =
+      reference === null ? "unknown" : context.resolvePath(reference).state;
+    if (missingMark ? state === "missing" : state === "confirmed") continue;
     unwrapMatch(element);
   }
 }
