@@ -2024,6 +2024,253 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
     },
     1_500_000,
   );
+
+  // -----------------------------------------------------------------------
+  // Editor tile ledger (roadmap/scrolling-memory-diet.md §G6, answers G2's
+  // Q3): what does ONE VISIBLE heavy CM6 editor cost in graphics backing?
+  // A Text card bound to a real ~5k-line source file (CM6 windows its DOM
+  // but declares the full content-height scroll layer), measured probe-A
+  // style: rest + purge floors with the editor visible, then the same deck
+  // with the editor's pane `visibility: hidden`, then revealed again. The
+  // causal delta between the visible and hidden floors is the editor's
+  // share. Foreground launch for the same reason as the tile ledger — a
+  // hidden window measures occlusion policy, not coverage.
+  test.skipIf(process.env.AT9996_EDITOR_TILES !== "1")(
+    "editor tile ledger: visible heavy CM6 editor share",
+    async () => {
+      const REST_SECS = Number(process.env.AT9996_TILES_REST_SECS ?? "45");
+      const PURGE_CYCLES = 3;
+      const heavyPath = new URL(
+        "../../tugdeck/src/components/tugways/tug-list-view.tsx",
+        import.meta.url,
+      ).pathname;
+
+      const sleep = (ms: number): Promise<void> =>
+        new Promise((r) => setTimeout(r, ms));
+
+      const priorWebContent = listWebContentPids();
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath);
+      const app = await launchTugApp({
+        testName: "at9996-editor-tiles",
+        env: { TUGBANK_PATH: tugbankPath },
+        foreground: true,
+      });
+      try {
+        await app.seedDeckState({
+          state: {
+            cards: [
+              { id: "T", componentId: "text", title: "", closable: true },
+            ],
+            panes: [
+              {
+                id: "pT",
+                position: { x: 40, y: 40 },
+                size: { width: 800, height: 1100 },
+                cardIds: ["T"],
+                activeCardId: "T",
+                title: "",
+                acceptsFamilies: ["standard"],
+                slot: 0,
+              },
+            ],
+            activePaneId: "pT",
+            imposition: { kind: "five-up", lens: "right" },
+            hasFocus: true,
+          },
+          cardStates: {
+            T: {
+              content: {
+                path: heavyPath,
+                draftId: null,
+                untitled: false,
+                untitledNumber: null,
+                anchor: { line: 1, ch: 0 },
+                scrollTop: 0,
+              },
+            },
+          },
+          focusCardId: "T",
+        });
+
+        const scroller = `document.querySelector(".cm-editor .cm-scroller")`;
+        await app.waitForCondition<boolean>(
+          `!!${scroller} && ${scroller}.scrollHeight > 10000`,
+          { timeoutMs: 30_000 },
+        );
+        {
+          const vis = await app.evalJS<string>(`document.visibilityState`);
+          if (vis !== "visible") {
+            throw new Error(
+              `editor tile ledger requires a visible lab window (visibilityState=${vis}); run when the machine is free`,
+            );
+          }
+        }
+
+        let wcPid = -1;
+        for (let i = 0; i < 40 && wcPid < 0; i += 1) {
+          const fresh = [...listWebContentPids()].filter(
+            (p) => !priorWebContent.has(p),
+          );
+          if (fresh.length === 1) {
+            wcPid = fresh[0]!;
+          } else if (fresh.length > 1) {
+            let best = -1;
+            let bestMalloc = -1;
+            for (const p of fresh) {
+              const led = readTileLedger(p);
+              if (led !== null && led.mallocMB > bestMalloc) {
+                bestMalloc = led.mallocMB;
+                best = p;
+              }
+            }
+            wcPid = best;
+          }
+          if (wcPid < 0) await sleep(250);
+        }
+        expect(wcPid).toBeGreaterThan(0);
+
+        const t0 = Date.now();
+        const samples: Array<{
+          phase: string;
+          t: number;
+          gfxMB: number;
+          mallocMB: number;
+        }> = [];
+        const sample = (phase: string): void => {
+          const led = readTileLedger(wcPid);
+          if (led === null) return;
+          samples.push({
+            phase,
+            t: Math.round((Date.now() - t0) / 100) / 10,
+            ...led,
+          });
+        };
+        const sampleFor = async (
+          phase: string,
+          secs: number,
+          everyMs = 5_000,
+        ): Promise<void> => {
+          const end = Date.now() + secs * 1000;
+          for (;;) {
+            sample(phase);
+            if (Date.now() + everyMs > end) return;
+            await sleep(everyMs);
+          }
+        };
+        const purgeCycles = async (phase: string): Promise<void> => {
+          for (let c = 0; c < PURGE_CYCLES; c += 1) {
+            Bun.spawnSync(["notifyutil", "-p", "org.WebKit.lowMemory"]);
+            await sampleFor(phase, 8, 1_000);
+            await sampleFor(phase, 22, 5_000);
+          }
+        };
+
+        // Warm sweep in half-viewport steps so CM6 has materialized every
+        // line at least once and the layer height is honest, mirroring the
+        // transcript rig's warm pass.
+        {
+          const sh = await app.evalJS<number>(
+            `${scroller}.scrollHeight - ${scroller}.clientHeight`,
+          );
+          const vh = await app.evalJS<number>(`${scroller}.clientHeight`);
+          const step = Math.max(1, Math.round(vh / 2));
+          for (let y = 0; y <= sh; y += step) {
+            await app.evalJS<number>(
+              `(function () { var el = ${scroller}; el.scrollTop = ${y}; return el.scrollTop; })()`,
+            );
+            await sleep(120);
+          }
+          await app.evalJS<number>(
+            `(function () { var el = ${scroller}; el.scrollTop = Math.round((el.scrollHeight - el.clientHeight) / 2); return el.scrollTop; })()`,
+          );
+        }
+
+        const geom = await app.evalJS<{
+          vw: number;
+          vh: number;
+          scrollHeight: number;
+          nodes: number;
+          dpr: number;
+          visibility: string;
+        }>(`(function () {
+  var el = ${scroller};
+  return {
+    vw: el.clientWidth,
+    vh: el.clientHeight,
+    scrollHeight: el.scrollHeight,
+    nodes: el.getElementsByTagName("*").length,
+    dpr: window.devicePixelRatio,
+    visibility: document.visibilityState,
+  };
+})()`);
+
+        await sleep(2_000);
+        await sampleFor("rest-editor", REST_SECS);
+        await purgeCycles("purge-editor");
+
+        // Probe-A: hide the pane frame (paint-only; layout, CM6 state and
+        // the layer height all survive), settle, re-measure the floors.
+        await app.evalJS<void>(
+          `document.querySelector('.tug-pane[data-pane-id="pT"]').style.visibility = "hidden"`,
+        );
+        await sleep(2_000);
+        await sampleFor("rest-hidden", REST_SECS);
+        await purgeCycles("purge-hidden");
+
+        await app.evalJS<void>(
+          `document.querySelector('.tug-pane[data-pane-id="pT"]').style.visibility = ""`,
+        );
+        await sleep(2_000);
+        await sampleFor("rest-revealed", 30);
+
+        const byPhase: Record<
+          string,
+          { n: number; minMB: number; maxMB: number; meanMB: number }
+        > = {};
+        for (const s of samples) {
+          const agg = (byPhase[s.phase] ??= {
+            n: 0,
+            minMB: Infinity,
+            maxMB: -Infinity,
+            meanMB: 0,
+          });
+          agg.n += 1;
+          agg.minMB = Math.min(agg.minMB, s.gfxMB);
+          agg.maxMB = Math.max(agg.maxMB, s.gfxMB);
+          agg.meanMB += s.gfxMB;
+        }
+        for (const agg of Object.values(byPhase)) {
+          agg.meanMB = Math.round(agg.meanMB / agg.n);
+          agg.minMB = Math.round(agg.minMB);
+          agg.maxMB = Math.round(agg.maxMB);
+        }
+        const report = { wcPid, heavyPath, geom, byPhase };
+        console.log(`[at9996] EDITOR-TILE-LEDGER ${JSON.stringify(report)}`);
+        writeFileSync(
+          "/tmp/at9996-editor-tiles.json",
+          JSON.stringify({ report, samples }, null, 2),
+        );
+
+        // Instrument sanity: the document is genuinely heavy, the window
+        // stayed visible, and every phase produced readings.
+        expect(geom.scrollHeight).toBeGreaterThan(10_000);
+        expect(geom.visibility).toBe("visible");
+        for (const phase of [
+          "rest-editor",
+          "purge-editor",
+          "rest-hidden",
+          "purge-hidden",
+          "rest-revealed",
+        ]) {
+          expect(byPhase[phase]?.n ?? 0).toBeGreaterThan(0);
+        }
+      } finally {
+        await app.close();
+      }
+    },
+    900_000,
+  );
 });
 
 // ---------------------------------------------------------------------------

@@ -163,6 +163,20 @@ The structural fix, held in reserve because it is the expensive one: stop giving
 
 The two buried editors are G1's problem while buried, but a *visible* 13.7k px editor still carries a content-height scroll layer with a full-height sticky gutter (47 × 13,664). CM6 already windows its DOM (it draws ~viewport lines); the layer area is what bills. Sequenced behind G2 (which prices the visible-editor share) and G3/G4 (which may fix it for free); if the editors remain a standing term after those, the CM-specific options (gutter treatment, CM's own `contentHeight` handling) get their own item with numbers.
 
+#### G6 priced and CLOSED, 2026-08-02 — a visible heavy CM6 editor costs ~29MB (~2 viewports), no CM-specific work warranted {#g6-priced}
+
+**The instrument:** new `AT9996_EDITOR_TILES=1` cell in at9996 — a Text card bound to a real 4,998-line source file (`tug-list-view.tsx`, CM6 `scrollHeight` **100,144px** at 786×1105 / dpr 2 after a warm sweep), measured probe-A style in one instance: rest + forced-purge floors with the editor visible, the same deck with the pane `visibility: hidden`, then revealed. Run on an idle machine, single foreground launch, no activation loop; window visible throughout. (The run carried the new cohort-off default — irrelevant to rest floors, which cohort retention provably does not touch.)
+
+| phase | graphics dirty MB (mean, min–max) |
+|---|---|
+| rest, editor visible | **77** (76–78, flat) |
+| purge ×3, visible | 81 (69–146) |
+| rest, editor hidden | **48** (48–48, flat — exactly G2's empty-deck chrome floor) |
+| purge ×3, hidden | 53 (48–96) |
+| rest, revealed again | 75 (flat) |
+
+**The verdict: a visible heavy CM6 editor bills ~29MB at rest (77 − 48), ≈ 2.1 viewports (786×1105 = 13.9MB/viewport) — half the transcript's 4.4-viewport multiplier — and the cost is length-independent (a 100k-px document, 7× the live deck's biggest editor, still lands at ~2 viewports).** The likely mechanism: CM6's windowed DOM leaves everything outside the drawn window as blank layer area, and WebKit's solid-color-tile optimization (G3's subject) makes those tiles nearly free — the editor's far coverage is blank in a way the transcript's (real content under E1's exact-height placeholders? no — spacer is blank too; the difference is plausibly the gutter/content split) is not fully. Whatever the mechanism, the bill is small and bounded. Live implication: the deck's big editors are buried most of the time (G1 zeroes them); a *raised* one costs ~30MB while it is front. **No CM-specific engineering (gutter treatment, contentHeight interventions) can be justified against a ~30MB bounded, length-independent term — G6 is closed with a number, and G2's Q3 is answered: the visible-card churn belongs overwhelmingly to the transcripts.**
+
 ## Sequencing {#sequencing}
 
 G2 first (the instrument), G1 in parallel (independently justified by probe A, already causally demonstrated safe). Then G3 (cheapest possible structural win) → G4 (host-side knobs) → decision point: if graphics dirty on the live deck is bounded and the train is gone, close; else G5. G6 rides the G2 numbers throughout. The malloc-side program (heap census, E1b) continues separately in [aug01-perf-brief.md](aug01-perf-brief.md) §F-E.
@@ -172,6 +186,8 @@ G2 first (the instrument), G1 in parallel (independently justified by probe A, a
 **Status after the G1 live read (2026-08-02, [#g1-build]):** G1 **shipped and measured live** — culled floor ~400–420M at a two-buried-pane arrangement, causal A/B −110–125MB (~55–63MB/pane; the working-order projection below assumed probe A's 3-pane stacking, so read its "565 → ~356" as arrangement-dependent). **G4 is now the front item.**
 
 **Status after the G4 A/B campaign (2026-08-02, [#g4-ab]):** one knob adoptable — **cohort retention off** (sweep transient −67MB mean / −92MB max, reproduced; rest untouched) — pending a live felt-scroll gate. **The 4.4-viewport rest floor is verified unreachable by any exposed knob**, so item 2's "206 → 70MB" projection below is **refuted**: the rest-floor headroom (~136MB) now belongs to G5's entry decision, and the near-term program is the live coverage read (item 3), the layer census (item 4), and G6.
+
+**Status after the G6 pricing (2026-08-02, [#g6-priced]):** **G6 closed** — a visible heavy CM6 editor bills ~29MB (~2.1 viewports), length-independent; buried ones are G1's. Item 5 below is done; Q3 is answered (the visible churn is the transcripts'). Remaining open items: the live per-scroller coverage read (item 3), the layer census (item 4), and the G5 entry decision — which now weighs deep surgery against a program whose felt problem (the sub-1.27GB purge train) is currently absent.
 
 **The live floor decomposes, and that sets the order.** Applying G2's measured 4.4 viewports-at-rest to live geometry (transcript scrollport 798×1222 = **15.6MB/viewport**; window 2879×1599 = **73.7MB**):
 
