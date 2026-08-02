@@ -197,8 +197,12 @@ export function registerDiffCard(): void {
     defaultMeta: { title: "Diff", icon: "GitCompareArrows", closable: true },
     category: { label: "Files", icon: "GitCompareArrows" },
     sizePolicy: {
+      // Opens at the 800 default width the Session, Text, and File cards
+      // share, so a diff popped out beside one reads at the same stature.
+      // The width floor stays below that — a diff still shrinks to a
+      // narrow column when the reader wants it beside something else.
       min: { width: 480, height: 320 },
-      preferred: { width: 720, height: 640 },
+      preferred: { width: 800, height: 640 },
     },
   });
 }
