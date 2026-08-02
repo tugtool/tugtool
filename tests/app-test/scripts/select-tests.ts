@@ -150,6 +150,13 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // smaller surface those gestures live on. The coupling is structural rather than
     // sloppy declaration.
     "tugdeck/src/components/chrome/tug-pane.tsx": 21,
+    // The list primitive: the transcript, the Lens sections, the gallery, and
+    // every picker are all TugListView, so a test that drives any list of rows
+    // names it. Crossed the budget when transcript DOM eviction landed inside
+    // it — the mode decides which rows exist at all, so a test of scroll
+    // fidelity, selection survival, or row gestures has nowhere smaller to
+    // point.
+    "tugdeck/src/components/tugways/tug-list-view.tsx": 21,
 };
 
 interface TestCoverage {

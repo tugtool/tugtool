@@ -164,6 +164,73 @@ async function seedTranscriptWeight(
 }
 
 /**
+ * Seed ONE session with `turns` complete prompt→reply turns, each contributing
+ * a user row and an assistant row.
+ *
+ * {@link seedTranscriptWeight} is the wrong shape for the eviction cell:
+ * consecutive assistant messages inside ONE turn coalesce into a single
+ * assistant-run row, so pushing 400 messages into one turn yields two rows no
+ * matter how much text it is. Eviction is measured in rows, so the weight has
+ * to arrive as turns.
+ */
+async function seedTranscriptTurns(
+  app: App,
+  id: string,
+  turns: number,
+  prefix: string,
+  /** Awaited every `sampleEvery` turns — the harness channel carries one RPC
+   *  at a time, so an observer has to take its turn rather than poll. */
+  onSample?: () => Promise<void>,
+  sampleEvery = 15,
+): Promise<void> {
+  const sid = `${prefix}-${id}`;
+  await app.bindSession(id, { tugSessionId: sid });
+  await app.awaitEngineReady(id, { timeoutMs: 20_000 });
+  const frame = (decoded: Record<string, unknown>): Promise<unknown> =>
+    withDeadline(
+      app.driveSession(
+        id,
+        {
+          op: "ingestFrame",
+          feedId: FEED_CODE_OUTPUT,
+          decoded: { tug_session_id: sid, ...decoded },
+        },
+        { timeoutMs: INGEST_TIMEOUT_MS },
+      ),
+      `${prefix} seed ${id} frame`,
+    );
+  for (let n = 0; n < turns; n += 1) {
+    const msgId = `${sid}-m${n}`;
+    await app.driveSession(id, { op: "send", text: `step ${n}` });
+    await frame({ type: "prompt_anchor", promptUuid: `${sid}-u${n}` });
+    await frame({
+      type: "content_block_start",
+      msg_id: msgId,
+      block_index: 0,
+      kind: "text",
+    });
+    await frame({
+      type: "assistant_text",
+      msg_id: msgId,
+      block_index: 0,
+      text: blockText(id, n),
+      is_partial: false,
+    });
+    await frame({ type: "turn_complete", msg_id: msgId, result: "success" });
+    if (onSample !== undefined && n > 0 && n % sampleEvery === 0) {
+      await onSample();
+    }
+  }
+  // Rendered-row counting is the wrong settle signal here: under eviction most
+  // rows are unmounted by design. The scroller's own height is the honest one
+  // — it counts every row, mounted or evicted.
+  await app.waitForCondition<boolean>(
+    `(document.querySelector('[data-tug-scroll-key="session-card-transcript"]')?.scrollHeight ?? 0) > ${turns * 60}`,
+    { timeoutMs: 60_000 },
+  );
+}
+
+/**
  * Encode an absolute project dir the way claude names its per-project subdir
  * under `~/.claude/projects/` — mirrors tugcode's `encodeProjectDir` (every
  * character outside `[A-Za-z0-9-]` → `-`). Inline so the app-test graph does
@@ -1405,6 +1472,226 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
         console.log(`[at9996] TYPIST-REPORT ${JSON.stringify(report)}`);
         // Real keys must actually have traversed the pipeline into the page.
         expect(qs.length).toBeGreaterThan(sent * 0.9);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  // Transcript DOM eviction (`evictOffscreen`). Seeds one session with a long
+  // run of separate rows, then reads three things the mode must be true about:
+  //
+  //   1. how few rows stay mounted once eviction arms — the footprint claim
+  //   2. that a full-range scroll doesn't move the scroll height — the
+  //      pixel-identity claim, since spacers stand at measured heights
+  //   3. that the suspension counter stays put — proof no commit had to fall
+  //      back to rendering everything, i.e. the ledger really covers the rows
+  //
+  // The mounted/total node ratio is captured as a same-instance A/B: the
+  // pre-arm high-water mark IS the inline population (every row mounted),
+  // because that is exactly what the transcript renders before it has measured
+  // enough to evict. No build flag, no second run.
+  //
+  // Opt-in (AT9996_EVICT=1) so a plain lab run doesn't pay the seed.
+  test.skipIf(process.env.AT9996_EVICT !== "1")(
+    "eviction: mounted-cell budget, scroll continuity, no suspensions",
+    async () => {
+      const TURNS = Number(process.env.AT9996_EVICT_TURNS ?? "150");
+      const ROWS = TURNS * 2;
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath);
+      const app = await launchTugApp({
+        testName: "at9996-evict",
+        env: { TUGBANK_PATH: tugbankPath },
+        foreground: true,
+      });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        for (const id of SESSIONS) {
+          await app.waitForCondition<boolean>(
+            `window.__tug.assertHostRootRegistered(${JSON.stringify(id)})`,
+            { timeoutMs: 8_000 },
+          );
+        }
+
+        // Sample the mounted population while the rows arrive. The maximum
+        // seen with `data-evict-active` ABSENT is the inline baseline.
+        // Nodes-per-row, sampled from the widest mounted population seen
+        // while the transcript was still short enough that the window held
+        // every row. That is a genuinely inline reading — the same rows, the
+        // same renderers, nothing evicted — and it is what makes the final
+        // node count comparable to anything.
+        let peakNodes = 0;
+        let peakCells = 0;
+        const sample = async (): Promise<void> => {
+          const s = await app.evalJS<{
+            active: boolean;
+            cells: number;
+            nodes: number;
+          } | null>(`(function () {
+  var el = document.querySelector('[data-tug-scroll-key="session-card-transcript"]');
+  if (!el) return null;
+  return {
+    active: el.hasAttribute("data-evict-active"),
+    cells: el.querySelectorAll("[data-tug-list-cell-index]").length,
+    nodes: el.getElementsByTagName("*").length,
+  };
+})()`);
+          if (s === null || s.cells <= peakCells) return;
+          peakCells = s.cells;
+          peakNodes = s.nodes;
+        };
+
+        await seedTranscriptTurns(app, "A", TURNS, "at9996-evict", sample);
+
+        // Eviction arms on the settled edge.
+        await app.waitForCondition<boolean>(
+          `!!document.querySelector('[data-tug-scroll-key="session-card-transcript"][data-evict-active]')`,
+          { timeoutMs: 30_000 },
+        );
+
+        const before = await app.evalJS<{
+          cells: number;
+          nodes: number;
+          rows: number;
+          budget: number;
+          minRow: number;
+          viewport: number;
+          scrollHeight: number;
+          fallbacks: number;
+          spacers: string;
+        }>(`(function () {
+  var el = document.querySelector('[data-tug-scroll-key="session-card-transcript"]');
+  var cells = Array.prototype.slice.call(el.querySelectorAll("[data-tug-list-cell-index]"));
+  var minRow = Infinity;
+  var maxIx = -1;
+  cells.forEach(function (c) {
+    var h = c.getBoundingClientRect().height;
+    if (h > 0 && h < minRow) minRow = h;
+    var ix = Number(c.getAttribute("data-tug-list-cell-index"));
+    if (ix > maxIx) maxIx = ix;
+  });
+  if (!isFinite(minRow) || minRow < 1) minRow = 1;
+  var vh = el.clientHeight;
+  // The window spans the viewport plus the retain margin on each side (two
+  // viewports), so the cell count it can hold is that span over the
+  // shortest row, plus the overscan cells and a little slack for a pin.
+  var budget = Math.ceil((vh + 4 * vh) / minRow) + 6 + 4;
+  var top = el.querySelector(".tug-list-view-spacer--top");
+  var bot = el.querySelector(".tug-list-view-spacer--bottom");
+  return {
+    cells: cells.length,
+    nodes: el.getElementsByTagName("*").length,
+    rows: maxIx + 1,
+    budget: budget,
+    minRow: Math.round(minRow),
+    viewport: vh,
+    scrollHeight: el.scrollHeight,
+    fallbacks: Number(el.getAttribute("data-evict-fallbacks") || "-1"),
+    spacers: (top ? top.style.height : "?") + "/" + (bot ? bot.style.height : "?"),
+  };
+})()`);
+
+        // Scripted full-range scroll: top, then bottom, then back. Each stop
+        // re-windows, mounts, measures, and evicts — the scroll height must
+        // not move, because every spacer stands at a measured height.
+        const traverse = async (): Promise<number[]> => {
+          const seen: number[] = [];
+          for (const frac of [0, 0.25, 0.5, 0.75, 1, 0.5, 0]) {
+            seen.push(
+              await app.evalJS<number>(`(function () {
+  var el = document.querySelector('[data-tug-scroll-key="session-card-transcript"]');
+  el.scrollTop = Math.round((el.scrollHeight - el.clientHeight) * ${frac});
+  return el.scrollHeight;
+})()`),
+            );
+            await new Promise((r) => setTimeout(r, 400));
+          }
+          return seen;
+        };
+        // Two passes. The first one warms: every row is re-mounted for the
+        // first time since it was measured, and any row whose height moved in
+        // the interval corrects then. The SECOND pass is the pixel-identity
+        // claim — by then nothing may move at all.
+        const pass1 = [before.scrollHeight, ...(await traverse())];
+        const pass2 = await traverse();
+        const spread = (xs: number[]): number =>
+          Math.max(...xs) - Math.min(...xs);
+        const heights = [...pass1, ...pass2];
+
+        const after = await app.evalJS<{
+          cells: number;
+          nodes: number;
+          scrollHeight: number;
+          fallbacks: number;
+          active: boolean;
+        }>(`(function () {
+  var el = document.querySelector('[data-tug-scroll-key="session-card-transcript"]');
+  return {
+    cells: el.querySelectorAll("[data-tug-list-cell-index]").length,
+    nodes: el.getElementsByTagName("*").length,
+    scrollHeight: el.scrollHeight,
+    fallbacks: Number(el.getAttribute("data-evict-fallbacks") || "-1"),
+    active: el.hasAttribute("data-evict-active"),
+  };
+})()`);
+        heights.push(after.scrollHeight);
+
+        const warmDrift = spread(pass1);
+        const steadyDrift = spread(pass2);
+        const report = {
+          rows: before.rows,
+          seeded: ROWS,
+          mountedCells: before.cells,
+          budget: before.budget,
+          minRow: before.minRow,
+          viewport: before.viewport,
+          mountedNodes: before.nodes,
+          sampledCells: peakCells,
+          sampledNodes: peakNodes,
+          // What this content would mount inline, extrapolated from the
+          // sampled nodes-per-row. An estimate, and labelled one.
+          projectedInlineNodes:
+            peakCells > 0
+              ? Math.round((peakNodes / peakCells) * before.rows)
+              : -1,
+          nodeReductionPct:
+            peakCells > 0
+              ? Math.round(
+                  (1 - before.nodes / ((peakNodes / peakCells) * before.rows)) *
+                    100,
+                )
+              : -1,
+          scrollHeight: before.scrollHeight,
+          warmPassDriftPx: warmDrift,
+          steadyPassDriftPx: steadyDrift,
+          heights,
+          fallbacksBefore: before.fallbacks,
+          fallbacksAfter: after.fallbacks,
+          activeAfterScroll: after.active,
+        };
+        console.log(`[at9996] EVICT-REPORT ${JSON.stringify(report)}`);
+
+        // The list really is long, and really is mostly unmounted.
+        expect(before.rows).toBeGreaterThan(ROWS * 0.8);
+        expect(before.cells).toBeLessThanOrEqual(before.budget);
+        expect(before.cells).toBeLessThan(before.rows / 2);
+        expect(report.nodeReductionPct).toBeGreaterThanOrEqual(60);
+        // Pixel identity, to the tolerance the measurement itself has. Each
+        // evicted row is represented by its remembered height, and a row
+        // measured while mounted can disagree with that by a fraction of a
+        // pixel; across hundreds of rows those fractions sum to a residual
+        // that shifts as the window moves. Two thousandths of the document
+        // is far below the scrollbar's own resolution — but it is a ceiling,
+        // and a regression that dropped a row's height (a lost gap, a
+        // mis-keyed ledger entry) would blow straight through it.
+        expect(steadyDrift).toBeLessThan(before.scrollHeight * 0.002);
+        expect(warmDrift).toBeLessThan(before.scrollHeight * 0.002);
+        // No commit fell back to rendering everything while scrolling.
+        expect(after.fallbacks).toBe(before.fallbacks);
+        expect(after.active).toBe(true);
       } finally {
         await app.close();
       }

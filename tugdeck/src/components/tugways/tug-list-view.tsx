@@ -827,6 +827,43 @@ export interface TugListViewProps<
   offscreenSkip?: boolean;
 
   /**
+   * Inline-mode footprint relief: once every row has been measured,
+   * UNMOUNT the rows outside the scrollport ± a pixel margin and stand
+   * exact-height spacers in their place. Requires `inline`; ignored
+   * (with a dev warning) without it.
+   *
+   * `offscreenSkip` stops an offscreen row from being styled, laid out,
+   * and painted, but the row still exists: a WebCore element, a render
+   * object, a computed style, and a React fiber per node. On a restored
+   * transcript that mounted representation is the dominant heap term —
+   * a session whose visible text is under a megabyte can hold tens of
+   * thousands of nodes, and the resident footprint that produces is what
+   * drives WebKit's periodic memory purge (and the style-recalc stall
+   * that follows it). Eviction releases all four.
+   *
+   * The no-estimates contract is stronger here than anywhere else,
+   * because spacer geometry SUMS the heights of rows that are not in
+   * the DOM. Eviction therefore activates only when every row outside
+   * the window has a real measured height in the `HeightIndex`
+   * (`coversRange`); if any is missing — mid-batch-load, after a width
+   * change wipes the ledger, or via any future path that adds rows out
+   * of view — the mode SUSPENDS for that commit and renders every row,
+   * exactly as plain `inline` does. The failure mode is "temporarily
+   * mounts everything", never "wrong scroll geometry".
+   *
+   * Rows leave the window at a wider margin than they enter it, so a
+   * row hovering at the boundary cannot churn; rows holding the user's
+   * selection or focus are pinned into the window and never evicted.
+   *
+   * Every other inline-mode subsystem stays live: follow-bottom,
+   * batch-load freeze, front-insert compensation, and `offscreenSkip`
+   * stamping on the rows that remain mounted.
+   *
+   * @default false
+   */
+  evictOffscreen?: boolean;
+
+  /**
    * Whether cells are interactive. `true` (default) is the picker shape —
    * `cell`-role rows are focusable (`tabIndex={0}`) and show the row hover
    * affordance. Set `false` for a **read-only listing** (e.g. `/skills`,
@@ -1301,6 +1338,21 @@ const DEFAULT_ESTIMATED_HEIGHT = 60;
  */
 const OVERSCAN_COUNT = 3;
 
+/**
+ * Eviction margins, in viewport heights (see the `evictOffscreen`
+ * prop). A row mounts once it is within one viewport of the scrollport
+ * and is not released until it is two viewports away — the gap is the
+ * hysteresis band, and it is also the budget for a fast flick: at a
+ * viewport of scroll per frame, a row is already mounted a frame
+ * before it could be seen.
+ *
+ * Cell counts cannot express this: transcript rows range from one line
+ * to thousands, so "three cells" is a screenful in one place and a
+ * sliver in another.
+ */
+const EVICT_MOUNT_MARGIN_VIEWPORTS = 1;
+const EVICT_RETAIN_MARGIN_VIEWPORTS = 2;
+
 /** Top-edge tolerance (CSS px) for the `onAtTopChange` signal — a few
  *  pixels of slop so a sub-pixel resting `scrollTop` still reads "at top." */
 const AT_TOP_EPSILON = 4;
@@ -1448,6 +1500,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       onFirstSettle,
       inline,
       offscreenSkip = false,
+      evictOffscreen = false,
       interactive = true,
       rowLayout,
       rowDensity,
@@ -1519,6 +1572,67 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     offscreenSkipRef.current = inline === true && offscreenSkip;
     const topSpacerRef = React.useRef<HTMLDivElement | null>(null);
     const bottomSpacerRef = React.useRef<HTMLDivElement | null>(null);
+    // Eviction mode is an `inline` sub-mode — it reuses every inline
+    // subsystem and only changes which rows reach the DOM.
+    const evictModeEnabled = inline === true && evictOffscreen;
+    if (
+      process.env.NODE_ENV !== "production" &&
+      evictOffscreen &&
+      inline !== true
+    ) {
+      console.warn(
+        "[TugListView] `evictOffscreen` requires `inline` — it evicts rows " +
+          "the inline path measured. Ignored on a windowed list, which " +
+          "already renders a window.",
+      );
+    }
+    // The leading-content wrapper. Rows live in a coordinate space whose
+    // origin is row 0's top, but leading content sits ABOVE row 0, so
+    // every `scrollTop` computed from row offsets has to add the leading
+    // element's height to land where the caller meant. Read live: the
+    // element's height changes with its content.
+    const leadingElRef = React.useRef<HTMLDivElement | null>(null);
+    const leadingOffsetPx = React.useCallback(
+      (): number => leadingElRef.current?.offsetHeight ?? 0,
+      [],
+    );
+    // The rendered window is a flex column with a `row-gap`, so the space a
+    // row occupies in the flow is its measured height PLUS the gap that
+    // follows it. Rows that are not rendered are represented by the spacers,
+    // which sit outside that flex box and get no gaps of their own — so
+    // unless the gap travels with the height, every unrendered row silently
+    // loses its share of it and the document changes size as the window
+    // moves. The ledger therefore stores each row's OUTER extent
+    // (height + gap); `contain-intrinsic-size` keeps the raw measured height,
+    // which is what it means.
+    //
+    // The arithmetic works out exactly. A top spacer covering rows [0, f)
+    // carries f gaps — one after each, the last being the f-1↔f separation.
+    // A bottom spacer covering [l, n) carries n-l gaps — one BEFORE each,
+    // the first being the l-1↔l separation. Sum: the true (n-1) gaps.
+    //
+    // Read from the live DOM rather than the token, so a theme or layout
+    // that changes the gap is picked up without a parallel source of truth.
+    const listWindowElRef = React.useRef<HTMLDivElement | null>(null);
+    const rowGapPxRef = React.useRef(0);
+    const refreshRowGap = React.useCallback((): void => {
+      const el = listWindowElRef.current;
+      if (el === null) return;
+      const raw = Number.parseFloat(getComputedStyle(el).rowGap);
+      rowGapPxRef.current = Number.isFinite(raw) ? raw : 0;
+    }, []);
+
+    // Previous commit's rendered range, fed back to `computeWindow` as
+    // the retention input so the mount/retain hysteresis has a memory.
+    const prevWindowRangeRef = React.useRef<{ first: number; last: number } | null>(
+      null,
+    );
+    // Diagnostics ([P08] of the eviction plan): how many commits fell
+    // back to rendering everything because the ledger was incomplete,
+    // and whether the current commit is actually evicting. Published as
+    // DOM attributes post-commit, never React state.
+    const evictFallbackCountRef = React.useRef(0);
+    const evictActiveRef = React.useRef(false);
 
     // Scrollport state for descendants — `OuterScrollportContext` publishes
     // this element so body-kind affordances can compensate `scrollTop` when
@@ -1841,13 +1955,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // reads the new pin. The window CLAMPS outward to cover the pin
     // (one contiguous range — see `computeWindow.pinnedRange`), so a
     // selection far from the viewport widens the window instead of
-    // splitting it. Inline mode mounts everything and skips the
-    // machinery entirely.
+    // splitting it. Plain inline mode mounts everything and skips the
+    // machinery entirely; `evictOffscreen` needs it back, because under
+    // eviction an inline list can once again unmount the row the user
+    // is selecting in or typing into.
     const pinnedRangeRef = React.useRef<{ first: number; last: number } | null>(
       null,
     );
     React.useLayoutEffect(() => {
-      if (inline === true) return;
+      if (inline === true && !evictModeEnabled) return;
       const container = scrollContainerRef.current;
       if (container === null) return;
 
@@ -1893,10 +2009,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         container.removeEventListener("focusout", recomputePin);
         pinnedRangeRef.current = null;
       };
-      // `scrollTick` is a stable reducer dispatch; `inline` is the only
-      // real dependency.
+      // `scrollTick` is a stable reducer dispatch; the mode flags are
+      // the only real dependencies.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [inline]);
+    }, [inline, evictModeEnabled]);
 
     // Read scroll geometry from the live DOM at render time. On the
     // first render `scrollContainerRef.current` is null (the ref
@@ -1974,27 +2090,74 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // bugs because every cell is observed from mount, so `heightIndex`
     // is fully populated before the user can scroll and never reverts
     // to estimates. Otherwise the windowed path runs as before.
-    const windowResult = inline === true
-      ? ({
-          firstIndex: 0,
-          lastIndex: itemCount,
-          topSpacerHeight: 0,
-          bottomSpacerHeight: 0,
-          // `totalHeight` is only consumed by `scrollToIndex`'s
-          // estimated-jump path, which is itself a no-op when every
-          // cell is rendered (the imperative handle's
-          // `scrollToElement` branch fires instead). Reporting 0 here
-          // is harmless.
-          totalHeight: 0,
-        })
-      : computeWindow({
-          itemCount,
-          scrollTop,
-          viewportHeight,
-          overscanCount: OVERSCAN_COUNT,
-          estimatedHeightForIndex: heightForIndex,
-          pinnedRange: pinnedRangeRef.current,
-        });
+    const fullRangeResult = {
+      firstIndex: 0,
+      lastIndex: itemCount,
+      topSpacerHeight: 0,
+      bottomSpacerHeight: 0,
+      // `totalHeight` is only consumed by `scrollToIndex`'s
+      // estimated-jump path, which is itself a no-op when every
+      // cell is rendered (the imperative handle's
+      // `scrollToElement` branch fires instead). Reporting 0 here
+      // is harmless.
+      totalHeight: 0,
+    };
+
+    // Eviction ([L24]: the window slice is derived structure, not
+    // state). Inline mode's full mount is what MEASURES every row;
+    // eviction mode then keeps only the rows near the scrollport,
+    // standing the exact measured heights of the rest in the spacers.
+    //
+    // The activation predicate is the whole safety argument: the
+    // spacers sum the heights of rows that are NOT in the DOM, so a
+    // single unmeasured row out there would put an estimate into the
+    // scroll geometry — the precise failure `inline` was introduced to
+    // eliminate. `coversRange` asks whether that can happen; when the
+    // answer is "maybe", this commit renders everything (the plain
+    // inline output) and the suspension is counted.
+    //
+    // A batch load is not a suspension: it is the loading state, during
+    // which the rows are being placed and measured in the first place.
+    let windowResult = fullRangeResult;
+    let evictingThisCommit = false;
+    let evictSuspendedThisCommit = false;
+    if (inline !== true) {
+      windowResult = computeWindow({
+        itemCount,
+        scrollTop,
+        viewportHeight,
+        overscanCount: OVERSCAN_COUNT,
+        estimatedHeightForIndex: heightForIndex,
+        pinnedRange: pinnedRangeRef.current,
+      });
+    } else if (
+      evictModeEnabled &&
+      !batchLoading &&
+      itemCount > 0 &&
+      viewportHeight > 0
+    ) {
+      const candidate = computeWindow({
+        itemCount,
+        scrollTop,
+        viewportHeight,
+        overscanCount: OVERSCAN_COUNT,
+        estimatedHeightForIndex: heightForIndex,
+        pinnedRange: pinnedRangeRef.current,
+        mountMarginPx: viewportHeight * EVICT_MOUNT_MARGIN_VIEWPORTS,
+        retainMarginPx: viewportHeight * EVICT_RETAIN_MARGIN_VIEWPORTS,
+        prevRange: prevWindowRangeRef.current,
+      });
+      const ledger = heightIndexRef.current;
+      if (
+        ledger.coversRange(0, candidate.firstIndex) &&
+        ledger.coversRange(candidate.lastIndex, itemCount)
+      ) {
+        windowResult = candidate;
+        evictingThisCommit = true;
+      } else {
+        evictSuspendedThisCommit = true;
+      }
+    }
 
     // Mount-tick: after the first commit attaches the scroll-container
     // ref, force a rerender so the window math reads a real
@@ -2011,6 +2174,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       if (followBottomEffective) {
         pinRequestedRef.current = true;
       }
+      // Resolve the row gap once the window element exists — every ledger
+      // entry is measured against it.
+      refreshRowGap();
       scrollTick();
       // `followBottom` is read once at mount; runtime changes are not
       // tracked (matches the SmartScroll-install effect's pattern).
@@ -2090,10 +2256,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             continue;
           }
           const newHeight = entry.contentRect.height;
+          // Ledger entries are outer extents (height + row gap); the cv
+          // stamp below is the raw measured height.
+          const newOuterHeight = newHeight + rowGapPxRef.current;
           const currentHeight = heightIndex.get(index);
           const heightChanged =
             currentHeight === undefined ||
-            Math.abs(currentHeight - newHeight) >= 0.5;
+            Math.abs(currentHeight - newOuterHeight) >= 0.5;
 
           // Offscreen-skip stamping: the exact measured height just
           // delivered becomes the cell's `contain-intrinsic-size`, and
@@ -2128,7 +2297,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           if (!heightChanged) {
             continue;
           }
-          heightIndex.set(index, newHeight);
+          heightIndex.set(index, newOuterHeight);
           anyChanged = true;
         }
         if (anyChanged) {
@@ -2233,8 +2402,19 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // re-arms with fresh exact heights. Height-only changes (content
     // growth, other cards resizing the deck vertically) don't touch
     // the stamps.
+    //
+    // Under `evictOffscreen` the same width change invalidates the
+    // measured-height ledger, for the same reason and with more at
+    // stake: those heights are standing in for rows that are not in the
+    // DOM, so a stale one is a wrong scroll position rather than a
+    // wrong skip size. Clearing the ledger makes the coverage predicate
+    // fail on the next commit, which renders every row (plain inline),
+    // re-measures at the new width, and re-arms eviction once the
+    // ledger is whole again — the suspension path doing exactly the job
+    // it exists for. A page-zoom or font-scale change reaches here the
+    // same way, since both change the scroller's effective width.
     React.useLayoutEffect(() => {
-      if (!(inline === true && offscreenSkip)) return;
+      if (!(inline === true && (offscreenSkip || evictModeEnabled))) return;
       const scroller = scrollContainerRef.current;
       if (scroller === null) return;
       let lastWidth = scroller.clientWidth;
@@ -2242,14 +2422,25 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         const width = scroller.clientWidth;
         if (Math.abs(width - lastWidth) < 0.5) return;
         lastWidth = width;
-        for (const el of cellElementMapRef.current.values()) {
-          el.removeAttribute("data-cv-ready");
-          el.style.removeProperty("contain-intrinsic-size");
+        // A width change can carry a layout/density change with it; re-read
+        // the gap before the re-measure repopulates the ledger against it.
+        refreshRowGap();
+        if (offscreenSkip) {
+          for (const el of cellElementMapRef.current.values()) {
+            el.removeAttribute("data-cv-ready");
+            el.style.removeProperty("contain-intrinsic-size");
+          }
+        }
+        if (evictModeEnabled) {
+          heightIndexRef.current.clear();
+          scrollTick();
         }
       });
       widthObserver.observe(scroller);
       return () => widthObserver.disconnect();
-    }, [inline, offscreenSkip]);
+      // `scrollTick` is a stable reducer dispatch.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inline, offscreenSkip, evictModeEnabled]);
 
     // Publish the scrollport's height for the inset ring ([L06] — straight to
     // the DOM, never React state). Only the component can see this number: the
@@ -2381,10 +2572,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             if (anchorIndex < 0 || anchorIndex >= total) return null;
             rowIndex = anchorIndex;
           }
-          const cellTop = heightIndexRef.current.offsetForIndex(
-            rowIndex,
-            estimatedHeightForKindOnly,
-          );
+          // Row offsets are relative to row 0's top; leading content
+          // sits above it, so its height is part of the target.
+          const cellTop =
+            heightIndexRef.current.offsetForIndex(
+              rowIndex,
+              estimatedHeightForKindOnly,
+            ) + leadingOffsetPx();
           return Math.max(0, cellTop + anchorOffset);
         };
 
@@ -2619,6 +2813,46 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
     }, [windowResult.topSpacerHeight, windowResult.bottomSpacerHeight]);
 
+    // Eviction bookkeeping, post-commit. Two jobs, both outside React
+    // state ([L06] for the attributes, a ref for the retention memory):
+    //
+    //   1. Remember the committed range so the next window computation
+    //      can honour the retain margin. Cleared whenever this commit
+    //      did NOT evict, so a suspension can't resurrect a stale range.
+    //   2. Publish the diagnostics the eviction lab and `/api/eval`
+    //      probes read: whether eviction is live right now, and how many
+    //      commits have had to fall back to rendering everything. A
+    //      non-zero fallback count on a settled deck means the ledger is
+    //      not covering what the mode assumes it covers.
+    //
+    // These attributes are instrumentation, not styling hooks — nothing
+    // in CSS may key off them.
+    React.useLayoutEffect(() => {
+      prevWindowRangeRef.current = evictingThisCommit
+        ? { first: windowResult.firstIndex, last: windowResult.lastIndex }
+        : null;
+      evictActiveRef.current = evictingThisCommit;
+      if (evictSuspendedThisCommit) {
+        evictFallbackCountRef.current += 1;
+      }
+      const el = scrollContainerRef.current;
+      if (el === null) return;
+      if (!evictModeEnabled) {
+        el.removeAttribute("data-evict-active");
+        el.removeAttribute("data-evict-fallbacks");
+        return;
+      }
+      if (evictingThisCommit) {
+        el.setAttribute("data-evict-active", "");
+      } else {
+        el.removeAttribute("data-evict-active");
+      }
+      el.setAttribute(
+        "data-evict-fallbacks",
+        String(evictFallbackCountRef.current),
+      );
+    });
+
     // Prime the height-index Fenwick cache so the post-commit
     // correction effect and the imperative handle's `scrollToIndex`
     // read in O(log n) rather than walking linearly. Re-runs when
@@ -2747,8 +2981,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         return;
       }
       const scrollTop = el.scrollTop;
+      // Convert to the row coordinate space (origin = row 0's top) by
+      // discounting any leading content above row 0.
+      const leadingTop = leadingOffsetPx();
+      const rowSpaceScrollTop = Math.max(0, scrollTop - leadingTop);
       const anchorIndex = heightIndexRef.current.indexForOffset(
-        scrollTop,
+        rowSpaceScrollTop,
         total,
         estimatedHeightForKindOnly,
       );
@@ -2770,10 +3008,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         const tr = dataSource.rowIndexForTurnDepthFromEnd?.(turnDepth);
         if (typeof tr === "number") basisRow = tr;
       }
-      const basisTop = heightIndexRef.current.offsetForIndex(
-        basisRow,
-        estimatedHeightForKindOnly,
-      );
+      const basisTop =
+        heightIndexRef.current.offsetForIndex(
+          basisRow,
+          estimatedHeightForKindOnly,
+        ) + leadingTop;
       const anchorOffset = Math.max(0, scrollTop - basisTop);
       const anchor: {
         index: number;
@@ -2849,10 +3088,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       if (ss === null) return;
       if (!heightIndexRef.current.has(pending.index)) return;
 
-      const correctedTop = heightIndexRef.current.offsetForIndex(
-        pending.index,
-        estimatedHeightForKindOnly,
-      );
+      const correctedTop =
+        heightIndexRef.current.offsetForIndex(
+          pending.index,
+          estimatedHeightForKindOnly,
+        ) + leadingOffsetPx();
       if (Math.abs(correctedTop - pending.estimatedTop) > SCROLL_CORRECTION_THRESHOLD_PX) {
         ss.scrollTo({ top: correctedTop, animated: false });
       }
@@ -3027,11 +3267,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
 
           // Pass 1 — estimated jump. Pass 2 fires from the
           // post-commit correction effect above once the target row
-          // mounts and is measured.
-          const estimatedTop = heightIndexRef.current.offsetForIndex(
-            clamped,
-            estimatedHeightForKindOnly,
-          );
+          // mounts and is measured. Under `evictOffscreen` this branch
+          // is the normal path (the target really is unmounted) and the
+          // offset is exact, since every out-of-window row is measured.
+          const estimatedTop =
+            heightIndexRef.current.offsetForIndex(
+              clamped,
+              estimatedHeightForKindOnly,
+            ) + leadingOffsetPx();
           ss.scrollTo({
             top: estimatedTop,
             animated: options?.animated ?? false,
@@ -3330,14 +3573,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           pendingScrollCorrectionRef.current = null;
           return;
         }
-        const estimatedTop = heightIndexRef.current.offsetForIndex(
-          clamped,
-          estimatedHeightForKindOnly,
-        );
+        const estimatedTop =
+          heightIndexRef.current.offsetForIndex(
+            clamped,
+            estimatedHeightForKindOnly,
+          ) + leadingOffsetPx();
         ss.scrollTo({ top: estimatedTop, animated: false });
         pendingScrollCorrectionRef.current = { index: clamped, estimatedTop };
       },
-      [estimatedHeightForKindOnly],
+      [estimatedHeightForKindOnly, leadingOffsetPx],
     );
 
     // Move the cursor to `index`, project it, and optionally scroll it in.
@@ -4304,23 +4548,32 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         {ringPlacement === "inset" ? (
           <div className="tug-list-view-ring" aria-hidden="true" />
         ) : null}
+        {/* Leading content — a permanent, un-indexed element above row 0 that
+            scrolls with the content (see `leadingContent` prop). Sits ABOVE
+            the top spacer, because the spacer stands in for evicted rows:
+            were the leading element below it, a grown spacer would push this
+            permanent header down into the middle of the list. With the
+            spacer at zero (plain inline, and the windowed path at the top of
+            its range) the two orderings are visually identical, which is why
+            this went unnoticed until eviction gave the spacer a height. */}
+        {leadingContent !== undefined ? (
+          <div
+            ref={leadingElRef}
+            className="tug-list-view-leading"
+            data-slot="tug-list-view-leading"
+          >
+            {leadingContent}
+          </div>
+        ) : null}
         <div
           ref={topSpacerRef}
           className="tug-list-view-spacer tug-list-view-spacer--top"
           aria-hidden="true"
         />
-        {/* Leading content — a permanent, un-indexed element above row 0 that
-            scrolls with the content (see `leadingContent` prop). Sits below
-            the top spacer so it rides the same scroll origin as the rows. */}
-        {leadingContent !== undefined ? (
-          <div className="tug-list-view-leading" data-slot="tug-list-view-leading">
-            {leadingContent}
-          </div>
-        ) : null}
         <OuterScrollportProvider scrollport={scrollportEl}>
         <ScrollerProvider scroller={scrollerFacadeRef.current}>
         <TugListRowLayoutProvider value={rowLayoutValue}>
-        <div className="tug-list-view-window">
+        <div className="tug-list-view-window" ref={listWindowElRef}>
           {renderedRange.map(({ index, id, kind, role, enabled }) => {
             // Role-aware wrapper attributes:
             //  - `tabIndex` is `0` for cells (focusable, in tab order)

@@ -177,17 +177,32 @@ describe.skipIf(!SHOULD_RUN)(
           );
           expect(attributed).toBe(0);
 
-          // The canned acknowledgement never becomes transcript ink.
-          const cannedShown = await app.evalJS<boolean>(
-            `(document.body.textContent || "").includes(${JSON.stringify(CANNED_REPLY)})`,
-          );
-          expect(cannedShown).toBe(false);
+          // The transcript evicts rows far from the scrollport, so no single
+          // moment holds the whole session's text. Read it the way a reader
+          // would: scroll through and accumulate.
+          let sweptText = "";
+          for (let s = 0; s <= 8; s += 1) {
+            await app.evalJS<number>(`(function () {
+  var el = document.querySelector('[data-card-id="A"] [data-tug-scroll-key="session-card-transcript"]');
+  if (el === null) return -1;
+  el.scrollTop = Math.round((el.scrollHeight - el.clientHeight) * ${s / 8});
+  return el.scrollTop;
+})()`);
+            await new Promise((r) => setTimeout(r, 250));
+            sweptText += await app.evalJS<string>(
+              `document.body.textContent || ""`,
+            );
+          }
+
+          // The canned acknowledgement never becomes transcript ink —
+          // asserted across the whole sweep, not one viewport of it.
+          expect(sweptText.includes(CANNED_REPLY)).toBe(false);
 
           // The ordinary turns are undisturbed.
-          const repliesShown = await app.evalJS<number>(
-            `Array.from({ length: ${COMPACTIONS} }, (_, i) => "reply " + (i + 1))` +
-              `.filter((t) => (document.body.textContent || "").includes(t)).length`,
-          );
+          const repliesShown = Array.from(
+            { length: COMPACTIONS },
+            (_, i) => `reply ${i + 1}`,
+          ).filter((t) => sweptText.includes(t)).length;
           expect(repliesShown).toBe(COMPACTIONS);
 
           process.stdout.write("VERDICT: PASS\n");

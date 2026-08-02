@@ -321,13 +321,13 @@ On the scroll container: `data-evict-active` present iff the current commit rend
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Hysteresis window math + ledger coverage API | pending | — |
-| #step-2 | `evictOffscreen` mode in TugListView | pending | — |
-| #step-3 | Pins, width epoch, prepend continuity | pending | — |
-| #step-4 | Transcript adoption | pending | — |
-| #step-5 | at9996 eviction cell + typist gate | pending | — |
-| #step-6 | Behavioral app-test suite | pending | — |
-| #step-7 | Integration checkpoint + live handoff | pending | — |
+| #step-1 | Hysteresis window math + ledger coverage API | done | `f74ff0a9a` |
+| #step-2 | `evictOffscreen` mode in TugListView | done | `ccce589b7` (live smoke folded into #step-4) |
+| #step-3 | Pins, width epoch, prepend continuity | done | `303423262` (live smoke folded into #step-4) |
+| #step-4 | Transcript adoption | done | `89b3396cb` |
+| #step-5 | at9996 eviction cell + typist gate | done | `468697b74` (found + fixed the row-gap spacer defect) |
+| #step-6 | Behavioral app-test suite | done | `43bba8491` |
+| #step-7 | Integration checkpoint + live handoff | lab done, live pending | build + suites green; the live reads (footprint, dual ledger, purge recovery) wait on the user's relaunch |
 
 #### Step 1: Hysteresis window math + ledger coverage API {#step-1}
 

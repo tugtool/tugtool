@@ -2530,6 +2530,18 @@ export const SessionTranscriptHost = forwardRef<
               // scroll geometry is unchanged, and find/reveal/selection
               // still see the full DOM. See TugListView.offscreenSkip.
               offscreenSkip
+              // Footprint relief on top of that: once the restore has
+              // mounted and measured every row, the rows more than a
+              // viewport away from the scrollport are UNMOUNTED, their
+              // exact measured heights standing in the spacers. Skipping
+              // paint still costs an element, a render object, a computed
+              // style, and a fiber per node; a long session holds tens of
+              // thousands of them, and that resident weight is what drives
+              // WebKit's periodic purge and the recalc stall behind it.
+              // Nothing about the transcript's appearance changes: an
+              // evicted row occupied no pixels of its own before, and the
+              // spacer occupies exactly the pixels it did.
+              evictOffscreen
               pageByEntry
               // The transcript is a read-only stream surface: its rows are
               // prose and tool blocks, not pickable list items. Without this,

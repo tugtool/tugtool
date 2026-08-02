@@ -25,6 +25,13 @@
  *   itemCount)` so the scroll height matches the document model.
  * - `totalHeight` is the sum of all item heights — convenient for
  *   spacer correctness checks and external scroll math.
+ * - Two window shapes share this function. The cell-count shape
+ *   (`overscanCount` alone) is the original. The pixel-margin shape
+ *   (`mountMarginPx` / `retainMarginPx` / `prevRange`) adds mount and
+ *   retain bands around the viewport: a cell enters the window when
+ *   it reaches the mount band and leaves only when it clears the
+ *   wider retain band, so a cell straddling the boundary cannot
+ *   oscillate between mounted and unmounted as the scroll jitters.
  *
  * Edge cases (each pinned by its own test in Step 3):
  * - `itemCount === 0`: empty window, both spacers zero.
@@ -72,6 +79,34 @@ export interface ComputeWindowInput {
    * `null`/omitted means no pin.
    */
   pinnedRange?: { first: number; last: number } | null;
+  /**
+   * Pixel margin above and below the visible viewport within which a
+   * cell enters the window. Supplying it (or `retainMarginPx`)
+   * switches the window from cell-count overscan to pixel margins:
+   * `overscanCount` still applies on top as a cell-count floor.
+   *
+   * Pixel margins exist because cell-count overscan is meaningless
+   * when row heights vary by two orders of magnitude — three overscan
+   * cells is either a screenful or a pixel depending on where the
+   * scroll happens to be.
+   */
+  mountMarginPx?: number;
+  /**
+   * Pixel margin within which an ALREADY-WINDOWED cell (one named by
+   * `prevRange`) is retained. Must be ≥ `mountMarginPx` to have any
+   * effect; the gap between the two is the hysteresis band that keeps
+   * a cell hovering at the boundary from mounting and unmounting on
+   * alternating scroll ticks. Defaults to `mountMarginPx`.
+   */
+  retainMarginPx?: number;
+  /**
+   * The previous call's rendered range, half-open `[first, last)` —
+   * feed it the prior result's `{firstIndex, lastIndex}` verbatim.
+   * Cells in this range that still intersect the retain band stay in
+   * the window even when they have left the mount band. Omitted or
+   * `null` means no retention (a fresh window).
+   */
+  prevRange?: { first: number; last: number } | null;
 }
 
 export interface ComputeWindowResult {
@@ -107,11 +142,28 @@ export function computeWindow(input: ComputeWindowInput): ComputeWindowResult {
   const safeOverscan = overscanCount < 0 ? 0 : Math.floor(overscanCount);
   const viewportEnd = safeScrollTop + safeViewport;
 
+  // Pixel-margin mode engages as soon as either margin is supplied;
+  // otherwise the bands collapse onto the visible range and the
+  // function behaves exactly as the cell-count version always has.
+  const useMargins =
+    input.mountMarginPx !== undefined || input.retainMarginPx !== undefined;
+  const mountMargin = Math.max(0, input.mountMarginPx ?? 0);
+  const retainMargin = Math.max(mountMargin, input.retainMarginPx ?? mountMargin);
+  const mountBandTop = safeScrollTop - mountMargin;
+  const mountBandBottom = viewportEnd + mountMargin;
+  const retainBandTop = safeScrollTop - retainMargin;
+  const retainBandBottom = viewportEnd + retainMargin;
+
   // First pass: walk indices, accumulate height, find the visible
-  // window's edges. Single-pass O(n); Step 4 swaps this for a
-  // binary-search-friendly height index.
+  // window's edges (and the margin bands' edges when they apply).
+  // Single-pass O(n); Step 4 swaps this for a binary-search-friendly
+  // height index.
   let firstVisibleIndex = -1;
   let lastVisibleIndex = -1;
+  let firstMountIndex = -1;
+  let lastMountIndex = -1;
+  let firstRetainIndex = -1;
+  let lastRetainIndex = -1;
   let cumulative = 0;
 
   for (let i = 0; i < itemCount; i += 1) {
@@ -129,6 +181,23 @@ export function computeWindow(input: ComputeWindowInput): ComputeWindowResult {
     }
     if (firstVisibleIndex !== -1 && itemTop < viewportEnd) {
       lastVisibleIndex = i;
+    }
+
+    if (useMargins) {
+      if (firstMountIndex === -1 && itemBottom > mountBandTop) {
+        firstMountIndex = i;
+        lastMountIndex = i;
+      }
+      if (firstMountIndex !== -1 && itemTop < mountBandBottom) {
+        lastMountIndex = i;
+      }
+      if (firstRetainIndex === -1 && itemBottom > retainBandTop) {
+        firstRetainIndex = i;
+        lastRetainIndex = i;
+      }
+      if (firstRetainIndex !== -1 && itemTop < retainBandBottom) {
+        lastRetainIndex = i;
+      }
     }
 
     cumulative = itemBottom;
@@ -158,9 +227,37 @@ export function computeWindow(input: ComputeWindowInput): ComputeWindowResult {
     lastVisibleIndex = itemCount - 1;
   }
 
+  // The window's base is the mount band when pixel margins apply,
+  // the visible range otherwise. A scroll position past the end can
+  // leave the band empty (`-1`); the visible fallback above has
+  // already clamped to the last item, so reuse it.
+  const baseFirst =
+    useMargins && firstMountIndex !== -1 ? firstMountIndex : firstVisibleIndex;
+  const baseLast =
+    useMargins && firstMountIndex !== -1 ? lastMountIndex : lastVisibleIndex;
+
   // Apply overscan symmetrically. Clamp to [0, itemCount).
-  let firstIndex = Math.max(0, firstVisibleIndex - safeOverscan);
-  let lastIndexInclusive = Math.min(itemCount - 1, lastVisibleIndex + safeOverscan);
+  let firstIndex = Math.max(0, baseFirst - safeOverscan);
+  let lastIndexInclusive = Math.min(itemCount - 1, baseLast + safeOverscan);
+
+  // Retention (hysteresis): a cell the previous window rendered stays
+  // rendered while it still intersects the retain band, even once it
+  // has left the mount band. Both ranges are contiguous, so their
+  // union is taken by clamping outward — the window never splits.
+  const prev = useMargins ? (input.prevRange ?? null) : null;
+  if (prev !== null && firstRetainIndex !== -1) {
+    const prevFirst = Math.floor(prev.first);
+    const prevLastInclusive = Math.floor(prev.last) - 1;
+    const retainedFirst = Math.max(prevFirst, firstRetainIndex);
+    const retainedLast = Math.min(prevLastInclusive, lastRetainIndex);
+    if (retainedFirst <= retainedLast) {
+      firstIndex = Math.max(0, Math.min(firstIndex, retainedFirst));
+      lastIndexInclusive = Math.min(
+        itemCount - 1,
+        Math.max(lastIndexInclusive, retainedLast),
+      );
+    }
+  }
 
   // Pinned-range clamp: widen the window outward until it covers the
   // pinned (selection/focus) rows. One contiguous range, so spacer

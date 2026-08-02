@@ -89,6 +89,33 @@ export class HeightIndex {
   }
 
   /**
+   * Whether EVERY index in the half-open range `[first, last)` has a
+   * measured height. Empty and inverted ranges answer `true`.
+   *
+   * This is the completeness question an eviction mode has to answer
+   * before it can unmount a cell: spacer geometry sums the heights of
+   * unrendered rows, so a single unmeasured row outside the window
+   * would put an estimate into the scroll math. Callers compose the
+   * two out-of-window ranges — `coversRange(0, firstIndex)` and
+   * `coversRange(lastIndex, itemCount)` — and render every row when
+   * either answers `false`.
+   *
+   * O(range) map lookups. At transcript scale (hundreds to a couple
+   * thousand rows) that is far cheaper than the height walk
+   * `computeWindow` already performs on the same range; `prepare`'s
+   * Fenwick cache is the escape hatch if a profile ever says
+   * otherwise.
+   */
+  coversRange(first: number, last: number): boolean {
+    const start = Math.max(0, Math.floor(first));
+    const end = Math.floor(last);
+    for (let i = start; i < end; i += 1) {
+      if (!this.heights.has(i)) return false;
+    }
+    return true;
+  }
+
+  /**
    * Drop the measurement at `index`. Returns `true` if a value was
    * removed. If a Fenwick cache is active and `index` is in range,
    * the tree is patched back to the estimate value.

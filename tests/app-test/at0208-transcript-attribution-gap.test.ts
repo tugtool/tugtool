@@ -135,8 +135,32 @@ describe.skipIf(!SHOULD_RUN)("at0208: under-attribution gap is constant per body
                 return null;
               }`;
 
+          // The transcript evicts rows far from the scrollport, so an entry
+          // seeded early is not in the DOM by the time its turn to be probed
+          // comes round. Walk the scroller a screenful at a time until the
+          // marker's row mounts — the same thing a reader scrolling back
+          // through the session would cause.
+          const revealMarker = async (marker: string): Promise<boolean> => {
+            const STEPS = 24;
+            for (let s = 0; s <= STEPS; s += 1) {
+              await app.evalJS<number>(`(function(){
+                var el = document.querySelector('[data-card-id="A"] [data-tug-scroll-key="session-card-transcript"]');
+                el.scrollTop = Math.round((el.scrollHeight - el.clientHeight) * ${s / STEPS});
+                return el.scrollTop;
+              })()`);
+              await new Promise((r) => setTimeout(r, 250));
+              const hit = await app.evalJS<boolean>(`(function(){
+                ${FIND_ENTRY_JS}
+                return findEntry(${JSON.stringify(marker)}) !== null;
+              })()`);
+              if (hit) return true;
+            }
+            return false;
+          };
+
           const probes: GapProbe[] = [];
           for (const c of CASES) {
+            await revealMarker(c.marker);
             // Scroll the marker's LIST CELL to center: the cell is
             // always laid out (exact stamped intrinsic size) while a
             // skipped entry's own rects are garbage — and centering

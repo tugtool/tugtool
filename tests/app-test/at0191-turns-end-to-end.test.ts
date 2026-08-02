@@ -148,6 +148,20 @@ describe.skipIf(!SHOULD_RUN)(
         )`;
         const readAddrs = async (): Promise<string[]> =>
           JSON.parse(await app.evalJS<string>(ADDRS_JS));
+        // The transcript evicts rows far from the scrollport, so "every
+        // address" is only ever the addresses near where the user is
+        // looking. Reading both ends is what a reader would do — and it is
+        // what the numbering claim is actually about: the marker a row
+        // carries when it IS on screen.
+        const readAddrsAt = async (frac: number): Promise<string[]> => {
+          await app.evalJS<number>(`(function () {
+  var el = document.querySelector('[data-card-id="A"] [data-tug-scroll-key="session-card-transcript"]');
+  el.scrollTop = Math.round((el.scrollHeight - el.clientHeight) * ${frac});
+  return el.scrollTop;
+})()`);
+          await new Promise((r) => setTimeout(r, 1200));
+          return readAddrs();
+        };
         // Turn number is the digits after the single speaker-prefix letter.
         const turnOf = (addr: string): number => parseInt(addr.slice(2), 10);
 
@@ -217,15 +231,21 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 8000 },
           );
 
+          // The viewport has not moved, so the rows around it are still the
+          // recent ones — and they did NOT renumber across the prepend.
           addrs = await readAddrs();
-          const turns2 = addrs.map(turnOf);
-          // The window now reaches turn 1; the highest is still totalTurns.
-          expect(Math.min(...turns2)).toBe(1);
-          expect(Math.max(...turns2)).toBe(8);
-          // The already-loaded turns did NOT renumber across the prepend.
+          expect(Math.max(...addrs.map(turnOf))).toBe(8);
           expect(addrs).toContain("#a8");
           expect(addrs).toContain("#a7");
           expect(addrs).toContain("#u6");
+          // Scroll up to where the newly-paged-in history lives: the window
+          // now reaches turn 1, numbered from the true start. (The older rows
+          // are not in the DOM until the user goes to them — the transcript
+          // evicts rows far from the scrollport.)
+          const atTop = await readAddrsAt(0);
+          expect(Math.min(...atTop.map(turnOf))).toBe(1);
+          expect(atTop).toContain("#u1");
+          expect(atTop).toContain("#a1");
 
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {
