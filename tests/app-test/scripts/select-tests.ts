@@ -156,8 +156,11 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // names it. Crossed the budget when transcript DOM eviction landed inside
     // it — the mode decides which rows exist at all, so a test of scroll
     // fidelity, selection survival, or row gestures has nowhere smaller to
-    // point.
-    "tugdeck/src/components/tugways/tug-list-view.tsx": 21,
+    // point. 21 → 22 when the list learned to adopt a descend that a focus-bag
+    // restore landed inside one of its rows: reconciling the engine's mode
+    // stack with where the keyboard actually is belongs to the list, so the ⌘L
+    // restore test (at0278) has to name it.
+    "tugdeck/src/components/tugways/tug-list-view.tsx": 22,
 };
 
 interface TestCoverage {

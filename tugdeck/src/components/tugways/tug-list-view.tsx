@@ -123,7 +123,11 @@ import {
   type TugListViewRowStriping,
 } from "./internal/list-view-striping";
 import { useFocusable, useFocusManager } from "./use-focusable";
-import { FocusModeContext, KEY_WITHIN_ATTRIBUTE } from "./focus-manager";
+import {
+  BASE_FOCUS_MODE,
+  FocusModeContext,
+  KEY_WITHIN_ATTRIBUTE,
+} from "./focus-manager";
 import type {
   FocusPolicy,
   KeyViewBehavior,
@@ -3968,15 +3972,81 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       selectCursorRow,
       clearCursorVisual,
     ]);
+    // ---- Adopting a descend the engine restored underneath us ----
+    //
+    // A focus BAG carries a key — `group:order` — and nothing else. So a card
+    // reactivated onto a key view that happens to be one of this list's
+    // in-row focusables comes back with the keyboard INSIDE a row and no row
+    // scope on the mode stack: the DOM says descended, the engine says it is
+    // not. Every arrow the row scope owns is then skipped (`inRowScope` is
+    // false) and the container is not the key view either, so the key falls
+    // through unhandled and the keyboard leaves the list on the first press.
+    //
+    // Restoring focus cannot fix this on its own: only the list knows which
+    // focusables belong to which row, so the list is where the two halves are
+    // put back together. The cursor moves to that row as well — the bar and
+    // the ring are the two marks that say where a descend came from, and a
+    // restored descend has to wear both.
+    //
+    // Guarded on the BASE mode: with any surface pushed (a popover opened
+    // from a row) the descend is not what the keyboard is inside, and pushing
+    // a row scope under it would corrupt the stack.
+    const adoptRestoredDescend = React.useCallback((): void => {
+      if (manager === null) return;
+      if (descendedRowRef.current !== null) return;
+      if (manager.currentFocusMode() !== BASE_FOCUS_MODE) return;
+      const keyView = manager.keyView();
+      if (keyView === null) return;
+      const scrollEl = scrollContainerRef.current;
+      if (scrollEl === null) return;
+      const el = scrollEl.querySelector<HTMLElement>(
+        `[data-tug-focusable="${CSS.escape(keyView)}"]`,
+      );
+      if (el === null) return;
+      const cell = el.closest<HTMLElement>(".tug-list-view-cell");
+      const attr = cell?.getAttribute("data-tug-list-cell-index");
+      if (attr === null || attr === undefined) return;
+      const index = Number(attr);
+      if (!Number.isInteger(index)) return;
+      // The row has to be OURS. A list rendered inside another list's row
+      // answers the DOM query above with its own cell and its own index, and
+      // adopting that would push this list's scope around a row it does not
+      // have. `rowFocusableIds` reads this list's own cell map, so agreeing
+      // with it is the ownership check.
+      if (!rowFocusableIds(index).includes(keyView)) return;
+      descendedRowRef.current = {
+        id: dataSourceRef.current.idForIndex(index),
+        scopeId: rowScopeId(index),
+        index,
+      };
+      manager.pushFocusMode(rowScopeId(index), { trapped: false });
+      // Cursor without reveal. Adopting is bookkeeping — it describes where
+      // the keyboard already is — and a scroll is a change the user did not
+      // ask for. Whoever placed the key view owns revealing it.
+      moveCursorTo(index, false);
+    }, [manager, rowScopeId, rowFocusableIds, moveCursorTo]);
+
     React.useLayoutEffect(() => {
       if (manager === null || !focusEngineActive) return;
-      return manager.subscribe(reconcileDescendedRow);
-    }, [manager, focusEngineActive, reconcileDescendedRow]);
+      return manager.subscribe(() => {
+        reconcileDescendedRow();
+        adoptRestoredDescend();
+      });
+    }, [
+      manager,
+      focusEngineActive,
+      reconcileDescendedRow,
+      adoptRestoredDescend,
+    ]);
     React.useLayoutEffect(() => {
       // Per-commit pass: a data-source tick that removed the descended
       // row re-renders the list, and this catches it. Near-zero cost
       // when nothing is descended.
       reconcileDescendedRow();
+      // Same pass for the other direction — a restore that landed the key
+      // view in a row often arrives with the row's own commit, before any
+      // engine notification this list is subscribed to.
+      adoptRestoredDescend();
     });
 
     // The thin declaration the engine's act dispatch reads at Space/Enter/Escape

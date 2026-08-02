@@ -23,7 +23,11 @@
  *  - **Slot assignment is a first-class exit.** Space on a row's slot
  *    assigns AND activates the slotted card through
  *    `transferFocusForActivation` (a raw `activateCard` skipped the focus
- *    claim); the ⌘L return restores the descend exactly — ring on the slot.
+ *    claim); the ⌘L return restores the descend exactly — ring on the slot,
+ *    and a descend that still WORKS. Those are two claims: a bag carries a
+ *    focus key and nothing else, so the ring can come back in the right place
+ *    over a mode stack that no longer holds the row's scope, and the first
+ *    arrow after such a restore throws the keyboard out of the Lens.
  *  - **Stale state heals, and ⌘L is never a no-op.** Closing the slotted
  *    card unmounts the descended row under the backgrounded Lens. The next
  *    ⌘L (with no live prior to toggle out to) ascends the dead scope
@@ -36,6 +40,7 @@
  * @covers tugdeck/src/deck-manager.ts
  * @covers tugdeck/src/components/lens/lens-content.tsx
  * @covers tugdeck/src/components/lens/slot-picker.tsx
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -209,6 +214,36 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
             { timeoutMs: 3_000 },
           );
           await app.dispatchControlAction("focus-lens"); // back in
+          await app.waitForCondition<boolean>(
+            `(function(){ var el = document.querySelector(${JSON.stringify(LENS_KBD)}); return el !== null && el.getAttribute('aria-label') === 'Put at position 1'; })()`,
+            { timeoutMs: 3_000 },
+          );
+
+          // ...and the restored descend WORKS, which is a separate claim from
+          // the ring being in the right place. A bag carries a focus key and
+          // nothing else, so a restore lands the keyboard inside a row with no
+          // row scope on the mode stack: the DOM says descended and the engine
+          // says it is not, every arrow the row scope owns is skipped, and the
+          // first press throws the keyboard out of the Lens. Both planes are
+          // checked, because they are what the row scope owns: the vertical
+          // arrow is swallowed at the list's edge (this deck has one card, so
+          // nothing below to step to) rather than falling through, and the
+          // horizontal one walks back to the accessory before the slots.
+          await app.nativeKey("ArrowDown");
+          await new Promise<void>((r) => setTimeout(r, 250));
+          expect(
+            await app.evalJS<string | null>(
+              `(function(){ var el = document.querySelector(${JSON.stringify(LENS_KBD)}); return el === null ? null : el.getAttribute('aria-label'); })()`,
+            ),
+          ).toBe("Put at position 1");
+          await app.nativeKey("ArrowLeft");
+          await app.waitForCondition<boolean>(
+            `(function(){ var el = document.querySelector(${JSON.stringify(LENS_KBD)}); return el !== null && (el.getAttribute('aria-label') || '').indexOf('Close ') === 0; })()`,
+            { timeoutMs: 3_000 },
+          );
+          // Back onto the slot, so section D starts from the descend it
+          // describes.
+          await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(function(){ var el = document.querySelector(${JSON.stringify(LENS_KBD)}); return el !== null && el.getAttribute('aria-label') === 'Put at position 1'; })()`,
             { timeoutMs: 3_000 },

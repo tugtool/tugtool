@@ -179,9 +179,11 @@
    lifts (the same construction, and the same reasoning, as the striping
    tokens in `tug-list-view.css`).
 
-   The rule under it is the boundary itself, and it is the strong border tone
-   rather than the muted hairline the rows are divided by: a divider between
-   two rows and the line where a group starts should not be the same line.
+   The header is ruled on BOTH edges, so what it reads as is a band rather
+   than a row that happens to be tinted: the line above closes the group before
+   it, the line below opens its own. The top one is an inset shadow rather than
+   a border because a border there would make the header one pixel taller than
+   the tint says it is, and the band's height is the tint's to state.
 
    TUNE the two knobs below — they are what this is for. Doubled selector so
    the wash beats `.tug-list-view[data-row-striping="on"] .tug-list-view-cell`
@@ -192,8 +194,11 @@ body {
      surface's own foreground. The rows' bands are ±4%; below about 6 this
      stops reading as a level and starts reading as a third stripe. */
   --tugx-lens-group-header-wash: 9%;
-  /* The line where the group's content begins. */
-  --tugx-lens-group-header-rule: var(--tug7-element-global-border-normal-strong-rest);
+  /* The two lines that close the band. Subtle by default — the wash is what
+     separates the levels, and the rules only draw where one ends; the strong
+     border tone (`--tug7-element-global-border-normal-strong-rest`) is the
+     next rung up if they want to carry more of the work. */
+  --tugx-lens-group-header-rule: var(--tug7-element-global-border-normal-muted-rest);
 }
 
 /* @tug-renders-on: --tug7-surface-card-primary-normal-well-rest */
@@ -206,6 +211,7 @@ body {
     var(--tug7-surface-card-primary-normal-well-rest)
   );
   border-bottom-color: var(--tugx-lens-group-header-rule) !important;
+  box-shadow: inset 0 1px 0 0 var(--tugx-lens-group-header-rule);
 }
 
 /* A group header is a row like any other — it takes the same chrome, the same
