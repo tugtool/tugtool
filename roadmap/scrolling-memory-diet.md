@@ -110,13 +110,29 @@ The two buried editors are G1's problem while buried, but a *visible* 13.7k px e
 
 G2 first (the instrument), G1 in parallel (independently justified by probe A, already causally demonstrated safe). Then G3 (cheapest possible structural win) → G4 (host-side knobs) → decision point: if graphics dirty on the live deck is bounded and the train is gone, close; else G5. G6 rides the G2 numbers throughout. The malloc-side program (heap census, E1b) continues separately in [aug01-perf-brief.md](aug01-perf-brief.md) §F-E.
 
-**Status after G2 (2026-08-01, [#g2-first-pass], visible-window pass complete for Q1/Q2):** G3 closed, G5's bar not met, **G4 promoted**. The working order is now:
+**Status after G2 (2026-08-01, [#g2-first-pass], visible-window pass complete for Q1/Q2):** G3 closed, G5's bar not met, **G4 promoted to co-lead**.
 
-1. **G1 — occlusion culling.** ~230MB, measured, demonstrated safe.
-2. **G4 — tile-policy coverage margin.** 4–9 viewports at rest per scroller is WebKit policy; ~25–75MB per visible scroller if it can be brought toward 2.
-3. **Layer census on the visible deck.** The live floor of ~356MB (visible cards only) against a 74MB one-screen ideal is layer *breadth* — enumerate every composited plane and its area, demote the ones not earning promotion.
-4. **The 30s re-materialization churn** (~200MB/cycle on visible cards) — the swing that crosses the 1.27GB threshold and keeps the purge train alive.
+**The live floor decomposes, and that sets the order.** Applying G2's measured 4.4 viewports-at-rest to live geometry (transcript scrollport 798×1222 = **15.6MB/viewport**; window 2879×1599 = **73.7MB**):
+
+| term | MB |
+|---|---|
+| root full-window plane | 73.7 |
+| 3 visible transcripts @ 4.4 viewports | 206.0 |
+| **subtotal** | **279.7** |
+| measured visible-cards floor (probe A, buried panes hidden) | ~356 |
+| unexplained residual (lens, pane chrome, small editor scrollers, overlays) | ~76 |
+
+So **~79% of the visible floor is the root plane plus transcript tile coverage** — the layer census is chasing the remaining ~76MB and demotes to a verification step. And the same tiles are what the 30s monitor purges and repaints, so **the ~200MB/cycle churn is not a separate item: it is these tiles re-materializing.** Shrink the tiles and the floor and the swing fall together.
+
+**Working order:**
+
+1. **G1 — occlusion culling.** ~230MB measured, causally demonstrated, invisible when probed. Takes the live floor 565 → ~356. Also removes those panes' tiles from the purge/repaint cycle.
+2. **G4 — tile coverage margin.** The 4.4 viewports is WebKit policy, unreachable from app code. 4.4 → 1.5 across three transcripts is **206 → 70MB (−136)**, and cuts the churn by the same proportion. Recon first (macOS 15 SDK/SPI, verified not assumed), validated by the G2 rig, which now exists and works.
+3. **Live per-scroller coverage read** — confirm the 4.4-viewport figure at live geometry (lab scrollport was 786×880, live is 798×1222; if the margin is an absolute px band rather than a viewport multiple, the multiplier differs). Cheap: probe-A technique, one transcript hidden at a time.
+4. **Layer census** for the ~76MB residual.
 5. **G6 — editors**, priced by a lab variant carrying a heavy CM6 document (G2's Q3, still open).
+
+**Projected exit:** G1 + G4 put the floor near **144MB + ~76MB residual ≈ 220MB** — under the ~300MB target, with the churn cut proportionally. That is roughly **three screenfuls**, against one screenful of actual pixels; the last stretch to ~150MB is the census and G6.
 
 ## Exit criteria {#exit}
 
