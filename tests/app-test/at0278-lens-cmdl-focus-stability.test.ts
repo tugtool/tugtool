@@ -224,11 +224,12 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
           // nothing else, so a restore lands the keyboard inside a row with no
           // row scope on the mode stack: the DOM says descended and the engine
           // says it is not, every arrow the row scope owns is skipped, and the
-          // first press throws the keyboard out of the Lens. Both planes are
-          // checked, because they are what the row scope owns: the vertical
-          // arrow is swallowed at the list's edge (this deck has one card, so
-          // nothing below to step to) rather than falling through, and the
-          // horizontal one walks back to the accessory before the slots.
+          // first press throws the keyboard out of the Lens. All three of the
+          // row scope's answers are checked, because a mode can be on the
+          // stack and still be wrong: the vertical arrow is swallowed at the
+          // list's edge (this deck has one card, so nothing below to step to)
+          // rather than falling through, the horizontal one walks back to the
+          // accessory before the slots, and one more ascends to the container.
           await app.nativeKey("ArrowDown");
           await new Promise<void>((r) => setTimeout(r, 250));
           expect(
@@ -241,8 +242,21 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
             `(function(){ var el = document.querySelector(${JSON.stringify(LENS_KBD)}); return el !== null && (el.getAttribute('aria-label') || '').indexOf('Close ') === 0; })()`,
             { timeoutMs: 3_000 },
           );
+          // ...and one more ArrowLeft ASCENDS to the container. This is the
+          // sharpest assertion in the section, because ascending reads the
+          // `restoreKeyView` the scope captured when it was pushed. A restored
+          // descend that pushed its scope while the accessory already held the
+          // key view records the ACCESSORY as what to restore, so the ascend
+          // lands back where it started and the row is a jail — a mode is on
+          // the stack and it points at the wrong thing.
+          await app.nativeKey("ArrowLeft");
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.lens-cards-list[data-key-view-kbd]') !== null`,
+            { timeoutMs: 3_000 },
+          );
           // Back onto the slot, so section D starts from the descend it
           // describes.
+          await app.nativeKey("ArrowRight");
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(function(){ var el = document.querySelector(${JSON.stringify(LENS_KBD)}); return el !== null && el.getAttribute('aria-label') === 'Put at position 1'; })()`,

@@ -123,11 +123,7 @@ import {
   type TugListViewRowStriping,
 } from "./internal/list-view-striping";
 import { useFocusable, useFocusManager } from "./use-focusable";
-import {
-  BASE_FOCUS_MODE,
-  FocusModeContext,
-  KEY_WITHIN_ATTRIBUTE,
-} from "./focus-manager";
+import { FocusModeContext, KEY_WITHIN_ATTRIBUTE } from "./focus-manager";
 import type {
   FocusPolicy,
   KeyViewBehavior,
@@ -135,6 +131,7 @@ import type {
 } from "./focus-manager";
 import type { FocusKey } from "./focus-act";
 import { CardIdContext } from "@/lib/card-id-context";
+import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import { KEY_CURSOR_ATTRIBUTE } from "./use-focus-cursor";
 
 // Re-export the `rowSeparator` prop types so consumers import them
@@ -3972,29 +3969,64 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       selectCursorRow,
       clearCursorVisual,
     ]);
-    // ---- Adopting a descend the engine restored underneath us ----
+    // ---- The descend record is DERIVED from the mode stack ----
     //
-    // A focus BAG carries a key — `group:order` — and nothing else. So a card
-    // reactivated onto a key view that happens to be one of this list's
-    // in-row focusables comes back with the keyboard INSIDE a row and no row
-    // scope on the mode stack: the DOM says descended, the engine says it is
-    // not. Every arrow the row scope owns is then skipped (`inRowScope` is
-    // false) and the container is not the key view either, so the key falls
-    // through unhandled and the keyboard leaves the list on the first press.
+    // A descend is held in two places: the engine's focus-mode stack, and
+    // `descendedRowRef` — which row, by stable id, and at what index. Every
+    // arrow the row scope owns reads the REF (`rowFocusableIds(rec.index)`,
+    // `stepCursorableRow(rec.index, …)`), so the two disagreeing is not a
+    // cosmetic drift: with the mode pushed and the ref null, ArrowLeft reads an
+    // empty accessory list, computes `next < 0`, and ASCENDS out of the row,
+    // while Right and the vertical pair find nothing to step from and die
+    // quietly. The keyboard looks right and answers wrong.
     //
-    // Restoring focus cannot fix this on its own: only the list knows which
-    // focusables belong to which row, so the list is where the two halves are
-    // put back together. The cursor moves to that row as well — the bar and
-    // the ring are the two marks that say where a descend came from, and a
-    // restored descend has to wear both.
+    // They come apart because `reconcileDescendedRow` decides the descend is
+    // over by asking `currentFocusMode()` / `isFocusModePushed()`, and both
+    // delegate to the manager's ACTIVE context. Assigning a slot hands
+    // activation to the slotted card, so for as long as the Lens is in the
+    // background those two answer about a different card's stack entirely —
+    // base mode, nothing pushed — and the record is dropped as though the user
+    // had escaped out of the row. The Lens's own stack still holds the scope,
+    // which is exactly the state ⌘L comes back to.
     //
-    // Guarded on the BASE mode: with any surface pushed (a popover opened
-    // from a row) the descend is not what the keyboard is inside, and pushing
-    // a row scope under it would corrupt the stack.
-    const adoptRestoredDescend = React.useCallback((): void => {
+    // So the ref is treated as derived rather than authoritative: whenever our
+    // row scope is the current mode and the record does not match it, the
+    // record is rebuilt from the mode. That makes the split self-healing
+    // whatever caused it — a context switch, a reload, a bag restore — instead
+    // of enumerating the ways it can happen.
+    //
+    // The second branch is for the other direction, where the mode is gone but
+    // the keyboard is sitting on one of our row's accessories. That one has to
+    // replay the descend properly rather than just push a mode, because a
+    // pushed mode records `restoreKeyView` — the key view AT THE MOMENT of the
+    // push — and both `ascend()` and `dispatchKeyToKeyView`'s descended-scope
+    // fallback (the only reason an arrow reaches this list while an accessory
+    // holds the key view; it runs `top.restoreKeyView !== keyViewId` first)
+    // read it. Pushing while the accessory already holds the key view points
+    // both records at the accessory and the fallback stops delegating.
+    const syncDescendRecordToMode = React.useCallback((): void => {
       if (manager === null) return;
+      const prefix = `${focusableId}-row-`;
+      const mode = manager.currentFocusMode();
+
+      if (mode.startsWith(prefix)) {
+        if (descendedRowRef.current?.scopeId === mode) return;
+        const index = Number(mode.slice(prefix.length));
+        if (!Number.isInteger(index)) return;
+        descendedRowRef.current = {
+          id: dataSourceRef.current.idForIndex(index),
+          scopeId: mode,
+          index,
+        };
+        // The cursor bar is the row's half of saying where the keyboard is, and
+        // it is cleared by the same context switch. No reveal: this is
+        // bookkeeping about where the keyboard already is, and a scroll is a
+        // change nobody asked for.
+        moveCursorTo(index, false);
+        return;
+      }
+
       if (descendedRowRef.current !== null) return;
-      if (manager.currentFocusMode() !== BASE_FOCUS_MODE) return;
       const keyView = manager.keyView();
       if (keyView === null) return;
       const scrollEl = scrollContainerRef.current;
@@ -4009,44 +4041,39 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const index = Number(attr);
       if (!Number.isInteger(index)) return;
       // The row has to be OURS. A list rendered inside another list's row
-      // answers the DOM query above with its own cell and its own index, and
-      // adopting that would push this list's scope around a row it does not
-      // have. `rowFocusableIds` reads this list's own cell map, so agreeing
-      // with it is the ownership check.
-      if (!rowFocusableIds(index).includes(keyView)) return;
-      descendedRowRef.current = {
-        id: dataSourceRef.current.idForIndex(index),
-        scopeId: rowScopeId(index),
-        index,
-      };
-      manager.pushFocusMode(rowScopeId(index), { trapped: false });
-      // Cursor without reveal. Adopting is bookkeeping — it describes where
-      // the keyboard already is — and a scroll is a change the user did not
-      // ask for. Whoever placed the key view owns revealing it.
+      // answers the DOM query above with its own cell and its own index.
+      // `rowFocusableIds` reads this list's own cell map, so agreeing with it
+      // is the ownership check.
+      const ordinal = rowFocusableIds(index).indexOf(keyView);
+      if (ordinal < 0) return;
       moveCursorTo(index, false);
-    }, [manager, rowScopeId, rowFocusableIds, moveCursorTo]);
+      manager.place(null, { kind: "focusable", id: focusableId }, {
+        modality: "keyboard",
+      });
+      descendRowAt(index, ordinal);
+    }, [manager, focusableId, rowFocusableIds, moveCursorTo, descendRowAt]);
 
     React.useLayoutEffect(() => {
       if (manager === null || !focusEngineActive) return;
       return manager.subscribe(() => {
         reconcileDescendedRow();
-        adoptRestoredDescend();
+        syncDescendRecordToMode();
       });
     }, [
       manager,
       focusEngineActive,
       reconcileDescendedRow,
-      adoptRestoredDescend,
+      syncDescendRecordToMode,
     ]);
     React.useLayoutEffect(() => {
       // Per-commit pass: a data-source tick that removed the descended
       // row re-renders the list, and this catches it. Near-zero cost
       // when nothing is descended.
       reconcileDescendedRow();
-      // Same pass for the other direction — a restore that landed the key
-      // view in a row often arrives with the row's own commit, before any
-      // engine notification this list is subscribed to.
-      adoptRestoredDescend();
+      // ...and re-derive the record from the mode in the same pass. A
+      // reactivation arrives with the card's own commit, which is often before
+      // any engine notification this list is subscribed to.
+      syncDescendRecordToMode();
     });
 
     // The thin declaration the engine's act dispatch reads at Space/Enter/Escape
@@ -4327,6 +4354,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       if (e.metaKey || e.ctrlKey) return false;
       const scrollEl = scrollContainerRef.current;
       if (scrollEl === null) return false;
+      if (e.key.startsWith("Arrow")) {
+        tugDevLogStore.debug("list-view", "onKey reached the list", {
+          list: focusableId,
+          key: e.key,
+          mode: manager?.currentFocusMode() ?? null,
+          keyView: manager?.keyView() ?? null,
+          containerIsKeyView: scrollEl.hasAttribute("data-key-view-kbd"),
+          descendedIndex: descendedRowRef.current?.index ?? null,
+        });
+      }
       // While descended into one of THIS list's row scopes (the container is no
       // longer the key view; the key view is an in-row focusable), the
       // horizontal arrows walk the row itself: Right steps to the next
