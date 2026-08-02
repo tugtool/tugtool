@@ -133,12 +133,14 @@ impl ControlReader {
                                     crate::actions::dispatch_action(
                                         &action,
                                         &bytes,
-                                        &shutdown_tx,
-                                        &stream_outputs,
-                                        &shared_dev_state,
-                                        &pending_evals,
-                                        &pending_asks,
-                                        &local_model,
+                                        &crate::actions::ActionContext {
+                                            shutdown_tx: &shutdown_tx,
+                                            stream_outputs: &stream_outputs,
+                                            dev_state: &shared_dev_state,
+                                            pending_evals: &pending_evals,
+                                            pending_asks: &pending_asks,
+                                            local_model: &local_model,
+                                        },
                                     )
                                     .await;
                                 }

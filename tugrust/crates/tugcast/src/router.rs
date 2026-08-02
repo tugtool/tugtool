@@ -167,6 +167,18 @@ impl FeedRouter {
         }
     }
 
+    /// Borrow the router state `dispatch_action` needs.
+    pub(crate) fn action_context(&self) -> crate::actions::ActionContext<'_> {
+        crate::actions::ActionContext {
+            shutdown_tx: &self.shutdown_tx,
+            stream_outputs: &self.stream_outputs,
+            dev_state: &self.dev_state,
+            pending_evals: &self.pending_evals,
+            pending_asks: &self.pending_asks,
+            local_model: &self.local_model,
+        }
+    }
+
     /// Register a stream output (broadcast feed, server → client).
     pub(crate) fn register_stream(
         &mut self,
@@ -989,12 +1001,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                                             crate::actions::dispatch_action(
                                                                 action,
                                                                 &frame.payload,
-                                                                &router.shutdown_tx,
-                                                                &router.stream_outputs,
-                                                                &router.dev_state,
-                                                                &router.pending_evals,
-                                                                &router.pending_asks,
-                                                                &router.local_model,
+                                                                &router.action_context(),
                                                             ).await;
                                                         }
                                                     }

@@ -137,17 +137,7 @@ async fn tell_handler(
     }
 
     // Dispatch action
-    crate::actions::dispatch_action(
-        action,
-        &body,
-        &router.shutdown_tx,
-        &router.stream_outputs,
-        &router.dev_state,
-        &router.pending_evals,
-        &router.pending_asks,
-        &router.local_model,
-    )
-    .await;
+    crate::actions::dispatch_action(action, &body, &router.action_context()).await;
 
     (
         StatusCode::OK,
@@ -655,7 +645,9 @@ async fn ask_handler(
         _ => {
             return (
                 StatusCode::BAD_REQUEST,
-                axum::Json(serde_json::json!({"status": "error", "message": "missing title field"})),
+                axum::Json(
+                    serde_json::json!({"status": "error", "message": "missing title field"}),
+                ),
             )
                 .into_response();
         }
@@ -742,9 +734,7 @@ async fn ask_handler(
     if !delivered {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
-            axum::Json(
-                serde_json::json!({"status": "error", "message": "no deck is connected"}),
-            ),
+            axum::Json(serde_json::json!({"status": "error", "message": "no deck is connected"})),
         )
             .into_response();
     }
@@ -770,15 +760,13 @@ async fn ask_handler(
             )
                 .into_response()
         }
-        Err(_) => {
-            (
-                StatusCode::GATEWAY_TIMEOUT,
-                axum::Json(
-                    serde_json::json!({"status": "error", "message": "timeout waiting for answer"}),
-                ),
-            )
-                .into_response()
-        }
+        Err(_) => (
+            StatusCode::GATEWAY_TIMEOUT,
+            axum::Json(
+                serde_json::json!({"status": "error", "message": "timeout waiting for answer"}),
+            ),
+        )
+            .into_response(),
     }
 }
 
@@ -1084,8 +1072,7 @@ mod tests {
         // receivers, which is exactly the "app running, no browser" case.
         drop(fx.control_rx);
 
-        let (status, body) =
-            post_json(&format!("{}/api/ask", fx.base_url), &ask_body(600)).await;
+        let (status, body) = post_json(&format!("{}/api/ask", fx.base_url), &ask_body(600)).await;
 
         assert_eq!(status, 503);
         assert_eq!(body["message"], "no deck is connected");

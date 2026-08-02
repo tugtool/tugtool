@@ -187,7 +187,9 @@ pub fn run_ask(
         Err(e) => {
             // Connection refused, DNS, a socket that closed under us — the
             // instance is gone or was never there. Nobody to ask.
-            eprintln!("tugutil host ask: could not reach the deck ({e}) — proceeding without a prompt");
+            eprintln!(
+                "tugutil host ask: could not reach the deck ({e}) — proceeding without a prompt"
+            );
             Ok(EXIT_NO_ROUTE)
         }
     }

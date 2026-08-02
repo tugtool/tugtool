@@ -54,26 +54,38 @@ fn model_id_from(raw_payload: &[u8]) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// The router-owned state every ingress path hands to [`dispatch_action`].
+///
+/// Borrowed as a group so the three call sites (HTTP tell, WebSocket control
+/// frame, UDS tell) pass one context instead of a widening argument list.
+pub struct ActionContext<'a> {
+    pub shutdown_tx: &'a mpsc::Sender<u8>,
+    /// Used to look up the CONTROL broadcast sender.
+    pub stream_outputs: &'a HashMap<FeedId, (broadcast::Sender<Frame>, LagPolicy)>,
+    pub dev_state: &'a crate::dev::SharedDevState,
+    pub pending_evals: &'a crate::router::PendingEvals,
+    pub pending_asks: &'a crate::router::PendingAsks,
+    pub local_model: &'a crate::local_model::SharedLocalModelState,
+}
+
 /// Dispatch an action received from any ingress path (HTTP tell, WebSocket control frame, UDS tell).
 ///
 /// Classifies the action and routes it to the appropriate channel(s).
 /// `raw_payload` is the full JSON body bytes, used to construct the Control frame for broadcasting.
-/// The `stream_outputs` map is used to look up the CONTROL broadcast sender.
 ///
 /// NOTE: session-lifecycle actions (`spawn_session`, `close_session`,
 /// `reset_session`) are handled upstream by `AgentSupervisor::handle_control`
 /// in `feeds/agent_supervisor.rs` and never reach this function — per [D09]
 /// the supervisor owns the per-session state machine, not the router.
-pub async fn dispatch_action(
-    action: &str,
-    raw_payload: &[u8],
-    shutdown_tx: &mpsc::Sender<u8>,
-    stream_outputs: &HashMap<FeedId, (broadcast::Sender<Frame>, LagPolicy)>,
-    shared_dev_state: &crate::dev::SharedDevState,
-    pending_evals: &crate::router::PendingEvals,
-    pending_asks: &crate::router::PendingAsks,
-    local_model: &crate::local_model::SharedLocalModelState,
-) {
+pub async fn dispatch_action(action: &str, raw_payload: &[u8], ctx: &ActionContext<'_>) {
+    let ActionContext {
+        shutdown_tx,
+        stream_outputs,
+        dev_state: shared_dev_state,
+        pending_evals,
+        pending_asks,
+        local_model,
+    } = *ctx;
     match action {
         "relaunch" => {
             info!("dispatch_action: relaunch requested");
@@ -316,15 +328,17 @@ mod tests {
         dispatch_action(
             "show-card",
             br#"{"action":"show-card"}"#,
-            &shutdown_tx,
-            &stream_outputs,
-            &dev_state,
-            &pending_evals,
-            &pending_asks,
-            &crate::local_model::LocalModelState::new(
-                std::env::temp_dir().join("tugcast-dispatch-test-models"),
-                crate::local_model::DEFAULT_BASE_URL.to_string(),
-            ),
+            &ActionContext {
+                shutdown_tx: &shutdown_tx,
+                stream_outputs: &stream_outputs,
+                dev_state: &dev_state,
+                pending_evals: &pending_evals,
+                pending_asks: &pending_asks,
+                local_model: &crate::local_model::LocalModelState::new(
+                    std::env::temp_dir().join("tugcast-dispatch-test-models"),
+                    crate::local_model::DEFAULT_BASE_URL.to_string(),
+                ),
+            },
         )
         .await;
 
@@ -353,15 +367,17 @@ mod tests {
         dispatch_action(
             "ask-response",
             br#"{"action":"ask-response","requestId":"req-1","choice":"run-background-only"}"#,
-            &shutdown_tx,
-            &stream_outputs,
-            &dev_state,
-            &pending_evals,
-            &pending_asks,
-            &crate::local_model::LocalModelState::new(
-                std::env::temp_dir().join("tugcast-dispatch-test-models"),
-                crate::local_model::DEFAULT_BASE_URL.to_string(),
-            ),
+            &ActionContext {
+                shutdown_tx: &shutdown_tx,
+                stream_outputs: &stream_outputs,
+                dev_state: &dev_state,
+                pending_evals: &pending_evals,
+                pending_asks: &pending_asks,
+                local_model: &crate::local_model::LocalModelState::new(
+                    std::env::temp_dir().join("tugcast-dispatch-test-models"),
+                    crate::local_model::DEFAULT_BASE_URL.to_string(),
+                ),
+            },
         )
         .await;
 
@@ -386,15 +402,17 @@ mod tests {
         dispatch_action(
             "ask-response",
             br#"{"action":"ask-response","requestId":"gone","choice":"run-all"}"#,
-            &shutdown_tx,
-            &stream_outputs,
-            &dev_state,
-            &pending_evals,
-            &pending_asks,
-            &crate::local_model::LocalModelState::new(
-                std::env::temp_dir().join("tugcast-dispatch-test-models"),
-                crate::local_model::DEFAULT_BASE_URL.to_string(),
-            ),
+            &ActionContext {
+                shutdown_tx: &shutdown_tx,
+                stream_outputs: &stream_outputs,
+                dev_state: &dev_state,
+                pending_evals: &pending_evals,
+                pending_asks: &pending_asks,
+                local_model: &crate::local_model::LocalModelState::new(
+                    std::env::temp_dir().join("tugcast-dispatch-test-models"),
+                    crate::local_model::DEFAULT_BASE_URL.to_string(),
+                ),
+            },
         )
         .await;
 
