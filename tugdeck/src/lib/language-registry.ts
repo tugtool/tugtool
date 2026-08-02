@@ -172,8 +172,13 @@ const LOADERS: Record<string, LanguageLoader> = {
   css: () => import("@codemirror/lang-css").then((m) => m.css()),
   html: () => import("@codemirror/lang-html").then((m) => m.html()),
   htm: () => import("@codemirror/lang-html").then((m) => m.html()),
-  md: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
-  markdown: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
+  // `addKeymap: false` on the same grounds as `markdownTextStyleSupport`: the
+  // markdown keymap binds Enter to `insertNewlineContinueMarkup`, which writes
+  // a bullet the writer did not type, and Backspace to `deleteMarkupBackward`.
+  // Both are editing behaviors; a grammar loaded here only tokenizes.
+  md: () => import("@codemirror/lang-markdown").then((m) => m.markdown({ addKeymap: false })),
+  markdown: () =>
+    import("@codemirror/lang-markdown").then((m) => m.markdown({ addKeymap: false })),
   go: () => import("@codemirror/lang-go").then((m) => m.go()),
   java: () => import("@codemirror/lang-java").then((m) => m.java()),
   sql: () => import("@codemirror/lang-sql").then((m) => m.sql()),
