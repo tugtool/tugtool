@@ -279,6 +279,49 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     weak var bridgeDelegate: BridgeDelegate?
     private var bridgeCleaned = false
 
+    /// Harness pid mode (`TUGAPP_NATIVE_EVENT_MODE=pid`) drives the app without
+    /// ever activating it. See {@link order(_:relativeTo:)}.
+    private let harnessPidMode =
+        ProcessInfo.processInfo.environment["TUGAPP_NATIVE_EVENT_MODE"] == "pid"
+
+    /// The window level a harness-driven window sits at: one step below the
+    /// normal level, so it can never come out above the user's windows.
+    ///
+    /// Suppressing activation is not enough on its own. Delivering a click into
+    /// the window makes AppKit raise it, and that raise does not go through
+    /// `order(_:relativeTo:)`, `orderFrontRegardless()`, or `setIsVisible(_:)` —
+    /// a probe on all three during a real run recorded exactly one call, the
+    /// deliberate `orderBack` at launch, while the window observably rose above
+    /// the user's a second later. So the raise cannot be intercepted at the
+    /// ordering API, and overriding it is a game of whack-a-mole against AppKit
+    /// internals besides.
+    ///
+    /// Sitting the window one level down makes the question moot: a raise still
+    /// happens, it just happens *within* a level that is entirely beneath every
+    /// ordinary window on screen. Nothing in pid mode needs the window on top —
+    /// keys arrive by `postToPid` and mouse events are rebuilt as `NSEvent`s
+    /// dispatched straight into the window, so neither consults WindowServer's
+    /// z-order or hit-testing.
+    ///
+    /// This matters at run scale: one launch per test file meant a core tier put
+    /// twenty windows through whatever the user was looking at, and a sweep
+    /// hundreds.
+    static let harnessBackgroundLevel = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
+
+    /// Keep the harness's window off the top of the user's screen.
+    ///
+    /// The level above is the load-bearing half; this catches the explicit
+    /// `orderFront` / `makeKeyAndOrderFront` calls so the window does not even
+    /// rise to the top of its own level. Only "front" is rewritten, and only to
+    /// "back": `orderOut` and explicit relative ordering still mean what they say.
+    override func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+        if harnessPidMode, place == .above, otherWin == 0 {
+            super.order(.below, relativeTo: 0)
+            return
+        }
+        super.order(place, relativeTo: otherWin)
+    }
+
     // MARK: - Page zoom (View > Actual Size / Zoom In / Zoom Out)
     //
     // The View menu's zoom commands drive `webView.pageZoom` directly —

@@ -224,13 +224,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         window.updateBackgroundColor(bgHex)
         if ProcessInfo.processInfo.environment["TUGAPP_NATIVE_EVENT_MODE"] == "pid" {
-            // Harness pid mode drives the app in the background — order
-            // the window on screen without taking key status or stealing
-            // the user's active app. Making the window key here does not
-            // buy `document.hasFocus()`: WebKit ties that to application
+            // Harness pid mode drives the app in the background — put the
+            // window on screen without taking key status or stealing the
+            // user's active app. Making the window key here does not buy
+            // `document.hasFocus()`: WebKit ties that to application
             // activation, and taking key status changes what an
             // activation click means.
-            window.orderFront(nil)
+            //
+            // `orderBack`, not `orderFront`. Suppressing activation keeps the
+            // keyboard where the user left it, but an ordered-front window
+            // still lands on top of whatever they are looking at — and a run
+            // is one launch per test file, so a core tier put twenty windows
+            // through the user's screen. Nothing in this mode needs to be on
+            // top: keys go by `postToPid` and mouse events are rebuilt as
+            // `NSEvent`s and dispatched straight into the window, so neither
+            // consults WindowServer's z-order.
+            //
+            // The level is what actually holds the line — AppKit raises the
+            // window on click by a route no ordering override sees, and a raise
+            // inside a below-normal level stays below every ordinary window.
+            window.level = MainWindow.harnessBackgroundLevel
+            window.orderBack(nil)
         } else {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
