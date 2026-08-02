@@ -73,6 +73,13 @@ export interface TugMessageEditorHandle {
   clear(): void;
   /** Move keyboard focus into the field. */
   focus(): void;
+  /**
+   * Bring the caret into view in every enclosing scroller, the outer ones
+   * included. A consumer that lets the field grow uncapped inside its own
+   * scroller (the Lens snippet editor: the list scrolls, not the field) calls
+   * this on each edit — see the substrate's `revealCaret` for the scheduling.
+   */
+  revealCaret(): void;
 }
 
 export interface TugMessageEditorProps {
@@ -258,6 +265,7 @@ export const TugMessageEditor = React.forwardRef<
       restoreState: (text) => seed(text),
       clear: () => substrateRef.current?.clear(),
       focus: () => substrateRef.current?.focus(),
+      revealCaret: () => substrateRef.current?.revealCaret(),
     }),
     [],
   );

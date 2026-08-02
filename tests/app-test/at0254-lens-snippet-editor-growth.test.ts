@@ -18,15 +18,27 @@
  *     ring is suppressed on both the descend wrapper and the editor host.
  *
  *  4. **The caret stays in view while editing a snippet taller than the Lens.**
- *     The well grows uncapped, the list is the single scroller, and SnippetsBody
- *     reveals the caret into the list on every edit.
+ *     The well grows uncapped, the list is the single scroller, and the editor
+ *     reveals its own caret into the list on every edit.
  *
- * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`).
+ *     The load-bearing half is 4a, the caret sitting BEHIND the card's pinned
+ *     header. Inside the scrollport's rectangle but covered by chrome is the
+ *     one state nothing else corrects: WebKit's native editing reveal (which
+ *     handles the plain off-the-bottom case on its own, verified by disabling
+ *     the app's reveal entirely) reasons about visibility and sees nothing
+ *     wrong. Only a reveal that insets the port by its sticky chrome moves it.
+ *     4b keeps the tail case as a companion; it is not, by itself, a gate.
+ *
+ * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`), and in the
+ * FOREGROUND: the caret only paints while `document.hasFocus()` is true, which
+ * WebKit ties to application activation and the default (pid) launch withholds.
  *
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/lib/snippets-store.ts
  * @covers tugdeck/src/lib/snippets-doc.ts
  * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/components/tugways/tug-message-editor.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -95,6 +107,9 @@ describe.skipIf(!SHOULD_RUN)("at0254 — Lens open card + top-anchored stack", (
           testName: "at0254-lens-snippet-editor-growth",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
           persistInTestMode: true,
+          // The caret is the subject: CM6 paints it only while
+          // `document.hasFocus()`, and that needs an activating launch.
+          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);
@@ -188,9 +203,9 @@ describe.skipIf(!SHOULD_RUN)("at0254 — Lens open card + top-anchored stack", (
             { timeoutMs: 3_000 },
           );
 
-          // 4. Open the LONG snippet, move the caret to the document end, and
-          //    type — editing at the tail of a snippet taller than the Lens.
-          //    The caret must stay in view, and the list is what scrolled.
+          // 4. Open the LONG snippet — a body taller than the whole Lens, so the
+          //    open card's header pins to the list's top edge while the body
+          //    scrolls under it.
           await app.nativeDoubleClickAtElement(
             `.lens-snippets-list .snippet-row-content[data-snippet-id="long"] .snippet-row-incipit`,
           );
@@ -198,6 +213,85 @@ describe.skipIf(!SHOULD_RUN)("at0254 — Lens open card + top-anchored stack", (
             `document.querySelector('.snippet-editor .cm-content') !== null`,
             { timeoutMs: 4_000 },
           );
+
+          // 4a. Edit with the caret BEHIND the pinned header, and it must come
+          //     out from under it. Scroll deliberately — and never to the live
+          //     edge, which engages the list's follow-bottom and hands the pin,
+          //     not the reveal, the last word on scroll position.
+          //
+          // The well animates open, so the list's scroll range grows over
+          // several frames; scrolling before it settles just clamps to 0.
+          await app.waitForCondition<boolean>(
+            `(() => {
+              const list = document.querySelector('.lens-snippets-list');
+              return list !== null && list.scrollHeight - list.clientHeight > 1200;
+            })()`,
+            { timeoutMs: 4_000 },
+          );
+          await app.evalJS<number>(
+            `(() => {
+              const list = document.querySelector('.lens-snippets-list');
+              list.scrollTop = 500;
+              return Math.round(list.scrollTop);
+            })()`,
+          );
+          // Put the caret on a line well inside the port, then scroll it up to
+          // sit BEHIND the pinned header — inside the scrollport's rectangle,
+          // so nothing that reasons about mere visibility (WebKit's own
+          // editing reveal included) will move it, yet covered by chrome.
+          const lineNth = await app.evalJS<number>(
+            `(() => {
+              const port = document.querySelector('.lens-snippets-list').getBoundingClientRect();
+              const lines = [...document.querySelectorAll('.snippet-editor .cm-line')];
+              return lines.findIndex((l) => l.getBoundingClientRect().top > port.top + 200) + 1;
+            })()`,
+          );
+          expect(lineNth).toBeGreaterThan(0);
+          await app.nativeClickAtElement(
+            `.snippet-editor .cm-line:nth-of-type(${lineNth})`,
+          );
+          const buried = await app.evalJS<number>(
+            `(() => {
+              const list = document.querySelector('.lens-snippets-list');
+              const caret = document.querySelector('.snippet-editor .tug-text-editor-caret');
+              const head = document.querySelector('.snippet-editor-header');
+              // Land the caret 10px above the header's bottom edge: covered.
+              list.scrollTop += caret.getBoundingClientRect().top - (head.getBoundingClientRect().bottom - 10);
+              return Math.round(caret.getBoundingClientRect().top - head.getBoundingClientRect().bottom);
+            })()`,
+          );
+          expect(buried).toBeLessThan(0);
+          await app.nativeType("TOP ");
+          await app.waitForCondition<boolean>(
+            `(() => {
+              const cur = document.querySelector('.snippet-editor .tug-text-editor-caret');
+              const head = document.querySelector('.snippet-editor-header');
+              const list = document.querySelector('.lens-snippets-list');
+              if (cur === null || head === null || list === null) return false;
+              const c = cur.getBoundingClientRect();
+              const h = head.getBoundingClientRect();
+              const l = list.getBoundingClientRect();
+              return c.top >= h.bottom - 1 && c.bottom <= l.bottom + 1;
+            })()`,
+            { timeoutMs: 3_000 },
+          );
+          // …and the header really was pinned, or the clause above is vacuous:
+          // it is holding the list's top edge with the body scrolled under it.
+          const pinned = await app.evalJS<{ gap: number; scrollTop: number }>(
+            `(() => {
+              const head = document.querySelector('.snippet-editor-header').getBoundingClientRect();
+              const list = document.querySelector('.lens-snippets-list');
+              return {
+                gap: Math.round(head.top - list.getBoundingClientRect().top),
+                scrollTop: Math.round(list.scrollTop),
+              };
+            })()`,
+          );
+          expect(pinned.gap).toBeLessThanOrEqual(1);
+          expect(pinned.scrollTop).toBeGreaterThan(0);
+
+          // 4b. Now the tail: move the caret to the document end and type. The
+          //     caret must stay in view, and the list is what scrolled.
           await app.nativeKey("ArrowDown", ["cmd"]);
           await app.nativeType(" EDITED");
           await app.waitForCondition<boolean>(

@@ -165,7 +165,11 @@ import {
 import { tugDropExtension } from "./tug-text-editor/drop-extension";
 import { createCMSelectionAdapter } from "./tug-text-editor/selection-adapter";
 import type { TextSelectionAdapter } from "./text-selection-adapter";
-import { tugCaretInteractionPlugin, tugCaretLayer } from "./tug-text-editor/caret-layer";
+import {
+  revealCaret,
+  tugCaretInteractionPlugin,
+  tugCaretLayer,
+} from "./tug-text-editor/caret-layer";
 import { tugLineNumbersGutter } from "./tug-text-editor/line-numbers-gutter";
 import { tugSelectionLayer } from "./tug-text-editor/selection-layer";
 import { captureEditState, tugTextEditorKeymap } from "./tug-text-editor/keymap";
@@ -450,6 +454,18 @@ export interface TugTextEditorDelegate {
    * offset 0.
    */
   focus(): void;
+  /**
+   * Bring the caret into view in every scroller that encloses it, including
+   * scrollers OUTSIDE the editor. An editor that grows uncapped inside an
+   * outer list (the Lens snippet editor) makes that LIST scroll, and nothing
+   * there follows the caret — such a consumer calls this on each edit.
+   *
+   * Scheduled on CM6's measure cycle, so it runs once the caret layer has
+   * repainted; insets each scrollport by the sticky chrome parked over it, so
+   * the caret never lands under a pinned header. Self-gating (an already
+   * visible caret writes no scroll) and a no-op while unfocused or unmounted.
+   */
+  revealCaret(): void;
   /**
    * Remove keyboard focus from the editor so the caret stops rendering.
    * Used when a modal surface deactivates the editor (e.g. an inline
@@ -1885,6 +1901,11 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         const view = viewRef.current;
         if (view === null) return;
         view.focus();
+      },
+      revealCaret() {
+        const view = viewRef.current;
+        if (view === null) return;
+        revealCaret(view);
       },
       blur() {
         const view = viewRef.current;

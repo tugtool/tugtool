@@ -65,6 +65,12 @@
  *     present so the caret reads as steady during active typing —
  *     matching standard text-editor behavior since the 1980s.
  *
+ * Caret reveal: because the caret element is this module's to paint, keeping it
+ * in view is this module's to schedule. {@link revealCaret} is the seam the
+ * substrate's delegate exposes — see its docstring for the measure-cycle
+ * scheduling and why the reveal is `revealFocusTarget` rather than
+ * `scrollIntoView`.
+ *
  * Both attributes are toggled directly on the DOM without
  * dispatching transactions; they are appearance-only state per [L06]
  * and [L22].
@@ -84,6 +90,14 @@ import type { Extension } from "@codemirror/state";
 
 import { getResponderChainManager } from "@/action-dispatch";
 import { deckTrace } from "@/deck-trace";
+import { revealFocusTarget } from "../focus-reveal";
+
+/**
+ * Class carried by the caret stroke this layer paints. The element is the
+ * substrate's own DOM: consumers reach it through {@link revealCaret}, never
+ * by selecting on this class themselves.
+ */
+const CARET_CLASS = "tug-text-editor-caret";
 
 /** Caret stroke width in pixels. Matches WebKit's native caret stroke. */
 const CARET_STROKE_WIDTH = 2;
@@ -312,7 +326,7 @@ export const tugCaretLayer: Extension = layer({
     }
     return [
       new RectangleMarker(
-        "tug-text-editor-caret",
+        CARET_CLASS,
         left,
         top - base.top,
         CARET_STROKE_WIDTH,
@@ -321,6 +335,71 @@ export const tugCaretLayer: Extension = layer({
     ];
   },
 });
+
+// ---------------------------------------------------------------------------
+// Caret reveal
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-view measure request, so a burst of edits coalesces into one reveal:
+ * CM6 dedupes a request already queued by identity, and a stable object per
+ * view is that identity. Keyed weakly so a destroyed view's request goes with
+ * it.
+ */
+const revealRequests = new WeakMap<
+  EditorView,
+  { read: () => null; write: () => void }
+>();
+
+/**
+ * Scroll the caret into view in every scroller that encloses it — including
+ * scrollers OUTSIDE the editor, which is the case that needs this: an editor
+ * that grows uncapped inside an outer list (the Lens snippet editor) makes the
+ * LIST scroll, and nothing there follows the caret.
+ *
+ * Scheduled on CM6's own measure cycle rather than a frame. The caret is a div
+ * this module's layer paints during that cycle, so at edit time it still sits
+ * at the old position; the measure request's write phase runs after the layer
+ * has drawn, which is the completion signal a frame could only guess at. CM6
+ * applies its own cursor `scrollIntoView` after the measure requests, and it
+ * reads as a no-op because {@link revealFocusTarget} has already brought the
+ * caret fully inside every port.
+ *
+ * The whole reveal — measurement included — rides the WRITE phase, against
+ * CM6's usual read-then-write split: the caret it measures does not exist at
+ * its new position until the layer's own write has drawn it, so a read-phase
+ * measurement would be the same stale geometry a frame's guess produced.
+ *
+ * The reveal is {@link revealFocusTarget}, not `scrollIntoView`: it insets each
+ * scrollport by the sticky chrome parked over its edges (the snippet card's
+ * pinned header), scrolls by the minimum delta, and releases follow-bottom
+ * through the registered `Scroller` façade first.
+ *
+ * That inset is the part nothing else does. WebKit reveals the caret natively
+ * on every edit and walks outer scrollers to do it, so a caret merely off the
+ * bottom is already handled without us (verified by disabling this reveal and
+ * watching at0254's tail case still pass). What no visibility-based reveal
+ * corrects is a caret inside the scrollport's rectangle but UNDER a stuck
+ * header — geometrically visible, actually covered.
+ *
+ * Self-gating — an already-visible caret produces no scroll writes at all, so
+ * a consumer may call this on every edit. No-op while the editor is unfocused
+ * (no caret is painted).
+ */
+export function revealCaret(view: EditorView): void {
+  let request = revealRequests.get(view);
+  if (request === undefined) {
+    request = {
+      read: () => null,
+      write: () => {
+        const caret = view.dom.querySelector<HTMLElement>(`.${CARET_CLASS}`);
+        if (caret !== null) revealFocusTarget(caret);
+      },
+    };
+    revealRequests.set(view, request);
+  }
+  view.requestMeasure(request);
+}
 
 /**
  * Interaction-state plugin. Tracks mouse-drag and active-typing

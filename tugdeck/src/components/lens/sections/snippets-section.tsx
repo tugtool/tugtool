@@ -558,18 +558,13 @@ function SnippetEditorRow({
   // Keep the caret in view as the snippet is edited. The editor grows uncapped
   // and the Lens list is the single scroller (see `snippets-section.css`), so a
   // snippet taller than the Lens makes the LIST scroll — nothing auto-follows
-  // the caret there. On each user edit, reveal the caret element into the list
-  // (`scrollIntoView` walks up to the list scroller); deferred a frame so CM6
-  // has laid the caret at its new position first. This is why the edit can never
-  // scroll off, even when the content dwarfs the Lens.
+  // the caret there. The substrate owns the reveal (it owns the caret): it
+  // schedules on CM6's measure cycle and clears the card's pinned header. This
+  // is why the edit can never scroll off, even when the content dwarfs the Lens.
   const onChange = useCallback(
     (text: string): void => {
       store.updateSnippet(snippet.id, text);
-      requestAnimationFrame(() => {
-        wrapRef.current
-          ?.querySelector<HTMLElement>(".tug-text-editor-caret")
-          ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-      });
+      editorRef.current?.revealCaret();
     },
     [store, snippet.id],
   );

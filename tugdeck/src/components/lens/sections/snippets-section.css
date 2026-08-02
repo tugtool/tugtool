@@ -152,15 +152,6 @@
   );
 }
 
-/* Reveal clears the stuck header: while an editor is open the list reserves the
-   header's height at the top so `scrollIntoView({block:"nearest"})` (the caret
-   reveal in `SnippetsBody`) never parks the caret UNDER the pinned header when
-   editing near the snippet's top. Only while a card is open — plain navigation
-   keeps the full scrollport. */
-.lens-snippets-list:has(.snippet-editor) {
-  scroll-padding-block-start: calc(2 * var(--tugx-list-row-padding-block, 5px) + 1.5lh);
-}
-
 /* The WELL: the substrate's own field treatment, exactly as prompt entry — the
    field surface washes while focused and drains on blur, and the caret carries
    keyboard focus. (The old flatten-every-background overrides are gone: the
