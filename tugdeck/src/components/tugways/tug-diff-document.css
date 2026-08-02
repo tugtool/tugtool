@@ -13,10 +13,16 @@
    render monochrome in the inherited foreground ([P27]) — so no
    @tug-renders-on ([L16]). */
 
+/* The document reads at the compact size the history and commit surfaces use
+   (`--tug-font-size-xs`), one step down from a tool block's inline code. The
+   code knob is declared on `body{}` (tugx-block.css), so scoping it here
+   re-sizes every composed DiffBlock's hunk rows without touching a token the
+   child declares on itself. */
 .tug-diff-document {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  --tugx-block-code-font-size: var(--tug-font-size-xs);
 }
 
 /* Header: ONE non-wrapping quiet line ([P29]) —
@@ -82,14 +88,14 @@
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  font-size: 0.8125rem;
+  font-size: var(--tug-font-size-xs);
   opacity: 0.7;
 }
 
 .tug-diff-document-binary-note {
   margin: 0;
   padding: 0.5rem 0;
-  font-size: 0.875rem;
+  font-size: var(--tug-font-size-xs);
   opacity: 0.6;
 }
 
@@ -102,8 +108,8 @@
   gap: 0.5rem;
   width: 100%;
   min-width: 0;
-  font-family: var(--tug-font-mono, monospace);
-  font-size: 0.8125rem;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
 }
 
 .tug-diff-document-file-status {

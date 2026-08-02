@@ -11,8 +11,8 @@
  * proves the real git round-trip. Here we drive the card's `GitDiffStore`
  * directly (`ingestGitDiff`) with a known two-file payload so the UI mapping
  * is deterministic: assert the sheet opens, the accordion lists both files
- * with the right stats, the header summarizes, and expanding a file renders
- * its hunks.
+ * with the right stats, the header summarizes, the short files arrive
+ * expanded, and Collapse/Expand All drive them.
  *
  * Has teeth: before the accordion is wired, `/diff` would open a sheet with
  * no `diff-file` items; before the body renders DiffBlock, expanding a file
@@ -187,24 +187,24 @@ describe.skipIf(!SHOULD_RUN)("AT0104: /diff accordion sheet", () => {
         );
         expect(firstTriggerText).toContain("src/main.rs");
 
-        // … multi-file opens collapsed …
-        expect(
-          await app.evalJS<number>(
-            `document.querySelectorAll(${JSON.stringify(DIFF_HUNK)}).length`,
-          ),
-        ).toBe(0);
-
-        // Expand All opens every file (controlled accordion) → hunks render.
-        await app.nativeClickAtElement(`${SHEET} [data-testid="diff-expand-all"]`);
+        // … and both files, being short, arrive already expanded, so their
+        // hunks render without a gesture.
         await app.waitForCondition<boolean>(
           `document.querySelectorAll(${JSON.stringify(DIFF_HUNK)}).length >= 2`,
           { timeoutMs: 6000 },
         );
 
-        // Collapse All closes them again.
+        // Collapse All closes them (controlled accordion).
         await app.nativeClickAtElement(`${SHEET} [data-testid="diff-collapse-all"]`);
         await app.waitForCondition<boolean>(
           `document.querySelectorAll(${JSON.stringify(DIFF_HUNK)}).length === 0`,
+          { timeoutMs: 6000 },
+        );
+
+        // Expand All opens every file again → hunks render.
+        await app.nativeClickAtElement(`${SHEET} [data-testid="diff-expand-all"]`);
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll(${JSON.stringify(DIFF_HUNK)}).length >= 2`,
           { timeoutMs: 6000 },
         );
       } finally {

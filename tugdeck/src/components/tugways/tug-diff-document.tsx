@@ -14,6 +14,10 @@
  * {@link GitDiffStore} request, refresh, loading/error notices) and hands this
  * component the parsed {@link GitDiffPayload}; the document renders the files.
  *
+ * Files whose change is short open expanded when a payload lands, up to a
+ * document-wide line budget; longer files stay collapsed until asked for. The
+ * seed re-runs whenever the change set itself changes, not on every render.
+ *
  * The view-mode toggle drives every `DiffBlock`'s `viewMode` prop in lockstep;
  * when a host passes a `cardId`, the choice persists through the existing
  * `diff-view-pref.ts` tugbank channel ([L02]), else it is ephemeral local
@@ -98,6 +102,39 @@ export interface TugDiffDocumentProps {
 /** Accordion item key — the (unique) destination path of each changed file. */
 function fileKey(file: GitDiffFile): string {
   return file.path;
+}
+
+// ---------------------------------------------------------------------------
+// Default expansion — short files open, long files stay collapsed
+// ---------------------------------------------------------------------------
+
+/** A file with this many changed lines or fewer opens expanded on arrival. */
+const AUTO_EXPAND_FILE_LINES = 60;
+/** Ceiling on the changed lines auto-expanded across the whole document. */
+const AUTO_EXPAND_TOTAL_LINES = 400;
+
+/**
+ * The files that open expanded when a payload lands: short ones, in document
+ * order, until the document budget runs out. A long file is skipped (it stays
+ * collapsed) but doesn't stop the walk — the shorter files after it still open.
+ * Binary files have no textual diff, so they never auto-expand.
+ */
+function defaultOpenKeys(files: readonly GitDiffFile[]): string[] {
+  const keys: string[] = [];
+  let budget = AUTO_EXPAND_TOTAL_LINES;
+  for (const file of files) {
+    if (file.binary) continue;
+    const lines = file.added + file.removed;
+    if (lines > AUTO_EXPAND_FILE_LINES || lines > budget) continue;
+    budget -= lines;
+    keys.push(fileKey(file));
+  }
+  return keys;
+}
+
+/** Identity of the rendered change set — a new one re-seeds the open files. */
+function filesSignature(files: readonly GitDiffFile[]): string {
+  return files.map((f) => `${f.path}:${f.added}:${f.removed}`).join("\n");
 }
 
 /** The collapsed trigger: status letter, path (rename shows old → new), stat. */
@@ -217,10 +254,24 @@ export function TugDiffDocument({
   // Controlled accordion so Expand All / Collapse All can drive every file at
   // once. The accordion and the view toggle are both controls ([L11]); one
   // responder form captures the accordion's `toggleSectionMulti` and the
-  // toggle's `selectValue`. Files open collapsed (a scannable list).
+  // toggle's `selectValue`. Short files arrive expanded so the document reads
+  // as a diff rather than a file list; long ones stay collapsed.
   const accordionSenderId = useId();
   const viewToggleSenderId = useId();
-  const [openKeys, setOpenKeys] = useState<string[]>([]);
+  const [openKeys, setOpenKeys] = useState<string[]>(() =>
+    defaultOpenKeys(files),
+  );
+
+  // A new change set (first payload, a refresh that moved, a re-pointed card)
+  // re-seeds the default expansion; re-rendering the same files leaves the
+  // reader's own open/closed choices alone.
+  const signature = filesSignature(files);
+  const [lastSignature, setLastSignature] = useState(signature);
+  if (signature !== lastSignature) {
+    setLastSignature(signature);
+    setOpenKeys(defaultOpenKeys(files));
+  }
+
   const { ResponderScope, responderRef } = useResponderForm({
     toggleSectionMulti: {
       [accordionSenderId]: (v: string[]) => setOpenKeys(v),
