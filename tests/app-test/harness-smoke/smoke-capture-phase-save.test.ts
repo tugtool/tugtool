@@ -58,6 +58,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tests/app-test/_harness/
  * @covers tugdeck/src/components/chrome/pane-focus-controller.ts
  * @covers tugdeck/src/components/tugways/tug-tab-bar.tsx
@@ -325,6 +326,10 @@ describe.skipIf(!SHOULD_RUN)(
       async () => {
         const app = await launchTugApp({
           testName: "smoke-capture-phase-save-window-blur",
+          // Foreground: the subject is the resign that fires `window.blur`.
+          // A background launch never activates the app, so `NSApp.deactivate()`
+          // is a no-op, `didResignActive` never posts, and the verb times out.
+          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);

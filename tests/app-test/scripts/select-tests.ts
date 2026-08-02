@@ -17,10 +17,14 @@
  * `@covers` values.
  *
  * A test that takes the screen also declares that, with `@foreground` on its own docblock
- * line. Those tests pass a `foreground` launch option, which puts the app in the activating
- * event mode; every other test runs in the background. The `app-test` recipe reads the
- * declaration before it launches anything, so it can tell the developer that a run is
- * about to seize the machine.
+ * line. The `app-test` recipe reads the declaration before it launches anything, so it can
+ * tell the developer that a run is about to seize the machine.
+ *
+ * There are two ways a test takes the screen, and the check knows both. The declared one is
+ * the `foreground` launch option, which puts the app in the activating event mode. The other
+ * is calling an app-lifecycle RPC verb: those drive `NSApp.activate` and a Finder activation
+ * inside the app, whatever mode it launched in, so a background launch does not make them
+ * background. Reading only the launch option missed that second class entirely.
  *
  * Usage:
  *   bun scripts/select-tests.ts                  # derive changed paths from git
@@ -166,8 +170,12 @@ const ACCEPTED_FANOUT: Record<string, number> = {
 interface TestCoverage {
     file: string;
     covers: string[];
-    /** Declared by `@foreground`: this file launches the app in the activating event mode. */
+    /** Declared by `@foreground`: this file takes the screen for its duration. */
     foreground: boolean;
+    /** Passes a possibly-true `foreground` launch option at some launch site. */
+    foregroundOption: boolean;
+    /** Calls an app-lifecycle RPC verb, which takes the screen whatever the launch mode. */
+    activatingVerb: boolean;
 }
 
 /** Repo-relative paths of every app-test file, in run order (smoke first). */
@@ -195,6 +203,20 @@ const FOREGROUND_LINE = /^\s*\*?\s*@foreground\b/;
  */
 const FOREGROUND_OPTION = /\bforeground:\s*(?!false\b)\S/;
 
+/**
+ * The app-lifecycle RPC verbs. Each one reaches `AppLifecycleHandlers` in the app, which
+ * drives the real activation machinery — `NSApp.activate(ignoringOtherApps:)` to become
+ * active, a Finder activation to resign — and neither is gated on the launch mode. So a
+ * file calling one of these takes the screen even though it launched in the background,
+ * which is exactly the unannounced seizure `@foreground` exists to prevent.
+ *
+ * They also cannot *work* in a background launch: the app was never active, so
+ * `NSApp.deactivate()` is a silent no-op, the `didResignActive` notification never posts,
+ * and the verb fails on its 1000ms timeout — after having activated Finder on the way.
+ * That is why calling one demands the launch option too, and not merely the tag.
+ */
+const ACTIVATING_VERB = /\bsimulateApp(?:Resign|BecomeActive|Hide|Unhide)\b/;
+
 function readCoverage(file: string): TestCoverage {
     const text = readFileSync(join(APP_TEST_DIR, file), "utf8");
     const covers: string[] = [];
@@ -206,12 +228,18 @@ function readCoverage(file: string): TestCoverage {
         // Declarations live in the header docblock; stop at the first import.
         if (/^import\s/.test(line)) break;
     }
-    return { file, covers, foreground };
+    return {
+        file,
+        covers,
+        foreground,
+        foregroundOption: FOREGROUND_OPTION.test(text),
+        activatingVerb: ACTIVATING_VERB.test(text),
+    };
 }
 
-/** Whether a test file passes a possibly-true `foreground` at any launch site. */
-function launchesForeground(file: string): boolean {
-    return FOREGROUND_OPTION.test(readFileSync(join(APP_TEST_DIR, file), "utf8"));
+/** Whether a file takes the screen — by launch option, by lifecycle verb, or both. */
+function takesScreen(c: TestCoverage): boolean {
+    return c.foregroundOption || c.activatingVerb;
 }
 
 /** A `@covers` value matches a changed path by subtree prefix or by glob. */
@@ -284,28 +312,39 @@ if (foregroundOnly) {
 }
 
 if (foregroundCheck) {
-    // Both directions matter, for different reasons. A tag with no launch option prompts
-    // about a test that never takes the screen — noise that trains dismissal. An option
-    // with no tag runs a screen-seizing test unannounced, which is the harm the tag exists
-    // to prevent.
-    const undeclared = coverage.filter((c) => !c.foreground && launchesForeground(c.file));
-    const overdeclared = coverage.filter((c) => c.foreground && !launchesForeground(c.file));
+    // Three findings, for three different harms. A tag with no screen-taking behavior
+    // prompts about a test that never takes the screen — noise that trains dismissal.
+    // Screen-taking behavior with no tag runs unannounced, which is the harm the tag exists
+    // to prevent. And a lifecycle verb without the launch option is a test that both seizes
+    // the screen and cannot pass, because the verb needs an app that is really active.
+    const undeclared = coverage.filter((c) => !c.foreground && takesScreen(c));
+    const overdeclared = coverage.filter((c) => c.foreground && !takesScreen(c));
+    const verbWithoutOption = coverage.filter((c) => c.activatingVerb && !c.foregroundOption);
 
     if (undeclared.length > 0) {
         process.stderr.write(
-            `[select-tests] ${undeclared.length} test file(s) can launch foreground but carry\n` +
-                `               no @foreground tag — they would seize the screen unannounced:\n`,
+            `[select-tests] ${undeclared.length} test file(s) take the screen but carry no\n` +
+                `               @foreground tag — they would seize it unannounced:\n`,
         );
         for (const c of undeclared) process.stderr.write(`  ${c.file}\n`);
     }
     if (overdeclared.length > 0) {
         process.stderr.write(
-            `[select-tests] ${overdeclared.length} test file(s) declare @foreground but never pass a\n` +
-                `               foreground launch option — they would prompt for nothing:\n`,
+            `[select-tests] ${overdeclared.length} test file(s) declare @foreground but neither pass a\n` +
+                `               foreground launch option nor call a lifecycle verb — they\n` +
+                `               would prompt for nothing:\n`,
         );
         for (const c of overdeclared) process.stderr.write(`  ${c.file}\n`);
     }
-    if (undeclared.length === 0 && overdeclared.length === 0) {
+    if (verbWithoutOption.length > 0) {
+        process.stderr.write(
+            `[select-tests] ${verbWithoutOption.length} test file(s) call an app-lifecycle verb without\n` +
+                `               launching foreground. The verb activates Finder on its way to\n` +
+                `               timing out, so the test steals focus AND fails:\n`,
+        );
+        for (const c of verbWithoutOption) process.stderr.write(`  ${c.file}\n`);
+    }
+    if (undeclared.length === 0 && overdeclared.length === 0 && verbWithoutOption.length === 0) {
         const n = coverage.filter((c) => c.foreground).length;
         process.stderr.write(
             `[select-tests] @foreground matches behavior across ${coverage.length} test files.\n` +

@@ -97,10 +97,10 @@ describe("--foreground-check detects drift in both directions", () => {
 
         expect(r.code).toBe(1);
         expect(r.err).toContain(TAGGED);
-        expect(r.err).toContain("no @foreground tag");
+        expect(r.err).toContain("take the screen but carry no");
     });
 
-    test("a tag with no launch option is reported", () => {
+    test("a tag with no screen-taking behavior is reported", () => {
         const path = copyPath(PREFIX_TWIN);
         const original = readFileSync(path, "utf8");
         writeFileSync(path, original.replace(/^ \* @covers/m, " * @foreground\n * @covers"));
@@ -109,6 +109,24 @@ describe("--foreground-check detects drift in both directions", () => {
 
         expect(r.code).toBe(1);
         expect(r.err).toContain(PREFIX_TWIN);
-        expect(r.err).toContain("declare @foreground but never pass a");
+        expect(r.err).toContain("declare @foreground but neither pass a");
+    });
+
+    test("an app-lifecycle verb is screen-taking behavior on its own", () => {
+        // The verb reaches `NSApp.activate` / a Finder activation inside the app
+        // whatever mode it launched in, so a file calling one takes the screen
+        // even with no `foreground` launch option anywhere in it. Reading only
+        // the launch option is what let this class through.
+        const path = copyPath(PREFIX_TWIN);
+        const original = readFileSync(path, "utf8");
+        writeFileSync(path, `${original}\n// await app.simulateAppResign();\n`);
+        const r = run(script, ["--foreground-check"]);
+        writeFileSync(path, original);
+
+        expect(r.code).toBe(1);
+        expect(r.err).toContain(PREFIX_TWIN);
+        // Both findings: undeclared, and a verb that cannot fire without the option.
+        expect(r.err).toContain("take the screen but carry no");
+        expect(r.err).toContain("call an app-lifecycle verb without");
     });
 });
