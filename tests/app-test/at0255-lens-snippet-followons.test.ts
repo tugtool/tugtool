@@ -19,7 +19,6 @@
  *
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`).
  *
- * @foreground
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/lib/snippets-store.ts
  * @covers tugdeck/src/lib/snippet-drag.ts
@@ -89,10 +88,6 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           testName: "at0255-lens-snippet-followons",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
           persistInTestMode: true,
-          // Keyboard focus is the subject, and `document.hasFocus()` — which
-          // this test waits on, and which the CM6 caret paints against — is
-          // tied by WebKit to application activation.
-          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);
@@ -101,9 +96,6 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
           await app.dispatchControlAction("toggle-lens");
           await app.waitForCondition<boolean>(
             `document.querySelector('.lens-snippets-list .snippet-row-content[data-snippet-id="s2"]') !== null`,

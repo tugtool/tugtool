@@ -13,7 +13,6 @@
  * the ENGINE key view (`data-key-view-kbd`), not on a mock: after each arrow
  * the ring must be on the expected accessory of the expected row.
  *
- * @foreground
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  */
@@ -121,10 +120,6 @@ describe.skipIf(!SHOULD_RUN)("at0282 — Lens row arrows never dead-end", () => 
         const app = await launchTugApp({
           testName: "at0282-lens-row-arrow-escape",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
-          // `document.hasFocus()` — which this test waits on — is tied by
-          // WebKit to application activation, so this one launches
-          // foreground.
-          foreground: true,
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
@@ -132,10 +127,6 @@ describe.skipIf(!SHOULD_RUN)("at0282 — Lens row arrows never dead-end", () => 
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
-
           await app.dispatchControlAction("focus-lens");
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,

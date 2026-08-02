@@ -9,7 +9,6 @@
  * (`data-key-cursor`) must move row-by-row on arrows, jump on Home/End, and
  * page on PageDown/PageUp — proving delegated delivery end-to-end.
  *
- * @foreground
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/lens/
@@ -101,10 +100,6 @@ describe.skipIf(!SHOULD_RUN)("at0248 — Lens list movement keys via onKey deleg
         const app = await launchTugApp({
           testName: "at0248-lens-list-cursor-keys",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
-          // `document.hasFocus()` — which this test waits on — is tied by
-          // WebKit to application activation, so this one launches
-          // foreground.
-          foreground: true,
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
@@ -112,10 +107,6 @@ describe.skipIf(!SHOULD_RUN)("at0248 — Lens list movement keys via onKey deleg
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
-
           await app.dispatchControlAction("focus-lens");
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,

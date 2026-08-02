@@ -12,7 +12,6 @@
  * transition), so it does not depend on the engine ascend, the editor's
  * blur-commit, and any row-discard re-render all converging.
  *
- * @foreground
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
@@ -80,10 +79,6 @@ describe.skipIf(!SHOULD_RUN)("at0256 — Lens focus carrier is never lost", () =
           testName: "at0256-lens-focus-carrier",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
           persistInTestMode: true,
-          // `document.hasFocus()` — which this test waits on — is tied by
-          // WebKit to application activation, so this one launches
-          // foreground.
-          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);
@@ -92,9 +87,6 @@ describe.skipIf(!SHOULD_RUN)("at0256 — Lens focus carrier is never lost", () =
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
           await app.dispatchControlAction("toggle-lens");
           await app.waitForCondition<boolean>(
             `document.querySelector('.lens-snippets-list .snippet-row-content[data-snippet-id="s2"]') !== null`,

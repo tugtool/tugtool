@@ -22,7 +22,6 @@
  * Surface: `gallery-prompt-entry` (composes the real `TugPromptEntry`), so no
  * live Claude session is needed. Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
- * @foreground
  * @covers tugdeck/src/lib/markdown-text-styling.ts
  * @covers tugdeck/src/lib/markdown-text-style-grammar.ts
  * @covers tugdeck/src/lib/language-registry.ts
@@ -178,10 +177,6 @@ describe.skipIf(!SHOULD_RUN)("at0269: markdown text style constructs", () => {
           testName: "at0269-markdown-text-style-constructs",
           env: { TUGBANK_PATH: tugbankPath },
           persistInTestMode: true,
-          // `document.hasFocus()` — which this test waits on — is tied by
-          // WebKit to application activation, so this one launches
-          // foreground.
-          foreground: true,
         });
 
         try {

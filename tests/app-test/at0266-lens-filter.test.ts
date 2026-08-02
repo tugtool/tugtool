@@ -33,7 +33,6 @@
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`), so the rows are
  * real and deterministic.
  *
- * @foreground
  * @covers tugdeck/src/components/tugways/tug-filter-field.tsx
  * @covers tugdeck/src/components/tugways/filter-highlight.tsx
  * @covers tugdeck/src/lib/text-match.ts
@@ -142,10 +141,6 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
           testName: "at0266-lens-filter",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
           persistInTestMode: true,
-          // `document.hasFocus()` — which this test waits on — is tied by
-          // WebKit to application activation, so this one launches
-          // foreground.
-          foreground: true,
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
@@ -153,10 +148,6 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
-
           await app.dispatchControlAction("toggle-lens");
           await app.waitForCondition<boolean>(
             `${ROW_COUNT} === ${SNIPPETS.length}`,

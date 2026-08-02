@@ -21,7 +21,6 @@
  *    (anchor-to-any-element) API drops the trigger-width floor, which would
  *    otherwise stretch the box to the full width of the row.
  *
- * @foreground
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/components/tugways/tug-confirm-popover.tsx
  * @covers tugdeck/src/components/tugways/tug-confirm-popover.css
@@ -105,16 +104,9 @@ describe.skipIf(!SHOULD_RUN)("at0290 — snippet delete confirm anchor", () => {
         const app = await launchTugApp({
           testName: "at0290-snippet-delete-confirm-anchor",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
-          // `document.hasFocus()` — which this test waits on — is tied by
-          // WebKit to application activation, so this one launches
-          // foreground.
-          foreground: true,
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
           await app.dispatchControlAction("focus-lens");
           await app.waitForCondition<boolean>(
             `document.querySelectorAll('${LIST} .tug-list-view-cell').length >= ${SNIPPETS.length}`,

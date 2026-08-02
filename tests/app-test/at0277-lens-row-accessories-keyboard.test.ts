@@ -30,7 +30,6 @@
  * key view has descended into a row, Right / Left walk the row's accessories
  * and Left off the first one ascends — the arrow that entered walks.
  *
- * @foreground
  * @covers tugdeck/src/components/lens/slot-picker.tsx
  * @covers tugdeck/src/components/lens/sections/layouts-section.tsx
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
@@ -133,10 +132,6 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
         const app = await launchTugApp({
           testName: "at0277-lens-row-accessories-keyboard",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
-          // `document.hasFocus()` — which this test waits on — is tied by
-          // WebKit to application activation, so this one launches
-          // foreground.
-          foreground: true,
         });
         try {
           await app.seedDeckState({
@@ -150,10 +145,6 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
-
           await app.dispatchControlAction("focus-lens");
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,

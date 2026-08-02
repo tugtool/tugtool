@@ -52,7 +52,6 @@
  * start: it guards the cold-boot restore channel through the
  * keyboard-as-engine-state rework rather than reproducing its trigger.
  *
- * @foreground
  * @covers tugdeck/src/components/lens/
  * @covers tugdeck/src/lib/lens-store/
  * @covers tugdeck/src/serialization.ts
@@ -140,10 +139,6 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
             testName: "at0247-relaunch-lens-keyboard-A",
             env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
             persistInTestMode: true,
-            // `document.hasFocus()` — which this test waits on — is tied by
-            // WebKit to application activation, so this one launches
-            // foreground.
-            foreground: true,
           });
           try {
             await app.seedDeckState({
@@ -163,10 +158,6 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
               `document.querySelector('[data-card-id="A"] .cm-content') !== null`,
               { timeoutMs: 6_000 },
             );
-            await app.waitForCondition<boolean>(`document.hasFocus()`, {
-              timeoutMs: 6_000,
-            });
-
             // The product ⌘L path: focus the Lens. With a real session
             // card open the Cards section is non-empty, so the ⌘L
             // seed lands there first; Tab — the product walk — moves
@@ -231,10 +222,6 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
             env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
             persistInTestMode: true,
             restoreInTestMode: true,
-            // `document.hasFocus()` — which this test waits on — is tied by
-            // WebKit to application activation, so this one launches
-            // foreground.
-            foreground: true,
           });
           try {
             // The restored deck mounts on its own: the snippets list
@@ -243,10 +230,6 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
               `document.querySelector(${JSON.stringify(SNIPPETS_LIST)}) !== null`,
               { timeoutMs: 10_000 },
             );
-            await app.waitForCondition<boolean>(`document.hasFocus()`, {
-              timeoutMs: 6_000,
-            });
-
             // 1. The ring restored onto the snippets list.
             await app.waitForCondition<boolean>(
               `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,

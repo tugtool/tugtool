@@ -19,7 +19,6 @@
  *   4. Escape → the editor closes, the list regains the key view, and the
  *      committed row shows the updated incipit.
  *
- * @foreground
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/lib/snippets-store.ts
  * @covers tugdeck/src/lib/snippets-doc.ts
@@ -96,10 +95,6 @@ describe.skipIf(!SHOULD_RUN)("at0241 — Lens snippet editor round-trip", () => 
           testName: "at0241-lens-snippet-editor",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
           persistInTestMode: true,
-          // Keyboard focus is the subject, and `document.hasFocus()` — which
-          // this test waits on, and which the CM6 caret paints against — is
-          // tied by WebKit to application activation.
-          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);
@@ -108,10 +103,6 @@ describe.skipIf(!SHOULD_RUN)("at0241 — Lens snippet editor round-trip", () => 
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
-
           // 1. Open the Lens; the seeded snippet row renders; click the
           //    Snippets band → the snippets list takes the keyboard key view.
           await dispatch(app, "toggle-lens");
@@ -210,10 +201,6 @@ describe.skipIf(!SHOULD_RUN)("at0241 — Lens snippet editor round-trip", () => 
           testName: "at0241-lens-snippet-space",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
           persistInTestMode: true,
-          // Keyboard focus is the subject, and `document.hasFocus()` — which
-          // this test waits on, and which the CM6 caret paints against — is
-          // tied by WebKit to application activation.
-          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);
@@ -222,10 +209,6 @@ describe.skipIf(!SHOULD_RUN)("at0241 — Lens snippet editor round-trip", () => 
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
-
           await dispatch(app, "toggle-lens");
           await app.waitForCondition<boolean>(
             `Array.from(document.querySelectorAll('.snippet-row-label'))

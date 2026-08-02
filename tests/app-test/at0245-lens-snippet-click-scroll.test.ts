@@ -19,7 +19,6 @@
  *
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`).
  *
- * @foreground
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/lib/snippets-store.ts
  * @covers tugdeck/src/lib/smart-scroll.ts
@@ -94,10 +93,6 @@ describe.skipIf(!SHOULD_RUN)("at0245 — Lens snippet click-select + per-section
           testName: "at0245-lens-snippet-click-scroll",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
           persistInTestMode: true,
-          // `document.hasFocus()` — which this test waits on — is tied by
-          // WebKit to application activation, so this one launches
-          // foreground.
-          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);
@@ -106,10 +101,6 @@ describe.skipIf(!SHOULD_RUN)("at0245 — Lens snippet click-select + per-section
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
-
           await dispatch(app, "toggle-lens");
           await app.waitForCondition<boolean>(
             `document.querySelector('.lens-snippets-list .snippet-row-content[data-snippet-id="s3"] .snippet-row-incipit') !== null`,

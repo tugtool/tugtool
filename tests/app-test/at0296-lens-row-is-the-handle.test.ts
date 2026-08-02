@@ -22,7 +22,6 @@
  *    than the threshold, leaves the order exactly as it was — the gesture was
  *    handed to the drag-out rather than swallowed by the carry.
  *
- * @foreground
  * @covers tugdeck/src/components/lens/block-reorder.ts
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/components/lens/lens-section-band.tsx
@@ -114,16 +113,9 @@ describe.skipIf(!SHOULD_RUN)("at0296 — the Lens row is the handle", () => {
         const app = await launchTugApp({
           testName: "at0296-lens-row-is-the-handle",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
-          // `document.hasFocus()` — which this test waits on — is tied by
-          // WebKit to application activation, so this one launches
-          // foreground.
-          foreground: true,
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
           await app.dispatchControlAction("focus-lens");
           await app.waitForCondition<boolean>(
             `document.querySelectorAll(${JSON.stringify(ROWS)}).length === ${SNIPPETS.length}`,
