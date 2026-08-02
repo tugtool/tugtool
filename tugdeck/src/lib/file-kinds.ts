@@ -47,7 +47,7 @@ export const VIEWABLE_EXTENSIONS: Readonly<Record<string, FileKind>> = {
  * basename has none (or is a dotfile like `.env`, whose leading dot names
  * the file rather than an extension).
  */
-function extensionOf(path: string): string | null {
+export function extensionOf(path: string): string | null {
   const basename = path.slice(path.lastIndexOf("/") + 1);
   const dot = basename.lastIndexOf(".");
   if (dot <= 0) return null;

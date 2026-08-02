@@ -25,6 +25,8 @@ import {
   idOfRow,
   kindOfRow,
   LensCardsDataSource,
+  summarizeGroup,
+  type CardIdentity,
   type CardsResolvers,
   type CardsRow,
   type LensCardsInputs,
@@ -846,5 +848,68 @@ describe("LensCardsDataSource", () => {
     const ds = source();
     expect(ds.indexForId(ds.idForIndex(0))).toBe(0);
     expect(ds.indexForId("pane:nope")).toBe(-1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The collapsed-group summary
+// ---------------------------------------------------------------------------
+
+describe("summarizeGroup", () => {
+  /** Only the two fields the summary reads; the rest of a `CardIdentity` has
+   *  no bearing on what a folded group says about itself. */
+  function file(path: string | null): CardIdentity {
+    return { path } as CardIdentity;
+  }
+
+  it("a non-file group says how many, and nothing else", () => {
+    expect(summarizeGroup("sessions", [file(null), file(null)])).toBe("2");
+    expect(summarizeGroup("tools", [file(null)])).toBe("1");
+    expect(summarizeGroup("tools", [])).toBe("0");
+  });
+
+  it("a files group names the kind", () => {
+    expect(summarizeGroup("files", [file("/x/a.md")])).toBe("1 md");
+  });
+
+  it("kinds lead by count, ties alphabetically", () => {
+    const summary = summarizeGroup("files", [
+      file("/x/a.ts"),
+      file("/x/b.md"),
+      file("/x/c.md"),
+      file("/x/d.css"),
+    ]);
+    expect(summary).toBe("2 md · 1 css · 1 ts");
+  });
+
+  it("the extension is taken lowercase", () => {
+    expect(summarizeGroup("files", [file("/x/A.MD"), file("/x/b.md")])).toBe(
+      "2 md",
+    );
+  });
+
+  it("anything without an extension is a plain file", () => {
+    // A dotfile's leading dot names the file, an unsaved buffer has no path at
+    // all, and `Makefile` simply has no extension — all three are "file".
+    expect(
+      summarizeGroup("files", [
+        file("/x/Makefile"),
+        file("/x/.env"),
+        file(null),
+      ]),
+    ).toBe("3 file");
+  });
+
+  it("past the limit the remainder counts FILES, not kinds", () => {
+    const summary = summarizeGroup("files", [
+      file("/x/a.md"),
+      file("/x/b.md"),
+      file("/x/c.ts"),
+      file("/x/d.css"),
+      file("/x/e.png"),
+      file("/x/f.png"),
+      file("/x/g.rs"),
+    ]);
+    expect(summary).toBe("2 md · 2 png · 1 css · +2 more");
   });
 });

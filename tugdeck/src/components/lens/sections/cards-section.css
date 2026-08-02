@@ -197,17 +197,17 @@
   transform: rotate(0deg);
 }
 
-/* How many pane rows the group holds — ink ONLY while the group is collapsed,
-   where the number is the sole report of what the fold is hiding. Open, the
-   rows themselves are the count and a tally out at the column's end is just
-   noise. It sits against the title in the label's own bolder weight, so it
-   reads as part of the group's name rather than as a separate column. */
+/* What the fold is hiding — ink ONLY while the group is collapsed, where it is
+   the sole report of what is in there. Open, the rows themselves are the
+   answer and a tally is just noise.
+
+   It is rendered inside the title label and carries no typography of its own:
+   size, weight, case and tracking are the label's, because the summary is part
+   of what the folded group is CALLED (`FILES: 2 MD · 1 PNG`), not an annotation
+   set against it. Only the figures' spacing is its own, so a count changing
+   under a fold does not shift the characters after it. */
 .lens-cards-header-count {
-  flex: 0 0 auto;
-  font-size: 0.85em;
-  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
 .lens-cards-header:not([data-group-collapsed="true"]) .lens-cards-header-count {

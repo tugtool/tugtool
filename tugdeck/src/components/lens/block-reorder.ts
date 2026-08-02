@@ -66,6 +66,15 @@ const SECTION_SELECTOR = ".lens-section[data-lens-section]";
 const KIND_ATTR = "data-lens-section";
 
 /**
+ * Stamped on the container while a carry is in flight — the declared state a
+ * surface inside it keys its own carry behavior off. It is deliberately
+ * generic (`data-tug-*`, like `data-tug-placement`) rather than Lens-private:
+ * `TugListView` reads it to stand its focus ring down, and a shared primitive
+ * must not have to know which host is dragging it.
+ */
+const CARRYING_ATTR = "data-tug-carrying";
+
+/**
  * How far the pointer travels before a press on a row becomes a carry. Under
  * it the gesture is still a click — which is the whole reason the row can be
  * both the thing you pick and the thing you drag.
@@ -214,11 +223,15 @@ export function useBlockReorder({
         el.setAttribute("data-dragging", "true");
         el.style.transition = "none";
       }
-      // The press that started this was a plain press on text, so it may have
-      // begun a selection and the browser would keep extending it for the
-      // length of the carry. Drop what it took and suppress selection in the
-      // container until the drop ([L06] — an attribute plus a CSS rule).
-      container.setAttribute("data-reordering", "true");
+      // Declare the carry on the container: `data-tug-carrying` is what the
+      // surfaces inside it read to stand their own marks down for the length
+      // of the gesture ([L06] — an attribute plus CSS rules, no React state).
+      // Two of them so far — selection is suppressed, because the press that
+      // started this was a plain press on text and the browser would keep
+      // extending the selection it took for the whole carry; and the focus
+      // ring stands down, so the drop caret is the only edge-drawn mark in the
+      // box (tuglaws/focus-language.md, "A carry suppresses the ring").
+      container.setAttribute(CARRYING_ATTR, "true");
       window.getSelection()?.removeAllRanges();
 
       const shiftFor = (i: number, target: number): number => {
@@ -300,7 +313,7 @@ export function useBlockReorder({
           el.style.transform = "";
         }
         for (const el of dragged) el.removeAttribute("data-dragging");
-        container.removeAttribute("data-reordering");
+        container.removeAttribute(CARRYING_ATTR);
         caret?.removeAttribute("data-visible");
         window.setTimeout(() => {
           for (const el of carried) el.style.transition = "";
@@ -321,7 +334,7 @@ export function useBlockReorder({
 
         clearInline();
         for (const el of dragged) el.removeAttribute("data-dragging");
-        container.removeAttribute("data-reordering");
+        container.removeAttribute(CARRYING_ATTR);
         caret?.removeAttribute("data-visible");
 
         flushSync(() => commitRef.current(newVisible));

@@ -252,6 +252,35 @@ body {
   outline: none;
 }
 
+/* ---- A carry suppresses the ring ----
+   While a host declares `data-tug-carrying` on an ancestor — a block reorder
+   is in flight inside it — this list's container ring stands down, in both
+   placements, for the length of the gesture.
+
+   The ring and a drop caret are both edge-drawn marks in the same hue, and a
+   ring around the whole list is the one shape that swallows a caret sitting at
+   the list's top or bottom edge: the two answers a dragging user needs — where
+   the keyboard is, and where this will land — collapse into one rectangle, and
+   the drop becomes a guess. The keyboard has not moved and the ring comes back
+   at the drop; see tuglaws/focus-language.md, "A carry suppresses the ring."
+
+   The cursor bar stays up. It is a leading-edge mark on one row, along an axis
+   the horizontal caret never uses, so it costs the caret nothing and it keeps
+   saying where the keyboard will be when the carry ends. */
+[data-tug-carrying="true"]
+  .tug-list-view:is([data-key-view-kbd], [data-key-within]) {
+  outline: none;
+  border-color: var(--tugx-list-view-frame-color);
+}
+[data-tug-carrying="true"]
+  .tug-list-view[data-ring-placement="inset"]:is(
+    [data-key-view-kbd],
+    [data-key-within]
+  )
+  .tug-list-view-ring::before {
+  border-color: transparent;
+}
+
 /* The cursor bar would sit under the inset ring's leading edge, both being one
    ring-width at the same x. Slide the bar inboard by that width so the two
    marks stack: ring at the edge, bar just inside it. */

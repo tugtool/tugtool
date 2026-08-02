@@ -22,11 +22,11 @@
  *      headers are cursorable rows, which is exactly what would let the list's
  *      own gain-seed park the cursor on index 0 — a header. The section seeds
  *      past them deliberately, and this is where that is checked.
- *   E. **The chevron is the header's whole mouse target, and the count is the
- *      collapsed state's voice.** Clicking the header body does nothing;
- *      clicking the chevron folds the group. Open, the rows are the count and
- *      the number is not ink at all; collapsed, it is the only report of what
- *      the fold is hiding.
+ *   E. **The chevron folds, and the summary is the collapsed state's voice.**
+ *      Clicking the header body does not fold; clicking the chevron does. Open,
+ *      the rows are the answer and the summary is not ink at all; collapsed, it
+ *      is the only report of what the fold is hiding, and for a Files group it
+ *      names the kinds rather than just counting them.
  *   F. **Reorder still engages while another group is collapsed.** The reorder
  *      hook aborts a drag silently — no error, no log — when any key in the
  *      visible order has no mounted element, so a collapsed group's keys must
@@ -270,9 +270,9 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
         expect(await app.evalJS<{ display: string; height: number }>(countBox))
           .toEqual({ display: "none", height: 0 });
 
-        // Clicking the label does nothing at all. A group folding out from
-        // under a user who clicked a word they were reading is the whole
-        // reason the header body is inert.
+        // Clicking the label does not fold. A group folding out from under a
+        // user who clicked a word they were reading is the whole reason the
+        // chevron is the only thing that toggles.
         await app.evalJS<null>(
           `(document.querySelector('${filesHeader} .tug-list-row-title').click(), null)`,
         );
@@ -310,9 +310,15 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
           })()`,
         );
         expect(collapsed.fileRows).toBe(0);
-        // The header stays, and now the number speaks: it is the only report
-        // of what the fold is hiding, and the way back.
-        expect(collapsed.count).toBe("1");
+        // The header stays, and now the summary speaks: it is the only report
+        // of what the fold is hiding, and the way back. A Files group names the
+        // kind, so the one open `alpha.txt` reads as a txt rather than as a
+        // bare "1" — the count alone answers a question nobody asked.
+        // Upper-cased because `innerText` is the RENDERED ink and the summary
+        // takes the header label's `text-transform` by inheritance — which is
+        // the whole point of putting it inside the label: it reads as part of
+        // the group's name, in one voice, not as a tally set beside it.
+        expect(collapsed.count).toBe(": 1 TXT");
         expect(collapsed.countPainted).toBe(true);
 
         // ---- F. Reorder engages while another group is collapsed. ----------

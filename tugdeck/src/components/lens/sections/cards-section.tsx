@@ -18,7 +18,9 @@
  * Group headers are cursorable rows, not `TugListView`'s inert `"header"`
  * role: the arrow walk reaches them and Enter/Space toggles that group's
  * collapse. That choice is what makes the cursor-seed rule below necessary. To
- * the mouse only the chevron toggles — the rest of the header is inert.
+ * the mouse the header is the group's drag handle and the chevron is the only
+ * thing that folds — travel tells the two apart, so a press that goes nowhere
+ * does nothing.
  *
  * The list is one Tab stop in the Lens; arrows rove the movement cursor,
  * Enter/click fronts the row's card (`focus-session-card`). Two things carry,
@@ -289,12 +291,14 @@ function OneLineRow({
  *  group's collapse. It composes `TugListRow` like every other row — the
  *  chevron's direction is a CSS response to `data-group-collapsed` ([L06]).
  *
- *  To the MOUSE the header body is inert: the chevron is the entire click
- *  target, and the row swallows the pointer so no part of a label the user is
- *  reading past can fold a group out from under them. The chevron is therefore
- *  a real button with a button's hover, which is also what says where to aim.
- *  Keyboard reach is unaffected — the row stays cursorable, and Enter/Space go
- *  to the delegate. */
+ *  To the MOUSE the header body is the group's drag handle, and the chevron is
+ *  the only thing that folds. Travel is what tells them apart, so a press that
+ *  goes nowhere does nothing at all — no part of a label the user is reading
+ *  past can fold a group out from under them, and the row swallows the trailing
+ *  click so the cell never reads it as a pick. The chevron is therefore a real
+ *  button with a button's hover, which is also what says where to aim. Keyboard
+ *  reach is unaffected — the row stays cursorable, and Enter/Space go to the
+ *  delegate. */
 const GroupHeaderCell: TugListViewCellRenderer<LensCardsDataSource> = ({
   index,
   dataSource,
@@ -333,10 +337,21 @@ const GroupHeaderCell: TugListViewCellRenderer<LensCardsDataSource> = ({
             ctx.onToggleGroup(row.group);
           }}
         />
+        {/* The summary is INSIDE the label, not a column beside it: it is part
+            of what the folded group is called, so it takes the label's size,
+            weight, case and tracking by inheritance rather than by a second
+            set of rules that could drift from them. The colon hugs the title
+            for the same reason — it is a separator within one phrase. Rendered
+            always and hidden by CSS while the group is open ([L06]). */}
         <TugLabel className="tug-list-row-title" size="sm" maxLines={1}>
           {title}
+          <span
+            className="lens-cards-header-count"
+            data-testid="lens-cards-header-count"
+          >
+            {`: ${row.summary}`}
+          </span>
         </TugLabel>
-        <span className="lens-cards-header-count">{row.count}</span>
       </span>
     </TugListRow>
   );

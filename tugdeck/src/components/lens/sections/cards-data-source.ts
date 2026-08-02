@@ -45,6 +45,7 @@ import type { CardState, DeckState, TugPaneState } from "@/layout-tree";
 import { findLensPane } from "@/deck-store-selectors";
 import type { CardSessionBinding } from "@/lib/card-session-binding-store";
 import { getDeckStore } from "@/lib/deck-store-registry";
+import { extensionOf } from "@/lib/file-kinds";
 import {
   getOpenFileViewCard,
   getOpenFileViewCardsVersion,
@@ -192,6 +193,9 @@ export type CardsRow =
       readonly group: LensCardsGroup;
       /** Pane rows in this group, after filtering. */
       readonly count: number;
+      /** What the header reports while the group is folded — see
+       *  {@link summarizeGroup}. */
+      readonly summary: string;
       readonly collapsed: boolean;
     }
   | {
@@ -390,6 +394,65 @@ function resolveCard(
   };
 }
 
+// ---------------------------------------------------------------------------
+// The collapsed-group summary
+// ---------------------------------------------------------------------------
+
+/** How many file kinds a folded Files group names before the rest are rolled
+ *  into a remainder. Three fits the rail; a fourth pushes the header's own
+ *  title into truncation, which is the wrong thing to lose. */
+const SUMMARY_KIND_LIMIT = 3;
+
+/**
+ * The word for what kind of file a row holds: its lowercase extension, or
+ * `"file"` for anything without one — an extensionless script, a dotfile, an
+ * unsaved buffer that has no path yet.
+ */
+function fileTypeLabel(identity: CardIdentity): string {
+  if (identity.path === null) return "file";
+  return extensionOf(identity.path) ?? "file";
+}
+
+/**
+ * What a folded group's header reports about what the fold is hiding.
+ *
+ * For Sessions and Tools that is the count and nothing else — those rows are
+ * told apart by their names, and a name is exactly what a fold takes away, so
+ * there is no second fact to offer.
+ *
+ * Files is different: a file row's kind is a real dimension of what it is, and
+ * it survives the fold as a summary. "3" over a folded Files group answers a
+ * question nobody asked; "2 md · 1 png" says what is in there. Kinds are
+ * ordered by how many there are, ties alphabetically, so the biggest thing in
+ * the group leads and the order does not shuffle as counts move.
+ */
+export function summarizeGroup(
+  group: LensCardsGroup,
+  identities: readonly CardIdentity[],
+): string {
+  if (group !== "files") return String(identities.length);
+
+  const counts = new Map<string, number>();
+  for (const identity of identities) {
+    const label = fileTypeLabel(identity);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  const kinds = [...counts].sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  );
+
+  const parts = kinds
+    .slice(0, SUMMARY_KIND_LIMIT)
+    .map(([label, n]) => `${n} ${label}`);
+  const rest = kinds
+    .slice(SUMMARY_KIND_LIMIT)
+    .reduce((sum, [, n]) => sum + n, 0);
+  // The remainder counts FILES, not kinds: the number the user wants is how
+  // many rows are still unaccounted for, not how many buckets they fell into.
+  if (rest > 0) parts.push(`+${rest} more`);
+  return parts.join(" · ");
+}
+
 /**
  * A pane's order key ([P08]): the identity that should survive a close/reopen.
  * A stack has only its pane id; a single-card session pane keys by session so
@@ -507,6 +570,10 @@ export function buildCardsRows(
       type: "group-header",
       group,
       count: survivors.length,
+      summary: summarizeGroup(
+        group,
+        survivors.map((entry) => entry.identity),
+      ),
       collapsed: isCollapsed,
     });
     if (isCollapsed) continue;

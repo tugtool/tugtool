@@ -20,9 +20,12 @@
  *      same amount, and the group being passed has opened a gap. This is the
  *      only assertion that can see a header travelling alone — after the drop
  *      the committed order looks correct either way.
- *   2. After the drop: the group headers swap, the runs are still whole and
+ *   2. The container declares `data-tug-carrying` while the carry is in flight
+ *      and drops it at the settle — the cross-module contract the focus ring's
+ *      stand-down and the selection suppression both hang off.
+ *   3. After the drop: the group headers swap, the runs are still whole and
  *      contiguous, and no card was fronted.
- *   3. `cardsGroupOrder` persisted, so the arrangement survives a relaunch.
+ *   4. `cardsGroupOrder` persisted, so the arrangement survives a relaunch.
  *
  * Then it does it again, the other way, and that repeat is its own gate: the
  * FLIP holds a latch that refuses a new carry until the settle finishes, and
@@ -134,6 +137,7 @@ describe.skipIf(!SHOULD_RUN)("at0313 — a Cards group carries its rows", () => 
           const carried = await app.evalJS<{
             tools: string[];
             filesShifted: boolean;
+            carrying: string | null;
           }>(`(function(){
             var header = document.querySelector(${JSON.stringify(headerSel("tools"))});
             var files = document.querySelector(${JSON.stringify(headerSel("files"))});
@@ -159,6 +163,9 @@ describe.skipIf(!SHOULD_RUN)("at0313 — a Cards group carries its rows", () => 
               filesShifted: runOf("files").every(function (el) {
                 return el.style.transform.indexOf("translateY") !== -1;
               }),
+              carrying: document
+                .querySelector(".lens-cards-list-wrap")
+                .getAttribute("data-tug-carrying"),
             };
             window.dispatchEvent(new PointerEvent("pointerup", opts(to)));
             return out;
@@ -171,6 +178,14 @@ describe.skipIf(!SHOULD_RUN)("at0313 — a Cards group carries its rows", () => 
           expect(carried.tools[1]).toBe(carried.tools[0]);
           // And the group it is passing has opened a gap for it.
           expect(carried.filesShifted).toBe(true);
+          // The container declares the carry while it is in flight. That
+          // attribute is what the surfaces inside read to stand their own
+          // marks down — the focus ring, so the drop caret is the only
+          // edge-drawn mark in the box, and the text selection the press would
+          // otherwise be extending. It is a contract between modules, so it is
+          // asserted here rather than left to the two stylesheets that consume
+          // it, and it must be gone once the drag is.
+          expect(carried.carrying).toBe("true");
 
           await app.waitForCondition<boolean>(
             `(function(){
@@ -191,6 +206,11 @@ describe.skipIf(!SHOULD_RUN)("at0313 — a Cards group carries its rows", () => 
 
           expect(await app.evalJS<string | null>(`window.__tug.getActiveCardId()`))
             .toBe(activeBefore);
+          expect(
+            await app.evalJS<string | null>(
+              `document.querySelector(".lens-cards-list-wrap").getAttribute("data-tug-carrying")`,
+            ),
+          ).toBeNull();
 
           const persisted = tugbankRead<string[]>(
             tugbankPath,

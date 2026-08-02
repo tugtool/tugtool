@@ -86,7 +86,7 @@ body {
 /* A row being carried is not a row being read: suppress selection in the
    container for the length of the drag, since the gesture begins as a plain
    press on text ([L06] — `block-reorder` stamps the attribute). */
-.lens-content [data-reordering="true"] {
+.lens-content [data-tug-carrying="true"] {
   user-select: none;
 }
 
