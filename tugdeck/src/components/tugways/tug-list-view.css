@@ -252,21 +252,27 @@ body {
   outline: none;
 }
 
-/* ---- A carry suppresses the ring ----
+/* ---- A carry suppresses the focus marks ----
    While a host declares `data-tug-carrying` on an ancestor — a block reorder
-   is in flight inside it — this list's container ring stands down, in both
-   placements, for the length of the gesture.
+   is in flight inside it — this list's focus marks stand down for the length
+   of the gesture: the container ring in both placements, and the movement
+   cursor's bar.
 
-   The ring and a drop caret are both edge-drawn marks in the same hue, and a
-   ring around the whole list is the one shape that swallows a caret sitting at
-   the list's top or bottom edge: the two answers a dragging user needs — where
-   the keyboard is, and where this will land — collapse into one rectangle, and
-   the drop becomes a guess. The keyboard has not moved and the ring comes back
-   at the drop; see tuglaws/focus-language.md, "A carry suppresses the ring."
+   The marks and the drop caret are drawn in the same hue, and each one the
+   carry leaves up is a second answer competing with the caret's. A ring around
+   the whole list is the shape that swallows a caret sitting at the list's top
+   or bottom edge outright: the two answers a dragging user needs — where the
+   keyboard is, and where this will land — collapse into one rectangle and the
+   drop becomes a guess. The keyboard has not moved and the marks come back at
+   the drop; see tuglaws/focus-language.md, "A carry suppresses the focus
+   marks."
 
-   The cursor bar stays up. It is a leading-edge mark on one row, along an axis
-   the horizontal caret never uses, so it costs the caret nothing and it keeps
-   saying where the keyboard will be when the carry ends. */
+   The bar goes down for the same reason at closer range: it is a stripe of
+   accent along the leading edge of one row, and the row it marks is a row the
+   carry may be about to move. Mid-gesture it reads as a mark on the drop,
+   pointing somewhere the drop is not. Where the keyboard is has no bearing on
+   the gesture in flight and is unchanged when it ends, so the bar is simply
+   drawn again at the drop, on whatever was set down. */
 [data-tug-carrying="true"]
   .tug-list-view:is([data-key-view-kbd], [data-key-within]) {
   outline: none;
@@ -279,6 +285,11 @@ body {
   )
   .tug-list-view-ring::before {
   border-color: transparent;
+}
+[data-tug-carrying="true"]
+  .tug-list-view
+  .tug-list-view-cell[data-key-cursor]::before {
+  background: transparent;
 }
 
 /* The cursor bar would sit under the inset ring's leading edge, both being one

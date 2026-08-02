@@ -158,6 +158,30 @@
 
 /* ── Group headers ────────────────────────────────────────────────────────── */
 
+/* A GROUP HEADER RIDES THE LENS'S SURFACE; ITS ROWS SIT IN THE WELL.
+   The band above this list says "header" by standing a step ABOVE its content
+   — the section body is a well cut into the Lens (`lens-section-band.css`) —
+   and a group header inside the list has to say the same thing the same way,
+   because it is the same kind of thing one level down. Left on the well with
+   the rows, and taking the rows' alternating band on top of that, a header was
+   just another stripe: the section's two levels flattened into one run of
+   near-identical bars, and the alternation stopped reading as alternation
+   because it had nothing to alternate against.
+
+   So the header steps out of the striping and back onto the Lens's own
+   surface. The rows keep the well and keep their bands, and the contrast that
+   matters — content against the headers that divide it — is a surface step
+   again rather than a 4% wash.
+
+   Doubled selector for the same reason the rest of this file doubles: it has
+   to beat `.tug-list-view[data-row-striping="on"] .tug-list-view-cell[…]`
+   whatever order the bundle lands the two files in. */
+/* @tug-renders-on: --tug7-surface-card-primary-normal-well-rest */
+.tug-list-view.lens-cards-list[data-row-striping]
+  .tug-list-view-cell[data-tug-list-cell-kind="group-header"] {
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+}
+
 /* A group header is a row like any other — it takes the same chrome, the same
    cursor ring, the same hover. What sets it apart is its voice: smaller, upper,
    tracked out, so it reads as a label over the rows rather than as one of

@@ -21,8 +21,10 @@
  *      only assertion that can see a header travelling alone — after the drop
  *      the committed order looks correct either way.
  *   2. The container declares `data-tug-carrying` while the carry is in flight
- *      and drops it at the settle — the cross-module contract the focus ring's
- *      stand-down and the selection suppression both hang off.
+ *      and drops it at the settle — the cross-module contract the focus marks'
+ *      stand-down and the selection suppression both hang off — and the
+ *      movement cursor's bar is actually unpainted for the length of the
+ *      gesture and painted again after it.
  *   3. After the drop: the group headers swap, the runs are still whole and
  *      contiguous, and no card was fronted.
  *   4. `cardsGroupOrder` persisted, so the arrangement survives a relaunch.
@@ -50,6 +52,7 @@
  * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  * @covers tugdeck/src/components/lens/sections/cards-groups.ts
  * @covers tugdeck/src/components/lens/sections/cards-data-source.ts
+ * @covers tugdeck/src/components/tugways/tug-list-view.css
  * @covers tugdeck/src/lib/lens-store/
  */
 
@@ -267,7 +270,10 @@ describe.skipIf(!SHOULD_RUN)("at0313 — a Cards group carries its rows", () => 
           // refuses to start says nothing in the console. No dwell — the
           // gesture ends when the commit lands, not when the settle finishes
           // playing, so the surface is armed again immediately.
-          const engagedAgain = await app.evalJS<boolean>(`(function(){
+          const engagedAgain = await app.evalJS<{
+            moved: boolean;
+            cursorBar: string | null;
+          }>(`(function(){
             var header = document.querySelector(${JSON.stringify(headerSel("files"))});
             var tools = document.querySelector(${JSON.stringify(headerSel("tools"))});
             if (header === null || tools === null) throw new Error("no headers");
@@ -290,10 +296,28 @@ describe.skipIf(!SHOULD_RUN)("at0313 — a Cards group carries its rows", () => 
             ).every(function (el) {
               return el.getAttribute("data-dragging") === "true";
             });
+            var cursor = document.querySelector(
+              ".lens-cards-list .tug-list-view-cell[data-key-cursor]",
+            );
+            var out = {
+              moved: moved,
+              cursorBar: cursor === null
+                ? null
+                : getComputedStyle(cursor, "::before").backgroundColor,
+            };
             window.dispatchEvent(new PointerEvent("pointerup", opts(to)));
-            return moved;
+            return out;
           })()`);
-          expect(engagedAgain).toBe(true);
+          expect(engagedAgain.moved).toBe(true);
+          // The movement cursor's bar is DOWN for the length of the carry. The
+          // cursor is on the Tools header the first drop landed it on and the
+          // carry is of the Files run, so a bar left up would be a stripe of
+          // accent on a row that has nothing to do with where this will land —
+          // indistinguishable, at a glance, from the drop caret it shares a hue
+          // with. Read as painted color rather than as an attribute: the
+          // suppression is a stylesheet's, and what it has to achieve is that
+          // nothing is drawn.
+          expect(engagedAgain.cursorBar).toBe("rgba(0, 0, 0, 0)");
 
           await app.waitForCondition<boolean>(
             `(function(){
@@ -309,6 +333,26 @@ describe.skipIf(!SHOULD_RUN)("at0313 — a Cards group carries its rows", () => 
             "tools",
             "tools",
           ]);
+
+          // And the bar is back, on what was just set down. The stand-down is
+          // for the length of the gesture and nothing longer — a suppression
+          // that outlived its carry would leave the keyboard invisible, which
+          // is a worse bug than the one it was fixing.
+          const barAfter = await app.evalJS<string | null>(`(function(){
+            var cursor = document.querySelector(
+              ".lens-cards-list .tug-list-view-cell[data-key-cursor]",
+            );
+            if (cursor === null) return null;
+            var header = cursor.querySelector(".lens-cards-header");
+            if (header === null
+              || header.getAttribute("data-lens-group") !== "files") {
+              return "cursor is not on the moved group";
+            }
+            return getComputedStyle(cursor, "::before").backgroundColor;
+          })()`);
+          expect(barAfter).not.toBeNull();
+          expect(barAfter).not.toBe("rgba(0, 0, 0, 0)");
+          expect(barAfter).not.toBe("cursor is not on the moved group");
 
         } finally {
           await app.close();

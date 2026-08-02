@@ -45,7 +45,11 @@ import type { CardState, DeckState, TugPaneState } from "@/layout-tree";
 import { findLensPane } from "@/deck-store-selectors";
 import type { CardSessionBinding } from "@/lib/card-session-binding-store";
 import { getDeckStore } from "@/lib/deck-store-registry";
-import { extensionOf } from "@/lib/file-kinds";
+import {
+  countedFileType,
+  fileTypeName,
+  type FileTypeName,
+} from "@/lib/file-type-names";
 import {
   getOpenFileViewCard,
   getOpenFileViewCardsVersion,
@@ -404,16 +408,6 @@ function resolveCard(
 const SUMMARY_KIND_LIMIT = 3;
 
 /**
- * The word for what kind of file a row holds: its lowercase extension, or
- * `"file"` for anything without one — an extensionless script, a dotfile, an
- * unsaved buffer that has no path yet.
- */
-function fileTypeLabel(identity: CardIdentity): string {
-  if (identity.path === null) return "file";
-  return extensionOf(identity.path) ?? "file";
-}
-
-/**
  * What a folded group's header reports about what the fold is hiding.
  *
  * For Sessions and Tools that is the count and nothing else — those rows are
@@ -422,9 +416,12 @@ function fileTypeLabel(identity: CardIdentity): string {
  *
  * Files is different: a file row's kind is a real dimension of what it is, and
  * it survives the fold as a summary. "3" over a folded Files group answers a
- * question nobody asked; "2 md · 1 png" says what is in there. Kinds are
- * ordered by how many there are, ties alphabetically, so the biggest thing in
- * the group leads and the order does not shuffle as counts move.
+ * question nobody asked; "2 Markdown · 1 Image" says what is in there. The
+ * names are `file-type-names`', not extensions: the header is prose and reads
+ * as prose, and its buckets are the ones a person would count in — every image
+ * format is Images, `.ts` and `.tsx` are both TypeScript. Kinds are ordered by
+ * how many there are, ties alphabetically, so the biggest thing in the group
+ * leads and the order does not shuffle as counts move.
  */
 export function summarizeGroup(
   group: LensCardsGroup,
@@ -432,21 +429,23 @@ export function summarizeGroup(
 ): string {
   if (group !== "files") return String(identities.length);
 
-  const counts = new Map<string, number>();
+  const counts = new Map<string, { name: FileTypeName; n: number }>();
   for (const identity of identities) {
-    const label = fileTypeLabel(identity);
-    counts.set(label, (counts.get(label) ?? 0) + 1);
+    const name = fileTypeName(identity.path);
+    const seen = counts.get(name.key);
+    if (seen === undefined) counts.set(name.key, { name, n: 1 });
+    else seen.n += 1;
   }
-  const kinds = [...counts].sort(
-    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  const kinds = [...counts.values()].sort(
+    (a, b) => b.n - a.n || a.name.one.localeCompare(b.name.one),
   );
 
   const parts = kinds
     .slice(0, SUMMARY_KIND_LIMIT)
-    .map(([label, n]) => `${n} ${label}`);
+    .map(({ name, n }) => countedFileType(name, n));
   const rest = kinds
     .slice(SUMMARY_KIND_LIMIT)
-    .reduce((sum, [, n]) => sum + n, 0);
+    .reduce((sum, { n }) => sum + n, 0);
   // The remainder counts FILES, not kinds: the number the user wants is how
   // many rows are still unaccounted for, not how many buckets they fell into.
   if (rest > 0) parts.push(`+${rest} more`);

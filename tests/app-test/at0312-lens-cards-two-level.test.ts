@@ -26,7 +26,10 @@
  *      Clicking the header body does not fold; clicking the chevron does. Open,
  *      the rows are the answer and the summary is not ink at all; collapsed, it
  *      is the only report of what the fold is hiding, and for a Files group it
- *      names the kinds rather than just counting them.
+ *      names the kinds, in words, rather than just counting them. The header
+ *      also stands on a different surface from the rows it divides — the step
+ *      that gives the list its two levels, and the one thing the row striping
+ *      can silently swallow.
  *   F. **Reorder still engages while another group is collapsed.** The reorder
  *      hook aborts a drag silently — no error, no log — when any key in the
  *      visible order has no mounted element, so a collapsed group's keys must
@@ -38,6 +41,7 @@
  * @covers tugdeck/src/components/lens/sections/cards-data-source.ts
  * @covers tugdeck/src/components/lens/sections/cards-groups.ts
  * @covers tugdeck/src/components/lens/sections/cards-session-cell.tsx
+ * @covers tugdeck/src/lib/file-type-names.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -312,14 +316,49 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
         expect(collapsed.fileRows).toBe(0);
         // The header stays, and now the summary speaks: it is the only report
         // of what the fold is hiding, and the way back. A Files group names the
-        // kind, so the one open `alpha.txt` reads as a txt rather than as a
-        // bare "1" — the count alone answers a question nobody asked.
+        // kind in words, so the one open `alpha.txt` reads as Text rather than
+        // as a bare "1" — the count alone answers a question nobody asked, and
+        // "txt" is a filename, not a word.
         // Upper-cased because `innerText` is the RENDERED ink and the summary
         // takes the header label's `text-transform` by inheritance — which is
         // the whole point of putting it inside the label: it reads as part of
         // the group's name, in one voice, not as a tally set beside it.
-        expect(collapsed.count).toBe(": 1 TXT");
+        expect(collapsed.count).toBe(": 1 TEXT");
         expect(collapsed.countPainted).toBe(true);
+
+        // A group header stands on a DIFFERENT surface from the rows it
+        // divides — the Lens's own, where the band above the list stands,
+        // while the rows sit in the section body's well. That step is what
+        // gives the list its two levels; without it the header takes the
+        // rows' alternating band and the section flattens into one run of
+        // near-identical bars. Read as painted color rather than as a class,
+        // because the failure is a cascade one: a header cell that never
+        // overrode the striping still has every class it is supposed to.
+        const surfaces = await app.evalJS<{
+          header: string;
+          rows: string[];
+        }>(`(function(){
+          var bg = function (el) {
+            return getComputedStyle(el).backgroundColor;
+          };
+          var cellOf = function (el) {
+            return el.closest(".tug-list-view-cell");
+          };
+          var header = document.querySelector('${filesHeader}');
+          var rows = Array.prototype.slice.call(
+            document.querySelectorAll(${JSON.stringify(PANE_ROW)}),
+          );
+          if (header === null || rows.length === 0) {
+            throw new Error("no header, or no rows to compare it against");
+          }
+          return {
+            header: bg(cellOf(header)),
+            rows: rows.map(function (r) { return bg(cellOf(r)); }),
+          };
+        })()`);
+        for (const row of surfaces.rows) {
+          expect(row).not.toBe(surfaces.header);
+        }
 
         // ---- F. Reorder engages while another group is collapsed. ----------
         //

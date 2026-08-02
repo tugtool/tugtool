@@ -868,8 +868,8 @@ describe("summarizeGroup", () => {
     expect(summarizeGroup("tools", [])).toBe("0");
   });
 
-  it("a files group names the kind", () => {
-    expect(summarizeGroup("files", [file("/x/a.md")])).toBe("1 md");
+  it("a files group names the kind in words", () => {
+    expect(summarizeGroup("files", [file("/x/a.md")])).toBe("1 Markdown");
   });
 
   it("kinds lead by count, ties alphabetically", () => {
@@ -879,25 +879,39 @@ describe("summarizeGroup", () => {
       file("/x/c.md"),
       file("/x/d.css"),
     ]);
-    expect(summary).toBe("2 md · 1 css · 1 ts");
+    expect(summary).toBe("2 Markdown · 1 CSS · 1 TypeScript");
   });
 
-  it("the extension is taken lowercase", () => {
-    expect(summarizeGroup("files", [file("/x/A.MD"), file("/x/b.md")])).toBe(
-      "2 md",
+  it("one name covers a whole family, however it is spelled", () => {
+    // Every image format is one bucket, `.ts` and `.tsx` are one language, and
+    // the extension's case never reaches the reader.
+    expect(
+      summarizeGroup("files", [
+        file("/x/a.png"),
+        file("/x/b.JPG"),
+        file("/x/c.heic"),
+      ]),
+    ).toBe("3 Images");
+    expect(summarizeGroup("files", [file("/x/a.ts"), file("/x/b.tsx")])).toBe(
+      "2 TypeScript",
     );
   });
 
-  it("anything without an extension is a plain file", () => {
+  it("anything without an extension is text", () => {
     // A dotfile's leading dot names the file, an unsaved buffer has no path at
-    // all, and `Makefile` simply has no extension — all three are "file".
+    // all, and `Makefile` simply has no extension — all three are text, which
+    // is both the card they open into and what they honestly are.
     expect(
       summarizeGroup("files", [
         file("/x/Makefile"),
         file("/x/.env"),
         file(null),
       ]),
-    ).toBe("3 file");
+    ).toBe("3 Text");
+  });
+
+  it("an extension nobody has named keeps itself", () => {
+    expect(summarizeGroup("files", [file("/x/a.parquet")])).toBe("1 PARQUET");
   });
 
   it("past the limit the remainder counts FILES, not kinds", () => {
@@ -910,6 +924,6 @@ describe("summarizeGroup", () => {
       file("/x/f.png"),
       file("/x/g.rs"),
     ]);
-    expect(summary).toBe("2 md · 2 png · 1 css · +2 more");
+    expect(summary).toBe("2 Images · 2 Markdown · 1 CSS · +2 more");
   });
 });
