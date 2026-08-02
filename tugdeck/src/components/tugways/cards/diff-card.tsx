@@ -170,7 +170,7 @@ export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElem
         label={descriptor !== null ? descriptorLabel(descriptor) : undefined}
         headerActions={
           <TugPushButton
-            size="sm"
+            size="2xs"
             emphasis="ghost"
             onClick={refresh}
             data-testid="diff-card-refresh"

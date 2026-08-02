@@ -77,7 +77,8 @@ export interface TugDiffDocumentProps {
   /**
    * Extra host controls placed at the end of the header action cluster (the
    * sheet's / Text card's Refresh button). The document owns the view toggle
-   * and Expand/Collapse All; the host owns Refresh.
+   * and Expand/Collapse All; the host owns Refresh. Author host controls at
+   * `size="2xs"` — the whole header line reads at the view toggle's scale.
    */
   headerActions?: React.ReactNode;
   /**
@@ -302,7 +303,9 @@ export function TugDiffDocument({
         <div className="tug-diff-document-header">
           {label !== undefined ? (
             <span className="tug-diff-document-header-label" title={label}>
-              <TugLabel emphasis="proposal">{label}</TugLabel>
+              <TugLabel emphasis="shout" size="3xs">
+                {label}
+              </TugLabel>
             </span>
           ) : null}
           <span
@@ -333,7 +336,7 @@ export function TugDiffDocument({
           </span>
           <span className="tug-diff-document-header-section">
             <TugPushButton
-              size="sm"
+              size="2xs"
               emphasis="ghost"
               onClick={expandAll}
               data-testid="diff-expand-all"
@@ -341,7 +344,7 @@ export function TugDiffDocument({
               Expand All
             </TugPushButton>
             <TugPushButton
-              size="sm"
+              size="2xs"
               emphasis="ghost"
               onClick={collapseAll}
               data-testid="diff-collapse-all"

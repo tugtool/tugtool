@@ -181,6 +181,70 @@ describe.skipIf(!SHOULD_RUN)("AT0104: /diff accordion sheet", () => {
         );
         expect(summary).toBe("2 files changed +2 −0");
 
+        // … and the header line reads as ONE typographic size. Font-size
+        // parity alone doesn't get there — a mixed-case or small-caps run at
+        // the same px reads visibly bigger/smaller than the uppercase segments
+        // beside it — so pin the transform too. Ordered label, summary,
+        // toggle segment, Expand All.
+        const headerType = await app.evalJS<string[]>(
+          `(function(){
+             var sel = [
+               ".tug-diff-document-header-label .tug-label",
+               ".tug-diff-document-summary",
+               '[data-testid="diff-view-mode"] .tug-choice-group-segment',
+               '[data-testid="diff-expand-all"]',
+             ];
+             return sel.map(function(s){
+               var e = document.querySelector(${JSON.stringify(SHEET)} + " " + s);
+               if (!e) return "MISSING:" + s;
+               var cs = getComputedStyle(e);
+               return cs.fontSize + "/" + cs.textTransform + "/" + cs.fontVariantCaps;
+             });
+           })()`,
+        );
+        expect(headerType).toEqual([
+          "10px/uppercase/normal",
+          "10px/uppercase/normal",
+          "10px/uppercase/normal",
+          "10px/uppercase/normal",
+        ]);
+
+        // … and on one baseline. Every run on the line is single-line 10px
+        // IBM Plex Sans, so equal box centers means equal baselines. The label
+        // is the one that drifts: as a plain inline wrapper it inherits the
+        // row's 16px strut and rides that baseline, landing ~3px low.
+        const headerCenters = await app.evalJS<number[]>(
+          `(function(){
+             var sel = [
+               ".tug-diff-document-header-label .tug-label",
+               ".tug-diff-document-summary",
+               '[data-testid="diff-view-mode"] .tug-choice-group-segment',
+               '[data-testid="diff-expand-all"]',
+             ];
+             return sel.map(function(s){
+               var e = document.querySelector(${JSON.stringify(SHEET)} + " " + s);
+               if (!e) return -1;
+               var r = e.getBoundingClientRect();
+               return Math.round((r.top + r.height / 2) * 100) / 100;
+             });
+           })()`,
+        );
+        expect(new Set(headerCenters).size).toBe(1);
+        expect(headerCenters[0]).toBeGreaterThan(0);
+
+        // The file row's +N −M must not butt against the accordion chevron —
+        // the trigger justifies content and chevron to opposite edges with no
+        // gap of its own, so the document has to inset its own row.
+        const chevronGap = await app.evalJS<number>(
+          `(function(){
+             var stat = document.querySelector(${JSON.stringify(SHEET)} + " .tug-diff-document-file-stat");
+             var chev = document.querySelector(${JSON.stringify(SHEET)} + " .tug-accordion-chevron");
+             if (!stat || !chev) return -1;
+             return chev.getBoundingClientRect().left - stat.getBoundingClientRect().right;
+           })()`,
+        );
+        expect(chevronGap).toBeGreaterThanOrEqual(6);
+
         // … the first trigger shows the path …
         const firstTriggerText = await app.evalJS<string | null>(
           `(function(){ var e = document.querySelector(${JSON.stringify(ACCORDION_TRIGGER)}); return e ? e.textContent : null; })()`,

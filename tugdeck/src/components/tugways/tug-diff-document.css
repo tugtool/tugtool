@@ -62,8 +62,19 @@
 }
 
 /* Label — leads the quiet line; ellipsizes FIRST when narrow (a steeper
-   shrink than the summary), never wraps. */
+   shrink than the summary), never wraps.
+
+   `display: flex` is load-bearing for baseline alignment, not layout. As a
+   plain inline container this wrapper inherits the row's 16px font and builds
+   a line box around that strut; the 10px TugLabel inside then rides the 16px
+   baseline, and centering the (too-tall) wrapper in the row left the label
+   sitting ~3px below every other run on the line. As a flex container there is
+   no strut: the wrapper is exactly as tall as the label, so the row's
+   `align-items: center` centers the label itself and its baseline lands with
+   the summary and the buttons. */
 .tug-diff-document-header-label {
+  display: flex;
+  align-items: center;
   flex: 0 3 auto;
   min-width: 0;
   overflow: hidden;
@@ -82,13 +93,25 @@
 }
 
 /* Summary — the flexible spacer that pushes the controls right; ellipsizes
-   after the label when the line is too narrow. */
+   after the label when the line is too narrow.
+
+   The whole header line is one typographic size: 10px
+   (`--tug-font-size-3xs` = `--tug-button-2xs-font-size`), uppercase, tracked.
+   Matching the font-size alone is not enough — a mixed-case run at 10px reads
+   visibly larger than the uppercase 10px segments beside it (ascenders and
+   descenders extend past their cap height), which is what made this line look
+   like three sizes. The transform and tracking here put the summary on the
+   same optical line as the view toggle; the label gets there through
+   TugLabel's `shout` emphasis. Quietness comes from opacity, not from size. */
 .tug-diff-document-summary {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  font-size: var(--tug-font-size-xs);
+  font-size: var(--tug-font-size-3xs);
+  font-weight: var(--tug-font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   opacity: 0.7;
 }
 
@@ -101,13 +124,18 @@
 
 /* One accordion item per file. The trigger is a single row: status badge,
    path (grows + truncates), the +N −M stat, then an optional trailing
-   affordance (the pop-out). */
+   affordance (the pop-out). The trailing padding is breathing room before
+   the accordion's own expand chevron, which butts against the row content
+   otherwise (the trigger justifies content and chevron to the two edges with
+   no gap between them). No `width: 100%` beside it: this is a block-level flex
+   box that already fills its parent, and the explicit 100% made the padding
+   overflow the trigger instead of insetting the stat. */
 .tug-diff-document-file-trigger {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  width: 100%;
   min-width: 0;
+  padding-right: var(--tug-space-md);
   font-family: var(--tug-font-family-mono);
   font-size: var(--tug-font-size-xs);
 }
