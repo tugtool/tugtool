@@ -11,6 +11,51 @@ import WebKit
 /// `clipboard-filters.ts`.
 private let tugAtomsPasteboardType = NSPasteboard.PasteboardType("dev.tug.prompt-atoms")
 
+/// The WebKit feature settings Tug ships with, applied at configuration
+/// time via the `_setEnabled:forFeature:` SPI (keys from
+/// `WKPreferences._features`). Cohort retention holds just-scrolled-past
+/// tiles for a grace period; disabling it cuts the flick-scroll graphics
+/// transient by ~67MB mean / ~92MB max with rest coverage unchanged
+/// (measured, roadmap/scrolling-memory-diet.md#g4-ab).
+private let defaultWebKitFeatureSpec = "TemporaryTileCohortRetentionEnabled=0"
+
+/// Applies `defaultWebKitFeatureSpec`, or the `TUG_WK_FEATURES`
+/// environment override ("Key=0,Key2=1") when present — the lab A/B hook;
+/// the app-test harness forwards every `TUG*` variable. An env spec
+/// replaces the default wholesale, so `TemporaryTileCohortRetentionEnabled=1`
+/// restores stock WebKit behavior for a control arm.
+private func applyWebKitFeatureOverrides(to preferences: WKPreferences) {
+    let spec = ProcessInfo.processInfo.environment["TUG_WK_FEATURES"]
+        ?? defaultWebKitFeatureSpec
+    guard !spec.isEmpty else { return }
+    let featuresSel = NSSelectorFromString("_features")
+    let setSel = NSSelectorFromString("_setEnabled:forFeature:")
+    guard WKPreferences.responds(to: featuresSel),
+          preferences.responds(to: setSel),
+          let features = WKPreferences.perform(featuresSel)?.takeUnretainedValue() as? [NSObject]
+    else {
+        NSLog("TUG_WK_FEATURES: WKPreferences feature SPI unavailable; overrides ignored")
+        return
+    }
+    typealias SetEnabledForFeature = @convention(c) (NSObject, Selector, Bool, NSObject) -> Void
+    let setImpl = unsafeBitCast(
+        preferences.method(for: setSel), to: SetEnabledForFeature.self)
+    for entry in spec.split(separator: ",") {
+        let parts = entry.split(separator: "=", maxSplits: 1)
+        guard parts.count == 2, let value = ["0": false, "1": true][String(parts[1])] else {
+            NSLog("TUG_WK_FEATURES: malformed entry '%@'", String(entry))
+            continue
+        }
+        let key = String(parts[0])
+        guard let feature = features.first(where: { ($0.value(forKey: "key") as? String) == key }) else {
+            NSLog("TUG_WK_FEATURES: unknown feature key '%@'", key)
+            continue
+        }
+        setImpl(preferences, setSel, value, feature)
+        NSLog("TUG_WK_FEATURES: %@ = %@", key, value ? "1" : "0")
+    }
+}
+
 /// Protocol for bridge callbacks from WebKit to AppDelegate
 protocol BridgeDelegate: AnyObject {
     func bridgeChooseSourceTree(completion: @escaping (String?) -> Void)
@@ -401,6 +446,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         // Configure WKWebView
         let config = WKWebViewConfiguration()
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        applyWebKitFeatureOverrides(to: config.preferences)
         config.userContentController = contentController
         // A process pool owned by this window, not shared. WebKit hosts
         // web views from the same pool in the same WebContent process, so

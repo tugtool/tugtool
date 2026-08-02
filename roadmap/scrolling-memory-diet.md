@@ -110,6 +110,51 @@ Under E1, everything beyond ±1 viewport of a transcript is spacer — uniform b
 
 Tug.app owns the WKWebView; WebKit's tile behavior has host-side switches whose availability and default state must be **verified against the macOS 15 SDK/SPI, not assumed**. Candidates to check, each validated by a G2 lab A/B: aggressive tile retention (must be OFF — it retains *more*), temporary tile-cohort retention (retains just-scrolled-past tiles for a grace period; turning it off trades a little re-paint for steady-state memory), giant-tile mode, and any coverage-margin control reachable through `WKPreferences`/`_WKProcessPoolConfiguration`. Honest framing: this item is reconnaissance with a validation harness, not a promised fix — if no reachable knob changes G2's numbers, write that verdict here and move on. Interaction to respect: the 30s monitor already volatilizes coverage under pressure; a knob that merely shrinks *reclaimable* without shrinking *dirty-between-purges* is worth nothing to this program.
 
+#### G4 recon, 2026-08-02 — runtime-verified inventory (macOS 15.6, 24G84) {#g4-recon}
+
+**Method: objc runtime introspection against the installed WebKit, not header folklore** — `class_copyMethodList` on `WKPreferences`/`WKWebViewConfiguration`/`WKProcessPool`/`_WKProcessPoolConfiguration`/`WKWebView`, plus enumeration of the `_features` list (544 entries), with a live smoke test of the setter path. Config point in tugapp: `MainWindow.swift:402–412` builds the `WKWebViewConfiguration` and already uses KVC (`developerExtrasEnabled`), so no private headers are needed.
+
+**The setter path is verified working.** `WKPreferences` exposes `_setEnabled:forFeature:` / `_isEnabledForFeature:`; a smoke test flipped `TemporaryTileCohortRetentionEnabled` to false on a real instance and read it back. Any of the 544 feature keys is reachable by name at config time.
+
+**Candidates for the G2 A/B, in order:**
+
+1. **`TemporaryTileCohortRetentionEnabled` = false** (default true; no direct selector, feature-key path verified). The cohort is the grace period holding just-scrolled-past tiles; expected effect is trimming the post-flick transient (G2 measured ~14 viewports under flick recovering to 4.4 at rest) more than the rest floor itself. Cheap to test, plausibly free of visible cost.
+2. **`ScrollingPerformanceTestingEnabled` = true** (default false). Folklore says WebKit clamps tile coverage toward the visible rect under this flag so scroll benchmarks are deterministic — **unverified semantics; the rig is the arbiter.** If it does clamp, it attacks the 4.4-viewport rest margin directly — but checkerboard-under-flick risk is first-order, and the scrolling-excellence goal gates it: any blank tile under a flick disqualifies it regardless of the MB.
+3. **`UseGiantTiles`** (default false; direct selector `_setUseGiantTiles:`). Larger tile granularity likely *worsens* overdraw at our geometry; A/B only because it is nearly free to run.
+
+**Guard:** `AggressiveTileRetentionEnabled` defaults **false** and must stay false — it retains more, and enabling it is the one clearly wrong direction.
+
+**Verified negative:** no coverage-margin multiplier, speculative-paint distance, or backing-store budget control exists anywhere in the feature set or the SPI selector surface on this OS (swept for tile/coverage/margin/speculative/prefetch/backing/volatile/purge/retention). The 4.4-viewports-at-rest margin is hardcoded velocity-driven policy in `TileController`; if candidates 1–2 do not move G2's numbers, that is G4's exit verdict and the remaining levers are layer breadth (G1, already shipped) and G5.
+
+**Instruments gained for the rig:** `TiledScrollingIndicatorVisible` (draws WebKit's own tile grid + coverage rect — turns the coverage question from vmmap inference into direct observation) and `CompositingBordersVisible` / `CompositingRepaintCountersVisible` for the layer census. `_WKProcessPoolConfiguration.suspendsWebProcessesAggressivelyOnMemoryPressure` exists but concerns background process suspension, not tiles — irrelevant here.
+
+**Next step:** an env-gated feature block in `MainWindow.swift` (e.g. `TUG_WK_FEATURES="TemporaryTileCohortRetentionEnabled=0"`) so the G2 rig can A/B each candidate per app-test launch without touching release behavior; release adopts a knob only after the rig shows a win with zero scroll-fidelity cost.
+
+#### G4 A/B, 2026-08-02 — hook landed, first two arms run, campaign paused {#g4-ab}
+
+**The hook is in:** `applyWebKitFeatureOverrides` in `MainWindow.swift` (uncommitted) parses `TUG_WK_FEATURES="Key=0,Key2=1"` and applies each key via the verified `_setEnabled:forFeature:` path at configuration time; absent the variable it is a no-op, so release behavior is untouched. The app-test harness forwards every `TUG*` variable automatically, and application is verifiable in the launch log (`tests/app-test/logs/at9996-tiles.log` shows `TUG_WK_FEATURES: TemporaryTileCohortRetentionEnabled = 0`).
+
+**Methodology note, binding:** the first two arms were run with a 3s `osascript activate` keeper loop holding the lab window forward while the user worked — **that technique is banned, never again for any test** (it steals the user's keyboard). The remaining arms ran on a genuinely idle machine (user away), where a single normal launch stays visible with no reactivation; that is the sanctioned pattern. If idle-machine windows become scarce, the harness alternative is a front-ordered non-key lab window (`orderFrontRegardless()` + floating level — `visibilityState` is occlusion, not focus), at the cost of covering the user's screen; not built.
+
+**The campaign (at9996 tiles cell, 150 turns, 786×880 scroller, dpr 2, one full run per arm; graphics dirty MB, mean with min–max, evict sub-arm shown — the full-inline sub-arm tracked it within noise everywhere):**
+
+| arm | rest | forced purge ×3 | constant-velocity sweep |
+|---|---|---|---|
+| control (no overrides) | 143 (126–149) | 159 (133–209) | 284 (176–325) |
+| **cohort retention OFF, run 1** | 151 (130–181) | 151 (128–225) | **217 (147–233)** |
+| **cohort retention OFF, run 2** | 149 (149–149) | 150 (128–223) | **215 (147–233)** |
+| ScrollingPerformanceTestingEnabled | 148 (145–149) | 148 (122–216) | 262 (162–288) |
+| UseGiantTiles | 285 (241–291) | 291 (239–387) | 502 (289–590) |
+
+**Verdicts:**
+
+- **`TemporaryTileCohortRetentionEnabled=0` — ADOPT (proposed).** Reproducible across two independent runs: sweep mean −67/−69MB and max −92MB vs control, rest and purge floors unchanged (the cohort is the just-scrolled-past grace period, not rest coverage — exactly as predicted). All cell assertions green in both runs. The mechanism trades a briefly-held dead tile for an earlier repaint if the user reverses scroll direction — the one felt-risk to check live.
+- **`ScrollingPerformanceTestingEnabled` — REJECT.** The folklore coverage-clamp does not materialize on macOS 15.6: rest floor 148 vs control 143 (no clamp), and its transient trim (262) is far weaker than cohort-off's (217). A testing flag with unaudited side effects buys nothing cohort-off doesn't buy better; no combination arm is justified.
+- **`UseGiantTiles` — REJECT, emphatically.** Doubles the rest floor (285 vs 143) and nearly doubles the sweep (502 vs 284) — larger tile granularity forces backing for pixels the small grid never materialized. Closed forever.
+- **The rest floor is confirmed unreachable.** No exposed knob touches the 4.4-viewports-at-rest coverage (the recon's verified negative, now corroborated causally by the one candidate that claimed otherwise). **G4 cannot deliver the −136MB rest-floor projection in [#sequencing]; that headroom belongs to G5 or stays unclaimed.**
+
+**Adoption shape (implemented in the working tree, the user lands it):** `defaultWebKitFeatureSpec = "TemporaryTileCohortRetentionEnabled=0"` in `MainWindow.swift`, applied at configuration time; a `TUG_WK_FEATURES` env spec replaces the default wholesale, so `TemporaryTileCohortRetentionEnabled=1` restores stock WebKit for a control arm. Gate before landing: one live felt-scroll pass on the user's release deck (relaunch with `TUG_WK_FEATURES=TemporaryTileCohortRetentionEnabled=0` exported, flick and direction-reverse the heavy transcripts) — if no blank tile is ever felt, bake the default; if one is, the knob stays lab-only and G4 closes with the transient win unadopted. Expected live effect: the flick-transient band (G2 measured ~14 viewports under flick) tightens toward the rest floor, and the 30s churn's scroll-driven component shrinks; the steady floor does not move.
+
 ### G5 — the endgame: a viewport-sized scroll canvas (only if G2–G4 fail to bound the term) {#g5-viewport-canvas}
 
 The structural fix, held in reserve because it is the expensive one: stop giving WebKit a 70k px layer at all. The scroller's real content becomes O(viewport) tall; scroll position is virtualized (the number the spacers currently encode becomes explicit state); mounted rows are placed by transform inside a viewport-sized canvas. This is how VS Code's editor and every native table view already work — backing store is bounded by the screen *by construction*, and no tile policy can change that. It is also a deep cut against things we currently get for free: native scrollbar and wheel/momentum feel (SmartScroll and [D07] are built on real `scrollTop`), find-in-page reveal, `scrollIntoView`, the restore-anchor protocol, and E1's own geometry. E1's measured-height ledger and windowing math carry over intact — what changes is who owns the scroll offset. **Bar to enter:** G2 shows tile coverage cannot be brought under ~2 viewports per visible scroller by G3+G4, or the re-dirty cycle cannot be broken. If entered, it gets its own design doc and recipe (devise → vet → implement), with scroll-feel parity as a machine-checked acceptance criterion (velocity/settle traces A/B'd against native), not a hope.
@@ -125,6 +170,8 @@ G2 first (the instrument), G1 in parallel (independently justified by probe A, a
 **Status after G2 (2026-08-01, [#g2-first-pass], visible-window pass complete for Q1/Q2):** G3 closed, G5's bar not met, **G4 promoted to co-lead**.
 
 **Status after the G1 live read (2026-08-02, [#g1-build]):** G1 **shipped and measured live** — culled floor ~400–420M at a two-buried-pane arrangement, causal A/B −110–125MB (~55–63MB/pane; the working-order projection below assumed probe A's 3-pane stacking, so read its "565 → ~356" as arrangement-dependent). **G4 is now the front item.**
+
+**Status after the G4 A/B campaign (2026-08-02, [#g4-ab]):** one knob adoptable — **cohort retention off** (sweep transient −67MB mean / −92MB max, reproduced; rest untouched) — pending a live felt-scroll gate. **The 4.4-viewport rest floor is verified unreachable by any exposed knob**, so item 2's "206 → 70MB" projection below is **refuted**: the rest-floor headroom (~136MB) now belongs to G5's entry decision, and the near-term program is the live coverage read (item 3), the layer census (item 4), and G6.
 
 **The live floor decomposes, and that sets the order.** Applying G2's measured 4.4 viewports-at-rest to live geometry (transcript scrollport 798×1222 = **15.6MB/viewport**; window 2879×1599 = **73.7MB**):
 
