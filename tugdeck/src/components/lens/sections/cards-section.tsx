@@ -72,7 +72,9 @@ import type {
   TugListViewCellProps,
   TugListViewCellRenderer,
   TugListViewDelegate,
+  TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
+import { useFocusManager } from "@/components/tugways/use-focusable";
 import { renderIcon } from "@/components/tugways/tug-tab-bar";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { classifyFileKind } from "@/lib/file-kinds";
@@ -593,6 +595,7 @@ function CardsSectionBody({
 }): React.ReactElement {
   const filterQuery = useCardsFilterQuery();
   const { dataSource } = useCardsInputs(filterQuery);
+  const focusManager = useFocusManager();
   const count = dataSource.numberOfItems();
   const filtering = dataSource.isFiltering();
 
@@ -644,7 +647,31 @@ function CardsSectionBody({
   // place, since `applyShift` only translates matched elements.
   const listWrapRef = useRef<HTMLDivElement | null>(null);
   const caretRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<TugListViewHandle>(null);
   const dragGroupRef = useRef<LensCardsGroup | null>(null);
+
+  // Hand the keyboard back to the row (or group) that was just set down. The
+  // press that started the carry would otherwise have placed it here itself —
+  // the arm cancels that pointerdown and the drop swallows the trailing click,
+  // so without this a carry is the one gesture in the list that leaves the
+  // keyboard nowhere. Two halves, because a list's key view and its movement
+  // cursor are two different registers: the list takes the key view ([L22],
+  // through `place()` — never a raw focus write), and the cursor parks on the
+  // block. `moveCursorTo` is a no-op for a row that is gone, so a drop whose
+  // commit removed its own row simply leaves the cursor alone.
+  const landCursorOn = useCallback(
+    (index: number): void => {
+      if (index < 0) return;
+      lastSelectedRowId = dataSource.idForIndex(index);
+      focusManager?.place(
+        host.lensCardId,
+        { kind: "focus-key", focusKey: `${host.focusGroup}:0` },
+        { modality: "keyboard" },
+      );
+      listRef.current?.moveCursorTo(index);
+    },
+    [dataSource, focusManager, host.lensCardId, host.focusGroup],
+  );
   const { onRowPointerDown: beginRowReorder } = useBlockReorder({
     containerRef: listWrapRef,
     caretRef,
@@ -661,6 +688,8 @@ function CardsSectionBody({
     },
     selector: ROW_SELECTOR,
     kindAttr: ROW_KIND_ATTR,
+    landKeyboard: (orderKey) =>
+      landCursorOn(dataSource.indexForOrderKey(orderKey)),
   });
   // Reorder is unavailable while a filter is active: the drop order describes
   // only the VISIBLE rows and the commit persists the whole group's
@@ -687,6 +716,9 @@ function CardsSectionBody({
     commit: (order) => lensStore.setCardsGroupOrder([...order]),
     selector: GROUP_RUN_SELECTOR,
     kindAttr: GROUP_RUN_ATTR,
+    // The keyboard lands on the group's header — the block's own handle, and
+    // the row the user was pointing at when they let go.
+    landKeyboard: (group) => landCursorOn(dataSource.indexForGroup(group)),
   });
   // Unarmed while filtering, for the row reorder's reason: a group with no
   // surviving row emits no header, so the visible order is a partial one and
@@ -789,6 +821,7 @@ function CardsSectionBody({
                 visible order has no MOUNTED element, so a windowed list would
                 have working reorder above the fold and dead reorder below it. */}
             <TugListView<LensCardsDataSource>
+              ref={listRef}
               dataSource={dataSource}
               delegate={delegate}
               cellRenderers={CARDS_CELL_RENDERERS}

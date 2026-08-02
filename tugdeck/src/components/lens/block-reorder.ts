@@ -36,13 +36,26 @@
  *    the opened gap.
  *  - **pointerup** commits `setSectionOrder` only if the index changed, then
  *    FLIPs every section from its pre-commit visual into its committed slot
- *    (measure → `flushSync(commit)` → measure → invert → play), so the band
- *    settles into place with no jump even though sections have unequal
- *    heights. An unchanged index (or Escape) animates back and commits
+ *    (measure → `flushSync(commit)` → measure → play from the old offset), so
+ *    the band settles into place with no jump even though sections have
+ *    unequal heights. An unchanged index (or Escape) eases back and commits
  *    nothing.
  *  - **Escape** aborts locally: the handler's own capture-phase keydown
  *    listener swallows the key (so the Lens `CANCEL_DIALOG` responder never
- *    sees it) and animates the drag back without committing.
+ *    sees it) and eases the drag back without committing.
+ *
+ * **The gesture ends before the settle plays.** Releasing the drag latch and
+ * handing the keyboard back to what was set down (`landKeyboard` — a release
+ * always, an Escape never) happen the moment the commit lands, and the settle
+ * animates on top of an already-final state. The inverse — outcome waiting on
+ * motion — is what let a drop in a window that was not in front leave the
+ * surface latched forever: no frames, so no play, so no end of gesture.
+ *
+ * Motion is `TugAnimator`, not a frame loop and not a timer ([L13]): the
+ * settle is multi-element coordination with a completion, which is exactly
+ * what `group()` is for. `requestAnimationFrame` appears nowhere here —
+ * the live drag writes its transform straight from the pointer event, which
+ * IS the gesture-driven loop the law allows.
  *
  * No React state changes mid-drag — appearance is inline `transform` +
  * `data-*` + CSS transitions ([L06]/[L08]); the store commit and the
@@ -55,12 +68,12 @@
 import React from "react";
 import { flushSync } from "react-dom";
 
+import { group } from "@/components/tugways/tug-animator";
+
 import { moveInArray } from "./lens-section-registry";
 
 /** Close-up / settle duration (Spec S01: 120–160ms ease). */
 const SETTLE_MS = 140;
-/** Slack after the settle before inline transitions are cleared. */
-const SETTLE_CLEAR_MS = SETTLE_MS + 60;
 
 const SECTION_SELECTOR = ".lens-section[data-lens-section]";
 const KIND_ATTR = "data-lens-section";
@@ -128,6 +141,31 @@ export interface UseBlockReorderOptions {
    * selection waits to find out whether the press was a click.
    */
   nativeDragSource?: boolean;
+  /**
+   * Put the keyboard on the block that was just set down.
+   *
+   * A press on one of these surfaces normally lands the keyboard on it — a
+   * band click focuses its section's list, a row click moves the list's key
+   * view. A carry suppresses both halves of that: the arm cancels the
+   * pointerdown, and the drop swallows the trailing click so a drop never
+   * reads as an activation. So the keyboard, which was going somewhere, ends
+   * up nowhere. This hands it back — the same destination the click would
+   * have reached, for the block the user actually moved.
+   *
+   * Called on any completed release, whether or not the order changed, and
+   * NEVER on an Escape abort: an abort says "never mind", and a gesture the
+   * user took back must not leave the keyboard somewhere new. It runs as soon
+   * as the commit lands — after the settle's keyframes are measured, so a
+   * placement free to scroll cannot move the ground they were computed from,
+   * but before the settle plays, because where the keyboard is must never
+   * wait on an animation.
+   *
+   * It is the caller's to define, because only the caller knows what focusing
+   * a block means for its surface: a Lens section places on the section's own
+   * focus key, a list row moves the list's movement cursor. Placement is
+   * `place()`'s, never a raw focus write ([L22]).
+   */
+  landKeyboard?: (kind: string) => void;
 }
 
 export interface UseBlockReorder {
@@ -148,13 +186,16 @@ export function useBlockReorder({
   selector = SECTION_SELECTOR,
   kindAttr = KIND_ATTR,
   nativeDragSource = false,
+  landKeyboard,
 }: UseBlockReorderOptions): UseBlockReorder {
   // Latest-ref mirrors so the stable callback reads current inputs ([L07]).
   const getVisibleOrderRef = React.useRef(getVisibleOrder);
   const commitRef = React.useRef(commit);
+  const landKeyboardRef = React.useRef(landKeyboard);
   React.useLayoutEffect(() => {
     getVisibleOrderRef.current = getVisibleOrder;
     commitRef.current = commit;
+    landKeyboardRef.current = landKeyboard;
   });
 
   const draggingRef = React.useRef(false);
@@ -305,77 +346,114 @@ export function useBlockReorder({
         }
       };
 
-      // Animate every block from its current transform back to none, then
-      // clear — used for an abort or an unchanged-index drop (no commit).
-      const settleBack = (): void => {
-        for (const el of carried) {
-          el.style.transition = `transform ${SETTLE_MS}ms ease`;
-          el.style.transform = "";
-        }
+      // The end of every carry, and it does NOT wait for the settle to play.
+      // Releasing the latch and handing back the keyboard are the gesture's
+      // OUTCOME; the settle is how it looks arriving. Hanging the outcome off
+      // the animation is what let a drop in a background window leave the
+      // surface permanently latched — the window ran no frames, so the play
+      // never started, so the gesture never ended. State first, motion after.
+      const finish = (landed: boolean): void => {
         for (const el of dragged) el.removeAttribute("data-dragging");
         container.removeAttribute(CARRYING_ATTR);
         caret?.removeAttribute("data-visible");
-        window.setTimeout(() => {
-          for (const el of carried) el.style.transition = "";
-          draggingRef.current = false;
-        }, SETTLE_CLEAR_MS);
+        draggingRef.current = false;
+        if (landed) landKeyboardRef.current?.(kind);
+      };
+
+      // Play a settle over `moves` and drop the animations when it is done.
+      // `fill: "none"` because every one of these ends at the element's own
+      // resting transform — there is nothing to hold, and a filled animation
+      // left behind would quietly override the next inline write ([L23]).
+      const playSettle = (
+        moves: ReadonlyArray<{ el: HTMLElement; from: string }>,
+      ): void => {
+        if (moves.length === 0) return;
+        const settle = group({ duration: SETTLE_MS, easing: "ease" });
+        const anims = moves.map(({ el, from }) =>
+          settle.animate(el, { transform: [from, "none"] }, { fill: "none" }),
+        );
+        void settle.finished
+          .then(() => {
+            for (const anim of anims) anim.raw.cancel();
+          })
+          .catch(() => {
+            /* superseded or cancelled — nothing left to release */
+          });
+      };
+
+      // Ease every carried block from where it is back to none — an abort, or
+      // a drop whose index never changed (no commit either way).
+      const settleBack = (landed: boolean): void => {
+        const moves = carried
+          .map((el) => ({ el, from: el.style.transform }))
+          .filter((m) => m.from !== "");
+        clearInline();
+        finish(landed);
+        playSettle(moves);
       };
 
       // FLIP the commit: snapshot the pre-commit visual, reorder synchronously,
-      // then invert → play so each element slides from where it looked into
-      // its committed slot (jump-free across unequal heights). Per ELEMENT
-      // rather than per block: a block's members can be re-parented into
-      // different slots by the commit, and each one still has to land without
-      // a jump.
+      // then play each element from where it LOOKED into its committed slot, so
+      // the settle is jump-free across unequal heights. Per ELEMENT rather than
+      // per block: a block's members can be re-parented into different slots by
+      // the commit, and each one still has to land without a jump.
+      //
+      // The invert is the animation's first keyframe rather than an inline
+      // style, which is what removes the old forced reflow and the frame hop
+      // that used to follow it: WAAPI is told where the element came from, so
+      // nothing has to be written and then read back.
       const settleCommit = (): void => {
         const newVisible = moveInArray(visible, dragIndex, targetIndex);
         const first = new Map<HTMLElement, number>();
         for (const el of allEls) first.set(el, el.getBoundingClientRect().top);
 
         clearInline();
-        for (const el of dragged) el.removeAttribute("data-dragging");
-        container.removeAttribute(CARRYING_ATTR);
-        caret?.removeAttribute("data-visible");
-
         flushSync(() => commitRef.current(newVisible));
 
+        const moves: { el: HTMLElement; from: string }[] = [];
         for (const el of allEls) {
           const last = el.getBoundingClientRect().top;
           const dy = (first.get(el) ?? last) - last;
-          el.style.transition = "none";
-          el.style.transform = dy === 0 ? "" : `translateY(${dy}px)`;
+          if (dy !== 0) moves.push({ el, from: `translateY(${dy}px)` });
         }
-        // Force a reflow so the inverted transform is the animation's start,
-        // then play to none on the next frame.
-        void container.offsetHeight;
-        requestAnimationFrame(() => {
-          for (const el of allEls) {
-            el.style.transition = `transform ${SETTLE_MS}ms ease`;
-            el.style.transform = "";
-          }
-          window.setTimeout(() => {
-            for (const el of allEls) el.style.transition = "";
-            draggingRef.current = false;
-          }, SETTLE_CLEAR_MS);
-        });
+        // Measured against the committed layout, so the gesture can end — and
+        // its keyboard landing can scroll, if it needs to — without moving the
+        // ground the settle was computed from.
+        finish(true);
+        playSettle(moves);
       };
 
       // An engaged carry is a DRAG, never a row activation — but the pointerup
       // still spawns a trailing `click` on the cell under the pointer, which the
       // list would read as a select/activate (e.g. front the session card, or
       // focus a band's list). Swallow that one click at capture phase so a drop
-      // never activates a row. One-shot: it removes itself the moment it fires,
-      // and a post-up fallback clears it if no click follows.
-      const swallowNextClick = (ev: MouseEvent): void => {
+      // never activates a row.
+      //
+      // What it is aimed at is the click the BROWSER makes out of this
+      // gesture's own pointerup, so it only ever swallows a trusted one. A
+      // synthetic `.click()` is some other code deciding to activate a row and
+      // has nothing to do with the drag that just ended — swallowing that
+      // would make a drag quietly disable a row for whatever came next.
+      //
+      // It is released two ways, and neither is a clock. The click itself
+      // releases it; and if no click follows (a drop over a gap), the next
+      // POINTERDOWN does — a later gesture cannot begin before this one's
+      // click would have arrived, so a press is proof none is coming. The
+      // duration a timer would have to guess is unknowable, and a window that
+      // is not in front stretches every timer to about a second, which is long
+      // enough to swallow a real click the user meant.
+      const releaseSwallow = (): void => {
+        window.removeEventListener("click", swallowNextClick, true);
+        window.removeEventListener("pointerdown", releaseSwallow, true);
+      };
+      function swallowNextClick(ev: MouseEvent): void {
+        if (!ev.isTrusted) return;
         ev.preventDefault();
         ev.stopImmediatePropagation();
-        window.removeEventListener("click", swallowNextClick, true);
-      };
-      const clearSwallow = (): void => {
-        window.setTimeout(
-          () => window.removeEventListener("click", swallowNextClick, true),
-          0,
-        );
+        releaseSwallow();
+      }
+      const armSwallowRelease = (): void => {
+        window.addEventListener("pointerdown", releaseSwallow, true);
       };
 
       const detach = (): void => {
@@ -386,9 +464,11 @@ export function useBlockReorder({
 
       const onUp = (): void => {
         detach();
-        clearSwallow();
+        armSwallowRelease();
         if (targetIndex !== dragIndex) settleCommit();
-        else settleBack();
+        // A release that changed nothing is still a release: the block was
+        // carried and set down, so the keyboard lands on it either way.
+        else settleBack(true);
       };
 
       const onKey = (ev: KeyboardEvent): void => {
@@ -398,8 +478,11 @@ export function useBlockReorder({
         ev.preventDefault();
         ev.stopImmediatePropagation();
         detach();
-        clearSwallow();
-        settleBack();
+        armSwallowRelease();
+        // Aborted, so the keyboard stays where it was. Escape means the
+        // gesture never happened, and a taken-back drag must not leave the
+        // keyboard somewhere the user did not put it.
+        settleBack(false);
       };
 
       window.addEventListener("click", swallowNextClick, true);

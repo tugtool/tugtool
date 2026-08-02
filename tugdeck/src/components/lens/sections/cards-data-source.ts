@@ -681,6 +681,21 @@ export class LensCardsDataSource implements TugListViewDataSource {
     return this.rows.findIndex((row) => idOfRow(row) === id);
   }
 
+  /** Index of the pane row carrying this order key, or -1 when absent — how a
+   *  reorder finds the row it just moved, which it knows only by that key. */
+  indexForOrderKey(orderKey: string): number {
+    return this.rows.findIndex(
+      (row) => row.type === "pane" && row.orderKey === orderKey,
+    );
+  }
+
+  /** Index of this group's header row, or -1 when the group renders none. */
+  indexForGroup(group: string): number {
+    return this.rows.findIndex(
+      (row) => row.type === "group-header" && row.group === group,
+    );
+  }
+
   /**
    * Index of the first pane row, or -1 when the projection holds none.
    *

@@ -132,6 +132,24 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
     commit: (newVisible) => {
       lensStore.setSectionOrder([...newVisible]);
     },
+    // The keyboard follows the band that was set down — the same destination
+    // and the same modality a band CLICK reaches (`lens-section-band`'s
+    // `onBandClick`). A carry suppresses that click on purpose, so this is the
+    // click's landing handed back rather than a new behavior: a section the
+    // user just moved is the section they are working on.
+    //
+    // A collapsed band has no body and therefore no focusable, so it is left
+    // alone: a keyboard placement on a key that has not mounted arms a
+    // late-mount resume, and a band that expands minutes later must not yank
+    // the keyboard off whatever the user was doing by then.
+    landKeyboard: (kind) => {
+      if (collapsed.has(kind)) return;
+      focusManager?.place(
+        cardId,
+        { kind: "focus-key", focusKey: `${sectionFocusGroup(kind)}:0` },
+        { modality: "keyboard" },
+      );
+    },
   });
 
   // Escape inside the Lens focuses back out: re-dispatch FOCUS_LENS via

@@ -26,13 +26,25 @@
  *   3. After the drop: the group headers swap, the runs are still whole and
  *      contiguous, and no card was fronted.
  *   4. `cardsGroupOrder` persisted, so the arrangement survives a relaunch.
+ *   5. The keyboard LANDED on what was set down: the list holds the key view
+ *      and the movement cursor is on the moved group's header. A carry cancels
+ *      its own pointerdown and swallows its trailing click, so without an
+ *      explicit landing it is the one gesture in the list that leaves the
+ *      keyboard nowhere.
  *
- * Then it does it again, the other way, and that repeat is its own gate: the
- * FLIP holds a latch that refuses a new carry until the settle finishes, and
- * only a second drag can tell you the latch came back. It dwells first, because
- * a backgrounded window throttles DOM timers to about a second and stretches
- * the settle well past its authored 200ms — the wait is the harness's, not the
- * surface's.
+ * Then it does it again, the other way, with no wait in between, and that is
+ * two gates at once. The FLIP holds a latch that refuses a new carry until the
+ * gesture ends, so a second drag engaging at all says the first one ended —
+ * and it ending IMMEDIATELY says the end is tied to the commit rather than to
+ * the settle animation. A surface that made the keyboard, the latch, and the
+ * committed state wait for motion would fail here, in a window that is not in
+ * front and plays no motion at all.
+ *
+ * That second carry reads `data-dragging` and NOT the inline transform, which
+ * is what it used to read. A transform can be left over from the previous
+ * carry, so a drag that never engaged read as engaged — which is how a settle
+ * that never completed passed here for a while. The attribute is written by
+ * this carry and cleared when it ends, so it cannot be inherited.
  *
  * @covers tugdeck/src/components/lens/block-reorder.ts
  * @covers tugdeck/src/components/lens/sections/cards-section.tsx
@@ -219,19 +231,42 @@ describe.skipIf(!SHOULD_RUN)("at0313 — a Cards group carries its rows", () => 
           );
           expect(persisted?.value?.[0]).toBe("tools");
 
+          // The keyboard is on what was set down. A press on a row normally
+          // places it there itself, and a carry suppresses both halves of that
+          // — the arm cancels the pointerdown, the drop swallows the trailing
+          // click — so without an explicit landing a carry is the one gesture
+          // in this list that leaves the keyboard nowhere. Both registers are
+          // checked, because they are two: the list holds the key view, and
+          // the movement cursor is on the header of the group that moved.
+          const landed = await app.evalJS<{
+            listHasKeyView: boolean;
+            cursorGroup: string | null;
+          }>(`(function(){
+            var list = document.querySelector(".lens-cards-list");
+            var cursor = document.querySelector(
+              ".lens-cards-list .tug-list-view-cell[data-key-cursor]",
+            );
+            var header = cursor === null
+              ? null
+              : cursor.querySelector(".lens-cards-header");
+            return {
+              listHasKeyView: list !== null
+                && list.hasAttribute("data-key-view-kbd"),
+              cursorGroup: header === null
+                ? null
+                : header.getAttribute("data-lens-group"),
+            };
+          })()`);
+          expect(landed.listHasKeyView).toBe(true);
+          expect(landed.cursorGroup).toBe("tools");
+
           // ---- And again, the other way. -----------------------------------
           //
           // Not a repetition for its own sake: the in-drag latch has to have
           // been released for this to engage at all, and a drag that quietly
-          // refuses to start says nothing in the console.
-          // Past the settle, throttling included — see the header note.
-          await app.evalJS<null>(
-            `(window.__at0313Ready = Date.now() + 1500, null)`,
-          );
-          await app.waitForCondition<boolean>(
-            `Date.now() > window.__at0313Ready`,
-            { timeoutMs: 5_000 },
-          );
+          // refuses to start says nothing in the console. No dwell — the
+          // gesture ends when the commit lands, not when the settle finishes
+          // playing, so the surface is armed again immediately.
           const engagedAgain = await app.evalJS<boolean>(`(function(){
             var header = document.querySelector(${JSON.stringify(headerSel("files"))});
             var tools = document.querySelector(${JSON.stringify(headerSel("tools"))});
@@ -245,10 +280,15 @@ describe.skipIf(!SHOULD_RUN)("at0313 — a Cards group carries its rows", () => 
             var to = tools.getBoundingClientRect().top + 2;
             header.dispatchEvent(new PointerEvent("pointerdown", opts(y)));
             window.dispatchEvent(new PointerEvent("pointermove", opts(to)));
+            // The dragging attribute, not the inline transform: a transform
+            // can be left over from the PREVIOUS carry's settle, which would
+            // make a drag that never engaged read as engaged. The attribute is
+            // set by this carry and cleared by its settle, so it can only be
+            // true while a carry is actually live.
             var moved = Array.from(
               document.querySelectorAll('[data-lens-group-run="files"]'),
             ).every(function (el) {
-              return el.style.transform.indexOf("translateY") !== -1;
+              return el.getAttribute("data-dragging") === "true";
             });
             window.dispatchEvent(new PointerEvent("pointerup", opts(to)));
             return moved;
@@ -269,6 +309,7 @@ describe.skipIf(!SHOULD_RUN)("at0313 — a Cards group carries its rows", () => 
             "tools",
             "tools",
           ]);
+
         } finally {
           await app.close();
         }

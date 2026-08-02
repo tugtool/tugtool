@@ -760,6 +760,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
   const listRef = useRef<TugListViewHandle>(null);
   const listWrapRef = useRef<HTMLDivElement | null>(null);
   const caretRef = useRef<HTMLDivElement | null>(null);
+  const focusManager = useFocusManager();
 
   // Descend into a row when it opens for editing ([P06]/[R01]): the editor cell
   // mounts in the same commit that set `editingId`; this parent layout effect
@@ -856,6 +857,24 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     // The incipit is a native drag source into a session prompt, so the arm
     // must not cancel the press the browser starts that drag from.
     nativeDragSource: true,
+    // Hand the keyboard to the row that was set down. A row's press normally
+    // places it here itself; the drop swallows the trailing click so a carry
+    // never reads as an activation, and this is that landing handed back.
+    // Both registers move — the list takes the key view through `place()`
+    // ([L22]), the movement cursor parks on the row — and the remembered
+    // selection follows, so a later Cmd-L returns to the row the user moved
+    // rather than to whatever it was before the drag.
+    landKeyboard: (id) => {
+      const index = dataSource.indexForId(id);
+      if (index < 0) return;
+      lastSelectedSnippetId = id;
+      focusManager?.place(
+        host.lensCardId,
+        { kind: "focus-key", focusKey: `${host.focusGroup}:0` },
+        { modality: "keyboard" },
+      );
+      listRef.current?.moveCursorTo(index);
+    },
   });
   // Reorder is unavailable while a filter is active: the drop order the drag
   // computes describes the VISIBLE rows, and `store.setOrder` expects the whole
