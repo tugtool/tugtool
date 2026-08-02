@@ -421,6 +421,30 @@ describe("PulseVoice — the monologue", () => {
     ]);
   });
 
+  test("a long command reaches the deck whole — the daemon budgets no widths", () => {
+    // How much of a command fits is the deck's to decide, at the width the
+    // surface actually has, and its activity run truncates in the MIDDLE —
+    // which needs the tail. A budget applied here would throw that tail away
+    // before any surface saw it, and would do it at one width for all of them.
+    const voice = new PulseVoice();
+    const command =
+      "cd /Users/someone/src/project && for f in $(git diff --name-only main); do npx tsc --noEmit $f; done";
+    voice.onFrame(
+      "s1",
+      toolUse("Agent", { subagent_type: "Explore" }, { id: "toolu_agent" }),
+      0,
+    );
+    voice.flush(1_100);
+    voice.onFrame(
+      "s1",
+      toolUse("Bash", { command }, { id: "toolu_1", parent: "toolu_agent" }),
+      2_200,
+    );
+    expect(voice.flush(2_300)).toEqual([
+      { scope: "s1", text: `Explore · Running ${command}` },
+    ]);
+  });
+
   test("a slug agent type shows a clean display label, never a raw slug", () => {
     const voice = new PulseVoice();
     voice.onFrame(

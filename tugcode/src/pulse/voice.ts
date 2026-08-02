@@ -435,7 +435,7 @@ function askQuestionBeat(frame: ToolUse): string {
     first && typeof first.header === "string" && first.header.length > 0
       ? first.header
       : null;
-  return header !== null ? `Asking: ${clipPhrase(header, 40)}` : "Asking a question";
+  return header !== null ? `Asking: ${narratedPhrase(header)}` : "Asking a question";
 }
 
 /**
@@ -471,10 +471,28 @@ function isGenericNonFileTool(frame: ToolUse): boolean {
   return typeof input.file_path !== "string";
 }
 
-/** One line, clipped with an ellipsis. */
-function clipPhrase(text: string, n: number): string {
+/**
+ * The transport guard on a phrase quoted into a beat — a command, a search
+ * pattern, a question's header.
+ *
+ * Deliberately far above any display width, because it is NOT a display
+ * budget. How much of a phrase fits is the DECK's to decide, at the width the
+ * surface actually has: the Z2 strip and a Lens session row are different
+ * widths, both move with the window, and `TugPulse` truncates an activity in
+ * the MIDDLE — which it can only do given the whole string, since a command
+ * identifies itself at the head and names what it acts on at the tail. A
+ * budget guessed here throws that tail away before the deck ever sees it, and
+ * throws it away at one width for every surface at once.
+ *
+ * What the guard is for is a pathological input riding the feed: a heredoc, a
+ * minified blob, a pasted file. An ordinary command never reaches it.
+ */
+const PHRASE_GUARD = 400;
+
+/** One line, whole — see {@link PHRASE_GUARD} for the one case it is not. */
+function narratedPhrase(text: string): string {
   const t = oneLine(text);
-  return t.length <= n ? t : `${t.slice(0, n - 1)}…`;
+  return t.length <= PHRASE_GUARD ? t : `${t.slice(0, PHRASE_GUARD - 1)}…`;
 }
 
 /**
@@ -495,15 +513,15 @@ function narrateTool(toolName: string, input: object): string {
       return path ? `Editing ${path}` : "Editing";
     case "Bash":
       return typeof inp.command === "string"
-        ? `Running ${clipPhrase(inp.command, 48)}`
+        ? `Running ${narratedPhrase(inp.command)}`
         : "Running a command";
     case "Grep":
       return typeof inp.pattern === "string"
-        ? `Searching ${clipPhrase(inp.pattern, 32)}`
+        ? `Searching ${narratedPhrase(inp.pattern)}`
         : "Searching";
     case "Glob":
       return typeof inp.pattern === "string"
-        ? `Finding ${clipPhrase(inp.pattern, 32)}`
+        ? `Finding ${narratedPhrase(inp.pattern)}`
         : "Finding files";
     default:
       return toolName;

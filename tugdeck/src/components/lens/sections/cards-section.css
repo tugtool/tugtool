@@ -158,28 +158,54 @@
 
 /* ── Group headers ────────────────────────────────────────────────────────── */
 
-/* A GROUP HEADER RIDES THE LENS'S SURFACE; ITS ROWS SIT IN THE WELL.
-   The band above this list says "header" by standing a step ABOVE its content
-   — the section body is a well cut into the Lens (`lens-section-band.css`) —
-   and a group header inside the list has to say the same thing the same way,
-   because it is the same kind of thing one level down. Left on the well with
-   the rows, and taking the rows' alternating band on top of that, a header was
-   just another stripe: the section's two levels flattened into one run of
-   near-identical bars, and the alternation stopped reading as alternation
-   because it had nothing to alternate against.
+/* THE SUB-HEADER'S OWN TONE — the third level the rail grew.
+   The Lens used to have two: a band on the Lens's surface, and the band's
+   content in a well cut below it. Cards has three — band, group sub-header,
+   rows — and a third level needs a third tone. Borrowing one of the two it
+   sits between is what does not work: on the well the sub-header is one more
+   row, and on the band's own surface it stops separating from the thing it is
+   supposed to be a header FOR, because a header's whole job here is to divide
+   the rows under it from the rows under the last one.
 
-   So the header steps out of the striping and back onto the Lens's own
-   surface. The rows keep the well and keep their bands, and the contrast that
-   matters — content against the headers that divide it — is a surface step
-   again rather than a 4% wash.
+   So the sub-header is not a surface at all — it is a WASH ON THE WELL,
+   measured on the same scale the rows' alternating bands are, which is the
+   only way its separation is stated against the thing it has to beat. The
+   rows band at ±4% of the surface's own foreground; the header stands at the
+   wash below, well clear of both parities, so it never reads as one of them
+   however the striping is retuned. Washing toward the FOREGROUND rather than
+   picking a color is what makes one number right in all six themes: the
+   foreground is light on the dark themes and dark on the light ones, so the
+   header lifts off the well in the direction that theme's content already
+   lifts (the same construction, and the same reasoning, as the striping
+   tokens in `tug-list-view.css`).
 
-   Doubled selector for the same reason the rest of this file doubles: it has
-   to beat `.tug-list-view[data-row-striping="on"] .tug-list-view-cell[…]`
-   whatever order the bundle lands the two files in. */
+   The rule under it is the boundary itself, and it is the strong border tone
+   rather than the muted hairline the rows are divided by: a divider between
+   two rows and the line where a group starts should not be the same line.
+
+   TUNE the two knobs below — they are what this is for. Doubled selector so
+   the wash beats `.tug-list-view[data-row-striping="on"] .tug-list-view-cell`
+   whatever order the bundle lands the two files in; `!important` on the rule
+   for the same reason the divider above uses it. */
+body {
+  /* How far the sub-header lifts off the well, as a percentage of the
+     surface's own foreground. The rows' bands are ±4%; below about 6 this
+     stops reading as a level and starts reading as a third stripe. */
+  --tugx-lens-group-header-wash: 9%;
+  /* The line where the group's content begins. */
+  --tugx-lens-group-header-rule: var(--tug7-element-global-border-normal-strong-rest);
+}
+
 /* @tug-renders-on: --tug7-surface-card-primary-normal-well-rest */
 .tug-list-view.lens-cards-list[data-row-striping]
   .tug-list-view-cell[data-tug-list-cell-kind="group-header"] {
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  background-color: color-mix(
+    in oklab,
+    var(--tug7-element-global-text-normal-default-rest)
+      var(--tugx-lens-group-header-wash, 9%),
+    var(--tug7-surface-card-primary-normal-well-rest)
+  );
+  border-bottom-color: var(--tugx-lens-group-header-rule) !important;
 }
 
 /* A group header is a row like any other — it takes the same chrome, the same
