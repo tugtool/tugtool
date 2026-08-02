@@ -1614,12 +1614,33 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // Read from the live DOM rather than the token, so a theme or layout
     // that changes the gap is picked up without a parallel source of truth.
     const listWindowElRef = React.useRef<HTMLDivElement | null>(null);
-    const rowGapPxRef = React.useRef(0);
-    const refreshRowGap = React.useCallback((): void => {
+    const rowGapPxRef = React.useRef<number | null>(null);
+    // Read the live flex row-gap and FOLD ANY CHANGE INTO THE LEDGER.
+    // The gap is part of every ledger entry (outer extent = height +
+    // gap), and it is not a constant: the session card resolves it
+    // from a per-card response-settings custom property that lands
+    // AFTER the list mounts, and a theme or density change can move it
+    // any time. A one-shot mount read left every entry short by the
+    // difference between the mount-time gap and the settled one — a
+    // uniform per-row deficit that collapses `scrollHeight` under
+    // eviction and misplaces every spacer. Rebasing (`adjustAll` by
+    // the delta) restores exactness without re-measuring: the rows'
+    // own heights didn't change, only the folded gap term. Returns
+    // `true` when a change was folded, so callers re-window.
+    const syncRowGap = React.useCallback((): boolean => {
       const el = listWindowElRef.current;
-      if (el === null) return;
+      if (el === null) return false;
       const raw = Number.parseFloat(getComputedStyle(el).rowGap);
-      rowGapPxRef.current = Number.isFinite(raw) ? raw : 0;
+      const gap = Number.isFinite(raw) ? raw : 0;
+      const prev = rowGapPxRef.current;
+      if (prev === null) {
+        rowGapPxRef.current = gap;
+        return false;
+      }
+      if (Math.abs(gap - prev) < 0.5) return false;
+      rowGapPxRef.current = gap;
+      heightIndexRef.current.adjustAll(gap - prev);
+      return true;
     }, []);
 
     // Previous commit's rendered range, fed back to `computeWindow` as
@@ -2155,7 +2176,92 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         windowResult = candidate;
         evictingThisCommit = true;
       } else {
-        evictSuspendedThisCommit = true;
+        // Surgical widening before wholesale suspension. The common way
+        // coverage fails in steady state is a row APPENDED outside the
+        // window — a streaming turn landing while the user reads older
+        // content. Suspending for that mounts the entire transcript for
+        // one commit, per appended row: a mass mount/unmount cycle that
+        // the user feels as a hitch mid-scroll. Instead, widen the
+        // window just far enough to mount every unmeasured row (they
+        // measure this commit; the next window releases them), keeping
+        // the spacers over measured rows only — the no-estimates
+        // invariant holds by construction. Only when widening degenerates
+        // to the full range (a cold or wiped ledger) is the commit a
+        // true suspension, and counted as one.
+        let widenedFirst = candidate.firstIndex;
+        for (let i = 0; i < widenedFirst; i += 1) {
+          if (!ledger.has(i)) {
+            widenedFirst = i;
+            break;
+          }
+        }
+        let widenedLast = candidate.lastIndex;
+        for (let i = itemCount - 1; i >= widenedLast; i -= 1) {
+          if (!ledger.has(i)) {
+            widenedLast = i + 1;
+            break;
+          }
+        }
+        if (widenedFirst === 0 && widenedLast === itemCount) {
+          evictSuspendedThisCommit = true;
+        } else {
+          let topSpacerHeight = 0;
+          for (let i = 0; i < widenedFirst; i += 1) {
+            topSpacerHeight += Math.max(0, heightForIndex(i));
+          }
+          let bottomSpacerHeight = 0;
+          for (let i = widenedLast; i < itemCount; i += 1) {
+            bottomSpacerHeight += Math.max(0, heightForIndex(i));
+          }
+          windowResult = {
+            firstIndex: widenedFirst,
+            lastIndex: widenedLast,
+            topSpacerHeight,
+            bottomSpacerHeight,
+            totalHeight: candidate.totalHeight,
+          };
+          evictingThisCommit = true;
+        }
+      }
+    } else if (
+      evictModeEnabled &&
+      !batchLoading &&
+      itemCount > 0 &&
+      prevWindowRangeRef.current !== null
+    ) {
+      // Hidden scroller (`display: none` — an inactive card tab), or a
+      // zero-height allotment: `viewportHeight` is 0, so there is no
+      // geometry to window against. Falling through to the full-range
+      // result here would re-mount the entire transcript on every commit
+      // a background streaming session produces — the exact DOM weight
+      // eviction exists to shed. Hold the previously committed range
+      // instead; the spacers keep their ledger-derived heights (nothing
+      // lays out while hidden, so the values are inert), and the
+      // scroll-container ResizeObserver's tick re-windows against real
+      // geometry the moment the card is shown again. Rows appended while
+      // hidden accumulate outside the held range unmeasured; the reveal
+      // commit's coverage check then suspends once, measures them, and
+      // re-arms — the suspension path doing its job.
+      const prev = prevWindowRangeRef.current;
+      const heldFirst = Math.max(0, Math.min(prev.first, itemCount));
+      const heldLast = Math.max(heldFirst, Math.min(prev.last, itemCount));
+      if (heldLast > heldFirst) {
+        let topSpacerHeight = 0;
+        for (let i = 0; i < heldFirst; i += 1) {
+          topSpacerHeight += Math.max(0, heightForIndex(i));
+        }
+        let bottomSpacerHeight = 0;
+        for (let i = heldLast; i < itemCount; i += 1) {
+          bottomSpacerHeight += Math.max(0, heightForIndex(i));
+        }
+        windowResult = {
+          firstIndex: heldFirst,
+          lastIndex: heldLast,
+          topSpacerHeight,
+          bottomSpacerHeight,
+          totalHeight: 0,
+        };
+        evictingThisCommit = true;
       }
     }
 
@@ -2176,7 +2282,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
       // Resolve the row gap once the window element exists — every ledger
       // entry is measured against it.
-      refreshRowGap();
+      syncRowGap();
       scrollTick();
       // `followBottom` is read once at mount; runtime changes are not
       // tracked (matches the SmartScroll-install effect's pattern).
@@ -2240,8 +2346,23 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
       prevDataSourceForClearRef.current = dataSource;
       const observer = new ResizeObserver((entries) => {
+        // A scroller with no rendered box — `display: none`, the state
+        // every inactive card tab sits in — reports EVERY observed cell
+        // at 0×0. Writing those zeros into the ledger poisons eviction's
+        // spacer geometry: spacer sums collapse by the true height of
+        // every "measured-at-zero" row, `scrollHeight` lies, and the
+        // scroll position snaps and judders until each poisoned row
+        // happens to remount and re-measure. No measurement taken while
+        // the scroller has no box is meaningful, so skip the delivery
+        // wholesale; re-showing the card resizes every cell 0 → real,
+        // which re-fires this observer with honest values.
+        const scroller = scrollContainerRef.current;
+        if (scroller === null || scroller.offsetWidth === 0) return;
+        // Fold any row-gap change into the ledger before this burst's
+        // entries are written against it; a fold also re-windows below.
+        const gapChanged = syncRowGap();
         const total = dataSource.numberOfItems();
-        let anyChanged = false;
+        let anyChanged = gapChanged;
         const heightIndex = heightIndexRef.current;
         for (const entry of entries) {
           const target = entry.target as HTMLElement;
@@ -2258,7 +2379,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           const newHeight = entry.contentRect.height;
           // Ledger entries are outer extents (height + row gap); the cv
           // stamp below is the raw measured height.
-          const newOuterHeight = newHeight + rowGapPxRef.current;
+          const newOuterHeight = newHeight + (rowGapPxRef.current ?? 0);
           const currentHeight = heightIndex.get(index);
           const heightChanged =
             currentHeight === undefined ||
@@ -2420,11 +2541,19 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       let lastWidth = scroller.clientWidth;
       const widthObserver = new ResizeObserver(() => {
         const width = scroller.clientWidth;
+        // Width 0 is a hidden scroller (`display: none` — an inactive
+        // card tab), not a width change. Skip WITHOUT updating
+        // `lastWidth`: re-showing the card at its old width is then a
+        // no-op and the measured ledger survives the tab switch intact.
+        // A pane resized while the card was hidden re-shows at a width
+        // that differs from `lastWidth`, which invalidates below as a
+        // real width change should.
+        if (width === 0) return;
         if (Math.abs(width - lastWidth) < 0.5) return;
         lastWidth = width;
         // A width change can carry a layout/density change with it; re-read
         // the gap before the re-measure repopulates the ledger against it.
-        refreshRowGap();
+        syncRowGap();
         if (offscreenSkip) {
           for (const el of cellElementMapRef.current.values()) {
             el.removeAttribute("data-cv-ready");
@@ -2441,6 +2570,28 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // `scrollTick` is a stable reducer dispatch.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [inline, offscreenSkip, evictModeEnabled]);
+
+    // Row-gap watch. The ledger folds the flex row-gap into every entry,
+    // and the gap can change without any cell resizing — the session
+    // card's per-card response settings land as an inline custom
+    // property after mount, a density or theme change can move it any
+    // time. No cell ResizeObserver fires for that (cell boxes are
+    // unchanged), but the WINDOW element's height moves by n·delta, so
+    // observing it catches the change; `syncRowGap` rebases the ledger
+    // by the delta and the tick re-windows the spacers against it.
+    React.useLayoutEffect(() => {
+      const winEl = listWindowElRef.current;
+      if (winEl === null) return;
+      const gapObserver = new ResizeObserver(() => {
+        // Hidden (display:none tab): no meaningful layout to sync against.
+        if (winEl.offsetWidth === 0) return;
+        if (syncRowGap()) scrollTick();
+      });
+      gapObserver.observe(winEl);
+      return () => gapObserver.disconnect();
+      // `syncRowGap` and `scrollTick` are stable.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Publish the scrollport's height for the inset ring ([L06] — straight to
     // the DOM, never React state). Only the component can see this number: the
@@ -2975,6 +3126,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       if (isScrollBatteryFrozen()) return;
       const el = scrollContainerRef.current;
       if (el === null) return;
+      // A hidden scroller (`display: none` — an inactive card tab) has no
+      // scrollport: `scrollTop` reads 0 there, which is the absence of a
+      // position, not a position. Writing it would overwrite the attribute
+      // with a top-of-list anchor that the [A9] debounced save can persist
+      // while the card sits in a background tab. Freeze the attribute at
+      // its last visible value instead.
+      if (el.clientHeight === 0) return;
       const total = dataSource.numberOfItems();
       if (total <= 0) {
         el.removeAttribute("data-tug-scroll-state");
@@ -3169,8 +3327,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // `pageByEntry` method on the handle (which lets a consumer drive
     // turn-by-turn navigation from a key bound anywhere, not only when
     // focus sits inside this scroll container). Geometry comes from real
-    // DOM rects, not the height index, so `row-gap` and the breathing-
-    // room pseudo-elements can't drift the target. Returns `true` when
+    // DOM rects where a cell is mounted, and from the measured-height
+    // ledger re-based into rect space where it is not (the
+    // `evictOffscreen` case) — so `row-gap` and the breathing-room
+    // pseudo-elements can't drift the target. Returns `true` when
     // it performed a scroll, `false` when there was nothing to do (so a
     // key handler can fall through to the browser default). The scroll
     // write routes through `SmartScroll` to keep the [D07] follow-bottom
@@ -3182,16 +3342,38 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         const scrollEl = scrollContainerRef.current;
         if (ss === null || scrollEl === null) return false;
         const itemCount = dataSource.numberOfItems();
-        const cellEls: HTMLElement[] = [];
+        if (itemCount === 0) return false;
+        const viewTop = scrollEl.getBoundingClientRect().top;
+        // Under `evictOffscreen` most rows are unmounted, so their tops
+        // come from the ledger (exact — eviction only engages when every
+        // out-of-window row is measured), re-based into rect space via a
+        // mounted cell so both sources describe the same axis. Mounted
+        // cells keep their real rects.
+        const ledgerTopFor = (i: number): number =>
+          heightIndexRef.current.offsetForIndex(
+            i,
+            estimatedHeightForKindOnly,
+          ) +
+          leadingOffsetPx() -
+          scrollEl.scrollTop;
+        let rebase: number | null = null;
+        for (const [j, el] of cellElementMapRef.current) {
+          rebase = el.getBoundingClientRect().top - viewTop - ledgerTopFor(j);
+          break;
+        }
+        const cellEls: Array<HTMLElement | undefined> = [];
+        const cellTops: number[] = [];
         for (let i = 0; i < itemCount; i += 1) {
           const el = cellElementMapRef.current.get(i);
-          if (el === undefined) return false;
           cellEls.push(el);
+          if (el !== undefined) {
+            cellTops.push(el.getBoundingClientRect().top - viewTop);
+          } else if (rebase !== null) {
+            cellTops.push(ledgerTopFor(i) + rebase);
+          } else {
+            return false;
+          }
         }
-        const viewTop = scrollEl.getBoundingClientRect().top;
-        const cellTops = cellEls.map(
-          (el) => el.getBoundingClientRect().top - viewTop,
-        );
         const result = computePageNavigation({ direction, cellTops });
         if (result.kind === "none") return false;
         if (result.kind === "bottom") {
@@ -3199,13 +3381,30 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           return true;
         }
         if (direction === "up") ss.disengage("page-up-key");
-        ss.scrollToElement(cellEls[result.index], {
-          animated: false,
-          block: "start",
-        });
+        const targetEl = cellEls[result.index];
+        if (targetEl !== undefined) {
+          ss.scrollToElement(targetEl, {
+            animated: false,
+            block: "start",
+          });
+          return true;
+        }
+        // Unmounted target: the [D03] two-pass protocol, same as
+        // `scrollToIndex` — estimated jump now, post-commit correction
+        // once the row mounts and measures.
+        const estimatedTop =
+          heightIndexRef.current.offsetForIndex(
+            result.index,
+            estimatedHeightForKindOnly,
+          ) + leadingOffsetPx();
+        ss.scrollTo({ top: estimatedTop, animated: false });
+        pendingScrollCorrectionRef.current = {
+          index: result.index,
+          estimatedTop,
+        };
         return true;
       },
-      [dataSource],
+      [dataSource, estimatedHeightForKindOnly, leadingOffsetPx],
     );
 
     // Imperative handle. `scrollToIndex` routes every scroll write

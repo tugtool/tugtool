@@ -132,6 +132,22 @@ const DECELERATION_DETECTION_MS = 50;
  */
 const SCROLLEND_FALLBACK_MS = 150;
 
+/**
+ * Drift beyond which a pending cold-boot restore concedes the scroll
+ * position to whoever moved it. The restore heartbeat records the
+ * post-write `scrollTop` (clamping folded in); if the next heartbeat
+ * finds the scroller more than this far from that baseline, some
+ * actor SmartScroll cannot see moved it — above all the native
+ * scrollbar, whose drag produces no pointer or wheel events on the
+ * container, so the phase machine never leaves `idle` and the
+ * `isUserScrolling` supersede can't fire. Without this, a scrollbar
+ * scrub fights the restore write on every layout heartbeat: the user
+ * drags toward the bottom, the restore yanks `scrollTop` back to the
+ * anchor, repeatedly, with no gesture that ends it. Matches
+ * CardHost's `REGION_SCROLL_TOLERANCE_PX`.
+ */
+const RESTORE_SUPERSEDE_DRIFT_PX = 8;
+
 // ---------------------------------------------------------------------------
 // SmartScroll
 // ---------------------------------------------------------------------------
@@ -194,6 +210,15 @@ export class SmartScroll {
   // virtualized content settles its heights the resolved offset
   // drifts, and the restore tracks it.
   private _restoreTarget: (() => number | null) | null = null;
+
+  // `scrollTop` as it stood at the end of the last restore heartbeat
+  // (read back after the write, so browser clamping is folded in), or
+  // `null` before the first heartbeat resolves the target. The next
+  // heartbeat compares the live `scrollTop` against this: drift beyond
+  // `RESTORE_SUPERSEDE_DRIFT_PX` means an actor SmartScroll cannot
+  // attribute — a scrollbar drag, chiefly — moved the scroller, and
+  // the restore is superseded. See `applyRestoreTarget`.
+  private _restoreBaselineTop: number | null = null;
 
   // Listener function references stored for removeEventListener
   private readonly _onScroll: () => void;
@@ -472,6 +497,10 @@ export class SmartScroll {
   //     clears it;
   //   - a user scroll gesture supersedes the restore — `applyRestore
   //     Target` clears it when `isUserScrolling`;
+  //   - a scroll SmartScroll cannot attribute (a native scrollbar
+  //     drag emits no pointer/wheel events) supersedes the restore —
+  //     `applyRestoreTarget` clears it when `scrollTop` has drifted
+  //     from the last heartbeat's post-write baseline;
   //   - an explicit programmatic scroll (`scrollTo`, `scrollToTop`,
   //     `scrollToElement`) supersedes the restore — the consumer
   //     named a position, so those methods clear the target.
@@ -495,12 +524,14 @@ export class SmartScroll {
   setRestoreTarget(resolver: () => number | null): void {
     if (this._disposed) return;
     this._restoreTarget = resolver;
+    this._restoreBaselineTop = null;
     this._setFollowingBottom(false, 'restore-target');
   }
 
   /** Drop the pending restore target, if any. */
   clearRestoreTarget(): void {
     this._restoreTarget = null;
+    this._restoreBaselineTop = null;
   }
 
   /**
@@ -526,7 +557,24 @@ export class SmartScroll {
     // A user scroll gesture supersedes the restore — they own the
     // position now. Clear so a later commit doesn't fight them.
     if (this.isUserScrolling) {
-      this._restoreTarget = null;
+      this.clearRestoreTarget();
+      return;
+    }
+    // Externally-moved supersede. Pointer, wheel, and keyboard gestures
+    // are caught above, but a native scrollbar drag delivers no events
+    // to the container — the phase machine sits in `idle` while the
+    // user scrubs. The heartbeat's own writes record their post-write
+    // `scrollTop` as the baseline below (clamping folded in, and DOM
+    // content growth never moves `scrollTop`), so a scroller found away
+    // from that baseline was moved by someone else. That someone owns
+    // the position — writing the restore over it is the "drag toward
+    // the bottom, snap back to the anchor, repeat" trap.
+    if (
+      this._restoreBaselineTop !== null &&
+      Math.abs(this._container.scrollTop - this._restoreBaselineTop) >
+        RESTORE_SUPERSEDE_DRIFT_PX
+    ) {
+      this.clearRestoreTarget();
       return;
     }
     const desired = resolver();
@@ -534,6 +582,7 @@ export class SmartScroll {
     if (Math.abs(this._container.scrollTop - desired) > 0.5) {
       this._writeScrollTop(desired, false);
     }
+    this._restoreBaselineTop = this._container.scrollTop;
   }
 
   // -------------------------------------------------------------------------

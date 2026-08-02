@@ -116,6 +116,29 @@ export class HeightIndex {
   }
 
   /**
+   * Add `delta` to EVERY stored measurement — the rebase for a change
+   * in a per-row constant folded into the entries. The concrete case:
+   * ledger entries are outer extents (measured height + the list's
+   * flex `row-gap`), and when the live gap changes — a per-card
+   * density setting landing after mount, a theme swap — every entry's
+   * gap term is off by the same delta. Re-measuring is wrong (the
+   * rows' own heights didn't change) and wiping is wasteful (it
+   * forces a full remount to re-measure); adding the delta restores
+   * exactness in O(n).
+   *
+   * Entries clamp at 0 (a negative extent is meaningless). Any
+   * prepared Fenwick cache is invalidated; the next `prepare` call
+   * rebuilds it against the adjusted entries.
+   */
+  adjustAll(delta: number): void {
+    if (delta === 0) return;
+    for (const [index, height] of this.heights) {
+      this.heights.set(index, Math.max(0, height + delta));
+    }
+    this.cache = null;
+  }
+
+  /**
    * Drop the measurement at `index`. Returns `true` if a value was
    * removed. If a Fenwick cache is active and `index` is in range,
    * the tree is patched back to the estimate value.

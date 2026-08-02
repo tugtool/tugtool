@@ -16,6 +16,13 @@
  * | tool-block expand   | a gesture on a row near the window edge losing its    |
  * |                     | block, or the document mis-sizing after the re-measure|
  * | no suspensions      | the mode silently falling back to mounting everything |
+ * | hide/show ledger    | a `display:none` spell (an inactive card tab) firing  |
+ * |                     | 0×0 ResizeObserver entries into the ledger and wiping |
+ * |                     | it via the width invalidator — scroll geometry then   |
+ * |                     | collapses and the position snaps until rows re-measure|
+ * | turn stepping       | ⌥⌘↑/⌥⌘↓ dead on an evicted transcript (the pager     |
+ * |                     | required every cell mounted and bailed on the first   |
+ * |                     | unmounted row)                                        |
  *
  * The transcript is seeded with COMPLETE TURNS, not with many messages in one
  * turn: consecutive assistant messages inside a turn coalesce into a single
@@ -338,6 +345,199 @@ describe.skipIf(!SHOULD_RUN)("AT0330: transcript DOM eviction", () => {
         // reached the ledger, so the spacers report the collapsed row again.
         expect(Math.abs(after.h - before.h)).toBeLessThanOrEqual(2);
         expect(after.fallbacks).toBe(0);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "turn stepping (⌥⌘↑ / ⌥⌘↓) pages across evicted rows one entry at a time",
+    async () => {
+      const app = await standUp("at0330-page-by-entry");
+      try {
+        const readState = (): Promise<{
+          top: number;
+          flush: number;
+          flushIndex: number;
+          mounted: string;
+          atMax: boolean;
+          active: boolean;
+          fallbacks: number;
+        }> =>
+          app.evalJS(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  var box = el.getBoundingClientRect();
+  var flush = 9999;
+  var flushIndex = -1;
+  var ix = [];
+  el.querySelectorAll("[data-tug-list-cell-index]").forEach(function (c) {
+    var n = Number(c.getAttribute("data-tug-list-cell-index"));
+    ix.push(n);
+    var d = Math.abs(c.getBoundingClientRect().top - box.top);
+    if (d < flush) { flush = d; flushIndex = n; }
+  });
+  return {
+    top: el.scrollTop,
+    flush: Math.round(flush),
+    flushIndex: flushIndex,
+    mounted: ix.length ? Math.min.apply(null, ix) + "-" + Math.max.apply(null, ix) : "none",
+    atMax: el.scrollTop >= el.scrollHeight - el.clientHeight - 2,
+    active: el.hasAttribute("data-evict-active"),
+    fallbacks: Number(el.getAttribute("data-evict-fallbacks") || "-1"),
+  };
+})()`);
+
+        // Step back turn by turn from the live bottom, far enough to cross
+        // the mounted window into evicted territory. Each press must (a)
+        // travel upward — the pre-fix defect was zero travel, because the
+        // pager demanded every cell mounted and bailed on the first
+        // unmounted row — and (b) land an entry top flush with the
+        // scrollport top, including presses whose target was unmounted and
+        // reached via the estimated-jump + post-commit-correction protocol.
+        // The chord's real route is the keybinding map's `key-card` scope
+        // (keybinding-map.ts, ⌥⌘↑ → PREVIOUS_TURN), read by the responder
+        // chain's document-level CAPTURE listener. Two other drives were
+        // tried and are wrong: `dispatchControlAction` registers key-card
+        // adapters for a fixed list that excludes the turn steps (silent
+        // no-op), and a native key needs the window to be key, which a
+        // background app-test window is not. Dispatching the KeyboardEvent
+        // on `document` enters the same capture listener a real chord does.
+        const chord = (key: string): Promise<void> =>
+          app.evalJS<void>(`(function () {
+  document.dispatchEvent(new KeyboardEvent("keydown", {
+    key: ${JSON.stringify(key)}, code: ${JSON.stringify(key)},
+    altKey: true, metaKey: true,
+    bubbles: true, cancelable: true, composed: true,
+  }));
+})()`);
+        const stepUp = (): Promise<void> => chord("ArrowUp");
+        const stepDown = (): Promise<void> => chord("ArrowDown");
+
+        // Stepping up off the pinned live edge is the user's own gesture.
+        const atBottom = await readState();
+        await stepUp();
+        await new Promise((r) => setTimeout(r, 500));
+        const afterFirst = await readState();
+        if (afterFirst.top >= atBottom.top) {
+          throw new Error(
+            `stepping up off the live bottom did not move (${atBottom.top} → ${afterFirst.top}, mounted ${afterFirst.mounted})`,
+          );
+        }
+
+        const tops: number[] = [afterFirst.top];
+        const trace: string[] = [];
+        for (let i = 0; i < 15; i += 1) {
+          await stepUp();
+          await new Promise((r) => setTimeout(r, 400));
+          const s = await readState();
+          tops.push(s.top);
+          trace.push(
+            `${i}:top=${s.top} flush=${s.flush}@${s.flushIndex} mounted=${s.mounted}`,
+          );
+          // A press whose target sits within the last viewport of content
+          // clamps at the bottom instead of reaching flush — legitimate;
+          // every interior landing must put an entry top at the scrollport
+          // top (including estimated jumps into evicted territory, whose
+          // post-commit correction reconciles the offset).
+          if (s.flush > 3 && !s.atMax) {
+            throw new Error(
+              `press ${i}: no entry landed flush with the scrollport top (nearest ${s.flush}px, scrollTop ${s.top})`,
+            );
+          }
+        }
+        for (let i = 1; i < tops.length; i += 1) {
+          if (tops[i] >= tops[i - 1]) {
+            throw new Error(
+              `press ${i} did not travel up (${tops[i - 1]} → ${tops[i]}); trace: ${trace.join(" | ")}`,
+            );
+          }
+        }
+
+        // And forward again: each press travels downward.
+        const downTops: number[] = [];
+        for (let i = 0; i < 3; i += 1) {
+          await stepDown();
+          await new Promise((r) => setTimeout(r, 400));
+          downTops.push((await readState()).top);
+        }
+        expect(downTops[0]).toBeGreaterThan(tops[tops.length - 1]);
+        for (let i = 1; i < downTops.length; i += 1) {
+          expect(downTops[i]).toBeGreaterThan(downTops[i - 1]);
+        }
+
+        const end = await readState();
+        expect(end.active).toBe(true);
+        expect(end.fallbacks).toBe(0);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a display:none spell round-trips the ledger and scroll geometry",
+    async () => {
+      const app = await standUp("at0330-hide-show");
+      try {
+        await scrollTo(app, 0.5);
+        const before = await app.evalJS<{
+          h: number;
+          cells: number;
+          fallbacks: number;
+        }>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  return {
+    h: el.scrollHeight,
+    cells: el.querySelectorAll("[data-tug-list-cell-index]").length,
+    fallbacks: Number(el.getAttribute("data-evict-fallbacks") || "-1"),
+  };
+})()`);
+        expect(before.cells).toBeGreaterThan(0);
+        expect(before.cells).toBeLessThan(TURNS * 2);
+
+        // Hide the scroller the way an inactive card tab is hidden. Every
+        // observed cell fires a 0×0 ResizeObserver entry, and the width
+        // invalidator sees width 0 — both must leave the ledger alone.
+        await app.evalJS<boolean>(`(function () {
+  document.querySelector('${SCROLLER}').style.display = "none";
+  return true;
+})()`);
+        await new Promise((r) => setTimeout(r, 600));
+
+        // While hidden, the held window must not balloon to a full mount.
+        const hidden = await app.evalJS<number>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  return el.querySelectorAll("[data-tug-list-cell-index]").length;
+})()`);
+        expect(hidden).toBeLessThan(TURNS * 2);
+
+        await app.evalJS<boolean>(`(function () {
+  document.querySelector('${SCROLLER}').style.display = "";
+  return true;
+})()`);
+        await new Promise((r) => setTimeout(r, 800));
+
+        const after = await app.evalJS<{
+          h: number;
+          fallbacks: number;
+          evicting: boolean;
+        }>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  return {
+    h: el.scrollHeight,
+    fallbacks: Number(el.getAttribute("data-evict-fallbacks") || "-1"),
+    evicting: el.hasAttribute("data-evict-active"),
+  };
+})()`);
+        // Geometry survives: zeroed measurements never reached the ledger,
+        // and the width invalidator did not wipe it, so the document is the
+        // same height it was and eviction re-armed without a suspension.
+        expect(Math.abs(after.h - before.h)).toBeLessThanOrEqual(2);
+        expect(after.fallbacks).toBe(before.fallbacks);
+        expect(after.evicting).toBe(true);
       } finally {
         await app.close();
       }
