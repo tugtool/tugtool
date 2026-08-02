@@ -47,7 +47,11 @@
  *  - Streaming (input still arriving) → `ListChecks` + `"Creating…"`
  *    / `"Updating…"` placeholder, no subject.
  *  - Errored event → `CircleAlert` + error text, both danger-tinted
- *    (`data-tone="danger"`).
+ *    (`data-tone="danger"`). A recognised `InputValidationError`
+ *    condenses to `Rejected` + a one-line parameter summary with the
+ *    full paragraph in the tooltip — see
+ *    {@link composeTaskInlineErrorRow}; any other error text rides the
+ *    subject slot verbatim.
  *
  * Why muted-icon, not role-colored. An earlier draft proposed
  * `role="action"` for Created / Started and `role="success"` for
@@ -117,6 +121,7 @@ import {
 import { useTaskListState } from "@/lib/code-session-store/hooks/use-task-list-state";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import { TugQuietLine } from "@/components/tugways/tug-quiet-line";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
 import type { ToolBlockProps } from "../../blocks/types";
 
@@ -239,6 +244,84 @@ export function resolveUpdateSubject(
 }
 
 // ---------------------------------------------------------------------------
+// Error-row composition
+// ---------------------------------------------------------------------------
+
+/** The error row's two text parts plus the untruncated text for the tooltip. */
+export interface TaskInlineErrorRow {
+  /** The bold verb — `"Rejected"` for a parsed validation error, absent otherwise. */
+  label?: string;
+  /** The muted detail — the condensed summary, or the raw text when unparsed. */
+  subject: string;
+  /** The full original error text; `undefined` when `subject` already is it. */
+  full?: string;
+}
+
+/** `The required parameter \`x\` is missing` — one match per offending field. */
+const MISSING_PARAM_RE = /required parameter `([^`]+)` is missing/g;
+
+/** `An unexpected parameter \`x\` was provided` — one match per offending field. */
+const UNEXPECTED_PARAM_RE = /unexpected parameter `([^`]+)` was provided/g;
+
+/** `InputValidationError: TaskCreate failed due to the following issues:` */
+const VALIDATION_TOOL_RE = /InputValidationError:\s*([A-Za-z][A-Za-z0-9_]*) failed/;
+
+function collectAll(re: RegExp, text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(re)) out.push(m[1]);
+  return out;
+}
+
+/**
+ * Condense an errored task event into one scannable line.
+ *
+ * Claude Code's `InputValidationError` is prose: it names the tool,
+ * enumerates every offending parameter, then restates the tool's
+ * contract and the correct alternative. That paragraph is written for
+ * the model that must repair the call, and the model has already read
+ * it by the time the row paints. What the reader needs is the fact of
+ * the rejection and which parameters were wrong — four lines of red
+ * body copy for a call the assistant re-issues correctly on the next
+ * turn reads as a system fault it isn't.
+ *
+ * So a recognised validation error collapses to
+ * `Rejected  TaskCreate — missing subject, description; unexpected prompt`,
+ * with the full paragraph preserved in the row's tooltip. Anything
+ * that doesn't parse falls through to the raw text unchanged: an
+ * unrecognised error is exactly the case where truncation would hide
+ * the one detail that mattered.
+ *
+ * Exported for tests.
+ */
+export function composeTaskInlineErrorRow(
+  textOutput: string | undefined,
+): TaskInlineErrorRow {
+  if (textOutput === undefined || textOutput.length === 0) {
+    return { subject: "Failed" };
+  }
+  if (!textOutput.includes("InputValidationError")) {
+    return { subject: textOutput };
+  }
+
+  const toolName = VALIDATION_TOOL_RE.exec(textOutput)?.[1];
+  const missing = collectAll(MISSING_PARAM_RE, textOutput);
+  const unexpected = collectAll(UNEXPECTED_PARAM_RE, textOutput);
+
+  const issues: string[] = [];
+  if (missing.length > 0) issues.push(`missing ${missing.join(", ")}`);
+  if (unexpected.length > 0) issues.push(`unexpected ${unexpected.join(", ")}`);
+
+  // A validation error we can name but not itemise still condenses —
+  // the generic "invalid parameters" beats the full paragraph, and the
+  // tooltip keeps the specifics one hover away.
+  const detail = issues.length > 0 ? issues.join("; ") : "invalid parameters";
+  const subject =
+    toolName !== undefined ? `${toolName} — ${detail}` : detail;
+
+  return { label: "Rejected", subject, full: textOutput };
+}
+
+// ---------------------------------------------------------------------------
 // Component — outer / inner split so the optional `session` doesn't
 // drive a conditional hook call.
 // ---------------------------------------------------------------------------
@@ -315,18 +398,24 @@ const TaskInlineRow: React.FC<RowProps> = ({ baseProps, tasks }) => {
   const { toolName, input, textOutput, status } = baseProps;
   const kind = deriveTaskInlineKind(toolName);
 
-  // Error branch: surface the error text with a danger tint carried
-  // by the row's `data-tone` (icon + text both tint via CSS). When
-  // `textOutput` is missing on an errored event (rare —
-  // `tool_result.is_error` true without an output body), fall back
-  // to a generic "Failed" label so the marker isn't a blank danger
-  // row. The error text rides the subject slot (it IS the content);
-  // there's no verb.
+  // Error branch: surface the error with a danger tint carried by the
+  // row's `data-tone` (icon + text both tint via CSS). A recognised
+  // `InputValidationError` condenses to a verb + one-line summary with
+  // the full paragraph in the tooltip; anything else rides the subject
+  // slot verbatim, with no verb, as it always has. When `textOutput` is
+  // missing on an errored event (rare — `tool_result.is_error` true
+  // without an output body), the composer yields a generic "Failed" so
+  // the marker isn't a blank danger row.
   if (status === "error") {
-    const errorText =
-      textOutput !== undefined && textOutput.length > 0
-        ? textOutput
-        : "Failed";
+    const { label, subject, full } = composeTaskInlineErrorRow(textOutput);
+    const subjectNode =
+      full !== undefined ? (
+        <TugTooltip content={full} side="bottom">
+          <span data-slot="task-inline-tool-block-error-detail">{subject}</span>
+        </TugTooltip>
+      ) : (
+        subject
+      );
     return (
       <div
         className="task-inline-tool-block"
@@ -335,7 +424,8 @@ const TaskInlineRow: React.FC<RowProps> = ({ baseProps, tasks }) => {
       >
         <TugQuietLine
           icon={<CircleAlert size={MARKER_ICON_SIZE} aria-hidden="true" />}
-          subject={errorText}
+          label={label}
+          subject={subjectNode}
           tone="danger"
         />
       </div>

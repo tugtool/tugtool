@@ -466,6 +466,21 @@ function ReferenceZone(): React.ReactElement {
           session,
         })}
       />
+      <TaskInlineToolBlock
+        {...taskProps({
+          toolName: "TaskCreate",
+          status: "error",
+          textOutput:
+            "InputValidationError: TaskCreate failed due to the following " +
+            "issues: The required parameter `subject` is missing The required " +
+            "parameter `description` is missing An unexpected parameter " +
+            "`prompt` was provided This call used Agent-tool parameters " +
+            "(`prompt`/`subagent_type`). TaskCreate adds an item to the task " +
+            "list and takes `subject` and `description` string parameters. To " +
+            "delegate work to a subagent, use the Agent tool instead.",
+          session,
+        })}
+      />
 
       <div className="gtr-ref-label">
         Background notice — before this rollout (wake-trigger,{" "}

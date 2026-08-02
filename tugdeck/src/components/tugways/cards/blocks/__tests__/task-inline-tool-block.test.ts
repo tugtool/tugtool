@@ -25,6 +25,7 @@ import {
   composeCreatedLabel,
   composeMarker,
   composeMarkerText,
+  composeTaskInlineErrorRow,
   composeUpdatedLabel,
   deriveTaskInlineKind,
   resolveUpdateSubject,
@@ -360,6 +361,86 @@ describe("composeMarker", () => {
         tasks: TASKS,
       }),
     ).toEqual({ state: "unknown", verb: "Task event", subject: "" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// composeTaskInlineErrorRow
+// ---------------------------------------------------------------------------
+
+describe("composeTaskInlineErrorRow", () => {
+  /**
+   * A real `InputValidationError` as Claude Code emitted it when the
+   * assistant called `TaskCreate` with the `Agent` tool's parameters.
+   */
+  const AGENT_PARAMS_ERROR =
+    "InputValidationError: TaskCreate failed due to the following issues: " +
+    "The required parameter `subject` is missing " +
+    "The required parameter `description` is missing " +
+    "An unexpected parameter `prompt` was provided " +
+    "This call used Agent-tool parameters (`prompt`/`subagent_type`). " +
+    "TaskCreate adds an item to the task list and takes `subject` and " +
+    "`description` string parameters. To delegate work to a subagent, " +
+    "use the Agent tool instead.";
+
+  test("condenses the real Agent-parameters error to one line", () => {
+    expect(composeTaskInlineErrorRow(AGENT_PARAMS_ERROR)).toEqual({
+      label: "Rejected",
+      subject: "TaskCreate — missing subject, description; unexpected prompt",
+      full: AGENT_PARAMS_ERROR,
+    });
+  });
+
+  test("the condensed subject is far shorter than the raw text", () => {
+    const row = composeTaskInlineErrorRow(AGENT_PARAMS_ERROR);
+    expect(row.subject.length).toBeLessThan(AGENT_PARAMS_ERROR.length / 4);
+  });
+
+  test("missing-only error omits the unexpected clause", () => {
+    const row = composeTaskInlineErrorRow(
+      "InputValidationError: TaskUpdate failed due to the following issues: " +
+        "The required parameter `taskId` is missing",
+    );
+    expect(row.subject).toBe("TaskUpdate — missing taskId");
+  });
+
+  test("unexpected-only error omits the missing clause", () => {
+    const row = composeTaskInlineErrorRow(
+      "InputValidationError: TaskCreate failed due to the following issues: " +
+        "An unexpected parameter `model` was provided",
+    );
+    expect(row.subject).toBe("TaskCreate — unexpected model");
+  });
+
+  test("a validation error with no itemisable issues still condenses", () => {
+    const text =
+      'InputValidationError: [ { "code": "too_big", "path": [ "questions" ] } ]';
+    expect(composeTaskInlineErrorRow(text)).toEqual({
+      label: "Rejected",
+      subject: "invalid parameters",
+      full: text,
+    });
+  });
+
+  test("a non-validation error passes through verbatim, with no verb", () => {
+    const row = composeTaskInlineErrorRow("Tool call timed out after 120s");
+    expect(row).toEqual({ subject: "Tool call timed out after 120s" });
+  });
+
+  test("absent / empty output falls back to a generic label", () => {
+    expect(composeTaskInlineErrorRow(undefined)).toEqual({ subject: "Failed" });
+    expect(composeTaskInlineErrorRow("")).toEqual({ subject: "Failed" });
+  });
+
+  test("the full text is preserved whenever the row condenses", () => {
+    const row = composeTaskInlineErrorRow(AGENT_PARAMS_ERROR);
+    expect(row.full).toBe(AGENT_PARAMS_ERROR);
+  });
+
+  test("repeated calls are stable (the global regexes carry no lastIndex)", () => {
+    const first = composeTaskInlineErrorRow(AGENT_PARAMS_ERROR);
+    const second = composeTaskInlineErrorRow(AGENT_PARAMS_ERROR);
+    expect(second).toEqual(first);
   });
 });
 
