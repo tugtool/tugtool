@@ -81,8 +81,12 @@ function mergedTurn(hostKey: string, steerKey: string): TurnEntry {
   });
 }
 
-/** A `shell`-origin turn — one `shell_exchange` Message, the whole turn ([P06]). */
-function shellTurn(turnKey: string, command: string): TurnEntry {
+/**
+ * A `shell`-origin turn — one `shell_exchange` Message, the whole turn ([P06]).
+ * `startedAt` is the exchange's start, which is also the turn's sort key against
+ * pending submissions.
+ */
+function shellTurn(turnKey: string, command: string, startedAt = 0): TurnEntry {
   return turnEntry({
     turnKey,
     msgId: `msg-${turnKey}`,
@@ -91,15 +95,15 @@ function shellTurn(turnKey: string, command: string): TurnEntry {
       {
         kind: "shell_exchange",
         messageKey: `shell-${turnKey}`,
-        createdAt: 0,
+        createdAt: startedAt,
         exchangeId: turnKey,
         command,
         output: "",
         exitCode: 0,
         cwd: "/tmp",
         cwdAfter: "/tmp",
-        startedAtMs: 1,
-        settledAtMs: 2,
+        startedAtMs: startedAt,
+        settledAtMs: startedAt + 1,
       },
     ],
   });
@@ -109,6 +113,7 @@ function activeTurn(args: {
   turnKey: string;
   isWake: boolean;
   withText?: string;
+  submitAt?: number;
 }): ActiveTurnSnapshot {
   const messages: import("@/lib/code-session-store").Message[] = [];
   if (!args.isWake) {
@@ -119,7 +124,7 @@ function activeTurn(args: {
   }
   return {
     turnKey: args.turnKey,
-    submitAt: 0,
+    submitAt: args.submitAt ?? 0,
     origin: args.isWake ? "assistant" : "user",
     suppressed: false,
     messages,
@@ -334,13 +339,125 @@ describe("[D07] row layout: variable rows per turn driven by user_message presen
       snapshotWith({
         transcript: [normalTurn("t1", "x", "y")],
         queuedSends: [
-          { turnKey: "q1", text: "queued", atoms: [] },
-          { turnKey: "q2", text: "another", atoms: [] },
+          { turnKey: "q1", text: "queued", atoms: [], queuedAt: 10 },
+          { turnKey: "q2", text: "another", atoms: [], queuedAt: 11 },
         ],
       }),
     );
     expect(layout.totalRows).toBe(2 + 2);
     expect(layout.ghostStartRow).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shell rows vs pending submissions ([D111])
+// ---------------------------------------------------------------------------
+
+describe("trailing shell rows merge into the pending block by timestamp", () => {
+  test("an exchange run AFTER the submit paints below the in-flight turn", () => {
+    // The user submits at 50, then runs `$ ls` at 100. The exchange commits
+    // to the transcript immediately while their message is still in flight —
+    // a plain append would paint the shell row above the message they had
+    // already sent.
+    const layout = buildRowLayout(
+      snapshotWith({
+        transcript: [normalTurn("t1", "hi", "yo"), shellTurn("s1", "ls", 100)],
+        activeTurn: activeTurn({ turnKey: "L", isWake: false, withText: "go", submitAt: 50 }),
+      }),
+    );
+    expect(layout.slots.map((s) => s.cellKind)).toEqual([
+      "user",
+      "assistant",
+      "user", // ← the in-flight submission
+      "assistant",
+      "shell", // ← the exchange the user ran after it
+    ]);
+    expect(layout.activeStartRow).toBe(2);
+    // The moved turn's start row is patched, so turn-anchored scrolls land.
+    expect(layout.turnStartRow[1]).toBe(4);
+    // Ordinals survive the move — shell rows never reorder among themselves.
+    expect(layout.slots[4].shellRowOrdinal).toBe(1);
+  });
+
+  test("an exchange run BEFORE the submit stays above it", () => {
+    const layout = buildRowLayout(
+      snapshotWith({
+        transcript: [normalTurn("t1", "hi", "yo"), shellTurn("s1", "ls", 10)],
+        activeTurn: activeTurn({ turnKey: "L", isWake: false, withText: "go", submitAt: 50 }),
+      }),
+    );
+    expect(layout.slots.map((s) => s.cellKind)).toEqual([
+      "user",
+      "assistant",
+      "shell",
+      "user",
+      "assistant",
+    ]);
+    expect(layout.activeStartRow).toBe(3);
+    expect(layout.turnStartRow[1]).toBe(2);
+  });
+
+  test("the merge splits a run of exchanges around the submissions they bracket", () => {
+    // s1 at 20 (before the in-flight submit at 50), s2 at 70 (after it, but
+    // before the queued send at 90), s3 at 120 (after everything).
+    const layout = buildRowLayout(
+      snapshotWith({
+        transcript: [
+          normalTurn("t1", "hi", "yo"),
+          shellTurn("s1", "ls", 20),
+          shellTurn("s2", "pwd", 70),
+          shellTurn("s3", "date", 120),
+        ],
+        activeTurn: activeTurn({ turnKey: "L", isWake: false, withText: "go", submitAt: 50 }),
+        queuedSends: [{ turnKey: "Q", text: "later", atoms: [], queuedAt: 90 }],
+      }),
+    );
+    expect(layout.slots.map((s) => s.cellKind)).toEqual([
+      "user",
+      "assistant",
+      "shell", // s1 — ran before the submit
+      "user", // in-flight submission
+      "assistant",
+      "shell", // s2 — ran during the turn
+      "ghost", // queued send
+      "shell", // s3 — ran after the queued send
+    ]);
+    expect(layout.activeStartRow).toBe(3);
+    expect(layout.ghostStartRow).toBe(6);
+    expect(layout.slots.map((s) => s.shellRowOrdinal)).toEqual([0, 0, 1, 0, 0, 2, 0, 3]);
+    expect(layout.turnStartRow).toEqual([0, 2, 5, 7]);
+  });
+
+  test("a suppressed in-flight turn holds no position — shell rows stay put", () => {
+    const active = activeTurn({ turnKey: "L", isWake: false, withText: "go", submitAt: 50 });
+    const layout = buildRowLayout(
+      snapshotWith({
+        transcript: [shellTurn("s1", "ls", 100)],
+        activeTurn: { ...active, suppressed: true },
+      }),
+    );
+    expect(layout.slots.map((s) => s.cellKind)).toEqual(["shell"]);
+    expect(layout.activeStartRow).toBe(-1);
+  });
+
+  test("a non-shell turn stops the walk — committed Claude turns never move", () => {
+    // Only the TRAILING shell run is eligible. A shell row buried behind a
+    // committed Claude turn stays where the reducer seated it, whatever its
+    // timestamp says.
+    const layout = buildRowLayout(
+      snapshotWith({
+        transcript: [shellTurn("s1", "ls", 100), normalTurn("t1", "hi", "yo")],
+        activeTurn: activeTurn({ turnKey: "L", isWake: false, withText: "go", submitAt: 50 }),
+      }),
+    );
+    expect(layout.slots.map((s) => s.cellKind)).toEqual([
+      "shell",
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    expect(layout.activeStartRow).toBe(3);
   });
 });
 
@@ -471,7 +588,7 @@ describe("rowAt produces a descriptor consumers can narrow on", () => {
 
   test("ghost: a queued send produces a `ghost` row with the queued payload", () => {
     const snap = snapshotWith({
-      queuedSends: [{ turnKey: "Q", text: "later", atoms: [] }],
+      queuedSends: [{ turnKey: "Q", text: "later", atoms: [], queuedAt: 10 }],
     });
     const ds = new SessionTranscriptDataSource(storeWith(snap));
     expect(ds.numberOfItems()).toBe(1);
@@ -621,7 +738,7 @@ describe("turnDepthFromEnd / rowIndexForTurnDepthFromEnd", () => {
     const snap = snapshotWith({
       transcript: [normalTurn("t1", "a", "A")], // rows 0,1
       activeTurn: active, // rows 2,3
-      queuedSends: [{ turnKey: "Q", text: "later", atoms: [] }], // row 4
+      queuedSends: [{ turnKey: "Q", text: "later", atoms: [], queuedAt: 10 }], // row 4
     });
     const ds = new SessionTranscriptDataSource(storeWith(snap));
     expect(ds.turnDepthFromEnd(0)).toBe(1); // committed

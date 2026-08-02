@@ -682,6 +682,15 @@ export interface QueuedSend {
   text: string;
   atoms: ReadonlyArray<AtomSegment>;
   turnKey: string;
+  /**
+   * Wall-clock time the user hit submit — stamped at the queueing `send`,
+   * not at the flush. It becomes the flushed turn's `UserMessage`
+   * `createdAt`/`submitAt`, so the Z1 timestamp reads the moment the user
+   * posted and the turn sorts against shell rows ([D111]) by submission
+   * rather than by dispatch. A shell exchange run while this send sat
+   * queued therefore stays BELOW it, live and after the flush alike.
+   */
+  queuedAt: number;
 }
 
 /**

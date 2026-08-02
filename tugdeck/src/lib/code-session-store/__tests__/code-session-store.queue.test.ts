@@ -374,3 +374,31 @@ describe("CodeSessionStore — cancelling and peeling queued sends", () => {
     });
   });
 });
+
+describe("CodeSessionStore — a queued send is stamped when the user submits it", () => {
+  it("the flushed turn's user message keeps its queue-time stamp, not the flush time", async () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    store.send("first", []);
+    driveToStreaming(conn, store, FIXTURE_IDS.MSG_ID_N(1));
+
+    store.send("queued", []);
+    const queuedAt = store.getSnapshot().queuedSends[0].queuedAt;
+
+    // Sit in the queue a while — a real turn runs for seconds or minutes,
+    // and anything the user does meanwhile (a `$` exchange, [D111]) is
+    // timestamped in that gap.
+    await Bun.sleep(5);
+    dispatchTurnCompleteSuccess(conn, FIXTURE_IDS.MSG_ID_N(1));
+
+    const flushed = store.getSnapshot().activeTurn;
+    expect(flushed?.messages[0].kind).toBe("user_message");
+    const opener = flushed!.messages[0] as { submitAt: number; createdAt: number };
+    expect(opener.submitAt).toBe(queuedAt);
+    expect(opener.createdAt).toBe(queuedAt);
+    // Telemetry still measures from dispatch — the turn started now.
+    expect(flushed!.submitAt).toBeGreaterThan(queuedAt);
+  });
+
+});

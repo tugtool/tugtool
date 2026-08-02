@@ -149,6 +149,22 @@ describe("mid-turn steering — boundary pickup at tool_result", () => {
     expect(steered.text).toBe("steer me");
   });
 
+  test("the picked-up row is stamped when the user submitted it, not at the boundary", async () => {
+    let state = openTurnWithPendingTool("t1");
+    state = reduce(state, send("steer me", "s1")).state;
+    const queuedAt = state.queuedSends[0].queuedAt;
+
+    // The boundary can be a long way from the submission — a tool call runs
+    // for as long as it runs. The row's timestamp is the user's submit.
+    await Bun.sleep(5);
+    state = reduce(state, { type: "tool_result", tool_use_id: "tu1", output: "ok" }).state;
+
+    const steered = state.scratch.get("t1")!.messages[2] as UserMessage;
+    expect(steered.submitAt).toBe(queuedAt);
+    expect(steered.createdAt).toBe(queuedAt);
+    expect(Date.now()).toBeGreaterThan(queuedAt);
+  });
+
   test("no double-forward: the picked-up entry is gone, so turn_complete re-sends nothing", () => {
     let state = openTurnWithPendingTool("t1");
     state = reduce(state, send("steer me", "s1")).state;

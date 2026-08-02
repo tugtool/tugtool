@@ -21,6 +21,11 @@
  * truncation is a store/data-source concern, exercised here independently of
  * the sheet (the sheet round-trip is at0097). Deterministic; no live claude.
  *
+ * Nothing here counts rows: the transcript evicts settled offscreen rows to
+ * measured-height placeholders, so the DOM holds the window, not the session.
+ * Presence is asserted near the scrollport, and the truncation itself is read
+ * off the scroll height — the spine that eviction preserves exactly.
+ *
  * @covers tugdeck/src/lib/code-session-store/
  * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
@@ -41,6 +46,21 @@ const USER_ROWS = `${CARD} [data-testid="session-card-transcript-user-body"]`;
 // The scrollable element is the TugListView viewport, keyed by its
 // `scrollKey` — NOT the `data-slot` wrapper around it.
 const TRANSCRIPT = `${CARD} [data-tug-scroll-key="session-card-transcript"]`;
+
+/**
+ * The turn numbers whose user row is CURRENTLY in the DOM, read out of the
+ * `prompt number N` bodies this test seeds. The transcript evicts settled
+ * offscreen rows, so this is a window onto the rendered range, not a turn
+ * count — assertions phrase themselves as presence/absence near the
+ * scrollport, never as a total.
+ */
+const RENDERED_PROMPTS_JS = `Array.prototype.map.call(
+  document.querySelectorAll(${JSON.stringify(USER_ROWS)}),
+  function (r) {
+    var m = /prompt number (\\d+)/.exec(r.textContent || "");
+    return m ? parseInt(m[1], 10) : -1;
+  },
+)`;
 
 function deckShape() {
   return {
@@ -94,23 +114,40 @@ describe.skipIf(!SHOULD_RUN)("AT0098: /rewind local truncation preserves survivo
         await app.awaitEngineReady("A");
 
         for (let i = 1; i <= TURNS; i += 1) await buildTurn(app, i);
+        // Row COUNTS are not a signal here: the transcript evicts settled
+        // offscreen rows to measured-height placeholders, so only the rows
+        // near the scrollport are in the DOM. The list is following the
+        // bottom, so the tip IS rendered — the newest turn's presence is the
+        // sound "all turns built" signal.
         await app.waitForCondition<boolean>(
-          `document.querySelectorAll(${JSON.stringify(USER_ROWS)}).length === ${TURNS}`,
+          `${RENDERED_PROMPTS_JS}.indexOf(${TURNS}) !== -1`,
           { timeoutMs: 12000 },
         );
 
-        // Select the first (always-surviving) turn's text and scroll the
-        // transcript to a modest non-zero offset — small enough that turn 1
-        // stays rendered near the top, large enough to distinguish "preserved"
-        // from "clamped to 0".
+        // Scroll back to a modest non-zero offset — small enough that turn 1
+        // is inside the window (eviction re-materializes it), large enough to
+        // distinguish "preserved" from "clamped to 0" after the rewind.
+        await app.evalJS<null>(
+          `(function () {
+             var scroller = document.querySelector(${JSON.stringify(TRANSCRIPT)});
+             if (scroller) scroller.scrollTop = 48;
+             return null;
+           })()`,
+        );
+        await app.waitForCondition<boolean>(
+          `${RENDERED_PROMPTS_JS}.indexOf(1) !== -1`,
+          { timeoutMs: 6000 },
+        );
+
+        // Select the first (always-surviving) turn's text.
         const before = await app.evalJS<{
           row0Text: string;
           selText: string;
           scrollTop: number;
+          scrollHeight: number;
         }>(
           `(function () {
              var scroller = document.querySelector(${JSON.stringify(TRANSCRIPT)});
-             if (scroller) scroller.scrollTop = 48;
              var rows = document.querySelectorAll(${JSON.stringify(USER_ROWS)});
              var first = rows[0];
              var range = document.createRange();
@@ -122,6 +159,7 @@ describe.skipIf(!SHOULD_RUN)("AT0098: /rewind local truncation preserves survivo
                row0Text: first.textContent || "",
                selText: sel.toString(),
                scrollTop: scroller ? scroller.scrollTop : -1,
+               scrollHeight: scroller ? scroller.scrollHeight : -1,
              };
            })()`,
         );
@@ -146,39 +184,59 @@ describe.skipIf(!SHOULD_RUN)("AT0098: /rewind local truncation preserves survivo
           },
         });
 
+        // The truncation landed when the content shrinks. Scroll height is the
+        // eviction-proof reading of it: the view stays parked near turn 1
+        // (that is the point of the test), so the dropped turn was never on
+        // screen to disappear from — but its rows' measured heights leave the
+        // spine when they leave the transcript.
         await app.waitForCondition<boolean>(
-          `document.querySelectorAll(${JSON.stringify(USER_ROWS)}).length === ${TURNS - 1}`,
+          `(function () {
+             var s = document.querySelector(${JSON.stringify(TRANSCRIPT)});
+             return s !== null && s.scrollHeight < ${before.scrollHeight};
+           })()`,
           { timeoutMs: 6000 },
         );
 
         // The survivor turn's selection survives and the scroll position is
         // not clamped to 0 — neither would hold across a remount ([L26]).
         const after = await app.evalJS<{
-          count: number;
+          prompts: number[];
           selText: string;
           scrollTop: number;
         }>(
           `(function () {
-             var rows = document.querySelectorAll(${JSON.stringify(USER_ROWS)});
              var scroller = document.querySelector(${JSON.stringify(TRANSCRIPT)});
              return {
-               count: rows.length,
+               prompts: ${RENDERED_PROMPTS_JS},
                selText: window.getSelection().toString(),
                scrollTop: scroller ? scroller.scrollTop : -1,
              };
            })()`,
         );
-        expect(after.count).toBe(TURNS - 1);
+        // The view never left turn 1, so that is what is rendered — and the
+        // dropped turn is not among the rendered rows.
+        expect(after.prompts).toContain(1);
+        expect(after.prompts).not.toContain(TURNS);
         // The selection in the surviving turn is intact — the definitive
         // proof that turn 1's row was NOT torn down and rebuilt ([L26]); a
         // remount collapses the selection.
         expect(after.selText).toContain("prompt number 1");
         // Scroll is healthy (not clamped to 0 — the documented remount
-        // regression in session-card-transcript.tsx). It settles at the new bottom
-        // because the list's `followBottom` re-anchors to the retained tip
-        // after the drop; that is scroll POLICY, distinct from the L26
-        // no-remount guarantee the selection above pins.
+        // regression in session-card-transcript.tsx).
         expect(after.scrollTop).toBeGreaterThan(0);
+
+        // The RIGHT turn was dropped: at the foot, the newest turn is 7.
+        await app.evalJS<null>(
+          `(function () {
+             var s = document.querySelector(${JSON.stringify(TRANSCRIPT)});
+             if (s) s.scrollTop = s.scrollHeight;
+             return null;
+           })()`,
+        );
+        await app.waitForCondition<boolean>(
+          `Math.max.apply(null, ${RENDERED_PROMPTS_JS}) === ${TURNS - 1}`,
+          { timeoutMs: 6000 },
+        );
       } finally {
         await app.close();
       }

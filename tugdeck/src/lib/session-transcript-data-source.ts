@@ -39,6 +39,11 @@
  *                        `assistant` row.
  *   ghost rows           one per `queuedSends` entry, at the tail.
  *
+ *   The last two are pending submissions, so committed `shell` rows at the
+ *   transcript's tail merge INTO that block by timestamp rather than sitting
+ *   above all of it — a `$` exchange run after the user hit submit paints
+ *   below their message, where the commit will seat it ([D111]).
+ *
  * **Single `"assistant"` kind, zero remounts per turn.** Earlier revisions
  * split the assistant row into `"code-streaming"` and `"code-committed"`
  * with a corresponding two-entry `cellRenderers` map. That split
@@ -443,48 +448,152 @@ function buildCommittedLayout(
 }
 
 /**
+ * The pending (not-yet-committed) submissions, in submission order: the
+ * in-flight turn first, then one entry per queued send. Each carries the
+ * wall-clock the user posted it, which is what a trailing committed shell
+ * row sorts against in {@link composeRowLayout}.
+ */
+interface PendingItem {
+  kind: "active" | "ghost";
+  /** `queuedSends` index for a ghost; `-1` for the in-flight turn. */
+  queuedIndex: number;
+  submitAt: number;
+}
+
+/**
+ * The trailing run of committed `shell`-origin turns whose exchange started
+ * AFTER `firstSubmitAt` — the rows that belong below a pending submission
+ * rather than above it. Returns the turn indices in transcript order (each
+ * shell turn is exactly one row, {@link walkTurnGroups}), empty when the
+ * transcript's tail isn't shell or every trailing shell row predates the
+ * submission.
+ *
+ * The walk mirrors `appendTurnInterleavingShell` in the reducer exactly:
+ * it stops at the first non-shell turn, and it moves a shell row only when
+ * that row's timestamp is strictly greater. Because it is the same rule,
+ * the row lands live where the commit will later seat it — no re-order,
+ * no jump, at `turn_complete`.
+ */
+function trailingShellAfter(
+  transcript: ReadonlyArray<TurnEntry>,
+  firstSubmitAt: number,
+): number[] {
+  const moved: number[] = [];
+  for (let t = transcript.length - 1; t >= 0; t--) {
+    const turn = transcript[t];
+    if (turn.origin !== "shell") break;
+    if (turnSortTs(turn) <= firstSubmitAt) break;
+    moved.push(t);
+  }
+  return moved.reverse();
+}
+
+/** A turn's sort key: its opener Message's creation time. Mirrors the reducer's. */
+function turnSortTs(turn: TurnEntry): number {
+  return turn.messages[0]?.createdAt ?? turn.endedAt;
+}
+
+/**
  * Complete a {@link RowLayout} from a (possibly memoized) committed
  * walk plus the snapshot's in-flight turn and ghost rows — the cheap
  * per-snapshot tail, O(active-turn messages + queued sends).
+ *
+ * The tail is not a plain append. A `$`-route exchange commits into the
+ * transcript the moment it starts ([D111]), while a submission the user
+ * has already made sits OUTSIDE the committed transcript until its turn
+ * ends — so appending would paint a shell command the user ran *after*
+ * hitting submit above the message they submitted, until the turn
+ * completed and the reducer's interleave slid it back. Here the trailing
+ * shell rows are merged into the pending block by timestamp under the
+ * same rule the commit uses, so the live order is the final order.
  */
 function composeRowLayout(
   committed: CommittedLayout,
   snap: CodeSessionSnapshot,
 ): RowLayout {
-  const tail: RowSlot[] = [];
   // A suppressed in-flight turn (the `/compact` seed) contributes zero
   // rows — it streams to claude but never shows in the transcript.
   const active =
     snap.activeTurn !== null && snap.activeTurn.suppressed
       ? null
       : snap.activeTurn;
-  let activeStartRow = -1;
+  const pending: PendingItem[] = [];
   if (active !== null) {
-    activeStartRow = committed.slots.length;
-    pushTurnSlots(tail, walkTurnGroups(active.messages, true), -1, true);
+    pending.push({ kind: "active", queuedIndex: -1, submitAt: active.submitAt });
   }
-  const ghostStartRow = committed.slots.length + tail.length;
   for (let q = 0; q < snap.queuedSends.length; q++) {
+    pending.push({
+      kind: "ghost",
+      queuedIndex: q,
+      submitAt: snap.queuedSends[q].queuedAt,
+    });
+  }
+  if (pending.length === 0) {
+    return {
+      totalRows: committed.slots.length,
+      slots: committed.slots,
+      turnStartRow: committed.turnStartRow,
+      turnRowCount: committed.turnRowCount,
+      activeStartRow: -1,
+      ghostStartRow: committed.slots.length,
+    };
+  }
+
+  const moved = trailingShellAfter(snap.transcript, pending[0].submitAt);
+  const cutRow =
+    moved.length === 0
+      ? committed.slots.length
+      : committed.turnStartRow[moved[0]];
+  // Patch only the moved turns' start rows; every turn ahead of the cut
+  // keeps the memoized walk's index, so the copy is skipped when nothing moves.
+  const movedStartRow: number[] =
+    moved.length === 0 ? [] : committed.turnStartRow.slice();
+
+  const tail: RowSlot[] = [];
+  let activeStartRow = -1;
+  let ghostStartRow = -1;
+  let m = 0;
+  const emitShell = (turnIndex: number): void => {
+    movedStartRow[turnIndex] = cutRow + tail.length;
+    // A shell turn is exactly one row, so its slot is the one at its start.
+    tail.push(committed.slots[committed.turnStartRow[turnIndex]]);
+    m += 1;
+  };
+  for (const item of pending) {
+    // Shell rows that started before (or exactly at) this submission belong
+    // above it — the reducer slides a committing turn left only past rows
+    // strictly newer than itself.
+    while (m < moved.length && turnSortTs(snap.transcript[moved[m]]) <= item.submitAt) {
+      emitShell(moved[m]);
+    }
+    if (item.kind === "active") {
+      activeStartRow = cutRow + tail.length;
+      pushTurnSlots(tail, walkTurnGroups(active!.messages, true), -1, true);
+      continue;
+    }
+    if (ghostStartRow === -1) ghostStartRow = cutRow + tail.length;
     tail.push({
       cellKind: "ghost",
       turnIndex: -1,
       active: false,
-      queuedIndex: q,
+      queuedIndex: item.queuedIndex,
       assistantRunOrdinal: -1,
       userRowOrdinal: -1,
       isLastAssistantOfTurn: false,
       shellRowOrdinal: 0,
     });
   }
-  const slots =
-    tail.length === 0 ? committed.slots : committed.slots.concat(tail);
+  // Anything left is newer than every pending submission — it sits at the foot.
+  while (m < moved.length) emitShell(moved[m]);
+
+  const slots = committed.slots.slice(0, cutRow).concat(tail);
   return {
     totalRows: slots.length,
     slots,
-    turnStartRow: committed.turnStartRow,
+    turnStartRow: moved.length === 0 ? committed.turnStartRow : movedStartRow,
     turnRowCount: committed.turnRowCount,
     activeStartRow,
-    ghostStartRow,
+    ghostStartRow: ghostStartRow === -1 ? slots.length : ghostStartRow,
   };
 }
 

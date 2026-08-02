@@ -497,6 +497,7 @@ export interface CodeSessionState {
     text: string;
     atoms: AtomSegment[];
     turnKey: string;
+    queuedAt: number;
   }>;
   lastError: {
     cause:
@@ -1061,6 +1062,10 @@ function handleSend(
       text: event.text,
       atoms: [...event.atoms],
       turnKey: event.turnKey,
+      // Submission time, stamped here rather than at the flush: this is
+      // the moment the user posted, which is what the row's timestamp
+      // shows and what its position among shell rows sorts on.
+      queuedAt: Date.now(),
     },
   ];
   return { state: { ...state, queuedSends }, effects: [] };
@@ -2227,13 +2232,16 @@ function handleToolResult(
   const pickupEffects: Effect[] = [];
   if (isLive && queuedSends.length > 0) {
     const [head, ...rest] = queuedSends;
+    // Queue-time stamp, as at the `turn_complete` flush: the row's
+    // timestamp is when the user posted, not when the agent loop picked
+    // the message up.
     const steered: UserMessage = {
       kind: "user_message",
       messageKey: userMessageKey(head.turnKey),
-      createdAt: now,
+      createdAt: head.queuedAt,
       text: head.text,
       attachments: head.atoms,
-      submitAt: now,
+      submitAt: head.queuedAt,
     };
     nextMessages.push(steered);
     queuedSends = rest;
@@ -2789,13 +2797,19 @@ function flushQueuedHeadResult(
   // entry's already-synthesized substrate — no re-synthesis at flush
   // time. Bytes-store entries minted at the original queueing `send`
   // stayed live across the queue gap (the bytes-store is per-card-mount).
+  // The Message carries the QUEUE-time stamp — the moment the user hit
+  // submit — while `pendingTurn.submitAt` below stays at dispatch time
+  // (telemetry measures the turn, not the wait). Stamping the Message at
+  // flush would re-date the row forward past any shell exchange run while
+  // it sat queued, permanently seating that exchange above a message the
+  // user submitted first ([D111]).
   const flushedUserMessage: UserMessage = {
     kind: "user_message",
     messageKey: userMessageKey(next.turnKey),
-    createdAt: flushedSubmitAt,
+    createdAt: next.queuedAt,
     text: next.text,
     attachments: next.atoms,
-    submitAt: flushedSubmitAt,
+    submitAt: next.queuedAt,
   };
   return {
     state: {
