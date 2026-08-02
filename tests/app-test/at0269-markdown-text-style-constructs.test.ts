@@ -177,6 +177,10 @@ describe.skipIf(!SHOULD_RUN)("at0269: markdown text style constructs", () => {
           testName: "at0269-markdown-text-style-constructs",
           env: { TUGBANK_PATH: tugbankPath },
           persistInTestMode: true,
+          // `document.hasFocus()` — which this test waits on — is tied by
+          // WebKit to application activation, so this one launches
+          // foreground.
+          foreground: true,
         });
 
         try {

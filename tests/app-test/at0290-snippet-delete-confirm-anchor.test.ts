@@ -104,6 +104,10 @@ describe.skipIf(!SHOULD_RUN)("at0290 — snippet delete confirm anchor", () => {
         const app = await launchTugApp({
           testName: "at0290-snippet-delete-confirm-anchor",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          // `document.hasFocus()` — which this test waits on — is tied by
+          // WebKit to application activation, so this one launches
+          // foreground.
+          foreground: true,
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });

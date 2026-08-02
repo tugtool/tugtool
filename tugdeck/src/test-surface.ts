@@ -39,6 +39,7 @@ import type { DeckManager } from "./deck-manager";
 import type { DeckState, CardStateBag } from "./layout-tree";
 import { DEFAULT_LENS_SIDE } from "./lib/layout-imposer";
 import { deckTrace, type DeckTraceEvent } from "./deck-trace";
+import { labFlags } from "./lib/lab-flags";
 import { getFocusManager } from "./components/tugways/focus-manager";
 import { currentGesture } from "./gesture-interpreter";
 import { _ingestPulseFrameForTest, getPulseStore } from "./lib/pulse-store";
@@ -173,8 +174,14 @@ import {
  * gesture's classification record, so a test can assert what the interpreter
  * decided (activation, promotion, placement, the named reasons) rather than
  * only the downstream effects. Additive; major stays `1`.
+ *
+ * `1.18.0`: adds {@link TugTestSurface.setTranscriptEvictionDisabled} — the
+ * tile-ledger cell's A/B arm (scrolling-memory-diet §G2): renders session
+ * transcripts with `evictOffscreen` withheld so the lab can compare graphics
+ * backing store between the evicted and full-inline DOM at identical layer
+ * height. Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.17.0" as const;
+export const SURFACE_VERSION = "1.18.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -515,6 +522,13 @@ export interface TugTestSurface {
   markDeckTrace(): number;
   clearDeckTrace(): void;
   enableDeckTrace(flag: boolean): void;
+
+  /**
+   * Lab flag (SURFACE_VERSION 1.18.0): render session transcripts with
+   * `evictOffscreen` withheld — the full inline DOM at full layer height.
+   * The tile-ledger cell's A/B arm (scrolling-memory-diet §G2).
+   */
+  setTranscriptEvictionDisabled(disabled: boolean): void;
 
   // ---- Introspection (SURFACE_VERSION 1.1.0, harness Phase A) ----
   getElementText(selector: string): string;
@@ -1312,6 +1326,10 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     clearDeckTrace(): void {
       deckTrace.clear();
+    },
+
+    setTranscriptEvictionDisabled(disabled: boolean): void {
+      labFlags.setTranscriptEvictionDisabled(disabled);
     },
 
     enableDeckTrace(flag: boolean): void {

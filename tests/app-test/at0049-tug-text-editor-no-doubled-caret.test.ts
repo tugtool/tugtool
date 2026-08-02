@@ -145,6 +145,9 @@ describe.skipIf(!SHOULD_RUN)(
             testName: "m49-atom-removal-backspace",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
+            // The caret is the subject: CM6 paints it only while
+            // `document.hasFocus()`, and that needs an activating launch.
+            foreground: true,
           });
           try {
             await setupGallery(app);
@@ -183,6 +186,9 @@ describe.skipIf(!SHOULD_RUN)(
             testName: "m49-ranged-delete-crossing",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
+            // The caret is the subject: CM6 paints it only while
+            // `document.hasFocus()`, and that needs an activating launch.
+            foreground: true,
           });
           try {
             await setupGallery(app);
@@ -220,6 +226,9 @@ describe.skipIf(!SHOULD_RUN)(
             testName: "m49-undo-cut",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
+            // The caret is the subject: CM6 paints it only while
+            // `document.hasFocus()`, and that needs an activating launch.
+            foreground: true,
           });
           try {
             await setupGallery(app);
@@ -268,6 +277,9 @@ describe.skipIf(!SHOULD_RUN)(
             testName: "m49-paste-over-selection",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
+            // The caret is the subject: CM6 paints it only while
+            // `document.hasFocus()`, and that needs an activating launch.
+            foreground: true,
           });
           try {
             await setupGallery(app);
@@ -303,6 +315,9 @@ describe.skipIf(!SHOULD_RUN)(
             testName: "m49-typeahead-deactivate",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
+            // The caret is the subject: CM6 paints it only while
+            // `document.hasFocus()`, and that needs an activating launch.
+            foreground: true,
           });
           try {
             await setupGallery(app);

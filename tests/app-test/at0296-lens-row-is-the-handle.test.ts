@@ -113,6 +113,10 @@ describe.skipIf(!SHOULD_RUN)("at0296 — the Lens row is the handle", () => {
         const app = await launchTugApp({
           testName: "at0296-lens-row-is-the-handle",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          // `document.hasFocus()` — which this test waits on — is tied by
+          // WebKit to application activation, so this one launches
+          // foreground.
+          foreground: true,
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });

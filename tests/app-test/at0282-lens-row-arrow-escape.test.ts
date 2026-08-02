@@ -120,6 +120,10 @@ describe.skipIf(!SHOULD_RUN)("at0282 — Lens row arrows never dead-end", () => 
         const app = await launchTugApp({
           testName: "at0282-lens-row-arrow-escape",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          // `document.hasFocus()` — which this test waits on — is tied by
+          // WebKit to application activation, so this one launches
+          // foreground.
+          foreground: true,
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });

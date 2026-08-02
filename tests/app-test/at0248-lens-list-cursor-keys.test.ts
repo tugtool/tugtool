@@ -100,6 +100,10 @@ describe.skipIf(!SHOULD_RUN)("at0248 — Lens list movement keys via onKey deleg
         const app = await launchTugApp({
           testName: "at0248-lens-list-cursor-keys",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          // `document.hasFocus()` — which this test waits on — is tied by
+          // WebKit to application activation, so this one launches
+          // foreground.
+          foreground: true,
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });

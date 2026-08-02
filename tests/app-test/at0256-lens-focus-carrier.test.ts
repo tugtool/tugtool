@@ -79,6 +79,10 @@ describe.skipIf(!SHOULD_RUN)("at0256 — Lens focus carrier is never lost", () =
           testName: "at0256-lens-focus-carrier",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
           persistInTestMode: true,
+          // `document.hasFocus()` — which this test waits on — is tied by
+          // WebKit to application activation, so this one launches
+          // foreground.
+          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);

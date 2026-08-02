@@ -95,6 +95,10 @@ describe.skipIf(!SHOULD_RUN)("at0241 — Lens snippet editor round-trip", () => 
           testName: "at0241-lens-snippet-editor",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
           persistInTestMode: true,
+          // Keyboard focus is the subject, and `document.hasFocus()` — which
+          // this test waits on, and which the CM6 caret paints against — is
+          // tied by WebKit to application activation.
+          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);
@@ -205,6 +209,10 @@ describe.skipIf(!SHOULD_RUN)("at0241 — Lens snippet editor round-trip", () => 
           testName: "at0241-lens-snippet-space",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
           persistInTestMode: true,
+          // Keyboard focus is the subject, and `document.hasFocus()` — which
+          // this test waits on, and which the CM6 caret paints against — is
+          // tied by WebKit to application activation.
+          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);

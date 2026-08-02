@@ -118,6 +118,7 @@ import { formatAtomTextForCopy } from "@/components/tugways/cards/tug-atom-text-
 import { TugAtomMarkdownBody } from "@/components/tugways/cards/tug-atom-markdown-body";
 import { SessionContextAttachments } from "@/components/tugways/cards/session-context-attachments";
 import { splitLeadingContext } from "@/lib/pending-context-store";
+import { labFlags } from "@/lib/lab-flags";
 import { TugAttachmentPreview } from "@/components/tugways/cards/tug-attachment-preview";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import { formatModelLabel } from "@/lib/model-label";
@@ -1812,6 +1813,14 @@ export const SessionTranscriptHost = forwardRef<
   }, [codeSessionStore]);
   const batchLoading = loadActive || settlingAfterLoad;
 
+  // Lab-only A/B arm for the tile ledger (scrolling-memory-diet §G2): the
+  // harness flips `transcriptEvictionDisabled` through `window.__tug`, and
+  // the store notify re-renders this card with `evictOffscreen` withheld.
+  const { transcriptEvictionDisabled } = useSyncExternalStore(
+    labFlags.subscribe,
+    labFlags.getSnapshot,
+  );
+
   // Suspend per-card state persistence for the WHOLE load — the replay
   // window (`isReplaying`, before the list even mounts) through the
   // post-reveal settle (`batchLoading`). The card's debounced [A9] save
@@ -2541,7 +2550,7 @@ export const SessionTranscriptHost = forwardRef<
               // Nothing about the transcript's appearance changes: an
               // evicted row occupied no pixels of its own before, and the
               // spacer occupies exactly the pixels it did.
-              evictOffscreen
+              evictOffscreen={!transcriptEvictionDisabled}
               pageByEntry
               // The transcript is a read-only stream surface: its rows are
               // prose and tool blocks, not pickable list items. Without this,

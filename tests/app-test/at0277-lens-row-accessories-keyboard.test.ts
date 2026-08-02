@@ -132,6 +132,10 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
         const app = await launchTugApp({
           testName: "at0277-lens-row-accessories-keyboard",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          // `document.hasFocus()` — which this test waits on — is tied by
+          // WebKit to application activation, so this one launches
+          // foreground.
+          foreground: true,
         });
         try {
           await app.seedDeckState({

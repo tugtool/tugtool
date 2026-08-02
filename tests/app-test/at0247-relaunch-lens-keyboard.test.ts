@@ -139,6 +139,10 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
             testName: "at0247-relaunch-lens-keyboard-A",
             env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
             persistInTestMode: true,
+            // `document.hasFocus()` — which this test waits on — is tied by
+            // WebKit to application activation, so this one launches
+            // foreground.
+            foreground: true,
           });
           try {
             await app.seedDeckState({
@@ -226,6 +230,10 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
             env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
             persistInTestMode: true,
             restoreInTestMode: true,
+            // `document.hasFocus()` — which this test waits on — is tied by
+            // WebKit to application activation, so this one launches
+            // foreground.
+            foreground: true,
           });
           try {
             // The restored deck mounts on its own: the snippets list

@@ -93,6 +93,10 @@ describe.skipIf(!SHOULD_RUN)("at0245 — Lens snippet click-select + per-section
           testName: "at0245-lens-snippet-click-scroll",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
           persistInTestMode: true,
+          // `document.hasFocus()` — which this test waits on — is tied by
+          // WebKit to application activation, so this one launches
+          // foreground.
+          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);

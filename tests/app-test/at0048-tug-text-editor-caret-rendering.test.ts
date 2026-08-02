@@ -175,6 +175,9 @@ describe.skipIf(!SHOULD_RUN)(
             testName: "m48-tug-text-editor-caret-rendering",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
+            // The caret is the subject: CM6 paints it only while
+            // `document.hasFocus()`, and that needs an activating launch.
+            foreground: true,
           });
           try {
             await setupGallery(app);

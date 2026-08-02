@@ -1698,4 +1698,401 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
     },
     TEST_TIMEOUT_MS,
   );
+
+  // -----------------------------------------------------------------------
+  // Tile ledger (roadmap/scrolling-memory-diet.md §G2). Attributes graphics
+  // backing store — vmmap's single "owned unmapped memory" region, the
+  // IOSurface pool — to the transcript scroller, per condition:
+  //
+  //   baseline      deck up, transcript empty — the chrome floor
+  //   rest          parked mid-document, nothing moving
+  //   purge         forced purges (notifyutil org.WebKit.lowMemory), the
+  //                 trough and the re-materialization slope
+  //   scroll        scripted constant-velocity full-range sweep
+  //
+  // each run twice: eviction ON (the shipped default) and OFF (the full
+  // inline DOM at identical layer height, via the 1.18.0 lab flag). The
+  // sampler shells `vmmap --summary` from THIS process — host-side reads
+  // never touch the one-at-a-time harness RPC channel, so they can overlap
+  // scroll driving. Foreground launch: a background window's tiles are
+  // purged wholesale, which would measure occlusion policy, not coverage.
+  //
+  // An instrument, not a regression gate — the numbers land in the brief.
+  test.skipIf(process.env.AT9996_TILES !== "1")(
+    "tile ledger: graphics dirty by phase, eviction A/B",
+    async () => {
+      const TURNS = Number(process.env.AT9996_TILES_TURNS ?? "150");
+      const ROWS = TURNS * 2;
+      const REST_SECS = Number(process.env.AT9996_TILES_REST_SECS ?? "45");
+      const PURGE_CYCLES = 3;
+
+      const sleep = (ms: number): Promise<void> =>
+        new Promise((r) => setTimeout(r, ms));
+
+      const priorWebContent = listWebContentPids();
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath);
+      const app = await launchTugApp({
+        testName: "at9996-tiles",
+        env: { TUGBANK_PATH: tugbankPath },
+        foreground: true,
+      });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        for (const id of SESSIONS) {
+          await app.waitForCondition<boolean>(
+            `window.__tug.assertHostRootRegistered(${JSON.stringify(id)})`,
+            { timeoutMs: 8_000 },
+          );
+        }
+
+        // The instance's WebContent: the pid that appeared since the
+        // pre-launch snapshot. WebContent is launchd-parented, so parentage
+        // can't identify it; arrival can. If several arrived, the heaviest
+        // malloc belongs to the deck.
+        let wcPid = -1;
+        for (let i = 0; i < 40 && wcPid < 0; i += 1) {
+          const fresh = [...listWebContentPids()].filter(
+            (p) => !priorWebContent.has(p),
+          );
+          if (fresh.length === 1) {
+            wcPid = fresh[0]!;
+          } else if (fresh.length > 1) {
+            let best = -1;
+            let bestMalloc = -1;
+            for (const p of fresh) {
+              const led = readTileLedger(p);
+              if (led !== null && led.mallocMB > bestMalloc) {
+                bestMalloc = led.mallocMB;
+                best = p;
+              }
+            }
+            wcPid = best;
+          }
+          if (wcPid < 0) await sleep(250);
+        }
+        expect(wcPid).toBeGreaterThan(0);
+
+        const t0 = Date.now();
+        const samples: Array<{
+          phase: string;
+          t: number;
+          gfxMB: number;
+          mallocMB: number;
+        }> = [];
+        const sample = (phase: string): void => {
+          const led = readTileLedger(wcPid);
+          if (led === null) return;
+          samples.push({
+            phase,
+            t: Math.round((Date.now() - t0) / 100) / 10,
+            ...led,
+          });
+        };
+        const sampleFor = async (
+          phase: string,
+          secs: number,
+          everyMs = 5_000,
+        ): Promise<void> => {
+          const end = Date.now() + secs * 1000;
+          for (;;) {
+            sample(phase);
+            if (Date.now() + everyMs > end) return;
+            await sleep(everyMs);
+          }
+        };
+
+        const scroller = `document.querySelector('[data-tug-scroll-key="session-card-transcript"]')`;
+        const geometry = (): Promise<{
+          vw: number;
+          vh: number;
+          scrollHeight: number;
+          cells: number;
+          nodes: number;
+          active: boolean;
+          fallbacks: number;
+          dpr: number;
+          focused: boolean;
+          visibility: string;
+        }> =>
+          app.evalJS(`(function () {
+  var el = ${scroller};
+  return {
+    vw: el.clientWidth,
+    vh: el.clientHeight,
+    scrollHeight: el.scrollHeight,
+    cells: el.querySelectorAll("[data-tug-list-cell-index]").length,
+    nodes: el.getElementsByTagName("*").length,
+    active: el.hasAttribute("data-evict-active"),
+    fallbacks: Number(el.getAttribute("data-evict-fallbacks") || "-1"),
+    dpr: window.devicePixelRatio,
+    focused: document.hasFocus(),
+    visibility: document.visibilityState,
+  };
+})()`);
+        const parkAt = (frac: number): Promise<number> =>
+          app.evalJS<number>(`(function () {
+  var el = ${scroller};
+  el.scrollTop = Math.round((el.scrollHeight - el.clientHeight) * ${frac});
+  return el.scrollTop;
+})()`);
+
+        // Constant-velocity sweep: half-viewport steps at 4/s, top→bottom→
+        // top. Ledger reads overlap the drive as async vmmap spawns.
+        const scrollSweep = async (phase: string): Promise<void> => {
+          const pendingReads: Array<Promise<void>> = [];
+          const readAsync = (): void => {
+            const at = Math.round((Date.now() - t0) / 100) / 10;
+            pendingReads.push(
+              readTileLedgerAsync(wcPid).then((led) => {
+                if (led !== null) samples.push({ phase, t: at, ...led });
+              }),
+            );
+          };
+          const sh = await app.evalJS<number>(
+            `${scroller}.scrollHeight - ${scroller}.clientHeight`,
+          );
+          const vh = await app.evalJS<number>(`${scroller}.clientHeight`);
+          const step = Math.max(1, Math.round(vh / 2));
+          const tops: number[] = [];
+          for (let y = 0; y <= sh; y += step) tops.push(y);
+          for (let y = sh; y >= 0; y -= step) tops.push(y);
+          for (let i = 0; i < tops.length; i += 1) {
+            await app.evalJS<number>(
+              `(function () { var el = ${scroller}; el.scrollTop = ${tops[i]}; return el.scrollTop; })()`,
+            );
+            if (i % 8 === 0) readAsync();
+            await sleep(250);
+          }
+          await Promise.all(pendingReads);
+        };
+
+        const purgeCycles = async (phase: string): Promise<void> => {
+          for (let c = 0; c < PURGE_CYCLES; c += 1) {
+            // Darwin-global: every WebContent on the machine purges too —
+            // each just repaints once, as it already does on the 30s clock.
+            Bun.spawnSync(["notifyutil", "-p", "org.WebKit.lowMemory"]);
+            await sampleFor(phase, 8, 1_000);
+            await sampleFor(phase, 22, 5_000);
+          }
+        };
+
+        const runCondition = async (tag: string): Promise<void> => {
+          await parkAt(0.5);
+          await sleep(2_000);
+          await sampleFor(`rest-${tag}`, REST_SECS);
+          await purgeCycles(`purge-${tag}`);
+          await scrollSweep(`scroll-${tag}`);
+        };
+
+        // Chrome floor before any transcript exists.
+        await sampleFor("baseline", 15);
+
+        await seedTranscriptTurns(app, "A", TURNS, "at9996-tiles");
+        await app.waitForCondition<boolean>(
+          `!!document.querySelector('[data-tug-scroll-key="session-card-transcript"][data-evict-active]')`,
+          { timeoutMs: 30_000 },
+        );
+        // Visible-window precondition. Tile coverage is a property of a
+        // VISIBLE page — a hidden window's backing is dropped or minimized
+        // by policy, so every number sampled against one measures occlusion
+        // policy, not coverage (the 2026-08-01 runs failed exactly this
+        // way: the user was at the machine and the lab window was buried).
+        // Fail fast with the reason instead of producing plausible junk.
+        {
+          const vis = await app.evalJS<string>(`document.visibilityState`);
+          if (vis !== "visible") {
+            throw new Error(
+              `tile ledger requires a visible lab window (visibilityState=${vis}); run when the machine is free`,
+            );
+          }
+        }
+        // Warm sweep, unsampled, in half-viewport steps so EVERY row
+        // remounts: rows measured while the window was backgrounded
+        // mid-seed carry short heights (cv-skipped layout), and a
+        // fractional-stop traversal leaves the rows between stops
+        // uncorrected. After this both arms run on the true layer height.
+        {
+          const sh = await app.evalJS<number>(
+            `${scroller}.scrollHeight - ${scroller}.clientHeight`,
+          );
+          const vh = await app.evalJS<number>(`${scroller}.clientHeight`);
+          const step = Math.max(1, Math.round(vh / 2));
+          for (let y = 0; y <= sh; y += step) {
+            await app.evalJS<number>(
+              `(function () { var el = ${scroller}; el.scrollTop = ${y}; return el.scrollTop; })()`,
+            );
+            await sleep(150);
+          }
+        }
+        const geomEvict = await geometry();
+        await runCondition("evict");
+
+        // The A/B arm: same rows, same layer height, full inline DOM.
+        await app.evalJS<void>(
+          `window.__tug.setTranscriptEvictionDisabled(true)`,
+        );
+        await app.waitForCondition<boolean>(
+          `!document.querySelector('[data-tug-scroll-key="session-card-transcript"][data-evict-active]')`,
+          { timeoutMs: 30_000 },
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll('[data-tug-scroll-key="session-card-transcript"] [data-tug-list-cell-index]').length >= ${ROWS}`,
+          { timeoutMs: 60_000 },
+        );
+        await sleep(3_000);
+        const geomFull = await geometry();
+        await runCondition("full");
+
+        // Flip back and confirm eviction re-arms on the intact ledger.
+        await app.evalJS<void>(
+          `window.__tug.setTranscriptEvictionDisabled(false)`,
+        );
+        await app.waitForCondition<boolean>(
+          `!!document.querySelector('[data-tug-scroll-key="session-card-transcript"][data-evict-active]')`,
+          { timeoutMs: 30_000 },
+        );
+        const geomRearm = await geometry();
+
+        const byPhase: Record<
+          string,
+          { n: number; minMB: number; maxMB: number; meanMB: number }
+        > = {};
+        for (const s of samples) {
+          const agg = (byPhase[s.phase] ??= {
+            n: 0,
+            minMB: Infinity,
+            maxMB: -Infinity,
+            meanMB: 0,
+          });
+          agg.n += 1;
+          agg.minMB = Math.min(agg.minMB, s.gfxMB);
+          agg.maxMB = Math.max(agg.maxMB, s.gfxMB);
+          agg.meanMB += s.gfxMB;
+        }
+        for (const agg of Object.values(byPhase)) {
+          agg.meanMB = Math.round(agg.meanMB / agg.n);
+          agg.minMB = Math.round(agg.minMB);
+          agg.maxMB = Math.round(agg.maxMB);
+        }
+        const report = {
+          wcPid,
+          turns: TURNS,
+          geomEvict,
+          geomFull,
+          geomRearm,
+          byPhase,
+        };
+        console.log(`[at9996] TILE-LEDGER ${JSON.stringify(report)}`);
+        writeFileSync(
+          "/tmp/at9996-tiles.json",
+          JSON.stringify({ report, samples }, null, 2),
+        );
+
+        // Instrument sanity, not a memory gate: both arms really ran on the
+        // shape they claim, and every phase produced readings.
+        expect(geomEvict.active).toBe(true);
+        expect(geomEvict.cells).toBeLessThan(ROWS / 2);
+        expect(geomFull.active).toBe(false);
+        expect(geomFull.cells).toBeGreaterThanOrEqual(ROWS);
+        // Both arms measured the same document at the same layer height —
+        // the instrument-validity check the backgrounded-window artifact
+        // fails (short seed-time measures leave the evicted layer a
+        // fraction of the true height, and the arms stop being comparable).
+        expect(geomFull.scrollHeight).toBeGreaterThan(
+          geomEvict.scrollHeight * 0.95,
+        );
+        expect(geomFull.scrollHeight).toBeLessThan(
+          geomEvict.scrollHeight * 1.05,
+        );
+        expect(geomRearm.active).toBe(true);
+        for (const phase of [
+          "baseline",
+          "rest-evict",
+          "purge-evict",
+          "scroll-evict",
+          "rest-full",
+          "purge-full",
+          "scroll-full",
+        ]) {
+          expect(byPhase[phase]?.n ?? 0).toBeGreaterThan(0);
+        }
+      } finally {
+        await app.close();
+      }
+    },
+    1_500_000,
+  );
 });
+
+// ---------------------------------------------------------------------------
+// Tile-ledger sampling (§G2) — host-side process reads, no RPC involved.
+// ---------------------------------------------------------------------------
+
+function listWebContentPids(): Set<number> {
+  const out = Bun.spawnSync(["pgrep", "-f", "com.apple.WebKit.WebContent"]);
+  const pids = new Set<number>();
+  for (const line of out.stdout.toString().split("\n")) {
+    const pid = Number(line.trim());
+    if (Number.isInteger(pid) && pid > 0) pids.add(pid);
+  }
+  return pids;
+}
+
+/** vmmap summary size token ("526.3M", "1.3G", "16K", "0K") → MB. */
+function parseVmmapSizeMB(token: string): number {
+  const m = /^([\d.]+)([KMG])?$/.exec(token);
+  if (m === null) return NaN;
+  const v = Number(m[1]);
+  if (m[2] === "G") return v * 1024;
+  if (m[2] === "M") return v;
+  if (m[2] === "K") return v / 1024;
+  return v / (1024 * 1024);
+}
+
+/**
+ * Pull the two ledger lines out of a `vmmap --summary` dump: graphics is
+ * the single "owned unmapped memory" region (the IOSurface pool; dirty is
+ * its 6th column), malloc is the "WebKit Malloc" summary row (dirty 5th) —
+ * NOT its "(reserved)" / "metadata" siblings.
+ */
+function parseTileLedger(
+  summary: string,
+): { gfxMB: number; mallocMB: number } | null {
+  let gfxMB = NaN;
+  let mallocMB = NaN;
+  for (const line of summary.split("\n")) {
+    const f = line.trim().split(/\s+/);
+    if (f[0] === "owned" && f[1] === "unmapped" && f[2] === "memory") {
+      gfxMB = parseVmmapSizeMB(f[5] ?? "");
+    } else if (
+      f[0] === "WebKit" &&
+      f[1] === "Malloc" &&
+      /^[\d.]/.test(f[2] ?? "")
+    ) {
+      mallocMB = parseVmmapSizeMB(f[4] ?? "");
+    }
+  }
+  if (!Number.isFinite(gfxMB) || !Number.isFinite(mallocMB)) return null;
+  return { gfxMB, mallocMB };
+}
+
+function readTileLedger(
+  pid: number,
+): { gfxMB: number; mallocMB: number } | null {
+  const out = Bun.spawnSync(["vmmap", "--summary", String(pid)]);
+  return parseTileLedger(out.stdout.toString());
+}
+
+async function readTileLedgerAsync(
+  pid: number,
+): Promise<{ gfxMB: number; mallocMB: number } | null> {
+  const proc = Bun.spawn(["vmmap", "--summary", String(pid)], {
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const text = await new Response(proc.stdout).text();
+  await proc.exited;
+  return parseTileLedger(text);
+}
