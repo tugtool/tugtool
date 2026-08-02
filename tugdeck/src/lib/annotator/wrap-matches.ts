@@ -26,33 +26,14 @@ import { ANNOTATION_CLASS } from "./types";
 /** Marks an element this pass created, rather than the renderer. */
 export const WRAPPED_ATTRIBUTE = "data-tugx-wrapped";
 
-/**
- * Marks a reference the resolver looked for and did not find. Not an
- * annotation: there is no file, so there is nothing to open and nothing
- * for a menu to act on. It carries a `title` and nothing else, so the
- * reference still reads as plain text and hovering says why it is plain.
- */
-export const MISSING_ATTRIBUTE = "data-tugx-missing";
-
-/**
- * What hovering a refused reference says. Only a *definite* answer earns
- * it — a path the endpoint probed and reported absent. A reference nobody
- * could answer for (no resolver, a query that never came back) stays
- * silent, because "we don't know" is not "it isn't there".
- */
-export const MISSING_TITLE = "File not found";
-
 /** A run of a text node that should become its own element. */
 export interface TextRunMatch {
   /** Index of the run's first character in the text node's data. */
   start: number;
   /** Index one past the run's last character. */
   end: number;
-  /**
-   * What the run is, or `null` for a path the resolver reported missing —
-   * wrapped only to carry {@link MISSING_TITLE}, never annotated.
-   */
-  payload: AnnotationPayload | null;
+  /** What the run is. */
+  payload: AnnotationPayload;
 }
 
 /** A text node to scan, and how much license the scan has over it. */
@@ -77,9 +58,8 @@ export interface TextNodeSite {
  *  - `<a>` — already a link; a path inside its label is not a second one.
  *  - `<pre>` — fenced code is content being shown, not references being
  *    made. (Inline `<code>` is *not* skipped: that is where paths live.)
- *  - anything already annotated, or already marked missing — including
- *    this pass's own wrappers, so re-running never nests a wrapper inside
- *    a wrapper.
+ *  - anything already annotated — including this pass's own wrappers, so
+ *    re-running never nests a wrapper inside a wrapper.
  */
 export function collectTextNodes(root: HTMLElement): TextNodeSite[] {
   const found: TextNodeSite[] = [];
@@ -97,7 +77,6 @@ export function collectTextNodes(root: HTMLElement): TextNodeSite[] {
       const element = child as HTMLElement;
       if (element.tagName === "A" || element.tagName === "PRE") continue;
       if (element.classList.contains(ANNOTATION_CLASS)) continue;
-      if (element.hasAttribute(MISSING_ATTRIBUTE)) continue;
       visit(element, inCode || element.tagName === "CODE");
     }
   };
@@ -131,12 +110,7 @@ export function wrapMatchesInTextNode(
     const span = document.createElement("span");
     span.setAttribute(WRAPPED_ATTRIBUTE, "");
     span.textContent = text.slice(match.start, match.end);
-    if (match.payload === null) {
-      span.setAttribute(MISSING_ATTRIBUTE, "");
-      span.title = MISSING_TITLE;
-    } else {
-      stampAnnotation(span, match.payload);
-    }
+    stampAnnotation(span, match.payload);
     fragment.appendChild(span);
     cursor = match.end;
   }

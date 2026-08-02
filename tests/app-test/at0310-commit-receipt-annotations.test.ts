@@ -24,11 +24,10 @@
  * a reference is trusted where it is marked as code, not everywhere it is
  * path-shaped.
  *
- * And a third state between the two: a backticked path the endpoint
- * probed and refused. It stays plain text like the unbackticked one — no
- * file, nothing to open — but carries a "File not found" title, so a
- * definite miss is distinguishable from a reference nobody ever answered
- * for.
+ * And a third case that lands where the unbackticked one does: a
+ * backticked path the endpoint probed and refused. There is no file and
+ * nothing to open, so it stays plain text carrying no mark of any kind —
+ * a refusal the annotator makes silently.
  *
  * @covers tugdeck/src/lib/annotator/wrap-matches.ts
  * @covers tugdeck/src/lib/annotator/annotate-content.ts
@@ -141,19 +140,22 @@ const bodySpanJS = (needle: string) => `JSON.stringify((function(){
   };
 })())`;
 
-/** Read one receipt-body run's missing-mark state by its exact text. */
-const missingMarkJS = (needle: string) => `JSON.stringify((function(){
+/**
+ * Read what, if anything, the annotator left on one receipt-body run —
+ * a wrapper, a mark, a hover title. A refused reference must show none of
+ * them: the run is still in the ink, and it is still plain text.
+ */
+const runStateJS = (needle: string) => `JSON.stringify((function(){
   var root = document.querySelector(
     '[data-card-id="A"] [data-slot="commit-receipt-detail"]');
   if (!root) return { rooted: false };
-  var el = Array.from(root.querySelectorAll('[data-tugx-missing]')).find(
-    function(n){ return (n.textContent || '') === ${JSON.stringify(needle)}; });
-  if (!el) return { rooted: true, found: false };
+  var marked = Array.from(
+    root.querySelectorAll('[data-tugx-wrapped], [data-tug-annotation], [title]'),
+  ).filter(function(n){ return (n.textContent || '') === ${JSON.stringify(needle)}; });
   return {
     rooted: true,
-    found: true,
-    title: el.getAttribute('title'),
-    annotated: el.hasAttribute('data-tug-annotation'),
+    present: (root.textContent || '').indexOf(${JSON.stringify(needle)}) !== -1,
+    markedCount: marked.length,
   };
 })())`;
 
@@ -229,19 +231,20 @@ describe.skipIf(!SHOULD_RUN)(
           expect(bare.rooted).toBe(true);
           expect(bare.found).toBe(false);
 
-          // A backticked path the endpoint probed and refused says so.
-          // It is NOT an annotation — there is no file to open — it is a
-          // title, so hovering distinguishes "looked, not there" from the
-          // silence of a reference nobody could answer for.
+          // A backticked path the endpoint probed and refused stays plain
+          // text — no wrapper, no mark, no hover. Asserted only once the
+          // card stops awaiting verdicts, so the `fs/stat` "no" has really
+          // come back and this is a settled refusal, not an unanswered one.
           await app.waitForCondition<boolean>(
-            `(function(){ var s = ${missingMarkJS(ABSENT_PATH)}; return JSON.parse(s).found === true; })()`,
+            `document.querySelectorAll('[data-card-id="A"] [data-tugx-awaiting]').length === 0`,
             { timeoutMs: 30_000 },
           );
           const absent = JSON.parse(
-            await app.evalJS<string>(missingMarkJS(ABSENT_PATH)),
-          ) as { title: string; annotated: boolean };
-          expect(absent.title).toBe("File not found");
-          expect(absent.annotated).toBe(false);
+            await app.evalJS<string>(runStateJS(ABSENT_PATH)),
+          ) as { rooted: boolean; present: boolean; markedCount: number };
+          expect(absent.rooted).toBe(true);
+          expect(absent.present).toBe(true);
+          expect(absent.markedCount).toBe(0);
 
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {
