@@ -8,8 +8,10 @@
  *    signals (errored / replaying / interruptInFlight).
  *  - `submitButtonMode` — the matrix's Z5 column for every state, plus
  *    the TRANSPORT_DOWN (`reconnecting`) overlay effect.
- *  - `overlays` — `transport_down` and `pending_ask`, including that
- *    `pending_ask` leaves the state and Z5 column untouched.
+ *  - `overlays` — `transport_down`, the sole member. A question raised
+ *    outside the turn stream produces no overlay here; its Awaiting
+ *    reading is pinned in `session-phase-visual.test.ts`, which covers
+ *    the projection the STATE cell actually reads.
  *  - [DT09] — `deriveLifecycleSnapshot` returns the previous reference
  *    when no matrix-relevant signal moved, a fresh one when any did.
  *  - `lifecycleSnapshotsEqual` — the structural-equality primitive.

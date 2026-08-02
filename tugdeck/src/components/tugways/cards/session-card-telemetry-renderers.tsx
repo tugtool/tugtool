@@ -851,6 +851,11 @@ export const SessionTelemetryStatusRow = React.forwardRef<
     // A committed turn can leave agents running behind it; without this
     // the cell would read "Idle" over live work.
     runningJobCount: countRunningJobs(jobsLedger),
+    // Every dialog that holds the user's answer reads Awaiting. The
+    // permission and question dialogs get there through `phase`, which
+    // the reducer sets; an `/api/ask` dialog belongs to no turn, so it
+    // reaches the cell on its own axis instead.
+    pendingAsk: snap.pendingAsk !== null,
   };
   const statePhaseKey = sessionSessionPhaseKey(indicatorState);
   // STATE cell value — the human-readable phase title. The two

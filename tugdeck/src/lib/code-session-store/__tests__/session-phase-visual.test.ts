@@ -150,6 +150,57 @@ describe("sessionSessionPhaseKey — background work promotes idle", () => {
   });
 });
 
+describe("sessionSessionPhaseKey — a pending ask reads Awaiting", () => {
+  // Every dialog holding the user's answer reports Awaiting. The permission
+  // and question dialogs arrive here as `phase: "awaiting_approval"` (the
+  // reducer sets it); an `/api/ask` dialog belongs to no turn and cannot, so
+  // it lands on the same key from its own axis.
+  test("an idle session showing an ask reads 'awaiting_approval'", () => {
+    expect(sessionSessionPhaseKey(input({ phase: "idle", pendingAsk: true }))).toBe(
+      "awaiting_approval",
+    );
+  });
+
+  test("the ask outranks the turn's own phase", () => {
+    // The common case: the agent's own Bash call raised the dialog mid-tool.
+    // "Working" would name the one participant who is not the bottleneck.
+    expect(
+      sessionSessionPhaseKey(input({ phase: "tool_work", pendingAsk: true })),
+    ).toBe("awaiting_approval");
+  });
+
+  test("the ask outranks background work", () => {
+    expect(
+      sessionSessionPhaseKey(
+        input({ phase: "idle", runningJobCount: 2, pendingAsk: true }),
+      ),
+    ).toBe("awaiting_approval");
+  });
+
+  test("a dead wire still dominates — the answer cannot be delivered", () => {
+    expect(
+      sessionSessionPhaseKey(
+        input({ phase: "idle", transportState: "offline", pendingAsk: true }),
+      ),
+    ).toBe("offline");
+  });
+
+  test("an interrupt in flight still dominates", () => {
+    expect(
+      sessionSessionPhaseKey(
+        input({ phase: "tool_work", interruptInFlight: true, pendingAsk: true }),
+      ),
+    ).toBe("interrupting");
+  });
+
+  test("false and omitted both make no Awaiting claim", () => {
+    expect(sessionSessionPhaseKey(input({ phase: "idle", pendingAsk: false }))).toBe(
+      "idle",
+    );
+    expect(sessionSessionPhaseKey(input({ phase: "idle" }))).toBe("idle");
+  });
+});
+
 describe("sessionSessionPhaseVisual — role/state mapping", () => {
   test("offline → danger/aborted", () => {
     expect(sessionSessionPhaseVisual("offline")).toEqual({

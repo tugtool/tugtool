@@ -57,13 +57,20 @@ export type SessionLifecycleState =
  * here — it surfaces directly as transcript ghost rows off the snapshot's
  * `queuedSends`.
  *
- * An overlay earns its place by *deriving* something: `transport_down` collapses
- * a three-valued `transportState` into the one question consumers ask. A member
- * that merely restates a snapshot field its consumers already hold is not a
- * projection, it is a synonym — a `pending_ask` overlay was tried and removed on
- * exactly that ground, since `pendingAsk` rides the same snapshot and the one
- * consumer (the card-modal predicate in `session-card.tsx`) reads it directly.
- * Add one back only alongside the delegate that needs it.
+ * An overlay earns its place by *deriving* something for a delegate that reads
+ * it: `transport_down` collapses a three-valued `transportState` into the one
+ * question consumers ask, and `deriveSubmitButtonMode` right below reads it.
+ *
+ * A `pending_ask` overlay was added here once and removed, and the removal is
+ * worth recording because the reasoning that produced it was half right. It was
+ * a synonym — `pendingAsk` rides the same snapshot, so a consumer could read it
+ * directly — but the reason nothing consumed the overlay was that the *consumer
+ * was never wired*, not that no consumer was wanted. The Awaiting reading it was
+ * meant to produce is a real requirement, and it does not live here: the STATE
+ * cell and the Lens row both flatten their indicator through
+ * `sessionSessionPhaseKey` (`session-phase-visual.ts`), which is where
+ * `pendingAsk` now surfaces as Awaiting. Deleting an unread overlay was right;
+ * concluding from its silence that the feature was unwanted was not.
  */
 export type SessionLifecycleOverlay = "transport_down";
 
@@ -171,8 +178,10 @@ function deriveOverlays(
   // nothing here. It says nothing about the turn — the session is usually idle
   // when one arrives — and routing it through `awaiting_approval` would make
   // `canSubmit` false and `canInterrupt` true on a session with no turn: a dead
-  // composer and a live Stop button with nothing to stop. The dialog's modality
-  // is a card concern, handled by `inlineDialogPending` in `session-card.tsx`.
+  // composer and a live Stop button with nothing to stop. Its two readings live
+  // where their consumers do: modality is `inlineDialogPending` in
+  // `session-card.tsx`, and the Awaiting state is `sessionSessionPhaseKey` in
+  // `session-phase-visual.ts`.
   return overlays;
 }
 

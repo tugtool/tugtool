@@ -138,6 +138,10 @@ function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
           transportState: snap.transportState,
           interruptInFlight: snap.interruptInFlight,
           runningJobCount: countRunningJobs(snap.jobs),
+          // A session waiting on an answer reads Awaiting from the Lens
+          // too — that row is how a card the user isn't looking at says
+          // it needs them.
+          pendingAsk: snap.pendingAsk !== null,
         }
       : OFFLINE_PHASE_INPUT;
   return (

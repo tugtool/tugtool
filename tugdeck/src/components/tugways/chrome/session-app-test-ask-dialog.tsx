@@ -28,7 +28,14 @@
  * This is a card-modal inline dialog ([P16]): a trapped focus mode owns the
  * keyboard while it is up, Tab cycles only its own controls, Escape declines,
  * and the card content around it is scrimmed ([P19] — driven by the mount
- * site's `data-inline-dialog-pending`, which the `pending_ask` overlay feeds).
+ * site's `data-inline-dialog-pending`, which `inlineDialogPending` in
+ * `session-card.tsx` sets off the snapshot's `pendingAsk`).
+ *
+ * While it is up the session reads **Awaiting** in the Z2 STATE cell and in the
+ * Lens session row, the same as the permission and question dialogs. Those two
+ * get there through the reducer's `phase`; this one cannot (it belongs to no
+ * turn), so it reaches the indicator through `sessionSessionPhaseKey`'s own
+ * `pendingAsk` axis — see `session-phase-visual.ts`.
  *
  * Modality is not decoration here. Without the trap the prompt entry keeps the
  * caret, and `TugTextEditor`'s Return defers to whatever default button the

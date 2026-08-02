@@ -28,6 +28,20 @@
  * does not report that session as quiet; it is a presentation key
  * only, and the reducer's phase enum is untouched by it.
  *
+ * `pendingAsk` rides the same "presentation key only" seam, for the
+ * mirror-image reason. A session is Awaiting whenever a dialog is
+ * holding the user's answer, and there are three such dialogs:
+ * `PermissionDialog` and `QuestionWizard` reach this function through
+ * the reducer, which really does set `phase: "awaiting_approval"` when
+ * their `control_request_forward` lands. `AppTestAskDialog` cannot —
+ * it arrives over `/api/ask`, belongs to no turn, and usually finds the
+ * session idle, so writing that phase would make `canSubmit` false and
+ * `canInterrupt` true: a dead composer and a live Stop button with
+ * nothing to stop. Flattening it here instead reports Awaiting off the
+ * one axis the indicator actually reads, and leaves the turn machine
+ * alone. All three dialogs therefore read Awaiting; only two of them
+ * are turn phases.
+ *
  * Migrated from the legacy `TugStateIndicator` — the visual
  * vocabulary is preserved; the API shape is reshaped to the unified
  * indicator's phase axis.
@@ -59,6 +73,14 @@ export interface SessionPhaseInput {
   readonly transportState: TransportState;
   readonly interruptInFlight: boolean;
   readonly runningJobCount?: number;
+  /**
+   * Whether a question from outside the turn stream (`/api/ask`) is on
+   * screen waiting to be answered. Optional for the same reason as
+   * `runningJobCount`: a replayed historical state-change row has no
+   * live dialog to consult, and absent correctly reads as "makes no
+   * claim". Every live surface passes it.
+   */
+  readonly pendingAsk?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,11 +103,20 @@ export type SessionPhaseKey =
  * describes something more specific about the session and keeps its
  * key — including `errored`, where the failure is the more important
  * reading and danger continues to dominate, exactly as transport does.
+ *
+ * A pending ask outranks the phase, because a dialog holding the user's
+ * answer is the more important reading of the session whatever its turn
+ * is doing — and the common case is an agent's own Bash call raising the
+ * dialog mid-`tool_work`, where reporting "Working" would describe the
+ * one participant who is not the bottleneck. It stays *below* transport
+ * and interrupt: a dead wire means the answer cannot be delivered, and a
+ * stop in flight is the thing the user most recently asked for.
  */
 export function sessionSessionPhaseKey(input: SessionPhaseInput): SessionPhaseKey {
   if (input.transportState === "offline") return "offline";
   if (input.transportState === "restoring") return "restoring";
   if (input.interruptInFlight) return "interrupting";
+  if (input.pendingAsk === true) return "awaiting_approval";
   if (input.phase === "idle" && (input.runningJobCount ?? 0) > 0) {
     return "background";
   }

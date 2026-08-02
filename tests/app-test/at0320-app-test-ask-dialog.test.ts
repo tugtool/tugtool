@@ -20,8 +20,12 @@
  *   - it is answerable from the keyboard: the ring seeds on Continue, arrows
  *     cross into the options and move the selection, and Return commits;
  *   - answering it releases the caller with the chosen option's value;
- *   - Z5 is untouched — the ask is not a turn phase, so a session with no turn
- *     must not end up showing a Stop button with nothing to stop;
+ *   - the session reads **Awaiting** in Z2 while the question is up, the same
+ *     as the permission and question dialogs — a dialog holding the user's
+ *     answer says so, whichever of the three it is;
+ *   - but Z5 is untouched — Awaiting here is a reading, not a turn phase, so a
+ *     session with no turn must not end up showing a Stop button with nothing
+ *     to stop;
  *   - the entry pane stands down while the dialog is up. This is the one that
  *     bites: `TugTextEditor`'s Return defers to the pane's default button,
  *     which while this dialog is up is its Continue. If the composer stayed
@@ -35,6 +39,7 @@
  * @covers tugdeck/src/components/tugways/chrome/session-app-test-ask-dialog.tsx
  * @covers tugdeck/src/components/tugways/chrome/session-app-test-ask-dialog.css
  * @covers tugdeck/src/lib/code-session-store/lifecycle-state.ts
+ * @covers tugdeck/src/lib/code-session-store/session-phase-visual.ts
  * @covers tugrust/crates/tugcast/src/server.rs
  * @covers tugrust/crates/tugutil/src/commands/ask.rs
  */
@@ -61,6 +66,20 @@ function hasAttr(app: App, selector: string, attr: string): Promise<boolean> {
   return app.evalJS<boolean>(
     `(function(){var el=document.querySelector(${JSON.stringify(selector)});` +
       `return el!==null && el.hasAttribute(${JSON.stringify(attr)});})()`,
+  );
+}
+
+/**
+ * Z2 — the status row's STATE-cell value text. Same selector `at0084` reads
+ * for the lifecycle matrix, so the two tests agree on what the cell is.
+ */
+function stateCellLabel(app: App, cardId: string): Promise<string | null> {
+  return app.evalJS<string | null>(
+    `(function(){
+      var cell = document.querySelector(
+        '[data-card-id="${cardId}"] [data-priority="state"] .session-telemetry-status-value');
+      return cell ? cell.textContent : null;
+    })()`,
   );
 }
 
@@ -217,13 +236,25 @@ describe.skipIf(!SHOULD_RUN)("at0320 — ask dialog round trip", () => {
       ).toContain("command on this machine");
       expect(rendered.options, "ARRIVES: all three choices render").toHaveLength(3);
 
-      // --- it does not masquerade as a turn ---------------------------
-      // The regression this dialog's design exists to prevent. Routing the ask
-      // through the `awaiting_approval` phase — the obvious way to reuse the
-      // existing Awaiting plumbing — would flip Z5 to the disabled
+      // --- the session reads Awaiting ---------------------------------
+      // Every dialog that holds the user's answer says so in Z2, and this one
+      // is no exception: a question on screen IS the session awaiting input.
+      // The permission and question dialogs reach this cell through the
+      // reducer's `phase`; this one has no turn to put a phase on, so it
+      // reaches the same cell through `sessionSessionPhaseKey`'s own
+      // `pendingAsk` axis.
+      expect(
+        await stateCellLabel(app, "A"),
+        "AWAITING: the Z2 STATE cell reads Awaiting while the question is up",
+      ).toBe("Awaiting");
+
+      // --- without masquerading as a turn -----------------------------
+      // The other half of that. Awaiting is a *reading*, not a phase change:
+      // routing the ask through `awaiting_approval` proper — the obvious way to
+      // reuse the existing plumbing — would flip Z5 to the disabled
       // `awaiting-user` button on a session with no turn running at all,
-      // leaving a dead composer and a Stop button with nothing to stop. The
-      // ask is an overlay instead, so Z5 must be untouched.
+      // leaving a dead composer and a Stop button with nothing to stop. So Z2
+      // says Awaiting and Z5 stays exactly where the real turn state left it.
       const submitMode = await app.evalJS<string | null>(
         `(function(){
           var el = document.querySelector(
@@ -233,7 +264,7 @@ describe.skipIf(!SHOULD_RUN)("at0320 — ask dialog round trip", () => {
       );
       expect(
         submitMode,
-        "OVERLAY: Z5 stays an enabled Submit — the ask is not a turn phase",
+        "AWAITING: Z5 stays an enabled Submit — the reading is not a turn phase",
       ).toBe("submit");
 
       // --- but it IS modal for keys -----------------------------------
