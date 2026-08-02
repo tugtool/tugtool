@@ -69,6 +69,7 @@ import {
   captureFocusForDragStart,
   transferFocusForActivation,
 } from "@/focus-transfer";
+import { paneOcclusionGesture } from "@/components/chrome/pane-occlusion-controller";
 
 // ===========================================================================
 // CardTitleBar (window title chrome)
@@ -1603,6 +1604,10 @@ export function TugPane({
           );
           if (travelled < DRAG_MOVE_THRESHOLD_PX) return;
           dragMoved.current = true;
+          // The move is about to expose whatever this frame was covering,
+          // without a store commit; reveal every occluded pane before the
+          // first moved paint and hold hides until the gesture ends.
+          paneOcclusionGesture.begin();
           // Now it is a move. A derived pane converts to free pixel geometry
           // here, at the moment the gesture becomes one.
           if (derivedRef.current) {
@@ -1716,6 +1721,11 @@ export function TugPane({
           lastSnapResult.current = null;
           return;
         }
+
+        // Close the occlusion bracket opened at the move latch; the commit
+        // below (or the merge's store mutation) recomputes from final
+        // geometry through the controller's store subscription.
+        paneOcclusionGesture.end();
 
         // Hit-test tab bars for merge on drop. [D45]
         if (onCardMerged && activeCardId) {
@@ -1860,6 +1870,10 @@ export function TugPane({
         const travelled = Math.hypot(pointer.x - startX, pointer.y - startY);
         if (travelled < DRAG_MOVE_THRESHOLD_PX) return false;
         resizeMoved = true;
+        // A shrinking edge exposes what this frame was covering, without a
+        // store commit; reveal occluded panes now and hold hides until the
+        // gesture ends.
+        paneOcclusionGesture.begin();
         if (derivedRef.current) {
           const frozen = releaseImposedFrame(frame, resizeCanvasBounds);
           released = frozen;
@@ -1979,6 +1993,9 @@ export function TugPane({
           return;
         }
 
+        // Close the occlusion bracket opened at the move latch.
+        paneOcclusionGesture.end();
+
         // Compute final resize with snap applied first, THEN clear guides. [D03]
         const r = computeAndApplyResize({ x: e.clientX, y: e.clientY }, e.altKey);
         clearGuideElements(resizeGuideEls);
@@ -2082,6 +2099,9 @@ export function TugPane({
         if (lensResizeMoved) return true;
         if (Math.abs(clientX - startClientX) < DRAG_MOVE_THRESHOLD_PX) return false;
         lensResizeMoved = true;
+        // The Lens is a coverer like any other pane; a shrinking rail
+        // exposes what it hid, without a store commit until pointer-up.
+        paneOcclusionGesture.begin();
         return true;
       };
 
@@ -2147,6 +2167,8 @@ export function TugPane({
           clearGuideElements(resizeGuideEls);
           return;
         }
+        // Close the occlusion bracket opened at the move latch.
+        paneOcclusionGesture.end();
         // Final width with snap applied, THEN clear the guides. [D03]
         width = computeWidth();
         clearGuideElements(resizeGuideEls);

@@ -148,8 +148,9 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // The pane frame itself: every test that drives a card through its title bar,
     // its handles, its close control, or its geometry names it, because there is no
     // smaller surface those gestures live on. The coupling is structural rather than
-    // sloppy declaration.
-    "tugdeck/src/components/chrome/tug-pane.tsx": 21,
+    // sloppy declaration. 21 → 22 when the pane-occlusion cell (at0332) landed:
+    // its gesture machines host the occlusion suspension brackets.
+    "tugdeck/src/components/chrome/tug-pane.tsx": 22,
     // The list primitive: the transcript, the Lens sections, the gallery, and
     // every picker are all TugListView, so a test that drives any list of rows
     // names it. Crossed the budget when transcript DOM eviction landed inside

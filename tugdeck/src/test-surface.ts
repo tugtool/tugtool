@@ -40,6 +40,8 @@ import type { DeckState, CardStateBag } from "./layout-tree";
 import { DEFAULT_LENS_SIDE } from "./lib/layout-imposer";
 import { deckTrace, type DeckTraceEvent } from "./deck-trace";
 import { labFlags } from "./lib/lab-flags";
+import { getDeckStore } from "./lib/deck-store-registry";
+import { transferFocusForActivation } from "./focus-transfer";
 import { getFocusManager } from "./components/tugways/focus-manager";
 import { currentGesture } from "./gesture-interpreter";
 import { _ingestPulseFrameForTest, getPulseStore } from "./lib/pulse-store";
@@ -180,8 +182,14 @@ import {
  * transcripts with `evictOffscreen` withheld so the lab can compare graphics
  * backing store between the evicted and full-inline DOM at identical layer
  * height. Additive; major stays `1`.
+ *
+ * `1.19.0`: adds {@link TugTestSurface.activateCard} — the raise gesture as
+ * a surface verb (mirrors `closePane`), for the pane-occlusion cell
+ * ([AT0332]): a fully-buried pane cannot be reached by a click, so the test
+ * raises it the way a Lens Cards row does, through
+ * `DeckManager.activateCard`. Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.18.0" as const;
+export const SURFACE_VERSION = "1.19.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -917,6 +925,14 @@ export interface TugTestSurface {
    * `_closePane` for the last surviving card in a single-card pane).
    */
   closePane(paneId: string): void;
+
+  /**
+   * Raise/activate a card by id — the same `DeckManager.activateCard`
+   * mutation a Lens Cards-row click commits. SURFACE_VERSION 1.19.0, for
+   * the pane-occlusion cell ([AT0332]): a fully-buried pane presents no
+   * clickable pixels, so raise-from-buried is driven here.
+   */
+  activateCard(cardId: string): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -1868,6 +1884,23 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     closePane(paneId: string): void {
       deck.handlePaneClosed(paneId);
+    },
+
+    activateCard(cardId: string): void {
+      // The full raise, not just the first-responder flip:
+      // `transferFocusForActivation` commits `store.activateCard` (which
+      // reorders the panes array — the z-raise) inside `flushSync`, the
+      // same path a real activation click takes through
+      // `pane-focus-controller`. `DeckManager.activateCard` alone would
+      // flip the responder and leave the pane buried.
+      const store = getDeckStore();
+      if (store === null) return;
+      transferFocusForActivation({
+        outgoingCardId: store.getFirstResponderCardId(),
+        incomingCardId: cardId,
+        store,
+        commitMutation: () => store.activateCard(cardId),
+      });
     },
   };
 }

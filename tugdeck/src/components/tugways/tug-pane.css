@@ -247,6 +247,29 @@ body {
   background-color: var(--tugx-pane-title-bar-bg-inactive);
 }
 
+/* ============================================================================
+   Occluded pane — paint suspended, everything else preserved
+   ========================================================================= */
+
+/*
+ * `data-occluded="true"` is written by `pane-occlusion-controller.ts` on a
+ * pane whose frame is fully covered by an opaque pane above it in z-order.
+ * `visibility: hidden` releases the pane's graphics tile backing while
+ * keeping layout, scroll positions, editor state, and running animations
+ * intact — nothing unmounts, nothing re-measures ([L06], [L23]).
+ *
+ * The subtree selector (not just the frame) is required: `visibility`
+ * inherits, but a descendant rule that sets `visibility: visible` explicitly
+ * (the jump-to-bottom button, hover-revealed row controls, checkbox icons)
+ * wins over inheritance and would leave that element painting alone above
+ * the hidden pane. `!important` outranks the higher-specificity reveal
+ * rules those components use.
+ */
+.tug-pane[data-occluded="true"],
+.tug-pane[data-occluded="true"] * {
+  visibility: hidden !important;
+}
+
 .tug-pane[data-focused="true"] .tug-pane-chrome--collapsed {
   background-color: var(--tugx-pane-title-bar-bg-active);
 }

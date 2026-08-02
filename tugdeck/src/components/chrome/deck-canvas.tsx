@@ -32,6 +32,7 @@ import { CanvasOverlayRoot } from "./canvas-overlay-root";
 import { OpenQuicklyOverlay } from "./open-quickly-overlay";
 import { DeckCommitBeacon } from "./deck-commit-beacon";
 import { usePaneFocusController } from "./pane-focus-controller";
+import { usePaneOcclusionController } from "./pane-occlusion-controller";
 import { getRegistration, getStackSizePolicy } from "@/card-registry";
 import { LENS_CARD_ID } from "@/lib/lens-card-id";
 import { findLensPane } from "@/deck-store-selectors";
@@ -271,6 +272,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   const deckRootRef = useRef<HTMLDivElement | null>(null);
   usePaneFocusController(deckRootRef);
+  usePaneOcclusionController(deckRootRef);
 
   // ---------------------------------------------------------------------------
   // Refs for cycleCard closure (registered once on mount via useResponder)
