@@ -163,8 +163,10 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // point. 21 → 22 when the list learned to adopt a descend that a focus-bag
     // restore landed inside one of its rows: reconciling the engine's mode
     // stack with where the keyboard actually is belongs to the list, so the ⌘L
-    // restore test (at0278) has to name it.
-    "tugdeck/src/components/tugways/tug-list-view.tsx": 22,
+    // restore test (at0278) has to name it. 22 → 23 when the scroll attribution
+    // doctrine was pinned (at0333): the two-pass correction its supersede rule
+    // voids lives in the list, so the doctrine test has to name it.
+    "tugdeck/src/components/tugways/tug-list-view.tsx": 23,
 };
 
 interface TestCoverage {

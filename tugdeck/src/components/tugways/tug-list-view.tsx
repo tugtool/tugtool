@@ -1369,6 +1369,30 @@ const AT_TOP_EPSILON = 4;
 const SCROLL_CORRECTION_THRESHOLD_PX = 4;
 
 /**
+ * Drift beyond which a pending two-pass correction concedes the
+ * scroll position to whoever moved it. Pass 1 records the post-write
+ * `scrollTop` read-back (browser clamping folded in); if the
+ * correction effect later finds the scroller more than this far from
+ * that baseline, some actor the list view cannot see moved it — a
+ * user gesture, above all the event-silent native scrollbar — and
+ * issuing the deferred correction would snap them to a stale target.
+ * Matches SmartScroll's `RESTORE_SUPERSEDE_DRIFT_PX`.
+ */
+const SCROLL_CORRECTION_SUPERSEDE_DRIFT_PX = 8;
+
+/**
+ * Trailing settle interval for width invalidation (ms). A live
+ * splitter drag fires the width observer every frame; wiping the
+ * measured-height ledger per fire forces a full remount + re-measure
+ * cycle per tick. Instead each qualifying fire restarts this timer
+ * and the invalidation body runs once, at rest. Long enough that a
+ * continuous drag coalesces to one wipe; short enough that a discrete
+ * resize (window snap, pane preset) re-measures promptly. A plain
+ * `setTimeout` — never rAF, which background windows suspend.
+ */
+const WIDTH_INVALIDATION_SETTLE_MS = 200;
+
+/**
  * Role assigned to a cell when the data source omits `roleForIndex`
  * or returns `undefined` for an index. Single source of truth for the
  * "cell" default so the inline reads in render, click, and keydown
@@ -1891,18 +1915,26 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // when no correction is queued. When `scrollToIndex` is called
     // for an unrendered target ([D03]):
     //   1. Pass 1 — the list view jumps to the estimated offset and
-    //      records the index + estimated top here.
+    //      records the index, estimated top, the caller's `block`,
+    //      and the post-write `scrollTop` read-back (`armedTop`,
+    //      clamping folded in) here.
     //   2. The target row mounts on the next windowing pass and
     //      `ResizeObserver` measures it.
-    //   3. Pass 2 — the post-commit correction effect (below) reads
-    //      this ref, recomputes the offset against the now-measured
-    //      heights, and corrects `scrollTop` if the difference
-    //      exceeds the threshold. Clearing the ref ends the
-    //      protocol; subsequent commits do nothing until the next
-    //      `scrollToIndex` call.
+    //   3. Pass 2 — the post-commit correction effect (below) first
+    //      voids the correction when `scrollTop` has drifted from
+    //      `armedTop` (someone — a user gesture, attributable or
+    //      not — moved the scroller since pass 1; they own the
+    //      position). Otherwise it corrects against the mounted
+    //      row's real rect when available, or recomputes the offset
+    //      against the now-measured heights and corrects if the
+    //      difference exceeds the threshold. Clearing the ref ends
+    //      the protocol; subsequent commits do nothing until the
+    //      next `scrollToIndex` call.
     const pendingScrollCorrectionRef = React.useRef<{
       index: number;
       estimatedTop: number;
+      block: ScrollLogicalPosition;
+      armedTop: number;
     } | null>(null);
 
     // Subscribe to the data source. The returned `version` token is a
@@ -1967,6 +1999,23 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // Triggers a reducer increment which forces React to re-execute
     // the component body and recompute the windowed slice.
     const [, scrollTick] = React.useReducer((x: number) => x + 1, 0);
+
+    // [L04] settle-handshake release, shared by the two cell-observer
+    // sites that can witness a batch settle: the normal post-measurement
+    // path, and the zero-box early return (a hidden scroller). Armed
+    // means a batch freeze is up and this batch's one-shot hasn't fired.
+    // Firing clears the list-internal initial freeze, raises the
+    // consumer's one-shot ready callback (which releases `batchLoading`
+    // — and with it the card's save gate), and forces a commit so the
+    // pin effect sees the freeze's falling edge and places the bottom
+    // once (the settle itself may schedule no flush of its own).
+    const releaseSettleIfArmed = React.useCallback((): void => {
+      if (!isScrollBatteryFrozen() || firstSettleFiredRef.current) return;
+      firstSettleFiredRef.current = true;
+      initialSettlePendingRef.current = false;
+      onFirstSettleRef.current?.();
+      scrollTick();
+    }, [isScrollBatteryFrozen]);
 
     // Selection/focus pin ([L23] under windowed mounting): rows whose
     // DOM holds the user's selection endpoints or keyboard focus must
@@ -2338,6 +2387,19 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // run-counter) is also correct under React StrictMode's
     // mount/unmount/mount double-invoke — the second invoke sees an
     // unchanged dataSource and skips the clear.
+    // True while a width change awaits its settle-debounced
+    // invalidation (the width observer below). While up, the cell
+    // ResizeObserver writes nothing — no ledger entries, no
+    // `contain-intrinsic-size` stamps. Without the freeze the pending
+    // window is stale and *drifting*: mounted rows re-measure at the
+    // new width while unmounted rows keep old-width entries, so the
+    // spacer sums — and `scrollHeight` — move continuously under the
+    // user for the whole drag. Frozen, the geometry is uniformly
+    // old-width and motionless until the settle wipe re-measures
+    // everything; nothing is lost, because that wipe discards those
+    // writes anyway.
+    const widthSettlePendingRef = React.useRef(false);
+
     React.useLayoutEffect(() => {
       if (
         prevDataSourceForClearRef.current !== null &&
@@ -2358,7 +2420,30 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // wholesale; re-showing the card resizes every cell 0 → real,
         // which re-fires this observer with honest values.
         const scroller = scrollContainerRef.current;
-        if (scroller === null || scroller.offsetWidth === 0) return;
+        if (scroller === null || scroller.offsetWidth === 0) {
+          // Hidden settle release. The freeze exists to protect the
+          // scroll battery's forced layouts during a batch settle — but
+          // a scroller with no box has no layouts to protect, and
+          // without a release here a restore that completes behind a
+          // hidden tab would hold `batchLoading` (and the card's save
+          // gate) up until the tab is next shown. These zero-box
+          // deliveries ARE the batch's settle as far as a hidden card
+          // can have one, so release the handshake and let the consumer
+          // stand down. Nothing is measured from this delivery — the
+          // zeros stay out of the ledger — and reveal follows the held-
+          // range path below: the 0→real resize refires this observer
+          // with honest values, the reveal commit's coverage check
+          // suspends once over rows left unmeasured, measures them, and
+          // re-arms.
+          releaseSettleIfArmed();
+          return;
+        }
+        // Width-settle freeze: a width change is mid-debounce, so
+        // these deliveries are new-width measurements the settle wipe
+        // will discard — writing them now would mix widths in the
+        // ledger and drift the spacer sums under the user. Skip the
+        // delivery wholesale, same shape as the zero-box guard above.
+        if (widthSettlePendingRef.current) return;
         // Fold any row-gap change into the ledger before this burst's
         // entries are written against it; a fold also re-windows below.
         const gapChanged = syncRowGap();
@@ -2476,22 +2561,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
 
         // [L04] settle handshake. This ResizeObserver delivery means the
         // batch's cells have been measured — the post-load layout has
-        // settled. Clear the list-internal initial freeze and fire the
-        // one-shot ready callback so the consumer that raised `batchLoading`
-        // can release it; the pin + anchor-writer then resume and place the
-        // bottom / serialize the anchor once. One-shot per batch (re-armed on
-        // each rising edge); only while a batch is actually frozen, so live
-        // streaming never fires it.
-        if (isScrollBatteryFrozen() && !firstSettleFiredRef.current) {
-          firstSettleFiredRef.current = true;
-          initialSettlePendingRef.current = false;
-          onFirstSettleRef.current?.();
-          // Force a commit so the pin effect sees the freeze's falling
-          // edge and places the bottom once (the `onFirstSettle` consumer
-          // may be a no-op for the list-internal initial freeze, and a
-          // settle with no height delta schedules no flush of its own).
-          scrollTick();
-        }
+        // settled. Release the freeze so the consumer that raised
+        // `batchLoading` can stand down; the pin + anchor-writer then
+        // resume and place the bottom / serialize the anchor once.
+        // One-shot per batch (re-armed on each rising edge); only while
+        // a batch is actually frozen, so live streaming never fires it.
+        releaseSettleIfArmed();
       });
       observerRef.current = observer;
       // Observe any cells already in the cellElementMap (mounted
@@ -2513,7 +2588,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // bounds — re-running the effect on dataSource identity change
       // installs a fresh observer that sees the new bound. This is
       // rare (dataSource is usually stable for a card's lifetime).
-    }, [dataSource]);
+    }, [dataSource, releaseSettleIfArmed]);
 
     // Offscreen-skip width invalidation: a remembered
     // `contain-intrinsic-size` is exact only for the width it was
@@ -2540,17 +2615,26 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const scroller = scrollContainerRef.current;
       if (scroller === null) return;
       let lastWidth = scroller.clientWidth;
-      const widthObserver = new ResizeObserver(() => {
+      let settleTimer: ReturnType<typeof setTimeout> | null = null;
+      // The invalidation body runs once, at settle — not per observer
+      // fire. During the pending window the cell observer is frozen
+      // (see `widthSettlePendingRef`), so the ledger holds uniformly
+      // old-width geometry throughout a drag, coverage stays true,
+      // eviction keeps running, and the one wipe here restores
+      // exactness: coverage fails on the next commit, every row
+      // renders, re-measures at the settled width, and eviction
+      // re-arms — one suspension per resize gesture instead of one
+      // per tick.
+      const runInvalidation = (): void => {
+        settleTimer = null;
+        widthSettlePendingRef.current = false;
         const width = scroller.clientWidth;
-        // Width 0 is a hidden scroller (`display: none` — an inactive
-        // card tab), not a width change. Skip WITHOUT updating
-        // `lastWidth`: re-showing the card at its old width is then a
-        // no-op and the measured ledger survives the tab switch intact.
-        // A pane resized while the card was hidden re-shows at a width
-        // that differs from `lastWidth`, which invalidates below as a
-        // real width change should.
+        // Hidden mid-settle (`display: none` landed during the
+        // debounce): no meaningful layout to wipe against, and
+        // `lastWidth` must survive so a re-show at the old width
+        // stays a no-op. The re-show at a *changed* width
+        // re-qualifies against the old baseline below.
         if (width === 0) return;
-        if (Math.abs(width - lastWidth) < 0.5) return;
         lastWidth = width;
         // A width change can carry a layout/density change with it; re-read
         // the gap before the re-measure repopulates the ledger against it.
@@ -2565,9 +2649,49 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           heightIndexRef.current.clear();
           scrollTick();
         }
+      };
+      const widthObserver = new ResizeObserver(() => {
+        const width = scroller.clientWidth;
+        // Width 0 is a hidden scroller (`display: none` — an inactive
+        // card tab), not a width change. Skip WITHOUT updating
+        // `lastWidth`: re-showing the card at its old width is then a
+        // no-op and the measured ledger survives the tab switch intact.
+        // A pane resized while the card was hidden re-shows at a width
+        // that differs from `lastWidth`, which invalidates below as a
+        // real width change should.
+        if (width === 0) return;
+        // The mirror case: a list that MOUNTED hidden baselines at 0.
+        // Its first box is a reveal, not a resize — every ledger entry
+        // that exists was measured at this width (the zero-box guard
+        // kept boxless deliveries out), so adopt the baseline silently.
+        // Invalidating here would wipe heights the reveal burst just
+        // measured, and with no cell box changing afterwards nothing
+        // would re-measure them: coverage would fail on every commit
+        // and eviction could never arm.
+        if (lastWidth === 0) {
+          lastWidth = width;
+          return;
+        }
+        // Compared against the settled baseline, not the previous
+        // fire — intermediate widths keep restarting the timer until
+        // the gesture rests.
+        if (Math.abs(width - lastWidth) < 0.5) return;
+        widthSettlePendingRef.current = true;
+        if (settleTimer !== null) clearTimeout(settleTimer);
+        settleTimer = setTimeout(
+          runInvalidation,
+          WIDTH_INVALIDATION_SETTLE_MS,
+        );
       });
       widthObserver.observe(scroller);
-      return () => widthObserver.disconnect();
+      return () => {
+        widthObserver.disconnect();
+        if (settleTimer !== null) {
+          clearTimeout(settleTimer);
+          settleTimer = null;
+        }
+        widthSettlePendingRef.current = false;
+      };
       // `scrollTick` is a stable reducer dispatch.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [inline, offscreenSkip, evictModeEnabled]);
@@ -3228,23 +3352,55 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // Two-pass `scrollToIndex` correction per [D03]. Pass 1 lives in
     // the imperative handle (estimated jump); this effect implements
     // pass 2. Runs after every commit; no-ops when no correction is
-    // pending. When the target row has been measured (heightIndex
-    // entry exists), the corrected offset is recomputed and a
-    // single corrective `scrollTo` is issued if it differs from the
-    // estimated top by more than the threshold. Sub-threshold drifts
-    // skip the corrective write so a stable target produces exactly
-    // one `scrollTo` (the pass-1 jump).
+    // pending.
     //
-    // The pending state is cleared in BOTH the corrected and the
-    // sub-threshold branches — if the row has been measured, pass 2
-    // is finished regardless of whether a correction was issued.
-    // Until measurement arrives, the ref stays set and a later
-    // commit completes the protocol.
+    // Supersede first: a correction is a deferred scroll write, and
+    // no deferred write survives the user moving the scroller. The
+    // drift check against `armedTop` (the pass-1 post-write
+    // read-back, clamping folded in) catches every mover the list
+    // view cannot see — chiefly the event-silent native scrollbar —
+    // as well as ordinary gestures; either way the correction is
+    // voided rather than snapping them to a stale target.
+    //
+    // Correction source: when the target row is mounted, its real
+    // rect is the truth — `scrollToElement` places it per the armed
+    // `block`, repairing what ledger arithmetic cannot (the
+    // breathing-room pseudo-elements and window chrome belong to no
+    // cell, so `offsetForIndex + leadingOffsetPx()` is systematically
+    // short by that constant). When the row is measured but was
+    // re-evicted before this effect ran, the ledger recompute (with
+    // the rebase folded into `estimatedTop` at arm time) is the
+    // fallback. Sub-threshold drifts skip the corrective write so a
+    // stable target produces exactly one `scrollTo` (the pass-1
+    // jump).
+    //
+    // The pending state is cleared in the mounted, corrected, and
+    // sub-threshold branches — pass 2 is finished regardless of
+    // whether a correction was issued. Until measurement arrives,
+    // the ref stays set and a later commit completes the protocol.
     React.useLayoutEffect(() => {
       const pending = pendingScrollCorrectionRef.current;
       if (pending === null) return;
       const ss = smartScrollRef.current;
       if (ss === null) return;
+      const scrollEl = scrollContainerRef.current;
+      if (scrollEl === null) return;
+      if (
+        Math.abs(scrollEl.scrollTop - pending.armedTop) >
+        SCROLL_CORRECTION_SUPERSEDE_DRIFT_PX
+      ) {
+        pendingScrollCorrectionRef.current = null;
+        return;
+      }
+      const targetEl = cellElementMapRef.current.get(pending.index);
+      if (targetEl !== undefined) {
+        ss.scrollToElement(targetEl, {
+          block: pending.block,
+          animated: false,
+        });
+        pendingScrollCorrectionRef.current = null;
+        return;
+      }
       if (!heightIndexRef.current.has(pending.index)) return;
 
       const correctedTop =
@@ -3323,6 +3479,39 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       prevRenderedIndicesRef.current = currentSet;
     });
 
+    // Rect-space rebase: the constant by which `offsetForIndex +
+    // leadingOffsetPx()` falls short of a row's true document offset.
+    // Ledger entries are outer cell extents and `leadingOffsetPx()`
+    // covers the leading strip, but the scroll container's
+    // breathing-room pseudo-elements and window chrome belong to no
+    // cell and no tracked element — so ledger arithmetic is short by
+    // their combined height. Any mounted cell captures the whole
+    // constant without naming its parts: its real rect vs its ledger
+    // offset. Returns `null` when no cell is mounted (under
+    // `evictOffscreen` one always is). Anchor save/restore never
+    // needs this (the constant folds into the saved offset because
+    // save and restore use the same formula); *flush placement* —
+    // estimated pass-1 jumps — does. Reads live DOM, so callers are
+    // explicit gesture paths, not per-commit hot paths.
+    const rectSpaceRebasePx = React.useCallback((): number | null => {
+      const scrollEl = scrollContainerRef.current;
+      if (scrollEl === null) return null;
+      const viewTop = scrollEl.getBoundingClientRect().top;
+      for (const [j, el] of cellElementMapRef.current) {
+        return (
+          el.getBoundingClientRect().top -
+          viewTop +
+          scrollEl.scrollTop -
+          (heightIndexRef.current.offsetForIndex(
+            j,
+            estimatedHeightForKindOnly,
+          ) +
+            leadingOffsetPx())
+        );
+      }
+      return null;
+    }, [estimatedHeightForKindOnly, leadingOffsetPx]);
+
     // Step the scroller one entry up / down — the shared core behind
     // both the PageUp/PageDown key handler below and the imperative
     // `pageByEntry` method on the handle (which lets a consumer drive
@@ -3349,7 +3538,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // come from the ledger (exact — eviction only engages when every
         // out-of-window row is measured), re-based into rect space via a
         // mounted cell so both sources describe the same axis. Mounted
-        // cells keep their real rects.
+        // cells keep their real rects. The rebase constant is the same
+        // in viewport and document space (the `scrollTop` terms
+        // cancel), so `rectSpaceRebasePx` serves both the selection
+        // math here and the document-space jump below.
         const ledgerTopFor = (i: number): number =>
           heightIndexRef.current.offsetForIndex(
             i,
@@ -3357,11 +3549,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           ) +
           leadingOffsetPx() -
           scrollEl.scrollTop;
-        let rebase: number | null = null;
-        for (const [j, el] of cellElementMapRef.current) {
-          rebase = el.getBoundingClientRect().top - viewTop - ledgerTopFor(j);
-          break;
-        }
+        const rebase = rectSpaceRebasePx();
         const cellEls: Array<HTMLElement | undefined> = [];
         const cellTops: number[] = [];
         for (let i = 0; i < itemCount; i += 1) {
@@ -3392,20 +3580,33 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         }
         // Unmounted target: the [D03] two-pass protocol, same as
         // `scrollToIndex` — estimated jump now, post-commit correction
-        // once the row mounts and measures.
+        // once the row mounts and measures. The jump carries the same
+        // rebase the selection math used — without it the entry lands
+        // `rebase` px shy of flush and the ledger-fallback correction
+        // recomputes the identical shortfall. An unmounted target
+        // implies a mounted sibling supplied a non-null rebase above.
         const estimatedTop =
           heightIndexRef.current.offsetForIndex(
             result.index,
             estimatedHeightForKindOnly,
-          ) + leadingOffsetPx();
+          ) +
+          leadingOffsetPx() +
+          (rebase ?? 0);
         ss.scrollTo({ top: estimatedTop, animated: false });
         pendingScrollCorrectionRef.current = {
           index: result.index,
           estimatedTop,
+          block: "start",
+          armedTop: scrollEl.scrollTop,
         };
         return true;
       },
-      [dataSource, estimatedHeightForKindOnly, leadingOffsetPx],
+      [
+        dataSource,
+        estimatedHeightForKindOnly,
+        leadingOffsetPx,
+        rectSpaceRebasePx,
+      ],
     );
 
     // Imperative handle. `scrollToIndex` routes every scroll write
@@ -3465,23 +3666,36 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             return;
           }
 
-          // Pass 1 — estimated jump. Pass 2 fires from the
-          // post-commit correction effect above once the target row
-          // mounts and is measured. Under `evictOffscreen` this branch
-          // is the normal path (the target really is unmounted) and the
-          // offset is exact, since every out-of-window row is measured.
+          // Pass 1 — estimated jump, carrying the rect-space rebase
+          // so ledger arithmetic lands at the row's true document
+          // offset. Pass 2 fires from the post-commit correction
+          // effect above once the target row mounts and is measured.
+          // Under `evictOffscreen` this branch is the normal path
+          // (the target really is unmounted) and the offset is
+          // exact, since every out-of-window row is measured.
           const estimatedTop =
             heightIndexRef.current.offsetForIndex(
               clamped,
               estimatedHeightForKindOnly,
-            ) + leadingOffsetPx();
+            ) +
+            leadingOffsetPx() +
+            (rectSpaceRebasePx() ?? 0);
           ss.scrollTo({
             top: estimatedTop,
             animated: options?.animated ?? false,
           });
+          // `armedTop` is the post-write read-back, so browser
+          // clamping is folded in and only another actor's movement
+          // can register as drift. An animated jump reads back its
+          // starting position instead — its own tween then registers
+          // as drift and voids the correction, which is the safe
+          // outcome for a path whose target was estimated anyway.
           pendingScrollCorrectionRef.current = {
             index: clamped,
             estimatedTop,
+            block: options?.block ?? "start",
+            armedTop:
+              scrollContainerRef.current?.scrollTop ?? estimatedTop,
           };
         },
         getElementForIndex(index: number): HTMLElement | null {
@@ -3524,7 +3738,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           moveCursorToRef.current(index);
         },
       }),
-      [dataSource, estimatedHeightForKindOnly, pageByEntryStep],
+      [
+        dataSource,
+        estimatedHeightForKindOnly,
+        pageByEntryStep,
+        rectSpaceRebasePx,
+      ],
     );
 
     // Render the windowed slice. Cells are keyed by
@@ -3777,11 +3996,18 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           heightIndexRef.current.offsetForIndex(
             clamped,
             estimatedHeightForKindOnly,
-          ) + leadingOffsetPx();
+          ) +
+          leadingOffsetPx() +
+          (rectSpaceRebasePx() ?? 0);
         ss.scrollTo({ top: estimatedTop, animated: false });
-        pendingScrollCorrectionRef.current = { index: clamped, estimatedTop };
+        pendingScrollCorrectionRef.current = {
+          index: clamped,
+          estimatedTop,
+          block,
+          armedTop: scrollContainerRef.current?.scrollTop ?? estimatedTop,
+        };
       },
-      [estimatedHeightForKindOnly, leadingOffsetPx],
+      [estimatedHeightForKindOnly, leadingOffsetPx, rectSpaceRebasePx],
     );
 
     // Move the cursor to `index`, project it, and optionally scroll it in.

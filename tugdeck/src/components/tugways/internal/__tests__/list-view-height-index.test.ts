@@ -411,3 +411,108 @@ describe("HeightIndex — shift (prepend remap)", () => {
     expect(empty.size).toBe(0);
   });
 });
+
+describe("HeightIndex — adjustAll patches the prepared cache in place", () => {
+  const est = fixed(60);
+
+  /** A fresh instance holding the same measured entries as `src`, prepared. */
+  const freshTwin = (src: HeightIndex, itemCount: number): HeightIndex => {
+    const twin = new HeightIndex();
+    for (let i = 0; i < itemCount; i += 1) {
+      const h = src.get(i);
+      if (h !== undefined) twin.set(i, h);
+    }
+    twin.prepare(itemCount, est);
+    return twin;
+  };
+
+  const expectParity = (
+    idx: HeightIndex,
+    twin: HeightIndex,
+    itemCount: number,
+  ): void => {
+    expect(idx.totalHeight(itemCount, est)).toBe(
+      twin.totalHeight(itemCount, est),
+    );
+    for (let i = 0; i <= itemCount; i += 1) {
+      expect(idx.offsetForIndex(i, est)).toBe(twin.offsetForIndex(i, est));
+    }
+    const total = twin.totalHeight(itemCount, est);
+    for (let px = 0; px <= total; px += 7) {
+      expect(idx.indexForOffset(px, itemCount, est)).toBe(
+        twin.indexForOffset(px, itemCount, est),
+      );
+    }
+  };
+
+  test("positive delta: reads agree with a freshly-prepared twin", () => {
+    const idx = new HeightIndex();
+    idx.set(0, 100);
+    idx.set(2, 50);
+    idx.set(4, 80);
+    idx.prepare(6, est);
+
+    idx.adjustAll(8);
+    expectParity(idx, freshTwin(idx, 6), 6);
+    expect(idx.get(0)).toBe(108);
+    expect(idx.get(2)).toBe(58);
+  });
+
+  test("negative delta with clamp-at-0 entries", () => {
+    const idx = new HeightIndex();
+    idx.set(0, 3); // clamps to 0 under -8
+    idx.set(1, 100);
+    idx.set(3, 8); // clamps exactly to 0
+    idx.prepare(5, est);
+
+    idx.adjustAll(-8);
+    expect(idx.get(0)).toBe(0);
+    expect(idx.get(3)).toBe(0);
+    expect(idx.get(1)).toBe(92);
+    expectParity(idx, freshTwin(idx, 5), 5);
+  });
+
+  test("unmeasured indices keep the estimate through the rebuild", () => {
+    const idx = new HeightIndex();
+    idx.set(1, 40);
+    idx.prepare(4, est);
+
+    idx.adjustAll(5);
+    // Indices 0, 2, 3 are unmeasured: still the 60px estimate.
+    expect(idx.offsetForIndex(1, est)).toBe(60);
+    expect(idx.offsetForIndex(2, est)).toBe(60 + 45);
+    expect(idx.totalHeight(4, est)).toBe(60 * 3 + 45);
+    expectParity(idx, freshTwin(idx, 4), 4);
+  });
+
+  test("measured entries outside the prepared range adjust without touching the cache", () => {
+    const idx = new HeightIndex();
+    idx.set(0, 30);
+    idx.set(9, 70); // beyond the prepared range
+    idx.prepare(4, est);
+
+    idx.adjustAll(10);
+    expect(idx.get(9)).toBe(80);
+    expectParity(idx, freshTwin(idx, 4), 4);
+  });
+
+  test("no-cache path is unchanged (map-only rebase)", () => {
+    const idx = new HeightIndex();
+    idx.set(0, 30);
+    idx.set(1, 40);
+    idx.adjustAll(6);
+    expect(idx.get(0)).toBe(36);
+    expect(idx.get(1)).toBe(46);
+    expect(idx.totalHeight(3, est)).toBe(36 + 46 + 60);
+  });
+
+  test("set after adjustAll still patches the tree consistently", () => {
+    const idx = new HeightIndex();
+    idx.set(0, 100);
+    idx.set(1, 100);
+    idx.prepare(3, est);
+    idx.adjustAll(12);
+    idx.set(1, 200);
+    expectParity(idx, freshTwin(idx, 3), 3);
+  });
+});

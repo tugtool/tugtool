@@ -17,7 +17,9 @@
  *
  *   Six listeners:
  *   1. scroll on container (passive) — onScroll callback, lastScrollTop update,
- *      phase transitions, follow-bottom re-engagement.
+ *      phase transitions, follow-bottom re-engagement, and the idle-phase
+ *      unattributed disengage (native scrollbar drags emit no pointer or
+ *      wheel events; an idle upward scroll we did not cause is the user).
  *   2. scrollend on container — terminal signal for deceleration and programmatic
  *      animation. Feature-detected at construction; 150ms timer fallback for
  *      browsers without it.
@@ -145,6 +147,11 @@ const SCROLLEND_FALLBACK_MS = 150;
  * drags toward the bottom, the restore yanks `scrollTop` back to the
  * anchor, repeatedly, with no gesture that ends it. Matches
  * CardHost's `REGION_SCROLL_TOLERANCE_PX`.
+ *
+ * Follow-bottom applies the same attribution rule from the other
+ * side: an idle upward scroll SmartScroll did not cause (the
+ * scrollbar again) disengages follow-bottom, so growth pins stop
+ * fighting the drag. See `_handleScroll`'s idle case.
  */
 const RESTORE_SUPERSEDE_DRIFT_PX = 8;
 
@@ -365,7 +372,7 @@ export class SmartScroll {
   }
 
   /** Slam scrollTop to bottom without entering programmatic phase.
-   *  Used for content growth while following bottom. Stays in idle. [D04]
+   *  Used for content growth while following bottom. Stays in idle. [D93]
    *
    *  Idempotent: reads the live scroll geometry and skips the write when
    *  scrollTop is already at (or past) the maximum. Setting scrollTop to a
@@ -504,6 +511,9 @@ export class SmartScroll {
   //   - an explicit programmatic scroll (`scrollTo`, `scrollToTop`,
   //     `scrollToElement`) supersedes the restore — the consumer
   //     named a position, so those methods clear the target.
+  // Follow-bottom obeys the same attribution rules from the other
+  // side: an idle upward scroll SmartScroll cannot attribute to its
+  // own writes disengages it (`_handleScroll`, idle case).
   // The consumer's only job is to forward layout signals by calling
   // `applyRestoreTarget` (its post-commit / ResizeObserver heartbeat);
   // it holds no restore state of its own.
@@ -700,6 +710,34 @@ export class SmartScroll {
           this.isAtBottom
         ) {
           this._setFollowingBottom(true, 'idle-reengage');
+        }
+        // Unattributed disengage — the mirror of the re-engagement above.
+        // A native scrollbar drag delivers no pointer or wheel events to
+        // the container, so the phase machine sits in `idle` while the
+        // user scrubs; without this, follow-bottom stays engaged and
+        // every growth pin slams the scroller back to the bottom against
+        // the drag. An idle upward scroll that SmartScroll did not cause
+        // is therefore the user and disengages. Safe against our own
+        // writes: explicit programmatic scrolls arm the one-shot
+        // suppression flag (captured above), pins and prepend
+        // compensation only ever move `scrollTop` down, a
+        // `scrollHeight`-shrink clamp lands where `isAtBottom` holds,
+        // and the raw upward writers (`focus-reveal`'s `revealWithin`,
+        // the transcript's `settleFindReveal`) call `disengage(...)`
+        // themselves before writing. `usePositionStableClick`'s
+        // compensation writes on the user's click call-stack to hold
+        // the click point under the cursor — attributing that scroll
+        // to the user is correct, and disengaging keeps growth pins
+        // from yanking the preserved point away. The `!isAtBottom`
+        // guard reuses the same 60px jitter band as the
+        // `dragging`-phase disengage.
+        if (
+          !suppressIdleReengage &&
+          this._isFollowingBottom &&
+          scrollTop < this._lastScrollTop &&
+          !this.isAtBottom
+        ) {
+          this._setFollowingBottom(false, 'unattributed-scroll-up');
         }
         break;
 

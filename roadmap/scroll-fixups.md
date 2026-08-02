@@ -37,8 +37,8 @@ The organizing doctrine, stated once and implemented throughout: **every scroll 
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- A simulated scrollbar drag (direct `scrollTop` assignment, no pointer/wheel events) away from the bottom during streaming growth disengages follow-bottom and is not snapped back (new at0332 test green).
-- A user scroll after an estimated jump voids the pending two-pass correction — no late snap to a stale target (at0332 test green).
+- A simulated scrollbar drag (direct `scrollTop` assignment, no pointer/wheel events) away from the bottom during streaming growth disengages follow-bottom and is not snapped back (new at0333 test green).
+- A user scroll after an estimated jump voids the pending two-pass correction — no late snap to a stale target (at0333 test green).
 - at0330's "turn stepping (⌥⌘↑ / ⌥⌘↓) pages across evicted rows one entry at a time" test passes: every press lands the target entry flush (±2px) with the scrollport top, including unmounted targets (run with the test window visible — a fully-covered background window freezes rAF and fails this suite as an environment artifact).
 - A continuous width-resize burst produces at most one eviction suspension (`data-evict-fallbacks` increments by ≤1 across the burst), not one per tick.
 - A transcript restored while `display:none` releases its batch freeze (the `deck.suspendCardStateSaves` hold drops) without waiting for reveal, and evicts normally after reveal with at most one suspension.
@@ -52,7 +52,7 @@ The organizing doctrine, stated once and implemented throughout: **every scroll 
 3. HeightIndex: `adjustAll` patches the Fenwick cache in place instead of nulling it.
 4. TugListView: settle-debounced width invalidation.
 5. TugListView: hidden-tab settle release, so a background-tab restore stops wedging the batch freeze and the deck-wide card-save gate.
-6. New app-test (at0332) pinning the two doctrine rules; at0330 turn-stepping goes green via item 2.
+6. New app-test (at0333) pinning the two doctrine rules; at0330 turn-stepping goes green via item 2.
 7. `tuglaws/scroll-intent.md` (the supersede-rules doctrine) and the matching amendment to the global [D93].
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
@@ -330,7 +330,7 @@ Placed alongside (mutually exclusive by direction with) the existing re-engageme
 
 | File | Purpose |
 |------|---------|
-| `tests/app-test/at0332-follow-bottom-unattributed.test.ts` | Behavioral pin of [P01]/[P02]/[P03]: scrollbar-simulated disengage under streaming; gesture voids a pending correction; downward unattributed re-engage unchanged |
+| `tests/app-test/at0333-follow-bottom-unattributed.test.ts` | Behavioral pin of [P01]/[P02]/[P03]: scrollbar-simulated disengage under streaming; gesture voids a pending correction; downward unattributed re-engage unchanged |
 | `tuglaws/scroll-intent.md` | The supersede-rules doctrine ([P08]) |
 
 #### Symbols to add / modify {#symbols}
@@ -353,7 +353,7 @@ Placed alongside (mutually exclusive by direction with) the existing re-engageme
 
 - [ ] `tuglaws/scroll-intent.md` written and cross-linked ([P08], #step-9).
 - [ ] `smart-scroll.ts` class doc block: supersede-rules list gains the unattributed-disengage bullet.
-- [ ] at0330/at0332 header docblocks carry `@covers` lines resolving to the touched sources (`just app-test-covers-check` enforces).
+- [ ] at0330/at0333 header docblocks carry `@covers` lines resolving to the touched sources (`just app-test-covers-check` enforces).
 
 ---
 
@@ -383,16 +383,16 @@ Placed alongside (mutually exclusive by direction with) the existing re-engageme
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | SmartScroll: unattributed-scroll disengage | pending | — |
-| #step-2 | TugListView: supersedable, real-rect corrections | pending | — |
-| #step-3 | TugListView: rebase-aware pass-1 jumps (turn stepping) | pending | — |
-| #step-4 | HeightIndex: adjustAll cache patch | pending | — |
-| #step-5 | Stage-1 integration checkpoint | pending | — |
-| #step-6 | Width invalidation settle-debounce + ledger freeze | pending | — |
-| #step-7 | Hidden-tab settle release | pending | — |
-| #step-8 | at0332: doctrine behavioral pins | pending | — |
-| #step-9 | tuglaws/scroll-intent.md + D93 amendment | pending | — |
-| #step-10 | Final integration checkpoint | pending | — |
+| #step-1 | SmartScroll: unattributed-scroll disengage | done | `143c2124a` |
+| #step-2 | TugListView: supersedable, real-rect corrections | done | `3244b2dbc` |
+| #step-3 | TugListView: rebase-aware pass-1 jumps (turn stepping) | done | `ed3e53f34` |
+| #step-4 | HeightIndex: adjustAll cache patch | done | `dc8dea609` |
+| #step-5 | Stage-1 integration checkpoint | done | N/A (verification only; guard suite green, turn-stepping green, expand round-trip pre-existing red per #non-goals) |
+| #step-6 | Width invalidation settle-debounce + ledger freeze | done | `13b86021c` |
+| #step-7 | Hidden-tab settle release | done | `8bc8b69a1` |
+| #step-8 | at0333: doctrine behavioral pins | done | `525efbe76` |
+| #step-9 | tuglaws/scroll-intent.md + D93 amendment | done | `457ca4ff4` |
+| #step-10 | Final integration checkpoint | done | N/A (verification only; bun test 5490 green, vite build clean; derived selection: every background-tier file green — at0122/41/42/60/62, at0189, at0190, at0202, at0245, at0256, at0287, at0330 6/7 (only the pre-existing #non-goals expand red), at0331, at0333 — while 11 foreground-tier files timed out at the harness's `document.hasFocus()` preflight with the machine unattended, failing identically at unmodified main; re-run those with the machine attended: at0127, at0218, at0248, at0249, at0250, at0267, at0277, at0278, at0282, at0283×2) |
 
 #### Step 1: SmartScroll — disengage follow-bottom on unattributed upward scroll {#step-1}
 
@@ -413,7 +413,7 @@ Placed alongside (mutually exclusive by direction with) the existing re-engageme
 
 **Tests:**
 
-- [ ] Behavioral coverage lands in #step-8 (at0332); this step's gate is the existing guard suite staying green.
+- [ ] Behavioral coverage lands in #step-8 (at0333); this step's gate is the existing guard suite staying green.
 
 **Checkpoint:**
 
@@ -590,17 +590,17 @@ Placed alongside (mutually exclusive by direction with) the existing re-engageme
 
 ---
 
-#### Step 8: at0332 — doctrine behavioral pins {#step-8}
+#### Step 8: at0333 — doctrine behavioral pins {#step-8}
 
 **Depends on:** #step-1, #step-2, #step-3
 
-**Commit:** `tugdash(scroll-fixups): pin unattributed disengage and correction supersede in at0332`
+**Commit:** `tugdash(scroll-fixups): pin unattributed disengage and correction supersede in at0333`
 
 **References:** [P01] [P02] [P03], Spec S01, Spec S02, Risk R03, (#test-plan-concepts, #test-non-goals)
 
 **Artifacts:**
 
-- `tests/app-test/at0332-follow-bottom-unattributed.test.ts` with `@covers` lines for `tugdeck/src/lib/smart-scroll.ts` and `tugdeck/src/components/tugways/tug-list-view.tsx`.
+- `tests/app-test/at0333-follow-bottom-unattributed.test.ts` with `@covers` lines for `tugdeck/src/lib/smart-scroll.ts` and `tugdeck/src/components/tugways/tug-list-view.tsx`.
 
 **Model it on `tests/app-test/at0189-transcript-atbottom-no-slam.test.ts`** — it already carries everything this file needs: `seedFixtureSession` / `openFixtureSession` / `SCROLLER` / `waitForTranscriptSettled` from `./fixtures/*`, the temp-tugbank + seeded-fixture setup, and crucially the technique of **mutating the card subtree to provoke a growth pin instead of driving a live stream**. Use that technique here too: app-test replay-session workspaces are transient (entries live only seconds), so a long live-streaming assertion is unreliable, while a card-subtree mutation exercises the same pin channels.
 
@@ -618,7 +618,7 @@ Placed alongside (mutually exclusive by direction with) the existing re-engageme
 **Checkpoint:**
 
 - [ ] `just app-test-covers-check`
-- [ ] `just app-test tests/app-test/at0332-follow-bottom-unattributed.test.ts`
+- [ ] `just app-test tests/app-test/at0333-follow-bottom-unattributed.test.ts`
 
 ---
 
@@ -677,18 +677,18 @@ Placed alongside (mutually exclusive by direction with) the existing re-engageme
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** A scroll stack whose intent model is attribution-complete — scrollbar drags disengage follow-bottom, deferred corrections die on user movement, turn stepping lands flush across evicted rows, resize and hidden-tab churn are bounded — pinned by at0330/at0332 and recorded as tuglaws doctrine.
+**Deliverable:** A scroll stack whose intent model is attribution-complete — scrollbar drags disengage follow-bottom, deferred corrections die on user movement, turn stepping lands flush across evicted rows, resize and hidden-tab churn are bounded — pinned by at0330/at0333 and recorded as tuglaws doctrine.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [ ] All (#success-criteria) verified on a visible test window.
 - [ ] at0330: 4 of 5 tests green (all but the pre-existing expand round-trip, which is out of scope per #non-goals).
-- [ ] at0332 green; `just app-test-covers-check` green.
+- [ ] at0333 green; `just app-test-covers-check` green.
 - [ ] `tuglaws/scroll-intent.md` exists and is cross-linked, and `tuglaws/design-decisions.md` D93 no longer contradicts the shipped idle-phase behavior ([P09]).
 
 **Acceptance tests:**
 
-- [ ] at0332 (all three), at0330 turn-stepping + width-churn + hidden-append additions.
+- [ ] at0333 (all three), at0330 turn-stepping + width-churn + hidden-append additions.
 - [ ] Guard suite: at0059 / at0061 / at0189 / at0190 / at0331.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
@@ -702,4 +702,4 @@ Placed alongside (mutually exclusive by direction with) the existing re-engageme
 |------------|--------------|
 | Stage 1 landed | #step-5 aggregate app-test run green |
 | Stage 2 landed | at0330 with width-churn + hidden-append additions green |
-| Doctrine pinned | at0332 green + `tuglaws/scroll-intent.md` merged |
+| Doctrine pinned | at0333 green + `tuglaws/scroll-intent.md` merged |

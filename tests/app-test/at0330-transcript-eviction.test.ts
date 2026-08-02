@@ -23,6 +23,10 @@
  * | turn stepping       | ⌥⌘↑/⌥⌘↓ dead on an evicted transcript (the pager     |
  * |                     | required every cell mounted and bailed on the first   |
  * |                     | unmounted row)                                        |
+ * | hidden restore      | a restore completing behind a hidden card holding its |
+ * |                     | batch freeze (and the card's save gate) until the tab |
+ * |                     | is next shown, instead of releasing at the hidden     |
+ * |                     | settle                                                |
  *
  * The transcript is seeded with COMPLETE TURNS, not with many messages in one
  * turn: consecutive assistant messages inside a turn coalesce into a single
@@ -37,6 +41,19 @@
 import { describe, expect, test } from "bun:test";
 
 import { launchTugApp, type App } from "./_harness";
+import {
+  mkTempTugbank,
+  rmTempTugbank,
+  seedTugbankForLaunch,
+  tugbankWrite,
+} from "./_harness/tugbank-helpers";
+import { seedFixtureSession } from "./fixtures/resolve";
+import {
+  openFixtureSession,
+  SCROLLER as FIXTURE_SCROLLER,
+  TRANSCRIPT as FIXTURE_TRANSCRIPT,
+  waitForTranscriptSettled,
+} from "./fixtures/runner";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 300_000;
@@ -478,6 +495,110 @@ describe.skipIf(!SHOULD_RUN)("AT0330: transcript DOM eviction", () => {
   );
 
   test(
+    "a width-churn burst coalesces to one invalidation at settle",
+    async () => {
+      const app = await standUp("at0330-width-churn");
+      try {
+        await scrollTo(app, 0.5);
+        const before = await app.evalJS<{ w: number; fallbacks: number }>(
+          `(function () {
+  var el = document.querySelector('${SCROLLER}');
+  return {
+    w: el.clientWidth,
+    fallbacks: Number(el.getAttribute("data-evict-fallbacks") || "-1"),
+  };
+})()`,
+        );
+        expect(before.w).toBeGreaterThan(300);
+
+        // Drive several width changes in quick succession — a splitter
+        // drag's shape. Each write must actually move the scroller's
+        // box (the scroller is sized by its pane, so pin it with an
+        // explicit width + flex none). Mid-burst, the ledger freeze
+        // keeps coverage true, so eviction stays armed instead of
+        // suspending per tick; mid-burst geometry is deliberately
+        // stale (old width) and is NOT asserted here.
+        const setWidth = (w: number): Promise<number> =>
+          app.evalJS<number>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  el.style.flex = "0 0 auto";
+  el.style.width = "${w}px";
+  return el.clientWidth;
+})()`);
+        const burstWidths = [
+          before.w - 40,
+          before.w - 80,
+          before.w - 120,
+          before.w - 60,
+        ];
+        let lastClientWidth = before.w;
+        for (const w of burstWidths) {
+          lastClientWidth = await setWidth(w);
+        }
+        const midBurst = await app.evalJS<{ active: boolean; w: number }>(
+          `(function () {
+  var el = document.querySelector('${SCROLLER}');
+  return { active: el.hasAttribute("data-evict-active"), w: el.clientWidth };
+})()`,
+        );
+        // `style.width` is border-box, so the client width lands a
+        // scrollbar short of the CSS value — compare against the
+        // final write's own read-back, not the CSS number.
+        expect(midBurst.w).toBe(lastClientWidth);
+        expect(midBurst.w).toBeLessThan(before.w);
+        // The freeze keeps eviction running through the burst.
+        expect(midBurst.active).toBe(true);
+
+        // Rest past the settle interval, then let the wipe → full
+        // render → re-measure → re-arm cycle complete.
+        await app.waitForCondition<boolean>(
+          `(function () {
+  var el = document.querySelector('${SCROLLER}');
+  return el.hasAttribute("data-evict-active");
+})()`,
+          { timeoutMs: 20_000, pollMs: 250 },
+        );
+        await new Promise((r) => setTimeout(r, 1500));
+
+        const settled = await app.evalJS<{
+          h: number;
+          fallbacks: number;
+          active: boolean;
+        }>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  return {
+    h: el.scrollHeight,
+    fallbacks: Number(el.getAttribute("data-evict-fallbacks") || "-1"),
+    active: el.hasAttribute("data-evict-active"),
+  };
+})()`);
+        expect(settled.active).toBe(true);
+        // One suspension per resize gesture, not one per tick.
+        expect(settled.fallbacks - before.fallbacks).toBeLessThanOrEqual(1);
+
+        // Exactness after settle: the evicted document is the same
+        // height the fully-mounted one is at this width.
+        await app.evalJS<boolean>(
+          `(window.__tug.setTranscriptEvictionDisabled(true), true)`,
+        );
+        await app.waitForCondition<boolean>(
+          `!document.querySelector('${SCROLLER}').hasAttribute("data-evict-active")`,
+          { timeoutMs: 20_000, pollMs: 250 },
+        );
+        await new Promise((r) => setTimeout(r, 1000));
+        const full = await app.evalJS<{ h: number }>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  return { h: el.scrollHeight };
+})()`);
+        expect(Math.abs(settled.h - full.h)).toBeLessThanOrEqual(2);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
     "a display:none spell round-trips the ledger and scroll geometry",
     async () => {
       const app = await standUp("at0330-hide-show");
@@ -540,6 +661,144 @@ describe.skipIf(!SHOULD_RUN)("AT0330: transcript DOM eviction", () => {
         expect(after.evicting).toBe(true);
       } finally {
         await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a restore behind a hidden card releases its settle without waiting for reveal",
+    async () => {
+      // A real resumed session (picker → spawn → replay), with the card
+      // hidden for the WHOLE restore. The batch-settle freeze exists to
+      // protect visible layouts; a hidden card has none, so the freeze
+      // must release while still hidden (0×0 ResizeObserver deliveries
+      // are the hidden batch's settle) — otherwise `batchLoading` and
+      // the card's save gate stay held until the tab is next shown.
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath);
+      const seeded = await seedFixtureSession(
+        "session-transcript-basic",
+        "at0330-hidden-restore",
+      );
+      // Point the picker's recents at ONLY the fixture dir so it never
+      // surfaces the live archive (same isolation as the fixture runner's
+      // other consumers).
+      tugbankWrite(
+        tugbankPath,
+        "dev.tugtool.dev",
+        "recent-projects",
+        "json",
+        JSON.stringify({ paths: [seeded.projectDir] }),
+      );
+      const app = await launchTugApp({
+        testName: "at0330-hidden-restore",
+        env: { TUGBANK_PATH: tugbankPath },
+        skipAccessibilityPreflight: true,
+      });
+      try {
+        await openFixtureSession(app, seeded);
+        // Hide the card the moment Open is clicked — before the session
+        // view or its transcript exist — so every phase of the restore
+        // (spawn, replay, list mount, measurement) runs behind
+        // `display:none`.
+        await app.evalJS<boolean>(`(function () {
+  var card = document.querySelector('[data-card-id="A"]');
+  window.__at0330PrevDisplay = card.style.display;
+  card.style.display = "none";
+  return true;
+})()`);
+
+        // The settle release is observable as the card's one-shot settle
+        // callback firing: it clears the freeze and logs
+        // `transcript_settle` to the dev log. Wait for that entry while
+        // the scroller is still boxless.
+        await app.waitForCondition<boolean>(
+          `(function () {
+  var el = document.querySelector('${FIXTURE_SCROLLER}');
+  if (el === null || el.offsetWidth !== 0) return false;
+  return window.tugDevLog.getSnapshot().entries.some(function (e) {
+    return e.message === "transcript_settle";
+  });
+})()`,
+          { timeoutMs: 60_000, pollMs: 250 },
+        );
+
+        const hidden = await app.evalJS<{
+          w: number;
+          cells: number;
+          replaying: boolean;
+          anchor: string | null;
+        }>(`(function () {
+  var el = document.querySelector('${FIXTURE_SCROLLER}');
+  var host = document.querySelector('${FIXTURE_TRANSCRIPT}');
+  return {
+    w: el.offsetWidth,
+    cells: el.querySelectorAll("[data-tug-list-cell-index]").length,
+    replaying: host.hasAttribute("data-replaying"),
+    anchor: el.getAttribute("data-tug-scroll-state"),
+  };
+})()`);
+        // Settled while genuinely hidden, with real mounted rows, and the
+        // anchor writer stayed silent — a hidden scroller has no position
+        // to serialize, so nothing was written across the hidden span.
+        expect(hidden.w).toBe(0);
+        expect(hidden.cells).toBeGreaterThan(0);
+        expect(hidden.replaying).toBe(false);
+        expect(hidden.anchor).toBeNull();
+
+        // Reveal. The 0→real resize refires the cell observer with honest
+        // values; the reveal commit's coverage check suspends at most once
+        // over the rows left unmeasured, measures them, and re-arms.
+        // Restore the card's ORIGINAL inline display (the deck's layout
+        // styles live inline on the card element — clearing to "" would
+        // clobber them and unconstrain the scroller).
+        await app.evalJS<boolean>(`(function () {
+  var card = document.querySelector('[data-card-id="A"]');
+  card.style.display = window.__at0330PrevDisplay || "";
+  return true;
+})()`);
+        await waitForTranscriptSettled(app);
+        await app.waitForCondition<boolean>(
+          `!!document.querySelector('${FIXTURE_SCROLLER}[data-evict-active]')`,
+          { timeoutMs: 30_000, pollMs: 250 },
+        );
+        await new Promise((r) => setTimeout(r, 1500));
+
+        const revealed = await app.evalJS<{
+          h: number;
+          fallbacks: number;
+          anchor: string | null;
+        }>(`(function () {
+  var el = document.querySelector('${FIXTURE_SCROLLER}');
+  return {
+    h: el.scrollHeight,
+    fallbacks: Number(el.getAttribute("data-evict-fallbacks") || "-1"),
+    anchor: el.getAttribute("data-tug-scroll-state"),
+  };
+})()`);
+        // One suspension for the whole reveal, and the anchor writer
+        // resumed once the scroller had a real box again.
+        expect(revealed.fallbacks).toBeGreaterThanOrEqual(0);
+        expect(revealed.fallbacks).toBeLessThanOrEqual(1);
+        expect(revealed.anchor).not.toBeNull();
+
+        // Exactness: the evicted document matches the fully-mounted one.
+        await app.evalJS<boolean>(
+          `(window.__tug.setTranscriptEvictionDisabled(true), true)`,
+        );
+        await app.waitForCondition<boolean>(
+          `!document.querySelector('${FIXTURE_SCROLLER}').hasAttribute("data-evict-active")`,
+          { timeoutMs: 20_000, pollMs: 250 },
+        );
+        await new Promise((r) => setTimeout(r, 1000));
+        const full = await app.evalJS<number>(
+          `document.querySelector('${FIXTURE_SCROLLER}').scrollHeight`,
+        );
+        expect(Math.abs(revealed.h - full)).toBeLessThanOrEqual(2);
+      } finally {
+        await app.close();
+        rmTempTugbank(tugbankPath);
       }
     },
     TEST_TIMEOUT_MS,

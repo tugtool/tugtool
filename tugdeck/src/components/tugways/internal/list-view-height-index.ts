@@ -127,15 +127,27 @@ export class HeightIndex {
    * exactness in O(n).
    *
    * Entries clamp at 0 (a negative extent is meaningless). Any
-   * prepared Fenwick cache is invalidated; the next `prepare` call
-   * rebuilds it against the adjusted entries.
+   * prepared Fenwick cache is patched in place — measured entries in
+   * range copy their clamped values into `effective[]` and the tree
+   * is rebuilt with the same O(n) linear sweep `prepare` uses.
+   * Nulling the cache instead would silently demote every subsequent
+   * read to the O(n) fallback for the rest of the session: nothing
+   * re-runs `prepare` after a gap rebase, because its keying inputs
+   * (`itemCount`, estimate identity) don't change.
    */
   adjustAll(delta: number): void {
     if (delta === 0) return;
     for (const [index, height] of this.heights) {
       this.heights.set(index, Math.max(0, height + delta));
     }
-    this.cache = null;
+    const cache = this.cache;
+    if (cache === null) return;
+    for (let i = 0; i < cache.itemCount; i += 1) {
+      const measured = this.heights.get(i);
+      if (measured !== undefined) cache.effective[i] = measured;
+    }
+    cache.bit.fill(0);
+    this._bitBuild(cache);
   }
 
   /**
@@ -231,18 +243,8 @@ export class HeightIndex {
       effective[i] =
         measured !== undefined ? measured : Math.max(0, estimateFn(i));
     }
-    // Linear-time Fenwick construction: each bit[i] is initially the
-    // sum of its responsibility range (a lowbit-sized window ending at
-    // i-1 in 0-indexed terms). Building incrementally via _bitUpdate
-    // would be O(n log n); the in-place sweep below is O(n).
-    for (let i = 1; i <= safeItemCount; i += 1) {
-      bit[i] += effective[i - 1];
-      const j = i + (i & -i);
-      if (j <= safeItemCount) {
-        bit[j] += bit[i];
-      }
-    }
     this.cache = { itemCount: safeItemCount, estimateFn, effective, bit };
+    this._bitBuild(this.cache);
   }
 
   /**
@@ -363,6 +365,25 @@ export class HeightIndex {
       && this.cache.itemCount === itemCount
       && this.cache.estimateFn === estimateFn
     );
+  }
+
+  /**
+   * Linear-time Fenwick construction over `cache.effective` into
+   * `cache.bit` (which must be zeroed): each bit[i] is initially the
+   * sum of its responsibility range (a lowbit-sized window ending at
+   * i-1 in 0-indexed terms). Building incrementally via `_bitUpdate`
+   * would be O(n log n); this in-place sweep is O(n). Shared by
+   * `prepare` (fresh build) and `adjustAll` (in-place rebuild).
+   */
+  private _bitBuild(cache: PreparedCache): void {
+    const n = cache.itemCount;
+    for (let i = 1; i <= n; i += 1) {
+      cache.bit[i] += cache.effective[i - 1];
+      const j = i + (i & -i);
+      if (j <= n) {
+        cache.bit[j] += cache.bit[i];
+      }
+    }
   }
 
   /** Add `delta` to position `index0` (0-indexed) of the Fenwick tree. */
