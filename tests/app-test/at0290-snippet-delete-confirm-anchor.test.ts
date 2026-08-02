@@ -21,6 +21,7 @@
  *    (anchor-to-any-element) API drops the trigger-width floor, which would
  *    otherwise stretch the box to the full width of the row.
  *
+ * @foreground
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/components/tugways/tug-confirm-popover.tsx
  * @covers tugdeck/src/components/tugways/tug-confirm-popover.css

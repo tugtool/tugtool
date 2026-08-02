@@ -1282,12 +1282,19 @@ export class DeckManager implements IDeckManagerStore {
    * commit it if it changed. A no-op when the allocator does not apply or its
    * answer is the width already showing.
    *
-   * This is the entry the settled-resize observer calls: the canvas got a new
-   * size, so the band the chain rides did too, and the width that tiled it
-   * before may not tile it now. Re-clicking the active Cards option comes
-   * through here as well — re-asserting the arrangement is the user's way of
-   * asking for the seams back after a card joined or left the chain, which is
-   * deliberately not a re-tune of its own.
+   * THE TWO MOMENTS. The Lens's width belongs to the user, and the deck may
+   * spend it only when the user has just asked the deck to arrange itself: a
+   * click in the Layouts section, and a canvas that came to rest at a new size
+   * (`deck-canvas.tsx`'s settled-resize observer — the window edge, a display
+   * change, a space move). Nothing else re-solves. Slotting a card, dragging
+   * one out of the chain, closing one: all of those change what the chain is,
+   * and all of them leave the Lens exactly where it stands, because the user
+   * was moving a CARD and did not ask for their rail to be resized.
+   *
+   * This is that second moment; the first commits through
+   * {@link _commitImposition} directly. A pick that does not change the kind
+   * lands here too — re-asserting the arrangement is a request for the seams,
+   * and it is the only way to ask for them without changing anything else.
    */
   retuneLensAllocation(): void {
     const imposition = this.deckState.imposition;
@@ -1901,8 +1908,7 @@ export class DeckManager implements IDeckManagerStore {
    * Either way the Lens returns to its pin: choosing an arrangement is choosing
    * one the Lens stands at the end of. A Lens dragged loose and left there is
    * put back by any choice in the Layouts section, which is why an unchanged
-   * kind is not simply a no-op — it also re-runs the space allocator, which is
-   * how the user asks for even seams back after a card joined or left the chain.
+   * kind is not simply a no-op.
    */
   setImposition(kind: ImpositionKind | null): void {
     const current = this.deckState.imposition.kind;
@@ -2045,7 +2051,11 @@ export class DeckManager implements IDeckManagerStore {
       p.id === targetPaneId ? updated : p,
     );
     // Everything in the chain moves, including the panes that kept their
-    // slots: this card's width is now part of what precedes them.
+    // slots: this card's width is now part of what precedes them. Committed
+    // here rather than through `_commitImposition`, deliberately: that path
+    // runs the space allocator, and slotting a card is not one of the two
+    // moments the Lens's width is the deck's to spend (see
+    // `retuneLensAllocation`).
     const moved = panes
       .filter((p) => p.slot !== undefined)
       .map((p) => p.activeCardId);

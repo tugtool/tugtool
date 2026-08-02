@@ -23,6 +23,7 @@
  * synchronous store-commit effects); the drag and screenshot cells need a
  * live compositor and run in the `foreground: true` tier.
  *
+ * @foreground
  * @covers tugdeck/src/components/chrome/pane-occlusion-controller.ts
  * @covers tugdeck/src/components/chrome/tug-pane.tsx
  * @covers tugdeck/src/components/chrome/deck-canvas.tsx

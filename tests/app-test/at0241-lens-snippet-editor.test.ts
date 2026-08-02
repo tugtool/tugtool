@@ -19,6 +19,7 @@
  *   4. Escape → the editor closes, the list regains the key view, and the
  *      committed row shows the updated incipit.
  *
+ * @foreground
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/lib/snippets-store.ts
  * @covers tugdeck/src/lib/snippets-doc.ts

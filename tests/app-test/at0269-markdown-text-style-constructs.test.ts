@@ -22,6 +22,7 @@
  * Surface: `gallery-prompt-entry` (composes the real `TugPromptEntry`), so no
  * live Claude session is needed. Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/lib/markdown-text-styling.ts
  * @covers tugdeck/src/lib/markdown-text-style-grammar.ts
  * @covers tugdeck/src/lib/language-registry.ts

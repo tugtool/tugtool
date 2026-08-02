@@ -19,6 +19,7 @@
  *
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`).
  *
+ * @foreground
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/lib/snippets-store.ts
  * @covers tugdeck/src/lib/snippet-drag.ts

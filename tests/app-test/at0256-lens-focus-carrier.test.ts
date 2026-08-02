@@ -12,6 +12,7 @@
  * transition), so it does not depend on the engine ascend, the editor's
  * blur-commit, and any row-discard re-render all converging.
  *
+ * @foreground
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx

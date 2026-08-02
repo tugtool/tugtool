@@ -6,7 +6,9 @@ import {
   IMPOSITION_KINDS,
   clampSlot,
   allocateLensWidth,
-  LENS_FLEX_FRACTION,
+  solveLensWidth,
+  LENS_FLEX_GROW_FRACTION,
+  LENS_FLEX_SHRINK_FRACTION,
   imposeRect,
   imposeStyle,
   imposeLensStyle,
@@ -527,7 +529,7 @@ describe("the space allocator", () => {
       minWidth: 320,
     });
     expect(width).toBe(lensFor(canvasWidth));
-    for (const seam of seamsAt(canvasWidth, width, FIVE_UP_THIRDS, "five-up")) {
+    for (const seam of seamsAt(canvasWidth, width ?? 0, FIVE_UP_THIRDS, "five-up")) {
       expect(seam).toBeCloseTo(GAP, 9);
     }
   });
@@ -562,14 +564,14 @@ describe("the space allocator", () => {
     expect(shrunk).toBeLessThan(preferredWidth);
   });
 
-  test("irregular occupancy takes the least-squares band", () => {
+  test("irregular occupancy is solved, then refused", () => {
     // Slots 1, 2 and 5 of five-up: fractions 0, 1/4, 1 with uniform 800s.
-    // No band tiles that exactly, so the fit spreads the error —
-    // B* = Σa(gap − c)/Σa² = 1305 / 0.625 = 2088.
+    // No band tiles that at all, so the least-squares fit does not remove the
+    // error, it spreads it — B* = Σa(gap − c)/Σa² = 1305 / 0.625 = 2088.
     const canvasWidth = 2523;
-    const width = allocateLensWidth({
+    const input = {
       canvasWidth,
-      kind: "five-up",
+      kind: "five-up" as const,
       occupied: [
         { slot: 0, width: 800 },
         { slot: 1, width: 800 },
@@ -577,19 +579,30 @@ describe("the space allocator", () => {
       ],
       preferredWidth: 400,
       minWidth: 320,
-    });
-    expect(width).toBe(canvasWidth - GAP * 3 - 2088);
+    };
+
+    // The geometry still answers: this is the best band there is.
+    expect(solveLensWidth(input)).toBe(canvasWidth - GAP * 3 - 2088);
+
+    // And standing there the cards overlap by 478 at one seam and stand 166
+    // apart at the other — the best band there is, is not a tiled one. The
+    // Lens's width buys nothing here, so it is not spent.
+    expect(allocateLensWidth(input)).toBeNull();
   });
 
-  test("the flex range's edges are where engagement stops", () => {
+  test("the allowance is asymmetric: a third up, a fifth down", () => {
     // The band that tiles the fixture is fixed, so the canvas width is what
-    // decides how far the Lens has to move — and the range is the only thing
-    // that says no. One pixel either side of the edge, in both directions.
+    // decides how far the Lens has to move. The Lens may travel further to
+    // grow than to shrink — growing spends slack the deck had lying between
+    // the cards, shrinking takes room from a surface holding content.
     const preferredWidth = 420;
-    const edge = Math.round(preferredWidth * LENS_FLEX_FRACTION);
+    const up = Math.round(preferredWidth * LENS_FLEX_GROW_FRACTION);
+    const down = Math.round(preferredWidth * LENS_FLEX_SHRINK_FRACTION);
+    expect(up).toBeGreaterThan(down);
+
     const canvasFor = (lensWidth: number): number =>
       lensWidth + GAP * 3 + EXACT_BAND;
-    const solve = (canvasWidth: number): number =>
+    const solve = (canvasWidth: number): number | null =>
       allocateLensWidth({
         canvasWidth,
         kind: "five-up",
@@ -598,29 +611,49 @@ describe("the space allocator", () => {
         minWidth: 320,
       });
 
-    expect(solve(canvasFor(preferredWidth + edge))).toBe(preferredWidth + edge);
-    expect(solve(canvasFor(preferredWidth + edge + 1))).toBe(preferredWidth);
-    expect(solve(canvasFor(preferredWidth - edge))).toBe(preferredWidth - edge);
-    expect(solve(canvasFor(preferredWidth - edge - 1))).toBe(preferredWidth);
+    // At each end, taken whole.
+    expect(solve(canvasFor(preferredWidth + up))).toBe(preferredWidth + up);
+    expect(solve(canvasFor(preferredWidth - down))).toBe(preferredWidth - down);
+
+    // Just past either end the clamped width still lands the chain even, so
+    // the move is made as far as the allowance goes — and NEVER further. The
+    // fixture's slots are a half-stride apart, so a Lens off by `d` leaves
+    // seams off by `d / 2`: four pixels over still tiles.
+    for (const over of [1, 4]) {
+      expect(solve(canvasFor(preferredWidth + up + over))).toBe(
+        preferredWidth + up,
+      );
+      expect(solve(canvasFor(preferredWidth - down - over))).toBe(
+        preferredWidth - down,
+      );
+    }
+
+    // Far enough past that the clamp leaves the seams visibly ragged, moving
+    // the Lens would buy nothing, so it does not move.
+    expect(solve(canvasFor(preferredWidth + up + 5))).toBeNull();
+    expect(solve(canvasFor(preferredWidth - down - 5))).toBeNull();
   });
 
-  test("a solve outside the flex range returns the preferred width unchanged", () => {
-    // The exact fit here wants a Lens of 1575 — nowhere near ±10% of 420.
-    const preferredWidth = 420;
+  test("a solve too far out of range leaves the Lens alone", () => {
+    // The exact fit here wants a Lens of 1575 — nowhere near ±20% of 420, and
+    // the width the allowance permits leaves the seams as ragged as they were.
+    // The Lens is the user's; there is nothing to be gained by moving it.
     expect(
       allocateLensWidth({
         canvasWidth: 4000,
         kind: "five-up",
         occupied: FIVE_UP_THIRDS,
-        preferredWidth,
+        preferredWidth: 420,
         minWidth: 320,
       }),
-    ).toBe(preferredWidth);
+    ).toBeNull();
   });
 
   test("the floor clips the low end of the range", () => {
-    // 10% below 340 is 306, but the Lens may not go under 320 — so a solve of
-    // 310 is out of range even though it is within the flex fraction.
+    // 20% below 340 is 272, but the Lens may not go under 320 — so a solve of
+    // 310 is out of range even though it is within the flex fraction. The floor
+    // is the nearest the Lens may stand, and standing there still leaves the
+    // seams 5px off, so it does not move at all.
     expect(
       allocateLensWidth({
         canvasWidth: 2735,
@@ -629,7 +662,7 @@ describe("the space allocator", () => {
         preferredWidth: 340,
         minWidth: 320,
       }),
-    ).toBe(340);
+    ).toBeNull();
     // 330 clears the floor and is taken.
     expect(
       allocateLensWidth({
@@ -671,7 +704,7 @@ describe("the space allocator", () => {
     expect(shuffled).toBe(lensFor(canvasWidth));
   });
 
-  test("no seam to solve for means the preferred width stands", () => {
+  test("no seam to solve for means the Lens does not move", () => {
     const base = {
       canvasWidth: 2845,
       kind: "five-up" as const,
@@ -680,18 +713,18 @@ describe("the space allocator", () => {
     };
     // One card, no cards, and one-up (whose every slot clamps to the same
     // anchor) all leave the chain without a pair of neighbours.
-    expect(allocateLensWidth({ ...base, occupied: [{ slot: 0, width: 800 }] })).toBe(400);
-    expect(allocateLensWidth({ ...base, occupied: [] })).toBe(400);
+    expect(allocateLensWidth({ ...base, occupied: [{ slot: 0, width: 800 }] })).toBeNull();
+    expect(allocateLensWidth({ ...base, occupied: [] })).toBeNull();
     expect(
       allocateLensWidth({
         ...base,
         kind: "one-up",
         occupied: FIVE_UP_THIRDS,
       }),
-    ).toBe(400);
+    ).toBeNull();
   });
 
-  test("a non-finite input is answered with the preferred width", () => {
+  test("a non-finite input leaves the Lens alone", () => {
     const base = {
       canvasWidth: 2845,
       kind: "five-up" as const,
@@ -699,13 +732,13 @@ describe("the space allocator", () => {
       preferredWidth: 400,
       minWidth: 320,
     };
-    expect(allocateLensWidth({ ...base, canvasWidth: Number.NaN })).toBe(400);
-    expect(allocateLensWidth({ ...base, minWidth: Number.NaN })).toBe(400);
+    expect(allocateLensWidth({ ...base, canvasWidth: Number.NaN })).toBeNull();
+    expect(allocateLensWidth({ ...base, minWidth: Number.NaN })).toBeNull();
     expect(
       allocateLensWidth({
         ...base,
         occupied: [{ slot: 0, width: Number.NaN }, { slot: 2, width: 800 }],
       }),
-    ).toBe(400);
+    ).toBeNull();
   });
 });

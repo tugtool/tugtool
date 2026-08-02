@@ -52,6 +52,7 @@
  * start: it guards the cold-boot restore channel through the
  * keyboard-as-engine-state rework rather than reproducing its trigger.
  *
+ * @foreground
  * @covers tugdeck/src/components/lens/
  * @covers tugdeck/src/lib/lens-store/
  * @covers tugdeck/src/serialization.ts

@@ -33,6 +33,7 @@
  * FOREGROUND: the caret only paints while `document.hasFocus()` is true, which
  * WebKit ties to application activation and the default (pid) launch withholds.
  *
+ * @foreground
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/lib/snippets-store.ts
  * @covers tugdeck/src/lib/snippets-doc.ts

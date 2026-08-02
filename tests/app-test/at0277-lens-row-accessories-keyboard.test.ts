@@ -30,6 +30,7 @@
  * key view has descended into a row, Right / Left walk the row's accessories
  * and Left off the first one ascends — the arrow that entered walks.
  *
+ * @foreground
  * @covers tugdeck/src/components/lens/slot-picker.tsx
  * @covers tugdeck/src/components/lens/sections/layouts-section.tsx
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx

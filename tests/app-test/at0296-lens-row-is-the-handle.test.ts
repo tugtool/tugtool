@@ -22,6 +22,7 @@
  *    than the threshold, leaves the order exactly as it was — the gesture was
  *    handed to the drag-out rather than swallowed by the carry.
  *
+ * @foreground
  * @covers tugdeck/src/components/lens/block-reorder.ts
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  * @covers tugdeck/src/components/lens/lens-section-band.tsx

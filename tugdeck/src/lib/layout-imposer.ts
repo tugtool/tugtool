@@ -78,17 +78,20 @@
  *
  * One number can. The pinned Lens is the band's other end, so its width and the
  * band's are the same quantity read from opposite sides. The **space allocator**
- * ({@link allocateLensWidth}) treats it as flexible within
- * {@link LENS_FLEX_FRACTION} of the width the user chose, and picks the value
- * that puts every seam in the chain on one imposition gap — a closed-form
- * least-squares fit, since each seam is linear in the band. Out of range, it
- * declines and the user's width stands.
+ * ({@link allocateLensWidth}) flexes it within
+ * {@link LENS_FLEX_GROW_FRACTION} / {@link LENS_FLEX_SHRINK_FRACTION} of the
+ * width the user chose, and picks the value that puts every seam in the chain
+ * on one imposition gap — a closed-form least-squares fit, since each seam is
+ * linear in the band.
  *
- * The deck asks for that at three moments and no others: a Layouts-section pick,
- * a settled manual window resize, and a settled OS-driven one. A card joining or
- * leaving a slot is deliberately not one of them — a single card is not enough
- * to move the Lens, and the deck must never feel like it is rearranging itself
- * under the user's hands.
+ * **Two moments, and one licence.** The deck re-solves when the user clicks in
+ * the Layouts section, and when the canvas comes to rest at a new size. Those
+ * are the two gestures that ask the deck to arrange itself; everything else —
+ * slotting a card, dragging one out, closing one — leaves the Lens alone, since
+ * the user was moving a card and did not ask for their rail to be resized. And
+ * at either moment the Lens moves only if standing at the new width actually
+ * tiles the chain. A resize that closes no gap is the deck taking the user's
+ * width for nothing.
  *
  * Pure module: no DOM, store, or React runtime imports — the same discipline as
  * `snap.ts`. (`React.CSSProperties` below is a type-only import.)
@@ -457,20 +460,26 @@ export function imposeStyle(
 
 /**
  * How far the allocator may flex the Lens from the width the user chose, as a
- * fraction of it.
+ * fraction of it. Asymmetric on purpose: the Lens may grow further than it may
+ * shrink.
  *
- * Sized from what the residual actually costs at real card widths. A seam off
- * by `d` needs a band correction of `d / (fⱼ₊₁ − fⱼ)` — twice `d` at the
- * half-stride that three-up and five-up-every-other produce — so an arrangement
- * of 800px cards standing 30px apart wants the Lens 45–60px wider. A tenth of
- * the 420px default width is 42px: it declined exactly the cases that look most
- * obviously repairable, by a few pixels. A fifth covers them and still stops
- * well short of a width the user would read as the deck rearranging itself.
+ * The two directions are not the same gesture. Growing the Lens spends slack
+ * the deck had lying between the cards, and the rail has more to show for the
+ * room; shrinking it takes room away from a surface the user sized to hold
+ * content, which is felt much sooner. A third up and a fifth down is what those
+ * two costs are worth against each other.
+ *
+ * The size of the allowance is what decides how much of a window resize the
+ * deck can absorb — the whole travel between the two ends is the budget the
+ * solve has to work in — so it is a bigger number than a "nudge" would want.
  *
  * {@link AllocatorInput.minWidth} clips the low end independently, so widening
  * this cannot push the Lens under its floor.
  */
-export const LENS_FLEX_FRACTION = 0.2;
+export const LENS_FLEX_GROW_FRACTION = 0.35;
+
+/** @see LENS_FLEX_GROW_FRACTION */
+export const LENS_FLEX_SHRINK_FRACTION = 0.2;
 
 /**
  * How long the canvas must hold still before a resize counts as settled and the
@@ -478,6 +487,18 @@ export const LENS_FLEX_FRACTION = 0.2;
  * surface stays in one module, beside {@link IMPOSITION_SETTLE_MS}.
  */
 export const RESIZE_RETUNE_QUIET_MS = 200;
+
+/**
+ * How far a seam may sit off {@link IMPOSITION_GAP_PX} and still count as
+ * tiled. This is the whole of the allocator's licence: it may take the Lens's
+ * width only to buy a chain whose every seam lands inside this.
+ *
+ * Two pixels, because that is about where a seam stops matching its neighbours
+ * to the eye at the sizes the deck runs at. It is a tolerance on the RESULT,
+ * never on the input — whether a width is worth taking is a question about the
+ * picture it produces, and the picture is what the seams are.
+ */
+export const ALLOCATOR_RESIDUAL_TOLERANCE_PX = 2;
 
 /** Everything {@link allocateLensWidth} reads. All lengths in layout px. */
 export interface AllocatorInput {
@@ -533,40 +554,71 @@ export interface AllocatorInput {
  *
  * For the common case — uniform card widths at an even stride, e.g. five-up
  * with slots 1, 3 and 5 — the fit is exact and every seam lands on the gap.
- * Irregular occupancy has no band that tiles it exactly; the fit spreads the
- * error, which usually lands out of range and reverts.
+ * Irregular occupancy (slots 1, 2 and 5) has no band that tiles it at all: the
+ * fit spreads the error rather than removing it, and the answer is that there
+ * is no answer.
  *
- * ## When it declines
+ * ## `null` — the Lens does not move
  *
- * The result is only used if it lands within {@link LENS_FLEX_FRACTION} of the
- * preferred width and above `minWidth`. Otherwise the preferred width is
- * returned unchanged: a half-corrected 100px gap reads as nothing at all, while
- * the classic even spread at least reads as intentional. Fewer than two
- * occupied slots has no seam to solve for, and also returns preferred.
+ * **The Lens's width is the user's**, and it is taken from them for exactly one
+ * reason: to close the gaps. So the whole of the decision is one question asked
+ * of the RESULT — *standing there, does the chain tile?* — and the three steps
+ * are:
  *
- * Total by construction: never throws, and always returns a finite width —
- * `preferredWidth` is the universal fallback.
+ *   1. solve for the width the seams want,
+ *   2. clamp it to what the allowance permits,
+ *   3. keep it only if every seam at that width lands within
+ *      {@link ALLOCATOR_RESIDUAL_TOLERANCE_PX} of the gap; otherwise `null`.
+ *
+ * `null` means *leave the Lens exactly where it is*. There is no fallback
+ * width. Answering `preferredWidth` when the solve is unusable reads like a
+ * safe default but is a MOVE: it drags a Lens the user sized by hand back to a
+ * remembered number and closes no gap doing it.
+ *
+ * Step 3 is asked of every answer, not only clamped ones, because a solve can
+ * sit comfortably inside the allowance and still not tile — the least-squares
+ * fit always returns its best band, and on an arrangement with no tiling band
+ * its best is still ragged. Moving the Lens there would spend the user's width
+ * on nothing.
+ *
+ * And it is asked of the picture, never of how far the solve missed by. A hard
+ * cap on the NUMBER makes the deck refuse arrangements that tile perfectly well
+ * a few pixels past it, and a seam left sitting at 50px because the correction
+ * overshot its allowance by 0.7% is not something the user can be told.
+ *
+ * Total by construction: never throws.
  */
-export function allocateLensWidth(input: AllocatorInput): number {
-  const { canvasWidth, kind, occupied, preferredWidth, minWidth } = input;
-  if (!Number.isFinite(preferredWidth) || preferredWidth <= 0) return preferredWidth;
-  if (!Number.isFinite(canvasWidth) || !Number.isFinite(minWidth)) return preferredWidth;
+export function allocateLensWidth(input: AllocatorInput): number | null {
+  const solved = solveLensWidth(input);
+  if (solved === null) return null;
+  const { preferredWidth, minWidth } = input;
+  const low = Math.max(
+    minWidth,
+    Math.round(preferredWidth * (1 - LENS_FLEX_SHRINK_FRACTION)),
+  );
+  const high = Math.round(preferredWidth * (1 + LENS_FLEX_GROW_FRACTION));
+  const width = Math.min(Math.max(low, high), Math.max(low, solved));
+  return worstSeamError(input, width) <= ALLOCATOR_RESIDUAL_TOLERANCE_PX
+    ? width
+    : null;
+}
 
-  // Fold duplicate slots by the widest pane standing there, and order the chain
-  // left to right — the seams below are between neighbours in that order.
-  const widest = new Map<number, number>();
-  for (const entry of occupied) {
-    if (!Number.isFinite(entry.width) || !Number.isFinite(entry.slot)) return preferredWidth;
-    const slot = clampSlot(kind, entry.slot);
-    const held = widest.get(slot);
-    if (held === undefined || entry.width > held) widest.set(slot, entry.width);
-  }
-  const chain = [...widest.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([slot, width]) => ({ slot, width }));
-  if (chain.length < 2) return preferredWidth;
+/**
+ * The raw closed-form solve — the width that would put every seam on one
+ * imposition gap, with no flex range applied — or `null` when there is nothing
+ * to solve for (fewer than two occupied slots, a degenerate chain, a
+ * non-finite input).
+ *
+ * Split out from {@link allocateLensWidth} so the number the fit actually wants
+ * is inspectable on its own. The range check is a policy about how far the deck
+ * may move under the user; the solve is the geometry, and the two answer
+ * different questions.
+ */
+export function solveLensWidth(input: AllocatorInput): number | null {
+  const chain = chainOf(input);
+  if (chain === null) return null;
 
-  const count = slotCount(kind);
+  const count = slotCount(input.kind);
   let numerator = 0;
   let denominator = 0;
   for (let j = 0; j < chain.length - 1; j += 1) {
@@ -579,16 +631,71 @@ export function allocateLensWidth(input: AllocatorInput): number {
     numerator += a * (IMPOSITION_GAP_PX - c);
     denominator += a * a;
   }
-  if (denominator <= 0) return preferredWidth;
+  if (denominator <= 0) return null;
 
   const band = numerator / denominator;
-  const allocated = Math.round(canvasWidth - IMPOSITION_GAP_PX * 3 - band);
-  if (!Number.isFinite(allocated)) return preferredWidth;
+  const solved = Math.round(input.canvasWidth - IMPOSITION_GAP_PX * 3 - band);
+  return Number.isFinite(solved) ? solved : null;
+}
 
-  const low = Math.max(minWidth, Math.round(preferredWidth * (1 - LENS_FLEX_FRACTION)));
-  const high = Math.round(preferredWidth * (1 + LENS_FLEX_FRACTION));
-  if (allocated < low || allocated > high) return preferredWidth;
-  return allocated;
+/**
+ * The occupied slots as the chain actually reads left to right: duplicates
+ * folded to the widest pane standing at that slot, ordered by slot. `null` when
+ * there is no chain — fewer than two occupied slots (no seam exists), or an
+ * input with a non-finite number anywhere in it.
+ */
+function chainOf(
+  input: AllocatorInput,
+): readonly { slot: number; width: number }[] | null {
+  const { canvasWidth, kind, occupied, preferredWidth, minWidth } = input;
+  if (!Number.isFinite(preferredWidth) || preferredWidth <= 0) return null;
+  if (!Number.isFinite(canvasWidth) || !Number.isFinite(minWidth)) return null;
+
+  const widest = new Map<number, number>();
+  for (const entry of occupied) {
+    if (!Number.isFinite(entry.width) || !Number.isFinite(entry.slot)) return null;
+    const slot = clampSlot(kind, entry.slot);
+    const held = widest.get(slot);
+    if (held === undefined || entry.width > held) widest.set(slot, entry.width);
+  }
+  const chain = [...widest.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([slot, width]) => ({ slot, width }));
+  return chain.length < 2 ? null : chain;
+}
+
+/**
+ * The widest any seam misses {@link IMPOSITION_GAP_PX} by when the Lens stands
+ * at `lensWidth` — how ragged the chain reads, in pixels, at that width.
+ *
+ * Measured from {@link imposeRect}'s actual rule rather than from the linear
+ * form the fit is built on. The two agree while every pane still has travel
+ * left, and part company exactly when a pane is wider than the band: the real
+ * rule clamps its travel at zero and the line does not, so on a crowded deck
+ * the linear form describes a picture the browser never paints. Since this is
+ * the test that decides whether the Lens is allowed to move at all, it has to
+ * be asked of the picture that will actually be on screen.
+ */
+function worstSeamError(input: AllocatorInput, lensWidth: number): number {
+  const chain = chainOf(input);
+  if (chain === null) return 0;
+  const span = {
+    x: 0,
+    width: input.canvasWidth - (lensWidth + IMPOSITION_GAP_PX),
+    height: 0,
+  };
+  const count = slotCount(input.kind);
+  let worst = 0;
+  for (let j = 0; j < chain.length - 1; j += 1) {
+    const near = chain[j];
+    const far = chain[j + 1];
+    const nearRect = imposeRect({ slot: near.slot, count }, near.width, span);
+    const farRect = imposeRect({ slot: far.slot, count }, far.width, span);
+    const seam =
+      farRect.position.x - (nearRect.position.x + nearRect.size.width);
+    worst = Math.max(worst, Math.abs(seam - IMPOSITION_GAP_PX));
+  }
+  return worst;
 }
 
 /**

@@ -33,6 +33,7 @@
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`), so the rows are
  * real and deterministic.
  *
+ * @foreground
  * @covers tugdeck/src/components/tugways/tug-filter-field.tsx
  * @covers tugdeck/src/components/tugways/filter-highlight.tsx
  * @covers tugdeck/src/lib/text-match.ts

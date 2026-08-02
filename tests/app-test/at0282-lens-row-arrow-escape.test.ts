@@ -13,6 +13,7 @@
  * the ENGINE key view (`data-key-view-kbd`), not on a mock: after each arrow
  * the ring must be on the expected accessory of the expected row.
  *
+ * @foreground
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
  */
