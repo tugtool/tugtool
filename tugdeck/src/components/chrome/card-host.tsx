@@ -1133,6 +1133,38 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
             continue;
           }
 
+          // `meta.anchor` regions are ONE-SHOT for the same reason.
+          // A `TugListView` restores an anchor by installing a resolver
+          // in SmartScroll (`setRestoreTarget`), which re-resolves the
+          // anchored row's live offset on every layout heartbeat and is
+          // superseded the moment the user gestures or follow-bottom
+          // engages. The resolved `scrollTop` is therefore NOT the stale
+          // saved `pos.y` whenever the anchored row's offset has moved —
+          // content paged in above it, heights re-measured at a new
+          // width, an anchor written by an older height accounting. The
+          // raw-`pos.y` tolerance gate below can never settle in that
+          // case, so every cardRoot mutation re-dispatches, and the list
+          // view's anchor branch disengages follow-bottom and re-installs
+          // the restore each time: an actively streaming transcript loses
+          // the live edge and snaps back to the anchor on every new turn.
+          // Dispatch once to hand the anchor to SmartScroll, then settle
+          // and let it own convergence and the supersede rules.
+          //
+          // Raw-pixel regions (`tug-markdown-view`, generic scrollers)
+          // keep the retry loop below: they have no resolver of their
+          // own, and their `scrollHeight` genuinely does grow past the
+          // saved `scrollTop` as estimated blocks bake in.
+          const metaAnchor =
+            typeof pos.meta === "object" &&
+            pos.meta !== null &&
+            "anchor" in (pos.meta as Record<string, unknown>);
+          if (metaAnchor) {
+            pending[key] = pos;
+            hasPending = true;
+            settledElByKey.set(key, el);
+            continue;
+          }
+
           // If the element already sits within tolerance of the
           // saved position, mark THIS element settled and stop
           // fighting any subsequent user scroll on it. Covers

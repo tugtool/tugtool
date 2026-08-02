@@ -1438,7 +1438,7 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
         }
 
         const out = await app.evalJS<{
-          keys: Array<{ ms: number; q: number }>;
+          keys: Array<{ ms: number; q: number; rep: boolean; tr: boolean }>;
           longs: Array<{ ms: number; gap: number }>;
         }>(`(function () {
   var S = window.__at9996Typist;

@@ -538,6 +538,7 @@ export function GalleryListView(
           role="action"
           size="sm"
           onClick={handleInsertTop}
+          data-testid="gallery-list-view-insert-top"
         >
           Insert top
         </TugPushButton>
