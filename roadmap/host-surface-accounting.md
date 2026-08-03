@@ -299,11 +299,40 @@ Unblocking it is a one-time user action: **System Settings → Privacy & Securit
 
 **G7-4 — What are there 36 of?** The main line, and now a much sharper question than the one it replaced. The floor is 36 copies of a fixed ~54 MB structure, allocated near launch and never released, identical across instances and independent of session age. It is not restore, not accumulation, and not deck content. The unit's own shape is the best evidence available: the largest class is triple-buffered and the smaller classes descend in an exact factor-of-four chain.
 
+### It is a pre-allocated pool, not per-layer cost {#not-per-layer}
+
+The obvious hypothesis — that the app maps a triple-buffered backing store per composited layer, so cutting layer promotions cuts memory — is **wrong, and was tested directly.** On the probe instance with `diag/eval` enabled:
+
+| step | app graphics | app regions | WebContent graphics dirty |
+|---|---|---|---|
+| baseline | 2.4 GB | 793 | 78.8 MB |
+| + one 1000×500 `will-change: transform` layer | 2.4 GB | **793** | — |
+| + 24 layers of 1200×800 | 2.4 GB | **793** | **438.2 MB** |
+| all removed | 2.4 GB | **793** | 78.8 MB |
+
+The injected layers were unquestionably real and composited — **WebContent moved 78.8 → 438.2 → 78.8 MB**, exactly tracking them. Over a gigabyte of genuine layer backing came and went, and **the app process never allocated a single additional region.**
+
+So the two are decoupled. WebContent's graphics behave correctly and respond to content. The app's 2.4 GB is a **fixed pre-allocation that the layer tree draws from**, and it does not grow, shrink, or respond to the deck at all.
+
+This retires the whole "count the composited layers" line, and with it the tempting fix: **reducing `will-change` promotions, sticky headers, or canvas count would free nothing.** The [sample stack](#uiside-compositing) is still accurate — the app really does map surfaces via `IOSurface::createFromSendRight` — but those mappings are a small part of the process, not the 2.4 GB.
+
+### What the pool does respond to {#pool-scaling}
+
+Total bytes appear **pinned near 2.4 GB** across instances, while the region count varies with window size:
+
+| instance | window (CSS) | regions | graphics |
+|---|---|---|---|
+| live | 2879 × 1599 | 1,186 | 2.4 GB |
+| probe | 2505 × 1392 | 793 | 2.4 GB |
+
+Same total, different partitioning — the signature of a **byte-capped pool** subdivided into different surface sizes, rather than an allocation sized by demand. Machine context: single Studio Display at 5120×2880, Apple M4 Max.
+
 Next moves, in order:
 
-1. **Count layers, not bytes.** Enumerate the host's `CALayer` tree at rest (36 backing stores implies ~36 layers with backing, or 12 triple-buffered ones) and compare that count against the deck's composited-layer count on the WebContent side. The two numbers either match — making this a straightforward per-layer cost — or they don't, which makes it a retention bug.
-2. **Vary one thing and re-read the count.** Window size, display, and pane count are each a one-variable change on a probe instance; the region *count* (not the byte total) is the sensitive readout.
-3. **Do not use the app-test lab.** It is [off the instrument](#lab-negative) for this measurement, and any A/B there will read zero in both arms.
+1. **Bisect the app-side window configuration.** Tug sets `webView.setValue(false, forKey: "drawsBackground")` (transparent web view) and `wantsLayer = true` on the content view; Safari, the control that does *not* show this pool, does neither. One variable at a time on the probe, reading the region count.
+2. **A/B the WebKit feature knobs** already reachable through the shipped `TUG_WK_FEATURES` hook — `UseGiantTiles`, `AggressiveTileRetentionEnabled`, `OverlappingBackingStoreProvidersEnabled`, `UseGPUProcessForDOMRenderingEnabled` are the candidates from the 544 keys this build exposes.
+3. **Settle bytes-per-pixel.** `RemoteLayerBackingStore::bytesPerPixel()` is 4 for BGRA8 but **8 for RGB10/RGBA16F** on extended-range displays. If the pool is being allocated in a wide-gamut format it is twice the size it needs to be. Note this is a *sizing* question, not the mechanism — the pool's byte total looks capped, so halving the format may repartition rather than shrink it.
+4. **Do not use the app-test lab.** It is [off the instrument](#lab-negative) for this measurement, and any A/B there will read zero in both arms.
 
 **G7-3 — Why are Tug's surfaces non-purgeable when Safari's are not?** *(refuted — see [#anomaly](#anomaly). The premise was a column-reading error: both apps hold zero resident bytes in volatile regions and everything in nonvolatile ones. The purge structure is identical and there is no cheap purgeability fix. Folded into G7-4.)*
 
