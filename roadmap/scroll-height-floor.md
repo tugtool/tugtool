@@ -41,6 +41,13 @@ These are the user's cases, restated with the amendments the diagnosis forced. E
 
 **3. Re-point `at0335` at zero.** The original success criterion — `data-scroll-displacements === "0"` — becomes honest again. Restore it, and fold the two remaining legitimate failures (the 326px idle-recovery shortfall, the `priorRepairHeld` null) into the interactive investigation. Keep `at0336` permanently as the conservation harness.
 
+**Stage 3 landed (2026-08-03).** Zero is the criterion again, on main:
+
+- *Every real drive asserts zero on both surfaces* — `data-scroll-displacements` reads `"0"` and the trace ring holds no records — through a shared `expectZeroDisplacements` helper: the sixty-turn stand-up, the streamed-under-a-parked-user drive, the quiet spell, the repeated window swaps, and the wheel run. The magnitude pins (worst displacement ≤ the at-bottom band) are deleted along with the helper that computed them; a magnitude band would only give a regression room to hide in now that the floor spans the ledger-settle dips that once made ~24px records honest.
+- *The `forceCommitClamp` tests stay exempt by design* — they take the floor down and manufacture the record deliberately — and now also pin a zero baseline before arming the clamp, so a defect that displaced before the simulation cannot masquerade as the simulation's record.
+- *The two failures this stage was slated to fold in* (the 326px idle-recovery shortfall, the `priorRepairHeld` null) were both discharged during stage 1 — the resting-geometry at-bottom judgment fixed the first, and the second's machinery was deleted outright in stage 2 — so nothing remained to investigate.
+- *Results*: at0335 9/9 under the zero criterion, at0336 5/5. `at0336` stays permanently as the conservation harness.
+
 **4. Rebuild follow-bottom on Case B's polarity.** Engaged is the resting state; disengagement requires an attributed action; re-engagement happens on attributed arrival at the bottom. Includes the anchoring gate while following and the capture-phase disengage ordering from Case C. The gesture-end `isAtBottom` re-engage path from the previous plan is implemented but unpinned — pin it here.
 
 **5. Amend the doctrine.** `tuglaws/scroll-intent.md` and [D93]: the clamp model is "removal-time, mid-mutation, no reader required," superseding "forced layout in the commit-phase gap." The floor becomes the stated defense; the bracket becomes the stated witness.
@@ -50,4 +57,4 @@ These are the user's cases, restated with the amendments the diagnosis forced. E
 - `just app-test tests/app-test/at0336-conservation-probe.test.ts` — the five-test diagnostic suite: probe run, at0335-swap replica, anchoring-off variant, mover capture, height-post countermeasure. The replica and countermeasure tests are the before/after pair for stage 1.
 - `window.__tug.getListConservation(selector)` — per-eviction ledger-vs-live records, mounted-cell audit, per-commit geometry ring.
 - `window.__tug.getScrollDisplacementCount` / `forceCommitClamp` / `setTranscriptFollowBottom` — the bracket's seams from the previous plan.
-- The at0335 magnitude assertions are the regression net until stage 3 restores the zero criterion.
+- at0335 asserts the zero criterion — `data-scroll-displacements === "0"` and an empty trace ring — on every real drive; the magnitude bands are gone.

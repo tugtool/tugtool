@@ -41,13 +41,17 @@
  * |                    | is stranded — no gesture, no scroll event, no way  |
  * |                    | back, and every append silently fails to arrive    |
  *
- * **These assertions are about displacement MAGNITUDE, not count.**
- * The floor drives real drives to zero records, but the magnitude pin
- * is what a regression fails first: the field captures were 2,660px
- * and 8,000px pulls that stranded a reader thousands of pixels above
- * the live edge, so the pin is that no displacement exceeds the
- * at-bottom band. A regression that reopens the tear fails that
- * immediately; a count would only wobble.
+ * **The success criterion is ZERO.** On every real drive — the
+ * sixty-turn stand-up, the window swaps, the wheel run, the quiet
+ * spell — `data-scroll-displacements` reads `"0"` and the trace ring
+ * holds no records. The extent floor makes the clamp impossible by
+ * construction, so a record is a defect, never a tolerance to measure
+ * against. Earlier revisions pinned magnitude instead, because
+ * eviction's ledger-settle dips produced honest ~24px records; the
+ * floor spans those dips now, and a magnitude band would only give a
+ * regression room to hide in. Only the `forceCommitClamp`-driven
+ * tests see a nonzero count, because they take the floor down and
+ * manufacture the record deliberately.
  *
  * The clamp cases are driven through `__tug.forceCommitClamp()`, which
  * reproduces a genuine browser clamp from *inside* a React commit.
@@ -222,26 +226,22 @@ function readFollowBottomSources(app: App): Promise<string[]> {
 })()`);
 }
 
-/** The largest single displacement recorded so far, in pixels.
+/** The honest criterion: nothing displaced, on either surface.
  *
- *  Magnitude, not count, is what this suite pins. Asserting a count of
- *  zero would be false: eviction's height ledger settles across
- *  commits — a cell measures at its new height in one, the spacer
- *  compensates in the next — so the document dips briefly in between
- *  and the browser clamps. Those are real, they measure ~24px, and
- *  they are self-correcting.
+ *  Zero was the original success criterion, retired while eviction's
+ *  height ledger settled across commits — a cell measured at its new
+ *  height in one commit, the spacer compensated in the next, and the
+ *  browser clamped ~24px against the dip in between — and restored
+ *  once the extent floor spanned those dips. The floor holds the
+ *  scrollable extent through every mutation, so a real drive records
+ *  nothing: not a small displacement, none.
  *
- *  Magnitude is what separates them from the defect. The field
- *  failures were 2,660px and 8,000px pulls that stranded a reader
- *  thousands of pixels above the live edge. A regression that reopens
- *  the commit-phase tear shows up here as a number far outside the
- *  at-bottom band; a count would only wobble. */
-function worstDisplacement(app: App): Promise<number> {
-  return app.evalJS<number>(`(function () {
-  return window.__deckTrace.dump()
-    .filter(function (e) { return e.kind === "scroll-displacement"; })
-    .reduce(function (m, e) { return Math.max(m, Math.abs(e.to - e.from)); }, 0);
-})()`);
+ *  Both surfaces are read — the published DOM attribute and the trace
+ *  ring — so a record that reaches one but misses the other is still
+ *  caught. */
+async function expectZeroDisplacements(app: App): Promise<void> {
+  expect((await readSnap(app)).displacements).toBe("0");
+  expect(await readDisplacementRecords(app)).toHaveLength(0);
 }
 
 /** Park the transcript well above the live edge, the way a native
@@ -273,27 +273,11 @@ describe.skipIf(!SHOULD_RUN)("AT0335: scroll displacement", () => {
           ),
         ).toBe(Number(snap.displacements));
 
-        // Seeding a tall transcript does still produce displacement,
-        // and pretending otherwise would make this suite a lie. Render-
-        // phase spacers close the commit-phase tear, but eviction's
-        // height ledger settles across commits — a cell measures at its
-        // new height in one commit and the spacer compensates in the
-        // next — so the document dips briefly in between and the
-        // browser clamps. Measured here: every record is a ~24px pull,
-        // three orders of magnitude below the multi-thousand-pixel
-        // field failures this work was written for.
-        //
-        // What matters is the magnitude, so that is what is pinned. A
-        // regression that reopens the real tear shows up as a record
-        // far outside the at-bottom band, not as a change in count.
-        const worst = await app.evalJS<number>(`(function () {
-  var recs = window.__deckTrace.dump()
-    .filter(function (e) { return e.kind === "scroll-displacement"; });
-  return recs.reduce(function (m, e) {
-    return Math.max(m, Math.abs(e.to - e.from));
-  }, 0);
-})()`);
-        expect(worst).toBeLessThanOrEqual(AT_BOTTOM_PX);
+        // And it reads zero. Standing up sixty turns evicts, swaps
+        // windows, and settles the height ledger across commits — the
+        // extent floor spans all of it, so nothing clamps and nothing
+        // is recorded.
+        await expectZeroDisplacements(app);
 
         // The transcript stood up at the live edge, which is a
         // follow-bottom engagement — and the dev log carries it with
@@ -341,7 +325,7 @@ describe.skipIf(!SHOULD_RUN)("AT0335: scroll displacement", () => {
       const app = await standUp("at0335-detect");
       try {
         const before = await readSnap(app);
-        expect(await worstDisplacement(app)).toBeLessThanOrEqual(AT_BOTTOM_PX);
+        await expectZeroDisplacements(app);
         // A clamp only displaces when the shrink actually lowers the
         // scroll maximum below the live position, so the top spacer
         // must be carrying real evicted extent.
@@ -378,8 +362,9 @@ describe.skipIf(!SHOULD_RUN)("AT0335: scroll displacement", () => {
       try {
         const parked = await parkMidHistory(app);
         // Parked deep in history with follow-bottom released — the
-        // position is the user's.
+        // position is the user's, and parking is not a displacement.
         expect((await readSnap(app)).buttonVisible).toBe("true");
+        await expectZeroDisplacements(app);
 
         await app.evalJS<boolean>(
           `(function () { window.__tug.forceCommitClamp('${SCROLLER}'); return true; })()`,
@@ -478,7 +463,7 @@ describe.skipIf(!SHOULD_RUN)("AT0335: scroll displacement", () => {
 
         const held = await readSnap(app);
         expect(Math.abs(held.top - parked)).toBeLessThanOrEqual(50);
-        expect(await worstDisplacement(app)).toBeLessThanOrEqual(AT_BOTTOM_PX);
+        await expectZeroDisplacements(app);
         expect(held.buttonVisible).toBe("true");
       } finally {
         await app.close();
@@ -505,7 +490,7 @@ describe.skipIf(!SHOULD_RUN)("AT0335: scroll displacement", () => {
         const arrived = await readSnap(app);
         expect(arrived.maxScroll - arrived.top).toBeLessThanOrEqual(4);
         expect(arrived.buttonVisible).toBe("false");
-        expect(await worstDisplacement(app)).toBeLessThanOrEqual(AT_BOTTOM_PX);
+        await expectZeroDisplacements(app);
       } finally {
         await app.close();
       }
@@ -584,8 +569,7 @@ describe.skipIf(!SHOULD_RUN)("AT0335: scroll displacement", () => {
         await seedTurn(app, TURNS);
         await new Promise((r) => setTimeout(r, 1000));
 
-        const after = await readSnap(app);
-        expect(await worstDisplacement(app)).toBeLessThanOrEqual(AT_BOTTOM_PX);
+        await expectZeroDisplacements(app);
       } finally {
         await app.close();
       }
@@ -662,7 +646,7 @@ describe.skipIf(!SHOULD_RUN)("AT0335: scroll displacement", () => {
         await new Promise((r) => setTimeout(r, 800));
         const settled = await readSnap(app);
         expect(settled.buttonVisible).toBe("false");
-        expect(await worstDisplacement(app)).toBeLessThanOrEqual(AT_BOTTOM_PX);
+        await expectZeroDisplacements(app);
       } finally {
         await app.close();
       }
