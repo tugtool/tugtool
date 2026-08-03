@@ -17,16 +17,6 @@
 
 /* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
 
-body {
-  /* Keyboard movement-cursor fill for the cursor header — a reduced (lighter)
-     version of the focus selection blue. The accordion has no row selection of
-     its own; this is purely the focus-blue hue at a low level. (TugListView marks
-     its cursor with a leading-edge bar rather than a fill; the accordion keeps a
-     header fill, which suits its larger, sparser header rows.) */
-  --tugx-accordion-cursor-tint:
-    color-mix(in srgb, var(--tug7-surface-selection-primary-normal-quiet-rest) 25%, transparent);
-}
-
 /* ============================================================================
    Keyframe Animations
    ========================================================================= */
@@ -162,6 +152,8 @@ body {
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  /* Anchor for the keyboard movement-cursor's leading-edge bar, below. */
+  position: relative;
   padding: 0.75rem 0.75rem;
   background: transparent;
   border: none;
@@ -184,29 +176,56 @@ body {
   color: var(--tug7-element-field-text-normal-label-hover);
 }
 
-/* ---- Focus language — item-group treatment ([P01]/[P02]/[P03]) ----
+/* ---- Focus language — item-group treatment ([P01]) ----
    The accordion is ONE item-container stop: Tab lands on the accordion (never a
    header), arrows move a cursor over the triggers, Space toggles the cursor
-   section, and Enter descends into an open section. It shares TugListView's
-   treatment (same row-based descendable archetype, settled by the list's by-eye
-   pass): a PERIMETER RING marks the focused container, and the cursor header
-   carries a reduced TINT FILL — not a ring. (This supersedes the earlier [P02]
-   behind-tint + cursor-ring here.) On descend the root drops the key view and
-   shows the quiet `[data-key-within]` mark (the global rule). Role-resolved via
-   `--tugx-focus-ring` / `--tugx-accordion-cursor-tint`. */
-.tug-accordion[data-key-view-kbd] {
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
-  outline-offset: 0;
-  background-image: none;
+   section, and Enter descends into an open section.
+
+   Rings mark ELEMENTS; washes mark CONTAINERS. So the container takes a
+   background WASH and no stroke, and the cursor trigger takes a leading-edge
+   BAR — the same two marks, in the same roles, that `TugListView` uses. The two
+   components share the archetype (full-width rows, descendable) and now share
+   the vocabulary; the shape of an element mark follows the shape of the item,
+   which is why the inline chip groups (radio, choice, option, tab) ring their
+   cursor instead of barring it.
+
+   It keeps the FULL-strength wash through a descend rather than dropping to the
+   quiet within-mark: a descend goes deeper into this accordion rather than out
+   of it, and the mark is what says which group the descended content belongs
+   to. */
+.tug-accordion:is([data-key-view-kbd], [data-key-within]) {
+  outline: none;
+  background-image: linear-gradient(
+    var(--tugx-focus-container-wash),
+    var(--tugx-focus-container-wash)
+  );
 }
 
-/* The movement cursor on a trigger is a reduced tint fill (lighter focus blue),
-   matching the list cursor row — no per-row ring. Suppress the global
-   `[data-key-cursor]` outline; the ring lives only on the accordion container. */
+/* The movement cursor on a trigger is a leading-edge bar, matching the list's
+   cursor row — and now genuinely matching it. The previous treatment was a
+   reduced tint FILL whose comment claimed it matched the list; the list's cursor
+   has been a bar for some time, so the claim was stale. It also cannot survive
+   the container becoming a wash: a tint fill over a wash is the same KIND of
+   mark at two strengths, answering two different questions.
+
+   The bar reads the language-level `--tugx-focus-cursor-bar-*` knobs, shared
+   with `TugListView`. It must not read `--tugx-list-view-cursor-bar-*` — that
+   would be one component reaching into another's slot, a direct [L20]
+   violation. Suppress the global `[data-key-cursor]` ring: the element mark
+   here is the bar. */
 .tug-accordion-trigger[data-key-cursor] {
   outline: none;
   box-shadow: none;
-  background-image: linear-gradient(var(--tugx-accordion-cursor-tint), var(--tugx-accordion-cursor-tint));
+}
+.tug-accordion-trigger[data-key-cursor]::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: var(--tugx-focus-cursor-bar-width);
+  background: var(--tugx-focus-cursor-bar-color);
+  /* Over any fill the trigger paints, including its hover background. */
+  z-index: 1;
 }
 
 /* ---- Disabled ---- */

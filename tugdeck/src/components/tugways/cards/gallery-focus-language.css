@@ -412,15 +412,34 @@
   --fl-focus-bg: color-mix(in srgb, var(--fl-role) 13%, transparent);
 }
 
-/* roving cursor → a ring around the current item. Role-coloured when the
-   component carries a role, action-blue otherwise. */
+/* roving cursor on an INLINE CHIP → a ring around the current item. Role-
+   coloured when the component carries a role, action-blue otherwise. The shape
+   of an element mark follows the shape of the item, so full-width row
+   containers take the bar below instead. */
 .cg-focus-language .fl-item[data-fl-cursor="true"],
 .cg-focus-language .fl-tab[data-fl-cursor="true"],
-.cg-focus-language .fl-opt[data-fl-cursor="true"],
-.cg-focus-language .fl-list-row[data-fl-cursor="true"],
-.cg-focus-language .fl-qa-row[data-fl-cursor="true"] {
+.cg-focus-language .fl-opt[data-fl-cursor="true"] {
   outline: var(--fl-ring-w) solid var(--fl-role);
   outline-offset: 2px;
+}
+
+/* roving cursor on a FULL-WIDTH ROW → a leading-edge bar. This is what the
+   shipped list, accordion, and dialog answer rows actually draw: a ring around
+   a full-bleed row reads as a second container nested in the first, which is
+   the mark the container itself already owns. */
+.cg-focus-language .fl-list-row[data-fl-cursor="true"],
+.cg-focus-language .fl-qa-row[data-fl-cursor="true"] {
+  position: relative;
+}
+.cg-focus-language .fl-list-row[data-fl-cursor="true"]::before,
+.cg-focus-language .fl-qa-row[data-fl-cursor="true"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: var(--fl-ring-w);
+  background: var(--fl-role);
+  z-index: 1;
 }
 
 /* the native blue radio dot — reused by radio rows AND exclusive Q&A rows */
@@ -521,10 +540,13 @@
   background: var(--fl-sel);
   color: var(--fl-thumb-on);
 }
-/* descended INTO the list → the container wears a quiet "contains active" mark */
+/* descended INTO the list → the container keeps its FULL mark, not a quiet one.
+   A descend goes deeper into the list rather than out of it, so the wash stays
+   at key-view strength and says which list the descended control belongs to.
+   The quiet within-mark is for a container the keyboard has genuinely left the
+   surface of — a sheet holding an open popover — which is not this. */
 .cg-focus-language .fl-list[data-fl-within="true"] {
-  outline: var(--fl-ring-w) solid var(--fl-within);
-  outline-offset: var(--fl-ring-offset);
+  background: var(--fl-focus-bg);
 }
 
 /* ---- 9 · QuestionDialog answers (exclusive = radio rows · multi = checkbox rows) ---- */

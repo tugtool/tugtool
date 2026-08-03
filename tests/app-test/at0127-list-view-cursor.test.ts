@@ -5,15 +5,23 @@
  * item-container stop whose rows each hold a focusable "Open" button. This pins
  * the full listbox keystroke set over a windowed list:
  *
- *   - **Tab → one stop, ring on the list, cursor on row 0** — the scroll
+ *   - **Tab → one stop, key view on the list, cursor on row 0** — the scroll
  *     container takes the key view (`data-key-view-kbd`) and the first cell wears
- *     the movement cursor (`data-key-cursor`); the ring never moves onto a row;
+ *     the movement cursor (`data-key-cursor`); the key view never moves onto a row;
  *   - **Arrow → cursor moves** — ArrowDown advances the cursor to row 1 and
- *     clears it from row 0, with the ring still on the container;
+ *     clears it from row 0, with the key view still on the container;
  *   - **Space → select** — the cursor row commits selection (`data-selected`);
  *   - **Enter → descend** — the cursor row's inner button becomes the key view
- *     and the container wears `data-key-within`, the ring leaving the list;
+ *     and the container wears `data-key-within`, the key view leaving the list;
  *   - **Escape → ascend** — the key view returns to the container.
+ *
+ * Everything here is an ATTRIBUTE assertion, and that is why this suite survived
+ * the container mark changing shape from a ring to a background wash: which
+ * element holds `data-key-view-kbd` / `data-key-cursor` / `data-key-within` is
+ * unchanged, only what those attributes paint. The prose above used to say
+ * "ring" throughout, which described the paint rather than the model this file
+ * actually pins — corrected so a reader does not go looking for an outline that
+ * no container draws. The paint is asserted in at0121 and at0340.
  *
  * A failure isolates which leg of the model broke: cursor projection, Space
  * select, Enter descend, or Escape ascend.
@@ -27,6 +35,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
+import { appIsActive } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -62,7 +71,7 @@ const has = (selector: string, attr: string) =>
 
 describe.skipIf(!SHOULD_RUN)("AT0127: list-view listbox — cursor / select / descend / ascend", () => {
   test(
-    "Tab rings the list + cursor row 0 → arrow → Space selects → Enter descends → Escape ascends",
+    "Tab lands the key view on the list + cursor row 0 → arrow → Space selects → Enter descends → Escape ascends",
     async () => {
       const app = await launchTugApp({ testName: "at0127-list-view-cursor" });
       try {
@@ -82,16 +91,20 @@ describe.skipIf(!SHOULD_RUN)("AT0127: list-view listbox — cursor / select / de
         );
 
         await app.nativeClickAtElement(TITLE);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        // Activate the webview, then gate on the app-active projection — the bit
+        // `focus-ring.css` suppresses every focus mark under. NOT
+        // `document.hasFocus()`: a background-mode harness window never
+        // activates, so that never becomes true (see `appIsActive`).
+        await app.waitForCondition<boolean>(appIsActive(), { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
-        // Tab → the list is the one stop: container takes the key view + ring,
+        // Tab → the list is the one stop: container takes the key view + wash,
         // cursor lands on row 0.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(has(CONTAINER, "data-key-view-kbd"), { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(has(CELL(0), "data-key-cursor"), { timeoutMs: 6000 });
 
-        // ArrowDown → cursor advances to row 1 and clears row 0; ring stays on
+        // ArrowDown → cursor advances to row 1 and clears row 0; key view stays on
         // the container (never on a row).
         await app.nativeKey("ArrowDown");
         await app.waitForCondition<boolean>(has(CELL(1), "data-key-cursor"), { timeoutMs: 6000 });
@@ -106,7 +119,7 @@ describe.skipIf(!SHOULD_RUN)("AT0127: list-view listbox — cursor / select / de
         );
 
         // Enter → descend into row 1: its inner button becomes the key view and
-        // the container wears data-key-within (the ring leaves the list).
+        // the container wears data-key-within (the key view leaves the list).
         await app.nativeKey("Enter");
         await app.waitForCondition<boolean>(has(INNER(1), "data-key-view-kbd"), { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(has(CONTAINER, "data-key-within"))).toBe(true);

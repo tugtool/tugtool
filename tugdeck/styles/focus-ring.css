@@ -145,6 +145,90 @@ body {
      lockstep with `--tugx-focus-ring` (see the field CSS) so an invalid field
      still washes danger, not key. */
   --tugx-focus-wash: var(--tug7-surface-toggle-primary-normal-on-rest);
+
+  /* THE CONTAINER WASH — rings mark elements, washes mark containers.
+     ------------------------------------------------------------------
+     An item-group CONTAINER (list, accordion, radio / choice / option group,
+     tab bar) answers "which container holds the keyboard" with a background
+     wash and never with a stroke. The ring and the movement caret are reserved
+     for marking ELEMENTS — the cursor item inside a group, and leaf controls.
+     Two nested rings in one hue at two scales is the focus/selection
+     conflation the focus language exists to prevent.
+
+     Why this is a NEW token and not `--tugx-focus-tint`: the tint is not
+     container-specific. Twelve files consume it, including leaves that also
+     wear a ring (checkbox, switch, slider) and floating surfaces that keep
+     theirs (alert, popover). Strengthening it in place would loudly tint all
+     of them for a change that concerns six containers.
+
+     Why not `--tugx-focus-wash` above: that name is taken, and for an
+     unrelated mark — it is the text-FIELD fill, which rides the KEY axis (the
+     selection-fill hue) and repoints with validation state. This one rides the
+     ACCENT axis, and the split is load-bearing: a committed selection fill is
+     Key (cobalt / blue), the container wash is Accent (orange), so a strong
+     wash can never be misread as selection. Keep them apart in any new theme.
+
+     THE VALUES ARE THE MINIMUM THAT READS, and that is deliberate. They were
+     landed by eye on the `gallery-focus-wash` spike card, which ramps eight
+     alphas across the three grounds a container actually sits on, in both
+     modes. In each mode the lowest rung that registers is also the rung that
+     reads best — the wash does not want headroom above it. By 15% the wash has
+     begun reading as a FILLED SURFACE rather than a lit one, which is the
+     failure this whole design exists to avoid. Raising these is the failure
+     direction; if a container reads as unmarked, look at what sits on top of
+     it before reaching for the alpha.
+
+     The two modes genuinely differ — light needs a few more points to clear
+     its pale ground — so the alpha is a knob of its own and the light override
+     moves only it. Holding the alpha separately from the colour is also what
+     lets `buildRoleStyle` inject a role-resolved wash inline and still pick up
+     the per-mode strength: an inline style cannot carry a media/attribute
+     variant, but it can read an inherited custom property. */
+  /* THE MOVEMENT CURSOR'S BAR — the element-level mark inside a full-width row
+     container. A leading-edge stripe on the cursor row, drawn on the Accent
+     axis so it reads distinctly from the Key selection fill it may overlay
+     while sharing the affordance hue with the ring.
+
+     This lives here, at language level, because TWO components draw it —
+     `TugListView` and `TugAccordion` — and the shape follows the item's shape:
+     full-width row containers mark the cursor with a leading bar, inline chip
+     groups (radio, choice, option, tab) mark it with a ring. Both are element
+     marks. It cannot live in either component's slot: an accordion reading a
+     `--tugx-list-view-*` token would violate [L20] ("A never overrides,
+     aliases, or references B's tokens"), and the token is not the list's
+     furniture any more. `tug-list-view.css` keeps its old
+     `--tugx-list-view-cursor-bar-*` names as aliases onto these. */
+  --tugx-focus-cursor-bar-width: var(--tugx-list-key-ring-width);
+  --tugx-focus-cursor-bar-color: var(--tug7-element-global-fill-normal-accent-rest);
+
+  /* There is deliberately NO reduced "within" variant of the wash. The design
+     called for one — a quieter wash for a container that merely contains the
+     active control — and building the six components found it has no subject.
+     `data-key-within` lands only on the container a scope was descended FROM.
+     The two groups that can legitimately receive it, `TugListView` and
+     `TugAccordion`, keep the FULL wash for it on purpose: a descend goes deeper
+     into the container rather than out of it, so the mark must not weaken. The
+     other four are inline chip groups that are never descend targets and
+     suppress the mark outright as a spurious engine stamp. That left nothing to
+     read a reduced variant, so it is not declared — see the note in each chip
+     group's CSS. The global `[data-key-within]` outline below still serves
+     containers that are NOT item-groups, which is the case it was written for. */
+  --tugx-focus-container-wash-alpha: 6%;
+  --tugx-focus-container-wash: color-mix(
+    in srgb,
+    var(--tug7-element-global-fill-normal-accent-rest)
+      var(--tugx-focus-container-wash-alpha),
+    transparent
+  );
+}
+
+/* Light themes carry the container wash a few points stronger to clear their
+   pale ground. `data-theme-mode` rides <html>, but the role-axis colours must
+   resolve on `body` (a `var(--tug7-*)` evaluated at `:root` is above the theme
+   scope and resolves invalid), so the selector needs both parts. Only the
+   alpha moves — the source token and the formula are shared. */
+:root[data-theme-mode="light"] body {
+  --tugx-focus-container-wash-alpha: 10%;
 }
 
 :focus-visible {
@@ -219,13 +303,28 @@ body {
    key. `data-app-active="false"` is projected onto <html> by the deck store's
    foreground tracking (`DeckManager.setHasFocus`, driven by window focus/blur).
    Without this the ring (and within/cursor marks) froze on whatever control held
-   the key view and kept painting while the app sat in the background. Higher
-   specificity than the base mark rules above, so it wins regardless of source
-   order; the per-component behind-tint is quieted at its own site. */
-[data-app-active="false"] [data-key-view-kbd],
-[data-app-active="false"] [data-key-cursor],
-[data-app-active="false"] [data-key-within] {
+   the key view and kept painting while the app sat in the background.
+
+   It suppresses the WASH as well as the stroke. The rule used to set only
+   `outline: none` and defer the behind-tint to "its own site" — but no
+   component ever implemented that, so the container tint kept painting in a
+   backgrounded window. It went unnoticed only because the tint was nearly
+   invisible; a container wash strong enough to read is exactly what would turn
+   that into a visibly lit section behind an inactive window.
+
+   ANCHORED ON `html`, and that is not cosmetic. `[data-app-active="false"]
+   [data-key-view-kbd]` has specificity (0,2,0) — and so does every item-group
+   container rule (`.tug-list-view[data-key-view-kbd]` and its five siblings):
+   one class plus one attribute. At equal specificity the cascade falls through
+   to source order, which here is Vite's CSS emission order — not something the
+   tree pins, not something a refactor preserves, and not something a test would
+   obviously catch if it flipped. `data-app-active` rides <html>, so naming that
+   element takes this rule to (0,2,1) and it wins everywhere, permanently, with
+   no per-component duplication. If the attribute ever moves to `body`, this
+   selector must move with it. */
+html[data-app-active="false"] :is([data-key-view-kbd], [data-key-cursor], [data-key-within]) {
   outline: none;
+  background-image: none;
 }
 
 /**

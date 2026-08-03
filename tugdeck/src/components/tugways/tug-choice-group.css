@@ -227,7 +227,25 @@
    ========================================================================== */
 .tug-choice-group[data-key-view-kbd] {
   outline: none;
-  background-image: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint));
+  background-image: linear-gradient(
+    var(--tugx-focus-container-wash),
+    var(--tugx-focus-container-wash)
+  );
+}
+
+/* A segmented control is a single Tab stop and never a descend target — its
+   segments move a movement cursor, they are not descended into — so it must
+   never wear the `data-key-within` mark. The engine can still transiently stamp
+   it: `data-key-within` lands on the container a scope was descended FROM, and
+   when a trap is re-pushed while the key view is already inside it, this group
+   is captured as the restore-key-view and marked, then the on-open seed moves
+   the key view away, leaving a stray mark behind. Until now that fell through to
+   the GLOBAL outline rule and rang the container — the one container ring left
+   in the app, on the least important state. Suppress it, exactly as
+   `TugRadioGroup` already does: the group shows only its key-view wash, and the
+   cursor ring lives on the segment. */
+.tug-choice-group[data-key-within] {
+  outline: none;
 }
 
 /* Cursor ring = the LEAF focus treatment ([P02], "ring + gap"): the standard

@@ -329,7 +329,7 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="8 · Descendable rows — list / accordion (multiple)"
           branch="ring"
-          note="Same model on row lists: behind-tint on focus, ring on the cursor row, native row fill on selection (multi-capable). Plus the descend story: when keyboard descends INTO a row, the container wears a quiet 'contains active' mark (the data-key-within analogue). Covers TugListView, TugListRow, TugAccordion, transcript/body-kind blocks."
+          note="Rings mark elements, washes mark containers — clearest here, where the container is big. The focused list takes a background WASH and no stroke of any kind; the cursor row takes a leading-edge BAR, not a ring, because a ring around a full-bleed row reads as a second container nested in the first. Selection stays the native row fill (multi-capable). Plus the descend story: when the keyboard descends INTO a row, the container keeps its FULL wash rather than dropping to the quiet 'contains active' mark — a descend goes deeper into the list, not out of it, and the wash is what says which list the descended control belongs to. Covers TugListView, TugListRow, TugAccordion, transcript/body-kind blocks."
         />
         <div className="fl-grid">
           <Cell label="focused — cursor on row 2 (row 1 selected)">

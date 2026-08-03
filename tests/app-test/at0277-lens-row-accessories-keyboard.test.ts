@@ -194,30 +194,34 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
           ).toBeGreaterThan(0);
 
           // The list does not go dark behind the descend. Both marks say where
-          // the accessory came from — the container ring says which list, the
-          // cursor bar says which row — and losing them left the ring on a lone
-          // button with nothing around it to say what it belonged to. The ring
-          // is the list's own inset overlay (`ringPlacement="inset"`), lit by
-          // the engine's `data-key-within` on the container it descended from.
+          // the accessory came from — the container wash says which list, the
+          // cursor bar says which row — and losing them left the focus on a lone
+          // button with nothing around it to say what it belonged to. That
+          // behaviour is what this assertion pins, and it is unchanged; only the
+          // container mark's shape changed, from an overlay ring to a background
+          // wash. The list keeps its FULL-strength mark here rather than the
+          // reduced within-wash: a descend goes deeper into this list rather
+          // than out of it.
           const descended = await app.evalJS<{
             within: boolean;
-            ring: number;
+            wash: string;
+            outlineWidth: string;
             cursorRows: number;
           }>(
             `(function(){
               var list = document.querySelector(${JSON.stringify(SNIPPETS_LIST)});
-              var ring = list === null ? null : list.querySelector('.tug-list-view-ring');
+              var cs = list === null ? null : getComputedStyle(list);
               return {
                 within: list !== null && list.hasAttribute('data-key-within'),
-                ring: ring === null
-                  ? 0
-                  : parseFloat(getComputedStyle(ring, '::before').borderTopWidth),
+                wash: cs === null ? 'none' : cs.backgroundImage,
+                outlineWidth: cs === null ? '0px' : cs.outlineWidth,
                 cursorRows: document.querySelectorAll(${JSON.stringify(CURSOR_ROW)}).length,
               };
             })()`,
           );
           expect(descended.within).toBe(true);
-          expect(descended.ring).toBeGreaterThan(0);
+          expect(descended.wash).not.toBe("none");
+          expect(descended.outlineWidth).toBe("0px");
           expect(descended.cursorRows).toBe(1);
 
           // ---- A1. Inside the row the horizontal arrows walk the accessories:

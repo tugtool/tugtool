@@ -1001,7 +1001,6 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
                 delegate={delegate}
                 cellRenderers={SNIPPETS_CELL_RENDERERS}
                 scrollKey="lens-snippets"
-                ringPlacement="inset"
                 inline
                 rowLayout="flush"
                 focusGroup={hasContent ? host.focusGroup : undefined}

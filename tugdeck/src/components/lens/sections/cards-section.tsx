@@ -826,7 +826,6 @@ function CardsSectionBody({
               delegate={delegate}
               cellRenderers={CARDS_CELL_RENDERERS}
               scrollKey="lens-cards"
-              ringPlacement="inset"
               inline
               rowLayout="flush"
               focusGroup={hasContent ? host.focusGroup : undefined}

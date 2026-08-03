@@ -63,23 +63,26 @@ body {
   --tugx-list-view-frame-color:        transparent;
 
   /* Keyboard movement-cursor mark — a leading-edge bar on the cursor row, the
-     "you are here" keyboard affordance. A MARK, not a fill: marks (this bar, the
-     container ring, selection glyphs) are the keyboard; a fill that comes and
-     goes under the pointer is the mouse. Replaces the former selection-blue
-     cursor wash, which was indistinguishable from hover and collided with the
-     selection fill on a selected row. Width is the only knob here; the bar's
-     COLOR is the Accent axis (`--tugx-list-view-cursor-bar-color` → the accent
-     fill), so the keyboard caret reads distinctly from the Key selection fill it
-     overlays while sharing the affordance hue with the focus ring. */
-  --tugx-list-view-cursor-bar-width:   var(--tugx-list-key-ring-width);
-  --tugx-list-view-cursor-bar-color:   var(--tug7-element-global-fill-normal-accent-rest);
-  /* How far in from the row's leading edge the bar starts. Zero for a list with
-     room around it: the container ring sits outside the list, so the edge is the
-     bar's alone. A host that draws the container ring INSIDE the list's box
-     instead (an edge-to-edge list, with nothing outside it to paint into) sets
-     this to the ring's width, so the two marks stack — ring at the edge, bar
-     just inboard of it — rather than the ring covering the bar outright. Applied
-     only while the list holds the key view, which is exactly when a ring is up. */
+     "you are here" keyboard affordance. A MARK, not a fill: marks (this bar,
+     selection glyphs) are the keyboard; a fill that comes and goes under the
+     pointer is the mouse. Replaces the former selection-blue cursor wash, which
+     was indistinguishable from hover and collided with the selection fill on a
+     selected row. The bar's COLOR is the Accent axis, so the keyboard caret
+     reads distinctly from the Key selection fill it overlays while sharing the
+     affordance hue with the focus language.
+
+     These are ALIASES now. The bar is a language-level mark shared with
+     `TugAccordion`, so the real knobs live in `focus-ring.css` as
+     `--tugx-focus-cursor-bar-*` — an accordion reading a `--tugx-list-view-*`
+     token would be a straight [L20] violation ("A never overrides, aliases, or
+     references B's tokens"). The old names survive as fallbacks so existing
+     consumers that set them keep working. */
+  --tugx-list-view-cursor-bar-width:   var(--tugx-focus-cursor-bar-width);
+  --tugx-list-view-cursor-bar-color:   var(--tugx-focus-cursor-bar-color);
+  /* How far in from the row's leading edge the bar starts. Always zero now: the
+     container mark is a wash sitting BEHIND the rows, so nothing shares the
+     leading edge with the bar and there is no stroke for it to stack against.
+     Kept as a knob because a consumer may still want the bar off the edge. */
   --tugx-list-view-cursor-bar-inset:   0px;
 
   /* Row-layout slots — consumed only when `rowLayout` is set. */
@@ -150,153 +153,105 @@ body {
 
 }
 
-/* ---- Focus language — item-group treatment ([P01]/[P02]) ----
-   The list is ONE item-container stop, so it never wears the leaf ring. The
-   `tabindex="0"` scroll container shows no outline at rest (native arrow / page
-   scroll still works); when it holds the keyboard key view it marks the WHOLE
-   list as the focused container with a ring on its PERIMETER, and the cursor row
-   carries its own ring (below).
+/* ---- Focus language — item-group treatment ([P01]) ----
+   Rings mark ELEMENTS; washes mark CONTAINERS. The list is ONE item-container
+   stop, so it never wears the leaf ring, and it no longer wears a perimeter one
+   either: when it holds the keyboard key view it marks the whole list with a
+   background WASH, and the cursor row carries the single element-level mark (the
+   leading-edge bar, below).
 
-   Why a perimeter ring, not the behind-tint the other item-groups use ([P02]):
-   a list is a large scrollable area with full-width rows and a real selection
-   fill. A faint tint over that whole area lit too many pixels and drowned the
-   cursor row — the eye couldn't separate "container is focused", "this row is
-   the cursor", and "this row is selected". A crisp edge communicates container
-   focus with almost no lit area, leaving the cursor ring legible. (Small
-   clusters — radio / choice / option / accordion — keep the tint; the split is
-   by archetype, by size.)
+   The ring is gone from here on purpose. A ring around the list and a mark on
+   the cursor row were answering two different questions — "which container?" and
+   "which element?" — in the same vocabulary, in the same hue, at two scales.
+   That is the focus/selection conflation the focus language exists to prevent,
+   arriving one level up. A wash is a different KIND of mark (area, not stroke),
+   so the two questions stop competing; see tuglaws/focus-language.md.
 
-   The ring OVERLAYS the list's own edge (`outline-offset: 0`) rather than sitting
-   inset — an inset ring read as a second border floating inside the list's
-   frame. On a SELF-FRAMED list (the dev picker boxes) the frame border joins the
-   ring: the frame recolors to the ring hue and the outline makes up the rest, so
-   the total ring equals the cursor-caret width (`--tugx-list-key-ring-width`)
-   whether or not the list wears a frame. Role-resolved via `--tugx-focus-ring`.
+   The wash is sufficient here precisely BECAUSE the cursor bar sits inside it.
+   Where there is no cursor row to mark, the ring comes back alongside the wash —
+   an opt-in rule, further down.
+
+   `background-attachment` defaults to `scroll`, which for a scroll container
+   means the background is fixed with regard to the element's BORDER BOX and does
+   not travel with the content. So the wash covers the visible scrollport and
+   stays put, for free — see the note where the inset ring used to be.
 
    On Enter-descend the container drops the key view for an accessory inside one
    of its rows and the engine marks it `[data-key-within]`. The list keeps the
-   FULL ring for that, not the global quiet within-mark: a descend goes deeper
-   into this list rather than out of it, and the ring is what says which list the
-   accessory under the cursor belongs to. (The quiet mark is right for a
+   FULL-strength mark for that, not the global quiet within-mark: a descend goes
+   deeper into this list rather than out of it, and the mark is what says which
+   list the accessory under the cursor belongs to. (The quiet mark is right for a
    container the keyboard has genuinely left the surface of — a sheet holding an
    open popover. A list row is still the list.) */
 .tug-list-view {
   outline: none;
 }
-.tug-list-view[data-key-view-kbd],
-.tug-list-view[data-key-within] {
-  /* Frame + outline together total the caret width: on a framed list the 1px
-     frame carries part of the ring, so the outline is the remainder; unframed
-     (frame-width 0) the outline carries the whole width and the border-color
-     recolor is a no-op on the 0-width border. */
-  outline: calc(var(--tugx-list-key-ring-width) - var(--tugx-list-view-frame-width))
-    solid var(--tugx-focus-ring);
-  outline-offset: 0;
-  border-color: var(--tugx-focus-ring);
-}
-
-/* ---- The inset ring (`ringPlacement="inset"`) ----
-   For an edge-to-edge list in a clipping host — a Lens band, a rail — where an
-   outset outline falls outside the host's overflow and never paints. The ring
-   comes inside, as an OVERLAY over the finished rows.
-
-   It cannot be an inset outline or a box-shadow: a `TugListRow` is a stacking
-   context (it owns its press layer), so it paints after the container's own
-   border/outline phase and a row with an opaque fill punches a hole in the ring
-   exactly where it sits. Nor can it be a real border, which would take layout
-   space and hold the rows off the host's edge — the one thing an edge-to-edge
-   list must not do.
-
-   So: a zero-height sticky child holding the scrollport's top edge, with the
-   ring painted by an absolutely-positioned pseudo hung off it at the scrollport's
-   measured height (`--tugx-list-view-ring-block-size`, published by the
-   component — CSS cannot ask a scroller for the size of the window onto it).
-   Zero height means it adds nothing to the scroll length; sticky means it does
-   not scroll away.
-
-   The ring lights while the keyboard is IN the list — holding the key view, or
-   descended into one of its rows (`[data-key-within]`). A descend goes deeper
-   into the list rather than out of it, so the ring stays up and keeps saying
-   which list the accessory under the cursor belongs to. */
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.tug-list-view-ring {
-  position: sticky;
-  inset-block-start: 0;
-  block-size: 0;
-  z-index: 4;
-  pointer-events: none;
-}
-.tug-list-view-ring::before {
-  content: "";
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline: 0;
-  block-size: var(--tugx-list-view-ring-block-size, 0px);
-  border: var(--tugx-list-key-ring-width) solid transparent;
-  border-radius: var(--tugx-list-view-radius);
-  box-sizing: border-box;
-}
-.tug-list-view[data-ring-placement="inset"]:is(
-    [data-key-view-kbd],
-    [data-key-within]
-  )
-  .tug-list-view-ring::before {
-  border-color: var(--tugx-focus-ring);
-}
-
-/* The list's own perimeter ring is the OTHER placement's ring — never both. */
-.tug-list-view[data-ring-placement="inset"]:is(
-    [data-key-view-kbd],
-    [data-key-within]
-  ) {
+.tug-list-view:is([data-key-view-kbd], [data-key-within]) {
+  /* Stated here, not left to `.tug-list-view { outline: none }` above. That rule
+     is specificity (0,1,0) and so is the global `[data-key-within]` outline in
+     `focus-ring.css`, so which one won would come down to bundle order. This
+     selector is (0,2,0) and beats it outright. */
   outline: none;
+  background-image: linear-gradient(
+    var(--tugx-focus-container-wash),
+    var(--tugx-focus-container-wash)
+  );
 }
 
-/* ---- A carry suppresses the focus marks ----
-   While a host declares `data-tug-carrying` on an ancestor — a block reorder
-   is in flight inside it — this list's focus marks stand down for the length
-   of the gesture: the container ring in both placements, and the movement
-   cursor's bar.
+/* ---- Why there is no overlay ring here any more ----
+   Kept as history because this is machinery somebody could reasonably rebuild,
+   and the reason not to is not obvious from what remains.
 
-   The marks and the drop caret are drawn in the same hue, and each one the
-   carry leaves up is a second answer competing with the caret's. A ring around
-   the whole list is the shape that swallows a caret sitting at the list's top
-   or bottom edge outright: the two answers a dragging user needs — where the
-   keyboard is, and where this will land — collapse into one rectangle and the
-   drop becomes a guess. The keyboard has not moved and the marks come back at
-   the drop; see tuglaws/focus-language.md, "A carry suppresses the focus
-   marks."
+   An edge-to-edge list inside a clipping host — a Lens band, a rail — has
+   nowhere to put an outset outline: it falls outside the host's overflow and
+   never paints. Bringing the ring inside was ruled out twice over. Not an inset
+   outline or box-shadow: a `TugListRow` is a stacking context (it owns its press
+   layer), so it paints AFTER the container's border/outline phase and any row
+   with an opaque fill punches a hole in the ring exactly where it sits. Not a
+   real border either: that takes layout space and holds the rows off the host's
+   edge, which is the one thing an edge-to-edge list must not do.
 
-   The bar goes down for the same reason at closer range: it is a stripe of
-   accent along the leading edge of one row, and the row it marks is a row the
-   carry may be about to move. Mid-gesture it reads as a mark on the drop,
-   pointing somewhere the drop is not. Where the keyboard is has no bearing on
-   the gesture in flight and is unchanged when it ends, so the bar is simply
-   drawn again at the drop, on whatever was set down. */
-[data-tug-carrying="true"]
-  .tug-list-view:is([data-key-view-kbd], [data-key-within]) {
-  outline: none;
-  border-color: var(--tugx-list-view-frame-color);
-}
-[data-tug-carrying="true"]
-  .tug-list-view[data-ring-placement="inset"]:is(
-    [data-key-view-kbd],
-    [data-key-within]
-  )
-  .tug-list-view-ring::before {
-  border-color: transparent;
-}
+   What was left was an overlay — a zero-height `position: sticky` child pinned
+   to the scrollport, painting the ring as an absolutely-positioned `::before`.
+   Its height could not come from CSS (a percentage inside a scroller resolves
+   against the SCROLLED length, not the window onto it), so the component
+   measured `clientHeight` in a layout effect, published it as a custom property,
+   and kept it current with a `ResizeObserver`. The cursor bar then had to be
+   inset by a ring-width so the two marks stacked instead of overlapping.
+
+   A background wash needs none of it: no offset, no clipping interaction, no
+   radius negotiation, no stacking-context fight, no measured height, no layout
+   cost — and, per the note above, `background-attachment: scroll` already pins
+   it to the scrollport, which is the exact property the sticky child and the
+   `clientHeight` publisher existed to synthesize. The overlay was not merely
+   unnecessary; it was hand-built from parts the platform gives away.
+
+   So: do not reintroduce an overlay ring for the next edge-to-edge surface. */
+
+/* ---- A carry suppresses the cursor bar ----
+   While a host declares `data-tug-carrying` on an ancestor — a block reorder is
+   in flight inside it — the movement cursor's bar stands down for the length of
+   the gesture. It is a stripe of accent along the leading edge of one row, drawn
+   in the same hue as the drop caret, and the row it marks is a row the carry may
+   be about to move; mid-gesture it reads as a mark on the drop, pointing
+   somewhere the drop is not. Where the keyboard is has no bearing on the gesture
+   in flight and is unchanged when it ends, so the bar is simply drawn again at
+   the drop, on whatever was set down.
+
+   The CONTAINER mark stays up, and that is a deliberate narrowing. The container
+   half of this exception existed for a reason about SHAPE: a ring drawn around
+   the whole list is the one shape that swallows a drop caret sitting at that
+   list's top or bottom edge outright, collapsing "where is the keyboard" and
+   "where will this land" into one rectangle. A wash draws no edge and sits
+   behind the content, so it cannot swallow the caret at any position, and the
+   reason evaporates with the ring. The keyboard has not moved during a carry;
+   the language's preference is that marks stand down only when they actively
+   mislead. See tuglaws/focus-language.md, "A carry suppresses the focus marks."
+   Do not restore the container half. */
 [data-tug-carrying="true"]
   .tug-list-view
   .tug-list-view-cell[data-key-cursor]::before {
   background: transparent;
-}
-
-/* The cursor bar would sit under the inset ring's leading edge, both being one
-   ring-width at the same x. Slide the bar inboard by that width so the two
-   marks stack: ring at the edge, bar just inside it. */
-.tug-list-view[data-ring-placement="inset"] {
-  --tugx-list-view-cursor-bar-inset: var(--tugx-list-key-ring-width);
 }
 
 /* Block-axis breathing room — implemented as scroll-flow children

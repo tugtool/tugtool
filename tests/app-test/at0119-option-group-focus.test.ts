@@ -31,6 +31,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
+import { appIsActive } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -130,10 +131,12 @@ describe.skipIf(!SHOULD_RUN)("AT0119: option group is a single item-container st
           { timeoutMs: 6000 },
         );
 
-        // Activate the webview and wait until the document holds key focus
-        // before driving Tab.
+        // Activate the webview, then gate on the app-active projection — the bit
+        // `focus-ring.css` suppresses every focus mark under. NOT
+        // `document.hasFocus()`: a background-mode harness window never
+        // activates, so that never becomes true (see `appIsActive`).
         await app.nativeClickAtElement(TITLE);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(appIsActive(), { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         // (1) Tab → one stop with the item-group treatment: the GROUP holds the

@@ -150,20 +150,6 @@ export type {
   TugListViewStripeStrength,
 } from "./internal/list-view-striping";
 
-/** Where the container focus ring is drawn — see {@link TugListViewProps.ringPlacement}. */
-export type TugListViewRingPlacement = "outset" | "inset";
-
-/**
- * The scrollport's height, published by the component onto the scroll container
- * so the inset ring's overlay can be exactly as tall as the visible list.
- *
- * A sticky child cannot ask CSS for the scrollport's height: a percentage
- * resolves against the scroll container's content box, which for a scroller is
- * the SCROLLED length, not the window onto it. So the component measures what
- * only it can see and hands the number to its own stylesheet.
- */
-const RING_HEIGHT_PROPERTY = "--tugx-list-view-ring-block-size";
-
 // ---------------------------------------------------------------------------
 // Row roles — structural classification of an item in the list
 // ---------------------------------------------------------------------------
@@ -985,34 +971,6 @@ export interface TugListViewProps<
   rowTextSize?: number | string;
 
   /**
-   * Where the container focus ring is drawn.
-   *
-   *  - `"outset"` (default) — an `outline` just outside the list's box. Right
-   *    for any list with room around it: the ring lights nothing the list owns.
-   *  - `"inset"` — an overlay ring drawn INSIDE the list's own box, over the
-   *    finished rows. For an **edge-to-edge list in a clipping host** — a Lens
-   *    band, a rail — where there is nothing outside the list to paint into and
-   *    an outset ring is simply clipped away.
-   *
-   * The inset ring is an overlay rather than an inset outline or a border, and
-   * both alternatives are ruled out by the same box: a `TugListRow` is a
-   * stacking context (it owns its press layer), so it paints AFTER the
-   * container's outline and a row with an opaque fill punches a hole in the
-   * ring exactly where it sits; and a real border would take layout space,
-   * holding the rows off the host's edge, which is the whole point of an
-   * edge-to-edge list. The overlay is a zero-height sticky child pinned to the
-   * scrollport, so it neither scrolls away nor lengthens the scroll.
-   *
-   * Inset mode also insets the cursor bar by the ring's width, so the two marks
-   * stack — ring at the edge, bar just inboard of it — rather than the ring
-   * covering the bar outright.
-   *
-   * @selector [data-ring-placement="inset"]
-   * @default "outset"
-   */
-  ringPlacement?: TugListViewRingPlacement;
-
-  /**
    * Draw an accent-colored border around the selected row(s). Published
    * to descendant `TugListRow`s through `TugListRowLayoutContext`, so a
    * cell renderer's row picks it up without repeating it. A row may
@@ -1695,7 +1653,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       rowSeparator,
       rowStriping,
       rowTextSize,
-      ringPlacement = "outset",
       selectedAccent = false,
       selectionSurface,
       pageByEntry,
@@ -2920,29 +2877,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // `syncRowGap` and `scrollTick` are stable.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    // Publish the scrollport's height for the inset ring ([L06] — straight to
-    // the DOM, never React state). Only the component can see this number: the
-    // ring is a sticky child, and a percentage height inside a scroller
-    // resolves against the scrolled length rather than the window onto it.
-    React.useLayoutEffect(() => {
-      if (ringPlacement !== "inset") return;
-      const scroller = scrollContainerRef.current;
-      if (scroller === null) return;
-      const publish = (): void => {
-        scroller.style.setProperty(
-          RING_HEIGHT_PROPERTY,
-          `${scroller.clientHeight}px`,
-        );
-      };
-      publish();
-      const observer = new ResizeObserver(publish);
-      observer.observe(scroller);
-      return () => {
-        observer.disconnect();
-        scroller.style.removeProperty(RING_HEIGHT_PROPERTY);
-      };
-    }, [ringPlacement]);
 
     // Instantiate `SmartScroll` against the scroll container ([D07]).
     // SmartScroll owns every programmatic scroll-position write the
@@ -5815,7 +5749,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         data-row-separator={rowSeparatorMode}
         data-row-striping={resolvedStriping !== null ? "on" : undefined}
         data-row-text-size={rowTextSizeValue !== undefined ? "" : undefined}
-        data-ring-placement={ringPlacement === "inset" ? "inset" : undefined}
         data-selection-surface={
           selectionSurface === "control" ? "control" : undefined
         }
@@ -5845,13 +5778,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             : 0
         }
       >
-        {/* The inset container-focus ring: a zero-height sticky child pinned to
-            the scrollport, whose overlay paints over the finished rows. First
-            in the box so nothing above it can be scrolled between it and the
-            top edge it holds. */}
-        {ringPlacement === "inset" ? (
-          <div className="tug-list-view-ring" aria-hidden="true" />
-        ) : null}
         {/* Leading content — a permanent, un-indexed element above row 0 that
             scrolls with the content (see `leadingContent` prop). Sits ABOVE
             the top spacer, because the spacer stands in for evicted rows:

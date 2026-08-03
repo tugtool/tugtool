@@ -153,7 +153,18 @@ body {
    ========================================================================== */
 .tug-tab-bar[data-key-view-kbd] {
   outline: none;
-  background-image: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint));
+  background-image: linear-gradient(
+    var(--tugx-focus-container-wash),
+    var(--tugx-focus-container-wash)
+  );
+}
+
+/* A tab bar is a single Tab stop and never a descend target, so it must never
+   wear the `data-key-within` mark — see the identical note in
+   `tug-choice-group.css` for how the engine can still transiently stamp it, and
+   why leaving it to the global rule meant ringing the container. */
+.tug-tab-bar[data-key-within] {
+  outline: none;
 }
 
 /* Cursor tab ring — the item-group movement cursor ([P02]). The bar clips its

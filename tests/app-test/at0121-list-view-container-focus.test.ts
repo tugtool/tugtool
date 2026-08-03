@@ -31,6 +31,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
+import { appIsActive } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -122,14 +123,21 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         const rowsInert = await app.evalJS<boolean>(ALL_ROWS_NON_FOCUSABLE);
         expect(rowsInert).toBe(true);
 
-        // Activate the webview and wait until the document holds key focus.
+        // Activate the webview, then gate on the app-active projection — the bit
+        // `focus-ring.css` suppresses every focus mark under. NOT
+        // `document.hasFocus()`: a background-mode harness window never
+        // activates, so that never becomes true (see `appIsActive`).
         await app.nativeClickAtElement(TITLE);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(appIsActive(), { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         // (2) Tab → the container is the one stop: it takes the key view and
-        // marks itself as the focused container with a perimeter ring (an inset
-        // outline), no behind-tint.
+        // marks itself as the focused container with a background WASH and no
+        // stroke of any kind. Rings mark elements, washes mark containers — the
+        // single stroke-or-bar on this surface belongs to the cursor row inside
+        // the list, asserted in (3). The `outlineWidth === "0px"` half is not
+        // redundant with the wash assertion: a container that painted both would
+        // be exactly the nested-marks conflation this treatment retired.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(CONTAINER)}).hasAttribute("data-key-view-kbd")`,
@@ -137,8 +145,8 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         );
         const onContainer = await app.evalJS<ContainerProbe>(CONTAINER_PROBE);
         expect(onContainer?.keyboardReached).toBe(true);
-        expect(parseFloat(onContainer?.outline ?? "0")).toBeGreaterThan(0);
-        expect(onContainer?.backgroundImage ?? "none").not.toContain("gradient");
+        expect(onContainer?.outline).toBe("0px");
+        expect(onContainer?.backgroundImage ?? "none").not.toBe("none");
         // "The list is one stop" is an ENGINE fact, not a tabindex fact. Once
         // the focus engine drives the card the container renders no tabindex
         // at all (tug-list-view's no-tabindex rule) — a tabindex'd container is

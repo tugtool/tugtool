@@ -228,9 +228,12 @@ describe.skipIf(!SHOULD_RUN)("AT0330: transcript DOM eviction", () => {
           spacerTop: number;
         }>(`(function () {
   var el = document.querySelector('${SCROLLER}');
-  var kids = Array.prototype.filter.call(el.children, function (k) {
-    return !k.classList.contains("tug-list-view-ring");
-  });
+  // Every child counts. This used to skip a sticky overlay child that painted
+  // the list's container focus ring, which is gone now that a container marks
+  // focus with a background wash instead of a stroke. A wash is a paint on the
+  // container itself and adds no element to the box, so "the first thing in the
+  // scroll content" is now unconditionally true.
+  var kids = Array.prototype.slice.call(el.children);
   var lead = el.querySelector(".tug-list-view-leading");
   var firstCell = el.querySelector("[data-tug-list-cell-index]");
   var box = el.getBoundingClientRect();

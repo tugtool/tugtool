@@ -79,3 +79,28 @@ export function keyboardIsInCard(cardId: string): string {
   return keyView !== null || frInCard || domGranted;
 })()`;
 }
+
+/**
+ * A page-side expression that is true when the app reads as foreground — the
+ * gate any assertion about a painted focus mark has to pass.
+ *
+ * `focus-ring.css` suppresses the whole focus language (ring, cursor, within,
+ * and the container wash) under `html[data-app-active="false"]`, so a suite that
+ * probes an outline or a background layer before this is true reads a
+ * legitimately-blank style and fails with a mysterious zero rather than a clear
+ * cause. `DeckManager.setHasFocus` projects the bit onto `<html>`, and
+ * `seedDeckState({ state: { hasFocus: true } })` seeds it, so it is available in
+ * both harness event modes.
+ *
+ * **Use this, not `document.hasFocus()`.** The two are not interchangeable, and
+ * the difference decides whether a suite can run in the background event mode
+ * that is now the default. A pid-mode harness window deliberately never
+ * activates — it sits one window level below normal and takes keys by
+ * `postToPid` — so `document.hasFocus()` is false for the entire run and any
+ * suite gating on it hangs until timeout. Only a suite whose *subject* is real
+ * app activation (`@foreground`, e.g. at0004 / at0295) should read
+ * `document.hasFocus()`, and those declare the foreground tier to earn it.
+ */
+export function appIsActive(): string {
+  return `document.documentElement.getAttribute("data-app-active") === "true"`;
+}

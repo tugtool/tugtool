@@ -30,18 +30,14 @@
   padding-inline-start: var(--tug-space-sm);
 }
 
-/* The key-view behind-tint, bumped. `TugRadioGroup` washes the focused group
-   with `--tugx-focus-tint`, which is built from the accent TONE — a surface so
-   quiet that over the Lens's own band background it barely registered, and the
-   focused axis read as unmarked. Rebuild it from the accent FILL at low alpha
-   instead: same hue, enough of it to see. TUNE the percentage here. */
-.layouts-section-group[data-key-view-kbd] {
-  --tugx-focus-tint: color-mix(
-    in srgb,
-    var(--tug7-element-global-fill-normal-accent-rest) 15%,
-    transparent
-  );
-}
+/* The local key-view tint override that used to live here is gone: this section
+   rides the shared container wash like every other item-group. It was the wash's
+   prototype — it had already found that the fix was to rebuild the mark from the
+   accent FILL rather than the near-invisible accent TONE — and the global token
+   now carries that idea, tuned. The alpha moved down rather than up in the
+   process: this override sat at 15%, which was calibrated against the invisible
+   default and had begun reading as a filled surface. A host must not draw a
+   component's focus marks on its behalf anyway; that is the component's to draw. */
 
 /* Both axes are the same control at the same scale, so they take one rule.
    Options run two to a row — the gallery card's `P4 · Two-column rows` shape:

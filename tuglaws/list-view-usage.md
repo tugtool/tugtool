@@ -54,6 +54,28 @@ a *data source* and a *cell renderer*; the cell renderer's job is to compose
    on click should not imply it does (no hover affordance, out of the tab
    order).
 
+5a. **The focus marks are the primitive's, and a consumer draws neither of them.**
+   A keyboard-focused list wears two marks and they answer two different
+   questions. The **container** gets a background **wash**
+   (`--tugx-focus-container-wash`) that says *the keyboard is in this list*; the
+   **cursor row** gets a leading-edge **bar** (`--tugx-focus-cursor-bar-*`) that
+   says *and it is on this row*. The list draws no ring on its own bounds and no
+   border-colour change, in any theme — rings mark elements, washes mark
+   containers ([focus-language.md](focus-language.md)). Both marks hold at full
+   strength through a descend into a row's accessories, because a descend goes
+   deeper into the list rather than out of it.
+   A host that finds the wash wrong on its surface fixes the shared token or the
+   component, never its own stylesheet: an edge-to-edge list in a clipping host
+   needs nothing special, since a wash has no outset geometry to be clipped and
+   `background-attachment: scroll` already pins it to the scrollport rather than
+   the scrolled content. (This is what retired `ringPlacement` — an entire
+   sticky-overlay apparatus that existed only to paint a *ring* on a shape that
+   resists one. Do not rebuild it for the next edge-to-edge surface.)
+   A list that can be filtered to zero rows must withhold its `focusGroup` when
+   empty, the way the Lens sections gate theirs on `navigable` — the wash is a
+   sufficient container mark only because a cursor bar sits inside it, so a
+   focusable list with no rows would have no legible focus indicator at all.
+
 6. **House layout is `flush`.** In-sheet listings use `rowLayout="flush"`.
    `pill` is reserved for free-standing, card-like rows *outside* a bordered list
    frame. A list inside a bordered frame uses `flush`.

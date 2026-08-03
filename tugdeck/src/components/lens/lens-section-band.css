@@ -137,13 +137,6 @@
   flex: 0 0 auto;
 }
 
-/* ---- Container focus on an edge-to-edge list ----
-   A Lens band's list runs the full width of the rail inside clipped overflow,
-   so its ring has to be drawn inside its own box. That is `TugListView`'s
-   `ringPlacement="inset"`, which the three list sections pass — the component
-   owns the ring, the cursor-bar inset that stacks under it, and holding both
-   through a descend into a row. Nothing here. */
-
 /* A band's content sits in a WELL — the same recessed surface a tool block's
    expanded body and a commit's detail stand on, a step darker than the card it
    is cut into. Edge-to-edge rows have no frame of their own, so the surface is

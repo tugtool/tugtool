@@ -99,6 +99,16 @@ export function buildRoleStyle(
     // color reads against the gap; the behind-tint is a faint wash of it).
     style["--tugx-focus-ring"] = `var(--tug7-surface-toggle-primary-normal-${suffix}-rest)`;
     style["--tugx-focus-tint"] = `color-mix(in srgb, var(--tug7-surface-toggle-primary-normal-${suffix}-rest) 18%, transparent)`;
+    // The container wash follows the role too, or a role-bearing group would
+    // wash accent-orange while ringing its own role colour. The alpha is read
+    // from the inherited knob rather than written here, so a role-bearing group
+    // and a role-less one wash at the SAME strength and both pick up the
+    // light-mode step-up — an inline style cannot carry a per-mode variant of
+    // its own. (The `-tint` line above writes a literal 18% while the global
+    // default resolves near 10%; that inconsistency is a leaf concern and is
+    // deliberately not propagated here.)
+    style["--tugx-focus-container-wash"] =
+      `color-mix(in srgb, var(--tug7-surface-toggle-primary-normal-${suffix}-rest) var(--tugx-focus-container-wash-alpha), transparent)`;
   }
   return style as React.CSSProperties;
 }

@@ -3,7 +3,7 @@
  * with Enter-descend in the Tug keyboard model ([P01]/[P02]/[P03]).
  *
  * When authored into a `focusGroup`, TugAccordion registers one engine focusable
- * via `useItemGroupKeyboard`: Tab lands the ring on the *accordion* (never a
+ * via `useItemGroupKeyboard`: Tab lands the key view on the *accordion* (never a
  * header), a movement cursor (`data-key-cursor`) traverses the headers under
  * Up/Down/Home/End, Space toggles the cursor section, and Enter **descends** into
  * an open section's content (a pushed non-trapped scope). The descended content
@@ -12,15 +12,16 @@
  * The gallery `Focus Walk` panel authors a three-section single-mode accordion,
  * fully collapsed; the first section's content holds a navigable inner control.
  * The test proves:
- *   - **Tab → one stop, perimeter ring on the accordion, cursor on the first
- *     header** — the accordion shares TugListView's treatment (row-based
- *     descendable archetype): a ring marks the focused container, the cursor
- *     header carries a tint fill ([P02], rolled out from the list);
+ *   - **Tab → one stop, container wash on the accordion, cursor bar on the
+ *     first header** — the accordion shares TugListView's treatment (row-based
+ *     descendable archetype), and shares its vocabulary: rings mark elements,
+ *     washes mark containers, so the accordion paints a background wash and no
+ *     stroke, and the cursor header carries a leading-edge bar;
  *   - **arrows move the cursor without expanding;**
  *   - **Space expands the cursor section;**
  *   - **Enter descends** into the open section's inner control (key view leaves
  *     the accordion; the accordion shows `data-key-within`), Space acts on it,
- *     and **Escape ascends** back to the accordion (ring returns, within clears).
+ *     and **Escape ascends** back to the accordion (key view returns, within clears).
  *
  * @covers tugdeck/src/components/tugways/tug-accordion.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
@@ -30,7 +31,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
-import { keyboardIsInCard } from "./_harness/selectors";
+import { appIsActive, keyboardIsInCard } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -62,10 +63,12 @@ function deckShape() {
   };
 }
 
-// The accordion's container perimeter ring + the visible :focus-within mark. As
-// a row-based item-group container it wears a ring on its own bounds (matching
-// TugListView), not a behind-tint; `data-key-within` is set while a descended
-// scope is active.
+// The accordion's container mark + the visible :focus-within mark. Rings mark
+// elements, washes mark containers: as an item-group container it paints a
+// background wash on its own bounds and no stroke of any kind, matching
+// TugListView. `data-key-within` is set while a descended scope is active, and
+// the accordion keeps the FULL wash for it — a descend goes deeper into the
+// group rather than out of it.
 const ACC_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(ACC)});
   if (!el) return null;
@@ -76,6 +79,17 @@ const ACC_PROBE = `(function(){
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
     within: el.hasAttribute("data-key-within"),
   };
+})()`;
+
+// The cursor trigger's element-level mark: a leading-edge bar drawn as a
+// `::before`, the same mark TugListView puts on its cursor row. Reads the bar's
+// width and paint rather than merely asserting the pseudo exists, so a rule that
+// generated an invisible zero-width bar would fail.
+const CURSOR_BAR = `(function(){
+  var el = document.querySelector(${JSON.stringify(DEMO)} + " [data-accordion-value][data-key-cursor]");
+  if (!el) return null;
+  var cs = getComputedStyle(el, "::before");
+  return { width: cs.width, background: cs.backgroundColor, content: cs.content };
 })()`;
 
 // data-accordion-value of the header currently wearing the movement cursor.
@@ -106,6 +120,11 @@ interface AccProbe {
   keyboardReached: boolean;
   within: boolean;
 }
+interface CursorBar {
+  width: string;
+  background: string;
+  content: string;
+}
 interface InnerProbe {
   keyboardReached: boolean;
   count: string | null;
@@ -113,7 +132,7 @@ interface InnerProbe {
 
 describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single item-container stop (descend)", () => {
   test(
-    "ring on the accordion; arrows move the cursor; Space expands; Enter descends; Escape ascends",
+    "wash on the accordion; arrows move the cursor; Space expands; Enter descends; Escape ascends",
     async () => {
       const app = await launchTugApp({ testName: "at0120-accordion-focus" });
       try {
@@ -132,7 +151,11 @@ describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single item-container stop 
         );
 
         await app.nativeClickAtElement(TITLE);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        // Activate the webview, then gate on the app-active projection — the bit
+        // `focus-ring.css` suppresses every focus mark under. NOT
+        // `document.hasFocus()`: a background-mode harness window never
+        // activates, so that never becomes true (see `appIsActive`).
+        await app.waitForCondition<boolean>(appIsActive(), { timeoutMs: 6000 });
         // The click activates the card; the Tab below is only meaningful once
         // that activation has settled the keyboard into the card. Waiting on
         // the engine fact rather than a fixed delay keeps the first key from
@@ -140,15 +163,28 @@ describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single item-container stop 
         // sleep here is what made this file order-sensitive in large batches.
         await app.waitForCondition<boolean>(keyboardIsInCard("A"), { timeoutMs: 6000 });
 
-        // (1) Tab → one stop: the perimeter ring lands on the ACCORDION (a
-        // row-based item-group container rings its own bounds, matching the list)
-        // and the cursor parks on the first header; nothing is expanded.
+        // (1) Tab → one stop: the container WASH lands on the ACCORDION (a
+        // row-based item-group container marks its own bounds with a background
+        // layer, matching the list) and the cursor parks on the first header;
+        // nothing is expanded. The `outlineWidth === "0px"` half is the load-
+        // bearing one — a container that both washed and ringed would be the
+        // nested-marks conflation this treatment exists to retire.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(`${CURSOR_HEADER} === "first"`, { timeoutMs: 6000 });
         const onAcc = await app.evalJS<AccProbe>(ACC_PROBE);
         expect(onAcc?.keyboardReached).toBe(true);
-        expect(parseFloat(onAcc?.outline ?? "0")).toBeGreaterThan(0);
+        expect(onAcc?.outline).toBe("0px");
+        expect(onAcc?.backgroundImage).not.toBe("none");
         expect(await app.evalJS<string>(STATE(HDR_FIRST))).toBe("closed");
+
+        // (1b) The cursor trigger wears the leading-edge BAR — the element-level
+        // mark, the same one TugListView draws on its cursor row. The accordion
+        // and the list agree by construction here (both read the language-level
+        // `--tugx-focus-cursor-bar-*` knobs) rather than by eye.
+        const bar = await app.evalJS<CursorBar>(CURSOR_BAR);
+        expect(bar?.content).not.toBe("none");
+        expect(parseFloat(bar?.width ?? "0")).toBeGreaterThan(0);
+        expect(bar?.background).not.toBe("rgba(0, 0, 0, 0)");
 
         // (2) ArrowDown → cursor moves to `second` without expanding; ArrowUp →
         // back to `first`. The ring stays on the accordion throughout.
@@ -183,8 +219,8 @@ describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single item-container stop 
           { timeoutMs: 6000 },
         );
 
-        // (6) Escape → ascends back to the accordion: the ring returns to the
-        // accordion and `data-key-within` clears.
+        // (6) Escape → ascends back to the accordion: the key view returns to
+        // the accordion and `data-key-within` clears.
         await app.nativeKey("Escape");
         await app.waitForCondition<boolean>(
           `(function(){var a=document.querySelector(${JSON.stringify(ACC)});return a && a.hasAttribute("data-key-view-kbd");})()`,

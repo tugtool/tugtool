@@ -119,30 +119,33 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           );
           const click = await app.evalJS<{
             listHasKbd: boolean;
-            ringWidth: string;
+            wash: string;
+            outlineWidth: string;
             cursorSnippetId: string | null;
             selectedCount: number;
           }>(
             `(() => {
               const list = document.querySelector('.lens-snippets-list');
-              const ring = list?.querySelector('.tug-list-view-ring') ?? null;
+              const cs = list ? getComputedStyle(list) : null;
               const cursor = document.querySelector('.lens-snippets-list [data-key-cursor]');
               return {
                 listHasKbd: list?.hasAttribute('data-key-view-kbd') ?? false,
-                ringWidth: ring ? getComputedStyle(ring, '::before').borderTopWidth : '0px',
+                wash: cs ? cs.backgroundImage : 'none',
+                outlineWidth: cs ? cs.outlineWidth : '0px',
                 cursorSnippetId: cursor?.querySelector('[data-snippet-id]')?.getAttribute('data-snippet-id') ?? null,
                 selectedCount: document.querySelectorAll('.lens-snippets-list .tug-list-view-cell[data-selected="true"]').length,
               };
             })()`,
           );
-          // The list wears the container ring, and the cursor sits on the clicked
-          // row. A Lens band's list draws that ring INSIDE its own box
-          // (`ringPlacement="inset"`): an edge-to-edge list has no room outside
-          // itself to paint an outline in, and an inset outline is painted before
-          // the rows and lost behind any row carrying a fill. See
-          // `tug-list-view.css`.
+          // The list wears the container WASH, and the cursor sits on the clicked
+          // row. Rings mark elements, washes mark containers: the container's
+          // answer to "the keyboard is in here" is a background layer, and the
+          // single stroke-or-bar belongs to the cursor row inside it. Asserting
+          // the outline is 0 is half the point — a container that both washed
+          // and ringed would be the nested-marks conflation this design retired.
           expect(click.listHasKbd).toBe(true);
-          expect(parseFloat(click.ringWidth)).toBeGreaterThan(0);
+          expect(click.wash).not.toBe("none");
+          expect(click.outlineWidth).toBe("0px");
           expect(click.cursorSnippetId).toBe("s2");
           expect(click.selectedCount).toBe(1);
 

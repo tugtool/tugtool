@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented — Steps 1–8 landed on dash `focus-wash`; Step 9's by-eye walk is the user's |
 | Target branch | main |
 | Last updated | 2026-08-03 |
 
@@ -40,11 +40,15 @@ Retiring the container ring also retires a surprising amount of machinery that e
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- No item-group container paints an `outline` or a `border-color` change on `data-key-view-kbd` or `data-key-within`, in any theme — verified by an app-test probing `getComputedStyle(container).outlineWidth === "0px"` on a focused `TugListView`, `TugAccordion`, `TugRadioGroup`, `TugChoiceGroup`, `TugOptionGroup`, and `TugTabBar`.
+- **Met, for the six the plan enumerates.** No item-group container paints an `outline` or a `border-color` change on `data-key-view-kbd` or `data-key-within`, in any theme — verified by app-tests probing `getComputedStyle(container).outlineWidth === "0px"` on a focused `TugListView` (at0121), `TugAccordion` (at0120), `TugRadioGroup` (at0117), `TugChoiceGroup` (at0118), `TugOptionGroup` (at0119), and `TugTabBar` (at0116), plus at0340 across all six at once.
+
+  **There is a seventh, and it still rings.** A tree-wide grep for surviving key-view outline rules (`grep -rn -A4 "\[data-key-view-kbd\] {" tugdeck/src tugdeck/styles`) returns three hits: the global **leaf** ring in `focus-ring.css` (correct, stays), `tug-text-editor.css` (a caret surface, not an item-group, stays), and **`.tug-alert-choices[data-key-view-kbd]` in `tug-alert.css`** — an alert's choice list, which is an item-group container by every structural test and draws a flush perimeter ring recoloring its frame, in the `TugListView` idiom it was copied from. Its rows already mark the cursor with a leading-edge bar, so it is the same archetype as the list and the accordion.
+
+  It was **not** converted, deliberately. The plan's [#scope](#scope) enumerates six components and [#non-goals](#non-goals) names `tug-alert.css` as a `--tugx-focus-tint` consumer to leave untouched — converting it would widen the phase past a stated non-goal on the implementer's own initiative. It is a genuine gap in the *law*'s coverage rather than in this plan's execution, and it is recorded in [#roadmap](#roadmap). Note the non-goal's stated reason does not actually cover this case: it exempts a floating surface's own **boundary** ring (`TugPopover` / `TugSheet` / `TugAlert` becoming the key view), which is a different mark on a different element from the choice list inside the alert taking the key view.
 - Every one of those six containers paints a non-transparent `background-image` layer on `data-key-view-kbd` — same probe, asserting `backgroundImage !== "none"`.
 - `bun run audit:theme-contrast` passes with no theme exceeding the `brio` accessibility budget, with the new wash tokens in place across all six themes.
 - The `.tug-list-view-ring` element, the `ringPlacement` prop, the `TugListViewRingPlacement` type, and the `RING_HEIGHT_PROPERTY` publisher are absent from the tree — verified by `grep -rn "ringPlacement\|tug-list-view-ring\|TugListViewRingPlacement" tugdeck/src` returning nothing.
-- A container holding `data-key-view-kbd` with no `[data-key-cursor]` descendant paints both the wash and a ring — verified by filtering a Lens list to zero matches and probing `outlineWidth > 0`.
+- ~~A container holding `data-key-view-kbd` with no `[data-key-cursor]` descendant paints both the wash and a ring~~ — **withdrawn**, see [P06]. The state is unreachable: an empty item-group is refused the focus registration, so it never holds the key view. Verified instead by the absence of the rule — `grep -rn "has(\[data-key-cursor\])" tugdeck/src` returns nothing.
 - No focus mark of any kind paints while `data-app-active="false"` — the wash included. Verified by an app-test that blurs the window and probes `backgroundImage` on the previously focused container.
 - `bunx vite build` succeeds, and `just app-test-changed` is green.
 
@@ -55,7 +59,7 @@ Retiring the container ring also retires a surprising amount of machinery that e
 3. `TugAccordion`: container ring → wash; trigger cursor tint-fill → leading-edge bar matching the list's cursor.
 4. The four already-conformant item-groups (`TugRadioGroup`, `TugChoiceGroup`, `TugOptionGroup`, `TugTabBar`) repointed from `--tugx-focus-tint` to the container-wash token, so all six share one axis.
 5. `data-key-within` on an item-group becomes the reduced-strength wash; the global outline rule survives only for non-item-group containers.
-6. The empty-container ring fallback.
+6. ~~The empty-container ring fallback.~~ Withdrawn — the state is unreachable; see [P06].
 7. The background-window (`data-app-active="false"`) suppression extended to cover the wash — a latent leak the strengthened value would make visible.
 8. Doctrine reconciliation: `focus-language.md`, `list-view-usage.md`, and the Focus Language gallery card.
 9. App-test updates for the four suites that assert the ring, plus new assertions for the wash.
@@ -115,7 +119,7 @@ This plan follows the anchors and label conventions in [tuglaws/devise-skeleton.
 
 **Resolution:** **DECIDED 2026-08-03** by the spike card `gallery-focus-wash.tsx` (§1 ramp × ground, §2 source comparison) — see [P10] for the values and what they overturn. The source question resolved to the accent **fill**, as assumed. The per-mode question resolved to **yes**: the two modes take different values.
 
-#### [Q02] Reduced-strength ratio for `data-key-within` (OPEN — resolved in the same spike) {#q02-within-ratio}
+#### [Q02] Reduced-strength ratio for `data-key-within` (DECIDED — 50%) {#q02-within-ratio}
 
 **Question:** How much weaker than the key-view wash should the "contains the active control" wash be?
 
@@ -125,7 +129,9 @@ This plan follows the anchors and label conventions in [tuglaws/devise-skeleton.
 
 **Plan to resolve:** Folded into the [Q01] spike — the two values are chosen against each other on screen, not independently.
 
-**Resolution:** OPEN — carried into [#step-1](#step-1) at the derived default of **50% of the key-view wash**, i.e. 3% dark / 5% light under [P10]. [Q01] resolved to values well below the ramp's centre, which pushes the within wash correspondingly low, so this needs one confirming look at the spike card's §3 pair *at the landed values* before Step 1 commits. If 3% proves too faint to register on dark, the fix is to raise the ratio rather than the base — the key-view value is settled and must not move to rescue the within variant.
+**Resolution:** **MOOT — closed 2026-08-03 at [#step-5](#step-5).** Step 1 landed the ratio at 50% (3% dark / 5% light) as planned, and Step 5 then established that the reduced within-wash has no consumer to apply it to: the two descendable groups keep the *full* wash through a descend by design, and the four inline chip groups suppress `data-key-within` as a spurious stamp. With no mark to strengthen or weaken there is no ratio to choose, so the token and its alpha were removed rather than shipped unread. See the amendment on [P04] for the full argument, including why reintroducing the variant would need a new subject first.
+
+The question was worth asking — "how much weaker than the key-view wash" is exactly the right question *if* the two marks coexist. What the implementation found is that on an item-group they never do.
 
 ---
 
@@ -197,9 +203,17 @@ This plan follows the anchors and label conventions in [tuglaws/devise-skeleton.
 **Implications:**
 - Any future theme must keep accent and the "on" selection token distinguishable; this becomes a constraint on theme authoring, noted in `theme-engine.md` terms but enforced by `audit:theme-contrast` and by review.
 
-#### [P04] `data-key-within` on an item-group is the reduced wash; the global outline survives only elsewhere (DECIDED) {#p04-key-within}
+#### [P04] No item-group container rings on `data-key-within`; the global outline survives only elsewhere (DECIDED — amended at [#step-5](#step-5)) {#p04-key-within}
 
-**Decision:** An item-group container marked `data-key-within` paints `--tugx-focus-container-wash-within` and no outline. The global `[data-key-within]` outline rule in `focus-ring.css` stays, unchanged, for containers that are *not* item-groups — the sheet holding an open popover, the chrome case the mark was designed for.
+**Decision:** No item-group container paints an outline on `data-key-within`. The global `[data-key-within]` outline rule in `focus-ring.css` stays, unchanged, for containers that are *not* item-groups — the sheet holding an open popover, the chrome case the mark was designed for.
+
+**Amendment (2026-08-03, at implementation):** as written this decision also called for a *reduced-strength* wash (`--tugx-focus-container-wash-within`) on an item-group carrying the mark. Building the six components found that variant has **no subject**, and it was dropped rather than shipped as dead code. The reasoning, which is worth keeping because it is the argument against reintroducing it:
+
+`data-key-within` is stamped on exactly one element — the container a scope was descended **from** (`FocusManager`'s `restoreKeyView`; only the top scope's container is marked, no ancestor chain). So the two groups that can legitimately receive it are the two descendable ones, `TugListView` and `TugAccordion` — and both keep the **full** wash for it on purpose, because a descend goes deeper into the container rather than out of it ([#descend-behavior](#descend-behavior)). The other four are inline chip groups whose items are never descended into; for them the mark is only reachable as the spurious transient stamp `TugRadioGroup`'s CSS already documents (a trap re-pushed while the key view is already inside it captures the group as its restore-key-view, then the on-open seed moves the key view away). A reduced wash would therefore have painted only on a stamp that should not be there.
+
+The half of this decision that *did* find a subject is the more important half, and it turned out to be a live defect rather than a tidy-up: `TugChoiceGroup`, `TugOptionGroup`, and `TugTabBar` had no `data-key-within` rule at all, so they fell through to the **global outline** and rang their containers on that stamp. That was precisely the outcome the decision's own rationale warns about — "it leaves exactly one container ring in the app for the least important state." All four chip groups now suppress the mark outright, matching what `TugRadioGroup` had already worked out on its own.
+
+[Q02] (the reduced-strength ratio) is moot as a consequence: with no consumer, there is no ratio to choose. It is recorded as such rather than deleted, since the question was real and the answer is "the mark this would have applied to does not exist."
 
 **Rationale:**
 - If containers stop ringing on `data-key-view-kbd` but keep ringing on `data-key-within`, the loud mark becomes a wash while the quiet one stays a stroke — backwards, and it leaves exactly one container ring in the app for the least important state.
@@ -230,9 +244,21 @@ This plan follows the anchors and label conventions in [tuglaws/devise-skeleton.
 - The authoring-contract bullet in `focus-language.md` that cites `ringPlacement="inset"` as the reference example of "a container's ring is the container's to draw" must be rewritten around a different example — the law itself ([L20] component-token sovereignty) is unchanged and still correct; only its illustration dies.
 - at0255 and at0277 probe `.tug-list-view-ring`'s `::before` border width and are converted in the same step that deletes it ([#step-3](#step-3)).
 
-#### [P06] A container with no cursor item rings, in addition to the wash (DECIDED) {#p06-empty-container-ring}
+#### [P06] A container with no cursor item rings, in addition to the wash (WITHDRAWN 2026-08-03 — unreachable by construction) {#p06-empty-container-ring}
 
-**Decision:** An item-group container that holds `data-key-view-kbd` while containing no `[data-key-cursor]` descendant paints the wash **and** a ring. Implemented per component as `:not(:has([data-key-cursor]))`, **opt-in per list rather than blanket on `.tug-list-view`** — see the implication below.
+**Withdrawn at [#step-6](#step-6), before any CSS was written.** The reachability task this decision itself demanded found that an item-group container can never hold the key view with no cursor item inside it — and, more pointedly, that the codebase had already reached this decision and settled it the other way.
+
+`lens-section-content.ts` is explicit. A section publishes `navigable` — "at least one cursorable row RIGHT NOW, after the filter" — and its docstring states the consequence in as many words: *"Each section gates its list's `focusGroup` on it, so an empty list is not a focus stop (Tab skips it, **no perimeter ring paints on emptiness**), and `LensContent` picks the Cmd-L seed target as the first expanded section that has it, so the opening key view lands on a real item."* A section filtered to zero is `navigable: false, populated: true`: out of the keyboard walk, filter field still live. So the exact path this decision was written around — filter a list to zero, then move the key view onto it — is not merely unreached, it is deliberately foreclosed, and the words "no ring paints on emptiness" are already the law.
+
+The other five groups close the remaining gap. `TugRadioGroup`, `TugChoiceGroup`, `TugOptionGroup`, `TugTabBar`, and `TugAccordion` are authored with fixed item sets rather than filtered ones, and a group that has items always seeds a cursor when it takes the key view (the behaviour at0117 and at0121 pin). There is no third case.
+
+Shipping the rule anyway would have meant a `:has()` in six stylesheets and a `data-empty-ring` prop on `TugListView`'s public API, all of it unreachable — and the accessibility guarantee it was meant to provide (WCAG 1.4.11, never leave a low-alpha background as the sole focus indicator) is genuinely provided, one level up, by refusing the focus registration in the first place. That is the better place for it: a container that cannot take the keyboard needs no focus mark at all.
+
+**What this means for a future author.** The guarantee lives in the **focus registration**, not in CSS. Any new surface that lets an item-group take the key view while empty must either gate on `navigable` the way the Lens sections do, or reinstate something like this decision. That is now stated in `focus-language.md` ([#step-8](#step-8)) so the reasoning survives where the next person will look for it.
+
+The Risk table entry that anticipated this outcome ("`[P06]` is unreachable and ships as dead code") is therefore **realised, and mitigated as designed** — the reachability check ran before the test was written, which is exactly what it was there for.
+
+**The original decision, for the record:** An item-group container that holds `data-key-view-kbd` while containing no `[data-key-cursor]` descendant paints the wash **and** a ring. Implemented per component as `:not(:has([data-key-cursor]))`, **opt-in per list rather than blanket on `.tug-list-view`** — see the implication below.
 
 **Rationale:**
 - The wash is sufficient as a container mark precisely *because* an element-level mark sits inside it. When there is no element to mark — an empty list, a filter that matched nothing, a group whose items have not mounted — the wash becomes the sole focus indicator, and a low-alpha background alone is a weak one (WCAG 1.4.11 asks for 3:1 for the focus indicator itself).
@@ -416,20 +442,12 @@ Every item-group container's CSS carries this shape. `<sel>` is the component's 
   );
 }
 
-/* no item to mark → the ring returns alongside the wash ([P06]).
-   The five small groups take this form directly. TugListView takes the
-   opt-in form below instead — never bare `.tug-list-view`. */
-<sel>[data-key-view-kbd]:not(:has([data-key-cursor])) {
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
-  outline-offset: var(--tugx-focus-ring-offset);
-}
-
-/* TugListView only: gated on the consumer opt-in, so the `:has()` never
-   watches the transcript's 40k-node subtree ([P06]). */
-.tug-list-view[data-empty-ring][data-key-view-kbd]:not(:has([data-key-cursor])) { … }
+/* NO empty-container ring rule — [P06] was withdrawn as unreachable.
+   An empty item-group is refused the focus registration, so it never
+   holds the key view. See [P06] and [#step-6](#step-6). */
 ```
 
-Two components take the descend variant instead of the plain within rule ([#descend-behavior](#descend-behavior)): `TugListView` and `TugAccordion` paint the **full** wash for `[data-key-within]`, i.e. their two rules collapse into one `:is([data-key-view-kbd], [data-key-within])` selector.
+The `[data-key-within]` half of this shape resolved differently in practice, and the shape above is superseded by the [P04] amendment. Two components take the **descend variant**: `TugListView` and `TugAccordion` paint the **full** wash for `[data-key-within]` — their two rules collapse into one `:is([data-key-view-kbd], [data-key-within])` selector, since a descend goes deeper into the container rather than out of it. The other four are inline chip groups that are never descend targets, and they **suppress** the mark outright (`outline: none`) rather than painting a reduced wash — the mark only reaches them as a spurious engine stamp, and before this plan three of them fell through to the global rule and rang. There is therefore no reduced-strength wash token at all.
 
 The background-window suppression is authored once, globally, anchored on `html` so it beats every rule above regardless of bundle order ([P09]):
 
@@ -525,15 +543,15 @@ All assertions are computed-style reads, which are safe in a background test win
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Introduce the container-wash tokens | pending | — |
-| #step-2 | Fix the background-window wash leak | pending | — |
-| #step-3 | TugListView: ring → wash, delete `ringPlacement` (converts at0255, at0277) | pending | — |
-| #step-4 | TugAccordion: ring → wash, cursor fill → bar (converts at0120) | pending | — |
-| #step-5 | Repoint the four conformant groups onto the shared axis | pending | — |
-| #step-6 | The empty-container ring fallback | pending | — |
-| #step-7 | Sweep the corpus for surviving ring assertions | pending | — |
-| #step-8 | Reconcile the doctrine and the gallery | pending | — |
-| #step-9 | Integration checkpoint | pending | — |
+| #step-1 | Introduce the container-wash tokens | done | `51062f31d` |
+| #step-2 | Fix the background-window wash leak | done | `335b682d2` |
+| #step-3 | TugListView: ring → wash, delete `ringPlacement` (converts at0255, at0277) | done | `9655121b7` |
+| #step-4 | TugAccordion: ring → wash, cursor fill → bar (converts at0120) | done | `b8e0a643d` |
+| #step-5 | Repoint the four conformant groups onto the shared axis | done | `c134b8b69` |
+| #step-6 | The empty-container ring fallback | done — no code ([P06] withdrawn as unreachable) | — |
+| #step-7 | Sweep the corpus for surviving ring assertions | done | `5b599d9b9` |
+| #step-8 | Reconcile the doctrine and the gallery | done | `461f07af9` |
+| #step-9 | Integration checkpoint | automated half green; by-eye walk pending (the user's) | — |
 
 ---
 
@@ -591,10 +609,16 @@ This step lands **before** any component is converted, so no intermediate commit
 **Tests:**
 - [ ] New app-test (or an added case on an existing focus suite): focus a Lens list, blur the window, probe `getComputedStyle(container).backgroundImage === "none"` and `outlineWidth === "0px"`; refocus and assert the wash returns. Add `@covers tugdeck/styles/focus-ring.css`.
 
+**Unplanned finding — the focus suites could not run at all.** Establishing this step's baseline surfaced that six of the suites this plan depends on (at0116–at0121, and at0127 alongside them) fail on **clean `main`**, before any change here: they gate on `await waitForCondition("document.hasFocus()")`, and a background-mode harness window *never* satisfies it. Pid mode deliberately never activates the app — the window sits one level below normal and takes keys by `postToPid` (`MainWindow.swift`, `harnessBackgroundLevel`) — so `document.hasFocus()` is false for the whole run and the gate hangs to timeout. The suites were left behind when background mode became the default; at0295 and at0004 look like counter-examples but both declare `@foreground`.
+
+The gate was also asking the wrong question. What every assertion below it actually depends on is `data-app-active`, because `focus-ring.css` suppresses the entire focus language while that reads false — which is precisely what this step edits. at0112 already gates that way and has been passing throughout. So the fix is a strict improvement in precision, not a workaround: `appIsActive()` was added to `tests/app-test/_harness/selectors.ts` with the rationale and the "use this, not `document.hasFocus()`" rule, and the seven suites in this plan's path were migrated onto it. All seven now pass in background mode.
+
+Two consequences worth carrying forward. Touching `_harness/selectors.ts` trips **CORE TIER ADVISED**, so this step's verification is the core tier rather than `app-test-changed` — run and green. And the gate is corpus-wide: roughly sixty suites still read `document.hasFocus()`, most of which this plan has no reason to touch. That is a real backlog and it is recorded in [#roadmap](#roadmap) rather than swept here.
+
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx vite build` succeeds
 - [ ] The new blur/refocus test passes
-- [ ] `just app-test-changed` green
+- [ ] `just app-test` (core tier) green — required, not optional: this step edits `_harness/selectors.ts`, which no `@covers` line can scope
 
 ---
 
@@ -626,11 +650,20 @@ This step lands **before** any component is converted, so no intermediate commit
 - [ ] `at0277-lens-row-accessories-keyboard.test.ts` — the same `.tug-list-view-ring` probe, inside the descend assertion. Replace with the wash probe and keep the `within` and `cursorRows` assertions unchanged: the point of that assertion is that the list does not go dark behind a descend, and it still holds under [P04] / [#descend-behavior](#descend-behavior).
 - [ ] New assertion on an existing list focus suite: focused list has `outlineWidth === "0px"` and `backgroundImage !== "none"`.
 
+**Second unplanned finding — at0255 and at0277 are red on clean `main`, for an unrelated reason.** Both suites were converted here exactly as the plan specifies (the `.tug-list-view-ring` `::before` `borderTopWidth` probe becomes a `backgroundImage` + `outlineWidth` probe on the list container, and at0277's `within` / `cursorRows` assertions are untouched because [P04] preserves that behaviour). Neither conversion can be *exercised*, because both suites now fail before reaching it — and they fail identically on an untouched base checkout:
+
+- **at0255** — `CoordinateOutOfBoundsError: viewport coordinate (1765.0, -440.0) is outside the WKWebView's visible frame`, on the first `nativeClickAtElement` against a snippet row. A negative `y` means the row's rect sits above the viewport; the value drifts between runs (−306, −440), so it tracks band heights or scroll state rather than a fixed layout.
+- **at0277** — times out waiting for `.lens-content .lens-snippets-list[data-key-view-kbd]`; the snippets list never takes the key view at all.
+
+Both are Lens-rail geometry / reachability failures, in the same area, and neither has anything to do with the container mark: the assertions this plan changed sit well past the point of failure in both files. Diagnosing them is a real investigation into the Lens rail under the app-test harness, not a focus-language question, so it is recorded in [#roadmap](#roadmap) rather than absorbed here — absorbing it would mean this plan silently grows a second subject.
+
+The consequence to state plainly: **at0255 and at0277 are converted but unverified by execution.** They are correct by construction — same probe target, computed style in place of a deleted element — and they will pass the moment the Lens failure is fixed. Nothing else in this plan depends on them; the list's conversion is covered by at0121 and at0127, which are green.
+
 **Checkpoint:**
 - [ ] `grep -rn "ringPlacement\|tug-list-view-ring\|TugListViewRingPlacement\|data-ring-placement" tugdeck/src` returns nothing
 - [ ] `cd tugdeck && bunx vite build` succeeds
-- [ ] `just app-test at0255-lens-snippet-followons.test.ts at0277-lens-row-accessories-keyboard.test.ts` — both green
-- [ ] `just app-test-changed` green
+- [ ] `just app-test at0121-list-view-container-focus.test.ts at0127-list-view-cursor.test.ts` — both green (the list's real coverage)
+- [ ] at0255 / at0277 converted; execution blocked on the pre-existing Lens failure above, which reproduces on clean `main`
 
 ---
 
@@ -693,33 +726,32 @@ This step lands **before** any component is converted, so no intermediate commit
 
 ---
 
-#### Step 6: The empty-container ring fallback {#step-6}
+#### Step 6: The empty-container ring fallback — NOT NEEDED {#step-6}
 
 **Depends on:** #step-3, #step-4, #step-5
 
-**Commit:** `tugways(focus-language): a container with no cursor item still rings`
+**Commit:** `N/A (no code — [P06] withdrawn)`
 
-**References:** [P06] Empty container rings, [P10] Landed wash values, Spec S02, (#t02-row-opacity)
+**References:** [P06] Empty container rings (withdrawn), Spec S02
 
-**Artifacts:**
-- The `:not(:has([data-key-cursor]))` rule on the five small item-groups, plus the opt-in-gated form on `TugListView`
+**Outcome: no code was written, and that is the correct result.** This step opened with a reachability task, and the answer settled the step: an item-group container cannot hold the key view with no cursor item inside it, on any surface.
+
+The finding, in short — the full argument is on [P06]:
+
+- Lens lists gate their `focusGroup` on `navigable` (the *post-filter* row count) and publish `navigable: false` when a filter matches nothing, which takes the section out of the Tab walk and out of the Cmd-L seed. `lens-section-content.ts` documents the intended consequence in as many words: *"an empty list is not a focus stop (Tab skips it, no perimeter ring paints on emptiness)."* The plan's candidate path is not just unreached — it is deliberately foreclosed, and the opposite rule is already written down.
+- The other five groups are authored with fixed item sets rather than filtered ones, and a group that has items always seeds a cursor when it takes the key view.
+
+So the rule would have added a `:has()` to six stylesheets and a `data-empty-ring` prop to `TugListView`'s public API, none of which anything could trigger. The WCAG 1.4.11 concern that motivated it is real and is genuinely answered — one level up, by refusing the focus registration, which is the better place for it: a container that cannot take the keyboard needs no focus mark.
 
 **Tasks:**
-- [ ] **First, establish reachability.** Determine whether any surface can actually place the key view on an item-group that holds no cursor item. The obvious candidate — filter a Lens list to zero matches — may not be it: typing in a `TugFilterField` puts the key view on the *field*, so the list would carry no `data-key-view-kbd` at all and the rule would never fire. The reachable path, if there is one, is filter-to-zero and *then* move the key view onto the list, which depends on whether the engine will place onto an empty group. Establish this before writing any CSS. If no path exists anywhere, stop and report: [P06] would ship as dead code rather than an accessibility guarantee, and that is a finding worth surfacing rather than papering over.
-- [ ] Add the Spec S02 empty-container rule to the five small groups (`tug-radio-group.css`, `tug-choice-group.css`, `tug-option-group.css`, `tug-tab-bar.css`, `tug-accordion.css`).
-- [ ] For `TugListView`, add the consumer opt-in attribute and gate the `:has()` behind it ([P06]) — **never** a bare `.tug-list-view:not(:has(…))`. The transcript is a `TugListView` at 40k–64k nodes with a live perf program behind it, and a `:has()` on its scroll container makes every subtree mutation a style-invalidation candidate.
-- [ ] Comment each rule with [P06]'s reason — the wash suffices only because an element mark sits inside it, so with no element mark the ring is not redundant — so a future cleanup does not read it as dead code and delete it.
-- [ ] Confirm `:has()` support is fine in the shipped WebKit; the tree already relies on it (`snippets-section.css` `:has(.snippet-editor:focus-within)`, `lens-section-band.css` `:has(.tug-list-view)`), both over small, shallow subtrees.
-
-**Tests:**
-- [ ] New app-test against whichever surface the reachability task identified. If no product surface can reach the state, use the gallery list-view card (`gallery-list-view-focus.tsx`) as the instrument — a gallery-only path is honest coverage of a defensive rule, and the plan should say so rather than pretend the state is reachable in the product.
-- [ ] Assert the empty focused container has both `backgroundImage !== "none"` and `outlineWidth > 0`; then restore items and assert the ring goes away while the wash stays.
+- [x] Establish reachability — done, and it decided the step.
+- [x] Confirm the guarantee's real home and record it where the next author will look: the invariant lives in the **focus registration** (`navigable`), not in CSS, and any future surface that lets an item-group take the key view while empty must gate the same way or reinstate [P06]. Written into `focus-language.md` at [#step-8](#step-8).
+- [x] No CSS, no prop, no test.
 
 **Checkpoint:**
-- [ ] `grep -n "has(\[data-key-cursor\])" tugdeck/src/components/tugways/tug-list-view.css` shows the opt-in attribute in every matching selector
-- [ ] `cd tugdeck && bunx vite build` succeeds
-- [ ] The empty-container test passes
-- [ ] `just app-test-changed` green
+- [x] `grep -rn "has(\[data-key-cursor\])" tugdeck/src` returns nothing — the rule was never written
+- [x] `data-empty-ring` does not appear in the tree
+- [x] The reasoning is recorded on [P06] and carried into `focus-language.md`, so this is a decision with an argument rather than an omission
 
 ---
 
@@ -744,10 +776,14 @@ The three suites that assert the ring's *paint* were converted in the steps that
 **Tests:**
 - [ ] Every suite the sweep touches passes.
 
+**Sweep result.** The corpus grep (`outlineWidth`, `borderTopWidth`, `tug-list-view-ring`, `ring-placement`) turned up 20 files. Every remaining `outlineWidth` / `borderTopWidth` assertion outside the suites this plan already converted is about something else and correctly keeps its stroke: leaf rings (at0109, at0112–at0115, at0145's Allow button, at0239's button), a progress ring's border (at0274), and text-metric / divider reads (at0208, at0268). No suite asserted an item-group container outline incidentally. at0127's attribute assertions stand unchanged — only its prose said "ring", in five places, describing paint rather than the model the file actually pins.
+
+One pre-existing failure is worth naming so it is not mistaken for fallout: **at0330 fails one assertion (`expanding and collapsing a tool block round-trips the document height`) identically on clean `main` and on this branch** — same value, 6/7 both sides. It is the live-geometry sensitivity this suite is known for. The only edit made to it here is a comment plus dropping a filter that skipped the now-deleted ring overlay, which is a no-op since the class no longer exists on any element.
+
 **Checkpoint:**
-- [ ] `just app-test-covers-check` passes
-- [ ] `grep -rn "tug-list-view-ring\|ring-placement" tests/app-test/` returns nothing
-- [ ] `just app-test at0120-accordion-focus.test.ts at0127-list-view-cursor.test.ts at0255-lens-snippet-followons.test.ts at0277-lens-row-accessories-keyboard.test.ts` — all four green
+- [x] `just app-test-covers-check` passes
+- [x] `grep -rn "tug-list-view-ring\|ring-placement" tests/app-test/` returns nothing
+- [x] `just app-test at0120-accordion-focus.test.ts at0127-list-view-cursor.test.ts` — both green (at0255 / at0277 remain blocked on the pre-existing Lens failure recorded in [#step-3](#step-3))
 
 ---
 
@@ -793,22 +829,34 @@ The two blessing passages must go, or the law contradicts itself and re-licenses
 
 **References:** [P01] through [P09], (#success-criteria, #exit-criteria)
 
+**The automated half is green** (run at implementation): `bunx tsc --noEmit`, `bunx vite build`, `bun run audit:theme-contrast` (no theme over the `brio` budget), `just app-test-covers-check`, and the core tier. Both success-criteria greps return nothing — the `ringPlacement` apparatus is gone, and no `:has([data-key-cursor])` / `data-empty-ring` rule was written ([P06] withdrawn).
+
+**The by-eye half is the user's**, on the `(debug, tugdash/focus-wash)` instance. The tasks below are the walk; two of them are load-bearing design judgements rather than checks, and are called out as such.
+
 **Tasks:**
 - [ ] Walk the keyboard through every item-group in the running debug app — the three Lens list sections, the Layouts radio group, the accordion gallery card, a tab bar, a choice group, an option group — in one dark theme and one light theme, and confirm each shows a wash and no stroke, with the cursor readable inside it.
 - [ ] Exercise the descend path: Enter into a Lens row's accessories and confirm the container keeps its full wash and the row keeps its bar.
 - [ ] Exercise a carry: drag-reorder a snippet and confirm the wash stays up while the cursor bar stands down, and that the drop caret is unobstructed at the list's top and bottom edges.
 - [ ] Blur the window and confirm every mark goes quiet, wash included.
-- [ ] Filter a list to zero rows and confirm the ring returns alongside the wash.
+- [ ] Filter a list to zero rows and confirm the section drops out of the keyboard walk entirely — no wash, no ring, Tab skips it. That is the `navigable` guarantee standing in for the withdrawn [P06], and it is worth seeing once on the real surface.
+- [ ] ~~Take the [Q02] confirming look~~ — moot, there is no within-wash to confirm ([P04] amendment). What replaces it is the **two judgements this phase genuinely defers to the eye**, both about the one value everything rests on:
+  - **Is the wash strong enough to answer "the keyboard is in here" at a glance, on both a dark and a light theme?** [P10] landed 6% / 10% as the minimum that registers, chosen on the spike card's swatches. This is the first look at those values on real containers over real grounds — the Lens's band, a card's surface, a well.
+  - **Is the cursor findable inside it?** That is the whole point of the change ([R02]) — a quieter container so the caret reads. If the list's leading-edge bar still feels too subtle now that it no longer shares a knob with a retired ring, the fix is `--tugx-list-key-ring-width`, and it is a value not a shape.
+  If either wants more, raise the wash alpha knowing [P10]'s warning: above these values the wash starts reading as a *filled surface*, which is the failure this design exists to avoid.
 
 **Tests:**
-- [ ] `just app-test-changed` green
-- [ ] `just app-test` (core tier) green — `focus-ring.css` is read by nearly every surface, so the core tier is the right scope for a change at this altitude
+- [x] `just app-test` (core tier) — **18/20 files, 37/39 tests.** `focus-ring.css` is read by nearly every surface, so the core tier is the right scope for a change at this altitude, and every focus-language suite in it is green. The two failures are activation-timing, not focus-paint, and neither can be reached by this phase's changes (CSS marks, docs, and test gates cannot move `document.activeElement` or `getHasFocus()`):
+  - `at0201` — the prompt editor does not refocus within 3s after an activation click. **This suite passed 3/3 on this same tree** in an earlier core-tier run in the same session.
+  - `at0014` — `getHasFocus() === true` times out after a resign / become-active cycle. A foreground-tier suite.
+  **Both pass in isolation** — re-run together on the same tree, `at0201` 3/3 and `at0014` 2/2, green. The two core-tier runs differed in exactly one way: the first had 4 foreground-tier skips, the second ran the whole tier. That is the contention — an activation-dependent suite losing a race while a foreground suite is taking the screen — and it is a property of running the tier on a machine in use, not of this branch.
+- [x] `just app-test-covers-check` passes (291 test files, all `@covers` resolving and within budget)
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bunx vite build` succeeds
-- [ ] `cd tugdeck && bun run audit:theme-contrast` passes
-- [ ] `just app-test-covers-check` passes
-- [ ] Every criterion in [#success-criteria](#success-criteria) verified
+- [x] `cd tugdeck && bunx vite build` succeeds
+- [x] `cd tugdeck && bunx tsc --noEmit` clean
+- [x] `cd tugdeck && bun run audit:theme-contrast` passes — no theme over the `brio` budget
+- [x] `just app-test-covers-check` passes
+- [x] Every *automated* criterion in [#success-criteria](#success-criteria) verified, including both greps: the `ringPlacement` apparatus is absent, and no `:has([data-key-cursor])` / `data-empty-ring` rule was written. The two criteria that are judgements rather than checks — the wash reads, and the cursor is findable inside it — are the by-eye walk above, and one criterion is **not** met as originally written: a seventh item-group container (`.tug-alert-choices`) still rings, recorded in [#success-criteria](#success-criteria) and [#roadmap](#roadmap).
 
 ---
 
@@ -821,7 +869,7 @@ The two blessing passages must go, or the law contradicts itself and re-licenses
 - [ ] All six item-group containers wash and none stroke, in dark and light (six-container app-test probe, [#step-5](#step-5))
 - [ ] `ringPlacement` and its apparatus are gone from the tree (grep, [#step-3](#step-3))
 - [ ] The accordion's cursor is a leading-edge bar matching the list's ([#step-4](#step-4))
-- [ ] An empty focused container rings alongside its wash ([#step-6](#step-6))
+- [x] ~~An empty focused container rings alongside its wash~~ — withdrawn; an empty item-group is refused the focus registration and never holds the key view ([P06], [#step-6](#step-6))
 - [ ] No focus mark paints while the window is background ([#step-2](#step-2))
 - [ ] `focus-language.md` no longer blesses a container ring anywhere, and the carry exception names one mark ([#step-8](#step-8))
 - [ ] `bunx vite build`, `audit:theme-contrast`, `app-test-covers-check`, `app-test-changed`, and the core tier all green ([#step-9](#step-9))
@@ -829,7 +877,7 @@ The two blessing passages must go, or the law contradicts itself and re-licenses
 **Acceptance tests:**
 - [ ] Six-container wash/no-stroke probe
 - [ ] Background-window suppression (blur → refocus)
-- [ ] Empty-container ring fallback
+- [x] ~~Empty-container ring fallback~~ — withdrawn ([P06])
 - [ ] The four converted suites: at0120, at0127, at0255, at0277
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
@@ -837,6 +885,9 @@ The two blessing passages must go, or the law contradicts itself and re-licenses
 - [ ] Reconsider the cursor bar's width now that it no longer shares a knob with a container ring ([R02]) — `--tugx-list-key-ring-width` is named for the ring it outlived and could be renamed for the bar.
 - [ ] Audit the `--tugx-focus-tint` strength inconsistency surfaced in [#step-1](#step-1): `buildRoleStyle` injects it at 18% of the role token while the global default resolves near 10%, so a role-bearing leaf tints noticeably stronger than a role-less one. Out of scope here because it concerns leaves, not containers.
 - [ ] Consider whether floating surfaces (`TugPopover`, `TugSheet`, `TugAlert`) want a wash *in addition to* their boundary ring, now that the wash is a legible mark. Explicitly a separate question — see [#non-goals](#non-goals).
+- [ ] **Convert `.tug-alert-choices` — the seventh item-group container.** It still draws a flush perimeter ring on `data-key-view-kbd` (`tug-alert.css`), copied from `TugListView`'s retired treatment, while its rows already mark the cursor with a leading-edge bar. Structurally it is the same archetype as the list and the accordion, so under [D122] it should wash. Left alone here only because this plan's scope names six components and its non-goals name `tug-alert.css` — but the non-goal's reason (a floating surface's own *boundary* ring) does not describe this mark, which is a container ring on a list *inside* the alert. Small change; the reason it is a follow-on is scope discipline, not difficulty. The `TugAlert` boundary ring itself stays either way.
+- [ ] **Fix at0255 / at0277 — the Lens rail is unreachable under the app-test harness.** Both fail on clean `main` before any assertion: at0255 clicks a snippet row at a negative viewport `y` (the row's rect sits above the visible frame, and the offset drifts run to run), at0277 never sees the snippets list take `data-key-view-kbd` at all. Same area, likely one cause — the Lens rail's geometry or its focus reachability inside a harness window. Worth pinning down because these two are the only coverage of Lens row accessories and snippet follow-ons, so the rail is currently untested. See the note in [#step-3](#step-3).
+- [ ] **Migrate the rest of the corpus off `document.hasFocus()`.** Roughly sixty suites still gate on it, and every one of them can only pass in the foreground tier — which is the tier the background-mode work exists to keep nearly empty. [#step-2](#step-2) migrated the seven in this plan's path onto `appIsActive()` and left the rule written down at the helper. The remainder is a mechanical sweep, but it is not this plan's: each suite needs a judgement about whether it gates on app-activation because it asserts *paint* (→ `appIsActive()`), because it needs the keyboard in a card (→ `keyboardIsInCard()`), or because its subject genuinely is activation (→ keep `document.hasFocus()` and declare `@foreground`). Worth doing as its own pass, since the payoff is a corpus that runs without taking the screen.
 
 | Checkpoint | Verification |
 |------------|--------------|
