@@ -768,3 +768,73 @@ fn draft_set_preserves_the_users_project_spelling() {
     assert_eq!(code, 0);
     assert!(stdout.contains("Join the snippets work"), "{stdout}");
 }
+
+/// Read one column off the single draft row on file.
+fn draft_column(ledger: &Path, column: &str) -> String {
+    Connection::open(ledger.join("changes.db"))
+        .unwrap()
+        .query_row(
+            &format!("SELECT {column} FROM changeset_drafts"),
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn draft_set_defaults_the_owner_to_the_dash_it_runs_in() {
+    // Work done on a `tugdash/<name>` branch is the dash's work; naming
+    // the owner again on the command line is ceremony the branch already
+    // performed.
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+    let worktree_dir = tempfile::tempdir().unwrap();
+    let worktree = worktree_dir.path().join("tugcast-perf");
+    git(
+        &root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "tugdash/tugcast-perf",
+            worktree.to_str().unwrap(),
+        ],
+    );
+
+    let mut set = tug(ledger.path());
+    set.current_dir(&worktree);
+    set.args(["draft", "set", "--message", "tugcast(perf): stop the burn"]);
+    let (code, stdout, err) = run(set);
+    assert_eq!(code, 0, "stderr: {err}");
+    assert!(stdout.contains("dash:tugcast-perf"), "{stdout}");
+
+    assert_eq!(draft_column(ledger.path(), "owner_kind"), "dash");
+    assert_eq!(draft_column(ledger.path(), "owner_id"), "tugdash/tugcast-perf");
+}
+
+#[test]
+fn draft_set_falls_back_to_the_session_then_refuses() {
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+
+    // Off a dash branch, the calling session owns the draft.
+    let mut set = tug(ledger.path());
+    set.current_dir(&root);
+    set.env("TUG_SESSION_ID", "work");
+    set.args(["draft", "set", "--message", "Land the feature"]);
+    let (code, _, err) = run(set);
+    assert_eq!(code, 0, "stderr: {err}");
+    assert_eq!(draft_column(ledger.path(), "owner_kind"), "session");
+    assert_eq!(draft_column(ledger.path(), "owner_id"), "work");
+
+    // With neither, the refusal names every way to say who owns this.
+    let mut orphan = tug(ledger.path());
+    orphan.current_dir(&root);
+    orphan.args(["draft", "set", "--message", "Whose is this?"]);
+    let (code, _, stderr) = run(orphan);
+    assert_eq!(code, 1);
+    assert!(stderr.contains("--owner"), "{stderr}");
+    assert!(stderr.contains("dash worktree"), "{stderr}");
+    assert!(stderr.contains("TUG_SESSION_ID"), "{stderr}");
+}

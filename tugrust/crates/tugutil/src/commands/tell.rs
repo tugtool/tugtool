@@ -76,18 +76,91 @@ fn parse_params(params: &[String]) -> Result<Vec<(String, Value)>, String> {
     Ok(result)
 }
 
+/// Why [`resolve_port`] could not name a tugcast.
+///
+/// Structured rather than pre-formatted because the remedy depends on the
+/// calling command: only a command that declares `--instance`/`--port` may
+/// tell the user to pass them. Rendering happens at the call site, through
+/// [`PortError::describe`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PortError {
+    /// The registry holds no live instance at all.
+    NoInstances,
+    /// A specific instance was named and is not live.
+    NotFound(String),
+    /// Several instances are live and nothing narrowed the choice.
+    Ambiguous(Vec<String>),
+    /// The registry itself could not be read.
+    Registry(String),
+}
+
+/// Which disambiguating flags the calling command actually declares.
+///
+/// Naming a flag the command does not accept is worse than saying nothing:
+/// the user follows the instruction and clap rejects it. `tugutil draft set`
+/// did exactly that before it grew `--instance`.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Remedy {
+    /// The command declares both `--instance <id>` and `--port <p>`.
+    Flags,
+    /// The command declares neither; `TUG_INSTANCE` is the only lever.
+    EnvOnly,
+}
+
+impl PortError {
+    /// Render this failure with a remedy the calling command can honour.
+    pub(crate) fn describe(&self, remedy: Remedy) -> String {
+        let pass = match remedy {
+            Remedy::Flags => "pass --instance <id>, --port <p>, or set TUG_INSTANCE",
+            Remedy::EnvOnly => "set TUG_INSTANCE",
+        };
+        match self {
+            PortError::NoInstances => format!("no Tug instances running; start one or {pass}"),
+            PortError::NotFound(id) => format!("no live instance '{id}' in registry"),
+            PortError::Ambiguous(ids) => {
+                format!("multiple instances running ({}); {pass}", ids.join(", "))
+            }
+            PortError::Registry(e) => format!("registry read failed: {e}"),
+        }
+    }
+}
+
+/// Instance ids no automatic choice should ever land on: an app-test's own
+/// throwaway instances. They are registered while a run is in flight, they
+/// have no developer watching them, and they run against an isolated
+/// `TUG_CHANGES_DB` — a write routed there vanishes with the run's tempdir.
+/// An explicitly named one is still honoured; only the guesses skip them.
+pub(crate) fn is_apptest_instance(id: &str) -> bool {
+    id.starts_with("apptest-")
+}
+
+/// What a multi-instance registry means to the caller.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Ambiguity {
+    /// Ambiguity is an error — the command is instance-directed, and
+    /// picking wrong is a bug (`tell` raises UI in one specific deck).
+    Strict,
+    /// Ambiguity is not a decision — the command's effect is identical
+    /// whichever live instance serves it, so pick one deterministically.
+    PickAny,
+}
+
 /// Resolve the tugcast port to talk to, per the [D09] CLI discovery
 /// order:
 /// 1. `--port <P>` (caller knows the exact port)
 /// 2. `--instance <id>` (registry lookup by ID)
 /// 3. `TUG_INSTANCE` env var (registry lookup by ID)
-/// 4. cwd-derived dev instance (registry's path-prefix match)
+/// 4. cwd-derived dev instance (registry's path-prefix match, which
+///    reaches through a dash worktree to its main checkout)
 /// 5. sole-running instance (registry has exactly one entry)
-/// 6. error with the list of running instances
-pub(crate) fn resolve_port(
+/// 6. `ambiguity`: error with the list of running instances, or — for a
+///    command whose write lands in the same machine-global place either
+///    way — the lowest instance id.
+pub(crate) fn resolve_port_with(
     explicit_port: Option<u16>,
     explicit_instance: Option<String>,
-) -> Result<u16, String> {
+    ambiguity: Ambiguity,
+) -> Result<u16, PortError> {
     if let Some(p) = explicit_port {
         return Ok(p);
     }
@@ -97,8 +170,8 @@ pub(crate) fn resolve_port(
     if let Some(id) = target_id {
         return match tugcore::registry::find_by_id(&id) {
             Ok(Some(i)) => Ok(i.tugcast_port),
-            Ok(None) => Err(format!("no live instance '{id}' in registry")),
-            Err(e) => Err(format!("registry read failed: {e}")),
+            Ok(None) => Err(PortError::NotFound(id)),
+            Err(e) => Err(PortError::Registry(e.to_string())),
         };
     }
     if let Ok(cwd) = std::env::current_dir()
@@ -106,20 +179,44 @@ pub(crate) fn resolve_port(
     {
         return Ok(i.tugcast_port);
     }
-    match tugcore::registry::list_live() {
-        Ok(live) if live.len() == 1 => Ok(live[0].tugcast_port),
-        Ok(live) if live.is_empty() => {
-            Err("no Tug instances running; start one or pass --port/--instance".to_owned())
-        }
-        Ok(live) => {
-            let ids: Vec<String> = live.iter().map(|i| i.instance_id.clone()).collect();
-            Err(format!(
-                "multiple instances running ({}). Pass --instance <id> or set TUG_INSTANCE",
-                ids.join(", ")
-            ))
-        }
-        Err(e) => Err(format!("registry read failed: {e}")),
+    let mut live = match tugcore::registry::list_live() {
+        Ok(live) => live,
+        Err(e) => return Err(PortError::Registry(e.to_string())),
+    };
+    if ambiguity == Ambiguity::PickAny && live.len() > 1 {
+        live.retain(|i| !is_apptest_instance(&i.instance_id));
     }
+    match live.as_slice() {
+        [] => Err(PortError::NoInstances),
+        [only] => Ok(only.tugcast_port),
+        _ if ambiguity == Ambiguity::PickAny => {
+            // Deterministic so repeated runs from the same shell keep
+            // talking to the same tugcast — arbitrary, but not random.
+            live.sort_by(|a, b| a.instance_id.cmp(&b.instance_id));
+            Ok(live[0].tugcast_port)
+        }
+        _ => Err(PortError::Ambiguous(
+            live.iter().map(|i| i.instance_id.clone()).collect(),
+        )),
+    }
+}
+
+/// [`resolve_port_with`] for instance-directed commands: ambiguity is an
+/// error.
+pub(crate) fn resolve_port(
+    explicit_port: Option<u16>,
+    explicit_instance: Option<String>,
+) -> Result<u16, PortError> {
+    resolve_port_with(explicit_port, explicit_instance, Ambiguity::Strict)
+}
+
+/// [`resolve_port_with`] for commands whose outcome does not depend on
+/// which live instance serves them — the machine-global ledger writes.
+pub(crate) fn resolve_port_any(
+    explicit_port: Option<u16>,
+    explicit_instance: Option<String>,
+) -> Result<u16, PortError> {
+    resolve_port_with(explicit_port, explicit_instance, Ambiguity::PickAny)
 }
 
 /// Run the tell command
@@ -130,7 +227,7 @@ pub fn run_tell(
     params: Vec<String>,
     json_output: bool,
 ) -> Result<i32, String> {
-    let port = match resolve_port(port, instance) {
+    let port = match resolve_port(port, instance).map_err(|e| e.describe(Remedy::Flags)) {
         Ok(p) => p,
         Err(e) => {
             if json_output {
@@ -265,6 +362,7 @@ pub fn run_tell(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn test_coerce_true() {
@@ -371,10 +469,9 @@ mod tests {
     // Resolution branches 1+2 are pure-functional (no env/registry
     // access on the explicit-port path; the explicit-instance path
     // does hit the live registry which is shared across tests in this
-    // crate). The lower-priority branches (env, cwd, sole) all touch
-    // process-wide state and would conflict with a shared $TMPDIR
-    // registry — they are covered by the Step 14 integration script,
-    // not by these unit tests.
+    // crate). The ambiguity branch is exercised against the real
+    // `$TMPDIR` registry under `#[serial]`, snapshotting and restoring
+    // the file — the cwd branch it sits behind is covered in `tugcore`.
 
     #[test]
     fn resolve_port_explicit_port_wins() {
@@ -392,9 +489,96 @@ mod tests {
     #[test]
     fn resolve_port_unknown_instance_errors() {
         let r = resolve_port(None, Some("does-not-exist-xyz-zzz".to_owned()));
-        match r {
-            Err(msg) => assert!(msg.contains("no live instance")),
-            Ok(_) => panic!("expected error for unknown instance"),
+        assert_eq!(r, Err(PortError::NotFound("does-not-exist-xyz-zzz".into())));
+    }
+
+    /// An error may only prescribe what the calling command accepts.
+    /// `draft set` used to be told to "pass --instance" by a command
+    /// that had no such flag — following the advice earned a clap error.
+    #[test]
+    fn port_error_names_only_the_remedies_the_command_offers() {
+        let ambiguous = PortError::Ambiguous(vec!["release-main".into(), "debug-dash".into()]);
+        let flags = ambiguous.describe(Remedy::Flags);
+        assert!(flags.contains("release-main, debug-dash"), "{flags}");
+        assert!(flags.contains("--instance <id>"), "{flags}");
+
+        let env_only = ambiguous.describe(Remedy::EnvOnly);
+        assert!(!env_only.contains("--instance"), "{env_only}");
+        assert!(env_only.contains("TUG_INSTANCE"), "{env_only}");
+    }
+
+    /// Several live instances: an error for an instance-directed command,
+    /// a deterministic choice for one whose write lands in the same
+    /// machine-global ledger either way.
+    #[test]
+    #[serial]
+    fn ambiguity_errors_for_tell_and_resolves_for_draft() {
+        let _g = ScopedEnv::unset("TUG_INSTANCE");
+        let _registry = ScopedRegistry::seed(&[
+            ("debug-zulu", 55401),
+            ("release-alpha", 55402),
+            ("apptest-throwaway", 55403),
+        ]);
+
+        match resolve_port(None, None) {
+            Err(PortError::Ambiguous(ids)) => {
+                assert_eq!(ids.len(), 3, "every live instance is listed: {ids:?}");
+            }
+            other => panic!("expected ambiguity, got {other:?}"),
+        }
+
+        // Lowest id wins — `debug-zulu`, not `apptest-throwaway`, which
+        // sorts first and is skipped: its ledger is a tempdir that dies
+        // with the run, so a draft routed there would simply vanish.
+        assert_eq!(resolve_port_any(None, None), Ok(55401));
+    }
+
+    /// The user's real `$TMPDIR` registry, replaced for the duration of
+    /// one test and restored on drop. `find_by_id`/`list_live` read the
+    /// public path, so there is nowhere else to put this.
+    struct ScopedRegistry {
+        path: std::path::PathBuf,
+        prior: Option<Vec<u8>>,
+    }
+
+    impl ScopedRegistry {
+        fn seed(instances: &[(&str, u16)]) -> Self {
+            let path = tugcore::registry::registry_path();
+            let prior = std::fs::read(&path).ok();
+            let _ = std::fs::remove_file(&path);
+            for (id, port) in instances {
+                tugcore::registry::register(tugcore::registry::Instance {
+                    instance_id: (*id).to_owned(),
+                    profile: "debug".to_owned(),
+                    branch: "main".to_owned(),
+                    bundle_id: format!("dev.tugtool.app.{id}"),
+                    // Nowhere near any cwd, so the cwd branch of
+                    // discovery cannot pre-empt the ambiguity branch.
+                    bundle_path: std::path::PathBuf::from("/nonexistent/Tug.app"),
+                    pid: std::process::id() as i32,
+                    host_pid: 0,
+                    tugcast_port: *port,
+                    vite_port: 0,
+                    tmux_session: format!("cc-{id}"),
+                    data_dir: std::path::PathBuf::from("/nonexistent/data"),
+                    started_at: tugcore::registry::now_rfc3339(),
+                })
+                .expect("seed registry");
+            }
+            Self { path, prior }
+        }
+    }
+
+    impl Drop for ScopedRegistry {
+        fn drop(&mut self) {
+            match &self.prior {
+                Some(bytes) => {
+                    let _ = std::fs::write(&self.path, bytes);
+                }
+                None => {
+                    let _ = std::fs::remove_file(&self.path);
+                }
+            }
         }
     }
 
@@ -409,6 +593,14 @@ mod tests {
             let prior = std::env::var_os(key);
             unsafe {
                 std::env::set_var(key, value);
+            }
+            Self { key, prior }
+        }
+
+        fn unset(key: &'static str) -> Self {
+            let prior = std::env::var_os(key);
+            unsafe {
+                std::env::remove_var(key);
             }
             Self { key, prior }
         }

@@ -192,11 +192,43 @@ pub fn find_by_id(instance_id: &str) -> Result<Option<Instance>, Error> {
 /// agree with. Symmetry is what makes the comparison sound.
 pub fn find_for_cwd(cwd: &Path) -> Result<Option<Instance>, Error> {
     let resolved = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let base = linked_worktree_base(cwd).map(|p| resolved(&p));
     let cwd = resolved(cwd);
     Ok(load()?.into_iter().find(|i| {
         let bundle = resolved(&i.bundle_path);
-        cwd.starts_with(&bundle) || bundle.starts_with(&cwd)
+        let touches = |c: &Path| c.starts_with(&bundle) || bundle.starts_with(c);
+        touches(&cwd) || base.as_deref().is_some_and(touches)
     }))
+}
+
+/// The main checkout behind `cwd` when `cwd` sits inside a **linked git
+/// worktree** — a dash — else `None`.
+///
+/// A dash worktree lives outside the checkout the instance was built from,
+/// so the bundle-path prefix test in [`find_for_cwd`] can never match from
+/// inside one: neither path contains the other. Discovery would fall
+/// through to the sole-instance rule and error out with a second instance
+/// running, which is how a shell in a dash lost its instance entirely.
+///
+/// The translation is pure filesystem, deliberately: a registry lookup must
+/// not depend on `git` being on `PATH`. A linked worktree records
+/// `gitdir: <path>` in a `.git` **file** (the main checkout's `.git` is a
+/// directory, and `read_to_string` on it fails — the `None` that correctly
+/// says "not a linked worktree"); that gitdir holds a `commondir` pointing
+/// at the shared `.git`, whose parent is the main checkout.
+fn linked_worktree_base(cwd: &Path) -> Option<PathBuf> {
+    let dot_git = cwd.ancestors().map(|d| d.join(".git")).find(|p| p.exists())?;
+    let gitdir = std::fs::read_to_string(&dot_git)
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("gitdir:").map(|p| PathBuf::from(p.trim())))?;
+    let gitdir = match gitdir.is_absolute() {
+        true => gitdir,
+        false => dot_git.parent()?.join(gitdir),
+    };
+    let common = std::fs::read_to_string(gitdir.join("commondir")).ok()?;
+    let common = gitdir.join(common.trim()).canonicalize().ok()?;
+    Some(common.parent()?.to_path_buf())
 }
 
 /// Alias for [`load`] — every instance returned by `load` is live by
@@ -590,6 +622,76 @@ mod tests {
         let got = find_by_id("debug-find-by-id-test").unwrap();
         assert!(got.is_some());
         unregister("debug-find-by-id-test").unwrap();
+    }
+
+    /// A shell inside a dash worktree still belongs to the instance
+    /// built from the main checkout. Real `git worktree add` output, not
+    /// a hand-built `.git` file: the pointer/`commondir` layout is
+    /// exactly what this resolution reads, so a fixture that drifted
+    /// from git's would test nothing.
+    #[test]
+    #[serial]
+    fn find_for_cwd_reaches_through_a_linked_worktree() {
+        let dir = tempdir().unwrap();
+        let main = dir.path().join("checkout");
+        let worktree = dir.path().join("dashes/tugcast-perf");
+        std::fs::create_dir_all(&main).unwrap();
+        let git = |args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&main)
+                .args(args)
+                .output()
+                .expect("git runs")
+                .status
+                .success();
+            assert!(ok, "git {args:?} failed");
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@example.com"]);
+        git(&["config", "user.name", "T"]);
+        std::fs::write(main.join("seed"), b"seed").unwrap();
+        git(&["add", "seed"]);
+        git(&["commit", "-qm", "seed"]);
+        git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "tugdash/tugcast-perf",
+            worktree.to_str().unwrap(),
+        ]);
+
+        let base = linked_worktree_base(&worktree).expect("worktree resolves to its checkout");
+        assert_eq!(base.canonicalize().unwrap(), main.canonicalize().unwrap());
+        // The main checkout is not a linked worktree and must say so.
+        assert!(linked_worktree_base(&main).is_none());
+
+        let real = registry_path();
+        let backup = std::fs::read(&real).ok();
+        let _restore = scopeguard(|| match &backup {
+            Some(bytes) => {
+                let _ = std::fs::write(&real, bytes);
+            }
+            None => {
+                let _ = std::fs::remove_file(&real);
+            }
+        });
+        // The bundle lives inside the checkout, as a dev build does —
+        // the prefix match the worktree path alone could never satisfy.
+        let bundle = main.join("tugapp/build/Tug.app");
+        std::fs::create_dir_all(&bundle).unwrap();
+        let mut instance = fixture("debug-worktree-test", ALIVE_PID);
+        instance.bundle_path = bundle;
+        register(instance).unwrap();
+
+        let got = find_for_cwd(&worktree).unwrap();
+        assert_eq!(
+            got.map(|i| i.instance_id).as_deref(),
+            Some("debug-worktree-test"),
+            "a dash worktree must resolve to the instance holding its checkout"
+        );
+        unregister("debug-worktree-test").unwrap();
     }
 
     /// Tiny scoped-defer helper: returns a guard that runs `f` on

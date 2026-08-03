@@ -217,7 +217,7 @@ pub fn run_probe(
     restore_or_report(&mut restorer)?;
 
     match status {
-        Ok(code) if code == 0 => Ok(()),
+        Ok(0) => Ok(()),
         Ok(code) => Err(AppError::ExitStatus(code)),
         Err(err) => Err(AppError::Exit1(err)),
     }

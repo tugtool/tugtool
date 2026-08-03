@@ -35,6 +35,72 @@ pub struct DraftRow {
     pub selection: Option<serde_json::Value>,
 }
 
+/// An owner as the ledger keys it, plus the spelling to echo back.
+struct Owner {
+    kind: String,
+    id: String,
+    /// `--owner`'s own grammar, so messages read the way the user typed
+    /// it (or would have typed it, when it was derived).
+    display: String,
+}
+
+/// Resolve the owner of a draft: `--owner` when given, else derived.
+///
+/// The derivation reads the project's checked-out branch: work done in a
+/// dash worktree is the dash's, and a `tugdash/<name>` branch says so
+/// without anyone having to repeat it on the command line. Off a dash
+/// branch the owner is the calling session. Both halves are the same
+/// defaults the rest of the CLI already applies — `changes` has defaulted
+/// `--session` to `$TUG_SESSION_ID` all along.
+fn resolve_owner(owner: Option<String>, project_dir: &str) -> Result<Owner, AppError> {
+    if let Some(owner) = owner.filter(|o| !o.is_empty()) {
+        let (kind, id) = parse_owner(&owner)?;
+        return Ok(Owner {
+            kind,
+            id,
+            display: owner,
+        });
+    }
+    if let Some(name) = dash_branch_name(project_dir) {
+        return Ok(Owner {
+            kind: "dash".to_string(),
+            id: format!("tugdash/{name}"),
+            display: format!("dash:{name}"),
+        });
+    }
+    let session = std::env::var("TUG_SESSION_ID")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            AppError::Exit1(
+                "no owner — pass --owner, run inside a dash worktree, or set TUG_SESSION_ID"
+                    .to_string(),
+            )
+        })?;
+    Ok(Owner {
+        kind: "session".to_string(),
+        id: session.clone(),
+        display: format!("session:{session}"),
+    })
+}
+
+/// The dash name when `project_dir` has a `tugdash/<name>` branch checked
+/// out, else `None` (a detached HEAD, a non-repo, or any ordinary branch).
+fn dash_branch_name(project_dir: &str) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(project_dir)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let branch = String::from_utf8(out.stdout).ok()?;
+    let name = branch.trim().strip_prefix("tugdash/")?.to_string();
+    (!name.is_empty()).then_some(name)
+}
+
 /// Parse `--owner`: `session:<id>`, `dash:<name>`, or `unattributed`. A dash
 /// owner normalizes to the branch-ref id the ledger stores
 /// (`tugdash/<name>`), accepting either the bare name or the full ref.
@@ -104,10 +170,24 @@ fn open_changes_db_readonly() -> Option<Connection> {
 /// POST one request to the running tugcast's `/api/draft`, discovering the
 /// port per [D09]. Errors are actionable: no reachable tugcast means the
 /// draft was NOT written.
-fn post_draft_api(body: serde_json::Value) -> Result<serde_json::Value, AppError> {
-    let port = crate::commands::tell::resolve_port(None, None).map_err(|e| {
+///
+/// Discovery resolves with [`resolve_port_any`], so several live instances
+/// are not an error here. The instance is a conduit, not a destination:
+/// `/api/draft` writes the **machine-global** `changes.db` and nothing
+/// else, and that write is funnelled to the single ledger writer ([LR8])
+/// whichever tugcast receives it — so every live instance produces the
+/// same row. Refusing to choose would be refusing a decision that does not
+/// exist. `--instance`/`--port` remain as an override.
+fn post_draft_api(
+    body: serde_json::Value,
+    port: Option<u16>,
+    instance: Option<String>,
+) -> Result<serde_json::Value, AppError> {
+    use crate::commands::tell::{Remedy, resolve_port_any};
+    let port = resolve_port_any(port, instance).map_err(|e| {
         AppError::Exit1(format!(
-            "draft writes go through the running Tug instance, but none was found ({e})"
+            "draft writes go through a running Tug instance, but none was found ({})",
+            e.describe(Remedy::Flags)
         ))
     })?;
     let url = format!("http://127.0.0.1:{port}/api/draft");
@@ -221,16 +301,23 @@ fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_set(
-    owner: String,
+    owner: Option<String>,
     project: Option<PathBuf>,
     message: Option<String>,
     include: Vec<String>,
     exclude: Vec<String>,
+    port: Option<u16>,
+    instance: Option<String>,
     json: bool,
 ) -> Result<(), AppError> {
-    let (owner_kind, owner_id) = parse_owner(&owner)?;
     let (project_dir, legacy) = resolve_project(project)?;
+    let Owner {
+        kind: owner_kind,
+        id: owner_id,
+        display: owner,
+    } = resolve_owner(owner, &project_dir)?;
 
     if !isolated_changes_db() {
         let selection = (!include.is_empty() || !exclude.is_empty())
@@ -248,7 +335,7 @@ pub fn run_set(
         if let Some(sel) = &selection {
             body["selection"] = serde_json::json!(sel);
         }
-        let response = post_draft_api(body)?;
+        let response = post_draft_api(body, port, instance)?;
         let row = response
             .get("row")
             .ok_or_else(|| AppError::Exit1("malformed response: missing row".to_string()))
@@ -324,9 +411,17 @@ pub fn run_set(
     Ok(())
 }
 
-pub fn run_show(owner: String, project: Option<PathBuf>, json: bool) -> Result<(), AppError> {
-    let (owner_kind, owner_id) = parse_owner(&owner)?;
+pub fn run_show(
+    owner: Option<String>,
+    project: Option<PathBuf>,
+    json: bool,
+) -> Result<(), AppError> {
     let (project_dir, legacy) = resolve_project(project)?;
+    let Owner {
+        kind: owner_kind,
+        id: owner_id,
+        display: owner,
+    } = resolve_owner(owner, &project_dir)?;
     // Reads never need a writable ledger open; a missing file just means
     // no drafts exist yet.
     let Some(row) = open_changes_db_readonly()
@@ -379,18 +474,32 @@ fn print_clear(owner: String, deleted: bool, json: bool) {
     }
 }
 
-pub fn run_clear(owner: String, project: Option<PathBuf>, json: bool) -> Result<(), AppError> {
-    let (owner_kind, owner_id) = parse_owner(&owner)?;
+pub fn run_clear(
+    owner: Option<String>,
+    project: Option<PathBuf>,
+    port: Option<u16>,
+    instance: Option<String>,
+    json: bool,
+) -> Result<(), AppError> {
     let (project_dir, legacy) = resolve_project(project)?;
+    let Owner {
+        kind: owner_kind,
+        id: owner_id,
+        display: owner,
+    } = resolve_owner(owner, &project_dir)?;
 
     if !isolated_changes_db() {
-        let response = post_draft_api(serde_json::json!({
-            "op": "clear",
-            "owner_kind": owner_kind,
-            "owner_id": owner_id,
-            "project_dir": project_dir,
-            "raw_project_dir": legacy,
-        }))?;
+        let response = post_draft_api(
+            serde_json::json!({
+                "op": "clear",
+                "owner_kind": owner_kind,
+                "owner_id": owner_id,
+                "project_dir": project_dir,
+                "raw_project_dir": legacy,
+            }),
+            port,
+            instance,
+        )?;
         let deleted = response
             .get("deleted")
             .and_then(|d| d.as_bool())

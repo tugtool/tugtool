@@ -139,7 +139,10 @@ pub fn run_claim(
         .to_string_lossy()
         .into_owned();
 
-    let port = crate::commands::tell::resolve_port(None, None)?;
+    // `changes claim` declares no instance flags, so the remedy it names
+    // must stop at the environment variable.
+    let port = crate::commands::tell::resolve_port(None, None)
+        .map_err(|e| e.describe(crate::commands::tell::Remedy::EnvOnly))?;
     let body = serde_json::json!({
         "action": "changeset_claim",
         "project_dir": project_dir,

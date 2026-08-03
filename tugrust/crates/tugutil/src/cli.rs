@@ -260,10 +260,16 @@ pub enum DraftCommands {
     ///
     /// A skill-authored draft is an authored draft: rows written here always
     /// carry `edited=1`, so the draft engine never clobbers them.
+    ///
+    /// The draft lands in the machine-global changes ledger, so any live
+    /// instance serves the write identically; `--instance`/`--port` are an
+    /// override, never a requirement.
     Set {
         /// Owner: `session:<id>`, `dash:<name>`, or `unattributed`.
+        /// Default: the dash whose worktree holds the project, else
+        /// `session:$TUG_SESSION_ID`.
         #[arg(long)]
-        owner: String,
+        owner: Option<String>,
         /// Project dir (default: cwd); canonicalized on write.
         #[arg(long)]
         project: Option<PathBuf>,
@@ -276,12 +282,21 @@ pub enum DraftCommands {
         /// Paths excluded from the landing against the default rule.
         #[arg(long, num_args = 1..)]
         exclude: Vec<String>,
+        /// Tugcast server port (overrides --instance and CLI discovery).
+        #[arg(long)]
+        port: Option<u16>,
+        /// Target a specific instance by ID (resolves to its
+        /// registered port via $TMPDIR/tug-instances.json).
+        #[arg(long)]
+        instance: Option<String>,
     },
     /// Print the maintained draft for an owner.
     Show {
         /// Owner: `session:<id>`, `dash:<name>`, or `unattributed`.
+        /// Default: the dash whose worktree holds the project, else
+        /// `session:$TUG_SESSION_ID`.
         #[arg(long)]
-        owner: String,
+        owner: Option<String>,
         /// Project dir (default: cwd).
         #[arg(long)]
         project: Option<PathBuf>,
@@ -289,11 +304,20 @@ pub enum DraftCommands {
     /// Delete the maintained draft for an owner.
     Clear {
         /// Owner: `session:<id>`, `dash:<name>`, or `unattributed`.
+        /// Default: the dash whose worktree holds the project, else
+        /// `session:$TUG_SESSION_ID`.
         #[arg(long)]
-        owner: String,
+        owner: Option<String>,
         /// Project dir (default: cwd).
         #[arg(long)]
         project: Option<PathBuf>,
+        /// Tugcast server port (overrides --instance and CLI discovery).
+        #[arg(long)]
+        port: Option<u16>,
+        /// Target a specific instance by ID (resolves to its
+        /// registered port via $TMPDIR/tug-instances.json).
+        #[arg(long)]
+        instance: Option<String>,
     },
 }
 

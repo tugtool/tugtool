@@ -722,8 +722,10 @@ fn repo_relative(canonical_root: &CanonicalPath, repo_root: &Path, file_path: &s
 ///
 /// Growth is one entry per path *ever* dirtied in this process's lifetime —
 /// bounded in practice by the repo's file count.
-fn live_cut_cache() -> &'static Mutex<HashMap<(String, String), (String, i64)>> {
-    static CACHE: OnceLock<Mutex<HashMap<(String, String), (String, i64)>>> = OnceLock::new();
+type LiveCutCache = Mutex<HashMap<(String, String), (String, i64)>>;
+
+fn live_cut_cache() -> &'static LiveCutCache {
+    static CACHE: OnceLock<LiveCutCache> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 

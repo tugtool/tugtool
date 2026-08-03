@@ -18,6 +18,8 @@
 
 use std::time::Duration;
 
+use crate::commands::tell::is_apptest_instance;
+
 /// Exit code for "asked, and the answer was no" — including a timeout, which
 /// means nobody was there to say yes.
 const EXIT_DECLINED: i32 = 2;
@@ -51,13 +53,6 @@ fn parse_option(spec: &str) -> Result<AskOption, String> {
         label: label.to_owned(),
         description: parts.next().filter(|d| !d.is_empty()).map(str::to_owned),
     })
-}
-
-/// Instance ids the ask should never target: an app-test's own throwaway
-/// instances. They are registered while a run is in flight, and they have no
-/// developer watching them.
-fn is_apptest_instance(id: &str) -> bool {
-    id.starts_with("apptest-")
 }
 
 /// Find the tugcast to ask, or `None` if there is no sensible one.

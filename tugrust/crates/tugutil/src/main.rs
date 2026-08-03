@@ -81,9 +81,18 @@ fn main() -> ExitCode {
                 message,
                 include,
                 exclude,
-            } => draft::run_set(owner, project, message, include, exclude, json),
+                port,
+                instance,
+            } => draft::run_set(
+                owner, project, message, include, exclude, port, instance, json,
+            ),
             cli::DraftCommands::Show { owner, project } => draft::run_show(owner, project, json),
-            cli::DraftCommands::Clear { owner, project } => draft::run_clear(owner, project, json),
+            cli::DraftCommands::Clear {
+                owner,
+                project,
+                port,
+                instance,
+            } => draft::run_clear(owner, project, port, instance, json),
         }),
 
         // File lifecycle verbs — receipts are the attribution surface.

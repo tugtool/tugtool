@@ -812,7 +812,7 @@ pub(crate) fn match_prefix(name: &str) -> Option<&'static TmpPrefix> {
 }
 
 fn has_four_digits(rest: &str) -> bool {
-    rest.as_bytes().len() >= 4 && rest.as_bytes()[..4].iter().all(u8::is_ascii_digit)
+    rest.len() >= 4 && rest.as_bytes()[..4].iter().all(u8::is_ascii_digit)
 }
 
 /// True when the artifact's mtime is at least `min_age` in the past.

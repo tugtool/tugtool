@@ -6,14 +6,14 @@
 //! Ground truth for diagnosing a stale or empty Changes view against the actual
 //! working-tree scan.
 
-use crate::commands::tell::resolve_port;
+use crate::commands::tell::{Remedy, resolve_port};
 
 pub fn run_changesets(
     port: Option<u16>,
     instance: Option<String>,
     json_output: bool,
 ) -> Result<i32, String> {
-    let port = resolve_port(port, instance)?;
+    let port = resolve_port(port, instance).map_err(|e| e.describe(Remedy::Flags))?;
     let url = format!("http://127.0.0.1:{}/api/changesets", port);
 
     let mut response = ureq::get(&url)
