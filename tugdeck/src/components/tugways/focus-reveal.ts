@@ -36,6 +36,7 @@
  */
 
 import { scrollerForElement } from "./internal/scroller-context";
+import { smartScrollForElement } from "@/lib/smart-scroll";
 
 /**
  * Air left between the revealed target's leading edge and the scrollport (or a
@@ -101,7 +102,16 @@ function revealWithin(scroller: HTMLElement, target: HTMLElement): void {
     // write on its next growth tick, so release the follow first.
     scrollerForElement(scroller)?.disengage("focus-reveal");
   }
-  if (Math.abs(deltaY) >= EPSILON_PX) scroller.scrollTop += deltaY;
+  if (Math.abs(deltaY) >= EPSILON_PX) {
+    scroller.scrollTop += deltaY;
+    // Declare the raw write. Disengaging follow-bottom above is
+    // invisible to the list view's displacement bracket, which reasons
+    // about position rather than intent: a commit landing between this
+    // write and its (deferred) scroll event would find the scroller
+    // somewhere no baseline explains and read a deliberate reveal as a
+    // browser clamp.
+    smartScrollForElement(scroller)?.noteExternalWrite();
+  }
   if (Math.abs(deltaX) >= EPSILON_PX) scroller.scrollLeft += deltaX;
 }
 

@@ -119,6 +119,7 @@ import { TugAtomMarkdownBody } from "@/components/tugways/cards/tug-atom-markdow
 import { SessionContextAttachments } from "@/components/tugways/cards/session-context-attachments";
 import { splitLeadingContext } from "@/lib/pending-context-store";
 import { labFlags } from "@/lib/lab-flags";
+import { smartScrollForElement } from "@/lib/smart-scroll";
 import { TugAttachmentPreview } from "@/components/tugways/cards/tug-attachment-preview";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import { formatModelLabel } from "@/lib/model-label";
@@ -1600,13 +1601,22 @@ function settleFindReveal(
     const scrollerRect = scroller.getBoundingClientRect();
     const bandTop = scrollerRect.top + stickyTop + 8;
     const bandBottom = scrollerRect.bottom - 8;
+    let wrote = false;
     if (rect.bottom > bandBottom) {
       scroller.scrollTop += rect.bottom - bandBottom;
+      wrote = true;
     }
     const settled = highlighter.activeRangeRect();
     if (settled !== null && settled.top < bandTop) {
       scroller.scrollTop -= bandTop - settled.top;
+      wrote = true;
     }
+    // Declare the raw writes. These bypass SmartScroll, so the list
+    // view's displacement bracket would otherwise find the scroller
+    // somewhere its baseline does not explain — a deliberate reveal
+    // read as a browser clamp, and repaired back out from under the
+    // match the user asked to see.
+    if (wrote) smartScrollForElement(scroller)?.noteExternalWrite();
   }
   highlighter.flashActive();
   return true;

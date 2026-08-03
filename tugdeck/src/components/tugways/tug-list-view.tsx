@@ -132,6 +132,7 @@ import type {
 import type { FocusKey } from "./focus-act";
 import { CardIdContext } from "@/lib/card-id-context";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
+import { deckTrace } from "@/deck-trace";
 import { KEY_CURSOR_ATTRIBUTE } from "./use-focus-cursor";
 
 // Re-export the `rowSeparator` prop types so consumers import them
@@ -1401,6 +1402,148 @@ const WIDTH_INVALIDATION_SETTLE_MS = 200;
 const DEFAULT_CELL_ROLE: TugListViewCellRole = "cell";
 
 /**
+ * Movement below which a `scrollTop` difference across a commit is
+ * noise rather than displacement. Sub-pixel layout rounding and the
+ * fractional heights the ledger carries can shift the position by a
+ * fraction; two pixels sits above that and far below any real clamp
+ * (the field captures were thousands of pixels).
+ */
+const DISPLACEMENT_EPSILON_PX = 2;
+
+/**
+ * Height the clamp simulation shortens the top spacer by. Large
+ * enough to pull the scroll maximum below `scrollTop` from a position
+ * near the bottom of an evicting transcript, small enough to stay
+ * inside a realistic window's spacer.
+ */
+const SIMULATED_CLAMP_SHRINK_PX = 2000;
+
+/**
+ * What the displacement bracket remembers from one commit to the next.
+ *
+ * `scrollTop` is the position that commit observed *after* any repair,
+ * so the next bracket's unchanged-position suppressor compares against
+ * the repaired value. `following` is the follow-bottom state before
+ * the repair, so a repair can restore the flag a clamp knocked over.
+ * `pendingRepairTop` carries the answer to "did the last repair hold?"
+ * forward, because ring entries are immutable once appended — the next
+ * record reports it as `priorRepairHeld`.
+ */
+interface CommitGeometry {
+  userActivitySeq: number;
+  programmaticWriteSeq: number;
+  scrollTop: number;
+  following: boolean;
+  pendingRepairTop: number | null;
+}
+
+/**
+ * Out-of-tree control handles for a list view, keyed by its scroll
+ * container.
+ *
+ * Same problem the `SmartScroll` registry solves, one level up: the
+ * test surface can resolve a scroll element by its
+ * `data-tug-scroll-key` selector, but the list view's own state lives
+ * in refs inside a closure with no route in. The `Scroller` façade the
+ * component publishes is a React context value, reachable only by
+ * descendants.
+ */
+/**
+ * One departed row whose ledger charge disagreed with its last live
+ * rendered extent — the per-row term of a conservation violation.
+ */
+interface ConservationRowDiff {
+  index: number;
+  kind: string;
+  /** What the spacer charges for the row (ledger outer extent). */
+  ledger: number;
+  /** What the row actually occupied while mounted (border-box + gap). */
+  live: number;
+}
+
+/**
+ * One eviction's height accounting. `delta = sumLedger - sumLive` is
+ * the document height error the swap introduced: negative means the
+ * document SHRANK by that many pixels — the quantity a browser clamp
+ * then acts on.
+ */
+interface ConservationEvent {
+  departed: number;
+  sumLedger: number;
+  sumLive: number;
+  delta: number;
+  first: number;
+  last: number;
+  itemCount: number;
+  scrollHeight: number;
+  rows: ConservationRowDiff[];
+}
+
+/** Ledger-vs-live audit row for a currently mounted cell. */
+interface LedgerAuditRow {
+  index: number;
+  kind: string;
+  ledger: number | null;
+  live: number;
+  delta: number;
+}
+
+interface LedgerAudit {
+  gap: number;
+  mounted: number;
+  /** Largest |ledger − live| across mounted cells. */
+  worst: number;
+  /** Mismatching cells only (|delta| ≥ 0.5px or no ledger entry). */
+  rows: LedgerAuditRow[];
+}
+
+/**
+ * One commit's post-layout geometry, as the commit bracket saw it.
+ * A dip in `h` between consecutive entries is an inter-commit document
+ * shrink; a displaced `top` with `h` steady on both sides means the
+ * shrink-and-recover happened entirely inside one commit's layout
+ * passes, where only the clamped position survives as evidence.
+ */
+interface CommitGeometryRecord {
+  top: number;
+  h: number;
+  ts: number;
+  bs: number;
+  first: number;
+  last: number;
+  n: number;
+}
+
+interface ListViewProbe {
+  /** Arm the one-shot clamp simulation — see `forceCommitClamp`. */
+  forceCommitClamp(): void;
+  /** Displacements recorded since mount. */
+  displacementCount(): number;
+  /** Eviction conservation records since mount, oldest first. */
+  conservationEvents(): ConservationEvent[];
+  /** Ledger-vs-live audit of every currently mounted cell. */
+  auditLedger(): LedgerAudit;
+  /** Per-commit geometry, most recent last, capped. */
+  geometryRing(): CommitGeometryRecord[];
+}
+
+const listViewProbeRegistry = new Map<Element, ListViewProbe>();
+
+/**
+ * The probe handle for the list view whose scroll container is `el`,
+ * or `null` when `el` is not one.
+ *
+ * The test surface's route to the displacement bracket. Deliberately
+ * not part of the `TugListViewHandle` imperative API: nothing in the
+ * app drives these, and putting a clamp simulator on the public handle
+ * would invite it.
+ */
+export function listViewProbeForScroller(el: Element | null): ListViewProbe | null {
+  if (el === null) return null;
+  return listViewProbeRegistry.get(el) ?? null;
+}
+
+/**
  * Resolve the effective selected index for `selectionRequired` mode.
  *
  * Keeps `current` when it still points at a selectable row (in range,
@@ -1597,6 +1740,21 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     offscreenSkipRef.current = inline === true && offscreenSkip;
     const topSpacerRef = React.useRef<HTMLDivElement | null>(null);
     const bottomSpacerRef = React.useRef<HTMLDivElement | null>(null);
+    // The commit bracket's memory of the previous commit — see the
+    // displacement effect below for what each field is for.
+    const commitGeometryRef = React.useRef<CommitGeometry | null>(null);
+    const displacementCountRef = React.useRef(0);
+    // Conservation probe state: every mounted cell's live outer extent
+    // as of the previous commit, and the per-eviction accounting
+    // records. See the conservation block in the commit bracket.
+    const liveExtentsRef = React.useRef<Map<number, { live: number; kind: string }>>(
+      new Map(),
+    );
+    const conservationEventsRef = React.useRef<ConservationEvent[]>([]);
+    const geometryRingRef = React.useRef<CommitGeometryRecord[]>([]);
+    // One-shot arming flag for the clamp simulation the test surface
+    // drives. See the displacement effect.
+    const forceClampRef = React.useRef(false);
     // Eviction mode is an `inline` sub-mode — it reuses every inline
     // subsystem and only changes which rows reach the DOM.
     const evictModeEnabled = inline === true && evictOffscreen;
@@ -2359,11 +2517,21 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const el = scrollContainerRef.current;
       if (el === null) return;
       heightIndexRef.current.shift(pending.added);
+      // The conservation probe's live-extent map is keyed by index and
+      // just went stale by `added`. Clearing skips one commit's
+      // comparison rather than diffing rows against the wrong indices.
+      liveExtentsRef.current.clear();
       el.scrollTop = prependScrollAdjustment(
         pending.oldScrollHeight,
         el.scrollHeight,
         pending.oldScrollTop,
       );
+      // Declare the direct write. This bypasses SmartScroll, so
+      // without this the displacement bracket below — which runs later
+      // in the same commit — would find the scroller somewhere its
+      // baseline does not explain and read a legitimate compensation
+      // as a clamp.
+      smartScrollRef.current?.noteExternalWrite();
       scrollTick();
     });
 
@@ -2406,6 +2574,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         prevDataSourceForClearRef.current !== dataSource
       ) {
         heightIndexRef.current.clear();
+        liveExtentsRef.current.clear();
       }
       prevDataSourceForClearRef.current = dataSource;
       const observer = new ResizeObserver((entries) => {
@@ -2647,6 +2816,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         }
         if (evictModeEnabled) {
           heightIndexRef.current.clear();
+          liveExtentsRef.current.clear();
           scrollTick();
         }
       };
@@ -3076,18 +3246,474 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       };
     }, []);
 
-    // Apply spacer heights directly to the DOM ([L06]). Mirrors the
-    // pattern in `TugMarkdownView`'s `applySpacers`. Runs in
-    // `useLayoutEffect` so the geometry is in place before the
-    // browser paints the freshly-rendered cells.
+    // Register the out-of-tree probe handle for this scroller, and
+    // publish the displacement counter's floor. The attribute exists
+    // from mount so `"0"` is a positive assertion — an absent
+    // attribute would read the same as a clean run ([L06]).
     React.useLayoutEffect(() => {
-      if (topSpacerRef.current !== null) {
-        topSpacerRef.current.style.height = `${windowResult.topSpacerHeight}px`;
+      const el = scrollContainerRef.current;
+      if (el === null) return;
+      el.setAttribute(
+        "data-scroll-displacements",
+        String(displacementCountRef.current),
+      );
+      const probe: ListViewProbe = {
+        forceCommitClamp: () => {
+          forceClampRef.current = true;
+          scrollTick();
+        },
+        displacementCount: () => displacementCountRef.current,
+        conservationEvents: () => conservationEventsRef.current.slice(),
+        geometryRing: () => geometryRingRef.current.slice(),
+        // Same-moment read: ledger charge vs live rendered extent for
+        // every mounted cell, right now. Complements the evict-time
+        // records above, whose live figures are one commit old.
+        auditLedger: (): LedgerAudit => {
+          const scroller = scrollContainerRef.current;
+          const gap = rowGapPxRef.current ?? 0;
+          const rows: LedgerAuditRow[] = [];
+          let mounted = 0;
+          let worst = 0;
+          if (scroller !== null) {
+            const cells = scroller.querySelectorAll<HTMLElement>(
+              "[data-tug-list-cell-index]",
+            );
+            for (const cell of cells) {
+              const index = Number.parseInt(
+                cell.getAttribute("data-tug-list-cell-index") ?? "",
+                10,
+              );
+              if (Number.isNaN(index)) continue;
+              mounted += 1;
+              const live = cell.offsetHeight + gap;
+              const ledger = heightIndexRef.current.get(index);
+              const delta = ledger === undefined ? Number.NaN : ledger - live;
+              if (ledger === undefined || Math.abs(delta) >= 0.5) {
+                rows.push({
+                  index,
+                  kind: cell.getAttribute("data-tug-list-cell-kind") ?? "",
+                  ledger: ledger ?? null,
+                  live,
+                  delta: Number.isFinite(delta) ? delta : 0,
+                });
+              }
+              if (Number.isFinite(delta)) {
+                worst = Math.max(worst, Math.abs(delta));
+              }
+            }
+          }
+          return { gap, mounted, worst, rows };
+        },
+      };
+      listViewProbeRegistry.set(el, probe);
+      return () => {
+        if (listViewProbeRegistry.get(el) === probe) {
+          listViewProbeRegistry.delete(el);
+        }
+      };
+      // `scrollTick` is a stable reducer dispatch.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // **The commit bracket.** Detects a `scrollTop` the machine cannot
+    // account for, puts it back, and records what happened.
+    //
+    // The premise: a person cannot scroll during synchronous
+    // JavaScript. The commit phase is synchronous — the event loop is
+    // not turning, no input is being processed — so a position change
+    // observed across it was caused by the machine, with certainty
+    // rather than confidence. That is the one interval where "the
+    // scroller moved and nobody asked it to" is a safe conclusion; a
+    // general across-frames version of this rule would fight the native
+    // scrollbar, whose drag is silent in pointer and wheel events.
+    //
+    // The baseline is `SmartScroll.lastScrollEventTop`, NOT this
+    // component's previous reading. The previous reading spans the
+    // whole inter-commit interval — real wall time, in which a thumb
+    // drag is indistinguishable from a clamp. The last-scroll-event
+    // position discriminates by event timing instead: a drag delivers
+    // scroll events that refresh it before any commit can run, while a
+    // clamp moves `scrollTop` synchronously at forced layout and its
+    // scroll event cannot dispatch until the layout phase has ended.
+    // So at this point the baseline reflects every drag and no clamp.
+    //
+    // **Ordering is load-bearing, in both directions.**
+    //
+    // After the front-insert prepend effect, which writes `scrollTop`
+    // directly (it calls `noteExternalWrite` so this bracket can see
+    // it).
+    //
+    // Before the auto-follow-bottom pin effect below, and that half is
+    // the sharper one. `maybePinToBottom` re-engages follow-bottom for
+    // an idle scroller sitting inside the at-bottom band — and during
+    // a clamp the document is transiently short, so
+    // `scrollTop == scrollHeight - clientHeight` and `isAtBottom`
+    // reads TRUE even for a user parked deep in history. A pin call in
+    // that window would re-engage them and yank them to the live edge:
+    // the same class of user-fighting behavior this whole bracket
+    // exists to end, in the opposite direction. Repairing first closes
+    // that window. Do not move either effect past the other.
+    React.useLayoutEffect(() => {
+      const el = scrollContainerRef.current;
+      const ss = smartScrollRef.current;
+      if (el === null || ss === null) return;
+
+      // A hidden scroller (`display: none` — an inactive card tab)
+      // reports every geometry read as 0. That is the absence of a
+      // position, not a position; classifying against it would
+      // manufacture a displacement on every background commit.
+      if (el.clientHeight === 0) return;
+
+      // The clamp simulation. After window geometry became atomic a
+      // real commit-scoped clamp is impossible by construction, which
+      // leaves this detector with no natural trigger to be tested
+      // against — so the test surface can arm a genuine one here.
+      // Shortening the spacer and then reading `scrollHeight` forces
+      // layout while the document is short, and the browser clamps
+      // `scrollTop` exactly as the original tear did. The height is
+      // restored in the same synchronous block, so the commit ends
+      // with correct geometry and a displaced position: the real
+      // article, reproduced from inside the commit where `evalJS`
+      // cannot reach.
+      //
+      // This is the ONE sanctioned exception to "spacer height is
+      // written in the render pass and nowhere else" (see the spacer
+      // elements). It deliberately re-creates the tear the render-pass
+      // rule exists to prevent, and restores the exact string React
+      // put there before the block ends, so React's own record of the
+      // style stays accurate.
+      if (forceClampRef.current) {
+        forceClampRef.current = false;
+        const spacer = topSpacerRef.current;
+        if (spacer !== null) {
+          const restore = spacer.style.height;
+          const shortened = Math.max(
+            0,
+            spacer.offsetHeight - SIMULATED_CLAMP_SHRINK_PX,
+          );
+          spacer.style.height = `${shortened}px`;
+          void el.scrollHeight;
+          spacer.style.height = restore;
+          void el.scrollHeight;
+        }
       }
-      if (bottomSpacerRef.current !== null) {
-        bottomSpacerRef.current.style.height = `${windowResult.bottomSpacerHeight}px`;
+
+      const prev = commitGeometryRef.current;
+      // Read together, so position and geometry describe one moment.
+      // Layout is flushed once for the three of them.
+      const scrollTop = el.scrollTop;
+      const scrollHeight = el.scrollHeight;
+      const clientHeight = el.clientHeight;
+
+      // ---- Conservation probe ----
+      //
+      // Eviction is height-neutral only when the extent the spacer
+      // charges for a departing row equals the extent the row actually
+      // occupied in the flow. This block measures that equality
+      // directly rather than inferring it from `scrollTop` symptoms:
+      // each commit records every mounted cell's live outer extent
+      // (border-box height + gap), and on the commit where rows depart
+      // into a spacer, diffs the ledger's charge for each departed row
+      // against that row's last live extent. The per-swap `delta` IS
+      // the document height error the swap introduced — the quantity
+      // a browser clamp then acts on. Reads happen on the layout the
+      // geometry reads above already flushed, so no extra layout pass.
+      //
+      // Boundary convention: the last row of the list carries a `gap`
+      // term in both ledger and live figures though no gap renders
+      // after it, so per-row diffs stay convention-consistent; a swap
+      // touching the final row can misstate the sum by at most one gap.
+      {
+        const gap = rowGapPxRef.current ?? 0;
+        const prevLive = liveExtentsRef.current;
+        const first = windowResult.firstIndex;
+        const last = windowResult.lastIndex;
+        const ring = geometryRingRef.current;
+        ring.push({
+          top: scrollTop,
+          h: scrollHeight,
+          ts: topSpacerRef.current?.offsetHeight ?? -1,
+          bs: bottomSpacerRef.current?.offsetHeight ?? -1,
+          first,
+          last,
+          n: itemCount,
+        });
+        if (ring.length > 400) ring.splice(0, ring.length - 400);
+        if (prevLive.size > 0) {
+          let departed = 0;
+          let sumLedger = 0;
+          let sumLive = 0;
+          const rows: ConservationRowDiff[] = [];
+          for (const [index, entry] of prevLive) {
+            if (index >= first && index < last) continue;
+            const ledgerVal = heightIndexRef.current.get(index);
+            if (ledgerVal === undefined) continue;
+            departed += 1;
+            sumLedger += ledgerVal;
+            sumLive += entry.live;
+            if (Math.abs(ledgerVal - entry.live) >= 0.5 && rows.length < 12) {
+              rows.push({
+                index,
+                kind: entry.kind,
+                ledger: ledgerVal,
+                live: entry.live,
+              });
+            }
+          }
+          if (departed > 0) {
+            const event: ConservationEvent = {
+              departed,
+              sumLedger,
+              sumLive,
+              delta: sumLedger - sumLive,
+              first,
+              last,
+              itemCount,
+              scrollHeight,
+              rows,
+            };
+            conservationEventsRef.current.push(event);
+            if (Math.abs(event.delta) >= 0.5) {
+              tugDevLogStore.debug("list-view", "conservation", {
+                departed: event.departed,
+                delta: event.delta,
+                sumLedger: event.sumLedger,
+                sumLive: event.sumLive,
+                first: event.first,
+                last: event.last,
+                rows: event.rows,
+              });
+            }
+          }
+        }
+        const next = new Map<number, { live: number; kind: string }>();
+        const cells = el.querySelectorAll<HTMLElement>(
+          "[data-tug-list-cell-index]",
+        );
+        for (const cell of cells) {
+          const index = Number.parseInt(
+            cell.getAttribute("data-tug-list-cell-index") ?? "",
+            10,
+          );
+          if (Number.isNaN(index)) continue;
+          next.set(index, {
+            live: cell.offsetHeight + gap,
+            kind: cell.getAttribute("data-tug-list-cell-kind") ?? "",
+          });
+        }
+        liveExtentsRef.current = next;
       }
-    }, [windowResult.topSpacerHeight, windowResult.bottomSpacerHeight]);
+      const userActivitySeq = ss.userActivitySeq;
+      const programmaticWriteSeq = ss.programmaticWriteSeq;
+      const following = ss.isFollowingBottom;
+
+      // Counters are re-read here rather than reused from above: a
+      // repair issues a write of its own, and the next bracket must
+      // see that advance so it exempts the repair's still-undelivered
+      // scroll event instead of classifying it.
+      const snapshot = (top: number, pendingRepairTop: number | null): void => {
+        commitGeometryRef.current = {
+          userActivitySeq: ss.userActivitySeq,
+          programmaticWriteSeq: ss.programmaticWriteSeq,
+          scrollTop: top,
+          following,
+          pendingRepairTop,
+        };
+      };
+
+      // First bracket since mount — nothing to compare against.
+      if (prev === null) {
+        snapshot(scrollTop, null);
+        return;
+      }
+
+      // A gesture is in flight: the user owns the position outright.
+      if (
+        ss.phase === "dragging" ||
+        ss.phase === "settling" ||
+        ss.phase === "decelerating"
+      ) {
+        snapshot(scrollTop, null);
+        return;
+      }
+
+      // Input arrived since the last bracket. A belt — any activity
+      // that delivered a scroll event already refreshed the baseline —
+      // but it also covers input whose scroll event is still queued.
+      if (userActivitySeq !== prev.userActivitySeq) {
+        snapshot(scrollTop, null);
+        return;
+      }
+
+      // A deliberate machine move (restore heartbeat, correction,
+      // reveal, growth pin) whose scroll event may not have delivered
+      // yet, so the baseline cannot know about it.
+      if (programmaticWriteSeq !== prev.programmaticWriteSeq) {
+        snapshot(scrollTop, null);
+        return;
+      }
+
+      // The baseline must actually describe the present.
+      //
+      // The counter check above is one-shot per advance, which is
+      // enough for a single write but not for streaming growth: pins
+      // land continuously, each one moving the scroller and each one
+      // separated from its `scroll` event by at least a task. Without
+      // this the bracket reads the transcript's own growth as
+      // displacement and repairs backwards against the stream — the
+      // exact fight the repair exists to prevent, with the roles
+      // reversed. Measured on a 60-turn seed: 37 spurious
+      // displacements, every one of them a pin.
+      //
+      // A real clamp involves no JavaScript write at all, so on a
+      // scroller the machine is not actively writing to, the baseline
+      // is fresh and the clamp still stands out.
+      if (!ss.isScrollBaselineFresh) {
+        snapshot(scrollTop, null);
+        return;
+      }
+
+      // The position has not moved since the previous bracket already
+      // classified it.
+      //
+      // This is what closes the same-task commit cascade. The list
+      // view dispatches `scrollTick()` from inside layout effects, so
+      // React re-renders synchronously, before paint: two or three
+      // commits can run this bracket in one task with no scroll event
+      // delivered between them. Walk a growth pin through that without
+      // this check — commit A's pin advances the write counter; commit
+      // B takes the exemption above and *consumes* it by refreshing
+      // the snapshot; commit C then sees unchanged counters, an idle
+      // phase, and a baseline still holding the pre-pin position,
+      // because the pin's scroll event is queued rather than
+      // delivered. It would classify the pin as displacement and
+      // repair the scroller back upward, un-pinning follow-bottom in
+      // the act of protecting it.
+      //
+      // Note this compares against the previous *bracket*, not the
+      // baseline — a span of real wall time. That is only safe because
+      // it can suppress a repair and never cause one, and it never
+      // supplies a position to restore to. The drag-fighting hazard
+      // that rules the previous bracket out as a baseline is a
+      // property of being the target, which this is not.
+      if (Math.abs(scrollTop - prev.scrollTop) <= DISPLACEMENT_EPSILON_PX) {
+        snapshot(scrollTop, null);
+        return;
+      }
+
+      const baseline = ss.lastScrollEventTop;
+      const positionDelta = scrollTop - baseline;
+      if (Math.abs(positionDelta) <= DISPLACEMENT_EPSILON_PX) {
+        snapshot(scrollTop, null);
+        return;
+      }
+
+      // **A browser-authored move is not automatically a clamp.**
+      //
+      // The browser has a second reason to move this scroller, and
+      // the transcript depends on it: **scroll anchoring**. When
+      // content above the viewport changes height, the browser shifts
+      // `scrollTop` by the same amount to keep what the user is
+      // reading in place. No JavaScript write, no height shrink — the
+      // same signature a clamp leaves. `tug-markdown-block.css` opts
+      // into it (`overflow-anchor: auto`) and `render-incremental.ts`
+      // is built around it, so repairing it away would undo a feature
+      // rather than a defect.
+      //
+      // The two separate on whether the document explains the move.
+      // Anchoring shifts the position by exactly what changed above
+      // the viewport, so the position delta and the height delta
+      // match. A clamp is the position moving while the document does
+      // not: the field capture recorded `scrollTop` dropping 2,660px
+      // with `scrollHeight` identical — 44,262 — on both sides.
+      //
+      // Hence two conditions. Downward moves are never clamps at all
+      // (a clamp pulls toward a shrunken maximum, which is always a
+      // SMALLER `scrollTop`), and an upward move whose magnitude the
+      // height change accounts for is anchoring compensating for
+      // content that shrank above the viewport — a collapsed tool
+      // block, say.
+      const heightDelta = scrollHeight - ss.lastScrollEventHeight;
+      if (positionDelta > 0) {
+        snapshot(scrollTop, null);
+        return;
+      }
+      if (Math.abs(positionDelta - heightDelta) <= DISPLACEMENT_EPSILON_PX) {
+        snapshot(scrollTop, null);
+        return;
+      }
+
+      // Unexplained. Report it.
+      //
+      // `priorRepairHeld` answers the previous record's open question:
+      // a repair that was immediately undone means the document
+      // genuinely got shorter (a ledger shortfall) rather than dipping
+      // transiently, and the two want different fixes.
+      const priorRepairHeld =
+        prev.pendingRepairTop === null
+          ? null
+          : Math.abs(scrollTop - prev.pendingRepairTop) <=
+            DISPLACEMENT_EPSILON_PX;
+      displacementCountRef.current += 1;
+
+      // Repair. The baseline is the position to restore to — the
+      // user's most recent expressed intent, whether they are
+      // following the live edge or parked deep in history. A clamp
+      // inside our own commit has no claim on either.
+      //
+      // The target is NOT clamped to the current maximum. Clamping it
+      // would bake the defect in: if the bracket runs while the
+      // document is still short, `min(baseline, shortMax)` writes the
+      // shortened position, and when the height returns a moment
+      // later the user is left exactly where the clamp put them —
+      // reproducing the clamp rather than undoing it, and leaving the
+      // position matching so no later bracket ever notices. Writing
+      // the baseline unclamped costs nothing when the document really
+      // is short (the browser re-clamps, same result) and restores the
+      // user when it is not.
+      //
+      // A repair that does not hold is not retried. If the next
+      // bracket finds the same displacement the document genuinely
+      // shrank — a ledger shortfall, not a dip — and rewriting a
+      // position the geometry cannot support would fight the browser
+      // every commit. That is what `priorRepairHeld` reports forward.
+      ss.notifyRepair("list-view-commit", baseline);
+
+      // A clamp that knocked follow-bottom over on its way through
+      // takes it back. The flag was observed before the repair, so
+      // this restores intent along with position.
+      if (following && !ss.isFollowingBottom) {
+        ss.engage("repair-restore");
+      }
+
+      deckTrace.record({
+        kind: "scroll-displacement",
+        from: baseline,
+        to: scrollTop,
+        scrollHeight,
+        clientHeight,
+        following,
+        repaired: true,
+        priorRepairHeld,
+        evicting: evictingThisCommit,
+      });
+      tugDevLogStore.debug("list-view", "scroll-displacement", {
+        from: baseline,
+        to: scrollTop,
+        delta: scrollTop - baseline,
+        scrollHeight,
+        clientHeight,
+        following,
+        repaired: true,
+        priorRepairHeld,
+        evicting: evictingThisCommit,
+      });
+      el.setAttribute(
+        "data-scroll-displacements",
+        String(displacementCountRef.current),
+      );
+      snapshot(el.scrollTop, baseline);
+    });
 
     // Eviction bookkeeping, post-commit. Two jobs, both outside React
     // state ([L06] for the attributes, a ref for the retention memory):
@@ -3170,6 +3796,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // The follow-bottom gate itself lives in `SmartScroll.maybePin
     // ToBottom` ([L07] reads `isFollowingBottom` live); this effect
     // owns only the `pinRequestedRef` lifecycle.
+    //
+    // **Must stay declared after the displacement bracket above.**
+    // `maybePinToBottom` re-engages follow-bottom when the scroller is
+    // idle inside the at-bottom band, and a clamp makes `isAtBottom`
+    // read true even for a user parked in history — the document is
+    // transiently short, so the position is trivially "at the bottom"
+    // of it. The bracket repairs that before this effect reads any
+    // geometry. Reorder the two and a clamp silently pins a reader to
+    // the live edge.
     //
     // Ref-clearing semantics: HOLD the request (don't clear) on
     // `no-ss` (rare; the SmartScroll-install effect runs before this
@@ -5108,9 +5743,40 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             {leadingContent}
           </div>
         ) : null}
+        {/* **Spacer height belongs in the render pass.** It stands in for
+            the rows the window left out, so it is the other half of the row
+            set React is rendering right beside it — one piece of geometry,
+            and it must land in ONE mutation batch.
+
+            Writing it from a `useLayoutEffect` instead splits that geometry
+            across React's commit boundary. The mutation phase removes the
+            evicted rows and their combined extent — thousands of pixels on
+            a transcript — leaves the document; the layout phase puts it
+            back. In between, the document is short by exactly that amount,
+            and layout is lazy, so this is harmless right up until something
+            forces layout in that window. Then the browser clamps `scrollTop`
+            to the short maximum and does NOT restore it when the spacer
+            grows back microseconds later — the user's position is simply
+            gone. Plenty of readers sit in that window: every child layout
+            effect (children run before parents), the front-insert
+            scroll-hold's `scrollHeight` read, the ring-height effect's
+            `clientHeight` read.
+
+            Rendering the height closes the window by construction rather
+            than by hunting readers, so a sixth reader added later cannot
+            reopen it. `windowResult` is already computed in the render body
+            and already decides which rows are rendered, so nothing new is
+            calculated and no new render is scheduled.
+
+            Do not re-add a DOM-side writer alongside this one: React skips
+            re-applying a `style` value it believes unchanged, so the two
+            would go stale against each other. `TugMarkdownView` reaches the
+            same atomicity imperatively — `applySpacers` runs in the same
+            synchronous task as its block add/remove loops. */}
         <div
           ref={topSpacerRef}
           className="tug-list-view-spacer tug-list-view-spacer--top"
+          style={{ height: `${windowResult.topSpacerHeight}px` }}
           aria-hidden="true"
         />
         <OuterScrollportProvider scrollport={scrollportEl}>
@@ -5256,9 +5922,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         </TugListRowLayoutProvider>
         </ScrollerProvider>
         </OuterScrollportProvider>
+        {/* Rendered, not written from an effect — see the top spacer for
+            why splitting window geometry across the commit boundary costs
+            the user their scroll position. */}
         <div
           ref={bottomSpacerRef}
           className="tug-list-view-spacer tug-list-view-spacer--bottom"
+          style={{ height: `${windowResult.bottomSpacerHeight}px` }}
           aria-hidden="true"
         />
       </div>

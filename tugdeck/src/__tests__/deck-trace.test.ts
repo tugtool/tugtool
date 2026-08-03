@@ -169,6 +169,44 @@ describe("deckTrace.enable(false) gates recording", () => {
       (final[final.length - 1] as Extract<DeckTraceEvent, { kind: "commit-tick" }>).count,
     ).toBe(100);
   });
+
+  test("scroll-displacement and follow-bottom record through a closed gate", () => {
+    // These two kinds are records of a defect that arrives
+    // unannounced, so they ignore the gate: a session found stranded
+    // hours later must carry its own evidence, and nobody was there
+    // to call `enable(true)` first.
+    deckTrace.enable(false);
+    const seqBefore = deckTrace.mark();
+
+    deckTrace.record({ kind: "commit-tick", count: 1 });
+    expect(deckTrace.dump().length).toBe(0);
+
+    deckTrace.record({
+      kind: "follow-bottom",
+      following: false,
+      source: "unattributed-scroll-up",
+    });
+    deckTrace.record({
+      kind: "scroll-displacement",
+      from: 39_000,
+      to: 36_340,
+      scrollHeight: 44_262,
+      clientHeight: 700,
+      following: true,
+      repaired: true,
+      priorRepairHeld: null,
+      evicting: true,
+    });
+
+    const recorded = deckTrace.dump();
+    expect(recorded.length).toBe(2);
+    expect(recorded.map((e) => e.kind)).toEqual([
+      "follow-bottom",
+      "scroll-displacement",
+    ]);
+    // The gate-exempt kinds still stamp seq like any other record.
+    expect(deckTrace.mark()).toBe(seqBefore + 2);
+  });
 });
 
 describe("deckTrace.mark()", () => {

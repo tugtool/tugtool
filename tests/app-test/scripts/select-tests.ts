@@ -166,7 +166,12 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // restore test (at0278) has to name it. 22 → 23 when the scroll attribution
     // doctrine was pinned (at0333): the two-pass correction its supersede rule
     // voids lives in the list, so the doctrine test has to name it.
-    "tugdeck/src/components/tugways/tug-list-view.tsx": 23,
+    // 23 → 24 when the displacement bracket landed (at0335): the commit
+    // bracket that detects and repairs a browser clamp lives in the list
+    // view, so the clamp test has to name it.
+    // 24 → 25 with the eviction conservation probe (at0336): the height
+    // accounting it measures lives in the list view's ledger and spacers.
+    "tugdeck/src/components/tugways/tug-list-view.tsx": 25,
 };
 
 interface TestCoverage {

@@ -490,13 +490,51 @@ The `SmartScroll` unit tests run against a real DOM element in the bun environme
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Durable displacement + follow-bottom instrumentation | pending | — |
-| #step-2 | Atomic window geometry (render-phase spacers) | pending | — |
-| #step-3 | Commit-scoped displacement repair | pending | — |
-| #step-4 | SmartScroll: machine displacement is never intent | pending | — |
-| #step-5 | Follow-bottom is recoverable | pending | — |
-| #step-6 | Doctrine: clamp row and the D93 amendment | pending | — |
-| #step-7 | Final integration checkpoint | pending | — |
+| #step-1 | Durable displacement + follow-bottom instrumentation | done | `66d41a610` |
+| #step-2 | Atomic window geometry (render-phase spacers) | done | `70a621534` |
+| #step-3 | Commit-scoped displacement repair | done | `b6beb6552` |
+| #step-4 | SmartScroll: machine displacement is never intent | done | `9bb0fc509` |
+| #step-5 | Follow-bottom is recoverable | done | `139b3be25` |
+| #step-6 | Doctrine: clamp row and the D93 amendment | done | `1c2326136` |
+| #step-7 | Final integration checkpoint | **blocked** | `bc1708315` (fixups) |
+
+**Verification findings (2026-08-02).** Steps 1–6 are committed, but app-test verification against the real app falsified two of this plan's claims and found three defects in the implementation. They are recorded here rather than in the step bodies because they change the plan, not just the code.
+
+**F1 — the zero-displacement criterion is unachievable, and [P02] does not fully close the tear.** [#success-criteria] requires `data-scroll-displacements` to stay `"0"`. It does not. Two distinct populations show up:
+
+- *Benign, ~24px.* Seeding 60 turns produces a dozen-odd records, every one an exactly-24px pull on a growing document with eviction active. Eviction's height ledger settles **across** commits — a cell measures at its new height in one commit, the spacer compensates in the next — so the document dips briefly between them and the browser clamps. This is [Q01]'s out-of-commit case, which the plan deferred as expected-to-be-rare; it is not rare, it is continuous. The repair undoes each one.
+- *Field-scale, ~2,368px.* Driving an evicting transcript through repeated re-window swaps (the [#step-2] test) still records a **2,368px** displacement. This is the magnitude class of the original failures, so **the render-phase spacer fix reduces but does not eliminate large displacement.** [#step-2]'s checkpoint asked for exactly this measurement and treated a non-zero result as "stop and re-diagnose". That is the open question.
+
+`at0335` now pins displacement **magnitude** against `AT_BOTTOM_PX` rather than a count of zero, since magnitude is what separates the benign population from the defect.
+
+**F2 — the [S02] classifier needs a baseline-freshness gate.** `lastScrollEventTop` describes the present only until the next write moves the scroller, and scroll events dispatch from the event loop. On a streaming transcript, which pins continuously, the baseline is stale nearly always. [S02]'s exemption 4 is one-shot per counter advance and its step 5 does not apply when growth genuinely moved the position, so pins slipped through both: **37 spurious displacements per 60-turn seed, each provoking a repair that dragged the scroller backwards against the stream.** Fixed by `SmartScroll.isScrollBaselineFresh`, which the bracket now requires before classifying. This should be folded into [S02].
+
+**F3 — [S03]'s repair target baked in the clamp it was meant to undo.** The specified target, `min(baseline, max(0, scrollHeight - clientHeight))`, writes the *shortened* position when the bracket runs while the document is still short — and once the position matches the short maximum, no later bracket notices. The target is now the unclamped baseline: when the document really is short the browser re-clamps to the same result, and when it is not, the user gets their position back.
+
+**F4 — a browser-authored move is not automatically a clamp.** [P03] reasons that only a clamp moves `scrollTop` without JS. Scroll anchoring also does, when content above the viewport resizes, and the transcript opts into it (`overflow-anchor: auto` in `tug-markdown-block.css`; `render-incremental.ts` is built around it). The classifier now requires the move to be upward **and** unexplained by the height delta. Honest note: this accounts for very few of the observed records — it is correct, but it was not the cause of the spurious repairs (F2 was).
+
+**Open `at0335` failures (5/9 passing).**
+
+| Case | Result | Read |
+|---|---|---|
+| repeated window swaps | worst displacement **2,368px** | **F1** — a real gap in the geometry fix, not a test artifact |
+| idle user never stranded | pins to **326px** short of the edge | follow-bottom re-engages (`growth-at-bottom-reengage` fires) but the position does not reach the bottom; needs investigation |
+| clamp repaired, repair holds | `priorRepairHeld` is `null` | the second forced clamp produced no record to carry the answer forward; test or `commitGeometryRef` chain |
+| wheel reaches the bottom | ends disengaged | harness limit: a synthetic `WheelEvent` + manual `scrollTop` does not reproduce a real gesture's `scrollend`-driven termination, so gesture-end re-engagement never runs |
+
+**Coverage gap accepted.** `at0333` is reverted to its `main` state — its wheel re-engage case is not faithfully drivable for the reason in the last row above. [#step-5]'s recoverability stays covered by `at0335`'s idle-recovery case, which reaches the disengaged-at-the-bottom state deterministically through `setTranscriptFollowBottom`. The **gesture-end** `isAtBottom`-only path is implemented but unpinned.
+
+**Not done.** The manual A/B regression attribution in [#step-1] and [#step-2] (displacement before/after the geometry fix, and in the eviction-disabled control arm) was never performed — it spans revisions and needs a person driving a real streaming session. [R03] is still unfilled, and F1 makes it the highest-value thing to run next.
+
+**F1 diagnosed (2026-08-03).** The conservation probe (`at0336-conservation-probe.test.ts`, `getListConservation`) measured the eviction ledger directly and exonerated it: across 109 eviction events including the full swap cycle, the worst ledger-vs-live accounting error is **1.5px across 15 rows** — the spacers charge exactly what departing rows occupied. The displacements have a different mechanism entirely, established by elimination and then caught red-handed:
+
+- The geometry ring shows the 2,368px event occurring in a commit whose **post-layout height and spacers are exactly right** — no inter-commit shrink exists for the browser to clamp against.
+- The event survives with scroll anchoring disabled (`overflow-anchor: none` on the scroller and every descendant), pixel-identical.
+- Wrapping every scroll mover (the `scrollTop` setter, `scrollIntoView`, `focus`) and every layout-forcing getter with stack capture shows **no JavaScript writes or reads in the gap** — the position is already moved when the first post-mutation read looks.
+
+Conclusion: **WebKit clamps the scroll offset synchronously at renderer removal, inside React's mutation phase.** React processes deletions before sibling style updates, so for one unobservable instant the old window's cells are gone while the spacers still hold their old heights; WebKit's removal path clamps the offset against that transient extent and nothing un-clamps it when the spacers grow microseconds later. No forced layout is required and no scroll API can see it happen — which is why [P02]'s render-phase atomicity (correct, and kept) reduced but could not eliminate the displacement, and why [Q01]'s "out-of-commit dip" reading of the ~24px population was wrong: both populations are removal-time clamps, differing only in how much renderer extent the mutation removes (one turn-boundary element vs. fifteen window cells).
+
+Countermeasure proven: pinning the scrollable extent with an absolutely-positioned one-pixel **height post** (so the content height cannot dip mid-mutation regardless of mutation order) drives the same swap sequence to **zero** displacements (`at0336` "height post prevents the mid-swap displacement"). The productization direction is a render-phase ratcheting height floor owned by the list view — the document's scrollable extent becomes monotone by construction, lowered only through an explicit, attributed rebase (user collapse, width reflow, clear) — after which the [S02]/[S03] repair machinery demotes to an assertion layer and the original zero-displacement success criterion is restorable.
 
 ---
 

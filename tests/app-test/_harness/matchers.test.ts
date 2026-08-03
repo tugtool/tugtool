@@ -461,6 +461,17 @@ const EVENT_FIXTURES: Record<
     following: true,
     source: "submit",
   },
+  "scroll-displacement": {
+    kind: "scroll-displacement",
+    from: 19199,
+    to: 16831,
+    scrollHeight: 19619,
+    clientHeight: 420,
+    following: true,
+    repaired: true,
+    priorRepairHeld: null,
+    evicting: true,
+  },
 };
 
 describe("summarizeEvent — exhaustive per-kind coverage", () => {

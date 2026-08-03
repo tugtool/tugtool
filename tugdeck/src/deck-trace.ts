@@ -33,9 +33,10 @@
  * This module provides the event union, the ring buffer, and
  * `record` / `dump` / `dumpTable` / `enable` / `mark` / `since` /
  * `clear`. Call sites in the deck install separately. The
- * `window.__deckTrace` global is bound so a developer can drive the
- * trace from the Safari Web Inspector console, but only under
- * `import.meta.env.DEV` so the release bundle tree-shakes the binding.
+ * `window.__deckTrace` global is bound in every build so a developer
+ * can drive the trace from the Safari Web Inspector console —
+ * including on a release instance, where the always-recorded kinds
+ * below have been filling the ring unattended.
  *
  * ## Enable semantics
  *
@@ -47,6 +48,12 @@
  * and `dump` remain callable regardless of the enable flag (they do
  * not write new events); toggling `enable` never clears the existing
  * buffer.
+ *
+ * The kinds in `ALWAYS_RECORDED_KINDS` are the exception: they record
+ * whether or not anyone opted in. They are records of a *defect*
+ * (a scroll displacement, a follow-bottom flip) rather than of an
+ * interaction under study, and the sessions that hold the evidence
+ * are by definition the ones nobody was watching.
  *
  * ## Bounded ring
  *
@@ -427,6 +434,31 @@ export type DeckTraceEvent = {
       following: boolean;
       source: string;
     }
+  | {
+      // Fired by `TugListView`'s commit bracket when it finds the
+      // scroller somewhere the machine cannot account for. The only
+      // actor that moves `scrollTop` with no JavaScript involved is
+      // the browser clamping it to a transiently-short document, so
+      // this is the record of a clamp: `from` is the position as of
+      // the last `scroll` event (the baseline the bracket compares
+      // against), `to` is where the commit left it.
+      //
+      // `priorRepairHeld` reports the PREVIOUS record's outcome —
+      // ring entries are immutable once appended, so a repair's
+      // result is carried forward rather than patched in. `false`
+      // means the previous repair was immediately re-clamped, which
+      // is the signature of a document that genuinely shrank (a
+      // ledger shortfall) rather than a transient dip.
+      kind: "scroll-displacement";
+      from: number;
+      to: number;
+      scrollHeight: number;
+      clientHeight: number;
+      following: boolean;
+      repaired: boolean;
+      priorRepairHeld: boolean | null;
+      evicting: boolean;
+    }
 );
 
 /**
@@ -455,7 +487,8 @@ export type DeckTraceEventInput =
   | Omit<Extract<DeckTraceEvent, { kind: "engine-paint-mirror-inactive" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "macrotask-focus-claim" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "caret-responder-divergence" }>, StampedFields>
-  | Omit<Extract<DeckTraceEvent, { kind: "follow-bottom" }>, StampedFields>;
+  | Omit<Extract<DeckTraceEvent, { kind: "follow-bottom" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "scroll-displacement" }>, StampedFields>;
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -639,6 +672,25 @@ let seqCounter = 0;
 /** Recording gate. `record` short-circuits when this is false. */
 let enabled = false;
 
+/**
+ * Event kinds that record regardless of the enable gate.
+ *
+ * Recording defaults to OFF, which is right for the high-volume focus
+ * and commit kinds — they exist to be switched on during a
+ * reproduction. Scroll displacement is the opposite case: it is a
+ * defect record, it happens without warning, and the sessions that
+ * most need it are the ones nobody was watching. Two sessions found
+ * stranded thousands of pixels above the live edge held no evidence
+ * at all, and the whole diagnosis had to be rebuilt live through
+ * `/api/eval`. These kinds are rare by nature (one record per
+ * displacement, one per follow-bottom transition), so recording them
+ * unconditionally costs nothing in the streaming hot path.
+ */
+const ALWAYS_RECORDED_KINDS: ReadonlySet<DeckTraceEvent["kind"]> = new Set([
+  "scroll-displacement",
+  "follow-bottom",
+]);
+
 function appendEvent(
   input: DeckTraceEventInput,
   loc: string,
@@ -683,6 +735,12 @@ export interface DeckTrace {
   /**
    * Record an event. No-op when `enable(false)`; under `enable(true)`
    * the call stamps `timestamp` and `seq` and appends to the ring.
+   *
+   * The kinds in `ALWAYS_RECORDED_KINDS` — `scroll-displacement` and
+   * `follow-bottom` — ignore the gate and always record. They are
+   * defect records for a failure that arrives unannounced, so waiting
+   * for someone to switch recording on means having no evidence
+   * exactly when it is needed.
    */
   record(event: DeckTraceEventInput): void;
   /** Return a fresh array of every event currently in the ring, oldest-first. */
@@ -723,7 +781,7 @@ export interface DeckTrace {
  */
 export const deckTrace: DeckTrace = {
   record(event) {
-    if (!enabled) return;
+    if (!enabled && !ALWAYS_RECORDED_KINDS.has(event.kind)) return;
     const loc = captureCallerLoc();
     const store = captureStoreSnapshot();
     appendEvent(event, loc, store);
@@ -907,7 +965,7 @@ function uninstallObservers(): void {
 }
 
 // ---------------------------------------------------------------------------
-// `window.__deckTrace` binding — DEV only
+// `window.__deckTrace` binding
 // ---------------------------------------------------------------------------
 
 /**
@@ -922,10 +980,13 @@ declare global {
   }
 }
 
-// Bind only under `import.meta.env.DEV` so Vite's release bundle
-// tree-shakes the binding entirely. The module's other exports
-// remain available to callers that import them directly; only the
-// global handle is dev-gated.
-if (import.meta.env?.DEV === true && typeof window !== "undefined") {
+// Bound in release builds too, not just under `import.meta.env.DEV`.
+// The always-recorded kinds put real defect evidence in the ring on
+// every build, and a handle that only exists in dev makes that
+// evidence unreachable in exactly the sessions that carry it — a
+// release instance found stranded hours later is the case the ring
+// was added for. The binding is one property assignment; the ring
+// itself is allocated either way.
+if (typeof window !== "undefined") {
   window.__deckTrace = deckTrace;
 }

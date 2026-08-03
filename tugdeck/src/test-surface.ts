@@ -40,6 +40,8 @@ import type { DeckState, CardStateBag } from "./layout-tree";
 import { DEFAULT_LENS_SIDE } from "./lib/layout-imposer";
 import { deckTrace, type DeckTraceEvent } from "./deck-trace";
 import { labFlags } from "./lib/lab-flags";
+import { listViewProbeForScroller } from "./components/tugways/tug-list-view";
+import { smartScrollForElement } from "./lib/smart-scroll";
 import { getDeckStore } from "./lib/deck-store-registry";
 import { transferFocusForActivation } from "./focus-transfer";
 import { getFocusManager } from "./components/tugways/focus-manager";
@@ -188,8 +190,30 @@ import {
  * ([AT0332]): a fully-buried pane cannot be reached by a click, so the test
  * raises it the way a Lens Cards row does, through
  * `DeckManager.activateCard`. Additive; major stays `1`.
+ *
+ * `1.20.0`: adds {@link TugTestSurface.getScrollDisplacementCount} and
+ * {@link TugTestSurface.forceCommitClamp} — the displacement bracket's two
+ * seams. The reader returns the count as a number rather than by scraping
+ * `data-scroll-displacements`; the clamp simulator reproduces a real
+ * commit-scoped browser clamp from *inside* a React commit, which `evalJS`
+ * cannot reach from outside. Both resolve the scroller by its
+ * `data-tug-scroll-key` selector. Additive; major stays `1`.
+ *
+ * `1.21.0`: adds {@link TugTestSurface.setTranscriptFollowBottom} — forces a
+ * scroller's follow-bottom flag through the scroller registry. The
+ * disengaged-at-the-bottom state cannot be reached by `scrollTop` assignment
+ * (a downward assignment into the band re-engages before the test can assert),
+ * and that state is precisely the one the field reports describe. Additive;
+ * major stays `1`.
+ *
+ * `1.22.0`: adds {@link TugTestSurface.getListConservation} — the eviction
+ * height-accounting probe. Returns the per-eviction ledger-vs-live records
+ * accumulated since mount plus a same-moment audit of every mounted cell, so
+ * a test can measure the document height error a window swap introduced
+ * rather than inferring it from `scrollTop` symptoms. Additive; major
+ * stays `1`.
  */
-export const SURFACE_VERSION = "1.19.0" as const;
+export const SURFACE_VERSION = "1.22.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -537,6 +561,75 @@ export interface TugTestSurface {
    * The tile-ledger cell's A/B arm (scrolling-memory-diet §G2).
    */
   setTranscriptEvictionDisabled(disabled: boolean): void;
+
+  /**
+   * Displacements a list-view scroller has recorded since mount
+   * (SURFACE_VERSION 1.20.0) — `scrollTop` changes across a commit
+   * that the machine could not account for. `selector` names the
+   * scroll container, e.g.
+   * `[data-tug-scroll-key="session-card-transcript"]`.
+   *
+   * Same number the `data-scroll-displacements` attribute carries;
+   * this reads it as a number rather than by DOM scraping. Throws
+   * when the selector does not resolve to a list-view scroller.
+   */
+  getScrollDisplacementCount(selector: string): number;
+
+  /**
+   * Arm a one-shot commit-scoped browser clamp on a list-view
+   * scroller (SURFACE_VERSION 1.20.0).
+   *
+   * Atomic window geometry makes a real commit-scoped clamp
+   * impossible by construction, which leaves the detection and repair
+   * path with no natural trigger to test against — and `evalJS` runs
+   * outside any React commit, so a test cannot reproduce one from
+   * outside. On the next commit the list view briefly shortens its
+   * top spacer and forces layout, so the browser clamps `scrollTop`
+   * exactly as the original defect did, then restores the height in
+   * the same synchronous block. The detector faces the genuine
+   * article: a real clamp, commit-scoped, machine-caused.
+   *
+   * Drive it from a position where a clamp is geometrically possible
+   * — near the bottom of an evicting transcript with a large top
+   * spacer, so the shrink actually lowers the scroll maximum below
+   * `scrollTop`.
+   */
+  forceCommitClamp(selector: string): void;
+
+  /**
+   * Force a scroller's follow-bottom flag (SURFACE_VERSION 1.21.0).
+   *
+   * Required, not a convenience. The established way to reach a
+   * scroll state in these tests is direct `scrollTop` assignment,
+   * which is attribution-identical to the native scrollbar's pointer
+   * silence. But the disengaged-at-the-bottom state cannot be built
+   * that way: a *downward* assignment into the at-bottom band emits a
+   * scroll event that satisfies `idle-reengage`, so follow-bottom
+   * comes back on before the test can assert anything. The state
+   * heals itself out from under any attempt to construct it.
+   *
+   * That state is exactly what the field reports describe — a user
+   * parked at the live edge with follow-bottom off, for whom every
+   * append silently fails to arrive — so it has to be reachable.
+   */
+  setTranscriptFollowBottom(selector: string, engaged: boolean): void;
+
+  /**
+   * The eviction height-accounting probe (SURFACE_VERSION 1.22.0).
+   *
+   * `events` is the per-eviction record list accumulated since mount:
+   * for every commit where rows departed the rendered window into a
+   * spacer, the sum the spacer charged for them (`sumLedger`) against
+   * the extent they actually occupied while mounted (`sumLive`), with
+   * `delta = sumLedger - sumLive` — negative means the document SHRANK
+   * by that much at that swap. `audit` is a same-moment ledger-vs-live
+   * comparison of every currently mounted cell.
+   */
+  getListConservation(selector: string): {
+    events: unknown[];
+    audit: unknown;
+    ring: unknown[];
+  };
 
   // ---- Introspection (SURFACE_VERSION 1.1.0, harness Phase A) ----
   getElementText(selector: string): string;
@@ -1362,6 +1455,55 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     setTranscriptEvictionDisabled(disabled: boolean): void {
       labFlags.setTranscriptEvictionDisabled(disabled);
+    },
+
+    getScrollDisplacementCount(selector: string): number {
+      const probe = listViewProbeForScroller(queryRequired(selector));
+      if (probe === null) {
+        throw new Error(
+          `getScrollDisplacementCount: ${selector} is not a list-view scroller`,
+        );
+      }
+      return probe.displacementCount();
+    },
+
+    forceCommitClamp(selector: string): void {
+      const probe = listViewProbeForScroller(queryRequired(selector));
+      if (probe === null) {
+        throw new Error(
+          `forceCommitClamp: ${selector} is not a list-view scroller`,
+        );
+      }
+      probe.forceCommitClamp();
+    },
+
+    setTranscriptFollowBottom(selector: string, engaged: boolean): void {
+      const ss = smartScrollForElement(queryRequired(selector));
+      if (ss === null) {
+        throw new Error(
+          `setTranscriptFollowBottom: ${selector} has no SmartScroll`,
+        );
+      }
+      if (engaged) ss.engage("test-surface");
+      else ss.disengage("test-surface");
+    },
+
+    getListConservation(selector: string): {
+      events: unknown[];
+      audit: unknown;
+      ring: unknown[];
+    } {
+      const probe = listViewProbeForScroller(queryRequired(selector));
+      if (probe === null) {
+        throw new Error(
+          `getListConservation: ${selector} is not a list-view scroller`,
+        );
+      }
+      return {
+        events: probe.conservationEvents(),
+        audit: probe.auditLedger(),
+        ring: probe.geometryRing(),
+      };
     },
 
     enableDeckTrace(flag: boolean): void {

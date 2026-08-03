@@ -42,6 +42,7 @@
  */
 
 import { deckTrace } from "../deck-trace";
+import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -156,6 +157,40 @@ const SCROLLEND_FALLBACK_MS = 150;
 const RESTORE_SUPERSEDE_DRIFT_PX = 8;
 
 // ---------------------------------------------------------------------------
+// Scroller registry
+// ---------------------------------------------------------------------------
+
+/**
+ * Every live `SmartScroll`, keyed by the element it manages.
+ *
+ * A `SmartScroll` is otherwise reachable only by the component that
+ * constructed it — the list view holds it in a ref and publishes a
+ * narrow `Scroller` façade to its React descendants through context.
+ * Neither route exists for code outside the tree: the test surface and
+ * `/api/eval` can find the scroll *element* by its
+ * `data-tug-scroll-key` selector but have nothing to hand it to.
+ *
+ * The registry closes that gap with the mapping the DOM already
+ * implies. Entries are added in the constructor and removed in
+ * `dispose()`, so a stale scroller is never handed out.
+ */
+const scrollerRegistry = new Map<Element, SmartScroll>();
+
+/**
+ * The `SmartScroll` managing `el`, or `null` when `el` is not a
+ * scroll container (or its scroller has been disposed).
+ *
+ * Intended for out-of-tree callers — the test surface, console
+ * diagnosis — that resolve an element by selector first. In-tree
+ * consumers should use the `useScroller()` façade, which carries the
+ * source-tagging discipline the raw instance does not enforce.
+ */
+export function smartScrollForElement(el: Element | null): SmartScroll | null {
+  if (el === null) return null;
+  return scrollerRegistry.get(el) ?? null;
+}
+
+// ---------------------------------------------------------------------------
 // SmartScroll
 // ---------------------------------------------------------------------------
 
@@ -191,6 +226,76 @@ export class SmartScroll {
   // cleared so a subsequent genuine user scroll re-engages
   // normally.
   private _suppressIdleReengagementOnNextScroll = false;
+
+  // One-shot guard: the next scroll event is the deferred echo of a
+  // repair write, so neither disengage rule may read it as intent.
+  //
+  // Separate from `_suppressIdleReengagementOnNextScroll`, which
+  // guards the opposite direction (a programmatic write must not
+  // *engage* follow-bottom). A repair needs both: it moves the
+  // scroller without the user asking, so its echo must neither engage
+  // nor disengage.
+  //
+  // Consumed on the FIRST `_handleScroll` after the write, on the
+  // same terms as the other flag.
+  private _repairSuppressionArmed = false;
+
+  // Signed `deltaY` accumulated over the current wheel gesture, reset
+  // when a gesture begins. The user's stated direction.
+  //
+  // The `drag-up` rule needs a direction, and position is the wrong
+  // measure for one during a streaming burst: growth pins and
+  // scrollHeight jitter move `scrollTop` independently of the user's
+  // hand, and a large clamp can land the position ABOVE any position
+  // baseline — so position-vs-gesture-start disengages on exactly the
+  // case the rule needs to tolerate. The wheel deltas are the hand.
+  private _gestureWheelDeltaAccum = 0;
+
+  // Monotonic counter of user input events that carry scroll intent —
+  // wheel, pointerdown, and scroll-key keydown. A consumer that wants
+  // to reason about an interval ("did the user touch this scroller
+  // between these two points?") samples the counter at each end and
+  // compares. It counts input, not scroll events, so it answers even
+  // for a gesture whose scroll events have not been dispatched yet.
+  private _userActivitySeq = 0;
+
+  // Monotonic counter of writes that MOVED the scroller. Advanced at
+  // every site that assigns `container.scrollTop` — `_writeScrollTop`,
+  // `pinToBottom`, and `noteExternalWrite` on behalf of a direct
+  // writer outside this class.
+  //
+  // "Moved", not "was called": `pinToBottom` early-returns when the
+  // scroller is already at the maximum, which is the common case on a
+  // transcript that is already pinned — most streaming commits. A
+  // counter that advanced on every call would look permanently busy
+  // to a consumer using it to exempt machine writes, blinding it
+  // exactly when the transcript is most active.
+  private _programmaticWriteSeq = 0;
+
+  // Writes that have moved the scroller since the last `scroll` event
+  // was delivered. Incremented alongside `_programmaticWriteSeq`,
+  // zeroed in `_handleScroll`.
+  //
+  // This is the freshness of `_lastScrollTop`. Scroll events are
+  // dispatched from the event loop, so between a write and its event
+  // the recorded position is a lie — it describes where the scroller
+  // was, not where it is. A consumer comparing the live position
+  // against a stale baseline sees a difference nobody caused and, if
+  // it acts on one, fights the very writes that created it. Streaming
+  // growth is a continuous stream of such writes, so this is the
+  // common case, not an edge one.
+  private _writesSinceScrollEvent = 0;
+
+  // `scrollHeight` as of the same `scroll` event that set
+  // `_lastScrollTop`. The two are read together so they describe one
+  // moment — a consumer asking "did the document explain this move?"
+  // needs both halves from the same instant or the arithmetic is
+  // meaningless.
+  //
+  // Costs no extra layout: `_handleScroll` already reads `scrollTop`,
+  // which flushes layout, so the height comes from the same
+  // computation.
+  private _lastScrollEventHeight = 0;
 
   // Timer handles
   private _decelerationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -271,6 +376,8 @@ export class SmartScroll {
     // keydown does not use passive:true here — that option is not universally
     // accepted for keydown and we don't call preventDefault in this handler.
     scrollContainer.addEventListener('keydown', this._onKeyDown);
+
+    scrollerRegistry.set(scrollContainer, this);
   }
 
   // -------------------------------------------------------------------------
@@ -312,6 +419,58 @@ export class SmartScroll {
 
   get isFollowingBottom(): boolean { return this._isFollowingBottom; }
 
+  /** Monotonic count of user input events carrying scroll intent
+   *  (wheel, pointerdown, scroll-key keydown). See
+   *  `_userActivitySeq`. */
+  get userActivitySeq(): number { return this._userActivitySeq; }
+
+  /** Monotonic count of writes that moved `scrollTop`. See
+   *  `_programmaticWriteSeq` — it counts writes, not calls. */
+  get programmaticWriteSeq(): number { return this._programmaticWriteSeq; }
+
+  /**
+   * `scrollTop` as of the most recent `scroll` event.
+   *
+   * This is the one position reading that a native scrollbar drag
+   * refreshes. The scrollbar thumb delivers no pointer or wheel
+   * events, so the phase machine cannot see it — but it does deliver
+   * scroll events, and `_handleScroll` records each one here. A
+   * browser clamp, by contrast, moves `scrollTop` synchronously at
+   * forced layout and its scroll event does not dispatch until the
+   * layout phase has ended, so this value is still pre-clamp when a
+   * synchronous observer reads it.
+   *
+   * That timing difference is what lets a consumer inside a
+   * synchronous commit tell "the user dragged" from "the browser
+   * clamped" without guessing. Before the first scroll event since
+   * construction, this reads 0 (the baseline is seeded lazily to
+   * avoid a layout-forcing read in the constructor).
+   */
+  get lastScrollEventTop(): number { return this._lastScrollTop; }
+
+  /**
+   * True when {@link lastScrollEventTop} reflects the scroller's
+   * current position — no write has moved it since the last `scroll`
+   * event was delivered.
+   *
+   * Anything comparing the live position against that baseline must
+   * check this first. Scroll events dispatch from the event loop, so
+   * a write and its event are separated by at least a task, and in
+   * that gap the baseline describes the past. Streaming growth pins
+   * the scroller continuously, so on a live transcript the baseline
+   * is stale most of the time — a consumer that skips this check
+   * reads its own writes as movement nobody authored and repairs
+   * against the stream.
+   */
+  get isScrollBaselineFresh(): boolean {
+    return this._writesSinceScrollEvent === 0;
+  }
+
+  /** `scrollHeight` as of the same `scroll` event as
+   *  {@link lastScrollEventTop}. Pair them to ask whether a change in
+   *  the document explains a change in the position. */
+  get lastScrollEventHeight(): number { return this._lastScrollEventHeight; }
+
   // -------------------------------------------------------------------------
   // Public API — programmatic scroll
   // -------------------------------------------------------------------------
@@ -348,6 +507,8 @@ export class SmartScroll {
   private _writeScrollTop(top: number, animated: boolean): void {
     this._enterProgrammatic();
     this._suppressIdleReengagementOnNextScroll = true;
+    this._programmaticWriteSeq += 1;
+    this._writesSinceScrollEvent += 1;
     if (animated) {
       this._container.scrollTo({ top, behavior: 'smooth' });
       // scrollend event (or 150ms fallback) will return us to idle.
@@ -381,12 +542,84 @@ export class SmartScroll {
    *  that re-runs after every commit (see TugListView's post-commit pin
    *  effect) and produces a 60Hz scrollTop-write loop on relaunch. The
    *  callers have just committed, so the layout read here is fresh and
-   *  cheap. */
+   *  cheap.
+   *
+   *  This is a SECOND, independent `scrollTop` write site: it does not
+   *  route through `_writeScrollTop`, because a pin must stay in the
+   *  `idle` phase [D93]. It therefore advances the programmatic-write
+   *  counter itself — after the already-at-max early return, so the
+   *  counter keeps meaning "a write moved the scroller". Missing it
+   *  would let a consumer that exempts machine writes read the hottest
+   *  write in the system (every growth pin while following bottom) as
+   *  something it did not cause. */
   pinToBottom(): void {
     if (this._disposed) return;
     const max = this._container.scrollHeight - this._container.clientHeight;
     if (this._container.scrollTop >= max) return;
     this._container.scrollTop = Math.max(0, max);
+    this._programmaticWriteSeq += 1;
+    this._writesSinceScrollEvent += 1;
+  }
+
+  /**
+   * Declare that the caller just wrote `container.scrollTop` directly,
+   * outside this class.
+   *
+   * A handful of writers legitimately bypass SmartScroll — the list
+   * view's front-insert prepend compensation, `focus-reveal`'s
+   * `revealWithin`, the transcript's `settleFindReveal`. Their write
+   * lands synchronously but its `scroll` event does not dispatch until
+   * the current task ends, so anything reading `lastScrollEventTop` in
+   * between sees a stale position and can mistake the write for a
+   * displacement nobody authored.
+   *
+   * Calling this immediately after the write closes that window: it
+   * syncs the baseline from the live position and advances the
+   * programmatic-write counter, making a direct write indistinguishable
+   * from a routed one to any consumer reasoning about the interval.
+   */
+  noteExternalWrite(): void {
+    if (this._disposed) return;
+    this._lastScrollTop = this._container.scrollTop;
+    this._scrollTopSeeded = true;
+    this._programmaticWriteSeq += 1;
+    this._writesSinceScrollEvent += 1;
+  }
+
+  /**
+   * Put the scroller back where it was after something moved it that
+   * nobody authored — a browser clamp against a transiently-short
+   * document, detected by the component that owns the commit.
+   *
+   * Distinct from `scrollTo` in what it means, not just in what it
+   * does: `scrollTo` is the machine choosing a position, and it
+   * supersedes a pending cold-boot restore on those grounds. A repair
+   * chooses nothing. It undoes a move, so the intent that was in
+   * force beforehand — including a restore still placing the content —
+   * must survive it.
+   *
+   * `source` names the caller for the dev log, which is where a
+   * repair that turns out to be wrong will be found.
+   */
+  notifyRepair(source: string, top: number): void {
+    if (this._disposed) return;
+    const from = this._container.scrollTop;
+    // Through `_writeScrollTop`, not `scrollTo`: the restore target
+    // must be preserved (see above), and the one-shot
+    // idle-re-engagement suppression it arms keeps this write's
+    // deferred scroll event from flipping follow-bottom.
+    this._writeScrollTop(top, false);
+    // Arm the intent-rule exemption. Without it the repair's own
+    // deferred scroll event is itself an unattributed upward move —
+    // the repair would trip the very rule it exists to protect
+    // follow-bottom from.
+    this._repairSuppressionArmed = true;
+    tugDevLogStore.debug('smart-scroll', 'repair', {
+      source,
+      from,
+      to: this._container.scrollTop,
+      requested: top,
+    });
   }
 
   /** True when a content-growth signal should auto-pin the scroller to the
@@ -426,9 +659,58 @@ export class SmartScroll {
    *  pure-pin case (a ResizeObserver fire, a spacer reflow, a post-commit
    *  re-window). The underlying `pinToBottom` is idempotent, so a call
    *  that passes the gate but finds scrollTop already at the bottom is a
-   *  cheap no-op. */
+   *  cheap no-op.
+   *
+   *  **Also the last route back to follow-bottom.** Every other route
+   *  requires the user to move: `idle-reengage` needs a scroll event,
+   *  the gesture-end paths need a gesture, and the jump-to-bottom
+   *  affordance needs a click. A user parked at the live edge who
+   *  touches nothing can fire none of them — and from where they sit
+   *  the card already looks pinned, so they have no reason to try. If
+   *  follow-bottom is off for them, it is off forever, and every
+   *  append silently fails to arrive. That is the shape of two field
+   *  reports: a `/commit` receipt row and a `Session compacted` note,
+   *  both ordinary appends onto a bottom-parked transcript, both
+   *  failing to scroll in.
+   *
+   *  So content arriving while the scroller sits inside the band
+   *  re-engages before pinning. This is not a new principle — it is
+   *  the one `shouldAutoPin`'s `isAtBottom` clause already encodes for
+   *  the engaged case, where content must not open a gap beneath a
+   *  user at the edge. The same reasoning applies when the flag is off
+   *  and the position is in the band. Unlike the repair path, it does
+   *  not depend on knowing WHY the disengage happened, so it also
+   *  bounds the cost of clamps that land outside any commit.
+   *
+   *  Two carve-outs. Never mid-gesture: an in-flight gesture's
+   *  re-engagement belongs to `_checkReEngageFollowBottom` at gesture
+   *  end, and re-engaging mid-drag would pin under the user's own
+   *  thumb. Never while a restore is pending: `setRestoreTarget`
+   *  disengaged deliberately and `applyRestoreTarget` owns the
+   *  position until it clears — and since engaging calls
+   *  `clearRestoreTarget()`, a pin arriving mid-restore would destroy
+   *  the cold-boot target outright.
+   *
+   *  The policy lives here rather than at the call sites because this
+   *  method is the single home of the auto-pin gate — which means it
+   *  is wider than "growth time" suggests. All five call sites reach
+   *  it: the list view's per-cell `ResizeObserver` flush (continuous
+   *  during streaming as cells re-wrap), its container `ResizeObserver`
+   *  (pane and window resize), its growth pin (the signal the field
+   *  cases need), and `TugMarkdownView`'s two. A cell or container
+   *  resize while the user sits idle in the band re-engages too. That
+   *  is intended: the policy is about the position, not about which
+   *  signal happened to ask. */
   maybePinToBottom(): void {
     if (this._disposed) return;
+    if (
+      !this._isFollowingBottom &&
+      !this.isUserScrolling &&
+      this._restoreTarget === null &&
+      this.isAtBottom
+    ) {
+      this._setFollowingBottom(true, 'growth-at-bottom-reengage');
+    }
     if (this.shouldAutoPin) this.pinToBottom();
   }
 
@@ -644,6 +926,14 @@ export class SmartScroll {
     if (this._disposed) return;
     this._disposed = true;
 
+    // Only drop the registry entry if it still points at this
+    // instance. A remount can construct the replacement scroller for
+    // the same element before the outgoing one disposes, and deleting
+    // unconditionally would unregister the live scroller.
+    if (scrollerRegistry.get(this._container) === this) {
+      scrollerRegistry.delete(this._container);
+    }
+
     this._clearDecelerationTimer();
     this._clearScrollEndTimer();
 
@@ -677,6 +967,11 @@ export class SmartScroll {
       this._scrollTopSeeded = true;
     }
 
+    // The baseline is now current again — every write up to this
+    // point has been accounted for by an event.
+    this._writesSinceScrollEvent = 0;
+    this._lastScrollEventHeight = this._container.scrollHeight;
+
     // Fire onScroll for every scroll event regardless of phase.
     this._callbacks.onScroll?.(this);
 
@@ -689,6 +984,12 @@ export class SmartScroll {
     // case, and the flag would carry over to a real user scroll.
     const suppressIdleReengage = this._suppressIdleReengagementOnNextScroll;
     this._suppressIdleReengagementOnNextScroll = false;
+
+    // Same one-shot discipline for the repair exemption: cleared
+    // unconditionally on the first scroll event after the write, so a
+    // genuine gesture that follows is judged normally.
+    const suppressIntentRules = this._repairSuppressionArmed;
+    this._repairSuppressionArmed = false;
 
     switch (this._phase) {
       case 'idle':
@@ -703,6 +1004,15 @@ export class SmartScroll {
         // state-restore path's disengage isn't undone by the very
         // write it set up. See `_suppressIdleReengagementOnNextScroll`
         // for the full rationale.
+        //
+        // This rule keeps its `scrollTop >= _lastScrollTop` direction
+        // requirement even though `_checkReEngageFollowBottom` dropped
+        // its equivalent for the in-band case. They are not the same
+        // situation: this fires DURING movement, so a user scrolling
+        // up into the band from below is still in motion and heading
+        // away — re-engaging under them would pin against the
+        // direction they are travelling. Gesture end has no motion
+        // left to contradict; the position is the whole statement.
         if (
           !suppressIdleReengage &&
           !this._isFollowingBottom &&
@@ -720,10 +1030,9 @@ export class SmartScroll {
         // is therefore the user and disengages. Safe against our own
         // writes: explicit programmatic scrolls arm the one-shot
         // suppression flag (captured above), pins and prepend
-        // compensation only ever move `scrollTop` down, a
-        // `scrollHeight`-shrink clamp lands where `isAtBottom` holds,
-        // and the raw upward writers (`focus-reveal`'s `revealWithin`,
-        // the transcript's `settleFindReveal`) call `disengage(...)`
+        // compensation only ever move `scrollTop` down, and the raw
+        // upward writers (`focus-reveal`'s `revealWithin`, the
+        // transcript's `settleFindReveal`) call `disengage(...)`
         // themselves before writing. `usePositionStableClick`'s
         // compensation writes on the user's click call-stack to hold
         // the click point under the cursor — attributing that scroll
@@ -731,8 +1040,21 @@ export class SmartScroll {
         // from yanking the preserved point away. The `!isAtBottom`
         // guard reuses the same 60px jitter band as the
         // `dragging`-phase disengage.
+        //
+        // **The browser clamp is the exception this rule used to get
+        // wrong.** It was once argued safe here on the grounds that a
+        // `scrollHeight`-shrink clamp lands where `isAtBottom` holds.
+        // Under window churn that is false: the height recovers before
+        // the clamp's scroll event is delivered, so by the time this
+        // handler runs the position looks arbitrary and the geometry
+        // looks fine. A field capture recorded `scrollTop` moving up
+        // 2,660px with `scrollHeight` identical on both sides and every
+        // JavaScript write channel silent. A clamp inside a commit is
+        // detected and repaired by the owning component, and the
+        // repair's echo is exempted here via `suppressIntentRules`.
         if (
           !suppressIdleReengage &&
+          !suppressIntentRules &&
           this._isFollowingBottom &&
           scrollTop < this._lastScrollTop &&
           !this.isAtBottom
@@ -749,7 +1071,34 @@ export class SmartScroll {
       case 'dragging':
         // During active dragging, the user is in deliberate control — no
         // re-engagement. Only DISENGAGE if they scroll up past the jitter guard.
-        if (scrollTop < this._lastScrollTop && this._isFollowingBottom && !this.isAtBottom) {
+        //
+        // An upward jump inside a net-DOWNWARD wheel burst is not a
+        // user scrolling up. This is the case the field report hit
+        // first: wheeling down over an evicting transcript, a clamp
+        // threw the position up by 8,000px mid-burst and this rule
+        // disengaged follow-bottom while the user was actively
+        // scrolling toward the live edge — so the gesture could never
+        // reach the bottom.
+        //
+        // The direction test reads the accumulated wheel deltas, not
+        // the position: during a streaming burst growth pins and
+        // `scrollHeight` jitter move `scrollTop` independently of the
+        // user's hand (see `_enterDragging`), and a large clamp can
+        // land the position above any position baseline. The deltas
+        // are what the user actually did.
+        //
+        // An accumulator of exactly 0 means no wheel deltas have
+        // arrived — a scroll-key gesture, which enters this phase
+        // through `_enterDragging` too. Those keep the plain
+        // per-event rule, hence `<= 0`: only a net-POSITIVE (downward)
+        // wheel accumulation suppresses the disengage.
+        if (
+          !suppressIntentRules &&
+          scrollTop < this._lastScrollTop &&
+          this._isFollowingBottom &&
+          !this.isAtBottom &&
+          this._gestureWheelDeltaAccum <= 0
+        ) {
           this._setFollowingBottom(false, 'drag-up');
         }
         if (!this._supportsScrollEnd) {
@@ -788,6 +1137,7 @@ export class SmartScroll {
 
   private _handlePointerDown(_e: PointerEvent): void {
     if (this._disposed) return;
+    this._userActivitySeq += 1;
     if (this._phase === 'idle') {
       this._gestureStartScrollTop = this._container.scrollTop;
       this._phase = 'tracking';
@@ -845,10 +1195,16 @@ export class SmartScroll {
   private _handleWheel(e: WheelEvent): void {
     if (this._disposed) return;
 
+    this._userActivitySeq += 1;
+
     // wheel always enters DRAGGING directly (no pointer down involved).
+    // `_enterDragging` resets the accumulator when a NEW gesture
+    // begins, so accumulate after it — this tick belongs to the
+    // gesture it just started.
     if (this._phase !== 'dragging') {
       this._enterDragging();
     }
+    this._gestureWheelDeltaAccum += e.deltaY;
 
     // Start/restart scrollend fallback timer (Issue 3).
     if (!this._supportsScrollEnd) {
@@ -881,6 +1237,8 @@ export class SmartScroll {
     // The keydown still bubbles to any other listener; this only
     // affects SmartScroll's intent tracking.
     if (_isEditableEventTarget(e.target)) return;
+
+    this._userActivitySeq += 1;
 
     // All scroll keys enter DRAGGING directly (keyboard has no pointer).
     if (this._phase !== 'dragging') {
@@ -933,6 +1291,8 @@ export class SmartScroll {
       // previous scroll event, which has not yet been updated for the
       // new gesture — the true pre-gesture position.
       this._gestureStartScrollTop = this._lastScrollTop;
+      // A new gesture states its own direction from scratch.
+      this._gestureWheelDeltaAccum = 0;
     }
     this._phase = 'dragging';
     if (!wasAlreadyDragging) {
@@ -998,6 +1358,22 @@ export class SmartScroll {
     // the trigger; the early-return above means only real transitions
     // are logged, never no-op calls.
     deckTrace.record({ kind: 'follow-bottom', following, source });
+    // Also to the dev log, which is visible in a release build through
+    // the dev panel and readable from app-tests via
+    // `window.tugDevLog.getSnapshot()`. The deck-trace ring is a
+    // fixed 512 entries and holds the geometry; the dev log holds the
+    // narrative, survives longer, and is the surface a person actually
+    // opens when a card stops tracking the live edge. Transitions are
+    // rare by nature — the early return above means no-op calls never
+    // reach here — so logging every one costs nothing.
+    tugDevLogStore.debug('smart-scroll', 'follow-bottom', {
+      following,
+      source,
+      scrollTop: this._container.scrollTop,
+      scrollHeight: this._container.scrollHeight,
+      clientHeight: this._container.clientHeight,
+      phase: this._phase,
+    });
     // Engaging the live edge supersedes any pending cold-boot
     // restore: the user (or an explicit jump-to-latest) has declared
     // the bottom is where they want to be, so a restore target that
@@ -1008,14 +1384,37 @@ export class SmartScroll {
   }
 
   private _checkReEngageFollowBottom(): void {
-    // Conservative re-engagement at gesture end: only if the gesture was
-    // net-downward AND the user landed at the absolute bottom (within 60px).
-    // Net-upward gestures that end near the bottom are the user scrolling
-    // AWAY — don't yank them back.
-    if (!this._isFollowingBottom
-      && this.isAtBottom
-      && this._container.scrollTop > this._gestureStartScrollTop) {
+    if (this._isFollowingBottom) return;
+
+    // Re-engagement at gesture end, in two flavors.
+    //
+    // The original: the gesture was net-downward AND landed within the
+    // at-bottom band. That still stands for a gesture ending NEAR the
+    // bottom, where direction is the only evidence of intent.
+    if (
+      this.isAtBottom &&
+      this._container.scrollTop > this._gestureStartScrollTop
+    ) {
       this._setFollowingBottom(true, 'gesture-end-reengage');
+      return;
+    }
+
+    // The addition: inside the band, direction no longer matters.
+    //
+    // Requiring net-downward strands two ordinary gestures. A user who
+    // wheels down past the bottom and rubber-bands back can end above
+    // where they started. A user who starts at the live edge, nudges,
+    // and ends at the live edge never moved net-downward at all — and
+    // `_handleWheel` carries no at-bottom guard, so a 10px nudge is
+    // enough to disengage them in the first place.
+    //
+    // Inside the band is the definition of "at the bottom" everywhere
+    // else in this class, so honoring it here costs the ability to
+    // hold a *disengaged* position within 60px of the live edge. That
+    // is deliberate: a peek that stays within 60px is not leaving, and
+    // a user who wants to hold a position moves further than that.
+    if (this.isAtBottom) {
+      this._setFollowingBottom(true, 'gesture-end-at-bottom-reengage');
     }
   }
 

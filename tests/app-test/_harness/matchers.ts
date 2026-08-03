@@ -187,6 +187,17 @@ export type DeckTraceEventShape = {
       following: boolean;
       source: string;
     }
+  | {
+      kind: "scroll-displacement";
+      from: number;
+      to: number;
+      scrollHeight: number;
+      clientHeight: number;
+      following: boolean;
+      repaired: boolean;
+      priorRepairHeld: boolean | null;
+      evicting: boolean;
+    }
 );
 
 /**
@@ -217,6 +228,7 @@ export const HARNESS_KNOWN_TRACE_KINDS = [
   "macrotask-focus-claim",
   "caret-responder-divergence",
   "follow-bottom",
+  "scroll-displacement",
 ] as const;
 export type HarnessKnownTraceKind = (typeof HARNESS_KNOWN_TRACE_KINDS)[number];
 
@@ -453,6 +465,8 @@ export function summarizeEvent(e: DeckTraceEventShape): string {
       return `caret-responder-divergence editor=${fmt(e.editorResponderId)} firstResponder=${fmt(e.firstResponderId)}`;
     case "follow-bottom":
       return `follow-bottom ${e.following ? "engage" : "disengage"} source=${fmt(e.source)}`;
+    case "scroll-displacement":
+      return `scroll-displacement ${e.from}→${e.to} (${e.to - e.from >= 0 ? "+" : ""}${e.to - e.from}) h=${e.scrollHeight}/${e.clientHeight} following=${e.following} repaired=${e.repaired} priorHeld=${e.priorRepairHeld ?? "n/a"} evicting=${e.evicting}`;
     default: {
       // Exhaustiveness pin: if a new kind is added to DeckTraceEventShape,
       // the assignment below fails because `e` is no longer `never`.
