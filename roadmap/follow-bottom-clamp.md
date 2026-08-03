@@ -53,15 +53,15 @@ The scroll-fixups doctrine in [`tuglaws/scroll-intent.md`](../tuglaws/scroll-int
 
 - **No displacement across a window swap.** Driving an evicting transcript through repeated re-window swaps (scroll down, stream growth, scroll up) records **zero** unexplained displacement events: `data-scroll-displacements` on the list view stays `"0"`. Verified in `at0335`.
 - **The wheel reaches the bottom.** A sustained downward wheel gesture over an evicting transcript with a ≥30,000px top spacer lands at `scrollHeight - clientHeight` with no intervening upward jump greater than `AT_BOTTOM_PX`, and follow-bottom ends engaged. Verified in `at0335`.
-- **Machine displacement never flips follow-bottom.** With follow-bottom engaged, a simulated clamp (a forced transient shrink inside a commit) leaves `.session-jump-to-bottom-button[data-visible]` at `"false"` and `isFollowingBottom` true. Verified in `at0335`.
+- **Machine displacement never flips follow-bottom.** With follow-bottom engaged, a simulated commit-scoped clamp — driven through the `forceCommitClamp()` test seam ([S04]) — leaves `.session-jump-to-bottom-button[data-visible]` at `"false"` and `isFollowingBottom` true. Verified in `at0335`.
 - **Follow-bottom is recoverable.** After any disengage, scrolling to within `AT_BOTTOM_PX` of the bottom re-engages, and a turn streamed afterwards pins. Verified by extending `at0333`.
 - **Arrivals scroll into view.** With follow-bottom engaged and the card idle, a turn appended after ≥10 minutes of quiet pins the new content into view. Verified in `at0335`.
-- **The regression is attributed.** The `at0335` A/B arm shows displacement events > 0 on the pre-fix code path and 0 after, and 0 in the eviction-disabled control arm at both revisions.
+- **The regression is attributed.** The manual A/B checkpoints in [#step-1] and [#step-2] record displacement events > 0 before the atomic-spacer fix and 0 after, and 0 in the eviction-disabled control arm both times. This measurement spans revisions, so it is manual by nature — do not try to build it as an app-test.
 - **Diagnosis is durable.** `window.__deckTrace.dump()` and the dev-panel log both carry every follow-bottom transition and every displacement with its geometry, in a release build, with no opt-in. Verified in `at0335`.
 
 #### Scope {#scope}
 
-1. Durable displacement + follow-bottom instrumentation (`deck-trace.ts`, `tug-dev-log-store`, a `data-scroll-displacements` attribute, one test-surface reader).
+1. Durable displacement + follow-bottom instrumentation (`deck-trace.ts`, `tug-dev-log-store`, a `data-scroll-displacements` attribute, a test-surface reader, and the `forceCommitClamp()` test seam).
 2. Atomic window geometry in `TugListView` — spacer heights applied in the render pass, not a post-commit layout effect.
 3. Commit-scoped displacement detection and repair in `TugListView`.
 4. `SmartScroll` attribution: a user-activity sequence, a programmatic-write sequence, and a repair notification that suppresses intent rules.
@@ -139,19 +139,19 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Repair reverts a genuine user scroll | high | low | Bracket is confined to the synchronous commit phase; user input is impossible inside it ([P03]) | Any field report of a "sticky" scroller |
+| Repair reverts a genuine user scroll | high | low | The baseline is the last scroll-event-observed position, so a silent scrollbar drag refreshes it before any commit can bracket it; the bracket itself is confined to the synchronous commit phase ([P03], [S02]) | Any field report of a "sticky" scroller |
 | Render-phase spacer style read as an [L06] violation | med | med | [P02] states the exception and its bounds; no new renders are introduced | A reviewer flags it, or a new spacer writer appears |
 | New geometry reads cost layout in the streaming hot path | med | med | Reads sit after the spacer write where layout is already clean; one read per commit, both values from the same read ([P03]) | Typing-lag q99 regresses in the perf probes |
 | Eviction ledger shortfall mistaken for a transient dip | med | med | The instrumentation reports each repair's outcome forward as `priorRepairHeld`; a repair that immediately re-clamps means a shortfall, not a dip ([S01]) | Displacement records whose successor carries `priorRepairHeld: false` |
 
 **Risk R01: The repair fights a native scrollbar drag** {#r01-repair-fights-scrollbar}
 
-- **Risk:** The one actor the doctrine cannot see is the native scrollbar thumb. If displacement detection ran across frame boundaries, a thumb drag would look identical to a clamp and the repair would yank the user back — the exact "drag, snap back, repeat" trap `RESTORE_SUPERSEDE_DRIFT_PX` was introduced to avoid.
+- **Risk:** The one actor the doctrine cannot see is the native scrollbar thumb. If displacement detection compared against a baseline that spans real wall time — such as the previous commit's bracket, seconds earlier — a thumb drag in the gap would look identical to a clamp and the repair would yank the user back — the exact "drag, snap back, repeat" trap `RESTORE_SUPERSEDE_DRIFT_PX` was introduced to avoid.
 - **Mitigation:**
-  - Capture and compare **inside one synchronous commit phase**, where no input can be processed.
+  - The baseline is **`SmartScroll.lastScrollEventTop`** — the position as of the most recent `scroll` event ([S02]). A thumb drag is silent in *pointer* events but not in *scroll* events, so the drag refreshes the baseline before any commit can bracket it. A commit-scoped clamp moves `scrollTop` synchronously at forced layout, and its `scroll` event does not dispatch until after the layout phase — so at bracket time the baseline is still pre-clamp. The baseline discriminates by event timing, not by guesswork.
   - Skip the repair whenever `SmartScroll`'s phase is `dragging`, `settling`, or `decelerating`.
-  - Skip when `SmartScroll`'s programmatic-write sequence advanced during the bracket (a deliberate machine move: restore heartbeat, correction, `scrollToIndex`).
-- **Residual risk:** A scrollbar drag whose scroll event is delivered *during* our commit phase would be misread. WebKit dispatches scroll events from the event loop, not from inside a synchronous script, so this should be impossible; the instrumentation will show it if it is not.
+  - Skip when `SmartScroll`'s programmatic-write sequence advanced during the bracket (a deliberate machine move: restore heartbeat, correction, growth pin, `scrollToIndex`).
+- **Residual risk:** A drag's final scroll event still queued when a commit lands would be misread — a frame-scale window, not a seconds-scale one. WebKit dispatches scroll events from the event loop, not from inside a synchronous script, so the event cannot land *during* the bracket itself; the instrumentation will show it if this model is wrong.
 
 **Risk R02: Spacer heights rendered inline conflict with the DOM-writes convention** {#r02-spacer-render-vs-l06}
 
@@ -201,30 +201,32 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 #### [P03] Displacement is detected and repaired inside the commit phase, and nowhere else (DECIDED) {#p03-commit-scoped-repair}
 
-**Decision:** `TugListView` brackets each commit: it reads `scrollTop`/`scrollHeight` once in a layout effect that runs **after** the spacers are correct, and compares against the value recorded at the end of the previous commit's bracket. A difference that is not explained by user activity or a programmatic write is recorded as displacement and repaired by writing the previous `scrollTop` back (clamped to the current maximum).
+**Decision:** `TugListView` brackets each commit: it reads `scrollTop`/`scrollHeight` once in a layout effect that runs **after** the spacers are correct, and compares against **`SmartScroll.lastScrollEventTop`** — the position as of the most recent `scroll` event, which `_handleScroll` already maintains as `_lastScrollTop`. A difference that is not explained by a gesture in flight, user activity, or a programmatic write is recorded as displacement and repaired by writing the baseline back (clamped to the current maximum).
 
 **Rationale:**
 - With [P02] in place the DOM is already consistent when the bracket reads it, so the read itself cannot trigger the clamp it is looking for. Ordering matters: the bracket is worthless — actively harmful — without atomic spacers first.
-- Restricting comparison to values captured under [P02]'s guarantee means the interval attributable to the commit contains no user input.
-- The three exemptions are precise and already tracked: `SmartScroll`'s phase (a gesture in flight), its programmatic-write sequence (a deliberate move), and its user-activity sequence (input since the last bracket).
+- The baseline choice is what makes the bracket safe against the native scrollbar. Comparing against the *previous bracket's* snapshot would span the whole inter-commit interval — seconds of real time in which a thumb drag (silent in pointer events, per the doctrine) is indistinguishable from a clamp. That design is rejected. The last-scroll-event position closes the gap by event timing: a drag delivers scroll events that refresh the baseline before any commit; a commit-scoped clamp moves `scrollTop` synchronously at forced layout and its scroll event does not dispatch until after the layout phase, so it cannot. See [S02] and [R01].
+- The mixed case comes out right: a drag followed by a clamp in the same interval repairs to the *post-drag* position — the user's most recent expressed intent ([P01]).
+- The exemptions are precise and cheap: `SmartScroll`'s phase (a gesture in flight), its programmatic-write sequence (a deliberate move whose scroll event may not have delivered yet), and its user-activity sequence (a belt — the baseline already absorbs any event-delivering activity).
 
 **Implications:**
-- The prepend compensation writes `el.scrollTop` **directly** (not through `SmartScroll`) in the front-insert layout effect; it must refresh the bracket baseline after its write or it will be misread as displacement.
+- The prepend compensation writes `el.scrollTop` **directly** (not through `SmartScroll`) in the front-insert layout effect; it must call `SmartScroll.noteExternalWrite()` after its write ([L01]) or the next bracket will misread it as displacement.
 - A repair that does not hold (the very next bracket shows the same displacement) means the document genuinely got shorter — a ledger shortfall, not a dip. It is recorded as such and not retried ([S01]).
 - The repair writes through `SmartScroll` so the write is attributed, suppression is armed, and follow-bottom is untouched ([P04]).
 
 #### [P04] A displacement the machine authored never reaches the intent rules (DECIDED) {#p04-machine-displacement-not-intent}
 
-**Decision:** `SmartScroll` gains an explicit "the next scroll event is a machine repair" suppression, and both intent rules — the `idle` `'unattributed-scroll-up'` disengage and the `dragging` `'drag-up'` disengage — skip events covered by it. Additionally, `'drag-up'` requires the gesture's net direction to be upward: an upward jump inside a net-downward wheel burst is not a user scrolling up.
+**Decision:** `SmartScroll` gains an explicit "the next scroll event is a machine repair" suppression, and both intent rules — the `idle` `'unattributed-scroll-up'` disengage and the `dragging` `'drag-up'` disengage — skip events covered by it. Additionally, `'drag-up'` requires the gesture's net direction to be upward, measured from the **accumulated wheel deltas**: an upward jump inside a net-downward wheel burst is not a user scrolling up.
 
 **Rationale:**
 - The field capture shows both rules firing on clamps — `'unattributed-scroll-up'` when idle, `'drag-up'` mid-wheel. Fixing only the idle rule would leave the wheel case, which is the one the user hit first.
 - The net-direction test is cheap and exactly discriminating: the wheel deltas are the user's stated direction, and a clamp is upward regardless.
+- The deltas must be the measure, **not** position-vs-`_gestureStartScrollTop`. The gesture start is frozen at gesture entry while growth pins and scrollHeight jitter move the position independently of the user's hand during a streaming burst (the `_enterDragging` comment in `smart-scroll.ts` documents exactly this jitter), and a large clamp (the field capture's −8,000px class) can land the position *above* any position baseline — position-vs-start would disengage on precisely the field case this rule exists to fix.
 
 **Implications:**
 - `SmartScroll` exposes `userActivitySeq` and `programmaticWriteSeq` (monotonic counters) so the list view's bracket can reason about the interval.
 - A new public method, `notifyRepair(source, top)`, performs the write and arms the suppression in one call.
-- The `dragging` case tracks the gesture's start `scrollTop` — `_gestureStartScrollTop` already exists for `_checkReEngageFollowBottom` and is reused.
+- `_handleWheel` accumulates signed `deltaY` into a new `_gestureWheelDeltaAccum`, reset when a gesture begins; the `'drag-up'` rule consults the accumulator. A `dragging` gesture with no wheel deltas (pointer or key drags) keeps the existing per-event rule — those gestures have no machine co-author moving the position.
 
 #### [P05] Follow-bottom is recoverable, never terminal (DECIDED) {#p05-recoverable-follow-bottom}
 
@@ -249,7 +251,8 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 **Implications:**
 - A new `deckTrace` event kind means edits in three places in `deck-trace.ts`: the `DeckTraceEvent` union, the `DeckTraceEventInput` union, and the `dumpTable` column handling if it special-cases kinds.
-- Recording must stay cheap enough for the streaming hot path — one record per *displacement*, not per commit.
+- The "release, no opt-in" promise requires two changes in `deck-trace.ts` that no existing behavior provides: `record` currently drops everything while `enabled === false` (the default), and the `window.__deckTrace` binding sits inside a dev-only guard. Add an `ALWAYS_RECORDED_KINDS` set (`"scroll-displacement"`, `"follow-bottom"`) checked **before** the `enabled` gate, and move the `__deckTrace` binding out of the dev-only guard so release builds carry the handle. Without both, the two stranded sessions that started this investigation would still have held zero evidence.
+- Recording must stay cheap enough for the streaming hot path — one record per *displacement*, not per commit. `follow-bottom` transitions are already rare by nature.
 
 ---
 
@@ -284,6 +287,8 @@ The doctrine's hardest constraint is the native scrollbar: a thumb drag delivers
 
 The commit phase is the one interval where that ambiguity does not exist. It is synchronous JavaScript; the event loop is not turning; no input can be processed. A `scrollTop` difference observed across it is machine-caused with certainty, not with confidence. That is the whole reason the repair is scoped there and [Q01] is deferred rather than guessed.
 
+But the bracket cannot literally capture its own "before" point: the clamp fires at the first forced layout in the commit — typically a *child's* layout effect, which runs before any effect the list view declares. The baseline therefore comes from the one channel the scrollbar is **not** silent on: `scroll` events. A thumb drag delivers no pointer, wheel, or key events, but it does deliver scroll events, and `_handleScroll` records each into `_lastScrollTop`. A clamp's own scroll event, by contrast, cannot dispatch until the synchronous layout phase has ended — WebKit fires scroll events from the event loop. So at bracket time, `lastScrollEventTop` reflects every drag and no clamp, and the comparison inherits the commit phase's certainty even though the baseline was captured outside it. See [S02] and [R01].
+
 #### Markdown-view parity {#markdown-view-parity}
 
 `TugMarkdownView` windows its own blocks and has spacers of its own, so it is a natural second suspect. It is not affected: its `applySpacers(top, bottom)` is called synchronously in the same task as the `removeBlockNode` / `addBlockNode` loops that change the block set. No layout can be forced between them because no other code runs between them. It is, in effect, already doing what [P02] makes the list view do — and it is a useful precedent to cite if the render-phase change is questioned.
@@ -305,7 +310,7 @@ Recorded when a commit bracket finds an unexplained `scrollTop` difference.
 | Field | Type | Meaning |
 |---|---|---|
 | `kind` | `"scroll-displacement"` | deck-trace event kind |
-| `from` | `number` | `scrollTop` recorded at the previous bracket |
+| `from` | `number` | the baseline — `SmartScroll.lastScrollEventTop` at bracket time ([S02]) |
 | `to` | `number` | `scrollTop` observed at this bracket |
 | `scrollHeight` | `number` | `scrollHeight` at this bracket |
 | `clientHeight` | `number` | `clientHeight` at this bracket |
@@ -318,29 +323,49 @@ Deck-trace entries are immutable once recorded (`appendEvent` stamps and appends
 
 **Spec S02: Displacement classification** {#s02-classification}
 
-At a bracket, with `prev` = the previous bracket's snapshot:
+**The baseline is `SmartScroll.lastScrollEventTop`** — the container position as of the most recent `scroll` event, i.e. the `_lastScrollTop` field `_handleScroll` already maintains, exposed through a new public getter. It is **not** the previous bracket's `scrollTop`: the inter-commit interval spans real wall time in which a native scrollbar drag (silent in pointer events) would be indistinguishable from a clamp, and comparing across it would make the repair fight the drag — see [R01] and [#repair-safety] for why the scroll-event timing discriminates exactly.
+
+At a bracket, with `prev` = the previous bracket's snapshot (counters only) and `baseline` = `SmartScroll.lastScrollEventTop`:
 
 1. If `prev` is null (first bracket since mount) → record the snapshot, no classification.
 2. If `SmartScroll.phase` is `dragging`, `settling`, or `decelerating` → user owns the position; refresh the snapshot, no displacement.
-3. If `SmartScroll.userActivitySeq !== prev.userActivitySeq` → input arrived since the last bracket; refresh, no displacement.
-4. If `SmartScroll.programmaticWriteSeq !== prev.programmaticWriteSeq` → a deliberate machine move (restore heartbeat, correction, reveal, pin); refresh, no displacement.
-5. Otherwise, if `|scrollTop - prev.scrollTop| > DISPLACEMENT_EPSILON_PX` → **displacement**. Record per [S01], and repair per [S03].
+3. If `SmartScroll.userActivitySeq !== prev.userActivitySeq` → input arrived since the last bracket; refresh, no displacement. (A belt — event-delivering activity already refreshed the baseline.)
+4. If `SmartScroll.programmaticWriteSeq !== prev.programmaticWriteSeq` → a deliberate machine move whose scroll event may not have delivered yet (restore heartbeat, correction, reveal, growth pin); refresh, no displacement.
+5. Otherwise, if `|scrollTop - baseline| > DISPLACEMENT_EPSILON_PX` → **displacement**. Record per [S01], and repair per [S03].
+
+After classification — and after any repair — the bracket refreshes its counter snapshot. It does not need to write the baseline: a repair advances `programmaticWriteSeq` (exemption 4 covers the window until its scroll event delivers), and direct writers outside `SmartScroll` are required to call `noteExternalWrite()` per [L01].
 
 **Spec S03: Repair** {#s03-repair}
 
-- Target is `min(prev.scrollTop, max(0, scrollHeight - clientHeight))`.
+- Target is `min(baseline, max(0, scrollHeight - clientHeight))`, with `baseline` per [S02].
 - The write goes through `SmartScroll.notifyRepair("list-view-commit", target)`, which writes, arms the one-shot idle-re-engagement suppression, increments `programmaticWriteSeq`, and marks the next scroll event exempt from both intent rules ([P04]).
 - If `prev.following` was true and follow-bottom is now false, re-engage with source `"repair-restore"` ([P05]).
 - Increment the displacement counter published as `data-scroll-displacements`.
+
+**Spec S04: The clamp-simulation seam** {#s04-clamp-seam}
+
+After [#step-2] a commit-scoped clamp is impossible by construction — which is the plan's headline claim, but it leaves the detection/repair path with no natural trigger to test against. App-test `evalJS` runs outside any React commit, so it cannot reproduce the tear from outside. The seam reproduces it from inside:
+
+- `forceCommitClamp()` is added to the test surface (`tugdeck/src/test-surface.ts`, `SURFACE_VERSION` bump `1.19.0` → `1.20.0`, alongside the existing `setTranscriptEvictionDisabled`). It arms a one-shot flag read by the list view's bracket effect.
+- On the next bracket, **before classification**, the effect: records the live `scrollTop`, writes the top spacer's `style.height` short by 2,000px, reads `el.scrollHeight` (forcing layout — the browser clamps `scrollTop` exactly as the real tear did), then restores the height — all synchronously inside the same layout effect, i.e. inside the commit.
+- Classification then runs against the genuine article: a real browser clamp, commit-scoped, machine-caused.
+- The test drives it from a position where a clamp is geometrically possible (near the bottom of an evicting transcript with a large top spacer, so the shrink actually lowers the scroll maximum below `scrollTop`).
+
+This is both the test vehicle for [#step-3]/[#step-4] and the permanent guard that repair stays live once the natural trigger is extinct.
 
 **List L01: Writers exempt from displacement detection** {#l01-exempt-writers}
 
 Each of these legitimately moves `scrollTop`; each must be visible to [S02] so the bracket does not misread it.
 
-- `SmartScroll.scrollTo` / `scrollToElement` / `scrollToBottom` / `pinToBottom` / `_writeScrollTop` — all route through the programmatic-write counter.
-- The **front-insert prepend compensation**, which writes `el.scrollTop` directly in the front-insert layout effect — it must refresh the bracket baseline itself after its write ([P03]).
+- `SmartScroll.scrollTo` / `scrollToElement` / `scrollToBottom` — route through `_writeScrollTop`, which advances the programmatic-write counter.
+- **`pinToBottom` does NOT route through `_writeScrollTop`.** It writes `this._container.scrollTop` directly and deliberately stays in `idle` phase ([D93] — pins must not enter `programmatic`). Verified against the code: it is a second, independent write site. The counter must be advanced there too. This is the hottest write in the system — every growth pin while following bottom — and missing it would make the bracket classify each pin as displacement and repair *upward against the stream*, un-fixing follow-bottom in the act of fixing it.
+- The **front-insert prepend compensation**, which writes `el.scrollTop` directly in the front-insert layout effect — it must call `SmartScroll.noteExternalWrite()` after its write ([P03]).
+- The **raw upward reveal writers** — `revealWithin` in `tugdeck/src/components/tugways/focus-reveal.ts` and `settleFindReveal` in `tugdeck/src/components/tugways/cards/session-card-transcript.tsx` — write `scrollTop` outside `SmartScroll` (they disengage follow-bottom first, but that is invisible to the bracket). A commit landing between their write and its scroll event would misread them; each must call `noteExternalWrite()` after its write.
 - The restore heartbeat (`applyRestoreTarget`) and the two-pass scroll correction — both already go through `SmartScroll` writes.
-- Wheel / pointer / key gestures — covered by the phase test and the user-activity counter.
+- `usePositionStableClick`'s compensation — writes on the user's own click call-stack; the accompanying `pointerdown` advances the user-activity counter, and its scroll event refreshes the baseline.
+- Wheel / pointer / key gestures — covered by the phase test, the user-activity counter, and the baseline itself (every gesture scroll event refreshes it).
+
+`noteExternalWrite()` is a new `SmartScroll` method: it sets `_lastScrollTop` from the live `container.scrollTop` and advances `_programmaticWriteSeq`, making a direct external write indistinguishable from a routed one as far as [S02] is concerned.
 
 **Table T01: Attribution inventory — the amended clamp row** {#t01-clamp-row}
 
@@ -376,9 +401,15 @@ The row to replace in [`tuglaws/scroll-intent.md`](../tuglaws/scroll-intent.md)'
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
 | `scroll-displacement` | deck-trace event kind | `tugdeck/src/deck-trace.ts` | Add to `DeckTraceEvent` union **and** `DeckTraceEventInput` union; fields per [S01] |
+| `ALWAYS_RECORDED_KINDS` | const | `tugdeck/src/deck-trace.ts` | `Set` of kinds (`"scroll-displacement"`, `"follow-bottom"`) checked in `record` **before** the `enabled` gate ([P06]) |
+| `window.__deckTrace` binding | move | `tugdeck/src/deck-trace.ts` | Currently inside a dev-only guard; move out so release builds carry the handle ([P06]) |
 | `_userActivitySeq` / `userActivitySeq` | field + getter | `tugdeck/src/lib/smart-scroll.ts` | Incremented in the wheel, pointerdown, and keydown handlers |
-| `_programmaticWriteSeq` / `programmaticWriteSeq` | field + getter | `tugdeck/src/lib/smart-scroll.ts` | Incremented in `_writeScrollTop` (the single chokepoint every programmatic write already routes through) |
+| `_programmaticWriteSeq` / `programmaticWriteSeq` | field + getter | `tugdeck/src/lib/smart-scroll.ts` | Incremented at **both** container write sites: `_writeScrollTop` **and** `pinToBottom` — `pinToBottom` writes directly and stays idle per [D93]; it does not route through `_writeScrollTop` ([L01]) |
+| `lastScrollEventTop` | getter | `tugdeck/src/lib/smart-scroll.ts` | Exposes the existing `_lastScrollTop` — the [S02] baseline |
+| `noteExternalWrite()` | method | `tugdeck/src/lib/smart-scroll.ts` | Sets `_lastScrollTop` from the live position and advances `_programmaticWriteSeq`; called by the direct writers in [L01] |
+| `_gestureWheelDeltaAccum` | field | `tugdeck/src/lib/smart-scroll.ts` | Signed `deltaY` accumulated per gesture in `_handleWheel`, reset at gesture entry; drives the `'drag-up'` net-direction test ([P04]) |
 | `notifyRepair(source, top)` | method | `tugdeck/src/lib/smart-scroll.ts` | Writes, arms suppression, marks the next scroll event exempt from intent rules |
+| `forceCommitClamp()` | test-surface method | `tugdeck/src/test-surface.ts` + `tug-list-view.tsx` | Arms the one-shot clamp simulation per [S04]; `SURFACE_VERSION` `1.19.0` → `1.20.0` |
 | `_repairSuppressionArmed` | field | `tugdeck/src/lib/smart-scroll.ts` | One-shot, consumed in `_handleScroll` alongside `_suppressIdleReengagementOnNextScroll` |
 | `_setFollowingBottom` | method (modify) | `tugdeck/src/lib/smart-scroll.ts` | Also log every transition to `tugDevLogStore.debug("smart-scroll", "follow-bottom", …)` ([P06]) |
 | `_checkReEngageFollowBottom` | method (modify) | `tugdeck/src/lib/smart-scroll.ts` | Add the `isAtBottom`-only re-engagement path ([P05]) |
@@ -453,15 +484,17 @@ The `SmartScroll` unit tests run against a real DOM element in the bun environme
 
 **Tasks:**
 - [ ] In `tugdeck/src/deck-trace.ts`, add the `scroll-displacement` variant to the `DeckTraceEvent` union and to `DeckTraceEventInput`, with the fields in [S01]. Both unions must be edited — a variant added to only one will not type-check at the `record` call site.
+- [ ] In `tugdeck/src/deck-trace.ts`, add `ALWAYS_RECORDED_KINDS` (`"scroll-displacement"`, `"follow-bottom"`) checked in `record` before the `enabled` gate, and move the `window.__deckTrace` binding out of the dev-only guard ([P06]). Without both, release builds still hold zero evidence — the exact failure this step exists to end.
 - [ ] In `tugdeck/src/lib/smart-scroll.ts`, have `_setFollowingBottom` also call `tugDevLogStore.debug("smart-scroll", "follow-bottom", { following, source, scrollTop, scrollHeight, clientHeight, phase })`. Keep the existing `deckTrace.record` call. This is the chokepoint every engage/disengage path already routes through.
-- [ ] Add `_userActivitySeq` (incremented in the wheel, pointerdown, and keydown handlers) and `_programmaticWriteSeq` (incremented in `_writeScrollTop`) with public getters. `_writeScrollTop` is the single private chokepoint all programmatic writes already funnel through — verify that before relying on it.
-- [ ] In `tugdeck/src/components/tugways/tug-list-view.tsx`, add `commitGeometryRef` and a `useLayoutEffect` declared **after** the existing spacer-height effect that implements [S02] steps 1–5 in *detect-only* mode: classify, record per [S01] with `repaired: false`, bump `displacementCountRef`, and publish `data-scroll-displacements`. Carry the previous bracket's pending outcome in `commitGeometryRef` and stamp it as `priorRepairHeld` on this record ([S01]).
-- [ ] Have the front-insert prepend effect refresh `commitGeometryRef` after its direct `el.scrollTop` write ([L01]).
-- [ ] Add a test-surface reader for the displacement count so app-tests can assert without DOM scraping, alongside the existing `setTranscriptEvictionDisabled` in `tugdeck/src/test-surface.ts`.
+- [ ] Add `_userActivitySeq` (incremented in the wheel, pointerdown, and keydown handlers) and `_programmaticWriteSeq` with public getters. **`_programmaticWriteSeq` increments at both container write sites: `_writeScrollTop` and `pinToBottom`.** Verified against the code: `pinToBottom` writes `this._container.scrollTop` directly and deliberately stays in `idle` ([D93]) — it does **not** route through `_writeScrollTop`, and a counter that misses it would classify every growth pin as displacement ([L01]).
+- [ ] Add the `lastScrollEventTop` getter (exposing the existing `_lastScrollTop`) and `noteExternalWrite()` (sets `_lastScrollTop` from the live position, advances `_programmaticWriteSeq`) per [S02]/[L01].
+- [ ] In `tugdeck/src/components/tugways/tug-list-view.tsx`, add `commitGeometryRef` and a `useLayoutEffect` declared **after** the existing spacer-height effect (and after every direct `scrollTop` writer in the component, notably the front-insert prepend effect) that implements [S02] steps 1–5 in *detect-only* mode: classify against `SmartScroll.lastScrollEventTop`, record per [S01] with `repaired: false`, bump `displacementCountRef`, and publish `data-scroll-displacements`. Carry the previous bracket's pending outcome in `commitGeometryRef` and stamp it as `priorRepairHeld` on this record ([S01]).
+- [ ] Have the front-insert prepend effect call `SmartScroll.noteExternalWrite()` after its direct `el.scrollTop` write, and have `revealWithin` (`tugdeck/src/components/tugways/focus-reveal.ts`) and `settleFindReveal` (`tugdeck/src/components/tugways/cards/session-card-transcript.tsx`) do the same after theirs ([L01]).
+- [ ] Add a test-surface reader for the displacement count so app-tests can assert without DOM scraping, and the `forceCommitClamp()` seam per [S04], alongside the existing `setTranscriptEvictionDisabled` in `tugdeck/src/test-surface.ts` (`SURFACE_VERSION` `1.19.0` → `1.20.0`).
 
 **Tests:**
-- [ ] `bun test` — `SmartScroll` unit: `userActivitySeq` advances on wheel/pointerdown/keydown and not on programmatic writes; `programmaticWriteSeq` advances on `scrollTo`/`pinToBottom` and not on user events.
-- [ ] `tests/app-test/at0335-scroll-displacement.test.ts` (new, `@covers` `tugdeck/src/components/tugways/tug-list-view.tsx`, `tugdeck/src/lib/smart-scroll.ts`, `tugdeck/src/deck-trace.ts`): open a fixture session, confirm `data-scroll-displacements` exists and the dev log carries `follow-bottom` records after a scroll gesture.
+- [ ] `bun test` — `SmartScroll` unit: `userActivitySeq` advances on wheel/pointerdown/keydown and not on programmatic writes; `programmaticWriteSeq` advances on `scrollTo` **and on `pinToBottom`** and not on user events; `noteExternalWrite()` advances the counter and syncs `lastScrollEventTop`.
+- [ ] `tests/app-test/at0335-scroll-displacement.test.ts` (new, `@covers` `tugdeck/src/components/tugways/tug-list-view.tsx`, `tugdeck/src/lib/smart-scroll.ts`, `tugdeck/src/deck-trace.ts`): open a fixture session, confirm `data-scroll-displacements` exists and the dev log carries `follow-bottom` records after a scroll gesture; then `forceCommitClamp()` ([S04]) with the card parked mid-history and assert `data-scroll-displacements` increments — detection is live before any repair exists.
 - [ ] Bump `ACCEPTED_FANOUT` for `tug-list-view.tsx` from 23 to 24 in `tests/app-test/scripts/select-tests.ts` with a comment naming `at0335`.
 
 **Checkpoint:**
@@ -497,7 +530,8 @@ The `SmartScroll` unit tests run against a real DOM element in the bun environme
 
   `windowResult` is already computed in the render body — do not recompute or memoize it separately.
 - [ ] **Delete** the `useLayoutEffect` keyed on `[windowResult.topSpacerHeight, windowResult.bottomSpacerHeight]`. Do not leave both writers in place ([R02]).
-- [ ] Keep `topSpacerRef` / `bottomSpacerRef` (other code reads them); confirm by grep that nothing else *writes* `.style.height` on the spacers.
+- [ ] Keep `topSpacerRef` / `bottomSpacerRef` (other code reads them); confirm by grep that nothing else *writes* `.style.height` on the spacers. The [S04] seam is the one sanctioned exception — it deliberately re-creates the tear inside the bracket effect and restores the height in the same task.
+- [ ] The bracket effect from [#step-1] was anchored "after the spacer-height effect", which this step deletes. Its correctness no longer depends on that effect's position (render-phase spacers are in place before any layout effect runs), but it must remain declared **after** the front-insert prepend effect, which still writes `scrollTop` directly.
 - [ ] Add a comment on the spacer elements recording the invariant: spacer height must land in the same mutation batch as the row set it complements, and why (cite the tear).
 
 **Tests:**
@@ -532,7 +566,7 @@ The `SmartScroll` unit tests run against a real DOM element in the bun environme
 
 **Tests:**
 - [ ] `bun test` — classification unit tests for [S02]: each of the four exemption paths suppresses displacement, and only the unexplained case reports it.
-- [ ] Extend `at0335`: with follow-bottom **disengaged** and the user parked mid-history, force a commit-scoped clamp (drive a window swap on a card whose content changes height) and assert the position is restored within `DISPLACEMENT_EPSILON_PX`.
+- [ ] Extend `at0335`: with follow-bottom **disengaged** and the user parked mid-history, force a commit-scoped clamp through `forceCommitClamp()` ([S04]) and assert the position is restored within `DISPLACEMENT_EPSILON_PX`, and that the record carries `repaired: true` with the next record's `priorRepairHeld: true`.
 - [ ] Extend `at0335`: assert a native-gesture scroll is **never** reverted — a wheel-up that parks mid-history stays parked across subsequent streamed turns.
 
 **Checkpoint:**
@@ -555,12 +589,12 @@ The `SmartScroll` unit tests run against a real DOM element in the bun environme
 **Tasks:**
 - [ ] Add `notifyRepair(source: string, top: number)`: writes through `_writeScrollTop`, arms `_repairSuppressionArmed` and the existing `_suppressIdleReengagementOnNextScroll`, and records to the dev log.
 - [ ] In `_handleScroll`, consume `_repairSuppressionArmed` the same way the existing one-shot suppression flag is consumed (unconditionally, on the first scroll event after the write), and skip **both** the `idle` `'unattributed-scroll-up'` disengage and the `dragging` `'drag-up'` disengage while it is set.
-- [ ] Add the net-direction test to `'drag-up'`: disengage only when the position is below the gesture's start (`_gestureStartScrollTop`, already maintained for `_checkReEngageFollowBottom`) — an upward jump inside a net-downward burst is a clamp, not a user scrolling up. This is the rule that broke the wheel case in the field report.
+- [ ] Add the net-direction test to `'drag-up'`: accumulate signed `deltaY` into `_gestureWheelDeltaAccum` in `_handleWheel` (reset when a gesture begins) and disengage only when the accumulated wheel direction is upward (net-negative) — an upward jump inside a net-downward burst is a clamp, not a user scrolling up. Do **not** use position-vs-`_gestureStartScrollTop`: the gesture start is frozen while growth pins and scrollHeight jitter move the position (the `_enterDragging` comment documents the jitter), and a large clamp can land above any position baseline — position-vs-start disengages on exactly the field case. A `dragging` gesture with no wheel deltas (pointer/key) keeps the existing per-event rule ([P04]). This is the rule that broke the wheel case in the field report.
 - [ ] Update the doc comments on both disengage sites to name the clamp case; they currently assert that clamps "land where `isAtBottom` holds", which the field capture falsifies.
 
 **Tests:**
-- [ ] `bun test` — a scroll event following `notifyRepair` does not flip follow-bottom in either phase; a genuine wheel-up still disengages; an upward jump during a net-downward gesture does not disengage while a net-upward one does.
-- [ ] Extend `at0335`: with follow-bottom engaged, a simulated commit-scoped clamp leaves `.session-jump-to-bottom-button[data-visible]` at `"false"`.
+- [ ] `bun test` — a scroll event following `notifyRepair` does not flip follow-bottom in either phase; a genuine wheel-up still disengages; an upward scroll jump during a gesture whose accumulated `deltaY` is net-downward does not disengage while a net-upward accumulation does; a pointer-drag gesture (no wheel deltas) keeps the per-event rule.
+- [ ] Extend `at0335`: with follow-bottom engaged, a commit-scoped clamp via `forceCommitClamp()` ([S04]) leaves `.session-jump-to-bottom-button[data-visible]` at `"false"`.
 - [ ] `at0333` must stay green — its three doctrine pins (unattributed disengage, correction supersede, band re-engage) are the contract this step must not break.
 
 **Checkpoint:**
@@ -586,7 +620,7 @@ The `SmartScroll` unit tests run against a real DOM element in the bun environme
 - [ ] Verify the affordance's `data-visible` follows every new transition ([L06] — the observer path, not React state).
 
 **Tests:**
-- [ ] `bun test` — a gesture that starts and ends inside the band re-engages; a gesture that ends above the band does not; an upward gesture ending inside the band does not re-engage mid-flight but does at gesture end when the position is at the bottom.
+- [ ] `bun test` — a gesture that starts and ends inside the band re-engages; a gesture that ends above the band does not; an upward gesture never re-engages mid-flight, and at gesture end it re-engages if and only if the position is inside the band (`isAtBottom`, the 60px `AT_BOTTOM_PX` band — "at the bottom" and "inside the band" mean the same thing throughout this plan).
 - [ ] Extend `at0333`: after a disengage, wheeling to the bottom re-engages and a subsequently streamed turn pins.
 - [ ] Extend `at0335`: the quiet-then-arrival criterion — with follow-bottom engaged and the card idle, a turn appended later pins into view.
 
@@ -612,7 +646,7 @@ The `SmartScroll` unit tests run against a real DOM element in the bun environme
 - [ ] Add an **atomic geometry** section: any windowing surface must apply spacer/placeholder geometry in the same mutation batch as the row set it complements ([P02]), with the tear explained and `TugMarkdownView` cited as the imperative precedent.
 - [ ] Add a **commit-scoped repair** section stating the rule and, importantly, its bound — why repair outside the commit phase is not safe ([#repair-safety], [Q01]).
 - [ ] Add a short **how to diagnose** section: the dev panel log, `window.__deckTrace.dump()`, `data-scroll-displacements`, and the `setTranscriptEvictionDisabled` A/B arm.
-- [ ] Amend `[D93]` in `tuglaws/design-decisions.md`: the idle clause currently says any non-programmatic idle scroll belongs to the user. Qualify it — machine-authored displacement identified by the owning component is excluded, and point at `scroll-intent.md`.
+- [ ] Amend `[D93]` in `tuglaws/design-decisions.md`: the idle clause currently says any non-programmatic idle scroll belongs to the user. Qualify it — machine-authored displacement identified by the owning component is excluded, and point at `scroll-intent.md`. Note explicitly that growth pins remain *phase*-invisible (they stay in `idle`, the original [D93] design) but are now *counter*-visible: `programmaticWriteSeq` advances in `pinToBottom`, which is what lets the displacement bracket exempt them.
 - [ ] No hard-wrapped prose; one logical line per paragraph or bullet.
 
 **Tests:**
