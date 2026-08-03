@@ -37,7 +37,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use crate::session_ledger::{ChangesetDraftRow, FileEventRewrite, FileEventRow};
+use crate::session_ledger::{ChangesetDraftRow, FileEventKey, FileEventRewrite, FileEventRow};
 
 /// Rotate the journal at open when it exceeds this size. Attribution rows
 /// are ~200 bytes; this horizon is years of normal use.
@@ -66,6 +66,17 @@ pub enum Record {
         canonical_project_dir: String,
         rewrite: FileEventRewrite,
     },
+    /// Purge of rows naming files outside the project's repo — the sweep of
+    /// what was written before capture learned to skip them. Carries the
+    /// explicit row keys, so replay is exact and idempotent, and one record
+    /// carries the whole batch (the forwarder queue is bounded, [LR8]).
+    /// `project_dir` records the scope the purge was computed for; the delete
+    /// matches on the primary key alone, which is already unique.
+    #[serde(rename = "fe_purge_out_of_repo")]
+    PurgeOutOfRepo {
+        project_dir: String,
+        keys: Vec<FileEventKey>,
+    },
     /// Maintained draft upsert (`INSERT OR REPLACE` on the owner key).
     #[serde(rename = "draft")]
     Draft { row: ChangesetDraftRow },
@@ -86,9 +97,10 @@ impl Record {
     pub fn shapes_rows(&self) -> bool {
         match self {
             Record::FileEvent { .. } | Record::Rewrite { .. } | Record::Draft { .. } => true,
-            Record::DeleteSession { .. } | Record::Sever { .. } | Record::DraftDelete { .. } => {
-                false
-            }
+            Record::DeleteSession { .. }
+            | Record::Sever { .. }
+            | Record::PurgeOutOfRepo { .. }
+            | Record::DraftDelete { .. } => false,
         }
     }
 }
@@ -233,6 +245,21 @@ mod tests {
         assert_eq!(records.len(), 2);
         assert!(matches!(&records[0], Record::FileEvent { row } if row.file_path == "src/a.rs"));
         assert!(matches!(&records[1], Record::DeleteSession { session } if session == "s9"));
+    }
+
+    /// A delete is shape-safe, so it must stay permitted when the
+    /// `user_version` gate has locked this build out of the shared tables
+    /// ([LR5]). Classifying the purge as row-shaping would disable it exactly
+    /// when the ledger is already degraded.
+    #[test]
+    fn purge_does_not_shape_rows() {
+        assert!(
+            !Record::PurgeOutOfRepo {
+                project_dir: "/proj".into(),
+                keys: Vec::new(),
+            }
+            .shapes_rows()
+        );
     }
 
     #[test]

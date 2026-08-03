@@ -23,7 +23,7 @@ use tokio::process::Command;
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 
 use super::agent_supervisor::{
@@ -884,7 +884,8 @@ async fn record_exact_pending(
     };
     // Repo membership is a per-file fact: the row's project_dir is the
     // file's OWN repo root (a nested worktree's root for a worktree file),
-    // never the session's. Off-repo files fall back to the session's dir.
+    // never the session's. A file in no repo at all is measured against the
+    // session's repo, and falls outside it — such a call records nothing.
     let file_root = file_repo_root(&pending.file_path).await;
     let (row_project_dir, row_repo_root) = match file_root {
         Some(root) => (root.clone(), Some(root)),
@@ -893,14 +894,22 @@ async fn record_exact_pending(
             ensure_repo_root(repo_root_cache, project_dir).await,
         ),
     };
-    let row = pending.into_row(
+    let named_path = pending.file_path.clone();
+    let Some(row) = pending.into_row(
         tug_session_id.as_str(),
         tool_use_id,
         &row_project_dir,
         row_repo_root.as_ref(),
         origin,
         at,
-    );
+    ) else {
+        debug!(
+            session = %tug_session_id,
+            path = %named_path,
+            "file event outside the project repo; not recorded"
+        );
+        return None;
+    };
     match ledger.record_file_event(&row) {
         Ok(()) => Some(row.file_path),
         Err(err) => {
@@ -947,12 +956,16 @@ async fn record_cmd_event(
     // its nearest surviving ancestor so the row's key lands in the same space
     // git's status output does.
     let canonical = canonicalize_declared(file_path);
-    let projected = match row_repo_root.as_ref() {
-        Some(root) => canonical
-            .strip_prefix(root.as_path())
-            .map(|rel| rel.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| canonical.to_string_lossy().into_owned()),
-        None => canonical.to_string_lossy().into_owned(),
+    let Some(projected) = crate::feeds::attribution::repo_relative_key(
+        row_repo_root.as_ref().map(|root| root.as_path()),
+        &canonical,
+    ) else {
+        debug!(
+            session = %tug_session_id,
+            path = %canonical.display(),
+            "cmd file event outside the project repo; not recorded"
+        );
+        return None;
     };
     let row = crate::session_ledger::FileEventRow {
         tug_session_id: tug_session_id.as_str().to_owned(),
@@ -2644,6 +2657,146 @@ fn parse_user_message_text(json: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shell route builds its row inline rather than through `into_row`,
+    /// so it is an independent producer and needs its own proof: a declared
+    /// path outside the repo records nothing, an in-repo one records
+    /// repo-relative. Drives the real `record_cmd_event` against a real
+    /// ledger and reads the rows back.
+    #[cfg(unix)]
+    fn init_git_repo(root: &Path) {
+        for args in [
+            &["init", "-q"][..],
+            &["config", "user.email", "t@t"][..],
+            &["config", "user.name", "t"][..],
+        ] {
+            std::process::Command::new("git")
+                .current_dir(root)
+                .args(args)
+                .status()
+                .expect("git");
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn record_cmd_event_skips_paths_outside_the_repo() {
+        let repo_dir = tempfile::tempdir().expect("tempdir");
+        let root = repo_dir.path().canonicalize().expect("canonicalize");
+        init_git_repo(&root);
+        std::fs::write(root.join("a.rs"), "x").expect("write");
+
+        let away = tempfile::tempdir().expect("tempdir");
+        let away_file = away
+            .path()
+            .canonicalize()
+            .expect("canonicalize")
+            .join("note.md");
+        std::fs::write(&away_file, "x").expect("write");
+
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().expect("ledger");
+        let session = TugSessionId::new("sess");
+        let canonical_project_dir = CanonicalPath::from_raw(&root);
+        let project_dir = root.to_string_lossy().into_owned();
+        let mut cache: Option<CanonicalPath> = None;
+
+        let inside = record_cmd_event(
+            &root.join("a.rs"),
+            "modified",
+            "tu-1",
+            None,
+            1,
+            &session,
+            &canonical_project_dir,
+            &mut cache,
+            &project_dir,
+            &ledger,
+        )
+        .await;
+        assert_eq!(inside.as_deref(), Some("a.rs"), "in-repo, repo-relative");
+
+        let outside = record_cmd_event(
+            &away_file,
+            "modified",
+            "tu-2",
+            None,
+            2,
+            &session,
+            &canonical_project_dir,
+            &mut cache,
+            &project_dir,
+            &ledger,
+        )
+        .await;
+        assert!(outside.is_none(), "outside the repo records nothing");
+
+        let rows = ledger
+            .file_events_for_project(canonical_project_dir.as_str())
+            .expect("read back");
+        assert_eq!(rows.len(), 1, "only the in-repo row landed: {rows:?}");
+    }
+
+    /// The skip measures a file against its OWN repo, so work in a second
+    /// checkout is recorded there — repo-relative, keyed to that root — rather
+    /// than discarded for not being under the session's repo.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn record_exact_pending_homes_a_file_in_another_repo() {
+        let session_dir = tempfile::tempdir().expect("tempdir");
+        let session_root = session_dir.path().canonicalize().expect("canonicalize");
+        init_git_repo(&session_root);
+
+        let other_dir = tempfile::tempdir().expect("tempdir");
+        let other_root = other_dir.path().canonicalize().expect("canonicalize");
+        init_git_repo(&other_root);
+        std::fs::create_dir(other_root.join("src")).expect("mkdir");
+        std::fs::write(other_root.join("src/b.rs"), "x").expect("write");
+
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().expect("ledger");
+        let session = TugSessionId::new("sess");
+        let canonical_project_dir = CanonicalPath::from_raw(&session_root);
+        let project_dir = session_root.to_string_lossy().into_owned();
+        let mut cache: Option<CanonicalPath> = None;
+
+        let pending = crate::feeds::attribution::PendingCall {
+            tool_name: "Write".to_owned(),
+            file_path: other_root.join("src/b.rs").to_string_lossy().into_owned(),
+            op: "write",
+            parent_tool_use_id: None,
+            timestamp: None,
+        };
+        let recorded = record_exact_pending(
+            pending,
+            "tu-1",
+            None,
+            "exact",
+            false,
+            &session,
+            &canonical_project_dir,
+            &mut cache,
+            &project_dir,
+            &ledger,
+        )
+        .await;
+        assert_eq!(recorded.as_deref(), Some("src/b.rs"));
+
+        let other_canonical = CanonicalPath::from_raw(&other_root);
+        assert_eq!(
+            ledger
+                .file_events_for_project(other_canonical.as_str())
+                .expect("read back")
+                .len(),
+            1,
+            "the row is keyed to the other repo's root"
+        );
+        assert!(
+            ledger
+                .file_events_for_project(canonical_project_dir.as_str())
+                .expect("read back")
+                .is_empty(),
+            "and not to the session's"
+        );
+    }
 
     /// A session opened on a non-repo dir caches `None` and re-probes; once a
     /// repo appears (a mid-session `git init`), the next probe finds it and

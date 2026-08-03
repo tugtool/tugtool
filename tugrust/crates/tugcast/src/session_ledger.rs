@@ -616,6 +616,14 @@ pub struct FileEventRewrite {
     pub new_file_path: String,
 }
 
+/// One `file_events` row named by its primary key, for a keyed delete.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileEventKey {
+    pub tug_session_id: String,
+    pub tool_use_id: String,
+    pub file_path: String,
+}
+
 /// One maintained changeset draft (Spec S09) — the continuously-current,
 /// convention-correct commit message the draft engine keeps for a changeset
 /// entry. Keyed by `(owner_kind, owner_id, project_dir)`; the `fingerprint`
@@ -955,6 +963,7 @@ impl SessionLedger {
                 paths,
                 keep_session,
             } => Self::sever_file_ownership_sql(conn, project_dir, paths, keep_session)?,
+            Record::PurgeOutOfRepo { keys, .. } => Self::purge_file_events_sql(conn, keys)?,
             Record::Rewrite {
                 canonical_project_dir,
                 rewrite,
@@ -2928,6 +2937,44 @@ impl SessionLedger {
             params.push(p);
         }
         Ok(conn.execute(&sql, params.as_slice())?)
+    }
+
+    /// Delete `file_events` rows naming files outside the project's repo, by
+    /// explicit key. Capture no longer writes such rows (they can never match
+    /// the compose fold, which is keyed on git's repo-relative dirty paths);
+    /// this removes the population written before it learned to skip them.
+    /// The whole batch is one record — the forwarder queue is bounded, so a
+    /// record per row would overrun it. Returns the number of rows deleted.
+    pub fn purge_file_events_out_of_repo(
+        &self,
+        project_dir: &str,
+        keys: &[FileEventKey],
+    ) -> Result<usize, LedgerError> {
+        if keys.is_empty() {
+            return Ok(0);
+        }
+        self.write_change(crate::changes_journal::Record::PurgeOutOfRepo {
+            project_dir: project_dir.to_string(),
+            keys: keys.to_vec(),
+        })
+    }
+
+    /// The bare keyed delete — shared with journal replay. Matching on the
+    /// primary key alone makes replay exact and idempotent: a row already
+    /// gone deletes nothing, and no other row can collide with the key.
+    fn purge_file_events_sql(
+        conn: &Connection,
+        keys: &[FileEventKey],
+    ) -> Result<usize, LedgerError> {
+        let mut deleted = 0usize;
+        for key in keys {
+            deleted += conn.execute(
+                "DELETE FROM changes.file_events
+                 WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                params![key.tug_session_id, key.tool_use_id, key.file_path],
+            )?;
+        }
+        Ok(deleted)
     }
 
     /// Shutdown flush: checkpoint both WALs down to the main files
@@ -6620,6 +6667,95 @@ mod tests {
         assert!(
             !owns.contains(&("dead", "a.rs")),
             "dead originator no longer owns the claimed path"
+        );
+    }
+
+    #[test]
+    fn purge_out_of_repo_deletes_by_key_and_leaves_the_rest() {
+        let l = fresh();
+        l.record_file_event(&sample_file_event("s1", "tu-1", "a.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("s1", "tu-2", "/away/note.md"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("s2", "tu-3", "/away/other.md"))
+            .unwrap();
+
+        let keys = vec![
+            FileEventKey {
+                tug_session_id: "s1".to_owned(),
+                tool_use_id: "tu-2".to_owned(),
+                file_path: "/away/note.md".to_owned(),
+            },
+            FileEventKey {
+                tug_session_id: "s2".to_owned(),
+                tool_use_id: "tu-3".to_owned(),
+                file_path: "/away/other.md".to_owned(),
+            },
+        ];
+        assert_eq!(l.purge_file_events_out_of_repo("/proj", &keys).unwrap(), 2);
+        let remaining = l.file_events_for_project("/proj").unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].event.file_path, "a.rs");
+
+        // Re-applying the same purge deletes nothing more — several tugcasts
+        // race the same sweep, and a quarantine replay re-applies it.
+        assert_eq!(l.purge_file_events_out_of_repo("/proj", &keys).unwrap(), 0);
+        assert_eq!(l.file_events_for_project("/proj").unwrap().len(), 1);
+    }
+
+    /// The purge rides the journal as one record carrying its explicit keys,
+    /// and replaying that journal reconstructs the post-purge state — twice
+    /// over, since replay must be idempotent.
+    #[test]
+    fn purge_out_of_repo_journals_and_replays_to_the_same_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let claude_root = dir.path().join("claude");
+        let changes = dir.path().join("changes.db");
+        let owner = SessionLedger::open_full(
+            dir.path().join("owner.db"),
+            Some(changes.clone()),
+            claude_root.clone(),
+            0,
+        )
+        .expect("owner ledger");
+        owner
+            .record_file_event(&sample_file_event("s1", "tu-1", "a.rs"))
+            .unwrap();
+        owner
+            .record_file_event(&sample_file_event("s1", "tu-2", "/away/note.md"))
+            .unwrap();
+        let keys = vec![FileEventKey {
+            tug_session_id: "s1".to_owned(),
+            tool_use_id: "tu-2".to_owned(),
+            file_path: "/away/note.md".to_owned(),
+        }];
+        owner.purge_file_events_out_of_repo("/proj", &keys).unwrap();
+
+        let journal = crate::changes_journal::journal_path_for(&changes);
+        let records = crate::changes_journal::ChangesJournal::read_records(&journal);
+        let batched = records.iter().any(|r| {
+            matches!(r, crate::changes_journal::Record::PurgeOutOfRepo { keys, .. } if keys.len() == 1)
+        });
+        assert!(batched, "one record carries the batch: {records:?}");
+
+        // A fresh database replaying the journal lands on the same state.
+        let rebuilt = SessionLedger::open_full(
+            dir.path().join("rebuilt.db"),
+            Some(dir.path().join("rebuilt-changes.db")),
+            claude_root,
+            0,
+        )
+        .expect("rebuilt ledger");
+        rebuilt.replay_changes_journal(&journal);
+        let after_one = rebuilt.file_events_for_project("/proj").unwrap();
+        assert_eq!(after_one.len(), 1);
+        assert_eq!(after_one[0].event.file_path, "a.rs");
+
+        rebuilt.replay_changes_journal(&journal);
+        assert_eq!(
+            rebuilt.file_events_for_project("/proj").unwrap(),
+            after_one,
+            "replay is idempotent"
         );
     }
 

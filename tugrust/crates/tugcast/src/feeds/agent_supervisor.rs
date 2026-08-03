@@ -4088,16 +4088,31 @@ impl AgentSupervisor {
         };
 
         let canonical = crate::path_resolver::CanonicalPath::from_raw(dir);
+        // The card claims files by their repo-relative key, which passes
+        // straight through; the root is what an absolute spelling is measured
+        // against, so a claim can no more name a file outside the repo than a
+        // captured tool call can.
+        let repo_root = crate::feeds::attribution::repo_root_for(dir).await;
         let at = crate::session_ledger::now_millis();
         // One synthetic tool_use_id groups the batch, mirroring how a Bash
         // call's N rows share an id.
         let tool_use_id = format!("claim:{at}");
         let mut claimed = 0usize;
         for path in &request.files {
+            let Some(file_path) = crate::feeds::attribution::repo_relative_key(
+                repo_root.as_deref(),
+                std::path::Path::new(path),
+            ) else {
+                warn!(
+                    project_dir,
+                    path, "changeset_claim path outside the repo; skipped"
+                );
+                continue;
+            };
             let row = crate::session_ledger::FileEventRow {
                 tug_session_id: request.session_id.clone(),
                 tool_use_id: tool_use_id.clone(),
-                file_path: path.clone(),
+                file_path,
                 tool_name: "Claim".to_string(),
                 op: "claimed".to_string(),
                 origin: "claim".to_string(),

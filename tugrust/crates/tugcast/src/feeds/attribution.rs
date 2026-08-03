@@ -224,6 +224,9 @@ impl PendingCall {
     /// the changeset join speak git's repo-relative language. When `repo_root`
     /// is `None` (non-repo project dir), the canonical absolute path is stored —
     /// there is nothing to strip against.
+    ///
+    /// `None` means the call named a file outside the project's repo: there is
+    /// no row to write (see [`repo_relative_key`]).
     pub fn into_row(
         self,
         tug_session_id: &str,
@@ -232,11 +235,11 @@ impl PendingCall {
         repo_root: Option<&CanonicalPath>,
         origin: &str,
         at: i64,
-    ) -> FileEventRow {
-        FileEventRow {
+    ) -> Option<FileEventRow> {
+        Some(FileEventRow {
             tug_session_id: tug_session_id.to_owned(),
             tool_use_id: tool_use_id.to_owned(),
-            file_path: project_repo_relative(repo_root, &self.file_path),
+            file_path: project_repo_relative(repo_root, &self.file_path)?,
             tool_name: self.tool_name,
             op: self.op.to_owned(),
             origin: origin.to_owned(),
@@ -244,25 +247,42 @@ impl PendingCall {
             parent_tool_use_id: self.parent_tool_use_id,
             project_dir: project_dir.as_str().to_owned(),
             at,
-        }
+        })
     }
 }
 
-/// Project an absolute `file_path` to its repo-relative form against the
-/// canonical `repo_root`, both in canonical space. The path is canonicalized
-/// through the gateway first (a firmlink/synthetic spelling of the same file
-/// collapses to the repo root's space), then stripped. `None` repo_root or a
-/// residual non-prefix returns the canonical absolute path — compose's bridge
-/// reconciles that case.
-fn project_repo_relative(repo_root: Option<&CanonicalPath>, file_path: &str) -> String {
+/// Canonicalize `file_path` through the gateway (a firmlink/synthetic spelling
+/// of the same file collapses into the repo root's space) and project it with
+/// [`repo_relative_key`].
+fn project_repo_relative(repo_root: Option<&CanonicalPath>, file_path: &str) -> Option<String> {
     let canonical = CanonicalPath::from_raw(Path::new(file_path));
+    repo_relative_key(repo_root.map(|r| r.as_path()), canonical.as_path())
+}
+
+/// Project an already-canonical captured path to the repo-relative key both
+/// sides of the changeset join speak, or `None` when the path names a file the
+/// changeset can never show.
+///
+/// A relative path is already that key and passes through. An absolute path is
+/// stripped against the canonical `repo_root`. An absolute path that does not
+/// lie under the root is **outside the repo**: the compose fold matches events
+/// against git's repo-relative dirty paths, so such a row can never surface in
+/// a changeset, a claim bucket, or a draft — it is not recorded at all. With no
+/// repo root (a non-repo project dir) there is nothing to be outside of, and
+/// the canonical absolute path is the key.
+///
+/// Every production site that builds a `FileEventRow` from a captured path
+/// projects it through here, so "what `file_events` can hold" has one answer.
+pub fn repo_relative_key(repo_root: Option<&Path>, canonical: &Path) -> Option<String> {
+    if canonical.is_relative() {
+        return Some(canonical.to_string_lossy().into_owned());
+    }
     match repo_root {
         Some(root) => canonical
-            .as_path()
-            .strip_prefix(root.as_path())
+            .strip_prefix(root)
             .map(|rel| rel.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| canonical.as_str().to_owned()),
-        None => canonical.as_str().to_owned(),
+            .ok(),
+        None => Some(canonical.to_string_lossy().into_owned()),
     }
 }
 
@@ -415,10 +435,9 @@ impl OpenBracket {
             };
             // The pre/post fingerprint keys are `repo_root.join(rel)`, so the
             // strip always recovers git's repo-relative key.
-            let file_path = path
-                .strip_prefix(&self.repo_root)
-                .map(|rel| rel.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| path.to_string_lossy().into_owned());
+            let Some(file_path) = repo_relative_key(Some(&self.repo_root), path) else {
+                continue;
+            };
             let row_origin = if declared_covers(declared, path) {
                 CMD_ORIGIN
             } else {
@@ -921,7 +940,9 @@ mod tests {
     #[test]
     fn into_row_carries_origin_and_at() {
         let project_dir = CanonicalPath::from_test_str("/proj");
-        let row = call("/proj/a.rs").into_row("tug-1", "tu-1", &project_dir, None, "replay", 42);
+        let row = call("/proj/a.rs")
+            .into_row("tug-1", "tu-1", &project_dir, None, "replay", 42)
+            .expect("no repo root, nothing to be outside of");
         assert_eq!(row.tug_session_id, "tug-1");
         assert_eq!(row.tool_use_id, "tu-1");
         // No repo root → the canonical absolute path is stored.
@@ -938,16 +959,46 @@ mod tests {
     fn into_row_stores_repo_relative() {
         let project_dir = CanonicalPath::from_test_str("/repo");
         let repo_root = CanonicalPath::from_test_str("/repo");
-        let row = call("/repo/roadmap/lens-frame.md").into_row(
-            "tug-1",
-            "tu-1",
-            &project_dir,
-            Some(&repo_root),
-            "exact",
-            1,
-        );
+        let row = call("/repo/roadmap/lens-frame.md")
+            .into_row("tug-1", "tu-1", &project_dir, Some(&repo_root), "exact", 1)
+            .expect("in-repo file records");
         assert_eq!(row.file_path, "roadmap/lens-frame.md");
         assert_eq!(row.project_dir, "/repo");
+    }
+
+    /// A repo project's session writing a file outside the checkout — a memory
+    /// file under `~/.claude/…` is the everyday case — records nothing. The
+    /// compose fold matches events against git's repo-relative dirty paths, so
+    /// the row could never surface anywhere; it would only accumulate.
+    #[test]
+    fn into_row_skips_a_file_outside_the_repo() {
+        let project_dir = CanonicalPath::from_test_str("/repo");
+        let repo_root = CanonicalPath::from_test_str("/repo");
+        assert!(
+            call("/elsewhere/memory/note.md")
+                .into_row("tug-1", "tu-1", &project_dir, Some(&repo_root), "exact", 1)
+                .is_none()
+        );
+    }
+
+    /// The skip is measured after gateway canonicalization, so an in-repo file
+    /// reached through a symlinked spelling still records — the skip can only
+    /// eat files that are genuinely elsewhere.
+    #[cfg(unix)]
+    #[test]
+    fn into_row_records_an_in_repo_file_spelled_through_a_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        std::fs::write(repo.join("src/a.rs"), "x").unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&repo, &link).unwrap();
+
+        let root = CanonicalPath::from_raw(&repo);
+        let row = call(&link.join("src/a.rs").to_string_lossy())
+            .into_row("tug-1", "tu-1", &root, Some(&root), "exact", 1)
+            .expect("the symlinked spelling canonicalizes into the repo");
+        assert_eq!(row.file_path, "src/a.rs");
     }
 
     /// Repo membership is a per-file fact: a file inside a nested worktree
@@ -974,8 +1025,9 @@ mod tests {
             root.as_path().ends_with(".tug/worktrees/demo"),
             "the worktree's own root wins: {root:?}"
         );
-        let row =
-            call(&file.to_string_lossy()).into_row("tug-1", "tu-1", &root, Some(&root), "exact", 1);
+        let row = call(&file.to_string_lossy())
+            .into_row("tug-1", "tu-1", &root, Some(&root), "exact", 1)
+            .expect("the worktree file records against the worktree root");
         assert_eq!(row.file_path, "src/a.rs", "worktree-relative, not .tug/…");
         assert_eq!(row.project_dir, root.as_str());
 
@@ -994,7 +1046,9 @@ mod tests {
     #[test]
     fn into_row_no_repo_root_keeps_absolute_canonical() {
         let project_dir = CanonicalPath::from_test_str("/nonrepo");
-        let row = call("/nonrepo/a.rs").into_row("tug-1", "tu-1", &project_dir, None, "exact", 1);
+        let row = call("/nonrepo/a.rs")
+            .into_row("tug-1", "tu-1", &project_dir, None, "exact", 1)
+            .expect("a non-repo project keeps recording absolute paths");
         assert_eq!(row.file_path, "/nonrepo/a.rs");
     }
 

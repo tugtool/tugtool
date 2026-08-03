@@ -216,22 +216,10 @@ impl AliasTable {
         // synthetic.conf symlink entries: a two-column `name<TAB>target` line is
         // a symlink `/name` → `target`; collapse the target's data-volume
         // firmlink to the user-visible face and record the rewrite.
-        if let Ok(conf) = std::fs::read_to_string("/etc/synthetic.conf") {
-            for line in conf.lines() {
-                let line = line.trim();
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
-                let parts: Vec<&str> = line.splitn(2, '\t').collect();
-                if parts.len() < 2 {
-                    continue;
-                }
-                let from = format!("/{}", parts[0].trim());
-                let target = parts[1].trim();
-                let to = resolve_apfs_firmlink_str(target).unwrap_or_else(|| target.to_string());
-                if same_file(Path::new(&from), Path::new(&to)) {
-                    rewrites.push((from, to));
-                }
+        for (from, target) in synthetic_table() {
+            let to = resolve_apfs_firmlink_str(target).unwrap_or_else(|| target.clone());
+            if same_file(Path::new(from), Path::new(&to)) {
+                rewrites.push((from.clone(), to));
             }
         }
 
@@ -467,22 +455,48 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
 // macOS: synthetic.conf resolution
 // ---------------------------------------------------------------------------
 
+/// Parse `/etc/synthetic.conf` into `("/name", "target")` symlink entries, in
+/// file order. Comments, blank lines, and lines without both columns are
+/// dropped.
+#[cfg(target_os = "macos")]
+fn parse_synthetic_conf(conf: &str) -> Vec<(String, String)> {
+    conf.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let (name, target) = line.split_once('\t')?;
+            let (name, target) = (name.trim(), target.trim());
+            if name.is_empty() || target.is_empty() {
+                return None;
+            }
+            Some((format!("/{name}"), target.to_string()))
+        })
+        .collect()
+}
+
+/// The parsed synthetic.conf entries, read once per process. Entries only take
+/// effect at boot, so a running process can never observe a working change to
+/// the file — the boot-built [`AliasTable`] already froze this data on the same
+/// reasoning.
+#[cfg(target_os = "macos")]
+fn synthetic_table() -> &'static [(String, String)] {
+    static TABLE: OnceLock<Vec<(String, String)>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        std::fs::read_to_string("/etc/synthetic.conf")
+            .map(|conf| parse_synthetic_conf(&conf))
+            .unwrap_or_default()
+    })
+}
+
 #[cfg(target_os = "macos")]
 fn resolve_synthetic(path: &Path) -> Option<PathBuf> {
-    let conf = std::fs::read_to_string("/etc/synthetic.conf").ok()?;
     let path_str = path.to_str()?;
 
-    for line in conf.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let parts: Vec<&str> = line.splitn(2, '\t').collect();
-        if parts.len() < 2 {
-            continue;
-        }
-        let syn_root = format!("/{}", parts[0]);
-        let target = parts[1].trim();
+    for (syn_root, target) in synthetic_table() {
+        let syn_root = syn_root.as_str();
+        let target = target.as_str();
 
         if path_str == syn_root || path_str.starts_with(&format!("{}/", syn_root)) {
             let rest = &path_str[syn_root.len()..];
@@ -600,6 +614,29 @@ fn resolve_bind_mounts(_path: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The conf parse keeps exactly the two-column entries, trims both
+    /// columns, and drops comments, blanks, and single-column lines.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn synthetic_conf_parse_keeps_only_valid_entries() {
+        let conf = "\
+# a comment
+
+u\t/Users/someone/Mounts/u
+malformed-single-column
+ spaced \t /Volumes/Target \n\
+empty-target\t
+\t/no/name";
+        let entries = parse_synthetic_conf(conf);
+        assert_eq!(
+            entries,
+            vec![
+                ("/u".to_string(), "/Users/someone/Mounts/u".to_string()),
+                ("/spaced".to_string(), "/Volumes/Target".to_string()),
+            ]
+        );
+    }
 
     /// Regression pin for the firmlink bug class. A path reached through a
     /// macOS `synthetic.conf` symlink (e.g. `/u`) must resolve to the

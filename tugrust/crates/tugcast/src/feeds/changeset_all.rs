@@ -40,6 +40,11 @@ use super::git::is_within_git_worktree;
 use super::workspace_registry::WorkspaceRegistry;
 use crate::session_ledger::SessionLedger;
 
+/// How long a bump waits before recomposing, so a burst of them costs one
+/// recompute. Imperceptible against the Changes card's human timescale, and
+/// the same scale as the debounce the file watchers already apply.
+const BUMP_FLOOR: std::time::Duration = std::time::Duration::from_millis(150);
+
 /// The account-global CHANGESET_ALL feed.
 pub struct ChangesetAllFeed {
     /// The set of open projects to enumerate each recompute.
@@ -95,7 +100,13 @@ impl SnapshotFeed for ChangesetAllFeed {
         // write, an open/close, a workspace's event-driven git watch, or a
         // probed draft write). The probe tick itself never recomputes.
         loop {
+            let started = std::time::Instant::now();
             let snapshot = compose_aggregate(&self.registry, self.ledger.as_deref()).await;
+            debug!(
+                projects = snapshot.projects.len(),
+                millis = started.elapsed().as_millis() as u64,
+                "aggregate changeset recomputed"
+            );
 
             if previous.as_ref() != Some(&snapshot) {
                 let json = serde_json::to_vec(&snapshot).unwrap_or_default();
@@ -113,7 +124,32 @@ impl SnapshotFeed for ChangesetAllFeed {
                         info!("aggregate changeset feed shutting down");
                         return;
                     }
-                    _ = self.bump.notified() => break 'wait,
+                    _ = self.bump.notified() => {
+                        // Coalescing floor. `git_watch` bumps on every
+                        // filesystem batch under any workspace root, so
+                        // sustained activity (a build, a save burst) would
+                        // otherwise drive full recomputes of every project
+                        // back to back, rate-limited only by how long a
+                        // recompute takes.
+                        tokio::select! {
+                            _ = cancel.cancelled() => {
+                                info!("aggregate changeset feed shutting down");
+                                return;
+                            }
+                            _ = tokio::time::sleep(BUMP_FLOOR) => {}
+                        }
+                        // Nothing awaited `notified()` during the sleep, so a
+                        // bump that landed there left a stored permit. Consume
+                        // it — its work is already folded into the recompute
+                        // about to run, and leaving it would spend a second
+                        // full compose on an identical snapshot.
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::ZERO,
+                            self.bump.notified(),
+                        )
+                        .await;
+                        break 'wait;
+                    }
                     _ = probe.tick(), if self.ledger.is_some() => {
                         let version = drafts_version(self.ledger.as_deref());
                         if version != last_drafts_version {
@@ -435,6 +471,65 @@ mod tests {
         drop(_plain_entry);
     }
 
+    /// Two bumps inside the floor publish one frame, not two. Frames are the
+    /// observable contract — a redundant recompute would compose an identical
+    /// snapshot and be swallowed by diff-suppression, so the thing worth
+    /// pinning is that the second bump's work rides the first bump's compose.
+    #[tokio::test]
+    async fn bumps_inside_the_floor_publish_one_frame() {
+        let repo_dir = tempfile::tempdir().unwrap();
+        let repo = repo_dir.path().canonicalize().unwrap();
+        init_repo(&repo);
+
+        let cancel = CancellationToken::new();
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        let _entry = registry.get_or_create(&repo, cancel.clone()).unwrap();
+
+        let bump = Arc::new(Notify::new());
+        let feed = ChangesetAllFeed::new(Arc::clone(&registry), None, Arc::clone(&bump));
+        let (tx, mut rx) = watch::channel(Frame::new(FeedId::CHANGESET_ALL, vec![]));
+        let feed_cancel = CancellationToken::new();
+        let task = spawn_snapshot_feed(Box::new(feed), tx, feed_cancel.clone());
+
+        tokio::time::timeout(Duration::from_secs(5), rx.changed())
+            .await
+            .expect("initial snapshot within timeout")
+            .expect("sender alive");
+        rx.borrow_and_update();
+
+        // Two changes, two bumps, 50 ms apart — both land inside the floor.
+        std::fs::write(repo.join("one.txt"), "x").unwrap();
+        bump.notify_one();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        std::fs::write(repo.join("two.txt"), "x").unwrap();
+        bump.notify_one();
+
+        tokio::time::timeout(Duration::from_secs(5), rx.changed())
+            .await
+            .expect("coalesced snapshot within timeout")
+            .expect("sender alive");
+        let snapshot: WorkspacesChangesetSnapshot =
+            serde_json::from_slice(&rx.borrow_and_update().payload).unwrap();
+        assert_eq!(
+            snapshot.projects[0].snapshot.unattributed.len(),
+            2,
+            "one frame carries both writes"
+        );
+
+        // The stored permit was consumed, so no second frame follows.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(750), rx.changed())
+                .await
+                .is_err(),
+            "the coalesced bump must not spend a second compose"
+        );
+
+        feed_cancel.cancel();
+        let _ = task.await;
+        cancel.cancel();
+        drop(_entry);
+    }
+
     /// End-to-end firmlink split through the real record → store → compose path:
     /// a session opened under a symlink spelling records a symlink-spelled tool
     /// `file_path`; `into_row` projects it to repo-relative in canonical space,
@@ -495,14 +590,16 @@ mod tests {
             timestamp: None,
         };
         // The edit postdates the fixture's commit, so the row is live.
-        let row = pending.into_row(
-            "sess",
-            "tu-1",
-            &canonical_project_dir,
-            Some(&repo_root),
-            "exact",
-            crate::session_ledger::now_millis() + 2_000,
-        );
+        let row = pending
+            .into_row(
+                "sess",
+                "tu-1",
+                &canonical_project_dir,
+                Some(&repo_root),
+                "exact",
+                crate::session_ledger::now_millis() + 2_000,
+            )
+            .expect("the symlink-spelled path canonicalizes into the repo");
         assert_eq!(
             row.file_path, "roadmap/x.md",
             "recorded repo-relative despite the split"

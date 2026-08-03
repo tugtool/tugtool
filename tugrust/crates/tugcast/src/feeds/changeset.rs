@@ -23,7 +23,7 @@ use super::git::{fetch_git_status, fetch_head_message, parse_porcelain_v2};
 use super::workspace_registry::WorkspaceRegistry;
 use crate::path_resolver::{CanonicalPath, same_file};
 use crate::session_ledger::{
-    FileEventRewrite, ProjectFileEvent, SessionLedger, SessionRow, SessionState,
+    FileEventKey, FileEventRewrite, ProjectFileEvent, SessionLedger, SessionRow, SessionState,
 };
 
 /// Fires the account-global changeset recompute after a file-event write.
@@ -90,10 +90,19 @@ pub(crate) async fn compose_snapshot(
     ledger: Option<&SessionLedger>,
 ) -> Option<ChangesetSnapshot> {
     let repo_root = repo_root_for(project_dir).await?;
+    // Loop-invariant across every row this compose resolves, and resolving it
+    // takes the resolver's global memo lock — so it is resolved once, here.
+    let canonical_root = CanonicalPath::from_raw(&repo_root);
     let status_output = fetch_git_status(&repo_root).await?;
 
     let header = parse_porcelain_v2(&status_output);
     let head_message = fetch_head_message(&repo_root).await;
+    // One `rev-parse` replaces up to one `git log` per dirty path on every
+    // recompute — see `live_cut_cache`.
+    let head_oid = git_stdout(&repo_root, &["rev-parse", "HEAD"])
+        .await
+        .map(|out| out.trim().to_owned())
+        .filter(|oid| !oid.is_empty());
 
     // Dirty working-tree files: repo-relative path → porcelain-v2 XY
     // status ("??" for untracked, matching the familiar v1 rendering).
@@ -132,7 +141,7 @@ pub(crate) async fn compose_snapshot(
             Vec::new()
         })
     };
-    let events = match ledger {
+    let mut events = match ledger {
         Some(ledger) => {
             let raw = project_dir.to_string_lossy();
             let canonical = CanonicalPath::from_raw(project_dir);
@@ -145,35 +154,95 @@ pub(crate) async fn compose_snapshot(
         None => Vec::new(),
     };
 
-    // Opportunistic lazy backfill: collapse this project's legacy absolute rows
-    // to canonical project_dir + repo-relative file_path, once per project per
-    // process. Correctness never depends on it — the bridge already reconciles
-    // legacy rows at read time (`events` above was read pre-backfill and this
-    // snapshot is composed from it); the backfill just makes later reads direct.
-    // It runs only for open projects (never a boot walk), preserving the
-    // no-TCC-prompt-on-boot property.
+    // Opportunistic lazy sweep of this project's absolute rows, once per project
+    // per process: those that resolve into the repo are collapsed to canonical
+    // project_dir + repo-relative file_path; those that resolve outside it are
+    // deleted. An out-of-repo row can never match the fold below (which is keyed
+    // on git's repo-relative dirty paths), so it is not a row this project has
+    // any use for — it only costs a full resolution attempt every recompute.
+    // Correctness never depends on the rewrite half — the bridge already
+    // reconciles legacy rows at read time. The sweep runs only for open projects
+    // (never a boot walk), preserving the no-TCC-prompt-on-boot property.
     if let Some(ledger) = ledger {
         let canonical = CanonicalPath::from_raw(project_dir);
-        let fresh = backfill_marker()
+        let swept = backfill_marker()
             .lock()
             .expect("backfill marker mutex")
-            .insert(canonical.as_str().to_owned());
-        if fresh {
-            let rewrites: Vec<FileEventRewrite> = events
-                .iter()
-                .filter(|pfe| pfe.event.file_path.starts_with('/'))
-                .filter_map(|pfe| {
-                    let rel = repo_relative(&repo_root, &pfe.event.file_path);
-                    (rel != pfe.event.file_path).then(|| FileEventRewrite {
+            .contains(canonical.as_str());
+        if !swept {
+            let mut rewrites: Vec<FileEventRewrite> = Vec::new();
+            let mut purges: Vec<FileEventKey> = Vec::new();
+            for pfe in &events {
+                if !pfe.event.file_path.starts_with('/') {
+                    continue;
+                }
+                let rel = repo_relative(&canonical_root, &repo_root, &pfe.event.file_path);
+                // Still absolute means both of `repo_relative`'s tests came back
+                // negative: the canonicalized path is not under the canonical
+                // root by prefix, AND no ancestor of it is the same live
+                // directory as the root. A path that merely fails to
+                // canonicalize (an in-repo file already deleted from disk) still
+                // strips, so "unresolvable" is never read as "outside".
+                if rel.starts_with('/') {
+                    purges.push(FileEventKey {
+                        tug_session_id: pfe.event.tug_session_id.clone(),
+                        tool_use_id: pfe.event.tool_use_id.clone(),
+                        file_path: pfe.event.file_path.clone(),
+                    });
+                } else {
+                    rewrites.push(FileEventRewrite {
                         tug_session_id: pfe.event.tug_session_id.clone(),
                         tool_use_id: pfe.event.tool_use_id.clone(),
                         old_file_path: pfe.event.file_path.clone(),
                         new_file_path: rel,
-                    })
-                })
-                .collect();
+                    });
+                }
+            }
+            // Mark the project swept only once the writes land: a forwarded
+            // write held for retry must not cost this process its one attempt.
+            let mut settled = true;
             if !rewrites.is_empty() {
-                let _ = ledger.backfill_file_events_repo_relative(canonical.as_str(), &rewrites);
+                settled &= ledger
+                    .backfill_file_events_repo_relative(canonical.as_str(), &rewrites)
+                    .is_ok();
+            }
+            if !purges.is_empty() {
+                match ledger.purge_file_events_out_of_repo(canonical.as_str(), &purges) {
+                    Ok(deleted) => tracing::debug!(
+                        project = canonical.as_str(),
+                        deleted,
+                        "purged file_events rows naming files outside the repo"
+                    ),
+                    Err(err) => {
+                        tracing::warn!(project = canonical.as_str(), error = %err, "out-of-repo purge failed; retrying next compose");
+                        settled = false;
+                    }
+                }
+                // Purged rows are gone from the ledger; drop them from this
+                // compose too, so they don't cost one last resolution each.
+                let dropped: HashSet<(&str, &str, &str)> = purges
+                    .iter()
+                    .map(|k| {
+                        (
+                            k.tug_session_id.as_str(),
+                            k.tool_use_id.as_str(),
+                            k.file_path.as_str(),
+                        )
+                    })
+                    .collect();
+                events.retain(|pfe| {
+                    !dropped.contains(&(
+                        pfe.event.tug_session_id.as_str(),
+                        pfe.event.tool_use_id.as_str(),
+                        pfe.event.file_path.as_str(),
+                    ))
+                });
+            }
+            if settled {
+                backfill_marker()
+                    .lock()
+                    .expect("backfill marker mutex")
+                    .insert(canonical.as_str().to_owned());
             }
         }
     }
@@ -187,14 +256,16 @@ pub(crate) async fn compose_snapshot(
     // hand-saves), so it never makes a session an owner.
     let mut proof_owners: HashMap<String, HashSet<String>> = HashMap::new();
     for pfe in &events {
-        let rel = repo_relative(&repo_root, &pfe.event.file_path);
+        let rel = repo_relative(&canonical_root, &repo_root, &pfe.event.file_path);
         let Some(git_status) = dirty.get(&rel) else {
             continue;
         };
         let min_live = match live_cuts.get(&rel) {
             Some(cut) => *cut,
             None => {
-                let cut = min_live_at_ms(&repo_root, &rel).await;
+                let cut =
+                    cached_min_live_at_ms(&canonical_root, &repo_root, &rel, head_oid.as_deref())
+                        .await;
                 live_cuts.insert(rel.clone(), cut);
                 cut
             }
@@ -609,7 +680,10 @@ fn backfill_marker() -> &'static Mutex<HashSet<String>> {
 /// - **Residual mismatch** — walk `file_path`'s ancestors for one that is the
 ///   same live directory as `repo_root` (`same_file`) and strip that; failing
 ///   all of it, return the input (falls to unattributed, never a wrong match).
-fn repo_relative(repo_root: &Path, file_path: &str) -> String {
+///
+/// The canonical root is passed in rather than derived: it is the same for
+/// every row of a compose, and resolving it takes a global memo lock.
+fn repo_relative(canonical_root: &CanonicalPath, repo_root: &Path, file_path: &str) -> String {
     // New capture-time rows are already repo-relative.
     if !file_path.starts_with('/') {
         return file_path.to_owned();
@@ -617,7 +691,6 @@ fn repo_relative(repo_root: &Path, file_path: &str) -> String {
 
     // Legacy absolute row: canonicalize both sides, then strip. The firmlink
     // split (repo_root and file_path spelled differently) collapses here.
-    let canonical_root = CanonicalPath::from_raw(repo_root);
     let canonical_file = CanonicalPath::from_raw(Path::new(file_path));
     if let Ok(rel) = canonical_file
         .as_path()
@@ -637,6 +710,47 @@ fn repo_relative(repo_root: &Path, file_path: &str) -> String {
         }
     }
     file_path.to_owned()
+}
+
+/// Liveness cuts that survive between composes, keyed `(canonical_root, rel)`
+/// → `(head_oid, cut_ms)`. The cut is derived from the last commit that touched
+/// the path, so it can only change when a commit lands — which moves HEAD.
+/// Holding the oid alongside the value makes that the invalidation: any commit,
+/// merge, or reset mismatches and re-derives. Between commits an editing
+/// session recomputes far more often than it commits, and every one of those
+/// recomputes was re-running `git log` per dirty path.
+///
+/// Growth is one entry per path *ever* dirtied in this process's lifetime —
+/// bounded in practice by the repo's file count.
+fn live_cut_cache() -> &'static Mutex<HashMap<(String, String), (String, i64)>> {
+    static CACHE: OnceLock<Mutex<HashMap<(String, String), (String, i64)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The liveness cut for `rel`, through [`live_cut_cache`] when `head_oid` is
+/// known. `None` (an unborn or unreadable HEAD) bypasses the cache entirely —
+/// never wrong, just uncached.
+async fn cached_min_live_at_ms(
+    canonical_root: &CanonicalPath,
+    repo_root: &Path,
+    rel: &str,
+    head_oid: Option<&str>,
+) -> i64 {
+    let Some(head_oid) = head_oid else {
+        return min_live_at_ms(repo_root, rel).await;
+    };
+    let key = (canonical_root.as_str().to_owned(), rel.to_owned());
+    if let Some((oid, cut)) = live_cut_cache().lock().expect("live cut cache").get(&key)
+        && oid == head_oid
+    {
+        return *cut;
+    }
+    let cut = min_live_at_ms(repo_root, rel).await;
+    live_cut_cache()
+        .lock()
+        .expect("live cut cache")
+        .insert(key, (head_oid.to_owned(), cut));
+    cut
 }
 
 /// The row-liveness cut for `rel` (epoch ms): a ledger row is live iff
@@ -1311,6 +1425,54 @@ mod tests {
         assert_eq!(unattributed, ["committed.txt"]);
     }
 
+    /// The liveness cut survives between composes keyed by HEAD, so a commit
+    /// landing between them must re-derive it: the row that was live before
+    /// the commit is spent after it, and the file falls to unattributed. A
+    /// cache that outlived the commit would keep claiming the file.
+    #[tokio::test]
+    async fn a_commit_between_composes_invalidates_the_cached_liveness_cut() {
+        let (_dir, root) = init_repo();
+        std::fs::write(root.join("committed.txt"), "edited\n").unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .record_spawn("sess", "ws", &root.to_string_lossy(), "card-1", 0, None)
+            .unwrap();
+        let mut ev = event("sess", "tu-1", &root.join("committed.txt"), &root);
+        // Past the fixture commit's cut, which rounds up to the next second.
+        ev.at = crate::session_ledger::now_millis() + 2_000;
+        ledger.record_file_event(&ev).unwrap();
+
+        let owned = |snapshot: &ChangesetSnapshot| {
+            snapshot
+                .changesets
+                .iter()
+                .any(|e| matches!(e, ChangesetEntry::Session { files, .. } if !files.is_empty()))
+        };
+
+        let first = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        assert!(owned(&first), "the row postdates the fixture's commit");
+
+        // The commit absorbs that work; re-dirtying the file must not let the
+        // now-fossil row reclaim it. The cut rounds up to the next whole
+        // second, so the commit has to land past the row's stamp.
+        tokio::time::sleep(std::time::Duration::from_millis(2_100)).await;
+        git(&root, &["add", "."]);
+        git(&root, &["commit", "-q", "-m", "absorb the edit"]);
+        std::fs::write(root.join("committed.txt"), "re-dirtied\n").unwrap();
+
+        let second = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        assert!(!owned(&second), "the commit spent the row");
+        assert_eq!(
+            second
+                .unattributed
+                .iter()
+                .map(|f| f.path.as_str())
+                .collect::<Vec<_>>(),
+            ["committed.txt"]
+        );
+    }
+
     #[tokio::test]
     async fn compose_derives_dash_entries_from_tugdash_refs() {
         let (_dir, root) = init_repo();
@@ -1859,8 +2021,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn bridge_passes_through_relative_and_strips_absolute() {
+        let any = Path::new("/any/repo");
         assert_eq!(
-            repo_relative(Path::new("/any/repo"), "roadmap/x.md"),
+            repo_relative(&CanonicalPath::from_raw(any), any, "roadmap/x.md"),
             "roadmap/x.md"
         );
 
@@ -1868,7 +2031,11 @@ mod tests {
         let root = tmp.path().canonicalize().unwrap();
         std::fs::write(root.join("a.txt"), "x").unwrap();
         assert_eq!(
-            repo_relative(&root, root.join("a.txt").to_str().unwrap()),
+            repo_relative(
+                &CanonicalPath::from_raw(&root),
+                &root,
+                root.join("a.txt").to_str().unwrap()
+            ),
             "a.txt"
         );
 
@@ -1876,7 +2043,11 @@ mod tests {
         let link = link_home.path().join("link");
         std::os::unix::fs::symlink(&root, &link).unwrap();
         assert_eq!(
-            repo_relative(&link, root.join("a.txt").to_str().unwrap()),
+            repo_relative(
+                &CanonicalPath::from_raw(&link),
+                &link,
+                root.join("a.txt").to_str().unwrap()
+            ),
             "a.txt",
             "firmlink-split repo_root collapses through the gateway"
         );
@@ -1914,6 +2085,59 @@ mod tests {
         compose_snapshot(&root, Some(&ledger)).await.expect("repo");
         let after = ledger.file_events_for_session("sess").unwrap();
         assert_eq!(before, after, "second compose does no extra writes");
+    }
+
+    /// A first compose deletes the rows naming files outside the repo and
+    /// converts the ones naming files inside it, leaving `file_events` holding
+    /// only paths a changeset can show.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn sweep_purges_out_of_repo_rows_and_keeps_in_repo_ones() {
+        let (_dir, root) = init_repo();
+        std::fs::write(root.join("a.txt"), "x").unwrap();
+        let away = tempfile::tempdir().unwrap();
+        let away_file = away.path().canonicalize().unwrap().join("note.md");
+        std::fs::write(&away_file, "x").unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .record_spawn("sess", "ws", &root.to_string_lossy(), "card", 0, None)
+            .unwrap();
+        ledger
+            .record_file_event(&event("sess", "tu-1", &root.join("a.txt"), &root))
+            .unwrap();
+        ledger
+            .record_file_event(&event("sess", "tu-2", &away_file, &root))
+            .unwrap();
+
+        compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+
+        let rows = ledger.file_events_for_session("sess").unwrap();
+        assert_eq!(rows.len(), 1, "the out-of-repo row is gone: {rows:?}");
+        assert_eq!(rows[0].file_path, "a.txt");
+    }
+
+    /// An in-repo file already deleted from disk cannot canonicalize, but it is
+    /// still in the repo — the sweep must rewrite it, never purge it.
+    /// "Unresolvable" is not "outside".
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn sweep_keeps_a_row_for_a_deleted_in_repo_file() {
+        let (_dir, root) = init_repo();
+        let gone = root.join("src/gone.txt");
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .record_spawn("sess", "ws", &root.to_string_lossy(), "card", 0, None)
+            .unwrap();
+        ledger
+            .record_file_event(&event("sess", "tu-1", &gone, &root))
+            .unwrap();
+
+        compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+
+        let rows = ledger.file_events_for_session("sess").unwrap();
+        assert_eq!(rows.len(), 1, "the row survives: {rows:?}");
+        assert_eq!(rows[0].file_path, "src/gone.txt", "rewritten, not purged");
     }
 
     /// The backfill runs only for the project compose actually touches; a

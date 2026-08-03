@@ -377,14 +377,14 @@ None — all changes land in existing files.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Snippets feed: single-file stat poll | pending | — |
-| #step-2 | path_resolver: cache the synthetic.conf parse | pending | — |
-| #step-3 | attribution: stop recording out-of-repo events | pending | — |
-| #step-4 | ledger: journaled out-of-repo purge | pending | — |
-| #step-5 | changeset: hoist canonical root | pending | — |
-| #step-6 | changeset: HEAD-keyed liveness-cut cache | pending | — |
-| #step-7 | changeset_all: bump debounce floor + instrumentation | pending | — |
-| #step-8 | Integration checkpoint: live-process verification | pending | — |
+| #step-1 | Snippets feed: single-file stat poll | done | `def803669` |
+| #step-2 | path_resolver: cache the synthetic.conf parse | done | `00ebc3e3a` |
+| #step-3 | attribution: stop recording out-of-repo events | done | `12bce2712` |
+| #step-4 | ledger: journaled out-of-repo purge | done | `89e504863` |
+| #step-5 | changeset: hoist canonical root | done | `b9a95b05c` |
+| #step-6 | changeset: HEAD-keyed liveness-cut cache | done | `b6db02fc9` |
+| #step-7 | changeset_all: bump debounce floor + instrumentation | done | `7f25f75f0` |
+| #step-8 | Integration checkpoint: live-process verification | partial | verification only — see below |
 
 #### Step 1: Snippets feed — single-file stat poll {#step-1}
 
@@ -596,8 +596,10 @@ None — all changes land in existing files.
 - [ ] `just app-test-changed` (selection derived from the diff; expect the changeset/session surfaces' covered tests)
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run` fully green, zero warnings
-- [ ] `sample` and `db-inspect` evidence matches every bullet in #success-criteria
+- [x] `cd tugrust && cargo nextest run` fully green, zero warnings — 1896 passed, 5 skipped
+- [x] Idle burn eliminated: `sample <debug tugcast> 5` shows **zero** `notify::poll` / `get_content_hash` frames at 0.1% CPU; the same sample of an old-build tugcast (the release instance, same machine, same moment) shows those frames at 18.8% CPU
+- [ ] **Blocked on a user gesture:** the purge and the under-load compose numbers need the **main checkout** open in an instance running this build. `just app-debug` from this worktree registers the *worktree* as its project, which has 59 rows and none absolute — the sweep ran and correctly found nothing to purge. The main checkout's 426 absolute rows (`/Users/kocienda/Mounts/u/src/tugtool`, plus 10 under `calc-demo`) are still held by the old-build release instance. They purge on the first compose after this lands and the main instance is rebuilt; re-run the `db-inspect` count then, before and after further session activity.
+- [ ] Snippets cross-build sync and the save-burst check are likewise live-app observations for the user.
 
 ---
 

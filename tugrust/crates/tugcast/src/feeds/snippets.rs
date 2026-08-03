@@ -17,31 +17,44 @@
 //!
 //! # Watching
 //!
-//! The `notify` watcher watches the file's **parent directory**, not the file
-//! itself: atomic writes replace the file via `rename`, so a watch on the old
-//! inode goes stale. Events are filtered to the target filename.
+//! The feed task polls `snippets.json` **by path**, comparing `(mtime, len)`
+//! each tick and re-reading only when that stamp moves. Polling by path is
+//! immune to the atomic writes that replace the file via `rename`: every tick
+//! stats whatever currently lives at the path, so a replaced inode is a
+//! non-event. It is also robust across sandboxes and the `/private/var`
+//! firmlink, which is why this feed polls rather than taking OS file events.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
-use notify::{Config, PollWatcher, RecursiveMode, Watcher};
 use serde_json::json;
-use tokio::sync::{Notify, mpsc, watch};
-use tracing::{debug, warn};
+use tokio::sync::{Notify, watch};
+use tokio::time::MissedTickBehavior;
+use tracing::debug;
 use tugcast_core::{FeedId, Frame};
 
 use crate::snippets::{ReadOutcome, SnippetsDoc, read_snippets};
 
-/// Debounce window coalescing a burst of filesystem events into one rebuild.
+/// Debounce window coalescing a burst of writes into one rebuild.
 const DEBOUNCE_MILLIS: u64 = 100;
 
-/// Poll interval for the file watcher. A `PollWatcher` (rather than the OS
-/// event backend) keeps cross-build sync robust across sandboxes and the
-/// `/private/var` firmlink, and 250 ms is comfortably inside the ~1 s sync
-/// budget. The `PUT` nudge gives the writing build instant feedback, so this
-/// interval only governs how fast *other* builds see a change.
+/// Poll interval for the file stamp. 250 ms is comfortably inside the ~1 s
+/// cross-build sync budget. The `PUT` nudge gives the writing build instant
+/// feedback, so this interval only governs how fast *other* builds see a
+/// change.
 const POLL_MILLIS: u64 = 250;
+
+/// Last observed `(mtime, len)` of the polled file. `None` — the file is
+/// absent or its metadata is unreadable — is a stamp of its own, so the file
+/// appearing or disappearing is a change like any other.
+type FileStamp = Option<(SystemTime, u64)>;
+
+/// Stat `path` and reduce it to the change-detection stamp.
+fn file_stamp(path: &Path) -> FileStamp {
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.modified().ok()?, meta.len()))
+}
 
 /// Build a SNIPPETS frame from a read outcome, retaining the last good
 /// document when the on-disk file is unreadable (`error` present).
@@ -56,64 +69,36 @@ fn frame_from_outcome(outcome: &ReadOutcome, last_good: &mut SnippetsDoc) -> Fra
     Frame::new(FeedId::SNIPPETS, bytes)
 }
 
-/// Install a `notify` watcher on `path`'s parent directory that sends `()` on
-/// every change touching the target filename. Returns the watcher, which the
-/// caller must keep alive for events to keep flowing.
-fn install_watcher(path: &Path, fs_tx: mpsc::UnboundedSender<()>) -> Option<PollWatcher> {
-    let parent = path.parent()?.to_path_buf();
-    let _ = std::fs::create_dir_all(&parent);
-    let filename = path.file_name()?.to_os_string();
-
-    let config = Config::default()
-        .with_poll_interval(Duration::from_millis(POLL_MILLIS))
-        .with_compare_contents(true);
-
-    let mut watcher = PollWatcher::new(
-        move |res: notify::Result<notify::Event>| {
-            if let Ok(event) = res
-                && event
-                    .paths
-                    .iter()
-                    .any(|p| p.file_name() == Some(filename.as_os_str()))
-            {
-                let _ = fs_tx.send(());
-            }
-        },
-        config,
-    )
-    .map_err(|e| warn!(error = %e, "snippets_feed: failed to create watcher"))
-    .ok()?;
-
-    watcher
-        .watch(&parent, RecursiveMode::NonRecursive)
-        .map_err(
-            |e| warn!(error = %e, dir = %parent.display(), "snippets_feed: failed to watch dir"),
-        )
-        .ok()?;
-
-    Some(watcher)
-}
-
 /// Start the SNIPPETS feed.
 ///
 /// Reads `snippets.json` at `path`, sends an initial frame, and returns the
 /// `watch::Receiver<Frame>` for wiring into `snapshot_watches` plus a
 /// [`Notify`] the `PUT` handler pulses to force an immediate rebuild (so the
-/// writer's own frontend doesn't wait on the watcher debounce).
+/// writer's own frontend doesn't wait on the poll interval).
 ///
-/// The spawned task holds the `watch::Sender` and the notify watcher; it exits
-/// when all receivers are dropped (`tx.closed()`), mirroring `defaults_feed`.
+/// The spawned task holds the `watch::Sender`; it exits when all receivers are
+/// dropped (`tx.closed()`), mirroring `defaults_feed`. That arm is the task's
+/// only exit — a rebuild whose content is unchanged publishes nothing, so the
+/// send path can stay quiet indefinitely.
 pub fn snippets_feed(path: PathBuf) -> (watch::Receiver<Frame>, Arc<Notify>) {
     let mut last_good = SnippetsDoc::empty();
-    let initial = frame_from_outcome(&read_snippets(&path), &mut last_good);
+    // Stamp before reading, and before the task spawns: a write landing in
+    // either window leaves the stamp behind the bytes, so the next tick
+    // re-reads. The reverse order could stamp bytes that were never published.
+    let initial_stamp = file_stamp(&path);
+    let initial_outcome = read_snippets(&path);
+    // Seed from the frame subscribers already hold, so the first rebuild does
+    // not republish a duplicate of it.
+    let mut published_hash = initial_outcome.hash.clone();
+    let initial = frame_from_outcome(&initial_outcome, &mut last_good);
     let (tx, rx) = watch::channel(initial);
     let nudge = Arc::new(Notify::new());
 
     let task_nudge = Arc::clone(&nudge);
     tokio::spawn(async move {
-        let (fs_tx, mut fs_rx) = mpsc::unbounded_channel::<()>();
-        // Held for the task's lifetime so the OS watch stays registered.
-        let _watcher = install_watcher(&path, fs_tx);
+        let mut stamp = initial_stamp;
+        let mut ticker = tokio::time::interval(Duration::from_millis(POLL_MILLIS));
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         loop {
             tokio::select! {
@@ -122,19 +107,26 @@ pub fn snippets_feed(path: PathBuf) -> (watch::Receiver<Frame>, Arc<Notify>) {
                     break;
                 }
                 _ = task_nudge.notified() => {}
-                recv = fs_rx.recv() => {
-                    if recv.is_none() {
-                        // Watcher gone (install failed or dropped): stop reacting
-                        // to fs events but keep serving PUT-driven rebuilds.
-                        std::future::pending::<()>().await;
+                _ = ticker.tick() => {
+                    let observed = file_stamp(&path);
+                    if observed == stamp {
+                        continue;
                     }
-                    // Coalesce a burst of rename/create/modify events.
+                    // Let a burst of writes settle, then take the stamp the
+                    // read below actually sees.
                     tokio::time::sleep(Duration::from_millis(DEBOUNCE_MILLIS)).await;
-                    while fs_rx.try_recv().is_ok() {}
+                    stamp = file_stamp(&path);
                 }
             }
 
-            let frame = frame_from_outcome(&read_snippets(&path), &mut last_good);
+            let outcome = read_snippets(&path);
+            // Republish only on a content change. An error outcome always
+            // publishes — its message is the payload.
+            if outcome.error.is_none() && outcome.hash.is_some() && outcome.hash == published_hash {
+                continue;
+            }
+            published_hash = outcome.hash.clone();
+            let frame = frame_from_outcome(&outcome, &mut last_good);
             if tx.send(frame).is_err() {
                 break;
             }
@@ -187,12 +179,7 @@ mod tests {
         // Initial frame is the empty document.
         assert!(parse_frame(&rx.borrow_and_update())["error"].is_null());
 
-        // Let the feed task start and the PollWatcher establish its baseline on
-        // the (empty) directory before we write — otherwise the write lands in
-        // the baseline and no change is ever observed.
-        tokio::time::sleep(Duration::from_millis(POLL_MILLIS * 3)).await;
-
-        // An external writer replaces the file.
+        // An external writer creates the file: the absent → present stamp move.
         write_snippets_atomic(&path, &sample_doc()).unwrap();
 
         // The watcher fires; wait for the next frame (bounded).
@@ -202,6 +189,53 @@ mod tests {
             .expect("sender alive");
         let json = parse_frame(&rx.borrow());
         assert_eq!(json["doc"]["snippets"][0]["id"], "sn_a");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn external_rewrite_of_existing_file_triggers_new_frame() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("snippets.json");
+        write_snippets_atomic(&path, &sample_doc()).unwrap();
+
+        let (mut rx, _nudge) = snippets_feed(path.clone());
+        assert_eq!(
+            parse_frame(&rx.borrow_and_update())["doc"]["snippets"][0]["id"],
+            "sn_a"
+        );
+
+        // A second write to a file that already existed at feed start: the
+        // present → present stamp move, which no rename-based watch would see
+        // on the inode it first opened.
+        let mut doc = sample_doc();
+        doc.snippets[0].id = "sn_b".into();
+        write_snippets_atomic(&path, &doc).unwrap();
+
+        tokio::time::timeout(Duration::from_secs(10), rx.changed())
+            .await
+            .expect("frame within timeout")
+            .expect("sender alive");
+        let json = parse_frame(&rx.borrow());
+        assert_eq!(json["doc"]["snippets"][0]["id"], "sn_b");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn unchanged_content_publishes_no_frame() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("snippets.json");
+        write_snippets_atomic(&path, &sample_doc()).unwrap();
+
+        let (mut rx, nudge) = snippets_feed(path.clone());
+        rx.borrow_and_update();
+
+        // A rebuild that reads identical bytes must not republish what
+        // subscribers already hold.
+        nudge.notify_one();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(750), rx.changed())
+                .await
+                .is_err(),
+            "identical content should publish no frame"
+        );
     }
 
     #[tokio::test]
