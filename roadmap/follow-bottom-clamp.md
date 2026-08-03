@@ -56,16 +56,17 @@ The scroll-fixups doctrine in [`tuglaws/scroll-intent.md`](../tuglaws/scroll-int
 - **Machine displacement never flips follow-bottom.** With follow-bottom engaged, a simulated commit-scoped clamp — driven through the `forceCommitClamp()` test seam ([S04]) — leaves `.session-jump-to-bottom-button[data-visible]` at `"false"` and `isFollowingBottom` true. Verified in `at0335`.
 - **Follow-bottom is recoverable.** After any disengage, scrolling to within `AT_BOTTOM_PX` of the bottom re-engages, and a turn streamed afterwards pins. Verified by extending `at0333`.
 - **Arrivals scroll into view.** With follow-bottom engaged and the card idle, a turn appended after ≥10 minutes of quiet pins the new content into view. Verified in `at0335`.
+- **An idle user at the bottom is never stranded.** With follow-bottom forced off through `setTranscriptFollowBottom(false)` while the transcript sits inside the `AT_BOTTOM_PX` band, appending a row with no user input pins it into view and logs a growth-time re-engagement. This is the app-test form of the two field reports — the `/commit` receipt row and the `Session compacted` note both failing to scroll in from a bottom-parked card. Verified in `at0335`.
 - **The regression is attributed.** The manual A/B checkpoints in [#step-1] and [#step-2] record displacement events > 0 before the atomic-spacer fix and 0 after, and 0 in the eviction-disabled control arm both times. This measurement spans revisions, so it is manual by nature — do not try to build it as an app-test.
 - **Diagnosis is durable.** `window.__deckTrace.dump()` and the dev-panel log both carry every follow-bottom transition and every displacement with its geometry, in a release build, with no opt-in. Verified in `at0335`.
 
 #### Scope {#scope}
 
-1. Durable displacement + follow-bottom instrumentation (`deck-trace.ts`, `tug-dev-log-store`, a `data-scroll-displacements` attribute, a test-surface reader, and the `forceCommitClamp()` test seam).
+1. Durable displacement + follow-bottom instrumentation (`deck-trace.ts`, `tug-dev-log-store`, a `data-scroll-displacements` attribute, a scroller registry giving the test surface its first route to a live `SmartScroll`, a test-surface reader, and the `forceCommitClamp()` test seam).
 2. Atomic window geometry in `TugListView` — spacer heights applied in the render pass, not a post-commit layout effect.
 3. Commit-scoped displacement detection and repair in `TugListView`.
 4. `SmartScroll` attribution: a user-activity sequence, a programmatic-write sequence, and a repair notification that suppresses intent rules.
-5. Follow-bottom recoverability: no terminal disengage from a machine cause, plus a forgiving re-engagement rule.
+5. Follow-bottom recoverability: no terminal disengage from a machine cause, plus two forgiving re-engagement rules — at gesture end, and at growth time for an idle user sitting inside the band.
 6. Doctrine updates: the clamp row in `tuglaws/scroll-intent.md` and the `[D93]` idle clause in `tuglaws/design-decisions.md`.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
@@ -143,6 +144,7 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 | Render-phase spacer style read as an [L06] violation | med | med | [P02] states the exception and its bounds; no new renders are introduced | A reviewer flags it, or a new spacer writer appears |
 | New geometry reads cost layout in the streaming hot path | med | med | Reads sit after the spacer write where layout is already clean; one read per commit, both values from the same read ([P03]) | Typing-lag q99 regresses in the perf probes |
 | Eviction ledger shortfall mistaken for a transient dip | med | med | The instrumentation reports each repair's outcome forward as `priorRepairHeld`; a repair that immediately re-clamps means a shortfall, not a dip ([S01]) | Displacement records whose successor carries `priorRepairHeld: false` |
+| A clamp's transient at-bottom triggers a spurious *re-engage* | med | low | The bracket repairs before the pin effect reads geometry; the ordering is pinned as an invariant with comments at both sites ([R04], [P05]) | A `growth-at-bottom-reengage` record in the dev log for a card parked mid-history |
 
 **Risk R01: The repair fights a native scrollbar drag** {#r01-repair-fights-scrollbar}
 
@@ -167,6 +169,15 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 - **Risk:** The captured evidence proves a transient dip clamped `scrollTop`, but the exact forced-layout reader that made the intermediate state visible has not been named. There may also be a persistent ledger shortfall (spacer sums under-reporting real extents).
 - **Mitigation:** [#step-1] lands before any fix and distinguishes the two: a transient dip repairs and holds; a shortfall repairs and immediately re-clamps. [#step-2]'s checkpoint requires the A/B arm to show displacement going to zero — if it does not, the diagnosis is wrong and the plan stops there rather than layering compensation on a bad model.
 - **Residual risk:** Both could be true at once. The instrumentation reports each separately.
+
+**Risk R04: The growth-time re-engage fires on a clamp's transient at-bottom** {#r04-spurious-reengage}
+
+- **Risk:** [P05](c) inverts the failure mode this plan was written to fix. During a clamp the document is transiently short, so `scrollTop == scrollHeight - clientHeight` and `isAtBottom` reads **true** even for a user parked deep in history. A `maybePinToBottom` call in that window would re-engage follow-bottom and pin them to the live edge — the same class of user-fighting behavior as the original disengage, in the opposite direction.
+- **Mitigation:**
+  - Ordering. React runs child layout effects before any of `TugListView`'s own, so a clamp fired by a child's forced layout has already happened when the displacement bracket runs; the bracket repairs, and only then does the auto-pin effect (declared later in the same component) read geometry. [#step-5] promotes that from accident to invariant with a comment at both sites.
+  - [#step-2] removes the tear that produces commit-scoped clamps in the first place, so this is a guard on a path that should no longer fire.
+  - The source string is distinct (`growth-at-bottom-reengage`), so a spurious engagement is visible in the dev log rather than silent — the failure mode that made the original bug so expensive to diagnose.
+- **Residual risk:** A clamp forced by a **parent's** layout effect runs *after* every effect in `TugListView` (parents run after children), and out-of-commit clamps remain out of scope per [Q01]. Either can leave a spurious at-bottom for the next `ResizeObserver` fire to convert into a re-engage. Bounded, logged, and strictly better than the status quo — where the same clamp silently disengages instead and never heals.
 
 ---
 
@@ -230,15 +241,21 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 #### [P05] Follow-bottom is recoverable, never terminal (DECIDED) {#p05-recoverable-follow-bottom}
 
-**Decision:** Disengagement stops being a one-way door. Two changes: (a) re-engagement no longer requires the scroll to be net-downward when the position is already inside the `AT_BOTTOM_PX` band at gesture end; (b) a disengage caused by a source later proven to be machine-authored within the same commit is reverted along with the position.
+**Decision:** Disengagement stops being a one-way door. Three changes: (a) re-engagement no longer requires the scroll to be net-downward when the position is already inside the `AT_BOTTOM_PX` band at gesture end; (b) a disengage caused by a source later proven to be machine-authored within the same commit is reverted along with the position; (c) a growth signal that arrives while the scroller is idle and inside the band re-engages before pinning.
 
 **Rationale:**
 - The user's actual complaint is not one bad flip, it is that the bad flip is permanent. Even a perfect attribution scheme will misfire eventually; a state that cannot heal turns every miss into a session-long outage.
 - The current `_checkReEngageFollowBottom` requires `scrollTop > _gestureStartScrollTop`, so a user who wheels down *past* the bottom and rubber-bands, or who ends a gesture exactly at the bottom having started there, does not re-engage.
+- Every existing way back requires the **user to move**. A user parked at the live edge, touching nothing, has no route back: `'idle-reengage'` needs a `scroll` event and `'gesture-end-reengage'` needs a gesture. This is the shape of the two field reports that motivated (c) — sitting at the bottom, the durable `/commit` receipt row (appended by `useLandingReceipts` via `ingestShellExchange`) and the `Session compacted` `system_note` (`code-session-store/compaction.ts`) both failed to scroll into view. Both are ordinary appends: they grow `itemCount`, trip the growth-detect layout effect, set `pinRequestedRef`, and reach `maybePinToBottom`, whose `shouldAutoPin` gate then drops the pin because follow-bottom was already off. Position said "at the live edge"; intent said "not following"; the row never arrived.
+- (c) is not a new principle — it is the one `shouldAutoPin` already encodes for the *engaged* case, where the `isAtBottom` clause keeps pinning through a downward gesture on the grounds that content must not open a gap beneath a user sitting at the edge. The same reasoning applies when the flag is off and the position is inside the band.
+- Unlike (b), (c) does not depend on knowing *why* the disengage happened, so it also bounds the cost of the out-of-commit clamps [Q01] defers. That is what makes it worth its own task rather than a follow-up.
 
 **Implications:**
 - `_checkReEngageFollowBottom` gains the `isAtBottom`-only path.
 - The repair path in [P03] restores the follow-bottom flag it observed before the displacement.
+- `maybePinToBottom` re-engages before consulting `shouldAutoPin` when the machine is idle and the position is inside the band. Two carve-outs: never mid-gesture (`isUserScrolling` — an in-flight gesture's re-engagement is `_checkReEngageFollowBottom`'s to decide at gesture end, and re-engaging mid-drag would pin under the user's own thumb), and never while a restore target is pending (`setRestoreTarget` disengaged deliberately; `applyRestoreTarget` owns the position until it clears).
+- **The accepted narrowing:** taken together, (a) and (c) mean a user can no longer hold a *disengaged* position inside the 60px band while content arrives. That state is easy to reach today — `_handleWheel` carries no `isAtBottom` guard, so a 10px wheel nudge at the live edge disengages and leaves the user in the band — and after this step, (a) re-engages them at gesture end and (c) re-engages them even if they never gesture again. This is deliberate and follows from the band being *the definition* of "at the bottom" throughout `SmartScroll`: a peek that stays within 60px of the live edge is not leaving it, and a user who genuinely wants to hold a position moves further than that. It is recorded here because it is a real reduction in what the user can hold, not a free win.
+- Because the rule lives in `maybePinToBottom` rather than at the growth call site, it fires on cell and container `ResizeObserver` flushes too, and `TugMarkdownView` inherits it. Intended: the policy is about *position*, not about which signal happened to ask.
 
 #### [P06] Diagnosis is a shipped feature, not a hand-built tap (DECIDED) {#p06-durable-instrumentation}
 
@@ -296,6 +313,8 @@ But the bracket cannot literally capture its own "before" point: the clamp fires
 #### The permanence trap {#permanence-trap}
 
 Follow-bottom has exactly three ways back on today's code: the user scrolls into the `AT_BOTTOM_PX` band while `idle` (`'idle-reengage'`), a gesture ends net-downward inside the band (`'gesture-end-reengage'`), or the jump-to-bottom affordance is clicked. All three require the user to act. Nothing re-engages on its own, and nothing reconsiders a disengage that turned out to be spurious.
+
+The sharpest form of the trap is the *idle* user. Someone parked at the live edge who touches nothing generates no scroll event and no gesture, so two of the three routes cannot fire and the third is a deliberate act they have no reason to perform — from where they sit, the card already looks pinned. The flag stays off indefinitely and every subsequent append silently fails to arrive. [P05](c) adds the fourth route: the growth signal itself. Content arriving while the position is inside the band re-engages before pinning, so the trap closes on its own the moment the card has something to show.
 
 That asymmetry is what converts a rare transient into a constant complaint, and it is why [P05] is part of this plan rather than a follow-up: the cause fix and the attribution fix both reduce the *rate* of bad flips, but only recoverability bounds their *cost*.
 
@@ -413,6 +432,9 @@ The row to replace in [`tuglaws/scroll-intent.md`](../tuglaws/scroll-intent.md)'
 | `_repairSuppressionArmed` | field | `tugdeck/src/lib/smart-scroll.ts` | One-shot, consumed in `_handleScroll` alongside `_suppressIdleReengagementOnNextScroll` |
 | `_setFollowingBottom` | method (modify) | `tugdeck/src/lib/smart-scroll.ts` | Also log every transition to `tugDevLogStore.debug("smart-scroll", "follow-bottom", …)` ([P06]) |
 | `_checkReEngageFollowBottom` | method (modify) | `tugdeck/src/lib/smart-scroll.ts` | Add the `isAtBottom`-only re-engagement path ([P05]) |
+| `maybePinToBottom` | method (modify) | `tugdeck/src/lib/smart-scroll.ts` | Re-engage before the `shouldAutoPin` gate when idle inside the band, no restore pending ([P05](c)) |
+| `setTranscriptFollowBottom(selector, engaged)` | test-surface method | `tugdeck/src/test-surface.ts` | Forces the flag so `at0335` can reach the disengaged-at-the-bottom state; resolves through the scroller registry; `SURFACE_VERSION` `1.20.0` → `1.21.0` |
+| scroller registry + `smartScrollForElement` | module map + export | `tugdeck/src/lib/smart-scroll.ts` | `Map<Element, SmartScroll>` keyed by the container; populated in the constructor, deleted in `dispose()`. The test surface's only route to a live scroller ([#step-1]) |
 | `_handleScroll` | method (modify) | `tugdeck/src/lib/smart-scroll.ts` | Both disengage rules honor repair suppression; `drag-up` gains the net-direction test ([P04]) |
 | `DISPLACEMENT_EPSILON_PX` | const | `tugdeck/src/components/tugways/tug-list-view.tsx` | Suggested `2` — below the sub-pixel noise threshold already used by the ledger's `0.5` comparisons but above rounding |
 | `commitGeometryRef` | ref | `tugdeck/src/components/tugways/tug-list-view.tsx` | The bracket snapshot per [S02] |
@@ -490,7 +512,9 @@ The `SmartScroll` unit tests run against a real DOM element in the bun environme
 - [ ] Add the `lastScrollEventTop` getter (exposing the existing `_lastScrollTop`) and `noteExternalWrite()` (sets `_lastScrollTop` from the live position, advances `_programmaticWriteSeq`) per [S02]/[L01].
 - [ ] In `tugdeck/src/components/tugways/tug-list-view.tsx`, add `commitGeometryRef` and a `useLayoutEffect` declared **after** the existing spacer-height effect (and after every direct `scrollTop` writer in the component, notably the front-insert prepend effect) that implements [S02] steps 1–5 in *detect-only* mode: classify against `SmartScroll.lastScrollEventTop`, record per [S01] with `repaired: false`, bump `displacementCountRef`, and publish `data-scroll-displacements`. Carry the previous bracket's pending outcome in `commitGeometryRef` and stamp it as `priorRepairHeld` on this record ([S01]).
 - [ ] Have the front-insert prepend effect call `SmartScroll.noteExternalWrite()` after its direct `el.scrollTop` write, and have `revealWithin` (`tugdeck/src/components/tugways/focus-reveal.ts`) and `settleFindReveal` (`tugdeck/src/components/tugways/cards/session-card-transcript.tsx`) do the same after theirs ([L01]).
-- [ ] Add a test-surface reader for the displacement count so app-tests can assert without DOM scraping, and the `forceCommitClamp()` seam per [S04], alongside the existing `setTranscriptEvictionDisabled` in `tugdeck/src/test-surface.ts` (`SURFACE_VERSION` `1.19.0` → `1.20.0`).
+- [ ] Add a **scroller registry** to `tugdeck/src/lib/smart-scroll.ts`: a module-level `Map<Element, SmartScroll>` that the constructor populates keyed by `this._container` and `dispose()` deletes, plus an exported `smartScrollForElement(el)` lookup. The test surface has **no** scroll methods today and no route to a card's `TugListView` handle — the `Scroller` façade in `tug-list-view.tsx` (`engage` / `disengage`) is a context value published to descendants, not reachable from `test-surface.ts`, and `labFlags` is a standing-flag store, not a command channel. The registry is that route, and it serves all three seams this plan adds (the displacement reader, `forceCommitClamp()`, and [#step-5]'s `setTranscriptFollowBottom`) instead of three ad-hoc plumbings. Tests name a scroller by the `data-tug-scroll-key` selector they already use — `[data-tug-scroll-key="session-card-transcript"]` in `at0333`.
+- [ ] Add a test-surface reader for the displacement count so app-tests can assert without DOM scraping, and the `forceCommitClamp()` seam per [S04], alongside the existing `setTranscriptEvictionDisabled` in `tugdeck/src/test-surface.ts` (`SURFACE_VERSION` `1.19.0` → `1.20.0`, with the version's own doc paragraph — the file documents every bump in a running block, the `1.19.0` entry being the current last).
+- [ ] Note for the implementer: bumping tugdeck's `SURFACE_VERSION` needs **no** harness or Swift change. It is independent of the bridge's `surfaceVersion` (`tugapp/Sources/TestHarness/TestHarnessConnection.swift`), which is what `EXPECTED_SURFACE_VERSION` in `tests/app-test/_harness/index.ts` asserts exact equality against; that constant tracks native RPC verbs, and tugdeck's tracks page-side `__tug` methods separately. Nothing asserts tugdeck's value, so neither bump in this plan touches `_harness/` and neither trips a CORE TIER advisory.
 
 **Tests:**
 - [ ] `bun test` — `SmartScroll` unit: `userActivitySeq` advances on wheel/pointerdown/keydown and not on programmatic writes; `programmaticWriteSeq` advances on `scrollTo` **and on `pinToBottom`** and not on user events; `noteExternalWrite()` advances the counter and syncs `lastScrollEventTop`.
@@ -607,22 +631,31 @@ The `SmartScroll` unit tests run against a real DOM element in the bun environme
 
 **Depends on:** #step-4
 
-**Commit:** `tugdeck(smart-scroll): let follow-bottom re-engage at the bottom regardless of gesture direction`
+**Commit:** `tugdeck(smart-scroll): re-engage follow-bottom at the bottom, at gesture end and on growth`
 
-**References:** [P05] Recoverable follow-bottom, (#permanence-trap, #success-criteria)
+**References:** [P05] Recoverable follow-bottom, Risk R04, (#permanence-trap, #success-criteria)
 
 **Artifacts:**
 - The `isAtBottom`-only re-engagement path at gesture end.
+- The growth-time re-engagement path in `maybePinToBottom`.
 
 **Tasks:**
 - [ ] In `_checkReEngageFollowBottom`, re-engage when `isAtBottom` holds at gesture end even if the gesture was not net-downward (today it requires `scrollTop > _gestureStartScrollTop`). Keep the existing net-downward path for the case where the gesture ends *near* but not inside the band. Tag the new path with its own source string so the trace distinguishes them.
 - [ ] Confirm the `idle` `'idle-reengage'` rule still requires `scrollTop >= _lastScrollTop` — a user scrolling *up* into the band from below must not be yanked into following. Add a comment recording why the two rules differ.
+- [ ] In `maybePinToBottom`, before consulting `shouldAutoPin`, re-engage follow-bottom when it is off, `isAtBottom` holds, `isUserScrolling` is false, and no restore target is pending ([P05](c)). Use a distinct source string (`'growth-at-bottom-reengage'` or equivalent) so the dev log distinguishes it from the gesture and idle paths. Keep the policy inside `maybePinToBottom` rather than at the call sites — that method's doc comment already names it the single home of the auto-pin gate. Extend that doc comment to cover the new clause.
+- [ ] Know the blast radius before writing it. `maybePinToBottom` has exactly **five** call sites, and the new rule reaches all five: `tug-list-view.tsx:2537` (the per-cell `ResizeObserver` flush — fires continuously during streaming as cells re-wrap), `:3063` (the container `ResizeObserver` — pane/window resize), `:3218` (the growth pin, the signal the field cases actually need), and `tug-markdown-view.tsx:481` and `:534`. So the rule is **not** growth-only: a cell resize or a container resize while the user sits idle inside the band also re-engages. That is intended — the trigger is irrelevant, the position is what the policy is about — but it is wider than "growth-time" suggests, and `TugMarkdownView` inherits it. Note both facts in the doc comment. (The three body-kind files that mention `shouldAutoPin` — `block-header.tsx`, `file-block.tsx`, `block-fold-cue.tsx` — only reference it in explanatory comments; they call nothing and need no change.)
+- [ ] Record in the same comment why the two carve-outs exist: mid-gesture re-engagement belongs to `_checkReEngageFollowBottom` at gesture end (re-engaging mid-drag would pin under the user's own thumb), and a pending restore target owns the position until `applyRestoreTarget` clears it. The restore carve-out is load-bearing, not defensive: `_setFollowingBottom(true, …)` calls `clearRestoreTarget()`, so a growth pin arriving mid-restore would otherwise destroy the cold-boot restore target.
+- [ ] **Pin the effect-ordering invariant** ([R04]). [P05](c) makes a spurious `isAtBottom` produce a spurious *engage* — the mirror of the bug this plan fixes — because during a clamp the document is transiently short and `scrollTop == scrollHeight - clientHeight` reads at-bottom. The displacement bracket must therefore remain declared **before** the auto-pin effect in `tug-list-view.tsx`, so any commit-scoped clamp is repaired before `maybePinToBottom` reads geometry. That ordering is true today only by accident (the bracket sits after the front-insert prepend effect, the pin effect much later); this step makes it a requirement. Add a comment at **both** sites naming the other and stating the dependency, so a future reordering fails review rather than silently re-engaging follow-bottom for a user parked mid-history.
 - [ ] Verify the affordance's `data-visible` follows every new transition ([L06] — the observer path, not React state).
+- [ ] Add `setTranscriptFollowBottom(selector: string, engaged: boolean)` to `tugdeck/src/test-surface.ts` (declaration + implementation + its own `SURFACE_VERSION` doc paragraph, following the file's running per-version convention), resolving the `SmartScroll` instance through the registry from [#step-1] and calling `engage` / `disengage` with an explicit test source string. Bump `SURFACE_VERSION` `1.20.0` → `1.21.0` (Step 1 took it from `1.19.0` to `1.20.0`). Do **not** route this through `labFlags` — that store is the right shape for a standing lab flag like `setTranscriptEvictionDisabled` and the wrong shape for a one-shot imperative command.
+- [ ] The seam is required, not a convenience, and for a specific reason worth recording in its doc comment: `at0333`'s established technique for reaching these states is direct `scrollTop` assignment (attribution-identical to the scrollbar's pointer silence). But a *downward* direct assignment into the band emits a `scroll` event that satisfies `idle-reengage`'s `scrollTop >= _lastScrollTop && isAtBottom`, so follow-bottom re-engages before the test can assert on it. The disengaged-at-the-bottom state therefore heals itself out from under any test that tries to construct it by assignment.
 
 **Tests:**
 - [ ] `bun test` — a gesture that starts and ends inside the band re-engages; a gesture that ends above the band does not; an upward gesture never re-engages mid-flight, and at gesture end it re-engages if and only if the position is inside the band (`isAtBottom`, the 60px `AT_BOTTOM_PX` band — "at the bottom" and "inside the band" mean the same thing throughout this plan).
+- [ ] `bun test` — growth-time re-engagement: with follow-bottom disengaged and the element scrolled inside the band, `maybePinToBottom` re-engages and pins; outside the band it does neither; mid-gesture (`isUserScrolling`) it does neither; with a restore target installed it does neither.
 - [ ] Extend `at0333`: after a disengage, wheeling to the bottom re-engages and a subsequently streamed turn pins.
 - [ ] Extend `at0335`: the quiet-then-arrival criterion — with follow-bottom engaged and the card idle, a turn appended later pins into view.
+- [ ] Extend `at0335`: the idle-user recovery criterion — disengage follow-bottom through the test surface while the transcript is scrolled to the bottom, touch nothing, then append a row; it pins into view and the dev log carries the growth-time re-engagement source. This is the app-test standing in for the two field reports (`/commit` receipt, `Session compacted` note), which are both plain appends onto a live transcript.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
@@ -646,6 +679,7 @@ The `SmartScroll` unit tests run against a real DOM element in the bun environme
 - [ ] Add an **atomic geometry** section: any windowing surface must apply spacer/placeholder geometry in the same mutation batch as the row set it complements ([P02]), with the tear explained and `TugMarkdownView` cited as the imperative precedent.
 - [ ] Add a **commit-scoped repair** section stating the rule and, importantly, its bound — why repair outside the commit phase is not safe ([#repair-safety], [Q01]).
 - [ ] Add a short **how to diagnose** section: the dev panel log, `window.__deckTrace.dump()`, `data-scroll-displacements`, and the `setTranscriptEvictionDisabled` A/B arm.
+- [ ] Record the **four** routes back to follow-bottom in the same document — idle scroll into the band, gesture end inside the band, the jump-to-bottom affordance, and the growth-time re-engagement added by [P05](c) — with the reason the fourth exists: an idle user parked at the live edge generates neither a scroll event nor a gesture, so the first three cannot fire and the state was terminal for them.
 - [ ] Amend `[D93]` in `tuglaws/design-decisions.md`: the idle clause currently says any non-programmatic idle scroll belongs to the user. Qualify it — machine-authored displacement identified by the owning component is excluded, and point at `scroll-intent.md`. Note explicitly that growth pins remain *phase*-invisible (they stay in `idle`, the original [D93] design) but are now *counter*-visible: `programmaticWriteSeq` advances in `pinToBottom`, which is what lets the displacement bracket exempt them.
 - [ ] No hard-wrapped prose; one logical line per paragraph or bullet.
 
