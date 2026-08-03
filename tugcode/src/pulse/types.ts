@@ -9,7 +9,12 @@
 /** One commentator line, broadcast on the PULSE feed and ledgered. */
 export interface PulseLine {
   type: "pulse";
-  /** The single-line commentary text (≤ ~110 chars, clipped defensively). */
+  /**
+   * The single-line commentary text. Bounded only by the daemon's transport
+   * guards (`PHRASE_GUARD` / `LINE_CLIP` in `voice.ts`), which sit far above
+   * any display width on purpose: how much of a line fits is the DECK's to
+   * decide, at the width the surface actually has.
+   */
   text: string;
   /**
    * The retained high-level thought behind a low-level `text` beat —

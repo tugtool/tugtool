@@ -53,6 +53,30 @@ function toolUse(
   } as OutboundMessage;
 }
 
+/** The session's working directory — what its file beats read relative to. */
+const ROOT = "/u/src/tugtool";
+
+/**
+ * The spawn-time `cwd`-only metadata frame. A real session always sends one
+ * before its first turn, so every fixture below that narrates a file seeds its
+ * scope with this first — a voice that has never seen one is the separate
+ * no-root case, and has its own test.
+ */
+function systemMetadata(cwd: string = ROOT): OutboundMessage {
+  return { type: "system_metadata", cwd, ipc_version: 2 };
+}
+
+/**
+ * A voice whose `s1` scope has been told where it is working — the state every
+ * real session reaches before its first turn, and the one the file beats below
+ * are written against. The unrooted voice is a case of its own, not a default.
+ */
+function rootedVoice(): PulseVoice {
+  const voice = new PulseVoice();
+  voice.onFrame("s1", systemMetadata(), 0);
+  return voice;
+}
+
 function toolProgress(
   opts: { filePath: string | null; lines: number; toolName?: string },
 ): OutboundMessage {
@@ -156,7 +180,7 @@ describe("extractDisplay", () => {
 
 describe("PulseVoice — the monologue", () => {
   test("streaming deltas surface as the latest settled thought, throttled", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     voice.onFrame("s1", assistantText("I'll map how the reducer handles "), 0);
     voice.onFrame("s1", assistantText("task transitions first. Then the edit."), 100);
     const lines = voice.flush(1_200);
@@ -173,7 +197,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("a new block becomes the speaker; the old thought is history", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     voice.onFrame("s1", assistantText("First thought about the reducer seam.", { msgId: "m1" }), 0);
     voice.flush(1_100);
     voice.onFrame("s1", assistantText("Second thought: the selector layer is cleaner.", { msgId: "m2" }), 1_200);
@@ -183,7 +207,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("a complete frame replaces accumulated deltas (deck reducer rule)", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     voice.onFrame("s1", assistantText("partial del"), 0);
     voice.onFrame("s1", assistantText("The final settled text of this block.", { isPartial: false }), 100);
     expect(voice.flush(1_200)).toEqual([
@@ -192,7 +216,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("turn completion says done immediately and resets the thought", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     voice.onFrame("s1", assistantText("Wrapping up the last edit now."), 0);
     voice.flush(1_100);
     const done = voice.onFrame("s1", turnComplete(), 2_000);
@@ -202,7 +226,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("cancellation says stopped", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     const stopped = voice.onFrame(
       "s1",
       { type: "turn_cancelled", msg_id: "m", seq: 2, partial_result: "", ipc_version: 2 },
@@ -212,7 +236,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("scopes speak independently", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     voice.onFrame("s1", assistantText("Working through the reducer tests."), 0);
     voice.onFrame("s2", assistantText("Drafting the probe harness adaptation."), 0);
     const lines = voice.flush(1_200);
@@ -221,6 +245,8 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("idle scopes are swept", () => {
+    // Named scopes only — this test counts what the sweep returns, and a
+    // seeded `s1` would be one more idle scope in the answer.
     const voice = new PulseVoice();
     voice.onFrame("s-idle", turnComplete(), 0);
     voice.onFrame("s-busy", turnComplete(), SCOPE_IDLE_SWEEP_MS - 1);
@@ -232,7 +258,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("a long write narrates progress instead of freezing", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     // The assistant says what it's about to do, then falls silent while the
     // Write streams — the monologue alone would freeze on this line.
     voice.onFrame("s1", assistantText("I'll write the poem file now."), 0);
@@ -242,31 +268,31 @@ describe("PulseVoice — the monologue", () => {
 
     // Tool-input progress takes over and keeps the strip alive — with the
     // superseded thought riding along as the intent.
-    voice.onFrame("s1", toolProgress({ filePath: "/a/b/poem.txt", lines: 12 }), 2_200);
+    voice.onFrame("s1", toolProgress({ filePath: `${ROOT}/roadmap/poem.txt`, lines: 12 }), 2_200);
     expect(voice.flush(2_300)).toEqual([
       {
         scope: "s1",
-        text: "Writing poem.txt — 12 lines",
+        text: "Writing roadmap/poem.txt — 12 lines",
         intent: "I'll write the poem file now.",
       },
     ]);
 
     // It climbs as more content streams.
-    voice.onFrame("s1", toolProgress({ filePath: "/a/b/poem.txt", lines: 30 }), 3_400);
+    voice.onFrame("s1", toolProgress({ filePath: `${ROOT}/roadmap/poem.txt`, lines: 30 }), 3_400);
     expect(voice.flush(3_500)).toEqual([
       {
         scope: "s1",
-        text: "Writing poem.txt — 30 lines",
+        text: "Writing roadmap/poem.txt — 30 lines",
         intent: "I'll write the poem file now.",
       },
     ]);
   });
 
   test("the assistant resuming speech supersedes the tool-progress line", () => {
-    const voice = new PulseVoice();
-    voice.onFrame("s1", toolProgress({ filePath: "/x/voice.ts", lines: 5 }), 0);
+    const voice = rootedVoice();
+    voice.onFrame("s1", toolProgress({ filePath: `${ROOT}/tugcode/src/pulse/voice.ts`, lines: 5 }), 0);
     expect(voice.flush(1_100)).toEqual([
-      { scope: "s1", text: "Writing voice.ts — 5 lines" },
+      { scope: "s1", text: "Writing tugcode/src/pulse/voice.ts — 5 lines" },
     ]);
     // Once the assistant narrates again, the monologue wins back the strip.
     voice.onFrame("s1", assistantText("Now running the test suite to confirm."), 1_200);
@@ -275,8 +301,60 @@ describe("PulseVoice — the monologue", () => {
     ]);
   });
 
-  test("task-list lifecycle surfaces as pulse beats", () => {
+  test("a file beat names the whole path the session would say", () => {
+    const voice = rootedVoice();
+    // A path deep enough that its file name alone says nothing — the case the
+    // beat exists to answer. The whole string crosses the wire; how much of it
+    // fits is the deck's to decide at the width the surface has.
+    voice.onFrame(
+      "s1",
+      toolProgress({
+        filePath: `${ROOT}/tugdeck/src/lib/code-session-store/__tests__/code-session-store.transport-state.test.ts`,
+        lines: 0,
+        toolName: "Read",
+      }),
+      0,
+    );
+    expect(voice.flush(1_100)).toEqual([
+      {
+        scope: "s1",
+        text: "Read tugdeck/src/lib/code-session-store/__tests__/code-session-store.transport-state.test.ts…",
+      },
+    ]);
+  });
+
+  test("a path outside the session's root keeps every segment it has", () => {
+    const voice = rootedVoice();
+    voice.onFrame(
+      "s1",
+      toolProgress({ filePath: "/etc/hosts", lines: 0, toolName: "Read" }),
+      0,
+    );
+    expect(voice.flush(1_100)).toEqual([
+      { scope: "s1", text: "Read /etc/hosts…" },
+    ]);
+  });
+
+  test("a scope that has not been told where it is says the whole path", () => {
+    // No `system_metadata` yet. The absolute path is long, but it is the
+    // truth, and the deck can still cut it — inventing a shorter one here
+    // would throw away what it needs to cut well.
     const voice = new PulseVoice();
+    voice.onFrame(
+      "s1",
+      toolProgress({ filePath: `${ROOT}/tugcode/src/pulse/voice.ts`, lines: 5 }),
+      0,
+    );
+    expect(voice.flush(1_100)).toEqual([
+      {
+        scope: "s1",
+        text: `Writing ${ROOT}/tugcode/src/pulse/voice.ts — 5 lines`,
+      },
+    ]);
+  });
+
+  test("task-list lifecycle surfaces as pulse beats", () => {
+    const voice = rootedVoice();
     // The empty-input content_block_start frame yields nothing...
     voice.onFrame("s1", toolUse("TaskCreate", {}), 0);
     expect(voice.flush(1_100)).toEqual([]);
@@ -292,7 +370,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("lifecycle + recovery frames surface as pulse beats", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     const beat = (frame: OutboundMessage, at: number): string | undefined => {
       voice.onFrame("s1", frame, at);
       return voice.flush(at + VOICE_THROTTLE_MS + 100)[0]?.text;
@@ -338,7 +416,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("a compaction boundary speaks immediately, ahead of the flush", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     voice.onFrame("s1", assistantText("Reading through the reducer."), 0);
     // Not a flush emission — the boundary line comes straight back.
     expect(
@@ -353,7 +431,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("an auto-compaction names itself; a boundary without metadata stays plain", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     expect(
       voice.onFrame("s1", { type: "compact_boundary", trigger: "auto", pre_tokens: 168_000, ipc_version: 2 }, 0),
     ).toEqual({ scope: "s1", text: "Auto-compacted context (was 168k)" });
@@ -363,7 +441,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("a backgrounded agent's task_progress keeps the pulse alive", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     // Launch sets the agent label.
     voice.onFrame(
       "s1",
@@ -391,7 +469,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("subagent work surfaces through the agent's tool calls", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     // Launching the agent is announced...
     voice.onFrame(
       "s1",
@@ -405,11 +483,11 @@ describe("PulseVoice — the monologue", () => {
     // the only thing a subagent streams to the parent) narrate, prefixed.
     voice.onFrame(
       "s1",
-      toolUse("Read", { file_path: "/a/b/session.ts" }, { id: "toolu_1", parent: "toolu_agent" }),
+      toolUse("Read", { file_path: `${ROOT}/tugcode/src/session.ts` }, { id: "toolu_1", parent: "toolu_agent" }),
       1_200,
     );
     expect(voice.flush(2_300)).toEqual([
-      { scope: "s1", text: "Explore · Reading session.ts" },
+      { scope: "s1", text: "Explore · Reading tugcode/src/session.ts" },
     ]);
     voice.onFrame(
       "s1",
@@ -426,7 +504,7 @@ describe("PulseVoice — the monologue", () => {
     // surface actually has, and its activity run truncates in the MIDDLE —
     // which needs the tail. A budget applied here would throw that tail away
     // before any surface saw it, and would do it at one width for all of them.
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     const command =
       "cd /Users/someone/src/project && for f in $(git diff --name-only main); do npx tsc --noEmit $f; done";
     voice.onFrame(
@@ -446,7 +524,7 @@ describe("PulseVoice — the monologue", () => {
   });
 
   test("a slug agent type shows a clean display label, never a raw slug", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     voice.onFrame(
       "s1",
       toolUse(
@@ -463,16 +541,16 @@ describe("PulseVoice — the monologue", () => {
     ]);
     voice.onFrame(
       "s1",
-      toolUse("Read", { file_path: "/a/b/x.ts" }, { id: "toolu_r", parent: "toolu_gp" }),
+      toolUse("Read", { file_path: `${ROOT}/tugcode/src/types.ts` }, { id: "toolu_r", parent: "toolu_gp" }),
       1_200,
     );
     expect(voice.flush(2_300)).toEqual([
-      { scope: "s1", text: "General · Reading x.ts" },
+      { scope: "s1", text: "General · Reading tugcode/src/types.ts" },
     ]);
   });
 
   test("a non-task tool call produces no beat", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     voice.onFrame("s1", assistantText("Running the build now."), 0);
     voice.flush(1_100);
     voice.onFrame("s1", toolUse("Bash", { command: "make" }), 1_200);
@@ -483,7 +561,7 @@ describe("PulseVoice — the monologue", () => {
 
 describe("PulseVoice — intent riding a tool chain", () => {
   test("a substantive thought pins as intent across subagent beats", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     voice.onFrame(
       "s1",
       assistantText("I'll map the reducer seam before touching the renderer."),
@@ -504,62 +582,62 @@ describe("PulseVoice — intent riding a tool chain", () => {
     // Later beats keep carrying the same intent.
     voice.onFrame(
       "s1",
-      toolUse("Read", { file_path: "/x/reducer.ts" }, { id: "toolu_1", parent: "toolu_a" }),
+      toolUse("Read", { file_path: `${ROOT}/tugdeck/src/lib/pulse-store.ts` }, { id: "toolu_1", parent: "toolu_a" }),
       1_200,
     );
     expect(voice.flush(2_300)).toEqual([
       {
         scope: "s1",
-        text: "Explore · Reading reducer.ts",
+        text: "Explore · Reading tugdeck/src/lib/pulse-store.ts",
         intent: "I'll map the reducer seam before touching the renderer.",
       },
     ]);
   });
 
   test("a trivially short thought keeps the previous intent (substance gate)", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     voice.onFrame(
       "s1",
       assistantText("Now I'll rewire the whole responder chain carefully.", { msgId: "m1" }),
       0,
     );
-    voice.onFrame("s1", toolProgress({ filePath: "/x/chain.ts", lines: 3 }), 100);
+    voice.onFrame("s1", toolProgress({ filePath: `${ROOT}/tugdeck/src/deck-manager.ts`, lines: 3 }), 100);
     voice.flush(1_100);
     // A new, too-thin thought ("Now the tests." — under both gates)...
     voice.onFrame("s1", assistantText("Now the tests.", { msgId: "m2" }), 1_200);
-    voice.onFrame("s1", toolProgress({ filePath: "/x/chain.test.ts", lines: 9 }), 1_300);
+    voice.onFrame("s1", toolProgress({ filePath: `${ROOT}/tugdeck/src/lib/__tests__/layout-imposer.test.ts`, lines: 9 }), 1_300);
     // ...does not evict the substantive intent.
     expect(voice.flush(2_400)).toEqual([
       {
         scope: "s1",
-        text: "Writing chain.test.ts — 9 lines",
+        text: "Writing tugdeck/src/lib/__tests__/layout-imposer.test.ts — 9 lines",
         intent: "Now I'll rewire the whole responder chain carefully.",
       },
     ]);
   });
 
   test("no monologue yet means no intent on a beat", () => {
-    const voice = new PulseVoice();
-    voice.onFrame("s1", toolProgress({ filePath: "/x/a.ts", lines: 2 }), 0);
+    const voice = rootedVoice();
+    voice.onFrame("s1", toolProgress({ filePath: `${ROOT}/tugdeck/src/main.tsx`, lines: 2 }), 0);
     expect(voice.flush(1_100)).toEqual([
-      { scope: "s1", text: "Writing a.ts — 2 lines" },
+      { scope: "s1", text: "Writing tugdeck/src/main.tsx — 2 lines" },
     ]);
   });
 
   test("turn completion clears the retained intent", () => {
-    const voice = new PulseVoice();
+    const voice = rootedVoice();
     voice.onFrame(
       "s1",
       assistantText("Finishing the ledger migration and running the tests."),
       0,
     );
-    voice.onFrame("s1", toolProgress({ filePath: "/x/l.rs", lines: 4 }), 100);
+    voice.onFrame("s1", toolProgress({ filePath: `${ROOT}/tugrust/crates/tugcast/src/main.rs`, lines: 4 }), 100);
     voice.flush(1_100);
     voice.onFrame("s1", turnComplete(), 2_000);
     // The next turn's first beat starts with a clean slate.
-    voice.onFrame("s1", toolProgress({ filePath: "/x/m.rs", lines: 1 }), 3_500);
+    voice.onFrame("s1", toolProgress({ filePath: `${ROOT}/tugrust/crates/tugcast/src/scribe.rs`, lines: 1 }), 3_500);
     expect(voice.flush(4_600)).toEqual([
-      { scope: "s1", text: "Writing m.rs — 1 line" },
+      { scope: "s1", text: "Writing tugrust/crates/tugcast/src/scribe.rs — 1 line" },
     ]);
   });
 });

@@ -392,10 +392,26 @@ function taskBeat(frame: ToolUse): string | null {
   return null;
 }
 
-/** Last path segment of a slash path. */
-function baseName(path: string): string {
-  const parts = path.split("/");
-  return parts[parts.length - 1] || path;
+/**
+ * A tool's file target as the beat should carry it: relative to the session's
+ * own root when it is under it, and otherwise exactly as it arrived.
+ *
+ * The same doctrine as {@link PHRASE_GUARD}, applied to a path. Reducing this
+ * to a bare file name is a display budget guessed at the producer — it throws
+ * the tail away at one width for every surface at once, and it throws away the
+ * part `TugPulse` is built to keep: the deck truncates an activity in the
+ * MIDDLE precisely so a path keeps its verb at the head and its file at the
+ * tail, which it can only do given the whole string.
+ *
+ * The root comes off the scope's `system_metadata` (see `ScopeVoiceState`),
+ * which lands at spawn, before the first turn. Absent it — a scope whose
+ * metadata has not arrived — the path is passed through whole: an absolute
+ * path is long, but it is the truth, and the deck can still cut it.
+ */
+function displayPath(path: string, root: string | null): string {
+  if (root === null || root.length === 0) return path;
+  const prefix = root.endsWith("/") ? root : `${root}/`;
+  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
 }
 
 /** Display names for the agent-type slugs that don't read as a clean
@@ -500,9 +516,14 @@ function narratedPhrase(text: string): string {
  * strip — used for SUBAGENT tool calls, which are the only activity a subagent
  * streams to the parent (no text/thinking deltas cross over).
  */
-function narrateTool(toolName: string, input: object): string {
+function narrateTool(
+  toolName: string,
+  input: object,
+  root: string | null,
+): string {
   const inp = input as Record<string, unknown>;
-  const path = typeof inp.file_path === "string" ? baseName(inp.file_path) : null;
+  const path =
+    typeof inp.file_path === "string" ? displayPath(inp.file_path, root) : null;
   switch (toolName) {
     case "Read":
       return path ? `Reading ${path}` : "Reading";
@@ -533,12 +554,13 @@ function narrateTool(toolName: string, input: object): string {
  * "Writing voice.ts — 37 lines". Falls back to the bare file name (or verb)
  * before any content has streamed.
  */
-function synthesizeToolLine(frame: ToolInputProgress): string {
+function synthesizeToolLine(
+  frame: ToolInputProgress,
+  root: string | null,
+): string {
   const verb = toolVerb(frame.tool_name);
   const target =
-    frame.file_path !== null
-      ? frame.file_path.split("/").pop() || frame.file_path
-      : null;
+    frame.file_path !== null ? displayPath(frame.file_path, root) : null;
   if (target !== null && frame.content_lines > 0) {
     const noun = frame.content_lines === 1 ? "line" : "lines";
     return `${verb} ${target} — ${frame.content_lines} ${noun}`;
@@ -574,6 +596,16 @@ class ScopeVoiceState {
    * prefix them ("Explore · Reading foo.ts").
    */
   agentLabels = new Map<string, string>();
+  /**
+   * The session's own working directory, off its `system_metadata` — what a
+   * tool's file path is shown RELATIVE TO (see {@link displayPath}).
+   *
+   * Session-scoped, not turn-scoped, so `resetTurn` leaves it: a session does
+   * not change directory between turns, and re-learning it every turn would
+   * spend the first tool beat of each turn on an absolute path. It arrives on
+   * the spawn-time `cwd`-only frame, before any turn has run.
+   */
+  root: string | null = null;
   /** The line currently on the strip (dedupe for change-driven emits). */
   shownText: string | null = null;
   lastEmitAt = Number.NEGATIVE_INFINITY;
@@ -612,8 +644,14 @@ export class PulseVoice {
       case "assistant_text":
         this.onAssistantText(state, frame);
         return null;
+      // Not a beat — the frame the scope learns its root from, so every tool
+      // line after it can name a file the way the user does. Silent: the
+      // metadata says nothing about what the session is DOING.
+      case "system_metadata":
+        if (frame.cwd.length > 0) state.root = frame.cwd;
+        return null;
       case "tool_input_progress":
-        state.directLine = synthesizeToolLine(frame);
+        state.directLine = synthesizeToolLine(frame, state.root);
         return null;
       case "tool_use": {
         const parentId = (frame as unknown as Record<string, unknown>)
@@ -624,7 +662,7 @@ export class PulseVoice {
           // strip isn't frozen while an agent works in the background.
           if (Object.keys(frame.input ?? {}).length > 0) {
             const label = state.agentLabels.get(parentId) ?? "Agent";
-            state.directLine = `${label} · ${narrateTool(frame.tool_name, frame.input)}`;
+            state.directLine = `${label} · ${narrateTool(frame.tool_name, frame.input, state.root)}`;
           }
           return null;
         }
@@ -674,7 +712,11 @@ export class PulseVoice {
         // monologue keeps the strip). A file tool defers to the monologue /
         // tool_input_progress line regardless.
         if (state.blockText.length === 0 && isGenericNonFileTool(frame)) {
-          state.directLine = narrateTool(frame.tool_name, frame.input ?? {});
+          state.directLine = narrateTool(
+            frame.tool_name,
+            frame.input ?? {},
+            state.root,
+          );
         }
         return null;
       }
