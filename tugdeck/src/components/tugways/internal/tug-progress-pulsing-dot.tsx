@@ -40,6 +40,25 @@
  * Lens's session list does. Firing near the turn also keeps the ring inside a
  * single cycle, so the pulse needs no wrap across the cycle boundary.
  *
+ * Same frame is the whole of it, and the loops live on two elements behind two
+ * separate gates, so it is a thing to be ENFORCED rather than assumed. The lock
+ * has exactly one enemy: starting one loop while the other is already running.
+ * There is no clock to re-sync against and no cycle boundary to recover on — a
+ * glyph that starts its two loops a quarter cycle apart sheds rings out of the
+ * breath for as long as it runs, and writing a gate that is already set starts
+ * nothing, so the mistake is not even visible at the call. Every start
+ * therefore goes through {@link startLoops}, which closes both gates and
+ * flushes the removal before opening either.
+ *
+ * The one arrival that cannot start both at once is work RESUMING while the
+ * last settle's pulse is still travelling — the ordinary way work resumes,
+ * since a pulse is in the air for most of a cycle. The ring is spoken for and
+ * the breath will not wait for it, so the two are started apart on purpose:
+ * the breath goes at once at the dot's own phase, the pulse finishes its
+ * travel, and the emitter then REJOINS the breath's clock at a phase where the
+ * ring paints nothing ({@link rejoinEmitter}). They carry separate phase
+ * variables for exactly this window, so starting one never disturbs the other.
+ *
  * **Two treatments.** The glyph serves both a 28px Lens row and a 10px status
  * cell, and it does that by carrying two geometries rather than scaling one —
  * see {@link BIG_SIZE}. The motion below is common to both; the proportions,
@@ -490,8 +509,18 @@ const IGNITION = DEFAULT_BREATH_TURN - EMIT_ADVANCE;
  */
 const EMIT_RELEASE_SLACK = 32;
 
-/** The custom property the arming phase is written to. */
+/**
+ * The custom properties the arming phase is written to — one per loop.
+ *
+ * They carry the same number whenever both loops are started together, which is
+ * almost always. They are two because the loops can be started APART: a breath
+ * resuming while the last settle's pulse is still travelling has to take its
+ * phase without dragging the flying ring's delay along with it, which a shared
+ * variable would do — and moving a running animation's delay moves the
+ * animation.
+ */
 const PHASE_VAR = "--tugx-progress-pulsing-dot-phase";
+const EMIT_PHASE_VAR = "--tugx-progress-pulsing-dot-emit-phase";
 
 /** The dot's transform at a given breath scale. */
 function dotPose(scale: number): string {
@@ -521,6 +550,29 @@ function liveScale(el: HTMLElement): number | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Where the breath is in its cycle right now, and how long that cycle is —
+ * `null` when the dot is not breathing.
+ *
+ * Read off the running animation rather than tracked, for the same reason
+ * {@link liveScale} is: the loop is the authority on where the loop is, and
+ * anything the script remembers instead would drift the moment a duration, a
+ * drift factor or a motion setting changed underneath it.
+ */
+function breathClock(dot: HTMLElement): { phase: number; period: number } | null {
+  for (const animation of dot.getAnimations()) {
+    if (!(animation instanceof CSSAnimation)) continue;
+    const timing = animation.effect?.getComputedTiming();
+    const phase = timing?.progress;
+    const period = timing?.duration;
+    if (typeof phase !== "number" || typeof period !== "number" || period <= 0) {
+      continue;
+    }
+    return { phase, period };
+  }
+  return null;
 }
 
 /**
@@ -764,8 +816,9 @@ export const TugProgressPulsingDot = React.forwardRef<
   // The pending live→static demotion, if one is armed. Cancelling abandons
   // the window; the effect re-arms when appropriate.
   const demotionRef = React.useRef<{ cancel(): void } | null>(null);
-  // Where a demotion blocked on a pulse in flight parks its continuation;
-  // the emitter release invokes it (see releaseEmitter's onReleased).
+  // Where work blocked on a pulse in flight parks its continuation — a pending
+  // demotion, or a breath waiting to start welded to a free emitter. The
+  // emitter release invokes it (see releaseEmitter's onReleased).
   const emitReleasedRef = React.useRef<(() => void) | null>(null);
 
   const setRootRef = React.useCallback(
@@ -792,7 +845,9 @@ export const TugProgressPulsingDot = React.forwardRef<
    *     releaseEmitter}) and the static ring fades in over it.
    *   - **into `running`** — the loop starts at the phase whose pose the dot is
    *     already standing at ({@link breathPhaseFor}), as a negative delay. The
-   *     breath picks the dot up mid-stride.
+   *     breath picks the dot up mid-stride. If the settle's own pulse is still
+   *     in the air the breath goes anyway and the emitter rejoins its clock
+   *     once the pulse lands ({@link rejoinEmitter}).
    *   - **between two settled states** — a plain property change; the dot's
    *     CSS transition carries it, along with the ring's diameter and the tint.
    *
@@ -836,6 +891,7 @@ export const TugProgressPulsingDot = React.forwardRef<
         dot.style.transform = "";
         dot.style.transition = "";
         root.style.removeProperty(PHASE_VAR);
+        root.style.removeProperty(EMIT_PHASE_VAR);
       }
       if (state === "running" || (previous !== null && state !== previous)) {
         // A crossing arrived on a static glyph. Promote: the live pass
@@ -851,14 +907,105 @@ export const TugProgressPulsingDot = React.forwardRef<
 
     shownRef.current = state;
 
+    /**
+     * Start the breath and the emitter — TOGETHER, which is the only way they
+     * are one clock.
+     *
+     * The phase lock is not a property of the durations; it is a property of
+     * the two loops having the same start time, and they only get that by
+     * being gated on in the same style flush. Writing an attribute that is
+     * ALREADY on the element is not a change and starts nothing, so a glyph
+     * that arrives here with one gate still open would restart the other
+     * against a loop already in progress — and then the ring sheds its pulse
+     * at some arbitrary point in the breath for the rest of the run.
+     *
+     * So both gates are closed and the removal is FLUSHED before either is
+     * opened, whenever either is already set. Restarting a loop at the phase it
+     * is already standing at costs at most the frame in between, which is a
+     * stall too small to see; starting two loops a quarter cycle apart is
+     * permanent and unrecoverable.
+     */
     const startLoops = (phase: number): void => {
       if (emitTimerRef.current !== null) {
         window.clearTimeout(emitTimerRef.current);
         emitTimerRef.current = null;
       }
+      if (
+        root.dataset.breathing !== undefined ||
+        root.dataset.emitting !== undefined
+      ) {
+        delete root.dataset.breathing;
+        delete root.dataset.emitting;
+        void root.offsetWidth;
+      }
       root.style.setProperty(PHASE_VAR, `${-phase}`);
+      root.style.setProperty(EMIT_PHASE_VAR, `${-phase}`);
       root.dataset.breathing = "";
       root.dataset.emitting = "";
+    };
+
+    /**
+     * Start the breath alone, leaving a pulse already in the air untouched.
+     *
+     * Only the resume-mid-pulse case calls this, and only because the ring is
+     * unavailable: it is still running out the pulse the last settle shed, and
+     * that pulse always finishes. Waiting for it would cost the dot the thing
+     * the phase match buys — the breath picking it up where it stood — for the
+     * better part of a cycle, on what is the ordinary way work resumes. So the
+     * dot goes back to breathing at once and the emitter rejoins it after
+     * ({@link rejoinEmitter}).
+     */
+    const startBreath = (phase: number): void => {
+      root.style.setProperty(PHASE_VAR, `${-phase}`);
+      root.dataset.breathing = "";
+    };
+
+    /**
+     * Put the emitter back on the breath's clock.
+     *
+     * Called once the shed pulse has landed. The rejoin is a restart of BOTH
+     * loops from where the breath currently stands — the only way they end up
+     * sharing a start time, and invisible on the dot's side because the breath
+     * resumes at its own phase.
+     *
+     * It waits for the breath to be somewhere in its INHALE first. The ring's
+     * loop paints a mid-flight pulse at any phase past ignition, so rejoining
+     * there would put a half-faded ring on screen out of nothing — the pop that
+     * running the pulse out to its end was avoiding. Before ignition the ring is
+     * parked at the dot's edge and fully faded, which is exactly what it is
+     * already showing, so the rejoin paints nothing at all.
+     */
+    const rejoinEmitter = (): void => {
+      const clock = breathClock(dot);
+      // No breath to rejoin: a newer crossing has taken the glyph, and it owns
+      // the loops now.
+      if (clock === null) return;
+      if (clock.phase >= IGNITION) {
+        emitTimerRef.current = window.setTimeout(
+          rejoinEmitter,
+          (1 - clock.phase) * clock.period + EMIT_RELEASE_SLACK,
+        );
+        return;
+      }
+      startLoops(clock.phase);
+    };
+
+    /**
+     * A running glyph's emitter is flying, or on its way back. Never neither.
+     *
+     * The rejoin is carried across renders by two refs, and a render can land
+     * in the middle of it — a size change, a role change, a parent re-render.
+     * This re-establishes the continuation on every pass rather than trusting
+     * the one that armed it to still be reachable, because the state it is
+     * guarding against is a dot that breathes and never sheds a ring again.
+     */
+    const ensureEmitter = (): void => {
+      if (emitTimerRef.current !== null) {
+        emitReleasedRef.current = rejoinEmitter;
+        return;
+      }
+      if (root.dataset.emitting !== undefined) return;
+      rejoinEmitter();
     };
 
     /**
@@ -982,12 +1129,29 @@ export const TugProgressPulsingDot = React.forwardRef<
 
     if (previous !== "running" && isRunning) {
       const live = liveScale(dot);
-      startLoops(live === null ? 0 : breathPhaseFor(live, scaleMin));
+      const phase = live === null ? 0 : breathPhaseFor(live, scaleMin);
+      // Work resuming while the last settle's pulse is still in the air — the
+      // ordinary way work resumes, since a pulse travels most of a cycle. Two
+      // of the glyph's rules apply here and they point opposite ways: a lit
+      // pulse always finishes its travel, and the two loops are only welded if
+      // they START together, which they cannot do while one of them is still
+      // running out a pulse the other has nothing to do with.
+      //
+      // Neither rule gives way. The breath starts now, on its own variable so
+      // the flying ring is undisturbed, and the emitter rejoins it on the
+      // pulse's own clock.
+      if (root.dataset.emitting !== undefined && emitTimerRef.current !== null) {
+        startBreath(phase);
+        ensureEmitter();
+        return;
+      }
+      startLoops(phase);
       return;
     }
 
     dot.style.transform = dotPose(isRunning ? 1 : staticScale);
-    if (!isRunning) armDemotion();
+    if (isRunning) ensureEmitter();
+    else armDemotion();
   }, [state, staticScale, scaleMin, mode, size]);
 
   React.useEffect(

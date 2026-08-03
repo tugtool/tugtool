@@ -389,15 +389,34 @@
 .tug-progress-pulsing-dot[data-breathing] .tug-progress-pulsing-dot-dot,
 .tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring {
   animation-duration: var(--tugx-progress-pulsing-dot-period);
-  /* Negative, and written by the component when it starts the breath: the
-     phase whose pose matches where the settled dot was standing, so the loop
-     picks the dot up rather than snapping it to the trough. Zero — a start at
-     the bottom of the breath — is only right on a first mount. */
+  animation-iteration-count: infinite;
+}
+
+/* Negative, and written by the component when it starts a loop: the phase whose
+   pose matches where the settled dot was standing, so the breath picks the dot
+   up rather than snapping it to the trough. Zero — a start at the bottom of the
+   breath — is only right on a first mount.
+
+   ONE phase, TWO variables, because the two loops can be started apart even
+   though they must always run together. Work resuming while the last settle's
+   pulse is still travelling is the case: the breath starts at once, at the
+   dot's own phase, and the ring keeps flying on the clock it was shed under
+   until it lands — at which point the component restarts BOTH from the breath's
+   position and they are welded again. A single variable makes that impossible,
+   because writing the breath's phase would drag the flying ring's delay with it
+   and jump the pulse mid-travel. */
+.tug-progress-pulsing-dot[data-breathing] .tug-progress-pulsing-dot-dot {
   animation-delay: calc(
     var(--tugx-progress-pulsing-dot-period) *
       var(--tugx-progress-pulsing-dot-phase, 0)
   );
-  animation-iteration-count: infinite;
+}
+
+.tug-progress-pulsing-dot[data-emitting] .tug-progress-pulsing-dot-ring {
+  animation-delay: calc(
+    var(--tugx-progress-pulsing-dot-period) *
+      var(--tugx-progress-pulsing-dot-emit-phase, 0)
+  );
 }
 
 /* Turn at 30%: cosine up over the first 600ms, cosine down over the remaining

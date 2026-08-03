@@ -20,7 +20,10 @@
  *   - the dot is caught where it stands, pinned, and transitioned from there;
  *   - going back into `running`, the breath starts at the phase whose pose the
  *     dot already holds, so it picks the dot up rather than snapping it down to
- *     the trough.
+ *     the trough — and if a pulse is still in flight the emitter rejoins the
+ *     breath's clock once it lands, because the two loops are only welded if
+ *     they START together and the ring cannot be restarted while it is still
+ *     running one out.
  *
  * The headline assertions sample the PAINTED values every frame across a real
  * state change and bound the rate of change, rather than checking any of the
@@ -260,6 +263,54 @@ interface Census {
   running: string[];
 }
 
+/**
+ * The three loops' clocks on the bench glyph whose box measures `px` — read in
+ * ONE script so they are all sampled against the same timeline instant.
+ *
+ * `currentTime` is the animation's local time, measured from its start; the
+ * negative `animation-delay` that phases the breath lives on the effect, not
+ * here, and all three carry the same one anyway. So loops that were started
+ * together read the same number and loops that were not do not — which is the
+ * entire phase lock, expressed as a spread in ms.
+ */
+const clockProbe = (px: number) => `(function(){
+  var g = Array.from(document.querySelectorAll(${JSON.stringify(GLYPH)}))
+    .filter(function (el) {
+      return Math.round(parseFloat(getComputedStyle(el).width)) === ${px};
+    })[0];
+  if (!g) return null;
+  var loops = g.getAnimations({ subtree: true }).filter(function (a) {
+    return !!a.animationName;
+  });
+  var times = loops.map(function (a) { return Number(a.currentTime); });
+  return {
+    names: loops.map(function (a) { return a.animationName; }).sort(),
+    paused: loops.some(function (a) { return a.playState === "paused"; }),
+    spreadMs: times.length
+      ? Math.max.apply(null, times) - Math.min.apply(null, times)
+      : -1
+  };
+})()`;
+
+interface Lock {
+  names: string[];
+  paused: boolean;
+  spreadMs: number;
+}
+
+/**
+ * True once every glyph on the bench is fully armed — breath AND emitter.
+ *
+ * Every seek below assumes it. A resume that interrupted a pulse leaves the
+ * emitter rejoining for up to a cycle and a half, and seeking a glyph in that
+ * window seeks a breath with no pulse behind it, which is not the fixture any
+ * of these sections mean to set up.
+ */
+const ALL_WELDED = `Array.from(document.querySelectorAll(${JSON.stringify(GLYPH)}))
+  .every(function (g) {
+    return g.hasAttribute("data-breathing") && g.hasAttribute("data-emitting");
+  })`;
+
 /** Whether any glyph on the bench is still holding its emitter open. */
 const anyEmitting = `Array.from(document.querySelectorAll(${JSON.stringify(GLYPH)}))
   .some(function (g) { return g.hasAttribute("data-emitting"); })`;
@@ -475,10 +526,7 @@ describe.skipIf(!SHOULD_RUN)("AT0276: pulsing-dot state crossing", () => {
         //
         // Phase as a controlled variable: paused and seeked past ignition,
         // there is definitely a ring in flight when the state changes.
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(GLYPH)}).getAnimations({ subtree: true }).length > 0`,
-          { timeoutMs: 6000 },
-        );
+        await app.waitForCondition<boolean>(ALL_WELDED, { timeoutMs: 8000 });
         expect(await app.evalJS<number>(seekAll(0.4))).toBeGreaterThan(0);
         await app.click(segment("completed"));
         const held = await app.evalJS<Census>(crossingCensus(12));
@@ -501,10 +549,7 @@ describe.skipIf(!SHOULD_RUN)("AT0276: pulsing-dot state crossing", () => {
         // There is no gesture to honor, and holding the gate open would let one
         // more ring out of a glyph that has already stopped working.
         await app.click(segment("running"));
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(GLYPH)}).getAnimations({ subtree: true }).length > 0`,
-          { timeoutMs: 6000 },
-        );
+        await app.waitForCondition<boolean>(ALL_WELDED, { timeoutMs: 8000 });
         expect(
           await app.evalJS<number>(seekAll(IGNITION - 0.1)),
         ).toBeGreaterThan(0);
@@ -536,10 +581,7 @@ describe.skipIf(!SHOULD_RUN)("AT0276: pulsing-dot state crossing", () => {
           };
         })()`;
         await app.click(segment("running"));
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(GLYPH)}).getAnimations({ subtree: true }).length > 0`,
-          { timeoutMs: 6000 },
-        );
+        await app.waitForCondition<boolean>(ALL_WELDED, { timeoutMs: 8000 });
         expect(await app.evalJS<number>(seekAll(0.4))).toBeGreaterThan(0);
         await app.click(segment("completed"));
         const mid = await app.evalJS<{ isStatic: boolean; emitting: boolean; running: number }>(swapProbe);
@@ -573,12 +615,78 @@ describe.skipIf(!SHOULD_RUN)("AT0276: pulsing-dot state crossing", () => {
           flipped.isStatic,
           "a flip inside the settle window abandoned the demotion",
         ).toBe(false);
+        // Waited for rather than read at the 1s mark: the middle state may have
+        // shed a pulse, and the breath does not start until that pulse lands
+        // (see the phase-lock section below), which is up to a cycle away.
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(GLYPH)}).hasAttribute("data-breathing")`,
+          { timeoutMs: 6000 },
+        );
+
+        // --- Resuming work never breaks the phase lock ---------------------
+        //
+        // The lock's one enemy, and the reason it is enforced rather than
+        // assumed. Both loops are gated by attributes, and writing an
+        // attribute that is already set starts nothing — so a breath restarted
+        // while the emitter was still held would take a new start time against
+        // a ring that kept its old one, and the glyph would shed rings at some
+        // arbitrary point in the breath for the rest of the run. There is no
+        // clock to re-sync against and no cycle boundary to recover on.
+        //
+        // Neither of the glyph's rules gives way: the lit pulse finishes its
+        // travel, the breath starts at once on its own phase variable, and the
+        // emitter rejoins the breath's clock afterwards.
+        await app.click(segment("running"));
+        await app.waitForCondition<boolean>(ALL_WELDED, { timeoutMs: 8000 });
+        expect(await app.evalJS<number>(seekAll(0.4))).toBeGreaterThan(0);
+        await app.click(segment("completed"));
         expect(
-          await app.evalJS<boolean>(
-            `document.querySelector(${JSON.stringify(GLYPH)}).hasAttribute("data-breathing")`,
-          ),
-          "the glyph is breathing after the flip",
+          (await app.evalJS<Census>(crossingCensus(12))).emitting,
+          "the settle shed a pulse",
         ).toBe(true);
+
+        await app.click(segment("running"));
+        const resumed = await app.evalJS<Census>(crossingCensus(12));
+        expect(resumed.state, "the work resumed").toBe("running");
+        expect(
+          resumed.breathing,
+          "the breath starts at once rather than waiting out the pulse",
+        ).toBe(true);
+        expect(
+          resumed.emitting,
+          "and the shed pulse is still finishing its travel",
+        ).toBe(true);
+
+        // The rejoin, waited for by the one thing that distinguishes it: the
+        // emitter's loops are still the PAUSED ones the seek left behind until
+        // it happens, and fresh running ones after. It lands once the pulse has
+        // finished and the breath is back in its inhale, so it is up to a cycle
+        // and a half away.
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var g = document.querySelector(${JSON.stringify(GLYPH)});
+            var loops = g.getAnimations({ subtree: true }).filter(function (a) {
+              return !!a.animationName;
+            });
+            return loops.length === 3 && loops.every(function (a) {
+              return a.playState === "running";
+            });
+          })()`,
+          { timeoutMs: 8000 },
+        );
+        const lock = await app.evalJS<Lock>(clockProbe(12));
+        expect(
+          lock.names,
+          "all three loops are running once the breath begins",
+        ).toEqual([
+          "tugx-progress-pulsing-dot-breathe",
+          "tugx-progress-pulsing-dot-emit-expand",
+          "tugx-progress-pulsing-dot-emit-fade",
+        ]);
+        expect(
+          lock.spreadMs,
+          `the loops share one clock (spread ${lock.spreadMs.toFixed(1)}ms)`,
+        ).toBeLessThan(1);
 
         // --- Motion-off lands settled states in static mode ---------------
         //
