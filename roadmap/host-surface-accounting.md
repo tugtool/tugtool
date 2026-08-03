@@ -30,19 +30,25 @@ So the diet worked where it was aimed, and the aim was incomplete. WebContent's 
 
 ## Why this is anomalous, not a cost of doing business {#anomaly}
 
-Safari, running on the same machine at the same moment, is the control:
+Safari, running on the same machine at the same moment, is the control. The whole `IOAccelerator (graphics)` row, whose columns are `VIRTUAL RESIDENT DIRTY SWAPPED VOLATILE NONVOL EMPTY COUNT`:
 
-| UI process | total footprint | graphics dirty | graphics reclaimable |
-|---|---|---|---|
-| Safari | 137 MB | **3 MB** | 187 MB |
-| Tug | 2,599 MB | **2,419 MB** | 149 MB |
+| UI process | virtual | resident | dirty | volatile | regions |
+|---|---|---|---|---|---|
+| Safari | 192.3 MB | 3.2 MB | 3.2 MB | **0 K** | 69 |
+| Tug | 2.5 GB | 2.4 GB | 2.4 GB | **0 K** | 1,183 |
 
-Two differences, and the second one matters more than the first:
+The difference is **residency and region count**, and it is not purgeability. Safari maps 192MB of graphics address space and keeps 2% of it resident; Tug maps 2.5GB and keeps ~96%.
 
-1. **Magnitude** — three orders of magnitude apart for two apps hosting a WKWebView.
-2. **Purgeability** — Safari's surfaces are overwhelmingly *reclaimable* (marked volatile: the OS may take them back under pressure and the app re-renders). Tug's are **pinned non-purgeable**: 2,419MB dirty against 149MB reclaimable. Under real memory pressure the kernel cannot take a single page of ours. Region-level confirmation from `vmmap`: the large regions all carry `PURGE=N`; only 174 of ~1,180 regions carry `PURGE=V`.
+Grouping each process's graphics regions by purge state settles the point:
 
-If purgeability turns out to be a window/layer configuration we control, that alone changes the character of the number — from a pool the system cannot manage to one it can.
+| | `PURGE=V` regions | resident in V | `PURGE=N` regions | resident in N |
+|---|---|---|---|---|
+| Safari | 52 | **0 MB** | 17 | **3.2 MB** |
+| Tug | 176 | **0 MB** | 984 | **2,423.5 MB** |
+
+Both apps keep exactly zero resident bytes in volatile regions and hold everything they have in nonvolatile ones. The purge *structure* is identical; Tug simply has 58× more nonvolatile regions and they are far larger. There is no purgeability policy difference to exploit.
+
+> **A misreading worth recording.** The first pass read only the row's `DIRTY` column and reported Safari as having "187MB reclaimable" — that figure was `VIRTUAL − DIRTY`, i.e. mapped-but-not-resident address space, not purgeable memory. Reading one column of an eight-column row invented a difference that does not exist, and it pointed a whole question (G7-3) at a mechanism neither app uses. Any process read from `vmmap --summary` should capture the whole row.
 
 ## Region census {#region-census}
 
@@ -66,6 +72,23 @@ The display is 5120×2880 Retina. Two arithmetic notes to carry forward, both un
 
 - **11.9 MB = 12,451,840 B = 3,112,960 px at 4 B/px.** That factors as 2048×1520 — a plausible tile or layer backing size. 108 of them is the single biggest line in the process.
 - **185.5 MB** ≈ three full-screen 5K buffers (5120×2880×4 B = 59 MB each), consistent with a triple-buffered full-screen window surface.
+
+### The census has a signature: 36 identical units {#thirty-six-units}
+
+Restricting the census to the `PURGE=N` regions — the 984 that hold the entire 2.4 GB — nearly every count is a multiple of **36**:
+
+| per unit | × 36 | subtotal |
+|---|---|---|
+| 3 × 11.9 MB | 108 | 1,285 MB |
+| 6 × 768 KB | 216 | 162 MB |
+| 2 × 5,120 KB | 72 | 360 MB |
+| 2 × 1,280 KB | 72 | 90 MB |
+| 4 × 320 KB | 144 | 45 MB |
+| 4 × 80 KB | 144 | 11 MB |
+
+That is **36 copies of one ~54 MB structure** (~1.95 GB), plus the 185.5 MB singleton and a tail of stragglers — the whole 2.4 GB. The floor is not diffuse and it is not the sum of many unrelated things. Naming what there are 36 of names the defect.
+
+Two properties of the repeating unit are worth carrying forward: the largest class is **triple-buffered** (3 × 11.9 MB), and the 5,120 / 1,280 / 320 / 80 KB classes fall in an exact **factor-of-four chain**, which is the shape a downsample or mip chain takes.
 
 ## The idle churn {#idle-churn}
 
@@ -134,23 +157,29 @@ Region geometry does not resolve from outside the process — the sizes cluster 
 
 ### The instrument that was missing {#host-ledger-cell}
 
-Added `AT9996_HOST_SURFACES=1` to `tests/app-test/at9996-anim-island-lab.test.ts` — the first cell in the corpus that reads the **app** process. It samples host `IOAccelerator (graphics)` dirty, host footprint, and WebContent graphics together across five deck states (`empty` / `one` heavy card / `all` heavy / all panes `hidden` / `revealed`), and reports in **window-equivalents** so a lab window compares against the user's 5K release instance. Host and WebContent pids are both identified by arrival, since neither is parented by the test runner.
+Added `AT9996_HOST_SURFACES=1` to `tests/app-test/at9996-anim-island-lab.test.ts` — the first cell in the corpus that reads the **app** process. It samples the host's whole `IOAccelerator (graphics)` row (virtual / resident / dirty / volatile / region count), host footprint, and WebContent graphics together across five deck states (`empty` / `one` heavy card / `all` heavy / all panes `hidden` / `revealed`), and reports in **window-equivalents** so a lab window compares against the user's 5K release instance. The host pid comes from the app over RPC (`App.hostPid`); WebContent is identified by arrival, since it is launchd-parented.
 
-### The lab result: a fresh app maps nothing {#lab-negative}
+Its verdict on itself is that it cannot see this phenomenon — see [#lab-negative](#lab-negative). It remains the right instrument for the WebContent side, and the whole-row capture is what proved the host side was out of range.
 
-First run of the new cell, on a Debug `Tug-apptest` launch, window 1986×1257 at dpr 2 (one full-window layer = 38.1 MB), 60 turns per session card:
+### The lab result: the app-test lab is a null instrument {#lab-negative}
 
-| phase | host graphics | host footprint | WebContent graphics |
-|---|---|---|---|
-| empty | **0 MB** | 25 MB | 184 MB |
-| one heavy card | **0 MB** | 28 MB | 225 MB |
-| all heavy | **0 MB** | 29 MB | 327 MB |
-| panes hidden | **0 MB** | 29 MB | 119 MB |
-| revealed | **0 MB** | 29 MB | 351 MB |
+Re-run of the cell with the full-row instrument, on a Debug `Tug-apptest` launch, window 1986×1257 at dpr 2 (one full-window layer = 38.1 MB), 150 turns per session card:
 
-**A fresh app with three heavy transcripts maps zero UI-side surfaces.** Its whole footprint is 29MB. Meanwhile WebContent behaves exactly as the diet program characterized it — 184 → 327 MB with content, dropping to 119 when the panes are hidden and recovering on reveal, which also confirms the cell's causal A/B works.
+| phase | host virtual | host resident | host dirty | host regions | host footprint | WebContent graphics |
+|---|---|---|---|---|---|---|
+| empty | 1 MB | 0 MB | 0 MB | **3** | 25 MB | 172 MB |
+| one heavy card | 1 MB | 0 MB | 0 MB | **3** | 29 MB | 196 MB |
+| all heavy | 1 MB | 0 MB | 0 MB | **3** | 30 MB | 329 MB |
+| panes hidden | 1 MB | 0 MB | 0 MB | **3** | 30 MB | 138 MB |
+| revealed | 1 MB | 0 MB | 0 MB | **3** | 30 MB | 354 MB |
 
-So the 2.4GB is **not a structural cost of UI-side compositing**. If it were, the lab would show it. Something the live instance does — and a fresh one does not — mints and retains those surfaces.
+WebContent behaves exactly as the diet program characterized it — 172 → 329 MB with content, dropping to 138 when the panes are hidden and recovering on reveal — so the cell's causal A/B genuinely works. But the host reads **3 regions and 1 MB of address space in every phase**, and never moves.
+
+**That is not a fresh app declining to accumulate surfaces. It is an app whose host never hosts a layer tree at all.** Three points of comparison make the state unambiguous: live Tug maps 1,183 regions, Safari maps 69, the lab maps 3. The lab is not a low reading on the same scale — it is off the instrument.
+
+So the app-test lab **cannot reproduce this phenomenon** and cannot be used to bisect it. Any A/B run there would read zero in both arms and conclude whatever the experimenter hoped. What differs is not deck content: the harness launches a Debug bundle with restore and persistence disabled in test mode, and the divergence is somewhere in that set, not in what the deck holds.
+
+The first pass read this table as "a fresh app with three heavy transcripts maps zero UI-side surfaces" and concluded the 2.4 GB was **acquired, not structural**. That conclusion was drawn from an instrument reading zero because it was disconnected, and it is withdrawn.
 
 ### What the live instance's own clock says {#live-growth}
 
@@ -161,13 +190,26 @@ So the 2.4GB is **not a structural cost of UI-side compositing**. If it were, th
 
 It reaches ~2.4GB **within the first 11 minutes** and then creeps by ~90MB over the next 85. So this is not a slow accumulation over a working day: it is minted early and then held. `phys_footprint_peak` of 8.9GB was also set inside that first window.
 
-Early minting plus permanent retention points at **restore** — the one thing the live instance does at launch that the lab does not, and the thing that already owns a known ~550MB of churn on the WebContent side ([aug01-perf-brief.md] §S9). It is not proof; it is the first place to look.
+### The restart reading: full size in three minutes {#restart-reading}
+
+A user-initiated restart supplied a clean `t=0` that no probe could buy — a genuinely fresh live release instance, observed without disturbing anything:
+
+| | uptime | host graphics | regions | footprint | peak |
+|---|---|---|---|---|---|
+| prior instance | 3 h 20 min | 2.4 GB | 1,183 | 2.5 GB | 8.7 GB |
+| **restarted instance** | **3 min 25 s** | **2.4 GB** | **1,186** | **2.5 GB** | **8.7 GB** |
+
+Full size, full region count, and the same 8.7 GB peak — **inside three and a half minutes.** And the [36-unit signature](#thirty-six-units) reproduces exactly: 216 × 768 KB, 144 × 320 KB, 144 × 80 KB, 108 × 11.9 MB, 72 × 5,120 KB, 72 × 1,280 KB, identical counts on both instances.
+
+That kills the accumulation framing outright. A structure whose region counts are *identical* between a three-minute-old process and a three-hour-old one is not something that builds up — it is allocated once, at a fixed size, near launch. The ~90 MB of creep over 85 minutes is a rounding error on top of a constant.
+
+This also demotes restore as the suspect. Restore was hypothesized because the floor appeared "early", but "early" has now resolved to "immediately and at full size", and the deck's own content varies between these two observations while the counts do not.
 
 ### Where G7-2 lands {#g7-2-verdict}
 
 - The **churn** is characterized and demoted: episodic, activity-driven, host-CPU-bound, not a metronome, plausibly the normal cost of re-buffering a layer population. **Not the defect.**
-- The **floor** is the defect, and it is now known to be **acquired, not structural** — the lab proves a fresh app of the same shape costs nothing.
-- The question changes from *"why does compositing cost so much?"* to **"what does the live instance map at startup and never release?"**
+- The **floor** is the defect. It is **fixed and allocated at startup** — 36 identical ~54 MB units, at full count within three minutes of launch, unchanged after three hours.
+- The question changes from *"why does compositing cost so much?"* to **"what are there 36 of?"**
 
 ### Instrument gotchas paid for in this pass {#g7-2-gotchas}
 
@@ -193,9 +235,15 @@ None observed. 128 GB installed, **zero swap in use**, no memory-pressure events
 
 **G7-2 — What is the ~900 MB churn?** *(answered — see [#g7-2-verdict](#g7-2-verdict). Episodic and activity-driven, not idle and not a metronome; demoted. The floor is the defect, and it is acquired rather than structural.)*
 
-**G7-4 — What does the live instance map at startup and never release?** The successor question G7-2 produced, and now the main line. Restore is the first suspect: it is what the live instance does that the lab does not, it lands inside the 11-minute window where the floor is minted, and it already owns known churn on the WebContent side. Next moves: bisect by launching a release-identity app against a **restore-free** deck and then a restored one, and read the same ledger; if restore is convicted, the question becomes which mapped surfaces survive it.
+**G7-4 — What are there 36 of?** The main line, and now a much sharper question than the one it replaced. The floor is 36 copies of a fixed ~54 MB structure, allocated near launch and never released, identical across instances and independent of session age. It is not restore, not accumulation, and not deck content. The unit's own shape is the best evidence available: the largest class is triple-buffered and the smaller classes descend in an exact factor-of-four chain.
 
-**G7-3 — Why are Tug's surfaces non-purgeable when Safari's are not?** If this is window or layer configuration we own, it is the cheapest structural fix available and it changes the floor's character without changing a byte of the deck.
+Next moves, in order:
+
+1. **Count layers, not bytes.** Enumerate the host's `CALayer` tree at rest (36 backing stores implies ~36 layers with backing, or 12 triple-buffered ones) and compare that count against the deck's composited-layer count on the WebContent side. The two numbers either match — making this a straightforward per-layer cost — or they don't, which makes it a retention bug.
+2. **Vary one thing and re-read the count.** Window size, display, and pane count are each a one-variable change on a probe instance; the region *count* (not the byte total) is the sensitive readout.
+3. **Do not use the app-test lab.** It is [off the instrument](#lab-negative) for this measurement, and any A/B there will read zero in both arms.
+
+**G7-3 — Why are Tug's surfaces non-purgeable when Safari's are not?** *(refuted — see [#anomaly](#anomaly). The premise was a column-reading error: both apps hold zero resident bytes in volatile regions and everything in nonvolatile ones. The purge structure is identical and there is no cheap purgeability fix. Folded into G7-4.)*
 
 ## Discipline {#discipline}
 
@@ -204,6 +252,7 @@ Carried unchanged from the diet program:
 - **The user's live release instance is the only success surface.** Lab cells gate diffs; they never declare victory.
 - **Forced-purge numbers do not count.** `notifyutil -p org.WebKit.lowMemory` floors are not steady state.
 - **Never disturb the live deck** to take a reading — no restarts, no resizes, no rearrangement, no `just app-release` — unless the user asks for it.
+- **Never launch a second release-identity `Tug.app`.** `open -n` against the release bundle does *not* give you an isolated probe instance beside the running one — it **terminates the user's live instance**, which is exactly what happened on 2026-08-03. A fresh `TUG_INSTANCE_ID` isolates the data directory, not the app identity. A probe instance that must not disturb the live one belongs on a **dash worktree with its own build**, and the reading it produces is only trustworthy if no takeover occurred.
 - **`osascript` activation loops are banned as methodology**, for any test, ever.
 - Motion designs are FIXED; pixel identity is FIXED; no FOUC.
 - Only the user commits.
@@ -211,4 +260,10 @@ Carried unchanged from the diet program:
 ## Status {#status}
 
 - **2026-08-03** — brief opened from the live 2.54 GB read.
-- **2026-08-03** — **G7-2 closed.** Architecture named (UI-side compositing; the app process holds the deck's layer tree, so the whole graphics program had been measuring the smaller share). Churn characterized and demoted — episodic, not idle, not metronomic, not the defect. Lab instrument built (`AT9996_HOST_SURFACES=1`) and it returns a decisive negative: **a fresh app with three heavy transcripts maps zero UI-side surfaces**. The floor is therefore acquired, not structural. G7-1 and G7-3 still stated and not started; **G7-4 opened** as the main line.
+- **2026-08-03** — **G7-2 closed.** Architecture named (UI-side compositing; the app process holds the deck's layer tree, so the whole graphics program had been measuring the smaller share). Churn characterized and demoted — episodic, not idle, not metronomic, not the defect. Lab instrument built (`AT9996_HOST_SURFACES=1`). G7-1 and G7-3 still stated and not started; **G7-4 opened** as the main line.
+- **2026-08-03, second pass** — **two conclusions from the first pass withdrawn, and the floor characterized.**
+  - **G7-3 refuted.** The purgeability difference was a column-reading error; both apps have identical purge structure. Folded into G7-4.
+  - **The lab negative withdrawn.** With the instrument capturing the whole `vmmap` row, the app-test lab reads **3 regions / 1 MB in every phase** — it never hosts a layer tree at all, so it is off the instrument rather than a control. "Acquired, not structural" was concluded from a disconnected meter.
+  - **The floor is a fixed startup allocation.** A user-initiated restart gave a clean `t=0`: **2.4 GB across 1,186 regions at 3 min 25 s**, matching a 3 h 20 min instance region-for-region, with the same 8.7 GB peak. Region counts identical across both instances rules out accumulation and demotes restore.
+  - **The floor has a signature: 36 identical ~54 MB units** (108 × 11.9 MB triple-buffered, plus a factor-of-four chain at 5,120 / 1,280 / 320 / 80 KB). G7-4 sharpens to **"what are there 36 of?"**
+  - **Discipline paid for in cash:** `open -n` on the release bundle terminated the user's live instance. Recorded in [#discipline](#discipline).
