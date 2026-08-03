@@ -546,6 +546,11 @@ mod tests {
         set_instance(Some("apptest-27b5400c-7d5e-4a9a-99a0-4f787deb6d80"));
         let tok = short_token().expect("token when ID set");
         assert_eq!(tok.len(), 8);
+        // Pinned vector. Swift's `InstanceConfig.shortToken` and the
+        // app-test harness's `fnv1a.ts` must produce this same string
+        // for this same id — three implementations addressing one
+        // instance's resources cannot be allowed to drift silently.
+        assert_eq!(tok, "a419f8f0");
         assert_eq!(tmux_socket_label().unwrap(), format!("tug-{tok}"));
         set_instance(None);
         assert_eq!(short_token(), None);

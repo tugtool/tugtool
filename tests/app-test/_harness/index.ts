@@ -37,6 +37,8 @@ import {
   AppCrashedError,
   VersionSkewError,
 } from "./errors";
+import { shortToken, tmuxSocketLabel } from "./fnv1a";
+import { onTestRunEnd } from "./test-cleanup";
 import { RpcClient, type RpcTransport } from "./rpc";
 import type {
   AccessibilityStatus,
@@ -297,6 +299,10 @@ export class App {
   /** Per-instance identity this launch ran under (`TUG_INSTANCE_ID`). */
   readonly instanceId: string;
   private closed = false;
+  /** Every screenshot path handed out, pending reclamation. */
+  private readonly screenshots: string[] = [];
+  /** Drops this app's pending run-end reclamation. */
+  private readonly disposeRunEndReclaim: () => void;
 
   constructor(args: {
     rpc: RpcClient;
@@ -320,6 +326,9 @@ export class App {
     this.detachSignals = args.detachSignals;
     this.hostPid = args.hostPid ?? 0;
     this.instanceId = args.instanceId;
+    // A test that never reaches `close()` (a thrown assertion, a
+    // timeout) still gives its screenshots back at the end of the run.
+    this.disposeRunEndReclaim = onTestRunEnd(() => this.reclaimScreenshots());
   }
 
   /**
@@ -608,11 +617,36 @@ export class App {
   /**
    * Capture the app's WKWebView as a PNG (written to a temp file) and
    * return its path. Uses `WKWebView.takeSnapshot` — captures rendered
-   * web content directly, no Screen Recording permission. The caller
-   * owns the file.
+   * web content directly, no Screen Recording permission.
+   *
+   * The harness owns the file: every shot is unlinked when the app
+   * closes, and again at the end of the run. Swift wrote these and
+   * nobody deleted them, which is how 121 MB of PNGs accumulated. A
+   * test that wants to keep a shot must read or copy it before
+   * `close()` — or the whole run can be told to keep them with
+   * `TUGAPP_KEEP_SCREENSHOTS=1`, which is what to set when a logged
+   * shot path is meant to be opened by a human afterwards.
    */
-  screenshot(): Promise<{ path: string }> {
-    return client.screenshot(this as HarnessCaller);
+  async screenshot(): Promise<{ path: string }> {
+    const shot = await client.screenshot(this as HarnessCaller);
+    this.screenshots.push(shot.path);
+    return shot;
+  }
+
+  /** Unlink every screenshot this app handed out. Idempotent. */
+  private reclaimScreenshots(): void {
+    const paths = this.screenshots.splice(0);
+    if (process.env.TUGAPP_KEEP_SCREENSHOTS === "1") {
+      for (const path of paths) console.log(`[harness] kept screenshot: ${path}`);
+      return;
+    }
+    for (const path of paths) {
+      try {
+        unlinkSync(path);
+      } catch {
+        // already gone
+      }
+    }
   }
 
   /** Compact state bundle: tagName, disabled, readOnly, checked, visible, isFocused. */
@@ -1052,6 +1086,8 @@ export class App {
     // log streams + signal handlers + socket file all unwind.
     this.closed = true;
     try { this.onUnlink(); } catch { /* socket already gone */ }
+    this.reclaimScreenshots();
+    this.disposeRunEndReclaim();
     try { this.logStream?.end(); } catch { /* best-effort */ }
     try { this.detachSignals(); } catch { /* best-effort */ }
   }
@@ -1309,6 +1345,8 @@ export class App {
     } catch {
       // already gone; ignore
     }
+    this.reclaimScreenshots();
+    this.disposeRunEndReclaim();
     // Close the log stream after the subprocess has exited; its pipe
     // writer will have flushed whatever tail it produced by then.
     try {
@@ -1358,15 +1396,26 @@ export async function launchTugApp(
   }
 
   // Register a last-resort unlink in case the harness is killed
-  // before `app.close()` runs.
+  // before `app.close()` runs. Both hooks: `process.on("exit")` covers
+  // a non-test-runner host, and `onTestRunEnd` is the one that actually
+  // fires under `bun test` — where the exit event never does, which is
+  // why 45 of these sockets were sitting in `$TMPDIR`.
+  let disposeSocketUnlink: (() => void) | undefined;
   const onExitUnlink = () => {
     try {
       unlinkSync(resolved.socketPath);
     } catch {
       // already gone
     }
+    // Once the socket is reclaimed the pending task is dead weight —
+    // drop it so a test file with many launches doesn't accumulate one
+    // per launch.
+    disposeSocketUnlink?.();
+    disposeSocketUnlink = undefined;
+    process.off("exit", onExitUnlink);
   };
   process.on("exit", onExitUnlink);
+  disposeSocketUnlink = onTestRunEnd(onExitUnlink);
 
   // Install SIGINT / SIGTERM / exit handlers so a Ctrl-C at the
   // runner or an unexpected exit cleans up the subprocess instead
@@ -1824,10 +1873,14 @@ function installSignalHandlers(subprocess: SpawnedTugApp): () => void {
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
   process.on("exit", onExit);
+  // `exit` does not fire under `bun test`, so the run-end hook is what
+  // actually catches a subprocess still alive at the end of a run.
+  const disposeRunEnd = onTestRunEnd(onExit);
   return () => {
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
     process.off("exit", onExit);
+    disposeRunEnd();
   };
 }
 
@@ -1986,15 +2039,33 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
     } catch {
       // ignore — the fallback below still runs
     }
-    // Reclaim the instance's tmux session. tugcast hosts each instance's
-    // session in the shared tmux server as `cc-<instanceId>`; it is NOT a
-    // child of Tug.app, so killing the app (via `instance stop` above)
-    // leaves the session — and the PTY it pins — alive. Across many runs
-    // these accumulate and exhaust the macOS pseudo-terminal pool, which
-    // then surfaces as `fork failed: Device not configured` and a launch
-    // that restart-storms forever. Every teardown path (App.close plus
-    // the launch-failure paths) routes through this wrapped kill, so
-    // killing the session here is the single place that reclaims it.
+    // Reclaim the instance's tmux server. tugcast hosts each instance's
+    // session as `cc-<instanceId>` on a PRIVATE server addressed by
+    // `-L tug-<token>`; it is NOT a child of Tug.app, so killing the app
+    // (via `instance stop` above) leaves the whole server — and the PTY
+    // it pins — alive. Across many runs these accumulate and exhaust the
+    // macOS pseudo-terminal pool, which then surfaces as `fork failed:
+    // Device not configured` and a launch that restart-storms forever.
+    //
+    // This must name the private server. A bare `tmux kill-session`
+    // addresses the DEFAULT server, where no current instance's session
+    // lives, so it reclaimed nothing — and this fallback is exactly what
+    // runs when the `tugutil` spawn above is unavailable (a dash
+    // worktree has no `~/.local/bin/tugutil` symlink), which is when it
+    // matters most. `kill-server` rather than `kill-session`: the server
+    // is per-instance, so nothing else is on it.
+    try {
+      spawnSync?.({
+        cmd: ["tmux", "-L", tmuxSocketLabel(instanceId), "kill-server"],
+        stdout: "ignore",
+        stderr: "ignore",
+        stdin: "ignore",
+      });
+    } catch {
+      // no such server — nothing to reclaim
+    }
+    // Pre-isolation builds put `cc-<id>` on the shared default server.
+    // Cheap to also ask, and it costs nothing when there is no server.
     try {
       spawnSync?.({
         cmd: ["tmux", "kill-session", "-t", `cc-${instanceId}`],
@@ -2004,6 +2075,19 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
       });
     } catch {
       // no such session / no tmux server — nothing to reclaim
+    }
+    // This launch's sockets. Each owner unlinks its own on a graceful
+    // close, but this path exists precisely because the close was not
+    // graceful.
+    for (const sock of [
+      resolved.socketPath,
+      `${tmpdir()}/tugbank-notify-${shortToken(instanceId)}.sock`,
+    ]) {
+      try {
+        unlinkSync(sock);
+      } catch {
+        // already gone
+      }
     }
     // Reclaim this launch's per-instance data dir. Each auto-minted
     // `apptest-<uuid>` is single-use, so once we've stopped the process

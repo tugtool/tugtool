@@ -26,13 +26,18 @@
  * Lifecycle: tests own their temp DB. `mkTempTugbank` returns a
  * unique path; sqlite creates the file on first write. After the
  * second-process read is done, call {@link rmTempTugbank} to remove
- * the file plus its WAL/SHM siblings.
+ * the file plus its WAL/SHM siblings. Calling it is still the right
+ * habit — it frees the file as soon as the test is done with it — but
+ * it is no longer the only thing standing between a forgetful test and
+ * a leak: every minted path is tracked and swept on process exit.
  */
 
 import { unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve as pathResolve } from "node:path";
 import { randomUUID } from "node:crypto";
+
+import { onTestRunEnd } from "./test-cleanup";
 
 /**
  * The tagged-value envelope tugbank emits for `read --json`.
@@ -59,8 +64,21 @@ export interface TugbankReadResult<T = unknown> {
  * {@link rmTempTugbank} in a `finally` block.
  */
 export function mkTempTugbank(): string {
-  return `${tmpdir()}/tugapp-test-tugbank-${randomUUID()}.db`;
+  const path = `${tmpdir()}/tugapp-test-tugbank-${randomUUID()}.db`;
+  minted.add(path);
+  return path;
 }
+
+/**
+ * Every path {@link mkTempTugbank} has handed out and {@link rmTempTugbank}
+ * has not yet reclaimed. Caller discipline alone left 373 of these in
+ * `$TMPDIR` — many tests simply never called the cleanup.
+ */
+const minted = new Set<string>();
+
+onTestRunEnd(() => {
+  for (const path of [...minted]) rmTempTugbank(path);
+});
 
 /**
  * Remove a temp tugbank DB plus its sqlite WAL/SHM siblings.
@@ -71,6 +89,7 @@ export function mkTempTugbank(): string {
  * naive `unlink(path)` leaves them behind to leak across test runs.
  */
 export function rmTempTugbank(path: string): void {
+  minted.delete(path);
   for (const p of [path, `${path}-wal`, `${path}-shm`]) {
     try {
       unlinkSync(p);

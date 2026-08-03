@@ -133,6 +133,10 @@ pub struct TestTugcast {
     /// on every `spawn_session` control frame (commit
     /// b1ba1a97); exposed here so callers don't have to re-derive it.
     pub project_dir: PathBuf,
+    /// Owns this spawn's changes DB. Held so the directory — and the
+    /// `-wal`/`-shm` siblings SQLite puts beside the file — is removed
+    /// when the handle drops, instead of being left in `$TMPDIR`.
+    _changes_db_dir: tempfile::TempDir,
 }
 
 /// Runs exactly once per test process, on the first [`TestTugcast::spawn`]
@@ -278,10 +282,11 @@ impl TestTugcast {
         // Point the machine-global changes ledger at a per-process temp file
         // so a spawned tugcast never writes attribution rows into the
         // developer's real ~/Library/Application Support/Tug/changes.db.
-        command.env(
-            "TUG_CHANGES_DB",
-            std::env::temp_dir().join(format!("tugcast-test-changes-{}.db", std::process::id())),
-        );
+        let changes_db_dir = tempfile::Builder::new()
+            .prefix("tugcast-test-changes-")
+            .tempdir()
+            .expect("changes db tempdir");
+        command.env("TUG_CHANGES_DB", changes_db_dir.path().join("changes.db"));
         let mut child = command.spawn().expect("failed to spawn tugcast");
         if let Some(stderr) = child.stderr.take() {
             tokio::spawn(async move {
@@ -297,6 +302,7 @@ impl TestTugcast {
             port,
             bank_path,
             project_dir: project_dir.to_path_buf(),
+            _changes_db_dir: changes_db_dir,
         }
     }
 }

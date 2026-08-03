@@ -88,7 +88,7 @@ So this plan is less an invention than a promotion: take `reap`'s registry-cross
 
 #### Assumptions {#assumptions}
 
-- A unix socket whose `connect()` fails with `ECONNREFUSED` has no listener and is safe to unlink (macOS semantics). The converse is **not** assumed: a live listener whose backlog is saturated fails `connect()` with `EAGAIN`/`ETIMEDOUT`, so only `ECONNREFUSED` (and `ENOENT`, the racing-unlink case) may unlink — every other errno keeps the file ([P02](#p02-liveness-probes)).
+- ~~A unix socket whose `connect()` fails with `ECONNREFUSED` has no listener and is safe to unlink~~ — **falsified by measurement during [#step-2](#step-2)**. On macOS a live `AF_UNIX` listener whose backlog is full also fails `connect()` with `ECONNREFUSED`, and it does so at backlog+1 connections; there is no `EAGAIN`/`ETIMEDOUT` to distinguish the cases. Errno discipline is kept (only `ECONNREFUSED`/`ENOENT` may unlink) but it is *not* sufficient on its own, so the socket pass is gated by the live-instance namespace check and the age floor as well ([P02](#p02-liveness-probes), [P10](#p10-age-floor)).
 - `tmux -L <label> list-sessions -F '#S:#{session_attached}'` on a dead socket errors out (as observed: "error connecting to …"), distinguishing dead socket files from live servers.
 - 24 h is a safe age gate for `$TMPDIR` test litter: no legitimate app-test or cargo-test artifact is read across a >24 h gap (the machine-wide app-test gate serializes runs; cargo tests are minutes).
 - `tugutil` remains bundled in `Tug.app/Contents/MacOS/` (verified on the Release bundle) — but nothing in this plan depends on it, because tugcast calls `tugcore::janitor` directly.
@@ -158,7 +158,7 @@ So this plan is less an invention than a promotion: take `reap`'s registry-cross
 - Observed populations confirm probes suffice: all 9,833 ctl sockets fail `connect()`; the orphan tmux server is identifiable by registry absence.
 
 **Implications:**
-- Socket sweep = `UnixStream::connect` per candidate. **Unlink only on `ECONNREFUSED` or `ENOENT`; every other errno keeps the file.** This is not a detail — a live listener with a saturated backlog fails `connect()` with `EAGAIN`/`ETIMEDOUT`, and reading that as "dead" unlinks a live instance's control socket, which is [R01](#r01-deleting-live-state) happening for real. Accepted → drop the stream immediately and skip.
+- Socket sweep = `UnixStream::connect` per candidate. Unlink only on `ECONNREFUSED` or `ENOENT`; every other errno keeps the file. Accepted → drop the stream immediately and skip. **But the probe is not sufficient by itself**: measured on macOS, a live `AF_UNIX` listener with a saturated backlog returns `ECONNREFUSED` — the same errno a corpse returns — so two further gates carry the safety. A socket whose basename belongs to a live registered instance (`tugcast-ctl-<token>`, `tugbank-notify-<token>`, `tugcast-ctl-<port>` for tugexec) is never a candidate at all, and the age floor ([P10](#p10-age-floor)) applies here too, contrary to the original "a bound socket answers for itself" reasoning. A failed registry read aborts the pass.
 - Tmux sweep = per `tug-*` socket in `${TMUX_TMPDIR:-/tmp}/tmux-<uid>/`: query sessions; dead socket → unlink the socket file; live server whose sessions are all `cc-apptest-*`, none of which maps to a registry-live instance id (session name minus `cc-` prefix), **and whose socket is older than the age floor** → `kill-server` + unlink; anything else → skip.
 - Data-dir sweep = existing prune discovery semantics (registry + `BUNDLE_PATH_MARKER`) plus the age floor, moved where the janitor can drive the apptest-data-only portion.
 - **A registry read failure is not an empty registry.** `reap` gets this right (`Justfile:591–594`, "refusing to reap blind") and the janitor must too: if `registry::load` errors, abort the registry-gated passes rather than treating every instance as an orphan.
@@ -249,7 +249,9 @@ So this plan is less an invention than a promotion: take `reap`'s registry-cross
 
 #### [P10] A minimum-age floor under every registry-gated deletion (DECIDED) {#p10-age-floor}
 
-**Decision:** Add `MIN_DEBRIS_AGE_SECS` (10 minutes) beside `TMP_DEBRIS_MAX_AGE_SECS`. No data dir and no tmux server is a removal candidate unless its mtime is older than that floor, regardless of registry state. Socket removal keeps its `connect()` probe and needs no floor (a bound socket answers for itself, instantly and without a registry lookup).
+**Decision:** Add `MIN_DEBRIS_AGE_SECS` (10 minutes) beside `TMP_DEBRIS_MAX_AGE_SECS`. No data dir, no tmux server, **and no socket** is a removal candidate unless its mtime is older than that floor, regardless of registry state.
+
+*(Sockets were originally exempted here on the grounds that "a bound socket answers for itself." [#step-2](#step-2) measured otherwise — a saturated live listener answers exactly like a corpse — so the floor covers all three classes.)*
 
 **Rationale:**
 - A booting instance is invisible to the registry for a real interval — `write_bundle_path_marker()` runs near the top of tugcast startup, `registry::register` only after the port bind — so "no registry entry" is a *lagging* signal, unlike a socket probe which is instantaneous. See [R04](#r04-mid-boot-race).
@@ -374,17 +376,25 @@ pub const MIN_DEBRIS_AGE_SECS: u64 = 10 * 60;
 /// Individual sweeps — each takes explicit roots (and the age floor)
 /// for testability; tests pass `Duration::ZERO` to exercise
 /// classification and a real floor to prove fresh fixtures survive.
-pub fn sweep_dead_sockets(tmp: &Path) -> Vec<PathBuf>;
-pub fn sweep_tmux_servers(tmux_dir: &Path, min_age: Duration)
+/// Whether a pass acts on its findings or only names them.
+/// Classification is identical in both modes, so a report is an
+/// honest preview of what an apply would do — which is what makes
+/// `just reap` (report) / `just reap apply` real.
+pub enum SweepMode { Report, Apply }
+
+pub fn sweep_dead_sockets(tmp: &Path, min_age: Duration, mode: SweepMode) -> Vec<PathBuf>;
+pub fn sweep_tmux_servers(tmux_dir: &Path, min_age: Duration, mode: SweepMode)
     -> (Vec<String>, Vec<PathBuf>);
-pub fn sweep_tmp_debris(tmp: &Path, max_age: Duration) -> (Vec<PathBuf>, Vec<PathBuf>);
-pub fn sweep_apptest_data_dirs(instances_root: &Path, min_age: Duration) -> Vec<String>;
-pub fn sweep_reparented_processes(min_age: Duration) -> Vec<(i32, String)>;
+pub fn sweep_tmp_debris(tmp: &Path, max_age: Duration, mode: SweepMode)
+    -> (Vec<PathBuf>, Vec<PathBuf>);
+pub fn sweep_apptest_data_dirs(instances_root: &Path, min_age: Duration, mode: SweepMode)
+    -> Vec<String>;
+pub fn sweep_reparented_processes(min_age: Duration, mode: SweepMode) -> Vec<(i32, String)>;
 
 /// Production composition: binds real roots (std::env::temp_dir(),
 /// ${TMUX_TMPDIR:-/tmp}/tmux-<uid>, tugcore::instances_root()) and the
 /// real age constants.
-pub fn sweep_all() -> SweepReport;
+pub fn sweep_all(mode: SweepMode) -> SweepReport;
 ```
 
 `sweep_apptest_data_dirs` mirrors the prune data-only branch: dir name passes `is_apptest_id`, no live registry entry, dir mtime older than `min_age`, bundle marker's bundle still exists (bundle-missing dirs are left for `prune`'s full removal so LaunchServices bookkeeping isn't skipped); removal = `reap_instance_tmux(id)` + `remove_dir_all`. `sweep_tmux_servers` implements [#tmux-sweep-mechanics](#tmux-sweep-mechanics) using `tmux_bin()`, and **must set `TMUX_TMPDIR` on every spawned command** from `tmux_dir`'s parent, or the parameter is decorative. `sweep_dead_sockets` probes only manifest `Socket`-kind prefixes (`tugcast-ctl-`, `tugbank-notify-`, `tugapp-test-`) via `std::os::unix::net::UnixStream::connect`, unlinking on `ECONNREFUSED`/`ENOENT` and **keeping the file on every other errno** ([P02](#p02-liveness-probes)). `sweep_reparented_processes` implements [P11](#p11-reparented-processes): PPID 1, command matches `tugcode` or `claude … stream-json`, process older than `min_age`, command re-checked immediately before signalling.
@@ -486,17 +496,17 @@ Live-fixture survival is the load-bearing test shape ([R01](#r01-deleting-live-s
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Janitor module: manifest + tmpdir debris sweep + enforcement test | pending | — |
-| #step-2 | Janitor: dead-socket sweep | pending | — |
-| #step-3 | Janitor: tmux-server sweep | pending | — |
-| #step-4 | Janitor: apptest data-dir sweep, reparented processes, `sweep_all` | pending | — |
-| #step-5 | `tugutil host sweep` CLI | pending | — |
-| #step-6 | Wire call sites: `Justfile` (both janitors deleted) + tugcast startup | pending | — |
-| #step-7 | Source fix: Rust test changes-DB TempDir | pending | — |
-| #step-8 | Source fix: TS tugbank temps (tugcode + harness) | pending | — |
-| #step-9 | Harness lifecycle: screenshots, testTmpDir, sockets, private-server fallback | pending | — |
-| #step-10 | Integration checkpoint + backlog remediation | pending | — |
-| #step-11 | Amend `tuglaws/app-test-harness.md` | pending | — |
+| #step-1 | Janitor module: manifest + tmpdir debris sweep + enforcement test | done | `fc4666f45` |
+| #step-2 | Janitor: dead-socket sweep | done | `5fd9aed6c` |
+| #step-3 | Janitor: tmux-server sweep | done | `b911a6441` |
+| #step-4 | Janitor: apptest data-dir sweep, reparented processes, `sweep_all` | done | `47ec273da` |
+| #step-5 | `tugutil host sweep` CLI | done | `884077319` |
+| #step-6 | Wire call sites: `Justfile` (both janitors deleted) + tugcast startup | done | `826ee9c9a` |
+| #step-7 | Source fix: Rust test changes-DB TempDir | done | `b0f159826` |
+| #step-8 | Source fix: TS tugbank temps (tugcode + harness) | done | `280b2b338` |
+| #step-9 | Harness lifecycle: screenshots, testTmpDir, sockets, private-server fallback | done | `e3d05ff7f` |
+| #step-10 | Integration checkpoint + backlog remediation | done | `14040b87d` |
+| #step-11 | Amend `tuglaws/app-test-harness.md` | done | `7828237f5` |
 
 #### Step 1: Janitor module: manifest + tmpdir debris sweep + enforcement test {#step-1}
 
@@ -541,7 +551,7 @@ Live-fixture survival is the load-bearing test shape ([R01](#r01-deleting-live-s
 
 **Tests:**
 - [ ] Plant a bound `UnixListener` socket and a dead socket file under `tugcast-ctl-` in a fixture tmp; sweep removes the dead one, leaves the live one; listener still accepts afterward.
-- [ ] Plant a bound listener that is **never accepted from** and whose backlog is filled (connect to it `SOMAXCONN`+1 times without accepting): the sweep must leave it alone. This is the errno-discipline regression test — a naive "any connect error means dead" implementation deletes it.
+- [ ] Plant a bound listener that is **never accepted from** and whose backlog is filled: the sweep must leave it alone. This is the load-bearing regression test — and the one that proved errno discipline insufficient, since the saturated listener returns `ECONNREFUSED`. It passes because of the age floor and the live-namespace check, not because of the errno.
 - [ ] `tugapp-test-tugbank-x.db` in the fixture is untouched by the socket pass.
 
 **Checkpoint:**
@@ -776,7 +786,7 @@ Live-fixture survival is the load-bearing test shape ([R01](#r01-deleting-live-s
 
 **Checkpoint:**
 - [ ] `rg -n 'possible future hardening' tuglaws/app-test-harness.md` returns nothing
-- [ ] `rg -n 'reaped. Bounded|does not glob-and-remove|the gate guarantees no other app-test run is live' tuglaws/app-test-harness.md` returns nothing (each match is a claim this plan falsifies: `$TMPDIR` does not reap sockets; the recipe now does sweep across instances, probed; and the gate no longer covers every sweep)
+- [x] `rg -n 'reaped. Bounded|does not glob-and-remove|the gate guarantees no other app-test run is live' tuglaws/app-test-harness.md` returns nothing **asserted** — each was a claim this plan falsifies (`$TMPDIR` does not reap sockets; the recipe now does sweep across instances, probed; the gate no longer covers every sweep). The one surviving occurrence is the deliberate historical note that *quotes* the gate rationale in order to retire it, which this step's own task list asks for. A grep cannot tell an assertion from a retraction; read the line.
 - [ ] Every row of the resource-lifecycle table names a definite reclaim path, per the section's own standing rule that "the OS cleans it up eventually" is only acceptable for kernel-owned resources
 
 ---

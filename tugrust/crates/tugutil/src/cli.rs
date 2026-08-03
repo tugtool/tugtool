@@ -400,6 +400,32 @@ pub enum HostCommands {
     #[command(subcommand)]
     Instance(InstanceCommands),
 
+    /// Reclaim leaked runtime debris machine-wide.
+    ///
+    /// Every runtime resource has an owner that releases it on graceful
+    /// shutdown, but the routine ending for an app-test instance is
+    /// SIGKILL, which skips every owner epilogue — and since each launch
+    /// mints a unique name, a leak never collides with a future run, so
+    /// nothing ever notices it. One audited machine had accumulated
+    /// 9,833 dead control sockets, 726 MB of orphaned data dirs, and a
+    /// tmux server idling for 20 hours.
+    #[command(
+        long_about = "Reclaim leaked runtime debris machine-wide.\n\nSweeps, in order: dead control/notify sockets, orphaned app-test tmux\nservers, aged $TMPDIR test litter, finished app-test data dirs,\ntugcode/claude processes reparented to launchd, and finally the\nbundle-missing data dirs `instance prune` owns.\n\nNothing is deleted by name pattern alone. Sockets must fail a connect\nprobe AND not belong to a live registered instance; tmux servers and\ndata dirs must have no live registry entry; and every registry-gated\ndeletion also has a minimum-age floor, because a booting instance is\ninvisible to the registry until after its port bind.\n\nWithout --yes the report is printed and confirmed once. With --json the\nreport is emitted and nothing is removed."
+    )]
+    Sweep {
+        /// Sweep without confirming.
+        #[arg(long)]
+        yes: bool,
+
+        /// Emit the report as JSON without removing anything.
+        #[arg(long)]
+        json: bool,
+
+        /// Print section counts only, not every item.
+        #[arg(long)]
+        quiet: bool,
+    },
+
     /// Machine-wide mutual exclusion via a localhost port bind.
     ///
     /// Holding a listener on the gate's reserved port is the mutex;

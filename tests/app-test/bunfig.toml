@@ -4,3 +4,7 @@
 # focus / selection behavior.
 [test]
 root = "."
+# Gives the harness an end-of-run cleanup hook. `process.on("exit")`
+# never fires under `bun test`; an `afterAll` registered from a preload
+# does. See `_harness/test-cleanup.ts`.
+preload = ["./_harness/preload.ts"]

@@ -18,6 +18,7 @@
  * insulated from each other by the time+random suffix.
  */
 import { Database } from "bun:sqlite";
+import { afterAll } from "bun:test";
 import { existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -67,10 +68,19 @@ process.env.TUGBANK_PATH = tempDbPath;
   db.close();
 }
 
-process.on("exit", () => {
-  if (existsSync(tempDbPath)) {
+// Cleanup rides `afterAll` registered from a preload, which the bun
+// test runner does call once per run. `process.on("exit")` — what this
+// used to use — never fires under `bun test`, so the cleanup was dead
+// code and every run leaked its DB.
+//
+// The WAL siblings count too: the database is opened
+// `journal_mode = WAL`, so SQLite puts `-wal` and `-shm` beside it and
+// unlinking only the `.db` leaves both behind.
+afterAll(() => {
+  for (const path of [tempDbPath, `${tempDbPath}-wal`, `${tempDbPath}-shm`]) {
+    if (!existsSync(path)) continue;
     try {
-      unlinkSync(tempDbPath);
+      unlinkSync(path);
     } catch {
       /* best-effort cleanup */
     }

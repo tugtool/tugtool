@@ -64,6 +64,9 @@ http-body-util = { workspace = true }
 # `tests/model-eval/analyze.py` parses are pinned against the emitting call site
 # rather than against a fixture someone copied by hand.
 tracing-subscriber = { workspace = true }
+# Owns the per-spawn changes DB so it is removed when the test ends
+# rather than left in $TMPDIR (8,765 files had accumulated).
+tempfile = { workspace = true }
 
 # Feature flag for real-claude integration tests. These tests spawn a
 # real `claude` (tugcode) subprocess and must NEVER run in standard

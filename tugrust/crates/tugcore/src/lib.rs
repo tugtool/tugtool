@@ -9,6 +9,7 @@
 //! Nothing in this crate may depend on any other Tug crate.
 
 pub mod instance;
+pub mod janitor;
 pub mod ledger_db;
 pub mod ports;
 pub mod quiesce;

@@ -405,7 +405,33 @@ struct Orphan {
     mtime: Option<i64>,
 }
 
+/// Remove only the bundle-missing orphans — the half of `prune` that
+/// needs the full removal path (and its LaunchServices bookkeeping).
+///
+/// `tugutil host sweep` runs this after the janitor, which has already
+/// reclaimed the data-only class.
+pub(crate) fn run_prune_bundle_missing(yes: bool, with_tcc: bool) -> Result<i32, String> {
+    let Some(orphans) = discover_orphans(false)? else {
+        return Ok(0);
+    };
+    let orphans: Vec<Orphan> = orphans.into_iter().filter(|o| !o.data_only).collect();
+    if orphans.is_empty() {
+        return Ok(0);
+    }
+    remove_orphans(&orphans, yes, with_tcc)
+}
+
 fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
+    let Some(orphans) = discover_orphans(json)? else {
+        return Ok(0);
+    };
+    report_and_remove_prune(orphans, yes, with_tcc, json)
+}
+
+/// Walk the instances root and classify every orphaned data dir.
+/// `None` means there is no instances directory at all (already
+/// reported to the caller's chosen surface).
+fn discover_orphans(json: bool) -> Result<Option<Vec<Orphan>>, String> {
     let base = tugcore::instances_root();
     if !base.exists() {
         if json {
@@ -413,7 +439,7 @@ fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
         } else {
             println!("no instances directory at {}", base.display());
         }
-        return Ok(0);
+        return Ok(None);
     }
 
     let mut orphans: Vec<Orphan> = Vec::new();
@@ -466,7 +492,15 @@ fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
             mtime,
         });
     }
+    Ok(Some(orphans))
+}
 
+fn report_and_remove_prune(
+    orphans: Vec<Orphan>,
+    yes: bool,
+    with_tcc: bool,
+    json: bool,
+) -> Result<i32, String> {
     if json {
         let report: Vec<OrphanReport> = orphans
             .iter()
@@ -494,8 +528,12 @@ fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
         return Ok(0);
     }
 
+    remove_orphans(&orphans, yes, with_tcc)
+}
+
+fn remove_orphans(orphans: &[Orphan], yes: bool, with_tcc: bool) -> Result<i32, String> {
     println!("orphaned data dirs ({}):", orphans.len());
-    for o in &orphans {
+    for o in orphans {
         println!("  {}", o.id);
         println!("    data dir: {}", o.data_dir.display());
         if o.data_only {
@@ -511,7 +549,7 @@ fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
         println!("aborted");
         return Ok(0);
     }
-    for o in &orphans {
+    for o in orphans {
         // `instance remove` already prints its own progress; pass
         // `--yes` so we don't re-prompt for each orphan.
         if let Err(e) = run_remove(&o.id, with_tcc, o.data_only, true) {
@@ -541,7 +579,7 @@ fn pid_alive(pid: i32) -> bool {
     err.raw_os_error() == Some(libc::EPERM)
 }
 
-fn confirm(prompt: &str) -> Result<bool, String> {
+pub(crate) fn confirm(prompt: &str) -> Result<bool, String> {
     print!("{prompt} [y/N]: ");
     use std::io::Write;
     std::io::stdout().flush().ok();

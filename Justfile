@@ -542,145 +542,49 @@ tail-replay:
     fi
     tail -F "$LOG" | grep --line-buffered -E "dev::replay::|dev::session-lifecycle"
 
-# Remedial resource cleanup — diagnose and release resources leaked by
-# crashed runs or out-of-band worktree deletion (`git worktree remove` /
+# Remedial resource cleanup — release the runtime debris crashed runs and
+# out-of-band worktree deletion leave behind (`git worktree remove` /
 # `rm -rf` instead of `tugutil dash join|release` / `instance remove`).
 #
-# Everything released is cross-referenced against the LIVE instance
-# registry (a tmux server/session is kept iff one of its `cc-<id>`
-# sessions names a running instance), so a developer's app-debug /
-# app-release and an in-flight app-test are never touched. Sockets are
-# lsof-guarded (only those NO process holds are removed).
+# A thin front end over `tugutil host sweep`, which is the one janitor:
+# tugcast calls the same `tugcore::janitor` code at startup, so there is
+# no second implementation to drift.
 #
-# Releases (transient, cheap to recreate):
-#   - orphaned per-instance tmux servers (`tug-<token>`) + legacy
-#     default-server sessions (`cc-<id>`) with no live owner
-#   - stale tugbank-notify / tugcast-ctl sockets no process holds
-#   - tugcode / claude processes reparented to PID 1 (crashed-host zombies)
+# Nothing is released on a name pattern alone. Sockets must fail a
+# connect probe AND not belong to a live registered instance; tmux
+# servers and data dirs must have no live registry entry; and every
+# registry-gated deletion has a minimum-age floor, because a booting
+# instance is invisible to the registry until after its port bind. A
+# developer's app-debug / app-release and an in-flight app-test are
+# never touched.
 #
-# Reports only (NOT released — removal deletes the possibly-shared app
-# bundle, so run it deliberately):
-#   - orphaned data dirs whose bundle is gone → `tugutil host instance prune`
+# Releases: dead tugcast-ctl / tugbank-notify / harness sockets,
+# orphaned per-instance tmux servers, legacy default-server `cc-*`
+# sessions, aged $TMPDIR test litter, finished app-test data dirs, and
+# tugcode / claude processes reparented to PID 1.
 #
-# Subsumes the former `zombies` / `zombie-cleanup` recipes — the PID-1
-# process reap is the "processes" section here, now cross-referenced and
-# bundled with the other leaked resources.
+# Reports only (removal can delete a possibly-shared app bundle, so it
+# stays deliberate): data dirs whose bundle is gone → `tugutil host
+# instance prune`.
 #
-# Usage (diagnose by default, like the old `zombies`):
+# Usage:
 #   just reap          # diagnose only — report what's leaked, change nothing
-#   just reap apply    # release everything reported (the old `zombie-cleanup`+)
-#
-# Diagnose/release leaked Tug resources; safe — never touches a live instance.
+#   just reap apply    # release everything reported
 reap *MODE:
     #!/usr/bin/env bash
-    # No `set -e` — keep going past per-item failures so one stuck reap
-    # doesn't abort the sweep.
     set -uo pipefail
-    DRY=1; [ "{{MODE}}" = "apply" ] && DRY=0
-
-    # tugutil host instance is the source of truth for which instances are LIVE. Without
-    # it we cannot tell an orphan from a running instance, so it is a hard
-    # dependency — build it if absent rather than risk reaping live state.
+    # The janitor is the source of truth for what is live, so it is a
+    # hard dependency — build it rather than risk reaping blind.
     TUGUTIL="tugrust/target/debug/tugutil"
     if [ ! -x "$TUGUTIL" ]; then
-        echo "==> building tug (needed to identify live instances)…"
+        echo "==> building tugutil (needed to identify live instances)…"
         (cd tugrust && cargo build -p tugutil) || { echo "error: could not build tugutil" >&2; exit 1; }
     fi
-    # A read failure here must abort: reaping against an empty/unknown live
-    # set would treat every running instance as an orphan.
-    if ! LIST="$("$TUGUTIL" host instance list 2>/dev/null)"; then
-        echo "error: 'tugutil host instance list' failed — refusing to reap blind" >&2
-        exit 1
-    fi
-    LIVE_IDS="$(printf '%s\n' "$LIST" | awk 'NR>1 && $1!="" {print $1}')"
-    is_live() { [ -n "$1" ] && printf '%s\n' "$LIVE_IDS" | grep -qxF "$1"; }
-
-    if [ "$DRY" = 1 ]; then echo "== reap (diagnose — nothing will change) =="; else echo "== reap (apply) =="; fi
-    echo "-- live instances (protected) --"
-    if [ -n "$LIVE_IDS" ]; then printf '%s\n' "$LIVE_IDS" | sed 's/^/   /'; else echo "   (none running)"; fi
-
-    # Per-section output is capped so a big backlog (hundreds of stale
-    # sockets) doesn't bury the report; every item is still reaped.
-    REAPED=0; PRINTED=0; CAP=12
-    new_section() { PRINTED=0; echo "-- $1 --"; }
-    reap() { # reap "<description>" <command...>
-        local desc="$1"; shift
-        REAPED=$((REAPED + 1))
-        if [ "$PRINTED" -lt "$CAP" ]; then
-            if [ "$DRY" = 1 ]; then echo "   WOULD reap: $desc"; else echo "   reap: $desc"; fi
-            PRINTED=$((PRINTED + 1))
-        elif [ "$PRINTED" -eq "$CAP" ]; then
-            echo "   … (cap reached; remaining items are still reaped)"
-            PRINTED=$((PRINTED + 1))
-        fi
-        [ "$DRY" = 1 ] || "$@" >/dev/null 2>&1 || true
-    }
-
-    # 1. tmux — private per-instance servers + legacy default-server sessions.
-    new_section tmux
-    TMUX_DIR="${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)"
-    if [ -d "$TMUX_DIR" ]; then
-        for sock in "$TMUX_DIR"/tug-*; do
-            [ -e "$sock" ] || continue
-            label="$(basename "$sock")"
-            sessions="$(tmux -L "$label" list-sessions -F '#S' 2>/dev/null)"
-            keep=0
-            while IFS= read -r s; do
-                [ -z "$s" ] && continue
-                is_live "${s#cc-}" && keep=1
-            done <<< "$sessions"
-            if [ "$keep" = 0 ]; then
-                summary="$(printf '%s' "$sessions" | tr '\n' ',' | sed 's/,$//')"
-                reap "tmux server $label [${summary:-empty}]" sh -c "tmux -L '$label' kill-server; rm -f '$sock'"
-            fi
-        done
-    fi
-    while IFS= read -r s; do
-        [ -z "$s" ] && continue
-        is_live "${s#cc-}" || reap "default-server session $s" tmux kill-session -t "$s"
-    done < <(tmux list-sessions -F '#S' 2>/dev/null | grep '^cc-' || true)
-
-    # 2. sockets — lsof-guarded; only those NO live process holds.
-    new_section sockets
-    tmp="${TMPDIR:-/tmp}"; tmp="${tmp%/}"
-    shopt -s nullglob
-    for s in "$tmp"/tugbank-notify-*.sock "$tmp"/tugcast-ctl-*.sock; do
-        [ -S "$s" ] || continue
-        lsof -- "$s" >/dev/null 2>&1 || reap "socket $(basename "$s")" rm -f "$s"
-    done
-    shopt -u nullglob
-
-    # 3. processes — tugcode / claude reparented to PID 1 (crashed host).
-    new_section processes
-    ZPIDS="$(ps -eo pid,ppid,command | awk '$2==1 && ($3 ~ /tugcode/ || ($3=="claude" && $0 ~ /stream-json/)) {print $1}')"
-    if [ -n "$ZPIDS" ]; then
-        for pid in $ZPIDS; do
-            reap "zombie PID $pid" sh -c "kill -TERM $pid 2>/dev/null; sleep 1; kill -0 $pid 2>/dev/null && kill -KILL $pid 2>/dev/null"
-        done
+    if [ "{{MODE}}" = "apply" ]; then
+        "$TUGUTIL" host sweep --yes
     else
-        echo "   (none)"
-    fi
-
-    # 4. data dirs — REPORT ONLY, both modes. Removing a data dir goes
-    #    through `tugutil host instance remove`, which also unregisters and can
-    #    `rm -rf` the (possibly shared) app bundle — far too heavy to fold
-    #    into a routine reap. Surface the count and defer to the dedicated,
-    #    deliberately-run command.
-    new_section "data dirs"
-    ORPHANS="$("$TUGUTIL" host instance prune --json 2>/dev/null | grep -oE '"instance_id": *"[^"]*"' | sed -E 's/.*"([^"]*)"$/\1/')"
-    if [ -n "$ORPHANS" ]; then
-        n="$(printf '%s\n' "$ORPHANS" | grep -c .)"
-        printf '%s\n' "$ORPHANS" | head -n "$CAP" | sed 's/^/   orphaned data dir: /'
-        [ "$n" -gt "$CAP" ] && echo "   … (+$((n - CAP)) more)"
-        echo "   → $n orphaned data dir(s) — remove deliberately with: tugutil host instance prune"
-    else
-        echo "   (none)"
-    fi
-
-    if [ "$DRY" = 1 ]; then
-        echo "== diagnose complete — $REAPED leaked resource(s) found (run 'just reap apply' to release) =="
-    else
-        echo "== done — $REAPED resource(s) released =="
+        echo "== reap (diagnose — nothing will change; run 'just reap apply' to release) =="
+        "$TUGUTIL" host sweep --json
     fi
 
 # Render the styled DMG background art (resources/dmg-preview.svg) into the
@@ -1242,48 +1146,33 @@ app-test *FILES:
     pkill -f "$APP_BIN" 2>/dev/null || true
     sleep 0.3
 
-    # Reap orphaned per-instance tmux servers from ungracefully-killed
-    # app-test runs (and stale empty socket files tmux leaves behind
-    # after a graceful kill-server). Each app-test instance owns a
-    # private `tmux -L tug-<token>` server; a graceful close tears it
-    # down (tugcast's shutdown), but a SIGKILLed run leaks the whole
-    # server. A private server hosting only THIS WORKTREE's
-    # `cc-${TUG_APPTEST_ID_PREFIX}-*` sessions is our orphan — reap it.
-    # Another worktree's apptest sessions, and dev/release servers
-    # (`cc-debug-*` / `cc-release-*`), are NEVER matched.
+    # Reclaim leaked runtime debris before the first spawn: orphaned
+    # per-instance tmux servers from SIGKILLed runs, dead control /
+    # notify / harness sockets, aged $TMPDIR test litter, and finished
+    # app-test data dirs. One janitor, shared with tugcast's startup
+    # sweep, so there is no second implementation to drift.
     #
-    # A server with NO sessions stays in scope deliberately: an empty
-    # server cannot be attributed to a worktree, and the gate
-    # guarantees no other app-test run is live while we sweep — so an
-    # empty tug-* server here is a dead orphan, not someone's
-    # mid-boot server. Run both before the first spawn and in cleanup
-    # so nothing accrues per run.
-    reap_orphan_tmux_servers() {
-        local dir="${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)"
-        [ -d "$dir" ] || return 0
-        local sock label sessions
-        for sock in "$dir"/tug-*; do
-            [ -e "$sock" ] || continue
-            label="$(basename "$sock")"
-            sessions="$(tmux -L "$label" list-sessions -F '#S' 2>/dev/null)"
-            if [ -z "$sessions" ] || ! printf '%s\n' "$sessions" | grep -qv "^cc-${TUG_APPTEST_ID_PREFIX}-"; then
-                tmux -L "$label" kill-server 2>/dev/null || true
-                rm -f "$sock" 2>/dev/null || true
-            fi
-        done
-    }
-    reap_orphan_tmux_servers
-
-    # No cross-instance socket sweep. On graceful close each owner
-    # unlinks its own sockets (ProcessManager unlinks the control socket;
-    # tugcast unlinks its notify socket). A crash can leave orphans, but
-    # every app-test launch derives its socket names from a per-launch
-    # `apptest-<wtslug>-<uuid>` (→ unique short token), so an orphan can
-    # never collide with a future run — it's a harmless dead file that
-    # $TMPDIR reaps on its own schedule. We deliberately do NOT
-    # glob-and-remove sockets here: the only such glob that ever existed
+    # This replaces a worktree-scoped shell reaper that could only ever
+    # match `cc-${TUG_APPTEST_ID_PREFIX}-*` — by construction it could
+    # not reach a server leaked by a since-deleted worktree, which is
+    # how one sat idle for 20 hours. The sweep is registry-anchored
+    # instead of slug-anchored, so it reaches every worktree's orphans
+    # while a live dev/release instance and an in-flight app-test are
+    # still never candidates.
+    #
+    # It also supersedes the old "no cross-instance socket sweep" rule.
+    # That rule existed because the only glob anyone had written
     # (`tugcast-ctl-*.sock`) was unscoped and could reach a live
-    # dev/release instance's control socket. Isolation > tidiness.
+    # instance's socket; the sweep probes and registry-checks every
+    # candidate instead, so cross-instance reclamation is now safe —
+    # and necessary, since $TMPDIR does not in fact reap these (9,833
+    # had accumulated).
+    #
+    # The sweep must never take the app-test gate: this whole recipe
+    # body already runs under it, so acquiring it here would deadlock
+    # against ourselves. Safety comes from the probes and the age
+    # floor, not from serialization.
+    tugrust/target/debug/tugutil host sweep --yes --quiet || true
 
     TMPOUT="$(mktemp -t app-test.XXXXXX)"
     cleanup() {
@@ -1303,7 +1192,7 @@ app-test *FILES:
         pkill -f "$APP_BIN" 2>/dev/null || true
         # Reap any private tmux servers (and stale socket files) the
         # stopped apptest instances left behind, so a run leaves nothing.
-        reap_orphan_tmux_servers
+        tugrust/target/debug/tugutil host sweep --yes --quiet || true
         rm -f "$TMPOUT"
     }
     trap cleanup EXIT INT TERM

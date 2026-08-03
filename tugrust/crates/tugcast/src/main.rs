@@ -102,6 +102,39 @@ async fn main() {
         }
     }
 
+    // Reclaim leaked runtime debris machine-wide. A dev/release launch is
+    // the only routine event on a machine where app-tests never run, so
+    // hooking it means merely using Tug keeps the machine clean —
+    // otherwise nothing runs and dead sockets accumulate by the thousand.
+    //
+    // Detached: the sweep must never delay serving. Gated the same way as
+    // the reconcile above (a test-spawned tugcast has no instance id), and
+    // additionally excluded for app-test instances — there are dozens per
+    // run, and mid-run sweeps of sibling instances are risk without gain.
+    //
+    // This runs before we register ourselves, which is harmless: only
+    // `apptest-` data dirs are candidates, so a dev/release instance is
+    // never its own. An app-test instance booting elsewhere is protected
+    // by the janitor's minimum-age floor.
+    if tugcore::instance::instance_id().is_some_and(|id| !tugcore::ports::is_apptest_id(&id)) {
+        std::thread::spawn(|| {
+            let r = tugcore::janitor::sweep_all(tugcore::janitor::SweepMode::Apply);
+            if !r.is_empty() {
+                info!(
+                    sockets = r.dead_sockets.len(),
+                    tmux_servers = r.tmux_servers_killed.len(),
+                    tmux_sockets = r.tmux_sockets_unlinked.len(),
+                    tmp_files = r.tmp_files_removed.len(),
+                    tmp_dirs = r.tmp_dirs_removed.len(),
+                    data_dirs = r.apptest_data_dirs_removed.len(),
+                    processes = r.processes_killed.len(),
+                    legacy_sessions = r.legacy_sessions_killed.len(),
+                    "janitor: swept leaked runtime debris"
+                );
+            }
+        });
+    }
+
     // Create own process group so the app can kill tugcast + all children
     // (tugcode, bun) with a single kill(-pgid, SIGTERM). Without this,
     // children become orphans when the app force-kills tugcast.

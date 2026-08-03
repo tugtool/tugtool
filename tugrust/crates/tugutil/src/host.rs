@@ -27,6 +27,11 @@ pub fn dispatch(cmd: HostCommands, json: bool, quiet: bool) -> ExitCode {
         } => commands::run_tell(action, port, instance, param, json),
         HostCommands::Instance(cmd) => commands::run_instance(cmd),
         HostCommands::Gate(cmd) => Ok(commands::run_gate(cmd, json, quiet)),
+        HostCommands::Sweep {
+            yes,
+            json: sweep_json,
+            quiet: sweep_quiet,
+        } => commands::run_sweep(yes, json || sweep_json, quiet || sweep_quiet),
         HostCommands::StateDir => commands::run_state_dir(json, quiet),
         HostCommands::Changesets { port, instance } => {
             commands::run_changesets(port, instance, json)
