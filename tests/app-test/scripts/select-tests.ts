@@ -171,7 +171,10 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // view, so the clamp test has to name it.
     // 24 → 25 with the eviction conservation probe (at0336): the height
     // accounting it measures lives in the list view's ledger and spacers.
-    "tugdeck/src/components/tugways/tug-list-view.tsx": 25,
+    // 25 → 26 with the extent-floor phantom gate (at0337): the floor is an
+    // element of the list view's own scroller and its height has exactly one
+    // writer, the commit bracket, so there is no smaller surface to name.
+    "tugdeck/src/components/tugways/tug-list-view.tsx": 26,
 };
 
 interface TestCoverage {

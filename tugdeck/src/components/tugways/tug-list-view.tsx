@@ -1521,11 +1521,33 @@ interface ListViewProbe {
   auditLedger(): LedgerAudit;
   /** Per-commit geometry, most recent last, capped. */
   geometryRing(): CommitGeometryRecord[];
-  /** The extent floor's current height and calibrated bottom inset. */
+  /** The extent floor's current height and the trailing pad below it. */
   extentFloor(): { height: number; inset: number };
 }
 
 const listViewProbeRegistry = new Map<Element, ListViewProbe>();
+
+/**
+ * The scroller's block-end pseudo-padding in pixels — the one piece of
+ * scrollable extent that lies BELOW the bottom spacer and still counts
+ * as content.
+ *
+ * The block-axis breathing room is a pair of pseudo-elements rather than
+ * container padding, so sticky descendants pin flush to the scrollport
+ * (see the `::before` / `::after` rules). That puts `::after` after every
+ * real child in flow, which is why the last element edge the commit
+ * bracket can reach through a ref falls short of the true extent by
+ * exactly this much.
+ *
+ * Returns 0 for a scroller with no pad, and for any reading that is not
+ * a finite positive length — the pad is an addition to a measured edge,
+ * and guessing one is strictly worse than adding nothing.
+ */
+function trailingPadOf(el: HTMLElement): number {
+  const raw = window.getComputedStyle(el, "::after").height;
+  const px = Number.parseFloat(raw);
+  return Number.isFinite(px) && px > 0 ? px : 0;
+}
 
 /**
  * The probe handle for the list view whose scroll container is `el`,
@@ -1755,12 +1777,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // what it last wrote there. `height` is the floor's current pixel
     // height (owned exclusively by the bracket, as a DOM write [L06] —
     // React renders the element with no height so there is no second
-    // writer to go stale against). `inset` is the self-calibrating
-    // difference between the scroller's content extent and the bottom
-    // spacer's bottom edge — the trailing content plus the block-end
-    // pseudo-padding — refreshed on every commit whose `scrollHeight`
-    // is content-defined, so the true extent stays recoverable even on
-    // a commit where the floor itself is what `scrollHeight` reports.
+    // writer to go stale against). `inset` is the block-end
+    // pseudo-padding that sits below the bottom spacer, re-measured
+    // from the DOM every commit rather than carried — it is reported to
+    // the probe, and never read back as an input.
     const extentFloorRef = React.useRef<HTMLDivElement | null>(null);
     const extentFloorStateRef = React.useRef({ height: 0, inset: 0 });
     // One-shot arming flag for the clamp simulation the test surface
@@ -3572,14 +3592,26 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // nobody anticipated lowers the floor one commit later instead
       // of leaving permanent phantom scroll space.
       //
-      // When the floor IS what `scrollHeight` reports (the one commit
-      // after a shrink, before this write lands), the true extent is
-      // recovered from the bottom spacer's bottom edge plus the
-      // calibrated `inset` (trailing content + block-end
-      // pseudo-padding), refreshed on every content-defined commit.
-      // The `scrollHeight > clientHeight` guard keeps a viewport-
-      // defined reading (content shorter than the scrollport) from
-      // poisoning that calibration with empty viewport space.
+      // The extent is MEASURED, never remembered. `scrollHeight` cannot
+      // be the source: the floor contributes to it, so on any commit
+      // where the floor stands above the content the scroller reports
+      // the floor back and the floor would hold itself up. The bottom
+      // spacer's bottom edge is the last in-flow content edge — the
+      // floor is out of flow and cannot reach it — and the only extent
+      // below it is the block-end pseudo-padding, read from the element
+      // it belongs to ({@link trailingPadOf}).
+      //
+      // This used to carry the pad as a self-calibrating `inset`,
+      // refreshed on content-defined commits and added back on
+      // floor-defined ones. A calibration is a second copy of a
+      // measurable fact, and a copy that is only ever refreshed on SOME
+      // commits is a copy that can be wrong on the rest: an inset larger
+      // than the true pad turns this branch into a RAISE, the floor
+      // settles at `content + inset` and stays there — permanent phantom
+      // scroll space under a list that fits, which is exactly what the
+      // floor's `− 1` was chosen to make impossible. Measuring costs one
+      // computed-style read on a layout the geometry reads above have
+      // already flushed, and it cannot go stale.
       {
         const floorEl = extentFloorRef.current;
         if (floorEl !== null) {
@@ -3587,14 +3619,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           const bottom = bottomSpacerRef.current;
           const bottomEdge =
             bottom === null ? null : bottom.offsetTop + bottom.offsetHeight;
-          let extent = scrollHeight;
-          if (scrollHeight > floorState.height) {
-            if (bottomEdge !== null && scrollHeight > clientHeight) {
-              floorState.inset = scrollHeight - bottomEdge;
-            }
-          } else if (bottomEdge !== null) {
-            extent = bottomEdge + floorState.inset;
-          }
+          floorState.inset = trailingPadOf(el);
+          const extent =
+            bottomEdge === null ? scrollHeight : bottomEdge + floorState.inset;
           const nextFloor = Math.max(0, Math.round(extent) - 1);
           if (nextFloor > floorState.height) {
             floorState.height = nextFloor;
