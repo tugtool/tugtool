@@ -322,8 +322,14 @@ export class App {
    * so `subprocess` is the `open` wrapper, not the app; killing the
    * app by PID is the only teardown that reliably makes the window go
    * away, and unlike the registry it has no registration race.
+   *
+   * Public because it is also the only sound way for a test to address
+   * the app process itself — e.g. a `vmmap` read of UI-side compositing
+   * backing. Identifying it by arrival instead races the bundle's helper
+   * executables, and `pgrep` cannot see this process at all (neither by
+   * argv nor by name), so both fallbacks are traps.
    */
-  private readonly hostPid: number;
+  readonly hostPid: number;
   /** Per-instance identity this launch ran under (`TUG_INSTANCE_ID`). */
   readonly instanceId: string;
   private closed = false;

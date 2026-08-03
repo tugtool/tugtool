@@ -2271,6 +2271,229 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
     },
     900_000,
   );
+
+  // -----------------------------------------------------------------------
+  // Host surface ledger (roadmap/host-surface-accounting.md §G7). Every
+  // other cell in this file measures WebContent. WebKit on macOS uses
+  // UI-side compositing: `RemoteLayerTreeDrawingAreaProxy` hands the whole
+  // CALayer tree to the APP process, which maps each layer's buffer set.
+  // So the app process — not WebContent — holds the deck's composited
+  // backing, and no instrument has ever read it.
+  //
+  // Reads both processes at once, per deck state:
+  //
+  //   empty      deck up, no transcript ingested — the chrome floor
+  //   one        one heavy session card
+  //   all        every session card heavy
+  //   hidden     all panes visibility:hidden (the causal A/B: what the
+  //              layer tree costs vs. what the window costs)
+  //   revealed   restored, to prove the hidden read was reversible
+  //
+  // Foreground launch for the same reason as the tile cells: a background
+  // window's backing is dropped by policy, which would measure occlusion
+  // instead of cost. Results are reported in window-equivalents (one
+  // full-window layer at dpr² × 4 B/px) so a lab window compares to the
+  // user's 5K release instance.
+  //
+  // An instrument, not a regression gate.
+  test.skipIf(process.env.AT9996_HOST_SURFACES !== "1")(
+    "host surface ledger: UI-process layer backing by deck state",
+    async () => {
+      const TURNS = Number(process.env.AT9996_TILES_TURNS ?? "150");
+      const REST_SECS = Number(process.env.AT9996_HOST_REST_SECS ?? "25");
+
+      const sleep = (ms: number): Promise<void> =>
+        new Promise((r) => setTimeout(r, ms));
+
+      const priorWebContent = listWebContentPids();
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath);
+      const app = await launchTugApp({
+        testName: "at9996-host-surfaces",
+        env: { TUGBANK_PATH: tugbankPath },
+        foreground: true,
+      });
+      try {
+        // Required before anything awaits engine readiness: `isEngineReady`
+        // answers by walking the deck-trace ring, so with tracing off no
+        // `engine-ready` event is ever recorded and the wait can only time
+        // out.
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        for (const id of SESSIONS) {
+          await app.waitForCondition<boolean>(
+            `window.__tug.assertHostRootRegistered(${JSON.stringify(id)})`,
+            { timeoutMs: 8_000 },
+          );
+        }
+
+        // The app reports its own pid over RPC at launch, which is exact.
+        // Identifying it by arrival races the bundle's helper executables
+        // — a first run picked one up and dutifully measured its 24MB.
+        const hostPid = app.hostPid;
+        expect(hostPid).toBeGreaterThan(0);
+
+        // WebContent has no such channel: it is launchd-parented, so
+        // parentage cannot identify it and arrival must.
+        let wcPid = -1;
+        for (let i = 0; i < 40 && wcPid < 0; i += 1) {
+          const fresh = [...listWebContentPids()].filter(
+            (p) => !priorWebContent.has(p),
+          );
+          if (fresh.length === 1) wcPid = fresh[0]!;
+          else await sleep(250);
+        }
+        expect(wcPid).toBeGreaterThan(0);
+
+        // The reading has to exist; its magnitude is the measurement, not
+        // an assumption. A first pass asserted "the app is never a few
+        // tens of MB" and the assertion was simply wrong — a fresh lab app
+        // reads ~25MB with no UI-side surfaces at all, which is the very
+        // result this cell exists to report.
+        const hostProbe = readHostGraphicsMB(hostPid);
+        expect(hostProbe).not.toBeNull();
+        const hostComm = Bun.spawnSync(["ps", "-o", "comm=", "-p", String(hostPid)])
+          .stdout.toString()
+          .trim();
+
+        const samples: Array<{
+          phase: string;
+          hostGfxMB: number;
+          hostFootMB: number;
+          wcGfxMB: number;
+        }> = [];
+        const sample = (phase: string): void => {
+          const host = readHostGraphicsMB(hostPid);
+          const wc = readTileLedger(wcPid);
+          if (host === null || wc === null) return;
+          samples.push({
+            phase,
+            hostGfxMB: host.gfxMB,
+            hostFootMB: host.footprintMB,
+            wcGfxMB: wc.gfxMB,
+          });
+        };
+        const sampleFor = async (phase: string, secs: number): Promise<void> => {
+          const end = Date.now() + secs * 1000;
+          for (;;) {
+            sample(phase);
+            if (Date.now() + 5_000 > end) return;
+            await sleep(5_000);
+          }
+        };
+
+        const geom = await app.evalJS<{
+          vw: number;
+          vh: number;
+          dpr: number;
+          visibility: string;
+          panes: number;
+          nodes: number;
+        }>(`({
+  vw: window.innerWidth,
+  vh: window.innerHeight,
+  dpr: window.devicePixelRatio,
+  visibility: document.visibilityState,
+  panes: document.querySelectorAll(".tug-pane").length,
+  nodes: document.getElementsByTagName("*").length,
+})`);
+        // A visible window is the precondition for every backing-store read
+        // (the 2026-08-01 lesson: a covered window reads hidden and its
+        // tiles are dropped wholesale).
+        expect(geom.visibility).toBe("visible");
+
+        // Bind every engine BEFORE any sampling. `vmmap` takes a corpse of
+        // the target, which suspends it for the duration — running that on
+        // a 5s cadence while the app is still binding starved
+        // `awaitEngineReady` past its fixed 20s deadline. Binding first
+        // also makes `empty` a truer baseline: engines up, content zero.
+        // `seedTranscriptTurns` re-binds, which is a fast path once bound.
+        const PREFIX = "at9996-host-surfaces";
+        for (const id of SESSIONS) {
+          await app.bindSession(id, { tugSessionId: `${PREFIX}-${id}` });
+          await app.awaitEngineReady(id, { timeoutMs: 60_000 });
+        }
+
+        await sampleFor("empty", REST_SECS);
+
+        await seedTranscriptTurns(app, "A", TURNS, PREFIX);
+        await sleep(2_000);
+        await sampleFor("one", REST_SECS);
+
+        for (const id of SESSIONS.slice(1)) {
+          await seedTranscriptTurns(app, id, TURNS, PREFIX);
+        }
+        await sleep(2_000);
+        await sampleFor("all", REST_SECS);
+
+        const setPaneVisibility = (value: string): Promise<void> =>
+          app.evalJS<void>(`(function () {
+  var panes = document.querySelectorAll(".tug-pane");
+  for (var i = 0; i < panes.length; i += 1) panes[i].style.visibility = ${JSON.stringify(value)};
+})()`);
+        await setPaneVisibility("hidden");
+        await sleep(3_000);
+        await sampleFor("hidden", REST_SECS);
+
+        await setPaneVisibility("");
+        await sleep(3_000);
+        await sampleFor("revealed", REST_SECS);
+
+        const byPhase: Record<
+          string,
+          { n: number; hostMB: number; hostMax: number; footMB: number; wcMB: number }
+        > = {};
+        for (const s of samples) {
+          const b = (byPhase[s.phase] ??= {
+            n: 0,
+            hostMB: 0,
+            hostMax: 0,
+            footMB: 0,
+            wcMB: 0,
+          });
+          b.n += 1;
+          b.hostMB += s.hostGfxMB;
+          b.hostMax = Math.max(b.hostMax, s.hostGfxMB);
+          b.footMB += s.hostFootMB;
+          b.wcMB += s.wcGfxMB;
+        }
+        // One full-window layer, in MB, at 4 bytes per device pixel — the
+        // unit the brief reports in so lab and release windows compare.
+        const windowMB =
+          (geom.vw * geom.dpr * geom.vh * geom.dpr * 4) / (1024 * 1024);
+        const report: Record<string, unknown> = {
+          hostPid,
+          hostComm,
+          wcPid,
+          geom,
+          windowMB,
+        };
+        for (const [phase, b] of Object.entries(byPhase)) {
+          report[phase] = {
+            n: b.n,
+            hostGfxMB: Math.round(b.hostMB / b.n),
+            hostGfxMaxMB: Math.round(b.hostMax),
+            hostFootprintMB: Math.round(b.footMB / b.n),
+            wcGfxMB: Math.round(b.wcMB / b.n),
+            hostWindowEquivalents:
+              Math.round((b.hostMB / b.n / windowMB) * 10) / 10,
+          };
+        }
+        console.log(`[at9996] HOST-SURFACE-LEDGER ${JSON.stringify(report)}`);
+        writeFileSync(
+          "/tmp/at9996-host-surfaces.json",
+          `${JSON.stringify({ report, samples }, null, 2)}\n`,
+        );
+
+        for (const phase of ["empty", "one", "all", "hidden", "revealed"]) {
+          expect(byPhase[phase]?.n ?? 0).toBeGreaterThan(0);
+        }
+      } finally {
+        await app.close();
+      }
+    },
+    900_000,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -2285,6 +2508,35 @@ function listWebContentPids(): Set<number> {
     if (Number.isInteger(pid) && pid > 0) pids.add(pid);
   }
   return pids;
+}
+
+/**
+ * The app process's share of the deck's graphics. Under UI-side
+ * compositing the app maps every composited layer's buffer set, and those
+ * land in vmmap's `IOAccelerator (graphics)` summary row (dirty is its 5th
+ * column) — a different row from WebContent's `owned unmapped memory`,
+ * which is why `parseTileLedger` cannot read it.
+ *
+ * `vmmap` takes a corpse of its target, which suspends the process for the
+ * duration: sample the app on a tight cadence while the harness is waiting
+ * on it and the wait will time out.
+ */
+function readHostGraphicsMB(
+  pid: number,
+): { gfxMB: number; footprintMB: number } | null {
+  const out = Bun.spawnSync(["vmmap", "--summary", String(pid)]);
+  let gfxMB = NaN;
+  let footprintMB = NaN;
+  for (const line of out.stdout.toString().split("\n")) {
+    const f = line.trim().split(/\s+/);
+    if (f[0] === "IOAccelerator" && f[1] === "(graphics)") {
+      gfxMB = parseVmmapSizeMB(f[4] ?? "");
+    } else if (f[0] === "Physical" && f[1] === "footprint:") {
+      footprintMB = parseVmmapSizeMB(f[2] ?? "");
+    }
+  }
+  if (!Number.isFinite(gfxMB) || !Number.isFinite(footprintMB)) return null;
+  return { gfxMB, footprintMB };
 }
 
 /** vmmap summary size token ("526.3M", "1.3G", "16K", "0K") → MB. */
