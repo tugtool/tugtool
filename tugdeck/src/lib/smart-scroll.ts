@@ -23,13 +23,26 @@
  *   2. scrollend on container — terminal signal for deceleration and programmatic
  *      animation. Feature-detected at construction; 150ms timer fallback for
  *      browsers without it.
- *   3. pointerdown on container (passive) — enters TRACKING phase.
+ *   3. pointerdown on container (passive, capture) — enters TRACKING phase.
  *   4. pointerup/pointercancel on document (passive) — exits DRAGGING; 50ms check
  *      determines whether DECELERATING follows (via SETTLING phase).
- *   5. wheel on container (passive) — skips TRACKING, enters DRAGGING immediately;
- *      disengages follow-bottom on deltaY < 0.
+ *   5. wheel on container (passive, capture) — skips TRACKING, enters DRAGGING
+ *      immediately; disengages follow-bottom on deltaY < 0.
  *   6. keydown on container — scroll keys skip TRACKING, enter DRAGGING immediately.
  *      Only scroll-up keys disengage follow-bottom.
+ *
+ *   The intent listeners (3, 5) run in the CAPTURE phase. A user disengage
+ *   must land synchronously ahead of anything else the same event can set
+ *   in motion — a descendant handler that stops propagation (the
+ *   Cmd-wheel inner-scroller route) or one that flushes a commit whose
+ *   layout effects pin to the bottom. Ancestor capture runs before every
+ *   descendant listener of any phase, so the wheel-up disengage is
+ *   recorded before a same-frame pin can consult the flag it flips.
+ *   keydown deliberately stays at the bubble phase: a key consumed by a
+ *   descendant control (a dialog's arrows, an editor's PageUp) is that
+ *   control's key, not scroll intent, and bubble semantics are exactly
+ *   that filter. A wheel has no such ambiguity — wheeling over an inner
+ *   scroller is still the user scrolling.
  *
  * Not a React hook — a plain class that manages DOM listeners directly.
  * Callers create an instance and call dispose() when done.
@@ -351,20 +364,26 @@ export class SmartScroll {
     this._onWheel = this._handleWheel.bind(this);
     this._onKeyDown = this._handleKeyDown.bind(this);
 
-    // Register listeners.
+    // Register listeners. pointerdown and wheel use the capture phase —
+    // see the header's ordering note: the disengage must be recorded
+    // before any descendant handler (including one that stops
+    // propagation or synchronously flushes a pinning commit) can run.
     scrollContainer.addEventListener('scroll', this._onScroll, { passive: true });
     if (this._supportsScrollEnd) {
       scrollContainer.addEventListener('scrollend', this._onScrollEnd, { passive: true });
     }
-    scrollContainer.addEventListener('pointerdown', this._onPointerDown, { passive: true });
+    scrollContainer.addEventListener('pointerdown', this._onPointerDown, { passive: true, capture: true });
     document.addEventListener('pointerup', this._onPointerUp, { passive: true });
     document.addEventListener('pointercancel', this._onPointerUp, { passive: true });
-    scrollContainer.addEventListener('wheel', this._onWheel, { passive: true });
+    scrollContainer.addEventListener('wheel', this._onWheel, { passive: true, capture: true });
     // keydown does not use passive:true here — that option is not universally
     // accepted for keydown and we don't call preventDefault in this handler.
+    // And it is bubble-phase on purpose: a key a descendant control consumes
+    // is not scroll intent (header ordering note).
     scrollContainer.addEventListener('keydown', this._onKeyDown);
 
     scrollerRegistry.set(scrollContainer, this);
+    this._applyAnchoringGate();
   }
 
   // -------------------------------------------------------------------------
@@ -384,6 +403,36 @@ export class SmartScroll {
 
   get isAtTop(): boolean {
     return this._container.scrollTop <= 0;
+  }
+
+  /** At the bottom, judged against the live geometry OR the resting
+   *  geometry (the position and height as of the last delivered scroll
+   *  event).
+   *
+   *  The live reading alone has a hole exactly the size of the growth
+   *  that asks the question: a whole turn landing in one commit grows
+   *  the extent by hundreds of pixels before any consumer reads it, so
+   *  an idle user parked at the old bottom measures hundreds of pixels
+   *  "away" from a bottom they never left. The resting reading asks
+   *  the right question — was the user at the bottom of everything
+   *  they had been shown? — because an idle user's distance from the
+   *  bottom only changes when THEY move, and their moves deliver
+   *  scroll events that refresh both resting figures. Unseeded resting
+   *  geometry (height 0, no scroll event yet) is no evidence and does
+   *  not vote.
+   *
+   *  This is the judgment behind `maybePinToBottom`'s recovery route
+   *  and the one a deliberate machine disengage (an inline dialog's
+   *  scope) consults at its close: "still settled at the bottom" is
+   *  the attributed arrival that licenses re-engaging follow-bottom. */
+  get isSettledAtBottom(): boolean {
+    const restingAtBottom =
+      this._lastScrollEventHeight > 0 &&
+      this._lastScrollEventHeight -
+        this._container.clientHeight -
+        Math.max(0, this._lastScrollTop) <=
+        AT_BOTTOM_PX;
+    return this.isAtBottom || restingAtBottom;
   }
 
   /** True when the container has scroll room — its content overflows the
@@ -653,33 +702,17 @@ export class SmartScroll {
    *  is intended: the policy is about the position, not about which
    *  signal happened to ask.
    *
-   *  At-bottom is judged twice: against the live geometry AND against
-   *  the geometry as of the last delivered scroll event. The live
-   *  reading alone has a hole exactly the size of the growth that asks
-   *  the question: a whole turn landing in one commit grows the extent
-   *  by hundreds of pixels before this gate runs, so the idle user
-   *  parked at the old bottom now measures hundreds of pixels "away"
-   *  and the recovery net never fires — stranded by the very content
-   *  that should have carried them along. The resting reading asks the
-   *  right question — was the user at the bottom of everything they
-   *  had been shown? — because an idle user's distance from the bottom
-   *  only changes when THEY move, and their moves deliver scroll
-   *  events that refresh both resting figures. Unseeded resting
-   *  geometry (height 0, no scroll event yet) is no evidence and does
-   *  not vote. */
+   *  At-bottom is judged by {@link isSettledAtBottom} — the live
+   *  geometry OR the resting geometry as of the last delivered scroll
+   *  event. See that getter for why the live reading alone strands an
+   *  idle user behind a whole turn landing in one commit. */
   maybePinToBottom(): void {
     if (this._disposed) return;
-    const restingAtBottom =
-      this._lastScrollEventHeight > 0 &&
-      this._lastScrollEventHeight -
-        this._container.clientHeight -
-        Math.max(0, this._lastScrollTop) <=
-        AT_BOTTOM_PX;
     if (
       !this._isFollowingBottom &&
       !this.isUserScrolling &&
       this._restoreTarget === null &&
-      (this.isAtBottom || restingAtBottom)
+      this.isSettledAtBottom
     ) {
       this._setFollowingBottom(true, 'growth-at-bottom-reengage');
     }
@@ -901,9 +934,13 @@ export class SmartScroll {
     // Only drop the registry entry if it still points at this
     // instance. A remount can construct the replacement scroller for
     // the same element before the outgoing one disposes, and deleting
-    // unconditionally would unregister the live scroller.
+    // unconditionally would unregister the live scroller. The same
+    // ownership rule guards the anchoring gate: the replacement
+    // scroller applied its own gate at construction, and an outgoing
+    // instance clearing it unconditionally would wipe the live one's.
     if (scrollerRegistry.get(this._container) === this) {
       scrollerRegistry.delete(this._container);
+      this._container.style.overflowAnchor = '';
     }
 
     this._clearDecelerationTimer();
@@ -913,10 +950,12 @@ export class SmartScroll {
     if (this._supportsScrollEnd) {
       this._container.removeEventListener('scrollend', this._onScrollEnd);
     }
-    this._container.removeEventListener('pointerdown', this._onPointerDown);
+    // Capture-phase registrations need capture-phase removals — an
+    // options mismatch leaves the listener attached.
+    this._container.removeEventListener('pointerdown', this._onPointerDown, { capture: true });
     document.removeEventListener('pointerup', this._onPointerUp);
     document.removeEventListener('pointercancel', this._onPointerUp);
-    this._container.removeEventListener('wheel', this._onWheel);
+    this._container.removeEventListener('wheel', this._onWheel, { capture: true });
     this._container.removeEventListener('keydown', this._onKeyDown);
   }
 
@@ -1312,9 +1351,31 @@ export class SmartScroll {
   // Private — follow-bottom helpers
   // -------------------------------------------------------------------------
 
+  /**
+   * Scroll anchoring is gated off while following the bottom.
+   *
+   * Anchoring holds mid-viewport content still when heights change
+   * above it — which is definitionally opposed to the pin: while
+   * following, the live edge is the position, and the only writer that
+   * may hold the viewport anywhere is the pin itself. `overflow-anchor`
+   * on the scroll container disables anchoring for the whole scroller,
+   * so descendants' opt-in (`tug-markdown-block.css`) goes quiet while
+   * the flag is engaged and resumes the moment the user parks to read —
+   * a disengaged reader is exactly who the reading-position hold
+   * (`render-incremental.ts`) exists for.
+   *
+   * An inline style rather than a class/attribute because the gate is a
+   * property of following-the-bottom itself, not of any one surface:
+   * every SmartScroll consumer gets it without per-surface CSS. [L06]
+   */
+  private _applyAnchoringGate(): void {
+    this._container.style.overflowAnchor = this._isFollowingBottom ? 'none' : '';
+  }
+
   private _setFollowingBottom(following: boolean, source: string): void {
     if (this._isFollowingBottom === following) return;
     this._isFollowingBottom = following;
+    this._applyAnchoringGate();
     // Record every follow-bottom transition to the deck trace.
     // `_setFollowingBottom` is the one chokepoint all engage /
     // disengage paths route through, so recording here — rather than

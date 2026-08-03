@@ -56,6 +56,16 @@ export interface Scroller {
   engage(source: string): void;
   /** Release auto-follow-bottom — stop pinning to the live edge. */
   disengage(source: string): void;
+  /**
+   * True when the user's position, judged against the live geometry OR
+   * the geometry they were last shown, is the bottom. A consumer whose
+   * own machinery disengaged follow-bottom (an inline dialog's scope)
+   * consults this before re-engaging at its close: still settled at
+   * the bottom is the attributed arrival that licenses `engage`; a
+   * user who scrolled away keeps the released state they chose.
+   * Delegates to `SmartScroll.isSettledAtBottom`.
+   */
+  isSettledAtBottom(): boolean;
 }
 
 /**
@@ -67,6 +77,9 @@ export interface Scroller {
 export const NOOP_SCROLLER: Scroller = Object.freeze({
   engage: () => {},
   disengage: () => {},
+  // No scrolling host means no bottom to be settled at — a consumer
+  // gating a re-engage on this correctly never engages.
+  isSettledAtBottom: () => false,
 });
 
 const ScrollerContext = React.createContext<Scroller>(NOOP_SCROLLER);

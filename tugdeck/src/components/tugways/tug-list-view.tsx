@@ -1985,6 +1985,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     const scrollerFacadeRef = React.useRef<Scroller>({
       engage: (source) => smartScrollRef.current?.engage(source),
       disengage: (source) => smartScrollRef.current?.disengage(source),
+      isSettledAtBottom: () =>
+        smartScrollRef.current?.isSettledAtBottom ?? false,
     });
 
     // Mount-in-saved-state for the outer scroller. Read the bag

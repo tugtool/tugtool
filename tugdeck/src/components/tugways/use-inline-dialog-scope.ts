@@ -138,7 +138,8 @@ export function useInlineDialogScope(
   }, [active, isKeyCard, defaultFocusKey, manager, cardId]);
 
   // While open, release the enclosing list's follow-bottom and bring the ENTIRE
-  // dialog into view; re-engage on close.
+  // dialog into view; re-engage on close only when the user is still settled at
+  // the bottom.
   //
   // The dialog is the live edge, so this is usually a scroll to the bottom: anchor
   // the dialog's bottom to the viewport bottom so the whole card-modal shows at
@@ -166,7 +167,18 @@ export function useInlineDialogScope(
       }
     }
     return () => {
-      scroller.engage("inline-dialog");
+      // Re-engage only on attributed arrival at the bottom: a user
+      // still settled at the dialog's live edge never left, so
+      // engaging restores the state this scope suspended. A user who
+      // scrolled away while the dialog was open chose that released
+      // position, and flipping follow-bottom back on would hand the
+      // next growth pin a license to yank them to the bottom — the
+      // ordinary routes back (idle scroll into the band, gesture end
+      // in the band, the jump affordance, growth while in the band)
+      // cover their return.
+      if (scroller.isSettledAtBottom()) {
+        scroller.engage("inline-dialog");
+      }
     };
   }, [active, scroller]);
 

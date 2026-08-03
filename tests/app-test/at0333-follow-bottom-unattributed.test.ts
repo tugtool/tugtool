@@ -20,6 +20,18 @@
  * | re-engage           | an unattributed scroll INTO the at-bottom band     |
  * |                     | fails to re-engage follow-bottom, so streaming     |
  * |                     | stops tracking the live edge                       |
+ * | gesture end         | a wheel nudge at the live edge strands the user    |
+ * |                     | disengaged on a transcript that looks pinned, and  |
+ * |                     | every later append silently fails to arrive        |
+ * | dialog close        | an inline dialog's close re-engages follow-bottom  |
+ * |                     | over a user who scrolled away to read history, and |
+ * |                     | the next growth pin yanks them to the bottom       |
+ *
+ * The gesture-end and dialog tests also pin the anchoring gate: scroll
+ * anchoring holds mid-viewport content still against height changes
+ * above it, which is definitionally opposed to the pin — so SmartScroll
+ * stamps `overflow-anchor: none` on the container while following and
+ * clears it when the user parks to read.
  *
  * Growth pins are provoked by streaming a real turn into the seeded session
  * (`driveSession` ingest — the same channel live streaming uses), never by
@@ -27,6 +39,8 @@
  *
  * @covers tugdeck/src/lib/smart-scroll.ts
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/components/tugways/use-inline-dialog-scope.ts
+ * @covers tugdeck/src/components/tugways/internal/scroller-context.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -133,6 +147,104 @@ interface ScrollSnap {
   buttonVisible: string | null;
 }
 
+/** Follow-bottom transitions from the dev log, oldest first. Recorded
+ *  with no opt-in, so the attribution chain is readable in exactly the
+ *  sessions nobody thought to instrument. */
+function readFollowBottomTransitions(
+  app: App,
+): Promise<{ source: string; following: boolean }[]> {
+  return app.evalJS(`(function () {
+  return window.tugDevLog.getSnapshot().entries
+    .filter(function (e) {
+      return e.source === "smart-scroll" && e.message === "follow-bottom";
+    })
+    .map(function (e) {
+      return { source: e.data.source, following: e.data.following };
+    });
+})()`);
+}
+
+/** The container's anchoring gate, as SmartScroll stamped it:
+ *  `"none"` while following the bottom, `""` while the user reads. */
+function readAnchoringGate(app: App): Promise<string> {
+  return app.evalJS<string>(
+    `document.querySelector('${SCROLLER}').style.overflowAnchor`,
+  );
+}
+
+/** Present a live AskUserQuestion dialog inside a streamed turn: the
+ *  `tool_use` hosts the wizard at its transcript position, the
+ *  `is_question` forward makes it live. The returned msgId's
+ *  `turn_complete` withdraws the question and closes the dialog —
+ *  the machine-side dismissal, no UI interaction involved. */
+async function presentQuestion(app: App, tag: string): Promise<string> {
+  const msgId = `${SID}-dlg-${tag}`;
+  const frame = (decoded: Record<string, unknown>): Promise<unknown> =>
+    app.driveSession("A", {
+      op: "ingestFrame",
+      feedId: FEED_CODE_OUTPUT,
+      decoded: { tug_session_id: SID, ...decoded },
+    });
+  await app.driveSession("A", { op: "send", text: `ask me something ${tag}` });
+  await frame({
+    type: "tool_use",
+    msg_id: msgId,
+    tool_use_id: `${SID}-tu-${tag}`,
+    tool_name: "AskUserQuestion",
+    input: {
+      questions: [
+        {
+          question: "Pick any that apply",
+          header: "Pick",
+          multiSelect: true,
+          options: [{ label: "Alpha" }, { label: "Beta" }],
+        },
+      ],
+    },
+    seq: 1,
+  });
+  await frame({
+    type: "control_request_forward",
+    request_id: `${SID}-q-${tag}`,
+    tool_use_id: `${SID}-tu-${tag}`,
+    is_question: true,
+    input: {
+      questions: [
+        {
+          question: "Pick any that apply",
+          header: "Pick",
+          multiSelect: true,
+          options: [{ label: "Alpha" }, { label: "Beta" }],
+        },
+      ],
+    },
+  });
+  await app.waitForCondition<boolean>(
+    `!!document.querySelector('[data-slot="session-question-dialog"]')`,
+    { timeoutMs: 10_000 },
+  );
+  return msgId;
+}
+
+/** End the turn that hosts a live question — the dialog closes the way
+ *  a withdrawn request does, with no pointer or key anywhere near it. */
+async function withdrawQuestion(app: App, msgId: string): Promise<void> {
+  await app.driveSession("A", {
+    op: "ingestFrame",
+    feedId: FEED_CODE_OUTPUT,
+    decoded: {
+      tug_session_id: SID,
+      type: "turn_complete",
+      msg_id: msgId,
+      result: "success",
+    },
+  });
+  await app.waitForCondition<boolean>(
+    `document.querySelector('[data-slot="session-question-dialog"]') === null`,
+    { timeoutMs: 10_000 },
+  );
+}
+
 function readSnap(app: App): Promise<ScrollSnap> {
   return app.evalJS<ScrollSnap>(`(function () {
   var el = document.querySelector('${SCROLLER}');
@@ -167,6 +279,9 @@ describe.skipIf(!SHOULD_RUN)("AT0333: unattributed scroll attribution", () => {
         await new Promise((r) => setTimeout(r, 500));
         const scrolledUp = await readSnap(app);
         expect(scrolledUp.buttonVisible).toBe("true");
+        // Disengaging opens the anchoring gate: the parked reader gets
+        // the reading-position hold back.
+        expect(await readAnchoringGate(app)).toBe("");
 
         // Watch scrollTop while a real streamed turn lands below — the
         // growth-pin channel. Disengaged, the pin must stay away.
@@ -312,6 +427,145 @@ describe.skipIf(!SHOULD_RUN)("AT0333: unattributed scroll attribution", () => {
         // Streaming pins resume: the next streamed turn tracks the live
         // edge again.
         await seedTurn(app, TURNS);
+        await new Promise((r) => setTimeout(r, 1000));
+        const pinned = await readSnap(app);
+        expect(pinned.maxScroll - pinned.top).toBeLessThanOrEqual(4);
+        expect(pinned.buttonVisible).toBe("false");
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a wheel nudge at the live edge re-engages when the gesture ends",
+    async () => {
+      const app = await standUp("at0333-gesture-end");
+      try {
+        // Following at stand-up, so the anchoring gate is closed.
+        expect(await readAnchoringGate(app)).toBe("none");
+
+        // A small upward wheel nudge that stays inside the at-bottom
+        // band. The wheel disengage carries no band guard — a 20px
+        // twitch releases follow-bottom — which is exactly why the
+        // gesture-end route must exist: the gesture ends at the live
+        // edge, and stranding the user disengaged there turns a twitch
+        // into a transcript that silently stops arriving.
+        await app.evalJS<boolean>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  el.dispatchEvent(new WheelEvent('wheel', {
+    deltaY: -20, bubbles: true, cancelable: true,
+  }));
+  el.scrollTop = el.scrollTop - 20;
+  return true;
+})()`);
+
+        // End the gesture the way at0335's wheel drive does: drain the
+        // queued scroll events, then pointerup — synthetic wheels do
+        // not reliably produce a scrollend, and any that does arrive
+        // early lands in the same gesture-end check.
+        await new Promise((r) => setTimeout(r, 500));
+        await app.evalJS<boolean>(`(function () {
+  document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+  return true;
+})()`);
+        await new Promise((r) => setTimeout(r, 800));
+
+        // Re-engaged at gesture end through the at-bottom flavor: the
+        // gesture was net-UPWARD, so the net-down path cannot claim
+        // it — position inside the band is the whole statement.
+        const transitions = await readFollowBottomTransitions(app);
+        const wheelUp = transitions.findIndex(
+          (t) => t.source === "wheel-up" && !t.following,
+        );
+        expect(wheelUp).toBeGreaterThanOrEqual(0);
+        const reengage = transitions.findIndex(
+          (t, i) =>
+            i > wheelUp &&
+            t.source === "gesture-end-at-bottom-reengage" &&
+            t.following,
+        );
+        expect(reengage).toBeGreaterThan(wheelUp);
+        expect((await readSnap(app)).buttonVisible).toBe("false");
+        expect(await readAnchoringGate(app)).toBe("none");
+
+        // And streaming still tracks the live edge.
+        await seedTurn(app, TURNS);
+        await new Promise((r) => setTimeout(r, 1000));
+        const pinned = await readSnap(app);
+        expect(pinned.maxScroll - pinned.top).toBeLessThanOrEqual(4);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "an inline dialog's close re-engages only a user still at the bottom",
+    async () => {
+      const app = await standUp("at0333-dialog");
+      try {
+        // A live question opens at the bottom: its scope releases
+        // follow-bottom (a declared machine disengage) and reveals the
+        // whole dialog. The user then scrolls away to read history
+        // while the question waits.
+        const first = await presentQuestion(app, "a");
+        await new Promise((r) => setTimeout(r, 400));
+        await app.evalJS<number>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  el.scrollTop = el.scrollTop - ${AT_BOTTOM_PX * 15};
+  return el.scrollTop;
+})()`);
+        await new Promise((r) => setTimeout(r, 500));
+
+        // The question is withdrawn under them. Case B: re-engagement
+        // requires attributed arrival at the bottom, and this user is
+        // parked mid-history — the close must NOT flip follow-bottom
+        // back on. The negative source assertion is the pin: an
+        // unconditional close-side engage would record
+        // `inline-dialog / following: true` right here.
+        await withdrawQuestion(app, first);
+        await new Promise((r) => setTimeout(r, 500));
+        const transitions = await readFollowBottomTransitions(app);
+        expect(
+          transitions.some(
+            (t) => t.source === "inline-dialog" && t.following,
+          ),
+        ).toBe(false);
+        expect((await readSnap(app)).buttonVisible).toBe("true");
+
+        // Growth stays away from the parked reader.
+        await seedTurn(app, TURNS);
+        await new Promise((r) => setTimeout(r, 1000));
+        const held = await readSnap(app);
+        expect(held.maxScroll - held.top).toBeGreaterThan(AT_BOTTOM_PX * 4);
+        expect(held.buttonVisible).toBe("true");
+
+        // Now the other polarity: return to the bottom (attributed
+        // arrival — the idle re-engage), sit through a second
+        // question, and let it close with the user still settled at
+        // the dialog's edge. Behavioral assert only — the machine may
+        // legitimately re-engage this parked-in-band user before the
+        // close does (growth-at-bottom), and either route is a
+        // correct arrival.
+        await app.evalJS<number>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  el.scrollTop = el.scrollHeight - el.clientHeight;
+  return el.scrollTop;
+})()`);
+        await new Promise((r) => setTimeout(r, 500));
+        expect((await readSnap(app)).buttonVisible).toBe("false");
+
+        const second = await presentQuestion(app, "b");
+        await new Promise((r) => setTimeout(r, 400));
+        await withdrawQuestion(app, second);
+        await new Promise((r) => setTimeout(r, 500));
+        expect((await readSnap(app)).buttonVisible).toBe("false");
+
+        // The next streamed turn tracks the live edge.
+        await seedTurn(app, TURNS + 1);
         await new Promise((r) => setTimeout(r, 1000));
         const pinned = await readSnap(app);
         expect(pinned.maxScroll - pinned.top).toBeLessThanOrEqual(4);
