@@ -288,6 +288,11 @@ actor MLXLocalModelBackend: LocalModelBackend {
             container = try await loadModelContainer(directory: model.directory)
             residentModel = model
             lastUse = Date()
+            // Arm the idle unload here, not only after a generation. The launch
+            // prewarm loads the pack without generating, so a session that
+            // never reaches the model would otherwise hold its weights — a
+            // multi-gigabyte resident set — for the life of the process.
+            scheduleIdleUnload()
             Self.logGpu("loaded \(model.id)")
         } catch {
             container = nil

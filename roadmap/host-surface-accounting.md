@@ -4,6 +4,27 @@ A working brief for the investigation that opens where `scrolling-memory-diet.md
 
 Like the diet brief, this is a brief and not a devise plan: the work is diagnostic, it proceeds against the user's live release instance, and the shape of the fix is unknown until the cause is named.
 
+## Resolved: it was never graphics {#resolved}
+
+**The 2.4 GB is the local language model's weights.** `MLXLocalModelBackend` loads `qwen3-4b-instruct-2507-4bit` (`model.safetensors`, **2.1 GB** on disk) during the launch prewarm. MLX runs inference out of Apple Silicon unified memory, so the weights are Metal buffers — and Metal buffers are accounted under `vmmap`'s `IOAccelerator (graphics)` row. The row name is the entire reason this looked like a compositing problem.
+
+Every measurement in this brief fits that and nothing else:
+
+| observation | why it follows |
+|---|---|
+| content-independent; empty deck = loaded deck | weights don't care what the deck holds |
+| fixed size; 24 injected large layers changed nothing | it was never a layer pool |
+| allocated <2 s after launch, then flat forever | a model load, not a render |
+| six WebKit feature knobs all inert | none of it was WebKit's |
+| entirely nonvolatile | weights must stay resident to be used |
+| `TUGAPP_APP_TEST=1` → 24 MB / 3 regions | app-test mode skips the model |
+| Safari shows none of it | Safari does not load a 4B model |
+| 8.7 GB peak | the load transient — still unexplained, see [local-model-load-peak.md](local-model-load-peak.md) |
+
+**A defect was found and fixed along the way.** `scheduleIdleUnload()` was called only from `generate()`'s `defer`, never after `load()`. The launch prewarm loads the pack without generating, so no idle timer was ever armed and the weights were held for the life of the process — measured at 6 min 40 s idle with no release, and matching a live instance still holding 2.4 GB after 3 h 20 m. The fix schedules the idle unload after a successful `load()`.
+
+**Read the rest of this brief as a record of a misdiagnosis.** The sections below are kept because their instrument lessons are real and were paid for, but their causal conclusions about compositing are wrong. The specific trap: `IOAccelerator (graphics)` anchored the whole investigation to WebKit, and a sampled stack showing `IOSurface::createFromSendRight` — genuine, but ordinary compositing traffic — was mistaken for the floor. The "36 identical units" arithmetic was numerology fitted to a 2.1 GB blob.
+
 ## The reading that opened it (2026-08-03) {#opening-read}
 
 Activity Monitor showed `Tug` at **2.54 GB** — the largest process on a 128GB machine, above WindowServer. That number is the **host** process (the Swift app), not the deck.
@@ -74,6 +95,8 @@ The display is 5120×2880 Retina. Two arithmetic notes to carry forward, both un
 - **185.5 MB** ≈ three full-screen 5K buffers (5120×2880×4 B = 59 MB each), consistent with a triple-buffered full-screen window surface.
 
 ### The census has a signature: 36 identical units {#thirty-six-units}
+
+> **Withdrawn.** These groupings are the MLX allocator's size classes for one 2.1 GB weight set, not "36 of" anything in the app. The factor-of-four chain and the multiples of 36 are allocator structure read as if it were layer geometry. See [#resolved](#resolved).
 
 Restricting the census to the `PURGE=N` regions — the 984 that hold the entire 2.4 GB — nearly every count is a multiple of **36**:
 
@@ -297,7 +320,12 @@ Unblocking it is a one-time user action: **System Settings → Privacy & Securit
 
 **G7-2 — What is the ~900 MB churn?** *(answered — see [#g7-2-verdict](#g7-2-verdict). Episodic and activity-driven, not idle and not a metronome; demoted. The floor is the defect, and it is acquired rather than structural.)*
 
-**G7-4 — What are there 36 of?** The main line, and now a much sharper question than the one it replaced. The floor is 36 copies of a fixed ~54 MB structure, allocated near launch and never released, identical across instances and independent of session age. It is not restore, not accumulation, and not deck content. The unit's own shape is the best evidence available: the largest class is triple-buffered and the smaller classes descend in an exact factor-of-four chain.
+**G7-4 — What are there 36 of?** *(answered — nothing. It is one 2.1 GB MLX weight set in the allocator's size classes; see [#resolved](#resolved). The question was malformed because its premise was.)*
+
+<details>
+<summary>The question as it stood before the answer</summary>
+
+The main line, and a much sharper question than the one it replaced. The floor is 36 copies of a fixed ~54 MB structure, allocated near launch and never released, identical across instances and independent of session age. It is not restore, not accumulation, and not deck content. The unit's own shape is the best evidence available: the largest class is triple-buffered and the smaller classes descend in an exact factor-of-four chain.
 
 ### It is a pre-allocated pool, not per-layer cost {#not-per-layer}
 
@@ -334,6 +362,10 @@ Next moves, in order:
 3. **Settle bytes-per-pixel.** `RemoteLayerBackingStore::bytesPerPixel()` is 4 for BGRA8 but **8 for RGB10/RGBA16F** on extended-range displays. If the pool is being allocated in a wide-gamut format it is twice the size it needs to be. Note this is a *sizing* question, not the mechanism — the pool's byte total looks capped, so halving the format may repartition rather than shrink it.
 4. **Do not use the app-test lab.** It is [off the instrument](#lab-negative) for this measurement, and any A/B there will read zero in both arms.
 
+</details>
+
+The app-test lab was not "off the instrument" after all — it was reading correctly the whole time. It is a Debug build launched with `TUGAPP_APP_TEST=1`, which skips the model, so its 3 regions were the true cost of the deck without a language model in the process. Treating a correct negative control as a broken meter cost this investigation most of its length.
+
 **G7-3 — Why are Tug's surfaces non-purgeable when Safari's are not?** *(refuted — see [#anomaly](#anomaly). The premise was a column-reading error: both apps hold zero resident bytes in volatile regions and everything in nonvolatile ones. The purge structure is identical and there is no cheap purgeability fix. Folded into G7-4.)*
 
 ## Discipline {#discipline}
@@ -358,6 +390,7 @@ Carried unchanged from the diet program:
   - **The floor is a fixed startup allocation.** A user-initiated restart gave a clean `t=0`: **2.4 GB across 1,186 regions at 3 min 25 s**, matching a 3 h 20 min instance region-for-region, with the same 8.7 GB peak. Region counts identical across both instances rules out accumulation and demotes restore.
   - **The floor has a signature: 36 identical ~54 MB units** (108 × 11.9 MB triple-buffered, plus a factor-of-four chain at 5,120 / 1,280 / 320 / 80 KB). G7-4 sharpens to **"what are there 36 of?"**
   - **Discipline paid for in cash:** `open -n` on the release bundle terminated the user's live instance. Recorded in [#discipline](#discipline).
+- **2026-08-03, RESOLVED** — **it was never graphics.** The 2.4 GB is `qwen3-4b-instruct-2507-4bit` (2.1 GB) loaded by `MLXLocalModelBackend` at launch; MLX weights are Metal buffers and land in the `IOAccelerator (graphics)` row. Found by bisecting env rather than code: `TUGAPP_APP_TEST=1` on the *same Release binary* read 24 MB / 3 regions against 2.5 GB / 793. Eleven Tug-side arms (six WebKit feature knobs, opaque web view, reveal fade, inspector, pid event mode, rebuild baselines) were all inert at exactly 793 regions — that invariance was the signal, and I read it as noise for too long. Defect found and fixed: `scheduleIdleUnload()` was armed only by `generate()`, so a prewarm-only session held the weights forever. The 8.7 GB load peak is split out to [local-model-load-peak.md](local-model-load-peak.md). See [#resolved](#resolved).
 - **2026-08-03, third pass** — **G7-1 answered; the floor is priced and content-independent.** A dash-built probe (`Tug-release-tugdash-host-surfaces.app`) gave the first rig that can be started and stopped without killing the investigation, which runs inside the live instance.
   - **The memory is real.** Quitting the probe returned **~3.8 GB** to the system, additive with the family's self-reported footprints. Not a WindowServer double-count.
   - **An empty deck costs the same as a loaded one** — 2.4 GB at 17 seconds, 37 units against a five-card deck's 36. Content, cards, transcripts and restore are all exonerated.
