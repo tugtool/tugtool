@@ -125,9 +125,15 @@ export const TUG_SESSION_ROW_INDICATOR_SIZE = 28;
  * the same reason as the indicator's: the tape is a fixed-width accessory
  * whose width comes straight off the activity run's, so the number belongs to
  * the row's packing rather than to whichever surface mounts it.
+ *
+ * Both numbers are the Session card strip's (`session-pulse-strip`). The pair
+ * has to match, not just the scale constants: width sets the scroll speed and
+ * height sets the amplitude, so a tape one pixel shorter draws the same series
+ * at a different vertical proportion under a stroke that stays 1px. Same
+ * session, two surfaces, one reading.
  */
 const SPARK_BASE_WIDTH = 64;
-const SPARK_BASE_HEIGHT = 18;
+const SPARK_BASE_HEIGHT = 22;
 
 /**
  * Symmetric scale on the tape. **TUNE HERE** — this is the one knob for how

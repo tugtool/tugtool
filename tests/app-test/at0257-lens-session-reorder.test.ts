@@ -301,6 +301,7 @@ describe.skipIf(!SHOULD_RUN)("at0257 — Lens Sessions reorder + bottom-append",
             leading: number;
             trailing: number;
             tapeInset: number;
+            trailingInset: number;
           }>(
             `(function(){
               var list = document.querySelector(${JSON.stringify(LIST)});
@@ -310,26 +311,33 @@ describe.skipIf(!SHOULD_RUN)("at0257 — Lens Sessions reorder + bottom-append",
               var cell = list.querySelector(
                 ".tug-list-view-cell:has(.session-row-content[data-session-id])"
               );
+              var row = cell.querySelector(".tug-session-row");
               var tape = cell.querySelector(".sessions-monitor-spark");
               var cs = getComputedStyle(list);
               var lr = list.getBoundingClientRect();
               var cr = cell.getBoundingClientRect();
               var tr = tape.getBoundingClientRect();
+              var declared = getComputedStyle(row)
+                .getPropertyValue("--tugx-session-row-trailing-inset").trim();
               return {
                 leading: cr.left - (lr.left + parseFloat(cs.borderLeftWidth)),
                 trailing: (lr.right - parseFloat(cs.borderRightWidth)) - cr.right,
                 tapeInset: cr.right - tr.right,
+                trailingInset: parseFloat(declared) || 0,
               };
             })()`,
           );
-          console.log("[at0257] row edges:", JSON.stringify(edges));
           expect(edges.leading).toBeCloseTo(0, 0);
           expect(edges.trailing).toBeCloseTo(0, 0);
           // The row's trailing content stands at the trailing frame, a hair in
           // — not a whole row inset in from it, and not out past it. This is
-          // the grip's old column, handed to the tape.
+          // the grip's old column, handed to the tape. The hair is the row's
+          // own trailing-inset knob plus the cell's inline padding, so the
+          // ceiling is read off that knob rather than written down here: the
+          // design of record may retune the standoff, but the tape may never
+          // drift a column away from the frame.
           expect(edges.tapeInset).toBeGreaterThan(0);
-          expect(edges.tapeInset).toBeLessThanOrEqual(6);
+          expect(edges.tapeInset).toBeLessThanOrEqual(edges.trailingInset + 6);
         } finally {
           await app.close();
         }
