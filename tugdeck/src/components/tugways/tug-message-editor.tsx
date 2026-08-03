@@ -97,6 +97,11 @@ export interface TugMessageEditorProps {
   onChange?: (text: string) => void;
   /** Fired on Cmd-Enter (regardless of `returnAction`). */
   onSubmit?: () => void;
+  /**
+   * Whether a submit Enter defers to a default button on the responder chain
+   * instead of firing `onSubmit`. Forwarded to the substrate. @default true
+   */
+  deferToDefaultButton?: boolean;
   /** Empty-state hint shown while the document is empty. */
   placeholder?: string;
   /** Maximum visible rows before the field scrolls. @default 12 */
@@ -180,6 +185,7 @@ export const TugMessageEditor = React.forwardRef<
     value,
     onChange,
     onSubmit,
+    deferToDefaultButton = true,
     placeholder,
     maxRows = DEFAULT_MAX_ROWS,
     suppressCardEngineHooks = false,
@@ -284,6 +290,7 @@ export const TugMessageEditor = React.forwardRef<
       suppressCardEngineHooks={suppressCardEngineHooks}
       preserveState={false}
       returnAction="newline"
+      deferToDefaultButton={deferToDefaultButton}
       maxRows={maxRows}
       lineWrap={lineWrap}
       markdownTextStyling={markdownTextStyling}

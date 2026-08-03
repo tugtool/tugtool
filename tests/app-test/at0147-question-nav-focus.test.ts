@@ -138,7 +138,10 @@ describe.skipIf(!SHOULD_RUN)("AT0147: question wizard nav keeps focus on Back/Ne
   test(
     "Next stays then →Submit at review; Back stays then →Next at first row",
     async () => {
-      const app = await launchTugApp({ testName: "at0147-question-nav-focus" });
+      const app = await launchTugApp({
+        testName: "at0147-question-nav-focus",
+        foreground: true,
+      });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

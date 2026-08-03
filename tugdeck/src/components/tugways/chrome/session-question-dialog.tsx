@@ -1025,6 +1025,12 @@ const QuestionFreeText: React.FC<QuestionFreeTextProps> = ({
           onChange(text);
         }}
         onSubmit={onSubmit}
+        // The field's submit is the wizard's advance, not the dialog's send.
+        // Left on, the substrate's default-button deferral would route a
+        // Shift-Return here into a click on `Submit` — sending every answer the
+        // moment the user finishes typing one, skipping both the remaining
+        // questions and the review step.
+        deferToDefaultButton={false}
         // The field wears the substrate's own frame (the standalone form),
         // not a borderless embed in someone else's well.
         borderless={false}

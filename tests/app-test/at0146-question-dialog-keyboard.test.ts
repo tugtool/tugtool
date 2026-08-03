@@ -245,7 +245,10 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
   test(
     "options item-group seeded; arrows move; Space toggles; Tab to Submit; Return submits",
     async () => {
-      const app = await launchTugApp({ testName: "at0146-question-dialog-keyboard" });
+      const app = await launchTugApp({
+          testName: "at0146-question-dialog-keyboard",
+          foreground: true,
+        });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -345,7 +348,10 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
   test(
     "single-select: arrows seam between the radio options and the button row; never beeps",
     async () => {
-      const app = await launchTugApp({ testName: "at0146-question-dialog-keyboard" });
+      const app = await launchTugApp({
+          testName: "at0146-question-dialog-keyboard",
+          foreground: true,
+        });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -444,7 +450,10 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
   test(
     "multi-question wizard: arrows seam off the radio bottom edge to the buttons; never dead-ends",
     async () => {
-      const app = await launchTugApp({ testName: "at0146-question-dialog-keyboard" });
+      const app = await launchTugApp({
+          testName: "at0146-question-dialog-keyboard",
+          foreground: true,
+        });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -505,7 +514,10 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
   test(
     "multi-question wizard: Return picks the ringed option and advances to the next question (return-return-return)",
     async () => {
-      const app = await launchTugApp({ testName: "at0146-question-dialog-keyboard" });
+      const app = await launchTugApp({
+          testName: "at0146-question-dialog-keyboard",
+          foreground: true,
+        });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -567,7 +579,10 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
   test(
     "free-text answer: Shift-Return advances the wizard, not some other filled button",
     async () => {
-      const app = await launchTugApp({ testName: "at0146-question-dialog-keyboard" });
+      const app = await launchTugApp({
+          testName: "at0146-question-dialog-keyboard",
+          foreground: true,
+        });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -627,6 +642,94 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
           clicks,
           "Shift-Return runs the field's own submit, activating no other button",
         ).toBe("[]");
+
+        process.stdout.write("VERDICT: PASS\n");
+      } catch (err) {
+        process.stdout.write("VERDICT: FAIL\n");
+        const tail = app.tailLog(200);
+        if (tail !== "") {
+          process.stderr.write(`\n[at0146-question-dialog-keyboard] log tail:\n${tail}\n`);
+        }
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  // The companion to the case above, on the seam where the two differ. There the
+  // typed answer left an unanswered question behind, so Submit was disabled and
+  // registered no default button. Here the typed answer is the LAST one — Submit
+  // goes live the instant it lands, and the substrate's default-button deferral
+  // would turn the very same Shift-Return into a click on it. Typing an answer
+  // must step the wizard exactly like picking an option does; sending is the
+  // user's separate act on the blue button.
+  test(
+    "free-text answer on the last question: Shift-Return moves the ring to Submit, it does not send",
+    async () => {
+      const app = await launchTugApp({
+          testName: "at0146-question-dialog-keyboard",
+          foreground: true,
+        });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindSession("A", { tugSessionId: SID });
+        await app.awaitEngineReady("A");
+        await app.driveSession("A", { op: "send", text: "ask me something" });
+        // A one-question payload: the only question IS the last one.
+        await ingestQuestion(app, controlRequestForwardSingle());
+
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
+          { timeoutMs: 6000 },
+        );
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 4000 },
+        );
+
+        let onField = false;
+        for (let i = 0; i < 10 && !onField; i += 1) {
+          await app.nativeKey("Tab");
+          await sleep(150);
+          onField = await hasAttr(app, FREE_TEXT, "data-key-view-kbd");
+        }
+        expect(onField, "Tab reaches the free-text answer field").toBe(true);
+
+        await app.nativeType("my own answer");
+        await sleep(250);
+
+        // With every question answered, Submit is enabled — and an enabled
+        // primary action button IS the scope's registered default button. This
+        // is the precondition that makes the deferral reachable at all; assert
+        // it so the test can't silently stop covering the seam.
+        const submitEnabled = await app.evalJS<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(SUBMIT)});return el!==null && !el.disabled;})()`,
+        );
+        expect(submitEnabled, "the typed answer completes the payload, enabling Submit").toBe(true);
+
+        await app.nativeKey("Return", ["shift"]);
+        await sleep(400);
+
+        // The dialog is still up: the answer was committed, not sent.
+        const stillOpen = await app.evalJS<boolean>(
+          `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
+        );
+        expect(stillOpen, "Shift-Return commits the answer without submitting the dialog").toBe(
+          true,
+        );
+
+        // …and the ring has moved to Submit, so the follow-up Return sends.
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(SUBMIT)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 4000 },
+        );
 
         process.stdout.write("VERDICT: PASS\n");
       } catch (err) {

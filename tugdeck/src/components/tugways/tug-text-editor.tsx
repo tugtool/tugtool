@@ -603,6 +603,16 @@ export interface TugTextEditorProps
    */
   onSubmit?: () => void;
   /**
+   * Whether a `submit` Enter defers to a default button registered on the
+   * responder chain in this editor's pane (a dialog's primary action), firing
+   * that button instead of `onSubmit`. Set `false` when the field's own
+   * `onSubmit` is a distinct step the default button would skip past — e.g. a
+   * wizard field whose submit advances to the next question, where deferring
+   * would send the whole dialog on the user's first Return.
+   * @default true
+   */
+  deferToDefaultButton?: boolean;
+  /**
    * History provider for Up / Down + Opt-Up / Opt-Down navigation. The substrate
    * captures the current editing state on each `back()` call so the
    * provider can stash it as the in-progress draft and restore it
@@ -1256,6 +1266,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       returnAction = DEFAULT_RETURN_ACTION,
       numpadEnterAction = DEFAULT_NUMPAD_ENTER_ACTION,
       onSubmit,
+      deferToDefaultButton = true,
       historyProvider,
       completionProviders,
       argumentHintResolver,
@@ -1796,6 +1807,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // editor's own onSubmit. Reads through a closure over the live
     // manager so a dialog mounted later than the editor still wins.
     const peekDefaultButton = useCallback((): HTMLButtonElement | null => {
+      if (!deferToDefaultButton) return null;
       const manager = responderChainManager;
       if (!manager) return null;
       // Pane-scope the defer. The default-button stack is process-global,
@@ -1810,7 +1822,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       return pane !== null
         ? manager.peekDefaultButtonInScope(pane)
         : manager.peekDefaultButton();
-    }, [responderChainManager]);
+    }, [responderChainManager, deferToDefaultButton]);
     const keymapConfigRef = useRef<TugTextEditorKeymapConfig>({
       returnAction,
       numpadEnterAction,
