@@ -33,7 +33,6 @@
  */
 
 import { TUG_ATOM_CHAR, type AtomSegment } from "./tug-atom-img";
-import { isBangCommand } from "./bang-commands";
 
 /** One locally-handled slash command's static descriptor. */
 export interface LocalSlashCommandSpec {
@@ -132,6 +131,17 @@ export const LOCAL_SLASH_COMMANDS = [
     description: "Copy the most recent assistant message to the clipboard",
   },
   {
+    name: "shell",
+    description: "Run one shell command from here",
+    takesArgs: true,
+  },
+  {
+    name: "btw",
+    description:
+      "Ask a quick side question, answered from the conversation with no tools",
+    takesArgs: true,
+  },
+  {
     name: "help",
     description: "Show available commands, shortcuts, and help",
   },
@@ -156,6 +166,15 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "compact",
     description: "Compact the conversation in place to free up context",
     takesArgs: true,
+  },
+  // There is deliberately no `/prompt` twin: in the Changes route the composer
+  // IS the commit-message editor, so submit lands the message verbatim and no
+  // typed line is ever read as a command there. A `/prompt` entry could only
+  // ever be a no-op typed from the route it already names. ⇧⌘P, ⇧⌘C, the Z4A
+  // tab, and Escape are the ways back.
+  {
+    name: "changes",
+    description: "Switch the composer to the Changes route",
   },
   {
     name: "commit",
@@ -233,9 +252,7 @@ export interface CommandLineAtom {
  * Reconstruct a plain `/command …` line from an editor draft that may carry
  * atoms, so a slash command is recognized even when its argument contains
  * `@`/file mentions. Each atom placeholder ({@link TUG_ATOM_CHAR}) in `text`
- * is expanded in place by its segment type: a `command` atom → `/<value>`
- * (or `!<value>` when the value is a registered bang routing — the same
- * sigil the chip displays, so the bang matcher recognizes the line);
+ * is expanded in place by its segment type: a `command` atom → `/<value>`;
  * `image` atoms are dropped (not
  * meaningful as a command argument); every other atom (file / doc / link /
  * …) contributes its `value` — the path or reference. Plain text passes
@@ -261,7 +278,7 @@ export function buildSlashCommandLine(
     const seg = segByPos.get(i);
     if (seg === undefined) continue; // defensive: orphan placeholder
     if (seg.type === "command")
-      out += `${isBangCommand(seg.value) ? "!" : "/"}${seg.value}`;
+      out += `/${seg.value}`;
     else if (seg.type === "image") continue; // drop — not a focus argument
     else out += seg.value;
   }

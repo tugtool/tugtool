@@ -1087,7 +1087,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             permissionModeMenu.addItem(item)
         }
         permissionModeMenu.addItem(NSMenuItem.separator())
-        permissionModeMenu.addItem(NSMenuItem(title: "Cycle Permission Mode", action: #selector(cyclePermissionModeFromMenu(_:)), keyEquivalent: "p", modifierMask: [.command, .shift]).identified("session.permissionMode.cycle"))
+        // ⌃⌘P, not ⇧⌘P: the composer's Prompt route claimed the ⇧⌘P
+        // mnemonic, and this menu item has to move with the tugdeck binding
+        // or it keeps swallowing the chord at the menu bar before the web
+        // view ever sees it.
+        permissionModeMenu.addItem(NSMenuItem(title: "Cycle Permission Mode", action: #selector(cyclePermissionModeFromMenu(_:)), keyEquivalent: "p", modifierMask: [.command, .control]).identified("session.permissionMode.cycle"))
         sessionMenu.addItem(permissionModeItem)
 
         sessionMenu.addItem(sessionCommandItem("Model…", "model", "session.model"))
@@ -1762,7 +1766,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             guard sessionCardFrontmost else { return false }
             // The Mode control must not change mid-turn. The whole Permission
             // Mode submenu — the parent item, every radio, and Cycle (whose
-            // ⇧⌘P key equivalent is validated even while the menu is closed) —
+            // ⌃⌘P key equivalent is validated even while the menu is closed) —
             // gates on the same `canChangeSettings` (canSubmit) the Z4B chips
             // do, so a disabled item beeps instead of racing the running turn.
             if id.hasPrefix("session.permissionMode") {

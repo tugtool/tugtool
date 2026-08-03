@@ -6,7 +6,7 @@
  * commit-message composer is the first consumer; the question wizard's answer
  * and reply fields are the standalone-frame form, `borderless={false}` plus a
  * `focusGroup` stop). It composes the substrate
- * exactly as {@link TextCardFindBar} composes it for its query field: a
+ * exactly as {@link TugFindBar} composes it for its query field: a
  * `borderless`, `preserveState={false}` mount with an
  * `EditorView.updateListener` that mirrors the document text back out — no
  * controlled-input round-trip. Because the substrate IS the editor, the

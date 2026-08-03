@@ -1,7 +1,7 @@
 /**
  * TugEntryShell — the shared structural shell behind bottom-docked entry
- * surfaces: the prompt entry (`TugPromptEntry`) and the Text card's find bar
- * (`TextCardFindBar`).
+ * surfaces: the prompt entry (`TugPromptEntry`) and the find bar
+ * (`TugFindBar`).
  *
  * The shell owns the *layout positions* and their surface treatment; every
  * occupant stays host-owned:

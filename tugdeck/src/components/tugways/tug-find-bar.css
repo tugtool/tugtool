@@ -1,0 +1,31 @@
+/**
+ * TugFindBar — docking rules only. The bar IS a `TugEntryShell` (the same
+ * panel / input-area / toolbar shell the prompt entry composes), so its look
+ * comes from `tug-entry-shell.css`; this file owns only how the bar sits
+ * against the surface below it ([L20]).
+ */
+
+.tug-find-bar {
+  /* Same contrasting rule the status bar draws against the content above. */
+  border-top: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+  /* A find field opens one line tall (the substrate's own minimum) and
+     grows with a longer query up to its `maxRows` cap — no tall prompt
+     floor here. */
+  --tug-text-editor-min-height: 0;
+}
+
+/* Centre the cluster on the CARD's midline, not the spacer midpoint. With
+   no leading occupant the shell's flanking spacers centre the cluster in
+   the gap LEFT of the trailing pair — visibly off-centre in a wide card.
+   Absolute centring pins it to the true middle; the toolbar row
+   (position: relative) is the containing block. The trailing pair keeps its
+   flex position and wins pointer events where they'd overlap on a very
+   narrow card (it comes later in DOM order). */
+.tug-find-bar .tug-entry-shell-toolbar {
+  position: relative;
+}
+.tug-find-bar .tug-entry-shell-indicators {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}

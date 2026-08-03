@@ -1,37 +1,34 @@
 /**
- * at0222-one-shot-commands.test.ts — the Code route's one-shot slash
- * commands, `!shell` and `!find` ([AT0222]).
+ * at0222-one-shot-commands.test.ts — the one-shot verbs typed into the
+ * Prompt route ([AT0222]).
  *
  * ## Why this exists
  *
- * With the sticky routes demoted ([P01]), every non-Code destination is a
- * per-submission *bang routing* (`lib/bang-commands.ts`): `!shell <cmd>`
- * runs one exchange against the card's shell session and `!find <query>`
- * runs the transcript search with live ⌘G cycling — Code stays the only
- * resting mode throughout.
+ * A one-shot verb consumes a single submission and leaves the route where it
+ * was: `/shell <cmd>` runs one exchange against the card's shell session and
+ * returns you to the prompt. There is one command namespace — the `/` one —
+ * so the popup is the whole inventory.
  *
  * ## Test matrix
  *
- *   1. `!shell echo …` lands a settled shell exchange row.
- *   2. `!find <term>` paints both matches, actives the first, ⌘G advances,
- *      Escape (empty editor) dissolves, a fresh `!find` re-seeds, and a
- *      subsequent non-find submission (`!shell`) dissolves again.
- *   3. Namespace split: the `/` popup offers no bang routings (they left
- *      the slash inventory), and the `!` popup offers exactly the four —
- *      `!changes` is not among them (committing is a composer mode).
- *   4. Live `!shell` auto-insert: typing `git ` materializes the `!shell`
- *      chip at the head; deleting it latches the decline (typing on, the
- *      next space never re-inserts).
+ *   1. `/shell echo …` lands a settled shell exchange row.
+ *   2. One namespace: the `/` popup offers the one-shot verbs alongside the
+ *      ordinary local commands, and a leading `!` opens no popup at all.
+ *   3. Live shell auto-insert: typing `git ` materializes the shell chip at
+ *      the head; deleting it latches the decline (typing on, the next space
+ *      never re-inserts).
  *
- * Gating: DISABLED (`describe.skip`) — case 4 pins the bare-command routing
- * decision to the simplistic login-PATH membership check, which an upcoming
- * feature replaces. Re-enable (`describe.skipIf(!SHOULD_RUN)`) once that
- * lands and the bare-typed classifier is the thing worth asserting.
+ * Transcript find has its own door (⌘F) and its own suites — at0271 and the
+ * find-bar test — so it is not asserted here.
  *
- * @covers tugdeck/src/lib/bang-commands.ts
+ * Gating: DISABLED (`describe.skip`) — the auto-insert case pins the
+ * bare-command routing decision to the simplistic login-PATH membership
+ * check, which an upcoming feature replaces. Re-enable
+ * (`describe.skipIf(!SHOULD_RUN)`) once that lands and the bare-typed
+ * classifier is the thing worth asserting.
+ *
  * @covers tugdeck/src/lib/slash-commands.ts
  * @covers tugdeck/src/lib/shell-session-store.ts
- * @covers tugdeck/src/lib/find-session.ts
  * @covers tugdeck/src/components/tugways/cards/session-card-z1b.tsx
  */
 
@@ -159,8 +156,8 @@ const EDITOR_SELECTOR =
   '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
 const COMPLETION_MENU_SELECTOR = '[data-slot="tug-completion-menu"]';
 
-/** The registered routings, mirroring `BANG_COMMANDS` in `lib/bang-commands.ts`. */
-const BANG_NAMES = ["shell", "btw", "find", "history"] as const;
+/** The one-shot verbs that must appear in the single `/` inventory. */
+const ONE_SHOT_VERBS = ["shell", "btw"] as const;
 
 async function mountAndReplay(app: App): Promise<void> {
   await app.enableDeckTrace(true);
@@ -184,84 +181,16 @@ async function submitLine(app: App, line: string): Promise<void> {
   await app.nativeKey("Enter", ["cmd"]);
 }
 
-/** Painted find ranges as `{text, row, active}` in document order. */
-async function readPaintedRanges(
-  app: App,
-): Promise<Array<{ text: string; row: number; active: boolean }>> {
-  const raw = await app.evalJS<string>(
-    `(() => {
-      const collect = (name, isActive) => {
-        const hl = CSS.highlights.get(name);
-        const out = [];
-        if (hl) {
-          for (const r of hl) {
-            const el = r.startContainer.parentElement;
-            const cell = el ? el.closest('[data-tug-list-cell-index]') : null;
-            out.push({
-              text: r.toString(),
-              row: cell ? Number(cell.getAttribute('data-tug-list-cell-index')) : -1,
-              active: isActive,
-              range: r,
-            });
-          }
-        }
-        return out;
-      };
-      const all = collect('transcript-find-match', false)
-        .concat(collect('transcript-find-active', true));
-      all.sort((a, b) => a.range.compareBoundaryPoints(Range.START_TO_START, b.range));
-      return JSON.stringify(all.map(({ text, row, active }) => ({ text, row, active })));
-    })()`,
-  );
-  return JSON.parse(raw) as Array<{ text: string; row: number; active: boolean }>;
-}
 
-async function waitForPaintedCount(app: App, expected: number): Promise<void> {
-  await app.waitForCondition<boolean>(
-    `(() => {
-      let n = 0;
-      for (const name of ['transcript-find-match', 'transcript-find-active']) {
-        const hl = CSS.highlights.get(name);
-        if (hl) for (const _ of hl) n += 1;
-      }
-      return n === ${expected};
-    })()`,
-    { timeoutMs: 8000 },
-  );
-}
-
-/** Synthetic keybinding chord at the active element (see at0221). */
-async function dispatchChord(
-  app: App,
-  code: string,
-  key: string,
-  modifiers: { meta?: boolean; shift?: boolean },
-): Promise<void> {
-  await app.evalJS<boolean>(
-    `(function(){
-      var target = document.activeElement || document;
-      return target.dispatchEvent(new KeyboardEvent("keydown", {
-        code: ${JSON.stringify(code)},
-        key: ${JSON.stringify(key)},
-        metaKey: ${modifiers.meta === true},
-        shiftKey: ${modifiers.shift === true},
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-      }));
-    })()`,
-  );
-}
-
-describe.skip("AT0222: one-shot !shell and !find", () => {
+describe.skip("AT0222: one-shot verbs in the Prompt route", () => {
   test(
-    "!shell runs one exchange into the transcript",
+    "/shell runs one exchange into the transcript",
     async () => {
       const app = await launchTugApp({ testName: "at0222-shell" });
       try {
         await mountAndReplay(app);
 
-        await submitLine(app, "!shell echo oneshot-shell-probe");
+        await submitLine(app, "/shell echo oneshot-shell-probe");
         await app.waitForCondition<boolean>(
           `(() => {
             const rows = document.querySelectorAll('[data-slot="session-transcript-shell-row"]');
@@ -281,56 +210,7 @@ describe.skip("AT0222: one-shot !shell and !find", () => {
   );
 
   test(
-    "!find paints + cycles; Escape and a new submission dissolve it",
-    async () => {
-      const app = await launchTugApp({ testName: "at0222-find" });
-      try {
-        await mountAndReplay(app);
-
-        await submitLine(app, "!find oneshotmark");
-        await waitForPaintedCount(app, 2);
-        const painted = await readPaintedRanges(app);
-        expect(painted.map((p) => p.text)).toEqual(["oneshotmark", "oneshotmark"]);
-        const firstActiveRow = painted.find((p) => p.active)!.row;
-
-        // ⌘G advances the active match to the other occurrence.
-        await dispatchChord(app, "KeyG", "g", { meta: true });
-        await app.waitForCondition<boolean>(
-          `(() => {
-            const hl = CSS.highlights.get('transcript-find-active');
-            if (!hl) return false;
-            for (const r of hl) {
-              const el = r.startContainer.parentElement;
-              const cell = el ? el.closest('[data-tug-list-cell-index]') : null;
-              if (cell && Number(cell.getAttribute('data-tug-list-cell-index')) !== ${firstActiveRow}) {
-                return true;
-              }
-            }
-            return false;
-          })()`,
-          { timeoutMs: 6000 },
-        );
-
-        // Escape on the (submit-emptied) editor dissolves the one-shot find.
-        await app.nativeClickAtElement(EDITOR_SELECTOR);
-        await app.nativeKey("Escape");
-        await waitForPaintedCount(app, 0);
-
-        // A fresh !find re-seeds…
-        await submitLine(app, "!find oneshotmark");
-        await waitForPaintedCount(app, 2);
-        // …and a subsequent non-find submission dissolves it again.
-        await submitLine(app, "!shell echo oneshot-clear");
-        await waitForPaintedCount(app, 0);
-      } finally {
-        await app.close();
-      }
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  test(
-    "namespace split: `/` offers no bang routings; `!` offers exactly the four",
+    "one namespace: `/` offers the one-shot verbs; a leading `!` opens nothing",
     async () => {
       const app = await launchTugApp({ testName: "at0222-gating" });
       try {
@@ -352,41 +232,34 @@ describe.skip("AT0222: one-shot !shell and !find", () => {
           return JSON.parse(labels) as string[];
         };
 
-        // The `/` popup: ordinary commands present, the four routings absent.
+        // The `/` popup is the whole inventory: ordinary local commands AND
+        // the one-shot verbs that used to wear the other sigil.
         await app.nativeClickAtElement(EDITOR_SELECTOR);
         await app.nativeType("/");
         const slashNames = await readPopupLabels();
         expect(slashNames.length).toBeGreaterThan(0);
-        for (const routed of BANG_NAMES) {
+        for (const verb of ONE_SHOT_VERBS) {
           expect(
-            slashNames.some((n) => n === routed || n.startsWith(`${routed} `)),
-            `bang routing "!${routed}" must not be offered by the / popup`,
-          ).toBe(false);
+            slashNames.some((n) => n === verb || n.startsWith(`${verb} `)),
+            `"/${verb}" must be offered by the / popup`,
+          ).toBe(true);
         }
         expect(
           slashNames.some((n) => n.includes("permissions")),
           "ordinary local commands stay offered",
         ).toBe(true);
 
-        // Clear the typed `/`, then the `!` popup: exactly the four routings.
+        // A leading `!` is prose: no popup, no second namespace.
         await app.nativeKey("Escape");
         await app.nativeKey("Backspace");
         await app.nativeType("!");
-        const bangNames = await readPopupLabels();
-        expect(bangNames.length).toBe(BANG_NAMES.length);
-        for (const routed of BANG_NAMES) {
-          expect(
-            bangNames.some((n) => n.startsWith(routed)),
-            `bang routing "!${routed}" must be offered by the ! popup`,
-          ).toBe(true);
-        }
-        // `!changes` is deliberately unregistered — committing is the
-        // composer's commit mode, not a routing, so `!changes` falls through
-        // to the shell escape hatch like any other unknown bang.
+        await new Promise((r) => setTimeout(r, 400));
         expect(
-          bangNames.some((n) => n.startsWith("changes")),
-          "`!changes` is not a routing",
-        ).toBe(false);
+          await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(COMPLETION_MENU_SELECTOR)}) === null`,
+          ),
+          "a leading `!` must open no completion popup",
+        ).toBe(true);
       } finally {
         await app.close();
       }
@@ -395,7 +268,7 @@ describe.skip("AT0222: one-shot !shell and !find", () => {
   );
 
   test(
-    "typing `git ` live-inserts the !shell chip; deleting it latches the decline",
+    "typing `git ` live-inserts the shell chip; deleting it latches the decline",
     async () => {
       const app = await launchTugApp({ testName: "at0222-autoinsert" });
       const CHIP_SELECTOR = `${EDITOR_SELECTOR} img[data-atom-type="command"][data-atom-value="shell"]`;
@@ -424,7 +297,7 @@ describe.skip("AT0222: one-shot !shell and !find", () => {
             await app.nativeKey("Backspace");
           }
         }
-        expect(inserted, "the !shell chip must auto-insert on `git `").toBe(true);
+        expect(inserted, "the shell chip must auto-insert on `git `").toBe(true);
 
         // Deleting the auto-inserted chip latches the decline. Walk the caret
         // to the head and forward-delete the chip + its following space

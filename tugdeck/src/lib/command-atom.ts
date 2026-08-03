@@ -29,7 +29,6 @@
  */
 
 import type { ContentBlock } from "@/protocol";
-import { isBangCommand } from "./bang-commands";
 
 /** Strip a single leading slash so the helpers are idempotent on a
  *  value that already carries one (defensive — `value` is canonically
@@ -53,10 +52,7 @@ export function commandWireText(value: string, args?: string): string {
  * The label a chip displays. A slash command shows its leading slash
  * (`/tugplug:commit`) — the slash *is* the command, and is the marker that
  * sets it apart in the shared atom-chip family (a command leads with `/`, a
- * file leads with its icon). A bang routing (`lib/bang-commands.ts`) shows
- * its `!` sigil instead (`!shell`) — the chip says "this line is routed",
- * not "this line runs a command". Every other atom type shows its stored
- * `label`.
+ * file leads with its icon). Every other atom type shows its stored `label`.
  */
 export function chipDisplayLabel(
   type: string,
@@ -64,8 +60,7 @@ export function chipDisplayLabel(
   value: string,
 ): string {
   if (type !== "command") return label;
-  const name = bareName(value);
-  return (isBangCommand(name) ? "!" : "/") + name;
+  return "/" + bareName(value);
 }
 
 /**

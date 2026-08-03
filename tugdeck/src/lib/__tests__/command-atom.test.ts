@@ -60,9 +60,10 @@ describe("chipDisplayLabel", () => {
     );
   });
 
-  test("a bang routing shows its `!` sigil", () => {
-    for (const name of ["shell", "btw", "find", "history"]) {
-      expect(chipDisplayLabel("command", name, name)).toBe(`!${name}`);
+  test("every command name shows the same slash sigil", () => {
+    // One namespace, one sigil — no name gets a different marker.
+    for (const name of ["shell", "btw", "commit", "model"]) {
+      expect(chipDisplayLabel("command", name, name)).toBe(`/${name}`);
     }
   });
 

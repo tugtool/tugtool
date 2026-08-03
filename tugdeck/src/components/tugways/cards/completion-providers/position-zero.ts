@@ -18,7 +18,7 @@ import type { TugPromptEntryDelegate } from "@/components/tugways/tug-prompt-ent
  * Wrap a `CompletionProvider` so it only yields results when the
  * trigger character is the first character of the editor's text.
  * `trigger` is the character the provider is registered under
- * (`"/"` for slash commands, `"!"` for bang routings).
+ * (`"/"` for slash commands).
  */
 export function wrapPositionZero(
   entryRef: React.RefObject<TugPromptEntryDelegate | null>,

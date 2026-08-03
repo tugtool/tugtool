@@ -727,7 +727,7 @@ export class ResponderChainManager {
     // Fallback: the card containing the current keyboard key view. The
     // keyboard-focused element may be focus-REFUSING (a focus-cycle stop such
     // as a Z2 status cell or a Z4B chip), so it is not a responder and the
-    // chain walk above finds no card — yet key-card-scoped chords (⌥⇥, ⇧⌘P, …)
+    // chain walk above finds no card — yet key-card-scoped chords (⌥⇥, ⌃⌘P, …)
     // should still resolve to the card the keyboard is in. Walk up from the
     // `[data-key-view-kbd]` element to the nearest `card`-kind responder.
     return this.findCardFromKeyboardFocus();

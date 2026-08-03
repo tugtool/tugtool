@@ -1,12 +1,11 @@
 /**
- * at0216-shell-exchange.test.ts — the `!shell` routing end-to-end + restore
+ * at0216-shell-exchange.test.ts — the `/shell` command end-to-end + restore
  * interleave ([P07], Risk R02).
  *
- * Drives the REAL shell backend: a `!shell <cmd>` submission (and its bare
- * `!<cmd>` escape hatch) sends SHELL_INPUT over the live connection,
- * tugcast's per-session shell child executes the command, and the
- * SHELL_OUTPUT frames thread a settled exchange row into the transcript as
- * non-context ink ([P11]).
+ * Drives the REAL shell backend: a `/shell <cmd>` submission sends
+ * SHELL_INPUT over the live connection, tugcast's per-session shell child
+ * executes the command, and the SHELL_OUTPUT frames thread a settled
+ * exchange row into the transcript as non-context ink ([P11]).
  *
  *   1. **Exchange e2e** — `echo` / `cd` / `pwd` submitted through the real
  *      prompt entry each settle a transcript row carrying the command, the
@@ -15,14 +14,14 @@
  *      `echo "$TUG_SESSION_ID"` proves the shell child inherits the card's
  *      session id (parity with the agent bridge's env export) — the value
  *      `tugutil changes` reads.
- *   2. **The escape hatch** — `!pwd` (an unregistered bang name) routes to
- *      the shell verbatim, exactly like `!shell pwd`, and its row carries
- *      the bare command.
- *   3. **Non-context styling hook** — every shell row renders inside
+ *      `/shell` is the deliberate override; a bare command line reaches the
+ *      shell through the auto-router (`shell-line-classifier`), which has
+ *      its own coverage.
+ *   2. **Non-context styling hook** — every shell row renders inside
  *      `[data-slot="session-transcript-shell-row"]` with
  *      `[data-participant="shell"]` on its transcript entry (the [P11]
  *      visual-distinctness anchor).
- *   4. **Restore interleave ([P07])** — after Maker ▸ Reload, a real
+ *   3. **Restore interleave ([P07])** — after Maker ▸ Reload, a real
  *      `spawn_session(resume)` replays a fixture JSONL Claude turn while
  *      the ledgered shell exchanges restore through `list_shell_exchanges`;
  *      the fixture's timestamps predate the live execs, so the reloaded
@@ -34,7 +33,6 @@
  * @covers tugdeck/src/lib/shell-session-store.ts
  * @covers tugdeck/src/lib/shell-line-classifier.ts
  * @covers tugdeck/src/lib/shell-share.ts
- * @covers tugdeck/src/lib/bang-commands.ts
  * @covers tugrust/crates/tugcast/
  * @covers tugdeck/src/components/tugways/blocks/block-header.css
  * @covers tugdeck/src/components/tugways/blocks/block-header.tsx
@@ -196,8 +194,8 @@ async function shellRowFacts(
   );
 }
 
-/** Submit `line` — a `!shell <cmd>` routing or its bare `!<cmd>` escape
- *  hatch — through the real prompt entry, and block until shell row
+/** Submit `line` — a `/shell <cmd>` command — through the real prompt
+ *  entry, and block until shell row
  *  `expectedIndex` (0-based) settles with an exit label. The first exec also
  *  spawns the login-shell child, so the wait is generous. */
 async function execAndSettle(
@@ -221,7 +219,7 @@ async function execAndSettle(
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0216: !shell routing — exchange e2e, escape hatch, restore interleave",
+  "AT0216: /shell — exchange e2e, statefulness, restore interleave",
   () => {
     test(
       "echo/cd/pwd settle real exchange rows; reload reproduces the interleaved order",
@@ -260,19 +258,18 @@ describe.skipIf(!SHOULD_RUN)(
           });
           await frame({ type: "turn_complete", msg_id: "m1", result: "success" });
 
-          // --- Four real exchanges through the live shell backend. The `pwd`
-          // rides the bare `!<cmd>` escape hatch (an unregistered bang name
-          // routes to the shell verbatim); the last reads $TUG_SESSION_ID,
+          // --- Four real exchanges through the live shell backend. The last
+          // reads $TUG_SESSION_ID,
           // which the shell child must inherit from the card (parity with the
           // agent bridge) so `tugutil changes` run from here resolves the
           // session against the ledger. ---
-          await execAndSettle(app, "!shell echo hello-from-shell", 0);
-          await execAndSettle(app, "!shell cd sub", 1);
-          await execAndSettle(app, "!pwd", 2);
-          await execAndSettle(app, '!shell echo "sid=$TUG_SESSION_ID"', 3);
+          await execAndSettle(app, "/shell echo hello-from-shell", 0);
+          await execAndSettle(app, "/shell cd sub", 1);
+          await execAndSettle(app, "/shell pwd", 2);
+          await execAndSettle(app, '/shell echo "sid=$TUG_SESSION_ID"', 3);
 
           // Row facts: command, real output, exit label. The row carries the
-          // routed payload — the `!shell` / `!` sigil never reaches the shell.
+          // routed payload — the `/shell` sigil never reaches the shell.
           const live = await shellRowFacts(app);
           expect(live.length).toBe(4);
           expect(live[0].command).toBe("echo hello-from-shell");

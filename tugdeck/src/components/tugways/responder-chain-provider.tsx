@@ -381,7 +381,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // navigation, the universal GUI convention. Tug deliberately departs from
     // the Claude Code TUI, where Shift-Tab cycles the permission mode — in a
     // GUI, Shift-Tab must move focus to the previous control. Permission-mode
-    // cycling lives on ⇧⌘P (key-card scope, in the keybinding map) plus the
+    // cycling lives on ⌃⌘P (key-card scope, in the keybinding map) plus the
     // session card's Mode chip / sheet and the /permissions command.
     function focusWalkListener(event: KeyboardEvent): void {
       if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) {

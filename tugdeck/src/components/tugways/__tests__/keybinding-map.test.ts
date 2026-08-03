@@ -4,11 +4,12 @@
  *
  * Tug departs from the Claude Code TUI: the terminal cycles the permission mode
  * on Shift+Tab, but in a GUI Shift+Tab must be reverse-focus navigation. So
- * permission cycling lives on ⇧⌘P (a key-card-scoped chord), and Tab /
- * Shift-Tab are owned by the focus-walk stage in `responder-chain-provider.tsx`
- * — deliberately absent from this static map. These tests pin that contract
- * against `matchKeybinding`, which reads only `code` + the four modifier flags,
- * so a plain object stands in for a `KeyboardEvent` with no DOM.
+ * permission cycling lives on a key-card-scoped chord — ⌃⌘P, since ⇧⌘P is the
+ * composer's Prompt route — and Tab / Shift-Tab are owned by the focus-walk
+ * stage in `responder-chain-provider.tsx`, deliberately absent from this static
+ * map. These tests pin that contract against `matchKeybinding`, which reads
+ * only `code` + the four modifier flags, so a plain object stands in for a
+ * `KeyboardEvent` with no DOM.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -33,20 +34,29 @@ function keyEvent(
   } as KeyboardEvent;
 }
 
-describe("keybinding-map: permission cycle on ⇧⌘P", () => {
-  test("⇧⌘P maps to cycle-permission-mode, key-card scope, preventDefault", () => {
+describe("keybinding-map: the two P chords", () => {
+  test("⇧⌘P selects the Prompt route, key-card scope, preventDefault", () => {
     const binding = matchKeybinding(keyEvent("KeyP", { meta: true, shift: true }));
+    expect(binding).not.toBeNull();
+    expect(binding?.action).toBe(TUG_ACTIONS.SELECT_COMPOSER_ROUTE);
+    expect(binding?.value).toBe("prompt");
+    expect(binding?.scope).toBe("key-card");
+    expect(binding?.preventDefaultOnMatch).toBe(true);
+  });
+
+  test("⌃⌘P cycles the permission mode, key-card scope, preventDefault", () => {
+    const binding = matchKeybinding(keyEvent("KeyP", { meta: true, ctrl: true }));
     expect(binding).not.toBeNull();
     expect(binding?.action).toBe(TUG_ACTIONS.CYCLE_PERMISSION_MODE);
     expect(binding?.scope).toBe("key-card");
     expect(binding?.preventDefaultOnMatch).toBe(true);
   });
 
-  test("⌘P without Shift does not match the cycle (exact modifier match)", () => {
+  test("bare ⌘P matches neither (exact modifier match)", () => {
     expect(matchKeybinding(keyEvent("KeyP", { meta: true }))).toBeNull();
   });
 
-  test("⇧P without Cmd does not match the cycle", () => {
+  test("⇧P without Cmd matches neither", () => {
     expect(matchKeybinding(keyEvent("KeyP", { shift: true }))).toBeNull();
   });
 });

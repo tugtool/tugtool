@@ -1,30 +1,27 @@
 /**
- * at0215-bang-chrome.test.ts — the composer's chrome now that the sticky
- * routes are gone and every non-Code destination is a per-submission bang
- * routing (`lib/bang-commands.ts`).
+ * at0215-composer-route-chrome.test.ts — the composer's chrome now that the
+ * `!` layer is gone and Z4A holds the two routes.
  *
- * Drives the REAL session card (the picker + chips live there, not in the
- * gallery prompt-entry wrapper) and asserts:
+ * Drives the REAL session card (the route group and the chips live there, not
+ * in the gallery prompt-entry wrapper) and asserts:
  *
  *   1. **The static Code chip set** — identity · session · project · mode ·
  *      model · effort, always, with no route to vary it. The find cluster is
- *      the one member that comes and goes, and it is absent at rest.
- *   2. **The Z4A `!` picker** — the menu offers exactly the four routings,
- *      each labeled in its typed `!name` form with its ⌃⌘ chord, and picking
- *      one seeds that routing's chip in the draft. The ⌃⌘ chord seeds the
- *      same chip from the keyboard.
- *   3. **Flanking-cell geometry** — the leading `!` picker (left edge AND
- *      width) and the trailing submit button's right edge do NOT move when
- *      the centred-floating Z4B cluster changes width. `!find` mounting the
- *      find cluster is the live width change.
- *   4. **`!btw` round-trip** — `!btw <question>` opens the side-question
+ *      not among them: it lives in the find bar, which owns the search.
+ *   2. **The Z4A route group** — exactly two segments, labelled Prompt and
+ *      Changes, with Prompt selected at rest. Clicking Changes selects it and
+ *      raises the Changes shade; clicking Prompt comes back.
+ *   3. **Flanking-cell geometry** — the leading Z4A group (left edge AND
+ *      width) does NOT move when the centred-floating Z4B cluster changes
+ *      width. The Prompt↔Changes switch is the live width change: commit
+ *      mode swaps Z4B's Code chips for the commit cluster.
+ *   4. **`/btw` round-trip** — `/btw <question>` opens the side-question
  *      placard and the exchange never touches the transcript (the [D108]
  *      invariant, beside at0211): the settled answer is injected as the
  *      `side_question_answer` frame the probe pinned.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
- * @covers tugdeck/src/lib/bang-commands.ts
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/lib/commit-mode-controller.ts
  * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
@@ -47,28 +44,16 @@ const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
 const PROMPT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
-const ENTRY_ROOT = `${CARD} [data-slot="tug-prompt-entry"]`;
 const TOOLBAR = `${CARD} .tug-prompt-entry-toolbar`;
-/** The Z4A leading cell — the `!` routing picker's popup trigger. */
-const PICKER = `${TOOLBAR} .tug-prompt-entry-command-picker`;
-const SUBMIT = `${CARD} .tug-prompt-entry-submit-button`;
+/** The Z4A leading cell — the two-route choice group. */
+const ROUTE_GROUP = `${TOOLBAR} .tug-prompt-entry-route-group`;
+const ROUTE_SEGMENTS = `${ROUTE_GROUP} .tug-choice-group-segment`;
+const ROUTE_SEGMENT = (value: string): string =>
+  `${ROUTE_GROUP} [data-choice-value="${value}"]`;
 const TRANSCRIPT_ENTRIES = `${CARD} [data-slot="tug-transcript-entry"]`;
 const FIND_CLUSTER = `${CARD} [data-slot="find-cluster"]`;
 const SIDE_Q_ASK = ".side-question-question";
 const SIDE_Q_ANSWER = ".side-question-answer";
-
-/** A seeded routing chip in the draft — one atom per routing name. */
-const chipSelector = (name: string): string =>
-  `${PROMPT} img[data-atom-type="command"][data-atom-value="${name}"]`;
-
-// The bang registry, mirroring `BANG_COMMANDS` in `lib/bang-commands.ts` —
-// the picker lists these in this order, each with its ⌃⌘ chord.
-const BANGS: ReadonlyArray<{ name: string; shortcut: string }> = [
-  { name: "shell", shortcut: "⌃⌘S" },
-  { name: "btw", shortcut: "⌃⌘B" },
-  { name: "find", shortcut: "⌃⌘G" },
-  { name: "history", shortcut: "⌃⌘H" },
-];
 
 // The static Code chip set — no route varies it any more.
 const STATIC_CHIPS = [
@@ -122,38 +107,32 @@ async function mountedChips(app: App): Promise<string[]> {
   );
 }
 
-/** Rects of the flanking cells: the leading Z4A picker and the trailing Z5
- *  submit button. The Z4B cluster floats centred between two spacers, so
- *  neither flank may move when it resizes. */
-async function flankingRects(
+/** The route group's segments: label plus whether it reads as selected. */
+async function routeSegments(
   app: App,
-): Promise<{ pickerLeft: number; pickerWidth: number; submitRight: number } | null> {
-  return app.evalJS<{
-    pickerLeft: number;
-    pickerWidth: number;
-    submitRight: number;
-  } | null>(
-    `(function(){
-      var p = document.querySelector(${JSON.stringify(PICKER)});
-      var s = document.querySelector(${JSON.stringify(SUBMIT)});
-      if (!p || !s) return null;
-      var pr = p.getBoundingClientRect();
-      var sr = s.getBoundingClientRect();
-      return { pickerLeft: pr.left, pickerWidth: pr.width, submitRight: sr.right };
-    })()`,
+): Promise<Array<{ label: string; active: boolean }>> {
+  return app.evalJS<Array<{ label: string; active: boolean }>>(
+    `Array.from(document.querySelectorAll(${JSON.stringify(ROUTE_SEGMENTS)})).map(function(el){
+       return {
+         label: (el.textContent || "").trim(),
+         active: el.getAttribute("data-state") === "active",
+       };
+     })`,
   );
 }
 
-/** Empty the draft, whatever it holds (typed text or seeded chips). The
- *  emptiness gate is the entry root's `data-empty` bridge — an empty editor
- *  still renders placeholder text, so `.cm-content` text is no signal. */
-async function clearDraft(app: App): Promise<void> {
-  await app.nativeClickAtElement(PROMPT);
-  await app.nativeKey("a", ["cmd"]);
-  await app.nativeKey("Backspace");
-  await app.waitForCondition<boolean>(
-    `document.querySelector(${JSON.stringify(ENTRY_ROOT)}).getAttribute("data-empty") === "true"`,
-    { timeoutMs: 4000 },
+/** The leading Z4A cell's rect. The Z4B cluster floats centred between two
+ *  spacers, so the leading flank must not move when it resizes. */
+async function routeGroupRect(
+  app: App,
+): Promise<{ left: number; width: number } | null> {
+  return app.evalJS<{ left: number; width: number } | null>(
+    `(function(){
+      var g = document.querySelector(${JSON.stringify(ROUTE_GROUP)});
+      if (!g) return null;
+      var r = g.getBoundingClientRect();
+      return { left: r.left, width: r.width };
+    })()`,
   );
 }
 
@@ -166,12 +145,12 @@ async function submitLine(app: App, line: string): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0215: bang-routing chrome — chip set, picker, geometry, btw round-trip",
+  "AT0215: composer route chrome — chip set, route tabs, geometry, btw round-trip",
   () => {
     test(
-      "the static chip set, the four-routing picker, unmoved flanks, and a btw ask that never touches the transcript",
+      "the static chip set, a two-segment route group, an unmoved leading flank, and a btw ask that never touches the transcript",
       async () => {
-        const app = await launchTugApp({ testName: "at0215-bang-chrome" });
+        const app = await launchTugApp({ testName: "at0215-composer-route-chrome" });
         try {
           await app.enableDeckTrace(true);
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -181,8 +160,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.bindSession("A", { tugSessionId: SID, projectDir: dir });
           await app.awaitEngineReady("A");
 
-          // One committed turn so the transcript has entries to count — and
-          // text for `!find` to match.
+          // One committed turn so the transcript has entries to count.
           await app.driveSession("A", { op: "send", text: "hello" });
           const frame = (decoded: Record<string, unknown>) =>
             app.driveSession("A", {
@@ -210,7 +188,7 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 8000 },
           );
 
-          // --- The static Code chip set, with no find cluster at rest. ---
+          // --- The static Code chip set, with no find cluster in Z4B. ---
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(CARD)} + ' [data-slot="effort-chip"]') !== null`,
             { timeoutMs: 8000 },
@@ -222,83 +200,59 @@ describe.skipIf(!SHOULD_RUN)(
             await app.evalJS<boolean>(
               `document.querySelector(${JSON.stringify(FIND_CLUSTER)}) === null`,
             ),
-            "the find cluster is absent until a find is active",
+            "the find cluster is not in Z4B — it belongs to the find bar",
           ).toBe(true);
 
-          // --- The Z4A picker offers exactly the four routings. ---
-          await app.click(PICKER);
+          // --- Z4A is exactly two routes, Prompt selected at rest. ---
           await app.waitForCondition<boolean>(
-            `document.querySelectorAll(".tug-menu-item[data-item-id]").length > 0`,
-            { timeoutMs: 4000 },
+            `document.querySelectorAll(${JSON.stringify(ROUTE_SEGMENTS)}).length === 2`,
+            { timeoutMs: 8000 },
           );
-          const menu = await app.evalJS<
-            Array<{ id: string; label: string; shortcut: string }>
-          >(
-            `Array.from(document.querySelectorAll(".tug-menu-item[data-item-id]")).map(function(el){
-               var label = el.querySelector(".tug-menu-item-label");
-               var shortcut = el.querySelector(".tug-menu-item-shortcut");
-               return {
-                 id: el.getAttribute("data-item-id") || "",
-                 label: label ? label.textContent.trim() : "",
-                 shortcut: shortcut ? shortcut.textContent.trim() : "",
-               };
-             })`,
-          );
-          expect(menu, "the picker lists exactly the bang registry").toEqual(
-            BANGS.map((b) => ({
-              id: b.name,
-              label: `!${b.name}`,
-              shortcut: b.shortcut,
-            })),
-          );
-
-          // Picking a routing seeds its chip in the draft.
-          await app.click(`.tug-menu-item[data-item-id="btw"]`);
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(chipSelector("btw"))}) !== null`,
-            { timeoutMs: 4000 },
-          );
-
-          // The ⌃⌘ chord is the keyboard twin — it seeds the same chip.
-          await clearDraft(app);
-          await app.evalJS<boolean>(
-            `(function(){
-              var target = document.activeElement || document;
-              return target.dispatchEvent(new KeyboardEvent("keydown", {
-                code: "KeyS", key: "s", ctrlKey: true, metaKey: true,
-                bubbles: true, cancelable: true, composed: true,
-              }));
-            })()`,
-          );
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(chipSelector("shell"))}) !== null`,
-            { timeoutMs: 4000 },
-          );
-          await clearDraft(app);
+          expect(await routeSegments(app), "the composer's two routes").toEqual([
+            { label: "Prompt", active: true },
+            { label: "Changes", active: false },
+          ]);
 
           // --- Flanking geometry across a real Z4B width change. ---
-          const restRects = await flankingRects(app);
-          expect(restRects).not.toBeNull();
+          // Entering Changes swaps Z4B's Code chips for the commit cluster —
+          // the centred slot's width event. The leading flank must not move.
+          const restRect = await routeGroupRect(app);
+          expect(restRect).not.toBeNull();
 
-          // `!find` mounts the find cluster into the centred Z4B cluster.
-          await submitLine(app, "!find there");
+          await app.click(ROUTE_SEGMENT("changes"));
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(FIND_CLUSTER)}) !== null`,
+            `document.querySelector(${JSON.stringify(CARD)} + ' .session-view-slot[data-active-view="changes"]') !== null`,
             { timeoutMs: 6000 },
           );
-          const findRects = await flankingRects(app);
-          expect(findRects).not.toBeNull();
           expect(
-            Math.abs(findRects!.pickerLeft - restRects!.pickerLeft),
+            await routeSegments(app),
+            "clicking Changes selects it",
+          ).toEqual([
+            { label: "Prompt", active: false },
+            { label: "Changes", active: true },
+          ]);
+
+          const changesRect = await routeGroupRect(app);
+          expect(changesRect).not.toBeNull();
+          expect(
+            Math.abs(changesRect!.left - restRect!.left),
           ).toBeLessThanOrEqual(1);
           expect(
-            Math.abs(findRects!.pickerWidth - restRects!.pickerWidth),
-          ).toBeLessThanOrEqual(1);
-          expect(
-            Math.abs(findRects!.submitRight - restRects!.submitRight),
+            Math.abs(changesRect!.width - restRect!.width),
           ).toBeLessThanOrEqual(1);
 
-          // --- `!btw` → side-question placard, transcript untouched. ---
+          // Back to Prompt — the group is how you leave Changes.
+          await app.click(ROUTE_SEGMENT("prompt"));
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(CARD)} + ' .session-view-slot[data-active-view="changes"]') === null`,
+            { timeoutMs: 6000 },
+          );
+          expect(await routeSegments(app), "clicking Prompt comes back").toEqual([
+            { label: "Prompt", active: true },
+            { label: "Changes", active: false },
+          ]);
+
+          // --- `/btw` → side-question placard, transcript untouched. ---
           const countEntries = () =>
             app.evalJS<number>(
               `document.querySelectorAll(${JSON.stringify(TRANSCRIPT_ENTRIES)}).length`,
@@ -306,7 +260,7 @@ describe.skipIf(!SHOULD_RUN)(
           const baseline = await countEntries();
           expect(baseline).toBeGreaterThan(0);
 
-          await submitLine(app, "!btw what did I just say");
+          await submitLine(app, "/btw what did I just say");
           await app.waitForCondition<boolean>(
             `document.querySelector('[data-slot="side-question-body"]') !== null &&
              document.querySelector(${JSON.stringify(SIDE_Q_ASK)}) !== null`,

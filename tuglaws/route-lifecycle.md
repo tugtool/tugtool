@@ -1,5 +1,7 @@
 # Route Lifecycle
 
+> **HISTORICAL — this describes a mechanism that no longer ships.** `RouteLifecycle` and `TugRouteDelegate` are absent from `tugdeck/src`; they went with the sticky `❯` / `$` / `?` recipient routes. The composer's routes today are the two of [D122] — Prompt and Changes — and their selection lives in `CommitModeController`, read through `useSyncExternalStore` with no lifecycle pipe. Kept for the observer-vs-delegate reasoning, which is still the shape `CardLifecycle` uses.
+
 *Route lifecycle: the per-prompt-entry event pipe for the command route. How `RouteLifecycle` holds the authoritative route, how `TugRouteDelegate` observers are registered and fired, and why dispatch is synchronous.*
 
 *Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [tuglaws.md](tuglaws.md).*

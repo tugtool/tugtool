@@ -108,7 +108,7 @@ Standard devise-skeleton conventions apply: explicit `{#anchor}` headings, plan-
 
 **Plan to resolve:** Build it flow-first in [#step-2] and watch a real card with the transcript scrolled to bottom and to a mid-point. `SessionTranscriptHost` already handles Z2 telemetry growth without repositioning the scroll ([D97] states the transcript pane is a flex column sized so Z2 growth takes space the list cedes), which is the same geometry, so flow is the informed default rather than a coin flip.
 
-**Resolution:** OPEN — resolve inside [#step-2]; record the outcome in the [D97] amendment written by [#step-6].
+**Resolution:** RESOLVED — **flow sibling**, shipped in [#step-2]. The bar is a direct child of `.session-card-top-column` with `flex: 0 0 auto`, so the view slot (`flex: 1 1 auto`, `min-height: 0`) cedes the height, exactly as it already does for Z2 telemetry growth. The scroller's `scrollTop` is untouched by the insertion, so a mid-scroll transcript keeps its top edge anchored and only loses viewport height from the bottom; a bottom-pinned transcript is held by [D07] follow-bottom. The overlay fallback is not needed, so [P07]'s coexistence claim stands unchanged. Record the placement in the [D97] amendment written by [#step-6].
 
 #### [Q02] Should the Changes tab be disabled when the project is not a git repository? (OPEN) {#q02-changes-tab-disabled}
 
@@ -216,8 +216,10 @@ Standard devise-skeleton conventions apply: explicit `{#anchor}` headings, plan-
 - `/changes` and `/commit` coexist without redundancy: `/commit [message]` enters with a seed message (an act of committing); `/changes` is the bare tab switch (an act of looking).
 
 **Implications:**
-- `/prompt` while already on Prompt, and `/changes` while already on Changes, are no-ops — `enter()` / `exit()` are idempotent against the controller's own `active` flag.
-- These are the only two `LOCAL_SLASH_COMMANDS` entries whose effect is a *mode* rather than a surface, which is the honest reading: they select a route.
+- `/changes` while already on Changes is a no-op — `enter()` / `exit()` are idempotent against the controller's own `active` flag.
+- It is the only `LOCAL_SLASH_COMMANDS` entry whose effect is a *mode* rather than a surface, which is the honest reading: it selects a route.
+
+**AMENDED DURING IMPLEMENTATION — `/prompt` is not shipped.** This decision assumed `/prompt` would be typeable from the Changes route. It is not, and the reason is [P01] itself: the Changes route *owns the composer's document*, so `performSubmit` lands the message verbatim and returns **before** the slash-command interception runs. Nothing typed in Changes is read as a command. That leaves `/prompt` reachable only from the Prompt route, where it names the route you are already on — a registered command that can never act, which is a resting lie in the `/` popup. `/changes` is unaffected (it is typed from Prompt, where commands do run) and ships. The ways back from Changes are ⇧⌘P, ⇧⌘C, the Z4A tab, and Escape — four doors, none of them typed. Pinned by `at0340-composer-routes.test.ts` and by a `matchLocalSlashCommand("/prompt") === null` unit assertion.
 
 #### [P06] Find lifts out of the composer into a ⌘F bar above Z2 (DECIDED) {#p06-find-bar}
 
@@ -388,7 +390,7 @@ With the bar owning the query, its lifetime is the bar's lifetime: closing the b
 | **Route** | A mode that owns the composer's entire document. Exactly two: Prompt, Changes. |
 | **Prompt route** | The default composer: assistant prompts, slash commands, and auto-routed shell lines. |
 | **Changes route** | Commit mode: the composer is the commit-message editor and the Changes shade is up. |
-| **Slash command** | A one-shot verb typed as `/name [args]`. Does not change the route, except `/prompt` and `/changes` ([P05]). |
+| **Slash command** | A one-shot verb typed as `/name [args]`. Does not change the route, except `/changes` ([P05]). |
 | **Find bar** | The ⌘F strip above Z2. Not a route, not a shade. |
 
 The user-visible segment labels are **Prompt** and **Changes**; the slash commands are `/prompt` and `/changes`; the choice-group values are the strings `"prompt"` and `"changes"`.
@@ -451,8 +453,8 @@ Registry order matters only for popup presentation; place `shell` and `btw` near
 |------|---------|
 | `tugdeck/src/components/tugways/tug-find-bar.tsx` | Shared find bar: entry shell + CM6 query field + `TugFindCluster` + ↑/↓ + find responder + wrap overlay, over a host-supplied `FindSession` ([P10]) |
 | `tugdeck/src/components/tugways/tug-find-bar.css` | Bar styling, generalized from `text-card-find-bar.css` |
-| `tests/app-test/at0338-session-find-bar.test.ts` | ⌘F open → search → ⌘G cycle → Escape close (next free number is at0338; highest existing is at0337 plus the at99xx lab tier) |
-| `tests/app-test/at0339-composer-routes.test.ts` | Z4A tab group, ⇧⌘P / ⇧⌘C, `/prompt` / `/changes`, draft stash-and-restore |
+| `tests/app-test/at0339-session-find-bar.test.ts` | ⌘F open → search → ⌘G cycle → Escape close (at0338 was taken by the slot-chords suite after this plan was written, so the pair landed at at0339 / at0340) |
+| `tests/app-test/at0340-composer-routes.test.ts` | Z4A tab group, ⇧⌘P / ⇧⌘C, `/prompt` / `/changes`, draft stash-and-restore |
 
 #### Files deleted {#deleted-files}
 
@@ -525,14 +527,14 @@ Registry order matters only for popup presentation; place `shell` and `btw` near
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Extract `TugFindBar` from `TextCardFindBar` | pending | — |
-| #step-2 | Mount the Session find bar; claim ⌘F | pending | — |
-| #step-3 | `/shell` and `/btw` local slash commands | pending | — |
-| #step-4 | Retire the bang layer; Z4A becomes the route tabs | pending | — |
-| #step-5 | Route chords and `/prompt` / `/changes` | pending | — |
-| #step-6 | Docs: [D97], the new global decision, help content | pending | — |
-| #step-7 | App-tests: rewrite the bang suites, add the two new ones | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Extract `TugFindBar` from `TextCardFindBar` | done | (dash) |
+| #step-2 | Mount the Session find bar; claim ⌘F | done | (dash) |
+| #step-3 | `/shell` and `/btw` local slash commands | done | (dash) |
+| #step-4 | Retire the bang layer; Z4A becomes the route tabs | done | (dash) |
+| #step-5 | Route chords and `/prompt` / `/changes` | done | (dash) |
+| #step-6 | Docs: [D97], the new global decision, help content | done | (dash) |
+| #step-7 | App-tests: rewrite the bang suites, add the two new ones | done | (dash) |
+| #step-8 | Integration checkpoint | done | (dash) |
 
 ---
 
@@ -589,7 +591,7 @@ Registry order matters only for popup presentation; place `shell` and `btw` near
 - [ ] Resolve [Q01]: check the transcript's scroll position across an open/close cycle with the list at bottom and at a mid-point. If flow insertion jumps the view, switch the bar's CSS to an absolute overlay pinned above Z2 and record which shipped — but note the fallback is **not** free: an overlay occludes the transcript's last rows, and because the Changes shade is bottom-anchored to the transcript region, an overlaid bar and a raised shade would paint over each other instead of stacking. If [Q01] resolves to overlay, re-check [P07]'s coexistence claim before calling the step done.
 
 **Tests:**
-- [ ] Covered by the new app-test in #step-7 (`at0338-session-find-bar.test.ts`); this step's proof is the manual checkpoint below.
+- [ ] Covered by the new app-test in #step-7 (`at0339-session-find-bar.test.ts`); this step's proof is the manual checkpoint below.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
@@ -740,13 +742,13 @@ Registry order matters only for popup presentation; place `shell` and `btw` near
 **References:** [P01] Two routes, [P02] Bang retirement, [P03] Slash demotions, [P06] Find bar, [P08] Chords, Spec S01, Spec S02, (#success-criteria, #test-non-goals)
 
 **Artifacts:**
-- `tests/app-test/at0338-session-find-bar.test.ts` (new)
-- `tests/app-test/at0339-composer-routes.test.ts` (new)
+- `tests/app-test/at0339-session-find-bar.test.ts` (new)
+- `tests/app-test/at0340-composer-routes.test.ts` (new)
 - Four existing suites updated
 
 **Tasks:**
-- [ ] **New `at0338-session-find-bar.test.ts`** — ⌘F opens the bar with the caret in the query field; typing a term paints both matches and actives the first; ⌘G advances and ⇧⌘G retreats; ⌘F while open re-focuses the query field; Escape closes the bar and dissolves the highlights; **a second ⌘F reopens with the previous query pre-filled and selected, and ⌘G while closed is inert** ([P13]); ⇧⌘C raises the Changes shade with the bar still open ([P07]). `@covers tugdeck/src/components/tugways/tug-find-bar.tsx`, `@covers tugdeck/src/components/tugways/cards/session-card.tsx`.
-- [ ] **New `at0339-composer-routes.test.ts`** — Z4A renders exactly two segments labelled Prompt and Changes; clicking Changes raises the shade and swaps the composer document; clicking Prompt restores a typed prompt draft verbatim (the [P01] stash-and-restore); ⇧⌘C and ⇧⌘P move the selection; `/changes` and `/prompt` move it; a one-shot (`/btw`) leaves it alone. `@covers tugdeck/src/components/tugways/tug-prompt-entry.tsx`, `@covers tugdeck/src/lib/commit-mode-controller.ts`, `@covers tugdeck/src/lib/slash-commands.ts`.
+- [ ] **New `at0339-session-find-bar.test.ts`** — ⌘F opens the bar with the caret in the query field; typing a term paints both matches and actives the first; ⌘G advances and ⇧⌘G retreats; ⌘F while open re-focuses the query field; Escape closes the bar and dissolves the highlights; **a second ⌘F reopens with the previous query pre-filled and selected, and ⌘G while closed is inert** ([P13]); ⇧⌘C raises the Changes shade with the bar still open ([P07]). `@covers tugdeck/src/components/tugways/tug-find-bar.tsx`, `@covers tugdeck/src/components/tugways/cards/session-card.tsx`.
+- [ ] **New `at0340-composer-routes.test.ts`** — Z4A renders exactly two segments labelled Prompt and Changes; clicking Changes raises the shade and swaps the composer document; clicking Prompt restores a typed prompt draft verbatim (the [P01] stash-and-restore); ⇧⌘C and ⇧⌘P move the selection; `/changes` and `/prompt` move it; a one-shot (`/btw`) leaves it alone. `@covers tugdeck/src/components/tugways/tug-prompt-entry.tsx`, `@covers tugdeck/src/lib/commit-mode-controller.ts`, `@covers tugdeck/src/lib/slash-commands.ts`.
 - [ ] **Rewrite `at0215-bang-chrome.test.ts`** → the Z4A route-chrome test. Its four current cases map over: (1) the static chip set keeps its assertion, minus the find cluster which has left Z4B; (2) the `!` picker case becomes the two-segment tab group; (3) the flanking-cell geometry case keeps its value but needs a new stimulus — `!find` no longer mounts a Z4B cluster, and the obvious substitute (the commit cluster's "Changes / N files") only appears in commit mode, where Z4A and Z5 have *also* swapped, so it would be measuring a different layout than the original assertion did. Assert the geometry across a **Prompt↔Changes switch** instead: that is the real Z4B width event now, and it exercises exactly the invariant the case was written to protect; (4) the `!btw` round-trip becomes `/btw`. Rename the file to match its new subject and update its `@covers` (the `bang-commands.ts` line must go — `app-test-covers-check` fails on a path that no longer resolves).
 - [ ] **Update `at0222-one-shot-commands.test.ts`** — `!shell` → `/shell`, `!find` → the ⌘F bar (or delete that case as now covered by at0338), and the namespace-split case (case 3, asserting the `/` popup offers no bang routings) inverts: `/shell` and `/btw` are now *in* the `/` popup and there is no `!` popup. Note this suite is currently `describe.skip` for an unrelated reason (case 4 pins the bare-command routing to a login-PATH check); keep the skip unless case 4 is also resolved, but still update the code so it is not stale when re-enabled.
 - [ ] **Update `at0216-shell-exchange.test.ts`** — `!shell <cmd>` → `/shell <cmd>`; case 2, the `!pwd` escape hatch, no longer has a mechanism: replace it with the auto-router equivalent (a bare `pwd` classified to the shell) or drop it and say so in the docblock. Cases 1, 3, and 4 (statefulness, the non-context styling hook, the restore interleave) are unaffected.
@@ -760,7 +762,7 @@ Registry order matters only for popup presentation; place `shell` and `btw` near
 **Checkpoint:**
 - [ ] `just app-test-covers-check`
 - [ ] `just app-test-changed` — the selection derived from this plan's diff passes
-- [ ] `just app-test tests/app-test/at0338-session-find-bar.test.ts tests/app-test/at0339-composer-routes.test.ts` passes
+- [ ] `just app-test tests/app-test/at0339-session-find-bar.test.ts tests/app-test/at0340-composer-routes.test.ts` passes
 
 ---
 
@@ -795,7 +797,7 @@ Registry order matters only for popup presentation; place `shell` and `btw` near
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [ ] `tugdeck/src/lib/bang-commands.ts` is deleted and `rg -n 'bang|BANG' tugdeck/src tests/app-test` is empty (grep)
-- [ ] Z4A renders a two-segment Prompt | Changes control whose selection always agrees with `CommitModeController.getSnapshot().active` across all eight entry/exit paths (at0339)
+- [ ] Z4A renders a two-segment Prompt | Changes control whose selection always agrees with `CommitModeController.getSnapshot().active` across all eight entry/exit paths (at0340)
 - [ ] ⌘F opens the Session find bar and Edit ▸ Find… validates enabled on a frontmost Session card (at0338 + manual menu check)
 - [ ] `/shell`, `/btw`, `/prompt`, `/changes` all match and dispatch; `/find` and `/history` do not exist (bun test + at0339)
 - [ ] ⇧⌘P selects Prompt and ⌃⌘P cycles the permission mode from both the binding and the Swift menu (at0339 + manual)
@@ -803,8 +805,8 @@ Registry order matters only for popup presentation; place `shell` and `btw` near
 - [ ] [D97]'s zone table names the real Z4A occupant and `/help` lists only chords that exist (manual)
 
 **Acceptance tests:**
-- [ ] `tests/app-test/at0338-session-find-bar.test.ts`
-- [ ] `tests/app-test/at0339-composer-routes.test.ts`
+- [ ] `tests/app-test/at0339-session-find-bar.test.ts`
+- [ ] `tests/app-test/at0340-composer-routes.test.ts`
 - [ ] `tests/app-test/at0215-*` (rewritten route chrome)
 - [ ] `tests/app-test/at0211-btw-side-question-overlay.test.ts`
 - [ ] `tests/app-test/at0216-shell-exchange.test.ts`
@@ -822,7 +824,7 @@ Registry order matters only for popup presentation; place `shell` and `btw` near
 | Checkpoint | Verification |
 |------------|--------------|
 | Bang layer gone | `rg -n 'bang\|BANG' tugdeck/src tests/app-test` empty; `lib/bang-commands.ts` absent |
-| Two routes visible and correct | `just app-test tests/app-test/at0339-composer-routes.test.ts` |
+| Two routes visible and correct | `just app-test tests/app-test/at0340-composer-routes.test.ts` |
 | ⌘F claimed | `just app-test tests/app-test/at0338-session-find-bar.test.ts` + Edit ▸ Find… enabled |
 | Text card unregressed | Its existing find app-tests pass unmodified |
 | Build clean | `cd tugdeck && bunx tsc --noEmit && bunx vite build` |

@@ -362,7 +362,7 @@ Step-by-step:
     focused element so it reaches the document-level capture listeners:
 
     ```ts
-    // ⇧⌘P — a key-card-scoped keybinding chord.
+    // ⌃⌘P — a key-card-scoped keybinding chord.
     await app.evalJS(`(function(){
       var t = document.activeElement || document;
       return t.dispatchEvent(new KeyboardEvent("keydown", {
@@ -373,7 +373,7 @@ Step-by-step:
     ```
 
     **Why not `nativeKey` for a chord.** A native `CGEvent` for a
-    `⌘`-modified chord (especially two-modifier, e.g. `⇧⌘P`) is routed
+    `⌘`-modified chord (especially two-modifier, e.g. `⌃⌘P`) is routed
     through windowserver, where the OS can intercept it as a menu
     key-equivalent or drop a modifier flag on the timing seam before it
     reaches the WKWebView. Single-modifier chords like `⌘A` usually
@@ -383,7 +383,7 @@ Step-by-step:
     accelerator chords synthetically. (The focus-walk stage that owns
     `Tab` / `Shift-Tab` also reads only `event.key` + modifiers, so the
     same synthetic dispatch drives it.) See `at0085` (route `⇧⌘C`) and
-    `at0105` (permission `⇧⌘P`); the binding's static contract is
+    `at0105` (permission `⌃⌘P`); the binding's static contract is
     additionally pinned by `keybinding-map.test.ts` (pure-logic).
 
 ## Directory layout

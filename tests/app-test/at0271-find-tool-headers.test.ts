@@ -1,5 +1,5 @@
 /**
- * at0271-find-tool-headers.test.ts — `!find` reaches tool-call block
+ * at0271-find-tool-headers.test.ts — transcript find reaches tool-call block
  * headers, in both collapse states ([AT0271]).
  *
  * ## Why this exists
@@ -27,6 +27,11 @@
  *      its label and its one-line preview, never the folded-away prose.
  *      Expanding swaps which of the two is findable.
  *
+ * The door is ⌘F: the search runs in the find bar above Z2, and Escape
+ * closes it (which clears the session). The subject here is index/painter
+ * agreement, not the bar — the bar is only how the query gets in.
+ *
+ * @covers tugdeck/src/components/tugways/tug-find-bar.tsx
  * @covers tugdeck/src/lib/transcript-search-index.ts
  * @covers tugdeck/src/components/tugways/cards/blocks/tool-header-projection.ts
  * @covers tugdeck/src/components/tugways/transcript-find-highlighter.ts
@@ -80,12 +85,30 @@ const BASH_BLOCK = '[data-card-id="A"] [data-slot="bash-tool-block"]';
 const THINKING_BLOCK =
   '[data-card-id="A"] [data-slot="session-thinking-block"]';
 
-/** Focus the editor, type `line`, settle, and force-submit with ⌘Enter. */
-async function submitLine(app: App, line: string): Promise<void> {
+const FIND_BAR = '[data-card-id="A"] [data-slot="session-card-find-bar"]';
+const FIND_INPUT = `${FIND_BAR} [data-testid="session-card-find-input"] .cm-content`;
+
+/**
+ * Open the find bar with ⌘F and run `query` in it. A reopen pre-fills the
+ * previous query fully selected, so typing replaces it either way.
+ */
+async function findInTranscript(app: App, query: string): Promise<void> {
   await app.nativeClickAtElement(EDITOR_SELECTOR);
-  await app.nativeType(line);
+  await app.nativeKey("f", ["cmd"]);
+  await app.waitForCondition<boolean>(
+    `document.querySelector('${FIND_BAR}') !== null`,
+    { timeoutMs: 8000 },
+  );
+  await app.waitForCondition<boolean>(
+    `(() => {
+      const input = document.querySelector('${FIND_INPUT}');
+      return input !== null && document.activeElement !== null &&
+        (input.contains(document.activeElement) || input === document.activeElement);
+    })()`,
+    { timeoutMs: 8000 },
+  );
+  await app.nativeType(query);
   await new Promise((r) => setTimeout(r, 150));
-  await app.nativeKey("Enter", ["cmd"]);
 }
 
 /** The texts of every painted find range, in no particular order. */
@@ -117,10 +140,13 @@ async function waitForPaintedCount(app: App, expected: number): Promise<void> {
   );
 }
 
-/** Dissolve the live find so the next `!find` starts from a clean paint. */
+/** Escape closes the bar, which dissolves the paint for the next search. */
 async function clearFind(app: App): Promise<void> {
-  await app.nativeClickAtElement(EDITOR_SELECTOR);
   await app.nativeKey("Escape");
+  await app.waitForCondition<boolean>(
+    `document.querySelector('${FIND_BAR}') === null`,
+    { timeoutMs: 8000 },
+  );
   await waitForPaintedCount(app, 0);
 }
 
@@ -169,19 +195,19 @@ describe.skipIf(!SHOULD_RUN)("AT0271: find reaches tool-call headers", () => {
         );
 
         // 1. The collapsed header's command paints.
-        await submitLine(app, `!find ${CMD_PROBE}`);
+        await findInTranscript(app, CMD_PROBE);
         await waitForPaintedCount(app, 1);
         expect(await paintedTexts(app)).toEqual([CMD_PROBE]);
         await clearFind(app);
 
         // …and so does the tool name.
-        await submitLine(app, "!find Bash");
+        await findInTranscript(app, "Bash");
         await waitForPaintedCount(app, 1);
         expect(await paintedTexts(app)).toEqual(["Bash"]);
         await clearFind(app);
 
         // 2. The unmounted body's output is out of scope while collapsed.
-        await submitLine(app, `!find ${OUT_PROBE}`);
+        await findInTranscript(app, OUT_PROBE);
         await new Promise((r) => setTimeout(r, 1000));
         expect(await paintedTexts(app)).toEqual([]);
         await clearFind(app);
@@ -194,13 +220,13 @@ describe.skipIf(!SHOULD_RUN)("AT0271: find reaches tool-call headers", () => {
           `document.querySelector('${BASH_BLOCK}[data-block-collapsed="true"]') === null`,
           { timeoutMs: 8000 },
         );
-        await submitLine(app, `!find ${OUT_PROBE}`);
+        await findInTranscript(app, OUT_PROBE);
         await waitForPaintedCount(app, 1);
         expect(await paintedTexts(app)).toEqual([OUT_PROBE]);
         await clearFind(app);
 
         // The header stays findable with the body open.
-        await submitLine(app, `!find ${CMD_PROBE}`);
+        await findInTranscript(app, CMD_PROBE);
         await waitForPaintedCount(app, 1);
         expect(await paintedTexts(app)).toEqual([CMD_PROBE]);
       } finally {
@@ -251,12 +277,12 @@ describe.skipIf(!SHOULD_RUN)("AT0271: find reaches tool-call headers", () => {
         // Expanded: the prose is on screen and matches — ONCE. The preview
         // holds the same first line but is `visibility: hidden`, so it must
         // not paint a second range.
-        await submitLine(app, `!find ${HEAD_PROBE}`);
+        await findInTranscript(app, HEAD_PROBE);
         await waitForPaintedCount(app, 1);
         expect(await paintedTexts(app)).toEqual([HEAD_PROBE]);
         await clearFind(app);
 
-        await submitLine(app, `!find ${DEEP_PROBE}`);
+        await findInTranscript(app, DEEP_PROBE);
         await waitForPaintedCount(app, 1);
         await clearFind(app);
 
@@ -270,13 +296,13 @@ describe.skipIf(!SHOULD_RUN)("AT0271: find reaches tool-call headers", () => {
           { timeoutMs: 8000 },
         );
 
-        await submitLine(app, `!find ${DEEP_PROBE}`);
+        await findInTranscript(app, DEEP_PROBE);
         await new Promise((r) => setTimeout(r, 1000));
         expect(await paintedTexts(app)).toEqual([]);
         await clearFind(app);
 
         // The visible preview keeps the first line findable.
-        await submitLine(app, `!find ${HEAD_PROBE}`);
+        await findInTranscript(app, HEAD_PROBE);
         await waitForPaintedCount(app, 1);
         expect(await paintedTexts(app)).toEqual([HEAD_PROBE]);
       } finally {

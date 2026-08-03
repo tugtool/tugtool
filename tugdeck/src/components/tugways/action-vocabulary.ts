@@ -279,9 +279,18 @@ export const TUG_ACTIONS = {
   //                 imposition, when nothing is selected, when the
   //                 selection is the Lens, or when N exceeds the
   //                 arrangement's slot count.
+  // SELECT_COMPOSER_ROUTE: payload — `value: "prompt" | "changes"`. Select
+  //                 one of the composer's two routes directly (as opposed to
+  //                 TOGGLE_CHANGES_VIEW, which flips between them). Bound to
+  //                 ⇧⌘P for `"prompt"`, scoped `scope: "key-card"`, handled
+  //                 by the session card's card-content responder, which
+  //                 applies it through `CommitModeController` — the single
+  //                 home of the route selection. Non-session cards register
+  //                 no handler, so the dispatch is a silent no-op
+  //                 (`preventDefaultOnMatch` suppresses the macOS beep).
   // CYCLE_PERMISSION_MODE: payload — none. Advance the session-card's
   //                 permission mode one step (default → acceptEdits →
-  //                 plan → auto → default). Bound to ⇧⌘P, scoped
+  //                 plan → auto → default). Bound to ⌃⌘P, scoped
   //                 `scope: "key-card"`, handled by the session card's
   //                 card-content responder. Non-dev cards register no
   //                 handler, so the dispatch is a silent no-op
@@ -369,6 +378,7 @@ export const TUG_ACTIONS = {
   FOCUS_PREVIOUS: "focus-previous",
   FOCUS_PROMPT:   "focus-prompt",
   MOVE_TO_SLOT:   "move-to-slot",
+  SELECT_COMPOSER_ROUTE: "select-composer-route",
   CYCLE_PERMISSION_MODE: "cycle-permission-mode",
   SET_PERMISSION_MODE: "set-permission-mode",
   INTERRUPT_SESSION: "interrupt-session",

@@ -274,6 +274,15 @@
    own tokens per [L20]. Rule sets only `background-color` (no
    foreground) — self-documenting per [L16]; descendants render on
    this surface and declare their own `@tug-renders-on` accordingly. */
+/* The find bar ([P06]/[P07]) — a flow row between the view slot and Z2,
+   content-sized exactly like the status bar beneath it. `flex: 0 0 auto`
+   makes the view slot cede the height rather than the bar being squeezed,
+   which is the same geometry Z2 telemetry growth already uses. The bar's
+   own look comes from `tug-find-bar.css`; this rule is docking only. */
+.session-card-top-column > [data-slot="session-card-find-bar"] {
+  flex: 0 0 auto;
+}
+
 .session-card-status-bar {
   flex: 0 0 auto;
   display: flex;

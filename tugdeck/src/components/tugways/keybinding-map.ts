@@ -91,9 +91,9 @@ export interface KeyBinding {
  * a new shortcut is one entry here and (if needed) one handler on
  * the responder that owns the semantic.
  *
- * Shortcuts that currently dispatch to stub handlers (⌘, , ⌘F) still
- * route through the chain so the keystroke has a single code path
- * from the moment the handler grows real behavior.
+ * Shortcuts that currently dispatch to stub handlers (⌘,) still route
+ * through the chain so the keystroke has a single code path from the
+ * moment the handler grows real behavior.
  *
  *  * | Ctrl+`           | cycle-card             | stage 1 (global shortcut)       |
  * | Cmd+A            | select-all             | stage 1 + preventDefaultOnMatch |
@@ -106,7 +106,7 @@ export interface KeyBinding {
  * | Cmd+T            | add-card-to-active-pane | stage 1 (canvas)                |
  * | Cmd+,            | show-settings          | stage 1 (canvas stub)           |
  * | Cmd+.            | cancel-dialog          | stage 1 (floating surfaces)     |
- * | Cmd+F            | find                   | stage 1 (card stub)             |
+ * | Cmd+F            | find                   | stage 1 + preventDefaultOnMatch |
  * | Shift+Cmd+[      | previous-tab           | stage 1 (card, wraps)           |
  * | Shift+Cmd+]      | next-tab               | stage 1 (card, wraps)           |
  * | Cmd+1..Cmd+9     | move-to-slot           | stage 1 + value: 1..9 payload   |
@@ -149,12 +149,13 @@ export const KEYBINDINGS: KeyBinding[] = [
   // is the single source of truth.
   { key: "KeyZ", meta: true, action: TUG_ACTIONS.UNDO },
   { key: "KeyZ", meta: true, shift: true, action: TUG_ACTIONS.REDO },
-  // Card / canvas / dialog shortcuts. These do NOT set
+  // Card / canvas / dialog shortcuts. Most do NOT set
   // preventDefaultOnMatch: either the key has no browser default we
   // care about (⌘W in a WebView is app-level), or the default is
   // already suppressed upstream (⌘T via the Swift menu), or there is
-  // no conflicting default at all (⌘, , ⌘., ⌘F inside a WebView run
-  // without a browser UI to collide with).
+  // no conflicting default at all (⌘, and ⌘. inside a WebView run
+  // without a browser UI to collide with). ⌘F is the exception — see
+  // its entry below.
   { key: "KeyW", meta: true, action: TUG_ACTIONS.CLOSE },
   // ⌥⌘W — Close All Card Tabs (every tab in the focused multi-card pane).
   // App-level in the WebView; the Swift File menu drives it natively and
@@ -194,7 +195,17 @@ export const KEYBINDINGS: KeyBinding[] = [
   // bubble-phase consumers (e.g. CodeMirror's autocomplete dismiss)
   // still see it.
   { key: "Escape", action: TUG_ACTIONS.CANCEL_DIALOG },
-  { key: "KeyF", meta: true, action: TUG_ACTIONS.FIND },
+  // ⌘F — open the first responder's find bar. Every card that can be
+  // searched (session transcript, Text card, code view) registers a FIND
+  // handler; `host-menu-state` derives Edit ▸ Find…'s enablement from that
+  // same chain validation. `preventDefaultOnMatch` is app-wide and matters
+  // only in browser dev: it keeps the browser's own find UI from opening
+  // over the deck. The consequence is that in dev, ⌘F on a card with no
+  // find responder is silently swallowed rather than reaching the browser —
+  // intended, since a native find panel over a virtualized transcript
+  // searches only the rendered slice. In Tug.app the flag is inert; AppKit
+  // has already consumed the chord at the menu bar.
+  { key: "KeyF", meta: true, action: TUG_ACTIONS.FIND, preventDefaultOnMatch: true },
   // ⌘G / ⇧⌘G — find next / find previous within the active find session.
   // Routes through the chain; the responder that owns the find session
   // (currently `FileBlock`) handles. Empty / invalid query is a silent
@@ -236,37 +247,37 @@ export const KEYBINDINGS: KeyBinding[] = [
   { key: "Digit7", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 7 },
   { key: "Digit8", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 8 },
   { key: "Digit9", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 9 },
-  // ⇧⌘P cycles the session card's permission mode. Tug deliberately departs from
-  // the Claude Code TUI here: the terminal cycles permission mode on Shift+Tab,
-  // but in a GUI Shift+Tab must move focus to the previous control. So the
-  // cycle moves to a non-conflicting chord (mnemonic: the chip's /PERMISSIONS
-  // caption). `scope: "key-card"` routes to the active card's `card-content`
-  // responder; only the session card registers a handler. `preventDefaultOnMatch`
-  // suppresses the macOS beep when no session card claims it (and any WebKit
-  // default). The chip / sheet and the `/permissions` command remain the
-  // pick-a-mode affordances. Tab / Shift-Tab are NOT in this map — the
-  // focus-walk stage in `responder-chain-provider.tsx` owns them.
-  { key: "KeyP", meta: true, shift: true, action: TUG_ACTIONS.CYCLE_PERMISSION_MODE, scope: "key-card", preventDefaultOnMatch: true },
-  // Command picker + one-shot command chords ([P06]/[P07]). ⌘/ opens the
-  // completion popup (seeds a leading `/`); ⌃⌘S/B/G/H insert the matching
-  // command chip at the head of the draft, preserving typed args. All are
-  // `scope: "key-card"` so they fire card-wide (not only while the editor is
-  // focused); the session card's card-content responder forwards each to the
-  // prompt entry's `openCommandPicker` / `insertCommandChip`. ⌃⌘G (not ⌃⌘F)
-  // for find — F shadows the legacy macOS fullscreen chord; G carries the
-  // platform find-next mnemonic (⌘G). `preventDefaultOnMatch` suppresses the
+  // ⇧⌘P selects the composer's Prompt route — P for Prompt, paired with ⇧⌘C
+  // for Changes, so the two routes have matching chords.
+  //
+  // ⌃⌘P cycles the session card's permission mode. It sat on ⇧⌘P until the
+  // routes claimed the P mnemonic; the incumbent moved rather than the route
+  // giving up the letter. Tug deliberately departs from the Claude Code TUI
+  // on this action either way: the terminal cycles permission mode on
+  // Shift+Tab, but in a GUI Shift+Tab must move focus to the previous
+  // control. The ⌃⌘ band is the coherent home for it — the band this map
+  // otherwise vacated. Both doors move together: the Swift Session ▸
+  // Permission Mode ▸ Cycle item carries the same modifier mask, or the
+  // menu would keep swallowing the chord at the menu bar.
+  //
+  // Both are `scope: "key-card"`, routing to the active card's `card-content`
+  // responder; only the session card registers handlers.
+  // `preventDefaultOnMatch` suppresses the macOS beep when no session card
+  // claims them (and any WebKit default). The chip / sheet and the
+  // `/permissions` command remain the pick-a-mode affordances. Tab /
+  // Shift-Tab are NOT in this map — the focus-walk stage in
+  // `responder-chain-provider.tsx` owns them.
+  { key: "KeyP", meta: true, shift: true, action: TUG_ACTIONS.SELECT_COMPOSER_ROUTE, value: "prompt", scope: "key-card", preventDefaultOnMatch: true },
+  { key: "KeyP", ctrl: true, meta: true, action: TUG_ACTIONS.CYCLE_PERMISSION_MODE, scope: "key-card", preventDefaultOnMatch: true },
+  // ⌘/ — the keyboard door to command discovery: focus the editor and seed a
+  // leading `/`, which opens the slash-command completion popup. `scope:
+  // "key-card"` so it fires card-wide (not only while the editor is focused);
+  // the session card's card-content responder forwards it to the prompt
+  // entry's `openCommandPicker`. `preventDefaultOnMatch` suppresses the
   // WebView default / macOS beep.
   { key: "Slash", meta: true, action: TUG_ACTIONS.OPEN_COMMAND_PICKER, scope: "key-card", preventDefaultOnMatch: true },
   // ⌥⌘/ opens the DevTools card (Log + Telemetry). Distinct from ⌘/ (command picker).
   { key: "Slash", meta: true, alt: true, action: TUG_ACTIONS.SHOW_DEVTOOLS, preventDefaultOnMatch: true },
-  { key: "KeyS", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "shell" }, scope: "key-card", preventDefaultOnMatch: true },
-  { key: "KeyB", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "btw" }, scope: "key-card", preventDefaultOnMatch: true },
-  // ⌃⌘C — muscle-memory alias for the retired `!changes` chord. Committing is
-  // a mode, not a routing, so this routes to the same toggle as ⇧⌘C rather
-  // than seeding a chip.
-  { key: "KeyC", ctrl: true, meta: true, action: TUG_ACTIONS.TOGGLE_CHANGES_VIEW, scope: "key-card", preventDefaultOnMatch: true },
-  { key: "KeyG", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "find" }, scope: "key-card", preventDefaultOnMatch: true },
-  { key: "KeyH", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "history" }, scope: "key-card", preventDefaultOnMatch: true },
   // Show/Hide Changes (⇧⌘C) and History (⇧⌘H) — the browser-dev twins of the
   // Swift Session-menu items ([P05], Spec S04). In Tug.app the menu key
   // equivalents (⌘⇧C / ⌘⇧H) win at the menu bar; these serve dev where no

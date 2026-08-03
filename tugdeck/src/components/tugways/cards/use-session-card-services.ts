@@ -33,12 +33,10 @@ import { isHiddenSlashCommand } from "@/lib/slash-supported";
 import { isCompactionLowEffect } from "@/lib/code-session-store/telemetry";
 import { wrapPositionZero } from "./completion-providers/position-zero";
 import {
-  bangCommandCompletionProvider,
   filterCommandProvider,
   localCommandCompletionProvider,
   mergeCommandProviders,
 } from "./completion-providers/local-commands";
-import { isBangCommand } from "@/lib/bang-commands";
 import type { TugPromptEntryDelegate } from "../tug-prompt-entry";
 import type { SessionCardServices } from "./session-card";
 
@@ -126,14 +124,6 @@ export function useSessionCardServices(cardId: string): SessionCardServices | nu
       "/": commandMatchProvider
         ? wrapPositionZero(entryDelegateRef, "/", commandMatchProvider)
         : EMPTY_FILE_COMPLETION_PROVIDER,
-      // A leading `!` opens the bang-routing popup — exactly the five demoted
-      // destinations (`lib/bang-commands.ts`), chords shown. Same position-0
-      // gate: a mid-text `!` is prose punctuation, never a trigger.
-      "!": wrapPositionZero(
-        entryDelegateRef,
-        "!",
-        bangCommandCompletionProvider(),
-      ),
     }),
     [services, commandMatchProvider],
   );
@@ -174,8 +164,7 @@ export function useSessionCardServices(cardId: string): SessionCardServices | nu
         name: value,
         category: catalogHit?.category,
         argumentHint: catalogHit?.argumentHint,
-        // Every bang routing takes args — the args ARE the routed payload.
-        takesArgs: local?.takesArgs ?? (isBangCommand(value) || undefined),
+        takesArgs: local?.takesArgs,
       });
     };
   }, [services]);

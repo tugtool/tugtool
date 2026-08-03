@@ -125,11 +125,13 @@ describe("wrapPositionZero", () => {
     expect(hits[0].label).toBe("hit:plan");
   });
 
-  it("gates a `!` provider on a leading `!`, not `/`", () => {
-    const slashDoc = wrapPositionZero(makeEntryRef("/model"), "!", inner);
+  it("gates on the trigger it was given, not on `/` specifically", () => {
+    // The gate is generic over its trigger character — a provider wrapped
+    // for `@` opens on a leading `@` and stays shut on a leading `/`.
+    const slashDoc = wrapPositionZero(makeEntryRef("/model"), "@", inner);
     expect(slashDoc("model")).toEqual([]);
-    const bangDoc = wrapPositionZero(makeEntryRef("!shell ls"), "!", inner);
-    expect(bangDoc("shell").length).toBe(1);
+    const mentionDoc = wrapPositionZero(makeEntryRef("@plan.md"), "@", inner);
+    expect(mentionDoc("plan").length).toBe(1);
   });
 
   it("returns [] when the ref is null (pre-mount)", () => {

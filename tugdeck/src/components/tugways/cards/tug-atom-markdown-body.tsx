@@ -148,9 +148,7 @@ function injectAtomHosts(root: HTMLElement, atomCount: number): HTMLElement[] {
  * The command line is reconstructed through {@link buildSlashCommandLine}
  * (atoms expand to their values) and split by the same
  * {@link parseSlashCommandLine} the assistant path uses, so the two can't
- * disagree on where the name ends and the args begin. A bang routing
- * (`!shell`) expands with a `!` sigil, fails that parse, and is left
- * untagged — re-running a shell escape is not this gesture.
+ * disagree on where the name ends and the args begin.
  *
  * No known-command predicate: the user typed this command and claude
  * expanded it, which is stronger evidence than any catalog lookup.

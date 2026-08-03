@@ -21,10 +21,10 @@
  *      mid-turn where the turn-lock dominates).
  *   2. A turn goes in flight (`send`): Mode, Model, AND Effort chips all go
  *      `disabled`.
- *   3. Seam: `⇧⌘P` mid-turn is declined — the permission mode does not change
+ *   3. Seam: `⌃⌘P` mid-turn is declined — the permission mode does not change
  *      (the guard runs synchronously in the keydown handler).
  *   4. The turn completes (`turn_complete`): the chips re-enable.
- *   5. With the lock lifted, `⇧⌘P` cycles the mode again — proving step 3's
+ *   5. With the lock lifted, `⌃⌘P` cycles the mode again — proving step 3's
  *      block was the turn-lock, not a dead key.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
@@ -102,7 +102,7 @@ async function modeLabel(app: App): Promise<string | null> {
   );
 }
 
-const PRESS_CYCLE = `document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyP", key: "P", metaKey: true, shiftKey: true, bubbles: true, cancelable: true }))`;
+const PRESS_CYCLE = `document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyP", key: "p", metaKey: true, ctrlKey: true, bubbles: true, cancelable: true }))`;
 
 describe.skipIf(!SHOULD_RUN)(
   "AT0220: Z4B Mode/Model/Effort controls lock during an in-flight turn",
@@ -127,7 +127,7 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 8000 },
           );
 
-          // Make the session card the key card so ⇧⌘P routes to its card-content
+          // Make the session card the key card so ⌃⌘P routes to its card-content
           // responder (the same focus step at0088 uses).
           await app.nativeClickAtElement(PROMPT_INPUT);
 
@@ -158,13 +158,13 @@ describe.skipIf(!SHOULD_RUN)(
             "effort chip locks mid-turn",
           ).toBe(true);
 
-          // 3. Seam: ⇧⌘P mid-turn is declined by the setter guard — the mode
+          // 3. Seam: ⌃⌘P mid-turn is declined by the setter guard — the mode
           //    does not change. The guard is synchronous in the keydown
           //    handler, so a single round-trip settles the outcome.
           await app.evalJS<void>(PRESS_CYCLE);
           expect(
             await modeLabel(app),
-            "⇧⌘P must not change the mode while a turn is in flight",
+            "⌃⌘P must not change the mode while a turn is in flight",
           ).toBe(modeBefore);
 
           // 4. Complete the turn → the chips re-enable.
@@ -187,7 +187,7 @@ describe.skipIf(!SHOULD_RUN)(
             "model chip re-enables after the turn",
           ).toBe(false);
 
-          // 5. Lock lifted: ⇧⌘P cycles the mode again, proving step 3's block
+          // 5. Lock lifted: ⌃⌘P cycles the mode again, proving step 3's block
           //    was the turn-lock and not a dead key.
           await app.nativeClickAtElement(PROMPT_INPUT);
           await app.evalJS<void>(PRESS_CYCLE);

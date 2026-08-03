@@ -13,7 +13,6 @@ import {
   canonicalizeBareCommandLine,
 } from "@/lib/slash-supported";
 import { LOCAL_SLASH_COMMANDS } from "@/lib/slash-commands";
-import { isBangCommand } from "@/lib/bang-commands";
 
 describe("classifySlashCommand", () => {
   test("a registered local command is supported-local", () => {
@@ -35,18 +34,23 @@ describe("classifySlashCommand", () => {
     }
   });
 
-  test("the bang routings left the slash inventory entirely", () => {
-    // shell/btw/find/history are bang commands now
-    // (`lib/bang-commands.ts`), not slash commands: not local, not hidden —
-    // a typed `/shell` is a plain pass-through that resolves to an unknown
-    // (the notice teaches the `!` form) rather than a silent swallow.
-    // `changes` is retired from the routings too — committing is a mode.
-    for (const name of ["shell", "btw", "find", "history"]) {
-      expect(isBangCommand(name)).toBe(true);
+  test("/shell and /btw are supported-local one-shot verbs", () => {
+    // Both are ordinary local commands: `/shell` is the deliberate override
+    // under the shell auto-router, `/btw` is how you ask the Z2 BTW cell a
+    // side question. Neither is hidden.
+    for (const name of ["shell", "btw"]) {
+      expect(classifySlashCommand(name)).toBe("supported-local");
+      expect(HIDDEN_SLASH_COMMANDS.has(name)).toBe(false);
+    }
+  });
+
+  test("find and history are not slash commands", () => {
+    // Find's one door is ⌘F, and the History shade's is ⇧⌘H — neither is
+    // reachable by typing, so both resolve as plain pass-throughs.
+    for (const name of ["find", "history"]) {
       expect(classifySlashCommand(name)).toBe("pass-through");
       expect(HIDDEN_SLASH_COMMANDS.has(name)).toBe(false);
     }
-    expect(isBangCommand("changes")).toBe(false);
   });
 
   test("/tasks and /bashes are supported-local (the WORK popover surface)", () => {

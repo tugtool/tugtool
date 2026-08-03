@@ -46,13 +46,9 @@ import React, {
 
 import {
   ArrowUp,
-  History as HistoryIcon,
-  MessageSquareDashed,
   PencilSparkles,
   Plus,
-  Search,
   Square,
-  SquareTerminal,
   X,
 } from "lucide-react";
 import { Prec } from "@codemirror/state";
@@ -105,8 +101,7 @@ import {
   waveCaretExtension,
 } from "./tug-text-editor/wave-caret";
 import { TugAttachmentPreview } from "./cards/tug-attachment-preview";
-import { TugButton } from "./internal/tug-button";
-import { TugPopupMenu } from "./internal/tug-popup-menu";
+import { TugChoiceGroup } from "./tug-choice-group";
 import { TugPushButton } from "./tug-push-button";
 import { TugTooltip } from "./tug-tooltip";
 import { TugConfirmPopover } from "./tug-confirm-popover";
@@ -154,7 +149,6 @@ import {
 } from "@/lib/shell-line-classifier";
 import { useLocalModelReady } from "@/lib/local-model-store";
 import { prewarm as prewarmLocalModel, requestClassify } from "@/lib/local-model-bridge";
-import { BANG_COMMANDS, matchBangCommandLine } from "@/lib/bang-commands";
 import type { FindSession } from "@/lib/find-session";
 import type { CommitModeController } from "@/lib/commit-mode-controller";
 import { hasSnippetDrag, readSnippetDrag } from "@/lib/snippet-drag";
@@ -166,34 +160,12 @@ import { hasSnippetDrag, readSnippetDrag } from "@/lib/snippet-drag";
 /** Stable no-op `useSyncExternalStore` subscribe for an absent shell store. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
-/** Per-routing menu icons for the Z4A picker — presentation only; names,
- *  descriptions, and chords come from the {@link BANG_COMMANDS} registry. */
-const BANG_PICKER_ICONS: Record<string, React.ReactNode> = {
-  shell: <SquareTerminal size={14} />,
-  btw: <MessageSquareDashed size={14} />,
-  find: <Search size={14} />,
-  history: <HistoryIcon size={14} />,
-};
-
 /**
- * The Z4A picker's roster ([P06], revised): the bang-command registry —
- * ONLY the four routings demoted from sticky routes, each labeled in its
- * typed `!name` form with its ⌃⌘ chord, so the menu teaches both the
- * shortcut and the typeable syntax as it is used. Picking one seeds its
- * `!name` chip. Deliberately NOT the `/` completion catalog — routings are
- * a different species from slash commands (`lib/bang-commands.ts`).
+ * `event.sender` on every `selectValue` the Z4A route group dispatches.
+ * Explicit rather than `useId`-derived so the entry's own responder can
+ * recognize its group without threading the id through.
  */
-const COMMAND_PICKER_ITEMS: ReadonlyArray<{
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  shortcut: string;
-}> = BANG_COMMANDS.map((cmd) => ({
-  id: cmd.name,
-  label: `!${cmd.name}`,
-  icon: BANG_PICKER_ICONS[cmd.name],
-  shortcut: cmd.shortcut,
-}));
+const ROUTE_CHOICE_SENDER_ID = "tug-prompt-entry-route";
 
 /**
  * Empty editing state — the draft a freshly-cleared editor holds.
@@ -710,11 +682,10 @@ export interface TugPromptEntryProps {
    */
   shellGrammarStore?: ShellGrammarStore;
   /**
-   * `⌕`-route Find session store. Holds the live query, options, match set,
-   * and active index for transcript search. While the Find route is active the
-   * editor doc is mirrored into `findSession.setQuery`; Return advances the
-   * active match; leaving the route clears it. Optional so hosts without a
-   * transcript (the gallery) can omit it.
+   * The host's find session — the live query, options, match set, and active
+   * index for transcript search. The find bar owns the query; the entry uses
+   * this only so ⌘G / ⇧⌘G cycle matches with the caret in the composer.
+   * Optional so hosts without a transcript (the gallery) can omit it.
    */
   findSession?: FindSession;
   /**
@@ -985,17 +956,11 @@ export interface TugPromptEntryDelegate {
   blur(): void;
   /** Clear the input's content. */
   clear(): void;
-  /**
-   * Whether the editor holds no user content (zero-length doc). The Session
-   * card reads this to gate the ⇧⌘C commit-mode entry ([P03]): ⇧⌘C on an
-   * empty composer enters the route; on a non-empty one it shows the read-only
-   * glance only, leaving the in-progress prompt untouched.
-   */
+  /** Whether the editor holds no user content (zero-length doc). */
   isEmpty(): boolean;
   /**
-   * Insert (or replace) the leading `/<name>` command chip ([P07]): the
-   * ⌃⌘ chords and the command picker call this. A head command atom is
-   * swapped in place, preserving typed args; otherwise a command atom +
+   * Insert (or replace) the leading `/<name>` command chip. A head command
+   * atom is swapped in place, preserving typed args; otherwise a command atom +
    * trailing space is inserted at document position 0. Focuses the editor.
    */
   insertCommandChip(name: string): void;
@@ -2094,17 +2059,6 @@ export const TugPromptEntry = React.forwardRef<
             // handlers (autocomplete dismiss, etc.) — none of which can be
             // open on an empty doc, which is why the empty gate is enough.
             if (!isEmpty) return false;
-            // One-shot `/find` highlights own the first empty-editor Escape:
-            // dissolve them BEFORE the pane-collapse gesture, so Escape reads
-            // as "dismiss find" while a search is live and only then as
-            // "collapse the entry".
-            {
-              const oneShot = findSessionRef.current;
-              if (oneShot !== undefined && oneShot.getSnapshot().query !== "") {
-                oneShot.clear();
-                return true;
-              }
-            }
             const onEscape = onEscapeWhenEmptyRef.current;
             if (onEscape === undefined) return false;
             onEscape();
@@ -2224,17 +2178,6 @@ export const TugPromptEntry = React.forwardRef<
     // inserted atom. Applies uniformly to `/` commands and `@` mentions.
     editor.acceptActiveCompletion();
 
-    // A submission dissolves any lingering one-shot `/find` highlights BEFORE
-    // dispatch — a fresh `/find` re-seeds the session in the same submit
-    // (clear, then the local-command surface sets the new query), so stale
-    // highlights never outlive a new submission.
-    {
-      const oneShot = findSessionRef.current;
-      if (oneShot !== undefined && oneShot.getSnapshot().query !== "") {
-        oneShot.clear();
-      }
-    }
-
     // Slash-command interception ([D23], [#step-1c]). Accepting any
     // slash-command suggestion inserts a `type:"command"` atom and dismisses
     // the popup — uniform for every command. The local-vs-remote split is
@@ -2257,17 +2200,12 @@ export const TugPromptEntry = React.forwardRef<
       // A draft that doesn't lead with a slash command won't match the
       // registry, so non-command drafts are unaffected.
       const commandLine: string = buildSlashCommandLine(draftText, draftAtoms);
-      // Bang routings (`lib/bang-commands.ts`): a line leading with `!`
-      // — a `!name` chip or typed text — routes its payload per-submission
-      // (`!shell`, `!btw`, `!find`, `!history`), with `!<anything else>` the
-      // shell escape hatch (`!git status` runs in the shell — and so does an
-      // unregistered `!changes`). Then the local slash-command registry
-      // (`/model`, `/rewind`, …). Both dispatch through the same card
-      // responder; an arbitrary claude slash command falls through to
-      // `send()`, and a non-command draft matches neither, so plain prose is
+      // One namespace: the local slash-command registry (`/model`, `/shell`,
+      // `/rewind`, …), dispatched to the card responder. An arbitrary claude
+      // slash command falls through to `send()`, and a non-command draft
+      // matches nothing, so plain prose — a leading `!` included — is
       // untouched.
-      const localCommand =
-        matchBangCommandLine(commandLine) ?? matchLocalSlashCommand(commandLine);
+      const localCommand = matchLocalSlashCommand(commandLine);
       const targetId = localCommandTargetIdRef.current;
       if (
         localCommand !== null &&
@@ -2453,8 +2391,8 @@ export const TugPromptEntry = React.forwardRef<
     const shellStore = shellSessionStoreRef.current;
     const routeToShell = (): void => {
       shellStore?.exec(submitText, { origin: "auto" });
-      // Auto-routed submissions were typed as Code input, so record the raw
-      // line under the Code route ([P11]).
+      // Auto-routed submissions were typed as prompt input, so record the
+      // raw line under the prompt route.
       const sessionId = snapRef.current.tugSessionId;
       historyStore.push({
         id: `${sessionId}-${Date.now()}`,
@@ -2687,10 +2625,11 @@ export const TugPromptEntry = React.forwardRef<
   const { ResponderScope, responderRef } = useResponder({
     id,
     actions: {
-      // ⌘G / ⇧⌘G — advance / retreat the active match. Gated on the SESSION
-      // holding matches (not on the ⌕ route): a one-shot `/find` leaves live
-      // matches on the Code route and ⌘G keeps cycling them. The transcript
-      // host reacts to the active-index change (scroll + flash).
+      // ⌘G / ⇧⌘G — advance / retreat the active match with the caret in the
+      // composer. Gated on the SESSION holding matches, which is true exactly
+      // while the find bar is open: closing the bar clears the session, so
+      // these are inert without a live search. The transcript host reacts to
+      // the active-index change (scroll + flash).
       [TUG_ACTIONS.FIND_NEXT]: () => {
         const session = findSessionRef.current;
         if (session !== undefined && session.getSnapshot().count > 0) {
@@ -2701,6 +2640,19 @@ export const TugPromptEntry = React.forwardRef<
         const session = findSessionRef.current;
         if (session !== undefined && session.getSnapshot().count > 0) {
           session.previous();
+        }
+      },
+      // The Z4A route group. `TugChoiceGroup` dispatches `selectValue` up to
+      // the parent responder ([L11]), and this entry is that parent — it owns
+      // the document the route selects. `exitCommitMode` (not a bare
+      // `exit()`) persists a typed message first, so leaving Changes and
+      // coming back resumes it.
+      [TUG_ACTIONS.SELECT_VALUE]: (event: ActionEvent) => {
+        if (event.sender !== ROUTE_CHOICE_SENDER_ID) return;
+        if (event.value === "changes") {
+          commitMode?.enter();
+        } else if (event.value === "prompt") {
+          exitCommitMode();
         }
       },
       [TUG_ACTIONS.REMOVE_ATTACHMENT]: (event: ActionEvent) => {
@@ -3044,24 +2996,23 @@ export const TugPromptEntry = React.forwardRef<
     editor.focus();
   }, []);
 
-  // Command picker ([P06], revised): open the Z4A menu of the four demoted
-  // commands. The menu is a `TugPopupMenu` whose trigger is the Z4A button; ⌘/
-  // opens it by focusing that trigger and dispatching a bubbling `Enter`
-  // keydown — the Radix trigger opens on Enter/Space/Arrow, not on a bare
-  // programmatic `.click()` (which fires no pointerdown). The menu shows each
-  // command's ⌃⌘ chord so it teaches the shortcuts over time.
-  const pickerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // ⌘/ — the keyboard door to command discovery: focus the editor and seed a
+  // leading `/`, which opens the slash-command completion popup. The `"/"`
+  // provider is position-0 gated (`wrapPositionZero`), so this opens the
+  // popup on an empty document and correctly does nothing but insert a
+  // character in a draft that already has text.
   const openCommandPicker = useCallback(() => {
-    const trigger = pickerTriggerRef.current;
-    if (trigger === null) return;
-    trigger.focus();
-    trigger.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
+    const editor = textEditorRef.current;
+    const view = editor?.view();
+    if (editor === null || editor === undefined || view === null || view === undefined) {
+      return;
+    }
+    editor.focus();
+    view.dispatch({
+      changes: { from: view.state.selection.main.from, to: view.state.selection.main.to, insert: "/" },
+      selection: { anchor: view.state.selection.main.from + 1 },
+      userEvent: "input.type",
+    });
   }, []);
 
   useImperativeHandle(
@@ -3150,51 +3101,38 @@ export const TugPromptEntry = React.forwardRef<
             </div>
     ) : undefined;
 
-  // Z4A leading slot — the routing picker ([P06], revised): a `!`-glyph
-  // `TugPopupMenu` trigger. The `!` is the honest sigil — this button picks a
-  // *routing* (where the input goes), not a slash command (what to do) — and
-  // matches the `!name` chips picking one seeds. The menu lists ONLY the four
-  // bang routings with their ⌃⌘ chord labels (the teaching surface). `⌘/`
-  // opens the same menu by activating this trigger. Keeps the leading-slot
-  // focus-group registration so the keyboard cycle's walk is unchanged; sets
-  // no persistent state.
+  // Z4A leading slot — the composer's two routes. A route is a mode that owns
+  // the composer's whole document, and there are exactly two things that do:
+  // typing a prompt, and authoring a commit message. Everything else is a
+  // one-shot verb (a slash command) or lives outside the composer.
   //
-  // In commit mode ([P03]) the button stays in place — the slot must not
-  // shift — but disabled: routings are meaningless while composing a commit
-  // message, and the Z5 ✕ is the mode's way out, so Z4A carries no exit of
-  // its own.
-  const entryRoutePopup = (
-    <TugPopupMenu
-      side="top"
-      align="start"
-      items={COMMAND_PICKER_ITEMS.map((item) => ({
-        id: item.id,
-        label: item.label,
-        icon: item.icon,
-        shortcut: item.shortcut,
-      }))}
-      onSelect={seedCommandChip}
-      trigger={
-        <TugButton
-          ref={pickerTriggerRef}
-          className="tug-prompt-entry-command-picker"
-          emphasis="filled"
-          role="accent"
-          size="lg"
-          subtype="icon"
-          disabled={commitActive}
-          icon={
-            <span className="tug-prompt-entry-bang-glyph" aria-hidden="true">
-              !
-            </span>
-          }
-          aria-label="Route this input"
-          focusGroup={routeFocusGroup}
-          focusOrder={routeFocusOrder}
-        />
-      }
-    />
-  );
+  // The group is a VIEW of `CommitModeController`, not a second home for the
+  // selection: `value` reads `commitActive`, and the segments dispatch into
+  // `enter()` / `exit()`. That is what makes every existing entry and exit
+  // path — ⇧⌘C, `/commit`, the Session menu, a successful land, Cancel ✕,
+  // Escape, the shade's self-close — move the visible tab with no extra
+  // wiring.
+  //
+  // No controller means no group. Hosts without commit mode (the Component
+  // Gallery's prompt entry) render an empty leading slot rather than a
+  // Changes segment that cannot act. It is deliberately NOT disabled while
+  // commit mode is active — the group is how you leave Changes.
+  const entryRouteChoice =
+    commitMode !== undefined ? (
+      <TugChoiceGroup
+        className="tug-prompt-entry-route-group"
+        items={[
+          { value: "prompt", label: "Prompt" },
+          { value: "changes", label: "Changes" },
+        ]}
+        value={commitActive ? "changes" : "prompt"}
+        senderId={ROUTE_CHOICE_SENDER_ID}
+        size="xs"
+        aria-label="Route"
+        focusGroup={routeFocusGroup}
+        focusOrder={routeFocusOrder}
+      />
+    ) : undefined;
 
   const entryToolbarTrailing = (
     <>
@@ -3383,7 +3321,7 @@ export const TugPromptEntry = React.forwardRef<
           inputAreaTabIndex={editorFocusGroup !== undefined ? -1 : undefined}
           accessoryRow={entryAccessoryRow}
           toolbarClassName="tug-prompt-entry-toolbar"
-          toolbarLeading={entryRoutePopup}
+          toolbarLeading={entryRouteChoice}
           toolbarCenter={indicatorsContent}
           toolbarTrailing={commitActive ? commitToolbarTrailing : entryToolbarTrailing}
         >
@@ -3399,8 +3337,8 @@ export const TugPromptEntry = React.forwardRef<
               // while the Dev prompt scrolls at a fraction of the card).
               maxRows={20}
               // In commit mode the field is a plain-prose message editor:
-              // read-only while the scribe streams a draft, and the slash / bang
-              // / mention / argument machinery stands down (submit lands the
+              // read-only while the scribe streams a draft, and the slash /
+              // mention / argument machinery stands down (submit lands the
               // commit; a `/` popup would be nonsense).
               disabled={deactivated || commitDrafting}
               placeholder={

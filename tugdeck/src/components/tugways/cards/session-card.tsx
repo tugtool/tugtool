@@ -78,7 +78,6 @@ import {
   type LocalCommandName,
   type SlashCommandDraft,
 } from "@/lib/slash-commands";
-import { type BangCommandName, isBangCommand } from "@/lib/bang-commands";
 import { useUsageStore } from "@/lib/usage-context";
 import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
@@ -129,8 +128,10 @@ import { useBannerDelegate } from "@/lib/banner-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
 import { FindSession } from "@/lib/find-session";
-import { TugFindCluster } from "@/components/tugways/tug-find-cluster";
-import { FindWrapOverlay } from "@/components/tugways/chrome/find-wrap-overlay";
+import {
+  TugFindBar,
+  type TugFindBarHandle,
+} from "@/components/tugways/tug-find-bar";
 import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
@@ -301,10 +302,6 @@ const SESSION_CYCLE_ORDER_EFFORT = 6;
 // The shell route's Cwd chip shares slot 4 with Mode — the two are never in
 // the same route's Z4B cluster (Table T01), so the Tab walk never sees both.
 const SESSION_CYCLE_ORDER_CWD = 4;
-// The find route's option cluster shares slot 4 too — it is the only Z4B
-// occupant on the ⌕ route besides the identity badge (Table T01), so it never
-// collides with Mode / Cwd in the walk.
-const SESSION_CYCLE_ORDER_FIND = 4;
 // Commit mode's Changes chip shares slot 4 as well — the commit cluster
 // (Project + Changes) replaces the whole Code chip set, so Mode is never
 // co-mounted with it (Table T01).
@@ -2368,6 +2365,33 @@ export function SessionCardBody({
     });
   });
 
+  // Find bar: open/closed is structural (the bar mounts/unmounts above Z2),
+  // mirroring the Text card's `findOpen`. The session outlives the bar here —
+  // the transcript host binds its engine to it at card scope — so the bar
+  // never clears it; closing does.
+  //
+  // Closing ends the search but not the query: the last one is remembered and
+  // seeded back on the next ⌘F, which is what makes clear-on-close painless
+  // (Safari and Xcode behave the same way). It lives in a ref because nothing
+  // renders from it.
+  const [findBarOpen, setFindBarOpen] = useState(false);
+  const findBarRef = useRef<TugFindBarHandle | null>(null);
+  const lastFindQueryRef = useRef("");
+
+  const openFindBar = useCallback(() => {
+    // Fresh bar: it focuses its own field on mount. Already open: ⌘F must
+    // still land the caret in the query field, unconditionally.
+    setFindBarOpen(true);
+    findBarRef.current?.focusQuery();
+  }, []);
+
+  const closeFindBar = useCallback(() => {
+    lastFindQueryRef.current = findSession.getSnapshot().query;
+    setFindBarOpen(false);
+    findSession.clear();
+    entryDelegateRef.current?.focus();
+  }, [findSession, entryDelegateRef]);
+
   // [P03] Shade visibility is card chrome state, not route state. A per-card
   // `ShadeViewController` holds which transcript-slot view is showing; the
   // card reads it via `useSyncExternalStore` to pick the active pane. All
@@ -2530,12 +2554,6 @@ export function SessionCardBody({
       }
     },
   });
-  // [P10] The Z4B find cluster (Case/Word/Grep + count) renders whenever an
-  // active `/find` holds a non-empty query — no route gate. [L02].
-  const findActive = useSyncExternalStore(
-    findSession.subscribe,
-    () => findSession.getSnapshot().query !== "",
-  );
   // Captured by the JSX's composed ref below for the first-mount
   // fade-in animation. Read by a useLayoutEffect with empty deps —
   // the effect runs once when this card first acquires services
@@ -3595,6 +3613,16 @@ export function SessionCardBody({
     // (confirm → interrupt every turn → `claude_logout` → TugSetup reopens);
     // the same nonce the File-menu "Log out…" bumps, so there's one flow.
     logout: () => requestLogout(),
+    // `/changes` — the one typeable route name. It is the only local command
+    // whose effect is a MODE rather than a surface: it selects a route and
+    // leaves you there, where every other command is a one-shot verb that
+    // returns you where you were. Idempotent against the controller's own
+    // `active` flag. (No `/prompt` twin — see `lib/slash-commands.ts`.)
+    //
+    // `/changes` and `/commit` are not redundant: `/commit [message]` enters
+    // with a seed message (an act of committing), `/changes` is the bare
+    // switch (an act of looking).
+    changes: () => commitModeController.enter(),
     // `/commit` — enters commit mode ([P03]/[P09]): the commit sheet rises
     // and the prompt entry becomes the message editor. A `/commit <message>`
     // seeds the composer with the args as an edited draft ([P05]); the `now`
@@ -3614,34 +3642,17 @@ export function SessionCardBody({
         "Joins land via the shell for now — TugJoinDialog is coming",
       );
     },
-  };
-
-  // Surface for each bang routing (`lib/bang-commands.ts`), keyed by name —
-  // the four per-submission destinations demoted from sticky routes, now
-  // their own namespace with the `!` sigil. Dispatched through the same
-  // `RUN_SLASH_COMMAND` channel as slash commands; only the registry (and
-  // the sigil) differs. The `as const satisfies` registry narrows
-  // `BangCommandName` to the literal union, so this `Record` is exhaustive —
-  // a registered routing without a wired surface is a compile error.
-  const bangCommandSurfaces: Record<BangCommandName, (args: string) => void> = {
-    // `!btw <question>` — ask a side question and open the non-modal overlay.
-    // Un-gated and pre-`canSubmit`, so it works idle AND mid-turn with no
-    // `performSubmit` change ([P04]). A bare `!btw` just opens the placard
-    // (history / earlier asks) without asking.
-    btw: (arg) => {
-      if (arg.trim().length > 0) sideQuestionStore.ask(arg);
-      statusRowRef.current?.openSideQuestions();
-    },
-    shell: (arg) => {
-      // One-shot shell routing ([D110] recipients): run one exchange against
-      // the card's shell session — the row threads into the transcript via
-      // `ingestShellExchange`. `exec` silently drops a command while an
-      // exchange is in flight (the shell child is serial), so surface that as
-      // a bulletin instead of losing the input.
+    // `/shell <command>` — the deliberate override under the shell
+    // auto-router: the classifier decides by default, and a user who knows
+    // better forces one exchange against the card's shell session (the row
+    // threads into the transcript via `ingestShellExchange`). `exec` silently
+    // drops a command while an exchange is in flight (the shell child is
+    // serial), so surface that as a bulletin instead of losing the input.
+    shell: (args) => {
       const notify = paneBulletinRef.current;
-      const command = arg.trim();
+      const command = args.trim();
       if (command.length === 0) {
-        notify?.caution("Usage: !shell <command> (or just !<command>)");
+        notify?.caution("Usage: /shell <command>");
         return;
       }
       if (shellSessionStore.getSnapshot().inflight !== null) {
@@ -3650,38 +3661,14 @@ export function SessionCardBody({
       }
       shellSessionStore.exec(command);
     },
-    find: (arg) => {
-      // One-shot transcript find: run the search and jump to the first match
-      // — highlights + ⌘G/⇧⌘G stay live. The session dissolves on the next
-      // submit or on Escape (empty editor).
-      const notify = paneBulletinRef.current;
-      const query = arg.trim();
-      if (query.length === 0) {
-        notify?.caution("Usage: !find <query>");
-        return;
-      }
-      findSession.setQuery(query);
-      findSession.next();
-    },
-    // `!history` ([P04]) — bare shows the History Shade; a question wraps in the
-    // `/tugplug:history` skill and sends ON the record so the answer streams in
-    // the transcript. The replay guard mirrors the retired `↺` branch: a submit
-    // while the session is replaying / transport-settling must never leak a
-    // turn (mid-turn sends queue, which is fine).
-    history: (arg) => {
-      const notify = paneBulletinRef.current;
-      const question = arg.trim();
-      // History and commit mode are mutually exclusive ([P03]): exit the
-      // mode before swapping the shade to History.
-      commitModeController.exit();
-      shadeViewController.show("history");
-      if (question.length === 0) return;
-      const snap = codeSessionStore.getSnapshot();
-      if (!snap.canSubmit && !snap.canInterrupt) {
-        notify?.caution("The session is still loading — try again in a moment");
-        return;
-      }
-      codeSessionStore.send(`/tugplug:history ${question}`, []);
+    // `/btw <question>` — ask a side question and open the non-modal placard.
+    // Un-gated and pre-`canSubmit`, so it works idle AND mid-turn with no
+    // `performSubmit` change. A bare `/btw` just opens the placard (history /
+    // earlier asks) without asking. The Z2 BTW cell is where answers live;
+    // this is how you ask.
+    btw: (args) => {
+      if (args.trim().length > 0) sideQuestionStore.ask(args);
+      statusRowRef.current?.openSideQuestions();
     },
   };
 
@@ -3694,6 +3681,15 @@ export function SessionCardBody({
     actions: {
       [TUG_ACTIONS.FOCUS_PROMPT]: (_event: ActionEvent) => {
         entryDelegateRef.current?.focus();
+      },
+      // ⌘F / Edit ▸ Find… — open the transcript find bar. Registering this
+      // handler is also what ENABLES the menu item: `host-menu-state` derives
+      // Edit ▸ Find…'s enablement from `chain.validateAction(FIND)`, so
+      // without a handler AppKit eats the chord at the menu bar and it never
+      // reaches the web view. Idempotent: a second ⌘F re-summons the caret
+      // into the query field rather than toggling the bar shut.
+      [TUG_ACTIONS.FIND]: (_event: ActionEvent) => {
+        openFindBar();
       },
       // ⌥⇥ toggles keyboard-focus-cycling: the editor's Tab gives way to a
       // trapped tour of the card's chrome zones, seeded on the submit
@@ -3721,7 +3717,19 @@ export function SessionCardBody({
       [TUG_ACTIONS.LAST_TURN]: (_event: ActionEvent) => {
         transcriptRef.current?.scrollToBottom();
       },
-      // ⇧⇥ cycles the permission mode. Only the session card registers this
+      // ⇧⌘P — select the Prompt route directly. Unlike ⇧⌘C's toggle this
+      // names the route it wants, so pressing it while already on Prompt is
+      // a no-op rather than a flip into Changes. Applied through
+      // `CommitModeController`, which is where the selection lives, so the
+      // Z4A group follows without being told.
+      [TUG_ACTIONS.SELECT_COMPOSER_ROUTE]: (event: ActionEvent) => {
+        if (event.value === "changes") {
+          commitModeController.enter();
+        } else if (event.value === "prompt") {
+          commitModeController.exit();
+        }
+      },
+      // ⌃⌘P cycles the permission mode. Only the session card registers this
       // handler, so on any other card ⇧⇥ falls through to reverse-tab
       // navigation (Risk R02). `cycle` reads the current mode fresh from
       // the metadata store [L07].
@@ -3748,17 +3756,14 @@ export function SessionCardBody({
       [TUG_ACTIONS.INTERRUPT_SESSION]: (_event: ActionEvent) => {
         codeSessionStore.interrupt();
       },
-      // A typed local slash command OR bang routing, dispatched
-      // key-card-scoped by the prompt entry. Open the matching surface —
-      // slash registry first, bang registry second (the namespaces are
-      // disjoint; both records are exhaustive over their registries). An
-      // unknown name is a no-op (the matchers only dispatch registered
-      // names, so this is defensive against registry/handler drift)
-      // ([#step-1c] / [D23]).
+      // A typed local slash command, dispatched key-card-scoped by the prompt
+      // entry. Open the matching surface. An unknown name is a no-op (the
+      // matcher only dispatches registered names, so this is defensive
+      // against registry/handler drift) ([D23]).
       [TUG_ACTIONS.RUN_SLASH_COMMAND]: (event: ActionEvent) => {
         const payload = event.value as
           | {
-              name: LocalCommandName | BangCommandName;
+              name: LocalCommandName;
               args: string;
               // Present only on a typed dispatch (the prompt entry attaches
               // the composer's substrate); absent on a menu dispatch.
@@ -3767,13 +3772,9 @@ export function SessionCardBody({
           | undefined;
         if (payload === undefined) return;
         type Surface = (args: string, draft?: SlashCommandDraft) => void;
-        const open =
-          (slashCommandSurfaces as Partial<Record<string, Surface>>)[
-            payload.name
-          ] ??
-          (bangCommandSurfaces as Partial<Record<string, Surface>>)[
-            payload.name
-          ];
+        const open = (slashCommandSurfaces as Partial<Record<string, Surface>>)[
+          payload.name
+        ];
         if (open !== undefined) open(payload.args, payload.draft);
       },
       // ⌃⌘ chord ([P07]): seed the corresponding command chip at the head of
@@ -3823,15 +3824,8 @@ export function SessionCardBody({
           | { name: string; reason: "unknown" | "unsupported" }
           | undefined;
         if (payload === undefined) return;
-        const { title, message } = isBangCommand(payload.name)
-          ? {
-              // A slash-typed routing name (`/shell`, `/btw`, …) — muscle
-              // memory from before the bang split. Teach the `!` form
-              // instead of reporting a generic unknown.
-              title: "That Command Moved",
-              message: `/${payload.name} is now the !${payload.name} routing. Type ! to see the four routings, or ⌘/ to open the picker.`,
-            }
-          : payload.reason === "unsupported"
+        const { title, message } =
+          payload.reason === "unsupported"
             ? {
                 title: "Command Not Available",
                 message: `The /${payload.name} command is not available in the session card. Type / to see the available commands.`,
@@ -4196,10 +4190,32 @@ export function SessionCardBody({
                 </TugSheet>
               </div>
             </div>
-            <FindWrapOverlay findSession={findSession} cardRef={sessionCardRootRef} />
             <PaneBulletinAnchor ref={paneBulletinRef} />
             </TugPaneBulletinProvider>
             </TugPaneBulletinProvider>
+            {/*
+              The find bar ([P06]/[P07]): a flow sibling between the view slot
+              and Z2, outside `.session-view-slot` and outside the shade
+              union — so it coexists with Changes and History rather than
+              displacing them, and they rise from ITS top edge while it is
+              open. The transcript pane is a flex column with the list at
+              `flex 1 1 auto`, so the bar takes its height from the list
+              exactly as Z2 telemetry growth does. It mounts the find-wrap
+              overlay, which is why the card has none of its own: a search is
+              live only while the bar is open ([P13]).
+            */}
+            {findBarOpen ? (
+              <TugFindBar
+                ref={findBarRef}
+                session={findSession}
+                onClose={closeFindBar}
+                cardRootRef={sessionCardRootRef}
+                placeholder="Find in transcript"
+                dataSlot="session-card-find-bar"
+                inputTestId="session-card-find-input"
+                initialQuery={lastFindQueryRef.current}
+              />
+            ) : null}
             <div
               className="session-card-status-bar"
               data-slot="session-card-status-bar"
@@ -4397,10 +4413,9 @@ export function SessionCardBody({
                   </>
                 ) : (
                 // Static Code chip set ([P01]/[P10]): identity · session ·
-                // project · mode · model · effort, plus the find cluster
-                // whenever an active `/find` holds a query. All three panes
-                // stay mounted; the cluster mounts/unmounts on find activity
-                // ([L26]).
+                // project · mode · model · effort. The find cluster is not
+                // here — it lives in the find bar, which owns the search for
+                // exactly as long as it is open.
                 <>
                   <SessionRouteIndicatorBadge
                     codeSessionStore={codeSessionStore}
@@ -4440,13 +4455,6 @@ export function SessionCardBody({
                     focusGroup={SESSION_CYCLE_GROUP}
                     focusOrder={SESSION_CYCLE_ORDER_EFFORT}
                   />
-                  {findActive && (
-                    <TugFindCluster
-                      surface={findSession}
-                      focusGroup={SESSION_CYCLE_GROUP}
-                      focusOrder={SESSION_CYCLE_ORDER_FIND}
-                    />
-                  )}
                   {effectiveFooterContent}
                 </>
                 )

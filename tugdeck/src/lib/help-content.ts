@@ -26,7 +26,7 @@ import { isHiddenSlashCommand } from "./slash-supported";
 import type { SlashCommandInfo } from "./session-metadata-store";
 
 // ---------------------------------------------------------------------------
-// General-tab copy — what Dev is, how routing works, the useful shortcuts
+// General-tab copy — what the Session card is, and the useful shortcuts
 // ---------------------------------------------------------------------------
 
 /** Lead paragraph at the top of the General tab. */
@@ -43,21 +43,22 @@ export interface HelpShortcut {
 }
 
 /**
- * The shortcuts worth surfacing, each verified against `keybinding-map.ts` — a
- * tight, true set, not the full binding table. (`/` and `!` are the two typed
- * command namespaces; `⌘/` opens the Z4A routing picker; `⌃⌘S`/`B`/`G`/`H` seed
- * a routing chip; `⇧⌘C` / `⇧⌘H` toggle the Shades — `⇧⌘C` on an empty composer
- * enters commit mode; `⇧⇥` cycles the permission mode; `⌃\`` cycles the active
- * card; `Esc` is the shared CANCEL_DIALOG dismiss / interrupt.)
+ * The shortcuts worth surfacing, each verified against `keybinding-map.ts` and
+ * the Swift menus — a tight, true set, not the full binding table. `/` is the
+ * one typed command namespace and `⌘/` opens its popup; `⇧⌘P` / `⇧⌘C` select
+ * the composer's two routes ([D122]); `⌘F` opens the find bar with `⌘G` /
+ * `⇧⌘G` cycling matches; `⇧⌘H` toggles the History shade; `⌃⌘P` cycles the
+ * permission mode; `⌃\`` cycles the active card; `Esc` is the shared
+ * CANCEL_DIALOG dismiss / interrupt.
  */
 export const HELP_SHORTCUTS: readonly HelpShortcut[] = [
   { keys: "/", label: "Slash commands" },
-  { keys: "!", label: "Route input — !shell, !btw, !find, !history" },
-  { keys: "⌘/", label: "Open the routing picker" },
-  { keys: "⌃⌘S", label: "Seed a !shell routing (⌃⌘B/G/H for the others)" },
-  { keys: "⇧⌘C", label: "Show or hide Changes; empty composer enters commit mode" },
+  { keys: "⌘/", label: "Open the slash-command popup" },
+  { keys: "⇧⌘P", label: "Prompt route" },
+  { keys: "⇧⌘C", label: "Changes route — show or hide Changes" },
+  { keys: "⌘F", label: "Find in the transcript (⌘G / ⇧⌘G to cycle)" },
   { keys: "⇧⌘H", label: "Show or hide the History Shade" },
-  { keys: "⇧⇥", label: "Cycle the permission mode" },
+  { keys: "⌃⌘P", label: "Cycle the permission mode" },
   { keys: "⌃`", label: "Cycle the active card" },
   { keys: "Esc", label: "Dismiss a sheet, or interrupt Claude" },
 ];
