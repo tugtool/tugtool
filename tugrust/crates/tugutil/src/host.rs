@@ -30,8 +30,9 @@ pub fn dispatch(cmd: HostCommands, json: bool, quiet: bool) -> ExitCode {
         HostCommands::Sweep {
             yes,
             json: sweep_json,
+            dry_run,
             quiet: sweep_quiet,
-        } => commands::run_sweep(yes, json || sweep_json, quiet || sweep_quiet),
+        } => commands::run_sweep(yes, json || sweep_json, quiet || sweep_quiet, dry_run),
         HostCommands::StateDir => commands::run_state_dir(json, quiet),
         HostCommands::Changesets { port, instance } => {
             commands::run_changesets(port, instance, json)

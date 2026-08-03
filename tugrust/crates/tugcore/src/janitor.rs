@@ -37,6 +37,9 @@ use std::time::{Duration, SystemTime};
 pub struct SweepReport {
     pub dead_sockets: Vec<PathBuf>,
     pub tmux_servers_killed: Vec<String>,
+    /// Socket inodes with no server behind them. A socket removed as
+    /// part of killing a live server is not counted here — that server
+    /// appears in `tmux_servers_killed` instead.
     pub tmux_sockets_unlinked: Vec<PathBuf>,
     pub tmp_files_removed: Vec<PathBuf>,
     pub tmp_dirs_removed: Vec<PathBuf>,
@@ -196,6 +199,11 @@ pub const TMP_DEBRIS_MAX_AGE_SECS: u64 = 24 * 60 * 60;
 /// unattended sweep from deleting it.
 pub const MIN_DEBRIS_AGE_SECS: u64 = 10 * 60;
 
+/// Suffix marking a data dir that has passed every gate and is being
+/// deleted. The rename is what makes an interrupted deletion recoverable
+/// — see [`sweep_apptest_data_dirs`].
+pub const CONDEMNED_SUFFIX: &str = ".tug-deleting";
+
 /// Remove age-expired inert litter under `tmp` for every `File`/`Dir`
 /// manifest entry. `Socket` entries are skipped here — they are probed,
 /// not aged.
@@ -343,6 +351,16 @@ pub fn sweep_apptest_data_dirs(
             continue;
         }
         let id = entry.file_name().to_string_lossy().into_owned();
+        // Finish a removal something interrupted. A condemned directory
+        // was already gated when it was renamed, so it needs no further
+        // checks — and it must NOT be age-gated, because the rename
+        // freshened its mtime.
+        if id.ends_with(CONDEMNED_SUFFIX) {
+            if mode.applies() {
+                let _ = fs::remove_dir_all(&dir);
+            }
+            continue;
+        }
         if !crate::ports::is_apptest_id(&id) || live_ids.contains(&id) {
             continue;
         }
@@ -364,7 +382,19 @@ pub fn sweep_apptest_data_dirs(
             continue;
         }
         crate::instance::reap_instance_tmux(&id);
-        if fs::remove_dir_all(&dir).is_ok() {
+        // Condemn by rename first, then delete. `remove_dir_all` walks
+        // in readdir order, so an interrupted delete can take the
+        // bundle-path marker out before the bulk of the tree — and a
+        // marker-less `apptest-*` directory is skipped by this sweep AND
+        // by `instance prune`, which would leave a directory nothing
+        // could ever reclaim. Renaming is atomic: after it, the entry is
+        // out of the instance namespace and self-evidently condemned, so
+        // the next sweep finishes the job whatever happened to us.
+        let condemned = dir.with_file_name(format!("{id}{CONDEMNED_SUFFIX}"));
+        if fs::rename(&dir, &condemned).is_ok() {
+            let _ = fs::remove_dir_all(&condemned);
+            removed.push(id);
+        } else if fs::remove_dir_all(&dir).is_ok() {
             removed.push(id);
         }
     }
@@ -397,11 +427,28 @@ pub(crate) fn is_reparented_orphan(row: &ProcRow, min_age: Duration) -> bool {
     is_orphan_command(&row.command)
 }
 
+/// Match on the **executable**, never on the whole command line.
+///
+/// `ps … command=` prints the binary followed by its arguments, and a
+/// substring test over that whole string is far too eager: `~/.claude/`
+/// appears in the path of anything Claude Code runs, and an argument can
+/// name `tugcode` without being it (`bun build ./tugcode`). Either would
+/// take a SIGKILL. Only the first token is the process's identity.
 fn is_orphan_command(command: &str) -> bool {
-    if command.contains("tugcode") {
+    let exe = command
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .rsplit('/')
+        .next()
+        .unwrap_or_default();
+    if exe == "tugcode" {
         return true;
     }
-    command.contains("claude") && command.contains("stream-json")
+    // The stream-json arm stays argument-sensitive on purpose: an
+    // interactive `claude` is a user's session, and only the
+    // stream-json flavour is ours to reap.
+    exe == "claude" && command.contains("stream-json")
 }
 
 /// SIGTERM (then SIGKILL) reparented tugcode/claude processes.
@@ -639,8 +686,14 @@ pub fn sweep_tmux_servers(
                     continue;
                 }
                 let _ = tmux(&tmpdir).args(["-L", label, "kill-server"]).output();
-                if path.exists() && fs::remove_file(&path).is_ok() {
-                    unlinked.push(path);
+                // Not recorded in `tmux_sockets_unlinked`: killing the
+                // server is the reclamation, and whether tmux tidies its
+                // own socket on the way out is an implementation detail
+                // nobody can predict from Report mode. Reporting it
+                // there and not here — or the reverse — would make the
+                // preview disagree with the run.
+                if path.exists() {
+                    let _ = fs::remove_file(&path);
                 }
             }
         }
@@ -1154,6 +1207,45 @@ mod tests {
         );
     }
 
+    /// An interrupted removal must be finishable, not permanent debris.
+    /// The condemned dir carries no marker and a fresh mtime — the exact
+    /// combination that both this sweep and `instance prune` otherwise
+    /// skip forever.
+    #[test]
+    fn an_interrupted_removal_is_finished_by_the_next_sweep() {
+        let root = tempfile::tempdir().unwrap();
+        let half_deleted = root
+            .path()
+            .join(format!("apptest-interrupted-abc{CONDEMNED_SUFFIX}"));
+        fs::create_dir_all(half_deleted.join("Logs")).unwrap();
+        fs::write(half_deleted.join("Logs/tugcast.log"), b"leftovers").unwrap();
+
+        // Real floor, no marker, mtime of a moment ago: still goes.
+        sweep_apptest_data_dirs(
+            root.path(),
+            Duration::from_secs(MIN_DEBRIS_AGE_SECS),
+            SweepMode::Apply,
+        );
+
+        assert!(
+            !half_deleted.exists(),
+            "a condemned dir must be reclaimed regardless of age or marker"
+        );
+    }
+
+    #[test]
+    fn a_condemned_dir_is_left_alone_in_report_mode() {
+        let root = tempfile::tempdir().unwrap();
+        let condemned = root
+            .path()
+            .join(format!("apptest-interrupted-xyz{CONDEMNED_SUFFIX}"));
+        fs::create_dir(&condemned).unwrap();
+
+        sweep_apptest_data_dirs(root.path(), Duration::ZERO, SweepMode::Report);
+
+        assert!(condemned.exists(), "report mode removes nothing");
+    }
+
     /// The mid-boot signature: a valid marker, no registry entry, and a
     /// fresh mtime. It must survive.
     #[test]
@@ -1202,6 +1294,36 @@ mod tests {
             !is_reparented_orphan(&row(42, 1, 5, "/path/to/tugcode"), floor),
             "a just-reparented process may be mid-handoff"
         );
+
+        // Identity is the executable, not any token on the line. Each of
+        // these was reapable when the match was a whole-line substring
+        // test — a detached build and anything running out of ~/.claude
+        // are the realistic victims.
+        for command in [
+            "/opt/homebrew/bin/bun build ./tugcode",
+            "tail -f /tmp/tugcode.log",
+            "/bin/sh -c 'cargo build -p tugcode'",
+            "/Users/x/.claude/local/node --output-format stream-json",
+            "rg --files-with-matches stream-json /Users/x/.claude",
+            // Not hypothetical: tugpulse takes transcript text as an
+            // argument, so a live one on this machine had "tugcode" in
+            // its command line purely because a session had discussed
+            // tugcode. Reparent it and the old matcher killed it.
+            "/Applications/Tug.app/Contents/MacOS/tugpulse --seed [\"why 405 tugcode DBs accumulated\"]",
+        ] {
+            assert!(
+                !is_reparented_orphan(&row(42, 1, 3600, command), floor),
+                "not ours to kill: {command}"
+            );
+        }
+
+        // Still reaped when the executable really is ours, bare name or
+        // absolute path.
+        assert!(is_reparented_orphan(&row(42, 1, 3600, "tugcode"), floor));
+        assert!(is_reparented_orphan(
+            &row(42, 1, 3600, "/opt/tug/bin/claude --output-format stream-json"),
+            floor
+        ));
     }
 
     #[test]
@@ -1281,6 +1403,60 @@ mod tests {
         assert_eq!(applied_sockets, sockets);
         assert!(!litter.exists());
         assert!(!dead_sock.exists());
+    }
+
+    /// The same guarantee for the two passes that reach outside
+    /// `$TMPDIR`. A preview that disagrees with the run is worse than no
+    /// preview, because `just reap` is read as a promise.
+    #[test]
+    fn report_and_apply_agree_for_data_dirs() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle = tempfile::tempdir().unwrap();
+        plant_instance(root.path(), "apptest-symmetry-abc", Some(bundle.path()));
+
+        let reported = sweep_apptest_data_dirs(root.path(), Duration::ZERO, SweepMode::Report);
+        assert_eq!(reported, vec!["apptest-symmetry-abc".to_string()]);
+        assert!(root.path().join("apptest-symmetry-abc").exists());
+
+        let applied = sweep_apptest_data_dirs(root.path(), Duration::ZERO, SweepMode::Apply);
+        assert_eq!(applied, reported);
+        assert!(!root.path().join("apptest-symmetry-abc").exists());
+    }
+
+    #[test]
+    fn report_and_apply_agree_for_tmux_servers() {
+        let Some((root, dir)) = tmux_fixture() else {
+            eprintln!("tmux unavailable — skipping");
+            return;
+        };
+        let tmpdir = root.path();
+        std::process::Command::new(crate::instance::tmux_bin())
+            .env("TMUX_TMPDIR", tmpdir)
+            .args([
+                "-L",
+                "tug-jsym1",
+                "new-session",
+                "-d",
+                "-s",
+                "cc-apptest-symmetry",
+            ])
+            .output()
+            .expect("start tmux server");
+        let dead = dir.join("tug-jsymdead");
+        fs::write(&dead, b"").unwrap();
+
+        let (r_killed, r_unlinked) = sweep_tmux_servers(&dir, Duration::ZERO, SweepMode::Report);
+        assert!(
+            tmux_sessions(tmpdir, "tug-jsym1").is_some(),
+            "report mode kills nothing"
+        );
+        assert!(dead.exists(), "report mode unlinks nothing");
+
+        let (a_killed, a_unlinked) = sweep_tmux_servers(&dir, Duration::ZERO, SweepMode::Apply);
+        assert_eq!(a_killed, r_killed);
+        assert_eq!(a_unlinked, r_unlinked);
+        assert!(tmux_sessions(tmpdir, "tug-jsym1").is_none());
+        assert!(!dead.exists());
     }
 
     #[test]
@@ -1380,6 +1556,32 @@ mod tests {
                         out.push(literal.to_string());
                     }
                 }
+            }
+        }
+        out.extend(builder_prefix_literals(text));
+        out
+    }
+
+    /// Leading literals from `tempfile::Builder::new().prefix("…")`.
+    ///
+    /// This idiom never mentions `temp_dir()`, so the scan above cannot
+    /// see it — and it is exactly how the changes-DB tempdir is named.
+    /// `tempfile` removes its own directories on drop, but a SIGKILLed
+    /// test binary never drops anything, which is the case the manifest
+    /// exists to cover.
+    fn builder_prefix_literals(text: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for (at, _) in text.match_indices(".prefix(\"") {
+            // `strip_prefix("…")` ends in the same eight characters and
+            // is not a temp path.
+            if text[..at].ends_with("strip") {
+                continue;
+            }
+            let body = &text[at + ".prefix(\"".len()..];
+            let Some(end) = body.find('"') else { continue };
+            let literal = body[..end].split('{').next().unwrap_or_default();
+            if !literal.is_empty() {
+                out.push(literal.to_string());
             }
         }
         out

@@ -15,14 +15,28 @@ use tugcore::janitor::{self, SweepMode, SweepReport};
 /// not bury the rest of the report; everything is still swept.
 const CAP: usize = 12;
 
-pub fn run_sweep(yes: bool, json: bool, quiet: bool) -> Result<i32, String> {
+pub fn run_sweep(yes: bool, json: bool, quiet: bool, dry_run: bool) -> Result<i32, String> {
     // `--json` reports without removing, mirroring `instance prune --json`.
+    // Deliberately uncapped: a machine-readable report that silently
+    // truncated would be worse than a long one.
     if json {
         let report = janitor::sweep_all(SweepMode::Report);
         println!(
             "{}",
             serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?
         );
+        return Ok(0);
+    }
+
+    // `--dry-run` is the human read of the same thing: capped, sectioned,
+    // and non-interactive, so a recipe can print it without prompting.
+    if dry_run {
+        let report = janitor::sweep_all(SweepMode::Report);
+        if report.is_empty() {
+            println!("nothing to sweep");
+            return Ok(0);
+        }
+        print_report(&report, "would sweep", quiet);
         return Ok(0);
     }
 

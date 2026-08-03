@@ -584,7 +584,7 @@ reap *MODE:
         "$TUGUTIL" host sweep --yes
     else
         echo "== reap (diagnose — nothing will change; run 'just reap apply' to release) =="
-        "$TUGUTIL" host sweep --json
+        "$TUGUTIL" host sweep --dry-run
     fi
 
 # Render the styled DMG background art (resources/dmg-preview.svg) into the

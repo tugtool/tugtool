@@ -458,6 +458,10 @@ pub enum HostCommands {
         #[arg(long)]
         json: bool,
 
+        /// Report what would be swept and stop. Never prompts.
+        #[arg(long, conflicts_with = "yes")]
+        dry_run: bool,
+
         /// Print section counts only, not every item.
         #[arg(long)]
         quiet: bool,
