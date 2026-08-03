@@ -109,7 +109,7 @@ export interface KeyBinding {
  * | Cmd+F            | find                   | stage 1 (card stub)             |
  * | Shift+Cmd+[      | previous-tab           | stage 1 (card, wraps)           |
  * | Shift+Cmd+]      | next-tab               | stage 1 (card, wraps)           |
- * | Cmd+1..Cmd+9     | jump-to-tab            | stage 1 + value: 1..9 payload   |
+ * | Cmd+1..Cmd+9     | move-to-slot           | stage 1 + value: 1..9 payload   |
  */
 export const KEYBINDINGS: KeyBinding[] = [
   { key: "Backquote", ctrl: true, action: TUG_ACTIONS.CYCLE_CARD },
@@ -213,22 +213,29 @@ export const KEYBINDINGS: KeyBinding[] = [
   // wrap via `(idx ± 1 + n) % n`.
   { key: "BracketLeft", meta: true, shift: true, action: TUG_ACTIONS.PREVIOUS_TAB },
   { key: "BracketRight", meta: true, shift: true, action: TUG_ACTIONS.NEXT_TAB },
-  // Jump to tab by 1-based index (⌘1..⌘9). Each binding carries its
-  // index on `value`; the capture-phase pipeline copies that onto
-  // the dispatched ActionEvent. TugPane's `jump-to-tab` handler reads
-  // the index, narrows to `number`, and selects the corresponding
-  // tab. Out-of-range indices are a silent no-op on the handler side.
+  // Move the selected card to a numbered slot (⌘1..⌘9). Each binding
+  // carries its 1-based slot number on `value`; the capture-phase
+  // pipeline copies that onto the dispatched ActionEvent, and
+  // DeckCanvas's `move-to-slot` handler resolves the selection and the
+  // range. The chords track the Lens's Layouts section: only the
+  // numbers the current arrangement actually has are live, and the
+  // rest do nothing.
+  //
+  // All nine digits are bound even though six-up is the largest
+  // arrangement, so every out-of-range number lands on the same silent
+  // no-op path rather than falling through to a macOS beep.
+  //
   // `preventDefaultOnMatch` is not set: browsers have no default
   // meaning for ⌘1..⌘9 inside a WKWebView that we need to suppress.
-  { key: "Digit1", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 1 },
-  { key: "Digit2", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 2 },
-  { key: "Digit3", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 3 },
-  { key: "Digit4", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 4 },
-  { key: "Digit5", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 5 },
-  { key: "Digit6", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 6 },
-  { key: "Digit7", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 7 },
-  { key: "Digit8", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 8 },
-  { key: "Digit9", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 9 },
+  { key: "Digit1", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 1 },
+  { key: "Digit2", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 2 },
+  { key: "Digit3", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 3 },
+  { key: "Digit4", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 4 },
+  { key: "Digit5", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 5 },
+  { key: "Digit6", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 6 },
+  { key: "Digit7", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 7 },
+  { key: "Digit8", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 8 },
+  { key: "Digit9", meta: true, action: TUG_ACTIONS.MOVE_TO_SLOT, value: 9 },
   // ⇧⌘P cycles the session card's permission mode. Tug deliberately departs from
   // the Claude Code TUI here: the terminal cycles permission mode on Shift+Tab,
   // but in a GUI Shift+Tab must move focus to the previous control. So the

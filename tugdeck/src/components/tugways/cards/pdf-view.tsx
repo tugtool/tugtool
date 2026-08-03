@@ -24,7 +24,7 @@
  * else, so the surface takes a chord away from nothing.
  *
  * The page modes and the zoom deliberately have **no** chord. Preview puts
- * the modes on ⌘1-3, which the deck already spends on `jump-to-tab`; a
+ * the modes on ⌘1-3, which the deck already spends on `move-to-slot`; a
  * chain-scoped binding could shadow that while a PDF held focus, but a
  * viewer is not the place to redefine a deck-wide navigation command. Both
  * are reachable from the context menu instead.
@@ -522,7 +522,7 @@ export function PdfView({
   // them only while it is on the first-responder walk.
   //
   // Neither the page modes nor the zoom carry a chord. The modes would have
-  // to take ⌘1-3 from `jump-to-tab`, and a viewer is not the place to
+  // to take ⌘1-3 from `move-to-slot`, and a viewer is not the place to
   // redefine a deck-wide navigation command; the zoom chords belong to the
   // host's View menu and never reach the web view at all. Both are reachable
   // from the context menu, and zoom additionally from the View menu itself.

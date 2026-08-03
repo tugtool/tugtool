@@ -28,7 +28,7 @@ Every action name belongs to exactly one of three categories. The category deter
 
 | Category | Defined in | Dispatched by | Handled by | Example |
 |----------|------------|---------------|------------|---------|
-| **Chain action** | `TUG_ACTIONS` in `action-vocabulary.ts` | `manager.dispatch` (chain walk), `manager.sendToFirstResponderForContinuation`, `keybinding-map.ts` | Responders via `useResponder`'s `actions` map | `cut`, `close`, `jump-to-tab` |
+| **Chain action** | `TUG_ACTIONS` in `action-vocabulary.ts` | `manager.dispatch` (chain walk), `manager.sendToFirstResponderForContinuation`, `keybinding-map.ts` | Responders via `useResponder`'s `actions` map | `cut`, `close`, `move-to-slot` |
 | **Control frame** | `registerAction` calls in `action-dispatch.ts` | Swift `sendControl(...)` → `dispatchAction` on the JS side | Handler body inside `registerAction`; may side-effect directly, may dispatch a chain action | `reload`, `set-theme`, `eval` |
 | **Both** (identity) | Both — same string in both tables | Swift `sendControl(...)` *and* `manager.dispatch` | Control-frame handler is a one-liner that re-dispatches the chain action; responders handle it | `close`, `add-card-to-active-pane`, `show-component-gallery` |
 
@@ -61,8 +61,8 @@ Every action name belongs to exactly one of three categories. The category deter
 
 - **All lowercase letters.** No uppercase, ever.
 - **Words separated by single dashes.** No underscores. No double-dashes.
-- **Verb first.** `close`, `cut`, `select`, `jump`, `toggle`, `show`, `add`, `remove`, `reset`, `set`, `dismiss`, `confirm`, `cancel`, `open`, `focus`, `cycle`, `increment`, `decrement`, `preview`, `find`.
-- **Object second** (when the verb needs a direct object). `close-tab`, `select-all`, `jump-to-tab`, `set-value`, `set-property`, `toggle-section`, `show-settings`, `add-tab`, `reset-layout`, `focus-next`, `cycle-card`, `preview-color`.
+- **Verb first.** `close`, `cut`, `select`, `move`, `toggle`, `show`, `add`, `remove`, `reset`, `set`, `dismiss`, `confirm`, `cancel`, `open`, `focus`, `cycle`, `increment`, `decrement`, `preview`, `find`.
+- **Object second** (when the verb needs a direct object). `close-tab`, `select-all`, `move-to-slot`, `set-value`, `set-property`, `toggle-section`, `show-settings`, `add-tab`, `reset-layout`, `focus-next`, `cycle-card`, `preview-color`.
 - **Modifier third** (when the object needs disambiguation). `add-card-to-active-pane` — the object is the card, but the modifier pins down *which* pane receives it. `show-component-gallery` — the object is the gallery, the modifier narrows *which* gallery.
 - **Single-word names are valid** when the verb alone is unambiguous in the chain's context. `close`, `cut`, `copy`, `paste`, `undo`, `redo`, `delete`, `duplicate`, `toggle`, `find`, `minimize`, `maximize`, `reload`. These are dispatched without an object because the first responder supplies it — `close` closes whatever responds to `close`; `undo` undoes whatever owns the history at the focus point.
 
@@ -116,7 +116,7 @@ export const TUG_ACTIONS = {
   CLOSE:                  "close",
   ADD_CARD_TO_ACTIVE_PANE: "add-card-to-active-pane",
   SHOW_COMPONENT_GALLERY: "show-component-gallery",
-  JUMP_TO_TAB:            "jump-to-tab",
+  MOVE_TO_SLOT:           "move-to-slot",
   // ...
 } as const;
 
@@ -137,7 +137,7 @@ export type TugAction<Extra extends string = never> =
 - Each key is the name of the action, in **`SCREAMING_SNAKE_CASE`**, derived mechanically from the kebab-case wire value:
   - `"select-all"` → `SELECT_ALL`
   - `"add-card-to-active-pane"` → `ADD_CARD_TO_ACTIVE_PANE`
-  - `"jump-to-tab"` → `JUMP_TO_TAB`
+  - `"move-to-slot"` → `MOVE_TO_SLOT`
 - No prefix on the key. `TUG_ACTIONS.CUT`, not `TUG_ACTIONS.TUG_CUT`. The object name carries the namespace.
 
 **Call sites always use the constant, never the raw string:**
@@ -203,7 +203,7 @@ The table below is the one-shot rename mapping applied during the A3 → action-
 | `nextTab`               | `next-tab`                    | `TUG_ACTIONS.NEXT_TAB`                |
 | `focusNext`             | `focus-next`                  | `TUG_ACTIONS.FOCUS_NEXT`              |
 | `focusPrevious`         | `focus-previous`              | `TUG_ACTIONS.FOCUS_PREVIOUS`          |
-| `jumpToTab`             | `jump-to-tab`                 | `TUG_ACTIONS.JUMP_TO_TAB`             |
+| `moveToSlot`            | `move-to-slot`                | `TUG_ACTIONS.MOVE_TO_SLOT`            |
 | `confirmDialog`         | `confirm-dialog`              | `TUG_ACTIONS.CONFIRM_DIALOG`          |
 | `cancelDialog`          | `cancel-dialog`               | `TUG_ACTIONS.CANCEL_DIALOG`           |
 | `dismissPopover`        | `dismiss-popover`             | `TUG_ACTIONS.DISMISS_POPOVER`         |

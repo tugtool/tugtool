@@ -270,8 +270,15 @@ export const TUG_ACTIONS = {
   //                 git) don't register a handler; the dispatch is a
   //                 no-op and `preventDefaultOnMatch` suppresses the
   //                 native beep.
-  // JUMP_TO_TAB:    payload — `value: number` (1-based tab index).
-  //                 Card-level: switch to the Nth tab. Used by ⌘1..9.
+  // MOVE_TO_SLOT:   payload — `value: number` (1-based slot number).
+  //                 Deck-level: put the selected card at slot N of the
+  //                 active imposition. Used by ⌘1..9, handled by the deck
+  //                 canvas, which owns the layout tree. The whole digit
+  //                 row is bound so an out-of-range number is inert rather
+  //                 than beeping: the handler no-ops when there is no
+  //                 imposition, when nothing is selected, when the
+  //                 selection is the Lens, or when N exceeds the
+  //                 arrangement's slot count.
   // CYCLE_PERMISSION_MODE: payload — none. Advance the session-card's
   //                 permission mode one step (default → acceptEdits →
   //                 plan → auto → default). Bound to ⇧⌘P, scoped
@@ -361,7 +368,7 @@ export const TUG_ACTIONS = {
   FOCUS_NEXT:     "focus-next",
   FOCUS_PREVIOUS: "focus-previous",
   FOCUS_PROMPT:   "focus-prompt",
-  JUMP_TO_TAB:    "jump-to-tab",
+  MOVE_TO_SLOT:   "move-to-slot",
   CYCLE_PERMISSION_MODE: "cycle-permission-mode",
   SET_PERMISSION_MODE: "set-permission-mode",
   INTERRUPT_SESSION: "interrupt-session",

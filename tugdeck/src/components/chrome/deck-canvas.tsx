@@ -45,9 +45,11 @@ import { openFileInCard } from "@/lib/open-file-in-card";
 import { revealPathInFinder } from "@/lib/os-open";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { flipDelta, springKeyframes } from "@/lib/pane-flip";
+import { dispatchAction } from "@/action-dispatch";
 import {
   isLensPinned,
   resolvePlacement,
+  slotCount,
   IMPOSITION_GAP_PX,
   IMPOSITION_SETTLE_MS,
   LENS_WIDTH_PROPERTY,
@@ -180,6 +182,7 @@ const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
   TUG_ACTIONS.CLOSE_ALL,
   TUG_ACTIONS.OPEN_FILE,
   TUG_ACTIONS.REVEAL_IN_FINDER,
+  TUG_ACTIONS.MOVE_TO_SLOT,
 ]);
 
 /**
@@ -390,6 +393,30 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       },
       [TUG_ACTIONS.NEXT_TAB]: (_event: ActionEvent) => {
         reactivateWhenDeselected();
+      },
+      // ⌘1..⌘9 — put the selected card at slot N of the active
+      // imposition. The canvas owns the layout tree, so it owns this;
+      // the chord walks past the focused card and its pane to get here.
+      // Every gate below is a silent return, never a warn: the digit row
+      // is bound in full, and a number the current arrangement doesn't
+      // have is a chord the user simply hasn't configured. `assign-slot`
+      // does the work, so the keyboard and the Lens's SlotPicker share
+      // one path (detach-from-tab-group, raise, clamp, persist).
+      [TUG_ACTIONS.MOVE_TO_SLOT]: (event: ActionEvent) => {
+        if (typeof event.value !== "number") return;
+        const deck = store.getSnapshot();
+        const kind = deck.imposition.kind;
+        if (kind === undefined) return;
+        if (event.value < 1 || event.value > slotCount(kind)) return;
+        const cardId = store.getFirstResponderCardId();
+        if (cardId === null) return;
+        const card = deck.cards.find((c) => c.id === cardId);
+        if (!card || card.componentId === LENS_CARD_ID) return;
+        dispatchAction({
+          action: "assign-slot",
+          cardId,
+          slot: event.value - 1,
+        });
       },
       // open-file / reveal-in-finder — deck-level file-reference
       // actions dispatched by context menus on transcript file refs.

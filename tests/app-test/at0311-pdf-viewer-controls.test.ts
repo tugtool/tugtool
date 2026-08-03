@@ -15,7 +15,7 @@
  *      Two Pages, each chosen from the context menu, change the laid-out
  *      geometry to match — one page, or two side by side at the same top
  *      edge. They carry no chord by design (Preview's ⌘1-3 are the deck's
- *      `jump-to-tab`), so the menu is the whole interface and this is the
+ *      `move-to-slot`), so the menu is the whole interface and this is the
  *      only place they are proven to work. ⌘1 with a PDF frontmost is
  *      asserted to leave the mode alone.
  *   3. **Zoom scales the document, not the app.** The host's Zoom In command
@@ -199,7 +199,7 @@ describe.skipIf(!SHOULD_RUN)("at0311 — the PDF surface answers the keyboard", 
 
         // ---- The page modes, reached the only way they can be reached.
         //
-        // They carry no chord on purpose: Preview's ⌘1-3 are `jump-to-tab`
+        // They carry no chord on purpose: Preview's ⌘1-3 are `move-to-slot`
         // here, and a viewer does not get to redefine a deck-wide navigation
         // command. The menu is the whole interface, so this is where the
         // modes are proven to work at all.

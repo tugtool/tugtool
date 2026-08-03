@@ -24,7 +24,7 @@ The chain has exactly three kinds of participants, and the distinction between t
 
 - **A *control* translates a user gesture into a typed intent.** It dispatches an action into the chain. It does not own the state the action will mutate. Most interactive widgets are controls: buttons, sliders, checkboxes, switches, radios, choice groups, tab bars, accordions, popup menus. Their "state" — the current slider value, the checked boolean, the selected tab — lives in a parent or a store, flows back in via props, and is rendered by the control. The control is a passthrough for the user's intent, not the home of the thing the intent modifies.
 
-- **A *responder* owns semantic state that actions mutate and registers handlers for the actions that mutate it.** Responders have a stable identity in the chain — a registered node with an id — so the first-responder promotion mechanism can address them. A text editor owns its document, caret, and undo stack, and is therefore the responder for `cut`, `copy`, `paste`, `select-all`, `undo`, `redo`. A card owns a **pane** (title bar, tabs, close state), so it is the responder for `close`, `previous-tab`, `next-tab`, `jump-to-tab`, `find`. A canvas owns the layout tree, so it is the responder for `cycle-card`, `reset-layout`, `add-card-to-active-pane`, `show-settings`, `show-component-gallery`.
+- **A *responder* owns semantic state that actions mutate and registers handlers for the actions that mutate it.** Responders have a stable identity in the chain — a registered node with an id — so the first-responder promotion mechanism can address them. A text editor owns its document, caret, and undo stack, and is therefore the responder for `cut`, `copy`, `paste`, `select-all`, `undo`, `redo`. A card owns a **pane** (title bar, tabs, close state), so it is the responder for `close`, `previous-tab`, `next-tab`, `close-tab`, `find`. A canvas owns the layout tree, so it is the responder for `cycle-card`, `reset-layout`, `add-card-to-active-pane`, `move-to-slot`, `show-settings`, `show-component-gallery`.
 
 - **A single component can be both.** A text editor with a built-in context menu is the emitter of `cut` when the user clicks the menu item, and the responder for `cut` because its selection is what gets cut. The walk starts at the first responder (the editor itself), finds the handler on the editor, and the emit-then-walk loop closes on the same component. That is the most common pattern in this codebase for self-contained widgets with their own action surfaces.
 
@@ -51,7 +51,7 @@ interface ActionEvent<Extra extends string = never> {
 
 **`sender`** identifies the originating control when multiple controls can emit the same action and handlers need to tell them apart. A form with a dozen text inputs all dispatching `set-value` disambiguates by `sender` — each input passes its `useId()` result, and the parent's handler routes each update to the right field. Controls that don't need disambiguation omit it.
 
-**`value`** is the typed payload. Its shape is action-specific and documented inline in `action-vocabulary.ts` alongside the constant. `set-value` carries a `number` (for numeric inputs) or a `string` (for text inputs); `jump-to-tab` carries a 1-based `number`; `set-property` carries a structured `{path, value, source?}`. Handlers narrow defensively with `typeof` or `Array.isArray` because the field is typed `unknown` — see the payload-narrowing commentary at the end of `action-vocabulary.ts` for the rationale and the two patterns (form-slot narrowing via `useResponderForm` vs. inline `typeof` gates).
+**`value`** is the typed payload. Its shape is action-specific and documented inline in `action-vocabulary.ts` alongside the constant. `set-value` carries a `number` (for numeric inputs) or a `string` (for text inputs); `move-to-slot` carries a 1-based `number`; `set-property` carries a structured `{path, value, source?}`. Handlers narrow defensively with `typeof` or `Array.isArray` because the field is typed `unknown` — see the payload-narrowing commentary at the end of `action-vocabulary.ts` for the rationale and the two patterns (form-slot narrowing via `useResponderForm` vs. inline `typeof` gates).
 
 **`phase`** distinguishes one-shot actions from continuous interactions. The phase model follows the same conceptual design as Apple's `UIGestureRecognizer.State`, adapted for a web responder chain.
 
@@ -129,7 +129,7 @@ Dispatch walks from the first responder upward through `parentId` links until a 
                     │  TugCard                │  ← registered handlers:
                     │   actions: {            │       close
                     │     close: ...          │       previous-tab / next-tab
-                    │     previous-tab: ...   │       jump-to-tab
+                    │     previous-tab: ...   │       close-tab
                     │     next-tab: ...       │
                     │   }                     │
                     └───────────▲─────────────┘
@@ -474,9 +474,9 @@ export function TugCard({ cardId, ... }) {
     actions: {
       [TUG_ACTIONS.CLOSE]:      (_e: ActionEvent) => handleClose(),
       [TUG_ACTIONS.SELECT_ALL]: (_e: ActionEvent) => handleSelectAll(),
-      [TUG_ACTIONS.JUMP_TO_TAB]: (event: ActionEvent) => {
-        if (typeof event.value !== "number") return;     // narrow defensively
-        handleJumpToTab(event.value);
+      [TUG_ACTIONS.CLOSE_TAB]: (event: ActionEvent) => {
+        if (typeof event.value !== "string") return;     // narrow defensively
+        handleCloseTab(event.value);
       },
     },
   });

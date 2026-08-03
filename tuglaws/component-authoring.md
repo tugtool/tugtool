@@ -555,9 +555,9 @@ export function TugCard({ cardId, ... }: TugCardProps) {
     actions: {
       [TUG_ACTIONS.CLOSE]:      (_e: ActionEvent) => handleClose(),
       [TUG_ACTIONS.SELECT_ALL]: (_e: ActionEvent) => handleSelectAll(),
-      [TUG_ACTIONS.JUMP_TO_TAB]: (event: ActionEvent) => {
-        if (typeof event.value !== "number") return;   // narrow defensively
-        handleJumpToTab(event.value);
+      [TUG_ACTIONS.CLOSE_TAB]: (event: ActionEvent) => {
+        if (typeof event.value !== "string") return;   // narrow defensively
+        handleCloseTab(event.value);
       },
     },
   });

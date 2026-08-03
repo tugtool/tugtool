@@ -1139,22 +1139,6 @@ export function TugPane({
     });
   }, [manager, keyboardTabNavSenderId, reactivateIfDeselected]);
 
-  const handleJumpToTab = useCallback(
-    (oneBasedIndex: number) => {
-      const currentCards = cardsRef.current;
-      if (!currentCards || currentCards.length === 0) return;
-      if (oneBasedIndex < 1 || oneBasedIndex > currentCards.length) return;
-      const targetCard = currentCards[oneBasedIndex - 1];
-      manager.sendToFirstResponder({
-        action: TUG_ACTIONS.SELECT_TAB,
-        value: targetCard.id,
-        sender: keyboardTabNavSenderId,
-        phase: "discrete",
-      });
-    },
-    [manager, keyboardTabNavSenderId],
-  );
-
   // Single-flight latch for the tab-× close guard, so a double-click on a
   // tab's × doesn't stack two sheets.
   const closeTabGuardRunningRef = useRef(false);
@@ -1167,10 +1151,6 @@ export function TugPane({
       [TUG_ACTIONS.CLOSE_ALL]: (_event: ActionEvent) => handleCloseAll(),
       [TUG_ACTIONS.PREVIOUS_TAB]: (_event: ActionEvent) => handlePreviousTab(),
       [TUG_ACTIONS.NEXT_TAB]: (_event: ActionEvent) => handleNextTab(),
-      [TUG_ACTIONS.JUMP_TO_TAB]: (event: ActionEvent) => {
-        if (typeof event.value !== "number") return;
-        handleJumpToTab(event.value);
-      },
       [TUG_ACTIONS.SELECT_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
         performSelectCard(event.value);
