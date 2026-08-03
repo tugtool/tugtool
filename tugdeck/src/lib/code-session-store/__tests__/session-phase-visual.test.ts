@@ -247,9 +247,9 @@ describe("sessionSessionPhaseVisual — role/state mapping", () => {
     });
   });
 
-  test("background → agent/running — executing, in its own tone", () => {
+  test("background → inherit/running — executing, in the quiet tone", () => {
     expect(sessionSessionPhaseVisual("background")).toEqual({
-      role: "agent",
+      role: "inherit",
       state: "running",
     });
   });
@@ -258,6 +258,13 @@ describe("sessionSessionPhaseVisual — role/state mapping", () => {
     expect(sessionSessionPhaseVisual("background").role).not.toBe(
       sessionSessionPhaseVisual("streaming").role,
     );
+  });
+
+  test("background reads apart from idle by motion, not by tone", () => {
+    const background = sessionSessionPhaseVisual("background");
+    const idle = sessionSessionPhaseVisual("idle");
+    expect(background.role).toBe(idle.role);
+    expect(background.state).not.toBe(idle.state);
   });
 
   test("idle → inherit/stopped", () => {

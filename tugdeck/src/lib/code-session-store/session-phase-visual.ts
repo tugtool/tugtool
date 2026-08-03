@@ -170,7 +170,7 @@ export const SESSION_PHASE_LABELS: Record<SessionPhaseKey, string> = {
  *  - `restoring`, `interrupting` → `{ role: caution, state: running }`
  *  - `awaiting_approval`         → `{ role: caution, state: running }`
  *  - active stream phases        → `{ role: action,  state: running }`
- *  - `background`                → `{ role: agent,   state: running }`
+ *  - `background`                → `{ role: inherit, state: running }`
  *  - `idle`                      → `{ role: inherit, state: stopped }`
  *
  * `action` (Key) is the canonical "work in flight" tone across the
@@ -180,9 +180,12 @@ export const SESSION_PHASE_LABELS: Record<SessionPhaseKey, string> = {
  *
  * `background` breathes: agents launched by a committed turn are
  * executing this instant, which is exactly what `running` claims, so
- * the liveness rule is satisfied rather than bent. What separates it
- * from a live turn is tone, not motion — the `agent` role, which
- * carries its own token in every theme.
+ * the liveness rule is satisfied rather than bent. It breathes in the
+ * quiet `inherit` tone rather than an accent, because the session
+ * itself is not asking for anything — the turn is committed and the
+ * user is free. Motion alone carries the reading, and a tinted dot
+ * beside a live turn's would compete with it for the same attention a
+ * live turn has the better claim to.
  */
 export function sessionSessionPhaseVisual(phaseKey: string): TugProgressIndicatorPhaseVisual {
   switch (phaseKey as SessionPhaseKey) {
@@ -200,7 +203,7 @@ export function sessionSessionPhaseVisual(phaseKey: string): TugProgressIndicato
       // be. See `indicator-liveness`.
       return { role: "caution", state: "running" };
     case "background":
-      return { role: "agent", state: "running" };
+      return { role: "inherit", state: "running" };
     case "submitting":
     case "awaiting_first_token":
     case "streaming":
