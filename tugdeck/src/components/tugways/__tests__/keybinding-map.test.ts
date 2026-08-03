@@ -111,3 +111,31 @@ describe("keybinding-map: precompiled index invariants", () => {
     }
   });
 });
+
+describe("keybinding-map: the digit row is move-to-slot, whole", () => {
+  test("⌘1..⌘9 each carry their own 1-based slot number", () => {
+    for (let n = 1; n <= 9; n++) {
+      const binding = matchKeybinding(keyEvent(`Digit${n}`, { meta: true }));
+      expect(binding).not.toBeNull();
+      expect(binding?.action).toBe(TUG_ACTIONS.MOVE_TO_SLOT);
+      expect(binding?.value).toBe(n);
+    }
+  });
+
+  test("all nine digits are bound, though six-up is the largest arrangement", () => {
+    // The out-of-range numbers are bound on purpose: an unbound chord falls
+    // through to a macOS beep, and a slot the arrangement doesn't have should
+    // be silent. The range gate lives in DeckCanvas's handler, not here.
+    for (let n = 7; n <= 9; n++) {
+      expect(matchKeybinding(keyEvent(`Digit${n}`, { meta: true }))).not.toBeNull();
+    }
+  });
+
+  test("a bare digit is not a chord", () => {
+    expect(matchKeybinding(keyEvent("Digit1"))).toBeNull();
+  });
+
+  test("⌘0 is the host's Actual Size and is absent from this map", () => {
+    expect(matchKeybinding(keyEvent("Digit0", { meta: true }))).toBeNull();
+  });
+});
