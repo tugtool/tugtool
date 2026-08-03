@@ -1421,20 +1421,16 @@ const SIMULATED_CLAMP_SHRINK_PX = 2000;
 /**
  * What the displacement bracket remembers from one commit to the next.
  *
- * `scrollTop` is the position that commit observed *after* any repair,
- * so the next bracket's unchanged-position suppressor compares against
- * the repaired value. `following` is the follow-bottom state before
- * the repair, so a repair can restore the flag a clamp knocked over.
- * `pendingRepairTop` carries the answer to "did the last repair hold?"
- * forward, because ring entries are immutable once appended — the next
- * record reports it as `priorRepairHeld`.
+ * `scrollTop` is the position that commit observed, so the next
+ * bracket's unchanged-position suppressor compares against it.
+ * `following` is the follow-bottom state as of the commit, recorded in
+ * any displacement record so the trace shows what the defect landed on.
  */
 interface CommitGeometry {
   userActivitySeq: number;
   programmaticWriteSeq: number;
   scrollTop: number;
   following: boolean;
-  pendingRepairTop: number | null;
 }
 
 /**
@@ -3332,7 +3328,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     }, []);
 
     // **The commit bracket.** Detects a `scrollTop` the machine cannot
-    // account for, puts it back, and records what happened.
+    // account for, attributes it, and records it loudly as a defect.
+    // It never counter-writes: the extent floor makes the clamp
+    // impossible by construction, so the bracket's job is to witness a
+    // hole in the floor, not to paper over one.
     //
     // The premise: a person cannot scroll during synchronous
     // JavaScript. The commit phase is synchronous — the event loop is
@@ -3367,8 +3366,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // reads TRUE even for a user parked deep in history. A pin call in
     // that window would re-engage them and yank them to the live edge:
     // the same class of user-fighting behavior this whole bracket
-    // exists to end, in the opposite direction. Repairing first closes
-    // that window. Do not move either effect past the other.
+    // exists to end, in the opposite direction. Witnessing first —
+    // which restores the floor from a simulated clamp and re-syncs the
+    // baseline via `noteExternalWrite` — closes that window. Do not
+    // move either effect past the other.
     React.useLayoutEffect(() => {
       const el = scrollContainerRef.current;
       const ss = smartScrollRef.current;
@@ -3635,23 +3636,23 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const programmaticWriteSeq = ss.programmaticWriteSeq;
       const following = ss.isFollowingBottom;
 
-      // Counters are re-read here rather than reused from above: a
-      // repair issues a write of its own, and the next bracket must
-      // see that advance so it exempts the repair's still-undelivered
-      // scroll event instead of classifying it.
-      const snapshot = (top: number, pendingRepairTop: number | null): void => {
+      // Counters are re-read here rather than reused from above:
+      // attributing a witnessed displacement (`noteExternalWrite`)
+      // advances the write counter, and the next bracket must see that
+      // advance so it exempts the displacement's still-undelivered
+      // scroll event instead of classifying it a second time.
+      const snapshot = (top: number): void => {
         commitGeometryRef.current = {
           userActivitySeq: ss.userActivitySeq,
           programmaticWriteSeq: ss.programmaticWriteSeq,
           scrollTop: top,
           following,
-          pendingRepairTop,
         };
       };
 
       // First bracket since mount — nothing to compare against.
       if (prev === null) {
-        snapshot(scrollTop, null);
+        snapshot(scrollTop);
         return;
       }
 
@@ -3661,7 +3662,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         ss.phase === "settling" ||
         ss.phase === "decelerating"
       ) {
-        snapshot(scrollTop, null);
+        snapshot(scrollTop);
         return;
       }
 
@@ -3669,7 +3670,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // that delivered a scroll event already refreshed the baseline —
       // but it also covers input whose scroll event is still queued.
       if (userActivitySeq !== prev.userActivitySeq) {
-        snapshot(scrollTop, null);
+        snapshot(scrollTop);
         return;
       }
 
@@ -3677,7 +3678,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // reveal, growth pin) whose scroll event may not have delivered
       // yet, so the baseline cannot know about it.
       if (programmaticWriteSeq !== prev.programmaticWriteSeq) {
-        snapshot(scrollTop, null);
+        snapshot(scrollTop);
         return;
       }
 
@@ -3688,28 +3689,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // land continuously, each one moving the scroller and each one
       // separated from its `scroll` event by at least a task. Without
       // this the bracket reads the transcript's own growth as
-      // displacement and repairs backwards against the stream — the
-      // exact fight the repair exists to prevent, with the roles
-      // reversed. Measured on a 60-turn seed: 37 spurious
-      // displacements, every one of them a pin.
+      // displacement and pollutes the record with phantom defects.
+      // Measured on a 60-turn seed: 37 spurious displacements, every
+      // one of them a pin.
       //
       // A real clamp involves no JavaScript write at all, so on a
       // scroller the machine is not actively writing to, the baseline
       // is fresh and the clamp still stands out.
-      //
-      // This return and the position-unchanged one below CARRY
-      // `pendingRepairTop` forward rather than clearing it: they fire
-      // on commits where nothing moved and nobody authored a write, so
-      // they are no evidence either way on whether the repair held.
-      // Clearing here is what made `priorRepairHeld` report `null` for
-      // a repair that plainly held — the repaired commit's own cascade
-      // re-runs the bracket within the same task, took one of these
-      // returns, and erased the marker before the next displacement
-      // could ever answer it. The activity/programmatic returns above
-      // still clear: once the user or the machine moves the scroller,
-      // the old repair target stops being a meaningful comparison.
       if (!ss.isScrollBaselineFresh) {
-        snapshot(scrollTop, prev.pendingRepairTop);
+        snapshot(scrollTop);
         return;
       }
 
@@ -3727,26 +3715,21 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // phase, and a baseline still holding the pre-pin position,
       // because the pin's scroll event is queued rather than
       // delivered. It would classify the pin as displacement and
-      // repair the scroller back upward, un-pinning follow-bottom in
-      // the act of protecting it.
+      // record a phantom defect against the machine's own write.
       //
       // Note this compares against the previous *bracket*, not the
       // baseline — a span of real wall time. That is only safe because
-      // it can suppress a repair and never cause one, and it never
-      // supplies a position to restore to. The drag-fighting hazard
-      // that rules the previous bracket out as a baseline is a
-      // property of being the target, which this is not.
+      // it can suppress a record and never cause one, and it never
+      // supplies a position of its own.
       if (Math.abs(scrollTop - prev.scrollTop) <= DISPLACEMENT_EPSILON_PX) {
-        // Carries the repair marker — see the baseline-staleness
-        // return above.
-        snapshot(scrollTop, prev.pendingRepairTop);
+        snapshot(scrollTop);
         return;
       }
 
       const baseline = ss.lastScrollEventTop;
       const positionDelta = scrollTop - baseline;
       if (Math.abs(positionDelta) <= DISPLACEMENT_EPSILON_PX) {
-        snapshot(scrollTop, null);
+        snapshot(scrollTop);
         return;
       }
 
@@ -3759,8 +3742,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // reading in place. No JavaScript write, no height shrink — the
       // same signature a clamp leaves. `tug-markdown-block.css` opts
       // into it (`overflow-anchor: auto`) and `render-incremental.ts`
-      // is built around it, so repairing it away would undo a feature
-      // rather than a defect.
+      // is built around it, so classifying it as displacement would
+      // indict a feature as a defect.
       //
       // The two separate on whether the document explains the move.
       // Anchoring shifts the position by exactly what changed above
@@ -3777,66 +3760,31 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // block, say.
       const heightDelta = scrollHeight - ss.lastScrollEventHeight;
       if (positionDelta > 0) {
-        snapshot(scrollTop, null);
+        snapshot(scrollTop);
         return;
       }
       if (Math.abs(positionDelta - heightDelta) <= DISPLACEMENT_EPSILON_PX) {
-        snapshot(scrollTop, null);
+        snapshot(scrollTop);
         return;
       }
 
-      // Unexplained. Report it.
+      // Unexplained. This is the defect the extent floor exists to
+      // make impossible, so a record here means the floor itself has a
+      // hole. Assert, never repair: the record is loud (deck-trace
+      // ring bypasses the enable gate; dev log at warn) and the
+      // position is left exactly where the browser put it — a
+      // counter-write would hide the evidence behind a fight with the
+      // browser, and the diagnosis that produced the floor came from
+      // refusing that fight.
       //
-      // `priorRepairHeld` answers the previous record's open question:
-      // a repair that was immediately undone means the document
-      // genuinely got shorter (a ledger shortfall) rather than dipping
-      // transiently, and the two want different fixes.
-      //
-      // Compared against the BASELINE, not this commit's `scrollTop` —
-      // by now `scrollTop` is wherever THIS displacement landed, which
-      // says nothing about the previous repair. The baseline is the
-      // last position a scroll event confirmed, i.e. where the
-      // scroller actually rested between the repair and this event: a
-      // repair that took delivers its scroll event at the target and
-      // the baseline matches; a repair the browser immediately
-      // re-clamped delivers it at the clamped position and the
-      // baseline gives it away.
-      const priorRepairHeld =
-        prev.pendingRepairTop === null
-          ? null
-          : Math.abs(baseline - prev.pendingRepairTop) <=
-            DISPLACEMENT_EPSILON_PX;
+      // The move IS attributed, though. `noteExternalWrite` syncs
+      // SmartScroll's baseline to the clamped position and advances
+      // the write counter, so the displacement's still-undelivered
+      // scroll event arrives with no unexplained delta: the intent
+      // rules never mistake the browser's move for the user scrolling
+      // up, and follow-bottom keeps whatever state the user gave it.
       displacementCountRef.current += 1;
-
-      // Repair. The baseline is the position to restore to — the
-      // user's most recent expressed intent, whether they are
-      // following the live edge or parked deep in history. A clamp
-      // inside our own commit has no claim on either.
-      //
-      // The target is NOT clamped to the current maximum. Clamping it
-      // would bake the defect in: if the bracket runs while the
-      // document is still short, `min(baseline, shortMax)` writes the
-      // shortened position, and when the height returns a moment
-      // later the user is left exactly where the clamp put them —
-      // reproducing the clamp rather than undoing it, and leaving the
-      // position matching so no later bracket ever notices. Writing
-      // the baseline unclamped costs nothing when the document really
-      // is short (the browser re-clamps, same result) and restores the
-      // user when it is not.
-      //
-      // A repair that does not hold is not retried. If the next
-      // bracket finds the same displacement the document genuinely
-      // shrank — a ledger shortfall, not a dip — and rewriting a
-      // position the geometry cannot support would fight the browser
-      // every commit. That is what `priorRepairHeld` reports forward.
-      ss.notifyRepair("list-view-commit", baseline);
-
-      // A clamp that knocked follow-bottom over on its way through
-      // takes it back. The flag was observed before the repair, so
-      // this restores intent along with position.
-      if (following && !ss.isFollowingBottom) {
-        ss.engage("repair-restore");
-      }
+      ss.noteExternalWrite();
 
       deckTrace.record({
         kind: "scroll-displacement",
@@ -3845,26 +3793,22 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         scrollHeight,
         clientHeight,
         following,
-        repaired: true,
-        priorRepairHeld,
         evicting: evictingThisCommit,
       });
-      tugDevLogStore.debug("list-view", "scroll-displacement", {
+      tugDevLogStore.warn("list-view", "scroll-displacement", {
         from: baseline,
         to: scrollTop,
         delta: scrollTop - baseline,
         scrollHeight,
         clientHeight,
         following,
-        repaired: true,
-        priorRepairHeld,
         evicting: evictingThisCommit,
       });
       el.setAttribute(
         "data-scroll-displacements",
         String(displacementCountRef.current),
       );
-      snapshot(el.scrollTop, baseline);
+      snapshot(scrollTop);
     });
 
     // Eviction bookkeeping, post-commit. Two jobs, both outside React
@@ -3954,9 +3898,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // idle inside the at-bottom band, and a clamp makes `isAtBottom`
     // read true even for a user parked in history — the document is
     // transiently short, so the position is trivially "at the bottom"
-    // of it. The bracket repairs that before this effect reads any
-    // geometry. Reorder the two and a clamp silently pins a reader to
-    // the live edge.
+    // of it. The bracket restores the floor from a simulated clamp and
+    // settles its witness before this effect reads any geometry.
+    // Reorder the two and a clamp silently pins a reader to the live
+    // edge.
     //
     // Ref-clearing semantics: HOLD the request (don't clear) on
     // `no-ss` (rare; the SmartScroll-install effect runs before this

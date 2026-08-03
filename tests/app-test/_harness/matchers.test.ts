@@ -468,8 +468,6 @@ const EVENT_FIXTURES: Record<
     scrollHeight: 19619,
     clientHeight: 420,
     following: true,
-    repaired: true,
-    priorRepairHeld: null,
     evicting: true,
   },
   "extent-rebase": {

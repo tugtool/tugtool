@@ -193,8 +193,6 @@ describe("deckTrace.enable(false) gates recording", () => {
       scrollHeight: 44_262,
       clientHeight: 700,
       following: true,
-      repaired: true,
-      priorRepairHeld: null,
       evicting: true,
     });
 

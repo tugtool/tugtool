@@ -443,20 +443,20 @@ export type DeckTraceEvent = {
       // the last `scroll` event (the baseline the bracket compares
       // against), `to` is where the commit left it.
       //
-      // `priorRepairHeld` reports the PREVIOUS record's outcome —
-      // ring entries are immutable once appended, so a repair's
-      // result is carried forward rather than patched in. `false`
-      // means the previous repair was immediately re-clamped, which
-      // is the signature of a document that genuinely shrank (a
-      // ledger shortfall) rather than a transient dip.
+      // This is an assertion record, not a repair record. The extent
+      // floor makes the clamp impossible by construction, so any
+      // record here is a defect in the floor itself: the bracket
+      // attributes the move (so intent rules don't misread it as the
+      // user) and records it — it never counter-writes the position.
+      // Whether a displacement persisted is read from consecutive
+      // records: the next record's `from` baseline sitting at this
+      // record's `to` means the position genuinely rested there.
       kind: "scroll-displacement";
       from: number;
       to: number;
       scrollHeight: number;
       clientHeight: number;
       following: boolean;
-      repaired: boolean;
-      priorRepairHeld: boolean | null;
       evicting: boolean;
     }
   | {

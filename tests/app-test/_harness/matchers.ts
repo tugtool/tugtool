@@ -194,8 +194,6 @@ export type DeckTraceEventShape = {
       scrollHeight: number;
       clientHeight: number;
       following: boolean;
-      repaired: boolean;
-      priorRepairHeld: boolean | null;
       evicting: boolean;
     }
   | {
@@ -476,7 +474,7 @@ export function summarizeEvent(e: DeckTraceEventShape): string {
     case "follow-bottom":
       return `follow-bottom ${e.following ? "engage" : "disengage"} source=${fmt(e.source)}`;
     case "scroll-displacement":
-      return `scroll-displacement ${e.from}→${e.to} (${e.to - e.from >= 0 ? "+" : ""}${e.to - e.from}) h=${e.scrollHeight}/${e.clientHeight} following=${e.following} repaired=${e.repaired} priorHeld=${e.priorRepairHeld ?? "n/a"} evicting=${e.evicting}`;
+      return `scroll-displacement ${e.from}→${e.to} (${e.to - e.from >= 0 ? "+" : ""}${e.to - e.from}) h=${e.scrollHeight}/${e.clientHeight} following=${e.following} evicting=${e.evicting}`;
     case "extent-rebase":
       return `extent-rebase ${e.from}→${e.to} (${e.to - e.from}) top=${e.scrollTop} client=${e.clientHeight} clamped=${e.clamped} following=${e.following}`;
     default: {

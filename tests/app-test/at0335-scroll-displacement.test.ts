@@ -15,12 +15,22 @@
  * every route back required the user to move — so one clamp anywhere
  * in a session ended follow-bottom for the rest of it.
  *
+ * The defense is the extent floor: an element that pins the scrollable
+ * extent so it cannot dip mid-mutation, making the clamp impossible by
+ * construction. The commit bracket that once repaired displacements is
+ * now an assertion layer — it witnesses a `scrollTop` the machine
+ * cannot account for, attributes it (`noteExternalWrite`, so intent
+ * rules never read the browser's move as the user), and records it
+ * loudly as a defect. It never counter-writes the position.
+ *
  * | Test               | What would break without it                        |
  * |--------------------|----------------------------------------------------|
  * | counter published  | displacement is invisible; the next scroll defect  |
  * |                    | has to be diagnosed live through `/api/eval` again |
- * | clamp detected     | the detector is dead code — after the geometry fix |
- * |                    | a real clamp no longer occurs to exercise it       |
+ * | clamp detected     | the detector is dead code — with the floor in      |
+ * |                    | place a real clamp no longer occurs to exercise it |
+ * | clamp witnessed    | a hole in the floor gets silently counter-written  |
+ * |                    | instead of recorded, and the evidence is destroyed |
  * | window swaps clean | the tear is back: re-windowing displaces the user  |
  * | wheel reaches      | a downward gesture gets snapped back partway and   |
  * |                    | cannot reach the live edge                         |
@@ -32,19 +42,12 @@
  * |                    | back, and every append silently fails to arrive    |
  *
  * **These assertions are about displacement MAGNITUDE, not count.**
- * Render-phase spacer geometry closes the commit-phase tear, but it
- * does not drive displacement to zero, and this suite does not pretend
- * otherwise. Eviction's height ledger settles across commits — a cell
- * measures at its new height in one commit, the spacer compensates in
- * the next — so the document dips briefly in between and the browser
- * clamps. Seeding sixty turns produces a dozen or so such records,
- * every one of them a ~24px pull that the repair immediately undoes.
- *
- * The defect this work exists for is three orders of magnitude larger:
- * the field captures were 2,660px and 8,000px pulls that stranded a
- * reader thousands of pixels above the live edge. So the pin is that
- * no displacement exceeds the at-bottom band. A regression that
- * reopens the tear fails that immediately; a count would only wobble.
+ * The floor drives real drives to zero records, but the magnitude pin
+ * is what a regression fails first: the field captures were 2,660px
+ * and 8,000px pulls that stranded a reader thousands of pixels above
+ * the live edge, so the pin is that no displacement exceeds the
+ * at-bottom band. A regression that reopens the tear fails that
+ * immediately; a count would only wobble.
  *
  * The clamp cases are driven through `__tug.forceCommitClamp()`, which
  * reproduces a genuine browser clamp from *inside* a React commit.
@@ -196,8 +199,6 @@ function readDisplacementRecords(app: App): Promise<
   {
     from: number;
     to: number;
-    repaired: boolean;
-    priorRepairHeld: boolean | null;
     following: boolean;
   }[]
 > {
@@ -205,10 +206,7 @@ function readDisplacementRecords(app: App): Promise<
   return window.__deckTrace.dump()
     .filter(function (e) { return e.kind === "scroll-displacement"; })
     .map(function (e) {
-      return {
-        from: e.from, to: e.to, repaired: e.repaired,
-        priorRepairHeld: e.priorRepairHeld, following: e.following,
-      };
+      return { from: e.from, to: e.to, following: e.following };
     });
 })()`);
 }
@@ -374,14 +372,13 @@ describe.skipIf(!SHOULD_RUN)("AT0335: scroll displacement", () => {
   );
 
   test(
-    "a clamp on a user parked mid-history is repaired, and the repair holds",
+    "a clamp on a user parked mid-history is witnessed loudly, never counter-written",
     async () => {
-      const app = await standUp("at0335-repair");
+      const app = await standUp("at0335-witness");
       try {
         const parked = await parkMidHistory(app);
         // Parked deep in history with follow-bottom released — the
-        // position is the user's, and a clamp inside our own commit
-        // has no claim on it.
+        // position is the user's.
         expect((await readSnap(app)).buttonVisible).toBe("true");
 
         await app.evalJS<boolean>(
@@ -389,27 +386,37 @@ describe.skipIf(!SHOULD_RUN)("AT0335: scroll displacement", () => {
         );
         await new Promise((r) => setTimeout(r, 600));
 
-        const after = await readSnap(app);
-        // Put back where they were, not left where the clamp landed.
-        expect(Math.abs(after.top - parked)).toBeLessThanOrEqual(4);
-        // Still parked — the repair restores position, it does not
-        // re-engage follow-bottom for someone who left it.
-        expect(after.buttonVisible).toBe("true");
-
+        // The bracket asserts instead of repairing: the record names
+        // the defect and the position stays exactly where the browser
+        // put it. A counter-write here would hide the evidence — the
+        // extent floor is the defense, and a record at all means the
+        // floor has a hole (the simulation makes one deliberately by
+        // taking the floor down for its synchronous window).
         const records = await readDisplacementRecords(app);
         expect(records.length).toBeGreaterThan(0);
-        expect(records[records.length - 1]!.repaired).toBe(true);
+        const witnessed = records[records.length - 1]!;
+        expect(witnessed.to).toBeLessThan(witnessed.from);
 
-        // The repair held: a second clamp's record reports on the
-        // first. A `false` here would mean the document genuinely
-        // shrank rather than dipping, which wants a different fix.
-        await app.evalJS<boolean>(
-          `(function () { window.__tug.forceCommitClamp('${SCROLLER}'); return true; })()`,
+        const after = await readSnap(app);
+        expect(Math.abs(after.top - witnessed.to)).toBeLessThanOrEqual(4);
+        expect(Math.abs(after.top - parked)).toBeGreaterThan(
+          AT_BOTTOM_PX,
         );
-        await new Promise((r) => setTimeout(r, 600));
-        const second = await readDisplacementRecords(app);
-        expect(second.length).toBeGreaterThan(records.length);
-        expect(second[second.length - 1]!.priorRepairHeld).toBe(true);
+        // Witnessing attributes the move (`noteExternalWrite`), so the
+        // clamp's deferred scroll event is not read as the user
+        // scrolling up and follow-bottom keeps the state the user gave
+        // it: still released, still parked.
+        expect(after.buttonVisible).toBe("true");
+
+        // Loud means the dev log carries it at warn with no opt-in —
+        // the defect record must exist in sessions nobody instrumented.
+        const warned = await app.evalJS<number>(`(function () {
+  return window.tugDevLog.getSnapshot().entries.filter(function (e) {
+    return e.source === "list-view" && e.message === "scroll-displacement" &&
+      e.level === "warn";
+  }).length;
+})()`);
+        expect(warned).toBeGreaterThan(0);
       } finally {
         await app.close();
       }

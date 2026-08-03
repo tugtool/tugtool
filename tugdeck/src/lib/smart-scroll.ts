@@ -227,19 +227,6 @@ export class SmartScroll {
   // normally.
   private _suppressIdleReengagementOnNextScroll = false;
 
-  // One-shot guard: the next scroll event is the deferred echo of a
-  // repair write, so neither disengage rule may read it as intent.
-  //
-  // Separate from `_suppressIdleReengagementOnNextScroll`, which
-  // guards the opposite direction (a programmatic write must not
-  // *engage* follow-bottom). A repair needs both: it moves the
-  // scroller without the user asking, so its echo must neither engage
-  // nor disengage.
-  //
-  // Consumed on the FIRST `_handleScroll` after the write, on the
-  // same terms as the other flag.
-  private _repairSuppressionArmed = false;
-
   // Signed `deltaY` accumulated over the current wheel gesture, reset
   // when a gesture begins. The user's stated direction.
   //
@@ -459,8 +446,8 @@ export class SmartScroll {
    * that gap the baseline describes the past. Streaming growth pins
    * the scroller continuously, so on a live transcript the baseline
    * is stale most of the time — a consumer that skips this check
-   * reads its own writes as movement nobody authored and repairs
-   * against the stream.
+   * reads its own writes as movement nobody authored and reports
+   * phantom displacements against the stream.
    */
   get isScrollBaselineFresh(): boolean {
     return this._writesSinceScrollEvent === 0;
@@ -586,42 +573,6 @@ export class SmartScroll {
     this._writesSinceScrollEvent += 1;
   }
 
-  /**
-   * Put the scroller back where it was after something moved it that
-   * nobody authored — a browser clamp against a transiently-short
-   * document, detected by the component that owns the commit.
-   *
-   * Distinct from `scrollTo` in what it means, not just in what it
-   * does: `scrollTo` is the machine choosing a position, and it
-   * supersedes a pending cold-boot restore on those grounds. A repair
-   * chooses nothing. It undoes a move, so the intent that was in
-   * force beforehand — including a restore still placing the content —
-   * must survive it.
-   *
-   * `source` names the caller for the dev log, which is where a
-   * repair that turns out to be wrong will be found.
-   */
-  notifyRepair(source: string, top: number): void {
-    if (this._disposed) return;
-    const from = this._container.scrollTop;
-    // Through `_writeScrollTop`, not `scrollTo`: the restore target
-    // must be preserved (see above), and the one-shot
-    // idle-re-engagement suppression it arms keeps this write's
-    // deferred scroll event from flipping follow-bottom.
-    this._writeScrollTop(top, false);
-    // Arm the intent-rule exemption. Without it the repair's own
-    // deferred scroll event is itself an unattributed upward move —
-    // the repair would trip the very rule it exists to protect
-    // follow-bottom from.
-    this._repairSuppressionArmed = true;
-    tugDevLogStore.debug('smart-scroll', 'repair', {
-      source,
-      from,
-      to: this._container.scrollTop,
-      requested: top,
-    });
-  }
-
   /** True when a content-growth signal should auto-pin the scroller to the
    *  bottom: the scroller is following the bottom (intent) AND the user is
    *  either idle OR still sitting at the live edge.
@@ -678,9 +629,9 @@ export class SmartScroll {
    *  the one `shouldAutoPin`'s `isAtBottom` clause already encodes for
    *  the engaged case, where content must not open a gap beneath a
    *  user at the edge. The same reasoning applies when the flag is off
-   *  and the position is in the band. Unlike the repair path, it does
-   *  not depend on knowing WHY the disengage happened, so it also
-   *  bounds the cost of clamps that land outside any commit.
+   *  and the position is in the band. It does not depend on knowing
+   *  WHY the disengage happened, so it also bounds the cost of any
+   *  displacement that lands outside a commit.
    *
    *  Two carve-outs. Never mid-gesture: an in-flight gesture's
    *  re-engagement belongs to `_checkReEngageFollowBottom` at gesture
@@ -1006,12 +957,6 @@ export class SmartScroll {
     const suppressIdleReengage = this._suppressIdleReengagementOnNextScroll;
     this._suppressIdleReengagementOnNextScroll = false;
 
-    // Same one-shot discipline for the repair exemption: cleared
-    // unconditionally on the first scroll event after the write, so a
-    // genuine gesture that follows is judged normally.
-    const suppressIntentRules = this._repairSuppressionArmed;
-    this._repairSuppressionArmed = false;
-
     switch (this._phase) {
       case 'idle':
         // Conservative auto-re-engagement: only if scrolled down to within
@@ -1070,12 +1015,14 @@ export class SmartScroll {
         // handler runs the position looks arbitrary and the geometry
         // looks fine. A field capture recorded `scrollTop` moving up
         // 2,660px with `scrollHeight` identical on both sides and every
-        // JavaScript write channel silent. A clamp inside a commit is
-        // detected and repaired by the owning component, and the
-        // repair's echo is exempted here via `suppressIntentRules`.
+        // JavaScript write channel silent. The extent floor makes that
+        // clamp impossible by construction; a residual one is witnessed
+        // by the owning component's commit bracket, which attributes it
+        // via `noteExternalWrite` — syncing `_lastScrollTop` to the
+        // clamped position — so its deferred scroll event arrives with
+        // no upward delta and never reaches this rule.
         if (
           !suppressIdleReengage &&
-          !suppressIntentRules &&
           this._isFollowingBottom &&
           scrollTop < this._lastScrollTop &&
           !this.isAtBottom
@@ -1114,7 +1061,6 @@ export class SmartScroll {
         // per-event rule, hence `<= 0`: only a net-POSITIVE (downward)
         // wheel accumulation suppresses the disengage.
         if (
-          !suppressIntentRules &&
           scrollTop < this._lastScrollTop &&
           this._isFollowingBottom &&
           !this.isAtBottom &&

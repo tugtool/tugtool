@@ -218,8 +218,16 @@ import {
  * so a test can assert the floor is standing (height tracks the settled
  * extent) rather than inferring its presence from the absence of
  * displacements. Additive; major stays `1`.
+ *
+ * `1.24.0`: the displacement bracket is an assertion layer. A clamp armed
+ * through {@link TugTestSurface.forceCommitClamp} is witnessed — counted,
+ * traced, attributed via `noteExternalWrite` — and the position is left
+ * where the browser put it; nothing counter-writes it back. The
+ * `scroll-displacement` trace event loses its `repaired` and
+ * `priorRepairHeld` fields with the machinery. Behavioral; major stays `1`
+ * because every surface method keeps its signature.
  */
-export const SURFACE_VERSION = "1.23.0" as const;
+export const SURFACE_VERSION = "1.24.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -585,15 +593,16 @@ export interface TugTestSurface {
    * Arm a one-shot commit-scoped browser clamp on a list-view
    * scroller (SURFACE_VERSION 1.20.0).
    *
-   * Atomic window geometry makes a real commit-scoped clamp
-   * impossible by construction, which leaves the detection and repair
-   * path with no natural trigger to test against — and `evalJS` runs
-   * outside any React commit, so a test cannot reproduce one from
-   * outside. On the next commit the list view briefly shortens its
-   * top spacer and forces layout, so the browser clamps `scrollTop`
-   * exactly as the original defect did, then restores the height in
-   * the same synchronous block. The detector faces the genuine
-   * article: a real clamp, commit-scoped, machine-caused.
+   * The extent floor makes a real commit-scoped clamp impossible by
+   * construction, which leaves the assertion layer with no natural
+   * trigger to test against — and `evalJS` runs outside any React
+   * commit, so a test cannot reproduce one from outside. On the next
+   * commit the list view takes the floor down, briefly shortens its
+   * top spacer, and forces layout, so the browser clamps `scrollTop`
+   * exactly as the original defect did, then restores both in the
+   * same synchronous block. The witness faces the genuine article: a
+   * real clamp, commit-scoped, machine-caused — and it records it
+   * without counter-writing the position.
    *
    * Drive it from a position where a clamp is geometrically possible
    * — near the bottom of an evicting transcript with a large top

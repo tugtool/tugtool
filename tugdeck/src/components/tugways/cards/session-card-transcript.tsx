@@ -1614,8 +1614,8 @@ function settleFindReveal(
     // Declare the raw writes. These bypass SmartScroll, so the list
     // view's displacement bracket would otherwise find the scroller
     // somewhere its baseline does not explain — a deliberate reveal
-    // read as a browser clamp, and repaired back out from under the
-    // match the user asked to see.
+    // recorded as a browser clamp, indicting a defect where the user
+    // asked for the move.
     if (wrote) smartScrollForElement(scroller)?.noteExternalWrite();
   }
   highlighter.flashActive();
