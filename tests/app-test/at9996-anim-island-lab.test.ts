@@ -2348,8 +2348,8 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
         // The reading has to exist; its magnitude is the measurement, not
         // an assumption. A first pass asserted "the app is never a few
         // tens of MB" and the assertion was simply wrong — a fresh lab app
-        // reads ~25MB with no UI-side surfaces at all, which is the very
-        // result this cell exists to report.
+        // reads ~25MB of footprint, which is the very result this cell
+        // exists to report.
         const hostProbe = readHostGraphicsMB(hostPid);
         expect(hostProbe).not.toBeNull();
         const hostComm = Bun.spawnSync(["ps", "-o", "comm=", "-p", String(hostPid)])
@@ -2359,6 +2359,10 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
         const samples: Array<{
           phase: string;
           hostGfxMB: number;
+          hostGfxVirtualMB: number;
+          hostGfxResidentMB: number;
+          hostGfxVolatileMB: number;
+          hostGfxRegions: number;
           hostFootMB: number;
           wcGfxMB: number;
         }> = [];
@@ -2369,6 +2373,10 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
           samples.push({
             phase,
             hostGfxMB: host.gfxMB,
+            hostGfxVirtualMB: host.gfxVirtualMB,
+            hostGfxResidentMB: host.gfxResidentMB,
+            hostGfxVolatileMB: host.gfxVolatileMB,
+            hostGfxRegions: host.gfxRegions,
             hostFootMB: host.footprintMB,
             wcGfxMB: wc.gfxMB,
           });
@@ -2441,19 +2449,37 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
 
         const byPhase: Record<
           string,
-          { n: number; hostMB: number; hostMax: number; footMB: number; wcMB: number }
+          {
+            n: number;
+            hostMB: number;
+            hostMax: number;
+            virtMB: number;
+            resMB: number;
+            volMB: number;
+            regions: number;
+            footMB: number;
+            wcMB: number;
+          }
         > = {};
         for (const s of samples) {
           const b = (byPhase[s.phase] ??= {
             n: 0,
             hostMB: 0,
             hostMax: 0,
+            virtMB: 0,
+            resMB: 0,
+            volMB: 0,
+            regions: 0,
             footMB: 0,
             wcMB: 0,
           });
           b.n += 1;
           b.hostMB += s.hostGfxMB;
           b.hostMax = Math.max(b.hostMax, s.hostGfxMB);
+          b.virtMB += s.hostGfxVirtualMB;
+          b.resMB += s.hostGfxResidentMB;
+          b.volMB += s.hostGfxVolatileMB;
+          b.regions += s.hostGfxRegions;
           b.footMB += s.hostFootMB;
           b.wcMB += s.wcGfxMB;
         }
@@ -2473,6 +2499,10 @@ describe.skipIf(!SHOULD_RUN)("at9996 anim island lab", () => {
             n: b.n,
             hostGfxMB: Math.round(b.hostMB / b.n),
             hostGfxMaxMB: Math.round(b.hostMax),
+            hostGfxVirtualMB: Math.round(b.virtMB / b.n),
+            hostGfxResidentMB: Math.round(b.resMB / b.n),
+            hostGfxVolatileMB: Math.round(b.volMB / b.n),
+            hostGfxRegions: Math.round(b.regions / b.n),
             hostFootprintMB: Math.round(b.footMB / b.n),
             wcGfxMB: Math.round(b.wcMB / b.n),
             hostWindowEquivalents:
@@ -2513,30 +2543,62 @@ function listWebContentPids(): Set<number> {
 /**
  * The app process's share of the deck's graphics. Under UI-side
  * compositing the app maps every composited layer's buffer set, and those
- * land in vmmap's `IOAccelerator (graphics)` summary row (dirty is its 5th
- * column) — a different row from WebContent's `owned unmapped memory`,
- * which is why `parseTileLedger` cannot read it.
+ * land in vmmap's `IOAccelerator (graphics)` summary row — a different row
+ * from WebContent's `owned unmapped memory`, which is why `parseTileLedger`
+ * cannot read it.
+ *
+ * The whole row is captured, not just dirty. Its columns are
+ * `VIRTUAL RESIDENT DIRTY SWAPPED VOLATILE NONVOL EMPTY COUNT`, and dirty
+ * alone cannot tell a process that maps no surfaces from one that maps many
+ * and keeps none of them resident — the two states read identically at 0
+ * and mean opposite things. Safari is the second: 192MB virtual across 69
+ * regions, 3MB resident.
  *
  * `vmmap` takes a corpse of its target, which suspends the process for the
  * duration: sample the app on a tight cadence while the harness is waiting
  * on it and the wait will time out.
  */
-function readHostGraphicsMB(
-  pid: number,
-): { gfxMB: number; footprintMB: number } | null {
+interface HostGraphicsRow {
+  gfxMB: number;
+  gfxVirtualMB: number;
+  gfxResidentMB: number;
+  gfxVolatileMB: number;
+  gfxRegions: number;
+  footprintMB: number;
+}
+
+function readHostGraphicsMB(pid: number): HostGraphicsRow | null {
   const out = Bun.spawnSync(["vmmap", "--summary", String(pid)]);
-  let gfxMB = NaN;
-  let footprintMB = NaN;
+  const row: HostGraphicsRow = {
+    gfxMB: NaN,
+    gfxVirtualMB: NaN,
+    gfxResidentMB: NaN,
+    gfxVolatileMB: NaN,
+    gfxRegions: NaN,
+    footprintMB: NaN,
+  };
   for (const line of out.stdout.toString().split("\n")) {
     const f = line.trim().split(/\s+/);
     if (f[0] === "IOAccelerator" && f[1] === "(graphics)") {
-      gfxMB = parseVmmapSizeMB(f[4] ?? "");
+      row.gfxVirtualMB = parseVmmapSizeMB(f[2] ?? "");
+      row.gfxResidentMB = parseVmmapSizeMB(f[3] ?? "");
+      row.gfxMB = parseVmmapSizeMB(f[4] ?? "");
+      row.gfxVolatileMB = parseVmmapSizeMB(f[6] ?? "");
+      row.gfxRegions = Number(f[9] ?? "");
     } else if (f[0] === "Physical" && f[1] === "footprint:") {
-      footprintMB = parseVmmapSizeMB(f[2] ?? "");
+      row.footprintMB = parseVmmapSizeMB(f[2] ?? "");
     }
   }
-  if (!Number.isFinite(gfxMB) || !Number.isFinite(footprintMB)) return null;
-  return { gfxMB, footprintMB };
+  const readings = [
+    row.gfxMB,
+    row.gfxVirtualMB,
+    row.gfxResidentMB,
+    row.gfxVolatileMB,
+    row.gfxRegions,
+    row.footprintMB,
+  ];
+  if (readings.some((v) => !Number.isFinite(v))) return null;
+  return row;
 }
 
 /** vmmap summary size token ("526.3M", "1.3G", "16K", "0K") → MB. */
