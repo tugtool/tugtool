@@ -3,6 +3,7 @@
 pub mod ask;
 pub mod changesets;
 pub mod file;
+pub mod file_probe;
 pub mod gate;
 pub mod init;
 pub mod instance;

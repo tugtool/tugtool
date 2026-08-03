@@ -270,6 +270,34 @@ export interface QuiesceReport {
 }
 
 /**
+ * Prefix of the diagnostic sentinel `note()` writes to stdout. The
+ * `app-test` recipe scans each file's captured output for these lines and
+ * renders them under `Diagnostics:` in the summary. Same house pattern as
+ * `TUG-FILE-RECEIPT`.
+ */
+export const NOTE_MARKER = "TUG-NOTE: ";
+
+/**
+ * Report a value from inside a test into the run's summary.
+ *
+ * A `console.log` lands in the per-file output, which is suppressed unless
+ * `TUG_APPTEST_STREAM=1`. A `note()` survives into the summary — for passing
+ * files as well as failing ones, which is the point: a probe's value is most
+ * often read off a green run.
+ *
+ * `value` is JSON-serialized; a value that will not serialize is stringified.
+ */
+export function note(label: string, value: unknown): void {
+  let encoded: string;
+  try {
+    encoded = JSON.stringify({ label, value });
+  } catch {
+    encoded = JSON.stringify({ label, value: String(value) });
+  }
+  console.log(`${NOTE_MARKER}${encoded}`);
+}
+
+/**
  * A live connection to a launched Tug.app. Returned by
  * `launchTugApp`; tests interact with this object only.
  */

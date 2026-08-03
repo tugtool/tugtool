@@ -24,6 +24,9 @@ pub enum AppError {
     Exit1(String),
     Exit2(String),
     Exit3(String),
+    /// A child process's exit status, propagated verbatim and silently — the
+    /// child has already said whatever it had to say.
+    ExitStatus(u8),
 }
 
 impl From<ChangesError> for AppError {
@@ -68,6 +71,7 @@ pub fn finish(result: Result<(), AppError>) -> ExitCode {
             eprintln!("error: {msg}");
             ExitCode::from(3)
         }
+        Err(AppError::ExitStatus(code)) => ExitCode::from(code),
     }
 }
 

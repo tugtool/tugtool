@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tugchanges_core::shell_ops::{ParseOutcome, parse_shell_ops};
+use tugchanges_core::shell_ops::{ParseOutcome, Suggestion, parse_shell_ops};
 
 use crate::changes::AppError;
 use crate::cli::FileCommands;
@@ -52,6 +52,14 @@ impl Receipt {
         });
     }
 
+    fn modified(&mut self, path: &Path) {
+        self.ops.push(ReceiptOp {
+            op: "modified",
+            path: path.to_string_lossy().into_owned(),
+            orig_path: None,
+        });
+    }
+
     fn created(&mut self, path: &Path) {
         self.ops.push(ReceiptOp {
             op: "created",
@@ -77,6 +85,19 @@ pub fn run_file(command: FileCommands) -> Result<(), AppError> {
         FileCommands::Rm { paths } => run_rm(&paths),
         FileCommands::Mv { src, dst } => run_mv(&src, &dst),
         FileCommands::Cp { src, dst } => run_cp(&src, &dst),
+        FileCommands::Edit {
+            patch,
+            path,
+            replace,
+            with,
+            count,
+            regex,
+        } => run_edit(patch, path, replace, with, count, regex),
+        FileCommands::Probe {
+            patch,
+            paths,
+            command,
+        } => super::file_probe::run_probe(patch, &paths, &command),
         FileCommands::Gate { command, base_dir } => run_gate(&command, base_dir),
     }
 }
@@ -206,6 +227,126 @@ fn run_cp(src: &str, dst: &str) -> Result<(), AppError> {
 }
 
 // ---------------------------------------------------------------------------
+// edit
+// ---------------------------------------------------------------------------
+
+/// Substitution and patch application that testify to what they changed.
+///
+/// This is the attributable form of the `perl -i`/`python3` heredoc edits the
+/// grammar cannot read: the verb performs the edit itself and prints a receipt
+/// naming every file whose bytes actually moved, which the relay turns into
+/// proof-class rows.
+fn run_edit(
+    patch: Option<String>,
+    path: Option<String>,
+    replace: Option<String>,
+    with: Option<String>,
+    count: Option<usize>,
+    regex: bool,
+) -> Result<(), AppError> {
+    match (patch, path) {
+        (Some(source), _) => edit_by_patch(&source),
+        (None, Some(path)) => {
+            // clap's `requires_all` guarantees both are present here.
+            let (replace, with) = (replace.unwrap_or_default(), with.unwrap_or_default());
+            edit_by_substitution(&path, &replace, &with, count, regex)
+        }
+        (None, None) => Err(AppError::Exit1(
+            "nothing to do — pass --patch, or --path with --replace and --with".to_string(),
+        )),
+    }
+}
+
+fn edit_by_patch(source: &str) -> Result<(), AppError> {
+    use super::file_probe::{git_apply, patch_targets, read_patch};
+
+    let text = read_patch(source)?;
+    let targets = patch_targets(&text);
+    if targets.is_empty() {
+        return Err(AppError::Exit1(
+            "the patch names no files".to_string(),
+        ));
+    }
+
+    // Remember each target's bytes so the receipt can name only the files that
+    // actually moved — a patch may name a file and leave it identical.
+    let before: Vec<Option<Vec<u8>>> = targets.iter().map(|p| std::fs::read(p).ok()).collect();
+
+    // Validate first: a patch that will not apply must change nothing and
+    // testify to nothing.
+    git_apply(&text, true)?;
+    git_apply(&text, false)?;
+
+    let mut receipt = Receipt::default();
+    for (target, was) in targets.iter().zip(before) {
+        let now = std::fs::read(target).ok();
+        if now == was {
+            continue;
+        }
+        match (was, &now) {
+            (None, Some(_)) => receipt.created(target),
+            (Some(_), None) => receipt.deleted(target),
+            _ => receipt.modified(target),
+        }
+    }
+    receipt.emit();
+    Ok(())
+}
+
+fn edit_by_substitution(
+    path: &str,
+    replace: &str,
+    with: &str,
+    count: Option<usize>,
+    regex: bool,
+) -> Result<(), AppError> {
+    let target = absolute(Path::new(path));
+    let original = std::fs::read_to_string(&target)
+        .map_err(|e| AppError::Exit1(format!("{}: {e}", target.display())))?;
+
+    let limit = count.unwrap_or(usize::MAX);
+    let updated = if regex {
+        let pattern = regex::Regex::new(replace)
+            .map_err(|e| AppError::Exit1(format!("--replace is not a valid regex: {e}")))?;
+        if !pattern.is_match(&original) {
+            return Err(no_match(&target, replace));
+        }
+        pattern.replacen(&original, limit, with).into_owned()
+    } else {
+        if !original.contains(replace) {
+            return Err(no_match(&target, replace));
+        }
+        original.replacen(replace, with, limit)
+    };
+
+    // A substitution that matched but changed nothing (replacing text with
+    // itself) is still a no-op, and a receipt for it would be a lie.
+    if updated == original {
+        return Err(AppError::Exit1(format!(
+            "{}: the replacement is identical to what it replaced",
+            target.display()
+        )));
+    }
+
+    std::fs::write(&target, updated)
+        .map_err(|e| AppError::Exit1(format!("{}: {e}", target.display())))?;
+
+    let mut receipt = Receipt::default();
+    receipt.modified(&target);
+    receipt.emit();
+    Ok(())
+}
+
+/// Silence about a substitution that matched nothing is how a stale edit hides,
+/// so it is an error rather than a quiet success.
+fn no_match(target: &Path, replace: &str) -> AppError {
+    AppError::Exit1(format!(
+        "no match for `{replace}` in {} — nothing was changed",
+        target.display()
+    ))
+}
+
+// ---------------------------------------------------------------------------
 // gate
 // ---------------------------------------------------------------------------
 
@@ -216,6 +357,23 @@ struct GateDecision {
     reason: Option<String>,
 }
 
+/// Where a refusal points. The grammar decides which verb covers what it could
+/// not read; this only spells it out, so a denied `perl -i` is never steered at
+/// `rm|mv|cp`.
+fn steering(suggest: Suggestion) -> &'static str {
+    match suggest {
+        Suggestion::Lifecycle => {
+            "Use `tugutil file rm|mv|cp` instead — it expands the operands itself and reports \
+             exactly which files it touched, so the change stays attributed."
+        }
+        Suggestion::Edit => {
+            "Use `tugutil file edit` instead — it performs the edit itself and reports exactly \
+             which files changed, so the change stays attributed. For a patch-run-revert cycle, \
+             `tugutil file probe` does the whole thing and records nothing."
+        }
+    }
+}
+
 /// The PreToolUse hook's decision, computed by the same grammar the relay uses
 /// so the two cannot fork. Deny is reserved for the case where correlation
 /// would otherwise be the ceiling: an rm/mv-class command whose operands the
@@ -224,12 +382,9 @@ struct GateDecision {
 fn run_gate(command: &str, base_dir: Option<PathBuf>) -> Result<(), AppError> {
     let base = base_dir.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     let decision = match parse_shell_ops(command, &base) {
-        ParseOutcome::Unparseable { reason } => GateDecision {
+        ParseOutcome::Unparseable { reason, suggest } => GateDecision {
             decision: "deny",
-            reason: Some(format!(
-                "{reason}. Use `tugutil file rm|mv|cp` instead — it expands the operands itself \
-                 and reports exactly which files it touched, so the change stays attributed."
-            )),
+            reason: Some(format!("{reason}. {}", steering(suggest))),
         },
         ParseOutcome::Ops(_) | ParseOutcome::NoFileOps => GateDecision {
             decision: "allow",
@@ -310,7 +465,7 @@ fn destination(src: &Path, dst: &Path) -> PathBuf {
     }
 }
 
-fn absolute(path: &Path) -> PathBuf {
+pub(super) fn absolute(path: &Path) -> PathBuf {
     if path.is_absolute() {
         return path.to_path_buf();
     }
@@ -318,7 +473,7 @@ fn absolute(path: &Path) -> PathBuf {
     normalize(&cwd.join(path))
 }
 
-fn normalize(path: &Path) -> PathBuf {
+pub(super) fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {
@@ -594,5 +749,37 @@ mod tests {
         assert_eq!(decide("rm a.ts"), "allow");
         assert_eq!(decide("cargo build"), "allow");
         assert_eq!(decide("tugutil file rm 'apptest-*'"), "allow");
+
+        // In-place editors: readable operands pass, unreadable ones do not.
+        assert_eq!(decide("perl -i -pe 's/a/b/' src/x.ts"), "allow");
+        assert_eq!(decide("perl -i -pe 's/a/b/' src/*.ts"), "deny");
+        assert_eq!(decide("sed -i '' 's/a/b/' src/*.ts"), "deny");
+        // A python heredoc is never denied — it cannot be judged without
+        // parsing Python, and two thirds of them are read-only analysis.
+        assert_eq!(
+            decide("python3 - <<'PY'\nopen('x','w').write('y')\nPY"),
+            "allow"
+        );
+    }
+
+    #[test]
+    fn a_refusal_steers_at_the_verb_that_covers_it() {
+        let base = PathBuf::from("/repo");
+        let reason = |command: &str| match parse_shell_ops(command, &base) {
+            ParseOutcome::Unparseable { suggest, .. } => steering(suggest).to_string(),
+            other => panic!("expected a refusal for `{command}`, got {other:?}"),
+        };
+
+        // An unreadable edit points at `edit`, NOT at the lifecycle verbs — the
+        // whole reason the suggestion rides on the refusal.
+        let edit = reason("perl -i -pe 's/a/b/' src/*.ts");
+        assert!(edit.contains("tugutil file edit"), "{edit}");
+        assert!(edit.contains("tugutil file probe"), "{edit}");
+        assert!(!edit.contains("rm|mv|cp"), "{edit}");
+
+        // …and an unreadable lifecycle op still points where it always did.
+        let lifecycle = reason("rm -rf apptest-*");
+        assert!(lifecycle.contains("tugutil file rm|mv|cp"), "{lifecycle}");
+        assert!(!lifecycle.contains("tugutil file edit"), "{lifecycle}");
     }
 }

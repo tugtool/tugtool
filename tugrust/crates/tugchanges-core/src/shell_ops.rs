@@ -46,11 +46,26 @@ pub enum ParseOutcome {
     Ops(Vec<DeclaredOp>),
     /// Parsed fine; nothing file-mutating that this grammar reads.
     NoFileOps,
-    /// A file-lifecycle command (`rm`/`mv`/`git rm`/`git mv`) is present with
-    /// operands this grammar cannot resolve — the gate's deny signal. Refusal
-    /// wins over any sibling command's ops on the same line: minting nothing is
-    /// the safe direction, and the gate steers the whole line to `tugutil file`.
-    Unparseable { reason: String },
+    /// A file-mutating command is present with operands this grammar cannot
+    /// resolve — the gate's deny signal. Refusal wins over any sibling
+    /// command's ops on the same line: minting nothing is the safe direction,
+    /// and the gate steers the whole line to `tugutil file`.
+    Unparseable {
+        reason: String,
+        /// Which verb covers what refused. The grammar knows, and the gate
+        /// would otherwise have to guess — steering a refused `perl -i` at
+        /// `rm|mv|cp` teaches the wrong lesson.
+        suggest: Suggestion,
+    },
+}
+
+/// The `tugutil file` verb that covers a refused command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Suggestion {
+    /// An `rm`/`mv`-class lifecycle operation — files removed, renamed, copied.
+    Lifecycle,
+    /// An in-place editor rewriting file contents.
+    Edit,
 }
 
 /// Parse `command` into the file operations it declares, resolving relative
@@ -65,7 +80,9 @@ pub fn parse_shell_ops(command: &str, base_dir: &Path) -> ParseOutcome {
         match parse_segment(&segment, &mut cwd) {
             SegmentOutcome::Ops(mut segment_ops) => ops.append(&mut segment_ops),
             SegmentOutcome::Nothing => {}
-            SegmentOutcome::Refuse(reason) => return ParseOutcome::Unparseable { reason },
+            SegmentOutcome::Refuse(reason, suggest) => {
+                return ParseOutcome::Unparseable { reason, suggest };
+            }
         }
     }
 
@@ -373,7 +390,7 @@ fn split_segments(tokens: &[Tok]) -> Vec<Vec<Tok>> {
 enum SegmentOutcome {
     Ops(Vec<DeclaredOp>),
     Nothing,
-    Refuse(String),
+    Refuse(String, Suggestion),
 }
 
 /// Command words whose presence means an rm/mv-class operation is happening
@@ -426,10 +443,13 @@ fn parse_segment(tokens: &[Tok], cwd: &mut Option<PathBuf>) -> SegmentOutcome {
 
     if OPAQUE_HEADS.contains(&head.text.as_str()) || words.iter().any(|w| w.text == "-exec") {
         return if lifecycle_present {
-            SegmentOutcome::Refuse(format!(
-                "`{}` runs a file-lifecycle command whose operands are not in the command text",
-                head.text
-            ))
+            SegmentOutcome::Refuse(
+                format!(
+                    "`{}` runs a file-lifecycle command whose operands are not in the command text",
+                    head.text
+                ),
+                Suggestion::Lifecycle,
+            )
         } else {
             finish(ops)
         };
@@ -453,7 +473,7 @@ fn parse_segment(tokens: &[Tok], cwd: &mut Option<PathBuf>) -> SegmentOutcome {
                 }));
                 finish(ops)
             }
-            Err(reason) => SegmentOutcome::Refuse(reason),
+            Err(reason) => SegmentOutcome::Refuse(reason, Suggestion::Lifecycle),
         },
         "mv" | "cp" => match operands(rest, cwd, &["-"]) {
             Ok(paths) => {
@@ -466,7 +486,9 @@ fn parse_segment(tokens: &[Tok], cwd: &mut Option<PathBuf>) -> SegmentOutcome {
                     None => finish(ops),
                 }
             }
-            Err(reason) if head.text == "mv" => SegmentOutcome::Refuse(reason),
+            Err(reason) if head.text == "mv" => {
+                SegmentOutcome::Refuse(reason, Suggestion::Lifecycle)
+            }
             Err(_) => finish(ops),
         },
         "touch" => {
@@ -485,10 +507,13 @@ fn parse_segment(tokens: &[Tok], cwd: &mut Option<PathBuf>) -> SegmentOutcome {
             }));
             finish(ops)
         }
-        "sed" => {
-            ops.extend(sed_ops(rest, cwd));
-            finish(ops)
-        }
+        "sed" | "perl" | "ruby" => match in_place_editor_ops(head.text.as_str(), rest, cwd) {
+            Ok(mut edits) => {
+                ops.append(&mut edits);
+                finish(ops)
+            }
+            Err(reason) => SegmentOutcome::Refuse(reason, Suggestion::Edit),
+        },
         "git" => git_ops(rest, cwd, ops),
         // The verbs report their own outcome in a receipt, which covers the glob
         // and variable operands this grammar refuses — so the gate must never
@@ -620,10 +645,69 @@ fn transfer_ops(paths: &[PathBuf], raw: &[&str], is_move: bool) -> Option<Vec<De
     Some(ops)
 }
 
-/// `sed -i` rewrites its file operands in place. Only the `-i` forms count, and
-/// the expression operand is never a path — a regex is full of glob characters,
-/// so it is dropped before literalness matters.
-fn sed_ops(words: &[&Word], cwd: &Option<PathBuf>) -> Vec<DeclaredOp> {
+/// What a flag word means to an in-place editor's operand scan.
+enum EditorFlag {
+    /// In-place editing is on. `suffix_follows` for the BSD `sed` form, which
+    /// takes its backup suffix as a separate operand.
+    InPlace { suffix_follows: bool },
+    /// The flag supplies the script; `inline` when the script text came attached
+    /// to the flag rather than as the next word.
+    Script { inline: bool },
+    /// Anything else — carries no operand of its own.
+    Plain,
+}
+
+fn scan_editor_flag(verb: &str, text: &str) -> EditorFlag {
+    if verb == "sed" {
+        return match text {
+            "-i" => EditorFlag::InPlace {
+                suffix_follows: true,
+            },
+            "-e" | "-f" => EditorFlag::Script { inline: false },
+            t if t.starts_with("-i") => EditorFlag::InPlace {
+                suffix_follows: false,
+            },
+            _ => EditorFlag::Plain,
+        };
+    }
+
+    // `perl` and `ruby` cluster their single-letter switches. `-i` swallows the
+    // rest of its cluster as the backup suffix, so `-i.bak`, `-pi` and `-0pi`
+    // all read the same. `-e`/`-E` take the program either attached or as the
+    // next word. A switch that swallows its own argument ends the scan.
+    for (offset, c) in text.char_indices().skip(1) {
+        match c {
+            'i' => {
+                return EditorFlag::InPlace {
+                    suffix_follows: false,
+                }
+            }
+            'e' | 'E' => {
+                return EditorFlag::Script {
+                    inline: offset + c.len_utf8() < text.len(),
+                }
+            }
+            'M' | 'm' | 'F' | 'I' | 'x' => return EditorFlag::Plain,
+            _ => {}
+        }
+    }
+    EditorFlag::Plain
+}
+
+/// The in-place editors — `sed -i`, `perl -i`, `ruby -i` — name the files they
+/// rewrite in the command text, which is the same standing `rm`'s operands have.
+/// The verbs differ only in how their flags consume the script, so the flag scan
+/// branches on the verb and the operand handling is shared.
+///
+/// The script operand is never a path — a regex is full of glob characters — so
+/// it is dropped before literalness matters. A file operand that is *not* a
+/// literal path refuses the whole command: the editor is provably rewriting
+/// something the grammar cannot name.
+fn in_place_editor_ops(
+    verb: &str,
+    words: &[&Word],
+    cwd: &Option<PathBuf>,
+) -> Result<Vec<DeclaredOp>, String> {
     let mut in_place = false;
     let mut have_expr = false;
     let mut operands: Vec<&Word> = Vec::new();
@@ -631,24 +715,31 @@ fn sed_ops(words: &[&Word], cwd: &Option<PathBuf>) -> Vec<DeclaredOp> {
 
     while idx < words.len() {
         let w = words[idx];
-        if w.text == "-i" {
-            in_place = true;
-            // BSD sed takes the backup suffix as a separate operand.
-            if let Some(next) = words.get(idx + 1) {
-                if next.text.is_empty() || next.text.starts_with('.') {
-                    idx += 2;
-                    continue;
+        if w.text.starts_with('-') && w.text != "-" {
+            match scan_editor_flag(verb, &w.text) {
+                EditorFlag::InPlace { suffix_follows } => {
+                    in_place = true;
+                    if suffix_follows {
+                        if let Some(next) = words.get(idx + 1) {
+                            if next.text.is_empty() || next.text.starts_with('.') {
+                                idx += 2;
+                                continue;
+                            }
+                        }
+                    }
                 }
+                EditorFlag::Script { inline } => {
+                    have_expr = true;
+                    if !inline {
+                        idx += 2;
+                        continue;
+                    }
+                }
+                EditorFlag::Plain => {}
             }
-        } else if w.text.starts_with("-i") {
-            in_place = true;
-        } else if w.text == "-e" || w.text == "-f" {
-            have_expr = true;
-            idx += 2;
-            continue;
-        } else if w.text.starts_with('-') && w.text != "-" {
-            // plain flags (-n, -E, -r)
         } else if !have_expr {
+            // Absent a script flag, the first non-flag operand is the script and
+            // everything after it is a file.
             have_expr = true;
         } else {
             operands.push(w);
@@ -657,17 +748,29 @@ fn sed_ops(words: &[&Word], cwd: &Option<PathBuf>) -> Vec<DeclaredOp> {
     }
 
     if !in_place {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    operands
-        .into_iter()
-        .filter(|w| w.literal && !w.text.is_empty())
-        .filter_map(|w| resolve(cwd, &w.text))
-        .map(|path| DeclaredOp {
-            kind: DeclaredKind::EditInPlace,
-            path,
-        })
-        .collect()
+
+    let mut out = Vec::new();
+    for w in operands {
+        if w.text.is_empty() {
+            continue;
+        }
+        if !w.literal {
+            return Err(format!(
+                "`{verb} -i` rewrites operand `{}`, which is not a literal path",
+                w.text
+            ));
+        }
+        match resolve(cwd, &w.text) {
+            Some(path) => out.push(DeclaredOp {
+                kind: DeclaredKind::EditInPlace,
+                path,
+            }),
+            None => return Err("the working directory is not statically known".to_string()),
+        }
+    }
+    Ok(out)
 }
 
 fn git_ops(words: &[&Word], cwd: &Option<PathBuf>, mut ops: Vec<DeclaredOp>) -> SegmentOutcome {
@@ -702,7 +805,7 @@ fn git_ops(words: &[&Word], cwd: &Option<PathBuf>, mut ops: Vec<DeclaredOp>) -> 
                 }));
                 finish(ops)
             }
-            Err(reason) => SegmentOutcome::Refuse(reason),
+            Err(reason) => SegmentOutcome::Refuse(reason, Suggestion::Lifecycle),
         },
         "mv" => match operands(rest, &cwd, &["-"]) {
             Ok(paths) => {
@@ -712,7 +815,7 @@ fn git_ops(words: &[&Word], cwd: &Option<PathBuf>, mut ops: Vec<DeclaredOp>) -> 
                 }
                 finish(ops)
             }
-            Err(reason) => SegmentOutcome::Refuse(reason),
+            Err(reason) => SegmentOutcome::Refuse(reason, Suggestion::Lifecycle),
         },
         "restore" => {
             let paths = operands(rest, &cwd, &["-"]).unwrap_or_default();
@@ -1003,6 +1106,55 @@ mod tests {
             PathBuf::from("/repo/f1.rs")
         );
         assert_no_file_ops("sed -n '1,5p' f1.rs");
+        assert_refused("sed -i '' 's/a/b/' src/*.ts");
+    }
+
+    #[test]
+    fn perl_in_place_declares_each_file_operand() {
+        assert_eq!(
+            ops("perl -i -pe 's/a/b/' src/x.ts"),
+            vec![DeclaredOp {
+                kind: DeclaredKind::EditInPlace,
+                path: PathBuf::from("/repo/src/x.ts")
+            }]
+        );
+        assert_eq!(
+            ops("perl -0pi -e 's/a/b/' src/x.ts")[0].path,
+            PathBuf::from("/repo/src/x.ts")
+        );
+        assert_eq!(
+            ops("perl -pi -e 's/a/b/' a.ts b.ts")
+                .into_iter()
+                .map(|op| op.path)
+                .collect::<Vec<_>>(),
+            vec![PathBuf::from("/repo/a.ts"), PathBuf::from("/repo/b.ts")]
+        );
+        assert_eq!(
+            ops("perl -i.bak -pe 's/a/b/' src/x.ts"),
+            vec![DeclaredOp {
+                kind: DeclaredKind::EditInPlace,
+                path: PathBuf::from("/repo/src/x.ts")
+            }]
+        );
+        assert_eq!(
+            ops("ruby -i -pe 'gsub(/a/, \"b\")' src/x.ts")[0].path,
+            PathBuf::from("/repo/src/x.ts")
+        );
+    }
+
+    #[test]
+    fn an_in_place_edit_whose_files_cannot_be_named_refuses() {
+        assert_refused("perl -i -pe 's/a/b/' src/*.ts");
+        assert_refused("perl -i -pe 's/a/b/' \"$F\"");
+        assert_refused("ruby -i -pe 'x' src/*.ts");
+    }
+
+    #[test]
+    fn an_editor_without_in_place_declares_nothing() {
+        assert_no_file_ops("perl -e 'print 1'");
+        assert_no_file_ops("perl -ne 'print if /x/' src/x.ts");
+        assert_no_file_ops("perl -pe 's/a/b/' src/*.ts");
+        assert_no_file_ops("ruby -e 'puts 1'");
     }
 
     #[test]

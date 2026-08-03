@@ -39,6 +39,43 @@ pub enum FileCommands {
         /// Destination path.
         dst: String,
     },
+    /// Edit files and report exactly which ones changed, so the edit stays
+    /// attributed. Either a unified diff (`--patch`) or one substitution
+    /// (`--path` with `--replace`/`--with`).
+    Edit {
+        /// Unified diff to apply (`-` for stdin). Multi-file diffs are fine.
+        #[arg(long, conflicts_with_all = ["path", "replace", "with"])]
+        patch: Option<String>,
+        /// The file to substitute in.
+        #[arg(long, requires_all = ["replace", "with"])]
+        path: Option<String>,
+        /// The text to replace (a literal substring unless `--regex`).
+        #[arg(long)]
+        replace: Option<String>,
+        /// The replacement text (`$1`-style captures with `--regex`).
+        #[arg(long = "with")]
+        with: Option<String>,
+        /// Replace at most this many occurrences (default: all).
+        #[arg(long)]
+        count: Option<usize>,
+        /// Read `--replace` as a regular expression rather than a literal.
+        #[arg(long)]
+        regex: bool,
+    },
+    /// Apply a patch, run a command against it, then put the tree back exactly
+    /// as it was — bytes and mtime. Records nothing: a probe that restores
+    /// changed nothing.
+    Probe {
+        /// Unified diff to apply for the duration of the command (`-` for stdin).
+        #[arg(long)]
+        patch: Option<String>,
+        /// Extra paths to snapshot and restore beyond the ones the patch names.
+        #[arg(long = "path")]
+        paths: Vec<String>,
+        /// The command to run, after `--`.
+        #[arg(last = true, allow_hyphen_values = true)]
+        command: Vec<String>,
+    },
     /// Decide whether a Bash command's file operations are readable — the
     /// PreToolUse hook's allow/deny, printed as JSON. Always exits 0.
     Gate {

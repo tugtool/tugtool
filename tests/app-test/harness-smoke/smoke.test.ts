@@ -22,7 +22,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp, EXPECTED_SURFACE_VERSION } from "../_harness";
+import { launchTugApp, note, EXPECTED_SURFACE_VERSION } from "../_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
@@ -46,6 +46,10 @@ describe.skipIf(!SHOULD_RUN)("smoke: launchTugApp → evalJS → close", () => {
   test("handshake reports the expected surface version", async () => {
     const app = await launchTugApp(NO_AX);
     try {
+      // Also the one call site that exercises the diagnostics channel on
+      // every core-tier run: this value must reach the summary's
+      // `Diagnostics:` section from a PASSING file.
+      note("SURFACE", app.version);
       expect(app.version).toBe(EXPECTED_SURFACE_VERSION);
     } finally {
       await app.close();

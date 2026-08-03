@@ -156,6 +156,40 @@ instance ids whose cleanup sweeps match only that worktree's prefix.
 | `TUGAPP_TEST_SOCKET`      | Reserved; set by the harness when spawning the subprocess.   |
 | `TUGCODE_LIVE=1`          | Opt-in for live-mode tugcode smoke (`harness-smoke/smoke-em-live.test.ts`); requires Anthropic credentials. Skipped by default. |
 | `APP_TEST_SKIP_RESIGN=1`  | Bypass the defensive re-sign in `just app-test`. Tests that need `CGEvent.post` will fail; tests that don't will pass. Diagnostic-only — see `tuglaws/code-signing-mac.md`. |
+| `TUG_APPTEST_STREAM=1`    | Print each file's raw `bun test` body as it runs. Off by default — see "Reading the output" below. |
+| `TUG_APPTEST_JSON=<path>` | Also write the run's results as a JSON document to `<path>`. Stdout is byte-identical either way. |
+
+### Reading the output
+
+**`just app-test` is quiet by default.** It prints the `APP-TEST SUMMARY` block and nothing else — no per-file `bun test` stream. The summary is meant to be complete enough that you never pipe it through `grep` or truncate it with `head`:
+
+- **`Per-file results:`** — every file's status and test counts.
+- **`Diagnostics:`** — whatever the tests reported with `note()`, printed for **passing** files as well as failing ones. This is where a probe value belongs; a green run is usually where you want to read one.
+- **`Failures:`** — per failing test, the title, the first assertion or error block (the `Expected:`/`Received:`/`TimeoutError:` text), and a `file:line` locator. Repeated identical errors are not reprinted.
+
+Set `TUG_APPTEST_STREAM=1` to get the full raw output back — it is an environment variable rather than a flag because the recipe re-execs itself under the host gate and its arguments are files-only.
+
+To report a value from inside a test, import `note` from the harness:
+
+```ts
+import { note } from "../_harness";
+
+note("ROWHEIGHT", await app.evalJS<number>("…"));
+```
+
+It prints one `TUG-NOTE:` sentinel line the recipe collects into the `Diagnostics:` section and the JSON document's per-file `notes` array. Prefer it to `console.log`, which is only visible under `TUG_APPTEST_STREAM=1`.
+
+For a machine-readable result, set `TUG_APPTEST_JSON=/tmp/run.json`:
+
+```json
+{ "sweep": "core", "wallSeconds": 118, "verdict": "FAIL",
+  "totals": { "filesRun": 20, "filesPassed": 19, "filesFailed": 1, "testsPassed": 38, "testsTotal": 39 },
+  "files": [ { "file": "at0145-….test.ts", "status": "FAIL", "passed": 0, "total": 1,
+               "failures": [ { "title": "…", "message": "…", "location": "at0145-….test.ts:118" } ],
+               "notes": [ { "label": "SURFACE", "value": "1.8.0" } ] } ] }
+```
+
+Both renderings are serialized from the same arrays in one pass, so the document and the printed summary cannot disagree.
 
 Per-run log files are written under `tests/app-test/logs/` when a
 test passes `testName` to `launchTugApp`; the directory is gitignored.

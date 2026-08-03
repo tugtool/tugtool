@@ -41,7 +41,7 @@ So the fix is two-sided and in one plan: make provable shell edits provable, and
 #### Success Criteria (Measurable) {#success-criteria}
 
 - `parse_shell_ops("perl -i -pe 's/a/b/' src/x.ts", root)` returns `ParseOutcome::Ops` with one `DeclaredKind::EditInPlace` on `src/x.ts`; the same command with a glob or `$VAR` operand returns `Unparseable`. (Unit tests in `tugchanges-core/src/shell_ops.rs`.)
-- `just app-test <one green file>` produces **no** raw `bun test` body on stdout — output is the summary block plus any `Diagnostics:` section. Verify by `just app-test harness-smoke/smoke.test.ts | grep -c '^(pass)'` returning `0`. (`TUG_APPTEST_STREAM=1` restores today's output; verify the same command with the env var set returns non-zero.)
+- `just app-test <one green file>` produces **no** raw `bun test` body on stdout — output is the summary block plus any `Diagnostics:` section. Verify by `just app-test harness-smoke/smoke.test.ts | grep -c '^bun test v'` returning `0`, and the same command under `TUG_APPTEST_STREAM=1` returning `1`. (Use bun's own banner as the falsifier, not `^(pass)` — bun prints a line per *failing* test only, so a green file has no `(pass)` lines to suppress in the first place.)
 - A test that calls `note("VERDICT", "…")` has that value printed under `Diagnostics:` in the summary of a **passing** run, with no pipe. (Verified by the smoke test.)
 - A failing app-test's summary carries the first assertion message / error and a `file:line` locator under the failure title, not just the `(fail) …` line. (Verified against a deliberately-failing fixture.)
 - `TUG_APPTEST_JSON=/tmp/r.json just app-test …` writes a JSON document validating against Spec S03, and stdout is unchanged.
@@ -117,7 +117,7 @@ Anchors are explicit and kebab-case. Plan-local decisions are `[P01]`… (never 
 
 **Plan to resolve:** Ship [P04] fully silent in #step-2, then run `just app-test` (core tier) once by hand and judge. If it needs motion, the TTY-conditional variant is the follow-up — it is a three-line change to the loop and costs the model nothing.
 
-**Resolution:** OPEN — resolved by observation during #step-2's checkpoint.
+**Resolution:** RESOLVED in #step-2 — **the TTY-conditional variant**. Observed: a silent core tier is 2m07s with nothing on screen after the two `==>` header lines, which reads as a hang to a person. The loop now prints one `  [PASS] <file> (n/m)` line per file as it completes, gated on `[ -t 1 ]` and on quiet mode. A captured run — a pipe, a redirect, a model's context — is never a TTY and stays fully silent; an interactive terminal shows motion at file cadence and accepts that the summary repeats the table.
 
 #### [Q02] Should `tugutil file probe` refuse a target that is already dirty? (DEFERRED) {#q02-probe-on-dirty}
 
@@ -222,7 +222,8 @@ Anchors are explicit and kebab-case. Plan-local decisions are `[P01]`… (never 
 - The recipe's existing `tee "$TMPOUT"` becomes a plain redirect to `$TMPOUT` in quiet mode; `$TMPOUT` is already the parse source, so no parsing changes.
 - No argument parsing is added to either phase of the recipe; `{{FILES}}` remains files-only.
 - `just app-test-changed` and `just app-test-all` delegate to this recipe and inherit both the default and the env var.
-- Whether a progress heartbeat is needed is [Q01].
+- Whether a progress heartbeat is needed is [Q01] (resolved in #step-2: TTY-conditional).
+- The dist-refresh step (`cd tugdeck && bun run build`) is quieted the same way and for the same reason: its stdout was already discarded, but a green build's rollup chunking advisories were several screens of stderr ahead of the summary. Its output is held in a temp file and printed only when the build fails.
 
 #### [P05] Test diagnostics travel as a stdout sentinel, not a new RPC (DECIDED) {#p05-note-sentinel}
 
@@ -524,14 +525,14 @@ Rules: the `Diagnostics:` section is omitted entirely when no notes were emitted
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | `perl -i` / `ruby -i` join the shell-ops grammar | pending | — |
-| #step-2 | App-test: quiet by default, diagnostics, per-failure detail | pending | — |
-| #step-3 | App-test: JSON output channel | pending | — |
-| #step-4 | `tugutil file probe` — atomic patch, run, restore | pending | — |
-| #step-5 | `tugutil file edit` — receipt-emitting substitution | pending | — |
-| #step-6 | Gate the provable in-place editors; steer the rest | pending | — |
-| #step-7 | Doctrine and docs | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | `perl -i` / `ruby -i` join the shell-ops grammar | done | `4c1ba8785` |
+| #step-2 | App-test: quiet by default, diagnostics, per-failure detail | done | `b32b441b2` |
+| #step-3 | App-test: JSON output channel | done | `0b0cf3452` |
+| #step-4 | `tugutil file probe` — atomic patch, run, restore | done | `1efe37b15` |
+| #step-5 | `tugutil file edit` — receipt-emitting substitution | done | `a245ffb9c` |
+| #step-6 | Gate the provable in-place editors; steer the rest | done | `ddcd0860e` |
+| #step-7 | Doctrine and docs | done | `4c4ac5d94` |
+| #step-8 | Integration checkpoint | done | `de6a71124` |
 
 ---
 
@@ -814,12 +815,30 @@ Rules: the `Diagnostics:` section is omitted entirely when no notes were emitted
 - [ ] `just app-test`
 - [ ] `TUG_APPTEST_JSON=/tmp/at.json just app-test harness-smoke/smoke.test.ts && jq -e '.verdict == "PASS"' /tmp/at.json`
 
+#### Observed at close {#observed-at-close}
+
+Every criterion in #success-criteria, with what was actually measured at #step-8.
+
+| Criterion | Observed |
+|---|---|
+| `perl -i` literal → `Ops(EditInPlace)`; glob → `Unparseable` | Both, plus `-0pi`, `-pi … a.ts b.ts`, `-i.bak`, `ruby -i`, and `sed -i '' … *.ts` → refuse. `tugchanges-core` 84/84 |
+| `just app-test <green file>` prints no raw bun body | 21 lines total for the smoke file, `grep -c '^bun test v'` = **0** (was several hundred lines including the dist build's stderr). Under `TUG_APPTEST_STREAM=1`, **1** |
+| A `note()` value appears under `Diagnostics:` on a **passing** run | `SURFACE: 1.8.0` from `harness-smoke/smoke.test.ts`, on every green core-tier run |
+| A failing summary carries the assertion/error text and a locator | Both: an `expect` failure shows `Expected:`/`Received:` + `zz-probe.test.ts:14:49`; a thrown `TimeoutError` shows the message and the failing script text. (`^error:`-prefixed *and* bare `SomeError:` forms are read — the second was found and fixed by observation, having produced an empty message on the first core-tier run) |
+| `TUG_APPTEST_JSON` writes Spec S03; stdout unchanged | `jq -e '.verdict == "PASS" and (.files\|length) == 1 and (.files[0].notes\|length) > 0'` passes; stdout diffs identical but for wall time; a mixed run's `totals` match the printed summary exactly |
+| `probe` restores byte-identical and writes **zero** rows | 7 integration tests (bytes, mtime, `git status --porcelain=v2` identical, pre-existing dirt survives, created file removed, exit code propagates, failed `--check` changes nothing). Live: `probe --patch … -- just app-test …` left `git status` unchanged and the ledger shows **no** rows for the probed file |
+| `edit` mints `origin='cmd'` through the live relay | Ran the verb from a live session; ledger shows `cmd\|Bash\|modified\|tugdeck/scratch-edit-check.txt` — proof class |
+| Gate matrix | `perl -i` literal → allow; `perl -i` glob → deny; `sed -i` glob → deny; `python3` heredoc → allow. The denied `perl -i` reason names `tugutil file edit` and `probe`; a denied `rm $F` still names `rm\|mv\|cp`. Hook denies, allows, and fails open with `tugutil` off `PATH` |
+| Whole system green | `cargo nextest run` **1847/1847**; `just app-test` (core tier) 19/20 — `at0145-permission-dialog-keyboard` fails **identically on the unmodified base checkout**, a screen-taker running without focus approval, pre-existing and unrelated |
+| Unattributed bucket shrinks in practice | **Not yet measurable** — needs a working week against the 30–62/day `origin='claim'` baseline. 24h distribution at close, for comparison: `exact` 659, `bash` 243, `turn` 127, `cmd` 117, `claim` 62, `replay` 57 |
+
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Resolve [Q01] — add a TTY-conditional progress heartbeat if the silent core-tier run proves annoying in practice.
 - [ ] Migrate existing `console.log("VERDICT", …)` / `PROBE` / `DBG` call sites in `tests/app-test/*.test.ts` to `note()` opportunistically, as each test is next touched.
 - [ ] Consider a `tugutil file edit --multi` taking a JSON array of substitutions, if the `--patch` form proves too heavy for the 78 + 79 two-and-three-substitution shapes (Table T02).
 - [ ] Re-measure the corpus after a working week and compare `origin='claim'` rows/day against the 30–62/day baseline; if the heredoc bucket has not moved, revisit the [P07] decision to steer rather than gate.
+- [ ] **A quoted receipt mints rows** — found at #step-8, pre-existing and out of scope here. The relay scans every successful Bash `tool_result` for `TUG-FILE-RECEIPT: `, so a command that merely *prints* the sentinel mints rows from it: reading this repo's own doc surfaced `cmd` rows for `/abs/a.ts`, `/abs/new.ts`, `/abs/old.ts` — the example paths in `tuglaws/tracking-changes.md`'s receipt block. Harmless as observed (a path that does not exist can never join `git status`, so it never reaches a bucket), but the shape is not sound: a session that `cat`s a log or transcript carrying another session's real receipt would mint proof-class rows for *those* files under its own id, which the Who axiom is supposed to make impossible. Worth a corroboration rule — the relay could require a receipt's paths to intersect the call's own bracket delta, which is exactly the live `cmd` mint rule already applied to parsed operands, and would cost the verbs nothing since they really do touch what they name.
 
 | Checkpoint | Verification |
 |------------|--------------|

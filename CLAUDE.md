@@ -67,6 +67,22 @@ The doctrine is in [tuglaws/app-test-harness.md](tuglaws/app-test-harness.md#sel
 
 Never point the `sqlite3` CLI (or any non-Tug SQLite build) at the live databases under `~/Library/Application Support/Tug/` — a foreign SQLite participating in WAL recovery/checkpointing on a live ledger is a corruption vector (the 2026-07-27 incident). Use `just db-inspect <name|path> ["SQL"]`, which copies the db + WAL/shm to a temp dir and inspects the copy. In Rust, every writable ledger open goes through `tugcore::ledger_db` (enforced by the `no_ad_hoc_ledger_opens` test); shared `changes.db` schema changes require bumping `CHANGES_SCHEMA_VERSION` with a registered migration — never edit the DDL alone.
 
+## Editing repo files from the shell
+
+`Edit`/`MultiEdit`/`Write` name their file in the tool input, so the change is attributed with certainty. A shell command is only attributed when the grammar in `tugchanges-core::shell_ops` can read which files it names — and **a `python3` heredoc that writes a repo file cannot be read at all.** Heredoc bodies are stripped before parsing (a body is data, not commands), so nothing inside one is evidence of anything. The file lands in the Changes card's `UNATTRIBUTED — NO SESSION CLAIMS THESE` bucket with at best a `likely` hint, and somebody has to press `CLAIM ALL` to repair it by hand. Same for `python3 -c`.
+
+So when an edit does not fit `Edit`/`MultiEdit`, reach for the verbs rather than a scripting language:
+
+```bash
+tugutil file edit --path src/x.ts --replace 'old' --with 'new' [--count N] [--regex]
+tugutil file edit --patch changes.diff          # or --patch - to read the diff from stdin
+tugutil file probe --patch p.diff -- just app-test at0287-….test.ts   # patch, run, restore
+```
+
+- **`edit`** performs the substitution or applies the diff itself and prints a `TUG-FILE-RECEIPT` naming exactly the files whose bytes moved, which the relay turns into proof-class rows. A no-match exits non-zero rather than succeeding quietly.
+- **`probe`** is the patch → run → revert cycle in one command: it restores bytes *and* mtime afterwards and records nothing, which is strictly better than doing it by hand (a hand-rolled probe leaves a spurious hint on the file it touched). Use it instead of `git checkout --` to revert, which would also destroy any uncommitted work already on those paths.
+- `sed -i`, `perl -i`, and `ruby -i` are readable **when every file operand is a literal path**. With a glob or a variable they are denied by the PreToolUse gate and steered here — the gate denies only what the grammar proves it cannot resolve.
+
 ## Tugdeck — Theme Token Files
 
 Theme tokens live in `tugdeck/styles/themes/*.css` — `brio`/`nocturne`/`bravura` (dark) and `harmony`/`aria`/`vivace` (light). These are hand-authored CSS files — there is no generation script. Edit them directly when adding or tuning tokens. Each theme is one tint hue over a shared tone skeleton; see `tuglaws/theme-engine.md` for the authoring doctrine. Validate contrast with `bun run audit:theme-contrast` (no theme may exceed the `brio` accessibility budget). Register new themes in `SHIPPED_THEME_NAMES` (`tugdeck/src/action-dispatch.ts`).

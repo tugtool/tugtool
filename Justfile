@@ -1077,7 +1077,12 @@ app-test *FILES:
         fi
 
         export TUG_APPTEST_GATED=1
-        exec tugrust/target/debug/tugutil host gate run --name apptest --label "$WTSLUG" -- just app-test {{FILES}}
+        # `--quiet` on the inner invocation, because a failing run otherwise
+        # reports `error: Recipe \`app-test\` failed with exit code 1` twice —
+        # once from the inner `just` under the gate and once from this one, the
+        # recipe having re-exec'd itself. Quiet suppresses only that line; the
+        # exit code, and everything the recipe body prints, are unchanged.
+        exec tugrust/target/debug/tugutil host gate run --name apptest --label "$WTSLUG" -- just --quiet app-test {{FILES}}
     fi
     echo "==> app-test instance prefix: $TUG_APPTEST_ID_PREFIX"
 
@@ -1114,11 +1119,19 @@ app-test *FILES:
     # reflects current source. A failed build MUST abort the run:
     # continuing would silently test whatever stale dist is on disk,
     # producing verdicts about old code.
-    if ! (cd tugdeck && bun run build >/dev/null); then
+    # Its stderr is held rather than printed: a green build's rollup
+    # chunking advisories are several screens of noise ahead of the summary,
+    # and they are the same thing the per-file stream is being quieted for.
+    # On failure every held line is printed before aborting.
+    DIST_LOG="$(mktemp -t apptest-dist.XXXXXX)"
+    if ! (cd tugdeck && bun run build >/dev/null 2>"$DIST_LOG"); then
+        cat "$DIST_LOG" >&2
+        rm -f "$DIST_LOG"
         echo "[app-test] tugdeck dist build FAILED — aborting; a stale dist would test old code." >&2
         echo "           Run 'cd tugdeck && bunx vite build' to see the build error." >&2
         exit 1
     fi
+    rm -f "$DIST_LOG"
 
     # Clean slate before the first spawn: wipe THIS WORKTREE's
     # apptest data dirs from earlier runs and stop any of its tugcasts
@@ -1327,7 +1340,71 @@ app-test *FILES:
     }
 
     declare -a RESULT_ROWS=()
-    declare -a FAILURE_BLOCKS=()
+    # Each entry: file US title US message US location. `note()` values and
+    # per-failure detail are extracted ONCE, here, and both the human summary
+    # and the JSON document render from these arrays — never by re-parsing
+    # printed text.
+    declare -a FAIL_DETAILS=()
+    # Each entry: file US <the raw TUG-NOTE json object>.
+    declare -a NOTE_ROWS=()
+    US=$'\037'
+    RS=$'\036'
+
+    # Quiet by default: the per-file bun stream is the single largest reason
+    # app-test output gets piped through grep/head. TUG_APPTEST_STREAM=1
+    # restores it verbatim.
+    STREAM="${TUG_APPTEST_STREAM:-}"
+
+    # A quiet core-tier run is two minutes with nothing on screen, which reads
+    # as a hang to a person and is exactly right for a captured one. So the
+    # per-file progress line is conditional on stdout being a terminal: a human
+    # sees motion, and a run piped into a file or a model's context does not.
+    PROGRESS=""
+    if [ -z "$STREAM" ] && [ -t 1 ]; then PROGRESS=1; fi
+
+    # bun prints a failing test's error block BEFORE its `(fail) <title>` line,
+    # so each block is read forward and emitted when its title arrives. Only the
+    # first error and the first locator per test are kept — a file with ten
+    # identical timeouts should not reprint them ten times.
+    extract_failures() {
+        awk -v US=$'\037' -v RS_OUT=$'\036' -v TESTFILE="${2##*/}" '
+            # An `expect` failure announces itself with `error: …`; a thrown one
+            # arrives as `SomeError: …` with no prefix. Both are the message.
+            /^error:?( |$)/ {
+                if (msg == "") { msg = substr($0, 8); capturing = 1 }
+                else { capturing = 0 }
+                next
+            }
+            /^[A-Za-z][A-Za-z0-9_]*(Error|Exception): / {
+                if (msg == "") { msg = $0; capturing = 1; next }
+            }
+            capturing == 1 {
+                if ($0 ~ /^[ \t]+at /) { capturing = 0 }
+                else if (lines < 12) { msg = msg "\n" $0; lines++ }
+            }
+            # A stack whose top frames are harness internals still has to point
+            # at the test, so a frame in the test file wins over the first one.
+            /^[ \t]+at / {
+                if (loc == "") loc = $0
+                if (testloc == "" && TESTFILE != "" && index($0, TESTFILE) > 0) testloc = $0
+            }
+            /^\(fail\) / {
+                title = substr($0, 8)
+                sub(/ \[[0-9.]+ *m?s\]$/, "", title)
+                where = (testloc != "" ? testloc : loc)
+                if (match(where, /\(([^)]*)\)$/)) {
+                    where = substr(where, RSTART + 1, RLENGTH - 2)
+                } else {
+                    sub(/^[ \t]*at +/, "", where)
+                }
+                sub(/.*\//, "", where)
+                while (msg ~ /\n$/) sub(/\n$/, "", msg)
+                printf "%s%s%s%s%s%s", title, US, msg, US, where, RS_OUT
+                msg = ""; loc = ""; testloc = ""; lines = 0; capturing = 0
+            }
+        ' "$1"
+    }
+
     START_EPOCH="$(date +%s)"
 
     for f in "${FILES[@]}"; do
@@ -1336,18 +1413,27 @@ app-test *FILES:
         if [ "${#FG_QUEUE[@]}" -gt 0 ] && printf '%s\n' "${FG_QUEUE[@]}" | grep -qx "$f"; then
             resolve_foreground_decision
             if [ "$FG_DECISION" = "skip" ]; then
-                echo "---- $f (skipped — takes the screen) ----"
+                [ -n "$STREAM" ] && echo "---- $f (skipped — takes the screen) ----"
                 RESULT_ROWS+=("SKIP:$f:0:0")
+                [ -n "$PROGRESS" ] && printf '  %-6s %-56s (skipped — takes the screen)\n' "[SKIP]" "$f"
                 continue
             fi
         fi
-        echo "---- $f ----"
-        # bun's stdout/stderr both stream to the user's terminal AND
-        # land in $TMPOUT for parsing. `tee` truncates without `-a`.
-        if bun test "$f" 2>&1 | tee "$TMPOUT"; then
-            rc=0
+        if [ -n "$STREAM" ]; then
+            echo "---- $f ----"
+            # bun's stdout/stderr both stream to the user's terminal AND
+            # land in $TMPOUT for parsing. `tee` truncates without `-a`.
+            if bun test "$f" 2>&1 | tee "$TMPOUT"; then
+                rc=0
+            else
+                rc="${PIPESTATUS[0]}"
+            fi
         else
-            rc="${PIPESTATUS[0]}"
+            if bun test "$f" > "$TMPOUT" 2>&1; then
+                rc=0
+            else
+                rc=$?
+            fi
         fi
         # Bun emits "  N pass\n  N fail" near the end of each file.
         # Match the LAST occurrence so per-test mentions earlier in
@@ -1358,16 +1444,36 @@ app-test *FILES:
         failed="${failed:-0}"
         total=$((passed + failed))
 
+        # Diagnostics the test asked to be seen, on green runs as well as red.
+        while IFS= read -r ln; do
+            [ -n "$ln" ] && NOTE_ROWS+=("$f$US${ln#TUG-NOTE: }")
+        done < <(grep '^TUG-NOTE: ' "$TMPOUT" || true)
+
         if [ "$rc" -eq 0 ] && [ "$total" -eq 0 ]; then
             RESULT_ROWS+=("SKIP:$f:0:0")
         elif [ "$rc" -eq 0 ]; then
             RESULT_ROWS+=("PASS:$f:$passed:$total")
-        elif [ "$total" -gt 0 ]; then
-            RESULT_ROWS+=("FAIL:$f:$passed:$total")
-            FAILURE_BLOCKS+=("$f"$'\n'"$(cat "$TMPOUT")")
         else
-            RESULT_ROWS+=("ERR:$f:0:0")
-            FAILURE_BLOCKS+=("$f"$'\n'"$(cat "$TMPOUT")")
+            if [ "$total" -gt 0 ]; then
+                RESULT_ROWS+=("FAIL:$f:$passed:$total")
+            else
+                RESULT_ROWS+=("ERR:$f:0:0")
+            fi
+            before=${#FAIL_DETAILS[@]}
+            while IFS= read -r -d "$RS" rec; do
+                [ -n "$rec" ] && FAIL_DETAILS+=("$f$US$rec")
+            done < <(extract_failures "$TMPOUT" "$f")
+            # A file that died before any test reported has no `(fail)` line to
+            # hang detail off — carry the tail of its output instead, so an
+            # early crash is not silently reduced to `[ERR]`.
+            if [ "${#FAIL_DETAILS[@]}" -eq "$before" ]; then
+                FAIL_DETAILS+=("$f$US(the file failed before any test reported)$US$(tail -n 12 "$TMPOUT")$US")
+            fi
+        fi
+
+        if [ -n "$PROGRESS" ]; then
+            IFS=':' read -r pstatus _pfile ppassed ptotal <<< "${RESULT_ROWS[-1]}"
+            printf '  %-6s %-56s (%d/%d)\n' "[$pstatus]" "$f" "$ppassed" "$ptotal"
         fi
 
         # Between files, stop any of THIS WORKTREE's apptest
@@ -1428,15 +1534,102 @@ app-test *FILES:
         printf '  %-6s %-56s (%d/%d)\n' "[$status]" "$file" "$rpassed" "$rtotal"
     done
 
-    if [ ${#FAILURE_BLOCKS[@]} -gt 0 ]; then
+    if [ ${#NOTE_ROWS[@]} -gt 0 ]; then
+        echo
+        echo "Diagnostics:"
+        note_file=""
+        for row in "${NOTE_ROWS[@]}"; do
+            nfile="${row%%$US*}"
+            njson="${row#*$US}"
+            if [ "$nfile" != "$note_file" ]; then
+                echo "  $nfile"
+                note_file="$nfile"
+            fi
+            if command -v jq >/dev/null 2>&1; then
+                printf '%s' "$njson" | jq -r \
+                    '"    \(.label): " + (if (.value|type) == "string" then .value else (.value|tojson) end)' \
+                    2>/dev/null || printf '    %s\n' "$njson"
+            else
+                printf '    %s\n' "$njson"
+            fi
+        done
+    fi
+
+    if [ ${#FAIL_DETAILS[@]} -gt 0 ]; then
         echo
         echo "Failures:"
-        for blk in "${FAILURE_BLOCKS[@]}"; do
-            file="${blk%%$'\n'*}"
-            echo "  $file"
-            # Surface bun's per-test "(fail) ..." lines for quick diagnosis.
-            printf '%s\n' "$blk" | grep -E '^\(fail\) ' | sed 's/^/    > /' || true
+        fail_file=""
+        for row in "${FAIL_DETAILS[@]}"; do
+            dfile="${row%%$US*}"; rest="${row#*$US}"
+            dtitle="${rest%%$US*}"; rest="${rest#*$US}"
+            dmsg="${rest%%$US*}"
+            dloc="${rest##*$US}"
+            if [ "$dfile" != "$fail_file" ]; then
+                echo "  $dfile"
+                fail_file="$dfile"
+            fi
+            echo "    > $dtitle"
+            [ -n "$dmsg" ] && printf '%s\n' "$dmsg" | sed 's/^/      /'
+            [ -n "$dloc" ] && echo "      $dloc"
         done
+    fi
+
+    # The JSON document, when asked for. It is serialized from the SAME arrays
+    # the summary above renders — never by re-parsing the printed text — so the
+    # two renderings cannot drift. It never touches stdout: mixing a document
+    # into the human summary would recreate the parsing problem in a new form.
+    if [ -n "${TUG_APPTEST_JSON:-}" ]; then
+        if ! command -v jq >/dev/null 2>&1; then
+            echo "[app-test] TUG_APPTEST_JSON is set but jq is not on PATH — no document written." >&2
+        else
+            if [ "$files_failed" -eq 0 ] && [ "$files_errored" -eq 0 ]; then
+                json_verdict=PASS
+            else
+                json_verdict=FAIL
+            fi
+            {
+                for row in "${RESULT_ROWS[@]}"; do
+                    IFS=':' read -r status file rpassed rtotal <<< "$row"
+                    fails="$(
+                        for d in ${FAIL_DETAILS[@]+"${FAIL_DETAILS[@]}"}; do
+                            dfile="${d%%$US*}"; rest="${d#*$US}"
+                            [ "$dfile" = "$file" ] || continue
+                            dtitle="${rest%%$US*}"; rest="${rest#*$US}"
+                            jq -n --arg title "$dtitle" \
+                                  --arg message "${rest%%$US*}" \
+                                  --arg location "${rest##*$US}" \
+                                  '{title:$title,message:$message,location:$location}'
+                        done | jq -s '.'
+                    )"
+                    notes="$(
+                        for n in ${NOTE_ROWS[@]+"${NOTE_ROWS[@]}"}; do
+                            [ "${n%%$US*}" = "$file" ] || continue
+                            printf '%s\n' "${n#*$US}"
+                        done | jq -s '.'
+                    )"
+                    jq -n --arg file "$file" --arg status "$status" \
+                          --argjson passed "$rpassed" --argjson total "$rtotal" \
+                          --argjson failures "$fails" --argjson notes "$notes" \
+                          '{file:$file,status:$status,passed:$passed,total:$total,failures:$failures,notes:$notes}'
+                done
+            } | jq -s \
+                --arg sweep "$SWEEP_LABEL" \
+                --arg verdict "$json_verdict" \
+                --argjson wall "$ELAPSED" \
+                --argjson filesRun "$files_run" \
+                --argjson filesPassed "$files_passed" \
+                --argjson filesFailed "$files_failed" \
+                --argjson filesErrored "$files_errored" \
+                --argjson filesSkipped "$files_skipped" \
+                --argjson testsPassed "$tests_passed_total" \
+                --argjson testsTotal "$tests_total" \
+                '{sweep:$sweep, wallSeconds:$wall, verdict:$verdict,
+                  totals:{filesRun:$filesRun, filesPassed:$filesPassed,
+                          filesFailed:$filesFailed, filesErrored:$filesErrored,
+                          filesSkipped:$filesSkipped, testsPassed:$testsPassed,
+                          testsTotal:$testsTotal},
+                  files: .}' > "$TUG_APPTEST_JSON"
+        fi
     fi
 
     echo "$BANNER"
