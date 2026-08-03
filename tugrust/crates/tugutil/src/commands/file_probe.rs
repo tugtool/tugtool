@@ -286,34 +286,122 @@ pub(super) fn read_patch(source: &str) -> Result<String, AppError> {
     std::fs::read_to_string(source).map_err(|e| AppError::Exit1(format!("{source}: {e}")))
 }
 
-/// Every path a unified diff names, resolved against the current directory —
+/// Every path the patch will touch, resolved against the current directory —
 /// which is where `git apply` resolves them too.
 ///
-/// Both sides are read, not just `+++`: a deletion's `+++` is `/dev/null` and
-/// the file that has to be protected is the one on the `---` side.
+/// Two sources, unioned, because neither alone is complete and the cost of
+/// asymmetry is not symmetric: a path this misses is a file the probe will
+/// **not put back**, while a path it over-reports costs one temp-file copy and
+/// yields no receipt op. So it is deliberately a superset.
+///
+/// - `git apply --numstat` is git's own answer to "what does this patch
+///   touch", so it sees the entries that carry no hunks at all — a mode-only
+///   change is nothing but `old mode`/`new mode` lines — and it resolves paths
+///   exactly the way the real apply will.
+/// - The header parse supplies what `--numstat` omits: a rename reports only
+///   its *destination* there, and the source is precisely the file that
+///   disappears.
 pub(super) fn patch_targets(patch: &str) -> Vec<PathBuf> {
+    let mut out = git_numstat_targets(patch);
+    for path in declared_patch_paths(patch) {
+        if !out.contains(&path) {
+            out.push(path);
+        }
+    }
+    out
+}
+
+/// Ask `git apply` which paths the patch touches. Empty when git cannot read
+/// the patch at all — the header parse then stands alone, and `git_apply`'s own
+/// `--check` reports the real error a moment later.
+fn git_numstat_targets(patch: &str) -> Vec<PathBuf> {
+    let Some(output) = git_apply_stdout(patch, &["--numstat", "-z"]) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
-    for line in patch.lines() {
-        let rest = match line.strip_prefix("+++ ").or_else(|| line.strip_prefix("--- ")) {
-            Some(rest) => rest,
-            None => continue,
+    // Records are `<added>\t<deleted>\t<path>`, NUL-terminated. `-z` means the
+    // path is verbatim, so a name with spaces or quotes needs no unescaping.
+    for record in output.split('\0') {
+        let Some(raw) = record.splitn(3, '\t').nth(2) else {
+            continue;
         };
-        // `git diff` appends a tab and a timestamp on some producers.
-        let raw = rest.split('\t').next().unwrap_or(rest).trim();
-        if raw.is_empty() || raw == "/dev/null" {
+        if raw.is_empty() {
             continue;
         }
-        // Strip the `a/` or `b/` prefix `git apply` strips by default (`-p1`).
-        let stripped = match raw.split_once('/') {
-            Some((_, rest)) if !rest.is_empty() => rest,
-            _ => raw,
-        };
-        let resolved = normalize(&absolute(Path::new(stripped)));
+        let resolved = normalize(&absolute(Path::new(raw)));
         if !out.contains(&resolved) {
             out.push(resolved);
         }
     }
     out
+}
+
+/// The paths a diff's own headers name.
+///
+/// Both sides of `---`/`+++` are read, not just `+++`: a deletion's `+++` is
+/// `/dev/null` and the file that has to be protected is the one on the `---`
+/// side. `rename from`/`copy from` are read for the same reason — they name a
+/// file that is about to stop existing, and a 100%-similarity rename carries no
+/// `---`/`+++` lines to find it by.
+fn declared_patch_paths(patch: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut push = |raw: &str, strip_prefix: bool| {
+        if raw.is_empty() || raw == "/dev/null" {
+            return;
+        }
+        // `---`/`+++` carry the `a/`/`b/` prefix `git apply` strips by default
+        // (`-p1`); `rename from`/`copy from` are already repo-relative.
+        let path = if strip_prefix {
+            match raw.split_once('/') {
+                Some((_, rest)) if !rest.is_empty() => rest,
+                _ => raw,
+            }
+        } else {
+            raw
+        };
+        let resolved = normalize(&absolute(Path::new(path)));
+        if !out.contains(&resolved) {
+            out.push(resolved);
+        }
+    };
+
+    for line in patch.lines() {
+        if let Some(rest) = line.strip_prefix("+++ ").or_else(|| line.strip_prefix("--- ")) {
+            // `git diff` appends a tab and a timestamp on some producers.
+            push(rest.split('\t').next().unwrap_or(rest).trim(), true);
+        } else if let Some(rest) = line
+            .strip_prefix("rename from ")
+            .or_else(|| line.strip_prefix("rename to "))
+            .or_else(|| line.strip_prefix("copy from "))
+            .or_else(|| line.strip_prefix("copy to "))
+        {
+            push(rest.trim_end(), false);
+        }
+    }
+    out
+}
+
+/// Run `git apply <args>` over the patch and return its stdout, or `None` when
+/// git rejected it.
+fn git_apply_stdout(patch: &str, args: &[&str]) -> Option<String> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = std::process::Command::new("git")
+        .arg("apply")
+        .args(args)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    child.stdin.take()?.write_all(patch.as_bytes()).ok()?;
+    let output = child.wait_with_output().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Apply the diff with git, or just validate it when `check_only`.
@@ -376,7 +464,7 @@ mod tests {
 @@ -1 +0,0 @@
 -old
 ";
-        let targets = patch_targets(patch);
+        let targets = declared_patch_paths(patch);
         let names: Vec<String> = targets
             .iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
@@ -390,8 +478,31 @@ mod tests {
         // `git apply` defaults to `-p1` whatever the first component is called,
         // so the snapshot has to resolve the same way or it would protect a
         // path the patch never writes.
-        let targets = patch_targets("--- src/x.ts\n+++ src/x.ts\n");
+        let targets = declared_patch_paths("--- src/x.ts\n+++ src/x.ts\n");
         assert_eq!(targets.len(), 1);
         assert!(targets[0].ends_with("x.ts"), "got {:?}", targets[0]);
+    }
+
+    #[test]
+    fn a_rename_with_no_hunks_still_names_the_file_that_disappears() {
+        // A 100%-similarity rename carries no `---`/`+++` lines at all. Miss
+        // the `rename from` side and the probe applies the rename but never
+        // puts the original back — a silent, unreported tree mutation.
+        let targets = declared_patch_paths(
+            "diff --git a/B.txt b/C.txt\nsimilarity index 100%\nrename from B.txt\nrename to C.txt\n",
+        );
+        let names: Vec<String> = targets
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["B.txt", "C.txt"]);
+    }
+
+    #[test]
+    fn a_copy_names_both_ends_too() {
+        let targets = declared_patch_paths(
+            "diff --git a/a.txt b/b.txt\nsimilarity index 100%\ncopy from a.txt\ncopy to b.txt\n",
+        );
+        assert_eq!(targets.len(), 2);
     }
 }

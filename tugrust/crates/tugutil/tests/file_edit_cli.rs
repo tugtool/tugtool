@@ -119,6 +119,25 @@ fn every_occurrence_goes_unless_count_bounds_it() {
 }
 
 #[test]
+fn count_zero_is_refused_in_both_modes_rather_than_meaning_two_things() {
+    let (_dir, root) = init_repo();
+    let before = std::fs::read(root.join("src/x.ts")).unwrap();
+
+    for extra in [vec![], vec!["--regex"]] {
+        let mut args = extra.clone();
+        args.extend_from_slice(&[
+            "--path", "src/x.ts", "--replace", "= 1;", "--with", "= 9;", "--count", "0",
+        ]);
+        let out = edit(&root, &args);
+        assert!(!out.status.success(), "--count 0 {extra:?} should refuse");
+        assert!(!has_receipt(&out));
+        // The regex path used to read 0 as "replace all" and silently rewrite
+        // every occurrence — the opposite of what the flag asks for.
+        assert_eq!(std::fs::read(root.join("src/x.ts")).unwrap(), before);
+    }
+}
+
+#[test]
 fn a_regex_substitution_supports_captures() {
     let (_dir, root) = init_repo();
     let out = edit(

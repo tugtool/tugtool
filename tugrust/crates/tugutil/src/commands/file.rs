@@ -304,6 +304,16 @@ fn edit_by_substitution(
     let original = std::fs::read_to_string(&target)
         .map_err(|e| AppError::Exit1(format!("{}: {e}", target.display())))?;
 
+    // `--count 0` is refused rather than interpreted. `str::replacen(…, 0)`
+    // replaces nothing and `Regex::replacen(…, 0)` replaces *everything*, so
+    // honouring it would make the same flag mean opposite things in the two
+    // modes — and the regex reading is a silent maximal edit from a flag the
+    // caller wrote to mean "at most".
+    if count == Some(0) {
+        return Err(AppError::Exit1(
+            "--count 0 would replace nothing; omit --count to replace every occurrence".to_string(),
+        ));
+    }
     let limit = count.unwrap_or(usize::MAX);
     let updated = if regex {
         let pattern = regex::Regex::new(replace)

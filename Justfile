@@ -1450,13 +1450,17 @@ app-test *FILES:
         done < <(grep '^TUG-NOTE: ' "$TMPOUT" || true)
 
         if [ "$rc" -eq 0 ] && [ "$total" -eq 0 ]; then
+            status=SKIP; passed=0; total=0
             RESULT_ROWS+=("SKIP:$f:0:0")
         elif [ "$rc" -eq 0 ]; then
+            status=PASS
             RESULT_ROWS+=("PASS:$f:$passed:$total")
         else
             if [ "$total" -gt 0 ]; then
+                status=FAIL
                 RESULT_ROWS+=("FAIL:$f:$passed:$total")
             else
+                status=ERR; passed=0; total=0
                 RESULT_ROWS+=("ERR:$f:0:0")
             fi
             before=${#FAIL_DETAILS[@]}
@@ -1471,9 +1475,11 @@ app-test *FILES:
             fi
         fi
 
+        # Read from the values just computed, not back out of the array: a
+        # negative array index is bash 4.3+, and macOS ships 3.2 as /bin/bash,
+        # where `set -u` makes the failure fatal rather than cosmetic.
         if [ -n "$PROGRESS" ]; then
-            IFS=':' read -r pstatus _pfile ppassed ptotal <<< "${RESULT_ROWS[-1]}"
-            printf '  %-6s %-56s (%d/%d)\n' "[$pstatus]" "$f" "$ppassed" "$ptotal"
+            printf '  %-6s %-56s (%d/%d)\n' "[$status]" "$f" "$passed" "$total"
         fi
 
         # Between files, stop any of THIS WORKTREE's apptest
@@ -1601,12 +1607,25 @@ app-test *FILES:
                                   '{title:$title,message:$message,location:$location}'
                         done | jq -s '.'
                     )"
+                    # `fromjson? // empty` drops a note that is not valid JSON
+                    # instead of failing the whole object. Nothing but `note()`
+                    # should be emitting this sentinel, but a hand-written
+                    # `console.log("TUG-NOTE: …")` can, and one of those used to
+                    # take its entire FILE out of the document while `totals`
+                    # went on counting it — the two renderings disagreeing is
+                    # the one thing this channel promised could not happen. The
+                    # human summary already prints such a line raw, so it is
+                    # reported either way.
                     notes="$(
                         for n in ${NOTE_ROWS[@]+"${NOTE_ROWS[@]}"}; do
                             [ "${n%%$US*}" = "$file" ] || continue
                             printf '%s\n' "${n#*$US}"
-                        done | jq -s '.'
+                        done | jq -R 'fromjson? // empty' | jq -s '.'
                     )"
+                    # Belt and braces: `--argjson` on an empty string is a hard
+                    # error, and no single file is worth losing the document.
+                    [ -n "$notes" ] || notes='[]'
+                    [ -n "$fails" ] || fails='[]'
                     jq -n --arg file "$file" --arg status "$status" \
                           --argjson passed "$rpassed" --argjson total "$rtotal" \
                           --argjson failures "$fails" --argjson notes "$notes" \

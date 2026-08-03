@@ -231,6 +231,101 @@ fn a_patch_that_does_not_apply_changes_nothing_and_runs_nothing() {
     assert_eq!(std::fs::read(&target).unwrap(), before);
 }
 
+/// The regression that motivated unioning `git apply --numstat` with the header
+/// parse. A patch mixing a hunked file with a 100%-similarity rename passes the
+/// "names no files" guard on the strength of the hunked file alone, so a
+/// header-only scan snapshots one file, `git apply` performs the rename anyway,
+/// and the rename is never undone — the probe reporting success on a tree it
+/// permanently modified.
+#[test]
+fn a_rename_riding_along_with_a_hunked_file_is_still_restored() {
+    let (_dir, root) = init_repo();
+    std::fs::write(root.join("src/keep.ts"), "keep\n").unwrap();
+    git(&root, &["add", "-A"]);
+    git(&root, &["commit", "-q", "-m", "keep"]);
+
+    // Build the patch the way git really emits one: a content change plus a
+    // pure rename, which carries no hunks.
+    std::fs::write(root.join("src/x.ts"), "const a = 2;\n").unwrap();
+    git(&root, &["mv", "src/keep.ts", "src/moved.ts"]);
+    git(&root, &["add", "-A"]);
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["diff", "--cached"])
+        .output()
+        .unwrap();
+    let patch = write_patch(&root, &String::from_utf8_lossy(&out.stdout));
+    git(&root, &["reset", "-q", "--hard"]);
+
+    assert!(root.join("src/keep.ts").exists());
+    assert!(!root.join("src/moved.ts").exists());
+
+    let out = probe(
+        &root,
+        &[
+            "--patch",
+            patch.to_str().unwrap(),
+            "--",
+            "test",
+            "-f",
+            "src/moved.ts",
+        ],
+    );
+    // The command saw the renamed file…
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    // …and the rename was undone on the way out.
+    assert!(
+        root.join("src/keep.ts").exists(),
+        "the rename source was not restored"
+    );
+    assert!(
+        !root.join("src/moved.ts").exists(),
+        "the rename destination was left behind"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("src/x.ts")).unwrap(),
+        "const a = 1;\n"
+    );
+}
+
+/// A mode-only entry carries neither hunks nor `rename from` — only
+/// `old mode`/`new mode`. `git apply --numstat` is the only thing that sees it.
+#[test]
+fn a_mode_only_change_is_restored() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (_dir, root) = init_repo();
+    let target = root.join("src/x.ts");
+    let before = std::fs::metadata(&target).unwrap().permissions().mode();
+
+    let mut perms = std::fs::metadata(&target).unwrap().permissions();
+    perms.set_mode(before | 0o111);
+    std::fs::set_permissions(&target, perms).unwrap();
+    git(&root, &["add", "-A"]);
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["diff", "--cached"])
+        .output()
+        .unwrap();
+    let patch = write_patch(&root, &String::from_utf8_lossy(&out.stdout));
+    git(&root, &["reset", "-q", "--hard"]);
+    std::fs::set_permissions(
+        &target,
+        std::fs::Permissions::from_mode(before),
+    )
+    .unwrap();
+
+    let out = probe(&root, &["--patch", patch.to_str().unwrap(), "--", "true"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        std::fs::metadata(&target).unwrap().permissions().mode(),
+        before,
+        "the mode change was left behind"
+    );
+}
+
 #[test]
 fn an_extra_path_is_protected_even_when_the_command_writes_it() {
     let (_dir, root) = init_repo();

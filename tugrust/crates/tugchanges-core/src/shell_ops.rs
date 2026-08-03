@@ -671,6 +671,14 @@ fn scan_editor_flag(verb: &str, text: &str) -> EditorFlag {
         };
     }
 
+    // A long option is never a cluster. Reading one as a cluster is a
+    // false-proof source, not a missed row: `ruby --disable=gems x.rb data.txt`
+    // has an `i` in `--disable`, which would turn on in-place editing and
+    // declare `data.txt` as rewritten by a script that only read it.
+    if text.starts_with("--") {
+        return EditorFlag::Plain;
+    }
+
     // `perl` and `ruby` cluster their single-letter switches. `-i` swallows the
     // rest of its cluster as the backup suffix, so `-i.bak`, `-pi` and `-0pi`
     // all read the same. `-e`/`-E` take the program either attached or as the
@@ -1147,6 +1155,22 @@ mod tests {
         assert_refused("perl -i -pe 's/a/b/' src/*.ts");
         assert_refused("perl -i -pe 's/a/b/' \"$F\"");
         assert_refused("ruby -i -pe 'x' src/*.ts");
+    }
+
+    #[test]
+    fn a_long_option_is_never_read_as_a_switch_cluster() {
+        // `--disable` contains an `i`. Read as a cluster it turns on in-place
+        // editing, and the operand of a read-only script becomes a proof row
+        // claiming the script rewrote it — a wrong row, which costs more than
+        // every missed row this grammar ever declines to mint.
+        assert_no_file_ops("ruby --disable=gems script.rb data.txt");
+        assert_no_file_ops("ruby --disable=gems script.rb src/*.ts");
+        assert_no_file_ops("perl --version");
+        // The real `-i` still reads, long options alongside it or not.
+        assert_eq!(
+            ops("perl --verbose -i -pe 's/a/b/' src/x.ts")[0].path,
+            PathBuf::from("/repo/src/x.ts")
+        );
     }
 
     #[test]
