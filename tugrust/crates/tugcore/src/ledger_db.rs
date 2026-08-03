@@ -331,60 +331,29 @@ mod tests {
     /// in-memory opens, and `#[cfg(test)]` code are exempt.
     #[test]
     fn no_ad_hoc_ledger_opens() {
-        let crates_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("crates dir")
-            .to_path_buf();
+        let crates_root = crate::source_scan::crates_root();
         let mut offenders = Vec::new();
-        let mut stack = vec![crates_root.clone()];
-        while let Some(dir) = stack.pop() {
-            for entry in std::fs::read_dir(&dir).expect("read_dir") {
-                let entry = entry.expect("dir entry");
-                let path = entry.path();
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if path.is_dir() {
-                    // Only production sources: skip target output and
-                    // per-crate `tests/` (integration tests may open raw).
-                    if name == "target" || name == "tests" || name == "fixtures" {
-                        continue;
-                    }
-                    stack.push(path);
-                    continue;
-                }
-                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                    continue;
-                }
-                // The chokepoint itself.
-                if path == crates_root.join("tugcore/src/ledger_db.rs") {
-                    continue;
-                }
-                let text = std::fs::read_to_string(&path).expect("read source");
-                // Ignore everything at and after the file's test module —
-                // the workspace convention is a trailing `#[cfg(test)]`
-                // followed (possibly through more attributes) by `mod …`.
-                // A lone `#[cfg(test)]` on a single item must NOT truncate
-                // the scan, so require the `mod` to follow.
-                let production = match test_module_start(&text) {
-                    Some(cut) => &text[..cut],
-                    None => &text[..],
-                };
-                // The integrity prober's quick_check open is deliberately
-                // raw (it must open a possibly-corrupt file without side
-                // effects) — exactly ONE raw open is sanctioned there,
-                // zero anywhere else. A count, not a whole-file skip, so
-                // a future ad-hoc open added to that file is still caught.
-                let allowed_raw =
-                    usize::from(path == crates_root.join("tugcast/src/ledger_integrity.rs"));
-                if production.matches("Connection::open(").count() > allowed_raw {
-                    offenders.push(path.display().to_string());
-                }
-                // A writable `open_with_flags` is the same bypass wearing
-                // different clothes; only READ_ONLY opens are exempt.
-                for (idx, _) in production.match_indices("Connection::open_with_flags(") {
-                    let window = &production[idx..production.len().min(idx + 300)];
-                    if !window.contains("READ_ONLY") {
-                        offenders.push(format!("{} (writable open_with_flags)", path.display()));
-                    }
+        for (path, production) in crate::source_scan::production_sources() {
+            // The chokepoint itself.
+            if path == crates_root.join("tugcore/src/ledger_db.rs") {
+                continue;
+            }
+            // The integrity prober's quick_check open is deliberately
+            // raw (it must open a possibly-corrupt file without side
+            // effects) — exactly ONE raw open is sanctioned there,
+            // zero anywhere else. A count, not a whole-file skip, so
+            // a future ad-hoc open added to that file is still caught.
+            let allowed_raw =
+                usize::from(path == crates_root.join("tugcast/src/ledger_integrity.rs"));
+            if production.matches("Connection::open(").count() > allowed_raw {
+                offenders.push(path.display().to_string());
+            }
+            // A writable `open_with_flags` is the same bypass wearing
+            // different clothes; only READ_ONLY opens are exempt.
+            for (idx, _) in production.match_indices("Connection::open_with_flags(") {
+                let window = &production[idx..production.len().min(idx + 300)];
+                if !window.contains("READ_ONLY") {
+                    offenders.push(format!("{} (writable open_with_flags)", path.display()));
                 }
             }
         }
@@ -394,23 +363,4 @@ mod tests {
         );
     }
 
-    /// Byte offset where a file's `#[cfg(test)] … mod …` block starts, or
-    /// `None` when the file has no test module.
-    fn test_module_start(text: &str) -> Option<usize> {
-        let mut search_from = 0;
-        while let Some(rel) = text[search_from..].find("#[cfg(test)]") {
-            let at = search_from + rel;
-            let after = &text[at + "#[cfg(test)]".len()..];
-            let is_module = after
-                .lines()
-                .map(str::trim_start)
-                .find(|l| !l.is_empty() && !l.starts_with("#["))
-                .is_some_and(|l| l.starts_with("mod ") || l.starts_with("pub mod "));
-            if is_module {
-                return Some(at);
-            }
-            search_from = at + 1;
-        }
-        None
-    }
 }

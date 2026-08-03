@@ -14,6 +14,8 @@ pub mod ledger_db;
 pub mod ports;
 pub mod quiesce;
 pub mod registry;
+#[cfg(test)]
+mod source_scan;
 
 /// Resolve the per-instance data directory for `instance_id` without
 /// consulting the environment. Mirrors `instance::data_dir` but with
@@ -26,8 +28,5 @@ pub fn instance_data_dir_for(instance_id: &str) -> std::path::PathBuf {
 /// Resolve the `instances/` root directory, the parent of every
 /// per-instance data dir.
 pub fn instances_root() -> std::path::PathBuf {
-    let base = dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("Tug");
-    base.join("instances")
+    instance::base_data_dir().join("instances")
 }

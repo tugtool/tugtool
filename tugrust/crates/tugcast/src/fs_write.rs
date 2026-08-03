@@ -58,29 +58,14 @@ pub(crate) struct WriteRequest {
 /// The directory untitled-draft buffers autosave into. The one place
 /// `fs_write` will create missing parent directories.
 pub(crate) fn drafts_root() -> Option<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        dirs::home_dir().map(|home| home.join("Library/Application Support/Tug/Drafts"))
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        dirs::data_dir().map(|data| data.join("Tug/Drafts"))
-    }
+    Some(tugcore::instance::base_data_dir().join("Drafts"))
 }
 
 /// The directory manual-mode set-aside autosave records live in. The
 /// second Tug-owned root under which `fs_write` will create missing
 /// parent directories.
 pub(crate) fn asides_root() -> Option<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        dirs::home_dir()
-            .map(|home| home.join("Library/Application Support/Tug/Autosave Information"))
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        dirs::data_dir().map(|data| data.join("Tug/Autosave Information"))
-    }
+    Some(tugcore::instance::base_data_dir().join("Autosave Information"))
 }
 
 /// Process-wide monotonic counter that makes every temp filename unique, so
@@ -432,20 +417,21 @@ mod tests {
         use std::sync::Mutex;
 
         // Env mutation is process-global; serialize with the other
-        // HOME/env-sensitive tests via a local mutex, and restore after.
+        // env-sensitive tests via a local mutex, and restore after.
         static ENV_MUTEX: Mutex<()> = Mutex::new(());
         let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
-        let home = tempfile::tempdir().unwrap();
-        let prior: Option<OsString> = std::env::var_os("HOME");
+        let data = tempfile::tempdir().unwrap();
+        let key = tugcore::instance::ENV_DATA_DIR;
+        let prior: Option<OsString> = std::env::var_os(key);
         unsafe {
-            std::env::set_var("HOME", home.path());
+            std::env::set_var(key, data.path());
         }
 
-        // asides_root() now resolves under the temp HOME; a nested aside
-        // path has no existing parent and must be created by the write.
-        let root = asides_root().expect("asides_root under temp HOME");
-        assert!(root.starts_with(home.path()));
+        // asides_root() now resolves under the temp data dir; a nested
+        // aside path has no existing parent and must be created by the write.
+        let root = asides_root().expect("asides_root under temp data dir");
+        assert!(root.starts_with(data.path()));
         let path = root.join("aside-deadbeef.json");
         assert!(!path.parent().unwrap().exists());
 
@@ -453,8 +439,8 @@ mod tests {
 
         unsafe {
             match &prior {
-                Some(value) => std::env::set_var("HOME", value),
-                None => std::env::remove_var("HOME"),
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
             }
         }
 

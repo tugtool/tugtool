@@ -20,25 +20,9 @@ use std::path::{Path, PathBuf};
 /// a project shares one state dir. This is per-user runtime state; it is never
 /// committed.
 pub fn project_state_dir(repo_root: &Path) -> PathBuf {
-    base_data_dir()
-        .join("Tug")
+    tugcore::instance::base_data_dir()
         .join("projects")
         .join(project_slug(repo_root))
-}
-
-/// The application-data base directory.
-///
-/// An explicit `TUG_DATA_DIR` env override wins when set and non-empty (used to
-/// pin the location for hermetic tests and host control). Otherwise a portable
-/// fallback chain ensures the function always yields a real path:
-/// `dirs::data_dir()` → `$HOME/.local/share` → the system temp dir.
-fn base_data_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("TUG_DATA_DIR").filter(|v| !v.is_empty()) {
-        return PathBuf::from(dir);
-    }
-    dirs::data_dir()
-        .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("share")))
-        .unwrap_or_else(std::env::temp_dir)
 }
 
 /// Flatten an absolute path into a single directory-name slug by replacing each

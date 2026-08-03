@@ -21,6 +21,16 @@ use std::path::PathBuf;
 /// Environment variable name carrying the runtime instance ID.
 pub const ENV_INSTANCE_ID: &str = "TUG_INSTANCE_ID";
 
+/// Environment variable relocating the application-data root that every
+/// Tug path derives from. Set by test harnesses and by `.cargo/config.toml`
+/// so no cargo-driven process resolves the user's live data.
+pub const ENV_DATA_DIR: &str = "TUG_DATA_DIR";
+
+/// Environment variable asserting that this process must never resolve a
+/// path inside the user's real application-data directory. When set,
+/// every path helper here checks its result and panics on a live path.
+pub const ENV_TEST_ISOLATION: &str = "TUG_TEST_ISOLATION";
+
 /// Environment variable name carrying the absolute path of the
 /// running app bundle. Swift sets this when spawning tugcast so
 /// tugcast can write the per-instance bundle-path marker.
@@ -152,10 +162,10 @@ pub fn instance_tmux_live(instance_id: &str) -> bool {
 /// need a writable path on disk should `fs::create_dir_all` it.
 pub fn data_dir() -> PathBuf {
     let base = base_data_dir();
-    match instance_id() {
+    guard_isolated(match instance_id() {
         Some(id) => base.join("instances").join(id),
         None => base,
-    }
+    })
 }
 
 /// Per-instance log directory: `<data-dir>/Logs/`.
@@ -191,6 +201,36 @@ pub fn sessions_db_path() -> Option<PathBuf> {
     instance_id().map(|_| data_dir().join("sessions.db"))
 }
 
+/// Full resolution order for the session ledger, shared by every reader in
+/// the workspace: the [`ENV_SESSIONS_DB`] override, then the per-instance
+/// path, then the legacy single-instance location a standalone tugcast
+/// launch used before instances existed.
+///
+/// `None` only when the platform has no resolvable data directory. Callers
+/// treat that as a misconfigured environment.
+pub fn resolve_sessions_db_path() -> Option<PathBuf> {
+    if let Some(p) = env::var_os(ENV_SESSIONS_DB).filter(|v| !v.is_empty()) {
+        return Some(guard_isolated(PathBuf::from(p)));
+    }
+    if let Some(p) = sessions_db_path() {
+        return Some(p);
+    }
+    Some(guard_isolated(legacy_data_dir().join("sessions.db")))
+}
+
+/// The pre-instances data directory. macOS has always used `Tug`; other
+/// platforms named it after the process that owned the ledger.
+fn legacy_data_dir() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        base_data_dir()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        base_data_dir().with_file_name("tugcast")
+    }
+}
+
 /// Environment variable overriding the shared changes-ledger path.
 /// Set by test harnesses (the app-test driver, the tugutil CLI suite)
 /// so isolated runs never touch the user's real ledger.
@@ -205,9 +245,9 @@ pub const ENV_CHANGES_DB: &str = "TUG_CHANGES_DB";
 /// [`ENV_CHANGES_DB`] override for isolated test runs.
 pub fn changes_db_path() -> PathBuf {
     if let Some(p) = env::var_os(ENV_CHANGES_DB).filter(|v| !v.is_empty()) {
-        return PathBuf::from(p);
+        return guard_isolated(PathBuf::from(p));
     }
-    base_data_dir().join("changes.db")
+    guard_isolated(base_data_dir().join("changes.db"))
 }
 
 /// Environment variable overriding the shared snippets-file path.
@@ -224,9 +264,9 @@ pub const ENV_SNIPPETS_PATH: &str = "TUG_SNIPPETS_PATH";
 /// Honors the [`ENV_SNIPPETS_PATH`] override for isolated test runs.
 pub fn snippets_path() -> PathBuf {
     if let Some(p) = env::var_os(ENV_SNIPPETS_PATH).filter(|v| !v.is_empty()) {
-        return PathBuf::from(p);
+        return guard_isolated(PathBuf::from(p));
     }
-    base_data_dir().join("snippets.json")
+    guard_isolated(base_data_dir().join("snippets.json"))
 }
 
 /// Per-instance tugbank notify socket path.
@@ -325,8 +365,46 @@ pub fn write_bundle_path_marker() -> std::io::Result<MarkerWrite> {
     Ok(MarkerWrite::Written)
 }
 
-fn base_data_dir() -> PathBuf {
+/// The Tug application-data root — `<platform-data-dir>/Tug` — and the
+/// single origin of every path in this module.
+///
+/// [`ENV_DATA_DIR`] relocates the platform data dir when set and non-empty;
+/// `Tug` is still appended, so an override of `/tmp/x` yields `/tmp/x/Tug`.
+/// Every other resolver in the workspace routes through here rather than
+/// calling `dirs::data_dir()` itself, so one variable moves the whole tree
+/// and a test run cannot reach live state through a forgotten call site.
+pub fn base_data_dir() -> PathBuf {
+    match env::var_os(ENV_DATA_DIR).filter(|v| !v.is_empty()) {
+        Some(dir) => PathBuf::from(dir).join("Tug"),
+        None => platform_data_root(),
+    }
+}
+
+/// The user's real data root, ignoring [`ENV_DATA_DIR`]. The tripwire
+/// measures against this; nothing else should call it.
+fn platform_data_root() -> PathBuf {
     dirs::data_dir().unwrap_or_else(env::temp_dir).join("Tug")
+}
+
+/// Enforce [`ENV_TEST_ISOLATION`]: when the caller has asserted isolation,
+/// a resolved path inside the user's real data root is a bug in the test's
+/// environment, not something to write through.
+///
+/// Returns `path` unchanged in every other case, so the check costs one
+/// env lookup on the normal path and is a no-op in the shipping app.
+fn guard_isolated(path: PathBuf) -> PathBuf {
+    if env::var_os(ENV_TEST_ISOLATION).is_none_or(|v| v.is_empty()) {
+        return path;
+    }
+    let live = platform_data_root();
+    assert!(
+        !path.starts_with(&live),
+        "{ENV_TEST_ISOLATION} is set, but {} resolved inside the live data root {}. \
+         Set {ENV_DATA_DIR} to a scratch directory before resolving Tug paths.",
+        path.display(),
+        live.display(),
+    );
+    path
 }
 
 #[cfg(test)]
@@ -474,6 +552,137 @@ mod tests {
         assert!(sl.ends_with("Tug/instances/debug-baz/sessions.db"));
     }
 
+    /// Snapshot/restore for one arbitrary variable.
+    struct VarGuard(&'static str, Option<OsString>);
+
+    impl VarGuard {
+        fn set(key: &'static str, value: Option<&std::path::Path>) -> Self {
+            let g = Self(key, env::var_os(key));
+            unsafe {
+                match value {
+                    Some(v) => env::set_var(key, v),
+                    None => env::remove_var(key),
+                }
+            }
+            g
+        }
+    }
+
+    impl Drop for VarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.1 {
+                    Some(v) => env::set_var(self.0, v),
+                    None => env::remove_var(self.0),
+                }
+            }
+        }
+    }
+
+    /// The data root must be resolved in exactly one place. A crate that
+    /// calls `dirs::data_dir()` or `dirs::home_dir()` itself is invisible
+    /// to [`ENV_DATA_DIR`], so a test run resolves the user's live
+    /// databases and a second process maps a live SQLite `-shm` — the
+    /// shape of the tugcast SIGBUS crashes of 2026-08-02.
+    #[test]
+    fn no_ad_hoc_data_dir_resolution() {
+        let crates_root = crate::source_scan::crates_root();
+        let chokepoint = crates_root.join("tugcore/src/instance.rs");
+        let mut offenders = Vec::new();
+        for (path, production) in crate::source_scan::production_sources() {
+            if path == chokepoint {
+                continue;
+            }
+            // Comments and doc prose legitimately spell these out; only
+            // code counts. `dirs::home_dir()` is deliberately NOT banned —
+            // tilde expansion in path completion and permissions is a
+            // different concern from the data root.
+            for line in production.lines() {
+                let code = line.trim_start();
+                if code.starts_with("//") || code.starts_with('*') {
+                    continue;
+                }
+                for call in ["dirs::data_dir(", "Application Support/Tug"] {
+                    if code.contains(call) {
+                        offenders.push(format!("{} ({call})", path.display()));
+                    }
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "data-root resolution outside tugcore::instance::base_data_dir — \
+             route these through it so {ENV_DATA_DIR} moves the whole tree: {offenders:#?}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn data_dir_override_relocates_the_whole_tree() {
+        let _e = EnvGuard::snapshot();
+        let tmp = tempfile::tempdir().unwrap();
+        let _d = VarGuard::set(ENV_DATA_DIR, Some(tmp.path()));
+        let _i = VarGuard::set(ENV_TEST_ISOLATION, None);
+        set_instance(Some("debug-relocated"));
+
+        // `Tug` is still appended, so an override of `/x` yields `/x/Tug` —
+        // the same contract tugcode's `tugDataRoot()` implements.
+        assert_eq!(base_data_dir(), tmp.path().join("Tug"));
+        for p in [data_dir(), changes_db_path(), snippets_path()] {
+            assert!(p.starts_with(tmp.path()), "{} escaped", p.display());
+        }
+        assert!(
+            sessions_db_path().unwrap().starts_with(tmp.path()),
+            "sessions.db escaped the override"
+        );
+    }
+
+    #[test]
+    #[serial]
+    #[should_panic(expected = "resolved inside the live data root")]
+    fn tripwire_fires_when_isolation_is_asserted_but_unconfigured() {
+        let _e = EnvGuard::snapshot();
+        let _d = VarGuard::set(ENV_DATA_DIR, None);
+        let _i = VarGuard::set(ENV_TEST_ISOLATION, Some(std::path::Path::new("1")));
+        set_instance(Some("debug-tripwire"));
+        // No ENV_DATA_DIR, so this resolves the user's real ledger directory.
+        let _ = data_dir();
+    }
+
+    #[test]
+    #[serial]
+    fn tripwire_is_silent_when_the_path_is_redirected() {
+        let _e = EnvGuard::snapshot();
+        let tmp = tempfile::tempdir().unwrap();
+        let _d = VarGuard::set(ENV_DATA_DIR, Some(tmp.path()));
+        let _i = VarGuard::set(ENV_TEST_ISOLATION, Some(std::path::Path::new("1")));
+        set_instance(Some("debug-quiet"));
+        assert!(data_dir().starts_with(tmp.path()));
+    }
+
+    #[test]
+    #[serial]
+    fn resolve_sessions_db_prefers_override_then_instance() {
+        let _e = EnvGuard::snapshot();
+        let tmp = tempfile::tempdir().unwrap();
+        let _d = VarGuard::set(ENV_DATA_DIR, Some(tmp.path()));
+        let _i = VarGuard::set(ENV_TEST_ISOLATION, None);
+        let seeded = tmp.path().join("seeded.db");
+        let _s = VarGuard::set(ENV_SESSIONS_DB, Some(&seeded));
+        set_instance(Some("debug-resolve"));
+        assert_eq!(resolve_sessions_db_path(), Some(seeded));
+
+        let _s2 = VarGuard::set(ENV_SESSIONS_DB, None);
+        assert_eq!(resolve_sessions_db_path(), sessions_db_path());
+
+        // With no instance, the legacy single-instance location — still
+        // inside the override, so a test run never reaches the real one.
+        set_instance(None);
+        let legacy = resolve_sessions_db_path().unwrap();
+        assert!(legacy.starts_with(tmp.path()), "{}", legacy.display());
+        assert!(legacy.ends_with("sessions.db"));
+    }
+
     /// Snapshot/restore for `TUG_SNIPPETS_PATH` (not covered by `EnvGuard`).
     struct SnippetsEnvGuard(Option<OsString>);
     impl SnippetsEnvGuard {
@@ -597,50 +806,12 @@ mod tests {
         assert_eq!(bundle_path_from_env(), None);
     }
 
-    /// Redirect `data_dir()` for one test by overriding the home env
-    /// variables `dirs::data_dir()` reads. On macOS `dirs` consults
-    /// `HOME`; on Linux it consults `XDG_DATA_HOME`. Restoring both on
-    /// drop covers either platform without conditional compilation.
-    struct HomeGuard {
-        home: Option<OsString>,
-        xdg: Option<OsString>,
-    }
-
-    impl HomeGuard {
-        fn redirect(to: &std::path::Path) -> Self {
-            let g = Self {
-                home: env::var_os("HOME"),
-                xdg: env::var_os("XDG_DATA_HOME"),
-            };
-            unsafe {
-                env::set_var("HOME", to);
-                env::set_var("XDG_DATA_HOME", to.join(".local/share"));
-            }
-            g
-        }
-    }
-
-    impl Drop for HomeGuard {
-        fn drop(&mut self) {
-            unsafe {
-                match &self.home {
-                    Some(v) => env::set_var("HOME", v),
-                    None => env::remove_var("HOME"),
-                }
-                match &self.xdg {
-                    Some(v) => env::set_var("XDG_DATA_HOME", v),
-                    None => env::remove_var("XDG_DATA_HOME"),
-                }
-            }
-        }
-    }
-
     #[test]
     #[serial]
     fn write_marker_skipped_when_env_unset() {
         let _e = EnvGuard::snapshot();
         let tmp = tempfile::tempdir().unwrap();
-        let _h = HomeGuard::redirect(tmp.path());
+        let _h = VarGuard::set(ENV_DATA_DIR, Some(tmp.path()));
         set_instance(None);
         set_bundle(None);
         assert_eq!(write_bundle_path_marker().unwrap(), MarkerWrite::Skipped);
@@ -657,7 +828,7 @@ mod tests {
     fn write_marker_writes_then_no_op_on_repeat() {
         let _e = EnvGuard::snapshot();
         let tmp = tempfile::tempdir().unwrap();
-        let _h = HomeGuard::redirect(tmp.path());
+        let _h = VarGuard::set(ENV_DATA_DIR, Some(tmp.path()));
         set_instance(Some("debug-write"));
         set_bundle(Some("/Applications/Tug.app"));
 
@@ -676,7 +847,7 @@ mod tests {
     fn write_marker_rewrites_when_path_changes() {
         let _e = EnvGuard::snapshot();
         let tmp = tempfile::tempdir().unwrap();
-        let _h = HomeGuard::redirect(tmp.path());
+        let _h = VarGuard::set(ENV_DATA_DIR, Some(tmp.path()));
         set_instance(Some("debug-rewrite"));
         set_bundle(Some("/Applications/Tug.app"));
         assert_eq!(write_bundle_path_marker().unwrap(), MarkerWrite::Written);

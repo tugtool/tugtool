@@ -806,14 +806,7 @@ fn merge_tree_conflicts(repo: &Path, base: &str, branch: &str) -> Result<Vec<Str
 /// Resolve the `sessions.db` path — the running instance's, else the
 /// platform default. Read-only callers only.
 fn sessions_db_file() -> Option<std::path::PathBuf> {
-    tugcore::instance::sessions_db_path().or_else(|| {
-        let base = dirs::data_dir()?;
-        #[cfg(target_os = "macos")]
-        let dir = base.join("Tug");
-        #[cfg(not(target_os = "macos"))]
-        let dir = base.join("tugcast");
-        Some(dir.join("sessions.db"))
-    })
+    tugcore::instance::resolve_sessions_db_path()
 }
 
 /// The `Tug-Session:` trailer value for the committing session ([P09], Spec

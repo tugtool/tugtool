@@ -39,6 +39,8 @@ An earlier reading of the crash reports argued it was the machine-global `change
 
 A detector is running to settle it. It polls `changes.db-shm`, `sessions.db-shm` and `tugbank.db-shm` every 10ms and, on any shrink or inode change, dumps the process table and `lsof` to `/tmp/shm-truncation.log`. The next occurrence names both the file and the actor.
 
+As of 2026-08-03 it has been up eleven hours with no event on any of the three files, and no new crash.
+
 ## Track one — the test isolation leak
 
 This is independently real and worth fixing whether or not it is the crash.
@@ -49,14 +51,28 @@ This is demonstrated, not inferred. Re-running the suites with `HOME` redirected
 
 The correlation with the crashes is tight. Every one sits one to two seconds after concurrent instance activity — `debug-main` tugcast *starting* at 00:05:21 and 00:07:13 UTC against crashes at 00:05:23 and 00:07:12 — and after test-fixture tugbank domains (`test.domain`, `env-domain`, `flag-domain`, `com.example.test`, `domain.alpha`, `app.prefs`) reaching the live instance. Those arrive over `$TMPDIR/tugbank-notify.sock`, a machine-global path, so a test with its own temp database still rings the live app's doorbell.
 
-The work, all small and testable:
+### What it turned out to be — done 2026-08-03
 
-- Pin the ledger paths for every Rust test run — an `[env]` block in `tugrust/.config/nextest.toml` setting `TUG_CHANGES_DB` and `TUG_SESSIONS_DB` to per-run temp paths and clearing `TUG_INSTANCE_ID`, so no test process can reach live state regardless of the ambient environment.
-- Add a live-path tripwire to `tugcore::instance` — under test/debug builds, panic if `changes_db_path` / `sessions_db_path` / `tugbank_db_path` / `data_dir` resolve inside the real `~/Library/Application Support/Tug`, so a future test that forgets isolation fails loudly instead of writing to live state.
-- Stop the `dash-log.md` writes from escaping into the live projects directory.
-- Verify by re-running under a sandboxed `HOME` and asserting nothing appears under `Library/Application Support/Tug`.
+The leak was wider than "some tests forget to isolate", and the fix landed in a different place than proposed above.
 
-Note the honest limit: the earlier changes-DB `TempDir` fix covered only the tugcast integration harness. This is the same bug class, wider than that fix scoped it.
+The real defect: **the application-data root was resolved in nine places and only one of them was overridable.** `TUG_DATA_DIR` already existed, but only `tugutil_core::project_state_dir` honored it. `tugcore::instance::base_data_dir`, `tugcore::instances_root`, `tugcast`'s `drafts_root` / `asides_root` / `models_root` / `SessionLedger::default_path`, `tugchanges_core::resolve_sessions_db_path` and `tugdash_core::sessions_db_file` each called `dirs::data_dir()` (or built `~/Library/Application Support/Tug` from `home_dir()`) themselves. No environment variable could move them, so a test run resolved live paths no matter what the harness set.
+
+Also worth recording: the intended lever does not exist. `nextest.toml` has no `[env]` section — nextest ignores the key with a warning. Environment for test processes comes from Cargo's `[env]` table in `.cargo/config.toml`, where `relative = true` resolves against the config file's parent directory and `force = true` overrides an inherited value.
+
+What was done:
+
+- `tugcore::instance::base_data_dir` is now public, honors `TUG_DATA_DIR` (replacing the platform dir, still appending `Tug` — the same contract `tugcode`'s `tugDataRoot()` implements), and is the single origin of every Tug path. All nine call sites route through it; the three duplicated session-ledger fallbacks collapsed into one `resolve_sessions_db_path`.
+- A tripwire keyed on `TUG_TEST_ISOLATION`: when set, any resolved path inside the user's real data root panics with the variable to set. It is a no-op in the shipping app.
+- `tugrust/.cargo/config.toml` gained an `[env]` block forcing `TUG_DATA_DIR` to `target/tug-test-data`, `TUG_INSTANCE_ID` to `cargo-test`, and `TUG_TEST_ISOLATION` to `1`. Forcing is required: a run started from a Session card inherits that instance's real `TUG_INSTANCE_ID`. This also covers `cargo run`; the shipping app and the `just build` binaries are launched directly and are unaffected.
+- `no_ad_hoc_data_dir_resolution`, a source-scanning enforcement test in the shape of the existing `no_ad_hoc_ledger_opens`, fails on any production `dirs::data_dir()` or hardcoded `Application Support/Tug` outside the chokepoint. Both tests now share one traversal (`tugcore::source_scan`). The guard was verified non-vacuous by patching in a violation with `tugutil file probe` and watching it fail.
+
+Verification: 1879 tests across all thirteen crates pass, and a run with `HOME` redirected into a sandbox creates nothing under `Library` at all. The scratch dir shows what had been landing in the live root — `sessions.db` and `shell_exchanges.db` each with a live `-shm` mapping, `projects/`, `backups/`, and `Logs/tugcast.log`, meaning tests had been writing into the very log directory used to build the crash timeline above.
+
+One test changed behavior deliberately: `fs_write`'s aside-root test redirected `HOME` to move `asides_root()`, which no longer keys off `HOME`. It now redirects `TUG_DATA_DIR`. The same substitution retired `HomeGuard` in `tugcore::instance`'s tests.
+
+Not covered, and correctly so: the app-test harness launches `Tug.app` directly rather than through cargo, so `[env]` does not reach it — but it already pins `TUG_CHANGES_DB` per instance (`tests/app-test/_harness/index.ts`), so an app-test instance never maps the machine-global ledger.
+
+Note the honest limit: the earlier changes-DB `TempDir` fix covered only the tugcast integration harness. This was the same bug class, wider than that fix scoped it.
 
 ## Track two — single-process `changes.db`
 

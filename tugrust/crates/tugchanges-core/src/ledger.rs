@@ -186,19 +186,7 @@ pub(crate) fn session_exists(conn: &Connection, session: &str) -> Result<bool, S
 /// override when set, else the per-instance location when `TUG_INSTANCE_ID` is
 /// set, else the legacy single-instance path under the platform data dir.
 pub(crate) fn resolve_sessions_db_path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os(tugcore::instance::ENV_SESSIONS_DB).filter(|v| !v.is_empty())
-    {
-        return Some(PathBuf::from(p));
-    }
-    if let Some(p) = tugcore::instance::sessions_db_path() {
-        return Some(p);
-    }
-    let base = dirs::data_dir()?;
-    #[cfg(target_os = "macos")]
-    let dir = base.join("Tug");
-    #[cfg(not(target_os = "macos"))]
-    let dir = base.join("tugcast");
-    Some(dir.join("sessions.db"))
+    tugcore::instance::resolve_sessions_db_path()
 }
 
 /// The machine-global changes-ledger path ([D112]): one `changes.db` for

@@ -201,14 +201,7 @@ pub fn catalog_entry(id: &str) -> Option<(usize, &'static CatalogEntry)> {
 
 /// Root of the model store, shared by every instance on the machine.
 pub fn models_root() -> Option<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        dirs::home_dir().map(|home| home.join("Library/Application Support/Tug/models"))
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        dirs::data_dir().map(|data| data.join("Tug/models"))
-    }
+    Some(tugcore::instance::base_data_dir().join("models"))
 }
 
 /// Where an installed model lives.

@@ -3,3 +3,17 @@
 
 [build]
 rustflags = ["-D", "warnings"]
+
+# Test isolation. Cargo applies these to every process it launches, which
+# includes each test binary nextest runs. `force` is required because a test
+# run started from a Session card inherits that instance's real
+# TUG_INSTANCE_ID, which would otherwise resolve the user's live databases —
+# and a second process mapping a live SQLite `-shm` is how tugcast crashes.
+#
+# This also covers `cargo run`. A cargo-driven binary reads the scratch data
+# dir, not the user's; the shipping app and the `just build` binaries are
+# launched directly and are unaffected.
+[env]
+TUG_DATA_DIR = { value = "target/tug-test-data", relative = true, force = true }
+TUG_INSTANCE_ID = { value = "cargo-test", force = true }
+TUG_TEST_ISOLATION = { value = "1", force = true }

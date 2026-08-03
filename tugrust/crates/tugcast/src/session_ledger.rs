@@ -1028,18 +1028,7 @@ impl SessionLedger {
     /// indicates a misconfigured environment; callers should treat that as
     /// a fatal startup error.
     pub fn default_path() -> Option<PathBuf> {
-        // Per-instance path when TUG_INSTANCE_ID is set; otherwise
-        // fall back to the legacy single-instance location for
-        // backward compatibility with standalone tugcast launches.
-        if let Some(p) = tugcore::instance::sessions_db_path() {
-            return Some(p);
-        }
-        let base = dirs::data_dir()?;
-        #[cfg(target_os = "macos")]
-        let dir = base.join("Tug");
-        #[cfg(not(target_os = "macos"))]
-        let dir = base.join("tugcast");
-        Some(dir.join("sessions.db"))
+        tugcore::instance::resolve_sessions_db_path()
     }
 
     /// Configured claude projects root. Exposed so the supervisor's batch
