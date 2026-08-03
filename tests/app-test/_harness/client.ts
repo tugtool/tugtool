@@ -813,6 +813,24 @@ export function driveSession(
   return caller.evalJS<null>(script, evalOpts).then(() => undefined);
 }
 
+/**
+ * Drop the app's real WebSocket, so the entire recovery path runs:
+ * close → `connectionDidClose` → backoff → reconnect →
+ * `connectionDidReconnect` → every services bag disposed → restore.
+ *
+ * Distinct from `driveSession(..., {op: "transportClose"})`, which
+ * dispatches into a single card's reducer and exercises none of that.
+ *
+ * Resolves `false` when the page had no connection to close.
+ */
+export function connectionClose(
+  caller: HarnessCaller,
+  evalOpts?: EvalJsOptions,
+): Promise<boolean> {
+  const script = callSurface(`window.__tug.connectionClose()`);
+  return caller.evalJS<boolean>(script, evalOpts).then((ok) => ok === true);
+}
+
 /** Mirrors `tugdeck/src/protocol.ts` → `RateLimitInfo`. */
 export interface RateLimitInfo {
   status: string;

@@ -324,6 +324,16 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     weak var bridgeDelegate: BridgeDelegate?
     private var bridgeCleaned = false
 
+    /// Last URL handed to `loadURL`, so a recovery reload has somewhere
+    /// to go when the dead WebContent process left `webView.url` nil.
+    private var lastLoadedURLString: String?
+
+    /// When the WebContent process was last observed dying. Used to
+    /// refuse a second reload on the heels of the first — a page that
+    /// kills its content process on load would otherwise reload
+    /// forever.
+    private var lastWebContentTerminationAt: Date?
+
     /// Harness pid mode (`TUGAPP_NATIVE_EVENT_MODE=pid`) drives the app without
     /// ever activating it. See {@link order(_:relativeTo:)}.
     private let harnessPidMode =
@@ -605,6 +615,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     func loadURL(_ urlString: String) {
         NSLog("MainWindow: loadURL called with %@", urlString)
         guard let url = URL(string: urlString) else { return }
+        lastLoadedURLString = urlString
         let request = URLRequest(url: url)
         webView.load(request)
     }
@@ -1086,6 +1097,47 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         NSLog("Navigation failed (provisional): %@", error.localizedDescription)
+    }
+
+    /// The WebContent process died — jetsam under memory pressure, or a
+    /// crash. Reload the page.
+    ///
+    /// Without this the window simply goes blank and stays blank: there
+    /// is no recovery of any kind, and the symptom is indistinguishable
+    /// from a transport close even though nothing about the wire is
+    /// wrong. Logging it distinctly is half the value — this event was
+    /// previously invisible.
+    ///
+    /// The reload is a genuine full recovery: the deck re-resumes every
+    /// card from JSONL on load. Whatever was typed but unsent is gone,
+    /// but it was gone the moment the process died — the reload only
+    /// restores a usable window.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        let now = Date()
+        let previous = lastWebContentTerminationAt
+        lastWebContentTerminationAt = now
+
+        // A page that kills its content process while loading would
+        // otherwise reload in a tight loop. One recovery attempt per
+        // quiet period; past that, leave the window blank and say so.
+        if let previous, now.timeIntervalSince(previous) < 10.0 {
+            NSLog(
+                "MainWindow: WebContent process terminated again after %.1fs — not reloading",
+                now.timeIntervalSince(previous),
+            )
+            return
+        }
+
+        NSLog("MainWindow: WebContent process terminated — reloading")
+        if webView.url != nil {
+            webView.reload()
+        } else if let urlString = lastLoadedURLString {
+            // A terminated process can leave `url` nil, and `reload()`
+            // on a webview with no URL does nothing at all.
+            loadURL(urlString)
+        } else {
+            NSLog("MainWindow: no URL to reload after WebContent termination")
+        }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

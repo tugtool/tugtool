@@ -23,6 +23,18 @@ The source is `CodeSessionStore`'s phase machine (`code-session-store.ts` + its 
 
 The equivalence is the point: because `canSubmit` and `submitButtonMode` are two faces of the *same* projection, a delegate that keys off `canSubmit` can never disagree with the submit button about whether a turn is live.
 
+### Transport loss is a `transportState` condition, never a banner
+
+`transportState` is an axis of its own, orthogonal to `phase`, and it is the **only** thing that represents a lost wire. A transport close must never stamp `lastError`.
+
+The distinction is what each surface is for. The error banner is the one surface allowed to lock the card body (it sets `inert`), and it is reserved for breakage that does not heal itself. A dropped wire heals itself: the connection retries on its own backoff and the deck restores every card. What the user gets instead is non-blocking and already complete without any error stamp —
+
+- `projectNotices` (`transient-notice.ts`) raises the "Reconnecting… / Lost the connection to the agent." bulletin from `transportState === "offline"`,
+- `tug-banner-bridge.tsx` shows the app-level "Disconnected — reconnecting in Ns…" strip,
+- and `canSubmit` above already clamps the composer, because it conjoins `transportState === "online"`.
+
+So the stamp bought nothing and cost the card: it was also *sticky*, since no recovery edge cleared it — worst in exactly the case where the wire never came back. `handleTransportOpen` and `handleTransportSettled` now clear a `transport_closed` cause if one reaches them from anywhere, and leave every other cause alone: a `session_state_errored` that merely coincided with an outage is real breakage and still banners.
+
 ---
 
 ## The delegates

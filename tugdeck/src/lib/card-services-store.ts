@@ -52,6 +52,15 @@ import { getConnection } from "./connection-singleton";
 import { encodeTrashProjectDirSessions } from "../protocol";
 import { DEFAULT_REPLAY_WINDOW_TURNS } from "../protocol";
 import { resolveRestoreWindow } from "./session-restore-window";
+// Cycle note: `session-restore` imports this module's singleton. These
+// three are called only from methods below, never during module
+// initialization, so the cycle resolves cleanly in both orders.
+import {
+  cancelRestoreRetry,
+  clearQueuedSends,
+  drainQueuedSends,
+  stashQueuedSends,
+} from "./session-restore";
 import { getConnectionLifecycle } from "./connection-lifecycle";
 import { getTugbankClient } from "./tugbank-singleton";
 import {
@@ -623,6 +632,14 @@ class CardServicesStore {
     if (binding.sessionMode === "resume") {
       codeSessionStore.notifyResumeBindingLanded();
     }
+    // Hand back anything the previous store for this card was holding
+    // when it was disposed. Seeded before `request_replay` so the queue
+    // is already in place when the replay terminates — that terminal is
+    // where it drains.
+    const stranded = drainQueuedSends(cardId);
+    if (stranded !== undefined) {
+      codeSessionStore.seedQueuedSends(stranded);
+    }
     // Bound the cold-resume load by recency: replay only the most recent N
     // committed turns (the canonical unit). A long session loads its relevant
     // tail fast; older turns page in on demand. tugcode reports the loaded
@@ -664,6 +681,11 @@ class CardServicesStore {
     if (!services) return;
     logSessionLifecycle("services_store.dispose", { card_id: cardId });
     this._services.delete(cardId);
+    // Rescue anything the user queued before the store goes down with
+    // the bag. A reconnect disposes every card up front, before any
+    // restore is attempted, so this is the last moment those messages
+    // exist anywhere ([L23]).
+    stashQueuedSends(cardId, services.codeSessionStore.exportQueuedSends());
     services.codeSessionStore.dispose();
     services.responseStore.dispose();
     services.sessionMetadataStore.dispose();
@@ -763,6 +785,13 @@ class CardServicesStore {
    * torn down.
    */
   private _closeCardInternal(cardId: string): void {
+    // The user is closing the card, not losing it. Anything still
+    // queued goes with it — the stash exists to survive an accident,
+    // and a message must never resurface later on an unrelated
+    // session bound to a recycled card id.
+    clearQueuedSends(cardId);
+    // Nothing to restore for a card that is going away ([L27]).
+    cancelRestoreRetry(cardId);
     const binding = cardSessionBindingStore.getBinding(cardId);
     if (!binding) return;
     const conn = getConnection();

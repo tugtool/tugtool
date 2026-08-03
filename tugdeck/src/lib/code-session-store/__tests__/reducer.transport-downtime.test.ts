@@ -151,3 +151,188 @@ describe("reducer — transport downtime", () => {
     expect(s2).toBe(s1);
   });
 });
+
+describe("reducer — a queued send belongs to the user, not the turn", () => {
+  /** Submit, open a turn, then queue two more sends behind it. */
+  function withTwoQueuedSends(): CodeSessionState {
+    const { state } = applyAll(fresh(), [
+      {
+        type: "send",
+        text: "first",
+        atoms: [],
+        content: [{ type: "text" as const, text: "first" }],
+        turnKey: "k1",
+      },
+      {
+        type: "assistant_text",
+        msg_id: "m1",
+        block_index: 0,
+        text: "working",
+        is_partial: true,
+      },
+      {
+        type: "send",
+        text: "queued one",
+        atoms: [],
+        content: [{ type: "text" as const, text: "queued one" }],
+        turnKey: "k2",
+      },
+      {
+        type: "send",
+        text: "queued two",
+        atoms: [],
+        content: [{ type: "text" as const, text: "queued two" }],
+        turnKey: "k3",
+      },
+    ]);
+    return state;
+  }
+
+  it("a transport close leaves both queued sends intact", () => {
+    const before = withTwoQueuedSends();
+    expect(before.queuedSends.length).toBe(2);
+
+    const { state } = applyAll(before, [{ type: "transport_close" }]);
+
+    expect(state.queuedSends.length).toBe(2);
+    expect(state.queuedSends[0].text).toBe("queued one");
+    expect(state.queuedSends[1].text).toBe("queued two");
+  });
+
+  it("the rest of the dead turn's reset still happens", () => {
+    const { state, effects } = applyAll(withTwoQueuedSends(), [
+      { type: "transport_close" },
+    ]);
+
+    // The turn that died is still committed and cleaned up — only the
+    // queue is exempt from the reset.
+    const appended = appendedEntries(effects);
+    expect(appended.length).toBe(1);
+    expect(appended[0].entry.turnEndReason).toBe("transport_lost");
+    expect(state.pendingTurn).toBeNull();
+    expect(state.pendingApproval).toBeNull();
+    expect(state.pendingQuestion).toBeNull();
+  });
+
+  it("a seeded queue drains at the end of replay", () => {
+    // The recovery shape: a fresh store is built for the card, seeded
+    // with what the disposed store was holding, and replays. The
+    // replay terminal is the only turn boundary this path ever sees.
+    const stranded = withTwoQueuedSends().queuedSends;
+
+    const { state, effects } = applyAll(fresh(), [
+      { type: "seed_queued_sends", sends: stranded },
+      { type: "replay_started" },
+      { type: "replay_complete", count: 0 },
+    ]);
+
+    // Head flushed into a live turn, tail still queued behind it.
+    expect(state.phase).toBe("submitting");
+    expect(state.queuedSends.length).toBe(1);
+    expect(state.queuedSends[0].text).toBe("queued two");
+    expect(effects.some((e) => e.kind === "send-frame")).toBe(true);
+  });
+
+  it("seeding never displaces a send the user made in the meantime", () => {
+    const stranded = withTwoQueuedSends().queuedSends;
+
+    const { state } = applyAll(fresh(), [
+      {
+        type: "send",
+        text: "brand new",
+        atoms: [],
+        content: [{ type: "text" as const, text: "brand new" }],
+        turnKey: "k9",
+      },
+      {
+        type: "assistant_text",
+        msg_id: "m9",
+        block_index: 0,
+        text: "working",
+        is_partial: true,
+      },
+      {
+        type: "send",
+        text: "also new",
+        atoms: [],
+        content: [{ type: "text" as const, text: "also new" }],
+        turnKey: "k10",
+      },
+      { type: "seed_queued_sends", sends: stranded },
+    ]);
+
+    expect(state.queuedSends.length).toBe(1);
+    expect(state.queuedSends[0].text).toBe("also new");
+  });
+});
+
+describe("reducer — transport loss is not a card error", () => {
+  it("a mid-turn close leaves lastError null", () => {
+    const { state } = applyAll(fresh(), [
+      {
+        type: "send",
+        text: "hi",
+        atoms: [],
+        content: [{ type: "text" as const, text: "hi" }],
+        turnKey: "k1",
+      },
+      {
+        type: "assistant_text",
+        msg_id: "m1",
+        block_index: 0,
+        text: "thinking",
+        is_partial: true,
+      },
+      { type: "transport_close" },
+    ]);
+
+    // Errored phase and an offline transport, but nothing that would
+    // raise the card-locking banner. The "Reconnecting…" bulletin
+    // derives from `transportState` alone.
+    expect(state.phase).toBe("errored");
+    expect(state.transportState).toBe("offline");
+    expect(state.lastError).toBeNull();
+  });
+
+  it("recovery clears a transport_closed error that arrived from elsewhere", () => {
+    // The reducer no longer mints this cause, but an error predating
+    // the rule — or one from a path the close handler does not cover —
+    // must not outlive the recovery that disproves it.
+    const seeded: CodeSessionState = {
+      ...fresh(),
+      lastError: { cause: "transport_closed", message: "closed", at: now },
+    };
+
+    const { state: opened } = applyAll(seeded, [
+      { type: "transport_close" },
+      { type: "transport_open" },
+    ]);
+    expect(opened.lastError).toBeNull();
+
+    // And on the settle edge, for a state that reached it without
+    // passing through `transport_open`.
+    const { state: settled } = applyAll(seeded, [
+      { type: "transport_close" },
+      { type: "transport_settled" },
+    ]);
+    expect(settled.lastError).toBeNull();
+  });
+
+  it("recovery leaves a genuine error alone", () => {
+    // Real breakage that merely coincided with an outage is not
+    // disproved by the wire coming back.
+    const seeded: CodeSessionState = {
+      ...fresh(),
+      lastError: { cause: "session_state_errored", message: "boom", at: now },
+    };
+
+    const { state } = applyAll(seeded, [
+      { type: "transport_close" },
+      { type: "transport_open" },
+      { type: "transport_settled" },
+    ]);
+
+    expect(state.lastError).not.toBeNull();
+    expect(state.lastError?.cause).toBe("session_state_errored");
+  });
+});

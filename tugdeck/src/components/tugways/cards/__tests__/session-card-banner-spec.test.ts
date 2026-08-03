@@ -132,16 +132,35 @@ describe("deriveSessionCardBannerSpec — breakage only", () => {
     });
   });
 
-  it("error wins even when a transport blip is also present", () => {
+  it("a genuine error still wins when a transport blip is also present", () => {
+    // Real breakage that merely coincided with an outage must not be
+    // swallowed by the outage. The reducer no longer mints a
+    // `transport_closed` error at all, so the offline transportState
+    // arrives on its own — the banner is owed to the other cause.
     const at = 1_700_000_000_000;
     const spec = deriveSessionCardBannerSpec(
       baseSnap({
-        lastError: { cause: "transport_closed", message: "closed", at },
+        lastError: { cause: "session_state_errored", message: "boom", at },
         transportState: "offline",
       }),
       { dismissedAt: null },
     );
     expect(spec.kind).toBe("error");
+  });
+
+  it("a transport outage on its own raises no banner", () => {
+    // The post-close snapshot: offline, errored phase, no `lastError`.
+    // The "Reconnecting…" bulletin owns this condition; the banner is
+    // reserved for breakage that does not heal itself.
+    const spec = deriveSessionCardBannerSpec(
+      baseSnap({
+        lastError: null,
+        transportState: "offline",
+        phase: "errored",
+      }),
+      { dismissedAt: null },
+    );
+    expect(spec).toEqual({ kind: "none" });
   });
 
   it("a dismissed error falls through to none (transient blips don't banner)", () => {

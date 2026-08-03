@@ -661,6 +661,22 @@ export interface TugTestSurface {
    */
   appReload(): void;
 
+  /**
+   * Drop the real WebSocket, so the whole recovery path runs.
+   *
+   * This is the only op that exercises what a transport close
+   * actually does to the deck. `driveSession`'s `transportClose`
+   * dispatches into one card's reducer and never reaches
+   * `ConnectionLifecycle`, `cardSessionBindingStore.clearAll()`, or
+   * `restoreSessions` — it pins the reducer contract and nothing
+   * else. This one closes the socket without the `intentionalClose`
+   * latch, so the close, the backoff, the reconnect, the disposal of
+   * every services bag, and the restore all happen for real.
+   *
+   * Returns `false` when there is no connection to close.
+   */
+  connectionClose(): boolean;
+
   // ---- Generic control-action dispatch (SURFACE_VERSION 1.5.0) ----
 
   /**
@@ -1608,6 +1624,13 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       // dedup guard (`reloadPending`) and any future reload-side
       // bookkeeping in one place. [L23]
       dispatchAction({ action: "reload" });
+    },
+
+    connectionClose(): boolean {
+      const connection = getConnection();
+      if (!connection) return false;
+      connection._forceCloseForTest();
+      return true;
     },
 
     dispatchControlAction(

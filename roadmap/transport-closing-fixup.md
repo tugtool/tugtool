@@ -23,7 +23,7 @@
 
 A couple of times a day, every Session card in the deck simultaneously drops its session and shows the red **Connection lost — transport closed** banner. The banner locks the card body (`inert`), its only affordance is Dismiss, and in the worst case the cards never come back on their own. This makes it unsafe to start a long-running turn and walk away from the machine — which is precisely when it happens, because walking away is the trigger condition.
 
-The investigation that produced this plan found the trigger and the wound to be different things, and both to be ours. The **trigger** is `tugcast`'s heartbeat policy: the router closes the client socket after 45 s without an explicit `FeedId::HEARTBEAT` frame, and `last_heartbeat` is refreshed by *nothing else* — not CONTROL, not CODE_INPUT, not any other inbound traffic. The deck sends that heartbeat from a `window.setInterval`, which stops running when the machine sleeps. A quiet, perfectly healthy wire therefore gets killed while the user is away from the keyboard. See [#incident-evidence](#incident-evidence) for the log timeline that shows exactly this, including a close at 08:35:19Z followed by a 4½-hour gap and an instant successful reconnect at 13:12:06Z when the page resumed.
+The investigation that produced this plan found the trigger and the wound to be different things, and both to be ours. **One correction before you read further:** this plan originally treated the heartbeat policy as *the* trigger. It is *a* trigger — a real one, still worth the fix below — but `tugcast` also crashes several times a day with a `SIGBUS` that produces the identical symptom, and the original log check could not have found it. Read [#crashes-are-a-second-cause](#crashes-are-a-second-cause) before drawing conclusions about cause from anything in this section. The **trigger** described here is `tugcast`'s heartbeat policy: the router closes the client socket after 45 s without an explicit `FeedId::HEARTBEAT` frame, and `last_heartbeat` is refreshed by *nothing else* — not CONTROL, not CODE_INPUT, not any other inbound traffic. The deck sends that heartbeat from a `window.setInterval`, which stops running when the machine sleeps. A quiet, perfectly healthy wire therefore gets killed while the user is away from the keyboard. See [#incident-evidence](#incident-evidence) for the log timeline that shows exactly this, including a close at 08:35:19Z followed by a 4½-hour gap and an instant successful reconnect at 13:12:06Z when the page resumed.
 
 Be precise about the suspension mechanism, because it determines what is worth fixing: a merely *occluded* WKWebView still runs its timers — background windows clamp DOM timers to ~1 s granularity rather than suspending them, so a 15 s heartbeat interval keeps firing. The multi-hour gaps in the logs are **system sleep**, not occlusion. Do not go hunting an occlusion bug; there isn't one.
 
@@ -85,7 +85,7 @@ The **wound** is what the deck does with that close. Three separate mechanisms c
 
 - The backend keeps working through a deck disconnect. Verified in the logs: `tugcode` is unaffected by client teardown, and `AgentSupervisor::on_client_disconnect` only drops the client-affinity entry — sessions keep streaming into their ledgers. Therefore a turn in flight during an outage usually *completes*, and its result is recovered by the post-reconnect JSONL replay.
 - A reconnect restore rebuilds each card's transcript from JSONL, so client-side synthetic state (including a `transport_lost` turn entry) is discarded rather than duplicated. Established in [#teardown-cascade](#teardown-cascade).
-- The observed incidents are heartbeat-timeout closes, not tugcast crashes. Every `tugcast` exit in the last week of logs is a clean parent-requested shutdown; there are no panics.
+- ~~The observed incidents are heartbeat-timeout closes, not tugcast crashes. Every `tugcast` exit in the last week of logs is a clean parent-requested shutdown; there are no panics.~~ **CORRECTED 2026-08-03 — this assumption was false.** See [#crashes-are-a-second-cause](#crashes-are-a-second-cause). Heartbeat-timeout closes are real and this phase's trigger fix still applies to them, but they are not the only cause, and on recent evidence not even the more frequent one.
 
 ---
 
@@ -110,7 +110,9 @@ This plan follows the standard devise conventions: explicit `{#anchor}` headings
 
 **Plan to resolve:** Ship [P03](#p03-liveness-any-frame), then watch `tugcast.log` for `Heartbeat timeout, closing connection` over a few weeks. If the count reaches zero, the timeout is harmless and the question closes; if closes persist on genuinely idle-but-alive pages, revisit removal.
 
-**Resolution:** DEFERRED — revisit after this phase ships, using the close-cause telemetry from [P07](#p07-close-cause-record).
+**The counting method is confounded — do not read a zero as an answer.** ([#crashes-are-a-second-cause](#crashes-are-a-second-cause), added 2026-08-03.) `tugcast` is currently dying of `SIGBUS` several times a day, and a process that has crashed cannot emit the line being counted. A drop to zero could therefore mean the timeout stopped firing *or* that crashes are ending the connections first. Before treating the count as evidence, subtract the crash-restarts: a `tugcast starting` with no preceding shutdown marker, cross-checked against `~/Library/Logs/DiagnosticReports/tugcast-<ts>.ips` (mind the local-vs-UTC skew noted there). Cleanest is to resolve this only once the crash is fixed and the window is crash-free.
+
+**Resolution:** DEFERRED — revisit after this phase ships *and* after the crash in [`roadmap/app-stability-brief.md`](app-stability-brief.md) is closed, using the close-cause telemetry from [P07](#p07-close-cause-record), which distinguishes a watchdog-forced close from a server-initiated one on the client side.
 
 #### [Q02] Should reconnect restore stop being destructive-first? (DEFERRED) {#q02-nondestructive-restore}
 
@@ -320,11 +322,34 @@ The 2026-08-02 instance log contains one clean incident:
 
 The last row is the tell: the automatic recovery at 13:12:06 *worked*, and the app was restarted by hand anyway three minutes later. That is the signature of a recovery the UI did not communicate.
 
-The same `Heartbeat timeout, closing connection` line appears once each in the 2026-07-31 and 2026-08-01 instance logs — matching the reported "couple times a day" cadence. Cross-checks that came back clean, and should not be re-investigated:
+The same `Heartbeat timeout, closing connection` line appears once each in the 2026-07-31 and 2026-08-01 instance logs — matching the reported "couple times a day" cadence. Cross-checks that came back clean:
 
-- **No tugcast crashes.** Every `tugcast` exit in the week's logs is preceded by `Control socket: shutdown requested by parent` and `shutdown requested with exit code 0`. No `panicked at`.
+- ~~**No tugcast crashes.** Every `tugcast` exit in the week's logs is preceded by `Control socket: shutdown requested by parent` and `shutdown requested with exit code 0`. No `panicked at`.~~ **WRONG — see [#crashes-are-a-second-cause](#crashes-are-a-second-cause) below.**
 - **No tugcode-induced socket loss.** `tugcode` deaths are handled per-session by `run_session_bridge` (respawn with a crash budget); `AgentSupervisor::on_client_disconnect` only drops the client-affinity entry, so sessions survive a client disconnect entirely.
 - **Client disconnect/reconnect pairs are routine and mostly benign** — the 2026-07-30 log shows a dozen disconnect → reconnect-2.3s-later pairs, each recovering.
+
+#### tugcast crashes are a second, independent cause {#crashes-are-a-second-cause}
+
+**Added 2026-08-03, correcting this plan's original reading of the logs.**
+
+`tugcast` has been dying of `SIGBUS` (`EXC_BAD_ACCESS`, `FS pagein error: 22`) inside SQLite's memory-mapped WAL-index. Full analysis in [`roadmap/app-stability-brief.md`](app-stability-brief.md). A crashing `tugcast` drops the WebSocket, which produces *exactly* the symptom this plan was written about — every card losing its session at once.
+
+**Why the original cross-check missed it, which is the part worth remembering.** It grepped for `panicked at` and for the absence of a clean-shutdown marker. A `SIGBUS` is not a panic and writes **no log line at all** — it leaves a *silent gap* in `tugcast.log.<date>`: a `tugcast starting` with no `SIGTERM received` / `shutdown requested` before it. Searching for evidence of a crash found nothing because a crash of this kind leaves no evidence in that file. The evidence lives in `~/Library/Logs/DiagnosticReports/tugcast-<ts>.ips`, which the original check never looked at.
+
+Re-measured on `release-main` over 2026-07-29 → 08-03:
+
+| Cause | Count |
+|---|---|
+| Crash-restarts (silent gap, no shutdown marker) | 9 |
+| `Heartbeat timeout, closing connection` | 5 |
+
+`.ips` crash reports exist on every day of that window (7 · 5 · 5 · 1 · 6 across all instances). Both mechanisms are real and of the same order; the heartbeat-timeout line is written *by* `tugcast`, so the process was alive when it fired — that close is genuinely distinct from a crash, not a crash in disguise.
+
+**Gotcha for whoever measures this next:** `.ips` filenames are stamped in **local** time while `tugcast.log.<date>` buckets by **UTC**. A crash at 18:58 PDT lands in the next day's log file. Correlating the two without accounting for that will appear to show crashes with no matching restart.
+
+**What this does and does not change for this phase.** Only [P03](#p03-liveness-any-frame) is heartbeat-specific. Every other decision here is cause-agnostic recovery — a crash-close runs the same `connectionDidClose` → `clearAll()` → restore cascade as a timeout-close, so [P01](#p01-transport-not-an-error), [P04](#p04-restore-retry), and [P08](#p08-preserve-queued-sends) apply to it unchanged. [P04](#p04-restore-retry) is arguably worth *more* under crashes: a `tugcast` restart has the supervisor rebinding its ledger while the deck is restoring, which is the transient race the retry exists to absorb.
+
+One trade to hold consciously: [P01](#p01-transport-not-an-error) removes the red banner from a condition that, when its cause is a crash, is **not** self-healing in the way the decision's rationale assumes. The non-blocking surfaces all remain (the bulletin, the app-level strip, the `canSubmit` clamp, and the new close-cause record from [P07](#p07-close-cause-record)), so the condition is quieter rather than invisible — but until the crash is fixed, the alarm on it is deliberately dialled down.
 
 #### The close taxonomy {#close-taxonomy}
 
@@ -462,15 +487,15 @@ Existing suites that must be updated rather than duplicated: `tugdeck/src/lib/co
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Make `connection.ts` greppable | pending | — |
-| #step-2 | Reconnect-latch fix + close-cause diagnostics | pending | — |
-| #step-3 | Server: any-frame liveness, longer window | pending | — |
-| #step-4 | Client: probe before condemning the wire | pending | — |
-| #step-5 | Reducer: transport loss is not a card error | pending | — |
-| #step-6 | Queued sends survive the close and the rebind | pending | — |
-| #step-7 | Restore: bounded retry, re-query before re-spawn | pending | — |
-| #step-8 | Host: recover from WebContent termination | pending | — |
-| #step-9 | Integration checkpoint | pending | — |
+| #step-1 | Make `connection.ts` greppable | done | `5ea768bce` |
+| #step-2 | Reconnect-latch fix + close-cause diagnostics | done | `39839cdac` |
+| #step-3 | Server: any-frame liveness, longer window | done | `01140d945` |
+| #step-4 | Client: probe before condemning the wire | done | `f382fb18d` |
+| #step-5 | Reducer: transport loss is not a card error | done | `dc558b06b` |
+| #step-6 | Queued sends survive the close and the rebind | done | `f9ebdc988` |
+| #step-7 | Restore: bounded retry, re-query before re-spawn | done | `429216adf` |
+| #step-8 | Host: recover from WebContent termination | done | `466957e7d` |
+| #step-9 | Integration checkpoint | done | `e3720a1c2` |
 
 ---
 

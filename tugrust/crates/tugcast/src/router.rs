@@ -51,8 +51,59 @@ pub use tugcast_core::{LagPolicy, ReplayBuffer};
 /// Heartbeat interval (send heartbeat every 15 seconds)
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
 
-/// Heartbeat timeout (close connection if no heartbeat received within 45 seconds)
-const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(45);
+/// How long a client may go without sending us *anything* before we
+/// treat the wire as dead and close it.
+///
+/// Two properties of this timeout are easy to get wrong:
+///
+/// 1. **Any inbound frame refreshes liveness, not just `HEARTBEAT`.** A
+///    client actively sending CONTROL and CODE_INPUT is provably alive;
+///    closing it because one specific frame type stopped arriving was
+///    indefensible. The refresh happens as soon as a frame decodes,
+///    ahead of the feed-id dispatch.
+/// 2. **The check runs only on the `HEARTBEAT_INTERVAL` tick**, so the
+///    effective window is 180–195 s, not a precise 180 s. Do not read
+///    this constant as a sharp deadline.
+///
+/// The window is wide because the client is a WKWebView whose timers
+/// stop entirely when the machine sleeps: a quiet, perfectly healthy
+/// page must not be hung up on. Twelve missed heartbeats is still
+/// unambiguous evidence of a dead wire.
+///
+/// This is *not* paired with the deck's `HEARTBEAT_TIMEOUT_MS`. That
+/// one measures server→client silence; this one measures
+/// client→server silence. They are independent.
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// When a client last proved it was alive.
+///
+/// Split out of `handle_client`'s select loop so the liveness rule is
+/// one named thing that can be driven directly, rather than a pair of
+/// statements 140 lines apart. `now` is a parameter rather than an
+/// internal `Instant::now()` so the rule can be exercised across a
+/// window measured in minutes without spending them.
+struct ClientLiveness {
+    last_frame: Instant,
+}
+
+impl ClientLiveness {
+    fn new(now: Instant) -> Self {
+        Self { last_frame: now }
+    }
+
+    /// Record proof of life. Every decoded inbound frame qualifies —
+    /// the frame's feed id is deliberately not consulted.
+    fn record_frame(&mut self, now: Instant) {
+        self.last_frame = now;
+    }
+
+    /// Whether the client has been silent long enough to be presumed
+    /// dead. Only ever consulted on the `HEARTBEAT_INTERVAL` tick, so
+    /// the window this implements is 180–195 s in practice.
+    fn is_stale(&self, now: Instant) -> bool {
+        now.duration_since(self.last_frame) > HEARTBEAT_TIMEOUT
+    }
+}
 
 // ---------------------------------------------------------------------------
 // InputOwnership — single-writer-per-(FeedId, tug_session_id) enforcement (P5)
@@ -845,7 +896,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                 drop(snap_tx);
 
                 let mut heartbeat_interval = time::interval(HEARTBEAT_INTERVAL);
-                let mut last_heartbeat = Instant::now();
+                let mut liveness = ClientLiveness::new(Instant::now());
 
                 use tokio_stream::StreamExt;
 
@@ -939,9 +990,16 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                     if let Ok((frame, _)) = Frame::decode(&data) {
                                         let fid = frame.feed_id;
 
+                                        // Any frame that decodes is proof the client
+                                        // is alive, whatever it carries. Liveness is
+                                        // refreshed here, ahead of the feed-id
+                                        // dispatch, so a busy client sending CONTROL
+                                        // and CODE_INPUT is never closed for the want
+                                        // of a HEARTBEAT.
+                                        liveness.record_frame(Instant::now());
+
                                         // Router-internal: Heartbeat
                                         if fid == FeedId::HEARTBEAT {
-                                            last_heartbeat = Instant::now();
                                             debug!("Heartbeat received from client");
                                         }
                                         // Router-internal: Control. Session-lifecycle
@@ -1081,7 +1139,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                 teardown_client(&router, client_id).await;
                                 return;
                             }
-                            if last_heartbeat.elapsed() > HEARTBEAT_TIMEOUT {
+                            if liveness.is_stale(Instant::now()) {
                                 warn!(client_id, "Heartbeat timeout, closing connection");
                                 teardown_client(&router, client_id).await;
                                 return;
@@ -1768,7 +1826,60 @@ mod tests {
     #[test]
     fn test_heartbeat_constants() {
         assert_eq!(HEARTBEAT_INTERVAL, Duration::from_secs(15));
-        assert_eq!(HEARTBEAT_TIMEOUT, Duration::from_secs(45));
+        assert_eq!(HEARTBEAT_TIMEOUT, Duration::from_secs(180));
+    }
+
+    /// A client that never sends a HEARTBEAT but is otherwise chatty is
+    /// alive, and must never be closed. This was the entire busy-session
+    /// class of spurious closes: liveness used to be refreshed only by
+    /// `FeedId::HEARTBEAT`, so a client streaming CONTROL and CODE_INPUT
+    /// got hung up on for the want of one specific frame type.
+    #[test]
+    fn control_only_traffic_keeps_a_client_alive() {
+        let t0 = Instant::now();
+        let mut liveness = ClientLiveness::new(t0);
+
+        // Ten minutes of CONTROL traffic at 30 s intervals — well past
+        // the 180 s window, with not one HEARTBEAT among them. The
+        // staleness check runs on every 15 s tick throughout.
+        for step in 1..=20u32 {
+            let frame_at = t0 + Duration::from_secs(30 * u64::from(step));
+            liveness.record_frame(frame_at);
+            for tick in 1..=2u32 {
+                let tick_at = frame_at + Duration::from_secs(15 * u64::from(tick));
+                assert!(
+                    !liveness.is_stale(tick_at),
+                    "a client sending a frame every 30 s was declared stale",
+                );
+            }
+        }
+    }
+
+    /// The other half of the rule: silence still ends the connection.
+    #[test]
+    fn silence_past_the_window_is_stale() {
+        let t0 = Instant::now();
+        let liveness = ClientLiveness::new(t0);
+
+        assert!(!liveness.is_stale(t0 + Duration::from_secs(179)));
+        assert!(!liveness.is_stale(t0 + HEARTBEAT_TIMEOUT));
+        assert!(liveness.is_stale(t0 + HEARTBEAT_TIMEOUT + Duration::from_secs(1)));
+    }
+
+    /// A single frame arriving late in the window resets the clock
+    /// rather than merely postponing the tick that reads it.
+    #[test]
+    fn a_late_frame_resets_the_whole_window() {
+        let t0 = Instant::now();
+        let mut liveness = ClientLiveness::new(t0);
+
+        let frame_at = t0 + Duration::from_secs(170);
+        liveness.record_frame(frame_at);
+
+        // 175 s after the frame: 345 s since the connection opened, but
+        // only 175 s of actual silence.
+        assert!(!liveness.is_stale(frame_at + Duration::from_secs(175)));
+        assert!(liveness.is_stale(frame_at + Duration::from_secs(181)));
     }
 
     #[test]

@@ -40,7 +40,7 @@
  *        place session under the same `session_id` and `project_dir`. The
  *        card opens to its bound project with a fresh claude session.
  *   2. The expectation is recorded in `sessionRestoreRegistry` with a
- *      10-second timeout. `SessionCardContent` subscribes to the
+ *      20-second timeout. `SessionCardContent` subscribes to the
  *      registry and renders `SessionRestoring` whenever a card has a
  *      pending restore.
  *   3. Happy path — the server acks with `spawn_session_ok`, the
@@ -50,15 +50,44 @@
  *      `SessionCardBody`.
  *   4. Server-error path — tugcast broadcasts `SESSION_STATE: errored`
  *      for the session. The module's `SESSION_STATE` subscriber picks
- *      it up, clears the registry entry, and sets a `resume_failed`
- *      picker notice carrying the `(tug_session_id, project_dir)` so
- *      the picker's Retry button can re-fire.
- *   5. Timeout path — no ack, no error within 10 seconds. Same shape
- *      as the error path but with a `restore_timed_out` notice.
+ *      it up, clears the registry entry, and either retries (see
+ *      below) or sets a `resume_failed` picker notice carrying the
+ *      `(tug_session_id, project_dir)` so the picker's Retry button
+ *      can re-fire.
+ *   5. Timeout path — no ack, no error within the timeout. Retries;
+ *      the `restore_timed_out` notice is what the exhausted budget
+ *      leaves behind.
  *   6. User-cancel path — `cancelSessionRestore(cardId)` clears the
  *      registry entry and sets a `restore_canceled` notice. Per
  *      design choice: server state is preserved (no `close_session`
  *      fires), so next reload will retry the restore.
+ *
+ * Retry policy. A restore that fails is retried automatically up to
+ * three times, at roughly 2 s / 6 s / 15 s, before the card falls
+ * through to the picker. The picker remains the honest terminal
+ * state — it is simply no longer the *first* thing a slow restore
+ * produces, which it was when the recovery plan amounted to "the user
+ * restarts the app".
+ *
+ *   - **Re-query before re-spawn.** Each retry issues
+ *     `list_card_bindings` and re-fires `spawn_session` only for a
+ *     card the fresh listing shows as genuinely unbound. A timeout is
+ *     not proof of failure — a resume-mode spawn faces a 5–10 s
+ *     tugcode boot — so the common case is that the original spawn
+ *     landed late, and a blind re-send would race a spawn about to
+ *     succeed.
+ *   - **Classified rejections.** A `SESSION_STATE errored` carrying a
+ *     known gate token (`session_live_in_terminal`,
+ *     `session_live_elsewhere`) is an answer, not a transient: it goes
+ *     straight to the picker with no retry. Everything else, including
+ *     an unrecognized detail, is retried.
+ *   - **Every armed timer has a release** ([L27]): a binding landing,
+ *     a user cancel, an outright `spawn_session_error`, and a card
+ *     close all disarm any pending retry.
+ *   - Attempts are logged as `restore.retry_scheduled`,
+ *     `restore.retry_skipped_already_bound`, and
+ *     `restore.retry_exhausted`, so the log distinguishes "retried"
+ *     from "turned out to be fine".
  *
  * Resumability: every non-failed binding surfaces in
  * `list_card_bindings_ok` regardless of `turn_count`. Sessions with
@@ -80,18 +109,50 @@ import { pickerNoticeStore } from "./picker-notice-store";
 import { subscribeToListCardBindingsOk } from "./session-ledger-events";
 import { CONTROL_ACTION_LIST_CARD_BINDINGS, FeedId } from "../protocol";
 import type { CardBinding } from "../protocol";
+import type { CodeSessionState } from "./code-session-store/reducer";
 
 /** Component id for dev cards. Matches `registerSessionCard`'s registration. */
 const SESSION_COMPONENT_ID = "session";
 
 /**
- * Per-card restore timeout. Long enough to survive a slow subprocess
- * spawn, short enough that a dead server is caught quickly. On
- * timeout the entry is cleared and the picker presents with a
- * `restore_timed_out` notice; the ledger row is preserved so the next
- * reload retries.
+ * Per-card restore timeout.
+ *
+ * A resume-mode spawn faces a documented 5–10 s tugcode boot, so the
+ * previous 10 s left no margin at all above the cost it was meant to
+ * tolerate — the timeout fired while the first spawn was legitimately
+ * still in flight more often than not. 20 s removes most of that race
+ * outright.
+ *
+ * Crossing it is no longer terminal: the timeout routes into
+ * {@link scheduleRestoreRetry}, which re-queries before it re-spawns.
+ * The picker notice is what happens after the retry budget is spent,
+ * not what happens at the first timeout.
  */
-const RESTORE_TIMEOUT_MS = 10_000;
+const RESTORE_TIMEOUT_MS = 20_000;
+
+/**
+ * Backoff before each automatic retry of a failed restore. Three
+ * entries = three retries after the initial attempt, then the card
+ * falls to the picker, which stays the honest terminal state.
+ *
+ * Spread wide on purpose: the failures worth retrying are transient by
+ * nature (tugcast still rebinding its ledger, the tugcode subprocess
+ * still booting, a timeout that simply lost a race), and each of those
+ * wants more time rather than a faster poll.
+ */
+const RESTORE_RETRY_BACKOFF_MS = [2_000, 6_000, 15_000] as const;
+
+/**
+ * Rejection details that are answers, not failures. A session held
+ * open in a terminal will still be held open on the third attempt, so
+ * retrying only turns a fast, legible message into three slow ones.
+ * Everything else — including an unrecognized detail — is treated as
+ * possibly transient and retried.
+ */
+const TERMINAL_REJECTION_DETAILS: ReadonlySet<string> = new Set([
+  "session_live_in_terminal",
+  "session_live_elsewhere",
+]);
 
 /**
  * Backstop for the startup restore pass: if `list_card_bindings_ok`
@@ -213,6 +274,71 @@ export function clearRestoreStartedAt(cardId: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Stranded queued sends — the one thing that must outlive the dispose
+// ---------------------------------------------------------------------------
+
+/**
+ * Sends the user queued at a card, held across the destruction of that
+ * card's services bag.
+ *
+ * A reconnect calls `cardSessionBindingStore.clearAll()` *before* any
+ * restore is attempted, which disposes every card's `CodeSessionStore`
+ * — and with it any messages the user typed and asked to deliver while
+ * a turn was running. Preserving the queue inside the store is
+ * therefore not enough on its own: the store dies milliseconds later.
+ * The queue has to live somewhere the dispose cannot reach, which is
+ * what this map is. Losing those messages is [L23] — an internal
+ * implementation operation destroying user-visible state — and unlike
+ * the transcript there is nothing on screen to mark that it happened.
+ *
+ * Keyed by `cardId`, not `tugSessionId`: the user queued the message
+ * *at a card*, and a card that comes back on a different session
+ * should still carry it.
+ *
+ * Lifecycle: written by `CardServicesStore._dispose` when it tears
+ * down a store with a non-empty queue; drained (and cleared) by
+ * `_construct` when the replacement store is wired up; cleared
+ * outright when the user closes the card, so a queued message cannot
+ * resurface on an unrelated later session. Module scope means it is
+ * bounded by the app session — nothing here is persisted, and a
+ * message cannot survive a reload.
+ */
+type StrandedSends = CodeSessionState["queuedSends"];
+
+const strandedQueuedSends = new Map<string, StrandedSends>();
+
+/** Hold a disposing card's queued sends for its replacement store. */
+export function stashQueuedSends(cardId: string, sends: StrandedSends): void {
+  if (sends.length === 0) return;
+  strandedQueuedSends.set(cardId, sends);
+  logSessionLifecycle("queued_sends.stashed", {
+    card_id: cardId,
+    count: sends.length,
+  });
+}
+
+/**
+ * Take back this card's stranded sends, if any, clearing the entry.
+ * Draining is destructive by design — a stash that could be read twice
+ * would double-send.
+ */
+export function drainQueuedSends(cardId: string): StrandedSends | undefined {
+  const sends = strandedQueuedSends.get(cardId);
+  if (sends === undefined) return undefined;
+  strandedQueuedSends.delete(cardId);
+  logSessionLifecycle("queued_sends.drained", {
+    card_id: cardId,
+    count: sends.length,
+  });
+  return sends;
+}
+
+/** Discard a card's stranded sends without delivering them. */
+export function clearQueuedSends(cardId: string): void {
+  strandedQueuedSends.delete(cardId);
+}
+
+// ---------------------------------------------------------------------------
 // Resume display metadata — the t=0 progress facts
 // ---------------------------------------------------------------------------
 
@@ -304,6 +430,199 @@ export class RestorePassGate {
 export const restorePassGate = new RestorePassGate();
 
 // ---------------------------------------------------------------------------
+// Automatic restore retry
+// ---------------------------------------------------------------------------
+
+/**
+ * Retries already spent on the current restore of each card.
+ *
+ * Cleared when the card's binding lands (the same place the registry
+ * hold clears on success), when the user cancels, and when the budget
+ * is exhausted. Module scope for the same reason as `restoreStartedAt`
+ * above — it must outlive the component tree that comes and goes
+ * across the restore — and in memory only: never React state, never
+ * browser storage.
+ */
+const restoreAttempts = new Map<string, number>();
+
+/** Armed retry timers, so every one of them has a release ([L27]). */
+const restoreRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** What a retry needs to know to re-fire the right kind of spawn. */
+interface RestoreRetryContext {
+  readonly cardId: string;
+  readonly tugSessionId: string;
+  readonly projectDir: string;
+  readonly connection: TugConnection;
+  readonly mode: "resume" | "new";
+  readonly display?: ResumeDisplayMetadata;
+  /** Run when the budget is spent — the card's honest terminal state. */
+  readonly onExhausted: () => void;
+}
+
+/**
+ * Cancel any pending retry for a card and forget its attempt count.
+ *
+ * Called when the binding lands (the restore succeeded, possibly on an
+ * attempt we had already given up waiting for), when the user cancels,
+ * when the server rejects terminally, and when the card closes.
+ */
+export function cancelRestoreRetry(cardId: string): void {
+  const timer = restoreRetryTimers.get(cardId);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    restoreRetryTimers.delete(cardId);
+  }
+  restoreAttempts.delete(cardId);
+}
+
+/**
+ * Schedule the next automatic retry of a failed restore, or give up.
+ *
+ * This is the change that answers the actual complaint. Before it, a
+ * restore that timed out or was rejected just dropped the card to the
+ * picker, on the stated assumption that "the next reload retries" —
+ * i.e. the recovery plan was *the user restarts the app*, which is
+ * precisely what makes walking away from a long turn unsafe.
+ *
+ * The retry does NOT blindly re-send `spawn_session`. See
+ * {@link fireRestoreRetry} — a timeout is not proof of failure, and a
+ * second concurrent spawn for a session that is about to bind has no
+ * established contract making it safe.
+ */
+function scheduleRestoreRetry(ctx: RestoreRetryContext): void {
+  const attempts = restoreAttempts.get(ctx.cardId) ?? 0;
+  if (attempts >= RESTORE_RETRY_BACKOFF_MS.length) {
+    logSessionLifecycle("restore.retry_exhausted", {
+      card_id: ctx.cardId,
+      tug_session_id: ctx.tugSessionId,
+      attempts,
+    });
+    cancelRestoreRetry(ctx.cardId);
+    ctx.onExhausted();
+    return;
+  }
+
+  const delayMs = RESTORE_RETRY_BACKOFF_MS[attempts];
+  restoreAttempts.set(ctx.cardId, attempts + 1);
+  logSessionLifecycle("restore.retry_scheduled", {
+    card_id: ctx.cardId,
+    tug_session_id: ctx.tugSessionId,
+    attempt: attempts + 1,
+    delay_ms: delayMs,
+  });
+
+  const timer = setTimeout(() => {
+    restoreRetryTimers.delete(ctx.cardId);
+    fireRestoreRetry(ctx);
+  }, delayMs);
+  restoreRetryTimers.set(ctx.cardId, timer);
+}
+
+/**
+ * Run one retry: re-query first, and re-spawn only if the listing says
+ * the card is genuinely still unbound.
+ *
+ * Asking before acting is the whole point. A resume-mode spawn faces a
+ * 5–10 s tugcode boot, so the common failure is not failure at all —
+ * it is impatience, and the original spawn lands a moment later.
+ * Re-sending `spawn_session` on top of that would race a spawn that is
+ * about to succeed. `list_card_bindings` is authoritative about what
+ * actually landed server-side, so asking it turns the guess into a
+ * fact and makes the common case cost one CONTROL round-trip instead
+ * of a duplicate spawn.
+ *
+ * Subscribing to the authoritative listing and responding to what it
+ * publishes is also the direction [L28] requires — reaching into the
+ * live spawn to re-drive it would be the source→delegate inversion the
+ * law forbids.
+ */
+function fireRestoreRetry(ctx: RestoreRetryContext): void {
+  const { cardId, connection } = ctx;
+
+  // Cheapest authority first: if this client already holds the
+  // binding, the spawn landed while we were waiting.
+  if (cardSessionBindingStore.getBinding(cardId) !== undefined) {
+    logSessionLifecycle("restore.retry_skipped_already_bound", {
+      card_id: cardId,
+      tug_session_id: ctx.tugSessionId,
+      source: "binding_store",
+    });
+    cancelRestoreRetry(cardId);
+    return;
+  }
+
+  // Backstop the query itself: no answer means the server is
+  // effectively dead, which is a reason to back off and try again
+  // rather than to re-spawn into the dark.
+  let settled = false;
+  const queryTimeout = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    unsubscribe();
+    logSessionLifecycle("restore.retry_query_timed_out", {
+      card_id: cardId,
+      tug_session_id: ctx.tugSessionId,
+    });
+    scheduleRestoreRetry(ctx);
+  }, RESTORE_PASS_SETTLE_TIMEOUT_MS);
+
+  const unsubscribe = subscribeToListCardBindingsOk(({ bindings }) => {
+    if (settled) return;
+    settled = true;
+    unsubscribe();
+    clearTimeout(queryTimeout);
+
+    const row = bindings
+      .filter(isCardBinding)
+      .find((b) => b.card_id === cardId);
+
+    // A live subprocess for this card means the original spawn landed
+    // late. Clear the retry rather than duplicating it.
+    if (row?.is_alive === true) {
+      logSessionLifecycle("restore.retry_skipped_already_bound", {
+        card_id: cardId,
+        tug_session_id: ctx.tugSessionId,
+        source: "list_card_bindings",
+      });
+      cancelRestoreRetry(cardId);
+      return;
+    }
+
+    // Genuinely unbound. Re-fire, preferring the fresh listing's view
+    // of the row over the stale one this retry was scheduled with.
+    if (row !== undefined) {
+      // `is_alive` is not consulted here — a live row returned above.
+      const resumable = row.has_jsonl === true || row.turn_count > 0;
+      if (resumable) {
+        fireRestore(cardId, row.session_id, row.project_dir, connection, {
+          title: null,
+          turnCount: row.turn_count,
+        });
+      } else {
+        fireFreshSpawn(cardId, row.session_id, row.project_dir, connection);
+      }
+      return;
+    }
+
+    // No row at all — fall back to what the original attempt knew.
+    if (ctx.mode === "resume") {
+      fireRestore(
+        cardId,
+        ctx.tugSessionId,
+        ctx.projectDir,
+        connection,
+        ctx.display,
+      );
+    } else {
+      fireFreshSpawn(cardId, ctx.tugSessionId, ctx.projectDir, connection);
+    }
+  });
+
+  connection.sendControlFrame(CONTROL_ACTION_LIST_CARD_BINDINGS, {});
+}
+
+// ---------------------------------------------------------------------------
 // Subscription wiring — installed once at startup by `restoreSessions`.
 // ---------------------------------------------------------------------------
 
@@ -327,6 +646,10 @@ function installRegistrySubscriptions(connection: TugConnection): void {
     for (const cardId of Array.from(sessionRestoreRegistry.getSnapshot().keys())) {
       if (bindings.has(cardId)) {
         sessionRestoreRegistry._clear(cardId);
+        // The restore landed — possibly on an attempt we had already
+        // stopped waiting for. Disarm any pending retry so it cannot
+        // spawn a duplicate ([L27]).
+        cancelRestoreRetry(cardId);
         const services = cardServicesStore.getServices(cardId);
         services?.codeSessionStore.notifyTransportSettled();
       }
@@ -343,16 +666,40 @@ function installRegistrySubscriptions(connection: TugConnection): void {
     )) {
       if (expectation.tugSessionId !== msg.tugSessionId) continue;
       sessionRestoreRegistry._clear(cardId);
-      pickerNoticeStore.set(cardId, {
-        category: "resume_failed",
-        message: resumeRejectionMessage(msg.detail, expectation.projectDir),
-        staleTugSessionId: expectation.tugSessionId,
-        staleProjectDir: expectation.projectDir,
-      });
       logSessionLifecycle("restore.server_rejected", {
         card_id: cardId,
         tug_session_id: expectation.tugSessionId,
         detail: msg.detail ?? null,
+      });
+
+      const toPicker = (): void => {
+        pickerNoticeStore.set(cardId, {
+          category: "resume_failed",
+          message: resumeRejectionMessage(msg.detail, expectation.projectDir),
+          staleTugSessionId: expectation.tugSessionId,
+          staleProjectDir: expectation.projectDir,
+        });
+      };
+
+      // A rejection with a known gate token is an answer, not a
+      // failure: the session is held open somewhere else and will
+      // still be held on the third attempt. Surface it immediately
+      // rather than spending the budget to say the same thing slowly.
+      if (msg.detail !== null && TERMINAL_REJECTION_DETAILS.has(msg.detail)) {
+        cancelRestoreRetry(cardId);
+        toPicker();
+        break;
+      }
+
+      // Anything else — including an unrecognized detail — may be
+      // transient (tugcast still rebinding, tugcode still booting).
+      scheduleRestoreRetry({
+        cardId,
+        tugSessionId: expectation.tugSessionId,
+        projectDir: expectation.projectDir,
+        connection,
+        mode: "resume",
+        onExhausted: toPicker,
       });
       break;
     }
@@ -616,8 +963,9 @@ function fireFreshSpawn(
     { tugSessionId, projectDir },
     () => {
       // Timeout backstop: no `spawn_session_ok`, no rejection. Drop
-      // the hold so the card falls through to the picker; the ledger
-      // row is preserved server-side, so the next reload retries.
+      // the hold and retry — the ledger row is preserved server-side,
+      // and a card that has to wait for the user to relaunch the app
+      // is a card that was lost.
       if (!sessionRestoreRegistry.has(cardId)) return;
       sessionRestoreRegistry._clear(cardId);
       logSessionLifecycle("restore.fresh_spawn_timed_out", {
@@ -625,6 +973,14 @@ function fireFreshSpawn(
         tug_session_id: tugSessionId,
         project_dir: projectDir,
         timeout_ms: RESTORE_TIMEOUT_MS,
+      });
+      scheduleRestoreRetry({
+        cardId,
+        tugSessionId,
+        projectDir,
+        connection,
+        mode: "new",
+        onExhausted: () => {},
       });
     },
   );
@@ -665,20 +1021,31 @@ export function fireRestore(
     cardId,
     { tugSessionId, projectDir },
     () => {
-      // Timeout: no ack, no error — treat as a distinct failure mode.
+      // Timeout: no ack, no error. Retry rather than dropping the card
+      // — the picker is where this ends only once the budget is spent.
       if (!sessionRestoreRegistry.has(cardId)) return;
       sessionRestoreRegistry._clear(cardId);
-      pickerNoticeStore.set(cardId, {
-        category: "restore_timed_out",
-        message: `Restore of "${projectDir}" timed out after 10 seconds.`,
-        staleTugSessionId: tugSessionId,
-        staleProjectDir: projectDir,
-      });
       logSessionLifecycle("restore.timed_out", {
         card_id: cardId,
         tug_session_id: tugSessionId,
         project_dir: projectDir,
         timeout_ms: RESTORE_TIMEOUT_MS,
+      });
+      scheduleRestoreRetry({
+        cardId,
+        tugSessionId,
+        projectDir,
+        connection,
+        mode: "resume",
+        ...(display !== undefined ? { display } : {}),
+        onExhausted: () => {
+          pickerNoticeStore.set(cardId, {
+            category: "restore_timed_out",
+            message: `Could not restore "${projectDir}" after several attempts.`,
+            staleTugSessionId: tugSessionId,
+            staleProjectDir: projectDir,
+          });
+        },
       });
     },
   );
@@ -694,6 +1061,9 @@ export function cancelSessionRestore(cardId: string): void {
   const expectation = sessionRestoreRegistry.get(cardId);
   if (expectation === undefined) return;
   sessionRestoreRegistry._clear(cardId);
+  // The user asked to stop. An automatic retry firing after that
+  // would be the card overruling them.
+  cancelRestoreRetry(cardId);
   pickerNoticeStore.set(cardId, {
     category: "restore_canceled",
     message: `Canceled restore of "${expectation.projectDir}".`,
@@ -722,4 +1092,8 @@ export function cancelSessionRestore(cardId: string): void {
  */
 export function notifySpawnRejected(cardId: string): void {
   sessionRestoreRegistry._clear(cardId);
+  // An outright `spawn_session_error` (e.g. the project directory is
+  // gone) is a fact about the world, not a race — retrying it would
+  // just re-ask a question already answered.
+  cancelRestoreRetry(cardId);
 }

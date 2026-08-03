@@ -826,6 +826,18 @@ export class App {
   }
 
   /**
+   * Drop the real WebSocket and let the app recover on its own.
+   *
+   * Unlike `driveSession(..., {op: "transportClose"})` — which only
+   * dispatches into one card's reducer — this runs the whole path the
+   * user experiences: the close, the reconnect backoff, the disposal
+   * of every card's services bag, and the restore that rebuilds them.
+   */
+  connectionClose(opts?: EvalJsOptions): Promise<boolean> {
+    return client.connectionClose(this as HarnessCaller, opts);
+  }
+
+  /**
    * Drive the app-level, account-global rate-limit store — mounts / clears
    * the single deck-wide rate-limit banner ([#step-3.5]).
    */

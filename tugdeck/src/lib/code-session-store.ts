@@ -1525,6 +1525,27 @@ export class CodeSessionStore {
   }
 
   /**
+   * The raw queued sends, for capture before this store is disposed.
+   *
+   * Returns the reducer's own entries rather than the snapshot
+   * projection because a re-seeded send has to reach the wire, and
+   * only the raw entry carries the `content` blocks the send-frame is
+   * built from.
+   */
+  exportQueuedSends(): CodeSessionState["queuedSends"] {
+    return this.state.queuedSends;
+  }
+
+  /**
+   * Adopt sends stranded by the disposal of this card's previous
+   * store. No-op if this store already has a queue of its own.
+   */
+  seedQueuedSends(sends: CodeSessionState["queuedSends"]): void {
+    if (this._disposed || sends.length === 0) return;
+    this.dispatch({ type: "seed_queued_sends", sends });
+  }
+
+  /**
    * Respond to a pending permission prompt. Emits a `tool_approval`
    * frame and restores the phase that was active before the
    * `control_request_forward` arrived (typically `tool_work`).

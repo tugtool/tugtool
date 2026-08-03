@@ -114,7 +114,7 @@ describe("CodeSessionStore — SESSION_STATE errored trigger (Step 8)", () => {
   });
 });
 
-describe("CodeSessionStore — transport close trigger (Step 8)", () => {
+describe("CodeSessionStore — transport close trigger", () => {
   it("routes connectionDidClose into the errored phase during an active turn", () => {
     const conn = new TestFrameChannel();
     const lifecycle = new ConnectionLifecycle();
@@ -129,8 +129,11 @@ describe("CodeSessionStore — transport close trigger (Step 8)", () => {
     expect(snap.phase).toBe("errored");
     expect(snap.transportState).toBe("offline");
     expect(snap.canSubmit).toBe(false);
-    expect(snap.lastError).not.toBeNull();
-    expect(snap.lastError?.cause).toBe("transport_closed");
+    // No `lastError`: the offline transportState and its "Reconnecting…"
+    // bulletin own this condition. Stamping an error here would raise
+    // the card-locking banner for a transient that heals itself — and
+    // nothing on the recovery path would clear it.
+    expect(snap.lastError).toBeNull();
   });
 
   it("idle connectionDidClose flips transportState to offline (phase preserved, no lastError)", () => {

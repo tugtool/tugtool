@@ -729,6 +729,31 @@ export interface TransportSettledEvent {
 }
 
 /**
+ * Internal event that re-seeds a freshly constructed store's send queue
+ * with messages stranded when the previous store for this card was
+ * disposed.
+ *
+ * A reconnect disposes every card's services bag before any restore is
+ * attempted, so a message the user queued during a turn would die with
+ * the bag. The sends are captured before disposal and handed to the
+ * replacement store here; they drain at the end of replay like any
+ * other queued send.
+ *
+ * Ignored unless the store's queue is empty, so seeding can never
+ * clobber a send the user made in the meantime.
+ */
+export interface SeedQueuedSendsEvent {
+  type: "seed_queued_sends";
+  sends: ReadonlyArray<{
+    content: ContentBlock[];
+    text: string;
+    atoms: AtomSegment[];
+    turnKey: string;
+    queuedAt: number;
+  }>;
+}
+
+/**
  * Internal event mapped from a CONTROL frame of shape
  * `{ type: "error", detail: "session_unknown", tug_session_id }`.
  * Supervisor emits this when a CODE_INPUT arrives for a session it
@@ -1269,6 +1294,7 @@ export type CodeSessionEvent =
   | TransportCloseEvent
   | TransportOpenEvent
   | TransportSettledEvent
+  | SeedQueuedSendsEvent
   | ResumeFailedEvent
   | AddUserMessageEvent
   | ReplayStartedEvent

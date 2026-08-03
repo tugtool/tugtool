@@ -13,11 +13,12 @@
  * sleeping for tens of seconds.
  *
  * Coverage:
- *   - 50 s of total wire silence after handshake → `ws.close()` called.
- *   - A frame at t=30 s defers the force-close: nothing at t=50 s, then
- *     force-close at t=80 s once 45 s have elapsed since the last frame.
- *
- * Mirrors [D02] / `tugcast/src/router.rs:48`.
+ *   - Crossing the silence threshold probes rather than closing.
+ *   - An answer during the grace window re-arms the watchdog.
+ *   - An unanswered probe force-closes once the grace window expires.
+ *   - A frame mid-window defers the whole cycle by the size of the gap.
+ *   - The wake pulse fires on a visibility transition, and only when
+ *     there is an open socket to send it on.
  */
 
 import { describe, it, expect, beforeEach, afterEach, setSystemTime } from "bun:test";
@@ -118,12 +119,60 @@ interface IntervalEntry {
 let intervals: Map<number, IntervalEntry>;
 let nextTimerId: number;
 let mockNow: number;
+let scheduledTimeouts: Array<{ cb: () => void; ms: number }> = [];
 
 let origSetInterval: typeof window.setInterval;
 let origClearInterval: typeof window.clearInterval;
 let origSetTimeout: typeof window.setTimeout;
 let origClearTimeout: typeof window.clearTimeout;
 let origWebSocket: typeof globalThis.WebSocket;
+let origDocument: unknown;
+
+// ---------------------------------------------------------------------------
+// Minimal `document` stand-in for the wake pulse.
+// ---------------------------------------------------------------------------
+//
+// The connection registers a `visibilitychange` listener and reads
+// `document.visibilityState`. That is the whole surface it touches —
+// no rendering, no tree, no layout. This stub is a listener registry
+// and one string, in the same spirit as `FakeWebSocket` above: it lets
+// the test drive the event the SUT actually listens for. (It is not a
+// DOM substrate; nothing here renders anything.)
+
+interface FakeDocument {
+  visibilityState: string;
+  listeners: Map<string, Set<() => void>>;
+  addEventListener(type: string, cb: () => void): void;
+  removeEventListener(type: string, cb: () => void): void;
+}
+
+let fakeDocument: FakeDocument;
+
+function makeFakeDocument(): FakeDocument {
+  return {
+    visibilityState: "visible",
+    listeners: new Map(),
+    addEventListener(type: string, cb: () => void): void {
+      let set = this.listeners.get(type);
+      if (set === undefined) {
+        set = new Set();
+        this.listeners.set(type, set);
+      }
+      set.add(cb);
+    },
+    removeEventListener(type: string, cb: () => void): void {
+      this.listeners.get(type)?.delete(cb);
+    },
+  };
+}
+
+/** Set `visibilityState` and dispatch `visibilitychange` to listeners. */
+function fireVisibilityChange(state: string): void {
+  fakeDocument.visibilityState = state;
+  for (const cb of fakeDocument.listeners.get("visibilitychange") ?? []) {
+    cb();
+  }
+}
 
 const BASE_TIME_MS = 1_700_000_000_000; // an arbitrary deterministic epoch
 
@@ -138,6 +187,9 @@ function installFakes(): void {
   origSetTimeout = window.setTimeout;
   origClearTimeout = window.clearTimeout;
   origWebSocket = globalThis.WebSocket;
+  origDocument = (globalThis as { document?: unknown }).document;
+  fakeDocument = makeFakeDocument();
+  (globalThis as unknown as { document: FakeDocument }).document = fakeDocument;
 
   // Simulated `setInterval`: capture the callback so the test can fire
   // it at the right simulated timestamp.
@@ -157,9 +209,15 @@ function installFakes(): void {
   // tests never let `onclose` fire (a forced close in this mock just
   // bumps a counter), so the reconnect path never runs — but stubbing
   // these stops `connect()`'s reconnect machinery from leaking real
-  // timers into the test.
+  // timers into the test. Registrations are recorded rather than
+  // discarded so a test can assert that a reconnect was *scheduled*
+  // without waiting for it to fire.
+  scheduledTimeouts = [];
   (window as unknown as { setTimeout: (cb: () => void, ms: number) => number })
-    .setTimeout = (_cb: () => void, _ms: number): number => 0;
+    .setTimeout = (cb: () => void, ms: number): number => {
+      scheduledTimeouts.push({ cb, ms });
+      return scheduledTimeouts.length;
+    };
   (window as unknown as { clearTimeout: (id?: number) => void })
     .clearTimeout = (_id?: number): void => {};
 
@@ -174,6 +232,11 @@ function uninstallFakes(): void {
   window.clearTimeout = origClearTimeout;
   (globalThis as unknown as { WebSocket: typeof globalThis.WebSocket })
     .WebSocket = origWebSocket;
+  if (origDocument === undefined) {
+    delete (globalThis as { document?: unknown }).document;
+  } else {
+    (globalThis as { document?: unknown }).document = origDocument;
+  }
   setSystemTime();
   lastWs = null;
 }
@@ -228,7 +291,7 @@ function heartbeatFrame(): ArrayBuffer {
 
 // ---------------------------------------------------------------------------
 
-describe("TugConnection — heartbeat watchdog (Step 2)", () => {
+describe("TugConnection — heartbeat watchdog", () => {
   beforeEach(() => {
     installFakes();
   });
@@ -237,20 +300,61 @@ describe("TugConnection — heartbeat watchdog (Step 2)", () => {
     uninstallFakes();
   });
 
-  it("force-closes the wire after 45 s of silence post-handshake", () => {
+  it("probes instead of closing when the silence threshold is crossed", () => {
     const conn = new TugConnection("ws://test.invalid/");
     const ws = completeHandshake(conn);
 
-    // No frames after the handshake. The watchdog ticks at 5 s
-    // intervals; advancing 50 s fires nine ticks (5/10/15/.../45/50 s).
-    // The check at 50 s sees `Date.now() - lastFrameAt = 50_000`, which
-    // is the first tick where the threshold is exceeded.
+    // t=45 s — the outbound heartbeat interval has fired three times by
+    // now (15/30/45 s); the watchdog check at this tick sees exactly
+    // 45 000 ms of silence, which does not *exceed* the threshold.
+    advanceTime(45_000);
+    const sentBeforeThreshold = ws.sent.length;
+
+    // t=50 s — the first tick past the threshold. No outbound heartbeat
+    // interval falls in this 5 s gap, so the single extra frame is the
+    // watchdog's probe, and the socket is left open.
+    advanceTime(5_000);
     expect(ws.closeCalls).toBe(0);
+    expect(ws.sent.length).toBe(sentBeforeThreshold + 1);
+  });
+
+  it("re-arms and leaves the socket open when the probe is answered", () => {
+    const conn = new TugConnection("ws://test.invalid/");
+    const ws = completeHandshake(conn);
+
+    // t=50 s — threshold crossed, probe sent, grace window open.
     advanceTime(50_000);
+    expect(ws.closeCalls).toBe(0);
+
+    // The server answers. `lastFrameAt` advances past the value it
+    // held when the probe went out.
+    ws.fireMessage(heartbeatFrame());
+
+    // t=65 s — well past the 10 s grace window. Because the wire
+    // answered, the watchdog closed the grace window instead of
+    // condemning the socket.
+    advanceTime(15_000);
+    expect(ws.closeCalls).toBe(0);
+  });
+
+  it("force-closes once the grace window expires with no answer", () => {
+    const conn = new TugConnection("ws://test.invalid/");
+    const ws = completeHandshake(conn);
+
+    // t=50 s — probe sent, grace window opens.
+    advanceTime(50_000);
+    expect(ws.closeCalls).toBe(0);
+
+    // t=55 s — 5 s into a 10 s grace window; still waiting.
+    advanceTime(5_000);
+    expect(ws.closeCalls).toBe(0);
+
+    // t=60 s — grace expired with the wire still silent. Dead.
+    advanceTime(5_000);
     expect(ws.closeCalls).toBe(1);
   });
 
-  it("a single mid-window frame defers the force-close by exactly the gap", () => {
+  it("a single mid-window frame defers the whole cycle by exactly the gap", () => {
     const conn = new TugConnection("ws://test.invalid/");
     const ws = completeHandshake(conn);
 
@@ -259,15 +363,88 @@ describe("TugConnection — heartbeat watchdog (Step 2)", () => {
     expect(ws.closeCalls).toBe(0);
     ws.fireMessage(heartbeatFrame());
 
-    // t=50 s — only 20 s have elapsed since the frame at t=30 s; under
-    // the 45 s threshold, no force-close.
+    // t=50 s — only 20 s since the frame at t=30 s; under the
+    // threshold, so not even a probe yet.
     advanceTime(20_000);
     expect(ws.closeCalls).toBe(0);
 
-    // t=80 s — 50 s since the frame at t=30 s; first tick past the
-    // threshold trips the watchdog.
+    // t=80 s — 50 s of silence since the frame; the probe goes out.
     advanceTime(30_000);
+    expect(ws.closeCalls).toBe(0);
+
+    // t=90 s — grace expired unanswered.
+    advanceTime(10_000);
     expect(ws.closeCalls).toBe(1);
+  });
+});
+
+describe("TugConnection — wake pulse", () => {
+  beforeEach(() => {
+    installFakes();
+  });
+
+  afterEach(() => {
+    uninstallFakes();
+  });
+
+  it("sends exactly one heartbeat when the page becomes visible", () => {
+    const conn = new TugConnection("ws://test.invalid/");
+    const ws = completeHandshake(conn);
+    const sentAfterHandshake = ws.sent.length;
+
+    fireVisibilityChange("visible");
+
+    expect(ws.sent.length).toBe(sentAfterHandshake + 1);
+  });
+
+  it("sends nothing when the page is hidden rather than revealed", () => {
+    const conn = new TugConnection("ws://test.invalid/");
+    const ws = completeHandshake(conn);
+    const sentAfterHandshake = ws.sent.length;
+
+    fireVisibilityChange("hidden");
+
+    expect(ws.sent.length).toBe(sentAfterHandshake);
+  });
+
+  it("sends nothing on a wake with no open socket", () => {
+    const conn = new TugConnection("ws://test.invalid/");
+    const ws = completeHandshake(conn);
+    const sentAfterHandshake = ws.sent.length;
+
+    // The wire drops. `stopHeartbeat` releases the visibility listener
+    // along with the timers, so a later wake finds nothing armed.
+    ws.fireClose(1006, "abnormal");
+    fireVisibilityChange("visible");
+
+    expect(ws.sent.length).toBe(sentAfterHandshake);
+  });
+});
+
+describe("TugConnection — the intentional-close latch is per-close, not per-instance", () => {
+  beforeEach(() => {
+    installFakes();
+  });
+
+  afterEach(() => {
+    uninstallFakes();
+  });
+
+  it("schedules a reconnect after an unexpected close that follows an explicit close()", () => {
+    const conn = new TugConnection("ws://test.invalid/");
+    completeHandshake(conn);
+
+    // An explicit close: no reconnect should be scheduled for it.
+    conn.close();
+    expect(scheduledTimeouts.length).toBe(0);
+
+    // A fresh connect, then the wire drops on its own. The latch set by
+    // `close()` must not still be holding, or this close returns early
+    // from `onclose` and the transport stays dead forever.
+    const ws = completeHandshake(conn);
+    ws.fireClose(1006, "abnormal");
+
+    expect(scheduledTimeouts.length).toBe(1);
   });
 });
 
@@ -287,7 +464,7 @@ function sessionStateFrame(payload: object): ArrayBuffer {
   });
 }
 
-describe("TugConnection — lastPayload cleared on close (Step 3)", () => {
+describe("TugConnection — lastPayload cleared on close", () => {
   beforeEach(() => {
     installFakes();
   });

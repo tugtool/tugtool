@@ -66,7 +66,7 @@ function primeLifecycleForReconnect(lifecycle: ConnectionLifecycle): void {
   lifecycle.notifyConnectionDidClose();
 }
 
-describe("CodeSessionStore — transportState snapshot integration (Step 4)", () => {
+describe("CodeSessionStore — transportState snapshot integration", () => {
   it("drives online → offline → restoring → online and mirrors canSubmit", () => {
     const conn = new TestFrameChannel();
     const lifecycle = new ConnectionLifecycle();
@@ -141,7 +141,7 @@ describe("CodeSessionStore — transportState snapshot integration (Step 4)", ()
   });
 });
 
-describe("CodeSessionStore — lifecycle-driven transport events (Step 5)", () => {
+describe("CodeSessionStore — lifecycle-driven transport events", () => {
   it("connectionDidClose flips transportState to offline", () => {
     const conn = new TestFrameChannel();
     const lifecycle = new ConnectionLifecycle();

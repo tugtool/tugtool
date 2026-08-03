@@ -50,6 +50,7 @@ import type {
   ControlRequestForwardEvent,
   CostUpdateEvent,
   ReplayCompleteEvent,
+  SeedQueuedSendsEvent,
   ReplayStartedEvent,
   RespondApprovalActionEvent,
   RespondQuestionActionEvent,
@@ -4191,6 +4192,37 @@ function handleResumeFailed(
   };
 }
 
+/**
+ * Re-seed a fresh store's queue with sends stranded by the disposal of
+ * the previous store for this card.
+ *
+ * Guarded on an empty queue: seeding must never displace something the
+ * user submitted to the new store in the meantime. The entries keep
+ * their original `queuedAt`, so the flushed turn's row is dated to the
+ * moment the user actually hit submit rather than to the recovery.
+ */
+function handleSeedQueuedSends(
+  state: CodeSessionState,
+  event: SeedQueuedSendsEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (event.sends.length === 0 || state.queuedSends.length > 0) {
+    return { state, effects: [] };
+  }
+  return {
+    state: {
+      ...state,
+      queuedSends: event.sends.map((s) => ({
+        content: [...s.content],
+        text: s.text,
+        atoms: [...s.atoms],
+        turnKey: s.turnKey,
+        queuedAt: s.queuedAt,
+      })),
+    },
+    effects: [],
+  };
+}
+
 function handleTransportClose(
   state: CodeSessionState,
 ): { state: CodeSessionState; effects: Effect[] } {
@@ -4281,7 +4313,11 @@ function handleTransportClose(
         pendingQuestion: null,
         prevPhase: null,
         pendingTurn: null,
-        queuedSends: [],
+        // `queuedSends` is deliberately absent from this reset. Every
+        // other member of it belongs to the turn that just died and is
+        // correctly discarded; the queue belongs to the *user* — those
+        // are messages they typed and asked to deliver. Dropping them
+        // on a wire blip is silent data loss with nothing to mark it.
         ...resetPerTurnTelemetry(),
         // Same per-turn-boundary close as `handleTurnComplete`:
         // close awaiting + interrupt segments into their arrays so
@@ -4293,13 +4329,21 @@ function handleTransportClose(
     }
   }
 
-  // Non-idle: flip phase to errored and stamp lastError exactly as
-  // before, but ALSO record `transportState = "offline"`. The card
-  // observer reads phase to surface "errored"; submit gating reads
-  // the conjunction of phase ∈ {idle, errored} and transportState.
-  // `wakeTrigger` is cleared unconditionally — after transport-lost
-  // there is no active wake; the bracket-close (`turn_complete`) will
-  // not arrive on the dead wire.
+  // Non-idle: flip phase to errored and record `transportState =
+  // "offline"`. The card observer reads phase to surface "errored";
+  // submit gating reads the conjunction of phase ∈ {idle, errored} and
+  // transportState. `wakeTrigger` is cleared unconditionally — after
+  // transport-lost there is no active wake; the bracket-close
+  // (`turn_complete`) will not arrive on the dead wire.
+  //
+  // No `lastError` is stamped. The banner is the one surface allowed
+  // to lock the card body, and it is reserved for breakage that does
+  // not heal itself — a wire blip does not qualify. The condition is
+  // already fully represented without it: `transportState = "offline"`
+  // raises the non-blocking "Reconnecting…" bulletin and gates
+  // `canSubmit` on its own. A stamp here would also be *sticky*, since
+  // nothing on the recovery path clears it — worst exactly in the case
+  // where the wire never comes back.
   return {
     state: {
       ...state,
@@ -4307,11 +4351,6 @@ function handleTransportClose(
       phase: "errored",
       transportState: "offline",
       wakeTrigger: null,
-      lastError: {
-        cause: "transport_closed",
-        message: "transport closed",
-        at: endedAt,
-      },
       ...preflightCleared,
       ...caseAEchoesCleared,
       ...transportClock,
@@ -4345,10 +4384,34 @@ function handleTransportOpen(
     state: {
       ...state,
       transportState: "restoring",
+      ...clearedTransportError(state),
       ...transportClock,
     },
     effects: [],
   };
+}
+
+/**
+ * Drop a `transport_closed` error on the recovery edge, and only that
+ * cause.
+ *
+ * States the invariant positively where a reader will look for it — a
+ * recovered transport has no transport error — rather than leaving it
+ * to rest on the absence of a stamp elsewhere. It also catches any
+ * such error that predates this rule or arrives from a path the
+ * transport-close handler does not cover: nothing that the recovery
+ * disproves should outlive it.
+ *
+ * Every other cause is deliberately untouched. A `session_state_errored`
+ * that merely happened to coincide with an outage is real breakage and
+ * survives the reconnect.
+ */
+function clearedTransportError(
+  state: CodeSessionState,
+): Partial<CodeSessionState> {
+  return state.lastError?.cause === "transport_closed"
+    ? { lastError: null }
+    : {};
 }
 
 function handleTransportSettled(
@@ -4372,6 +4435,7 @@ function handleTransportSettled(
     state: {
       ...state,
       transportState: "online",
+      ...clearedTransportError(state),
       ...closeTransportDowntimeInterval(state),
       transportReconnectCount: state.transportReconnectCount + 1,
     },
@@ -4700,6 +4764,34 @@ function handleReplayComplete(
   }
 
   // No surviving in-flight cycle: clean replay terminates to idle.
+  const replayBookkeeping: Partial<CodeSessionState> = {
+    lastReplayResult,
+    replayWindow,
+    replayPrependActive: false,
+    replayEverCompleted: true,
+    replayPreflightActive: false,
+    replaySoftBudgetElapsed: false,
+    replayTimeoutDwellActive: isTimeout,
+  };
+
+  // A queue waiting at the end of a replay is a turn boundary too, and
+  // it is the ONLY trigger this path will ever get: the queue-flush
+  // everywhere else hangs off a `turn_complete`, and on this path there
+  // is no prior turn to complete. This is how a send that was stranded
+  // by a transport close and carried across the rebind finally reaches
+  // the wire — without the flush here the stash would refill the store
+  // and then sit there forever, which is worse than no stash at all.
+  if (state.queuedSends.length > 0) {
+    return flushQueuedHeadResult(
+      state,
+      new Map(),
+      state.committedMsgIds,
+      state.sessionInitTokens,
+      effects,
+      replayBookkeeping,
+    );
+  }
+
   return {
     state: {
       ...state,
@@ -4711,13 +4803,7 @@ function handleReplayComplete(
       pendingQuestion: null,
       prevPhase: null,
       pendingTurn: null,
-      lastReplayResult,
-      replayWindow,
-      replayPrependActive: false,
-      replayEverCompleted: true,
-      replayPreflightActive: false,
-      replaySoftBudgetElapsed: false,
-      replayTimeoutDwellActive: isTimeout,
+      ...replayBookkeeping,
     },
     effects,
   };
@@ -5644,6 +5730,8 @@ export function reduce(
       return handleSessionUnknown(state, event);
     case "session_not_owned":
       return handleSessionNotOwned(state, event);
+    case "seed_queued_sends":
+      return handleSeedQueuedSends(state, event);
     case "transport_close":
       return handleTransportClose(state);
     case "transport_open":
