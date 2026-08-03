@@ -169,3 +169,69 @@ describe("moveKeyViewSpatial — never-beep boundaries", () => {
     expect(m.moveKeyViewSpatial("left")).toBe(false);
   });
 });
+
+describe("moveKeyViewSpatial — a descend scope above the declaring scope", () => {
+  // The PermissionDialog case: the dialog pushes its trap and declares the
+  // button ring under that scope; the enclosing transcript list then DESCENDS
+  // into the row holding the dialog, pushing a non-trapped row scope on top.
+  // The arrows still belong to the dialog's declared plane — a descend does not
+  // strand them.
+  function setupDescended() {
+    const m = new FocusManager();
+    const ctx = m.contextFor(null);
+    ctx.registerFocusable({ id: "deny", group: "g", order: 0 });
+    ctx.registerFocusable({ id: "allow", group: "g", order: 1 });
+    ctx.registerFocusable({ id: "scope", group: "g", order: 2 });
+    ctx.pushFocusMode("dialog-trap", { trapped: true });
+    ctx.registerSpatialOrder("dialog-trap", order);
+    ctx.pushFocusMode("list-row-1", { trapped: false });
+    return { m, ctx };
+  }
+
+  test("Left from allow still lands on deny under a descend scope", () => {
+    const { m, ctx } = setupDescended();
+    ctx.setKeyView("allow", true);
+    expect(m.moveKeyViewSpatial("left")).toBe(true);
+    expect(m.keyView()).toBe("deny");
+  });
+
+  test("a trapped mode that declares no order does not borrow the plane below it", () => {
+    const m = new FocusManager();
+    const ctx = m.contextFor(null);
+    ctx.registerFocusable({ id: "deny", group: "g", order: 0 });
+    ctx.registerFocusable({ id: "allow", group: "g", order: 1 });
+    ctx.registerSpatialOrder(BASE_FOCUS_MODE, order);
+    ctx.pushFocusMode("sheet", { trapped: true });
+    ctx.setKeyView("allow", true);
+    expect(m.moveKeyViewSpatial("left")).toBe(false);
+    expect(m.keyView()).toBe("allow");
+  });
+});
+
+describe("key-within projection", () => {
+  // An element is never its own container. A descend scope captures the key view
+  // at push (`restoreKeyView`) and may then place the key view back on that same
+  // node — the dialog seeds Allow, the list descends into that row and lands on
+  // Allow again. Marking it key-within paints the faint within outline over the
+  // crisp role ring, because `[data-key-within]` is authored last.
+  test("a descend scope whose restore IS the key view projects no within mark", () => {
+    const m = new FocusManager();
+    const ctx = m.contextFor(null);
+    ctx.registerFocusable({ id: "allow", group: "g", order: 0 });
+    ctx.setKeyView("allow", true);
+    ctx.pushFocusMode("list-row-1", { trapped: false });
+    ctx.setKeyView("allow", true);
+    expect(ctx.projectionState().keyWithinId).toBeNull();
+  });
+
+  test("a descend scope from a DIFFERENT node still marks that node", () => {
+    const m = new FocusManager();
+    const ctx = m.contextFor(null);
+    ctx.registerFocusable({ id: "row", group: "g", order: 0 });
+    ctx.registerFocusable({ id: "accessory", group: "g", order: 1 });
+    ctx.setKeyView("row", true);
+    ctx.pushFocusMode("list-row-1", { trapped: false });
+    ctx.setKeyView("accessory", true);
+    expect(ctx.projectionState().keyWithinId).toBe("row");
+  });
+});

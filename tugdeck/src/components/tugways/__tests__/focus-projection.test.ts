@@ -112,8 +112,13 @@ describe("projection record", () => {
 
     // A descend scope (`trapped: false`) — an accordion section, a list row:
     // the container we descended FROM stays a DOM ancestor, so marking it
-    // "contains the active component" is true.
+    // "contains the active component" is true. The mark needs the key view to
+    // have actually moved INSIDE: while it still rests on the container, the
+    // container is not "containing the active component", it IS it, and the
+    // faint within outline would override that node's own ring.
     ctx.pushFocusMode("row0-scope", { trapped: false });
+    expect(stateOf(m).keyWithinId).toBeNull();
+    ctx.setKeyView("row1", true);
     expect(stateOf(m).keyWithinId).toBe("row0");
     expect(stateOf(m).focusMode).toBe("row0-scope");
 

@@ -1729,7 +1729,7 @@ export class FocusContext {
     // Tree-disclosure descend on Right keeps its meaning wherever descent is
     // available ([P02]) — consulted before spatial movement.
     if (direction === "right" && (handle?.tryDescendRight() ?? false)) return true;
-    const order = this.spatialOrders.get(this.currentFocusMode());
+    const order = this.spatialOrderInScope();
     if (order === undefined && handle === undefined) return false;
     // The declared order references nodes by their stable `group:order` focus key
     // ([Q12]) — the same key the dialog seeds with — so an author never needs an
@@ -1812,6 +1812,27 @@ export class FocusContext {
       return true;
     }
     return false;
+  }
+
+  /**
+   * The spatial order governing the current keyboard scope ([P22] / [P23]).
+   *
+   * Not simply the top mode's order: a DESCEND scope (`trapped: false` — a list
+   * row, an accordion section) can sit ABOVE the scope that declared the plane,
+   * and descending into a row inside a dialog does not hand that row the
+   * dialog's arrows — it leaves them on the dialog's declared plane. So the walk
+   * runs top-down for the first mode that declared an order, and STOPS at the
+   * first trapped mode it passes (inclusive): a trap that declares nothing has
+   * no plane, and the card's order below it is not the trap's to borrow.
+   */
+  private spatialOrderInScope(): SpatialOrder | undefined {
+    for (let i = this.modeStack.length - 1; i >= 0; i -= 1) {
+      const entry = this.modeStack[i];
+      const order = this.spatialOrders.get(entry.scopeId);
+      if (order !== undefined) return order;
+      if (entry.trapped) return undefined;
+    }
+    return this.spatialOrders.get(BASE_FOCUS_MODE);
   }
 
   /**
@@ -1939,8 +1960,18 @@ export class FocusContext {
     // `restoreKeyView` is the trigger, which does not contain the surface — so
     // projecting the within mark onto it paints a spurious ring on the host
     // control behind the open surface.
-    const keyWithinId =
+    // An element is never its own container: when a descend scope's captured
+    // `restoreKeyView` IS the current key view (a row descend that lands the key
+    // view back on the node it was pushed from — an inline dialog seeds its
+    // default button, then the enclosing list descends into that row and places
+    // on the same button), the within mark would paint on the key view itself.
+    // `[data-key-within]` is authored after `[data-key-view-kbd]` at equal
+    // specificity, so the faint within outline would WIN over the crisp role
+    // ring on the live control.
+    const withinCandidate =
       top === undefined || top.trapped ? null : (top.restoreKeyView ?? null);
+    const keyWithinId =
+      withinCandidate === this.keyViewId ? null : withinCandidate;
     const mode = this.currentFocusMode();
     return {
       keyViewId: this.keyViewId,

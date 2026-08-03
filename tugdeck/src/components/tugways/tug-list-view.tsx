@@ -4253,6 +4253,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
 
       if (descendedRowRef.current !== null) return;
+      // Only adopt a key view that is in OUR scope. A surface rendered inside a
+      // row can push its own mode and seed its own key view — a card-modal
+      // inline dialog (the PermissionDialog seeding Allow). That keyboard
+      // belongs to the surface, and adopting it would push a row scope OVER the
+      // surface's trap, taking the top of the mode stack away from it: its
+      // declared arrow plane and its Tab walk both key off the top mode, so
+      // both would go dead. The list being a member of the current mode is what
+      // "the keyboard is in our scope" means — true at base and true for a list
+      // inside a sheet (it registered into that trap), false when a nested
+      // surface owns the mode.
+      if (!manager.currentModeMember(focusableId)) return;
       const keyView = manager.keyView();
       if (keyView === null) return;
       const scrollEl = scrollContainerRef.current;
