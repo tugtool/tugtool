@@ -69,8 +69,10 @@ The out-of-repo rows are not merely legacy: **capture still writes them today** 
 #### Constraints {#constraints}
 
 - **Warnings are errors** (`tugrust/.cargo/config.toml` sets `-D warnings`).
-- Never open live ledger DBs with a foreign SQLite; all verification queries via `just db-inspect`.
-- Every `changes.db` mutation goes through the ledger chokepoint and is journaled (a new `Record` variant in `changes_journal.rs`, replay-idempotent, following `DeleteSession`/`Sever` precedent).
+- Never open live ledger DBs with a foreign SQLite ([LR2]); all verification queries via `just db-inspect`.
+- Every `changes.db` mutation goes through the ledger chokepoint ([LR1]) and is journaled ([LR6]) — a new `Record` variant in `changes_journal.rs`, replay-idempotent, following the `DeleteSession`/`Sever` precedent.
+- **[LR5]:** row deletion is shape-safe and stays permitted when a build is locked out by the `user_version` gate — so the new Record variant **must** return `false` from `Record::shapes_rows()`. Returning `true` would silently disable the purge under a version-gate lockout.
+- **[LR8]:** only the writer-claim owner writes `changes.db`; other processes forward records through a **bounded 256-record queue** whose overflow drops records loudly and latches `ledger_degraded`. The purge must therefore be **one record carrying all row keys**, never one record per row.
 - `notify` remains a dependency (used by `dev.rs` and `feeds/file_watcher.rs`); only the snippets feed's use of `PollWatcher` is removed.
 - The snippets feed's public shape — `snippets_feed(path) -> (watch::Receiver<Frame>, Arc<Notify>)`, the frame format, and the PUT-nudge contract — must not change (`main.rs` wiring and `snippets::SnippetsState` depend on it).
 
@@ -115,6 +117,8 @@ This plan follows the tuglaws devise skeleton conventions: explicit `{#anchor}` 
 | Snippets cross-build sync regresses (missed external writes) | med | low | Stat-poll same 250 ms cadence; keep content-hash suppression; existing async tests cover external write + nudge + corrupt file | `external_write_triggers_new_frame` flakes or user reports stale snippets across builds |
 | Purge deletes a row a future feature wanted | low | low | Deletion is journaled (auditable in `changes.db.journal.jsonl`); the no-consumer claim is verified in #assumptions; session JSONL remains the full activity record | A feature spec appears that reads `file_events` for out-of-repo activity |
 | Capture-skip drops an event that was actually in-repo (canonicalization miss) | high | low | The skip uses the same gateway canonicalization the fold uses — an event skipped at capture is by construction one the fold could never match; unit tests cover firmlink/symlink spellings resolving in-repo (recorded) vs truly outside (skipped) | Attribution gaps reported for real repo files |
+| A producer is missed, so the row count never reaches zero | med | med (without the fix) | #file-event-producers enumerates all four sites; Step 3 names `record_shell_op_row` explicitly; Step 8 verifies **after** further session activity, not just once | Step 8's post-activity `db-inspect` returns non-zero |
+| Purge overruns the [LR8] forwarder queue | med | low | One record carrying all keys ([P09]); 256-record queue documented in #constraints | `ledger_degraded` latches during Step 8 |
 | `min_live_at_ms` cache returns a stale liveness cut | med | low | Cache keyed by `(repo_root, rel, head_oid)`; any commit moves HEAD and naturally invalidates | A workflow that rewrites history without moving HEAD (not a real Tug flow) |
 | Debounce floor delays changeset UI freshness | low | med | Floor is small (150 ms) and only coalesces — the recompute still always runs after the last bump | User-visible lag in the Changes card after a save |
 
@@ -155,6 +159,8 @@ This plan follows the tuglaws devise skeleton conventions: explicit `{#anchor}` 
 - `install_watcher` is deleted; the feed task owns all change detection.
 - The existing tests keep their scenarios; the "let the PollWatcher establish its baseline" sleep in `external_write_triggers_new_frame` becomes unnecessary but harmless (the stat poll has no baseline race — the pre-write stat is the baseline).
 - The `Arc<Notify>` nudge contract and `main.rs` wiring are untouched.
+- **The last-published hash initializes from the initial frame** built before `watch::channel(initial)` — otherwise the first rebuild always publishes a duplicate of what subscribers already hold.
+- **Task exit must rest on the `tx.closed()` arm.** Today the loop also exits via `tx.send(frame).is_err()`; once sends are suppressed on unchanged content, that path can go quiet indefinitely and would leak the task. The `tx.closed()` select arm already exists and becomes the load-bearing exit — do not remove it when restructuring the loop.
 
 #### [P02] `resolve_synthetic` parses `/etc/synthetic.conf` once per process (DECIDED) {#p02-synthetic-conf-cache}
 
@@ -184,7 +190,9 @@ This plan follows the tuglaws devise skeleton conventions: explicit `{#anchor}` 
 
 #### [P05] `min_live_at_ms` is cached keyed by HEAD (DECIDED) {#p05-live-cut-cache}
 
-**Decision:** Cache the per-path liveness cut (`git log -1 --format=%ct -- <rel>`) in a process-lifetime map keyed `(canonical_root, rel)` → `(head_oid, cut_ms)`, where `head_oid` comes from one `git rev-parse HEAD` per `compose_snapshot` call (one added subprocess replacing up-to-N `git log` subprocesses on every recompute). On a miss or an oid mismatch the existing subprocess runs and the entry is replaced, keeping the map bounded by the dirty-path population.
+**Decision:** Cache the per-path liveness cut (`git log -1 --format=%ct -- <rel>`) in a process-lifetime map keyed `(canonical_root, rel)` → `(head_oid, cut_ms)`, where `head_oid` comes from one `git rev-parse HEAD` per `compose_snapshot` call (one added subprocess replacing up-to-N `git log` subprocesses on every recompute). On a miss or an oid mismatch the existing subprocess runs and the entry is replaced.
+
+**Growth:** one entry per distinct path *ever* dirtied in the process's lifetime (not per currently-dirty path — entries for paths that go clean are replaced, never removed). Bounded in practice by the repo's file count, which is acceptable for a `(String, String) → (String, i64)` map; if that ever stops being true the fix is an LRU, not a redesign.
 
 **Rationale:**
 - The liveness cut ([D112] row-liveness rule) only changes when a commit lands — i.e., when HEAD moves. Between commits, re-running `git log` per dirty-path-with-events per recompute is pure subprocess churn (a busy editing session bumps recomputes far more often than it commits).
@@ -196,7 +204,9 @@ This plan follows the tuglaws devise skeleton conventions: explicit `{#anchor}` 
 
 #### [P06] The aggregate recompute loop gets a coalescing debounce floor (DECIDED) {#p06-bump-debounce}
 
-**Decision:** In `ChangesetAllFeed::run` (`feeds/changeset_all.rs`), after `bump.notified()` fires, sleep 150 ms before recomputing; further bumps during the sleep coalesce into the same recompute (the `Notify` permit semantics already guarantee at most one queued wake — the sleep widens the coalescing window beyond "however long a compose takes").
+**Decision:** In `ChangesetAllFeed::run` (`feeds/changeset_all.rs`), after `bump.notified()` fires, sleep 150 ms before recomputing, **then drain any permit the sleep accumulated** before composing. Bumps landing during the sleep fold into the same recompute.
+
+**The drain is required, not incidental.** `Notify::notify_one` stores a permit when no waiter is registered, and nothing awaits `notified()` during the sleep — so without a drain, a bump landing mid-sleep leaves a permit that makes the *next* `notified()` return immediately, producing a second, redundant full compose of every project. (The second snapshot is identical and diff-suppression eats the frame, so it is invisible but not free.) Drain with `tokio::time::timeout(Duration::ZERO, self.bump.notified())` — `Notified`'s first poll consumes a stored permit and otherwise the zero timeout expires immediately.
 
 **Rationale:**
 - Today the loop's only rate limit is compose duration itself: `git_watch` bumps on **every** filesystem batch under any workspace root, so sustained file activity (builds, `cargo` runs, autosave) drives back-to-back full recomputes of all projects.
@@ -205,6 +215,7 @@ This plan follows the tuglaws devise skeleton conventions: explicit `{#anchor}` 
 **Implications:**
 - The `drafts_version` probe arm and cancellation arm are unchanged; the sleep sits between wake and compose and must yield to cancellation.
 - Existing `changeset_all` tests that wait on `rx.changed()` with 5 s timeouts absorb 150 ms without modification.
+- Assertions about coalescing must be phrased in terms of **frames published**, not composes performed — frames are the observable contract, and diff-suppression already collapses redundant composes.
 
 #### [P07] Compose instrumentation via tracing (DECIDED) {#p07-instrumentation}
 
@@ -226,13 +237,17 @@ This plan follows the tuglaws devise skeleton conventions: explicit `{#anchor}` 
 - The skip decision uses the same canonicalization the fold uses, so a skipped event is by construction one the fold could never have matched (Risk table, capture-skip row).
 
 **Implications:**
-- The skip must apply to every capture route that builds `FileEventRow`s through `into_row` (relay tool events, shell-op grammar events) — one chokepoint in `into_row`/`project_repo_relative`, not per-route checks.
-- `into_row`'s return becomes fallible (`Option<FileEventRow>` or equivalent); callers drop `None` silently at `debug!` level.
+- **There is no single existing chokepoint — three production sites build `FileEventRow`s and two of them bypass `into_row` entirely.** The skip predicate must live in one shared helper called from all of them (see #file-event-producers): (1) `attribution.rs::into_row` via `project_repo_relative` — the exact-tool route, 2 callers (`agent_bridge.rs`'s `record_exact_pending`, `changeset_all.rs`); (2) **`agent_bridge.rs::record_shell_op_row`** — the Bash/shell-grammar route, which builds the row inline with its own `strip_prefix(...).unwrap_or_else(|_| canonical…)` fallback and is an *independent producer of exactly these rows*; (3) `agent_supervisor.rs`'s claim route and `attribution.rs`'s bracket-sweep row push, both of which are low-risk (their paths are repo-relative by construction) but carry the same fallback shape and should route through the helper for uniformity.
+- `into_row`'s return becomes fallible (`Option<FileEventRow>` or equivalent); callers drop `None` silently at `debug!` level. `record_shell_op_row` gains the equivalent early return.
+- **This changes documented behavior.** `record_exact_pending`'s comment states "Off-repo files fall back to the session's dir," and [D112] describes the per-file `project_dir` rule of which that fallback is the tail case. The decision text needs a corresponding update (see #documentation-plan) rather than drifting silently.
 - The full activity record for out-of-repo writes remains available in the session JSONL; `file_events` is scoped to what the Changes card can ever show.
+- **Not at risk: cross-repo attribution.** `record_exact_pending` resolves `file_repo_root(&pending.file_path)` first, so a file in *another* checkout (or a nested worktree) is already homed to that repo's root and stripped against it — `into_row` only ever sees `Some(root)` + strip-failure for a file in **no git repo at all**. The skip cannot eat another project's work.
 
 #### [P09] Out-of-repo rows are purged through a journaled ledger delete (DECIDED) {#p09-journaled-purge}
 
-**Decision:** The existing once-per-project-per-process backfill block in `compose_snapshot` (`feeds/changeset.rs`) is extended: rows whose absolute `file_path` resolves **outside** the canonical repo root (resolution unchanged by `repo_relative`, path absolute) are partitioned out of the rewrite set and **deleted** via a new `SessionLedger` method backed by a new `changes_journal::Record` variant (`fe_purge_out_of_repo`) that carries the explicit row keys (`tug_session_id`, `tool_use_id`, `file_path`) plus the canonical `project_dir`. Replay is exact and idempotent (Risk R03).
+**Decision:** The existing once-per-project-per-process backfill block in `compose_snapshot` (`feeds/changeset.rs`) is extended: rows whose absolute `file_path` is **definitively outside** the canonical repo root are partitioned out of the rewrite set and **deleted** via a new `SessionLedger` method backed by a new `changes_journal::Record` variant (`fe_purge_out_of_repo`) that carries the explicit row keys (`tug_session_id`, `tool_use_id`, `file_path`) plus the canonical `project_dir`. Replay is exact and idempotent (Risk R03).
+
+**The purge predicate is stated directly, not as a proxy:** purge iff the gateway-canonicalized `file_path` is absolute **and** is not under the canonical repo root by string prefix. An earlier draft used "resolution unchanged by `repo_relative`" — that is a *proxy* that diverges precisely when canonicalization **fails** (an in-repo file already deleted from disk, spelled through a symlink the boot alias table doesn't cover: `canonicalize` fails, `strip_prefix` fails, the ancestor `same_file` walk stats nothing, and a legitimate in-repo row would be purged). Unresolvable ≠ outside; the predicate must test the property, and the deleted-in-repo-file case is a required test (see #step-4).
 
 **Rationale:**
 - Owner's directive (2026-08-03): delete these rows; they serve nothing. Caching around them ([P04], withdrawn) treated a data defect as a perf problem.
@@ -240,8 +255,12 @@ This plan follows the tuglaws devise skeleton conventions: explicit `{#anchor}` 
 - With [P08] stopping the influx, once-per-process is sufficient: after the first compose, a repo project has zero absolute rows and `repo_relative`'s expensive path never executes again.
 
 **Implications:**
-- New `Record` variant in `changes_journal.rs` (serde-tagged; additive, no journal format break) and a corresponding `SessionLedger` delete method with the same journal-then-apply discipline as existing writes. No DDL, no `CHANGES_SCHEMA_VERSION` bump.
+- New `Record` variant in `changes_journal.rs` (serde-tagged; additive, no journal format break) and a corresponding `SessionLedger` delete method with the same journal-then-apply discipline as existing writes (`sever_file_ownership_except` is the closest precedent — journal a `Record`, apply via a `_sql` helper shared with replay). No DDL, no `CHANGES_SCHEMA_VERSION` bump.
+- **`Record::shapes_rows()` must return `false` for the new variant** ([LR5], #constraints). The `match` there is exhaustive so the compiler forces a choice; choosing `true` would make the purge refuse to run on a build locked out by the `user_version` gate — exactly the degraded state where quiet failure is worst.
+- **One record, all keys** ([LR8], #constraints). ~424 rows must arrive as a single `PurgeOutOfRepo` record with a `Vec` of keys. One-record-per-row would overrun the 256-record forwarder queue on every non-owner process, dropping records and latching `ledger_degraded`.
 - The purge must run **before** the fold uses `events` (or the fold must use the post-purge set) so a purged row doesn't cost the ancestor walk one last time per process — order: read events → partition (rewrites / purges / keep) → apply ledger writes → fold over the kept set.
+- **The once-per-project marker is set only on success.** The existing `backfill_marker().insert(...)` marks the project *before* the work runs, so a failed `write_change` (e.g. a failed [LR8] forward) means the process never retries for its lifetime. The purge must mark the project done only after the ledger write succeeds. (The same latent issue exists today for the rewrite backfill; fixing it here covers both.)
+- Several tugcast processes will race the same purge. That is safe by construction — deletes are keyed and idempotent, and a no-op replay is skipped per [LR6] — but the replay test must cover a **re-applied** purge, not just a single application.
 - The legacy union read in `compose_snapshot` (raw-spelling `project_dir` query) is unaffected; purge keys carry whichever `project_dir` spelling the row actually has.
 
 ---
@@ -268,6 +287,19 @@ Ledger row counts (via `just db-inspect changes`): 5,269 total `file_events`; 4,
 
 `ChangesetAllFeed` recomputes when its `bump` (`Arc<Notify>`, account-global, held by `WorkspaceRegistry::changeset_all_bump`) fires. Bump sources: (1) `feeds/git_watch.rs::run_git_workspace_watch` — fires on **every** debounced filesystem batch under a workspace root, one watcher per open workspace, all feeding the same global bump; (2) `ChangesetBumper::bump` from the relay after each attributed file-event write (`feeds/agent_bridge.rs`, four call sites); (3) `WorkspaceRegistry` open/close transitions (three call sites in `feeds/workspace_registry.rs`); (4) the 2 s drafts-version probe inside the feed itself when `MAX(updated_at)` moves. Each recompute runs `compose_snapshot` for every open project — three git subprocesses minimum per project (`rev-parse --show-toplevel` via `repo_root_for`, `status --porcelain=v2`, `log -1` head message), plus one `git log -1 -- <path>` per dirty-path-with-events (`min_live_at_ms`, cached only within a single compose via `live_cuts`), plus ~4 subprocesses per `refs/heads/tugdash/` branch (`dash_entries`).
 
+#### Every production producer of a `FileEventRow` {#file-event-producers}
+
+Verified by grepping `FileEventRow {` and `.into_row(` across `crates/tugcast/src` (2026-08-03). [P08]'s skip predicate must be applied at each of these; there is **no single existing chokepoint**.
+
+| Site | Route | How it builds `file_path` | Risk of out-of-repo rows |
+|---|---|---|---|
+| `attribution.rs::into_row` → `project_repo_relative` | Exact tool calls (Write/Edit/MultiEdit/NotebookEdit). Callers: `agent_bridge.rs::record_exact_pending`, `changeset_all.rs` | Canonicalize, `strip_prefix(root)`, else canonical absolute | **High — the dominant producer.** Session memory-file writes land here |
+| `agent_bridge.rs::record_shell_op_row` | Bash / shell-grammar declared paths | `canonicalize_declared`, then inline `strip_prefix(root).unwrap_or_else(\|_\| canonical…)` | **High — independent producer, bypasses `into_row` entirely** |
+| `agent_supervisor.rs` claim handler (`do_changeset_claim`, [D120]) | `changeset_claim` CONTROL verb | `path.clone()` straight from the client request | Low — the Changes card sends repo-relative paths; unvalidated, so route it through the helper anyway |
+| `attribution.rs` bracket-sweep row push | Bash/turn fingerprint delta ([D112]) | `path.strip_prefix(&self.repo_root).unwrap_or_else(…)` | Low — keys come from a pre/post walk rooted at `repo_root`, so the strip always succeeds |
+
+Note `record_exact_pending`'s per-file homing, which bounds what the skip can ever discard: it calls `file_repo_root(&pending.file_path)` and, when the file has its **own** repo root (including a nested `.tug/worktrees/<name>` root), sets the row's `project_dir` to that root and strips against it. Only a file in **no git repo at all** falls through to `(session project_dir, session repo root)` — which is the exact and only shape [P08] skips. Cross-repo and cross-worktree attribution is therefore untouched.
+
 #### Why the snippets PollWatcher hashes the databases {#why-pollwatcher-hashes}
 
 `notify`'s `PollWatcher` with `compare_contents(true)` maintains a content hash per file under the watch root to detect changes without trusting mtime. The watch root is the *parent directory* of `snippets.json` (chosen because atomic rename replaces the file's inode, staling inode-based watches). The event *callback* filters to the target filename — but the *scan* necessarily hashes every file in the directory to know what changed. The fix keeps poll-by-path semantics (sandbox/firmlink-robust, rename-immune) while scoping the work to the one file that matters: stat is ~1 syscall, and content is only read when `(mtime, len)` moves.
@@ -293,14 +325,27 @@ None — all changes land in existing files.
 | `snippets_feed` | fn (modify) | `feeds/snippets.rs` | Same signature; loop gains interval arm, loses `fs_rx` channel; adds last-published-hash suppression |
 | `synthetic_table` | fn (add) | `tugrust/crates/tugcast/src/path_resolver.rs` | `OnceLock<Vec<(String, String)>>` parsed synthetic.conf |
 | `resolve_synthetic` | fn (modify) | `path_resolver.rs` | Iterates `synthetic_table()` instead of reading the file |
-| `project_repo_relative` | fn (modify) | `tugrust/crates/tugcast/src/feeds/attribution.rs` | Signals out-of-repo instead of returning canonical absolute ([P08]) |
+| `project_repo_relative` | fn (modify) | `tugrust/crates/tugcast/src/feeds/attribution.rs` | The shared out-of-repo predicate; signals skip instead of returning canonical absolute ([P08]) |
 | `into_row` | fn (modify) | `feeds/attribution.rs` | Fallible; `None` for out-of-repo events on repo projects ([P08]) |
-| `Record::PurgeOutOfRepo` | enum variant (add) | `tugrust/crates/tugcast/src/changes_journal.rs` | `fe_purge_out_of_repo`: canonical `project_dir` + explicit row keys ([P09], R03) |
+| `record_shell_op_row` | fn (modify) | `feeds/agent_bridge.rs` | **Independent producer** — replace its inline strip fallback with the shared predicate ([P08], #file-event-producers) |
+| `do_changeset_claim` row build | fn (modify) | `feeds/agent_supervisor.rs` | Route claim paths through the shared predicate for uniformity ([P08]) |
+| bracket-sweep row push | fn (modify) | `feeds/attribution.rs` | Same shared predicate; strip already always succeeds ([P08]) |
+| `Record::PurgeOutOfRepo` | enum variant (add) | `tugrust/crates/tugcast/src/changes_journal.rs` | `fe_purge_out_of_repo`: canonical `project_dir` + explicit row keys, one record per batch ([P09], R03, [LR8]) |
+| `Record::shapes_rows` | fn (modify) | `changes_journal.rs` | New variant classified `false` — deletes stay allowed under the [LR5] version gate |
 | `SessionLedger::purge_file_events_out_of_repo` | fn (add) | `tugrust/crates/tugcast/src/session_ledger.rs` | Journal-then-apply delete by explicit keys ([P09]) |
 | `repo_relative` | fn (modify) | `tugrust/crates/tugcast/src/feeds/changeset.rs` | Takes `&CanonicalPath` root ([P03]) |
 | `compose_snapshot` | fn (modify) | `feeds/changeset.rs` | Hoists canonical root; backfill block partitions rewrites/purges; fetches `head_oid` once |
 | `live_cut_cache` | fn (add) | `feeds/changeset.rs` | `OnceLock<Mutex<HashMap<(String, String), (String, i64)>>>` — `(root, rel)` → `(head_oid, cut_ms)` ([P05]) |
 | `ChangesetAllFeed::run` | fn (modify) | `tugrust/crates/tugcast/src/feeds/changeset_all.rs` | 150 ms coalescing sleep after bump ([P06]); duration/row-count `debug!` ([P07]) |
+
+---
+
+### Documentation Plan {#documentation-plan}
+
+- [ ] `tuglaws/design-decisions.md` — amend [D112] to record that a file event resolving into **no repo at all** is no longer recorded against the session's `project_dir` but dropped ([P08]). The per-file `project_dir` rule and the point-of-change principle are unchanged; only the off-repo tail case changes, and the decision text currently describes the old fallback.
+- [ ] `tuglaws/tracking-changes.md` — same amendment where it narrates the capture rules, plus one line that `file_events` now holds only paths that can appear in a changeset.
+- [ ] `feeds/agent_bridge.rs` — update the `record_exact_pending` comment ("Off-repo files fall back to the session's dir") to state the new behavior.
+- [ ] `feeds/snippets.rs` module docs — the "# Watching" section describes path-stat polling and why it is rename-immune (already a Step 1 task; listed here for completeness).
 
 ---
 
@@ -353,8 +398,8 @@ None — all changes land in existing files.
 **Tasks:**
 - [ ] Delete `install_watcher`, the `fs_tx`/`fs_rx` channel, and the `notify` imports from `feeds/snippets.rs`.
 - [ ] In the feed task loop, add an interval arm (250 ms, `MissedTickBehavior::Skip`): stat `path`; derive `(Option<mtime>, len)` (absent file → distinct "absent" stamp); if the stamp differs from the last observed, run the existing debounce (100 ms sleep) then re-read via `read_snippets`.
-- [ ] Track the last **published** content hash; after any rebuild (stat-triggered or nudge-triggered), skip `tx.send` when the outcome's hash equals it (error outcomes always publish — the error text matters).
-- [ ] Keep the `task_nudge.notified()` arm and `tx.closed()` exit arm exactly as they are; the nudge path bypasses stat comparison (a PUT writer must always get a rebuild) — but still applies hash suppression.
+- [ ] Track the last **published** content hash, initialized from the initial outcome built before `watch::channel(initial)`; after any rebuild (stat-triggered or nudge-triggered), skip `tx.send` when the outcome's hash equals it (error outcomes always publish — the error text matters).
+- [ ] Keep the `task_nudge.notified()` arm and `tx.closed()` exit arm exactly as they are; the nudge path bypasses stat comparison (a PUT writer must always get a rebuild) — but still applies hash suppression. **`tx.closed()` is now the load-bearing exit** (suppressed sends mean `send().is_err()` may never fire); do not drop it while restructuring.
 - [ ] Update the module docs: the "# Watching" section now describes path-stat polling and why it is rename-immune.
 
 **Tests:**
@@ -397,24 +442,29 @@ None — all changes land in existing files.
 
 **Commit:** `tugcast(no-out-of-repo-events): capture skips file events that resolve outside the project repo`
 
-**References:** [P08] Capture skip, [Q01], Risk table (capture-skip row), (#out-of-repo-rows, #assumptions)
+**References:** [P08] Capture skip, [Q01], Risk table (capture-skip row, missed-producer row), (#file-event-producers, #out-of-repo-rows, #assumptions)
 
 **Artifacts:**
-- `feeds/attribution.rs` with `project_repo_relative` signaling out-of-repo and `into_row` returning `Option<FileEventRow>`; all `into_row` callers dropping `None`.
+- A shared out-of-repo predicate in `feeds/attribution.rs`, applied at **all four** production `FileEventRow` sites enumerated in #file-event-producers.
+- `project_repo_relative` signaling out-of-repo; `into_row` returning `Option<FileEventRow>`; `agent_bridge.rs::record_shell_op_row` gaining the equivalent early return.
 
 **Tasks:**
-- [ ] Change `project_repo_relative` so that for `Some(root)` a canonicalized path failing `strip_prefix` yields an out-of-repo signal (e.g. `Option<String>`: `None` = skip) instead of the canonical absolute path; `None` root keeps returning the canonical absolute path (non-repo project, unchanged).
-- [ ] Make `into_row` fallible accordingly; update every caller (relay tool-event capture, shell-op grammar capture) to drop `None` with a `debug!` naming the skipped path.
-- [ ] Grep for any other producer of `FileEventRow` with an absolute `file_path` on a repo project (`rg "FileEventRow"` across `crates/tugcast`) and route it through the same chokepoint.
+- [ ] Add the shared predicate/helper in `attribution.rs` (e.g. `project_repo_relative` returning `Option<String>`: `None` = out-of-repo, skip). For `repo_root = None` it keeps returning the canonical absolute path — non-repo projects are unchanged.
+- [ ] Make `into_row` fallible accordingly; update both production callers (`agent_bridge.rs::record_exact_pending`, `changeset_all.rs`) to drop `None` with a `debug!` naming the skipped path.
+- [ ] **`agent_bridge.rs::record_shell_op_row`** — replace its inline `strip_prefix(root).unwrap_or_else(|_| canonical…)` with the shared helper and return early on `None`. This site bypasses `into_row` entirely and is an independent producer of out-of-repo rows; without this the purge regrows and #step-8's post-activity check fails.
+- [ ] Route `agent_supervisor.rs`'s claim handler and `attribution.rs`'s bracket-sweep row push through the same helper for uniformity (both are low-risk today — their paths are repo-relative by construction — but both carry the same fallback shape).
+- [ ] Re-run the producer grep (`rg 'FileEventRow \{' crates/tugcast/src`) and confirm every non-test hit is covered; #file-event-producers is the expected result set.
 
 **Tests:**
-- [ ] Existing `into_row_stores_repo_relative` and neighbors pass (adjusted for the new return shape).
-- [ ] New unit test: repo project + out-of-repo path (e.g. a tempdir outside the fixture repo) → no row.
+- [ ] Existing `into_row_stores_repo_relative`, `file_repo_root_resolves_the_nested_worktrees_own_root`, and neighbors pass (adjusted for the new return shape).
+- [ ] New unit test: repo project + out-of-repo path (a tempdir outside the fixture repo) → no row.
 - [ ] New unit test: repo project + in-repo path spelled through a symlink/alias (canonicalizes into the repo) → recorded repo-relative (proves the skip can't eat real repo files).
 - [ ] New unit test: non-repo project (`repo_root = None`) → canonical absolute row still recorded.
+- [ ] New unit test on the **shell-op route** specifically: an out-of-repo declared path records no row, an in-repo one records repo-relative.
+- [ ] New unit test: a file inside a *different* repo still records against that repo's root (guards the cross-repo property described in #file-event-producers).
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast attribution`
+- [ ] `cd tugrust && cargo nextest run -p tugcast attribution agent_bridge`
 
 ---
 
@@ -424,24 +474,28 @@ None — all changes land in existing files.
 
 **Commit:** `tugcast(purge-out-of-repo-rows): delete out-of-repo file_events through a journaled ledger record`
 
-**References:** [P09] Journaled purge, [Q01], Risk R03, (#out-of-repo-rows, #constraints)
+**References:** [P09] Journaled purge, [Q01], Risk R03, Risk table (forwarder-queue row), [LR1], [LR5], [LR6], [LR8], (#out-of-repo-rows, #constraints)
 
 **Artifacts:**
-- `changes_journal.rs` with `Record::PurgeOutOfRepo` (`fe_purge_out_of_repo`); `session_ledger.rs` with `purge_file_events_out_of_repo`; `feeds/changeset.rs` backfill block partitioning rewrites/purges and applying both.
+- `changes_journal.rs` with `Record::PurgeOutOfRepo` (`fe_purge_out_of_repo`) classified `shapes_rows() == false`; `session_ledger.rs` with `purge_file_events_out_of_repo`; `feeds/changeset.rs` backfill block partitioning rewrites/purges and applying both.
 
 **Tasks:**
-- [ ] Add the `Record` variant carrying canonical `project_dir` and a `Vec` of explicit row keys (`tug_session_id`, `tool_use_id`, `file_path`) — replay does keyed `DELETE`s, idempotent per R03.
-- [ ] Add `SessionLedger::purge_file_events_out_of_repo` with the same journal-then-apply discipline as `backfill_file_events_repo_relative`; wire journal replay for the new variant.
-- [ ] In `compose_snapshot`'s backfill block: partition rows into rewrites (resolution changed → existing path), purges (absolute path, resolution unchanged → out-of-repo), and keep; apply rewrites then purges through the ledger; fold over the kept+rewritten set so purged rows never reach the per-event loop even on this first pass.
-- [ ] Bump the changeset feed after a non-empty purge is applied? — No: the purge happens *inside* a compose; the current compose already reflects the post-purge event set. Note this in a comment-free way (ordering in code, not prose).
+- [ ] Add the `Record` variant carrying canonical `project_dir` and a `Vec` of explicit row keys (`tug_session_id`, `tool_use_id`, `file_path`) — replay does keyed `DELETE`s, idempotent per R03. **One record for the whole batch**, never one per row ([LR8], #constraints).
+- [ ] **Classify the variant `false` in `Record::shapes_rows()`** ([LR5]) — a delete is shape-safe and must stay permitted when the `user_version` gate has locked the build out of shared-table inserts. The exhaustive `match` forces the choice; choosing `true` silently disables the purge exactly when the ledger is already degraded.
+- [ ] Add `SessionLedger::purge_file_events_out_of_repo` with the same journal-then-apply discipline as `sever_file_ownership_except` (journal a `Record` via `write_change`, apply via a `_sql` helper shared with replay); wire journal replay for the new variant.
+- [ ] In `compose_snapshot`'s backfill block: partition rows into rewrites (resolution changed), purges (absolute **and** not under the canonical root by prefix — the direct predicate from [P09], not "resolution unchanged"), and keep; apply rewrites then purges through the ledger; fold over the kept+rewritten set so purged rows never reach the per-event loop even on this first pass.
+- [ ] **Set the once-per-project marker only after the ledger writes succeed**, so a failed [LR8] forward retries on the next compose instead of being skipped for the process lifetime. (Applies to the existing rewrite backfill too — fix both.)
+- [ ] No extra bump after a purge: the purge happens *inside* a compose, so the current compose already reflects the post-purge event set.
 
 **Tests:**
 - [ ] Ledger round-trip test (fixture repo + temp ledger, style of the existing backfill tests): seed in-repo relative rows, in-repo absolute rows (rewrite expected), and out-of-repo absolute rows (purge expected); after one `compose_snapshot`, the db holds only repo-relative rows and the snapshot matches the pre-purge snapshot for repo files.
-- [ ] Journal replay test: apply the purge, replay the journal against a fresh db copy, assert identical final state; replay twice, assert idempotent.
+- [ ] **Deleted-in-repo-file test** ([P09] predicate): an absolute row naming a repo file that no longer exists on disk (so `canonicalize` fails) is **rewritten or kept, never purged** — the guard against the proxy-predicate bug.
+- [ ] Journal replay test: apply the purge, replay the journal against a fresh db copy, assert identical final state; replay **twice**, assert idempotent (covers several tugcasts racing the same purge).
+- [ ] `shapes_rows()` unit assertion for the new variant (`false`), beside the existing classification coverage.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast changeset session_ledger changes_journal`
-- [ ] `cd tugrust && cargo nextest run -p tugcast no_ad_hoc_ledger_opens` (chokepoint rule still holds)
+- [ ] `cd tugrust && cargo nextest run -p tugcast no_ad_hoc_ledger_opens` ([LR1] chokepoint rule still holds)
 
 ---
 
@@ -505,13 +559,14 @@ None — all changes land in existing files.
 - `feeds/changeset_all.rs` with the coalescing sleep and a per-recompute `debug!` line (duration, project count).
 
 **Tasks:**
-- [ ] After the `'wait` loop breaks on `bump.notified()`, sleep 150 ms before recomposing, inside a `select!` with `cancel.cancelled()` so shutdown wins. Bumps landing during the sleep coalesce via the `Notify` permit.
+- [ ] After the `'wait` loop breaks on `bump.notified()`, sleep 150 ms before recomposing, inside a `select!` with `cancel.cancelled()` so shutdown wins.
+- [ ] **Drain the permit accumulated during the sleep** — `tokio::time::timeout(Duration::ZERO, self.bump.notified())` — before composing. Without this, a bump landing mid-sleep leaves a stored permit that triggers a second, redundant full compose of every project immediately after the first ([P06]).
 - [ ] Time `compose_aggregate` and emit one `debug!` with duration and project count ([P07]); add per-project event-row counts only if a side-channel return from `compose_snapshot` is non-invasive — never a snapshot/wire-format field.
 - [ ] Confirm the drafts-probe arm cadence is unchanged.
 
 **Tests:**
 - [ ] Existing `changeset_all` async tests pass unchanged (their 5 s timeouts absorb the 150 ms floor).
-- [ ] New test: two bumps fired 50 ms apart produce exactly one recompute/frame (subscribe, fire, assert a single `changed()` and no second frame within a bounded window).
+- [ ] New test: two bumps fired 50 ms apart publish exactly **one frame** (subscribe, fire both, assert a single `changed()` and no second frame within a bounded window). Assert on frames, not composes — frames are the observable contract, and diff-suppression collapses any redundant compose ([P06]).
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast changeset_all`
@@ -530,7 +585,9 @@ None — all changes land in existing files.
 - [ ] Full workspace test run.
 - [ ] Build and run the app (build is fast); open the main project with at least one session; let it idle 2 minutes.
 - [ ] `sample <tugcast-pid> 5` on the idle instance: assert zero `notify::poll` frames and confirm the compose subtree's steady-state share against #success-criteria.
-- [ ] `just db-inspect changes "SELECT COUNT(*) FROM file_events WHERE project_dir='/Users/kocienda/Mounts/u/src/tugtool' AND file_path LIKE '/%'"` → **0** after the first compose; have a session write a memory file, re-run → still **0** (proves [P08] + [P09] together).
+- [ ] `just db-inspect changes "SELECT COUNT(*) FROM file_events WHERE project_dir='/Users/kocienda/Mounts/u/src/tugtool' AND file_path LIKE '/%'"` → **0** after the first compose.
+- [ ] Exercise **both** high-risk producers, then re-run the query → still **0**: have a session write a memory file outside the repo via an exact tool (Write/Edit), **and** run a shell command that writes outside the repo (e.g. `cp` into a temp dir) so the `record_shell_op_row` route is covered (#file-event-producers).
+- [ ] Confirm no `ledger_degraded` latched during the purge (Changes card shows no "attribution ledger damaged" banner; [LR4]/[LR8] forwarder-queue check).
 - [ ] Edit `snippets.json` from a second running build (or a direct atomic write) and confirm the first build's frontend sees the change within ~1 s.
 - [ ] Make a burst of file saves in the repo and confirm the Changes card updates promptly (the 150 ms floor is imperceptible) and the new `debug!` line shows coalesced recomputes.
 
