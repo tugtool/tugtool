@@ -64,6 +64,18 @@ body {
      reading by a fifth of a rail-width row, which the activity run cannot
      afford. Set to 0 for the old flush edge. */
   --tugx-session-row-pulse-inset: 8px;
+  /* How far the row's trailing furniture stands off the row's own trailing
+     edge — the slot picker on the name line, and the PULSE's tape below it.
+     TUNE HERE.
+
+     The mirror of `--tugx-session-row-pulse-inset`, and the same argument on
+     the far side: the row's inline padding is a margin for TYPE, and neither
+     of these is type. The slot is a pressable box that draws a focus ring
+     OUTSIDE its own edge, so a slot flush to the padding line puts the ring on
+     the rail; the tape below it is a graph whose last sample would otherwise
+     be the row's last pixel. Both come in together, so they stay on one
+     vertical, and the name line's measure comes in with them. */
+  --tugx-session-row-trailing-inset: 4px;
   /* How far the tape is LIFTED off the activity line it rides. TUNE HERE.
      Positive raises it, negative drops it; a transform, so no baseline, line
      box, or row height moves with it — only the tape.
@@ -98,6 +110,7 @@ body {
   min-inline-size: 0;
   position: relative;
   z-index: 0;
+  padding-inline-end: var(--tugx-session-row-trailing-inset);
 }
 
 /* ── The name line ───────────────────────────────────────────────────────
@@ -201,7 +214,10 @@ body {
    says "this session is busy", and the type in front of it is the reading. */
 .tug-session-row-wash {
   position: absolute;
-  inset-inline-end: 0;
+  /* Stated rather than left at 0: an absolute box is placed against its
+     ancestor's PADDING box, so a flush tape here would ignore the trailing
+     inset every other piece of furniture on the row takes. */
+  inset-inline-end: var(--tugx-session-row-trailing-inset);
   inset-block-end: 0;
   z-index: -1;
   display: flex;

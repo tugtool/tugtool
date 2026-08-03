@@ -120,9 +120,15 @@
 }
 
 /* The picker takes the line's slack, so it sits at the content column's end on
-   every row kind and the impositions read as one column down the Lens. */
+   every row kind and the impositions read as one column down the Lens.
+
+   The trailing inset is the session row's own knob, spent here as a margin so
+   the two row kinds' pickers stay on ONE vertical: the session rows pay it as
+   padding on their content column, and a one-line row that did not pay it
+   would put its slots four pixels past every slot above and below it. */
 .lens-cards-row-headline .slot-picker {
   margin-inline-start: auto;
+  margin-inline-end: var(--tugx-session-row-trailing-inset);
 }
 
 /* Where this file is, shown only when its name alone would be ambiguous. Muted
