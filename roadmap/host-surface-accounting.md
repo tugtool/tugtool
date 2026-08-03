@@ -221,17 +221,79 @@ Recorded because each cost a full run:
 - **The app-test build is a different bundle** (`Tug-apptest.app/Contents/MacOS/Tug-apptest`), so any match anchored on the release product name finds nothing.
 - **A magnitude assertion encoded a wrong assumption.** A gate of "the GUI app is never a few tens of MB" failed against the truth — a fresh app really is ~25MB with no surfaces. The cell now records magnitude and asserts only that a reading exists.
 
+## The probe instance, and the quit-delta {#quit-delta}
+
+The measurement that sizes everything else could never be taken on the user's instance, for a structural reason worth recording: **this investigation runs inside the live instance's Session card**, so quitting it to measure the delta terminates the measurer. The rig has to be a second app that can be started and stopped at will.
+
+A dash worktree supplies exactly that. Building `release` on branch `tugdash/host-surfaces` yields `Tug-release-tugdash-host-surfaces.app` — its own product name, its own `CFBundleIdentifier`, its own DerivedData and instance id — so its launch and its quit cannot touch the live instance. (This is the safe form of what `open -n` on the release bundle does destructively.)
+
+### An empty deck costs the same as a loaded one {#empty-deck-costs-the-same}
+
+The probe, **17 seconds** after launch, with an **empty deck**:
+
+| | uptime | deck | host graphics | regions | footprint | peak |
+|---|---|---|---|---|---|---|
+| probe | 17 s | **empty** | **2.4 GB** | 796 | 2.5 GB | 8.7 GB |
+| live | 3 min 25 s | restored | 2.4 GB | 1,186 | 2.5 GB | 8.7 GB |
+
+And the repeating structure is the same, one unit larger — **37 units** against the live deck's 36:
+
+| per unit | probe (empty) | live (5 cards) |
+|---|---|---|
+| 3 × 11.9 MB | 111 | 108 |
+| 6 × 768 KB | 220 | 216 |
+| 4 × 320 KB | 148 | 144 |
+| 4 × 80 KB | 148 | 144 |
+| 2 × 5,120 KB | 74 | 72 |
+| 2 × 1,280 KB | 74 | 72 |
+
+**The floor is content-independent.** An empty deck and a five-card deck cost the same 2.4 GB. Nothing about transcripts, cards, panes or restore is implicated — this is paid before the user does anything.
+
+It also explains the [lab null](#lab-negative): the difference is **Release vs Debug**, not deck content. The app-test harness drives a Debug bundle, and a Debug build maps 3 regions where a Release build of the same commit maps 796.
+
+### The quit-delta: the memory is real {#the-memory-is-real}
+
+System-wide `vm_stat`, with the probe running and after quitting it. `free` is the stable channel here — `wired` fluctuates by ±3 GB on a busy machine, which is larger than the signal:
+
+| | free | active | active+wired+compressed |
+|---|---|---|---|
+| probe running | 27.22 / 27.30 / 27.28 GB | 47.18 GB | 52.35 GB |
+| probe quit | 31.10 / 31.11 / 30.58 GB | 45.29 GB | 50.45 GB |
+
+**~3.8 GB returns to the system when the probe quits**, ~1.9 GB of it out of `active`. The probe family's own self-reported footprints — host 2.5 GB plus WebContent, GPU process and helpers, ~3.2–3.5 GB in total — are roughly **additive** with what came back.
+
+That is the answer to G7-1. If the host's 2.4 GB were largely the same physical pages WindowServer already counts, the sum of footprints would substantially exceed the memory returned. It does not. **The pool is real RAM, committed for as long as Tug runs.**
+
 ## Standing caveat: shared pages {#shared-pages-caveat}
 
-Every large region reads `SM=SHM` — shared memory. IOSurfaces are shared by construction between the app, the GPU process, and WindowServer, and `phys_footprint` charges a process for shared-owned pages. WindowServer is itself at 1.86 GB on this machine. **Some fraction of Tug's 2.4 GB may be the same physical pages WindowServer is also counting.** Until that is settled, 2.4 GB is an upper bound on unique RAM, not a measured prize. No fix should be sized against it, and no victory should be declared from it.
+Every large region reads `SM=SHM` — shared memory. IOSurfaces are shared by construction between the app, the GPU process, and WindowServer, and `phys_footprint` charges a process for shared-owned pages. WindowServer is itself at 1.86 GB on this machine, and it is SIP-protected: `vmmap` cannot read it, so the two processes' regions cannot be compared directly.
 
-## System impact today {#system-impact}
+The [quit-delta](#the-memory-is-real) settles this well enough to act on — the footprints proved additive with the memory actually returned, so the pool is not a WindowServer double-count. The residual caution is narrower than it was: exactly which process *should be charged* for a shared IOSurface remains an accounting question, but **the physical pages are real and they are committed while Tug runs**, which is the only property a citizenship fix needs.
 
-None observed. 128 GB installed, **zero swap in use**, no memory-pressure events, and this pool is *not* the named typing-lag mechanism — that one is WebContent crossing ~1.27 GB, and WebContent is at 727 MB. This work is therefore not urgent-by-symptom. It is worth doing because a 2.4 GB non-purgeable pool that churns while idle is either a defect or a thing we do not understand, and both are worth closing on a tool meant to sit open all day on machines smaller than this one.
+## System impact: none here, and that is not the test {#system-impact}
+
+None observed on this machine. 128 GB installed, **zero swap in use**, no memory-pressure events, and this pool is *not* the named typing-lag mechanism — that one is WebContent crossing ~1.27 GB, and WebContent is at 727 MB. Nothing here is urgent-by-symptom for the developer's own Mac.
+
+The citizenship case does not rest on this machine, and the [quit-delta](#the-memory-is-real) plus the [empty-deck reading](#empty-deck-costs-the-same) are what make it concrete:
+
+- **~3.8 GB of real physical RAM** is committed while Tug runs, ~2.4 GB of it the host's graphics floor.
+- It is **paid at launch, on an empty deck**, before the user opens anything.
+- It is **entirely nonvolatile** — under pressure the kernel cannot reclaim a page of it.
+- The startup **peak is 8.7 GB**, reached within the first minutes of every launch.
+
+On a 16 GB machine that is roughly a quarter of RAM at rest for an idle editor, with a transient spike larger than the whole machine. That is the argument for doing something, and it is an argument about other people's machines rather than this one.
+
+**The open verification is behavioral, not numeric:** run Tug in a memory-constrained VM and observe whether it actually degrades the system (swap, pressure, other apps stuttering). That test is specified in the VM lab and is currently blocked — see [#vm-lab-blocked](#vm-lab-blocked).
+
+## The constrained-machine test is blocked on a privacy grant {#vm-lab-blocked}
+
+`/Volumes/Lab-A` (the Tart lab disk) is an **External** volume, and macOS gates external volumes behind a privacy permission. A shell hosted by Tug.app gets `Operation not permitted` on the entire mount — not a POSIX problem (ownership and modes are correct), so `tart list` cannot even enumerate the golden bases and no `lab-*` recipe can run.
+
+Unblocking it is a one-time user action: **System Settings → Privacy & Security → Files and Folders (or Full Disk Access) → Tug → allow removable/external volumes.** The developer's own terminal already holds this grant, which is why `just lab-ls` works interactively and fails from inside a Session card.
 
 ## The questions, in order {#questions}
 
-**G7-1 — Are those pages unique, or double-counted with WindowServer?** Settles whether the prize is 2.4 GB or a fraction of it. Everything downstream is sized by this answer.
+**G7-1 — Are those pages unique, or double-counted with WindowServer?** *(answered — the memory is real. See [#quit-delta](#quit-delta).)*
 
 **G7-2 — What is the ~900 MB churn?** *(answered — see [#g7-2-verdict](#g7-2-verdict). Episodic and activity-driven, not idle and not a metronome; demoted. The floor is the defect, and it is acquired rather than structural.)*
 
@@ -267,3 +329,8 @@ Carried unchanged from the diet program:
   - **The floor is a fixed startup allocation.** A user-initiated restart gave a clean `t=0`: **2.4 GB across 1,186 regions at 3 min 25 s**, matching a 3 h 20 min instance region-for-region, with the same 8.7 GB peak. Region counts identical across both instances rules out accumulation and demotes restore.
   - **The floor has a signature: 36 identical ~54 MB units** (108 × 11.9 MB triple-buffered, plus a factor-of-four chain at 5,120 / 1,280 / 320 / 80 KB). G7-4 sharpens to **"what are there 36 of?"**
   - **Discipline paid for in cash:** `open -n` on the release bundle terminated the user's live instance. Recorded in [#discipline](#discipline).
+- **2026-08-03, third pass** — **G7-1 answered; the floor is priced and content-independent.** A dash-built probe (`Tug-release-tugdash-host-surfaces.app`) gave the first rig that can be started and stopped without killing the investigation, which runs inside the live instance.
+  - **The memory is real.** Quitting the probe returned **~3.8 GB** to the system, additive with the family's self-reported footprints. Not a WindowServer double-count.
+  - **An empty deck costs the same as a loaded one** — 2.4 GB at 17 seconds, 37 units against a five-card deck's 36. Content, cards, transcripts and restore are all exonerated.
+  - **The lab null is Release-vs-Debug**, not deck content: 3 regions in Debug, 796 in Release at the same commit.
+  - **The constrained-machine test (#2) is blocked** on an external-volume privacy grant for Tug.app — see [#vm-lab-blocked](#vm-lab-blocked).
