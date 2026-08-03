@@ -98,7 +98,7 @@ This plan follows the anchors and label conventions in [tuglaws/devise-skeleton.
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] The wash value on the light themes (OPEN — resolved by design spike) {#q01-wash-value}
+#### [Q01] The wash value on the light themes (DECIDED — see [P10]) {#q01-wash-value}
 
 **Question:** What alpha and source token produce a container wash that reads clearly as "the keyboard is in here" on `harmony`/`aria`/`vivace` without reading as a filled surface or as selection?
 
@@ -113,7 +113,7 @@ This plan follows the anchors and label conventions in [tuglaws/devise-skeleton.
 
 **Plan to resolve:** The user runs a mini design spike against the running debug app (HMR is live on `tugdeck`, so token edits are immediate) before Step 1 executes, and lands the chosen value(s). Validate with `bun run audit:theme-contrast`.
 
-**Resolution:** OPEN — resolved by the design spike that gates [#step-1](#step-1). Step 1's tasks consume the spike's output; if the spike has not run, Step 1 lands the `layouts-section.css` value (15% of accent fill) unchanged as an explicitly-marked placeholder for both modes and the checkpoint records that the light value is provisional.
+**Resolution:** **DECIDED 2026-08-03** by the spike card `gallery-focus-wash.tsx` (§1 ramp × ground, §2 source comparison) — see [P10] for the values and what they overturn. The source question resolved to the accent **fill**, as assumed. The per-mode question resolved to **yes**: the two modes take different values.
 
 #### [Q02] Reduced-strength ratio for `data-key-within` (OPEN — resolved in the same spike) {#q02-within-ratio}
 
@@ -125,7 +125,7 @@ This plan follows the anchors and label conventions in [tuglaws/devise-skeleton.
 
 **Plan to resolve:** Folded into the [Q01] spike — the two values are chosen against each other on screen, not independently.
 
-**Resolution:** OPEN — resolved with [Q01] before [#step-1](#step-1). Default if unspiked: 50% of the key-view wash's alpha.
+**Resolution:** OPEN — carried into [#step-1](#step-1) at the derived default of **50% of the key-view wash**, i.e. 3% dark / 5% light under [P10]. [Q01] resolved to values well below the ramp's centre, which pushes the within wash correspondingly low, so this needs one confirming look at the spike card's §3 pair *at the landed values* before Step 1 commits. If 3% proves too faint to register on dark, the fix is to raise the ratio rather than the base — the key-view value is settled and must not move to rescue the within variant.
 
 ---
 
@@ -133,7 +133,8 @@ This plan follows the anchors and label conventions in [tuglaws/devise-skeleton.
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Wash unreadable or overbearing on light themes | high | med | Spike on `harmony` first ([Q01]); per-mode override precedent already exists for `--tugx-drop-ring-width` | `audit:theme-contrast` failure, or the wash reading as a fill |
+| ~~Wash unreadable on light themes~~ — **retired**, disproved by the spike ([P10]) | — | — | Light landed at 10%, close to dark's 6%; per-mode override absorbs the difference | — |
+| A later tuning pass raises the wash and it starts reading as a filled surface | med | med | [P10] records both values as the *minimum that reads* and names raising them as the failure direction | Any change to `--tugx-focus-container-wash` |
 | Strengthened wash exposes the background-window leak | med | high | Fixed head-on in [#step-2](#step-2) — this is a latent bug today, not a new one | Any focus mark visible while the app is not foreground |
 | A strong wash reads as selection | med | low | [P03] pins the hue split: wash on Accent, selection fill on Key | Any theme where accent and the "on" selection token converge |
 | Deleting `ringPlacement` breaks a consumer not found by grep | low | low | Full-tree grep in the [#step-3](#step-3) checkpoint; `bunx vite build` catches type errors | Build failure |
@@ -141,14 +142,11 @@ This plan follows the anchors and label conventions in [tuglaws/devise-skeleton.
 | `:has()` style invalidation on the transcript list | med | med | [P06] gates the rule behind a consumer opt-in so it never watches the transcript subtree | Any regression in the typing-lag q99 budget |
 | `[P06]` is unreachable and ships as dead code | low | med | Reachability is a task in [#step-6](#step-6), before the test is written | No surface can focus an empty group |
 
-**Risk R01: The wash cannot be made to read on the light themes** {#r01-light-theme-headroom}
+**Risk R01: The wash cannot be made to read on the light themes** {#r01-light-theme-headroom} — **RETIRED 2026-08-03**
 
-- **Risk:** Over `harmony`'s pale ground there may be no alpha at which an accent wash is both clearly visible and clearly not a surface fill, which would mean the design cannot ship as a wash-only treatment.
-- **Mitigation:**
-  - The spike runs on light **first**, so this is discovered before any component is converted.
-  - The per-theme-mode override precedent (`:root[data-theme-mode="light"]` in `focus-ring.css`) gives light its own value at zero structural cost.
-  - The empty-container ring fallback ([P06]) is already a proven pattern in this plan for "the wash is not enough here"; if light needs a hairline companion, it extends rather than replaces the design.
-- **Residual risk:** If light genuinely has no workable band, the phase stalls at [#step-1](#step-1) with nothing else converted — which is the cheapest possible place to learn it.
+- **Risk (as written):** Over `harmony`'s pale ground there may be no alpha at which an accent wash is both clearly visible and clearly not a surface fill, which would mean the design cannot ship as a wash-only treatment.
+- **Outcome:** Disproved by the spike. Light has a comfortable band, and its landed value (10%) sits close to dark's (6%) rather than in a different regime ([P10]). The per-theme-mode override absorbs the difference at zero structural cost, exactly as the mitigation anticipated.
+- **What replaced it:** the opposite concern. The risk was never that the wash would be too weak to read on light — it is that a wash tuned for confidence reads as a *filled surface*, in either mode. [P10] records that both landed values are the minimum that registers, and that raising them is the failure direction.
 
 **Risk R02: The list's cursor bar is too quiet to be the sole element mark** {#r02-cursor-bar-weight}
 
@@ -289,6 +287,22 @@ This plan follows the anchors and label conventions in [tuglaws/devise-skeleton.
 - The fix lands in [#step-2](#step-2), *before* any component is converted, so no intermediate commit ships a visibly-leaking wash.
 - Needs an app-test; the harness can blur the window, and the assertion is a computed-style probe rather than anything rAF-dependent, so it is safe in a background test window.
 
+#### [P10] The wash is 6% of the accent fill on dark, 10% on light (DECIDED) {#p10-wash-values}
+
+**Decision:** `--tugx-focus-container-wash` resolves to `color-mix(in srgb, var(--tug7-element-global-fill-normal-accent-rest) 6%, transparent)` on the dark themes and the same formula at **10%** on the light ones, via a `:root[data-theme-mode="light"]` override. The source is the accent **fill**, as [P02] assumed.
+
+**Rationale:**
+- Landed by eye on the spike card (`gallery-focus-wash.tsx`), which ramps eight alphas across the three grounds a container actually sits on, in both modes. In each mode the *minimum* rung that registers is also the rung that reads best — the wash does not want headroom above that.
+- **This overturns the plan's own starting assumption.** [Q01] opened with 15% (the value `layouts-section.css` had reached for by eye on a dark ground) and treated the ramp's middle as the likely answer. The spike says the answer is the floor: at 15% the wash has already begun reading as a *filled surface* rather than a lit one, which is precisely the failure mode [P01] exists to avoid. The Layouts section's local override was tuned against the near-invisible global default, so it was calibrated to beat the wrong reference.
+- The two modes genuinely differ, so [Q01]'s per-mode option is taken rather than declined. Light needs the extra few points to clear its pale ground; forcing one value would either wash out on light or over-fill on dark.
+- Low values also widen the margin on every downstream risk: less chance of reading as selection ([P03]), more headroom under the six-theme contrast budget, and a quieter ground for the cursor bar that [P01] exists to make findable.
+
+**Implications:**
+- Step 1 lands concrete values, not a placeholder, and its checkpoint is a real gate rather than a provisional note.
+- The per-mode split needs the right scope. Geometry knobs live on `:root`; the role-axis colour tokens must live on `body` (a `var(--tug7-*)` evaluated at `:root` resolves invalid and collapses every rule that reads it). `data-theme-mode` rides `<html>`, so the override selector is `:root[data-theme-mode="light"] body`.
+- `--tugx-focus-container-wash-within` derives from these at the [Q02] ratio, landing at 3% dark / 5% light — low enough that it needs the confirming look [Q02] now calls for.
+- Risk R01 ("the wash cannot be made to read on the light themes") is **retired**: light not only works, it works at a value close to dark's.
+
 ---
 
 ### Deep Dives (Optional) {#deep-dives}
@@ -365,8 +379,8 @@ Declared on `body` in `tugdeck/styles/focus-ring.css`, alongside the existing ro
 
 | Token | Default source | Role-injected by `buildRoleStyle` | Consumed by |
 |---|---|---|---|
-| `--tugx-focus-container-wash` | accent **fill** at the spiked alpha ([Q01]) | yes — from the group's role token | the six item-group containers on `[data-key-view-kbd]` |
-| `--tugx-focus-container-wash-within` | the above at the spiked reduced ratio ([Q02]) | yes | item-group containers on `[data-key-within]` that are not descend targets |
+| `--tugx-focus-container-wash` | accent **fill** at **6%** (dark) / **10%** (light) — [P10] | yes — from the group's role token | the six item-group containers on `[data-key-view-kbd]` |
+| `--tugx-focus-container-wash-within` | the above at the [Q02] ratio — 50% → 3% / 5% pending the confirming look | yes | item-group containers on `[data-key-within]` that are not descend targets |
 
 Painted by each component as a gradient overlay over its own background, so it composes with any surface, exactly as the existing behind-tint does:
 
@@ -529,18 +543,20 @@ All assertions are computed-style reads, which are safe in a background test win
 
 **References:** [P02] New token, not a restrengthened `--tugx-focus-tint`, [P03] Accent wash / Key selection, [Q01] wash value, [Q02] within ratio, Spec S01, Table T01, (#theme-ground, #context)
 
-**Prerequisite:** the design spike ([Q01], [Q02]) has landed the `harmony` value and the reduced-within ratio. If it has not, use `color-mix(in srgb, var(--tug7-element-global-fill-normal-accent-rest) 15%, transparent)` for both modes — the value `layouts-section.css` proved — and 50% of that alpha for the within variant, and record in the checkpoint that the light value is provisional.
+**Prerequisite:** satisfied. The design spike ran 2026-08-03 and landed the values in [P10] — **6%** of the accent fill on dark, **10%** on light, with the within variant deriving at the [Q02] ratio (3% / 5%). The spike card `gallery-focus-wash.tsx` carries the same values in its own knobs, so the two can be compared directly while this step is written.
 
 **Artifacts:**
 - `--tugx-focus-container-wash` and `--tugx-focus-container-wash-within` on `body` in `tugdeck/styles/focus-ring.css`
 - Two new keys injected by `buildRoleStyle`
 
 **Tasks:**
-- [ ] Add both tokens to the role-axis block on `body` in `tugdeck/styles/focus-ring.css`, next to `--tugx-focus-ring` / `--tugx-focus-tint` / `--tugx-focus-fill` / `--tugx-focus-wash`. They must go on `body`, not `:root` — the block's existing comment explains why (`--tug7-*` are `body`-scoped and resolve invalid at `:root`).
-- [ ] Write a comment block above them stating [P01] (rings mark elements, washes mark containers), [P02] (why this is not `--tugx-focus-tint` and not `--tugx-focus-wash`), and [P03] (Accent for the wash, Key for selection fill).
-- [ ] If the spike produced per-mode values, add the light override following the `--tugx-drop-ring-width` precedent in the same file — but scoped so it lands on `body`, since these are colour tokens on the role axis rather than geometry knobs on `:root`.
+- [ ] Add both tokens to the role-axis block on `body` in `tugdeck/styles/focus-ring.css`, next to `--tugx-focus-ring` / `--tugx-focus-tint` / `--tugx-focus-fill` / `--tugx-focus-wash`, at the [P10] dark values. They must go on `body`, not `:root` — the block's existing comment explains why (`--tug7-*` are `body`-scoped and resolve invalid at `:root`).
+- [ ] Add the light-mode override as `:root[data-theme-mode="light"] body { … }` ([P10]). This is the `--tugx-drop-ring-width` precedent in the same file, but that token is geometry and sits on `:root`; these are role-axis colours and must land on `body`, so the selector needs both parts.
+- [ ] Write a comment block above them stating [P01] (rings mark elements, washes mark containers), [P02] (why this is not `--tugx-focus-tint` and not `--tugx-focus-wash`), [P03] (Accent for the wash, Key for selection fill), and [P10] (the values, and that they are the *minimum* that reads in each mode — raising them starts reading as a filled surface, which is the failure this design exists to avoid).
 - [ ] In `tugdeck/src/components/tugways/internal/tug-group-utils.tsx`, extend `buildRoleStyle` to inject `--tugx-focus-container-wash` and `--tugx-focus-container-wash-within` from `--tug7-surface-toggle-primary-normal-${suffix}-rest`, alongside the `--tugx-focus-ring` and `--tugx-focus-tint` keys it already injects. Use the same alphas as the global defaults so a role-bearing group and a role-less one wash at the same strength — note the existing `--tugx-focus-tint` injection uses 18% while the global default resolves to roughly 10%, an inconsistency this step should not propagate.
 - [ ] Leave `--tugx-focus-tint` and all twelve of its consumers untouched.
+
+- [ ] Take the [Q02] confirming look: open the spike card, read §3's key-view/within pair at the landed values, and either accept the 50% ratio or raise it. Do not move the key-view value to rescue the within one — [P10] is settled.
 
 **Tests:**
 - [ ] None new at this step — the tokens are not yet consumed. Correctness is the build and the audit.
@@ -548,7 +564,8 @@ All assertions are computed-style reads, which are safe in a background test win
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx vite build` succeeds
 - [ ] `cd tugdeck && bun run audit:theme-contrast` passes with no theme over the `brio` budget
-- [ ] `grep -n "tugx-focus-container-wash" tugdeck/styles/focus-ring.css` shows both tokens declared on `body`
+- [ ] `grep -n "tugx-focus-container-wash" tugdeck/styles/focus-ring.css` shows both tokens declared on `body`, plus the `:root[data-theme-mode="light"] body` override
+- [ ] [Q02] recorded as decided in this plan with the ratio actually used
 
 ---
 
@@ -682,7 +699,7 @@ This step lands **before** any component is converted, so no intermediate commit
 
 **Commit:** `tugways(focus-language): a container with no cursor item still rings`
 
-**References:** [P06] Empty container rings, Spec S02, Risk R01, (#t02-row-opacity)
+**References:** [P06] Empty container rings, [P10] Landed wash values, Spec S02, (#t02-row-opacity)
 
 **Artifacts:**
 - The `:not(:has([data-key-cursor]))` rule on the five small item-groups, plus the opt-in-gated form on `TugListView`

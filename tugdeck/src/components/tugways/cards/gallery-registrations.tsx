@@ -76,6 +76,7 @@ import { GalleryListView } from "./gallery-list-view";
 import { GalleryListViewFilter } from "./gallery-list-view-filter";
 import { GalleryListViewFocus } from "./gallery-list-view-focus";
 import { GalleryFocusLanguage } from "./gallery-focus-language";
+import { GalleryFocusWash } from "./gallery-focus-wash";
 import { GalleryCycleDemo } from "./gallery-cycle-demo";
 import { GalleryListViewHeaders } from "./gallery-list-view-headers";
 import { GalleryTugListRow } from "./gallery-tug-list-row";
@@ -944,6 +945,22 @@ export function registerGalleryCards(): void {
     componentId: "gallery-focus-language",
     contentFactory: (_cardId) => <GalleryFocusLanguage />,
     defaultMeta: { title: "Focus Language", icon: "List", closable: true },
+    family: "maker",
+    acceptsFamilies: ["maker"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.architecture,
+  });
+
+  // Design spike for the container focus WASH — the alpha ramp, the source-token
+  // comparison, the within ratio, and an A/B of the shipped ring against the
+  // proposed wash on real `TugListView` instances. Judged by eye in BOTH themes;
+  // the light ground is what constrains the value. Backs
+  // `roadmap/focus-language-wash.md` [Q01]/[Q02]; retire the card once the value
+  // lands in `focus-ring.css`.
+  registerCard({
+    componentId: "gallery-focus-wash",
+    contentFactory: (_cardId) => <GalleryFocusWash />,
+    defaultMeta: { title: "Focus Wash (spike)", icon: "List", closable: true },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
