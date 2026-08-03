@@ -700,14 +700,35 @@ export class SmartScroll {
    *  cases need), and `TugMarkdownView`'s two. A cell or container
    *  resize while the user sits idle in the band re-engages too. That
    *  is intended: the policy is about the position, not about which
-   *  signal happened to ask. */
+   *  signal happened to ask.
+   *
+   *  At-bottom is judged twice: against the live geometry AND against
+   *  the geometry as of the last delivered scroll event. The live
+   *  reading alone has a hole exactly the size of the growth that asks
+   *  the question: a whole turn landing in one commit grows the extent
+   *  by hundreds of pixels before this gate runs, so the idle user
+   *  parked at the old bottom now measures hundreds of pixels "away"
+   *  and the recovery net never fires — stranded by the very content
+   *  that should have carried them along. The resting reading asks the
+   *  right question — was the user at the bottom of everything they
+   *  had been shown? — because an idle user's distance from the bottom
+   *  only changes when THEY move, and their moves deliver scroll
+   *  events that refresh both resting figures. Unseeded resting
+   *  geometry (height 0, no scroll event yet) is no evidence and does
+   *  not vote. */
   maybePinToBottom(): void {
     if (this._disposed) return;
+    const restingAtBottom =
+      this._lastScrollEventHeight > 0 &&
+      this._lastScrollEventHeight -
+        this._container.clientHeight -
+        Math.max(0, this._lastScrollTop) <=
+        AT_BOTTOM_PX;
     if (
       !this._isFollowingBottom &&
       !this.isUserScrolling &&
       this._restoreTarget === null &&
-      this.isAtBottom
+      (this.isAtBottom || restingAtBottom)
     ) {
       this._setFollowingBottom(true, 'growth-at-bottom-reengage');
     }

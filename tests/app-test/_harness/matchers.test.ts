@@ -472,6 +472,15 @@ const EVENT_FIXTURES: Record<
     priorRepairHeld: null,
     evicting: true,
   },
+  "extent-rebase": {
+    kind: "extent-rebase",
+    from: 19618,
+    to: 18990,
+    scrollTop: 18571,
+    clientHeight: 420,
+    clamped: true,
+    following: true,
+  },
 };
 
 describe("summarizeEvent — exhaustive per-kind coverage", () => {

@@ -198,6 +198,15 @@ export type DeckTraceEventShape = {
       priorRepairHeld: boolean | null;
       evicting: boolean;
     }
+  | {
+      kind: "extent-rebase";
+      from: number;
+      to: number;
+      scrollTop: number;
+      clientHeight: number;
+      clamped: boolean;
+      following: boolean;
+    }
 );
 
 /**
@@ -229,6 +238,7 @@ export const HARNESS_KNOWN_TRACE_KINDS = [
   "caret-responder-divergence",
   "follow-bottom",
   "scroll-displacement",
+  "extent-rebase",
 ] as const;
 export type HarnessKnownTraceKind = (typeof HARNESS_KNOWN_TRACE_KINDS)[number];
 
@@ -467,6 +477,8 @@ export function summarizeEvent(e: DeckTraceEventShape): string {
       return `follow-bottom ${e.following ? "engage" : "disengage"} source=${fmt(e.source)}`;
     case "scroll-displacement":
       return `scroll-displacement ${e.from}→${e.to} (${e.to - e.from >= 0 ? "+" : ""}${e.to - e.from}) h=${e.scrollHeight}/${e.clientHeight} following=${e.following} repaired=${e.repaired} priorHeld=${e.priorRepairHeld ?? "n/a"} evicting=${e.evicting}`;
+    case "extent-rebase":
+      return `extent-rebase ${e.from}→${e.to} (${e.to - e.from}) top=${e.scrollTop} client=${e.clientHeight} clamped=${e.clamped} following=${e.following}`;
     default: {
       // Exhaustiveness pin: if a new kind is added to DeckTraceEventShape,
       // the assignment below fails because `e` is no longer `never`.

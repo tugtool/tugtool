@@ -1,20 +1,24 @@
 /**
- * at0336-conservation-probe.test.ts — eviction height accounting, measured.
+ * at0336-conservation-probe.test.ts — eviction height accounting and
+ * the extent floor, measured.
  *
- * Diagnostic companion to at0335. That suite pins the *symptom* bound
- * (displacement magnitude); this one measures the *cause* directly:
- * for every commit where rows depart the rendered window into a
- * spacer, the extent the spacer charges for them versus the extent
- * they actually occupied while mounted. The per-swap `delta` is the
- * document height error the swap introduced — the quantity a browser
- * clamp then acts on. A transcript whose eviction conserves height has
- * every delta at zero; any persistent nonzero delta names the rows and
- * pixel counts the ledger is misaccounting.
+ * Companion to at0335. That suite pins the *symptom* bound
+ * (displacement magnitude); this one measures the *mechanism*: for
+ * every commit where rows depart the rendered window into a spacer,
+ * the extent the spacer charges for them versus the extent they
+ * actually occupied while mounted (the conservation records), and the
+ * extent floor that pins the scrollable extent so it cannot dip
+ * mid-mutation. The diagnosis this suite produced — WebKit clamps the
+ * scroll offset synchronously at renderer removal, inside React's
+ * mutation phase, where no scroll API can witness it — is recorded in
+ * `roadmap/scroll-height-floor.md`; the floor is that diagnosis
+ * productized, and the driving sequences here (the at0335 swap cycle,
+ * the mid-history→max hop) are the ones that deterministically
+ * reproduced a ~2,368px displacement before it existed. They now
+ * assert zero.
  *
- * The run writes its full findings to
- * `/tmp/at0336-conservation.json` for offline analysis; the in-suite
- * assertions only establish that the probe is alive and producing
- * records.
+ * The runs write full findings to `/tmp/at0336-*.json` for offline
+ * analysis.
  *
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  */
@@ -147,6 +151,18 @@ interface Conservation {
     last: number;
     n: number;
   }[];
+  floor: { height: number; inset: number };
+}
+
+/** Displacements after `since` whose magnitude exceeds `px`. */
+function bigDisplacements(
+  displacements: Record<string, unknown>[],
+  since: number,
+  px: number,
+): Record<string, unknown>[] {
+  return displacements
+    .slice(since)
+    .filter((x) => Math.abs((x.to as number) - (x.from as number)) > px);
 }
 
 function readConservation(app: App): Promise<Conservation> {
@@ -210,6 +226,14 @@ describe.skipIf(!SHOULD_RUN)("AT0336: eviction conservation probe", () => {
         // The probe is alive and the drive produced eviction traffic.
         expect(finalState.events.length).toBeGreaterThan(0);
         expect(finalState.audit.mounted).toBeGreaterThan(0);
+
+        // The extent floor is standing: its height tracks the settled
+        // extent (extent − 1; the ring's last entry is the most recent
+        // commit's post-layout `scrollHeight`, allow the one commit of
+        // rebase slack).
+        const lastRing = finalState.ring[finalState.ring.length - 1]!;
+        expect(finalState.floor.height).toBeGreaterThan(0);
+        expect(Math.abs(finalState.floor.height - (lastRing.h - 1))).toBeLessThanOrEqual(2);
       } finally {
         await app.close();
       }
@@ -218,18 +242,18 @@ describe.skipIf(!SHOULD_RUN)("AT0336: eviction conservation probe", () => {
   );
 
   // Verbatim replica of at0335's "repeated window swaps displace
-  // nobody" driving — the sequence that deterministically records a
-  // ~2,368px displacement there — instrumented to capture the full
-  // context of that event: every displacement field, the conservation
-  // records bracketing it, and geometry before/after each stop.
+  // nobody" driving — the sequence that deterministically recorded a
+  // ~2,368px displacement before the extent floor existed —
+  // instrumented to capture the full context: every displacement
+  // field, the conservation records, and geometry before/after each
+  // stop.
   //
   // The second variant disables scroll anchoring for the transcript
-  // before driving. The geometry ring showed the big displacement
-  // occurring in a commit whose post-layout document height and
-  // spacers are exactly right — no shrink, no clamp — which leaves
-  // the browser's scroll anchoring as the only actor that moves
-  // `scrollTop` with no JavaScript write and no height change. If the
-  // displacement vanishes with anchoring off, the mechanism is named.
+  // before driving. During the diagnosis it exonerated anchoring (the
+  // big displacement was pixel-identical with anchoring off); it stays
+  // because the floor must hold in both anchoring regimes, and a
+  // regression that only reproduces in one of them should still fail
+  // exactly one named test.
   for (const anchoring of [true, false] as const) {
     test(
       anchoring
@@ -296,7 +320,17 @@ describe.skipIf(!SHOULD_RUN)("AT0336: eviction conservation probe", () => {
             : "/tmp/at0336-replica-noanchor.json",
           JSON.stringify(findings, null, 2),
         );
-        expect(Array.isArray(findings.finalDisplacements)).toBe(true);
+        // Before the extent floor, this exact drive deterministically
+        // recorded a ~2,368px displacement on the mid-history→max hop.
+        // The floor makes the mid-mutation extent dip impossible, so
+        // the swap-scale population must be empty across the whole run.
+        expect(
+          bigDisplacements(
+            findings.finalDisplacements as Record<string, unknown>[],
+            0,
+            100,
+          ),
+        ).toEqual([]);
         } finally {
           await app.close();
         }
@@ -427,6 +461,7 @@ describe.skipIf(!SHOULD_RUN)("AT0336: eviction conservation probe", () => {
           JSON.stringify({ movers, displacements }, null, 2),
         );
         expect(Array.isArray(movers)).toBe(true);
+        expect(bigDisplacements(displacements, 0, 100)).toEqual([]);
       } finally {
         await app.close();
       }
@@ -434,33 +469,33 @@ describe.skipIf(!SHOULD_RUN)("AT0336: eviction conservation probe", () => {
     TEST_TIMEOUT_MS,
   );
 
-  // The countermeasure experiment. If the mid-swap displacement is
-  // WebKit clamping the scroll offset synchronously at renderer
-  // removal (deletions land before the spacer style updates within
-  // React's mutation phase), then pinning the scrollable extent with
-  // an absolutely-positioned one-pixel height post — so the content
-  // height cannot dip no matter what order the in-flow mutations land
-  // in — should make the displacement vanish with no other change.
+  // The productized extent floor. The countermeasure this test once
+  // injected by hand — an absolutely-positioned one-pixel height post
+  // pinning the scrollable extent — now ships in `TugListView` as
+  // `.tug-list-view-floor`, written by the commit bracket to the last
+  // settled extent minus one. This test verifies the shipped article:
+  // the element is present, its height tracks the extent, and the
+  // mid-history→max hop that deterministically displaced ~2,368px
+  // before the floor existed displaces nothing.
   test(
-    "height post prevents the mid-swap displacement",
+    "the shipped extent floor prevents the mid-swap displacement",
     async () => {
       const app = await standUp("at0336-post");
       try {
-        await app.evalJS<boolean>(`(function () {
+        const floorState = await app.evalJS<{
+          present: boolean;
+          floorPx: number;
+          scrollHeight: number;
+        }>(`(function () {
   var el = document.querySelector('${SCROLLER}');
-  var post = document.createElement("div");
-  post.style.position = "absolute";
-  post.style.top = "0";
-  post.style.left = "0";
-  post.style.width = "1px";
-  post.style.pointerEvents = "none";
-  post.style.height = (el.scrollHeight - 1) + "px";
-  post.setAttribute("data-at0336-height-post", "");
-  var cs = getComputedStyle(el);
-  if (cs.position === "static") el.style.position = "relative";
-  el.appendChild(post);
-  return true;
+  var floor = el.querySelector(".tug-list-view-floor");
+  return {
+    present: floor !== null,
+    floorPx: floor === null ? -1 : parseFloat(floor.style.height || "0"),
+    scrollHeight: el.scrollHeight,
+  };
 })()`);
+        const probeFloor = (await readConservation(app)).floor;
         const displBefore = (await readDisplacements(app)).length;
 
         await app.evalJS<number>(`(function () {
@@ -480,15 +515,18 @@ describe.skipIf(!SHOULD_RUN)("AT0336: eviction conservation probe", () => {
         const displacements = await readDisplacements(app);
         writeFileSync(
           "/tmp/at0336-post.json",
-          JSON.stringify({ displBefore, displacements }, null, 2),
+          JSON.stringify(
+            { floorState, probeFloor, displBefore, displacements },
+            null,
+            2,
+          ),
         );
-        const bigAfter = displacements
-          .slice(displBefore)
-          .filter(
-            (x) =>
-              Math.abs((x.to as number) - (x.from as number)) > 100,
-          );
-        expect(bigAfter).toEqual([]);
+        expect(floorState.present).toBe(true);
+        expect(floorState.floorPx).toBe(probeFloor.height);
+        expect(
+          Math.abs(floorState.floorPx - (floorState.scrollHeight - 1)),
+        ).toBeLessThanOrEqual(2);
+        expect(bigDisplacements(displacements, displBefore, 100)).toEqual([]);
       } finally {
         await app.close();
       }

@@ -1525,6 +1525,8 @@ interface ListViewProbe {
   auditLedger(): LedgerAudit;
   /** Per-commit geometry, most recent last, capped. */
   geometryRing(): CommitGeometryRecord[];
+  /** The extent floor's current height and calibrated bottom inset. */
+  extentFloor(): { height: number; inset: number };
 }
 
 const listViewProbeRegistry = new Map<Element, ListViewProbe>();
@@ -1752,6 +1754,19 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     );
     const conservationEventsRef = React.useRef<ConservationEvent[]>([]);
     const geometryRingRef = React.useRef<CommitGeometryRecord[]>([]);
+    // The extent floor — the element that pins the scrollable extent so
+    // it cannot dip mid-mutation, and the commit bracket's record of
+    // what it last wrote there. `height` is the floor's current pixel
+    // height (owned exclusively by the bracket, as a DOM write [L06] —
+    // React renders the element with no height so there is no second
+    // writer to go stale against). `inset` is the self-calibrating
+    // difference between the scroller's content extent and the bottom
+    // spacer's bottom edge — the trailing content plus the block-end
+    // pseudo-padding — refreshed on every commit whose `scrollHeight`
+    // is content-defined, so the true extent stays recoverable even on
+    // a commit where the floor itself is what `scrollHeight` reports.
+    const extentFloorRef = React.useRef<HTMLDivElement | null>(null);
+    const extentFloorStateRef = React.useRef({ height: 0, inset: 0 });
     // One-shot arming flag for the clamp simulation the test surface
     // drives. See the displacement effect.
     const forceClampRef = React.useRef(false);
@@ -3265,6 +3280,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         displacementCount: () => displacementCountRef.current,
         conservationEvents: () => conservationEventsRef.current.slice(),
         geometryRing: () => geometryRingRef.current.slice(),
+        extentFloor: () => ({ ...extentFloorStateRef.current }),
         // Same-moment read: ledger charge vs live rendered extent for
         // every mounted cell, right now. Complements the evict-time
         // records above, whose live figures are one commit old.
@@ -3391,17 +3407,31 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             0,
             spacer.offsetHeight - SIMULATED_CLAMP_SHRINK_PX,
           );
+          // The extent floor holds the document up against exactly this
+          // kind of transient dip, so the simulation must take it down
+          // for the duration or there is no clamp to simulate. Restored
+          // to the bracket's own recorded value before the block ends —
+          // the bracket is the floor's only writer, so its record IS
+          // the correct restoration target.
+          const floorEl = extentFloorRef.current;
+          if (floorEl !== null) floorEl.style.height = "0px";
           spacer.style.height = `${shortened}px`;
           void el.scrollHeight;
           spacer.style.height = restore;
+          if (floorEl !== null) {
+            floorEl.style.height = `${extentFloorStateRef.current.height}px`;
+          }
           void el.scrollHeight;
         }
       }
 
       const prev = commitGeometryRef.current;
       // Read together, so position and geometry describe one moment.
-      // Layout is flushed once for the three of them.
-      const scrollTop = el.scrollTop;
+      // Layout is flushed once for the three of them. `scrollTop` is
+      // reassigned in one place only: when lowering the extent floor
+      // clamps the position, the classification below must reason
+      // about the post-rebase moment.
+      let scrollTop = el.scrollTop;
       const scrollHeight = el.scrollHeight;
       const clientHeight = el.clientHeight;
 
@@ -3503,6 +3533,104 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         }
         liveExtentsRef.current = next;
       }
+
+      // ---- The extent floor ----
+      //
+      // The one mechanism behind every observed displacement: WebKit
+      // clamps the scroll offset synchronously at renderer removal,
+      // INSIDE React's mutation phase. Deletions land before sibling
+      // style updates, so for one unobservable instant the removed
+      // cells are gone while the spacers still hold their old heights;
+      // the browser clamps against that transient extent and nothing
+      // restores the position when the spacers grow microseconds
+      // later. No scroll API can witness the moment, so the defense is
+      // constructive: the floor element pins the scrollable extent at
+      // the last settled value, making the dip impossible regardless
+      // of mutation order.
+      //
+      // The floor is set to `extent − 1` every bracket, up or down.
+      // The `− 1` keeps the floor from ever DEFINING `scrollHeight`,
+      // so `scrollHeight` stays a truthful content measurement (and
+      // the worst residual mid-mutation clamp is one pixel, only for a
+      // scroller parked at its absolute maximum). Between brackets the
+      // floor holds the previous commit's extent — that standing value
+      // is what spans the mutation gap.
+      //
+      // Lowering is the declared rebase: the extent only shrinks for
+      // attributable reasons (a collapsed block, a pane re-wrap, a
+      // density change, a cleared session, a data-source swap), each
+      // of which lands here as a commit whose settled extent is
+      // smaller. The lowering itself may clamp `scrollTop` — that is
+      // the browser following the shorter document, machine-authored
+      // and legitimate — so it is pinned with `noteExternalWrite` and
+      // recorded as an `extent-rebase` trace event, never repaired.
+      // Setting-to-extent rather than ratcheting with enumerated
+      // shrink paths makes the floor self-healing: a shrink path
+      // nobody anticipated lowers the floor one commit later instead
+      // of leaving permanent phantom scroll space.
+      //
+      // When the floor IS what `scrollHeight` reports (the one commit
+      // after a shrink, before this write lands), the true extent is
+      // recovered from the bottom spacer's bottom edge plus the
+      // calibrated `inset` (trailing content + block-end
+      // pseudo-padding), refreshed on every content-defined commit.
+      // The `scrollHeight > clientHeight` guard keeps a viewport-
+      // defined reading (content shorter than the scrollport) from
+      // poisoning that calibration with empty viewport space.
+      {
+        const floorEl = extentFloorRef.current;
+        if (floorEl !== null) {
+          const floorState = extentFloorStateRef.current;
+          const bottom = bottomSpacerRef.current;
+          const bottomEdge =
+            bottom === null ? null : bottom.offsetTop + bottom.offsetHeight;
+          let extent = scrollHeight;
+          if (scrollHeight > floorState.height) {
+            if (bottomEdge !== null && scrollHeight > clientHeight) {
+              floorState.inset = scrollHeight - bottomEdge;
+            }
+          } else if (bottomEdge !== null) {
+            extent = bottomEdge + floorState.inset;
+          }
+          const nextFloor = Math.max(0, Math.round(extent) - 1);
+          if (nextFloor > floorState.height) {
+            floorState.height = nextFloor;
+            floorEl.style.height = `${nextFloor}px`;
+          } else if (nextFloor < floorState.height) {
+            const fromFloor = floorState.height;
+            floorState.height = nextFloor;
+            floorEl.style.height = `${nextFloor}px`;
+            // Flush now so the clamp (if any) happens here, inside the
+            // declared write, instead of at whatever read forces
+            // layout next.
+            void el.scrollHeight;
+            const topAfter = el.scrollTop;
+            const clamped =
+              Math.abs(topAfter - scrollTop) > DISPLACEMENT_EPSILON_PX;
+            if (clamped) {
+              ss.noteExternalWrite();
+              scrollTop = topAfter;
+            }
+            deckTrace.record({
+              kind: "extent-rebase",
+              from: fromFloor,
+              to: nextFloor,
+              scrollTop: topAfter,
+              clientHeight,
+              clamped,
+              following: ss.isFollowingBottom,
+            });
+            tugDevLogStore.debug("list-view", "extent-rebase", {
+              from: fromFloor,
+              to: nextFloor,
+              scrollTop: topAfter,
+              clientHeight,
+              clamped,
+            });
+          }
+        }
+      }
+
       const userActivitySeq = ss.userActivitySeq;
       const programmaticWriteSeq = ss.programmaticWriteSeq;
       const following = ss.isFollowingBottom;
@@ -3568,8 +3696,20 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // A real clamp involves no JavaScript write at all, so on a
       // scroller the machine is not actively writing to, the baseline
       // is fresh and the clamp still stands out.
+      //
+      // This return and the position-unchanged one below CARRY
+      // `pendingRepairTop` forward rather than clearing it: they fire
+      // on commits where nothing moved and nobody authored a write, so
+      // they are no evidence either way on whether the repair held.
+      // Clearing here is what made `priorRepairHeld` report `null` for
+      // a repair that plainly held — the repaired commit's own cascade
+      // re-runs the bracket within the same task, took one of these
+      // returns, and erased the marker before the next displacement
+      // could ever answer it. The activity/programmatic returns above
+      // still clear: once the user or the machine moves the scroller,
+      // the old repair target stops being a meaningful comparison.
       if (!ss.isScrollBaselineFresh) {
-        snapshot(scrollTop, null);
+        snapshot(scrollTop, prev.pendingRepairTop);
         return;
       }
 
@@ -3597,7 +3737,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // that rules the previous bracket out as a baseline is a
       // property of being the target, which this is not.
       if (Math.abs(scrollTop - prev.scrollTop) <= DISPLACEMENT_EPSILON_PX) {
-        snapshot(scrollTop, null);
+        // Carries the repair marker — see the baseline-staleness
+        // return above.
+        snapshot(scrollTop, prev.pendingRepairTop);
         return;
       }
 
@@ -3649,10 +3791,20 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // a repair that was immediately undone means the document
       // genuinely got shorter (a ledger shortfall) rather than dipping
       // transiently, and the two want different fixes.
+      //
+      // Compared against the BASELINE, not this commit's `scrollTop` —
+      // by now `scrollTop` is wherever THIS displacement landed, which
+      // says nothing about the previous repair. The baseline is the
+      // last position a scroll event confirmed, i.e. where the
+      // scroller actually rested between the repair and this event: a
+      // repair that took delivers its scroll event at the target and
+      // the baseline matches; a repair the browser immediately
+      // re-clamped delivers it at the clamped position and the
+      // baseline gives it away.
       const priorRepairHeld =
         prev.pendingRepairTop === null
           ? null
-          : Math.abs(scrollTop - prev.pendingRepairTop) <=
+          : Math.abs(baseline - prev.pendingRepairTop) <=
             DISPLACEMENT_EPSILON_PX;
       displacementCountRef.current += 1;
 
@@ -5929,6 +6081,20 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           ref={bottomSpacerRef}
           className="tug-list-view-spacer tug-list-view-spacer--bottom"
           style={{ height: `${windowResult.bottomSpacerHeight}px` }}
+          aria-hidden="true"
+        />
+        {/* The extent floor. Pins the scrollable extent at the last
+            settled value so it cannot dip mid-mutation — WebKit clamps
+            the scroll offset synchronously at renderer removal, before
+            the sibling spacer styles land, and no scroll API can
+            witness that moment (see the commit bracket). Out of flow,
+            one pixel wide, no pointer target, no paint: it exists only
+            as scroll overflow. Rendered with NO height — the commit
+            bracket is its single writer ([L06]), so React never goes
+            stale against it. */}
+        <div
+          ref={extentFloorRef}
+          className="tug-list-view-floor"
           aria-hidden="true"
         />
       </div>

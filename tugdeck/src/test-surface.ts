@@ -212,8 +212,14 @@ import {
  * a test can measure the document height error a window swap introduced
  * rather than inferring it from `scrollTop` symptoms. Additive; major
  * stays `1`.
+ *
+ * `1.23.0`: {@link TugTestSurface.getListConservation} additionally returns
+ * `floor` — the extent floor's current height and calibrated bottom inset,
+ * so a test can assert the floor is standing (height tracks the settled
+ * extent) rather than inferring its presence from the absence of
+ * displacements. Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.22.0" as const;
+export const SURFACE_VERSION = "1.23.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -629,6 +635,7 @@ export interface TugTestSurface {
     events: unknown[];
     audit: unknown;
     ring: unknown[];
+    floor: { height: number; inset: number };
   };
 
   // ---- Introspection (SURFACE_VERSION 1.1.0, harness Phase A) ----
@@ -1492,6 +1499,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       events: unknown[];
       audit: unknown;
       ring: unknown[];
+      floor: { height: number; inset: number };
     } {
       const probe = listViewProbeForScroller(queryRequired(selector));
       if (probe === null) {
@@ -1503,6 +1511,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         events: probe.conservationEvents(),
         audit: probe.auditLedger(),
         ring: probe.geometryRing(),
+        floor: probe.extentFloor(),
       };
     },
 

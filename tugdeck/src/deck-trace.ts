@@ -459,6 +459,25 @@ export type DeckTraceEvent = {
       priorRepairHeld: boolean | null;
       evicting: boolean;
     }
+  | {
+      // Fired by `TugListView`'s commit bracket when it lowers the
+      // extent floor — the element that pins the scrollable extent so
+      // it cannot dip mid-mutation. The floor only lowers when the
+      // content genuinely got shorter (a collapsed block, a re-wrap, a
+      // cleared session), so this is the declared, attributed shrink
+      // Case A of `roadmap/scroll-height-floor.md` requires: every
+      // extent decrease leaves exactly one of these records. `clamped`
+      // reports whether the lowering moved `scrollTop` (the browser
+      // clamping to the now-shorter maximum) — that move is machine-
+      // authored and pinned via `noteExternalWrite`, never repaired.
+      kind: "extent-rebase";
+      from: number;
+      to: number;
+      scrollTop: number;
+      clientHeight: number;
+      clamped: boolean;
+      following: boolean;
+    }
 );
 
 /**
@@ -488,7 +507,8 @@ export type DeckTraceEventInput =
   | Omit<Extract<DeckTraceEvent, { kind: "macrotask-focus-claim" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "caret-responder-divergence" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "follow-bottom" }>, StampedFields>
-  | Omit<Extract<DeckTraceEvent, { kind: "scroll-displacement" }>, StampedFields>;
+  | Omit<Extract<DeckTraceEvent, { kind: "scroll-displacement" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "extent-rebase" }>, StampedFields>;
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -683,12 +703,14 @@ let enabled = false;
  * stranded thousands of pixels above the live edge held no evidence
  * at all, and the whole diagnosis had to be rebuilt live through
  * `/api/eval`. These kinds are rare by nature (one record per
- * displacement, one per follow-bottom transition), so recording them
- * unconditionally costs nothing in the streaming hot path.
+ * displacement, one per follow-bottom transition, one per attributed
+ * extent shrink), so recording them unconditionally costs nothing in
+ * the streaming hot path.
  */
 const ALWAYS_RECORDED_KINDS: ReadonlySet<DeckTraceEvent["kind"]> = new Set([
   "scroll-displacement",
   "follow-bottom",
+  "extent-rebase",
 ]);
 
 function appendEvent(
@@ -736,11 +758,11 @@ export interface DeckTrace {
    * Record an event. No-op when `enable(false)`; under `enable(true)`
    * the call stamps `timestamp` and `seq` and appends to the ring.
    *
-   * The kinds in `ALWAYS_RECORDED_KINDS` — `scroll-displacement` and
-   * `follow-bottom` — ignore the gate and always record. They are
-   * defect records for a failure that arrives unannounced, so waiting
-   * for someone to switch recording on means having no evidence
-   * exactly when it is needed.
+   * The kinds in `ALWAYS_RECORDED_KINDS` — `scroll-displacement`,
+   * `follow-bottom`, and `extent-rebase` — ignore the gate and always
+   * record. They are defect and attribution records for events that
+   * arrive unannounced, so waiting for someone to switch recording on
+   * means having no evidence exactly when it is needed.
    */
   record(event: DeckTraceEventInput): void;
   /** Return a fresh array of every event currently in the ring, oldest-first. */

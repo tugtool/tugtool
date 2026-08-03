@@ -337,6 +337,27 @@ body {
      paint. */
 }
 
+/* ---- Extent floor ----
+   Pins the scroller's scrollable extent at the last settled value so
+   the extent cannot dip mid-mutation (WebKit clamps `scrollTop`
+   synchronously at renderer removal, before sibling spacer styles
+   land). Out of flow so it takes no layout space, one pixel wide with
+   no background so it paints nothing, `pointer-events: none` so it can
+   never intercept a click on the last row. NOT `visibility: hidden` —
+   the floor works by contributing scrollable overflow, and a hidden
+   box's contribution is not a contract worth betting the mechanism on.
+   Height is owned by the commit bracket (style.height, [L06]); the
+   initial value is zero. */
+
+.tug-list-view-floor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 0;
+  pointer-events: none;
+}
+
 /* ---- Rendered window ---- */
 
 .tug-list-view-window {
