@@ -21,7 +21,16 @@ Every measurement in this brief fits that and nothing else:
 | Safari shows none of it | Safari does not load a 4B model |
 | 8.7 GB peak | the load transient — still unexplained, see [local-model-load-peak.md](local-model-load-peak.md) |
 
-**A defect was found and fixed along the way.** `scheduleIdleUnload()` was called only from `generate()`'s `defer`, never after `load()`. The launch prewarm loads the pack without generating, so no idle timer was ever armed and the weights were held for the life of the process — measured at 6 min 40 s idle with no release, and matching a live instance still holding 2.4 GB after 3 h 20 m. The fix schedules the idle unload after a successful `load()`.
+**A defect was found and fixed along the way.** `scheduleIdleUnload()` was called only from `generate()`'s `defer`, never after `load()`. The launch prewarm loads the pack without generating, so no idle timer was ever armed and the weights were held for the life of the process. The fix schedules the idle unload after a successful `load()`.
+
+Verified by A/B on the same dash build, idle from launch with no requests:
+
+| | 04:38 | **05:08** | 12:49 |
+|---|---|---|---|
+| before | 2.4 GB / 793 regions | 2.4 GB / 793 | (held past 06:40) |
+| after | 2.4 GB / 793 regions | **864 KB / 7 regions, 122.8 MB** | 864 KB / 7 |
+
+The release lands at the 300 s threshold and holds. This matters for an app left open in the background rather than one in use: the model serves shell-routing classification and PULSE summaries, so it is legitimately warm whenever the user is working.
 
 **Read the rest of this brief as a record of a misdiagnosis.** The sections below are kept because their instrument lessons are real and were paid for, but their causal conclusions about compositing are wrong. The specific trap: `IOAccelerator (graphics)` anchored the whole investigation to WebKit, and a sampled stack showing `IOSurface::createFromSendRight` — genuine, but ordinary compositing traffic — was mistaken for the floor. The "36 identical units" arithmetic was numerology fitted to a 2.1 GB blob.
 
