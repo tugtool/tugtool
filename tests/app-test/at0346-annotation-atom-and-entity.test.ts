@@ -1,0 +1,358 @@
+/**
+ * at0346-annotation-atom-and-entity.test.ts — the two ways the transcript's
+ * right-click treats an annotation as a thing rather than as text.
+ *
+ * Both cases are about the same claim from opposite sides. An annotation is
+ * an object the transcript mentions; a secondary click on it should offer
+ * object-shaped acts and should not narrow it to whatever run of characters
+ * the browser thinks a word is.
+ *
+ *  1. **Insert as Atom** — a verified file path offers a second way into the
+ *     composer beside Insert into Composer: the file arrives as the chip an
+ *     `@` mention mints, carrying the canonical path as its value, instead
+ *     of as a run of path characters. The assertion is the chip's own
+ *     `data-atom-value`, and that the path never landed as literal text.
+ *  2. **A command is one entity** — right-clicking a command span leaves no
+ *     selection behind. The control is the span beside it: an inline-code
+ *     span the registry has no entry for, where WebKit's smart-select still
+ *     runs and paints a sub-word. Same DOM shape, same gesture, different
+ *     verdict — which is what proves the suppression is the registry's doing
+ *     and not the surface refusing selection wholesale.
+ *
+ * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/annotator/registry.ts
+ * @covers tugdeck/src/components/tugways/cards/transcript-host-helpers.ts
+ * @covers tugdeck/src/components/tugways/use-text-surface-context-menu.tsx
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/lib/code-session-store.ts
+ */
+
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { launchTugApp } from "./_harness";
+
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
+const TEST_TIMEOUT_MS = 120_000;
+
+const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
+const SID = "test-session-A";
+
+const FILE_NAME = "notes.md";
+const FILE_BODY = ["alpha", "bravo", "charlie"].join("\n");
+
+const KNOWN_CMD = "tugplug:implement";
+const ARG = "roadmap/find-route.md";
+const UNKNOWN_CMD = "definitely-not-a-command";
+
+const PROMPT_INPUT = '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
+
+let projectDir = "";
+let realPath = "";
+
+beforeAll(() => {
+  if (!SHOULD_RUN) return;
+  projectDir = mkdtempSync(join(tmpdir(), "at0346-annotation-"));
+  realPath = join(projectDir, FILE_NAME);
+  writeFileSync(realPath, FILE_BODY, "utf8");
+});
+afterAll(() => {
+  if (projectDir !== "" && existsSync(projectDir)) {
+    rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
+function deckShape() {
+  return {
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
+    panes: [
+      {
+        id: "p1",
+        position: { x: 40, y: 40 },
+        size: { width: 900, height: 640 },
+        cardIds: ["A"],
+        activeCardId: "A",
+        title: "",
+        acceptsFamilies: ["maker"],
+      },
+    ],
+    activePaneId: "p1",
+    hasFocus: true,
+  };
+}
+
+function capabilities(commands: string[]) {
+  return {
+    type: "session_capabilities",
+    models: [{ value: "default", displayName: "Default" }],
+    commands,
+    agents: [],
+    available_output_styles: [],
+    output_style: "default",
+    account: null,
+    effort: null,
+    ipc_version: 2,
+  };
+}
+
+const userMsg = (text: string) => ({
+  type: "add_user_message",
+  tug_session_id: SID,
+  content: [{ type: "text", text }],
+});
+const asstText = (msgId: string, text: string, seq: number) => ({
+  type: "assistant_text",
+  tug_session_id: SID,
+  msg_id: msgId,
+  text,
+  is_partial: false,
+  rev: 0,
+  seq,
+});
+const turnDone = (msgId: string) => ({
+  type: "turn_complete",
+  tug_session_id: SID,
+  msg_id: msgId,
+  result: "success",
+});
+const replayStarted = () => ({ type: "replay_started", tug_session_id: SID });
+const replayComplete = () => ({
+  type: "replay_complete",
+  tug_session_id: SID,
+  count: 1,
+  firstLoadedTurnIndex: 0,
+  totalTurns: 1,
+  hasOlder: false,
+});
+
+/** Center a span in the scroller before a native click reaches for it. */
+const revealJS = (selector: string) =>
+  `(function(){
+    var el = document.querySelector(${JSON.stringify(selector)});
+    if (el === null) return false;
+    el.scrollIntoView({ block: "center" });
+    return true;
+  })()`;
+
+/** The viewport point of a menu item, or `null` when it is not open. */
+const menuItemPointJS = (action: string) =>
+  `(function(){
+    var item = document.querySelector('[data-item-action=${action}]');
+    if (item === null) return null;
+    var r = item.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  })()`;
+
+describe.skipIf(!SHOULD_RUN)("AT0346: annotations as objects", () => {
+  test(
+    "a file inserts into the composer as an atom, not as its path text",
+    async () => {
+      const app = await launchTugApp({
+        testName: "at0346-annotation-atom",
+      });
+      const ingest = (decoded: unknown) =>
+        app.driveSession("A", {
+          op: "ingestFrame",
+          feedId: CODE_OUTPUT_FEED,
+          decoded,
+        });
+
+      try {
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+          { timeoutMs: 30_000 },
+        );
+        await app.bindSession("A", { tugSessionId: SID, sessionMode: "resume" });
+
+        await ingest(replayStarted());
+        await ingest(userMsg("where is it"));
+        await ingest(asstText("m1", `It is at \`${realPath}\`.`, 1));
+        await ingest(turnDone("m1"));
+        await ingest(replayComplete());
+
+        // The path is inert until the filesystem confirms it.
+        const SPAN = `[data-card-id="A"] code[data-tug-annotation="file-path"]`;
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(SPAN)}) !== null`,
+          { timeoutMs: 12_000 },
+        );
+        const stampedPath = await app.evalJS<string | null>(
+          `(function(){
+            var el = document.querySelector(${JSON.stringify(SPAN)});
+            return el === null ? null : el.getAttribute('data-path');
+          })()`,
+        );
+        expect(stampedPath?.startsWith("/")).toBe(true);
+        expect(stampedPath?.endsWith(`/${FILE_NAME}`)).toBe(true);
+
+        // --- the menu offers both ways into the composer ---------------
+        await app.evalJS<boolean>(revealJS(SPAN));
+        await app.nativeRightClickAtElement(SPAN);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-item-action="insert-as-atom"]') !== null`,
+          { timeoutMs: 4000 },
+        );
+        const bothOffered = await app.evalJS<boolean>(
+          `document.querySelector('[data-item-action="insert-into-composer"]') !== null`,
+        );
+        expect(bothOffered).toBe(true);
+
+        const itemPoint = await app.evalJS<{ x: number; y: number } | null>(
+          menuItemPointJS("insert-as-atom"),
+        );
+        expect(itemPoint).not.toBeNull();
+        await app.nativeClick(itemPoint as { x: number; y: number });
+
+        // The composer carries a file chip whose value is the canonical
+        // path — an object, not the path spelled out.
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var cm = document.querySelector(${JSON.stringify(PROMPT_INPUT)});
+            if (cm === null) return false;
+            return cm.querySelector('img[data-atom-type="file"]') !== null;
+          })()`,
+          { timeoutMs: 8000 },
+        );
+        const chipValue = await app.evalJS<string | null>(
+          `(function(){
+            var img = document.querySelector(${JSON.stringify(PROMPT_INPUT)} + ' img[data-atom-type="file"]');
+            return img === null ? null : img.getAttribute('data-atom-value');
+          })()`,
+        );
+        expect(chipValue).toBe(stampedPath);
+
+        const literal = await app.evalJS<boolean>(
+          `(function(){
+            var cm = document.querySelector(${JSON.stringify(PROMPT_INPUT)});
+            return cm !== null && (cm.textContent || '').indexOf(${JSON.stringify(
+              FILE_NAME,
+            )}) !== -1;
+          })()`,
+        );
+        expect(literal).toBe(false);
+
+        process.stdout.write("VERDICT: PASS\n");
+      } catch (err) {
+        process.stdout.write("VERDICT: FAIL\n");
+        const tail = app.tailLog(200);
+        if (tail !== "") process.stderr.write(`\n[at0346] log tail:\n${tail}\n`);
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "right-clicking a command selects nothing, where plain code still smart-selects",
+    async () => {
+      const app = await launchTugApp({
+        testName: "at0346-annotation-whole-entity",
+      });
+      const ingest = (decoded: unknown) =>
+        app.driveSession("A", {
+          op: "ingestFrame",
+          feedId: CODE_OUTPUT_FEED,
+          decoded,
+        });
+      const selectionText = () =>
+        app.evalJS<string>(
+          `(function(){
+            var sel = window.getSelection();
+            return sel === null ? "" : sel.toString();
+          })()`,
+        );
+      const clearSelection = () =>
+        app.evalJS<boolean>(
+          `(function(){
+            var sel = window.getSelection();
+            if (sel !== null) sel.removeAllRanges();
+            return true;
+          })()`,
+        );
+
+      try {
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+          { timeoutMs: 30_000 },
+        );
+        await app.bindSession("A", { tugSessionId: SID, sessionMode: "resume" });
+        await app.ingestSessionMetadata("A", capabilities([KNOWN_CMD]));
+
+        await ingest(replayStarted());
+        await ingest(userMsg("go"));
+        await ingest(
+          asstText(
+            "m1",
+            `Ready: \`/${KNOWN_CMD} ${ARG}\` — not \`/${UNKNOWN_CMD}\`.`,
+            1,
+          ),
+        );
+        await ingest(turnDone("m1"));
+        await ingest(replayComplete());
+
+        const CMD_SPAN = `[data-card-id="A"] code.tugx-annotation[data-slash-command="${KNOWN_CMD}"]`;
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(CMD_SPAN)}) !== null`,
+          { timeoutMs: 12_000 },
+        );
+
+        // --- the control: an inline-code span with no registry entry ---
+        const PLAIN_SPAN = `[data-card-id="A"] .session-card-transcript-code-body code:not(.tugx-annotation)`;
+        const plainIsTheUnknownCommand = await app.evalJS<boolean>(
+          `(function(){
+            var el = document.querySelector(${JSON.stringify(PLAIN_SPAN)});
+            return el !== null && (el.textContent || '').indexOf(${JSON.stringify(
+              UNKNOWN_CMD,
+            )}) !== -1;
+          })()`,
+        );
+        expect(plainIsTheUnknownCommand).toBe(true);
+
+        await clearSelection();
+        await app.evalJS<boolean>(revealJS(PLAIN_SPAN));
+        await app.nativeRightClickAtElement(PLAIN_SPAN);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-item-action="copy"]') !== null`,
+          { timeoutMs: 4000 },
+        );
+        // WebKit's smart-select ran: the click painted a word inside the
+        // span. This is the behavior the command case must NOT show.
+        expect((await selectionText()).length).toBeGreaterThan(0);
+        await app.nativeKey("Escape");
+
+        // --- the command: one entity, so nothing narrows ---------------
+        await clearSelection();
+        await app.evalJS<boolean>(revealJS(CMD_SPAN));
+        await app.nativeRightClickAtElement(CMD_SPAN);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-item-action="copy-command"]') !== null`,
+          { timeoutMs: 4000 },
+        );
+        expect(await selectionText()).toBe("");
+        // And the menu is the command's own — no selection-scoped Copy
+        // beside it to act on a sub-word that was never selected.
+        const standardCopy = await app.evalJS<boolean>(
+          `document.querySelector('[data-item-action="copy"]') !== null`,
+        );
+        expect(standardCopy).toBe(false);
+        await app.nativeKey("Escape");
+
+        process.stdout.write("VERDICT: PASS\n");
+      } catch (err) {
+        process.stdout.write("VERDICT: FAIL\n");
+        const tail = app.tailLog(200);
+        if (tail !== "") process.stderr.write(`\n[at0346] log tail:\n${tail}\n`);
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+});

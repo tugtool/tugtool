@@ -29,11 +29,21 @@
  *      (which would collapse the selection). No snapshot, no restore — the
  *      selection simply isn't disturbed. (The CM6 editor stops its own pointer
  *      selection with an equivalent guard in its `domEventHandlers.mousedown`.)
+ *      When the optional `suppressSelectionChange` predicate claims the
+ *      target is one indivisible entity — a transcript command span, whose
+ *      menu items all act on the whole command — this step also *snapshots*
+ *      the selection. `preventDefault` is no help there: WebKit picks the
+ *      closest word inside `sendContextMenuEvent` itself, ahead of the event
+ *      it dispatches to us, so the sub-word is already painted by the time
+ *      any handler runs and the only honest remedy is to put back what was
+ *      there.
  *
  *   2. `onContextMenu(event)` — `preventDefault` (suppress the system menu),
- *      sample `hasSelection` from the live selection
+ *      restore the step-1 snapshot when there is one (clearing the
+ *      smart-select, or handing back a range the user had), sample
+ *      `hasSelection` from the live selection
  *      (`adapterRef.current.hasRangedSelection()`), open the menu at the click
- *      point. The selection is already intact from step 1.
+ *      point. The selection is otherwise already intact from step 1.
  *
  *   3. `hasSelection` drives `buildTextEditingMenuItems({ hasSelection, canEdit
  *      })` so Cut / Copy / Paste / Select All enablement is consistent across
@@ -80,7 +90,7 @@
  *     (appearance) → CSS in tug-menu.css.
  */
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 
 import {
   TugEditorContextMenu,
@@ -153,6 +163,17 @@ export interface UseTextSurfaceContextMenuOptions {
    * smart-selected sub-word instead of the whole command.
    */
   hideStandardItems?: (event: MouseEvent) => boolean;
+
+  /**
+   * Optional per-click predicate: when it returns `true`, the
+   * secondary-click `mousedown` is `preventDefault`ed even with no ranged
+   * selection, so the browser's smart-select never runs. The transcript
+   * uses it for the kinds the annotator marks as whole entities — a
+   * right-click on a command opens a menu whose every item acts on the
+   * whole command, so highlighting one word inside it is a lie about what
+   * the gesture is about to do.
+   */
+  suppressSelectionChange?: (event: MouseEvent) => boolean;
 }
 
 export interface UseTextSurfaceContextMenuResult {
@@ -203,6 +224,31 @@ interface MenuState {
   hideStandard: boolean;
 }
 
+/**
+ * The live selection as detached clones, or `null` when there is none.
+ * Cloning matters: the live `Range` objects mutate as the selection moves,
+ * so holding them would remember the smart-select rather than what preceded
+ * it.
+ */
+function snapshotSelection(): Range[] | null {
+  const sel = window.getSelection();
+  if (sel === null || sel.rangeCount === 0) return null;
+  const ranges: Range[] = [];
+  for (let i = 0; i < sel.rangeCount; i += 1) {
+    ranges.push(sel.getRangeAt(i).cloneRange());
+  }
+  return ranges;
+}
+
+/** Put a {@link snapshotSelection} result back, or clear when it was empty. */
+function restoreSelection(ranges: Range[] | null): void {
+  const sel = window.getSelection();
+  if (sel === null) return;
+  sel.removeAllRanges();
+  if (ranges === null) return;
+  for (const range of ranges) sel.addRange(range);
+}
+
 export function useTextSurfaceContextMenu(
   options: UseTextSurfaceContextMenuOptions,
 ): UseTextSurfaceContextMenuResult {
@@ -212,6 +258,7 @@ export function useTextSurfaceContextMenu(
     hasSelectionOverride,
     extraEntries,
     hideStandardItems,
+    suppressSelectionChange,
   } = options;
 
   // The single piece of React state the hook owns: open/closed +
@@ -219,6 +266,13 @@ export function useTextSurfaceContextMenu(
   // structural (the portal mounts / unmounts based on it) so it
   // belongs in React state per [L24].
   const [menuState, setMenuState] = useState<MenuState | null>(null);
+
+  // The selection as it stood before a whole-entity secondary click, parked
+  // by `onMouseDown` and consumed by `onContextMenu`. `null` means the last
+  // secondary click was not on a whole-entity target and the selection is
+  // the browser's business as usual; a set `ranges: null` means there was
+  // no selection to keep, which is itself what gets restored.
+  const preClickRangesRef = useRef<{ ranges: Range[] | null } | null>(null);
 
   const closeMenu = useCallback(() => {
     setMenuState(null);
@@ -236,11 +290,21 @@ export function useTextSurfaceContextMenu(
       const adapter = adapterRef?.current ?? null;
       const isSecondaryClick =
         event.button === 2 || (event.button === 0 && event.ctrlKey);
-      if (isSecondaryClick && (adapter?.hasRangedSelection() ?? false)) {
+      if (!isSecondaryClick) return;
+      // A whole-entity target: remember the selection as it stands BEFORE
+      // WebKit's contextual smart-select gets to it, so `onContextMenu` can
+      // put it back. `preventDefault` cannot help here — WebKit selects the
+      // closest word inside `sendContextMenuEvent` itself, ahead of the
+      // event it dispatches to us — so the only honest fix is to restore.
+      preClickRangesRef.current =
+        suppressSelectionChange?.(event) === true
+          ? { ranges: snapshotSelection() }
+          : null;
+      if (adapter?.hasRangedSelection() ?? false) {
         event.preventDefault();
       }
     },
-    [adapterRef],
+    [adapterRef, suppressSelectionChange],
   );
 
   // Contextmenu — suppress the system menu, sample hasSelection from the live
@@ -249,6 +313,12 @@ export function useTextSurfaceContextMenu(
   const onContextMenu = useCallback(
     (event: MouseEvent) => {
       event.preventDefault();
+      // Undo the browser's contextual word-select on a whole-entity target:
+      // the click's job was to name the entity, not to carve a word out of
+      // it, and whatever the user had selected before is still theirs.
+      const preClick = preClickRangesRef.current;
+      preClickRangesRef.current = null;
+      if (preClick !== null) restoreSelection(preClick.ranges);
       let hasSelection = adapterRef?.current?.hasRangedSelection() ?? false;
       if (hasSelectionOverride !== undefined) {
         hasSelection = hasSelectionOverride();

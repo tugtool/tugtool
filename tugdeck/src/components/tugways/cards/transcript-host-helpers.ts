@@ -32,6 +32,7 @@ import { openAttachmentPreview } from "@/lib/attachment-preview-open";
 import { useDeckManager } from "@/deck-manager-context";
 import { useCardId } from "@/components/tugways/use-card-state-preservation";
 import type { CodeSessionStore } from "@/lib/code-session-store";
+import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { AnnotationContext } from "@/lib/annotator/types";
 import { pathResolutionStore } from "@/lib/annotator/path-resolution";
 import { fileNameResolverFor } from "@/lib/annotator/file-name-resolution";
@@ -510,6 +511,27 @@ export function useTranscriptCellMenu({
     };
   }, [cardId, codeSessionStore, deck]);
 
+  // Send the right-clicked file into the composer as an object: the same
+  // chip an `@` mention mints, carrying the canonical path as its value, so
+  // the composer treats it as one thing to move, delete, or send rather than
+  // as a run of path characters. A cited line is deliberately dropped — an
+  // atom names a file, and `path:line` is not one.
+  const handleInsertAsAtom = useCallback((): ActionHandlerResult => {
+    const payload = contextAnnotationRef.current;
+    if (payload === null || codeSessionStore === undefined) return;
+    if (payload.kind !== "file-path") return;
+    const segment: AtomSegment = {
+      kind: "atom",
+      type: "file",
+      label: payload.path,
+      value: payload.path,
+    };
+    return () => {
+      if (cardId !== null) deck.activateCard(cardId);
+      codeSessionStore.insertAtomDraft(segment);
+    };
+  }, [cardId, codeSessionStore, deck]);
+
   // Open in Editor / Show in Finder for the right-clicked file annotation.
   // These live on the cell rather than riding the deck-level chain
   // handlers because a menu item carries no value — the path comes from
@@ -565,6 +587,7 @@ export function useTranscriptCellMenu({
       [TUG_ACTIONS.COPY_COMMAND_AS_PLAIN_TEXT]: handleCopyCommandPlain,
       [TUG_ACTIONS.COPY_ANNOTATION_VALUE]: handleCopyAnnotationValue,
       [TUG_ACTIONS.INSERT_INTO_COMPOSER]: handleInsertIntoComposer,
+      [TUG_ACTIONS.INSERT_AS_ATOM]: handleInsertAsAtom,
       [TUG_ACTIONS.OPEN_FILE]: handleOpenAnnotatedFile,
       [TUG_ACTIONS.REVEAL_IN_FINDER]: handleRevealAnnotatedFile,
       [TUG_ACTIONS.OPEN_IMAGE_PREVIEW]: handleOpenImagePreview,
@@ -590,7 +613,11 @@ export function useTranscriptCellMenu({
       // A surface with no live session can't seed a composer, so it doesn't
       // offer to.
       return codeSessionStore === undefined
-        ? entries.filter((e) => e.action !== TUG_ACTIONS.INSERT_INTO_COMPOSER)
+        ? entries.filter(
+            (e) =>
+              e.action !== TUG_ACTIONS.INSERT_INTO_COMPOSER &&
+              e.action !== TUG_ACTIONS.INSERT_AS_ATOM,
+          )
         : entries;
     },
     [codeSessionStore],
@@ -600,6 +627,15 @@ export function useTranscriptCellMenu({
     const hit = annotationFromEvent(event);
     if (hit === null) return false;
     return annotationEntryFor(hit.payload.kind)?.suppressStandardItems ?? false;
+  }, []);
+
+  // A secondary click on a whole-entity annotation (a command) keeps its
+  // hands off the selection: the browser would smart-select a sub-word, and
+  // every item the menu is about to show acts on the entire command.
+  const suppressSelectionChange = useCallback((event: MouseEvent): boolean => {
+    const hit = annotationFromEvent(event);
+    if (hit === null) return false;
+    return annotationEntryFor(hit.payload.kind)?.wholeEntitySelection ?? false;
   }, []);
 
   // The shared hook owns menuState, the contextmenu pipeline, and
@@ -623,6 +659,7 @@ export function useTranscriptCellMenu({
     capabilities: { canEdit: false },
     extraEntries,
     hideStandardItems,
+    suppressSelectionChange,
   });
 
   // The hook returns native-event handlers; the cell wires them

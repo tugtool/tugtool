@@ -63,6 +63,15 @@ describe("command kinds replace the standard menu block", () => {
     ]);
   });
 
+  test("and a command is one thing to a secondary click", () => {
+    // The whole point of replacing the standard block: the menu's items
+    // all act on the entire command, so the click must not leave the
+    // browser's smart-selected sub-word painted underneath it.
+    for (const kind of ["slash-command", "shell-command"] as const) {
+      expect(annotationEntryFor(kind)?.wholeEntitySelection).toBe(true);
+    }
+  });
+
   test("and a command click is registered at all", () => {
     expect(annotationEntryFor("slash-command")?.primaryClick).toBeDefined();
     expect(annotationEntryFor("shell-command")?.primaryClick).toBeDefined();
@@ -99,6 +108,43 @@ describe("link kinds leave the standard menu block alone", () => {
         ?.menuEntries({ kind: "email", address: "a@b.com" })
         .map((e) => e.label),
     ).toEqual(["Copy Address", "Insert into Composer"]);
+  });
+});
+
+describe("a file offers both ways into the composer", () => {
+  test("its path as text, and itself as an atom", () => {
+    expect(
+      annotationEntryFor("file-path")
+        ?.menuEntries({ kind: "file-path", path: "/repo/a.ts" })
+        .map((e) => e.label),
+    ).toEqual([
+      "Open in Editor",
+      "Show in Finder",
+      "Copy Path",
+      "Insert into Composer",
+      "Insert as Atom",
+    ]);
+  });
+
+  test("and only a file does — the other kinds have no atom to mint", () => {
+    for (const kind of ["url", "email", "directory", "commit-sha"] as const) {
+      const sample = {
+        url: { kind: "url", url: "https://x.y" },
+        email: { kind: "email", address: "a@b.com" },
+        directory: { kind: "directory", path: "/repo/src" },
+        "commit-sha": {
+          kind: "commit-sha",
+          sha: "b089d34a8",
+          root: "/repo",
+          paths: ["a.ts"],
+        },
+      }[kind] as Parameters<
+        NonNullable<ReturnType<typeof annotationEntryFor>>["menuEntries"]
+      >[0];
+      expect(
+        annotationEntryFor(kind)?.menuEntries(sample).map((e) => e.action),
+      ).not.toContain(TUG_ACTIONS.INSERT_AS_ATOM);
+    }
   });
 });
 

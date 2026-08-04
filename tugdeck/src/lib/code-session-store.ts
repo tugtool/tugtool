@@ -748,6 +748,7 @@ export class CodeSessionStore {
       // on the slot's identity) fire exactly once per clicked command.
       pendingCommandInsert: this.state.pendingCommandInsert,
       pendingSnippetInsert: this.state.pendingSnippetInsert,
+      pendingAtomInsert: this.state.pendingAtomInsert,
       lastCost: this.state.lastCost,
       // Live API-retry announcement (or null). The reducer assigns a
       // fresh object only on an `api_retry` frame and clears it to null
@@ -1458,6 +1459,28 @@ export class CodeSessionStore {
   consumePendingSnippetInsert(): void {
     if (this._disposed) return;
     this.dispatch({ type: "consume_snippet_insert" });
+  }
+
+  /**
+   * Park one atom on `pendingAtomInsert` for the prompt entry to insert at
+   * the caret. Used by the transcript's Insert as Atom gesture, which hands
+   * the composer an object rather than the annotation's path text. The entry
+   * observes the slot, inserts, and calls
+   * {@link consumePendingAtomInsert}. Public because the dispatch source is a
+   * UI surface (the transcript's context menu), not the reducer.
+   */
+  insertAtomDraft(segment: AtomSegment): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "insert_atom_draft", segment });
+  }
+
+  /**
+   * Clear `pendingAtomInsert` once the prompt entry has inserted the atom.
+   * Idempotent — a call while already `null` is a state-ref-stable no-op.
+   */
+  consumePendingAtomInsert(): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "consume_atom_insert" });
   }
 
   /**

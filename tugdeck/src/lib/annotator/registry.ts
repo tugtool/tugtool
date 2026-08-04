@@ -7,7 +7,7 @@
  * Adding an entity kind is therefore a detector plus an entry here, with
  * no edit to any transcript, cell, or menu surface.
  *
- * Two things a kind declares:
+ * Three things a kind declares:
  *
  *  - `primaryClick` — what a plain click does, or nothing at all. URLs
  *    and email addresses deliberately have none: they are real anchors,
@@ -21,6 +21,12 @@
  *    smart-selected, which is never what the user meant. Kinds whose
  *    entries don't collide with Copy append instead, so right-clicking an
  *    annotation inside a selection keeps Copy and Select All.
+ *  - `wholeEntitySelection` — whether a secondary click may leave a
+ *    sub-word highlighted inside the annotation. Commands say no: the
+ *    browser's smart-select would paint a word the menu has no item for.
+ *
+ * @see module:components/tugways/use-text-surface-context-menu for where
+ * the last of those is honored.
  *
  * @module lib/annotator/registry
  */
@@ -74,6 +80,13 @@ export interface AnnotationKindEntry {
    * rather than appending below it.
    */
   suppressStandardItems: boolean;
+  /**
+   * Whether a secondary click treats this annotation as one indivisible
+   * thing. When true the surface stops the browser's smart-select on the
+   * click, so a right-click on a command never leaves a sub-word
+   * highlighted under a menu whose every item acts on the whole command.
+   */
+  wholeEntitySelection?: boolean;
 }
 
 const REGISTRY = new Map<AnnotationKind, AnnotationKindEntry>();
@@ -137,12 +150,14 @@ registerAnnotationKind("slash-command", {
   primaryClick: seedCommand,
   menuEntries: () => COMMAND_MENU_ENTRIES,
   suppressStandardItems: true,
+  wholeEntitySelection: true,
 });
 
 registerAnnotationKind("shell-command", {
   primaryClick: seedCommand,
   menuEntries: () => COMMAND_MENU_ENTRIES,
   suppressStandardItems: true,
+  wholeEntitySelection: true,
 });
 
 const URL_MENU_ENTRIES: AnnotationMenuEntry[] = [
@@ -155,11 +170,22 @@ const EMAIL_MENU_ENTRIES: AnnotationMenuEntry[] = [
   INSERT_ENTRY,
 ];
 
+/**
+ * Send this annotation into the composer as an object rather than as its
+ * text — the same chip an `@` mention mints. Offered by the kinds an atom
+ * can actually carry, which today means the ones with a path.
+ */
+const INSERT_ATOM_ENTRY: AnnotationMenuEntry = {
+  action: TUG_ACTIONS.INSERT_AS_ATOM,
+  label: "Insert as Atom",
+};
+
 const FILE_PATH_MENU_ENTRIES: AnnotationMenuEntry[] = [
   { action: TUG_ACTIONS.OPEN_FILE, label: "Open in Editor" },
   { action: TUG_ACTIONS.REVEAL_IN_FINDER, label: "Show in Finder" },
   { action: TUG_ACTIONS.COPY_ANNOTATION_VALUE, label: "Copy Path" },
   INSERT_ENTRY,
+  INSERT_ATOM_ENTRY,
 ];
 
 registerAnnotationKind("file-path", {

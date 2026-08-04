@@ -459,6 +459,30 @@ export interface ConsumeSnippetInsertActionEvent {
 }
 
 /**
+ * Internal action injected by `CodeSessionStore.insertAtomDraft`. Not a
+ * wire event. Parks one `AtomSegment` on `pendingAtomInsert` when a
+ * transcript annotation is inserted as an atom rather than as text; the
+ * prompt entry observes the slot via `useSyncExternalStore`, inserts the
+ * atom at the caret inside a `useLayoutEffect`, and dispatches
+ * `consume_atom_insert`.
+ */
+export interface InsertAtomDraftActionEvent {
+  type: "insert_atom_draft";
+  segment: AtomSegment;
+}
+
+/**
+ * Internal action injected by `CodeSessionStore.consumePendingAtomInsert`.
+ * Clears `pendingAtomInsert` to `null` once the prompt entry has inserted
+ * the atom. Idempotent — a consume while already `null` is a
+ * state-ref-stable no-op, so the seeding `useLayoutEffect` can fire it
+ * without a notification storm.
+ */
+export interface ConsumeAtomInsertActionEvent {
+  type: "consume_atom_insert";
+}
+
+/**
  * Internal action injected by `CodeSessionStore.cancelQueuedSend`. Not
  * a wire event. Removes one entry from `queuedSends` by `turnKey` — a
  * true un-send of a mid-turn submission that was queued but never
@@ -1276,6 +1300,8 @@ export type CodeSessionEvent =
   | ConsumeCommandInsertActionEvent
   | InsertSnippetActionEvent
   | ConsumeSnippetInsertActionEvent
+  | InsertAtomDraftActionEvent
+  | ConsumeAtomInsertActionEvent
   | CancelQueuedSendActionEvent
   | CostUpdateEvent
   | StreamingUsageEvent

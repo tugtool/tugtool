@@ -1749,6 +1749,23 @@ export const TugPromptEntry = React.forwardRef<
     codeSessionStore.consumePendingSnippetInsert();
   }, [pendingSnippetInsert, codeSessionStore]);
 
+  // Atom insert. A transcript annotation inserted as an atom parks its
+  // segment here; this effect drops the atom at the caret and consumes.
+  // The insertion is additive (never a `restoreState`) — an atom is one
+  // more thing the prompt mentions, so an in-progress draft survives it.
+  // [L02] slot via the snapshot; [L03] useLayoutEffect so the doc change
+  // lands in one paint; the slot survives until an editor exists so the
+  // gesture is never silently dropped.
+  const pendingAtomInsert = snap.pendingAtomInsert;
+  useLayoutEffect(() => {
+    if (pendingAtomInsert === null) return;
+    const editor = textEditorRef.current;
+    if (editor === null) return;
+    editor.insertAtom(pendingAtomInsert);
+    editor.focus();
+    codeSessionStore.consumePendingAtomInsert();
+  }, [pendingAtomInsert, codeSessionStore]);
+
   // Code's Z5 button follows the Claude session lifecycle unchanged.
   const submitButtonMode = claudeSubmitButtonMode;
   const submitView = resolveSubmitButtonView(submitButtonMode);

@@ -961,6 +961,16 @@ export interface CodeSessionSnapshot {
     at: { x: number; y: number } | null;
   } | null;
 
+  /**
+   * An atom the transcript asked the composer to carry — a file annotation
+   * inserted as an atom rather than as its path text. Set by
+   * {@link CodeSessionStore.insertAtomDraft}, cleared by
+   * {@link CodeSessionStore.consumePendingAtomInsert} once the prompt entry
+   * has inserted it. Survives snapshot rebuilds until consumed so a re-mounted
+   * entry still picks it up.
+   */
+  pendingAtomInsert: AtomSegment | null;
+
   lastCost: CostSnapshot | null;
   /**
    * Live API-retry announcement, or `null` when no retry is in flight.

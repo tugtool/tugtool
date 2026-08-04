@@ -44,6 +44,7 @@ import type {
   CancelQueuedSendActionEvent,
   InsertCommandDraftActionEvent,
   InsertSnippetActionEvent,
+  InsertAtomDraftActionEvent,
   CodeSessionEvent,
   ContentBlockStartEvent,
   ContextBreakdownEvent,
@@ -440,6 +441,13 @@ export interface CodeSessionState {
     text: string;
     at: { x: number; y: number } | null;
   } | null;
+  /**
+   * An atom the transcript asked the composer to carry, parked by
+   * `insert_atom_draft` and cleared by `consume_atom_insert`. Mirrored onto
+   * `CodeSessionSnapshot.pendingAtomInsert` with a shared reference so the
+   * seeding `useLayoutEffect` fires once per gesture.
+   */
+  pendingAtomInsert: AtomSegment | null;
   /**
    * Counter of outstanding CASE A wire echoes the reducer expects to
    * suppress. Incremented every time `handleInterrupt` fires from
@@ -888,6 +896,7 @@ export function createInitialState(
     pendingDraftRestore: null,
     pendingCommandInsert: null,
     pendingSnippetInsert: null,
+    pendingAtomInsert: null,
     pendingCaseAEchoes: 0,
     queuedSends: [],
     lastError: null,
@@ -1404,6 +1413,29 @@ function handleConsumeSnippetInsert(
   }
   return {
     state: { ...state, pendingSnippetInsert: null },
+    effects: [],
+  };
+}
+
+function handleInsertAtomDraft(
+  state: CodeSessionState,
+  event: InsertAtomDraftActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  return {
+    state: { ...state, pendingAtomInsert: event.segment },
+    effects: [],
+  };
+}
+
+function handleConsumeAtomInsert(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Idempotent — ref-stable no-op when the slot is already null.
+  if (state.pendingAtomInsert === null) {
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, pendingAtomInsert: null },
     effects: [],
   };
 }
@@ -5701,6 +5733,10 @@ export function reduce(
       return handleInsertSnippet(state, event);
     case "consume_snippet_insert":
       return handleConsumeSnippetInsert(state);
+    case "insert_atom_draft":
+      return handleInsertAtomDraft(state, event);
+    case "consume_atom_insert":
+      return handleConsumeAtomInsert(state);
     case "cancel_queued_send":
       return handleCancelQueuedSend(state, event);
     case "cost_update":
