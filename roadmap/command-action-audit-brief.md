@@ -220,13 +220,76 @@ Concrete defects found by the audit, ordered by user-visible impact:
 
 ---
 
-## G. Recommended staging
+## G. The consolidation: command funnel, keyboard funnel, and the user keymap
 
-1. **M1 — Fix the broken validation floor.** Defects 1–7: move imperative enablement into validator tiers, register a `DELETE` handler (or drop the menu item), detach ⌘R when depth ≤ 1 (from `updateMenuState`, where key-equivalent mutation is sanctioned), fix `TugButton:597`, fix the two chord labels, gate Open Recent.
-2. **M2 — The validation registry (leg B).** Extend `registerAction` to `{ handler, validate? }`; assign `validateAction` branches per the §A handler map; generalize `computeEditCapabilities` into per-tier mirrored capability blocks; converge `TugButton` and the context menus onto `chain.validateAction`.
-3. **M3 — The state-query surface (leg C).** Add `queryActionState` beside `validateAction` (chain) and `state?` (registry); ride the same mirror; retire the theme submenu's tugbank pull by pushing the current theme name.
-4. **M4 — Close the door gaps (leg A).** Promote the §A.3 chord-only actions to menu items (turn navigation, command picker, devtools, slots, composer route) and give the control-frame-only commands chain identities where they belong (Both entries), which makes them browser-dev-reachable and validation-visible for free. New chords draw from the §D.2 free pools.
-5. **M5 — Refresh tuglaws/menus.md** against the audited reality: wire-block rename, full frame catalog, full chord table, the tier table including File/stack tiers, and the corrected exception list. The at0167–at0174 harness coverage (`menuSnapshot` / `menuItemState`, `TestHarnessConnection.swift:432-515`) is the regression surface for all of the above and should grow with each milestone.
+The end-state this audit should serve: every command in Tug plumbs through a **single funnel point** where it is received, validated, and issued; every keyboard chord plumbs through a **second funnel point** that maps and controls access to the first; and on top of the two, an app-wide **keyboard-command configuration map** lets the user review, control, and customize their key mappings.
+
+### G.1 What "one funnel" means here — and what it doesn't replace
+
+The funnel is a *front door*, not a new routing system. [L11] and the responder chain stay exactly what they are: ownership and routing — the walk still decides *which responder* handles `close`. What consolidates is everything upstream of the walk: the many places a command can *enter* (menu wire, keybinding, button, slash bridge, raw `dispatchAction` string, direct store-method call) become one place. This is the Cocoa shape precisely: `NSApp.sendEvent` is the keyboard funnel, `NSApp.sendAction` is the command funnel, and the responder chain is the routing both feed. Tug already has three unformalized near-funnels — `dispatchAction` in `action-dispatch.ts` (every control frame), stage 1 of the keyboard pipeline (`responder-chain-provider.tsx`, every mapped chord), and `useControlDispatch` (every control) — plus the audit's finding that **Swift has zero key interception outside menu key equivalents**. Consolidation is mostly formalizing choke points that already exist, then closing the leaks around them.
+
+### G.2 Funnel #1 — the command registry
+
+One canonical table, one entry per user-invocable command, and one dispatch call — `dispatchCommand(id, payload?)` — that every emitter goes through. The entry is the natural container for everything legs A–C produced:
+
+```
+{ id,                      // TUG_ACTIONS constant or control-frame wire — the existing canonical names
+  title,                   // menu/palette/keymap-UI display name (localizable, single source for labels)
+  routing,                 // "first-responder" | "key-card" | "target" | "registry" | "native"
+  validate?,               // leg B predicate — the one definition every surface consults
+  state?,                  // leg C query — checkmark / radio-value projection
+  bindings?,               // LIST of { chord, scope, source } — many chords per command by design (§G.5.2)
+  menuPlacement?,          // menu + position, or none (palette/chord-only commands)
+  scope }                  // "global" | "key-card" | card-component-scoped
+                           // lockedness is NOT an entry field — it is policy, read from the
+                           // maintained NATIVE_LOCKED list (§G.5.4)
+```
+
+`dispatchCommand` validates first, dispatches via the entry's routing (the existing four mechanisms — `sendToFirstResponder`, `sendToKeyCard`, `sendToTarget`, registry handler — become data instead of hand-picked call sites), and notifies observers. Swift stays exactly as thin as it is today: menu selectors keep sending `sendControl` wires, but every wire lands in `dispatchCommand` (which is what `dispatchAction` already almost is). Native-only commands (Hide, Quit, Minimize, Full Screen, the `NSText` re-dispatch five) get ordinary registry entries with `routing: "native"` — represented so the keymap UI can show them, never routed through JS — and are locked only insofar as the `NATIVE_LOCKED` policy list names them (§G.5.4).
+
+What deliberately stays **outside** the funnel: substrate editing bindings (⌃U/⌃W/⌥F/⌥B, Enter/submit — text-editing currency, not commands), form-control value actions (`set-value`, `toggle`, `select-value` — chain currency between controls and responders), and tugcast data frames (`spawn_session_ok` et al. — protocol, not commands). The command/action distinction the registry draws is exactly "user-invocable intent" vs "internal currency," and the §A inventory is the sorting sheet.
+
+The registry retro-pays most of the defect ledger: one entry per command kills the Settings dual-path (defect 9), makes orphan constants visible as registry rows with no handler, makes `set-maker-mode`-style dead doors impossible (a registered command with no emitter is a lint error against the table), and gives the ⌘/ command picker, the Help sheet, and a future command palette one source to enumerate.
+
+### G.3 Funnel #2 — the keymap registry
+
+One table of bindings — each `{ chord, scope } → commandId`, many bindings per command and potentially several commands per chord across scopes (§G.5.2/3) — resolved at one point on each side of the process boundary, with `resolveChord` exposing the full resolution stack including shadowing. The load-bearing move is inverting chord ownership: today chords are *declared* in five places (Swift `keyEquivalent` literals, `KEYBINDINGS`, CM6 keymaps, scoped `useKeybindings`, raw capture listeners); under the funnel, chords are *derived* from the keymap registry:
+
+- **Swift side**: `keyEquivalent`s become applied state, not construction literals. The precedent already ships — `applyStackChordKeyEquivalent` (`AppDelegate.swift:1635`) and the dynamic ⇧⌘S both mutate key equivalents from `updateMenuState`, the sanctioned site. The generalization is a `keymap` block in the menuState push (or a launch-time tugbank read — see G.4) that `updateMenuState` sweeps across all identified items. Because the audit found no Swift key claims outside menus, **the entire native key surface is derivable from the registry** — nothing hides.
+- **JS side**: `KEYBINDINGS` becomes the runtime resolution of the same table (stage 1 already consults a single `matchKeybinding`; it just reads the registry instead of a static array). Scoped bindings (`useKeybindings`) keep their mechanism but register through the same table so they are *visible* to conflict detection.
+- **Migration debt**: the raw capture listeners that claim chords invisibly (commit-mode ⇧⌘M at `tug-prompt-entry.tsx:1626`, the local ⌘. handlers) either register through the funnel or are formally classified substrate-local. Nothing may claim a chord the table can't see.
+
+This structurally closes three whole classes from leg D: Swift/JS double-claim drift (one table generates both sides), menu-only chords dead in browser dev (the JS twin is automatic), and lying labels (defect 6 — displayed chords render from the registry, so a label cannot disagree with the binding).
+
+### G.4 The user keymap feature
+
+With both funnels in place, user customization is a thin layer, and the codebase already contains its working miniature: the **stack-chord preference** — Settings radio → tugbank → `menuState.stackChord` → `applyStackChordKeyEquivalent` re-binding ⌘R (`settings-general-body.tsx:132`, `stack-chord-store.ts`, `AppDelegate.swift:1635`). The feature generalizes exactly that loop:
+
+- **Storage**: a tugbank domain (`keymap/<command-id>` → the command's *binding list*, or `[]` to unbind), per the no-localStorage law. Defaults live in the registry; tugbank holds only overrides, so reset-to-default is deletion. The override value is a list from day one (§G.5.2) — never a scalar that would have to grow later.
+- **Launch**: Swift reads overrides in `loadPreferences` (`AppDelegate.swift:727` — the established launch-time tugbank pattern) so menus carry user chords from first paint; live changes re-apply through the `updateMenuState` sweep.
+- **UI**: a Settings-card keymap pane enumerating the registry — searchable command list (title, scope, current bindings, defaults), chord-capture for adding/removing bindings (lists, not a single slot — §G.5.2), shadowing rendered inline per binding (who wins and in what scope, from `resolveChord` — §G.5.3), locked rows driven by the `NATIVE_LOCKED` policy list (§G.5.4), and per-row reset. The §D.2 free-chord pools become the suggestion surface for conflicts.
+- **Regression surface**: the harness's `menuSnapshot`/`menuItemState` generalizes to a registry snapshot verb, and at0167–at0174 grow keymap-override cases.
+
+### G.5 Design decisions (locked 2026-08-04)
+
+The four open questions from the first draft, resolved:
+
+1. **Where the canonical registry lives — DECIDED: TypeScript.** Beside `action-vocabulary.ts` (where the names already live), with Swift continuing to hand-build menu *structure* keyed by the existing identifiers and consuming chords/validity/state as data. Generating menu structure from a shared manifest remains a later, optional step; identifiers already decouple structure from behavior.
+2. **Chord arity — DECIDED: many chords per command from the start.** A single-chord-per-command model is impractical for real systems and must not be designed in as a corner. The registry's binding shape is a *list* end to end: `bindings: [{ chord, scope, source }]` per command, everywhere — entry shape, keymap table, conflict detection, tugbank override format, capture UI, and the Swift `keyEquivalent` sweep (which applies the first menu-eligible binding and leaves the rest to the JS funnel, since an `NSMenuItem` carries only one key equivalent — a display constraint of the menu, never a constraint of the model). Existing multi-chord realities (⌘+/⌘=, ⌘./Escape both cancelling, the ⌘R preference pair) become ordinary registry data on day one. Non-US keyboard layouts still need a `key`-vs-code matching decision before the capture UI ships.
+3. **Scope conflict semantics — DECIDED: innermost scope wins, with first-class shadowing feedback.** The rule mirrors the chain walk. But shadowing must be *excellent, queryable, and surfaced* — not silently resolved: the registry API answers, for any chord, the full resolution stack (`resolveChord(chord, scope) → [{ commandId, scope, active | shadowedBy }]`), and for any command, whether each of its bindings is currently live or shadowed and by what. The keymap UI renders shadowing inline (shadowed rows say who wins and where); the observability surface (registry snapshot verb, dev panel) exposes the same answers. A chord or command silently going dead is the failure mode this decision exists to prevent.
+4. **What natives are rebindable — DECIDED: locking is policy, carried by a maintained native-locked list.** A single curated list (`NATIVE_LOCKED`, living with the registry) names the commands whose bindings are locked — Hide/Quit/Services, the `NSText` five, and whatever else policy says. The *system* has no hard-coded limitation: every entry is mechanically rebindable, and lockedness is a data-driven predicate the UI and the override validator both read from the list. Changing the policy is editing the list, never touching the mechanism.
+
+---
+
+## H. Recommended staging
+
+1. **M1 — Fix the broken validation floor.** Defects 1–7: move imperative enablement into validator tiers, register a `DELETE` handler (or drop the menu item), detach ⌘R when depth ≤ 1 (from `updateMenuState`, where key-equivalent mutation is sanctioned), fix `TugButton:597`, fix the two chord labels, gate Open Recent. No architecture, just floor repair — everything later builds on a truthful baseline.
+2. **M2 — The command registry (funnel #1, structure).** Introduce the §G.2 registry and `dispatchCommand`; fold `dispatchAction` into it; convert the existing "Both" loops and menu wires to registry entries; give ids to the §A.4 store-verb and raw-string dispatch candidates; represent native items as locked entries. Behavior-neutral by design — same routing, one front door.
+3. **M3 — Validation and state as registry fields (legs B + C).** Populate `validate` per the §A handler map (chain `validateAction` branches + registry predicates for control-frame commands); add `queryActionState`/`state`; generalize `computeEditCapabilities` into the per-tier mirror driven by the registry; converge `TugButton`, the context menus, and the Swift tiers onto the one definition; retire the theme submenu's tugbank pull by pushing current theme.
+4. **M4 — Close the door gaps (leg A).** Now one-line registry edits: promote the §A.3 chord-only commands to menu items (turn navigation, command picker, devtools, slots, composer route) and give control-frame-only commands chain identities where they belong, making them browser-dev-reachable and validation-visible for free. New chords draw from the §D.2 free pools.
+5. **M5 — The keymap registry (funnel #2).** Invert chord ownership per §G.3: bindings become derived data on both sides (`updateMenuState` sweep on Swift, registry-resolved `matchKeybinding` on JS), multi-chord from the start (§G.5.2); migrate or formally classify the raw capture listeners; land `resolveChord` with full shadowing answers (§G.5.3) and the `NATIVE_LOCKED` policy list (§G.5.4).
+6. **M6 — The user keymap feature.** tugbank `keymap/` overrides, launch-time read in `loadPreferences`, live re-apply, and the Settings keymap pane per §G.4 — the stack-chord loop generalized to every rebindable command.
+7. **M7 — Refresh tuglaws/menus.md** — now largely *generated* from the registry: wire-block rename, full frame catalog, the chord table (from funnel #2's one table), the tier table including File/stack tiers, and the corrected exception list. The at0167–at0174 harness coverage (`menuSnapshot` / `menuItemState`, `TestHarnessConnection.swift:432-515`) grows with each milestone; M5+ adds a registry-snapshot verb.
 
 ---
 
