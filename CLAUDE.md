@@ -61,6 +61,14 @@ Do **not** run `just app-test-all` on your own initiative. Run the full corpus o
 
 Bare `just app-test` (no arguments) is a curated **core tier** of ~20 tests — one per load-bearing surface — for a fast read on whether the app fundamentally works. It is deliberately not everything. `just app-test <files…>` runs exactly what you name.
 
+### The output is the report — never pipe it
+
+Run the app-test command bare. The recipe prints a finished report: a per-file result table, a `Diagnostics:` section carrying every `note()` the tests asked to be seen, a `Failures:` section giving each failure's message and its location in the test file, and a closing `VERDICT:` line. Per-file `bun` streams are suppressed by default (`TUG_APPTEST_STREAM=1` restores them verbatim), so a green one-file run is about twenty lines. There is nothing a filter can extract that the summary has not already extracted.
+
+Piping it into `grep`/`head`/`tail` is worse than redundant: the pipeline's exit status becomes the filter's, so `just app-test X | grep -A 8 "Failures:"` on a **passing** run prints nothing and exits 1 — a green run reported as a silent failure. A fixed `-A N` window also truncates the second failure and drops `Diagnostics:` entirely. `tugplug/hooks/gate-app-test-output.sh` denies these pipelines.
+
+Want a result to compute over rather than read? `TUG_APPTEST_JSON=<path>` writes a document — verdict, totals, per-file status, failures, notes — serialized from the same arrays the text summary renders, so the two cannot drift. It never touches stdout.
+
 The doctrine is in [tuglaws/app-test-harness.md](tuglaws/app-test-harness.md#selection-is-derived-not-remembered); the how-to is in [tests/app-test/README.md](tests/app-test/README.md#choosing-what-to-run).
 
 ## Ledger databases — never open live files with sqlite3
