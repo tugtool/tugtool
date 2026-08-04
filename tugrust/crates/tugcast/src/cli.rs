@@ -66,6 +66,20 @@ pub struct Cli {
     /// Useful when a zombie tugcast is holding the port after a crash.
     #[arg(long)]
     pub force: bool,
+
+    /// Seed this instance's ledger from a JSON spec, then exit without
+    /// starting a server — the app-test harness's pre-launch hook.
+    ///
+    /// A session row is written by the real spawn path and nothing else
+    /// (`session_init` from a live tugcode), so an app-test cannot compose a
+    /// *session-entry* changeset row without either a real Claude subprocess
+    /// or this. It writes through the same `SessionLedger` the server uses, so
+    /// the schema and the journal are correct by construction rather than by a
+    /// hand-mirrored `CREATE TABLE` that drifts.
+    ///
+    /// Refused outside an app-test instance — see `seed_ledger` in `main`.
+    #[arg(long, value_name = "JSON_FILE")]
+    pub seed_ledger: Option<PathBuf>,
 }
 
 impl Cli {

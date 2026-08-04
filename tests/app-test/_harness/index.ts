@@ -23,8 +23,10 @@
 
 import {
   createWriteStream,
+  existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   unlinkSync,
   writeFileSync,
   type WriteStream,
@@ -44,6 +46,7 @@ import type {
   AccessibilityStatus,
   EvalJsOptions,
   LaunchTugAppOptions,
+  LedgerSeedSpec,
   MenuItemSnapshot,
   MenuItemState,
   NativeModifier,
@@ -102,6 +105,10 @@ export type {
 export { TUGCODE_TRANSCRIPT_SCHEMA_VERSION } from "./client";
 export type {
   AccessibilityStatus,
+  MenuItemState,
+  LedgerSeedFileEvent,
+  LedgerSeedSession,
+  LedgerSeedSpec,
   NativeModifier,
   NativeMouseButton,
   ScreenRect,
@@ -332,6 +339,9 @@ export class App {
   readonly hostPid: number;
   /** Per-instance identity this launch ran under (`TUG_INSTANCE_ID`). */
   readonly instanceId: string;
+  /** This launch's resolved options — the bundle path and instance env
+   *  {@link App.seedLedger} needs to address the same ledger. */
+  private readonly resolvedLaunch: ResolvedLaunch;
   private closed = false;
   /** Every screenshot path handed out, pending reclamation. */
   private readonly screenshots: string[] = [];
@@ -349,6 +359,7 @@ export class App {
     detachSignals: () => void;
     hostPid?: number;
     instanceId: string;
+    resolvedLaunch: ResolvedLaunch;
   }) {
     this.rpc = args.rpc;
     this.version = args.version;
@@ -360,6 +371,7 @@ export class App {
     this.detachSignals = args.detachSignals;
     this.hostPid = args.hostPid ?? 0;
     this.instanceId = args.instanceId;
+    this.resolvedLaunch = args.resolvedLaunch;
     // A test that never reaches `close()` (a thrown assertion, a
     // timeout) still gives its screenshots back at the end of the run.
     this.disposeRunEndReclaim = onTestRunEnd(() => this.reclaimScreenshots());
@@ -374,6 +386,35 @@ export class App {
    * Tug service flushes and exits inside its own budget, so a healthy
    * teardown never escalates.
    */
+  /**
+   * Write rows into this instance's ledger — the way an app-test reaches a
+   * **session entry** in the Changes shade.
+   *
+   * A `sessions` row is written by exactly one path in the product,
+   * `session_init` arriving from a live tugcode subprocess, and
+   * `bindSession` is a client-side binding the ledger knows nothing
+   * about. Without this, an app-test can compose *unattributed* changeset
+   * rows but never a session entry, which left the hunk-election
+   * checkboxes, the `N of M hunks` badge, and per-row Disclaim
+   * unreachable — at0253 and at0332 both record it as a wall.
+   *
+   * Call it **after** the app is up: tugcast demotes every `live` row to
+   * `closed` once at startup (a live row with no running subprocess is
+   * stale), so a row seeded before launch is swept before the first
+   * compose and its files surface as `orphaned` instead.
+   *
+   * The aggregate recomposes on git-status movement, so touch a file
+   * afterwards if nothing else in the test does.
+   *
+   * A `file_events` row only makes a session *own* a file when the path is
+   * dirty in git, the `origin` is proof-class (`exact`/`replay` — a `bash`
+   * row is a bracket hint and never an owner), and `at` post-dates the
+   * path's liveness cut (its last commit).
+   */
+  seedLedger(spec: LedgerSeedSpec): void {
+    seedLedgerForLaunch(this.resolvedLaunch, spec);
+  }
+
   quiesceReport(): QuiesceReport | null {
     const path = join(
       homedir(),
@@ -1689,6 +1730,7 @@ export async function launchTugApp(
     detachSignals,
     hostPid,
     instanceId: resolved.instanceId,
+    resolvedLaunch: resolved,
   });
 }
 
@@ -1944,6 +1986,71 @@ interface SpawnedTugApp {
   exited: Promise<number>;
   stdout?: ReadableStream<Uint8Array> | null;
   stderr?: ReadableStream<Uint8Array> | null;
+}
+
+/**
+ * Write ledger rows for a running launch.
+ *
+ * Runs the `tugcast` shipped inside the bundle under test with this
+ * launch's instance environment, so the rows land in the same
+ * per-instance `sessions.db` / `changes.db` the app is reading and are
+ * written by the same `SessionLedger` the server uses — real schema, real
+ * journal. `--seed-ledger` refuses a non-app-test instance id, so this
+ * cannot reach a developer's ledger even if the env were wrong.
+ *
+ * **This must run after the app is up, not before.** tugcast calls
+ * `demote_live_to_closed` once at startup, which flips every `live` row to
+ * `closed` — the crash-recovery rule that a live row with no running
+ * subprocess is stale. A pre-launch seed is exactly that shape, so it gets
+ * demoted before the first compose and its files surface as `orphaned`
+ * rather than under a session entry. Seeding after startup lands the row
+ * behind the sweep.
+ */
+function seedLedgerForLaunch(
+  resolved: ResolvedLaunch,
+  spec: LedgerSeedSpec,
+): void {
+  const spawnSync = (globalThis as unknown as {
+    Bun?: {
+      spawnSync: (opts: Record<string, unknown>) => {
+        exitCode: number;
+        stdout: Uint8Array;
+        stderr: Uint8Array;
+      };
+    };
+  }).Bun?.spawnSync;
+  if (!spawnSync) {
+    throw new Error("seedLedger: Bun.spawnSync is unavailable (run via `bun test`)");
+  }
+
+  const bundlePath = resolved.appPath.replace(/\/Contents\/MacOS\/[^/]+$/, "");
+  const tugcast = `${bundlePath}/Contents/MacOS/tugcast`;
+  if (!existsSync(tugcast)) {
+    throw new Error(
+      `seedLedger: no tugcast in the bundle under test at ${tugcast}. ` +
+        "The seeding hook runs the binary that ships with the app so the " +
+        "ledger schema cannot drift from the server's.",
+    );
+  }
+
+  const specPath = `${tmpdir()}/tug-ledger-seed-${randomUUID()}.json`;
+  writeFileSync(specPath, JSON.stringify(spec));
+  try {
+    const out = spawnSync({
+      cmd: [tugcast, "--seed-ledger", specPath],
+      env: { ...process.env, ...resolved.env },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (out.exitCode !== 0) {
+      throw new Error(
+        `seedLedger: tugcast --seed-ledger exited ${out.exitCode}: ` +
+          new TextDecoder().decode(out.stderr).trim(),
+      );
+    }
+  } finally {
+    rmSync(specPath, { force: true });
+  }
 }
 
 function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {

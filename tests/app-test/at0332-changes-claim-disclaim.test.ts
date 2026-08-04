@@ -18,12 +18,15 @@
  * **Not driven here:** the claim/disclaim round trip's *destination*. Clicking
  * Claim really does write rows, but the file only surfaces under a session
  * entry when the ledger holds a live session of that id, and `bindSession` is
- * a synthetic client-side binding the ledger knows nothing about. So the
- * attributed row — its Disclaim affordance, its corner-up-right icon, its
- * single divider — is not reachable from here, the same wall at0253 records
- * for the commit round trip. Those verbs are covered at the Rust layer
- * (`session_ledger.rs`: batch claim atomicity, disclaim scoping, journal
- * replay).
+ * a synthetic client-side binding the ledger knows nothing about. Those verbs
+ * are covered at the Rust layer (`session_ledger.rs`: batch claim atomicity,
+ * disclaim scoping, journal replay).
+ *
+ * That gap is no longer a wall, only a scope choice: `app.seedLedger()` writes
+ * a live session and its proof rows through the real ledger, which is how
+ * at0334 drives a session-entry row. A test that wants the attributed row —
+ * its Disclaim affordance, its corner-up-right icon, its single divider — can
+ * seed one rather than accept the gap.
  *
  * @covers tugdeck/src/components/tugways/tug-changes-list.tsx
  * @covers tugdeck/src/lib/changeset-verb-store.ts

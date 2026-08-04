@@ -129,6 +129,20 @@ An app-test launch, a live interactive instance (`just app-debug`, `just app-rel
 | Claude / tugcode subprocess | tugcast's own process group (`setpgid` + `kill(0)` on exit) | `tugcast/src/main.rs` |
 | **Native input / app activation / key window** | **not divisible** — these are login-session singletons, so they are serialized, not namespaced: the whole `just app-test` invocation runs under `tugutil host gate run --name apptest` | `tugcore::ports::APPTEST_GATE_PORT`, `tug::commands::gate` |
 
+### Seeding the ledger: reaching a session entry
+
+Per-instance isolation is what makes ledger seeding safe, and seeding is what makes a **session-entry** changeset row reachable at all. A `sessions` row is written by exactly one path in the product — `session_init` arriving from a live tugcode subprocess — and `bindSession` is a client-side binding the ledger knows nothing about, so a test could compose *unattributed* rows and nothing else. Everything hanging off a session entry (the hunk-election checkboxes, the `N of M hunks` badge, per-row Disclaim) sat behind that.
+
+`App.seedLedger({ sessions, file_events })` runs `tugcast --seed-ledger` out of the bundle under test with the launch's own instance environment, so rows are written by the same `SessionLedger` the server uses — real schema, real migrations, real change journal. A hand-mirrored `CREATE TABLE` in the harness would drift the first time the schema moved. The flag refuses any instance id that is not an app-test one, so it cannot reach a developer's ledger even if the environment were wrong.
+
+Three things decide whether a seeded row actually composes:
+
+- **Seed after launch, never before.** tugcast calls `demote_live_to_closed` once at startup — the crash-recovery rule that a `live` row with no running subprocess is stale. A pre-launch seed is exactly that shape, so it is swept before the first compose and its files surface as `orphaned`.
+- **`origin` must be proof-class** (`exact` / `replay`). A `bash` or `turn` row is a whole-tree-delta *hint* and never makes a session an owner; the file falls to `unattributed` instead.
+- **`at` must post-date the path's liveness cut** (its last commit), and the path must be dirty in git.
+
+The wall this retires was written down as permanent (an earlier decision recorded "no app-test is written for them" and two test docblocks recorded it as unreachable). It was reachable the whole time. When a surface looks untestable, spike the seam before the gap becomes doctrine — the cost of getting this one wrong was two blocking defects nobody had clicked their way into.
+
 ### Background is the default; the screen-takers are a declared set
 
 An app-test does not take your machine. The app launches as an accessory (`NSApp.setActivationPolicy(.accessory)`, `open -g`), keyboard events are addressed to its process with `CGEvent.postToPid`, and mouse events are synthesized as `NSEvent`s and dispatched straight into its window — AppKit refuses to route mouse events to an inactive app above the window level, so going through the window is the only way in. A run happens around you while you keep working.

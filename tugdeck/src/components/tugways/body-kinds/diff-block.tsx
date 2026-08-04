@@ -807,12 +807,16 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     stableViewToggleClickRef.current = stableViewToggleClick;
   }, [stableViewToggleClick]);
   const viewToggleForm = useResponderForm({
-    // `parentId: null` registers the form at the ambient
-    // `ResponderParentContext` level — the same level DiffBlock
-    // itself sits at. The choice group inside dispatches `selectValue`
-    // and the chain walk reaches this form directly; no block-level
-    // responder sits between them.
-    parentId: null,
+    // No `parentId`, so the form inherits the ambient
+    // `ResponderParentContext` and sits as a sibling of DiffBlock in the
+    // chain. The choice group inside dispatches `selectValue` and the walk
+    // reaches this form directly; no block-level responder sits between them.
+    //
+    // Explicitly **not** `parentId: null`, which pins a responder as a ROOT
+    // node — the walk would stop dead here. Anything a host renders inside
+    // this block (`renderHunkAffordance`'s election checkbox dispatching
+    // `toggle`) would then find no handler, because its nearest scope is this
+    // form and this form would have nowhere to forward to.
     selectValue: {
       [viewToggleSenderId]: (next: string) => {
         // Release follow-bottom BEFORE the mutator runs — same

@@ -2262,3 +2262,376 @@ mod tests {
         assert!(draft_from_row(&draft_row(None)).selection.is_none());
     }
 }
+
+/// The M02A checklist, walked against the real machinery rather than by hand.
+///
+/// Every step here runs the product path: a real git repo, a real
+/// `SessionLedger` holding a live session and a proof row, the real
+/// [`compose_snapshot`], the real draft round trip through the ledger, and the
+/// real landing engine. What it does **not** drive is the rendering — the
+/// checkbox, the badge text, and the disabled control are React, and are
+/// covered by the `reconcileHunkElection` unit table and by at0333.
+///
+/// The point of walking it here is that every M02A defect lived on this side
+/// of the boundary: the projection that dropped the election, the two diff
+/// spellings that could disagree about an id, the landing that had to refuse
+/// drift. A checklist item a machine can hold is not a hand-verification item.
+#[cfg(test)]
+mod m02a_verification {
+    use super::*;
+    use crate::session_ledger::{ChangesetDraftRow, FileEventRow};
+    use std::path::Path;
+
+    const SESSION: &str = "hv-session";
+    const FILE: &str = "wide.txt";
+
+    fn git(dir: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// 120 committed lines, then edits at 20 and 90 — far enough apart that
+    /// git emits two hunks rather than merging them.
+    fn dirty_two_hunks(root: &Path) {
+        let dirty: String = (1..=120)
+            .map(|n| match n {
+                20 | 90 => format!("line {n} CHANGED\n"),
+                _ => format!("line {n}\n"),
+            })
+            .collect();
+        std::fs::write(root.join(FILE), dirty).unwrap();
+    }
+
+    fn seed_repo() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        git(&root, &["init", "-q", "-b", "main"]);
+        git(&root, &["config", "user.email", "t@t.test"]);
+        git(&root, &["config", "user.name", "t"]);
+        let base: String = (1..=120).map(|n| format!("line {n}\n")).collect();
+        std::fs::write(root.join(FILE), base).unwrap();
+        git(&root, &["add", "-A"]);
+        git(&root, &["commit", "-q", "-m", "init"]);
+        dirty_two_hunks(&root);
+        (dir, root)
+    }
+
+    /// A live session that proof-owns the dirty file — the shape a real
+    /// session-entry row is composed from.
+    fn seed_ledger(root: &Path) -> SessionLedger {
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .record_spawn(SESSION, "ws", &root.to_string_lossy(), "card-1", 0, None)
+            .unwrap();
+        ledger
+            .record_file_event(&FileEventRow {
+                tug_session_id: SESSION.to_owned(),
+                tool_use_id: "tu-1".to_owned(),
+                file_path: root.join(FILE).to_string_lossy().into_owned(),
+                tool_name: "Edit".to_owned(),
+                op: "write".to_owned(),
+                origin: "exact".to_owned(),
+                ambiguous: false,
+                parent_tool_use_id: None,
+                project_dir: root.to_string_lossy().into_owned(),
+                // Past the row-liveness cut (the file's last commit).
+                at: 9_000_000_000_000,
+            })
+            .unwrap();
+        ledger
+    }
+
+    /// The hunk ids the deck's checkboxes are keyed by — read the way the deck
+    /// reads them, off the wire.
+    async fn wire_hunk_ids(root: &Path) -> Vec<String> {
+        let diff = super::super::git::fetch_git_diff_with_untracked(root, &[])
+            .await
+            .expect("wire diff");
+        super::super::git::parse_git_diff(&diff)
+            .into_iter()
+            .find(|f| f.path == FILE)
+            .expect("the dirty file is on the wire")
+            .hunks
+    }
+
+    fn write_election(ledger: &SessionLedger, root: &Path, ids: &[&str]) {
+        let selection = serde_json::json!({
+            "include": [],
+            "exclude": [],
+            "hunks": { FILE: ids },
+        });
+        ledger
+            .upsert_changeset_draft(&ChangesetDraftRow {
+                owner_kind: "session".to_owned(),
+                owner_id: SESSION.to_owned(),
+                project_dir: root.to_string_lossy().into_owned(),
+                fingerprint: "fp".to_owned(),
+                message: "Land part of the file".to_owned(),
+                updated_at: 1,
+                edited: false,
+                selection: Some(selection.to_string()),
+            })
+            .unwrap();
+    }
+
+    /// The composed session entry for our seeded session.
+    async fn session_entry(root: &Path, ledger: &SessionLedger) -> ChangesetEntry {
+        compose_snapshot(root, Some(ledger))
+            .await
+            .expect("repo composes")
+            .changesets
+            .into_iter()
+            .find(|e| matches!(e, ChangesetEntry::Session { owner_id, .. } if owner_id == SESSION))
+            .expect("the live session owns a dirty file, so it has an entry")
+    }
+
+    fn head_patch(root: &Path) -> String {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["show", "--no-color", "HEAD"])
+            .output()
+            .expect("git show");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    /// **HV1 + HV2** — the election settles, survives the round trip through
+    /// the ledger, and the row can count it.
+    ///
+    /// This is the F1 defect's exact path. Before the projection was made
+    /// opaque, the `hunks` key was written to the ledger and then dropped by
+    /// the typed struct on the way back out, so the checkbox snapped back and
+    /// the badge never appeared. `elected`/`total` here are the two numbers
+    /// the `N of M hunks` badge renders.
+    #[tokio::test]
+    async fn hv1_hv2_the_election_settles_and_the_row_can_count_it() {
+        let (_dir, root) = seed_repo();
+        let ledger = seed_ledger(&root);
+        let ids = wire_hunk_ids(&root).await;
+        assert_eq!(ids.len(), 2, "two well-separated edits, two hunks");
+
+        write_election(&ledger, &root, &[&ids[0]]);
+
+        let ChangesetEntry::Session { files, draft, .. } = session_entry(&root, &ledger).await
+        else {
+            panic!("session entry");
+        };
+        assert!(
+            files.iter().any(|f| f.path == FILE),
+            "the session owns the dirty file"
+        );
+
+        let selection = draft
+            .expect("an entry with files carries its draft")
+            .selection
+            .expect("the draft carries the selection");
+        assert_eq!(
+            selection["hunks"][FILE],
+            serde_json::json!([ids[0]]),
+            "the election survives the projection — the F1 defect verbatim"
+        );
+
+        // What the badge renders: elected ∩ current = 1, total = 2.
+        let elected = selection["hunks"][FILE]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|id| ids.iter().any(|cur| cur == id.as_str().unwrap()))
+            .count();
+        assert_eq!((elected, ids.len()), (1, 2), "the row reads `1 of 2 hunks`");
+    }
+
+    /// **HV4 + HV6** — a partial landing takes only the elected hunk and
+    /// leaves the rest dirty; an unelected file still lands whole.
+    #[tokio::test]
+    async fn hv4_hv6_partial_lands_alone_and_whole_file_still_lands_whole() {
+        let (_dir, root) = seed_repo();
+        let _ledger = seed_ledger(&root);
+        let ids = wire_hunk_ids(&root).await;
+
+        // HV4: land the first hunk only.
+        let mut hunks = std::collections::BTreeMap::new();
+        hunks.insert(FILE.to_string(), vec![ids[0].clone()]);
+        tugchanges_core::commit(tugchanges_core::CommitOptions {
+            project: Some(root.clone()),
+            message: "land the first hunk".to_string(),
+            paths: Some(vec![FILE.to_string()]),
+            hunks: Some(hunks),
+            ..Default::default()
+        })
+        .expect("the partial landing succeeds");
+
+        let shown = head_patch(&root);
+        assert!(
+            shown.contains("line 20 CHANGED"),
+            "the elected hunk landed: {shown}"
+        );
+        assert!(
+            !shown.contains("line 90 CHANGED"),
+            "the unelected hunk did NOT land: {shown}"
+        );
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["status", "--porcelain"])
+            .output()
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&status.stdout).contains(FILE),
+            "the remainder is still dirty"
+        );
+
+        // HV6: no election now — the remainder lands whole.
+        tugchanges_core::commit(tugchanges_core::CommitOptions {
+            project: Some(root.clone()),
+            message: "land the rest".to_string(),
+            paths: Some(vec![FILE.to_string()]),
+            ..Default::default()
+        })
+        .expect("the whole-file landing succeeds");
+        assert!(
+            head_patch(&root).contains("line 90 CHANGED"),
+            "the remainder landed whole"
+        );
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["status", "--porcelain"])
+            .output()
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&status.stdout).trim().is_empty(),
+            "the tree is clean"
+        );
+    }
+
+    /// **HV5 + HV8** — an election whose content has moved is refused by name,
+    /// and the refusal stages nothing.
+    ///
+    /// HV8's display half (the row reading `stale election` rather than a
+    /// silent whole-file landing) is the `reconcileHunkElection` table's job;
+    /// what matters here is that the condition it warns about is real — the
+    /// landing genuinely refuses rather than quietly taking the whole file.
+    #[tokio::test]
+    async fn hv5_hv8_drift_refuses_by_name_and_stages_nothing() {
+        let (_dir, root) = seed_repo();
+        let _ledger = seed_ledger(&root);
+        let ids = wire_hunk_ids(&root).await;
+
+        // Elect the first hunk, then edit that hunk's own content out from
+        // under the election.
+        let drifted: String = (1..=120)
+            .map(|n| match n {
+                20 => "line 20 CHANGED AGAIN\n".to_string(),
+                90 => "line 90 CHANGED\n".to_string(),
+                _ => format!("line {n}\n"),
+            })
+            .collect();
+        std::fs::write(root.join(FILE), drifted).unwrap();
+
+        let mut hunks = std::collections::BTreeMap::new();
+        hunks.insert(FILE.to_string(), vec![ids[0].clone()]);
+        let err = tugchanges_core::commit(tugchanges_core::CommitOptions {
+            project: Some(root.clone()),
+            message: "land a hunk that moved".to_string(),
+            paths: Some(vec![FILE.to_string()]),
+            hunks: Some(hunks),
+            ..Default::default()
+        })
+        .expect_err("the elected hunk is no longer in the file");
+
+        match &err {
+            tugchanges_core::CommitError::HunkDrift { path, ids: named } => {
+                assert_eq!(path, FILE, "the refusal names the path");
+                assert_eq!(named, &vec![ids[0].clone()], "and the drifted id");
+            }
+            other => panic!("expected a typed drift refusal, got {other:?}"),
+        }
+        assert!(
+            err.to_string().starts_with("hunk drift:"),
+            "the refusal reads as drift: {err}"
+        );
+
+        let staged = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["diff", "--cached", "--name-only"])
+            .output()
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&staged.stdout).trim().is_empty(),
+            "a refused landing leaves nothing staged"
+        );
+    }
+
+    /// **HV3's premise** — an election that selects nothing is refused, which
+    /// is what makes the disabled last checkbox correct rather than arbitrary.
+    ///
+    /// The control refuses to let the user uncheck the sole remaining hunk.
+    /// That guard is only honest if the state it prevents is genuinely
+    /// unreachable-by-design, so this pins the engine end of it: a file in the
+    /// landing set with an empty election is an error, not a whole-file
+    /// disposition.
+    #[tokio::test]
+    async fn hv3_an_election_that_selects_nothing_is_refused() {
+        let (_dir, root) = seed_repo();
+        let mut hunks = std::collections::BTreeMap::new();
+        hunks.insert(FILE.to_string(), Vec::new());
+
+        let err = tugchanges_core::commit(tugchanges_core::CommitOptions {
+            project: Some(root.clone()),
+            message: "land nothing".to_string(),
+            paths: Some(vec![FILE.to_string()]),
+            hunks: Some(hunks),
+            ..Default::default()
+        })
+        .expect_err("an empty election is not a disposition");
+        assert!(
+            err.to_string().contains("selects no hunks"),
+            "the refusal says why: {err}"
+        );
+    }
+
+    /// **HV7's mechanism** — the id a collapsed band is keyed by survives a
+    /// hunk appearing above it.
+    ///
+    /// at0333 drives the DOM half on a real row (the band stays folded and the
+    /// diff body is the same node). This pins the half that makes that
+    /// meaningful: the id is content-derived, so inserting a hunk above does
+    /// not move it — if ids shifted with position, surviving the mount would
+    /// still land the fold on the wrong band.
+    #[tokio::test]
+    async fn hv7_a_hunk_appearing_above_does_not_move_the_ids_below_it() {
+        let (_dir, root) = seed_repo();
+        let before = wire_hunk_ids(&root).await;
+        assert_eq!(before.len(), 2);
+
+        // A third edit between the two, far enough from both to be its own
+        // hunk — the "a hunk appears above the collapsed one" transition.
+        let three: String = (1..=120)
+            .map(|n| match n {
+                20 | 55 | 90 => format!("line {n} CHANGED\n"),
+                _ => format!("line {n}\n"),
+            })
+            .collect();
+        std::fs::write(root.join(FILE), three).unwrap();
+
+        let after = wire_hunk_ids(&root).await;
+        assert_eq!(after.len(), 3, "the new edit is its own hunk");
+        assert_eq!(
+            (after[0].clone(), after[2].clone()),
+            (before[0].clone(), before[1].clone()),
+            "the original hunks keep their ids — the `@@` header is not hashed, \
+             so a hunk appearing between them cannot move either one"
+        );
+    }
+}

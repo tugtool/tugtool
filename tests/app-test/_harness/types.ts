@@ -403,6 +403,45 @@ export interface WaitForConditionOptions {
 /**
  * Options for `launchTugApp`.
  */
+/** One live session row to seed — mirrors the ledger's `record_spawn`. */
+export interface LedgerSeedSession {
+  /** The id the card will bind to, so the entry and the card agree. */
+  session_id: string;
+  /** The registry's workspace key — the canonical project dir. */
+  workspace_key: string;
+  /** The canonical project dir the entry composes under. */
+  project_dir: string;
+  card_id?: string;
+  /** The entry's display title; falls back to the id prefix without one. */
+  name?: string;
+}
+
+/**
+ * One `file_events` row — the evidence that makes a session own a file.
+ * Field names are the ledger's, so the spec is the row.
+ */
+export interface LedgerSeedFileEvent {
+  tug_session_id: string;
+  tool_use_id: string;
+  /** Absolute or repo-relative; the read side reconciles both. */
+  file_path: string;
+  tool_name: string;
+  op: string;
+  /** `exact`/`replay` make an owner; `bash`/`turn` are bracket hints only. */
+  origin: string;
+  ambiguous: boolean;
+  parent_tool_use_id?: string | null;
+  project_dir: string;
+  /** Epoch ms. Must post-date the path's last commit to stay live. */
+  at: number;
+}
+
+/** See {@link LaunchTugAppOptions.seedLedger}. */
+export interface LedgerSeedSpec {
+  sessions?: LedgerSeedSession[];
+  file_events?: LedgerSeedFileEvent[];
+}
+
 export interface LaunchTugAppOptions {
   /**
    * Absolute path to the Tug.app binary to launch. If unset, the

@@ -145,6 +145,12 @@ async fn main() {
     // Parse CLI arguments
     let cli = cli::Cli::parse();
 
+    // Ledger seeding runs before everything else and never returns — it must
+    // not bind a port, register an instance, or touch tmux.
+    if let Some(spec) = cli.seed_ledger.as_deref() {
+        seed_ledger(spec);
+    }
+
     // Duplicate-launch guard (per [D07]). When TUG_INSTANCE_ID is
     // set and the registry already lists a live tugcast for this
     // identity, bail out *before* binding any port. The walker in
@@ -1785,6 +1791,140 @@ async fn main() {
 
     info!("tugcast shut down");
     std::process::exit(exit_code);
+}
+
+/// One session row to seed. Mirrors `record_spawn`'s arguments.
+#[derive(serde::Deserialize)]
+struct SeedSession {
+    session_id: String,
+    workspace_key: String,
+    project_dir: String,
+    #[serde(default)]
+    card_id: String,
+    /// Display name for the entry's title, applied via `rename`.
+    #[serde(default)]
+    name: Option<String>,
+}
+
+/// The seed spec's whole shape: live sessions and the file events that make
+/// them own something.
+#[derive(serde::Deserialize)]
+struct SeedSpec {
+    #[serde(default)]
+    sessions: Vec<SeedSession>,
+    #[serde(default)]
+    file_events: Vec<session_ledger::FileEventRow>,
+}
+
+/// Seed this instance's ledger from a JSON spec and exit.
+///
+/// The app-test harness's pre-launch hook, and the answer to a gap that had
+/// been recorded as unreachable: a `sessions` row is written only by the real
+/// spawn path (`session_init` from a live tugcode subprocess), so an app-test
+/// could compose *unattributed* changeset rows but never a **session entry** —
+/// leaving every affordance that hangs off one uncovered.
+///
+/// Writing through the real [`SessionLedger`] rather than raw SQL is the whole
+/// point: the schema, the migrations, and the change journal come along, so a
+/// seeded ledger is one the server would have written itself. A hand-mirrored
+/// `CREATE TABLE` in the harness would drift the first time the schema moved.
+///
+/// **Refused outside an app-test instance.** The gate is the instance id, the
+/// same signal the janitor and the startup sweep already trust: seeding is a
+/// test affordance, and pointing it at a developer's real ledger would forge
+/// attribution rows in the ledger the Changes card reads.
+fn seed_ledger(spec_path: &std::path::Path) -> ! {
+    let instance = tugcore::instance::instance_id();
+    if !instance
+        .as_deref()
+        .is_some_and(tugcore::ports::is_apptest_id)
+    {
+        eprintln!(
+            "tugcast: error: --seed-ledger requires an app-test instance \
+             (TUG_INSTANCE_ID is {:?}); refusing to seed a real ledger",
+            instance.as_deref().unwrap_or("<unset>")
+        );
+        std::process::exit(2);
+    }
+
+    let raw = match std::fs::read_to_string(spec_path) {
+        Ok(raw) => raw,
+        Err(e) => {
+            eprintln!(
+                "tugcast: error: cannot read seed spec {}: {e}",
+                spec_path.display()
+            );
+            std::process::exit(1);
+        }
+    };
+    let spec: SeedSpec = match serde_json::from_str(&raw) {
+        Ok(spec) => spec,
+        Err(e) => {
+            eprintln!("tugcast: error: malformed seed spec: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let Some(path) = SessionLedger::default_path() else {
+        eprintln!("tugcast: error: cannot resolve the session ledger path");
+        std::process::exit(1);
+    };
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!(
+                "tugcast: error: cannot create {}: {e}",
+                parent.display()
+            );
+            std::process::exit(1);
+        }
+    }
+    // Port 0: the seeder serves nothing, and the value only rides the row's
+    // liveness bookkeeping.
+    let ledger = match SessionLedger::open(&path, 0) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!(
+                "tugcast: error: cannot open the ledger at {}: {e}",
+                path.display()
+            );
+            std::process::exit(1);
+        }
+    };
+
+    let now = session_ledger::now_millis();
+    for session in &spec.sessions {
+        if let Err(e) = ledger.record_spawn(
+            &session.session_id,
+            &session.workspace_key,
+            &session.project_dir,
+            &session.card_id,
+            now,
+            None,
+        ) {
+            eprintln!("tugcast: error: record_spawn failed: {e}");
+            std::process::exit(1);
+        }
+        if let Some(name) = session.name.as_deref() {
+            if let Err(e) = ledger.rename(&session.session_id, Some(name)) {
+                eprintln!("tugcast: error: rename failed: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+    for event in &spec.file_events {
+        if let Err(e) = ledger.record_file_event(event) {
+            eprintln!("tugcast: error: record_file_event failed: {e}");
+            std::process::exit(1);
+        }
+    }
+
+    println!(
+        "seeded {} session(s) and {} file event(s) into {}",
+        spec.sessions.len(),
+        spec.file_events.len(),
+        path.display()
+    );
+    std::process::exit(0);
 }
 
 /// Run the tugbank notification socket listener.

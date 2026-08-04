@@ -378,9 +378,13 @@ M02A adds:
 - The notice branches (`error` / `loading` / `no diff` / `binary`) keep returning `<p>` elements. Those are genuinely different entities and predate this plan.
 - Hooks must be unconditional, which is why the branch moves inside the component rather than staying at the call site.
 
-#### [P20] Session-entry affordances are hand-verified, not app-tested (DECIDED) {#p20-hand-verification}
+#### [P20] Session-entry affordances are hand-verified, not app-tested (SUPERSEDED) {#p20-hand-verification}
 
-**Decision:** the hunk-election checkbox, the partial landing, and the `N of M hunks` badge are verified by a scripted manual pass in the running debug app, recorded as an explicit checklist in #step-11g. No app-test is written for them.
+> **Superseded at M02A's close — the wall was not permanent.** The premise below is that a session entry is unreachable from the harness. It was reachable all along: `SessionLedger::default_path()` resolves through `TUG_SESSIONS_DB` / the per-instance data dir, so a `tugcast --seed-ledger` run against a launch's own instance writes a live session and its proof rows through the same ledger the server uses. `App.seedLedger()` is that hook, at0334 is the test, and HV1–HV8 are automated: the affordance half in at0334, the landing half (partial, drift refusal, whole-file) against a temp repo in `feeds/changeset.rs`'s `m02a_verification`. Seeding must run **after** launch — tugcast demotes every `live` row to `closed` once at startup, so a pre-launch seed lands its files in `orphaned`.
+>
+> The decision cost something real while it stood: it was the reason nobody clicked one of these checkboxes, and the reason two blocking defects — the dropped wire projection (F1) and the responder-chain break in `DiffBlock` — sat behind it undetected. "This surface is untestable" deserves a spike before it becomes a decision.
+
+**Decision (as it stood):** the hunk-election checkbox, the partial landing, and the `N of M hunks` badge are verified by a scripted manual pass in the running debug app, recorded as an explicit checklist in #step-11g. No app-test is written for them.
 
 **Rationale:**
 - A session-entry row requires the ledger to hold live proof rows for a session id the harness owns, and `app.bindSession` is a synthetic client-side binding the ledger knows nothing about. at0332 and at0253 already record this wall; at0333 works only because it drives an *unattributed* row.
@@ -640,7 +644,7 @@ The contract, after [P16] and [P17]:
 | #step-11d | Election reconciliation + control affordances | done | 7ad7acd3d |
 | #step-11e | Diff-block CSS de-duplication | done | f5ccee427 |
 | #step-11f | Disclaim storage-form spike | done | e67da36f4 |
-| #step-11g | M02A integration checkpoint | tests green; HV1–HV8 pending | — |
+| #step-11g | M02A integration checkpoint | done — HV1–HV8 automated | uncommitted |
 | #step-12 | Schema v2: spans table | pending | — |
 | #step-13 | Span capture | pending | — |
 | #step-14 | Hunk-aware contention verdict | pending | — |

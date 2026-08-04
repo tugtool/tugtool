@@ -34,17 +34,17 @@
  * `undefined` on every entry kind but `session`, so on the unattributed row
  * this harness can reach, `fileBlockBody` renders one component type both
  * before and after that change and a test here cannot fail on it. That fix is
- * guarded by the mount-identity triple stated in its commit body and by the
- * hand-verification checklist, not by this file. Do not read the assertion as
- * covering more than it does.
+ * guarded by the mount-identity triple stated in its commit body and by
+ * at0334, which drives a seeded session-entry row. Do not read the assertion
+ * as covering more than it does.
  *
  * **Not driven here:** the election checkbox and the partial landing. Those
- * render on *session-entry* rows, and a session entry is unreachable from an
- * app-test — `bindSession` is a synthetic client-side binding the ledger knows
- * nothing about, the same wall at0332 and at0253 record. The checkbox's
- * destination is covered at the Rust round-trip layer (`commit.rs`: elected
- * hunk lands alone, mixed whole+partial landing, drift refusal, dirty-index
- * refusal; `feeds/changeset.rs`: the `changeset_commit` election round trip).
+ * render on *session-entry* rows, which this file does not seed — at0334 does,
+ * via `app.seedLedger()`, and drives the checkbox, the `N of M hunks` badge,
+ * and the stale-election signal there. The landing itself is covered at the
+ * Rust round-trip layer (`commit.rs`: elected hunk lands alone, mixed
+ * whole+partial landing, drift refusal, dirty-index refusal;
+ * `feeds/changeset.rs`: the `changeset_commit` election round trip).
  *
  * @covers tugdeck/src/components/tugways/tug-changes-list.tsx
  * @covers tugdeck/src/components/tugways/body-kinds/diff-block.tsx
