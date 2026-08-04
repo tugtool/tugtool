@@ -97,21 +97,13 @@ export function slotStackOf(
   return state.panes.filter((p) => p.slot === slot);
 }
 
-/**
- * `paneDisplayTitle(state, pane)` — the title a pane shows in any list: its
- * own, else its active card's, else its first card's, else `"Untitled"`.
- *
- * One rule, two consumers: the host menu-state pane projection and the
- * title bar's slot-stack picker both render the same name for a pane.
- */
-export function paneDisplayTitle(
-  state: Pick<DeckState, "cards">,
-  pane: TugPaneState,
-): string {
-  const activeCard = state.cards.find((c) => c.id === pane.activeCardId);
-  const firstCard = state.cards.find((c) => c.id === pane.cardIds[0]);
-  return pane.title || activeCard?.title || firstCard?.title || "Untitled";
-}
+// A pane's display name is NOT derived here. It is the string that pane's own
+// title bar renders — registry title, multi-tab group prefix, and the live
+// `cardTitleStore` override composed together — and it lives in exactly one
+// place, `lib/pane-title.ts`. A simpler rule used to live here (the
+// `CardState.title` fallback chain) and it disagreed with the title bar for
+// every card whose identity is dynamic: a Session card bound to a project read
+// `test-repo/petit-thaw` on its title bar and `Untitled` in every list.
 
 /**
  * One row of a slot's stack, already resolved for display. Ordered
@@ -131,6 +123,13 @@ export interface SlotStackEntry {
   cardId: string;
   /** Display title, from {@link paneDisplayTitle}. */
   title: string;
+  /**
+   * The pane's icon, as a `lucide-react` name — the same `CardMeta.icon` its
+   * own title bar draws, resolved here so a picker row reads as a miniature of
+   * the title bar it stands for rather than as a bare list of strings.
+   * Absent when the card's registration declares no icon.
+   */
+  icon?: string;
   /** True for the pane currently at the front of the slot. */
   topmost: boolean;
 }

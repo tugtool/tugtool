@@ -57,6 +57,7 @@ import {
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { cardTitleStore } from "@/lib/card-title-store";
+import { composePaneTitleBarText } from "@/lib/pane-title";
 import { paneTitleBarMenuStore } from "@/lib/pane-title-bar-menu-store";
 import { TugPopupMenu } from "@/components/tugways/internal/tug-popup-menu";
 import {
@@ -511,13 +512,25 @@ function CardTitleBar({
             align="end"
             open={stackMenuOpen}
             onOpenChange={setStackMenuOpen}
-            items={slotStack.map((entry) => ({
-              id: entry.paneId,
-              label: entry.title,
-              // Set on every row, not just the front one, so the check
-              // column aligns across the menu.
-              selected: entry.topmost,
-            }))}
+            items={slotStack.map((entry) => {
+              // Each row is a miniature of the title bar it stands for: the
+              // pane's own icon, then the pane's own title, in that order and
+              // from the same `CardMeta.icon` the real title bar draws.
+              const RowIcon =
+                entry.icon !== undefined && entry.icon in icons
+                  ? icons[entry.icon as keyof typeof icons]
+                  : null;
+              return {
+                id: entry.paneId,
+                label: entry.title,
+                ...(RowIcon === null
+                  ? {}
+                  : { icon: React.createElement(RowIcon) }),
+                // Set on every row, not just the front one, so the check
+                // column aligns across the menu.
+                selected: entry.topmost,
+              };
+            })}
             onSelect={(paneId) => {
               const entry = slotStack.find((e) => e.paneId === paneId);
               if (entry) onRevealPane?.(entry);
@@ -1393,14 +1406,15 @@ export function TugPane({
     [performSelectCard],
   );
 
-  const baseTitle = cardTitle
-    ? `${cardTitle} : ${effectiveMeta.title}`
-    : effectiveMeta.title;
-  const displayTitle = activeCardTitleOverride
-    ? baseTitle
-      ? `${baseTitle} : ${activeCardTitleOverride}`
-      : activeCardTitleOverride
-    : baseTitle;
+  // The composition rule itself lives in `lib/pane-title.ts`, because this is
+  // not the only surface that names a pane — the slot-stack picker and the
+  // Window menu's pane list name the same panes, and a second copy of this
+  // arithmetic is how they came to disagree with the title bar.
+  const displayTitle = composePaneTitleBarText({
+    metaTitle: effectiveMeta.title,
+    paneTitle: cardTitle,
+    titleOverride: activeCardTitleOverride,
+  });
 
   const resolvedAccessory: React.ReactNode | null = hasMultipleCards
     ? (

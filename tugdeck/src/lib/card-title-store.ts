@@ -50,6 +50,19 @@ class CardTitleStore {
     return this._overrides.get(cardId) ?? null;
   }
 
+  /**
+   * Monotonic revision, bumped on every change. A consumer that needs
+   * *several* cards' overrides at once — the deck canvas, resolving the
+   * titles of every pane in a slot's stack — has no single value to snapshot
+   * and cannot call `get()` per card from `useSyncExternalStore` without
+   * returning a fresh object each time. It subscribes to this instead and
+   * reads the overrides it wants downstream of it, which keeps [L02] intact
+   * with a snapshot that is stable by construction.
+   */
+  version = (): number => this._version;
+
+  private _version = 0;
+
   subscribe = (listener: () => void): (() => void) => {
     this._listeners.add(listener);
     return () => {
@@ -58,6 +71,11 @@ class CardTitleStore {
   };
 
   private _notify(): void {
+    // Bump BEFORE the listeners run: a `useSyncExternalStore` subscriber reads
+    // the snapshot from inside its notification, and a revision incremented
+    // afterwards would hand it the value it already had — the store would
+    // notify and nothing would recompute.
+    this._version += 1;
     for (const listener of this._listeners) listener();
   }
 }

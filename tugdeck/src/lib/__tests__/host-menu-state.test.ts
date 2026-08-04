@@ -14,6 +14,8 @@ import {
   type MenuStatePayload,
 } from "../host-menu-state";
 import { TUG_ACTIONS } from "../../components/tugways/action-vocabulary";
+import { cardTitleStore } from "../card-title-store";
+import { registerCard } from "../../card-registry";
 import type { CardState, DeckState, TugPaneState } from "../../layout-tree";
 
 function card(id: string, overrides: Partial<CardState> = {}): CardState {
@@ -47,6 +49,21 @@ function deck(cards: CardState[], panes: TugPaneState[]): DeckState {
   return { cards, panes, imposition: { lens: "right" }, hasFocus: true };
 }
 
+// Pane names resolve through the card registry now, so the projection tests
+// need two kinds registered: one whose name is baked in, and one (the Session
+// card's shape) whose registry title is empty because its identity is only
+// ever a runtime override.
+registerCard({
+  componentId: "menu-state-titled",
+  contentFactory: () => null,
+  defaultMeta: { title: "File", closable: true },
+});
+registerCard({
+  componentId: "menu-state-dynamic",
+  contentFactory: () => null,
+  defaultMeta: { title: "", closable: true },
+});
+
 describe("projectDeckState", () => {
   test("empty deck projects no panes and a null activeCard", () => {
     const projection = projectDeckState(deck([], []));
@@ -75,27 +92,45 @@ describe("projectDeckState", () => {
     expect(entry.closable).toBe(false);
   });
 
-  test("title falls back: pane title, then active card, then first card, then Untitled", () => {
-    const titled = deck([card("a")], [pane("p1", ["a"], { title: "My Pane" })]);
-    expect(projectDeckState(titled).panes[0].title).toBe("My Pane");
+  test("a pane is named the way its own title bar names it", () => {
+    // The Window menu's pane list, the slot-stack picker, and the title bar
+    // all resolve a pane's name through `paneTitleBarTextFor`, so this asserts
+    // the projection has adopted that rule rather than a private one. The
+    // previous rule here was a `CardState.title` fallback chain, which read
+    // `Untitled` for exactly the cards whose title bars are most informative:
+    // a Session card's name lives entirely in its live override.
+    const cards = [card("a", { componentId: "menu-state-titled" })];
+    const named = deck(cards, [pane("p1", ["a"])]);
+    expect(projectDeckState(named).panes[0].title).toBe("File");
 
-    const fromActive = deck(
-      [card("a", { title: "" }), card("b", { title: "Active Title" })],
-      [pane("p1", ["a", "b"], { activeCardId: "b" })],
+    // `CardState.title` is NOT the name — the old rule's input is ignored.
+    expect(projectDeckState(named).panes[0].title).not.toContain("Card a");
+
+    // A multi-tab pane's group name prefixes it, as on the title bar.
+    const grouped = deck(
+      [
+        card("a", { componentId: "menu-state-titled" }),
+        card("b", { componentId: "menu-state-titled" }),
+      ],
+      [pane("p1", ["a", "b"], { title: "Notes" })],
     );
-    expect(projectDeckState(fromActive).panes[0].title).toBe("Active Title");
+    expect(projectDeckState(grouped).panes[0].title).toBe("Notes : File");
 
-    const fromFirst = deck(
-      [card("a", { title: "First Title" }), card("b", { title: "" })],
-      [pane("p1", ["a", "b"], { activeCardId: "b" })],
-    );
-    expect(projectDeckState(fromFirst).panes[0].title).toBe("First Title");
-
-    const untitled = deck(
-      [card("a", { title: "" })],
+    // A card whose identity is dynamic is named by its override, and by
+    // nothing at all before it publishes one.
+    const dynamic = deck(
+      [card("a", { componentId: "menu-state-dynamic" })],
       [pane("p1", ["a"])],
     );
-    expect(projectDeckState(untitled).panes[0].title).toBe("Untitled");
+    expect(projectDeckState(dynamic).panes[0].title).toBe("Untitled");
+    cardTitleStore.set("a", "test-repo/petit-thaw");
+    try {
+      expect(projectDeckState(dynamic).panes[0].title).toBe(
+        "test-repo/petit-thaw",
+      );
+    } finally {
+      cardTitleStore.clear("a");
+    }
   });
 
   test("activeCard reflects the focused pane's active card component", () => {

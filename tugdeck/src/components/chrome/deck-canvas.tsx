@@ -35,8 +35,10 @@ import { usePaneFocusController } from "./pane-focus-controller";
 import { usePaneOcclusionController } from "./pane-occlusion-controller";
 import { getRegistration, getStackSizePolicy } from "@/card-registry";
 import { LENS_CARD_ID } from "@/lib/lens-card-id";
-import { findLensPane, paneDisplayTitle } from "@/deck-store-selectors";
+import { findLensPane } from "@/deck-store-selectors";
 import type { SlotStackEntry } from "@/deck-store-selectors";
+import { cardTitleStore } from "@/lib/card-title-store";
+import { paneTitleBarTextFor } from "@/lib/pane-title";
 import type { DeckState, TugPaneState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { cardDragCoordinator } from "@/card-drag-coordinator";
@@ -203,6 +205,13 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   const deckState = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const panes = deckState.panes;
   const cards = deckState.cards;
+  // Per-card title overrides are not deck state, so the deck subscription
+  // above cannot see one land. The slot-stack picker names its rows with the
+  // title bar's own text, which folds an override in, so it needs this too.
+  const cardTitleVersion = useSyncExternalStore(
+    cardTitleStore.subscribe,
+    cardTitleStore.version,
+  );
   // The Lens pane carries no marker of its own — it is the pane hosting the
   // Lens card ([P04]). Resolved once here and reused by the z-order, the band
   // insets, the placements memo, and the `lensSide` prop below.
@@ -252,6 +261,13 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // `slotStack` prop — and therefore the picker's `items` array — keeps a
   // stable identity across renders that changed neither.
   const slotStackByPaneId = useMemo(() => {
+    // A picker row shows the title bar's own text, which folds in the live
+    // override a card publishes on `cardTitleStore`. That store is not the
+    // deck, so the memo above would never see an override land — subscribing
+    // to its revision is what makes a Session card that has just bound to a
+    // project rename its row as well as its title bar. [L02]
+    void cardTitleVersion;
+    const cardsForTitles = new Map(cards.map((c) => [c.id, c]));
     const bySlot = new Map<number, TugPaneState[]>();
     for (const pane of panes) {
       if (pane.slot === undefined) continue;
@@ -262,16 +278,29 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     const map = new Map<string, readonly SlotStackEntry[]>();
     for (const members of bySlot.values()) {
       // Topmost first, matching the host menu-state convention.
-      const entries: SlotStackEntry[] = [...members].reverse().map((pane, i) => ({
-        paneId: pane.id,
-        cardId: pane.activeCardId,
-        title: paneDisplayTitle({ cards }, pane),
-        topmost: i === 0,
-      }));
+      const entries: SlotStackEntry[] = [...members].reverse().map((pane, i) => {
+        // A row is a miniature of the title bar it stands for, so it takes
+        // both of that title bar's parts from the same places the title bar
+        // does: the icon off the active card's registration, and the title
+        // through the one composer in `lib/pane-title.ts`. Resolved here
+        // rather than in the pane because the title bar renders its picker
+        // from props alone and reaches for neither a registry nor a store.
+        const activeCard = cardsForTitles.get(pane.activeCardId);
+        const icon = activeCard
+          ? getRegistration(activeCard.componentId)?.defaultMeta.icon
+          : undefined;
+        return {
+          paneId: pane.id,
+          cardId: pane.activeCardId,
+          title: paneTitleBarTextFor(pane, cardsForTitles),
+          ...(icon === undefined ? {} : { icon }),
+          topmost: i === 0,
+        };
+      });
       for (const pane of members) map.set(pane.id, entries);
     }
     return map;
-  }, [panes, cards]);
+  }, [panes, cards, cardTitleVersion]);
 
   // Build a cardId → hostStackId map so `CardHost` can look up its
   // host stack without re-scanning the stacks array on every render.

@@ -55,6 +55,8 @@
  * @covers tugdeck/src/components/chrome/tug-pane.tsx
  * @covers tugdeck/src/components/chrome/deck-canvas.tsx
  * @covers tugdeck/src/deck-store-selectors.ts
+ * @covers tugdeck/src/lib/pane-title.ts
+ * @covers tugdeck/src/lib/card-title-store.ts
  * @covers tugdeck/src/components/tugways/internal/tug-popup-menu.tsx
  */
 
@@ -86,9 +88,26 @@ const titleBar = (paneId: string): string =>
 const wait = (ms: number): Promise<void> =>
   new Promise<void>((r) => setTimeout(r, ms));
 
-function card(id: string, title: string) {
-  return { id, componentId: "gallery-accordion", title, closable: true };
+/**
+ * The two stacked cards are deliberately of DIFFERENT kinds — `gallery-
+ * chain-actions` registers a `Zap` icon and `gallery-animator` a `Play` one —
+ * so the picker's icon assertion can discriminate. Seeded from one kind, every
+ * row would carry the same glyph and "each row shows its own pane's icon"
+ * would be indistinguishable from "every row shows the same icon".
+ */
+function card(id: string, title: string, componentId = "gallery-accordion") {
+  return { id, componentId, title, closable: true };
 }
+
+/** The `lucide-*` class on an element's first `svg`, or null. */
+const lucideClassOf = (selector: string): string =>
+  `(function () {
+    var svg = document.querySelector(${JSON.stringify(selector)});
+    if (svg === null) return null;
+    return (svg.getAttribute("class") || "")
+      .split(/\\s+/)
+      .filter(function (c) { return c.indexOf("lucide-") === 0; })[0] || null;
+  })()`;
 
 function pane(
   id: string,
@@ -136,8 +155,8 @@ function lensPane() {
 function deckShape() {
   return {
     cards: [
-      card("Z", "Card Z"),
-      card("A", "Card A"),
+      card("Z", "Card Z", "gallery-animator"),
+      card("A", "Card A", "gallery-chain-actions"),
       card("B", "Card B"),
       card("F", "Card F"),
       { id: "L", componentId: "lens", title: "Lens", closable: true },
@@ -190,6 +209,13 @@ async function stackDepthAttr(app: App, paneId: string): Promise<string | null> 
 async function zIndexOf(app: App, paneId: string): Promise<number> {
   return app.evalJS<number>(
     `Number(getComputedStyle(document.querySelector(${JSON.stringify(frame(paneId))})).zIndex)`,
+  );
+}
+
+/** The text a pane's own title bar is rendering, right now. */
+async function titleBarText(app: App, paneId: string): Promise<string> {
+  return app.evalJS<string>(
+    `document.querySelector(${JSON.stringify(`${frame(paneId)} [data-testid="tug-pane-title"]`)}).textContent.trim()`,
   );
 }
 
@@ -259,16 +285,85 @@ describe.skipIf(!SHOULD_RUN)(
           expect(await stackDepthAttr(app, "pFree")).toBe("0");
           expect(await stackDepthAttr(app, "pLens")).toBe("0");
 
+          // --- The badge is unlit at rest. ---------------------------------
+          expect(
+            await app.evalJS<string | null>(
+              `document.querySelector(${JSON.stringify(`${frame("p1")} ${BADGE}`)}).getAttribute("data-state")`,
+            ),
+            "a closed picker leaves its badge in the resting pose",
+          ).toBe("closed");
+
           // --- The picker lists the slot, topmost first, front row checked. -
           await app.nativeClickAtElement(`${frame("p1")} ${BADGE}`);
           await waitForMenu(app, true);
 
+          // ...and the badge stays lit for as long as the menu is down, the
+          // way a macOS menu-bar title holds its highlight. The CSS hangs off
+          // `data-state`, so this is the whole contract that keeps the control
+          // that opened the surface saying so.
+          expect(
+            await app.evalJS<string | null>(
+              `document.querySelector(${JSON.stringify(`${frame("p1")} ${BADGE}`)}).getAttribute("data-state")`,
+            ),
+            "an open picker keeps its badge lit",
+          ).toBe("open");
+
           expect(await count(app, ROW), "one row per pane in the slot").toBe(2);
-          expect(await rowLabels(app), "topmost first — p1/A is in front").toEqual([
-            "Card A",
-            "Card Z",
+
+          // A row REPRODUCES ITS PANE'S TITLE BAR TEXT — not a name derived
+          // some other way. That distinction is the whole point: a pane's
+          // title bar composes a registry title with the live override its
+          // card publishes, and a list that instead read `CardState.title`
+          // named a bound Session card `Untitled` while its title bar read
+          // `test-repo/petit-thaw`. The seeded cards carry a `CardState.title`
+          // ("Card A") that differs from what their title bars render
+          // ("Chain Actions"), so this comparison catches exactly that drift.
+          expect(await rowLabels(app), "each row reads as its pane's title bar does").toEqual([
+            await titleBarText(app, "p1"),
+            await titleBarText(app, "p0"),
+          ]);
+          expect(await rowLabels(app), "topmost first, and named from the registry not the card record").toEqual([
+            "Chain Actions",
+            "TugAnimator",
           ]);
           expect(await checkedRowPaneId(app), "the front pane's row is the checked one").toBe("p1");
+
+          // --- Each row is a miniature of the title bar it stands for. ------
+          // Not merely "an icon is present": the row's glyph has to be the one
+          // that pane's OWN title bar draws, which is what makes the row read
+          // as a small picture of the card rather than as decoration. The two
+          // stacked cards are of different kinds precisely so this can tell
+          // the difference.
+          expect(
+            await app.evalJS<string | null>(
+              lucideClassOf(`${ROW}[data-item-id="p1"] .tug-menu-item-icon svg`),
+            ),
+            "the front row carries the front pane's icon",
+          ).toBe(
+            await app.evalJS<string | null>(
+              lucideClassOf(`${frame("p1")} [data-testid="tug-pane-icon"] svg`),
+            ),
+          );
+          expect(
+            await app.evalJS<string | null>(
+              lucideClassOf(`${ROW}[data-item-id="p0"] .tug-menu-item-icon svg`),
+            ),
+            "and the buried row carries the buried pane's — a different one",
+          ).toBe(
+            await app.evalJS<string | null>(
+              lucideClassOf(`${frame("p0")} [data-testid="tug-pane-icon"] svg`),
+            ),
+          );
+          expect(
+            await app.evalJS<string | null>(
+              lucideClassOf(`${ROW}[data-item-id="p1"] .tug-menu-item-icon svg`),
+            ),
+            "the two rows are genuinely distinguishable, so the check above bites",
+          ).not.toBe(
+            await app.evalJS<string | null>(
+              lucideClassOf(`${ROW}[data-item-id="p0"] .tug-menu-item-icon svg`),
+            ),
+          );
 
           // --- Choosing the back row raises that pane. ---------------------
           const zBefore = {
@@ -315,6 +410,70 @@ describe.skipIf(!SHOULD_RUN)(
           expect(await stackDepthAttr(app, "p1"), "the surviving pane stands alone in its slot").toBe("1");
 
           note("at0347", "Cmd-drag-still-drags is asserted in at0349 (foreground); see Spec S07");
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "a row reproduces a title that exists only as a live override",
+      async () => {
+        // The case the picker originally got wrong, and the reason the title
+        // rule had to move into one place. A card whose registry title is
+        // EMPTY carries its whole identity in a `cardTitleStore` override —
+        // the Session card bound to a project is the real instance, and the
+        // About card is that same shape with no backend behind it. Naming a
+        // pane from its `CardState.title` (which the deck happens to hold)
+        // reads `Untitled` here while the title bar reads the real name.
+        const app = await launchTugApp({ testName: "at0347-stack-override-title" });
+        try {
+          await app.seedDeckState({
+            state: {
+              cards: [
+                { id: "Z", componentId: "about", title: "Card Z", closable: true },
+                card("A", "Card A", "gallery-chain-actions"),
+                { id: "L", componentId: "lens", title: "Lens", closable: true },
+              ],
+              panes: [
+                pane("p0", "Z", 520, 0),
+                pane("p1", "A", 420, 0),
+                lensPane(),
+              ],
+              activePaneId: "p1",
+              imposition: { kind: "three-up", lens: "right" },
+              hasFocus: true,
+            },
+            focusCardId: "A",
+          });
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll('.tug-pane[data-pane-id]').length === 3`,
+            { timeoutMs: 5_000 },
+          );
+          // The override is published from the card's own layout effect, so
+          // wait for the title bar to actually carry it rather than assuming.
+          await app.waitForCondition<boolean>(
+            `(document.querySelector(${JSON.stringify(`${frame("p0")} [data-testid="tug-pane-title"]`)}) || { textContent: "" }).textContent.trim().startsWith("About ")`,
+            { timeoutMs: 5_000 },
+          );
+
+          const overrideTitle = await titleBarText(app, "p0");
+          note("at0347 override title bar text", overrideTitle);
+
+          await app.nativeClickAtElement(`${frame("p1")} ${BADGE}`);
+          await waitForMenu(app, true);
+
+          const labels = await rowLabels(app);
+          expect(labels[1], "the row reproduces the title bar's own text").toBe(
+            overrideTitle,
+          );
+          expect(labels[1], "and is emphatically not the old fallback").not.toBe(
+            "Untitled",
+          );
+          expect(labels[1], "nor the CardState.title the deck happens to hold").not.toBe(
+            "Card Z",
+          );
         } finally {
           await app.close();
         }

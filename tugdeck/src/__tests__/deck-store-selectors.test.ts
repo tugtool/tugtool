@@ -10,11 +10,7 @@
 
 import { describe, test, expect } from "bun:test";
 import type { CardState, DeckState, TugPaneState } from "../layout-tree";
-import {
-  isFocusDestination,
-  paneDisplayTitle,
-  slotStackOf,
-} from "../deck-store-selectors";
+import { isFocusDestination, slotStackOf } from "../deck-store-selectors";
 
 function makeCard(id: string, componentId = "probe"): CardState {
   return { id, componentId, title: id, closable: true };
@@ -148,39 +144,5 @@ describe("slotStackOf", () => {
     const stack = slotStackOf(slottedState(), 0);
     expect(stack.some((p) => p.id === "pane-2")).toBe(false);
     expect(stack.some((p) => p.id === "pane-free")).toBe(false);
-  });
-});
-
-describe("paneDisplayTitle", () => {
-  test("prefers the pane's own title", () => {
-    const state = baseState();
-    const pane = { ...state.panes[0], title: "Pane Title" };
-    expect(paneDisplayTitle(state, pane)).toBe("Pane Title");
-  });
-
-  test("falls back to the active card's title", () => {
-    const state = baseState();
-    expect(paneDisplayTitle(state, state.panes[0])).toBe("card-a");
-  });
-
-  test("falls back to the first card's title when the active card is unknown", () => {
-    const state = baseState();
-    const pane = { ...state.panes[0], activeCardId: "gone" };
-    expect(paneDisplayTitle(state, pane)).toBe("card-a");
-  });
-
-  test('falls back to "Untitled" when no card resolves', () => {
-    const state = baseState();
-    const pane = { ...state.panes[0], activeCardId: "gone", cardIds: ["also-gone"] };
-    expect(paneDisplayTitle(state, pane)).toBe("Untitled");
-  });
-
-  test('an empty-string card title still falls through to "Untitled"', () => {
-    const state: DeckState = {
-      ...baseState(),
-      cards: [{ ...makeCard("card-a"), title: "" }],
-    };
-    const pane = makePane("pane-1", ["card-a"], "card-a");
-    expect(paneDisplayTitle(state, pane)).toBe("Untitled");
   });
 });

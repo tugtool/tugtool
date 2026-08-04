@@ -476,14 +476,59 @@ body {
 
 /*
  * Slot-stack badge — the depth of the stack this pane stands in, and the
- * trigger for the picker that switches between them. It carries a count, so
- * unlike its icon-only neighbours its width would follow its content; the
- * min-width clears a two-digit count so a ten-deep slot does not reflow the
- * controls cluster the moment a pane joins or leaves.
+ * trigger for the picker that switches between them.
+ *
+ * It is the one control in this cluster that is not square: its icon-only
+ * neighbours sit their 14px glyph in a 28px box (7px a side, `padding: 0`),
+ * while the stock `sm` inline padding is a full 1rem. Left at that, the badge
+ * stood 9px further from the chevron than the chevron stands from the close
+ * box, and the cluster read as two groups rather than one row. Matching the
+ * neighbours' optical inset is what evens it out, so the value is derived from
+ * their box rather than typed as a number.
+ *
+ * The count is the only content here whose width follows its value, so the
+ * digits are tabular — 1 and 2 occupy the same column and a raise cannot jog
+ * the cluster. Nothing is reserved for a second digit: a ten-deep slot is rare
+ * enough that permanently parking its width beside every badge would just
+ * restore the gap this rule exists to close.
  */
-.tug-pane-title-bar-stack-badge {
-  min-width: calc(var(--tug-space-lg) + var(--tug-space-md));
+/* `.tug-button-size-sm` sets the inline padding through the `padding`
+   shorthand and ties with a bare class on specificity, so the override is
+   compounded onto `.tug-button` to win outright rather than by load order. */
+.tug-button.tug-pane-title-bar-stack-badge {
+  padding-inline: calc(
+    (var(--tug-button-sm-height) - var(--tug-button-sm-icon-size)) / 2
+  );
   justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * While its menu is open the badge stays lit, the way a macOS menu-bar title
+ * holds its highlight for as long as the menu is down — the control that
+ * opened the surface keeps saying so. Radix stamps `data-state="open"` on the
+ * trigger, so this covers every door into the picker: the badge click, the
+ * Cmd-click on the title bar, and ⌘R.
+ *
+ * The pose is the pressed one the button already owns, not a new colour: a
+ * menu being down is a control being held. These sit after the :hover/:active
+ * rules above and tie with them on specificity, so source order is what keeps
+ * an open badge lit while the pointer wanders off it.
+ */
+.tug-pane[data-focused="true"]
+  .tug-pane-title-bar-controls
+  .tug-button.tug-pane-title-bar-stack-badge[data-state="open"] {
+  color: var(--tugx-pane-control-on-fg-active);
+  background-color: var(--tugx-pane-control-on-bg-active);
+  border-color: var(--tugx-pane-control-on-border-active);
+}
+
+.tug-pane:not([data-focused="true"])
+  .tug-pane-title-bar-controls
+  .tug-button.tug-pane-title-bar-stack-badge[data-state="open"] {
+  color: var(--tugx-pane-control-off-fg-active);
+  background-color: var(--tugx-pane-control-off-bg-active);
+  border-color: var(--tugx-pane-control-off-border-active);
 }
 
 /*

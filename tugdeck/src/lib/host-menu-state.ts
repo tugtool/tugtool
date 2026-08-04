@@ -28,7 +28,9 @@
  */
 
 import type { DeckState } from "../layout-tree";
-import { paneDisplayTitle, slotStackOf } from "../deck-store-selectors";
+import { slotStackOf } from "../deck-store-selectors";
+import { paneTitleBarTextFor } from "./pane-title";
+import { cardTitleStore } from "./card-title-store";
 import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 
@@ -369,10 +371,16 @@ export interface MenuStatePayload {
 /**
  * Project the deck store snapshot into the menu-relevant shape.
  *
- * Pure — exported for unit tests. The pane projection (focused = last
- * pane in z-order, title fallback chain, reverse to topmost-first)
- * carries the exact semantics the host's close-item validation and
- * pane-list menu were built against.
+ * Exported for unit tests. The pane projection (focused = last pane in
+ * z-order, reverse to topmost-first) carries the exact semantics the host's
+ * close-item validation and pane-list menu were built against.
+ *
+ * Pane names come from {@link paneTitleBarTextFor} — the same string the
+ * pane's own title bar renders — so the Window menu, the slot-stack picker,
+ * and the title bar cannot disagree about what a pane is called. That read
+ * folds in the live `cardTitleStore` override, which is not deck state; the
+ * publisher wiring below subscribes to that store as well as to the deck, so
+ * a card that renames itself renames its menu entry.
  */
 export function projectDeckState(state: DeckState): MenuStateDeckProjection {
   const stacks = state.panes;
@@ -384,7 +392,7 @@ export function projectDeckState(state: DeckState): MenuStateDeckProjection {
       const activeCard = cardsById.get(s.activeCardId);
       return {
         id: s.id,
-        title: paneDisplayTitle(state, s),
+        title: paneTitleBarTextFor(s, cardsById),
         focused: s.id === focusedId,
         cardCount: s.cardIds.length,
         closable: activeCard?.closable ?? false,
@@ -615,6 +623,13 @@ export function initHostMenuState(deck: DeckSource): void {
   // Session bindings appear/disappear without a deck mutation, and Open
   // Quickly's gate reads them — re-project so the flush recomputes it.
   cardSessionBindingStore.subscribe(push);
+  // Pane names are the title bar's own text, which folds in a card's live
+  // title override; that override is not deck state either, so a Session card
+  // binding to a project would otherwise keep its stale Window-menu entry
+  // until some unrelated deck mutation came along. The publisher already
+  // diffs the serialized payload, so a push that changes nothing costs
+  // nothing.
+  cardTitleStore.subscribe(push);
   push();
 }
 
