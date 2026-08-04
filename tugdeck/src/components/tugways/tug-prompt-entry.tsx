@@ -46,6 +46,8 @@ import React, {
 
 import {
   ArrowUp,
+  GitCommitHorizontal,
+  MessageSquareText,
   PencilSparkles,
   Plus,
   Square,
@@ -75,6 +77,7 @@ import type { PromptHistoryStore } from "@/lib/prompt-history-store";
 import {
   TugTextEditor,
   type TugTextEditorDelegate,
+  type EditorArrowExitDirection,
 } from "./tug-text-editor";
 import type {
   ArgumentHintRefreshSource,
@@ -922,8 +925,9 @@ export interface TugPromptEntryProps {
   /**
    * The arrow sibling of {@link onTabWhenEmpty}, and the same contract: the
    * gesture goes to the host, which enters its focus cycle at the editor's own
-   * seat and steps ([P10]). `step` is `1` for Down / Right, `-1` for Up / Left;
-   * return `true` to consume.
+   * seat and moves ([P10]). The callback receives the arrow's DIRECTION, so a
+   * host can resolve the exit spatially rather than as an ordinal step; return
+   * `true` to consume.
    *
    * A non-empty composer offers it only on the second discrete press at a
    * document edge — the first arms the editor's boundary latch — so walking or
@@ -934,7 +938,7 @@ export interface TugPromptEntryProps {
    * a trapped focus cycle, so there is no base-mode walk for a released arrow
    * to move along. Supplying the callback is what makes the exit land somewhere.
    */
-  onArrowExit?: (step: 1 | -1) => boolean;
+  onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
   /**
    * Fired when the cycle's Return-into-text gesture lands on the editor stop
    * ([P11]): the host should exit cycling so the editor reactivates and the
@@ -3189,8 +3193,20 @@ export const TugPromptEntry = React.forwardRef<
       <TugChoiceGroup
         className="tug-prompt-entry-route-group"
         items={[
-          { value: "prompt", label: "Prompt" },
-          { value: "changes", label: "Changes" },
+          {
+            value: "prompt",
+            label: "Prompt",
+            icon: <MessageSquareText strokeWidth={2} />,
+            tooltip: "Write a prompt",
+            tooltipShortcut: "⇧⌘P",
+          },
+          {
+            value: "changes",
+            label: "Changes",
+            icon: <GitCommitHorizontal strokeWidth={2} />,
+            tooltip: "Write a commit message",
+            tooltipShortcut: "⇧⌘C",
+          },
         ]}
         value={commitActive ? "changes" : "prompt"}
         senderId={ROUTE_CHOICE_SENDER_ID}
@@ -3236,6 +3252,10 @@ export const TugPromptEntry = React.forwardRef<
             <TugPushButton
               className="tug-prompt-entry-submit-button"
               data-mode={submitView.dataMode}
+              // Return's home while the caret is in this composer — the shell
+              // lights the default ring and stands the fill down when the caret
+              // moves to another entry surface (the find bar).
+              data-tug-entry-default=""
               action={TUG_ACTIONS.SUBMIT}
               subtype="icon"
               size="lg"

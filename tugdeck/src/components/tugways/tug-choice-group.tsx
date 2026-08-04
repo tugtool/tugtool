@@ -35,6 +35,7 @@ import {
   buildRoleStyle,
   renderGroupItemContent,
 } from "./internal/tug-group-utils";
+import { TugTooltip } from "./tug-tooltip";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useComponentStatePreservation } from "./use-component-state-preservation";
@@ -100,6 +101,17 @@ export interface TugChoiceItem {
   "aria-label"?: string;
   /** Disables this segment individually. */
   disabled?: boolean;
+  /**
+   * Hover/focus tooltip content for this segment. Omit for no tooltip.
+   * Rendered by the shared `TugTooltip`, so a group's segments read the
+   * same as the icon buttons they sit beside.
+   */
+  tooltip?: React.ReactNode;
+  /**
+   * Keyboard shortcut badge shown in this segment's tooltip. Ignored
+   * without `tooltip`.
+   */
+  tooltipShortcut?: string;
 }
 
 /** TugChoiceGroup props. */
@@ -443,9 +455,8 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
           const isDisabled = effectiveDisabled || item.disabled;
           const isIconOnly = item.icon && !item.label;
 
-          return (
+          const segment = (
             <button
-              key={item.value}
               ref={(el) => { segmentRefs.current[index] = el; }}
               type="button"
               role="radio"
@@ -471,6 +482,18 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
             >
               {renderGroupItemContent({ label: item.label, icon: item.icon, iconPosition: item.iconPosition })}
             </button>
+          );
+
+          return item.tooltip !== undefined ? (
+            <TugTooltip
+              key={item.value}
+              content={item.tooltip}
+              shortcut={item.tooltipShortcut}
+            >
+              {segment}
+            </TugTooltip>
+          ) : (
+            <React.Fragment key={item.value}>{segment}</React.Fragment>
           );
         })}
       </div>
