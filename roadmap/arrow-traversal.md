@@ -548,17 +548,26 @@ No new React state is introduced anywhere in this phase.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Engine: `moveKeyViewLinear` + group-edge fallback | pending | — |
-| #step-2 | Shared release predicate + `arrowNavListener` rework | pending | — |
-| #step-3 | The net stage: `arrowFallbackListener` | pending | — |
-| #step-4 | Universal list cursor handles | pending | — |
-| #step-5 | Lens traversal app-tests | pending | — |
-| #step-6 | Choose Session sheet: authored order + app-tests | pending | — |
-| #step-7 | Editor keymap: Cmd-history, plain arrows caret-only | pending | — |
-| #step-8 | Editor boundary latch + substrate-owned release | pending | — |
-| #step-9 | Prompt-entry exit handoff + editor row in the cycle grid | pending | — |
-| #step-10 | Doctrine amendments | pending | — |
-| #step-11 | Integration checkpoint | pending | — |
+| #step-1 | Engine: `moveKeyViewLinear` + group-edge fallback | done | `8e4111f0c` |
+| #step-2 | Shared release predicate + `arrowNavListener` rework | done | `910b5ce7a` |
+| #step-3 | The net stage: `arrowFallbackListener` | done | `5cb8cf94b` |
+| #step-4 | Universal list cursor handles | done | `fe0ff5736` |
+| #step-5 | Lens traversal app-tests (`at0341`) | done | `0943a8eaf` |
+| #step-6 | Choose Session sheet: authored order + app-tests (`at0342`) | done | `ab07afca9` |
+| #step-7 | Editor keymap: Cmd-history, plain arrows caret-only | done | `4a8c14bb4` |
+| #step-8 | Editor boundary latch + substrate-owned release | done | `2097b9fb5` |
+| #step-9 | Prompt-entry exit handoff + editor row in the cycle grid (`at0343`) | done | `17415cdd3` |
+| #step-10 | Doctrine amendments | done | `e181f5d57` |
+| #step-11 | Integration checkpoint | done | verification only |
+
+**Step 11 notes.** `just app-test-changed` over the phase's whole diff derives **140 files** and the selector refuses it as a sweep — `focus-manager.ts` alone fans out to 64. The scoped answer run instead: the ~20-file **core tier** (`just app-test`, 20/20 green after the at0168 fix below) plus the phase's own three tests and the six drift tests (9/9 files, 12/12 tests green).
+
+Two pre-existing failures on `main` were found and fixed, neither caused by this phase:
+
+- **at0248 / at0277 / at0282** assumed ⌘L seeds the Lens **Snippets** list. It seeds the first expanded section with navigable content, which became **Cards** once that section had a card to show. All three were already red on `main`. Their assertions are untouched — they now Tab to Snippets first. at0248's interior-arrow and focus-invariant assertions passing unmodified is the evidence that universal cursor handles changed no interior behavior.
+- **at0168** pinned ⇧⌘P for *Cycle Permission Mode*, but `2d28be623` (on `main`, before this branch) rebound it to ⌃⌘P and never updated the test. `main` looked green only off a **stale app-test bundle**; a fresh build from this worktree surfaced it. The expectation now matches the shipped binding.
+
+**Not verifiable on this machine:** the foreground-class focus tests (at0246, at0250–at0252, at0268, at0272, at0278, at0287) time out on `document.hasFocus()` — they need real key focus, and they fail **identically on unmodified `main`**, so they are a machine condition, not a signal about this work. Re-run them on an idle machine.
 
 #### Step 1: Engine — `moveKeyViewLinear` + group-edge fallback {#step-1}
 

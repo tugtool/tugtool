@@ -77,7 +77,7 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "session.permissionMode.acceptEdits" },
   { id: "session.permissionMode.plan" },
   { id: "session.permissionMode.auto" },
-  { id: "session.permissionMode.cycle", key: "p", mods: MOD.command | MOD.shift },
+  { id: "session.permissionMode.cycle", key: "p", mods: MOD.command | MOD.control },
   { id: "session.permissionRules" },
   { id: "session.rewind" },
   { id: "session.compact" },

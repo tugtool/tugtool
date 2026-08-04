@@ -920,6 +920,22 @@ export interface TugPromptEntryProps {
    */
   onTabWhenEmpty?: (step: 1 | -1) => boolean;
   /**
+   * The arrow sibling of {@link onTabWhenEmpty}, and the same contract: the
+   * gesture goes to the host, which enters its focus cycle at the editor's own
+   * seat and steps ([P10]). `step` is `1` for Down / Right, `-1` for Up / Left;
+   * return `true` to consume.
+   *
+   * A non-empty composer offers it only on the second discrete press at a
+   * document edge — the first arms the editor's boundary latch — so walking or
+   * holding the caret to the top of a draft never leaves the editor. An empty
+   * composer offers it on the first press, having no document to protect.
+   *
+   * This is how the composer exits at all: the session card keeps its stops in
+   * a trapped focus cycle, so there is no base-mode walk for a released arrow
+   * to move along. Supplying the callback is what makes the exit land somewhere.
+   */
+  onArrowExit?: (step: 1 | -1) => boolean;
+  /**
    * Fired when the cycle's Return-into-text gesture lands on the editor stop
    * ([P11]): the host should exit cycling so the editor reactivates and the
    * caret returns. Paired with {@link editorFocusGroup}.
@@ -1043,6 +1059,7 @@ export const TugPromptEntry = React.forwardRef<
     editorFocusGroup,
     editorFocusOrder,
     onTabWhenEmpty,
+    onArrowExit,
     onResumeTyping,
     attachmentFocusGroup,
     attachmentFocusOrderBase,
@@ -3411,6 +3428,7 @@ export const TugPromptEntry = React.forwardRef<
               attachmentBytesStore={attachmentBytesStore}
               onAttachmentError={publishAttachmentError}
               historyProvider={currentHistoryProvider}
+              onArrowExit={onArrowExit}
               // Code Return semantics: Return inserts a newline; Shift+Return
               // (or the Z5 button) submits. A host override wins when supplied.
               returnAction={returnActionOverride ?? "newline"}

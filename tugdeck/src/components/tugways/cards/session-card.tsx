@@ -1318,6 +1318,27 @@ const pickerFocusKey = (order: number): string =>
   `${PICKER_CYCLE_GROUP}:${order}`;
 
 /**
+ * The Choose Session sheet's arrow order — the sheet's stops laid out as the
+ * rows they read as on screen. Without it the sheet is served by the liveliness
+ * net alone, which walks the linear order; a sheet is exactly the surface the
+ * focus language asks to be authored, so Cancel / Open get a real horizontal
+ * ring (Left/Right swap, wrapping) instead of two more stops in a column.
+ *
+ * The Sessions list is a single-node row, so it takes no ring: the engine
+ * injects its live cursor handle as the group, interior arrows rove its rows,
+ * and only an arrow off the cursor's edge crosses the seam to the row above or
+ * below. Every key is a module constant, so the order is too — nothing to
+ * memoize.
+ */
+const PICKER_SPATIAL_ORDER: SpatialOrder = rowGridOrder([
+  [pickerFocusKey(PICKER_ORDER_BROWSE), pickerFocusKey(PICKER_ORDER_PATH)],
+  [pickerFocusKey(PICKER_ORDER_FILTER)],
+  [pickerFocusKey(PICKER_ORDER_SESSIONS)],
+  [pickerFocusKey(PICKER_ORDER_TRASH_ALL)],
+  [pickerFocusKey(PICKER_ORDER_CANCEL), pickerFocusKey(PICKER_ORDER_OPEN)],
+]);
+
+/**
  * Render `text` with `<mark>` highlights at `matches` (UTF-16 code-unit
  * half-open ranges) — the recents dropdown's substring emphasis. Empty
  * `matches` → the text unmarked.
@@ -1350,6 +1371,12 @@ function SessionProjectPickerForm({
   onRetryRestore,
 }: SessionProjectPickerFormProps) {
   const focusManager = useFocusManager();
+  // Declared against the sheet's own trap, which `TugSheet` owns — hence the
+  // context form, read from the enclosing `FocusModeScope`. This body renders
+  // inside that trap; if the order ever landed on the base mode instead (the
+  // context form no-ops there), that is the signal the call has drifted outside
+  // the trap.
+  useSpatialOrder(PICKER_SPATIAL_ORDER);
   const inputRef = useRef<HTMLInputElement | null>(null);
   // Per-state default focus for the picker ([P12] Picker → Open). The Open
   // button is the destination so Return opens the seeded path — but Open is
@@ -2751,9 +2778,12 @@ export function SessionCardBody({
   // linearly; arrows give them a 2D feel: horizontal rings — the bottom toolbar
   // (route → mode → model → effort → submit), the Z2 status cells, and (while
   // composing with attachments) the Z4C tiles — with a vertical seam cycle
-  // between the rows. The editor (the text body) is reached by Tab / typing, not
-  // arrows: it is deactivated while cycling and a focused editor keeps its caret
-  // arrows ([P25] editing-host yield), so it is deliberately left OUT of the grid.
+  // between the rows. The editor's text stop takes a row of its own between
+  // PULSE and the attachments, which is where it sits on screen: a focused
+  // editor no longer keeps its caret arrows unconditionally (its boundary latch
+  // hands the second discrete edge press out), so the stop is a legitimate
+  // arrow destination and an arrow crossing the composer has somewhere real to
+  // land instead of jumping from PULSE straight to the tiles.
   // The chips disable on the Shell route; the navigator skips a disabled ring
   // target onto the next live stop, so this grid needs no per-route membership.
   // The attachment row is sized to the live tile count (an empty row is dropped
@@ -2794,6 +2824,9 @@ export function SessionCardBody({
       // / attachments instead). A lone node gets no horizontal ring; the seams
       // carry Up / Down across it.
       pulseStopPresent ? [k(SESSION_CYCLE_ORDER_PULSE)] : [],
+      // The editor's text stop — the input-area wrapper, which is what wears
+      // the ring while the editor itself stays blurred. Also a lone node.
+      [k(SESSION_CYCLE_ORDER_EDITOR)],
       Array.from({ length: attachmentCount }, (_, i) =>
         k(SESSION_CYCLE_ORDER_ATTACHMENT_BASE + i),
       ),
@@ -4402,6 +4435,15 @@ export function SessionCardBody({
               // editor's own seat and steps — so the key moves the keyboard
               // along the card's one Tab order instead of indenting nothing.
               onTabWhenEmpty={(step) =>
+                cycle.enterAt(
+                  `${SESSION_CYCLE_GROUP}:${SESSION_CYCLE_ORDER_EDITOR}`,
+                  step,
+                )
+              }
+              // An arrow leaving the composer lands exactly where Tab does —
+              // same seat, same step. The card's stops all live in its trapped
+              // cycle, so this handoff is the only way out that goes anywhere.
+              onArrowExit={(step) =>
                 cycle.enterAt(
                   `${SESSION_CYCLE_GROUP}:${SESSION_CYCLE_ORDER_EDITOR}`,
                   step,

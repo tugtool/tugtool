@@ -108,6 +108,14 @@ export interface SpatialCursorHandle {
    */
   columns?: () => number;
   /**
+   * Which arrows the group claims ([P12]). `"both"` (the default) is the inline
+   * shape — a chip group roves on all four. `"vertical"` is the stacked shape: a
+   * one-column list, where the resolver's 1-D reading would otherwise make
+   * ArrowLeft mean "cursor up". A horizontal arrow against a `"vertical"` group is
+   * not the cursor's; it falls through to seam / ring / the liveliness net.
+   */
+  axis?: "vertical" | "both";
+  /**
    * If `ArrowRight` should descend the current item (tree disclosure — an open
    * accordion section / a list row with navigable content), descend and return
    * `true`; else `false`. Consulted before spatial movement so Right keeps its
@@ -1710,15 +1718,33 @@ export class FocusContext {
   }
 
   /**
+   * Move the key view one step along the current mode's linear walk order — the
+   * liveliness net under the spatial plane. `down` / `right` advance, `up` / `left`
+   * retreat, both wrapping (the walk is modulo its length) and both mode-bounded, so
+   * a walk inside a trap never escapes it. Returns the moved focusable id, or `null`
+   * when the current mode has no participating focusables.
+   *
+   * Performs **no focus write**: it moves the key view and hands the id back, so the
+   * caller realizes it (context-internal callers via `focusKeyView`, external callers
+   * via `place`). That keeps this method from becoming a second focus writer ([L22]).
+   */
+  moveKeyViewLinear(direction: SpatialDirection): string | null {
+    return direction === "down" || direction === "right"
+      ? this.focusNext()
+      : this.focusPrevious();
+  }
+
+  /**
    * Move the focus ring spatially in `direction` ([P22] / [P23]): delegate an
    * in-group arrow to the ringed group's cursor, cross a declared seam / ring at a
    * boundary, or descend on Right where disclosure is available. Returns `true` when
    * the navigator owns the arrow (moved the ring, drove a group cursor, descended,
-   * or held a group at an undeclared edge), so the caller consumes it; `false` when
+   * or walked on from an undeclared edge), so the caller consumes it; `false` when
    * no declared order and no group claim this arrow — it is not the spatial plane's.
    *
    * Never beeps: a closed ring always yields a next node and a declared seam always
-   * has a target; a group at an undeclared edge holds (clamps) rather than failing.
+   * has a target; a group at an undeclared edge walks on along the linear order
+   * rather than failing, and holds (still consuming) when there is nowhere to walk.
    * A non-group node with a declared order but no target for this arrow is a *dead
    * arrow* ([R06]) — warned at dev time, never a beep.
    */
@@ -1747,7 +1773,12 @@ export class FocusContext {
           ? [{ node, length: handle.length(), columns: handle.columns?.() ?? 1 }]
           : order?.groups,
     };
-    const cursorIndex = handle !== undefined ? handle.cursorIndex() : null;
+    // A horizontal arrow against a vertical-axis group ([P12]) is not the cursor's:
+    // withholding the index skips group delegation entirely, so the arrow resolves
+    // against the seams / rings and then the net, instead of stepping the cursor.
+    const horizontal = direction === "left" || direction === "right";
+    const claimsArrow = !(horizontal && (handle?.axis ?? "both") === "vertical");
+    const cursorIndex = handle !== undefined && claimsArrow ? handle.cursorIndex() : null;
     const resolution = resolveSpatial(effective, node, direction, cursorIndex);
     if (resolution.kind === "cursor") {
       handle?.moveCursor(resolution.delta);
@@ -1797,18 +1828,20 @@ export class FocusContext {
       // view the author left OUT of the order (a Tab-reached list that owns its own
       // arrows) is not on the spatial plane, so the navigator yields the arrow to that
       // surface's own handler rather than dragging it into the linear net.
-      const moved =
-        direction === "down" || direction === "right"
-          ? this.focusNext()
-          : this.focusPrevious();
+      const moved = this.moveKeyViewLinear(direction);
       if (moved !== null) {
         this.focusKeyView();
         return true;
       }
     }
     if (handle !== undefined) {
-      // A group at an edge in a scope with NO declared order: hold the cursor (clamp)
-      // and consume the arrow so the page does not scroll — Tab leaves the group.
+      // A group at an edge in a scope with NO declared order. The same liveliness net
+      // applies here as inside a declared scope ([P01]): the arrow walks on along the
+      // linear order instead of clamping, so a list's last row continues into whatever
+      // is authored after it (the Lens's next section) rather than dead-ending. When
+      // the walk finds nowhere to go the group simply holds — either way the arrow is
+      // consumed, so the page never scrolls and the key never beeps ([P08]).
+      if (this.moveKeyViewLinear(direction) !== null) this.focusKeyView();
       return true;
     }
     return false;
@@ -3482,6 +3515,9 @@ export class FocusManager {
   }
   focusPrevious(): string | null {
     return this.activeContext().focusPrevious();
+  }
+  moveKeyViewLinear(direction: SpatialDirection): string | null {
+    return this.activeContext().moveKeyViewLinear(direction);
   }
   moveKeyViewSpatial(direction: SpatialDirection): boolean {
     return this.activeContext().moveKeyViewSpatial(direction);

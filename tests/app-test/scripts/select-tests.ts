@@ -136,7 +136,10 @@ const EXIT_OVER_BUDGET = 3;
  * a deliberate, argued act, not a reflex to make the lint quiet.
  */
 const ACCEPTED_FANOUT: Record<string, number> = {
-    "tugdeck/src/components/tugways/focus-manager.ts": 63,
+    // 63 → 64 with the Lens cross-section traversal (at0341): the liveliness
+    // net that carries an arrow off one surface and onto the next is the
+    // navigator's, so a traversal test has nowhere smaller to point.
+    "tugdeck/src/components/tugways/focus-manager.ts": 64,
     "tugdeck/src/focus-transfer.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/": 29,
     // The editor modules named individually by a test on top of the 29 that name the
@@ -144,6 +147,15 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     "tugdeck/src/components/tugways/tug-text-editor/drop-extension.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/state-preservation.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/theme.ts": 30,
+    "tugdeck/src/components/tugways/tug-text-editor/keymap.ts": 30,
+    // The editor substrate itself — every text surface in the app is this
+    // component, so a test of any of them names it. Crossed the budget with
+    // the arrow-exit prop (at0343).
+    "tugdeck/src/components/tugways/tug-text-editor.tsx": 21,
+    // The composer: every test that types into a Session card goes through it.
+    // Crossed the budget with the arrow-exit handoff (at0343), which is the
+    // prompt entry's own prop and has no smaller home.
+    "tugdeck/src/components/tugways/tug-prompt-entry.tsx": 21,
     "tugdeck/src/card-state-orchestrator.ts": 21,
     // The deck's own store: every test that seeds a deck, opens or closes a card,
     // or asserts pane geometry goes through it. Same structural coupling as the
@@ -174,7 +186,16 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // 25 → 26 with the extent-floor phantom gate (at0337): the floor is an
     // element of the list view's own scroller and its height has exactly one
     // writer, the commit bracket, so there is no smaller surface to name.
-    "tugdeck/src/components/tugways/tug-list-view.tsx": 26,
+    // 26 → 27 when every list gained a spatial cursor handle (at0341): a
+    // list's EDGES are what hand an arrow onward, and they are the list's own,
+    // so a cross-section traversal test has to name it.
+    "tugdeck/src/components/tugways/tug-list-view.tsx": 27,
+    // The session card: the composer, the route chip, the status cells, the
+    // focus cycle, and the Choose Session sheet are all one module, so any test
+    // that drives the app's centerpiece names it. Crossed the budget with the
+    // sheet's authored arrow order (at0342), which has no smaller home than the
+    // component that declares the sheet's stops.
+    "tugdeck/src/components/tugways/cards/session-card.tsx": 21,
 };
 
 interface TestCoverage {

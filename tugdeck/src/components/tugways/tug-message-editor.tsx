@@ -157,11 +157,12 @@ export interface TugMessageEditorProps {
   /** Walk policy when registered. */
   focusPolicy?: FocusPolicy;
   /**
-   * Arrow directions released back to the spatial plane while focused ([P25]),
-   * forwarded to the substrate — e.g. `"up down"` on an empty optional field
-   * so a bare arrow moves the ring out instead of dead-ending on the caret.
+   * Take the arrow that would leave the editor, forwarded to the substrate —
+   * the arrow sibling of Tab-out-of-an-empty-field. See
+   * `TugTextEditorProps.onArrowExit` for when a host wants it and when
+   * leaving it off is the right call.
    */
-  arrowRelease?: string;
+  onArrowExit?: (step: 1 | -1) => boolean;
   /**
    * Forwarded to the substrate: a transient, in-list editor (the Lens snippet
    * editor) that is not its card's primary text surface should NOT register
@@ -199,7 +200,7 @@ export const TugMessageEditor = React.forwardRef<
     focusGroup,
     focusOrder,
     focusPolicy,
-    arrowRelease,
+    onArrowExit,
     className,
     "data-testid": dataTestid,
     "aria-label": ariaLabel,
@@ -301,7 +302,7 @@ export const TugMessageEditor = React.forwardRef<
       focusGroup={focusGroup}
       focusOrder={focusOrder}
       focusPolicy={focusPolicy}
-      arrowRelease={arrowRelease}
+      onArrowExit={onArrowExit}
       onSubmit={onSubmit}
       extensions={messageEditorExtensions}
     />

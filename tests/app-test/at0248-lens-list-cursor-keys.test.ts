@@ -56,6 +56,24 @@ function priorCardDeck() {
   };
 }
 
+/**
+ * Walk the keyboard from wherever ⌘L seeds it to the Snippets list. The seed
+ * lands on the first expanded section that has navigable content — the Cards
+ * section, since this test opens a card — so getting to Snippets is a Tab walk,
+ * not an assumption. Tab is used deliberately: it is orthogonal to the arrow
+ * behavior under test here.
+ */
+async function tabToSnippetsList(app: App): Promise<void> {
+  for (let i = 0; i < 12; i += 1) {
+    const there = await app.evalJS<boolean>(
+      `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+    );
+    if (there) return;
+    await app.nativeKey("Tab");
+  }
+  throw new Error("the Tab walk never reached the Lens Snippets list");
+}
+
 async function cursorText(app: App): Promise<string | null> {
   return app.evalJS<string | null>(
     `(function(){
@@ -108,10 +126,7 @@ describe.skipIf(!SHOULD_RUN)("at0248 — Lens list movement keys via onKey deleg
             { timeoutMs: 5_000 },
           );
           await app.dispatchControlAction("focus-lens");
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
-            { timeoutMs: 5_000 },
-          );
+          await tabToSnippetsList(app);
           // The keyboard entry seeds the cursor on the first row.
           await waitCursorText(app, `function(t){ return t.indexOf("row-0") !== -1; }`);
 

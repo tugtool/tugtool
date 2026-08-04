@@ -146,10 +146,10 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             { timeoutMs: 5_000 },
           );
           await app.dispatchControlAction("focus-lens");
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
-            { timeoutMs: 5_000 },
-          );
+          // ⌘L seeds the first expanded section with navigable content — the
+          // Cards section, since this test opens a card — so Tab the rest of the
+          // way to Snippets rather than assuming the seed lands there.
+          await tabUntilKbd(app, SNIPPETS_LIST);
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(CURSOR_ROW)}) !== null`,
             { timeoutMs: 3_000 },

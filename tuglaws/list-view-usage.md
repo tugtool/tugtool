@@ -71,6 +71,18 @@ a *data source* and a *cell renderer*; the cell renderer's job is to compose
    the scrolled content. (This is what retired `ringPlacement` — an entire
    sticky-overlay apparatus that existed only to paint a *ring* on a shape that
    resists one. Do not rebuild it for the next edge-to-edge surface.)
+5b. **A list's arrow edges hand on; they do not clamp, and no consumer opts in.**
+   Every engine-authored list registers its spatial cursor handle
+   unconditionally — the opt-in prop is gone — because the handle is what makes
+   the list's *edges* visible to the navigator, and the edges are what carry an
+   arrow onward when the cursor runs off the end: to a declared seam where the
+   surface authored one, else along the liveliness net (the Lens's next
+   section). Interior arrows are unchanged. The handle is **vertical-axis only**:
+   a one-column list would otherwise read as a 1-D run in which `Left` means
+   "cursor up", so horizontal arrows fall through to the surface's seams instead
+   — while `ArrowRight` still descends into a row's accessories first, which is
+   consulted ahead of any movement.
+
    A list that can be filtered to zero rows must withhold its `focusGroup` when
    empty, the way the Lens sections gate theirs on `navigable` — the wash is a
    sufficient container mark only because a cursor bar sits inside it, so a

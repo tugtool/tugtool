@@ -1,5 +1,7 @@
 # Arrow traversal everywhere — design brief
 
+*Superseded by [roadmap/arrow-traversal.md](arrow-traversal.md), which answered every open question here and carries the implementation. Kept for the reasoning that led to it.*
+
 *Status: brief for discussion, not yet a plan. Grounds in [tuglaws/focus-language.md](../tuglaws/focus-language.md) ("Motion: two planes"), [P22]/[P23] spatial navigation, and the `data-tug-arrow-release` precedent. The goal is one general mechanism, not per-surface patches.*
 
 ## The tenet, and where we fall short

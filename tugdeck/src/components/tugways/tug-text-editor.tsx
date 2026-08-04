@@ -819,15 +819,23 @@ export interface TugTextEditorProps
    */
   focusPolicy?: FocusPolicy;
   /**
-   * Arrow directions this editor RELEASES back to the spatial plane ([P25]) —
-   * a space-separated subset of `up down left right`, written onto the
-   * `contentDOM` so the chain's arrow listener reads it off the focused
-   * element. A focused editor otherwise owns every arrow for the caret; a
-   * short optional field with nothing to navigate releases Up / Down while
-   * empty so a bare arrow moves the ring out rather than dead-ending on the
-   * caret. Reactive: the consumer flips it as the document fills. [L06]
+   * Take the arrow that would leave this editor — the arrow sibling of
+   * {@link onTabWhenEmpty}, and the same contract: `-1` for Up / Left, `+1`
+   * for Down / Right, return `true` to consume the press.
+   *
+   * A non-empty editor offers it only on the second discrete press at a
+   * document edge (the boundary latch: the first press arms, so slamming or
+   * holding the key parks the caret and never overshoots out). An empty
+   * editor offers it on the first press in any direction — there is no
+   * document to protect.
+   *
+   * Supply it from a host whose stops live in a mode the document keyboard
+   * pipeline cannot walk — a card that keeps its stops in a trapped focus
+   * cycle — so the host enters that cycle at this editor's own seat. Omit it
+   * on a surface the pipeline CAN walk (a dialog's answer field) and the
+   * editor releases the arrow to the spatial plane instead.
    */
-  arrowRelease?: string;
+  onArrowExit?: (step: 1 | -1) => boolean;
   /**
    * Soft-wrap long lines at the editor's width. When true, adds
    * `EditorView.lineWrapping` (sets `white-space: break-spaces` on
@@ -1287,7 +1295,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       focusGroup,
       focusOrder = 0,
       focusPolicy,
-      arrowRelease,
+      onArrowExit,
       lineWrap = false,
       lineNumbers: lineNumbersProp = false,
       highlightActiveLineGutter: highlightActiveLineGutterProp = false,
@@ -1841,8 +1849,16 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         onSubmit: onSubmit ?? noopSubmit,
         historyProvider: historyProvider ?? null,
         peekDefaultButton,
+        onArrowExit,
       };
-    }, [returnAction, numpadEnterAction, onSubmit, historyProvider, peekDefaultButton]);
+    }, [
+      returnAction,
+      numpadEnterAction,
+      onSubmit,
+      historyProvider,
+      peekDefaultButton,
+      onArrowExit,
+    ]);
 
     // Expose the imperative delegate. The closure reads `viewRef.current`
     // at call time so consumers see the live view across StrictMode's
@@ -1999,20 +2015,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     useLayoutEffect(() => {
       cmAdapterRef.current = view !== null ? createCMSelectionAdapter(view) : null;
     }, [view]);
-
-    // [P25] arrow-release marker. The chain's arrow listener reads the
-    // attribute off `document.activeElement`, which for a focused editor is
-    // CM6's `contentDOM` — so the marker goes there, not on the host wrapper.
-    // Appearance/behavior-zone DOM write, never React state ([L06]).
-    useLayoutEffect(() => {
-      if (view === null) return;
-      const content = view.contentDOM;
-      if (arrowRelease === undefined || arrowRelease === "") {
-        content.removeAttribute("data-tug-arrow-release");
-        return;
-      }
-      content.setAttribute("data-tug-arrow-release", arrowRelease);
-    }, [view, arrowRelease]);
 
     // Right-clicked file/directory atom's path, captured at menu-open
     // time so the OPEN_FILE responder handler below can dispatch it

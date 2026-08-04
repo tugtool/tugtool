@@ -23,9 +23,10 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
-import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, BASE_FOCUS_MODE, registerFocusManager } from "./focus-manager";
+import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, KEY_SINK_ATTRIBUTE, BASE_FOCUS_MODE, registerFocusManager } from "./focus-manager";
 import { resolveFocusAct } from "./focus-act";
 import { arrowDirection } from "./spatial-order";
+import { arrowReleaseSubject, resolveArrowRelease } from "./arrow-release";
 import { keyboardAccessStore } from "../../keyboard-access-store";
 import { focusRingModalityStore } from "../../focus-ring-modality-store";
 import { matchKeybinding } from "./keybinding-map";
@@ -498,25 +499,21 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // focus follows the ring onto the zone (not the editor), so this never blocks
       // zone navigation.
       //
-      // Narrow opt-out: a text field may *release* specific arrow directions back
-      // to the spatial plane via `data-tug-arrow-release` (a space-separated list
-      // of `up`/`down`/`left`/`right`). A single-line field with nothing to
-      // navigate to (e.g. an empty optional answer field) sets this so a bare
-      // Up/Down moves the ring out rather than dead-ending on the caret. The
-      // field controls when it releases (typically only while empty), so a field
-      // with text still owns every arrow.
-      const active = document.activeElement;
-      if (
-        active instanceof HTMLElement &&
-        (active.isContentEditable ||
-          active.tagName === "INPUT" ||
-          active.tagName === "TEXTAREA")
-      ) {
-        const released = active.getAttribute("data-tug-arrow-release");
-        const yields =
-          released !== null && released.split(/\s+/).includes(direction);
-        if (!yields) return;
-      }
+      // Narrow opt-out ([P03], `arrow-release.ts`): a text surface releases an arrow
+      // back to the spatial plane either explicitly, via `data-tug-arrow-release`
+      // (the substrate channel — the editor projects its emptiness and its boundary
+      // latch into it), or automatically, when it is an empty single-line field
+      // inside the key view and so has no caret motion to protect. A field with text
+      // still owns every arrow.
+      //
+      // A release never fires on auto-repeat: leaving a text surface is always a
+      // discrete press, so slamming an arrow parks the caret at the edge instead of
+      // shooting the ring out of the field.
+      const release = resolveArrowRelease(
+        arrowReleaseSubject(document.activeElement),
+        direction,
+      );
+      if (release === "held" || (release === "released" && event.repeat)) return;
       const focusKey = {
         key: event.key,
         altKey: event.altKey,
@@ -809,6 +806,59 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         event.preventDefault();
         event.stopImmediatePropagation();
       }
+    }
+
+    // ---- The arrow liveliness net ([P01], Spec S01) ----
+    // The floor under the spatial plane: a bare arrow that nothing has claimed
+    // moves the ring one step along the mode's linear walk order, wrapping. This
+    // is what carries the key view across surfaces that declare no spatial order
+    // — the Lens's sections, any list whose edge the navigator declined.
+    //
+    // It runs AFTER the key-view delegate on purpose: a descended row scope's
+    // in-row arrow walks and any `KeyViewBehavior.onKey` consumer own their keys,
+    // and the net catches only what is genuinely unclaimed. Text surfaces are
+    // gated rather than raced — the active-element check admits a focused text
+    // surface only when the release policy has already handed this arrow back.
+    function arrowFallbackListener(event: KeyboardEvent): void {
+      if (event.defaultPrevented) return;
+      const direction = arrowDirection(event.key);
+      if (direction === null) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      const active = document.activeElement;
+      const release = resolveArrowRelease(arrowReleaseSubject(active), direction);
+      if (release === "held") return;
+      if (release === "released") {
+        // Crossing out of a text surface is a discrete press ([P03]); a held key
+        // parks the caret at the edge. Non-text engine stops keep their repeat, so
+        // a held arrow still roves a list cursor via the earlier stage.
+        if (event.repeat) return;
+      } else if (
+        active !== null &&
+        active !== document.body &&
+        !(active instanceof HTMLElement && active.closest(`[${KEY_SINK_ATTRIBUTE}]`) !== null)
+      ) {
+        // Some other element holds real DOM focus — a Radix menu item, a native
+        // control. It owns its arrows; the net never walks focus out from under it.
+        return;
+      }
+      const focusKey = {
+        key: event.key,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+      };
+      // Defensive parity with the earlier stage: a capturing key view (a slider's
+      // value axis) keeps its arrow even here.
+      if (focusManager.keyViewCaptures(focusKey)) return;
+      const moved = focusManager.moveKeyViewLinear(direction);
+      // Nothing registered to move to — decline rather than swallow the key. A
+      // released text surface can never reach this state (its host owns the exit),
+      // so this branch is defensive, not a beep path.
+      if (moved === null) return;
+      focusManager.place(null, { kind: "focusable", id: moved }, { modality: "keyboard" });
+      event.preventDefault();
+      event.stopImmediatePropagation();
     }
 
     // ---- Engine scroll-key route ([Q02]) ----
@@ -1250,6 +1300,10 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // in the capture phase ahead of the global-shortcut dispatch. arrowNavListener
     // sits between them: it owns bare arrows for the spatial plane ahead of the
     // keybinding map, the same precedence the walk has for Tab ([P22]).
+    // arrowFallbackListener is the far end of that same arrow story — the
+    // liveliness net ([P01]) — and so registers AFTER keyViewDelegateListener:
+    // descended row scopes and `onKey` consumers get their arrows first, and the
+    // net picks up only what nothing claimed.
     // ---- Input-source latch ----
     // The engine's modality latch: the last REAL user input source. The ring
     // projection reads it for native focus changes; a placement overrides it
@@ -1270,6 +1324,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     document.addEventListener("keydown", captureListener, { capture: true });
     document.addEventListener("keydown", actDispatchListener, { capture: true });
     document.addEventListener("keydown", keyViewDelegateListener, { capture: true });
+    document.addEventListener("keydown", arrowFallbackListener, { capture: true });
     document.addEventListener("keydown", engineScrollKeyListener, { capture: true });
     document.addEventListener("keydown", bubbleListener);
     document.addEventListener("pointerdown", promoteOnPointerDown, { capture: true });
@@ -1284,6 +1339,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       document.removeEventListener("keydown", captureListener, { capture: true });
       document.removeEventListener("keydown", actDispatchListener, { capture: true });
       document.removeEventListener("keydown", keyViewDelegateListener, { capture: true });
+      document.removeEventListener("keydown", arrowFallbackListener, { capture: true });
       document.removeEventListener("keydown", engineScrollKeyListener, { capture: true });
       document.removeEventListener("keydown", bubbleListener);
       document.removeEventListener("pointerdown", promoteOnPointerDown, { capture: true });

@@ -916,7 +916,6 @@ const QuestionOptions: React.FC<QuestionOptionsProps> = ({
         focusGroup={focusGroup}
         focusOrder={focusOrder}
         commitOnEnter="act"
-        spatialCursor
         initialSelectedIndex={seedIndex}
         listRole={multi ? "group" : "radiogroup"}
         itemRole="presentation"
@@ -1045,11 +1044,11 @@ const QuestionFreeText: React.FC<QuestionFreeTextProps> = ({
         focusGroup={focusGroup}
         focusOrder={focusOrder}
         aria-label="Type your own answer"
-        // While the field is empty the user hasn't committed to typing, so a
-        // bare Up/Down should move the ring to the adjacent row rather than
-        // dead-end on the (empty) caret ([P25] release seam). Once there's
-        // text, the caret owns every arrow again.
-        arrowRelease={empty ? "up down" : undefined}
+        // No `onArrowExit`: this dialog's stops are ones the document keyboard
+        // pipeline can walk, so the editor's own release is the right exit
+        // here. It supersedes the field's former hand-wired release — an empty
+        // editor now releases all four directions, and a non-empty one leaves
+        // through the boundary latch.
       />
     </div>
   );

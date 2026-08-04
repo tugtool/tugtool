@@ -1253,19 +1253,6 @@ export interface TugListViewProps<
    * @default "listitem"
    */
   itemRole?: string;
-
-  /**
-   * Register a spatial-cursor handle so the **spatial navigator** drives in-group
-   * arrows — roving the movement cursor over the rows — when this list is also a
-   * node in a declared spatial order ([P22] / [Q12]). Without it, a list that
-   * shares a spatial grid with sibling controls (e.g. a dialog's option list next
-   * to its buttons) loses its arrows to ring movement: an arrow jumps the ring out
-   * to the neighbor instead of moving the cursor. Opt in for a list that lives in
-   * such a grid; a standalone authored list (its own arrow handling suffices)
-   * leaves it off. Ignored unless authored into a `focusGroup`.
-   * @default false
-   */
-  spatialCursor?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1675,7 +1662,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       onKeyViewKey,
       listRole = "list",
       itemRole = "listitem",
-      spatialCursor = false,
     },
     ref,
   ) {
@@ -5131,9 +5117,24 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       rowFirstFocusableId,
       descendCursorRow,
     };
+    // The spatial navigator's view of this list ([P22] / [Q12]): the ring rests on
+    // the list as ONE node while an in-group arrow roves the movement cursor over
+    // the rows, and only an arrow off the cursor's edge crosses onward — to a
+    // declared seam where the author drew one, else to the liveliness net, which
+    // carries the ring into whatever the walk order puts after this list ([P01]).
+    // That is why the handle is unconditional: the edges are what make the list
+    // traversable at all, and every engine-authored list wants them.
+    //
+    // Vertical axis only ([P12]). A list is one column, which the resolver would
+    // otherwise read as a 1-D run where ANY arrow steps the cursor — making
+    // ArrowLeft mean "cursor up" on every full-width list in the app. Horizontal
+    // arrows instead fall through to seam / ring / net. (ArrowRight still descends
+    // into a row's accessories first: `tryDescendRight` is consulted ahead of any
+    // movement.)
     const cursorHandleRef = React.useRef<SpatialCursorHandle | null>(null);
     if (cursorHandleRef.current === null) {
       cursorHandleRef.current = {
+        axis: "vertical",
         length: () => {
           const total = dataSourceRef.current.numberOfItems();
           const { isCursorableRow: cursorable } = cursorNavRef.current;
@@ -5179,11 +5180,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       };
     }
     React.useLayoutEffect(() => {
-      if (manager === null || !focusEngineActive || !spatialCursor) return;
+      if (manager === null || !focusEngineActive) return;
       const ctx = manager.contextFor(cardId);
       ctx.registerCursorHandle(focusableId, cursorHandleRef.current!);
       return () => ctx.unregisterCursorHandle(focusableId);
-    }, [manager, cardId, focusableId, focusEngineActive, spatialCursor]);
+    }, [manager, cardId, focusableId, focusEngineActive]);
 
     // Land / clear the cursor as the container gains or loses the keyboard key
     // view. On gain, seed the cursor on the selected row (else the first
@@ -5412,6 +5413,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
               Math.max(1, heightForIndex(Math.max(0, cur))),
           ) - 1,
         );
+      // Container-cursor arrows now reach the list through its spatial cursor
+      // handle instead, which the navigator consumes before this delegate ever
+      // runs ([P02]) — and whose edges hand on to the liveliness net rather than
+      // clamping here. The arrow cases below stay as the delegate's backstop for
+      // any path that bypasses the spatial plane; Home / End / Page have no
+      // spatial counterpart and are only ever served here.
       let next = -1;
       switch (e.key) {
         case "ArrowDown":

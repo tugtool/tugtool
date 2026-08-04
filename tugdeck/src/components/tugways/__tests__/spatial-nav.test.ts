@@ -5,7 +5,8 @@
  * no-ops headless; `setKeyView` mutates the in-memory key view, which is what these
  * assert). The pure resolver itself is pinned by `spatial-order.test.ts`; this pins
  * the engine wiring: ring/seam movement, group cursor delegation, the never-beep
- * edge clamp, the dead-arrow warning ([R06]), and the default-context path ([L26]).
+ * liveliness walk at an edge, the dead-arrow warning ([R06]), and the
+ * default-context path ([L26]).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -116,18 +117,59 @@ describe("moveKeyViewSpatial — group cursor delegation", () => {
     expect(m.keyView()).toBe("deny"); // focusNext(scope=last) wraps to deny (order 0)
   });
 
-  test("a group edge with NO declared order clamps (standalone group, no scroll)", () => {
+  test("a group edge with NO declared order walks on along the linear order", () => {
+    const m = new FocusManager();
+    const ctx = m.contextFor(null);
+    ctx.registerFocusable({ id: "list", group: "grp", order: 0 });
+    ctx.registerFocusable({ id: "next-section", group: "grp", order: 1 });
+    const { handle, state } = makeHandle(2, 1); // cursor at the bottom
+    ctx.registerCursorHandle("list", handle);
+    ctx.setKeyView("list", true);
+    // No declared spatial order for this mode → the liveliness net carries the ring on
+    // to the next stop in the walk (the Lens's next section) instead of clamping.
+    expect(m.moveKeyViewSpatial("down")).toBe(true);
+    expect(m.keyView()).toBe("next-section");
+    expect(state.index).toBe(1); // the cursor did not move; the ring left the group
+  });
+
+  test("a lone group with nowhere to walk holds, and still consumes", () => {
     const m = new FocusManager();
     const ctx = m.contextFor(null);
     ctx.registerFocusable({ id: "g", group: "grp", order: 0 });
     const { handle, state } = makeHandle(2, 1); // cursor at the bottom
     ctx.registerCursorHandle("g", handle);
     ctx.setKeyView("g", true);
-    // No declared spatial order for this mode → the group holds (clamps) rather than
-    // walking out; it consumes the arrow so the page does not scroll.
+    // The walk has one member, so it lands back on the group: nothing moves, but the
+    // arrow is still consumed so the page does not scroll and the key never beeps.
     expect(m.moveKeyViewSpatial("down")).toBe(true);
     expect(m.keyView()).toBe("g");
     expect(state.index).toBe(1);
+  });
+
+  test("a vertical-axis group yields horizontal arrows to the plane ([P12])", () => {
+    const { m, ctx } = setup();
+    const { handle, state } = makeHandle(3, 1); // mid-cursor: a 'both' group would rove
+    ctx.registerCursorHandle("scope", { ...handle, axis: "vertical" });
+    ctx.setKeyView("scope", true);
+    // Vertical still roves the cursor.
+    expect(m.moveKeyViewSpatial("down")).toBe(true);
+    expect(state.index).toBe(2);
+    expect(m.keyView()).toBe("scope");
+    // Left is not the cursor's: with no horizontal seam from the list it falls to
+    // the liveliness net, which retreats one stop in the walk order.
+    expect(m.moveKeyViewSpatial("left")).toBe(true);
+    expect(state.index).toBe(2); // the cursor did not move
+    expect(m.keyView()).toBe("allow"); // focusPrevious(scope) → allow
+  });
+
+  test("a 'both' group (a chip row) still roves on horizontal arrows", () => {
+    const { m, ctx } = setup();
+    const { handle, state } = makeHandle(3, 1);
+    ctx.registerCursorHandle("scope", handle); // no axis → "both"
+    ctx.setKeyView("scope", true);
+    expect(m.moveKeyViewSpatial("left")).toBe(true);
+    expect(state.index).toBe(0);
+    expect(m.keyView()).toBe("scope");
   });
 
   test("ArrowRight descends a disclosable item before any spatial movement", () => {
@@ -167,6 +209,33 @@ describe("moveKeyViewSpatial — never-beep boundaries", () => {
   test("no key view → nothing to move", () => {
     const { m } = setup();
     expect(m.moveKeyViewSpatial("left")).toBe(false);
+  });
+});
+
+describe("moveKeyViewLinear — the liveliness net's walk", () => {
+  test("down / right advance and up / left retreat, wrapping at both ends", () => {
+    const { m, ctx } = setup(); // deny(0), allow(1), scope(2)
+    ctx.setKeyView("allow", true);
+    expect(m.moveKeyViewLinear("down")).toBe("scope");
+    expect(m.moveKeyViewLinear("right")).toBe("deny"); // wrapped past the last
+    expect(m.moveKeyViewLinear("up")).toBe("scope"); // wrapped past the first
+    expect(m.moveKeyViewLinear("left")).toBe("allow");
+    expect(m.keyView()).toBe("allow");
+  });
+
+  test("a registry with nothing to walk returns null", () => {
+    const m = new FocusManager();
+    expect(m.moveKeyViewLinear("down")).toBeNull();
+    expect(m.keyView()).toBeNull();
+  });
+
+  test("a single-stop registry re-returns its one id", () => {
+    const m = new FocusManager();
+    const ctx = m.contextFor(null);
+    ctx.registerFocusable({ id: "only", group: "g", order: 0 });
+    ctx.setKeyView("only", true);
+    expect(m.moveKeyViewLinear("down")).toBe("only");
+    expect(m.moveKeyViewLinear("up")).toBe("only");
   });
 });
 
