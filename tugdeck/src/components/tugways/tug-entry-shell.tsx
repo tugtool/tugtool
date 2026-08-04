@@ -27,23 +27,44 @@
  * `--tugx-entry-shell-editor-rest`, `--tugx-entry-shell-editor-focus`) are
  * defined in `tug-entry-shell.css` and are host-referenceable the same way.
  *
- * The shell is stateless and law-inert: no store reads, no responders, no
- * focus claims. The forwarded ref lands on the root `div` — the prompt entry
- * composes its `rootRef + responderRef` there (the substrate's `data-empty`
- * bridge writes through that root ref per [L22], and the responder-chain
- * registration rides the same element).
+ * The shell claims no focus and owns no responder. It does keep ONE derived
+ * appearance bit: `data-entry-keyboard` on the root, set while the engine's
+ * key view sits inside this shell's input area — "this shell's field holds the
+ * keyboard". The stylesheet reads it to decide which of the deck's entry
+ * shells lights its default button, since with a find bar open two are on
+ * screen and only the one holding the keyboard may read as live.
+ *
+ * It is mirrored onto the root rather than read in place with
+ * `:has(.tug-entry-shell-input-area [data-key-view])`, which is the selector
+ * this obviously wants to be: **WebKit does not invalidate `:has()` when a
+ * descendant's attribute changes.** The selector matches correctly under
+ * `element.matches()` and the computed style still does not update — re-insert
+ * the subtree and the correct style appears. So a `:has()` keyed on an engine
+ * mark silently renders the state the DOM had when the subtree was last
+ * built. Never key appearance on `:has()` over a projected engine attribute;
+ * mirror the bit onto an ancestor, as here.
+ *
+ * The forwarded ref lands on the root `div` — the prompt entry composes its
+ * `rootRef + responderRef` there (the substrate's `data-empty` bridge writes
+ * through that root ref per [L22], and the responder-chain registration rides
+ * the same element).
  *
  * Laws: [L19] component authoring, [L20] the shell styles only its own box —
- * occupants keep their own tokens.
+ * occupants keep their own tokens, [L06] the derived bit is a DOM attribute
+ * written from a mutation observer, never React state.
  *
  * @module components/tugways/tug-entry-shell
  */
 
 import "./tug-entry-shell.css";
 
-import React from "react";
+import React, { useLayoutEffect, useRef } from "react";
 
 import { cn } from "@/lib/utils";
+import { KEY_VIEW_ATTRIBUTE } from "./focus-manager";
+
+/** Set on the shell root while the engine's key view is inside its input area. */
+const ENTRY_KEYBOARD_ATTRIBUTE = "data-entry-keyboard";
 
 export interface TugEntryShellProps
   extends React.ComponentPropsWithoutRef<"div"> {
@@ -97,12 +118,62 @@ export const TugEntryShell = React.forwardRef<HTMLDivElement, TugEntryShellProps
     }: TugEntryShellProps,
     ref,
   ) {
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const areaRef = useRef<HTMLDivElement | null>(null);
+
+    // Mirror "the keyboard is in this shell's field" onto the root, driven by a
+    // MutationObserver on the input area rather than by a focus-manager
+    // subscription. The engine's notify and its DOM converge are two steps, and
+    // a subscriber that reads the DOM sees the PREVIOUS projection — which
+    // showed up as the two shells' default buttons lit exactly backwards. An
+    // observer fires on the write itself, so there is no ordering to get right.
+    useLayoutEffect(() => {
+      const root = rootRef.current;
+      const area = areaRef.current;
+      if (root === null || area === null) return;
+      const sync = (): void => {
+        const held =
+          area.hasAttribute(KEY_VIEW_ATTRIBUTE) ||
+          area.querySelector(`[${KEY_VIEW_ATTRIBUTE}]`) !== null;
+        if (held) root.setAttribute(ENTRY_KEYBOARD_ATTRIBUTE, "");
+        else root.removeAttribute(ENTRY_KEYBOARD_ATTRIBUTE);
+      };
+      sync();
+      const observer = new MutationObserver(sync);
+      observer.observe(area, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: [KEY_VIEW_ATTRIBUTE],
+      });
+      return () => observer.disconnect();
+    }, []);
+
+    const composedRootRef = React.useCallback(
+      (el: HTMLDivElement | null) => {
+        rootRef.current = el;
+        if (typeof ref === "function") ref(el);
+        else if (ref !== null) ref.current = el;
+      },
+      [ref],
+    );
+    const composedAreaRef = React.useCallback(
+      (el: HTMLDivElement | null) => {
+        areaRef.current = el;
+        if (typeof inputAreaRef === "function") inputAreaRef(el);
+        else if (inputAreaRef !== null && inputAreaRef !== undefined) {
+          (inputAreaRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+        }
+      },
+      [inputAreaRef],
+    );
+
     return (
-      <div ref={ref} className={cn("tug-entry-shell", className)} {...rest}>
+      <div ref={composedRootRef} className={cn("tug-entry-shell", className)} {...rest}>
         {statusRow}
         <div
           className={cn("tug-entry-shell-input-area", inputAreaClassName)}
-          ref={inputAreaRef}
+          ref={composedAreaRef}
           tabIndex={inputAreaTabIndex}
         >
           {children}

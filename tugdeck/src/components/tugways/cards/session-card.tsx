@@ -2840,14 +2840,19 @@ export function SessionCardBody({
     editorStore.getSnapshot,
   );
 
-  // Bind the pane element for CSS variable cascade
+  // Bind the CARD ROOT for the editor CSS variable cascade
   // (`--tug-font-family-editor` / `--tug-font-size-editor` /
-  // `--tug-letter-spacing-editor` / `--tug-line-height-editor`). The
-  // `regenerateAtoms` callback re-renders baked atom chips when the
-  // editor font changes, so atoms track the editor's chosen font.
-  const paneRef = useRef<HTMLDivElement | null>(null);
+  // `--tug-letter-spacing-editor` / `--tug-line-height-editor`). The root, not
+  // the composer's pane: the card holds TWO editors and the find bar's query
+  // field docks above the status bar, outside the entry pane — bound there it
+  // never inherited the chosen editor font and silently rendered at the
+  // substrate's 14px default beside a composer the user had set smaller. Every
+  // editor in the card is an editor and reads the same settings.
+  //
+  // The `regenerateAtoms` callback re-renders baked atom chips when the editor
+  // font changes, so atoms track the editor's chosen font.
   useLayoutEffect(() => {
-    const el = paneRef.current;
+    const el = sessionCardRootRef.current;
     if (!el) return;
     // `regenerateAtoms` re-renders the baked atom chips when the editor
     // font changes via the tools popover — atoms must track the editor
@@ -4312,6 +4317,18 @@ export function SessionCardBody({
                       step,
                     )
                   }
+                  // The query field needs the arrow handoff for the same reason
+                  // the composer does — its stops are in the trapped cycle, so a
+                  // released arrow would walk a base-mode order that holds none
+                  // of them and the caret would be stuck in the field. Spatial,
+                  // so Down reaches the status row rather than the option group
+                  // sharing this row.
+                  onArrowExit={(direction) =>
+                    cycle.enterToward(
+                      `${SESSION_CYCLE_GROUP}:${SESSION_CYCLE_ORDER_FIND_BASE}`,
+                      direction,
+                    )
+                  }
                 />
               </cycle.CycleScope>
             ) : null}
@@ -4386,9 +4403,6 @@ export function SessionCardBody({
           data-slot="session-card-entry-region"
         >
           <TugBox
-            ref={(el) => {
-              paneRef.current = el as HTMLDivElement | null;
-            }}
             variant="plain"
             inset={false}
             disabled={sessionErrored}
@@ -4440,13 +4454,15 @@ export function SessionCardBody({
                   step,
                 )
               }
-              // An arrow leaving the composer lands exactly where Tab does —
-              // same seat, same step. The card's stops all live in its trapped
-              // cycle, so this handoff is the only way out that goes anywhere.
-              onArrowExit={(step) =>
-                cycle.enterAt(
+              // An arrow leaving the composer enters the cycle at the same seat
+              // Tab does, but moves along the cycle's SPATIAL plane — Up is the
+              // row above, not the previous ordinal. The card's stops all live
+              // in its trapped cycle, so this handoff is the only way out that
+              // goes anywhere.
+              onArrowExit={(direction) =>
+                cycle.enterToward(
                   `${SESSION_CYCLE_GROUP}:${SESSION_CYCLE_ORDER_EDITOR}`,
-                  step,
+                  direction,
                 )
               }
               attachmentFocusGroup={SESSION_CYCLE_GROUP}

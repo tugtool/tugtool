@@ -39,7 +39,23 @@
  *      ⇧Tab in an empty composer enter the cycle from either side; a
  *      non-empty composer takes Tab back and indents.
  *
+ * A second test covers what the bar owes the rest of the focus language, which
+ * the door-opening test above says nothing about:
+ *
+ *  10. **Arrows leave the query field.** The bar's stops live in the card's
+ *      trapped cycle, which the document keyboard pipeline cannot walk — so
+ *      without the host's arrow handoff a released arrow has nowhere to go and
+ *      the field becomes a dead end for the keyboard. Down and Up out of an
+ *      empty query field must both move the ring OUT of the bar.
+ *  11. **One lit default button.** With the bar open the deck shows two entry
+ *      shells, each with a Return button, and only the one holding the caret
+ *      may read as live. The composer's submit gives up its fill when the caret
+ *      is in the query field and takes it back when the caret returns.
+ *  12. **The query field is an editor like any other** — same font size as the
+ *      composer, which it only gets by inheriting the card's editor settings.
+ *
  * @covers tugdeck/src/components/tugways/tug-find-bar.tsx
+ * @covers tugdeck/src/components/tugways/tug-entry-shell.css
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/components/tugways/keybinding-map.ts
  * @covers tugdeck/src/lib/commit-mode-controller.ts
@@ -654,6 +670,140 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
           ),
           "Tab in a non-empty composer indents; it must not move the keyboard",
         ).toBe(true);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "arrows leave the query field, one default button is lit, and the query is an editor like the composer",
+    async () => {
+      const app = await launchTugApp({ testName: "at0339-find-bar-language" });
+      try {
+        await seedSession(app);
+
+        await app.nativeClickAtElement(EDITOR);
+        await chord(app, "KeyF", "f", { meta: true });
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FIND_BAR)}) !== null`,
+          { timeoutMs: 8000 },
+        );
+        await app.waitForCondition<boolean>(queryFieldHasCaret, {
+          timeoutMs: 8000,
+        });
+
+        // --- 12. The query field inherits the card's editor settings. It docks
+        //         outside the composer's pane, so a font bound to that pane
+        //         never reached it and it silently rendered at the substrate's
+        //         own default beside a composer the user had set smaller. ---
+        const fontSizes = await app.evalJS<{ find: string; composer: string } | null>(
+          `(function(){
+            var find = document.querySelector(${JSON.stringify(FIND_INPUT)});
+            var composer = document.querySelector(${JSON.stringify(EDITOR)});
+            if (!find || !composer) return null;
+            return {
+              find: getComputedStyle(find).fontSize,
+              composer: getComputedStyle(composer).fontSize,
+            };
+          })()`,
+        );
+        expect(fontSizes).not.toBeNull();
+        expect(
+          fontSizes!.find,
+          "the find field renders at the composer's editor font size",
+        ).toBe(fontSizes!.composer);
+
+        // --- 11. Exactly one lit default button. Return follows the caret —
+        //         in the query field it is Find Next, in the composer it is
+        //         Submit — so the fill has to follow it too. Read by
+        //         background colour, which the filled → outlined stand-down
+        //         changes and which (unlike the ring outline) does not go quiet
+        //         in a background window. ---
+        //         The lit/dim decision reads the ENGINE's `[data-key-view]`
+        //         mark rather than `:focus-within`, so wait for that mark
+        //         rather than for `document.activeElement`: ⌘F's imperative
+        //         focus claim reaches the engine through `focusin`, one turn
+        //         later than the DOM focus it asserts.
+        const keyViewIn = (host: string) =>
+          `(() => {
+            const kv = document.querySelector('${CARD} [data-key-view]');
+            const host = document.querySelector(${JSON.stringify(host)});
+            return kv !== null && host !== null && host.contains(kv);
+          })()`;
+        //         Read by the RING, not by the fill: the fill is transitioned,
+        //         so a snapshot taken the moment the mark moves catches both
+        //         buttons mid-interpolation and neither value is either
+        //         endpoint. The default ring is not animated.
+        const ringed = (host: string, label: string) =>
+          `(() => {
+            const el = document.querySelector('${host} ${label}');
+            if (el === null) return false;
+            const s = getComputedStyle(el);
+            return s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0;
+          })()`;
+        const SUBMIT = ".tug-prompt-entry-submit-button";
+        const NEXT = '[aria-label="Find next"]';
+
+        await app.waitForCondition<boolean>(keyViewIn(FIND_BAR), {
+          timeoutMs: 8000,
+        });
+        await app.waitForCondition<boolean>(ringed(FIND_BAR, NEXT), {
+          timeoutMs: 6000,
+        });
+        expect(
+          await app.evalJS<boolean>(ringed(CARD, SUBMIT)),
+          "with the keyboard in the query field, only Find Next carries the default ring",
+        ).toBe(false);
+
+        // Back to the composer and the two swap roles.
+        await app.nativeClickAtElement(EDITOR);
+        await app.waitForCondition<boolean>(
+          keyViewIn(`${CARD} [data-slot="tug-prompt-entry"]`),
+          { timeoutMs: 8000 },
+        );
+        await app.waitForCondition<boolean>(ringed(CARD, SUBMIT), {
+          timeoutMs: 6000,
+        });
+        expect(
+          await app.evalJS<boolean>(ringed(FIND_BAR, NEXT)),
+          "the keyboard left the query field, so Find Next gives up the ring",
+        ).toBe(false);
+
+        // --- 10. Arrows leave the query field in both directions. The bar's
+        //         stops are in the card's trapped cycle; a released arrow walks
+        //         the document pipeline's mode-bounded order, which holds none
+        //         of them — so the host's arrow handoff is the only thing that
+        //         makes this move at all. An empty field pays no latch press.
+        const ringOutsideBar = `(() => {
+          const kv = document.querySelector('[data-key-view]');
+          const bar = document.querySelector(${JSON.stringify(FIND_BAR)});
+          return kv !== null && bar !== null && !bar.contains(kv);
+        })()`;
+
+        for (const direction of ["Down", "Up"] as const) {
+          await app.nativeClickAtElement(FIND_INPUT);
+          await app.waitForCondition<boolean>(queryFieldHasCaret, {
+            timeoutMs: 8000,
+          });
+          // Empty, so the arrow is an exit on the first discrete press.
+          await app.nativeKey("a", ["cmd"]);
+          await app.nativeKey("Backspace");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(FIND_INPUT)} + " .cm-placeholder") !== null`,
+            { timeoutMs: 4000 },
+          );
+
+          await app.nativeKey(`Arrow${direction}`);
+          await app.waitForCondition<boolean>(ringOutsideBar, {
+            timeoutMs: 6000,
+          });
+          expect(
+            await app.evalJS<boolean>(queryFieldHasCaret),
+            `${direction} out of an empty query field leaves the field`,
+          ).toBe(false);
+        }
       } finally {
         await app.close();
       }

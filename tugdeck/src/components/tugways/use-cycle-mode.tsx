@@ -47,6 +47,7 @@ import React, {
 
 import { FocusManagerContext, FocusModeContext } from "./focus-manager";
 import type { CycleDisposition, FocusCommit } from "./focus-manager";
+import type { SpatialDirection } from "./spatial-order";
 import { CardIdContext } from "@/lib/card-id-context";
 
 /**
@@ -124,6 +125,22 @@ export interface UseCycleModeResult {
    * walk), so the caller can leave the key unconsumed.
    */
   enterAt: (fromFocusKey: string, step: 1 | -1) => boolean;
+  /**
+   * Enter cycling as if the ring were already on `fromFocusKey`, then move one
+   * step in `direction` along the cycle's **spatial** plane — the arrow door,
+   * beside {@link enterAt}'s Tab door.
+   *
+   * An arrow is a direction, not an ordinal: Down out of a field that shares a
+   * row with three sibling controls means the row *below*, not the control to
+   * its right, which is what a linear step would give. So this resolves through
+   * the declared spatial order and only falls back to the linear walk when the
+   * plane declines (no order declared, or the seat is off it) — the same
+   * liveliness net the navigator applies everywhere ([P01]).
+   *
+   * Returns `false` only when there was nowhere to go, so a caller can leave the
+   * key unconsumed.
+   */
+  enterToward: (fromFocusKey: string, direction: SpatialDirection) => boolean;
   /** Wrap the card's cycle-able zones so they register into this mode. */
   CycleScope: React.FC<{ children: React.ReactNode }>;
   /** This card's stable cycle-scope id (for diagnostics / advanced wiring). */
@@ -256,6 +273,30 @@ export function useCycleMode({
     [ctx, enabled, scopeId, pushMode],
   );
 
+  const enterToward = useCallback(
+    (fromFocusKey: string, direction: SpatialDirection): boolean => {
+      if (ctx === null || !enabled) return false;
+      const wasCycling = ctx.currentFocusMode() === scopeId;
+      if (!wasCycling) pushMode();
+      // Same synchronous seat-then-move as `enterAt`: the seed exists only to
+      // give the navigator a position to resolve from, and is never painted.
+      ctx.realizeTarget({ kind: "focus-key", focusKey: fromFocusKey }, "keyboard");
+      // `moveKeyViewSpatial` lands the keyboard itself on every branch it owns.
+      if (ctx.moveKeyViewSpatial(direction)) return true;
+      // Off the declared plane (or no plane in this scope) — walk the linear
+      // order, so an arrow still moves rather than dying at the seat.
+      const step = direction === "down" || direction === "right" ? 1 : -1;
+      const moved = step === 1 ? ctx.focusNext() : ctx.focusPrevious();
+      if (moved === null) {
+        if (!wasCycling) ctx.popFocusMode(scopeId, { moveDomFocus: false });
+        return false;
+      }
+      ctx.focusKeyView();
+      return true;
+    },
+    [ctx, enabled, scopeId, pushMode],
+  );
+
   const exit = useCallback(() => {
     if (ctx === null) return;
     if (ctx.currentFocusMode() !== scopeId) return;
@@ -338,9 +379,10 @@ export function useCycleMode({
       toggle,
       exit,
       enterAt,
+      enterToward,
       CycleScope: scopeRef.current!,
       scopeId,
     }),
-    [cycling, toggle, exit, enterAt, scopeId],
+    [cycling, toggle, exit, enterAt, enterToward, scopeId],
   );
 }

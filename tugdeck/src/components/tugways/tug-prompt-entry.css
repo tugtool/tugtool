@@ -166,39 +166,12 @@ body {
   cursor: not-allowed;
 }
 
-/* Editor text-stop border ([P10]/[P11]). When the keyboard-focus cycle lands
-   on the input area (its last stop), give the WHOLE text component a clear
-   focus-ring-coloured border while the editor itself stays blurred (the
-   `deactivated` stand-down). Return then "descends" into the editor (resume
-   typing).
-
-   Drawn as a `::after` overlay rather than an `outline`: the embedded
-   CodeMirror substrate fills the input area and (with its own stacking /
-   backgrounds) painted over a negative-offset inset outline, leaving the ring
-   invisible. An absolutely-positioned, `pointer-events: none` border pinned to
-   the input area's box and lifted above the editor renders the border reliably
-   on top, hugging the text region without extending under the toolbar / pane
-   edge. Appearance keyed on the engine attribute, no React state ([L06]). */
-.tug-prompt-entry-input-area[data-key-view-kbd] {
-  position: relative;
-  /* Suppress the global rounded key-view ring — this element draws its OWN
-     square `::after` border below. Without this, the global `[data-key-view-kbd]`
-     outline (rounded, 2px outside) painted alongside the square border and
-     bulged out below it as a rounded "chin". */
-  outline: none;
-}
-
-.tug-prompt-entry-input-area[data-key-view-kbd]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
-  /* Square corners — the input area spans the full prompt-entry panel, so a
-     rounded ring reads as a floating pill; a square border hugs the panel. */
-  border-radius: 0;
-  pointer-events: none;
-  z-index: 2;
-}
+/* Editor text-stop ring ([P10]/[P11]) — when the keyboard-focus cycle lands on
+   the input area, the WHOLE text component takes a focus-ring border while the
+   editor itself stays blurred (the `deactivated` stand-down; Return then
+   "descends" into the editor and resumes typing). The ring itself is the shared
+   entry-shell treatment now (`tug-entry-shell.css`), which the find bar's query
+   field wears identically — this element carries both classes. */
 
 /* Drop-target ring. The editor's own `[data-drop-active]` ring (tug-text-editor.css)
    is a negative-offset inset outline — and exactly like the focus ring above, the

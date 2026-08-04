@@ -132,12 +132,15 @@ export interface TugTextEditorKeymapConfig {
    */
   peekDefaultButton?: () => HTMLButtonElement | null;
   /**
-   * The host's offer to take an arrow that would leave the editor ([P09]):
-   * `-1` for Up / Left, `+1` for Down / Right. Return `true` to consume the
-   * press. The arrow sibling of `onTabWhenEmpty` — a host enters its
-   * focus-cycling mode at this editor's own seat in the order and takes one
-   * step, rather than the editor releasing the key to the document pipeline
-   * and hoping the surface has stops the pipeline can walk.
+   * The host's offer to take an arrow that would leave the editor ([P09]).
+   * Return `true` to consume the press. The arrow sibling of `onTabWhenEmpty` —
+   * a host enters its focus-cycling mode at this editor's own seat in the order
+   * and moves one step, rather than the editor releasing the key to the document
+   * pipeline and hoping the surface has stops the pipeline can walk.
+   *
+   * The callback receives the DIRECTION, not a `±1` step: a host resolving the
+   * exit against a spatial plane needs to tell Down from Right, which they
+   * collapse into the same step.
    *
    * A host that supplies this owns EVERY exit from the editor: the release
    * attribute is then never projected, because a document-capture listener
@@ -146,8 +149,11 @@ export interface TugTextEditorKeymapConfig {
    * answer field, whose surface the pipeline CAN walk) keeps the attribute
    * path instead.
    */
-  onArrowExit?: (step: 1 | -1) => boolean;
+  onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
 }
+
+/** The four directions an arrow can carry an editor's keyboard out on. */
+export type EditorArrowExitDirection = "up" | "down" | "left" | "right";
 
 // ---------------------------------------------------------------------------
 // State capture / restore
@@ -391,12 +397,12 @@ export function resolveArrowHistory(input: {
   return "caret";
 }
 
-/** Which way an arrow leaves the editor, as the host's `enterAt` step. */
-const EXIT_STEP: Record<string, 1 | -1> = {
-  ArrowUp: -1,
-  ArrowLeft: -1,
-  ArrowDown: 1,
-  ArrowRight: 1,
+/** Which way an arrow leaves the editor, as a direction on the spatial plane. */
+const EXIT_DIRECTION: Record<string, EditorArrowExitDirection> = {
+  ArrowUp: "up",
+  ArrowLeft: "left",
+  ArrowDown: "down",
+  ArrowRight: "right",
 };
 
 /** Which document edge an arrow can arm the latch at, if any. */
@@ -610,8 +616,8 @@ export function tugTextEditorKeymap(
         ) {
           return false;
         }
-        const step = EXIT_STEP[event.key];
-        if (step === undefined) return false;
+        const exitDirection = EXIT_DIRECTION[event.key];
+        if (exitDirection === undefined) return false;
         const hostExit = config.onArrowExit;
 
         if (view.state.doc.length === 0) {
@@ -623,7 +629,7 @@ export function tugTextEditorKeymap(
             event.preventDefault();
             return true;
           }
-          hostExit(step);
+          hostExit(exitDirection);
           // Consumed either way. A host that declines has nowhere to send the
           // ring, and letting the key run on from an empty document would end
           // with nothing handling it — a beep, against [P08].
@@ -663,7 +669,7 @@ export function tugTextEditorKeymap(
         if (hostExit !== undefined) {
           // A host that declines leaves the latch armed and keeps the key: the
           // editor never hands an arrow to nobody ([P08]).
-          hostExit(step);
+          hostExit(exitDirection);
           event.preventDefault();
           return true;
         }

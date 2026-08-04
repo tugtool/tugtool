@@ -44,6 +44,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
   TugTextEditor,
   type TugTextEditorDelegate,
+  type EditorArrowExitDirection,
 } from "@/components/tugways/tug-text-editor";
 import { useOptionalResponder } from "@/components/tugways/use-responder";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -102,6 +103,20 @@ export interface TugFindBarProps {
    * (or is absent) leaves Tab to the field, which indents as usual.
    */
   onTabWhenEmpty?: (step: 1 | -1) => boolean;
+  /**
+   * An arrow that would leave the query field — the arrow sibling of
+   * {@link onTabWhenEmpty}, forwarded to the substrate. Return `true` to
+   * consume.
+   *
+   * A host whose find stops live in a trapped focus cycle MUST supply this:
+   * a released arrow walks the *document* pipeline's linear order, which is
+   * bounded by the current focus mode and so contains none of a cycle's stops.
+   * Without the callback the caret has nowhere to go and the field holds every
+   * arrow — the query field becomes a dead end for the keyboard. A host whose
+   * bar sits in the ordinary base-mode walk (the Text card) leaves it off and
+   * keeps the release path.
+   */
+  onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
 }
 
 /** Imperative surface the host drives: ⌘F on an already-open bar must put
@@ -135,6 +150,7 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
       focusGroup,
       focusOrderBase = 0,
       onTabWhenEmpty,
+      onArrowExit,
     }: TugFindBarProps,
     ref,
   ): React.ReactElement {
@@ -329,6 +345,11 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
                 size="lg"
                 emphasis="filled"
                 role="action"
+                // Return in the query field IS this button, so it wears the
+                // shell's default ring — and gives the fill back the moment the
+                // caret leaves for the composer, whose submit is Return's home
+                // there.
+                data-tug-entry-default=""
                 onClick={() => session.next()}
                 aria-label="Find next"
                 icon={<ChevronDown size={18} strokeWidth={2.5} />}
@@ -355,6 +376,7 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
             preserveState={false}
             focusGroup={focusGroup}
             focusOrder={focusOrderBase + FIND_STOP_QUERY}
+            onArrowExit={onArrowExit}
             extensions={findBarExtensions}
           />
         </TugEntryShell>

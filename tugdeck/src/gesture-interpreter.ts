@@ -217,6 +217,22 @@ function placementIsSuppressedByPolicy(el: Element | null): boolean {
 }
 
 /**
+ * Whether the gesture landed inside a text-entry surface — a contenteditable
+ * (the CM6 substrates), an `<input>`, or a `<textarea>`.
+ *
+ * The one class of target whose browser mousedown default is not just harmless
+ * but *required*: it is what puts the caret at the character the user clicked.
+ * Everywhere else the default either clears focus to `<body>` or fights the
+ * engine's own placement, which is why it is suppressed on an activating click.
+ */
+function isTextEntryTarget(el: Element | null): boolean {
+  if (el === null) return false;
+  if (el instanceof HTMLElement && el.isContentEditable) return true;
+  return el.closest("input, textarea") !== null;
+}
+
+
+/**
  * What classification reads off a gesture. A real `MouseEvent` /
  * `PointerEvent` satisfies it structurally; the host's activation click
  * (which has a point but no event) synthesizes one.
@@ -360,11 +376,28 @@ function classify(
     placement = "suppressed";
     reasons.push("placement-policy");
   } else if (activation === "activate" && crossCard) {
-    // First-click-activates: the transfer realizes the card's recorded
-    // destination, and a pointer place would overwrite it with whatever sat
-    // under the click.
-    placement = "suppressed";
-    reasons.push("activation-click");
+    // First-click-activates, and the click drills through to what it landed on.
+    // The transfer runs first (synchronously, in `onPointerDown`, before any
+    // consumer reads this record), restoring the card's recorded destination;
+    // the place that follows then moves the keyboard to the target the user
+    // actually aimed at. So one click activates AND lands the caret, instead of
+    // activating and asking for a second click on the same pixel.
+    //
+    // Only into a TEXT surface. That is the target whose aim is unambiguous —
+    // a caret goes exactly where the click landed — and it is the one the
+    // browser's own mousedown default already knows how to serve. Everything
+    // else on a background card keeps the old behavior deliberately: a click on
+    // transcript prose is a click on *the card*, and the destination it wants
+    // is the card's recorded one, not a ring parked on the list under the
+    // pointer (at0201). Widening this to every engine-addressable target is
+    // exactly the change that broke that.
+    if (isTextEntryTarget(startEl)) {
+      placement = "place";
+      reasons.push("activation-drill-down");
+    } else {
+      placement = "suppressed";
+      reasons.push("activation-click");
+    }
   } else if (cardId === null) {
     placement = "skip";
     reasons.push("no-card");
@@ -394,7 +427,14 @@ function classify(
       // Nothing placed to protect, and preventing the default would stop the
       // browser from ever beginning the native drag this may turn out to be.
       preventMousedownDefault = false;
-    } else if (crossCard && event.button === 0) {
+    } else if (crossCard && event.button === 0 && !isTextEntryTarget(startEl)) {
+      // Cross-card activation suppresses the default — EXCEPT into a text
+      // surface, which is the one target the default serves: CM6 reads
+      // `defaultPrevented` and declines to move its selection, so preventing
+      // here is what made an activating click land the card but not the caret.
+      // Letting it through is the second half of the drill-down above; the
+      // engine's place has already granted the surface focus, and the default
+      // only decides WHERE in it the caret sits.
       preventMousedownDefault = true;
     } else if (startEl.closest("[data-card-host]") !== null) {
       // Card content: the browser's default is the correct outcome (click an
