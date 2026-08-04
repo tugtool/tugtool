@@ -99,10 +99,21 @@
   text-decoration: underline;
 }
 
-.tug-changes-list-file-provenance {
+/* The row's metadata cluster — shared badge, provenance, hint — behind one
+   leading divider. The rule lives on the wrapper rather than on any one child
+   so a row shows exactly one separator whichever kinds it happens to carry,
+   and none at all when it carries none. */
+.tug-changes-list-file-meta {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
   padding-left: var(--tug-space-md);
   border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+}
+
+.tug-changes-list-file-provenance {
+  flex-shrink: 0;
   font-size: 0.6875rem;
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -153,7 +164,8 @@
 
 /* The per-row Claim icon pins to the row's extreme right; claiming removes it
    and the ± / pop-out / fold shift right to fill. */
-.tug-changes-list-claim {
+.tug-changes-list-claim,
+.tug-changes-list-disclaim {
   flex: 0 0 auto;
 }
 

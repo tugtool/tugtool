@@ -118,8 +118,42 @@ pub fn run_claim(
     project: Option<PathBuf>,
     json: bool,
 ) -> Result<(), AppError> {
+    tell_ownership_verb("claim", "changeset_claim", paths, session, project, json)
+}
+
+/// Disclaim files for a session: remove the listed repo-relative paths from the
+/// session's changeset by asking the running tugcast to delete the session's
+/// rows for them. The inverse of [`run_claim`] — the file falls to another
+/// session that still holds proof of it (which also resolves a SHARED file in
+/// that session's favor), or back to unattributed. Requires a running instance.
+pub fn run_disclaim(
+    paths: Vec<String>,
+    session: Option<String>,
+    project: Option<PathBuf>,
+    json: bool,
+) -> Result<(), AppError> {
+    tell_ownership_verb(
+        "disclaim",
+        "changeset_disclaim",
+        paths,
+        session,
+        project,
+        json,
+    )
+}
+
+/// The shared body of `claim`/`disclaim`: resolve the session and project,
+/// then POST the ownership verb to the running instance's `/api/tell`.
+fn tell_ownership_verb(
+    verb: &str,
+    action: &str,
+    paths: Vec<String>,
+    session: Option<String>,
+    project: Option<PathBuf>,
+    json: bool,
+) -> Result<(), AppError> {
     if paths.is_empty() {
-        return Err(AppError::Exit1("no paths to claim".to_string()));
+        return Err(AppError::Exit1(format!("no paths to {verb}")));
     }
     let session_id = session
         .or_else(|| std::env::var("TUG_SESSION_ID").ok())
@@ -139,12 +173,12 @@ pub fn run_claim(
         .to_string_lossy()
         .into_owned();
 
-    // `changes claim` declares no instance flags, so the remedy it names
-    // must stop at the environment variable.
+    // These verbs declare no instance flags, so the remedy they name must stop
+    // at the environment variable.
     let port = crate::commands::tell::resolve_port(None, None)
         .map_err(|e| e.describe(crate::commands::tell::Remedy::EnvOnly))?;
     let body = serde_json::json!({
-        "action": "changeset_claim",
+        "action": action,
         "project_dir": project_dir,
         "session_id": session_id,
         "files": paths,
@@ -153,9 +187,11 @@ pub fn run_claim(
     match ureq::post(&url).send_json(&body) {
         Ok(resp) if resp.status().as_u16() == 200 => {
             if json {
-                print_ok("claim", serde_json::json!({ "claimed": paths.len() }));
+                let mut data = serde_json::Map::new();
+                data.insert(format!("{verb}ed"), paths.len().into());
+                print_ok(verb, serde_json::Value::Object(data));
             } else {
-                println!("claimed {} file(s) for session {session_id}", paths.len());
+                println!("{verb}ed {} file(s) for session {session_id}", paths.len());
             }
             Ok(())
         }
@@ -163,7 +199,7 @@ pub fn run_claim(
             "tugcast returned status {}",
             resp.status().as_u16()
         ))),
-        Err(e) => Err(AppError::Exit1(format!("claim request failed: {e}"))),
+        Err(e) => Err(AppError::Exit1(format!("{verb} request failed: {e}"))),
     }
 }
 

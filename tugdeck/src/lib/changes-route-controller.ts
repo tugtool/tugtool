@@ -269,6 +269,24 @@ export class ChangesRouteController {
   }
 
   /**
+   * Disclaim files for this session: remove the given repo-relative paths from
+   * this session's changeset. The inverse of {@link claim} — a path falls to
+   * another session that still holds proof of it (resolving a SHARED file in
+   * that session's favor), or back to unattributed. Keyed by the aggregate's
+   * canonical project spelling and by `entryKey`, exactly as claim is. No-op
+   * when the store is absent or `paths` is empty.
+   */
+  disclaim(paths: string[]): void {
+    if (paths.length === 0) return;
+    getChangesetVerbStore()?.disclaim(
+      this.entryKey,
+      this._snapshot.project.project_dir,
+      this.tugSessionId,
+      paths,
+    );
+  }
+
+  /**
    * Nudge the server to re-scan the working tree and recompose the aggregate.
    * Fired when the Changes shade opens so a just-created orphan surfaces the
    * moment you look, rather than waiting on the next FS-watch bump. No-op when

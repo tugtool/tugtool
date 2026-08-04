@@ -189,6 +189,21 @@ pub enum Commands {
         #[arg(long)]
         project: Option<PathBuf>,
     },
+    /// Disclaim files for a session — remove them from the session's changeset.
+    /// The inverse of `claim`: the file falls to another session that still
+    /// holds proof of it, or back to unattributed. Paths are repo-relative.
+    /// Needs a running instance.
+    Disclaim {
+        /// Repo-relative paths to disclaim.
+        #[arg(required = true, num_args = 1..)]
+        paths: Vec<String>,
+        /// Session id (default: $TUG_SESSION_ID).
+        #[arg(long)]
+        session: Option<String>,
+        /// Project dir (default: cwd).
+        #[arg(long)]
+        project: Option<PathBuf>,
+    },
     /// Recent commits, or a range's commits.
     Log {
         /// Number of commits (default 10).

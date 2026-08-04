@@ -14,12 +14,23 @@
 //! format, the durable format, and the recovery format cannot drift apart.
 //!
 //! Failover is the same path as crash recovery: a forward that fails
-//! (owner exited, port gone) triggers a re-claim; whoever wins reopens the
-//! attach read-write and drains the pending queue. Records that arrive
-//! while nobody can be reached are held in a small bounded queue — past
-//! its bound the oldest are dropped, loudly, and the ledger is marked
-//! degraded. The JSONL side of attribution capture is unaffected either
-//! way.
+//! **to reach anyone** (owner exited, port gone) triggers a re-claim;
+//! whoever wins reopens the attach read-write and drains the pending
+//! queue. Records that arrive while nobody can be reached are held in a
+//! small bounded queue — past its bound the oldest are dropped, loudly,
+//! and the ledger is marked degraded. The JSONL side of attribution
+//! capture is unaffected either way.
+//!
+//! A refusal is not a failure to reach. An HTTP answer of any status
+//! proves the owner is alive, so a refused write never triggers failover:
+//! taking the claim there would mean a healthy owner losing the database
+//! over a disagreement. A `4xx` refusal is permanent — the owner
+//! understood and will not accept — and the way that happens in practice
+//! is a follower forwarding a `Record` variant its older owner cannot
+//! deserialize. That is a version skew, not damage: nothing is corrupt
+//! and nothing is left pending, so it is reported to the caller as that
+//! one gesture's failure rather than latching the process-wide degraded
+//! flag the deck renders as a damaged ledger.
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -67,8 +78,12 @@ impl ChangesAccess {
 pub enum ForwardError {
     /// No reachable owner: no published claim, or its process is gone.
     NoOwner,
-    /// The owner was reached but refused or failed the write.
-    Rejected(String),
+    /// The owner answered and refused the write. An answer proves the owner
+    /// is alive, so this is never a failover trigger. `permanent` marks a
+    /// refusal retrying cannot fix — the owner understood the request and
+    /// will not accept it, which is what a build too old to deserialize a
+    /// newer `Record` variant looks like from here.
+    Rejected { detail: String, permanent: bool },
     /// Transport failure talking to the owner.
     Transport(String),
 }
@@ -77,7 +92,9 @@ impl std::fmt::Display for ForwardError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ForwardError::NoOwner => write!(f, "no reachable changes-ledger owner"),
-            ForwardError::Rejected(m) => write!(f, "owner rejected the write: {m}"),
+            ForwardError::Rejected { detail, .. } => {
+                write!(f, "owner rejected the write: {detail}")
+            }
             ForwardError::Transport(m) => write!(f, "cannot reach the owner: {m}"),
         }
     }
@@ -96,8 +113,12 @@ pub struct ChangesForwarder {
 
 impl ChangesForwarder {
     pub fn new(changes_db: PathBuf) -> Self {
+        // A status code is an answer, not a transport failure — read it here
+        // rather than letting the client collapse it into an error, so a
+        // refusal by a live owner can be told apart from a dead one.
         let config = ureq::Agent::config_builder()
             .timeout_global(Some(FORWARD_TIMEOUT))
+            .http_status_as_error(false)
             .build();
         Self {
             changes_db,
@@ -120,18 +141,33 @@ impl ChangesForwarder {
             .post(&url)
             .send_json(record)
             .map_err(|e| ForwardError::Transport(e.to_string()))?;
+        let status = response.status().as_u16();
         let value: serde_json::Value = response
             .into_body()
             .read_json()
             .map_err(|e| ForwardError::Transport(e.to_string()))?;
-        if value.get("status").and_then(|s| s.as_str()) != Some("ok") {
-            return Err(ForwardError::Rejected(
-                value
-                    .get("message")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("unknown error")
-                    .to_string(),
-            ));
+        let detail = || {
+            value
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown error")
+                .to_string()
+        };
+        // 4xx: the owner understood the request and refused it. The one way
+        // that happens in practice is a record variant this owner's build
+        // does not know — a newer follower forwarding to an older owner —
+        // and no amount of retrying teaches it the variant.
+        if (400..500).contains(&status) {
+            return Err(ForwardError::Rejected {
+                detail: detail(),
+                permanent: true,
+            });
+        }
+        if status >= 500 || value.get("status").and_then(|s| s.as_str()) != Some("ok") {
+            return Err(ForwardError::Rejected {
+                detail: detail(),
+                permanent: false,
+            });
         }
         Ok(value.get("applied").and_then(|a| a.as_u64()).unwrap_or(0) as usize)
     }
@@ -254,6 +290,103 @@ mod tests {
             "the three oldest records are the ones dropped"
         );
         assert_eq!(fwd.pending_len(), 0);
+    }
+
+    /// Publish `port` as the live owner of `changes_db` — our own pid, so the
+    /// liveness check passes — and hand back the path the forwarder reads.
+    fn publish_owner(changes_db: &Path, port: u16) {
+        let lock = changes_db.with_extension("db.writer-lock");
+        std::fs::write(
+            &lock,
+            format!(
+                r#"{{"instance_id":"test-owner-{port}","pid":{},"port":{port}}}"#,
+                std::process::id()
+            ),
+        )
+        .unwrap();
+    }
+
+    /// An owner that answers `400` understood the request and refused it —
+    /// which is exactly what a build too old to deserialize a newer `Record`
+    /// variant does. That must classify as a permanent rejection: the caller
+    /// needs to hear "refused", not "unreachable", or a healthy owner gets
+    /// its claim taken and a version skew is reported as a damaged ledger.
+    #[tokio::test]
+    async fn an_owner_that_refuses_the_record_is_a_permanent_rejection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let app = axum::Router::new().route(
+            "/api/changes-write",
+            axum::routing::post(|| async {
+                (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    axum::Json(serde_json::json!({
+                        "status": "error",
+                        "message": "invalid record: unknown variant `fe_disclaim`",
+                    })),
+                )
+            }),
+        );
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("changes.db");
+        publish_owner(&db, port);
+
+        let err = tokio::task::spawn_blocking(move || {
+            ChangesForwarder::new(db).send(&row("s1")).unwrap_err()
+        })
+        .await
+        .unwrap();
+
+        let ForwardError::Rejected { detail, permanent } = err else {
+            panic!("a 400 must be a rejection, not {err:?}");
+        };
+        assert!(permanent, "a 400 can never be fixed by retrying");
+        assert!(detail.contains("fe_disclaim"), "detail carried: {detail}");
+    }
+
+    /// An owner whose own ledger erred is still an owner — the write is held
+    /// for retry rather than treated as a dead process.
+    #[tokio::test]
+    async fn an_owner_that_errors_internally_is_a_retryable_rejection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let app = axum::Router::new().route(
+            "/api/changes-write",
+            axum::routing::post(|| async {
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(serde_json::json!({ "status": "error", "message": "disk full" })),
+                )
+            }),
+        );
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("changes.db");
+        publish_owner(&db, port);
+
+        let err = tokio::task::spawn_blocking(move || {
+            ChangesForwarder::new(db).send(&row("s1")).unwrap_err()
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            matches!(
+                err,
+                ForwardError::Rejected {
+                    permanent: false,
+                    ..
+                }
+            ),
+            "a 5xx is a retryable refusal, not {err:?}"
+        );
     }
 
     #[test]

@@ -65,6 +65,11 @@ fn main() -> ExitCode {
             session,
             project,
         }) => changes::finish(changes::run_claim(paths, session, project, json)),
+        Some(Commands::Disclaim {
+            paths,
+            session,
+            project,
+        }) => changes::finish(changes::run_disclaim(paths, session, project, json)),
         Some(Commands::Log { limit, range }) => {
             changes::finish(changes::run_log(limit, range, json))
         }

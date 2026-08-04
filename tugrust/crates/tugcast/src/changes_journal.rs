@@ -50,6 +50,12 @@ pub enum Record {
     /// `record_file_event` — idempotent insert on the natural PK.
     #[serde(rename = "fe")]
     FileEvent { row: FileEventRow },
+    /// `record_file_events` — one user gesture's whole batch of attribution
+    /// rows, applied in a single transaction so the batch lands whole or not
+    /// at all. Each row keeps the single insert's `ON CONFLICT DO NOTHING`
+    /// semantics, so replay is idempotent.
+    #[serde(rename = "fe_batch")]
+    FileEventBatch { rows: Vec<FileEventRow> },
     /// Session eviction / deletion: drop every attribution row of one session.
     #[serde(rename = "fe_del_session")]
     DeleteSession { session: String },
@@ -59,6 +65,15 @@ pub enum Record {
         project_dir: String,
         paths: Vec<String>,
         keep_session: String,
+    },
+    /// Ownership renunciation: drop one session's own rows for the named
+    /// paths. The inverse of a claim — the file leaves this session's
+    /// changeset and degrades to another live owner or to unattributed.
+    #[serde(rename = "fe_disclaim")]
+    Disclaim {
+        project_dir: String,
+        paths: Vec<String>,
+        session: String,
     },
     /// Legacy-row canonicalization rewrite (collision-safe, idempotent).
     #[serde(rename = "fe_rewrite")]
@@ -96,9 +111,13 @@ impl Record {
     /// ([LR5]); inserts and updates against an unknown shape are not.
     pub fn shapes_rows(&self) -> bool {
         match self {
-            Record::FileEvent { .. } | Record::Rewrite { .. } | Record::Draft { .. } => true,
+            Record::FileEvent { .. }
+            | Record::FileEventBatch { .. }
+            | Record::Rewrite { .. }
+            | Record::Draft { .. } => true,
             Record::DeleteSession { .. }
             | Record::Sever { .. }
+            | Record::Disclaim { .. }
             | Record::PurgeOutOfRepo { .. }
             | Record::DraftDelete { .. } => false,
         }

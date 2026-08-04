@@ -35,7 +35,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { CornerUpLeft, SquareArrowOutUpRight } from "lucide-react";
+import { CornerDownLeft, CornerUpRight, SquareArrowOutUpRight } from "lucide-react";
 
 import { dispatchAction } from "@/action-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -390,6 +390,11 @@ function FileIdentity({
       : file.origin === "dash" || file.origin === "claim"
         ? file.op
         : `${file.op} · ${file.origin}`;
+  // The divider is a separator between the file name and its metadata cluster,
+  // not a property of one metadata kind — so it rides a wrapper that renders
+  // only when the cluster has something in it. A badge-only or hint-only row
+  // gets the same single divider a provenance row does; a bare row gets none.
+  const hasMeta = file.shared || provenance !== null || file.hint !== undefined;
   return (
     <span className="tug-changes-list-file-identity">
       <FilePathLink
@@ -399,20 +404,24 @@ function FileIdentity({
         projectRoot={projectRoot}
         highlightQuery={highlightQuery}
       />
-      {file.shared ? (
-        <span className="tug-changes-list-badge tug-changes-list-badge-shared">
-          shared
-        </span>
-      ) : null}
-      {provenance !== null ? (
-        <span className="tug-changes-list-file-provenance">{provenance}</span>
-      ) : null}
-      {file.hint !== undefined ? (
-        <span
-          className="tug-changes-list-file-hint"
-          data-testid="tug-changes-list-file-hint"
-        >
-          {file.hint}
+      {hasMeta ? (
+        <span className="tug-changes-list-file-meta">
+          {file.shared ? (
+            <span className="tug-changes-list-badge tug-changes-list-badge-shared">
+              shared
+            </span>
+          ) : null}
+          {provenance !== null ? (
+            <span className="tug-changes-list-file-provenance">{provenance}</span>
+          ) : null}
+          {file.hint !== undefined ? (
+            <span
+              className="tug-changes-list-file-hint"
+              data-testid="tug-changes-list-file-hint"
+            >
+              {file.hint}
+            </span>
+          ) : null}
         </span>
       ) : null}
     </span>
@@ -438,6 +447,8 @@ export function ChangesFileRow({
   body,
   onClaim,
   claimPending = false,
+  onDisclaim,
+  disclaimPending = false,
   highlightQuery,
 }: {
   file: FileBlockData;
@@ -459,6 +470,11 @@ export function ChangesFileRow({
   /** A claim round trip is in flight — the affordance disables rather than
    *  re-sending, so a slow reply reads as "working", not as a dead button. */
   claimPending?: boolean;
+  /** When set, a Disclaim affordance trails the cluster — the row's file is in
+   *  this session's changeset and the session can renounce it. */
+  onDisclaim?: () => void;
+  /** A disclaim round trip is in flight — the affordance disables. */
+  disclaimPending?: boolean;
 }): React.ReactElement {
   return (
     <div
@@ -505,7 +521,7 @@ export function ChangesFileRow({
                 <TugPushButton
                   className="tug-changes-list-claim"
                   subtype="icon"
-                  icon={<CornerUpLeft size={12} />}
+                  icon={<CornerDownLeft size={12} />}
                   size="2xs"
                   emphasis="outlined"
                   role="accent"
@@ -520,6 +536,28 @@ export function ChangesFileRow({
                   onClick={(event) => {
                     event?.stopPropagation();
                     onClaim();
+                  }}
+                />
+              ) : null}
+              {onDisclaim !== undefined ? (
+                <TugPushButton
+                  className="tug-changes-list-disclaim"
+                  subtype="icon"
+                  icon={<CornerUpRight size={12} />}
+                  size="2xs"
+                  emphasis="outlined"
+                  role="accent"
+                  disabled={disclaimPending}
+                  title={
+                    disclaimPending
+                      ? "Disclaiming…"
+                      : "Disclaim this file from this session"
+                  }
+                  aria-label={`Disclaim ${file.path} from this session`}
+                  data-testid="tug-changes-list-disclaim"
+                  onClick={(event) => {
+                    event?.stopPropagation();
+                    onDisclaim();
                   }}
                 />
               ) : null}
@@ -572,6 +610,8 @@ function EntryFiles({
   ownSessionId,
   onClaim,
   claimPending,
+  onDisclaim,
+  disclaimPending,
 }: {
   entry: TugChangesListEntry;
   expandedKeys: ReadonlySet<string>;
@@ -582,6 +622,10 @@ function EntryFiles({
   onClaim?: (path: string) => void;
   /** A claim round trip is in flight. */
   claimPending?: boolean;
+  /** Per-path disclaim, wired only for the session entry. */
+  onDisclaim?: (path: string) => void;
+  /** A disclaim round trip is in flight. */
+  disclaimPending?: boolean;
 }) {
   const projectRoot = entry.project.project_dir;
   const descriptor = useMemo(() => entryDiffDescriptor(entry), [entry]);
@@ -601,7 +645,7 @@ function EntryFiles({
         : entry.files.map((file) => unattributedFileData(file, ownSessionId));
 
   return (
-    <div className="tug-changes-list-file-list">
+    <div className="tug-changes-list-file-list" data-entry-kind={entry.kind}>
       {files.map((file) => {
         const diffFile = diffSnapshot.payload?.files.find((f) => f.path === file.path);
         const counts =
@@ -621,6 +665,10 @@ function EntryFiles({
             body={expanded ? fileBlockBody(diffSnapshot, file.path) : null}
             onClaim={onClaim !== undefined ? () => onClaim(file.path) : undefined}
             claimPending={claimPending}
+            onDisclaim={
+              onDisclaim !== undefined ? () => onDisclaim(file.path) : undefined
+            }
+            disclaimPending={disclaimPending}
           />
         );
       })}
@@ -656,6 +704,12 @@ export interface TugChangesListProps {
   /** A claim round trip is in flight — every Claim affordance disables until
    *  the reply lands, so a slow or refused claim never invites a re-click. */
   claimPending?: boolean;
+  /** When set, session-entry rows show a Disclaim affordance that removes the
+   *  path from this session's changeset — claim's inverse. */
+  onDisclaimFile?: (path: string) => void;
+  /** A disclaim round trip is in flight — every Disclaim affordance disables
+   *  until the reply lands. */
+  disclaimPending?: boolean;
   className?: string;
 }
 
@@ -671,6 +725,8 @@ export function TugChangesList({
   onClaimOrphaned,
   onClaimAllOrphaned,
   claimPending,
+  onDisclaimFile,
+  disclaimPending,
   className,
 }: TugChangesListProps): React.ReactElement {
   return (
@@ -710,7 +766,7 @@ export function TugChangesList({
                   <TugPushButton
                     className="tug-changes-list-claim-all"
                     subtype="icon-text"
-                    icon={<CornerUpLeft size={12} />}
+                    icon={<CornerDownLeft size={12} />}
                     size="2xs"
                     emphasis="outlined"
                     role="accent"
@@ -737,6 +793,8 @@ export function TugChangesList({
               ownSessionId={entry.kind === "unattributed" ? ownSessionId : undefined}
               onClaim={onClaim}
               claimPending={claimPending}
+              onDisclaim={entry.kind === "session" ? onDisclaimFile : undefined}
+              disclaimPending={disclaimPending}
             />
           </React.Fragment>
         );

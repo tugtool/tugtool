@@ -1524,6 +1524,28 @@ fn parse_changeset_claim_payload(payload: &[u8]) -> Result<ChangesetClaimPayload
     })
 }
 
+/// A `changeset_disclaim` CONTROL request: a session renounces the listed
+/// files — the inverse of a claim. Same shape as the claim payload; the
+/// session's own rows for those paths are deleted, so the file falls to
+/// another live owner or to unattributed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ChangesetDisclaimPayload {
+    project_dir: String,
+    session_id: String,
+    files: Vec<String>,
+}
+
+fn parse_changeset_disclaim_payload(
+    payload: &[u8],
+) -> Result<ChangesetDisclaimPayload, ControlError> {
+    let claim = parse_changeset_claim_payload(payload)?;
+    Ok(ChangesetDisclaimPayload {
+        project_dir: claim.project_dir,
+        session_id: claim.session_id,
+        files: claim.files,
+    })
+}
+
 /// The commit message enriched with a `Tug-Session:` trailer when the deck
 /// supplied the session name + id (Spec S01/S02). Absent either field, the
 /// message is returned byte-for-byte. Idempotent via `append_trailers`.
@@ -2504,6 +2526,13 @@ impl AgentSupervisor {
             "changeset_claim" => match parse_changeset_claim_payload(payload) {
                 Ok(parsed) => {
                     self.do_changeset_claim(&parsed).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "changeset_disclaim" => match parse_changeset_disclaim_payload(payload) {
+                Ok(parsed) => {
+                    self.do_changeset_disclaim(&parsed).await;
                     Ok(())
                 }
                 Err(e) => return ControlOutcome::Error(e),
@@ -4097,7 +4126,7 @@ impl AgentSupervisor {
         // One synthetic tool_use_id groups the batch, mirroring how a Bash
         // call's N rows share an id.
         let tool_use_id = format!("claim:{at}");
-        let mut claimed = 0usize;
+        let mut rows = Vec::with_capacity(request.files.len());
         for path in &request.files {
             let Some(file_path) = crate::feeds::attribution::repo_relative_key(
                 repo_root.as_deref(),
@@ -4109,7 +4138,7 @@ impl AgentSupervisor {
                 );
                 continue;
             };
-            let row = crate::session_ledger::FileEventRow {
+            rows.push(crate::session_ledger::FileEventRow {
                 tug_session_id: request.session_id.clone(),
                 tool_use_id: tool_use_id.clone(),
                 file_path,
@@ -4120,25 +4149,32 @@ impl AgentSupervisor {
                 parent_tool_use_id: None,
                 project_dir: canonical.as_str().to_string(),
                 at,
-            };
-            match ledger.record_file_event(&row) {
-                Ok(()) => claimed += 1,
-                Err(err) => {
-                    warn!(error = %err, project_dir, path, "changeset_claim record failed");
-                }
-            }
+            });
         }
+        // The whole gesture is one journaled, transactional batch: `claimed`
+        // is the mapped row count or zero, never a partial tally the deck
+        // has to interpret.
+        let claimed = match ledger.record_file_events(&rows) {
+            Ok(()) => rows.len(),
+            Err(err) => {
+                warn!(error = %err, project_dir, "changeset_claim batch failed");
+                0
+            }
+        };
 
         // Sever any prior owner ([D120]): a claim asserts sole ownership, so
         // remove other sessions' rows for these paths — a dead originator can't
         // silently re-own the file on re-open, and it leaves the orphaned
         // bucket. The claimant's own fresh rows (just recorded) are preserved.
-        if let Err(err) = ledger.sever_file_ownership_except(
-            canonical.as_str(),
-            &request.files,
-            &request.session_id,
-        ) {
-            warn!(error = %err, project_dir, "changeset_claim sever failed");
+        // A batch that did not land claims nothing, so it severs nothing.
+        if claimed > 0 {
+            if let Err(err) = ledger.sever_file_ownership_except(
+                canonical.as_str(),
+                &request.files,
+                &request.session_id,
+            ) {
+                warn!(error = %err, project_dir, "changeset_claim sever failed");
+            }
         }
 
         self.registry.changeset_all_bump().notify_one();
@@ -4166,6 +4202,89 @@ impl AgentSupervisor {
         let _ = control_tx.send(Frame::new(
             FeedId::CONTROL,
             serde_json::to_vec(&body).expect("changeset_claim_err serializes"),
+        ));
+    }
+
+    /// Handle a `changeset_disclaim` CONTROL request: a session renounces the
+    /// listed files, the inverse of a claim. Every row the session holds for
+    /// those paths — proof and bracket alike — is deleted in one journaled
+    /// record, then the aggregate bump fires so the file re-buckets on the next
+    /// recompute: to the other live owner if there is one (which also clears
+    /// the SHARED marking), otherwise to unattributed.
+    ///
+    /// Guards mirror claim: `project_dir` must be a current `WorkspaceRegistry`
+    /// entry, a ledger must be present, and each path maps through
+    /// `repo_relative_key` with skip-and-warn. Idempotent — disclaiming a file
+    /// the session no longer holds deletes nothing and still replies ok.
+    async fn do_changeset_disclaim(&self, request: &ChangesetDisclaimPayload) {
+        let project_dir = request.project_dir.as_str();
+        let dir = std::path::Path::new(project_dir);
+
+        if self.registry.find_entry_by_path(dir).is_none() {
+            Self::send_changeset_disclaim_err(&self.control_tx, project_dir, "not an open project");
+            return;
+        }
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            Self::send_changeset_disclaim_err(&self.control_tx, project_dir, "no ledger");
+            return;
+        };
+
+        let canonical = crate::path_resolver::CanonicalPath::from_raw(dir);
+        let repo_root = crate::feeds::attribution::repo_root_for(dir).await;
+        let mut paths = Vec::with_capacity(request.files.len());
+        for path in &request.files {
+            let Some(file_path) = crate::feeds::attribution::repo_relative_key(
+                repo_root.as_deref(),
+                std::path::Path::new(path),
+            ) else {
+                warn!(
+                    project_dir,
+                    path, "changeset_disclaim path outside the repo; skipped"
+                );
+                continue;
+            };
+            paths.push(file_path);
+        }
+
+        let disclaimed =
+            match ledger.disclaim_file_ownership(canonical.as_str(), &paths, &request.session_id) {
+                Ok(deleted) => deleted,
+                Err(err) => {
+                    warn!(error = %err, project_dir, "changeset_disclaim failed");
+                    Self::send_changeset_disclaim_err(
+                        &self.control_tx,
+                        project_dir,
+                        &err.to_string(),
+                    );
+                    return;
+                }
+            };
+
+        self.registry.changeset_all_bump().notify_one();
+        let body = serde_json::json!({
+            "action": "changeset_disclaim_ok",
+            "project_dir": project_dir,
+            "disclaimed": disclaimed,
+        });
+        let _ = self.control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_disclaim_ok serializes"),
+        ));
+    }
+
+    fn send_changeset_disclaim_err(
+        control_tx: &broadcast::Sender<Frame>,
+        project_dir: &str,
+        detail: &str,
+    ) {
+        let body = serde_json::json!({
+            "action": "changeset_disclaim_err",
+            "project_dir": project_dir,
+            "detail": detail,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_disclaim_err serializes"),
         ));
     }
 
@@ -6491,6 +6610,24 @@ mod tests {
         // Missing project_dir is the shared invalid-project error.
         let no_project = br#"{"session_id":"sess-1","files":["a.txt"]}"#;
         assert!(parse_changeset_claim_payload(no_project).is_err());
+    }
+
+    #[test]
+    fn parse_changeset_disclaim_payload_matches_the_claim_shape() {
+        let payload = br#"{"project_dir":"/p","session_id":"sess-1","files":["a.txt","b.rs"]}"#;
+        let parsed = parse_changeset_disclaim_payload(payload).expect("parse");
+        assert_eq!(parsed.project_dir, "/p");
+        assert_eq!(parsed.session_id, "sess-1");
+        assert_eq!(parsed.files, vec!["a.txt".to_string(), "b.rs".to_string()]);
+        // A disclaim is by a session, so a missing session id is malformed.
+        let no_session = br#"{"project_dir":"/p","files":["a.txt"]}"#;
+        assert!(matches!(
+            parse_changeset_disclaim_payload(no_session),
+            Err(ControlError::Malformed)
+        ));
+        assert!(
+            parse_changeset_disclaim_payload(br#"{"session_id":"s","files":["a.txt"]}"#).is_err()
+        );
     }
 
     #[test]

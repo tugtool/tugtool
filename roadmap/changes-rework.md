@@ -405,11 +405,11 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Atomic batch claim record | pending | — |
-| #step-2 | Disclaim backend + CLI | pending | — |
-| #step-3 | Disclaim frontend | pending | — |
-| #step-4 | Icons + metadata divider | pending | — |
-| #step-5 | M01 integration checkpoint | pending | — |
+| #step-1 | Atomic batch claim record | done | adfdd559c |
+| #step-2 | Disclaim backend + CLI | done | 2b5d72032 |
+| #step-3 | Disclaim frontend | done | fa27a9a0a |
+| #step-4 | Icons + metadata divider | done | fa27a9a0a |
+| #step-5 | M01 integration checkpoint | done | N/A (verification only) |
 | #step-6 | Hunk model in tugchanges-core | pending | — |
 | #step-7 | Hunk ids on the diff wire | pending | — |
 | #step-8 | Partial staging in commit | pending | — |

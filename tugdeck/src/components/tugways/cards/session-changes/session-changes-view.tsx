@@ -35,7 +35,7 @@ import {
   type TugChangesListEntry,
 } from "@/components/tugways/tug-changes-list";
 import type { DiffDescriptor } from "@/lib/git-diff-store";
-import { useChangesetClaim } from "@/lib/changeset-verb-store";
+import { useChangesetClaim, useChangesetDisclaim } from "@/lib/changeset-verb-store";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 
@@ -78,6 +78,9 @@ export function SessionChangesView({
   // view reads it only to hold the Claim affordances while one is in flight.
   const claim = useChangesetClaim(changesController.entryKey);
   const claimPending = claim.phase === "pending";
+  // Claim's inverse, read the same way and for the same reason.
+  const disclaim = useChangesetDisclaim(changesController.entryKey);
+  const disclaimPending = disclaim.phase === "pending";
 
   const sessionFiles = snap.entry?.files ?? [];
 
@@ -275,6 +278,8 @@ export function SessionChangesView({
           onClaimOrphaned={(path) => changesController.claim([path])}
           onClaimAllOrphaned={(paths) => changesController.claim(paths)}
           claimPending={claimPending}
+          onDisclaimFile={(path) => changesController.disclaim([path])}
+          disclaimPending={disclaimPending}
         />
       ) : null}
     </div>,

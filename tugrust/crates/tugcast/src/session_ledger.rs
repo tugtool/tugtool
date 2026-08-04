@@ -182,6 +182,13 @@ pub enum LedgerError {
 
     #[error("serde error: {0}")]
     Serde(#[from] serde_json::Error),
+
+    /// The instance owning the shared changes ledger answered this forwarded
+    /// write with a refusal retrying cannot fix — in practice, a build too
+    /// old to deserialize the record. The owner is healthy and the database
+    /// is intact, so this is one gesture's failure and nothing more.
+    #[error("the changes-ledger owner refused the write: {0}")]
+    ForwardRejected(String),
 }
 
 /// Lifecycle state of a row in the ledger.
@@ -954,6 +961,15 @@ impl SessionLedger {
         use crate::changes_journal::Record;
         let touched = match record {
             Record::FileEvent { row } => Self::insert_file_event(conn, row)?,
+            Record::FileEventBatch { rows } => {
+                let tx = conn.unchecked_transaction()?;
+                let mut inserted = 0usize;
+                for row in rows {
+                    inserted += Self::insert_file_event(&tx, row)?;
+                }
+                tx.commit()?;
+                inserted
+            }
             Record::DeleteSession { session } => conn.execute(
                 "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
                 params![session],
@@ -963,6 +979,11 @@ impl SessionLedger {
                 paths,
                 keep_session,
             } => Self::sever_file_ownership_sql(conn, project_dir, paths, keep_session)?,
+            Record::Disclaim {
+                project_dir,
+                paths,
+                session,
+            } => Self::disclaim_file_ownership_sql(conn, project_dir, paths, session)?,
             Record::PurgeOutOfRepo { keys, .. } => Self::purge_file_events_sql(conn, keys)?,
             Record::Rewrite {
                 canonical_project_dir,
@@ -2869,6 +2890,21 @@ impl SessionLedger {
         Ok(())
     }
 
+    /// Record a whole batch of `file_events` rows as one journal record,
+    /// applied in a single transaction: every row lands or none does. One
+    /// user gesture (a `Claim all` over N files) is one durable record, one
+    /// forwarder unit, and one replay unit, so a partial write is not a
+    /// state the receipt has to describe. A no-op for an empty batch.
+    pub fn record_file_events(&self, rows: &[FileEventRow]) -> Result<(), LedgerError> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        self.write_change(crate::changes_journal::Record::FileEventBatch {
+            rows: rows.to_vec(),
+        })?;
+        Ok(())
+    }
+
     /// The bare insert — shared by the live path and journal replay.
     fn insert_file_event(conn: &Connection, row: &FileEventRow) -> Result<usize, LedgerError> {
         Ok(conn.execute(
@@ -2933,6 +2969,52 @@ impl SessionLedger {
                AND file_path IN ({placeholders})"
         );
         let mut params: Vec<&dyn rusqlite::ToSql> = vec![&project_dir, &keep_session_id];
+        for p in paths {
+            params.push(p);
+        }
+        Ok(conn.execute(&sql, params.as_slice())?)
+    }
+
+    /// Renounce one session's ownership of the given repo-relative paths under
+    /// `project_dir`: delete every `file_events` row of `session_id` for those
+    /// paths — proof and bracket alike, so the session's own hint rows can't go
+    /// on saying `likely` about a file it just gave up. The inverse of a claim:
+    /// another live owner becomes sole owner, and with no other owner the file
+    /// degrades to unattributed. Returns the number of rows deleted. A no-op
+    /// for an empty `paths`.
+    pub fn disclaim_file_ownership(
+        &self,
+        project_dir: &str,
+        paths: &[String],
+        session_id: &str,
+    ) -> Result<usize, LedgerError> {
+        if paths.is_empty() {
+            return Ok(0);
+        }
+        self.write_change(crate::changes_journal::Record::Disclaim {
+            project_dir: project_dir.to_string(),
+            paths: paths.to_vec(),
+            session: session_id.to_string(),
+        })
+    }
+
+    /// The bare renunciation delete — shared with journal replay.
+    fn disclaim_file_ownership_sql(
+        conn: &Connection,
+        project_dir: &str,
+        paths: &[String],
+        session_id: &str,
+    ) -> Result<usize, LedgerError> {
+        let placeholders = std::iter::repeat_n("?", paths.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "DELETE FROM changes.file_events
+             WHERE project_dir = ?1
+               AND tug_session_id = ?2
+               AND file_path IN ({placeholders})"
+        );
+        let mut params: Vec<&dyn rusqlite::ToSql> = vec![&project_dir, &session_id];
         for p in paths {
             params.push(p);
         }
@@ -3102,6 +3184,41 @@ impl SessionLedger {
         };
         match forwarder.send(&record) {
             Ok(applied) => Ok(applied),
+            // The owner answered and refused. It is alive, so this is not a
+            // failover trigger — taking its claim would be a healthy owner
+            // losing the database to a disagreement. A permanent refusal is
+            // also not a durability outage: nothing is damaged and nothing
+            // is pending, so it must not latch the degraded flag the deck
+            // renders as "attribution ledger damaged". It is one gesture's
+            // failure, returned to the caller, which surfaces it as that
+            // verb's own error.
+            Err(crate::changes_writer::ForwardError::Rejected {
+                detail,
+                permanent: true,
+            }) => {
+                tracing::error!(
+                    detail,
+                    "the changes-ledger owner refused this write and always will — \
+                     it is very likely an older build that does not know this record; \
+                     rebuild every tug binary so the owner and its followers agree"
+                );
+                Err(LedgerError::ForwardRejected(detail))
+            }
+            // A refusal that might not repeat (the owner's own ledger erred).
+            // Still an answer, so still no takeover — hold it for the next
+            // attempt, which is the pending-queue path a live owner deserves.
+            Err(crate::changes_writer::ForwardError::Rejected {
+                detail,
+                permanent: false,
+            }) => {
+                tracing::warn!(
+                    detail,
+                    "the changes-ledger owner refused this write; holding it for retry"
+                );
+                forwarder.queue(record);
+                ledger_integrity::health::note_degraded("changes-forward");
+                Ok(0)
+            }
             Err(err) => {
                 if !forwarder.retry_due() {
                     forwarder.queue(record);
@@ -6567,6 +6684,58 @@ mod tests {
     }
 
     #[test]
+    fn record_file_events_lands_the_whole_batch() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let rows = vec![
+            sample_file_event("s1", "claim:1", "/proj/a.rs"),
+            sample_file_event("s1", "claim:1", "/proj/b.rs"),
+            sample_file_event("s1", "claim:1", "/proj/c.rs"),
+        ];
+        l.record_file_events(&rows).unwrap();
+        assert_eq!(l.file_events_for_session("s1").unwrap().len(), 3);
+
+        // Re-applying the same batch is a no-op: every row collapses on the
+        // primary key, exactly as a single replayed insert does.
+        l.record_file_events(&rows).unwrap();
+        assert_eq!(l.file_events_for_session("s1").unwrap().len(), 3);
+    }
+
+    #[test]
+    fn record_file_events_tolerates_a_duplicate_row_within_the_batch() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let rows = vec![
+            sample_file_event("s1", "claim:1", "/proj/a.rs"),
+            sample_file_event("s1", "claim:1", "/proj/a.rs"),
+            sample_file_event("s1", "claim:1", "/proj/b.rs"),
+        ];
+        l.record_file_events(&rows).unwrap();
+        let read = l.file_events_for_session("s1").unwrap();
+        assert_eq!(read.len(), 2, "the duplicate was conflict-ignored");
+    }
+
+    #[test]
+    fn record_file_events_replays_from_the_journal_after_destruction() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.db");
+        let root = PathBuf::from("/tmp/tugcast-tests-no-trash");
+        {
+            let l = SessionLedger::open_with_claude_root(&path, root.clone()).unwrap();
+            l.record_file_events(&[
+                sample_file_event("s1", "claim:1", "/proj/a.rs"),
+                sample_file_event("s1", "claim:1", "/proj/b.rs"),
+            ])
+            .unwrap();
+        }
+        std::fs::write(dir.path().join("sessions.db.changes"), b"destroyed").unwrap();
+
+        let l = SessionLedger::open_with_claude_root(&path, root).unwrap();
+        let rows = l.file_events_for_session("s1").unwrap();
+        assert_eq!(rows.len(), 2, "the batch record replayed whole");
+    }
+
+    #[test]
     fn record_file_event_distinct_paths_of_one_bash_call_are_separate_rows() {
         // A Bash call touching N files yields N rows sharing tool_use_id.
         let l = fresh();
@@ -6668,6 +6837,95 @@ mod tests {
             !owns.contains(&("dead", "a.rs")),
             "dead originator no longer owns the claimed path"
         );
+    }
+
+    #[test]
+    fn disclaim_removes_only_the_requesting_sessions_rows_for_those_paths() {
+        // The inverse of a claim: `mine` gives up a.rs — every row it holds on
+        // that path (proof and bracket alike) goes, `other`'s row on the same
+        // path survives as sole ownership, and `mine`'s other path is untouched.
+        let l = fresh();
+        l.record_file_event(&sample_file_event("mine", "tu-1", "a.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("mine", "tu-bash", "a.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("mine", "tu-2", "b.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("other", "tu-3", "a.rs"))
+            .unwrap();
+
+        let deleted = l
+            .disclaim_file_ownership("/proj", &["a.rs".to_owned()], "mine")
+            .unwrap();
+        assert_eq!(deleted, 2, "both of mine's a.rs rows removed");
+
+        let owns: Vec<(String, String)> = l
+            .file_events_for_project("/proj")
+            .unwrap()
+            .iter()
+            .map(|r| (r.event.tug_session_id.clone(), r.event.file_path.clone()))
+            .collect();
+        assert!(
+            owns.contains(&("other".to_owned(), "a.rs".to_owned())),
+            "the other owner becomes sole owner"
+        );
+        assert!(
+            owns.contains(&("mine".to_owned(), "b.rs".to_owned())),
+            "an undisclaimed path is untouched"
+        );
+        assert!(
+            !owns.iter().any(|(s, p)| s == "mine" && p == "a.rs"),
+            "the disclaiming session holds nothing on the path"
+        );
+
+        // Idempotent: disclaiming again deletes nothing and does not error.
+        assert_eq!(
+            l.disclaim_file_ownership("/proj", &["a.rs".to_owned()], "mine")
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn disclaim_is_scoped_to_its_project() {
+        let l = fresh();
+        l.record_file_event(&sample_file_event("mine", "tu-1", "a.rs"))
+            .unwrap();
+        let elsewhere = {
+            let mut r = sample_file_event("mine", "tu-2", "a.rs");
+            r.project_dir = "/other".to_owned();
+            r
+        };
+        l.record_file_event(&elsewhere).unwrap();
+
+        l.disclaim_file_ownership("/proj", &["a.rs".to_owned()], "mine")
+            .unwrap();
+        assert!(l.file_events_for_project("/proj").unwrap().is_empty());
+        assert_eq!(l.file_events_for_project("/other").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn disclaim_replays_from_the_journal_after_destruction() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.db");
+        let root = PathBuf::from("/tmp/tugcast-tests-no-trash");
+        {
+            let l = SessionLedger::open_with_claude_root(&path, root.clone()).unwrap();
+            l.record_file_event(&sample_file_event("mine", "tu-1", "a.rs"))
+                .unwrap();
+            l.record_file_event(&sample_file_event("mine", "tu-2", "b.rs"))
+                .unwrap();
+            l.disclaim_file_ownership("/proj", &["a.rs".to_owned()], "mine")
+                .unwrap();
+        }
+        std::fs::write(dir.path().join("sessions.db.changes"), b"destroyed").unwrap();
+
+        // Replay re-inserts both rows and then re-applies the delete, so the
+        // renunciation survives the rebuild rather than being undone by it.
+        let l = SessionLedger::open_with_claude_root(&path, root).unwrap();
+        let rows = l.file_events_for_session("mine").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].file_path, "b.rs");
     }
 
     #[test]
