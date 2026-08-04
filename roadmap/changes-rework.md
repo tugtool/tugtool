@@ -410,12 +410,12 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 | #step-3 | Disclaim frontend | done | fa27a9a0a |
 | #step-4 | Icons + metadata divider | done | fa27a9a0a |
 | #step-5 | M01 integration checkpoint | done | N/A (verification only) |
-| #step-6 | Hunk model in tugchanges-core | pending | — |
-| #step-7 | Hunk ids on the diff wire | pending | — |
-| #step-8 | Partial staging in commit | pending | — |
-| #step-9 | Hunk election UI + draft selection | pending | — |
-| #step-10 | file stage verb + shell steering | pending | — |
-| #step-11 | M02 integration checkpoint | pending | — |
+| #step-6 | Hunk model in tugchanges-core | done | d6bc72b48 |
+| #step-7 | Hunk ids on the diff wire | done | b288714d2 |
+| #step-8 | Partial staging in commit | done | 7c81af548 |
+| #step-9 | Hunk election UI + draft selection | done | 65eaadd23 |
+| #step-10 | file stage verb + shell steering | done | eca819ad5 |
+| #step-11 | M02 integration checkpoint | done | 92d3cd2e3 |
 | #step-12 | Schema v2: spans table | pending | — |
 | #step-13 | Span capture | pending | — |
 | #step-14 | Hunk-aware contention verdict | pending | — |

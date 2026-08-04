@@ -28,7 +28,7 @@
 
 #![allow(dead_code)]
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
@@ -1429,6 +1429,10 @@ struct ChangesetCommitPayload {
     session_name: Option<String>,
     /// Optional session id for the `Tug-Session:` trailer (Spec S01).
     session_id: Option<String>,
+    /// Optional per-path hunk election (Spec S03): repo-relative path → the
+    /// ids of the hunks to land. Absent means whole-file staging for every
+    /// path, which is what every caller sent before hunks existed.
+    hunks: Option<BTreeMap<String, Vec<String>>>,
 }
 
 fn parse_changeset_commit_payload(payload: &[u8]) -> Result<ChangesetCommitPayload, ControlError> {
@@ -1468,13 +1472,52 @@ fn parse_changeset_commit_payload(payload: &[u8]) -> Result<ChangesetCommitPaylo
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(str::to_string);
+    let hunks = parse_hunk_election(&value, &files)?;
     Ok(ChangesetCommitPayload {
         project_dir,
         files,
         message,
         session_name,
         session_id,
+        hunks,
     })
+}
+
+/// Read the optional `hunks` map (Spec S03) off a `changeset_commit` payload.
+///
+/// Every key must also appear in `files` — an election naming a path the
+/// commit is not landing is a malformed request, not a silent no-op. An
+/// absent or empty map reads as `None`, which keeps the whole-file path
+/// byte-for-byte what it was.
+fn parse_hunk_election(
+    value: &serde_json::Value,
+    files: &[String],
+) -> Result<Option<BTreeMap<String, Vec<String>>>, ControlError> {
+    let Some(raw) = value.get("hunks") else {
+        return Ok(None);
+    };
+    if raw.is_null() {
+        return Ok(None);
+    }
+    let object = raw.as_object().ok_or(ControlError::Malformed)?;
+    let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (path, ids) in object {
+        if !files.iter().any(|f| f == path) {
+            return Err(ControlError::Malformed);
+        }
+        let ids = ids
+            .as_array()
+            .ok_or(ControlError::Malformed)?
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .map(str::to_string)
+                    .ok_or(ControlError::Malformed)
+            })
+            .collect::<Result<Vec<String>, ControlError>>()?;
+        map.insert(path.clone(), ids);
+    }
+    Ok(if map.is_empty() { None } else { Some(map) })
 }
 
 /// A `changeset_claim` CONTROL request: a session claims the listed files
@@ -4023,7 +4066,14 @@ impl AgentSupervisor {
         }
 
         let message = changeset_commit_message(request);
-        match crate::feeds::changeset::run_changeset_commit(dir, &request.files, &message).await {
+        match crate::feeds::changeset::run_changeset_commit(
+            dir,
+            &request.files,
+            &message,
+            request.hunks.clone(),
+        )
+        .await
+        {
             Ok(receipt) => {
                 self.registry.changeset_all_bump().notify_one();
                 let summary = crate::feeds::changeset::format_commit_summary(
@@ -6562,6 +6612,7 @@ mod tests {
             message: "commit a".to_string(),
             session_name: Some("web".to_string()),
             session_id: Some("sess-1".to_string()),
+            hunks: None,
         };
         assert_eq!(
             changeset_commit_message(&request),
@@ -6577,6 +6628,7 @@ mod tests {
             message: "commit a".to_string(),
             session_name: None,
             session_id: None,
+            hunks: None,
         };
         assert_eq!(changeset_commit_message(&request), "commit a");
     }
@@ -6592,6 +6644,28 @@ mod tests {
         let parsed_bare = parse_changeset_commit_payload(bare).expect("parse");
         assert_eq!(parsed_bare.session_name, None);
         assert_eq!(parsed_bare.session_id, None);
+        assert_eq!(parsed_bare.hunks, None);
+    }
+
+    #[test]
+    fn parse_changeset_commit_payload_reads_the_hunk_election() {
+        let payload = br#"{"project_dir":"/p","files":["a.txt","b.rs"],"message":"m","hunks":{"a.txt":["aaaa111122223333"]}}"#;
+        let parsed = parse_changeset_commit_payload(payload).expect("parse");
+        let hunks = parsed.hunks.expect("hunks present");
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks["a.txt"], vec!["aaaa111122223333".to_string()]);
+
+        // An empty map means "no election" rather than an empty one.
+        let empty = br#"{"project_dir":"/p","files":["a.txt"],"message":"m","hunks":{}}"#;
+        assert_eq!(parse_changeset_commit_payload(empty).unwrap().hunks, None);
+
+        // Electing a path the commit is not landing is malformed, not ignored.
+        let stray =
+            br#"{"project_dir":"/p","files":["a.txt"],"message":"m","hunks":{"other.txt":["x"]}}"#;
+        assert!(matches!(
+            parse_changeset_commit_payload(stray),
+            Err(ControlError::Malformed)
+        ));
     }
 
     #[test]
@@ -10891,6 +10965,7 @@ mod tests {
             message: "Add a second line".to_string(),
             session_name: Some("web".to_string()),
             session_id: Some("sess".to_string()),
+            hunks: None,
         };
         sup.do_changeset_commit(&request).await;
 
@@ -10915,6 +10990,7 @@ mod tests {
             message: "Add a third line".to_string(),
             session_name: None,
             session_id: None,
+            hunks: None,
         };
         sup.do_changeset_commit(&bare).await;
         let _ = drain_until_action(&mut rx, "changeset_commit_ok");

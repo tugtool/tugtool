@@ -49,6 +49,7 @@ fn main() -> ExitCode {
             include_unattributed,
             leave_unattributed,
             tree,
+            hunks,
         }) => changes::finish(changes::run_commit(
             message,
             session,
@@ -58,6 +59,7 @@ fn main() -> ExitCode {
             include_unattributed,
             leave_unattributed,
             tree,
+            hunks,
             json,
         )),
         Some(Commands::Claim {

@@ -62,6 +62,14 @@ pub enum FileCommands {
         #[arg(long)]
         regex: bool,
     },
+    /// Stage a patch into the index without touching the working tree — the
+    /// non-interactive equivalent of `git add -p`, which cannot run in the
+    /// block shell (its stdin is /dev/null).
+    Stage {
+        /// Unified diff to stage (`-` for stdin).
+        #[arg(long)]
+        patch: String,
+    },
     /// Apply a patch, run a command against it, then put the tree back exactly
     /// as it was — bytes and mtime. Records nothing: a probe that restores
     /// changed nothing.
@@ -174,6 +182,11 @@ pub enum Commands {
         /// Commit the whole dirty tree (attributed ∪ unattributed ∪ shared), except foreign-claimed paths.
         #[arg(long)]
         tree: bool,
+        /// Land only some hunks: a JSON file (or `-` for stdin) mapping each
+        /// repo-relative path to the hunk ids to commit. Every path must also
+        /// be in the commit's file set, and the index must be clean.
+        #[arg(long, value_name = "FILE")]
+        hunks: Option<String>,
     },
     /// Claim files for a session — promote "likely" hints into the changeset
     /// without re-editing them (proof-grade attribution). Paths are

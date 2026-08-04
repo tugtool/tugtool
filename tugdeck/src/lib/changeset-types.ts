@@ -76,6 +76,13 @@ export interface ChangesetDraftSelection {
   include?: string[];
   /** Paths excluded from the landing against the default rule. */
   exclude?: string[];
+  /**
+   * Per-path hunk election: the server-supplied hunk ids to land for a path
+   * whose landing is partial. A path absent from this map lands whole, which
+   * is what every landing did before hunks existed. Meaningful only for paths
+   * that are in the landing set.
+   */
+  hunks?: { [path: string]: string[] };
 }
 
 /** Files attributed to one Claude session. */
@@ -193,13 +200,26 @@ export function isOptionalChangesetDraft(value: unknown): boolean {
   );
 }
 
-/** A present selection must be include/exclude string arrays; absent is valid. */
+/**
+ * A present selection must be include/exclude string arrays and, when present,
+ * a `hunks` record of string arrays; absent is valid.
+ */
 function isOptionalDraftSelection(value: unknown): boolean {
   if (value === undefined) return true;
   if (!isRecord(value)) return false;
   const isPathArray = (v: unknown): boolean =>
     v === undefined || (Array.isArray(v) && v.every((p) => typeof p === "string"));
-  return isPathArray(value.include) && isPathArray(value.exclude);
+  const isHunkMap = (v: unknown): boolean =>
+    v === undefined ||
+    (isRecord(v) &&
+      Object.values(v).every(
+        (ids) => Array.isArray(ids) && ids.every((id) => typeof id === "string"),
+      ));
+  return (
+    isPathArray(value.include) &&
+    isPathArray(value.exclude) &&
+    isHunkMap(value.hunks)
+  );
 }
 
 export function isChangesetEntry(value: unknown): value is ChangesetEntry {

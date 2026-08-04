@@ -15,10 +15,17 @@
 //! Staging is by construction: `git add -- <files>` then
 //! `git commit -m <message> -- <files>` — never `git add .` — so anything else
 //! already in the index stays out of the commit, and the receipt can't disagree
-//! with what was staged. The result is a structured [`CommitReceipt`] (Spec S03),
-//! not scraped text, with a raw `numstat` field retained as the transition
-//! bridge ([Q01]) and a `left_behind` bucket list (Spec S04).
+//! with what was staged. `hunks` elects a subset of one file's hunks and
+//! switches staging into the [P07] mode: a clean index is required, elected
+//! files are staged by piping a filtered patch to `git apply --cached`, and the
+//! commit takes no pathspec (a pathspec commits working-tree content, which
+//! would drag the unelected hunks in).
+//!
+//! The result is a structured [`CommitReceipt`] (Spec S03), not scraped text,
+//! with a raw `numstat` field retained as the transition bridge ([Q01]) and a
+//! `left_behind` bucket list (Spec S04).
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -26,6 +33,7 @@ use serde::Serialize;
 
 use crate::changes::{ChangesOptions, resolve_changes};
 use crate::git::{self, FileStat, repo_root_for};
+use crate::hunks::{HunkDrift, file_header, filtered_patch, parse_hunks};
 
 /// Options for [`commit`]. `message` is required. Disposition precedence
 /// ([P04], Table T01): `paths` > `tree` > (`include_unattributed` /
@@ -43,6 +51,11 @@ pub struct CommitOptions {
     pub include_unattributed: bool,
     pub leave_unattributed: bool,
     pub tree: bool,
+    /// Per-path hunk election: repo-relative path → the ids of the hunks to
+    /// land ([P06] identity). Every key must also be in the resolved file set.
+    /// Absent or empty means whole-file staging for everything — the pathspec
+    /// path this module has always taken.
+    pub hunks: Option<BTreeMap<String, Vec<String>>>,
 }
 
 /// The typed outcome of a failed [`commit`] (Spec S03). `UnattributedPresent` is
@@ -55,6 +68,9 @@ pub enum CommitError {
     /// Unattributed dirty files were present with no explicit disposition —
     /// nothing was committed. Carries the offending repo-relative paths.
     UnattributedPresent { paths: Vec<String> },
+    /// An elected hunk is no longer in the file's diff — the content moved
+    /// under the election. Nothing was staged and nothing committed.
+    HunkDrift { path: String, ids: Vec<String> },
     /// A real error (git/sqlite/io/blank message) — exit 1.
     Other(String),
 }
@@ -75,6 +91,9 @@ impl fmt::Display for CommitError {
                 paths.len(),
                 paths.join(", ")
             ),
+            CommitError::HunkDrift { path, ids } => {
+                write!(f, "hunk drift: {path} no longer has {}", ids.join(", "))
+            }
             CommitError::Other(msg) => write!(f, "{msg}"),
         }
     }
@@ -132,7 +151,8 @@ pub fn commit(opts: CommitOptions) -> Result<CommitReceipt, CommitError> {
         return Err(CommitError::Other("no files selected".to_string()));
     }
 
-    stage_and_commit(&repo_root, &files, &opts.message).map_err(CommitError::Other)?;
+    let elections = normalize_elections(opts.hunks.as_ref(), &files)?;
+    stage_and_commit(&repo_root, &files, &opts.message, &elections)?;
     let mut receipt = build_receipt(&repo_root, &opts.message).map_err(CommitError::Other)?;
     receipt.left_behind = compute_left_behind(&opts);
     Ok(receipt)
@@ -261,7 +281,21 @@ fn compute_left_behind(opts: &CommitOptions) -> LeftBehind {
 ///   strands the source's deletion in the index. Rename sources whose
 ///   destination is in `files` join the `commit` pathspec, and the commit
 ///   records the rename.
-fn stage_and_commit(repo_root: &Path, files: &[String], message: &str) -> Result<(), String> {
+/// When any file carries a hunk election the shape changes ([P07]): the index
+/// must start clean, the elected files are staged by piping a filtered patch to
+/// `git apply --cached`, and the commit runs with **no** pathspec — a pathspec
+/// would commit working-tree content for those paths and drag the unelected
+/// hunks in with it. See [`stage_partial_and_commit`].
+fn stage_and_commit(
+    repo_root: &Path,
+    files: &[String],
+    message: &str,
+    elections: &BTreeMap<String, BTreeSet<String>>,
+) -> Result<(), CommitError> {
+    if !elections.is_empty() {
+        return stage_partial_and_commit(repo_root, files, message, elections);
+    }
+
     let stageable = stageable_paths(repo_root, files);
     if !stageable.is_empty() {
         let mut add_args: Vec<&str> = vec!["add", "--"];
@@ -274,6 +308,184 @@ fn stage_and_commit(repo_root: &Path, files: &[String], message: &str) -> Result
     commit_args.extend(commit_paths.iter().map(String::as_str));
     run_git_step(repo_root, &commit_args, "git commit failed")?;
     Ok(())
+}
+
+/// Validate the caller's hunk map against the resolved file set and drop the
+/// no-op cases, so the staging code sees only genuine partial elections.
+///
+/// A key naming a path outside `files`, or electing no hunks at all, is a
+/// caller bug rather than drift — it would make the receipt disagree with the
+/// request, so it is refused up front.
+fn normalize_elections(
+    hunks: Option<&BTreeMap<String, Vec<String>>>,
+    files: &[String],
+) -> Result<BTreeMap<String, BTreeSet<String>>, CommitError> {
+    let Some(hunks) = hunks else {
+        return Ok(BTreeMap::new());
+    };
+    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (path, ids) in hunks {
+        if !files.iter().any(|f| f == path) {
+            return Err(CommitError::Other(format!(
+                "hunk election names {path}, which is not in the commit's file set"
+            )));
+        }
+        if ids.is_empty() {
+            return Err(CommitError::Other(format!(
+                "hunk election for {path} selects no hunks"
+            )));
+        }
+        out.insert(path.clone(), ids.iter().cloned().collect());
+    }
+    Ok(out)
+}
+
+/// The partial-staging branch ([P07]).
+///
+/// Every filtered patch is built *before* anything is staged, so drift is a
+/// clean refusal that never touched the index. Staging then runs whole-file
+/// paths through `git add` and elected paths through `git apply --cached`; if
+/// any step after that fails, the whole staged set — whole-file paths included
+/// — is reset, or our own residue would trip the next attempt's index-clean
+/// precondition.
+fn stage_partial_and_commit(
+    repo_root: &Path,
+    files: &[String],
+    message: &str,
+    elections: &BTreeMap<String, BTreeSet<String>>,
+) -> Result<(), CommitError> {
+    require_clean_index(repo_root)?;
+
+    let tracked = tracked_paths(repo_root, files);
+    let mut patches: Vec<(&String, String)> = Vec::new();
+    for (path, selected) in elections {
+        if !tracked.contains(path) {
+            return Err(CommitError::Other(format!(
+                "{path} is not tracked; a created file has no electable hunks and stages whole or not at all"
+            )));
+        }
+        let diff = git::git_stdout(
+            repo_root,
+            &["diff", "--no-color", "--no-ext-diff", "--", path],
+        )
+        .map_err(CommitError::Other)?;
+        let parsed = parse_hunks(&diff);
+        let patch =
+            filtered_patch(&file_header(&diff), &parsed, selected).map_err(|e| match e {
+                HunkDrift::Missing(ids) => CommitError::HunkDrift {
+                    path: path.clone(),
+                    ids,
+                },
+                HunkDrift::EmptySelection => CommitError::HunkDrift {
+                    path: path.clone(),
+                    ids: selected.iter().cloned().collect(),
+                },
+            })?;
+        patches.push((path, patch));
+    }
+
+    let whole: Vec<String> = files
+        .iter()
+        .filter(|f| !elections.contains_key(*f))
+        .cloned()
+        .collect();
+    let stageable = stageable_paths(repo_root, &whole);
+    if !stageable.is_empty() {
+        let mut add_args: Vec<&str> = vec!["add", "--"];
+        add_args.extend(stageable.iter().map(String::as_str));
+        run_git_step(repo_root, &add_args, "git add failed").map_err(|e| {
+            reset_index(repo_root, files);
+            e
+        })?;
+    }
+
+    for (path, patch) in &patches {
+        if let Err(e) = git_apply_cached(repo_root, patch) {
+            reset_index(repo_root, files);
+            return Err(CommitError::Other(format!(
+                "git apply --cached failed for {path}: {e}"
+            )));
+        }
+    }
+
+    run_git_step(repo_root, &["commit", "-m", message], "git commit failed").map_err(|e| {
+        reset_index(repo_root, files);
+        e
+    })?;
+    Ok(())
+}
+
+/// Refuse unless the index holds nothing, naming what is staged. Partial
+/// staging commits the whole index without a pathspec, so pre-existing staged
+/// content would silently ride along in the receipt's blind spot.
+fn require_clean_index(repo_root: &Path) -> Result<(), CommitError> {
+    let output =
+        git::git_output(repo_root, &["diff", "--cached", "--quiet"]).map_err(CommitError::Other)?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let staged = git::git_stdout(repo_root, &["diff", "--cached", "--name-only"])
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(CommitError::Other(format!(
+        "hunk election needs a clean index; these paths are already staged: {staged}"
+    )))
+}
+
+/// Which of `files` git already tracks. An untracked path has no diff against
+/// the index, so no hunk of it can be elected ([P07]).
+fn tracked_paths(repo_root: &Path, files: &[String]) -> BTreeSet<String> {
+    let mut ls_args: Vec<&str> = vec!["ls-files", "--"];
+    ls_args.extend(files.iter().map(String::as_str));
+    match git::git_stdout(repo_root, &ls_args) {
+        Ok(out) => out.lines().map(str::to_string).collect(),
+        Err(_) => files.iter().cloned().collect(),
+    }
+}
+
+/// Pipe `patch` to `git apply --cached`, returning git's stderr on refusal.
+fn git_apply_cached(repo_root: &Path, patch: &str) -> Result<(), String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(["apply", "--cached", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to execute git apply: {e}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| "git apply stdin unavailable".to_string())?
+        .write_all(patch.as_bytes())
+        .map_err(|e| format!("failed to write patch to git apply: {e}"))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("git apply did not complete: {e}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(if detail.is_empty() {
+        "git apply --cached failed".to_string()
+    } else {
+        detail
+    })
+}
+
+/// Unstage `paths`, best-effort — this runs on a failure path whose real error
+/// is the one worth reporting.
+fn reset_index(repo_root: &Path, paths: &[String]) {
+    let mut args: Vec<&str> = vec!["reset", "--quiet", "--"];
+    args.extend(paths.iter().map(String::as_str));
+    let _ = git::git_output(repo_root, &args);
 }
 
 /// The subset of `files` `git add` can match: present in the worktree, or still
@@ -667,5 +879,222 @@ mod tests {
         .expect("commit");
         assert_eq!(receipt.files.len(), 1);
         assert_eq!(receipt.left_behind, LeftBehind::default());
+    }
+
+    // ── hunk-elected landing ([P07]) ───────────────────────────────────────
+
+    fn git_out(root: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("git");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    /// Commit `f.txt` with 60 numbered lines, then dirty it in three regions
+    /// far enough apart that git emits three hunks. Returns the edited text.
+    fn seed_three_hunk_file(root: &Path, name: &str) -> String {
+        let original: String = (1..=60).map(|n| format!("line{n}\n")).collect();
+        std::fs::write(root.join(name), &original).unwrap();
+        git(root, &["add", name]);
+        git(root, &["commit", "-q", "-m", "seed"]);
+        let edited = original
+            .replace("line2\n", "line2\nINSERTED-A\n")
+            .replace("line30\n", "CHANGED-B\n")
+            .replace("line58\n", "");
+        std::fs::write(root.join(name), &edited).unwrap();
+        edited
+    }
+
+    fn hunk_ids(root: &Path, path: &str) -> Vec<String> {
+        let diff = git_out(root, &["diff", "--no-color", "--no-ext-diff", "--", path]);
+        let ids: Vec<String> = parse_hunks(&diff).into_iter().map(|h| h.id).collect();
+        assert_eq!(ids.len(), 3, "expected three hunks; diff was: {diff}");
+        ids
+    }
+
+    fn elect(path: &str, ids: &[&str]) -> Option<BTreeMap<String, Vec<String>>> {
+        let mut map = BTreeMap::new();
+        map.insert(
+            path.to_string(),
+            ids.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+        );
+        Some(map)
+    }
+
+    #[test]
+    fn elected_hunk_lands_alone_and_the_rest_stays_dirty() {
+        let repo = init_repo();
+        let root = repo.path();
+        let edited = seed_three_hunk_file(root, "f.txt");
+        let ids = hunk_ids(root, "f.txt");
+
+        let receipt = commit(CommitOptions {
+            project: Some(root.to_path_buf()),
+            message: "land the middle hunk".to_string(),
+            paths: Some(vec!["f.txt".to_string()]),
+            hunks: elect("f.txt", &[&ids[1]]),
+            ..Default::default()
+        })
+        .expect("partial commit succeeds");
+
+        assert_eq!(receipt.files.len(), 1);
+        let shown = git_out(root, &["show", "--no-color", "HEAD"]);
+        assert!(shown.contains("+CHANGED-B"), "commit was: {shown}");
+        assert!(!shown.contains("INSERTED-A"), "commit was: {shown}");
+        assert!(!shown.contains("-line58"), "commit was: {shown}");
+
+        // The working tree still carries all three edits, so the unelected two
+        // are still dirty.
+        assert_eq!(std::fs::read_to_string(root.join("f.txt")).unwrap(), edited);
+        let after = git_out(root, &["diff", "--no-color", "--", "f.txt"]);
+        assert!(after.contains("INSERTED-A"), "worktree diff was: {after}");
+        assert!(after.contains("-line58"), "worktree diff was: {after}");
+        assert!(!after.contains("CHANGED-B"), "worktree diff was: {after}");
+        assert!(git_out(root, &["diff", "--cached", "--name-only"]).is_empty());
+    }
+
+    #[test]
+    fn a_whole_file_and_a_partial_file_land_together() {
+        let repo = init_repo();
+        let root = repo.path();
+        seed_three_hunk_file(root, "f.txt");
+        std::fs::write(root.join("whole.txt"), "all of me\n").unwrap();
+        let ids = hunk_ids(root, "f.txt");
+
+        commit(CommitOptions {
+            project: Some(root.to_path_buf()),
+            message: "mixed landing".to_string(),
+            paths: Some(vec!["f.txt".to_string(), "whole.txt".to_string()]),
+            hunks: elect("f.txt", &[&ids[0]]),
+            ..Default::default()
+        })
+        .expect("mixed commit succeeds");
+
+        let shown = git_out(root, &["show", "--no-color", "--name-only", "HEAD"]);
+        assert!(shown.contains("f.txt"));
+        assert!(shown.contains("whole.txt"));
+        let body = git_out(root, &["show", "--no-color", "HEAD"]);
+        assert!(body.contains("+INSERTED-A"), "commit was: {body}");
+        assert!(body.contains("+all of me"), "commit was: {body}");
+        assert!(!body.contains("CHANGED-B"), "commit was: {body}");
+    }
+
+    #[test]
+    fn drift_refuses_and_leaves_the_index_untouched() {
+        let repo = init_repo();
+        let root = repo.path();
+        seed_three_hunk_file(root, "f.txt");
+        // A second, whole-file path so the refusal has to unwind a mixed set.
+        std::fs::write(root.join("whole.txt"), "all of me\n").unwrap();
+
+        let head_before = git_out(root, &["rev-parse", "HEAD"]);
+        let err = commit(CommitOptions {
+            project: Some(root.to_path_buf()),
+            message: "elect a hunk that moved".to_string(),
+            paths: Some(vec!["f.txt".to_string(), "whole.txt".to_string()]),
+            hunks: elect("f.txt", &["0000000000000000"]),
+            ..Default::default()
+        })
+        .expect_err("drift refuses");
+
+        match err {
+            CommitError::HunkDrift { path, ids } => {
+                assert_eq!(path, "f.txt");
+                assert_eq!(ids, vec!["0000000000000000".to_string()]);
+            }
+            other => panic!("expected HunkDrift, got {other:?}"),
+        }
+        assert_eq!(git_out(root, &["rev-parse", "HEAD"]), head_before);
+        assert!(
+            git_out(root, &["diff", "--cached", "--name-only"]).is_empty(),
+            "a refusal must leave nothing staged"
+        );
+    }
+
+    #[test]
+    fn a_dirty_index_refuses_a_hunk_election() {
+        let repo = init_repo();
+        let root = repo.path();
+        seed_three_hunk_file(root, "f.txt");
+        let ids = hunk_ids(root, "f.txt");
+        std::fs::write(root.join("preexisting.txt"), "staged by hand\n").unwrap();
+        git(root, &["add", "preexisting.txt"]);
+
+        let err = commit(CommitOptions {
+            project: Some(root.to_path_buf()),
+            message: "land the middle hunk".to_string(),
+            paths: Some(vec!["f.txt".to_string()]),
+            hunks: elect("f.txt", &[&ids[1]]),
+            ..Default::default()
+        })
+        .expect_err("a dirty index refuses");
+        let detail = err.to_string();
+        assert!(detail.contains("clean index"), "detail was: {detail}");
+        assert!(detail.contains("preexisting.txt"), "detail was: {detail}");
+    }
+
+    #[test]
+    fn a_created_file_has_no_electable_hunks() {
+        let repo = init_repo();
+        let root = repo.path();
+        std::fs::write(root.join("brand-new.txt"), "one\ntwo\n").unwrap();
+
+        let err = commit(CommitOptions {
+            project: Some(root.to_path_buf()),
+            message: "elect a hunk of a created file".to_string(),
+            paths: Some(vec!["brand-new.txt".to_string()]),
+            hunks: elect("brand-new.txt", &["0000000000000000"]),
+            ..Default::default()
+        })
+        .expect_err("an untracked path refuses");
+        assert!(err.to_string().contains("not tracked"), "detail was: {err}");
+        assert!(git_out(root, &["diff", "--cached", "--name-only"]).is_empty());
+    }
+
+    #[test]
+    fn an_election_outside_the_file_set_refuses() {
+        let repo = init_repo();
+        let root = repo.path();
+        seed_three_hunk_file(root, "f.txt");
+
+        let err = commit(CommitOptions {
+            project: Some(root.to_path_buf()),
+            message: "elect a path we are not committing".to_string(),
+            paths: Some(vec!["f.txt".to_string()]),
+            hunks: elect("elsewhere.txt", &["0000000000000000"]),
+            ..Default::default()
+        })
+        .expect_err("an out-of-set election refuses");
+        assert!(
+            err.to_string().contains("not in the commit's file set"),
+            "detail was: {err}"
+        );
+    }
+
+    #[test]
+    fn an_empty_election_refuses() {
+        let repo = init_repo();
+        let root = repo.path();
+        seed_three_hunk_file(root, "f.txt");
+
+        let err = commit(CommitOptions {
+            project: Some(root.to_path_buf()),
+            message: "elect nothing".to_string(),
+            paths: Some(vec!["f.txt".to_string()]),
+            hunks: elect("f.txt", &[]),
+            ..Default::default()
+        })
+        .expect_err("an empty election refuses");
+        assert!(
+            err.to_string().contains("selects no hunks"),
+            "detail was: {err}"
+        );
     }
 }

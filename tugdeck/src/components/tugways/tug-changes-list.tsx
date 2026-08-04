@@ -18,9 +18,18 @@
  * per-file collapse is CONTROLLED by the host (`expandedKeys` +
  * `onToggleFile`) so each host keeps its own fold-all / whole-diff chrome.
  *
+ * A session-entry row can also elect *which hunks* of a file the landing
+ * takes ([P09]): the expanded diff renders a checkbox per hunk, keyed by the
+ * server-computed hunk id, and the row wears an `N of M hunks` badge when only
+ * part of it will land. The election is persisted by the host (the draft's
+ * selection) — this component owns the controls and their responder wiring,
+ * `DiffBlock` only paints the slot ([D05]).
+ *
  * Laws: [L02] diff stores enter React through `useSyncExternalStore`;
- * [L06] status tones and hover affordances paint via CSS, never React
- * state; [L26] the diff body collapses by unmount.
+ * [L06] status tones, hover affordances, and the partial-landing mark paint
+ * via CSS, never React state; [L11] the hunk checkboxes dispatch `toggle`
+ * through a `useResponderForm` scope this module owns; [L26] the diff body
+ * collapses by unmount.
  *
  * @module components/tugways/tug-changes-list
  */
@@ -39,9 +48,11 @@ import { CornerDownLeft, CornerUpRight, SquareArrowOutUpRight } from "lucide-rea
 
 import { dispatchAction } from "@/action-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { DiffSummaryBadges } from "@/components/tugways/blocks/diff-summary-badges";
@@ -53,6 +64,7 @@ import {
 import {
   diffDescriptorKey,
   type DiffDescriptor,
+  type GitDiffFile,
   type GitDiffSnapshot,
 } from "@/lib/git-diff-store";
 import type {
@@ -270,8 +282,104 @@ export function useEntryDiff(
   return { snapshot, ensureRequested };
 }
 
+// ---------------------------------------------------------------------------
+// Hunk election ([P09]) — which hunks of a partial file the landing takes
+// ---------------------------------------------------------------------------
+
+/**
+ * One file's hunk election as the row needs it: the server-supplied ids (the
+ * only identity anyone uses — the deck never derives one) and the elected
+ * subset. An absent entry in the draft means the whole file lands, so
+ * `elected` is every id until the user unchecks one.
+ */
+export interface HunkElection {
+  /** The elected ids for this path, or `null` when the file lands whole. */
+  elected: readonly string[] | null;
+  /** Persist a new election; `null` restores whole-file landing. */
+  onElect: (ids: readonly string[] | null) => void;
+}
+
+/** The elected set for a file, resolving "no entry" to "every hunk". */
+function electedSet(
+  ids: readonly string[],
+  election: HunkElection | undefined,
+): ReadonlySet<string> {
+  if (election?.elected == null) return new Set(ids);
+  return new Set(election.elected);
+}
+
+/**
+ * A file's inline diff with a per-hunk election checkbox in each `@@` band.
+ *
+ * The responder wiring lives here rather than in `DiffBlock` ([D05], [L11]):
+ * `DiffBlock` paints the slot and hands back each hunk's id, this component
+ * owns the checkboxes, their `toggle` bindings, and the write. Unchecking the
+ * last elected hunk is refused at the control — a file in the landing set with
+ * nothing elected is a refusal server-side, so the UI never offers it.
+ */
+function HunkElectionDiff({
+  file,
+  election,
+}: {
+  file: GitDiffFile;
+  election: HunkElection;
+}): React.ReactElement {
+  const ids = file.hunks ?? [];
+  const elected = electedSet(ids, election);
+  const senderId = useCallback((id: string) => `hunk:${file.path}:${id}`, [file.path]);
+  const toggle = useMemo(() => {
+    const bindings: Record<string, (value: boolean) => void> = {};
+    for (const id of ids) {
+      bindings[senderId(id)] = (next: boolean) => {
+        const nextElected = ids.filter((candidate) =>
+          candidate === id ? next : elected.has(candidate),
+        );
+        // Every hunk checked is whole-file landing — clear the entry rather
+        // than persisting a selection that means the same thing.
+        election.onElect(
+          nextElected.length === ids.length ? null : nextElected,
+        );
+      };
+    }
+    return bindings;
+  }, [ids, elected, election, senderId]);
+  const form = useResponderForm({ toggle });
+
+  return (
+    <form.ResponderScope>
+      <div ref={form.responderRef}>
+        <DiffBlock
+          data={{ source: "unified", text: file.unified, filePath: file.path }}
+          embedded
+          hunkIds={ids}
+          renderHunkAffordance={(hunkId) => {
+            const checked = elected.has(hunkId);
+            // The sole remaining hunk cannot be unchecked: an empty election
+            // on a landing path is a server-side refusal, not a disposition.
+            const isLast = checked && elected.size === 1;
+            return (
+              <TugCheckbox
+                checked={checked}
+                disabled={isLast}
+                size="sm"
+                senderId={senderId(hunkId)}
+                aria-label={`Land this hunk of ${file.path}`}
+                data-testid="tug-changes-list-hunk-elect"
+              />
+            );
+          }}
+        />
+      </div>
+    </form.ResponderScope>
+  );
+}
+
 /** One file's diff as the row's expanded body. */
-function fileBlockBody(snapshot: GitDiffSnapshot, path: string): React.ReactNode {
+function fileBlockBody(
+  snapshot: GitDiffSnapshot,
+  path: string,
+  election?: HunkElection,
+): React.ReactNode {
   if (snapshot.phase === "error") {
     return (
       <p className="tug-changes-list-file-block-notice" role="alert">
@@ -301,10 +409,20 @@ function fileBlockBody(snapshot: GitDiffSnapshot, path: string): React.ReactNode
       </p>
     );
   }
+  // Hunk controls only where a hunk can actually be elected: the server sends
+  // ids for tracked, textual files and none for a created file (whose diff it
+  // synthesizes) or a binary one, and the landing engine refuses an election
+  // on either ([P07]).
+  if (election !== undefined && (file.hunks?.length ?? 0) > 1) {
+    return <HunkElectionDiff file={file} election={election} />;
+  }
+  // The ids ride every diff, not only the electable ones: identity is what the
+  // wire serves, and an affordance is a separate question.
   return (
     <DiffBlock
       data={{ source: "unified", text: file.unified, filePath: file.path }}
       embedded
+      hunkIds={file.hunks}
     />
   );
 }
@@ -379,10 +497,13 @@ function FileIdentity({
   file,
   projectRoot,
   highlightQuery,
+  partial = null,
 }: {
   file: FileBlockData;
   projectRoot: string;
   highlightQuery?: string;
+  /** See {@link ChangesFileRow}'s `partial`. */
+  partial?: { elected: number; total: number } | null;
 }) {
   const provenance =
     file.origin === ""
@@ -394,7 +515,8 @@ function FileIdentity({
   // not a property of one metadata kind — so it rides a wrapper that renders
   // only when the cluster has something in it. A badge-only or hint-only row
   // gets the same single divider a provenance row does; a bare row gets none.
-  const hasMeta = file.shared || provenance !== null || file.hint !== undefined;
+  const hasMeta =
+    file.shared || provenance !== null || file.hint !== undefined || partial !== null;
   return (
     <span className="tug-changes-list-file-identity">
       <FilePathLink
@@ -406,6 +528,15 @@ function FileIdentity({
       />
       {hasMeta ? (
         <span className="tug-changes-list-file-meta">
+          {partial !== null ? (
+            <span
+              className="tug-changes-list-badge tug-changes-list-badge-partial"
+              data-testid="tug-changes-list-file-partial"
+              title={`Only ${partial.elected} of this file's ${partial.total} hunks will land`}
+            >
+              {`${partial.elected} of ${partial.total} hunks`}
+            </span>
+          ) : null}
           {file.shared ? (
             <span className="tug-changes-list-badge tug-changes-list-badge-shared">
               shared
@@ -441,6 +572,7 @@ export function ChangesFileRow({
   file,
   projectRoot,
   counts,
+  partial = null,
   expanded,
   onToggle,
   popOut,
@@ -459,6 +591,9 @@ export function ChangesFileRow({
   /** The `+N −M` pair when known (live: from the eager entry diff; receipt:
    *  from the frozen record). Absent → no badges (binary, still loading). */
   counts: { added: number; removed: number } | null;
+  /** When only some of the file's hunks are elected ([P09]), the counts —
+   *  the row says `2 of 3 hunks` rather than reading as a whole landing. */
+  partial?: { elected: number; total: number } | null;
   expanded: boolean;
   onToggle: (expanded: boolean) => void;
   popOut: DiffDescriptor | null;
@@ -482,6 +617,7 @@ export function ChangesFileRow({
       data-testid="tug-changes-list-file-block"
       data-path={file.path}
       data-expanded={expanded ? "true" : undefined}
+      data-partial={partial !== null ? "true" : undefined}
     >
       <div
         className="tug-changes-list-row-hit"
@@ -568,6 +704,7 @@ export function ChangesFileRow({
             file={file}
             projectRoot={projectRoot}
             highlightQuery={highlightQuery}
+            partial={partial}
           />
         </TugListRow>
       </div>
@@ -612,6 +749,8 @@ function EntryFiles({
   claimPending,
   onDisclaim,
   disclaimPending,
+  hunkElection,
+  onElectHunks,
 }: {
   entry: TugChangesListEntry;
   expandedKeys: ReadonlySet<string>;
@@ -626,6 +765,10 @@ function EntryFiles({
   onDisclaim?: (path: string) => void;
   /** A disclaim round trip is in flight. */
   disclaimPending?: boolean;
+  /** The persisted per-path hunk election ([P09]). */
+  hunkElection?: Readonly<Record<string, readonly string[]>>;
+  /** Persist a path's election; `null` restores whole-file landing. */
+  onElectHunks?: (path: string, ids: readonly string[] | null) => void;
 }) {
   const projectRoot = entry.project.project_dir;
   const descriptor = useMemo(() => entryDiffDescriptor(entry), [entry]);
@@ -653,16 +796,34 @@ function EntryFiles({
             ? { added: diffFile.added, removed: diffFile.removed }
             : null;
         const expanded = expandedKeys.has(fileExpandKey(entry.id, file.path));
+        const election: HunkElection | undefined =
+          onElectHunks !== undefined
+            ? {
+                elected: hunkElection?.[file.path] ?? null,
+                onElect: (ids) => onElectHunks(file.path, ids),
+              }
+            : undefined;
+        // The row says so when only part of the file lands — a landing that
+        // reads whole but isn't would be a resting lie.
+        const electedCount = hunkElection?.[file.path]?.length;
+        const hunkCount = diffFile?.hunks?.length;
+        const partial =
+          electedCount !== undefined &&
+          hunkCount !== undefined &&
+          electedCount < hunkCount
+            ? { elected: electedCount, total: hunkCount }
+            : null;
         return (
           <ChangesFileRow
             key={file.path}
             file={file}
             projectRoot={projectRoot}
             counts={counts}
+            partial={partial}
             expanded={expanded}
             onToggle={(next) => onToggleFile(entry.id, file.path, !next)}
             popOut={filePopOutDescriptor(entry.project, file.path)}
-            body={expanded ? fileBlockBody(diffSnapshot, file.path) : null}
+            body={expanded ? fileBlockBody(diffSnapshot, file.path, election) : null}
             onClaim={onClaim !== undefined ? () => onClaim(file.path) : undefined}
             claimPending={claimPending}
             onDisclaim={
@@ -716,6 +877,12 @@ export interface TugChangesListProps {
   /** A disclaim round trip is in flight — every Disclaim affordance disables
    *  until the reply lands. */
   disclaimPending?: boolean;
+  /** The persisted per-path hunk election ([P09]) — a path absent from it
+   *  lands whole. Read to check the boxes and mark partial rows. */
+  hunkElection?: Readonly<Record<string, readonly string[]>>;
+  /** When set, session-entry files with more than one hunk show a per-hunk
+   *  election checkbox; `null` ids restore whole-file landing. */
+  onElectHunks?: (path: string, ids: readonly string[] | null) => void;
   className?: string;
 }
 
@@ -735,6 +902,8 @@ export function TugChangesList({
   onDisclaimFile,
   onDisclaimAllFiles,
   disclaimPending,
+  hunkElection,
+  onElectHunks,
   className,
 }: TugChangesListProps): React.ReactElement {
   return (
@@ -830,6 +999,8 @@ export function TugChangesList({
               claimPending={claimPending}
               onDisclaim={entry.kind === "session" ? onDisclaimFile : undefined}
               disclaimPending={disclaimPending}
+              hunkElection={entry.kind === "session" ? hunkElection : undefined}
+              onElectHunks={entry.kind === "session" ? onElectHunks : undefined}
             />
           </React.Fragment>
         );

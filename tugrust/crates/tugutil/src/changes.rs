@@ -4,6 +4,7 @@
 //! (the shared `{schema_version, command, status, data, issues}` envelope) or a
 //! plain read-out.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -298,8 +299,13 @@ pub fn run_commit(
     include_unattributed: bool,
     leave_unattributed: bool,
     tree: bool,
+    hunks: Option<String>,
     json: bool,
 ) -> Result<(), AppError> {
+    let hunks = match hunks {
+        Some(source) => Some(read_hunk_election(&source)?),
+        None => None,
+    };
     let receipt = tugchanges_core::commit(CommitOptions {
         session,
         project,
@@ -309,6 +315,7 @@ pub fn run_commit(
         include_unattributed,
         leave_unattributed,
         tree,
+        hunks,
     })
     .map_err(refusal_to_app_error)?;
     if json {
@@ -327,6 +334,22 @@ pub fn run_commit(
         print_left_behind(&receipt.left_behind);
     }
     Ok(())
+}
+
+/// Read the `--hunks` map (Spec S03) from a file, or from stdin when `source`
+/// is `-`.
+fn read_hunk_election(source: &str) -> Result<BTreeMap<String, Vec<String>>, AppError> {
+    let text = if source == "-" {
+        let mut buf = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
+            .map_err(|e| AppError::from(format!("failed to read --hunks from stdin: {e}")))?;
+        buf
+    } else {
+        std::fs::read_to_string(source)
+            .map_err(|e| AppError::from(format!("failed to read --hunks file {source}: {e}")))?
+    };
+    serde_json::from_str(&text)
+        .map_err(|e| AppError::from(format!("--hunks is not a {{path: [id…]}} JSON map: {e}")))
 }
 
 /// Map a [`CommitError`] to its exit code, expanding the [P03] refusal into a

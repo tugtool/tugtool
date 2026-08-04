@@ -939,6 +939,7 @@ pub(crate) async fn run_changeset_commit(
     repo_dir: &Path,
     files: &[String],
     message: &str,
+    hunks: Option<std::collections::BTreeMap<String, Vec<String>>>,
 ) -> Result<tugchanges_core::CommitReceipt, String> {
     let project = repo_dir.to_path_buf();
     let files = files.to_vec();
@@ -951,6 +952,7 @@ pub(crate) async fn run_changeset_commit(
             project: Some(project),
             message,
             paths: Some(files),
+            hunks,
             ..Default::default()
         })
         .map_err(|e| e.to_string())
@@ -1647,7 +1649,7 @@ mod tests {
         git(&repo, &["add", "b.txt"]);
         std::fs::write(repo.join("c.txt"), "c\n").unwrap();
 
-        let receipt = run_changeset_commit(&repo, &["a.txt".to_string()], "commit a")
+        let receipt = run_changeset_commit(&repo, &["a.txt".to_string()], "commit a", None)
             .await
             .expect("commit succeeds");
 
@@ -1681,7 +1683,7 @@ mod tests {
     async fn run_changeset_commit_stages_untracked_selections() {
         let (_temp, repo) = init_repo();
         std::fs::write(repo.join("fresh.txt"), "fresh\n").unwrap();
-        let receipt = run_changeset_commit(&repo, &["fresh.txt".to_string()], "add fresh")
+        let receipt = run_changeset_commit(&repo, &["fresh.txt".to_string()], "add fresh", None)
             .await
             .expect("untracked selection commits");
         assert!(receipt.numstat.contains("fresh.txt"));
@@ -1695,7 +1697,7 @@ mod tests {
         // committing (do_changeset_commit → append_trailers). Mirror that here.
         let message =
             tugchanges_core::append_trailers("commit a", &[("Tug-Session", "web (sess-1)")]);
-        run_changeset_commit(&repo, &["a.txt".to_string()], &message)
+        run_changeset_commit(&repo, &["a.txt".to_string()], &message, None)
             .await
             .expect("commit succeeds");
         let trailer = git_stdout(
@@ -1719,19 +1721,61 @@ mod tests {
     #[tokio::test]
     async fn run_changeset_commit_refuses_empty_list_and_blank_message() {
         let (_temp, repo) = init_repo();
-        assert!(run_changeset_commit(&repo, &[], "msg").await.is_err());
+        assert!(run_changeset_commit(&repo, &[], "msg", None).await.is_err());
         std::fs::write(repo.join("a.txt"), "changed\n").unwrap();
         assert!(
-            run_changeset_commit(&repo, &["a.txt".to_string()], "   ")
+            run_changeset_commit(&repo, &["a.txt".to_string()], "   ", None)
                 .await
                 .is_err()
         );
     }
 
     #[tokio::test]
+    async fn run_changeset_commit_forwards_a_hunk_election() {
+        let (_temp, repo) = init_repo();
+        let original: String = (1..=60).map(|n| format!("line{n}\n")).collect();
+        std::fs::write(repo.join("f.txt"), &original).unwrap();
+        git(&repo, &["add", "f.txt"]);
+        git(&repo, &["commit", "-q", "-m", "seed"]);
+        let edited = original
+            .replace("line2\n", "line2\nINSERTED-A\n")
+            .replace("line30\n", "CHANGED-B\n");
+        std::fs::write(repo.join("f.txt"), &edited).unwrap();
+
+        let diff = git_stdout(
+            &repo,
+            &["diff", "--no-color", "--no-ext-diff", "--", "f.txt"],
+        )
+        .await
+        .expect("diff");
+        let ids: Vec<String> = tugchanges_core::parse_hunks(&diff)
+            .into_iter()
+            .map(|h| h.id)
+            .collect();
+        assert_eq!(ids.len(), 2, "diff was: {diff}");
+
+        let mut election = std::collections::BTreeMap::new();
+        election.insert("f.txt".to_string(), vec![ids[1].clone()]);
+        run_changeset_commit(
+            &repo,
+            &["f.txt".to_string()],
+            "land the second hunk",
+            Some(election),
+        )
+        .await
+        .expect("partial commit succeeds");
+
+        let shown = git_stdout(&repo, &["show", "--no-color", "HEAD"])
+            .await
+            .expect("show");
+        assert!(shown.contains("+CHANGED-B"), "commit was: {shown}");
+        assert!(!shown.contains("INSERTED-A"), "commit was: {shown}");
+    }
+
+    #[tokio::test]
     async fn run_changeset_commit_error_carries_git_stderr() {
         let (_temp, repo) = init_repo();
-        let err = run_changeset_commit(&repo, &["no-such-file.txt".to_string()], "msg")
+        let err = run_changeset_commit(&repo, &["no-such-file.txt".to_string()], "msg", None)
             .await
             .expect_err("missing pathspec fails");
         assert!(

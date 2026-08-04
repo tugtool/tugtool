@@ -136,6 +136,13 @@
   color: var(--tug7-element-tone-text-normal-accent-rest);
 }
 
+/* A file whose landing takes only some of its hunks ([P09]). Caution-toned:
+   the row's ± counts describe the whole file, and this says the landing
+   won't. */
+.tug-changes-list-badge-partial {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+
 /* ---- Section labels ---- */
 
 .tug-changes-list-section-label {

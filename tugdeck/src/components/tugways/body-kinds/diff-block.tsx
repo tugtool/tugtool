@@ -185,6 +185,25 @@ export interface DiffBlockProps {
   suppressHeader?: boolean;
 
   /**
+   * Stable ids for the rendered hunks, in hunk order — the server-computed
+   * identities the changes engine addresses hunks by. DiffBlock never derives
+   * them; it only hands each one back to {@link renderHunkAffordance} so a
+   * host can key a per-hunk control. Absent (or short) leaves a hunk with no
+   * id, and therefore no affordance.
+   */
+  hunkIds?: readonly string[];
+
+  /**
+   * Render a host-owned control alongside one hunk's `@@` header — the slot
+   * the Changes card's per-hunk election checkbox lands in. DiffBlock supplies
+   * the hunk's id and index and paints the layout; the host owns the control,
+   * its state, and its responder wiring, per the [D05] two-layer split.
+   * Returning `null` (or omitting the prop) renders the header exactly as
+   * before.
+   */
+  renderHunkAffordance?: (hunkId: string, index: number) => React.ReactNode;
+
+  /**
    * Identifier used for tugbank-persisted per-card preferences.
    * Currently scopes the inline ↔ side-by-side `viewMode`. When
    * omitted, `viewMode` falls back to the prop / default and is not
@@ -228,6 +247,7 @@ const DATA_SLOT_ROOT = "diff-body";
 const DATA_SLOT_HEADER = "diff-header";
 const DATA_SLOT_HUNKS = "diff-hunks";
 const DATA_SLOT_HUNK = "diff-hunk";
+const DATA_SLOT_HUNK_LEAD = "diff-hunk-lead";
 const DATA_SLOT_HUNK_ROWS = "diff-hunk-rows";
 const DATA_SLOT_LINE = "diff-line";
 const DATA_SLOT_SBS_ROW = "diff-sbs-row";
@@ -474,6 +494,8 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   className,
   embedded = false,
   suppressHeader = false,
+  hunkIds,
+  renderHunkAffordance,
   cardId,
   viewMode: viewModeProp,
   onViewModeChange,
@@ -1161,32 +1183,58 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
         <div className="tugx-diff-hunks" data-slot={DATA_SLOT_HUNKS}>
           {renderData.map((hunkData, index) => {
             const isHunkCollapsed = collapsedHunks.has(index);
+            const hunkId = hunkIds?.[index];
+            const affordance =
+              hunkId !== undefined && renderHunkAffordance !== undefined
+                ? renderHunkAffordance(hunkId, index)
+                : null;
+            const cue = (
+              <TugCue
+                role="muted"
+                align="start"
+                mono
+                icon={
+                  isHunkCollapsed ? (
+                    <ChevronRight aria-hidden />
+                  ) : (
+                    <ChevronDown aria-hidden />
+                  )
+                }
+                aria-expanded={!isHunkCollapsed}
+                aria-label={isHunkCollapsed ? "Expand hunk" : "Collapse hunk"}
+                onClick={() => toggleHunk(index)}
+                className="tugx-diff-hunk-header"
+              >
+                {composeHunkHeader(hunkData.hunk)}
+              </TugCue>
+            );
             return (
               <div
                 key={index}
                 className="tugx-diff-hunk"
                 data-slot={DATA_SLOT_HUNK}
                 data-hunk-index={index}
+                data-hunk-id={hunkId}
                 data-collapsed={isHunkCollapsed ? "true" : "false"}
               >
-                <TugCue
-                  role="muted"
-                  align="start"
-                  mono
-                  icon={
-                    isHunkCollapsed ? (
-                      <ChevronRight aria-hidden />
-                    ) : (
-                      <ChevronDown aria-hidden />
-                    )
-                  }
-                  aria-expanded={!isHunkCollapsed}
-                  aria-label={isHunkCollapsed ? "Expand hunk" : "Collapse hunk"}
-                  onClick={() => toggleHunk(index)}
-                  className="tugx-diff-hunk-header"
-                >
-                  {composeHunkHeader(hunkData.hunk)}
-                </TugCue>
+                {affordance !== null ? (
+                  <div
+                    className="tugx-diff-hunk-lead"
+                    data-slot={DATA_SLOT_HUNK_LEAD}
+                  >
+                    <span
+                      className="tugx-diff-hunk-affordance"
+                      // The affordance is its own gesture — a click on it must
+                      // never also fold the hunk behind it.
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {affordance}
+                    </span>
+                    {cue}
+                  </div>
+                ) : (
+                  cue
+                )}
                 <div
                   className="tugx-diff-hunk-rows"
                   data-slot={DATA_SLOT_HUNK_ROWS}

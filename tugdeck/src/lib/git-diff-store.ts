@@ -47,6 +47,14 @@ export interface GitDiffFile {
   binary: boolean;
   /** The file's complete unified-diff chunk, verbatim from git. */
   unified: string;
+  /**
+   * Content-hash id per hunk of `unified`, in hunk order. Computed server-side
+   * and never re-derived here, so a hunk election means the same thing to the
+   * checkbox, the draft, and the landing engine. Absent for files whose hunks
+   * cannot be elected — binary files, and created files (whose diff is
+   * synthesized rather than read out of the index).
+   */
+  hunks?: string[];
 }
 
 /** A single-shot `git diff HEAD` payload from tugcast (GIT_DIFF feed). */

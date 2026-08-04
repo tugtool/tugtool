@@ -9,6 +9,7 @@
 pub mod changes;
 pub mod commit;
 pub mod git;
+pub mod hunks;
 mod ledger;
 pub mod preflight;
 pub mod shell_ops;
@@ -21,6 +22,7 @@ pub use git::{
     git_output, git_stdout, normalize_xy, parse_name_status, parse_numstat,
     parse_status_porcelain_v2, parse_unified_diff, repo_root_for,
 };
+pub use hunks::{Hunk, HunkDrift, file_header, filtered_patch, hunk_id, parse_hunks};
 pub use preflight::{
     DiffOptions, DiffReport, LogEntry, LogOptions, LogReport, PreflightOptions, PreflightReport,
     diff, log, preflight,

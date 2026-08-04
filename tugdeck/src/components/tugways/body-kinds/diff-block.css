@@ -255,6 +255,41 @@ body {
   z-index: 0;
 }
 
+/* ---------- Host affordance beside the hunk header ---------- */
+
+/* When a host supplies a per-hunk control (`renderHunkAffordance` — the
+   Changes card's election checkbox), the control and the `@@` cue share one
+   band. The band takes over the sticky pin so the control stays reachable
+   while the hunk's lines scroll under it, and carries the cue's own muted
+   surface so the pinned row is opaque over the code beneath. */
+.tugx-diff-hunk-lead {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  position: sticky;
+  top: calc(
+    var(--tugx-pin-stack-top, 0px)
+    + var(--tugx-block-header-height, 0px)
+    + var(--tugx-diff-header-height, 0px)
+  );
+  z-index: 0;
+  background: var(--tug7-surface-global-primary-normal-sunken-rest);
+}
+
+.tugx-diff-hunk-affordance {
+  display: inline-flex;
+  align-items: center;
+  padding-left: var(--tug-space-sm);
+  flex-shrink: 0;
+}
+
+/* Inside the band the cue is an ordinary flex child — the band owns the pin. */
+.tugx-diff-hunk-lead .tugx-diff-hunk-header.tugx-diff-hunk-header {
+  position: static;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .tugx-diff-hunk[data-collapsed="true"] .tugx-diff-hunk-rows {
   display: none;
 }

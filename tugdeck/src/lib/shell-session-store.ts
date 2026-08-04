@@ -26,6 +26,7 @@ import { getConnection } from "./connection-singleton";
 import type { CodeSessionStore } from "./code-session-store";
 import type { PendingContextStore } from "./pending-context-store";
 import { composeShellShareText } from "./shell-share";
+import { interactiveStagingSteer } from "./shell-interactive-staging";
 
 /** A running exchange — drives the `stop` pose on the `$` route ([P13]). */
 export interface ShellInflight {
@@ -187,11 +188,20 @@ export class ShellSessionStore {
    * `SHELL_INPUT`. The transcript row is minted when the `exchange_started`
    * frame echoes back — not optimistically — so a failed send never leaves a
    * ghost row. Serial: refused while an exchange is in flight.
+   *
+   * An interactive-staging invocation (`git add -p` and friends) is answered
+   * with a steering notice instead of being run ([P13]) — see
+   * {@link _steerInteractiveStaging}.
    */
   exec(command: string, opts?: { origin?: "auto" }): void {
     const trimmed = command.trim();
     if (trimmed.length === 0) return;
     if (this._snapshot.inflight !== null) return;
+    const steer = interactiveStagingSteer(trimmed);
+    if (steer !== null) {
+      this._steerInteractiveStaging(trimmed, steer);
+      return;
+    }
     this._seq += 1;
     const exchangeId = `sh-${this._seq}`;
     // Remember an auto-routed exchange so the transcript row (minted when the
@@ -217,6 +227,42 @@ export class ShellSessionStore {
         }),
       ),
     );
+  }
+
+  /**
+   * Answer an interactive-staging command with a notice rather than running it
+   * ([P13]).
+   *
+   * The row is minted locally — nothing is sent, nothing is spawned, and the
+   * shell ledger records nothing, because nothing happened. It settles
+   * immediately with a non-zero exit so the row reads as a refusal and not as
+   * a command that ran and printed advice.
+   */
+  private _steerInteractiveStaging(command: string, notice: string): void {
+    this._seq += 1;
+    const exchangeId = `sh-steer-${this._seq}`;
+    const at = Date.now();
+    const cwd = this._snapshot.cwd ?? this._projectDir;
+    this._codeSessionStore.ingestShellExchange({
+      phase: "started",
+      exchangeId,
+      command,
+      cwd,
+      startedAtMs: at,
+      autoRouted: false,
+    });
+    this._codeSessionStore.ingestShellExchange({
+      phase: "complete",
+      exchangeId,
+      command,
+      output: notice,
+      exitCode: 1,
+      cwd,
+      cwdAfter: null,
+      startedAtMs: at,
+      settledAtMs: at,
+      autoRouted: false,
+    });
   }
 
   /** Kill the running command — reaps the shell's process group ([Q03]). */

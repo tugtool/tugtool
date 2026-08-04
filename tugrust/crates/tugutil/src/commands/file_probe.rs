@@ -409,6 +409,16 @@ fn git_apply_stdout(patch: &str, args: &[&str]) -> Option<String> {
 
 /// Apply the diff with git, or just validate it when `check_only`.
 pub(super) fn git_apply(patch: &str, check_only: bool) -> Result<(), AppError> {
+    run_git_apply(patch, check_only, false)
+}
+
+/// Apply the diff to the **index** (`--cached`), leaving the working tree
+/// alone, or just validate it when `check_only`.
+pub(super) fn git_apply_cached(patch: &str, check_only: bool) -> Result<(), AppError> {
+    run_git_apply(patch, check_only, true)
+}
+
+fn run_git_apply(patch: &str, check_only: bool, cached: bool) -> Result<(), AppError> {
     use std::io::Write;
     use std::process::Stdio;
 
@@ -416,6 +426,9 @@ pub(super) fn git_apply(patch: &str, check_only: bool) -> Result<(), AppError> {
     command.arg("apply");
     if check_only {
         command.arg("--check");
+    }
+    if cached {
+        command.arg("--cached");
     }
     command
         .arg("-")

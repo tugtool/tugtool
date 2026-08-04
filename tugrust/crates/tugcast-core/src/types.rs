@@ -101,6 +101,12 @@ pub enum GitDiffFileStatus {
 ///
 /// `added` / `removed` count the `+` / `-` body lines (not the `+++` / `---`
 /// headers); for a binary file both are `0` and `binary` is `true`.
+///
+/// `hunks` carries the content-hash id of each hunk of `unified`, in hunk
+/// order, so a client can key a per-hunk control without deriving identity
+/// itself — the ids are computed in Rust only. It is empty for files no hunk
+/// election can address (binary files, and created files, whose diff is
+/// synthesized rather than parsed from the index).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GitDiffFile {
     /// Path relative to the repo root (the rename *destination* when renamed).
@@ -118,6 +124,9 @@ pub struct GitDiffFile {
     pub binary: bool,
     /// The file's complete unified-diff chunk, verbatim from git.
     pub unified: String,
+    /// Content-hash id per hunk of `unified`, in hunk order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hunks: Vec<String>,
 }
 
 /// A single-shot `git diff HEAD` payload, delivered on the GIT_DIFF feed
@@ -686,11 +695,16 @@ mod tests {
             removed: 1,
             binary: false,
             unified: "@@ -1 +1,3 @@\n a\n+b\n+c\n".to_string(),
+            hunks: Vec::new(),
         };
         let json = serde_json::to_string(&file).unwrap();
         assert!(
             !json.contains("old_path"),
             "absent old_path must be omitted"
+        );
+        assert!(
+            !json.contains("hunks"),
+            "an empty hunk list must be omitted"
         );
         let decoded: GitDiffFile = serde_json::from_str(&json).unwrap();
         assert_eq!(file, decoded);
@@ -715,6 +729,7 @@ mod tests {
                     removed: 1,
                     binary: false,
                     unified: "diff --git a/old.rs b/renamed.rs\n".to_string(),
+                    hunks: vec!["a1b2c3d4e5f60718".to_string()],
                 },
                 GitDiffFile {
                     path: "img.png".to_string(),
@@ -724,6 +739,7 @@ mod tests {
                     removed: 0,
                     binary: true,
                     unified: "Binary files a/img.png and b/img.png differ\n".to_string(),
+                    hunks: Vec::new(),
                 },
             ],
         };

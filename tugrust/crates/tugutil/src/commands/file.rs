@@ -93,6 +93,7 @@ pub fn run_file(command: FileCommands) -> Result<(), AppError> {
             count,
             regex,
         } => run_edit(patch, path, replace, with, count, regex),
+        FileCommands::Stage { patch } => run_stage(&patch),
         FileCommands::Probe {
             patch,
             paths,
@@ -288,6 +289,40 @@ fn edit_by_patch(source: &str) -> Result<(), AppError> {
         }
     }
     receipt.emit();
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// stage
+// ---------------------------------------------------------------------------
+
+/// Stage a patch into the index, working tree untouched.
+///
+/// This is `git add -p` without the prompting: filter a diff to what you want,
+/// hand it here, and the index holds exactly that. The interactive form cannot
+/// work in the block shell — its stdin is `/dev/null`, so it reads EOF and
+/// silently stages nothing, which looks like success ([P13]).
+///
+/// It prints no `TUG-FILE-RECEIPT`: staging moves no working-tree bytes, and a
+/// receipt would mint a false `modified` row against the session.
+fn run_stage(source: &str) -> Result<(), AppError> {
+    use super::file_probe::{git_apply_cached, patch_targets, read_patch};
+
+    let text = read_patch(source)?;
+    let targets = patch_targets(&text);
+    if targets.is_empty() {
+        return Err(AppError::Exit1("the patch names no files".to_string()));
+    }
+
+    // Validate before staging: a patch that will not apply must leave the
+    // index exactly as it found it.
+    git_apply_cached(&text, true)?;
+    git_apply_cached(&text, false)?;
+
+    println!("staged {} file(s):", targets.len());
+    for target in &targets {
+        println!("  {}", target.display());
+    }
     Ok(())
 }
 
@@ -789,5 +824,96 @@ mod tests {
         let lifecycle = reason("rm -rf apptest-*");
         assert!(lifecycle.contains("tugutil file rm|mv|cp"), "{lifecycle}");
         assert!(!lifecycle.contains("tugutil file edit"), "{lifecycle}");
+    }
+
+    // ── stage ([P13]) ──────────────────────────────────────────────────────
+
+    fn git_out(root: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("git");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    /// A repo with a committed `f.txt`, plus the patch that would add a line to
+    /// it and the file's committed bytes.
+    #[allow(clippy::disallowed_methods)] // the verb reads cwd; nextest gives each test its own process
+    fn stage_fixture() -> (tempfile::TempDir, String, String) {
+        let repo = init_repo();
+        let root = repo.path();
+        let committed = "alpha\nbravo\ncharlie\n";
+        std::fs::write(root.join("f.txt"), committed).unwrap();
+        commit_all(root);
+        std::env::set_current_dir(root).unwrap();
+        let patch = "\
+--- a/f.txt
++++ b/f.txt
+@@ -1,3 +1,4 @@
+ alpha
++added
+ bravo
+ charlie
+";
+        (repo, patch.to_string(), committed.to_string())
+    }
+
+    #[test]
+    fn stage_puts_the_patch_in_the_index_and_leaves_the_worktree_alone() {
+        let (repo, patch, committed) = stage_fixture();
+        let root = repo.path();
+        let patch_file = root.join("p.diff");
+        std::fs::write(&patch_file, &patch).unwrap();
+
+        run_stage(&patch_file.to_string_lossy()).expect("stage succeeds");
+
+        let staged = git_out(root, &["diff", "--cached", "--no-color"]);
+        assert!(staged.contains("+added"), "staged was: {staged}");
+        assert_eq!(
+            std::fs::read_to_string(root.join("f.txt")).unwrap(),
+            committed,
+            "staging moves no working-tree bytes",
+        );
+    }
+
+    #[test]
+    fn stage_refuses_a_non_applying_patch_and_stages_nothing() {
+        let (repo, _patch, committed) = stage_fixture();
+        let root = repo.path();
+        let patch_file = root.join("p.diff");
+        // Context that does not match the committed content.
+        std::fs::write(
+            &patch_file,
+            "\
+--- a/f.txt
++++ b/f.txt
+@@ -1,3 +1,4 @@
+ nothing
++added
+ like
+ this
+",
+        )
+        .unwrap();
+
+        let err = run_stage(&patch_file.to_string_lossy()).expect_err("a bad patch refuses");
+        assert!(
+            format!("{err:?}").contains("git apply"),
+            "the refusal carries git's own words: {err:?}",
+        );
+        assert!(
+            git_out(root, &["diff", "--cached", "--name-only"]).is_empty(),
+            "a refusal stages nothing",
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("f.txt")).unwrap(),
+            committed,
+        );
     }
 }

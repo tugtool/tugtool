@@ -763,17 +763,34 @@ pub(crate) async fn fetch_git_diff(repo_dir: &Path, paths: &[String]) -> Option<
 /// type (the two structs carry identical fields — only the status enum differs).
 /// The `unified` chunk text is preserved verbatim, so the frame the client
 /// parses is unchanged.
+///
+/// Each file also carries its hunk ids ([P06] identity, computed in
+/// `tugchanges_core::hunks` and nowhere else) in hunk order. Binary files have
+/// no hunks; created files are left id-less on purpose — their chunk is
+/// synthesized from `--no-index` rather than read out of the index, so the
+/// landing engine cannot address their hunks and the client must not offer to.
 pub fn parse_git_diff(output: &str) -> Vec<GitDiffFile> {
     tugchanges_core::parse_unified_diff(output)
         .into_iter()
-        .map(|f| GitDiffFile {
-            path: f.path,
-            old_path: f.old_path,
-            status: map_diff_status(f.status),
-            added: f.added,
-            removed: f.removed,
-            binary: f.binary,
-            unified: f.unified,
+        .map(|f| {
+            let hunks = if f.binary || f.status == tugchanges_core::DiffFileStatus::Added {
+                Vec::new()
+            } else {
+                tugchanges_core::parse_hunks(&f.unified)
+                    .into_iter()
+                    .map(|h| h.id)
+                    .collect()
+            };
+            GitDiffFile {
+                path: f.path,
+                old_path: f.old_path,
+                status: map_diff_status(f.status),
+                added: f.added,
+                removed: f.removed,
+                binary: f.binary,
+                unified: f.unified,
+                hunks,
+            }
         })
         .collect()
 }
@@ -1057,6 +1074,43 @@ Binary files a/img.png and b/img.png differ
         assert_eq!(f.status, GitDiffFileStatus::Added);
         assert_eq!(f.added, 2);
         assert_eq!(f.removed, 0);
+    }
+
+    #[test]
+    fn test_hunk_ids_are_served_in_order_and_agree_with_the_library() {
+        let two_hunk = "\
+diff --git a/src/main.rs b/src/main.rs
+index 1111111..2222222 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,3 +1,4 @@
+ fn main() {
+-    let a = 1;
++    let a = 2;
++    let b = 3;
+ }
+@@ -20,2 +21,2 @@
+ fn other() {
+-    old();
++    new();
+";
+        let files = parse_git_diff(two_hunk);
+        let f = &files[0];
+        let library = tugchanges_core::parse_hunks(&f.unified);
+        assert_eq!(library.len(), 2);
+        assert_eq!(
+            f.hunks,
+            library.iter().map(|h| h.id.clone()).collect::<Vec<_>>(),
+            "the feed serves exactly the library's ids, in hunk order"
+        );
+    }
+
+    #[test]
+    fn test_no_hunk_ids_for_created_or_binary_files() {
+        // A created file's diff is synthesized, not read from the index, so no
+        // hunk of it is electable at landing time.
+        assert!(parse_git_diff(ADDED)[0].hunks.is_empty());
+        assert!(parse_git_diff(BINARY)[0].hunks.is_empty());
     }
 
     #[test]

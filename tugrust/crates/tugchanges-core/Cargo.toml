@@ -15,6 +15,7 @@ serde.workspace = true
 serde_json.workspace = true
 dirs.workspace = true
 rusqlite.workspace = true
+sha2.workspace = true
 tugcore.workspace = true
 
 [dev-dependencies]

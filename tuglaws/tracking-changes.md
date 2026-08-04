@@ -200,6 +200,24 @@ The legacy `tugutil changes` verb keeps its event-scoped wire contract (attribut
 - **Staging is by construction:** `git add -- <files>` then `git commit -m <msg> -- <files>` — never `git add .` — so the receipt cannot disagree with what was staged.
 - **The receipt tells on itself:** after committing, the bucketing re-runs and `CommitReceipt.left_behind` (`{unattributed, foreign, shared}`) names every still-dirty path. A partial commit is visible in its own receipt, not two sessions later.
 
+### Below the file: hunk election
+
+A landing can take *part* of a file. `CommitOptions.hunks` (wire: `changeset_commit.hunks`, CLI: `tugutil commit --hunks`) maps a repo-relative path to the ids of the hunks to land; every key must also be in the file set, and a path with no entry lands whole — which is what every landing did before hunks existed.
+
+**A hunk's id is a content hash of its body**, computed in `tugchanges_core::hunks` and nowhere else, then served to the deck alongside the diff text. The `@@` header is excluded, so an unrelated hunk changing size does not move this hunk's id, while any change to the hunk's own content does — which is exactly when a stale election must be refused (`CommitError::HunkDrift`, nothing staged, nothing committed). The deck never re-derives an id, so the checkbox, the draft election, and the commit filter cannot disagree.
+
+**Partial staging changes the staging shape**, and the change is load-bearing:
+
+- The index must start clean (a typed refusal names what is already staged). Partial staging commits the whole index, so pre-existing staged content would ride along in the receipt's blind spot.
+- Whole-file paths stage with `git add --`; elected paths stage by rebuilding a unified diff of only their elected hunks (new-side offsets recomputed by cumulative delta over the *included* hunks) and piping it to `git apply --cached`.
+- The commit then runs with **no pathspec**. `git commit -- <paths>` commits *working-tree* content for those paths, which would drag the unelected hunks in — the pathspec form is structurally incompatible with partial staging.
+- Every filtered patch is built before anything is staged, so drift refuses without touching the index; any later failure resets the whole staged set, whole-file paths included, or our own residue would trip the next attempt's index-clean precondition.
+- **Created files are whole-file only.** Their diff is synthesized from `git diff --no-index` rather than read out of the index, so no hunk of one is addressable; the engine refuses such an election and the card renders no controls on them.
+
+**A partial commit spends the whole path's rows.** Liveness is per-path (`min_live_at_ms` above), so the un-landed remainder's evidence dies with the commit and the remainder surfaces as `unattributed` afterward. This is the doctrine's blessed failure direction — visible, never falsely claimed — and the remainder stays electable by hand. Re-minting rows for the remainder's owner at land time is a recorded follow-on, not built speculatively.
+
+**Interactive staging is answered, not run.** `git add -p` and its relatives (`commit`/`stash`/`checkout`/`restore`/`reset` with `-p`/`--patch`/`--interactive`, and a bare `git commit` with no message flag) are detected at the `$` route's `exec` and answered with a steering notice. In the block shell a command's stdin is `/dev/null`, so those prompts read EOF and stage nothing while exiting 0 — a no-op that looks like success. The graphical surface is the answer: the Changes shade picks hunks, and `tugutil file stage --patch <file|->` is the non-interactive verb for a script or an agent. This is steering plus verbs, never a PTY ([D111] stands).
+
 The net effect of refusal + `--tree` + `left_behind`: a half-commit is impossible to produce *by accident*. Every narrowing is an explicit, named election.
 
 ---

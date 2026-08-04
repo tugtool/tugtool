@@ -8,6 +8,12 @@
  * AI, not a checkbox. Unattributed files (no session claims them) are shown
  * for awareness but never swept into this session's commit.
  *
+ * Below the file, though, a landing can be partial: {@link
+ * ChangesRouteController.electHunks} persists which hunks of a path to land
+ * ([P09], riding the draft's free-form selection), and {@link
+ * ChangesRouteController.commit} sends them as `changeset_commit.hunks`. A
+ * path with no election lands whole.
+ *
  * It opens NO feed of its own — the per-workspace `CHANGESET` feed (0x23)
  * is retired. Instead it subscribes to the app-level `ChangesetAllStore`
  * singleton (`CHANGESET_ALL`, 0x24 — the same store the Lens reads) and
@@ -30,6 +36,7 @@ import {
 import { getChangesetDraftStore } from "./changeset-draft-store";
 import { getChangesetVerbStore } from "./changeset-verb-store";
 import type {
+  ChangesetDraftSelection,
   DashChangesetEntry,
   OrphanedFile,
   ProjectChangeset,
@@ -236,6 +243,15 @@ export class ChangesRouteController {
     const files = [...this._snapshot.committedPaths];
     if (files.length === 0) return;
     this._lastCommitMessage = message;
+    // A path whose hunks are only partly elected rides `hunks`; everything
+    // else stages whole. Elections for paths that have since left the landing
+    // set are dropped rather than sent — the server refuses an out-of-set key.
+    const election = this.hunkElection();
+    const hunks: Record<string, string[]> = {};
+    for (const path of files) {
+      const ids = election[path];
+      if (ids !== undefined && ids.length > 0) hunks[path] = [...ids];
+    }
     // Carry the session's display name + id so `do_changeset_commit` appends a
     // `Tug-Session:` trailer ([P08], Spec S01). Sourced from the CHANGESET
     // entry; absent an entry (an unattributed-only commit), the id still
@@ -247,6 +263,51 @@ export class ChangesRouteController {
       files,
       message,
       { name: entry?.display_name, id: entry?.owner_id ?? this.tugSessionId },
+      Object.keys(hunks).length > 0 ? hunks : undefined,
+    );
+  }
+
+  // ── Hunk election ([P09]) ──────────────────────────────────────────────
+
+  /**
+   * The persisted per-path hunk election, read straight off the entry's draft
+   * selection. A path absent from the map lands whole — the default, and what
+   * every landing did before hunks existed.
+   */
+  hunkElection(): Readonly<Record<string, readonly string[]>> {
+    return this._snapshot.entry?.draft?.selection?.hunks ?? {};
+  }
+
+  /**
+   * Persist the elected hunk ids for one path. `ids` of `null` clears the
+   * path's entry, restoring whole-file landing — the same thing the UI means
+   * when every hunk is checked again, so a fully-elected file leaves no
+   * partial-looking residue in the draft.
+   *
+   * The write rides the draft's free-form selection column immediately (no
+   * debounce): a settled checkbox must show what the store holds.
+   */
+  electHunks(path: string, ids: readonly string[] | null): void {
+    const entry = this._snapshot.entry;
+    if (entry === null) return;
+    const current = entry.draft?.selection ?? {};
+    const nextHunks: Record<string, string[]> = { ...(current.hunks ?? {}) };
+    if (ids === null || ids.length === 0) {
+      delete nextHunks[path];
+    } else {
+      nextHunks[path] = [...ids];
+    }
+    const selection: ChangesetDraftSelection = { ...current };
+    if (Object.keys(nextHunks).length > 0) {
+      selection.hunks = nextHunks;
+    } else {
+      delete selection.hunks;
+    }
+    getChangesetDraftStore()?.setDraft(
+      this.projectDir,
+      this.draftOwnerKind,
+      this.tugSessionId,
+      { selection },
     );
   }
 

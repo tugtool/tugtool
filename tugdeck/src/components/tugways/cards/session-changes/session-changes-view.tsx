@@ -282,6 +282,8 @@ export function SessionChangesView({
           onDisclaimFile={(path) => changesController.disclaim([path])}
           onDisclaimAllFiles={(paths) => changesController.disclaim(paths)}
           disclaimPending={disclaimPending}
+          hunkElection={changesController.hunkElection()}
+          onElectHunks={(path, ids) => changesController.electHunks(path, ids)}
         />
       ) : null}
     </div>,
