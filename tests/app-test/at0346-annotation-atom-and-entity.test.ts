@@ -216,13 +216,22 @@ describe.skipIf(!SHOULD_RUN)("AT0346: annotations as objects", () => {
           })()`,
           { timeoutMs: 8000 },
         );
-        const chipValue = await app.evalJS<string | null>(
-          `(function(){
-            var img = document.querySelector(${JSON.stringify(PROMPT_INPUT)} + ' img[data-atom-type="file"]');
-            return img === null ? null : img.getAttribute('data-atom-value');
-          })()`,
-        );
-        expect(chipValue).toBe(stampedPath);
+        const chip = JSON.parse(
+          await app.evalJS<string>(
+            `JSON.stringify((function(){
+              var img = document.querySelector(${JSON.stringify(PROMPT_INPUT)} + ' img[data-atom-type="file"]');
+              if (img === null) return {};
+              return {
+                value: img.getAttribute('data-atom-value'),
+                label: img.getAttribute('data-atom-label'),
+              };
+            })())`,
+          ),
+        ) as { value?: string | null; label?: string | null };
+        expect(chip.value).toBe(stampedPath);
+        // The chip reads as the filename — a composer line has no room for
+        // an absolute path, and the whole path is right there in the value.
+        expect(chip.label).toBe(FILE_NAME);
 
         const literal = await app.evalJS<boolean>(
           `(function(){

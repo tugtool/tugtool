@@ -32,7 +32,7 @@ import { openAttachmentPreview } from "@/lib/attachment-preview-open";
 import { useDeckManager } from "@/deck-manager-context";
 import { useCardId } from "@/components/tugways/use-card-state-preservation";
 import type { CodeSessionStore } from "@/lib/code-session-store";
-import type { AtomSegment } from "@/lib/tug-atom-img";
+import { formatAtomLabel, type AtomSegment } from "@/lib/tug-atom-img";
 import type { AnnotationContext } from "@/lib/annotator/types";
 import { pathResolutionStore } from "@/lib/annotator/path-resolution";
 import { fileNameResolverFor } from "@/lib/annotator/file-name-resolution";
@@ -523,7 +523,10 @@ export function useTranscriptCellMenu({
     const segment: AtomSegment = {
       kind: "atom",
       type: "file",
-      label: payload.path,
+      // The chip reads as a filename and carries the whole path underneath —
+      // the same split every other file chip in the app makes, and the
+      // reason one fits on a composer line at all.
+      label: formatAtomLabel(payload.path, "filename"),
       value: payload.path,
     };
     return () => {
