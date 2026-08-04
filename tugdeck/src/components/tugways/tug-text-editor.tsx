@@ -173,7 +173,12 @@ import {
 import { tugLineNumbersGutter } from "./tug-text-editor/line-numbers-gutter";
 import { tugSelectionLayer } from "./tug-text-editor/selection-layer";
 import { captureEditState, tugTextEditorKeymap } from "./tug-text-editor/keymap";
-import type { TugTextEditorKeymapConfig } from "./tug-text-editor/keymap";
+import type {
+  EditorArrowExitDirection,
+  TugTextEditorKeymapConfig,
+} from "./tug-text-editor/keymap";
+
+export type { EditorArrowExitDirection };
 import {
   acceptCompletionAt,
   cancelCompletion,
@@ -835,7 +840,7 @@ export interface TugTextEditorProps
    * on a surface the pipeline CAN walk (a dialog's answer field) and the
    * editor releases the arrow to the spatial plane instead.
    */
-  onArrowExit?: (step: 1 | -1) => boolean;
+  onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
   /**
    * Soft-wrap long lines at the editor's width. When true, adds
    * `EditorView.lineWrapping` (sets `white-space: break-spaces` on

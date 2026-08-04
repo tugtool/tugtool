@@ -298,6 +298,13 @@ export const FOCUS_MODE_ATTRIBUTE = "data-focus-mode";
 export const KEY_WITHIN_ATTRIBUTE = "data-key-within";
 
 /**
+ * DOM marker naming the engine's key view — the element the keyboard is on,
+ * carrying the focusable id as its value. Modality-agnostic; the `-kbd` variant
+ * beside it is the one that paints a ring.
+ */
+export const KEY_VIEW_ATTRIBUTE = "data-key-view";
+
+/**
  * DOM marker a focused text surface sets on (or within) itself to advertise
  * "I own Tab right now" -- e.g. a text editor with an open completion popup,
  * which accepts the completion on Tab instead of yielding to the focus walk.
@@ -2793,14 +2800,14 @@ export class FocusManager {
 
     for (const el of document.querySelectorAll<HTMLElement>("[data-key-view]")) {
       if (el !== p.keyViewEl) {
-        el.removeAttribute("data-key-view");
+        el.removeAttribute(KEY_VIEW_ATTRIBUTE);
         el.removeAttribute("data-key-view-kbd");
         writes += 1;
       }
     }
     if (p.keyViewEl !== null && p.keyViewId !== null) {
-      if (p.keyViewEl.getAttribute("data-key-view") !== p.keyViewId) {
-        p.keyViewEl.setAttribute("data-key-view", p.keyViewId);
+      if (p.keyViewEl.getAttribute(KEY_VIEW_ATTRIBUTE) !== p.keyViewId) {
+        p.keyViewEl.setAttribute(KEY_VIEW_ATTRIBUTE, p.keyViewId);
         writes += 1;
       }
       const hasKbd = p.keyViewEl.hasAttribute("data-key-view-kbd");

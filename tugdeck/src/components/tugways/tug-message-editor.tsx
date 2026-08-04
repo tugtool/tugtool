@@ -49,6 +49,7 @@ import {
   TugTextEditor,
   type TugTextEditorDelegate,
   type TugTextEditorFocusStyle,
+  type EditorArrowExitDirection,
 } from "@/components/tugways/tug-text-editor";
 import type { FocusPolicy } from "@/components/tugways/focus-manager";
 
@@ -162,7 +163,7 @@ export interface TugMessageEditorProps {
    * `TugTextEditorProps.onArrowExit` for when a host wants it and when
    * leaving it off is the right call.
    */
-  onArrowExit?: (step: 1 | -1) => boolean;
+  onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
   /**
    * Forwarded to the substrate: a transient, in-list editor (the Lens snippet
    * editor) that is not its card's primary text surface should NOT register
