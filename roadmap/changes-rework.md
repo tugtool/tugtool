@@ -33,7 +33,7 @@ No interactivity is needed for any of this: `git add -p` is a prompting UI over 
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- A `CLAIM ALL` of N files writes one `fe_batch` journal record and either claims all N or none; `changeset_claim_ok.claimed` is `N` or `0` (Rust unit test on the ledger + supervisor test).
+- A `CLAIM ALL` of N files writes one `fe_batch` journal record and either claims the whole batch or none of it; `changeset_claim_ok.claimed` is the batch size *after* `repo_relative_key` mapping (outside-repo paths are skipped-and-warned before the batch, today's behavior) or `0` (Rust unit test on the ledger + supervisor test).
 - A per-row Disclaim on an attributed file removes it from the session's changeset on the next aggregate recompute; the file reappears as `unattributed` (or the other claimant becomes sole owner if it was shared). Verified by a `tugutil changes disclaim` CLI round trip and an app-test.
 - Every changes-list row with any trailing metadata (badge, provenance, or hint) renders exactly one leading divider; rows with none render none (visual check + app-test DOM assertion on the wrapper class).
 - Claim renders `corner-down-left`, Disclaim renders `corner-up-right` (DOM assertion on the lucide class names).
@@ -198,7 +198,7 @@ No interactivity is needed for any of this: `git add -p` is a prompting UI over 
 
 #### [P07] Partial staging = `git apply --cached` on a filtered patch; commit from the index; index-clean precondition (DECIDED) {#p07-partial-staging}
 
-**Decision:** When any file in the landing carries a hunk election, `stage_and_commit` switches modes: refuse unless `git diff --cached --quiet` reports a clean index (typed error naming the staged paths); stage whole-file selections with `git add --`; stage partial files by rebuilding a unified diff of only the elected hunks (new-side `@@` start offsets recomputed by cumulative delta over included hunks) and piping it to `git apply --cached`; then `git commit -m <msg>` **without a pathspec**.
+**Decision:** When any file in the landing carries a hunk election, `stage_and_commit` switches modes: refuse unless `git diff --cached --quiet` reports a clean index (typed error naming the staged paths); stage whole-file selections with `git add --`; stage partial files by rebuilding a unified diff of only the elected hunks (new-side `@@` start offsets recomputed by cumulative delta over included hunks) and piping it to `git apply --cached`; then `git commit -m <msg>` **without a pathspec**. The per-file diff runs with `--no-ext-diff` (an external diff driver would break both the patch and id agreement with the wire's ids, which assume default `-U3` context on both sides).
 
 **Rationale:**
 - `git commit -- <paths>` commits *working-tree* content for those paths, which would drag unselected hunks in — the pathspec form is structurally incompatible with partial staging.
@@ -208,7 +208,8 @@ No interactivity is needed for any of this: `git add -p` is a prompting UI over 
 **Implications:**
 - `CommitOptions` gains `hunks: Option<BTreeMap<String, Vec<String>>>` (path → elected hunk ids); empty/absent map preserves today's pathspec path byte-for-byte.
 - A selected hunk id absent from the file's current diff is a typed refusal (`CommitError::HunkDrift { path, ids }`) — nothing staged, nothing committed.
-- On any failure after staging began, the engine runs `git reset -- <partial paths>` to unstage before returning, so a refusal never leaves a half-staged index.
+- **Created/untracked files are whole-file only.** The deck's diff wire *synthesizes* a new-file unified diff for untracked paths (`feeds/git.rs`), but the engine's partial branch parses `git diff --no-color -- <path>`, which emits nothing for an untracked file — any election on one is a guaranteed drift refusal. The engine rejects `hunks` keys naming untracked/created paths with a typed error, and the UI (Step 9) renders no hunk controls on them.
+- On any failure after staging began, the engine runs `git reset -- <all staged paths>` (the whole-file subset ∪ the partial paths) before returning, so a refusal never leaves a half-staged index — resetting only the partial paths would leave the `git add`-staged whole files tripping the *next* attempt's index-clean precondition on our own residue.
 - The `with_rename_sources` staged-rename handling applies to the whole-file subset only.
 
 #### [P08] A partial commit spends the whole path's rows; the remainder degrades (DECIDED) {#p08-partial-spends-path}
@@ -331,7 +332,7 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 ### Compatibility / Migration / Rollout {#rollout}
 
 - **M01/M02:** no schema changes. New journal record variants are forward-incompatible with older binaries' journal *replay* (Risk R01) — rebuild all `tug*` binaries when landing each pass (they land from one dash join, so this is the normal flow).
-- **M03 schema bump, the complete satellite list** (all in `tugcast/src/session_ledger.rs` unless noted): `CHANGES_SCHEMA_VERSION` 1→2; add `(1, "CREATE TABLE IF NOT EXISTS file_event_spans …")` to `CHANGES_MIGRATIONS`; add the table to `bootstrap_changes_schema`'s idempotent DDL block; extend the version-gate tests; extend eviction (`DeleteSession`), `Sever`, and the new `Disclaim` SQL to also delete matching span rows; read side adds a spans query in `tugchanges-core/src/ledger.rs` (which hand-mirrors the writer's schema per its module doc) and updates the seeded test DDL in `ledger.rs` and `changes.rs` tests. After the pass lands: rebuild everything; any stale binary (e.g. an old dash-worktree build) refuses shared-table row-shaping writes by the existing gate — expected and safe.
+- **M03 schema bump, the complete satellite list** (all in `tugcast/src/session_ledger.rs` unless noted): `CHANGES_SCHEMA_VERSION` 1→2; add `(1, "CREATE TABLE IF NOT EXISTS file_event_spans …")` to `CHANGES_MIGRATIONS`; add the table to `bootstrap_changes_schema`'s idempotent DDL block; add `file_event_spans` to the quarantine `salvage_into` table list (currently `["file_events", "changeset_drafts"]`) so a post-quarantine rebuild recovers span rows rather than leaning entirely on journal replay; extend the version-gate tests; extend eviction (`DeleteSession`), `Sever`, and the new `Disclaim` SQL to also delete matching span rows; read side adds a spans query in `tugchanges-core/src/ledger.rs` (which hand-mirrors the writer's schema per its module doc) and updates the seeded test DDL in `ledger.rs` and `changes.rs` tests. After the pass lands: rebuild everything; any stale binary (e.g. an old dash-worktree build) refuses shared-table row-shaping writes by the existing gate — expected and safe.
 - **Wire:** every new field is additive and optional (`hunks` on commit, `own_hunks`/`contested_hunks` on files, `hunks` on receipt ops); an old deck against a new server, or vice versa, degrades to file-level behavior.
 
 ---
@@ -364,7 +365,7 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 | `FileEventSpan`, spans on `Record::FileEvent` | struct/field | `tugcast/src/changes_journal.rs` + `session_ledger.rs` | `#[serde(default)]` |
 | span capture in `PendingCall`/`into_row` path | Rust | `tugcast/src/feeds/attribution.rs` | [P11] anchors from tool input |
 | overlap verdict fn (`classify_contention` or similar) | Rust | `tugchanges-core` | [P14], consumed by `changes.rs` + tugcast `feeds/changeset.rs` |
-| interactive-staging detection | TS | deck shell-routing layer (beside `lib/shell-line-classifier.ts` / bang-commands routing) | [P13] |
+| interactive-staging detection | TS | deck shell-routing layer (beside `lib/shell-line-classifier.ts` / the prompt-entry submit routing) | [P13] |
 
 ---
 
@@ -548,7 +549,7 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 - [ ] Implement `hunk_id` ([P06]: SHA-256 over body lines excluding the `@@` header, hex, 16 chars, `#N` ordinal on duplicates) and `filtered_patch` (original `---`/`+++` header + selected hunks, new-side starts recomputed by cumulative delta over included hunks; `HunkDrift` on unknown ids).
 
 **Tests:**
-- [ ] Unit: id stability under other-hunk drift (same body, shifted `@@` numbers → same id); id change on body change; duplicate-hunk ordinals.
+- [ ] Unit: id stability under other-hunk drift (same body, shifted `@@` numbers → same id); id change on body change; duplicate-hunk ordinals; a `\ No newline at end of file` marker rides its hunk's body (through parse, id, and `filtered_patch`) without counting as a body line for offset math.
 - [ ] Unit: `filtered_patch` of hunks {1 of 3}, {2,3 of 3}, {all}, {none→error}, and a real-git application test: build a repo, make a 3-hunk change, filter to hunk 2, `git apply --cached`, assert `git diff --cached` contains exactly hunk 2's lines.
 
 **Checkpoint:**
@@ -589,13 +590,13 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 
 **Tasks:**
 - [ ] Extend `CommitOptions` with `hunks: Option<BTreeMap<String, Vec<String>>>`; absent/empty → existing code path untouched.
-- [ ] Partial branch per [P07]: index-clean guard (`git diff --cached --quiet`; on failure, typed `Other` error naming the staged paths from `git diff --cached --name-only`); `git add --` the whole-file subset (existing `stageable_paths` rules); per partial file, `git diff --no-color -- <path>` → `parse_hunks` → `filtered_patch` → `git apply --cached` via stdin (reuse the child-process shape of `file_probe.rs::git_apply`); `git commit -m <msg>` with **no** pathspec; on any post-staging failure, `git reset -- <partial paths>` before returning.
+- [ ] Partial branch per [P07]: index-clean guard (`git diff --cached --quiet`; on failure, typed `Other` error naming the staged paths from `git diff --cached --name-only`); `git add --` the whole-file subset (existing `stageable_paths` rules); per partial file, `git diff --no-color --no-ext-diff -- <path>` → `parse_hunks` → `filtered_patch` → `git apply --cached` via stdin (reuse the child-process shape of `file_probe.rs::git_apply`); `git commit -m <msg>` with **no** pathspec; on any post-staging failure, `git reset -- <all staged paths>` (whole-file ∪ partial) before returning.
 - [ ] Map `HunkDrift` to `CommitError::HunkDrift { path, ids }` (a refusal-class error: nothing committed; CLI exit 1 with a `hunk drift:` prefix — Spec S03).
 - [ ] `feeds/changeset.rs::run_changeset_commit` + the `changeset_commit` payload parser in `agent_supervisor.rs`: accept optional `hunks`, validate keys ⊆ `files`, pass through.
 - [ ] `tugutil commit --hunks <file|->` parsing the Spec-S03 JSON map.
 
 **Tests:**
-- [ ] `commit.rs` integration (real git, `init_repo` pattern): 3-hunk file, elect hunk 2 → `git show HEAD` contains hunk 2 only, worktree still dirty with hunks 1+3, `left_behind` re-bucketing runs; mixed landing (one whole file + one partial file) commits both correctly; drift election refuses with nothing staged (assert `git diff --cached` empty after refusal); dirty-index precondition refuses.
+- [ ] `commit.rs` integration (real git, `init_repo` pattern): 3-hunk file, elect hunk 2 → `git show HEAD` contains hunk 2 only, worktree still dirty with hunks 1+3, `left_behind` re-bucketing runs; mixed landing (one whole file + one partial file) commits both correctly; drift election refuses with nothing staged (assert `git diff --cached` empty after refusal — including the mixed case where a whole file was already `git add`-staged before the partial file's drift surfaced); dirty-index precondition refuses; a `hunks` key naming an untracked/created path refuses.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugchanges-core -p tugcast -p tugutil`
@@ -611,8 +612,8 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 **References:** [P09] Selection hunks, Spec S03, State Zone Mapping (#state-zone-mapping)
 
 **Tasks:**
-- [ ] `changeset-types.ts`: add `hunks?: { [path: string]: string[] }` to `ChangesetDraftSelection`.
-- [ ] Render a per-hunk election control in the inline diff body for session-entry files (the diff body renders through `DiffBlock` from `body-kinds/diff-block` inside `tug-changes-list.tsx`'s expanded-file branch; key controls by the Step-7 server ids). Compose existing Tug components for the control — never hand-roll.
+- [ ] `changeset-types.ts`: add `hunks?: { [path: string]: string[] }` to `ChangesetDraftSelection`, and extend the runtime validator `isOptionalDraftSelection` to accept it (a present `hunks` must be a record of string arrays; absent stays valid).
+- [ ] Render a per-hunk election control in the inline diff body for session-entry files (the diff body renders through `DiffBlock` from `body-kinds/diff-block` inside `tug-changes-list.tsx`'s expanded-file branch; key controls by the Step-7 server ids). Compose existing Tug components for the control — never hand-roll. **No hunk controls on created/untracked files** — their wire diff is synthesized and the engine refuses elections on them ([P07]); they stage whole or not at all.
 - [ ] Toggle writes go through the draft write path on settle (the same `changeset-draft-store.ts` route file dispositions use — `selection` rides `tugutil draft set` / the `/api/draft` POST); a file with a hunk subset elected renders its row as partially-included.
 - [ ] The commit gesture assembles `hunks` from the draft selection and sends it on `changeset_commit` (`changeset-verb-store.ts::commit` gains the optional field; `commit-mode-controller.ts` / `session-changes-view.tsx` thread it).
 
@@ -635,7 +636,7 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 
 **Tasks:**
 - [ ] `tugutil file stage --patch <file|->`: validate with `git apply --check --cached`, then `git apply --cached`; reuse `file_probe.rs`'s `git_apply`/`patch_targets` helpers; print a staged-paths summary (no `TUG-FILE-RECEIPT` — staging moves no working-tree bytes, and a receipt would mint a false `modified` row). Register in `tugutil/src/cli.rs`.
-- [ ] Deck: at the shell-routing layer (the routing that dispatches `$`/auto-routed lines — beside `lib/shell-line-classifier.ts` and the bang-commands routing in `lib/bang-commands.ts`), detect `git (add|commit|stash|checkout|restore|reset)` invocations carrying `-p`/`--patch`/`--interactive` and bare `git commit` without `-m`/`-F`; instead of executing, render a notice block: interactive staging doesn't work in the block shell (stdin is `/dev/null`) and hunk staging lives in the Changes shade. Detection is a literal-token scan of the parsed words — no execution, no grammar changes.
+- [ ] Deck: at the shell-routing layer (the routing that dispatches `$`/auto-routed lines — beside `lib/shell-line-classifier.ts` and the prompt-entry submit routing; there is no `lib/bang-commands.ts`, the bang/route dispatch lives in the prompt-entry path), detect `git (add|commit|stash|checkout|restore|reset)` invocations carrying `-p`/`--patch`/`--interactive` and bare `git commit` without `-m`/`-F`; instead of executing, render a notice block: interactive staging doesn't work in the block shell (stdin is `/dev/null`) and hunk staging lives in the Changes shade. Detection is a literal-token scan of the parsed words — no execution, no grammar changes.
 
 **Tests:**
 - [ ] Rust: `file stage` stages a valid patch (assert `git diff --cached`), refuses a non-applying one with git's stderr, leaves the worktree bytes untouched either way.
@@ -675,7 +676,7 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 **References:** [P10] Spans table, Spec S04, Risk R02, (#rollout)
 
 **Tasks:**
-- [ ] Execute the complete satellite list in #rollout: version constant 1→2, `CHANGES_MIGRATIONS` entry, idempotent DDL in `bootstrap_changes_schema`, version-gate test updates, span-row deletion joined into `DeleteSession`/`Sever`/`Disclaim` appliers, read-side spans query + seeded test DDL updates in `tugchanges-core` (`ledger.rs`, `changes.rs` tests).
+- [ ] Execute the complete satellite list in #rollout: version constant 1→2, `CHANGES_MIGRATIONS` entry, idempotent DDL in `bootstrap_changes_schema`, `file_event_spans` added to the quarantine `salvage_into` table list, version-gate test updates, span-row deletion joined into `DeleteSession`/`Sever`/`Disclaim` appliers, read-side spans query + seeded test DDL updates in `tugchanges-core` (`ledger.rs`, `changes.rs` tests).
 - [ ] Add `FileEventSpan { seq, kind, anchor }` and the `#[serde(default)] spans` field on `Record::FileEvent` (and on `FileEventBatch` rows) with insertion in `apply_journal_record`.
 
 **Tests:**
