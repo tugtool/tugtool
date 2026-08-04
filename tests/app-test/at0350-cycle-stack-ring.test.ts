@@ -45,7 +45,25 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { launchTugApp, note, type App } from "./_harness";
+import {
+  launchTugApp,
+  note,
+  type App,
+  type MenuItemState,
+} from "./_harness";
+
+/**
+ * Assert an item is in the menu bar, and narrow to the found shape so its
+ * enablement is readable — `expect(...).toBe(true)` checks a value but tells
+ * the compiler nothing about the union.
+ */
+function inMenuBar(
+  state: MenuItemState,
+  label: string,
+): Extract<MenuItemState, { found: true }> {
+  if (!state.found) throw new Error(`${label} is not in the menu bar`);
+  return state;
+}
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
@@ -187,8 +205,10 @@ describe.skipIf(!SHOULD_RUN)(
         try {
           await seed(app);
 
-          const cycle = await app.menuItemState("window.cycleStack");
-          expect(cycle.found, "window.cycleStack exists in the menu bar").toBe(true);
+          const cycle = inMenuBar(
+            await app.menuItemState("window.cycleStack"),
+            "window.cycleStack",
+          );
           expect(cycle.enabled, "a 3-deep slot has somewhere to cycle to").toBe(true);
 
           // The preference reaches the menu bar over the menu-state push, the
@@ -205,8 +225,10 @@ describe.skipIf(!SHOULD_RUN)(
           );
 
           // And it is still a live command — only its chord went elsewhere.
-          const stillThere = await app.menuItemState("window.cycleStack");
-          expect(stillThere.found, "Cycle Stack stays in the menu").toBe(true);
+          const stillThere = inMenuBar(
+            await app.menuItemState("window.cycleStack"),
+            "Cycle Stack",
+          );
           expect(stillThere.enabled, "and stays enabled — only the chord moved").toBe(
             true,
           );

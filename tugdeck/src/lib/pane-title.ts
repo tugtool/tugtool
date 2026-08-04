@@ -7,13 +7,15 @@
  *
  *   1. the **registry title** of the pane's active card (`CardMeta.title`) —
  *      the static label baked in at card-type definition time ("File",
- *      "Diff", "Chain Actions"), which is the empty string for card types
- *      whose identity is entirely dynamic (the Session card);
+ *      "Diff", "Chain Actions"), which is what a card of that type is called
+ *      before it has a name of its own;
  *   2. the **pane title** (`TugPaneState.title`), the group name a multi-tab
- *      pane carries, which prefixes the registry title;
+ *      pane carries, which prefixes whatever the card is called;
  *   3. the **live override** a card publishes on {@link cardTitleStore} once
- *      its identity resolves — the Session card's bound project path, for
- *      instance — which is the whole title when there is no static base.
+ *      its identity resolves — a Text card's filename, a Session card's bound
+ *      project path — which REPLACES the registry title rather than extending
+ *      it, because a card with a name of its own no longer needs to be
+ *      announced by its type.
  *
  * Before this module existed the composition lived inside `CardTitleBar`'s
  * render and a *different*, simpler rule (`CardState.title` with a fallback
@@ -52,10 +54,23 @@ const UNTITLED = "Untitled";
 /**
  * The exact string a pane's title bar renders, from its three parts.
  *
+ * **An override REPLACES the registry title; it does not extend it.** A card
+ * publishes an override precisely when it has a name of its own, and that name
+ * says what the static one said and more: `changes-rework.md` is already
+ * evidently a file, and the row draws the card's `FileText` icon beside it
+ * besides. Prefixing it produced `File : changes-rework.md`, where the first
+ * word carried nothing the rest of the row did not. The registry title is the
+ * FALLBACK — what a Text card with no file open is called — not a category
+ * stamped on every name.
+ *
+ * A group name still prefixes, because it is not redundant with anything: it
+ * is the name the user gave a multi-tab pane, and nothing else on the title
+ * bar says it.
+ *
  * - `metaTitle` alone when nothing else is present.
  * - `"<paneTitle> : <metaTitle>"` when the pane carries a group name.
- * - `"<base> : <override>"` when a card has published an override, or the
- *   override alone when there is no static base to prefix it with.
+ * - the override alone once one is published, or `"<paneTitle> : <override>"`
+ *   inside a named multi-tab pane.
  */
 export function composePaneTitleBarText(args: {
   /** The active card's registry title. May be empty. */
@@ -66,9 +81,8 @@ export function composePaneTitleBarText(args: {
   titleOverride?: string | null | undefined;
 }): string {
   const { metaTitle, paneTitle, titleOverride } = args;
-  const base = paneTitle ? `${paneTitle} : ${metaTitle}` : metaTitle;
-  if (!titleOverride) return base;
-  return base ? `${base} : ${titleOverride}` : titleOverride;
+  const name = titleOverride ? titleOverride : metaTitle;
+  return paneTitle && name ? `${paneTitle} : ${name}` : paneTitle || name;
 }
 
 /**

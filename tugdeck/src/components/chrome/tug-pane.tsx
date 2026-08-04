@@ -1360,14 +1360,12 @@ export function TugPane({
     ? activeCardRegistration.defaultMeta
     : meta;
 
-  // Per-card title override (cardTitleStore). When a card publishes an
-  // override (e.g. the Session card publishes its bound project path once a
-  // session is picked), the title bar composes it as
-  // `"<base> : <override>"`. A card with no static base title (e.g. the
-  // About card, whose title *is* its dynamic identity) declares an
-  // empty registry title, and the override then stands alone as the
-  // whole title. Subscription is keyed on the active card so a card
-  // swap repaints the title without prop drill.
+  // Per-card title override (cardTitleStore) — the name a card takes once its
+  // identity resolves: a Text card's filename, the Session card's bound
+  // project path. It REPLACES the registry title rather than prefixing it
+  // (`lib/pane-title.ts` owns that rule), so a card with a name of its own is
+  // called by it and nothing else. Subscription is keyed on the active card so
+  // a card swap repaints the title without prop drill.
   const activeCardTitleOverride = useSyncExternalStore(
     cardTitleStore.subscribe,
     useCallback(

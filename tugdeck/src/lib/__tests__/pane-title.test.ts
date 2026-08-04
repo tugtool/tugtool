@@ -67,31 +67,38 @@ describe("composePaneTitleBarText", () => {
     ).toBe("Notes : File");
   });
 
-  test("an override is appended to the base", () => {
+  test("an override REPLACES the registry title rather than extending it", () => {
+    // `File : changes-rework.md` was the old answer, and the first word said
+    // nothing the filename and the card's own document icon did not.
     expect(
-      composePaneTitleBarText({ metaTitle: "Dev", titleOverride: "my-repo" }),
-    ).toBe("Dev : my-repo");
+      composePaneTitleBarText({
+        metaTitle: "File",
+        titleOverride: "changes-rework.md",
+      }),
+    ).toBe("changes-rework.md");
   });
 
-  test("an override stands alone when the registry title is empty", () => {
-    // The Session card's case, and the whole reason this rule cannot be
-    // approximated by a fallback chain over card titles.
+  test("an override stands alone when the registry title is empty too", () => {
+    // The Session card's case. It used to reach this outcome by declaring an
+    // empty registry title; now it is simply the rule.
     expect(
       composePaneTitleBarText({ metaTitle: "", titleOverride: "test-repo/petit-thaw" }),
     ).toBe("test-repo/petit-thaw");
   });
 
-  test("all three compose in order", () => {
+  test("a group name still prefixes an override — it is redundant with nothing", () => {
     expect(
       composePaneTitleBarText({
         metaTitle: "File",
         paneTitle: "Notes",
         titleOverride: "draft.md",
       }),
-    ).toBe("Notes : File : draft.md");
+    ).toBe("Notes : draft.md");
   });
 
-  test("an empty override is not appended", () => {
+  test("an empty override leaves the registry title standing — it is the fallback", () => {
+    // A Text card with no file open is called "File". The registry title is
+    // what a card is called before it has a name, not a category prefix.
     expect(
       composePaneTitleBarText({ metaTitle: "File", titleOverride: "" }),
     ).toBe("File");
@@ -124,6 +131,17 @@ describe("paneTitleBarTextFor", () => {
     cardTitleStore.set("a", "test-repo/petit-thaw");
     expect(paneTitleBarTextFor(pane("p", ["a"]), cards)).toBe(
       "test-repo/petit-thaw",
+    );
+  });
+
+  test("a named card is called by its own name, not by its type", () => {
+    // The `File : ` prefix, retired. `pane-title-static` registers as "File",
+    // which is what an unnamed one is called — and only that.
+    const cards = byId(card("a", "pane-title-static"));
+    expect(paneTitleBarTextFor(pane("p", ["a"]), cards)).toBe("File");
+    cardTitleStore.set("a", "stacks-interaction.md");
+    expect(paneTitleBarTextFor(pane("p", ["a"]), cards)).toBe(
+      "stacks-interaction.md",
     );
   });
 
