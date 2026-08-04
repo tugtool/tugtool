@@ -62,6 +62,7 @@ import {
   resolvePermissionMode,
 } from "@/lib/permission-mode";
 import type { PermissionMode } from "@tugproto/inbound";
+import { PICKER_SHEET_ANCHOR } from "./picker-sheet-anchor";
 
 export interface PermissionModeChipProps {
   /**
@@ -251,6 +252,8 @@ export function usePermissionSheet({
       iconRole: "agent",
       description: "Choose how Claude handles file edits and commands.",
       onCommitDisposition: commitDisposition,
+      presentation: "bottom",
+      bottomAnchorSelector: PICKER_SHEET_ANCHOR,
       content: (close) => (
         <PermissionModeSheetBody
           currentMode={mode}

@@ -53,6 +53,7 @@ import type {
 import { resolvePickerModels } from "@/lib/model-picker-data";
 import { compressContextPhrase } from "@/lib/model-label";
 import { readModelCatalog } from "@/lib/model-catalog";
+import { PICKER_SHEET_ANCHOR } from "./picker-sheet-anchor";
 
 // ---------------------------------------------------------------------------
 // useModelPicker — the shared, card-hosted model sheet
@@ -117,6 +118,8 @@ export function useModelPicker({
       iconRole: "agent",
       description: "Choose the model for this session.",
       onCommitDisposition: commitDisposition,
+      presentation: "bottom",
+      bottomAnchorSelector: PICKER_SHEET_ANCHOR,
       content: (close) => (
         <ModelPickerSheetBody
           options={options}

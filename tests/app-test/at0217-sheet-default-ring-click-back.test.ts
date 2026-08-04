@@ -20,6 +20,7 @@
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
  * @covers tugdeck/src/components/tugways/tug-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-sheet.css
  * @covers tugdeck/src/components/tugways/tug-dialog-button.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/chrome/pane-focus-controller.ts

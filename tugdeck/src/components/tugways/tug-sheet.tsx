@@ -692,6 +692,20 @@ export interface TugSheetContentProps {
   /** Accessible label for the shade's resize grabber. @default "Resize" */
   grabberLabel?: string;
   /**
+   * Bottom-anchor the panel to the bottom edge of the element matching this
+   * selector (queried within the host pane chrome) instead of top-anchoring it
+   * under the pane title bar. The clip keeps its top pinned below the chrome
+   * and takes its bottom from the measured anchor edge, so the panel rests just
+   * above that edge and grows upward — the placement the Z4B picker sheets use
+   * to sit above the Session card's Z2 status bar, near the chips that open
+   * them. Pair with `presentation="bottom"` so the panel rises from the anchor
+   * rather than dropping from the title bar.
+   *
+   * A selector that matches nothing (a host without the anchor element) falls
+   * back to the default top anchor.
+   */
+  bottomAnchorSelector?: string;
+  /**
    * Selector (queried within the host pane chrome) for the element that goes
    * `inert` while the sheet is open. Defaults to `.tug-pane-body` — the
    * whole-pane-body modal contract. The `shade` presentation passes a
@@ -740,6 +754,7 @@ export function TugSheetContent({
   shadeAnchor = "top",
   shadePassive = false,
   grabberLabel = "Resize",
+  bottomAnchorSelector,
   modalScopeSelector,
   children,
 }: TugSheetContentProps) {
@@ -886,10 +901,53 @@ export function TugSheetContent({
   // overrides the CSS fallback. Geometry is read from the clip (never
   // transformed) so the entrance animation on the panel doesn't skew it — no
   // rAF/commit sequencing needed ([L05]).
+  // ---- Bottom anchor ----
+  //
+  // The element whose bottom edge the clip pins to, when the consumer asked for
+  // a bottom-anchored panel. Resolved from the pane chrome the same way
+  // `modalScopeSelector` resolves its inert region; null (no selector, or a
+  // selector that matches nothing) leaves the default top anchor in place.
+  const bottomAnchorEl = useMemo(
+    () =>
+      bottomAnchorSelector !== undefined
+        ? (cardEl?.querySelector(bottomAnchorSelector) ?? null)
+        : null,
+    [cardEl, bottomAnchorSelector],
+  );
+
+  // Write the clip's bottom edge from the measured anchor, in frame
+  // coordinates ([L06] — DOM write, no React state). The clip's top stays
+  // pinned under the chrome via CSS, so setting `bottom` makes the clip exactly
+  // the band between the title bar and the anchor; `tug-sheet.css` bottom-aligns
+  // the panel within it and caps its height to that band. Re-measured whenever
+  // the pane or the anchor resizes — dragging the Session card's sash and
+  // growing the Z2 telemetry row both change the anchor's height.
+  useLayoutEffect(() => {
+    const clip = clipRef.current;
+    if (clip === null || bottomAnchorEl === null || paneFrameEl === null) return;
+    const measure = (): void => {
+      const frame = paneFrameEl.getBoundingClientRect();
+      const anchor = bottomAnchorEl.getBoundingClientRect();
+      clip.style.bottom = `${Math.max(0, frame.bottom - anchor.bottom)}px`;
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(paneFrameEl);
+    observer.observe(bottomAnchorEl);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [bottomAnchorEl, paneFrameEl, mounted]);
+
   useLayoutEffect(() => {
     // The shade's height is fraction-driven CSS against its slot — no
     // canvas clamp applies.
     if (presentation === "shade") return;
+    // A bottom-anchored clip is bounded on both edges, so CSS caps the panel
+    // against the clip itself — there is no canvas bottom to measure toward.
+    if (bottomAnchorEl !== null) return;
     const content = sheetContentRef.current;
     const clip = clipRef.current;
     if (content === null || clip === null || paneFrameEl === null) return;
@@ -967,7 +1025,7 @@ export function TugSheetContent({
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [paneFrameEl, mounted, maxHostFraction, aspectLockContent, presentation]);
+  }, [paneFrameEl, mounted, maxHostFraction, aspectLockContent, presentation, bottomAnchorEl]);
 
   // ---- Drag-resize ([D15] resizable sheets) ----
   //
@@ -1509,7 +1567,11 @@ export function TugSheetContent({
     // a tall panel can paint into the canvas grid without being
     // clipped by the chrome's overflow:hidden.
     <TugSheetStackingContext.Provider value={true}>
-      <div className="tug-sheet-clip" ref={clipRef}>
+      <div
+        className="tug-sheet-clip"
+        ref={clipRef}
+        data-vertical-anchor={bottomAnchorEl !== null ? "bottom" : undefined}
+      >
         {/* A sheet is PANE-modal, never app-modal: its modality must not leak
             to other panes ([D15], pane-model). Same-pane modality is enforced
             by `inert` on this pane's `.tug-pane-body` (the card behind is
@@ -1786,6 +1848,12 @@ export interface ShowSheetOptions {
    * No-op when the sheet is not opened from within a cycle.
    */
   onCommitDisposition?: "retain" | "relinquish";
+  /**
+   * Bottom-anchor the panel above the named element instead of dropping it from
+   * the pane title bar — the Z4B pickers' placement above the Session card's Z2
+   * status bar. See {@link TugSheetContentProps.bottomAnchorSelector}.
+   */
+  bottomAnchorSelector?: string;
 }
 
 interface UseTugSheetState {
@@ -2122,6 +2190,7 @@ export function useTugSheet(): {
           hideHeader={options.hideHeader}
           hideHeaderRule={options.hideHeaderRule}
           onCommitDisposition={options.onCommitDisposition}
+          bottomAnchorSelector={options.bottomAnchorSelector}
         >
           {options.content(close)}
         </TugSheetContent>

@@ -51,6 +51,7 @@ import {
   formatEffortLabel,
   resolveEffortSupport,
 } from "@/lib/effort";
+import { PICKER_SHEET_ANCHOR } from "./picker-sheet-anchor";
 
 /**
  * Brief description per level, shown as the option's subtitle — paraphrasing
@@ -130,6 +131,8 @@ export function useEffortPicker({
       iconRole: "agent",
       description: "Choose how long Claude thinks before answering.",
       onCommitDisposition: commitDisposition,
+      presentation: "bottom",
+      bottomAnchorSelector: PICKER_SHEET_ANCHOR,
       content: (close) => (
         <EffortPickerSheetBody
           levels={levels}

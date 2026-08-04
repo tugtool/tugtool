@@ -73,6 +73,34 @@ body {
   pointer-events: none;
 }
 
+/* ---- Bottom-anchored clip ([data-vertical-anchor="bottom"]) ----
+ *
+ * The clip keeps its top pinned under the chrome (declared above) and takes its
+ * `bottom` from an inline px value measured off the consumer's anchor element
+ * (`bottomAnchorSelector` — see the bottom-anchor effect in tug-sheet.tsx), so
+ * the clip becomes exactly the band between the title bar and that edge. The
+ * panel sits at the BOTTOM of that band and its height is capped against the
+ * band rather than the canvas — which is why the JS canvas clamp stands down
+ * for this anchor.
+ *
+ * For the Session card's Z4B pickers the anchor is the view slot, so the panel
+ * rests just above the Z2 status bar (or above the find bar while it is open,
+ * matching where the Changes / History shades rise from) and grows upward,
+ * near the chips that opened it. */
+.tug-sheet-clip[data-vertical-anchor="bottom"] {
+  /* Both edges are set, so the height is derived — the `100vh` above must go. */
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.tug-sheet-clip[data-vertical-anchor="bottom"] .tug-sheet-content {
+  /* Mirror of the top anchor's `space-a auto 0`: the gap moves to the bottom. */
+  margin: 0 auto var(--tugx-sheet-space-a);
+  max-height: calc(100% - var(--tugx-sheet-space-b));
+}
+
 /* ---- Content panel (the sheet itself) ---- */
 
 .tug-sheet-content {
