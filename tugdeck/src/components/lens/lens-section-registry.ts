@@ -140,6 +140,25 @@ export function sectionFocusGroup(kind: string): string {
 }
 
 /**
+ * The band's stops, ordered ahead of the body's list (which is `0`) so the walk
+ * runs down the section the way the eye does: the band itself, then its actions
+ * cluster left-to-right, then the rows. Fractional orders keep the cluster
+ * between the filter field and the list without renumbering either.
+ *
+ * The band being a stop at all is what puts a section's fold within reach of the
+ * keyboard: arrow onto the band, arrow on to its chevron, Space. A collapsed
+ * section renders no body and no filter, so its band and chevron are the only
+ * stops it has — which is exactly enough to open it again.
+ */
+export const LENS_BAND_FOCUS_ORDER = -2;
+/** The band's filter field, when the section is filterable. */
+export const LENS_BAND_FILTER_FOCUS_ORDER = -1;
+/** A section's contributed header controls, left of the fold chevron. */
+export const LENS_BAND_ACTION_FOCUS_ORDER = -0.75;
+/** The fold chevron — the band's last stop, at its right edge. */
+export const LENS_BAND_FOLD_FOCUS_ORDER = -0.5;
+
+/**
  * Test seam — clear the registry so a test starts from a known state.
  * @internal
  */

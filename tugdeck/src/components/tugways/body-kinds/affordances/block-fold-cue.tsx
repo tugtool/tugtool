@@ -147,6 +147,15 @@ export interface BlockFoldCueProps {
    * layout stays stable across blocks; it just doesn't toggle.
    */
   disabled?: boolean;
+  /**
+   * Author the cue into a keyboard walk ([P02]) — forwarded to the button's own
+   * opt-in. A cue inside a transcript body leaves this off (the block's own
+   * surface decides how it is reached); the Lens section bands pass their
+   * section's group, which is what makes a fold reachable by arrow.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. */
+  focusOrder?: number;
   /** Optional className for cascade-scoped customization. */
   className?: string;
 }
@@ -167,6 +176,8 @@ export function BlockFoldCue({
   subtype = "icon-text",
   stabilizeScroll = true,
   disabled = false,
+  focusGroup,
+  focusOrder,
   className,
 }: BlockFoldCueProps): React.ReactElement {
   const buttonRef = React.useRef<HTMLButtonElement | null>(null);
@@ -239,6 +250,8 @@ export function BlockFoldCue({
       emphasis="ghost"
       size={size}
       disabled={disabled}
+      focusGroup={focusGroup}
+      focusOrder={focusOrder}
       aria-expanded={!collapsed}
       aria-label={collapsed ? ariaLabelExpand : ariaLabelCollapse}
       onClick={() => (stabilizeScroll ? stableClick(handleClick) : handleClick())}

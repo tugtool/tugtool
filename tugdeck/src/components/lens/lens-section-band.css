@@ -94,6 +94,15 @@
   flex-shrink: 0;
 }
 
+/* The band is a keyboard stop, so it wears the leaf ring. Drawn INSIDE its own
+   box: the band spans the rail's full width and the default outward offset would
+   put the ring's vertical runs outside the pane, where they are clipped away and
+   the ring reads as two loose horizontal lines. The inset also keeps it clear of
+   the seam rules above and below, which are the band's own edges. */
+.lens-section > .tool-call-header[data-key-view-kbd] {
+  outline-offset: calc(-1 * var(--tugx-focus-ring-width));
+}
+
 /* Drag ghost — the dragged section lifts while a reorder is live ([P08]):
    dimmed, raised above its siblings + the drop caret, and click-through so
    it never intercepts the pointer mid-drag. The follow-the-pointer + settle

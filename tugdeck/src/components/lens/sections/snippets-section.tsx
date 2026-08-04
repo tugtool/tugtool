@@ -89,7 +89,10 @@ import {
   getFilterVersion,
   subscribeFilterQuery,
 } from "@/components/lens/lens-filter-store";
-import { registerLensSection } from "../lens-section-registry";
+import {
+  LENS_BAND_ACTION_FOCUS_ORDER,
+  registerLensSection,
+} from "../lens-section-registry";
 import type { LensSectionHost } from "../lens-section-registry";
 import {
   LensSnippetsDataSource,
@@ -166,8 +169,14 @@ function SnippetsCollapsedSummary(): React.ReactElement {
 
 /** The header `+`: create a snippet and open it (the store sets `editingId`,
  *  the body's descend effect focuses it). `TugIconButton` carries the standard
- *  ghost hover / focus / active treatment the fold chevron wears. */
-function SnippetsHeaderActions(): React.ReactElement {
+ *  ghost hover / focus / active treatment the fold chevron wears, and is
+ *  authored into the band's walk beside it — a control on the band is reachable
+ *  by arrow like every other one there. */
+function SnippetsHeaderActions({
+  host,
+}: {
+  host: LensSectionHost;
+}): React.ReactElement {
   const store = getSnippetsStore();
   return (
     <TugIconButton
@@ -175,6 +184,8 @@ function SnippetsHeaderActions(): React.ReactElement {
       size="xs"
       aria-label="New snippet"
       title="New snippet"
+      focusGroup={host.focusGroup}
+      focusOrder={LENS_BAND_ACTION_FOCUS_ORDER}
       onClick={() => store.createSnippet(null)}
     />
   );
@@ -1051,7 +1062,7 @@ export function registerSnippetsSection(): void {
     filterable: true,
     glyph: <TextQuote size={14} />,
     collapsedSummary: () => <SnippetsCollapsedSummary />,
-    headerActions: () => <SnippetsHeaderActions />,
+    headerActions: (host) => <SnippetsHeaderActions host={host} />,
     body: (host) => <SnippetsBody host={host} />,
   });
 }

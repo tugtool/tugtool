@@ -77,7 +77,7 @@ const TEST_TIMEOUT_MS = 120_000;
 const SNIPPETS_LIST = ".lens-content .lens-snippets-list";
 const SNIPPETS_KBD = `${SNIPPETS_LIST}[data-key-view-kbd]`;
 const SNIPPETS_SECTION = '.lens-section[data-lens-section="snippets"]';
-const SNIPPETS_FILTER_KBD = `${SNIPPETS_SECTION} [data-testid="lens-section-filter"] input[data-key-view-kbd]`;
+const SNIPPETS_BAND_KBD = `${SNIPPETS_SECTION} > .tool-call-header[data-key-view-kbd]`;
 
 const SESSION_DECK_STATE = {
   cards: [
@@ -161,10 +161,11 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
             // The product ⌘L path: focus the Lens. With a real session
             // card open the Cards section is non-empty, so the ⌘L
             // seed lands there first; Tab — the product walk — moves
-            // the key view on to the Snippets section. Two presses: a
-            // filterable band's filter field is a Tab stop of its own,
-            // registered just ahead of its list, so the walk crosses
-            // Snippets' field before it reaches the rows.
+            // the key view on to the Snippets section. The band is a
+            // stop, and so is everything on it (the filter field, the
+            // `+`, the fold chevron), so the walk crosses the whole
+            // band before it reaches the rows — walked rather than
+            // counted, since what is pinned here is where it ENDS.
             await dispatch(app, "focus-lens");
             await app.waitForCondition<boolean>(
               `window.__tug.getActiveCardId() !== "A"`,
@@ -178,12 +179,22 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
               `document.querySelector("[data-key-view-kbd]") !== null`,
               { timeoutMs: 8_000 },
             );
+            // The band leads the section, so the first press lands there.
             await app.nativeKey("Tab");
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(SNIPPETS_FILTER_KBD)}) !== null`,
+              `document.querySelector(${JSON.stringify(SNIPPETS_BAND_KBD)}) !== null`,
               { timeoutMs: 5_000 },
             );
-            await app.nativeKey("Tab");
+            for (let i = 0; i < 8; i += 1) {
+              if (
+                await app.evalJS<boolean>(
+                  `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+                )
+              ) {
+                break;
+              }
+              await app.nativeKey("Tab");
+            }
             await app.waitForCondition<boolean>(
               `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
               { timeoutMs: 5_000 },

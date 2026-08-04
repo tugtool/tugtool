@@ -22,6 +22,14 @@
  * `lens-section-content` — never off the filtered count, which would disable
  * the field the moment a query narrowed to nothing.
  *
+ * The band is itself a stop in the section's focus group, ahead of the filter
+ * field, the section's own controls, and the fold chevron — which are stops too,
+ * in the order they are read. So the arrow walk that runs down a section's rows
+ * carries on into the next section's BAND, and folding a section is a keyboard
+ * gesture: arrow to the band, arrow on to its chevron, Space. A collapsed
+ * section renders no body, so its band and chevron are all it has — which is
+ * exactly what it takes to open it again.
+ *
  * Clicking the band (anywhere except its buttons / the filter field) focuses
  * the section's list: it expands a collapsed section and lands the key view on
  * the section's focus group via a keyboard `place()`, so the band is a
@@ -48,14 +56,23 @@ import { lensStore } from "@/lib/lens-store/lens-store";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { TugFilterField } from "@/components/tugways/tug-filter-field";
-import { useFocusManager } from "@/components/tugways/use-focusable";
+import {
+  useFocusable,
+  useFocusManager,
+} from "@/components/tugways/use-focusable";
 import { getFilterQuery, setFilterQuery } from "./lens-filter-store";
 import {
   getSectionContentVersion,
   sectionIsPopulated,
   subscribeSectionContent,
 } from "./lens-section-content";
-import { sectionFocusGroup } from "./lens-section-registry";
+import {
+  LENS_BAND_ACTION_FOCUS_ORDER,
+  LENS_BAND_FILTER_FOCUS_ORDER,
+  LENS_BAND_FOCUS_ORDER,
+  LENS_BAND_FOLD_FOCUS_ORDER,
+  sectionFocusGroup,
+} from "./lens-section-registry";
 import type {
   LensSectionDefinition,
   LensSectionHost,
@@ -91,6 +108,20 @@ export function LensSection({
   onBandPointerDown,
 }: LensSectionProps): React.ReactElement {
   const focusManager = useFocusManager();
+
+  // The band is a stop in its section's group, ahead of everything the body
+  // holds ([P02]) — so the arrow walk that runs down one section's rows arrives
+  // at the NEXT section's band rather than skipping straight into its list, and
+  // a collapsed section (which renders no body at all) is still somewhere the
+  // keyboard can go. A plain leaf: Space / Enter reach it as a synthesized
+  // press, which is the same `onBandClick` a pointer makes — enter the section,
+  // expanding it if it was folded. Folding is the chevron's, one stop further
+  // right.
+  const { focusableRef } = useFocusable({
+    id: `lens-band-${def.kind}`,
+    group: host.focusGroup,
+    order: LENS_BAND_FOCUS_ORDER,
+  });
 
   // Band click → focus this section's list. Filtered to the band's inert
   // surface: clicks on the fold chevron or the header-action buttons keep
@@ -158,6 +189,7 @@ export function LensSection({
       data-collapsed={collapsed ? "true" : "false"}
     >
       <BlockStrip
+        ref={focusableRef}
         altitude="section"
         className="tool-call-header"
         dataTestid="lens-section-band"
@@ -190,11 +222,12 @@ export function LensSection({
         actions={
           <>
             {/* The filter field leads the actions cluster while the section is
-                expanded. It registers at `focusOrder: -1` in the section's own
-                group with the default `accept` policy, so the Tab walk reaches
-                it just before that section's list: filter → list → next
-                section's filter → next list. It is still never the ⌘L seed
-                target, which addresses `<group>:0` by key — the list.
+                expanded. It registers in the section's own group with the
+                default `accept` policy, at the order that puts it between the
+                band and the actions it precedes on screen, so the walk runs the
+                band the way it reads: band → filter → controls → chevron →
+                list. It is still never the ⌘L seed target, which addresses
+                `<group>:0` by key — the list.
 
                 A section with NO items disables its field: nothing to filter,
                 so no caret and no Tab stop (`TugInput` declines to register a
@@ -216,7 +249,7 @@ export function LensSection({
                 disabled={!populated}
                 data-testid="lens-section-filter"
                 focusGroup={host.focusGroup}
-                focusOrder={-1}
+                focusOrder={LENS_BAND_FILTER_FOCUS_ORDER}
               />
             )}
             {/* Section-contributed controls sit LEFT of the chevron and,
@@ -233,6 +266,12 @@ export function LensSection({
               ariaLabelCollapse={`Collapse ${def.title}`}
               size="xs"
               subtype="icon"
+              // The chevron is the keyboard's fold: the band's last stop, and
+              // the only one a collapsed section still offers besides the band
+              // itself. Authored into the section's group rather than left an
+              // un-walked native button, so arrowing along the band reaches it.
+              focusGroup={host.focusGroup}
+              focusOrder={LENS_BAND_FOLD_FOCUS_ORDER}
               // The section body owns its own scrolling; a section fold is a
               // plain toggle, so skip the fold-cue's scroll-stabilization
               // machinery (a no-op here anyway).

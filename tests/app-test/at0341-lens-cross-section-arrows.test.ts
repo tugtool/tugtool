@@ -2,12 +2,13 @@
  * at0341-lens-cross-section-arrows.test.ts — arrows carry the Lens ring across
  * section boundaries, and an empty filter field is transparent to them.
  *
- * The Lens is one column of sections, each a focus group of `filter(-1) →
- * list(0)`, and it declares no spatial order — its linear walk order IS its
- * visual column. Before the universal liveliness net, an arrow off a list's
- * last row clamped there: Down from the bottom of Cards dead-ended instead of
- * continuing into Snippets. This pins the traversal end to end on the real
- * Lens with real keystrokes, reading the ENGINE key view (`data-key-view-kbd`).
+ * The Lens is one column of sections, each a focus group running band → filter
+ * → the section's own controls → fold chevron → list, and it declares no
+ * spatial order — its linear walk order IS its visual column. Before the
+ * universal liveliness net, an arrow off a list's last row clamped there: Down
+ * from the bottom of Cards dead-ended instead of continuing into Snippets. This
+ * pins the traversal end to end on the real Lens with real keystrokes, reading
+ * the ENGINE key view (`data-key-view-kbd`).
  *
  * It also pins the empty-input release: an empty `TugFilterField` spends its
  * arrows on movement (a field is not a wall), while a field holding a query
@@ -62,36 +63,34 @@ function priorCardDeck() {
 
 /**
  * Where the keyboard ring rests, as a short address a failure can be read
- * from: the Lens section that contains it, and whether it is that section's
- * filter field or its list.
+ * from: the Lens section that contains it, and which of that section's stops it
+ * is — the band itself, one of the band's controls (the fold chevron, a
+ * section's own `+`), its filter field, or its list.
  */
+const RING_ADDRESS = `(function(){
+  var el = document.querySelector('[data-key-view-kbd]');
+  if (el === null) return null;
+  var section = el.closest('.lens-section');
+  var kind = section === null ? "?" : (section.getAttribute("data-lens-section") || "?");
+  var part = el.closest('[data-slot="tug-filter-field"]') !== null
+    ? "filter"
+    : el.closest(".tug-list-view") !== null
+      ? "list"
+      : el.matches(".tool-call-header")
+        ? "band"
+        : el.closest(".tool-call-header") !== null
+          ? "band-control"
+          : "other";
+  return kind + ":" + part;
+})()`;
+
 async function ringAddress(app: App): Promise<string | null> {
-  return app.evalJS<string | null>(
-    `(function(){
-      var el = document.querySelector('[data-key-view-kbd]');
-      if (el === null) return null;
-      var band = el.closest('.lens-section');
-      var kind = band === null ? "?" : (band.getAttribute("data-lens-section") || "?");
-      var part = el.closest('[data-slot="tug-filter-field"]') !== null
-        ? "filter"
-        : el.closest(".tug-list-view") !== null ? "list" : "other";
-      return kind + ":" + part;
-    })()`,
-  );
+  return app.evalJS<string | null>(RING_ADDRESS);
 }
 
 async function waitRing(app: App, address: string): Promise<void> {
   await app.waitForCondition<boolean>(
-    `(function(){
-      var el = document.querySelector('[data-key-view-kbd]');
-      if (el === null) return false;
-      var band = el.closest('.lens-section');
-      var kind = band === null ? "?" : (band.getAttribute("data-lens-section") || "?");
-      var part = el.closest('[data-slot="tug-filter-field"]') !== null
-        ? "filter"
-        : el.closest(".tug-list-view") !== null ? "list" : "other";
-      return (kind + ":" + part) === ${JSON.stringify(address)};
-    })()`,
+    `${RING_ADDRESS} === ${JSON.stringify(address)}`,
     { timeoutMs: 3_000 },
   );
 }
@@ -138,13 +137,25 @@ describe.skipIf(!SHOULD_RUN)("at0341 — Lens arrows cross section boundaries", 
           // The Cards list holds a single row, so its cursor is already at the
           // bottom: Down runs off the list's edge. Before the net this clamped
           // and the ring never left the section. Now it walks on to the next
-          // stop in the Lens's column — the Snippets section's filter field.
+          // stop in the Lens's column — the Snippets BAND, which is where that
+          // section starts.
+          await app.nativeKey("ArrowDown");
+          await waitRing(app, "snippets:band");
+
+          // Down along the band, in the order it reads: the filter field, then
+          // the band's controls (the `+`, then the fold chevron).
           await app.nativeKey("ArrowDown");
           await waitRing(app, "snippets:filter");
 
           // The field is empty, so it spends the arrow on movement rather than
           // holding it for a caret that has nothing to move: Down passes
-          // straight through into the list below it.
+          // straight through to the controls beside it.
+          await app.nativeKey("ArrowDown");
+          await waitRing(app, "snippets:band-control");
+          await app.nativeKey("ArrowDown");
+          await waitRing(app, "snippets:band-control");
+
+          // Off the band's last control and into the rows.
           await app.nativeKey("ArrowDown");
           await waitRing(app, "snippets:list");
 
@@ -158,16 +169,24 @@ describe.skipIf(!SHOULD_RUN)("at0341 — Lens arrows cross section boundaries", 
           ).toContain("row-1");
 
           // Up retraces exactly: back to the list's first row, then off its top
-          // edge onto the section's own filter field, then back into Cards.
+          // edge back along the band — controls, field, band — and into Cards.
           await app.nativeKey("ArrowUp");
           await waitRing(app, "snippets:list");
           await app.nativeKey("ArrowUp");
+          await waitRing(app, "snippets:band-control");
+          await app.nativeKey("ArrowUp");
+          await waitRing(app, "snippets:band-control");
+          await app.nativeKey("ArrowUp");
           await waitRing(app, "snippets:filter");
+          await app.nativeKey("ArrowUp");
+          await waitRing(app, "snippets:band");
           await app.nativeKey("ArrowUp");
           await waitRing(app, "cards:list");
 
           // A filter field with a query is a different animal: the caret owns
           // the arrows again. Land on the field and type.
+          await app.nativeKey("ArrowDown");
+          await waitRing(app, "snippets:band");
           await app.nativeKey("ArrowDown");
           await waitRing(app, "snippets:filter");
           await app.nativeType("row");
