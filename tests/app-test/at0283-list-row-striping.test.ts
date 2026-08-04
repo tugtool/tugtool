@@ -50,6 +50,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { launchTugApp } from "./_harness";
+import { appIsActive } from "./_harness/selectors";
 import {
   mkTempTugbank,
   rmTempTugbank,
@@ -122,7 +123,11 @@ describe.skipIf(!SHOULD_RUN)("at0283 — list row striping + text measure", () =
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
+          // Gate on the app-active projection, the bit `focus-ring.css`
+          // suppresses every mark under. NOT `document.hasFocus()`: a
+          // background-mode harness window never activates, so that never
+          // becomes true (see `appIsActive`).
+          await app.waitForCondition<boolean>(appIsActive(), {
             timeoutMs: 6_000,
           });
           await app.dispatchControlAction("focus-lens");

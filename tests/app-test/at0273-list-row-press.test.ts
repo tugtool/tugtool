@@ -31,6 +31,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { launchTugApp } from "./_harness";
+import { appIsActive } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -89,7 +90,10 @@ describe.skipIf(!SHOULD_RUN)("at0273 — a list row answers the press", () => {
           `document.querySelector(${JSON.stringify(ROW)}) !== null`,
           { timeoutMs: 8_000 },
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, {
+        // Gate on the app-active projection, the bit `focus-ring.css` suppresses
+        // every mark under. NOT `document.hasFocus()`: a background-mode harness
+        // window never activates, so that never becomes true (see `appIsActive`).
+        await app.waitForCondition<boolean>(appIsActive(), {
           timeoutMs: 6_000,
         });
 

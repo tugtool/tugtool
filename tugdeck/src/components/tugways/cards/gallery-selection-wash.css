@@ -20,11 +20,14 @@
      paint at, and the number this card exists to choose. `--sw-src` is which
      blue it mixes from (§2 is the evidence).
 
-     The starting values are a hypothesis, not a landing: 22% of the VIVID
-     selection blue, which is roughly where a fill stops being a slab and
-     starts being a mark. The floor is set by §5 (the mark has to survive the
-     list losing focus with nothing else on the surface) and the ceiling by §1
-     (the first rung that recolours the row instead of marking it).
+     LANDED 2026-08-04: 18% of the VIVID selection blue, one number for all six
+     themes and both modes. It reads in §5 with the container wash and the
+     cursor bar both gone, and it is still low enough in §1 that the row's own
+     title and muted subtitle keep their colours — which is what let the shipped
+     row drop its foreground flip entirely. The rungs live in the themes now
+     (`--tug7-surface-selection-primary-normal-quiet-*`, the `selected` hue at
+     a: 180 / 240 / 320); this card keeps its own knob so the neighbouring
+     values stay walkable.
 
      Note the asymmetry with the focus wash, and that it is expected: the
      focus wash is a CONTAINER mark competing with nothing, so it lives at the
@@ -32,7 +35,7 @@
      stay distinguishable from its unmarked neighbours across a divider, so
      its floor is higher. "Same register" does not mean "same number."
      ================================================================== */
-  --sw-pick: 22%;
+  --sw-pick: 18%;
   --sw-src: var(--sw-src-vivid);
 
   /* The two candidate SOURCES (§2). The `selected` surface is the full-chroma
@@ -159,9 +162,9 @@
 }
 
 /* Hairline dividers, so a selection mark is judged with the neighbours it has
-   to be distinguishable from. The shipped list drops the dividers touching a
-   selected block; that is a slab affordance, and whether a wash still wants it
-   is one of the things §1 answers. */
+   to be distinguishable from. Dropping the dividers around a selected row was a
+   slab affordance; the shipped list keeps them now, for the reason §1 makes
+   plain — a wash describes the row's extent and needs its boundaries drawn. */
 .cg-selection-wash .sw-row + .sw-row {
   border-block-start: 1px solid
     var(--tug7-element-global-border-normal-muted-rest);

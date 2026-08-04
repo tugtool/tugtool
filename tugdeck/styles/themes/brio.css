@@ -212,46 +212,45 @@ body {
 
   /* Selection */
   --tug7-element-selection-text-normal-plain-rest: --tug-color(indigo, l: 930, c: 20);
-  --tug7-surface-selection-primary-normal-plain-inactive: --tug-color(gray, l: 600, a: 250);
+  --tug7-surface-selection-primary-normal-plain-inactive: --tug-color(gray, l: 600, a: 180);
   --tug7-surface-selection-primary-normal-plain-rest: --tug-color(cobalt, l: 810, c: 200, a: 600);
   /* UI selection — the selection axis (blue): its OWN fixed color marking the
      chosen item, independent of the accent/action roles and of the focus axis
      (orange). The same blue carries the toggle `on` role (group / checkbox /
      switch on-states) above. Two intensities for two contexts: `selected` is
      the vibrant fill for a *transient*, small target (the menus' highlighted
-     item); `quiet` is the calmer cousin for a *persistent*, large fill
-     (list/flush rows) where the vibrant blue would glare. Both carry near-white
-     selected text. Text/character selection (`plain`, above) stays blue. */
+     item); `quiet` is the same hue at low ALPHA — a wash for a *persistent*,
+     large mark (list/flush rows), where an opaque fill would glare and would
+     force the row to recolor its own text. Only `selected` carries near-white
+     text; a washed row keeps its own. Text/character selection (`plain`,
+     above) stays blue. */
   --tug7-surface-selection-primary-normal-selected-rest: --tug-color(cobalt, l: 670, c: 380);
   --tug7-surface-selection-primary-normal-selected-hover: --tug-color(cobalt, l: 760, c: 260);
-  /* The calm row-selection blue. Toned well back from the former vivid i:62/t:40
-     — that lit up too many pixels. This is now the "selected color" itself; the
-     list-view cursor tint is a reduced (lighter) color-mix of it, so the two read
-     as one ramp. Lower chroma + darker keeps a clearly-"chosen" fill that no
-     longer glares. Sole consumer is the list row, so this is safe to tune here. */
-  --tug7-surface-selection-primary-normal-quiet-rest: --tug-color(cobalt, l: 510, c: 180);
-  --tug7-surface-selection-primary-normal-quiet-hover: --tug-color(cobalt, l: 570, c: 180);
-  /* The "mouse is on the selected row" fill — a selected row gains this on mouse
-     hover. A moderate, deliberate step above `quiet-rest` so the bit reads
-     clearly, well short of the vibrant `selected` ramp (which glared). The list's
-     selection fills are now two rungs — quiet-rest (selected) < quiet-strong
-     (selected + mouse hover); the keyboard cursor is a leading-edge bar (not a
-     fill) and unselected-row hover is a neutral graze, so neither rides this
-     blue. */
-  --tug7-surface-selection-primary-normal-quiet-strong: --tug-color(cobalt, l: 600, c: 260);
+  /* The row-selection WASH — the `selected` hue above at low alpha, three rungs:
+     rest (selected) < hover (selected + mouse) < strong (the press preview).
+     A committed row selection is a mark laid OVER the row, not a slab painted in
+     place of it, so the row keeps its own title and muted-subtitle colors and
+     the hierarchy between them survives being chosen. Alpha rather than a
+     toned-down opaque cousin, because the wash has to composite over whatever
+     the row sits on — a striping band, the container focus wash, the dialog
+     surface — which an opaque fill cannot. Sole consumer is the list row. */
+  --tug7-surface-selection-primary-normal-quiet-rest: --tug-color(cobalt, l: 670, c: 380, a: 180);
+  --tug7-surface-selection-primary-normal-quiet-hover: --tug-color(cobalt, l: 670, c: 380, a: 240);
+  --tug7-surface-selection-primary-normal-quiet-strong: --tug-color(cobalt, l: 670, c: 380, a: 320);
   /* Demoted selection — a selected list row whose descended trailing
      accessory holds the keyboard key view yields its fill to the live
      control: the row drops to a calmer wash TINGED BY THE ACCESSORY'S ROLE
      (a danger trash murmurs red under its filled-danger button), so the row
      whispers what the descended control will do without fighting it. Same
-     recipe as `quiet` but toned back (lower intensity) and role-hued;
-     stays dark enough for the near-white selected text. One token per
+     recipe as `quiet` but at an alpha rung BELOW its resting one, and
+     role-hued; a demoted mark that outweighed the selection it demotes
+     from would invert the very emphasis this exists to yield. One token per
      focus-ring-axis role; sole consumer is the list row's demotion rules. */
-  --tug7-surface-selection-primary-demoted-action-rest: --tug-color(cobalt, l: 480, c: 100);
-  --tug7-surface-selection-primary-demoted-danger-rest: --tug-color(red, l: 440, c: 200);
-  --tug7-surface-selection-primary-demoted-accent-rest: --tug-color(orange, l: 500, c: 120);
-  --tug7-surface-selection-primary-demoted-data-rest: --tug-color(teal, l: 520, c: 140);
-  --tug7-surface-selection-primary-demoted-agent-rest: --tug-color(violet, l: 460, c: 140);
+  --tug7-surface-selection-primary-demoted-action-rest: --tug-color(cobalt, l: 480, c: 100, a: 130);
+  --tug7-surface-selection-primary-demoted-danger-rest: --tug-color(red, l: 440, c: 200, a: 130);
+  --tug7-surface-selection-primary-demoted-accent-rest: --tug-color(orange, l: 500, c: 120, a: 130);
+  --tug7-surface-selection-primary-demoted-data-rest: --tug-color(teal, l: 520, c: 140, a: 130);
+  --tug7-surface-selection-primary-demoted-agent-rest: --tug-color(violet, l: 460, c: 140, a: 130);
   --tug7-element-selection-text-normal-selected-rest: --tug-color(indigo, l: 960, c: 20);
 
   /* tug-text-editor selection overlay — saturated blue painted as a layer behind

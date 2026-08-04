@@ -33,10 +33,6 @@
  * | --tugx-list-row-pill-rest-border     | --tugx-list-row-pill-rest-bg         | control | .tug-list-row[data-variant="pill"] (border)      |
  * | --tugx-list-row-text                 | --tugx-list-row-pill-hover-bg        | content | .tug-list-row[data-variant="pill"]:hover (color) |
  * | --tugx-list-row-pill-hover-border    | --tugx-list-row-pill-hover-bg        | control | .tug-list-row[data-variant="pill"]:hover (border)|
- * | --tugx-list-row-selected-text        | --tugx-list-row-selected-bg          | content | .tug-list-row[data-selected="true"] (color)      |
- * | --tugx-list-row-selected-text        | --tugx-list-row-selected-hover-bg    | content | .tug-list-row[data-selected="true"]:hover (color)|
- * | --tugx-list-row-selected-text        | --tugx-list-row-pressed-bg           | content | .tug-list-row:active (color)                     |
- * | --tugx-list-row-selected-text        | --tugx-list-row-selected-pressed-bg  | content | .tug-list-row[data-selected="true"]:active (color)|
  * | --tugx-list-row-pill-rest-border     | --tugx-list-row-selected-bg          | control | .tug-list-row[data-variant="pill"][data-selected] (border) |
  * | --tugx-list-row-selected-accent-border | --tugx-list-row-selected-bg        | control | .tug-list-row[data-selected][data-selected-accent] (accent border) |
  * | --tugx-list-row-radio-dot            | --tugx-list-row-radio-on             | control | .tug-list-row-check[data-state="shown"] .tug-list-row-radio-dot (dot on filled ring) |
@@ -55,10 +51,6 @@
   --tugx-list-row-pill-rest-border     | --tugx-list-row-pill-rest-bg      | control
   --tugx-list-row-text                 | --tugx-list-row-pill-hover-bg     | content
   --tugx-list-row-pill-hover-border    | --tugx-list-row-pill-hover-bg     | control
-  --tugx-list-row-selected-text        | --tugx-list-row-selected-bg       | content
-  --tugx-list-row-selected-text        | --tugx-list-row-selected-hover-bg | content
-  --tugx-list-row-selected-text        | --tugx-list-row-pressed-bg        | content
-  --tugx-list-row-selected-text        | --tugx-list-row-selected-pressed-bg | content
   --tugx-list-row-pill-rest-border     | --tugx-list-row-selected-bg       | control
   --tugx-list-row-selected-accent-border | --tugx-list-row-selected-bg     | control
   --tugx-list-row-radio-dot            | --tugx-list-row-radio-on          | control
@@ -135,39 +127,40 @@ body {
   --tugx-list-row-pill-hover-bg:     var(--tug7-surface-control-primary-outlined-action-hover);
   --tugx-list-row-pill-hover-border: var(--tug7-element-control-border-outlined-action-hover);
 
-  /* Selection ramp — committed row selection is the native fill in the role
-     color ([P01]/[P03]: selection is the role-resolved blue, unified with the
-     toggle "on" / filled-action blue). A row selection sits persistently across
-     a large fill, so it rides the `selection` family's calmer `quiet` sibling
-     rather than the vibrant `selected` blue (which the popup menus use for their
-     small, transient highlight). The quiet ramp is toned back per theme at the
-     source (`--tug7-surface-selection-primary-normal-quiet-*` in brio/harmony) —
-     the list row is its SOLE consumer — so it is calm in both themes without an
-     alpha `color-mix`, which washed it out over the light harmony surface.
-     `-hover` steps up within the quiet ramp. Distinct from the `selection ...
-     plain` family (the caret text-selection highlight in editor / code /
-     markdown / pane). [L17] one-hop aliases. */
+  /* Selection ramp — committed row selection is a WASH in the role color
+     ([P01]/[P03]: selection is the role-resolved blue, unified with the toggle
+     "on" / filled-action blue), not an opaque fill. The `selection` family's
+     `quiet` siblings are that blue at three alpha rungs; the vibrant `selected`
+     blue stays where it belongs, on the popup menus' small transient highlight.
+     The list row is the quiet ramp's SOLE consumer, so the rungs are authored
+     per theme at the source rather than mixed here — a local `color-mix` cannot
+     be tuned per theme, and washed out over the light harmony surface when it
+     was tried.
+
+     A wash rather than a fill because the row has to stay READABLE while it is
+     chosen: at 18% the title keeps its own color and the muted subtitle keeps
+     its muted one, so the hierarchy inside the row survives selection instead
+     of being flattened to a single foreground. It also composites — over a
+     striping band, over the container focus wash, over whichever surface the
+     list sits on — which an opaque slab cannot.
+
+     Distinct from the `selection … plain` family (the caret text-selection
+     highlight in editor / code / markdown / pane). [L17] one-hop aliases. */
   --tugx-list-row-selected-bg:            var(--tug7-surface-selection-primary-normal-quiet-rest);
-  /* Selected + pointer (mouse hover OR keyboard cursor) — the top rung. A
-     moderate step above the resting selected fill so a pointer on a selected row
-     reads clearly, well short of the vibrant `selected` ramp that glared. */
-  --tugx-list-row-selected-hover-bg:      var(--tug7-surface-selection-primary-normal-quiet-strong);
-  --tugx-list-row-selected-text:          var(--tug7-element-selection-text-normal-selected-rest);
+  /* Selected + pointer (mouse hover OR keyboard cursor) — one rung up. Enough
+     that a pointer on a selected row reads as a change, small enough that it
+     never reads as a different mark. */
+  --tugx-list-row-selected-hover-bg:      var(--tug7-surface-selection-primary-normal-quiet-hover);
   /* Pressed — the pointer is DOWN on the row, before the click commits. The
      press is a PREVIEW of the selection, so it borrows the selection's own hue
      rather than deepening the neutral hover graze: the row answers the finger
      in the same language the click will leave behind. It is the top rung of the
-     quiet ramp, so a press reads clearly against the neutral hover the pointer
-     is already showing. A row that is ALREADY selected presses one ramp further
-     — into the vibrant `selected` blue the popup menus use — since a press onto
-     the resting quiet fill would land on the fill it is already wearing. */
+     quiet ramp, which is what lets ONE token serve both presses — landing on an
+     unselected row it sits above the neutral graze the pointer is already
+     showing, and on an already-selected row it sits above that row's own
+     resting and hover washes. */
   --tugx-list-row-pressed-bg:             var(--tug7-surface-selection-primary-normal-quiet-strong);
-  --tugx-list-row-selected-pressed-bg:    var(--tug7-surface-selection-primary-normal-selected-rest);
-  /* The content column's tone while pressed — the selection's, since the press
-     wears the selection's fill. A read-only list repoints this to
-     `currentColor`, which for the `color` property means "keep what you
-     inherited": no flip, because there is no press fill to flip against. */
-  --tugx-list-row-pressed-text:           var(--tugx-list-row-selected-text);
+  --tugx-list-row-selected-pressed-bg:    var(--tug7-surface-selection-primary-normal-quiet-strong);
   /* How long the press takes to LEAVE. Arriving is `-instant`: a press must be
      under the finger on the frame the button goes down, and only the release
      is a thing to watch. */
@@ -229,8 +222,7 @@ body {
 /* Leading single-select checkmark column. Fixed width, reserved on
    every row (empty when unselected) so titles align whether or not a
    row carries the mark. The check inherits the row's text color
-   (currentColor), so a selected row's `--tugx-list-row-selected-text`
-   tints it. */
+   (currentColor), which a selected row no longer changes. */
 .tug-list-row-check {
   flex: 0 0 auto;
   display: inline-flex;
@@ -347,34 +339,9 @@ body {
    override would have to guess them. What remains is the neutral hover graze
    and the list-view's keyboard cursor: orthogonal channels, untouched.
 
-   ---- Indicator on a SELECTED row — invert to the contrast tone ----
-   The whole list speaks one blue, so on a selected row the row fill IS that blue
-   and a blue-filled indicator (radio dot / checkbox box) would vanish into it.
-   This is the one place a second tone is essential: switch the shown indicator to
-   the high-contrast selected-text color (the same light tone the row's label
-   uses) over a transparent interior, so it reads as a crisp light radio / checkbox
-   sitting on the blue fill — legible in every selected state (rest, hover,
-   cursor), since all of them set `data-selected`. Placed after the fill rules so
-   it wins their specificity tie.
-   @tug-renders-on: --tugx-list-row-selected-bg */
-.tug-list-row[data-selected="true"]:not([data-selection-surface="control"])
-  .tug-list-row-check[data-state="shown"]
-  .tug-list-row-radio {
-  background-color: transparent;
-  border-color: var(--tugx-list-row-selected-text);
-}
-.tug-list-row[data-selected="true"]:not([data-selection-surface="control"])
-  .tug-list-row-check[data-state="shown"]
-  .tug-list-row-radio-dot {
-  background-color: var(--tugx-list-row-selected-text);
-}
-.tug-list-row[data-selected="true"]:not([data-selection-surface="control"])
-  .tug-list-row-check[data-state="shown"]
-  .tug-list-row-checkbox {
-  background-color: transparent;
-  border-color: var(--tugx-list-row-selected-text);
-  color: var(--tugx-list-row-selected-text);
-}
+   The shown indicator needs no selected-state arm. It keeps its filled blue on a
+   selected row: the row's own mark is an 18% wash of the same hue, not an opaque
+   slab of it, so there is nothing for a blue dot or box to vanish into. */
 
 /* The content column flexes to fill the row; `min-width: 0` lets a
    long title truncate instead of forcing the row wider than its
@@ -400,8 +367,7 @@ body {
    `maxLines`). The row only re-asserts the title's `color`: `TugLabel`
    would otherwise paint its own field-label color, but a row title
    must inherit the row's resolved color so `pill` uses its explicit
-   text color and `flush` inherits the host surface — and so a selected
-   row's `--tugx-list-row-selected-text` cascades down. The descendant
+   text color and `flush` inherits the host surface. The descendant
    selector outranks `.tug-label`'s own color rule. */
 .tug-list-row .tug-list-row-title {
   color: inherit;
@@ -413,17 +379,10 @@ body {
    for consumers that need to bend one list's subtitle (see the skills
    sheet); it declares no typography of its own. */
 
-/* A selected row recolors its ENTIRE content column — title, subtitle,
-   and any meta — to the selected-text color, so every line stays legible
-   on the selection fill. Without this the muted subtitle / meta keep
-   their own `TugLabel` color and read poorly on the fill (acutely in the
-   light theme, where a dark muted subtitle sits on the blue). The
-   two-class + attribute selector outranks `TugLabel`'s own
-   `.tug-label-emphasis-calm` color rule. */
-.tug-list-row[data-selected="true"]:not([data-selection-surface="control"]) .tug-list-row-content,
-.tug-list-row[data-selected="true"]:not([data-selection-surface="control"]) .tug-list-row-content .tug-label {
-  color: var(--tugx-list-row-selected-text);
-}
+/* A selected row recolors NOTHING in its content column. The selection mark is
+   a wash, so the title keeps its own color and the subtitle keeps its muted one,
+   and the hierarchy between them survives being chosen — which is the whole
+   reason the mark is a wash and not a fill. */
 
 /* ---- Monospace, dense content row (`mono`) ----
    A standard row type for monospace text — file paths, ids, code-ish
@@ -477,7 +436,6 @@ body {
 
 .tug-list-row[data-variant="flush"][data-selected="true"]:not([data-selection-surface="control"]) {
   background-color: var(--tugx-list-row-selected-bg);
-  color: var(--tugx-list-row-selected-text);
 }
 
 /* Selected + hover — a distinct, stronger fill so a hovered selected
@@ -515,7 +473,6 @@ body {
 .tug-list-row[data-variant="pill"][data-selected="true"]:not([data-selection-surface="control"]) {
   background-color: var(--tugx-list-row-selected-bg);
   border-color: var(--tugx-list-row-pill-rest-border);
-  color: var(--tugx-list-row-selected-text);
 }
 
 /* Selected + hover — see the `flush` counterpart for the specificity
@@ -586,16 +543,9 @@ body {
   transition-duration: var(--tug-motion-duration-instant);
 }
 
-/* The content column follows the layer, exactly as it does for a selected row:
-   `TugLabel` paints its own title / muted-subtitle colors, so the row's own
-   `color` alone would leave the text standing at its resting tone on a
-   saturated fill. The flip is instant both ways — it rides the press's arrival
-   and steps aside at the release, leaving the fade to the fill, which is what
-   the eye is following. */
-.tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active)) .tug-list-row-content,
-.tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active)) .tug-list-row-content .tug-label {
-  color: var(--tugx-list-row-pressed-text);
-}
+/* The content column does not follow the layer — the press wash is a rung of the
+   same ramp the selection rests on, so the text that reads through the resting
+   mark reads through the press too. */
 
 /* ---- Accent selection border (opt-in via `selectedAccent`) ----
    Drawn only on a selected row carrying `data-selected-accent="true"`.

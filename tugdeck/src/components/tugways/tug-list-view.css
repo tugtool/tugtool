@@ -415,18 +415,14 @@ body {
    selection inside a read-only listing drags across rows with the button down,
    which must stay a quiet gesture.
 
-   Blanking it is done on the row's TOKENS rather than on its rules. A press
-   paints through a layer and a text flip whose selectors carry every guard the
-   press needs; out-ranking that pair from here would mean restating all of it,
-   and restating the resting text color the flip returns to. Repointing the
-   three tokens says the same thing once, at any specificity: no fill, and
-   `currentColor` for the text, which on the `color` property means "keep what
-   you inherited" — so a selected read-only row keeps its selection tone and an
-   ordinary one keeps the host surface's. */
+   Blanking it is done on the row's TOKENS rather than on its rules. The press
+   paints through a layer whose selector carries every guard the press needs;
+   out-ranking it from here would mean restating all of that. Repointing the two
+   fills says the same thing once, at any specificity. Nothing to say about the
+   text: the press is a wash, so no row flips its foreground for it. */
 .tug-list-view[data-interactive="false"] .tug-list-row {
   --tugx-list-row-pressed-bg: transparent;
   --tugx-list-row-selected-pressed-bg: transparent;
-  --tugx-list-row-pressed-text: currentColor;
 }
 
 /* ---- Row layout — opt-in via the `rowLayout` prop ----
@@ -479,41 +475,12 @@ body {
   border-bottom: none;
 }
 
-/* Selected rows read as a clean block — drop the hairline divider that touches
-   them (the selected cell's own bottom divider, and the bottom divider of the
-   preceding cell), for either divider source (`rowLayout="flush"` or
-   `rowSeparator="on"`). Keyed off TWO selection signals: the wrapper's
-   `data-selected` (the list-owned cursor) AND the rendered row's
-   `.tug-list-row[data-selected]`. The picker drives selection through cell
-   context, not the list cursor, so its default/unfocused selected row paints the
-   caret via the inner `.tug-list-row` while the wrapper carries no attribute —
-   the inner-row clause is what suppresses the divider in that case (e.g. the
-   default "New session" row). MUST come after the draw rule above. Color only —
-   the 1px is kept, so neither the row height nor the cursor bar shifts.
-
-   A CONTROL-selection list (`selectionSurface="control"`) is excluded outright,
-   and so is any individual control-selection row: neither paints a fill, so
-   there is no block for a divider to interrupt — every hairline stays drawn.
-   The list-level exclusion is the load-bearing one, because the wrapper's
-   `data-selected` tracks the list's OWN selected index (which under a focus
-   group moves with Space/Enter commits), and suppressing dividers around it
-   reads as separators randomly going missing. */
-.tug-list-view[data-row-layout="flush"]:not([data-selection-surface="control"]) .tug-list-view-cell[data-selected="true"],
-.tug-list-view[data-row-layout="flush"]:not([data-selection-surface="control"])
-  .tug-list-view-cell:has(.tug-list-row[data-selected="true"]:not([data-selection-surface="control"])),
-.tug-list-view[data-row-layout="flush"]:not([data-selection-surface="control"])
-  .tug-list-view-cell:has(+ .tug-list-view-cell[data-selected="true"]),
-.tug-list-view[data-row-layout="flush"]:not([data-selection-surface="control"])
-  .tug-list-view-cell:has(+ .tug-list-view-cell .tug-list-row[data-selected="true"]:not([data-selection-surface="control"])),
-.tug-list-view[data-row-separator="on"]:not([data-selection-surface="control"]) .tug-list-view-cell[data-selected="true"],
-.tug-list-view[data-row-separator="on"]:not([data-selection-surface="control"])
-  .tug-list-view-cell:has(.tug-list-row[data-selected="true"]:not([data-selection-surface="control"])),
-.tug-list-view[data-row-separator="on"]:not([data-selection-surface="control"])
-  .tug-list-view-cell:has(+ .tug-list-view-cell[data-selected="true"]),
-.tug-list-view[data-row-separator="on"]:not([data-selection-surface="control"])
-  .tug-list-view-cell:has(+ .tug-list-view-cell .tug-list-row[data-selected="true"]:not([data-selection-surface="control"])) {
-  border-bottom-color: transparent;
-}
+/* A selected row keeps every hairline that touches it. Dropping them was a SLAB
+   affordance: an opaque fill swallowed the divider's ends and left them reading
+   as scars across the block, so the block was drawn clean instead. A selection
+   wash has the opposite need — it is a tint over the row, and the row's extent
+   is exactly what the tint has to describe, so the boundaries have to stay
+   drawn or the wash bleeds into its neighbours. */
 
 /* `pill` — discrete rounded rows: a small inter-row gap separates
    them and no divider is drawn, since each `TugListRow` paints its

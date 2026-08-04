@@ -166,14 +166,6 @@ body {
     var(--tug7-element-global-border-normal-accent-rest) 55%,
     transparent
   );
-  /* On a selected row the fill is already the accent, so an accent mark would
-     vanish into it. The mark inverts instead: the row's own on-selection text
-     color becomes the mark's background, and the fill shows through as its
-     foreground. Inverting an existing pair preserves its contrast ratio, and
-     `--tugx-list-row-selected-text` on `--tugx-list-row-selected-bg` is already
-     a checked `content` pairing — so this needs no new pairing of its own. */
-  --tugx-filter-mark-selected-bg: var(--tugx-list-row-selected-text);
-  --tugx-filter-mark-selected-text: var(--tugx-list-row-selected-bg);
 }
 
 /* @tug-renders-on: --tugx-filter-mark-bg */
@@ -188,8 +180,6 @@ body {
   margin-inline: -1px;
 }
 
-/* @tug-renders-on: --tugx-filter-mark-selected-bg */
-.tug-list-row[data-selected="true"] .tug-filter-mark {
-  background-color: var(--tugx-filter-mark-selected-bg);
-  color: var(--tugx-filter-mark-selected-text);
-}
+/* A selected row needs no arm of its own. The row's selection mark is an 18%
+   wash of the selection hue, not an opaque accent slab, so the accent mark still
+   reads through it — there is nothing left for it to vanish into. */

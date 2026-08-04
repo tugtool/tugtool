@@ -2614,8 +2614,6 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   { element: "--tugx-list-row-pill-rest-border", surface: "--tugx-list-row-pill-rest-bg", role: "control" },
   { element: "--tugx-list-row-text", surface: "--tugx-list-row-pill-hover-bg", role: "content" },
   { element: "--tugx-list-row-pill-hover-border", surface: "--tugx-list-row-pill-hover-bg", role: "control" },
-  { element: "--tugx-list-row-selected-text", surface: "--tugx-list-row-selected-bg", role: "content" },
-  { element: "--tugx-list-row-selected-text", surface: "--tugx-list-row-selected-hover-bg", role: "content" },
   { element: "--tugx-list-row-pill-rest-border", surface: "--tugx-list-row-selected-bg", role: "control" },
   { element: "--tugx-list-row-selected-accent-border", surface: "--tugx-list-row-selected-bg", role: "control" },
   { element: "--tugx-list-row-radio-dot", surface: "--tugx-list-row-radio-on", role: "control" },
