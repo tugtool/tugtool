@@ -22,12 +22,13 @@
  * @covers tugdeck/src/lib/diff/
  * @covers tugdeck/src/components/tugways/cards/diff-sheet.tsx
  * @covers tugdeck/src/components/tugways/tug-diff-document.tsx
+ * @covers tugdeck/src/components/tugways/tug-diff-document.css
  * @covers tugdeck/src/lib/slash-commands.ts
  * @covers tugdeck/src/components/tugways/tug-alert-sheet.tsx
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp, note, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -231,6 +232,68 @@ describe.skipIf(!SHOULD_RUN)("AT0104: /diff accordion sheet", () => {
         );
         expect(new Set(headerCenters).size).toBe(1);
         expect(headerCenters[0]).toBeGreaterThan(0);
+
+        // … and it FITS at the narrow width. The controls are fixed-width and
+        // the text sections shrink, so an over-full line spends its overflow
+        // clipping the label mid-word ("UNCOMMITTED CHANGES (GI") — which is
+        // what the 800px Diff card did while the toggle carried its two word
+        // labels and the buttons said "Expand All"/"Collapse All". Below the
+        // document's container-query breakpoint those words clip away, which
+        // has to buy back enough room for the label to read whole.
+        //
+        // The sheet is wider than the card, so pin the document to the card's
+        // default width to measure the case that broke. Real layout, real
+        // container query — only the width is imposed.
+        await app.evalJS<boolean>(
+          `(function(){
+             var s = document.querySelector(${JSON.stringify(SHEET)});
+             s.style.width = "800px";
+             s.style.maxWidth = "800px";
+             return true;
+           })()`,
+        );
+        // The container query engaged: the toggle's word labels are clipped.
+        await app.waitForCondition<boolean>(
+          `(function(){
+             var l = document.querySelector(${JSON.stringify(SHEET)} + ' [data-testid="diff-view-mode"] .tug-group-item-label');
+             return l !== null && l.getBoundingClientRect().width <= 2;
+           })()`,
+          { timeoutMs: 6000 },
+        );
+        const headerFit = await app.evalJS<string[]>(
+          `(function(){
+             var h = document.querySelector(${JSON.stringify(SHEET)} + " .tug-diff-document-header");
+             if (h === null) return ["MISSING"];
+             var over = [];
+             for (var i = 0; i < h.children.length; i++) {
+               var c = h.children[i];
+               if (c.scrollWidth > c.clientWidth + 1) {
+                 over.push(c.className + ":" + c.scrollWidth + ">" + c.clientWidth);
+               }
+             }
+             return over;
+           })()`,
+        );
+        note("HEADERFIT", `${await app.evalJS<string>(
+          `(function(){
+             var h = document.querySelector(${JSON.stringify(SHEET)} + " .tug-diff-document-header");
+             var parts = [];
+             for (var i = 0; i < h.children.length; i++) {
+               var c = h.children[i];
+               parts.push(c.className.replace(/tug-diff-document-/g, "") + "=" + Math.round(c.getBoundingClientRect().width));
+             }
+             return "avail=" + h.clientWidth + " :: " + parts.join(" | ");
+           })()`,
+        )} overflowing=${JSON.stringify(headerFit)}`);
+        expect(headerFit).toEqual([]);
+        await app.evalJS<boolean>(
+          `(function(){
+             var s = document.querySelector(${JSON.stringify(SHEET)});
+             s.style.width = "";
+             s.style.maxWidth = "";
+             return true;
+           })()`,
+        );
 
         // The file row's +N −M must not butt against the accordion chevron —
         // the trigger justifies content and chevron to opposite edges with no

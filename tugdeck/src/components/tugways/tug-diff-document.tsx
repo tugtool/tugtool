@@ -218,6 +218,7 @@ const VIEW_TOGGLE_ITEMS: TugChoiceItem[] = [
     icon: <Columns2 aria-hidden="true" />,
     iconPosition: "left",
     "aria-label": "Side by side",
+    tooltip: "Side by side",
   },
   {
     value: "inline",
@@ -225,6 +226,7 @@ const VIEW_TOGGLE_ITEMS: TugChoiceItem[] = [
     icon: <AlignLeft aria-hidden="true" />,
     iconPosition: "left",
     "aria-label": "Inline",
+    tooltip: "Inline",
   },
 ];
 
@@ -341,7 +343,8 @@ export function TugDiffDocument({
               onClick={expandAll}
               data-testid="diff-expand-all"
             >
-              Expand All
+              Expand
+              <span className="tug-diff-document-header-wide">&nbsp;All</span>
             </TugPushButton>
             <TugPushButton
               size="2xs"
@@ -349,7 +352,8 @@ export function TugDiffDocument({
               onClick={collapseAll}
               data-testid="diff-collapse-all"
             >
-              Collapse All
+              Collapse
+              <span className="tug-diff-document-header-wide">&nbsp;All</span>
             </TugPushButton>
           </span>
           {headerActions != null && headerActions !== false ? (
