@@ -148,6 +148,70 @@ describe("no session to show the question on", () => {
   });
 });
 
+describe("a countdown question", () => {
+  const SID = "cc-session-2";
+
+  /** The wire shape of a question that answers itself if nobody intervenes. */
+  function countdownFrame(requestId: string): Record<string, unknown> {
+    return {
+      requestId,
+      title: "t",
+      options: OPTIONS,
+      sessionId: SID,
+      unattendedChoice: "run-all",
+      countdownSecs: 30,
+    };
+  }
+
+  beforeEach(() => {
+    init();
+    addSession(SID);
+  });
+
+  it("carries the countdown to the dialog", () => {
+    pendingAskStore.receive(countdownFrame("r20"));
+    expect(sessions.get(SID)?.parked?.unattendedChoice).toBe("run-all");
+    expect(sessions.get(SID)?.parked?.countdownSecs).toBe(30);
+  });
+
+  // A duration with no answer to commit is not a countdown, and a dialog that
+  // showed one would be counting down to nothing.
+  it("ignores half a countdown", () => {
+    pendingAskStore.receive({ ...countdownFrame("r21"), unattendedChoice: undefined });
+    expect(sessions.get(SID)?.parked?.countdownSecs).toBeNull();
+    init();
+    addSession(SID);
+    pendingAskStore.receive({ ...countdownFrame("r22"), countdownSecs: 0 });
+    expect(sessions.get(SID)?.parked?.unattendedChoice).toBeNull();
+  });
+
+  it("ignores an unattended answer that is not one of the options", () => {
+    pendingAskStore.receive({ ...countdownFrame("r23"), unattendedChoice: "run-them" });
+    expect(sessions.get(SID)?.parked?.unattendedChoice).toBeNull();
+    expect(sessions.get(SID)?.parked?.countdownSecs).toBeNull();
+  });
+
+  // The caller said what silence means. A question no human could ever see is
+  // the purest silence there is, so it gets that answer rather than the
+  // declining one — which for an app-test run would mean "skipped" because a
+  // card happened to be closing.
+  it("answers an unshowable one with the unattended choice", () => {
+    removeSession(SID);
+    pendingAskStore.receive(countdownFrame("r24"));
+    expect(sent).toEqual([
+      { action: "ask-response", payload: { requestId: "r24", choice: "run-all" } },
+    ]);
+  });
+
+  it("answers with the unattended choice when the session vanishes under it", () => {
+    pendingAskStore.receive(countdownFrame("r25"));
+    removeSession(SID);
+    expect(sent).toEqual([
+      { action: "ask-response", payload: { requestId: "r25", choice: "run-all" } },
+    ]);
+  });
+});
+
 describe("respond", () => {
   it("ignores an answer for a request that is not live", () => {
     pendingAskStore.respond("never-asked", "run-all");

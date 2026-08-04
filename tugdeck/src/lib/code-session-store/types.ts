@@ -503,6 +503,19 @@ export interface PendingAsk {
   title: string;
   description: string | null;
   options: ReadonlyArray<PendingAskOption>;
+  /**
+   * The answer to commit if nobody intervenes, or `null` when the question
+   * genuinely needs a human.
+   *
+   * A caller sets it when going ahead is the honest default and the dialog
+   * exists only so someone at the keyboard can say otherwise. The dialog then
+   * counts {@link countdownSecs} down and commits the *selected* option — the
+   * countdown decides when, never what, so a developer who moves the selection
+   * and walks away still gets what they picked.
+   */
+  unattendedChoice: string | null;
+  /** Seconds the countdown runs for. Non-null exactly when {@link unattendedChoice} is. */
+  countdownSecs: number | null;
 }
 
 /**

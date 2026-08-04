@@ -947,6 +947,11 @@ build-app:
 # is usually already in. Declining skips them; the background run has already
 # happened either way.
 #
+# The question is a chance to intervene, not a gate: it counts thirty seconds
+# down and then runs them. Say no while it counts (Escape says it at once) and
+# it skips them. Nobody there to say no means nobody there to disturb, and a
+# run must not sit parked in a dialog because you stepped away.
+#
 # Set TUG_APPTEST_ASSUME to answer ahead of time and raise nothing:
 #
 #   TUG_APPTEST_ASSUME=all         run everything, screen-takers included
@@ -1010,6 +1015,11 @@ app-test *FILES:
         # last, by which time the answer has usually already arrived. Anything
         # that needed no permission must never wait on something that did.
         #
+        # And it always arrives — the question carries `--unattended run-all`,
+        # so thirty seconds of nobody saying otherwise IS the answer. Waiting
+        # forever for a developer who has left the room was the same failure in
+        # a slower form: the run stopped, and nothing was on screen to notice.
+        #
         # It is raised before the gate re-exec, and never while holding the
         # gate — a run waiting on a human would otherwise block every other
         # worktree's run for as long as the dialog sat unanswered. The asker is
@@ -1043,7 +1053,7 @@ app-test *FILES:
                 # Two choices, because by the time this is answered the
                 # background run is already under way — "cancel everything" is
                 # no longer a coherent thing to offer. Declining is last, which
-                # is what the dialog preselects.
+                # is what Escape chooses.
                 if [ "$BG_COUNT" -gt 0 ]; then
                     RUN_DESC="The other $BG_COUNT are running now either way"
                     SKIP_LABEL="Skip them"
@@ -1052,6 +1062,15 @@ app-test *FILES:
                     SKIP_LABEL="Skip them — run nothing"
                 fi
 
+                # The question is a chance to intervene, not a request for
+                # permission: unanswered, it runs them. A developer at the
+                # keyboard has the countdown to say otherwise (or Escape, which
+                # says it immediately); a developer who has walked away no
+                # longer leaves the run parked in a dialog nobody is reading.
+                # TUG_APPTEST_COUNTDOWN overrides it — mostly for tests, which
+                # cannot afford to sit out the real one.
+                FG_COUNTDOWN_SECS="${TUG_APPTEST_COUNTDOWN:-30}"
+
                 ASK_OUT="$(mktemp -t apptest-ask.XXXXXX)"
                 export TUG_APPTEST_ASK_OUT="$ASK_OUT"
                 (
@@ -1059,6 +1078,8 @@ app-test *FILES:
                         ${TUG_INSTANCE:+--instance "$TUG_INSTANCE"} \
                         --title "$FG_COUNT app-test(s) want to take over the screen" \
                         --description "$FG_LIST" \
+                        --timeout-secs "$FG_COUNTDOWN_SECS" \
+                        --unattended run-all \
                         --option "run-all:Run them:$RUN_DESC" \
                         --option "background:$SKIP_LABEL:Keeps the screen yours" \
                         2>/dev/null)"
@@ -1072,6 +1093,7 @@ app-test *FILES:
                 # replace; without the pid, a ^C'd run would leave the question
                 # standing in the Session card with nobody left to hear it.
                 export TUG_APPTEST_ASK_PID=$!
+                export TUG_APPTEST_COUNTDOWN="$FG_COUNTDOWN_SECS"
                 disown 2>/dev/null || true
             fi
         fi
@@ -1299,11 +1321,15 @@ app-test *FILES:
             FG_DECISION=run
             return 0
         fi
-        # The ask carries its own timeout, so this waits for it to land rather
-        # than racing it. The ceiling is a backstop against a killed asker.
+        # The question resolves itself — the dialog counts down and commits, and
+        # tugcast answers for a deck that stopped ticking — so this waits for
+        # that answer rather than racing it. The ceiling is a backstop against
+        # an asker that died with the answer still in it, which is a broken
+        # pipe rather than silence; skipping is the safe reading of a break.
+        local ceiling=$(( ${TUG_APPTEST_COUNTDOWN:-30} + 120 ))
         local waited=0
         while [ ! -f "$out.done" ]; do
-            if [ "$waited" -ge 660 ]; then
+            if [ "$waited" -ge "$ceiling" ]; then
                 echo "==> the approval request never came back — skipping the screen-takers." >&2
                 FG_DECISION=skip
                 return 0

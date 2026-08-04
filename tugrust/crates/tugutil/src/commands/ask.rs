@@ -15,6 +15,19 @@
 //!   same as being told no; the caller decides what to do, and for app-tests
 //!   that means proceeding with a warning rather than blocking a terminal-only
 //!   run that could never have shown a dialog.
+//!
+//! ## `--unattended` — a chance to intervene, not a block
+//!
+//! Blocking is right when the disruption needs a yes. It is wrong when the
+//! honest default is to go ahead and the prompt exists only so a developer *at
+//! the keyboard* can stop it: there, an unanswered question means nobody was
+//! there to mind, and holding the caller until it times out — then reading that
+//! silence as "no" — strands the work for as long as the developer is away.
+//!
+//! `--unattended VALUE` names the answer silence means. The dialog counts
+//! `--timeout-secs` down where the developer can see it and commits the
+//! selected option when it reaches zero, so the question resolves either way
+//! and the developer's only cost for being present is a keystroke.
 
 use std::time::Duration;
 
@@ -104,6 +117,7 @@ pub fn run_ask(
     description: Option<String>,
     option: Vec<String>,
     timeout_secs: u64,
+    unattended: Option<String>,
     port: Option<u16>,
     instance: Option<String>,
 ) -> Result<i32, String> {
@@ -115,6 +129,16 @@ pub fn run_ask(
         .map(|s| parse_option(s))
         .collect::<Result<Vec<_>, _>>()?;
 
+    // An unattended answer nobody offered would count a question down to an
+    // option that does not exist, so it is caught here rather than on the wire.
+    if let Some(value) = unattended.as_deref()
+        && !options.iter().any(|o| o.value == value)
+    {
+        return Err(format!(
+            "--unattended '{value}' is not one of the --option values"
+        ));
+    }
+
     let Some(port) = resolve_ask_port(port, instance) else {
         eprintln!("tugutil host ask: no Tug instance to ask — proceeding without a prompt");
         return Ok(EXIT_NO_ROUTE);
@@ -125,6 +149,7 @@ pub fn run_ask(
         "title": title,
         "description": description,
         "timeoutSecs": timeout_secs,
+        "unattendedChoice": unattended,
         "options": options.iter().map(|o| serde_json::json!({
             "value": o.value,
             "label": o.label,
@@ -235,6 +260,21 @@ mod tests {
         assert!(is_apptest_instance("apptest-main-9f2c"));
         assert!(!is_apptest_instance("debug-main"));
         assert!(!is_apptest_instance("release"));
+    }
+
+    #[test]
+    fn an_unattended_value_must_name_an_option() {
+        let err = run_ask(
+            "Take the screen?".to_owned(),
+            None,
+            vec!["run-all:Run them".to_owned(), "skip:Skip them".to_owned()],
+            30,
+            Some("run-them".to_owned()),
+            Some(1),
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("--unattended"), "{err}");
     }
 
     #[test]

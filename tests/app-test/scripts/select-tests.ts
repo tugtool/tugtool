@@ -171,7 +171,9 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // the slot-stack surface: the badge and picker live in this file's title
     // bar (at0347) and the Cmd-click that opens them resolves inside its drag
     // machine (at0349, which needs a key window and so cannot share a file).
-    "tugdeck/src/components/chrome/tug-pane.tsx": 24,
+    // 24 → 25 with the no-look cycle: the pane answers CYCLE_STACK itself
+    // (at0350), since raising a peer needs the very slotStack its badge reads.
+    "tugdeck/src/components/chrome/tug-pane.tsx": 25,
     // The list primitive: the transcript, the Lens sections, the gallery, and
     // every picker are all TugListView, so a test that drives any list of rows
     // names it. Crossed the budget when transcript DOM eviction landed inside

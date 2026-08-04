@@ -97,6 +97,8 @@ A minority cannot work that way, because activation *is* their subject: app resi
 
 When a run contains any of them, `just app-test` raises the question in the Session card straight away — and then **gets on with the background tests while you decide.** The screen-takers are ordered last, so by the time the answer matters it is usually already in. Nothing that needed no permission ever waits on something that did. Declining skips them; the background run happened either way, and every skipped file shows as a `SKIP` row in the summary.
 
+**The question counts down and then runs them.** It is a chance to intervene, not a request for permission: the dialog shows thirty seconds ticking (`TUG_APPTEST_COUNTDOWN` overrides the duration), commits whatever option is selected when it reaches zero, and re-arms the count each time you move the selection so you are never timed out mid-decision. Escape says no immediately. Nobody at the keyboard means nobody to disturb — the run should proceed, not sit parked in a dialog until you come back to it.
+
 `TUG_APPTEST_ASSUME=all|background|cancel` answers ahead of time; scripted and non-interactive runs should set it. With no Tug instance to ask, a run proceeds after naming the tests that will take the screen — blocking a terminal-only run that could never have shown a dialog is worse than an unannounced one you started by hand.
 
 `just app-test-foreground-check` holds the declaration honest in both directions. A foreground launch with no tag would seize the screen unannounced, which is the real harm; a tag with no such launch would prompt about a test that was never disruptive.

@@ -14,13 +14,17 @@
  * The blocked caller is the reason for three behaviors that would otherwise
  * look over-careful:
  *
- *  - **A question that cannot be routed is answered immediately**, with the
- *    designated declining option, rather than dropped. Silence would leave the
- *    caller hanging until its own timeout.
+ *  - **A question that cannot be routed is answered immediately**, with its
+ *    fallback choice, rather than dropped. Silence would leave the caller
+ *    hanging until its own timeout.
  *  - **A session torn down under a live question answers on its way out**, for
  *    the same reason.
- *  - **A second question for a session already showing one is declined**, rather
- *    than replacing the dialog and orphaning the first caller.
+ *  - **A second question for a session already showing one is answered at
+ *    once**, rather than replacing the dialog and orphaning the first caller.
+ *
+ * The fallback is the caller's `unattendedChoice` when it named one and the
+ * declining option otherwise — see {@link fallbackChoice}. Both readings say
+ * the same thing: this is the answer for a question no human ever saw.
  *
  * Everything outside the store — the wire, the focused session, the session
  * registry — arrives through {@link PendingAskContext}. Nothing is imported as a
@@ -69,10 +73,19 @@ export interface PendingAskContext {
 }
 
 /**
- * The option a question falls back to when nobody can answer it. Callers put
- * their declining choice last, matching the dialog's own ordering.
+ * The option a question falls back to when nobody can answer it.
+ *
+ * `unattendedChoice` is that answer when the caller named one: it is precisely
+ * "what to do when no human weighs in", and a question that could not be shown
+ * at all is the purest case of that. Otherwise it is the last option, which
+ * callers reserve for declining — matching the dialog's own ordering.
  */
-function decliningOption(options: ReadonlyArray<PendingAskOption>): string | null {
+function fallbackChoice(ask: {
+  options: ReadonlyArray<PendingAskOption>;
+  unattendedChoice: string | null;
+}): string | null {
+  if (ask.unattendedChoice !== null) return ask.unattendedChoice;
+  const { options } = ask;
   return options.length > 0 ? options[options.length - 1].value : null;
 }
 
@@ -99,7 +112,7 @@ interface LiveAsk {
   tugSessionId: string;
   requestId: string;
   /** The answer to send if nobody ever gets to choose. Captured on arrival. */
-  declining: string;
+  fallback: string;
 }
 
 class PendingAskStore {
@@ -179,6 +192,19 @@ class PendingAskStore {
       return;
     }
 
+    // Both halves of a countdown or neither: a duration with no answer to
+    // commit, or an answer with no duration to reach it, is not a countdown.
+    const unattendedRaw =
+      typeof frame.unattendedChoice === "string" &&
+      options.some((o) => o.value === frame.unattendedChoice)
+        ? frame.unattendedChoice
+        : null;
+    const countdownRaw =
+      typeof frame.countdownSecs === "number" && frame.countdownSecs > 0
+        ? Math.floor(frame.countdownSecs)
+        : null;
+    const counts = unattendedRaw !== null && countdownRaw !== null;
+
     const ask: PendingAsk = {
       requestId,
       title,
@@ -187,6 +213,8 @@ class PendingAskStore {
           ? frame.description
           : null,
       options,
+      unattendedChoice: counts ? unattendedRaw : null,
+      countdownSecs: counts ? countdownRaw : null,
     };
 
     const targetSessionId =
@@ -198,23 +226,23 @@ class PendingAskStore {
         ? null
         : this._context?.sessionFor(targetSessionId) ?? null;
 
-    const declining = decliningOption(options) ?? "";
+    const fallback = fallbackChoice(ask) ?? "";
 
     if (session === null) {
       // No card to show it on. Answering beats leaving the caller to time out.
-      this.respondOnWire(requestId, declining);
+      this.respondOnWire(requestId, fallback);
       return;
     }
 
     // One dialog per session. A second question arriving while the developer is
     // mid-decision would swap the dialog out from under them and orphan the
-    // first caller, so the newcomer is declined instead. Its caller learns the
+    // first caller, so the newcomer gets its fallback instead. Its caller learns the
     // answer immediately rather than blocking behind a question it cannot see.
     const occupied = [...this._live.values()].some(
       (live) => live.tugSessionId === session.tugSessionId,
     );
     if (occupied) {
-      this.respondOnWire(requestId, declining);
+      this.respondOnWire(requestId, fallback);
       return;
     }
 
@@ -222,7 +250,7 @@ class PendingAskStore {
       next.set(requestId, {
         tugSessionId: session.tugSessionId,
         requestId,
-        declining,
+        fallback,
       }),
     );
     session.setPendingAsk(ask);
@@ -243,10 +271,10 @@ class PendingAskStore {
   };
 
   /**
-   * A session is going away. Anything it was being asked gets the declining
+   * A session is going away. Anything it was being asked gets its fallback
    * answer, because the dialog is about to stop existing.
    *
-   * The declining choice is the one captured when the question arrived, not one
+   * The fallback is the one captured when the question arrived, not one
    * re-read from the session — by the time this runs the store it lived on may
    * already be disposed, and an empty answer is no answer.
    */
@@ -258,7 +286,7 @@ class PendingAskStore {
     this._commit((next) => {
       for (const live of doomed) next.delete(live.requestId);
     });
-    for (const live of doomed) this.respondOnWire(live.requestId, live.declining);
+    for (const live of doomed) this.respondOnWire(live.requestId, live.fallback);
     this._notify();
   };
 

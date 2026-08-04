@@ -549,6 +549,15 @@ async fn eval_handler(
 /// and "nobody is there" becomes the honest reading.
 const ASK_TIMEOUT_SECS: u64 = 600;
 
+/// Extra time the server waits past a countdown before answering it itself.
+///
+/// A question carrying `unattendedChoice` is counted down by the deck, in view
+/// of the developer, and the deck sends the answer. This wait is the backstop
+/// for a deck that took the frame and then stopped ticking — a suspended page,
+/// a card torn down mid-count. The grace exists so the ordinary case is decided
+/// where the human could still see it, and this path never races the dialog.
+const ASK_UNATTENDED_GRACE_SECS: u64 = 5;
+
 /// The most questions that may be in flight at once.
 ///
 /// A blocked ask holds a task and a map entry for as long as its timeout, and
@@ -603,6 +612,12 @@ fn clamp_chars(s: &str, max: usize) -> String {
 ///
 /// Sends the question to the deck via a CONTROL frame and blocks until someone
 /// answers it, then returns the chosen option's opaque id.
+///
+/// A caller that names an `unattendedChoice` is asking for a chance to be
+/// stopped rather than for permission: the deck counts `timeoutSecs` down in
+/// the dialog and commits, and a count that never arrives here is answered with
+/// that choice ([`ASK_UNATTENDED_GRACE_SECS`]) instead of timing out. Without
+/// one, silence is still a 504 — some questions really do need a yes.
 ///
 /// Deliberately NOT gated like `/api/eval`. Eval is gated because it executes
 /// arbitrary code; ask displays text and returns one of the caller's own option
@@ -686,6 +701,37 @@ async fn ask_handler(
         .map(serde_json::Value::String)
         .unwrap_or(serde_json::Value::Null);
 
+    // The caller may shorten the wait but not extend it past the ceiling.
+    let secs = payload
+        .get("timeoutSecs")
+        .and_then(|t| t.as_u64())
+        .unwrap_or(ASK_TIMEOUT_SECS)
+        .min(ASK_TIMEOUT_SECS);
+
+    // The answer silence means, if the caller named one. It has to be one of
+    // the caller's own option values — anything else would count a dialog down
+    // to a choice the caller cannot interpret.
+    let unattended = match payload.get("unattendedChoice") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(value))
+            if options
+                .iter()
+                .any(|o| o.get("value").and_then(|v| v.as_str()) == Some(value.as_str())) =>
+        {
+            Some(value.clone())
+        }
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": "unattendedChoice must be one of the option values",
+                })),
+            )
+                .into_response();
+        }
+    };
+
     let request_id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = tokio::sync::oneshot::channel();
     {
@@ -716,6 +762,10 @@ async fn ask_handler(
         "title": title,
         "description": description,
         "options": options,
+        // Present together or not at all: the deck counts down only when it has
+        // both a duration and an answer to commit at the end of it.
+        "unattendedChoice": unattended,
+        "countdownSecs": unattended.as_ref().map(|_| secs),
     });
 
     // Nobody listening is a distinct answer from nobody deciding. `send` reports
@@ -739,14 +789,12 @@ async fn ask_handler(
             .into_response();
     }
 
-    // The caller may shorten the wait but not extend it past the ceiling.
-    let secs = payload
-        .get("timeoutSecs")
-        .and_then(|t| t.as_u64())
-        .unwrap_or(ASK_TIMEOUT_SECS)
-        .min(ASK_TIMEOUT_SECS);
+    let wait = match unattended {
+        Some(_) => secs + ASK_UNATTENDED_GRACE_SECS,
+        None => secs,
+    };
 
-    match timeout(std::time::Duration::from_secs(secs), rx).await {
+    match timeout(std::time::Duration::from_secs(wait), rx).await {
         Ok(Ok(choice)) => (
             StatusCode::OK,
             axum::Json(serde_json::json!({"status": "ok", "choice": choice})),
@@ -760,13 +808,23 @@ async fn ask_handler(
             )
                 .into_response()
         }
-        Err(_) => (
-            StatusCode::GATEWAY_TIMEOUT,
-            axum::Json(
-                serde_json::json!({"status": "error", "message": "timeout waiting for answer"}),
-            ),
-        )
-            .into_response(),
+        // Nobody answered. With an `unattendedChoice` that is itself the
+        // answer — the caller said so — and reporting it as a timeout would
+        // turn "nobody was at the keyboard" back into a refusal.
+        Err(_) => match unattended {
+            Some(choice) => (
+                StatusCode::OK,
+                axum::Json(serde_json::json!({"status": "ok", "choice": choice})),
+            )
+                .into_response(),
+            None => (
+                StatusCode::GATEWAY_TIMEOUT,
+                axum::Json(
+                    serde_json::json!({"status": "error", "message": "timeout waiting for answer"}),
+                ),
+            )
+                .into_response(),
+        },
     }
 }
 
@@ -1037,6 +1095,63 @@ mod tests {
         assert_eq!(status, 504);
         assert_eq!(body["message"], "timeout waiting for answer");
         assert!(fx.pending_asks.lock().unwrap().is_empty());
+    }
+
+    /// A countdown question carries its answer and its duration to the deck,
+    /// which is what lets the dialog show the count and commit at zero.
+    #[tokio::test]
+    async fn test_ask_forwards_the_unattended_answer_to_the_deck() {
+        let mut fx = serve_ask_fixture().await;
+        let url = format!("{}/api/ask", fx.base_url);
+        let mut body = ask_body(30);
+        body["unattendedChoice"] = serde_json::json!("run-all");
+
+        let request = tokio::spawn(async move { post_json(&url, &body).await });
+
+        let frame = fx.control_rx.recv().await.unwrap();
+        let payload: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(payload["unattendedChoice"], "run-all");
+        assert_eq!(payload["countdownSecs"], 30);
+
+        let request_id = payload["requestId"].as_str().unwrap().to_owned();
+        let tx = fx.pending_asks.lock().unwrap().remove(&request_id).unwrap();
+        tx.send("cancel".to_owned()).unwrap();
+        let (status, body) = request.await.unwrap();
+        assert_eq!(status, 200);
+        // Intervention wins: the countdown is a default, not a verdict.
+        assert_eq!(body["choice"], "cancel");
+    }
+
+    /// A deck that never answers a countdown question — suspended, torn down —
+    /// must not turn the caller's own default back into a refusal.
+    #[tokio::test]
+    async fn test_ask_answers_an_unanswered_countdown_with_the_default() {
+        let fx = serve_ask_fixture().await;
+        let mut body = ask_body(0);
+        body["unattendedChoice"] = serde_json::json!("run-all");
+
+        let (status, body) = post_json(&format!("{}/api/ask", fx.base_url), &body).await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["choice"], "run-all");
+        assert!(fx.pending_asks.lock().unwrap().is_empty());
+    }
+
+    /// An unattended answer nobody offered would count down to a value the
+    /// caller cannot interpret.
+    #[tokio::test]
+    async fn test_ask_rejects_an_unattended_choice_that_is_not_an_option() {
+        let fx = serve_ask_fixture().await;
+        let mut body = ask_body(30);
+        body["unattendedChoice"] = serde_json::json!("run-them");
+
+        let (status, body) = post_json(&format!("{}/api/ask", fx.base_url), &body).await;
+
+        assert_eq!(status, 400);
+        assert_eq!(
+            body["message"],
+            "unattendedChoice must be one of the option values"
+        );
     }
 
     /// A question with no options has nothing to choose and is refused.

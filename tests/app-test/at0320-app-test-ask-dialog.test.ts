@@ -26,6 +26,12 @@
  *   - but Z5 is untouched — Awaiting here is a reading, not a turn phase, so a
  *     session with no turn must not end up showing a Stop button with nothing
  *     to stop;
+ *   - a question carrying `--unattended` says so on screen and then answers
+ *     itself: the countdown line renders, the option it will commit is the one
+ *     already checked, and an untouched dialog releases the caller with that
+ *     value. This is the difference between a prompt that asks permission and
+ *     one that offers a chance to intervene — the second must never park a run
+ *     because nobody was at the keyboard;
  *   - the entry pane stands down while the dialog is up. This is the one that
  *     bites: `TugTextEditor`'s Return defers to the pane's default button,
  *     which while this dialog is up is its Continue. If the composer stayed
@@ -60,6 +66,7 @@ const DIALOG = '[data-slot="session-app-test-ask-dialog"]';
 const OPTION_GROUP = `${DIALOG} [data-slot="tug-radio-group"]`;
 const OPTION_ITEMS = `${DIALOG} [data-slot="tug-radio-item"]`;
 const CONTINUE = `${DIALOG} [data-slot="tug-inline-dialog-actions"] button`;
+const COUNTDOWN = `${DIALOG} [data-slot="session-app-test-ask-dialog-countdown"]`;
 
 /** Whether the element matched by `selector` carries `attr`. */
 function hasAttr(app: App, selector: string, attr: string): Promise<boolean> {
@@ -160,6 +167,41 @@ function startAsk(instanceId: string) {
       cwd: REPO_ROOT,
       // How the real caller runs: the session id comes from the environment
       // the Session card's shell already exports.
+      env: { ...process.env, TUG_SESSION_ID: SID },
+    },
+  );
+}
+
+/**
+ * The same question, but as a chance to intervene rather than a request for
+ * permission: `--unattended` names the answer silence means, and the dialog
+ * counts `--timeout-secs` down to it.
+ */
+function startCountdownAsk(instanceId: string, secs: number) {
+  return Bun.spawn(
+    [
+      TUGUTIL,
+      "host",
+      "ask",
+      "--instance",
+      instanceId,
+      "--title",
+      "1 app-test wants to take over the screen",
+      "--description",
+      "at0349-stack-picker-foreground",
+      "--option",
+      "run-all:Run them:The other 2 are running now either way",
+      "--option",
+      "background:Skip them:Keeps the screen yours",
+      "--timeout-secs",
+      String(secs),
+      "--unattended",
+      "run-all",
+    ],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+      cwd: REPO_ROOT,
       env: { ...process.env, TUG_SESSION_ID: SID },
     },
   );
@@ -341,6 +383,61 @@ describe.skipIf(!SHOULD_RUN)("at0320 — ask dialog round trip", () => {
       ).toBe("background");
 
       // --- and the dialog goes away -----------------------------------
+      await app.waitForCondition<boolean>(
+        `!document.querySelector('${DIALOG}')`,
+        { timeoutMs: 5_000 },
+      );
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a countdown question answers itself at an empty keyboard",
+    async () => {
+      const proc = startCountdownAsk(app.instanceId, 3);
+
+      try {
+        await app.waitForCondition<boolean>(
+          `!!document.querySelector('${COUNTDOWN}')`,
+          { timeoutMs: 15_000 },
+        );
+      } catch (error) {
+        proc.kill();
+        const stderr = await new Response(proc.stderr).text();
+        throw new Error(`countdown never appeared; tugutil host ask said: ${stderr}`, {
+          cause: error,
+        });
+      }
+
+      // The line says what will happen, so nobody has to infer it from a
+      // dialog that quietly closes on its own.
+      const line = await app.evalJS<string>(
+        `(document.querySelector('${COUNTDOWN}')?.textContent ?? '')`,
+      );
+      expect(
+        line,
+        "COUNTDOWN: the dialog states that it continues on its own",
+      ).toContain("Continues with the selected option");
+
+      // No resting lie: what the countdown will commit is what the radio
+      // already shows checked — the caller's `--unattended`, not the
+      // declining option this dialog otherwise opens on.
+      expect(
+        await checkedOption(app),
+        "COUNTDOWN: the option it will commit is the one preselected",
+      ).toContain("Run them");
+
+      // Nobody touches anything. The dialog commits, the caller is released,
+      // and the answer is the one silence was declared to mean — the point of
+      // the whole change: a developer who stepped away no longer parks the run.
+      const stdout = await new Response(proc.stdout).text();
+      await proc.exited;
+      expect(proc.exitCode, "COUNTDOWN: an unanswered question exits 0").toBe(0);
+      expect(
+        stdout.trim(),
+        "COUNTDOWN: silence answers with the caller's unattended choice",
+      ).toBe("run-all");
+
       await app.waitForCondition<boolean>(
         `!document.querySelector('${DIALOG}')`,
         { timeoutMs: 5_000 },

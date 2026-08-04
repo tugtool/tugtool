@@ -429,7 +429,7 @@ pub enum HostCommands {
     /// Blocks until someone answers. Use before doing something the developer
     /// will feel, so they get a say rather than a surprise.
     #[command(
-        long_about = "Ask the human a question in the Session card and print their answer.\n\nRaises an inline dialog in the session named by $TUG_SESSION_ID (or the\nactive session) and blocks until it is answered. The chosen option's value\nis printed to stdout; everything else goes to stderr.\n\nExit codes:\n  0  answered — the choice is on stdout\n  2  declined, timed out, or the deck disconnected\n  3  no route to a dialog — there was nobody to ask\n\nExit 3 is deliberately distinct from a refusal: it means the question could\nnot be put, not that the answer was no. Callers decide what to do about it.\n\nExamples:\n  tugutil host ask --title 'Run the slow tests?' \\\n      --option run:Run --option cancel:Cancel\n  tugutil host ask --title 'Take the screen?' --description '3 of 12 tests' \\\n      --option run-all:'Run all':'Includes the 3 that take the screen' \\\n      --option cancel:Cancel"
+        long_about = "Ask the human a question in the Session card and print their answer.\n\nRaises an inline dialog in the session named by $TUG_SESSION_ID (or the\nactive session) and blocks until it is answered. The chosen option's value\nis printed to stdout; everything else goes to stderr.\n\nExit codes:\n  0  answered — the choice is on stdout\n  2  declined, timed out, or the deck disconnected\n  3  no route to a dialog — there was nobody to ask\n\nExit 3 is deliberately distinct from a refusal: it means the question could\nnot be put, not that the answer was no. Callers decide what to do about it.\n\n--unattended turns the wait into a chance to intervene rather than a block:\nthe dialog counts --timeout-secs down in view of the developer, commits the\nselected option when it reaches zero, and exits 0 with that choice. Use it\nwhen going ahead unasked is the right thing to do at an empty keyboard.\n\nExamples:\n  tugutil host ask --title 'Run the slow tests?' \\\n      --option run:Run --option cancel:Cancel\n  tugutil host ask --title 'Take the screen?' --description '3 of 12 tests' \\\n      --option run-all:'Run all':'Includes the 3 that take the screen' \\\n      --option cancel:Cancel\n  tugutil host ask --title 'Take the screen?' --timeout-secs 30 \\\n      --unattended run-all \\\n      --option run-all:'Run them' --option skip:'Skip them'"
     )]
     Ask {
         /// The question, shown as the dialog's title
@@ -447,6 +447,14 @@ pub enum HostCommands {
         /// How long to wait for an answer before giving up
         #[arg(long, value_name = "N", default_value_t = 600)]
         timeout_secs: u64,
+
+        /// The option value to answer with if nobody answers in time
+        ///
+        /// Must match one of --option's values. Turns the timeout from a
+        /// refusal into an answer: the dialog counts down in view of the
+        /// developer, and an unanswered question exits 0 with this value.
+        #[arg(long, value_name = "VALUE")]
+        unattended: Option<String>,
 
         /// Tugcast server port (overrides --instance and CLI discovery).
         #[arg(long)]

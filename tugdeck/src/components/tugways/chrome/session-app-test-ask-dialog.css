@@ -1,6 +1,7 @@
 /* @tug-pairings:
    - --tugx-ask-provenance-color | --tugx-idialog-bg  (provenance line above the caller's own text)
    - --tugx-ask-detail-color     | --tugx-idialog-bg  (the caller's detail line)
+   - --tugx-ask-countdown-color  | --tugx-idialog-bg  (the countdown line under the options)
 */
 
 /**
@@ -34,6 +35,7 @@
 .session-app-test-ask-dialog {
   --tugx-ask-provenance-color: var(--tug7-element-global-text-normal-muted-rest);
   --tugx-ask-detail-color: var(--tug7-element-global-text-normal-rest);
+  --tugx-ask-countdown-color: var(--tug7-element-global-text-normal-muted-rest);
   --tugx-ask-provenance-size: 0.75rem;
   --tugx-ask-provenance-gap: 0.25rem;
 }
@@ -52,6 +54,18 @@
   margin-top: var(--tug-space-md);
   display: flex;
   justify-content: center;
+}
+
+/* The countdown, centered under the options it is counting down for. Muted and
+   small: it is a statement about what happens next, not the question itself.
+   Its text is rewritten in place by the tick, so the line must not resize as
+   the number shrinks — hence a fixed row rather than inline flow. */
+.session-app-test-ask-dialog-countdown {
+  margin-top: var(--tug-space-md);
+  text-align: center;
+  color: var(--tugx-ask-countdown-color);
+  font-size: var(--tugx-ask-provenance-size);
+  font-variant-numeric: tabular-nums;
 }
 
 .session-app-test-ask-dialog-detail {

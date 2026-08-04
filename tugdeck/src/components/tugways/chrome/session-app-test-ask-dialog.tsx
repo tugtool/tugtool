@@ -56,6 +56,30 @@
  * options with the declining one last; that is what Escape chooses, and what
  * the store falls back to when a question cannot be shown at all.
  *
+ * ## The countdown
+ *
+ * A question that carries `unattendedChoice` is not asking permission — it is
+ * offering a chance to intervene. Going ahead is the honest default there, and
+ * a dialog that waited forever for a developer who has left the room would
+ * strand the work it was being polite about. So the dialog counts
+ * `countdownSecs` down in plain sight and commits when it reaches zero.
+ *
+ * Three things make that safe to leave running:
+ *
+ *  - **It commits the *selected* option, not the caller's.** The countdown
+ *    decides *when*, never *what*. Moving the selection to "skip" and walking
+ *    away skips — no control ever rests showing something other than what will
+ *    happen.
+ *  - **Touching the selection re-arms it.** A developer mid-decision gets the
+ *    full duration back from their last keystroke rather than being timed out
+ *    mid-thought.
+ *  - **`unattendedChoice` is what it starts on**, so the preselection and the
+ *    countdown say the same thing from the first frame.
+ *
+ * The tick writes into the DOM through a ref ([L06]) — a modal dialog has no
+ * business re-rendering its whole subtree once a second — and the remaining
+ * seconds live in a ref, never in state ([L24]).
+ *
  * **Laws:** [L24] — `selectedOption` is a pre-commit draft owned by this
  * component and never leaves it; the question itself is local data on the
  * session store, read through `useSyncExternalStore` by the mount site ([L02]).
@@ -91,11 +115,27 @@ const CONFIRM_FOCUS_ORDER = 0;
 const OPTIONS_FOCUS_ORDER = 1;
 
 /**
- * The option to start on: the last one, which callers reserve for declining.
- * Erring toward "do less" is the whole point of a consent prompt.
+ * The option to start on.
+ *
+ * A countdown question starts on the answer it will commit — the preselection
+ * and the count must never disagree. Otherwise it is the last option, which
+ * callers reserve for declining: erring toward "do less" is the whole point of
+ * a consent prompt.
  */
-function safestOption(options: ReadonlyArray<{ value: string }>): string {
+function openingOption(ask: PendingAsk): string {
+  if (ask.unattendedChoice !== null) return ask.unattendedChoice;
+  const { options } = ask;
   return options.length > 0 ? options[options.length - 1].value : "";
+}
+
+/** The option Escape answers with: always the declining one, countdown or not. */
+function decliningOption(options: ReadonlyArray<{ value: string }>): string {
+  return options.length > 0 ? options[options.length - 1].value : "";
+}
+
+/** The countdown line, rebuilt each tick. */
+function countdownText(remaining: number): string {
+  return `Continues with the selected option in ${remaining}s`;
 }
 
 export const AppTestAskDialog: React.FC<AppTestAskDialogProps> = ({
@@ -107,12 +147,12 @@ export const AppTestAskDialog: React.FC<AppTestAskDialogProps> = ({
   // Keyed on requestId so a second question replaces the first's selection
   // instead of inheriting it.
   const [selectedOption, setSelectedOption] = React.useState<string>(() =>
-    safestOption(ask.options),
+    openingOption(ask),
   );
   const lastRequestId = React.useRef(ask.requestId);
   if (lastRequestId.current !== ask.requestId) {
     lastRequestId.current = ask.requestId;
-    setSelectedOption(safestOption(ask.options));
+    setSelectedOption(openingOption(ask));
   }
 
   const handleConfirm = React.useCallback(() => {
@@ -123,8 +163,63 @@ export const AppTestAskDialog: React.FC<AppTestAskDialogProps> = ({
   // There is no dismiss to offer: a process is blocked on this, and closing the
   // dialog without answering would leave it blocked with nothing on screen.
   const handleDecline = React.useCallback(() => {
-    onRespond(safestOption(ask.options));
+    onRespond(decliningOption(ask.options));
   }, [onRespond, ask.options]);
+
+  // The countdown reads these rather than closing over them, so a re-render —
+  // a selection change, a new `onRespond` identity — never restarts the clock.
+  const selectedRef = React.useRef(selectedOption);
+  selectedRef.current = selectedOption;
+  const respondRef = React.useRef(onRespond);
+  respondRef.current = onRespond;
+
+  // When the count runs out, in `Date.now()` terms. Local data ([L24]): the
+  // remaining seconds are DOM text, not state, so moving this moves nothing
+  // React can see.
+  const deadlineRef = React.useRef<number | null>(null);
+  const countdownElRef = React.useRef<HTMLDivElement | null>(null);
+
+  const { countdownSecs } = ask;
+
+  /** Give the developer the full duration back from their last keystroke. */
+  const rearmCountdown = React.useCallback(() => {
+    if (countdownSecs === null) return;
+    deadlineRef.current = Date.now() + countdownSecs * 1000;
+    if (countdownElRef.current !== null) {
+      countdownElRef.current.textContent = countdownText(countdownSecs);
+    }
+  }, [countdownSecs]);
+
+  const handleSelect = React.useCallback(
+    (next: string) => {
+      setSelectedOption(next);
+      rearmCountdown();
+    },
+    [rearmCountdown],
+  );
+
+  React.useEffect(() => {
+    if (countdownSecs === null) return undefined;
+    deadlineRef.current = Date.now() + countdownSecs * 1000;
+    const tick = (): void => {
+      const deadline = deadlineRef.current;
+      if (deadline === null) return;
+      // Ceil so the line reads the caller's own duration for a full second
+      // before it says one less, and 0 is only ever shown at the commit.
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      if (countdownElRef.current !== null) {
+        countdownElRef.current.textContent = countdownText(remaining);
+      }
+      if (remaining <= 0) {
+        window.clearInterval(timer);
+        respondRef.current(selectedRef.current);
+      }
+    };
+    const timer = window.setInterval(tick, 250);
+    return () => window.clearInterval(timer);
+    // Re-armed by `rearmCountdown` through the ref; only a different question
+    // (or a different duration) starts a new clock.
+  }, [ask.requestId, countdownSecs]);
 
   // The engine-side trap. While it is up the Tab walk services only this
   // dialog's focusables, and the key view that was current when it opened is
@@ -170,7 +265,7 @@ export const AppTestAskDialog: React.FC<AppTestAskDialogProps> = ({
   const radioSenderId = React.useId();
   const { ResponderScope: OptionsResponderScope, responderRef: optionsResponderRef } =
     useResponderForm({
-      selectValue: { [radioSenderId]: (next: string) => setSelectedOption(next) },
+      selectValue: { [radioSenderId]: handleSelect },
       parentId: dialogResponderId,
     });
 
@@ -237,6 +332,15 @@ export const AppTestAskDialog: React.FC<AppTestAskDialogProps> = ({
               </TugRadioGroup>
             </div>
           </OptionsResponderScope>
+          {countdownSecs !== null ? (
+            <div
+              ref={countdownElRef}
+              className="session-app-test-ask-dialog-countdown"
+              data-slot="session-app-test-ask-dialog-countdown"
+            >
+              {countdownText(countdownSecs)}
+            </div>
+          ) : null}
         </TugInlineDialog>
       </div>
     </FocusModeScope>
