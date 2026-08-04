@@ -25,6 +25,14 @@
   /* How tightly the keyboard focus ring hugs the PULSE label pill (smaller =
    * tighter). The global default is 2px; this label wears a snugger ring. */
   --session-pulse-strip-legend-ring-offset: 0px;
+  /* How far the PULSE bar's clip stands off the controls at its two ends.
+     `TugPulse`'s inline bar clips (its runs ellipsize), and a clip cuts at the
+     PADDING box — so a control flush to that edge loses the ring stroke that
+     paints OUTSIDE it. Both ends of this strip are controls: the legend pill
+     and the sparkline trigger. This is the ring's width plus its offset,
+     rounded up; the strip's own inline padding gives it back below, so the
+     type lands exactly where it did. */
+  --session-pulse-strip-ring-clearance: 4px;
   /* ONE row, always. Both levels of the reading share the bar `TugPulse`
    * lays out, so whether a session has an overview changes what the row says
    * and never how tall it is. Bar height, baseline, and the gap between the
@@ -32,7 +40,11 @@
   flex: 0 0 auto;
   box-sizing: border-box;
   padding-block: 0;
-  padding-inline: var(--tug-space-md);
+  /* The strip's margin for type, less what the bar's own padding now carries —
+     so the legend still starts `--tug-space-md` in from the card's edge. */
+  padding-inline: calc(
+    var(--tug-space-md) - var(--session-pulse-strip-ring-clearance)
+  );
   /* The strip MIRRORS the transcript — same background — so it reads as a
    * distinct band between the Z2 status row (its own status surface) and the
    * text editor, with NO rules of its own. Z2 drops its bottom border when
@@ -41,6 +53,14 @@
   background-color: var(--tugx-pane-bg);
   color: var(--tug7-element-global-text-normal-muted-rest);
   overflow: hidden;
+}
+
+/* The standoff itself, on the bar — inside its clip, so the rings at both ends
+   paint whole. Inline axis only: the bar's `block-size` is a content height, so
+   block padding would make the strip taller, and the 24px pill already sits in
+   a 34px bar with room on both sides. */
+.session-pulse-strip .tug-pulse {
+  padding-inline: var(--session-pulse-strip-ring-clearance);
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
