@@ -21,9 +21,15 @@
  *
  *   1. A click into the composer of a NON-first-responder card activates it and
  *      leaves the caret in that composer, in one click.
- *   2. A click on the same card's transcript — content the engine has no name
- *      for — activates it and restores the card's own destination instead of
- *      stranding the keyboard.
+ *   2. The same, aimed at the composer's BLANK BAND — the space below the last
+ *      line, which on an empty composer is nearly all of it. The band is editor
+ *      (`cursor: text`, caret landed by `host-click.ts`) but it is not
+ *      `contentEditable`, so a drill-down keyed on the content box alone works
+ *      when the click hits a line of text and not when it hits the space under
+ *      it. That is the "sometimes" failure this case exists to pin.
+ *   3. A click on the same card's transcript — content the drill-down
+ *      deliberately does not claim — activates it and restores the card's own
+ *      destination instead of stranding the keyboard.
  *
  * @covers tugdeck/src/gesture-interpreter.ts
  */
@@ -152,7 +158,27 @@ describe.skipIf(!SHOULD_RUN)("AT0344: the activating click drills down", () => {
           "the activating click leaves the caret in the composer it landed on",
         ).toBe(true);
 
-        // --- 2. Aimed at unaddressable content: the card's own recorded
+        // --- 2. Aimed at the blank band under the last line. Clicked near the
+        //        composer's bottom edge, well below any text, which is where a
+        //        content-box-only rule silently stops drilling. ---
+        await parkOnB(app);
+        const band = await app.evalJS<{ x: number; y: number } | null>(
+          `(function(){
+            const host = document.querySelector('[data-card-id="A"] [data-slot="tug-prompt-entry"] [data-slot="tug-text-editor"]');
+            if (host === null) return null;
+            const r = host.getBoundingClientRect();
+            return { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom - 8) };
+          })()`,
+        );
+        expect(band).not.toBeNull();
+        await app.nativeClick(band!);
+        await app.waitForCondition<boolean>(
+          `window.__tug.getActiveCardId() === "A"`,
+          { timeoutMs: 8000 },
+        );
+        await app.waitForCondition<boolean>(caretIn("A"), { timeoutMs: 8000 });
+
+        // --- 3. Aimed at unaddressable content: the card's own recorded
         //        destination answers, and the keyboard is never stranded. ---
         await parkOnB(app);
         await app.nativeClickAtElement(

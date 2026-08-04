@@ -154,8 +154,10 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     "tugdeck/src/components/tugways/tug-text-editor.tsx": 21,
     // The composer: every test that types into a Session card goes through it.
     // Crossed the budget with the arrow-exit handoff (at0343), which is the
-    // prompt entry's own prop and has no smaller home.
-    "tugdeck/src/components/tugways/tug-prompt-entry.tsx": 21,
+    // prompt entry's own prop and has no smaller home. 21 → 22 with the
+    // Insert as Atom slot (at0346): the composer is where the parked atom is
+    // consumed, so a test of that gesture has nowhere smaller to point.
+    "tugdeck/src/components/tugways/tug-prompt-entry.tsx": 22,
     "tugdeck/src/card-state-orchestrator.ts": 21,
     // The deck's own store: every test that seeds a deck, opens or closes a card,
     // or asserts pane geometry goes through it. Same structural coupling as the

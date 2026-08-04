@@ -134,52 +134,57 @@ body {
   border-width: 0;
 }
 
-/* The shell communicates keyboard focus through its OWN treatment — NEVER the
-   global accent `outline` (focus-ring.css). On this embedded, full-bleed editor
-   that global outline is clipped by the CodeMirror substrate down to a
-   meaningless top/bottom-only accent bar. Kill the global ring + behind-tint on
-   the input-area stop and the editor host in every key state; the ring is
-   re-drawn as an `::after` overlay directly below. */
-.tug-entry-shell-input-area:is([data-key-view-kbd], [data-key-cursor], [data-key-within]),
-.tug-entry-shell .tug-text-editor:is([data-key-view-kbd], [data-key-cursor], [data-key-within]) {
+/* The input-area stop never draws the global accent `outline` (focus-ring.css)
+   — the full-bleed CodeMirror substrate clips it down to a meaningless
+   top/bottom-only accent bar, and more to the point this box gets no ring at
+   all (see below). Kill the global ring + behind-tint on the stop in every key
+   state. (The editor host inside it is suppressed by `tug-text-editor.css`,
+   which forbids it a ring outright.) */
+.tug-entry-shell-input-area:is([data-key-view-kbd], [data-key-cursor], [data-key-within]) {
   outline: none;
   background-image: none;
 }
 
 /* ----------------------------------------------------------------------------
-   The ring, on whichever element is the authored stop
+   No ring anywhere in an entry shell — the wash is the carrier
    ----------------------------------------------------------------------------
-   A shell's text stop is one of two elements depending on the host: the
-   input-area WRAPPER (the prompt entry's composer stop, which wears the ring
-   while the editor itself stays blurred — [P11]) or the embedded EDITOR (the
-   find bar's query field, authored into the host's walk directly). Both draw
-   the same ring, so a keyboard user reads one focus language across the two
-   bottom-docked entry surfaces rather than a ring on one and nothing on the
-   other.
+   A text editor never wears a focus ring, and neither does the box it fills:
+   the distinction between the editor and its input-area wrapper is a DOM
+   detail, and a user sees one rectangle around their text either way. So there
+   is no ring in a shell at all, in any state ([L06] / focus-language.md).
 
-   Drawn as an absolutely-positioned, pointer-inert `::after` rather than an
-   `outline`: the CodeMirror substrate fills the box and paints over a
-   negative-offset inset outline, which is why the suppression above exists at
-   all. An overlay pinned to the box and lifted above the editor renders
-   reliably on top. Square corners — the stop spans the full panel width, so a
-   rounded ring reads as a floating pill. Appearance keyed on the engine
-   attribute, no React state ([L06]).
+   That leaves the cycling stop state — the keyboard on the input area with the
+   editor blurred, where `Return` descends back into typing ([P11]) — needing a
+   carrier, since there is no caret there to be one. The WASH is that carrier:
+   the shell adopts its focus surface whenever the keyboard is anywhere inside
+   it, by caret or by stop, so the panel reads as the live one either way. The
+   caret then answers the finer question the wash does not — *typing here*
+   versus *parked on this stop* — which is the [D122] container/element split
+   doing exactly its job.
    ----------------------------------------------------------------------------- */
 
-.tug-entry-shell-input-area[data-key-view-kbd],
-.tug-entry-shell .tug-text-editor[data-key-view-kbd] {
-  position: relative;
+/* The stop state washes like the caret state: `:focus-within` covers the caret,
+   `[data-entry-keyboard]` covers the engine-routed stop (where DOM focus is
+   parked on the key sink OUTSIDE the shell, so the pseudo-class is false). */
+.tug-entry-shell[data-entry-keyboard] {
+  background-color: var(--tugx-entry-shell-editor-focus);
+}
+.tug-entry-shell[data-entry-keyboard] .tug-text-editor .cm-editor:not(.cm-focused) {
+  background-color: var(--tugx-entry-shell-editor-focus);
 }
 
-.tug-entry-shell-input-area[data-key-view-kbd]::after,
-.tug-entry-shell .tug-text-editor[data-key-view-kbd]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
-  border-radius: 0;
-  pointer-events: none;
-  z-index: 2;
+/* A background window's entry is not the live one — stand the wash down with
+   every other focus mark (focus-ring.css). `:focus-within` does this for free
+   (WebKit drops it with the key window); the engine mark persists, so it needs
+   saying. */
+html[data-app-active="false"] .tug-entry-shell[data-entry-keyboard] {
+  background-color: var(--tugx-entry-shell-surface);
+}
+html[data-app-active="false"]
+  .tug-entry-shell[data-entry-keyboard]
+  .tug-text-editor
+  .cm-editor:not(.cm-focused) {
+  background-color: var(--tugx-entry-shell-editor-rest);
 }
 
 /* ----------------------------------------------------------------------------

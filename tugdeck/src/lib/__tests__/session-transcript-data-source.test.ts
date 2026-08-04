@@ -158,6 +158,7 @@ function snapshotWith(args: {
     pendingDraftRestore: null,
     pendingCommandInsert: null,
     pendingSnippetInsert: null,
+    pendingAtomInsert: null,
     lastCost: null,
     apiRetry: null,
     refusalFallback: null,

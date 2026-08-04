@@ -147,6 +147,11 @@ export const TUG_ACTIONS = {
   //              annotation kind offers — a URL, a path, or a command line
   //              becomes something to talk about rather than something to
   //              follow.
+  // INSERT_AS_ATOM: payload — none. Like INSERT_INTO_COMPOSER, but the
+  //              composer receives an atom rather than text: the file the
+  //              right-click landed on arrives as the same chip an `@`
+  //              mention mints, so it reads as one object and travels as
+  //              one. Menu-only; offered by the kinds an atom can carry.
   CUT:                 "cut",
   COPY:                "copy",
   COPY_AS_PLAIN_TEXT:  "copy-as-plain-text",
@@ -154,6 +159,7 @@ export const TUG_ACTIONS = {
   COPY_COMMAND_AS_PLAIN_TEXT: "copy-command-as-plain-text",
   COPY_ANNOTATION_VALUE: "copy-annotation-value",
   INSERT_INTO_COMPOSER: "insert-into-composer",
+  INSERT_AS_ATOM:      "insert-as-atom",
   PASTE:               "paste",
   PASTE_AS_QUOTE:      "paste-as-quote",
   PASTE_AS_PLAIN_TEXT: "paste-as-plain-text",

@@ -218,17 +218,25 @@ function placementIsSuppressedByPolicy(el: Element | null): boolean {
 
 /**
  * Whether the gesture landed inside a text-entry surface — a contenteditable
- * (the CM6 substrates), an `<input>`, or a `<textarea>`.
+ * (the CM6 substrates), an `<input>`, a `<textarea>`, or anywhere in a
+ * `.tug-text-editor` **host**.
  *
  * The one class of target whose browser mousedown default is not just harmless
  * but *required*: it is what puts the caret at the character the user clicked.
  * Everywhere else the default either clears focus to `<body>` or fights the
  * engine's own placement, which is why it is suppressed on an activating click.
+ *
+ * The host, not just `contentDOM`: an editor is taller than its text (the
+ * composer opens at a min-height), and the blank band below the last line is
+ * `cursor: text` and lands the caret through `host-click.ts` — it is editor as
+ * far as the user is concerned. Testing only `isContentEditable` made the
+ * activating click drill down when it hit a line of text and not when it hit the
+ * empty space under it, which on an empty composer is nearly all of it.
  */
 function isTextEntryTarget(el: Element | null): boolean {
   if (el === null) return false;
   if (el instanceof HTMLElement && el.isContentEditable) return true;
-  return el.closest("input, textarea") !== null;
+  return el.closest("input, textarea, .tug-text-editor") !== null;
 }
 
 

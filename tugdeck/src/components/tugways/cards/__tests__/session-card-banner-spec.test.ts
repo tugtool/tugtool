@@ -80,6 +80,7 @@ function baseSnap(
     pendingDraftRestore: null,
     pendingCommandInsert: null,
     pendingSnippetInsert: null,
+    pendingAtomInsert: null,
     lastCost: null,
     apiRetry: null,
     refusalFallback: null,

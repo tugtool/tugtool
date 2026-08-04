@@ -152,28 +152,26 @@ body {
   background-color: var(--tug7-surface-field-primary-normal-plain-rest);
 }
 
-/* ---- Keyboard key view: the ring OVERLAPS the field's border ----
+/* ---- Keyboard key view: a text editor NEVER wears a ring ----
  *
- * An editor authored into a focus group ([P02] — a dialog's answer field, a
- * reply field) becomes a key view, and the global `[data-key-view-kbd]` rule
- * (focus-ring.css) would float its ring 2px OUTSIDE the field. On a field that
- * already draws a focused border, that reads as two concentric rings. So the
- * ring is pulled onto the border instead: the border recolors to the ring hue
- * and the outline is drawn inside the border box (negative offset) so the two
- * coincide as ONE edge — the same geometry the drop ring below uses (1px
- * border + outline at a negative offset), which is why a focused editor that
- * picks up a drag swaps colour without shifting anything.
+ * The blinking caret is a full carrier of keyboard focus, not a hint that wants
+ * a ring's help. An editor holding the keyboard blinks, and that is the whole
+ * signal; a ring drawn beside a live caret is an **illegal state** by design,
+ * not a redundancy. (When the keyboard is on an editor's *stop* with the editor
+ * stood down and blurred there is no caret to carry anything — that is what the
+ * stop's own ring is for, and it lives on the stop, never here.)
  *
- * Gated on `data-focus-stop` — the editor was authored into a focus group and
- * so can be ringed at all. An editor that is not a stop (the prompt entry, a
- * text card) never matches, so its focus language is untouched. Specificity
- * (0,3,0) beats the global ring rule's (0,1,0). */
-
-/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-focus */
-.tug-text-editor[data-focus-stop][data-key-view-kbd] {
-  border-color: var(--tugx-focus-ring);
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
-  outline-offset: calc(-1 * var(--tugx-focus-ring-width));
+ * So the global `[data-key-view-kbd]` ring (focus-ring.css) is suppressed on
+ * every editor host, in every key state. This used to be the opposite rule —
+ * an editor authored into a focus group recolored its border and drew an inset
+ * outline — which put a ring around the find bar's query field the moment ⌘F
+ * landed the caret in it. Specificity (0,3,0) beats the global rule's (0,1,0).
+ *
+ * Pinned by at0345: no `.tug-text-editor` anywhere in the deck may compute a
+ * visible outline. */
+.tug-text-editor:is([data-key-view-kbd], [data-key-cursor], [data-key-within]) {
+  outline: none;
+  background-image: none;
 }
 
 /* ---- Borderless ---- */

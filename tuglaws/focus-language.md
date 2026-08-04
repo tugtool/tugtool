@@ -86,13 +86,27 @@ Where the gesture *goes* is the Tab rule again, not a parallel one. A text surfa
 
 **The editor takes no ring; the ring belongs to its stop and the caret to the editor.** Arrows now move focus into and out of editors, which is exactly the change that tempts an author to paint a ring on the editor so the landing is visible. The landing is already visible: while the keyboard cycles, the ring lands on the editor's **stop** — the input-area wrapper — with the editor deactivated and blurred, and `Return` descends back into typing. While the user is typing, the editor shows a caret and no ring. Never both, and never a ring on the editor itself.
 
-Which raises the question the rule above assumes an answer to: **the ring is not the only thing that says "the keyboard is here."** A text surface has three carriers, and every surface must be wearing one of them at all times:
+**A text editor never wears a focus ring, in any state.** The blinking caret is a *full* carrier of keyboard focus — as complete an answer to *where am I?* as any ring — so an editor that holds the keyboard simply starts blinking and draws nothing else. A ring beside a live caret is an illegal state, not a redundancy.
 
-- the **ring**, when a stop holds the key view and the surface behind it is stood down;
+**And "the editor" here means the box, not the DOM node.** The distinction between a `.tug-text-editor` and the input-area wrapper it fills is an implementation detail; a user sees one orange rectangle around their text either way. So the prohibition covers the wrapper too, which is where it survived longest: a ring keyed on the *stop* is invisible to any test that only inspects editors, and unreachable by a click, so it sat there through three green assertions and two rounds of "fixed".
+
+This has been broken from three directions, which is why it is a test and not a convention:
+
+- a rule that ringed any editor authored into a focus group — which lit the ⌘F query field the moment the caret landed in it;
+- the opposite "fix": noticing an embedded editor showed no ring (the CodeMirror substrate clips the global outline to a meaningless top/bottom bar) and *adding* one — reading a correct state as a missing feature;
+- the stop's own `::after` ring on the input-area wrapper, which drew the same rectangle one element up.
+
+at0345 sweeps both classes of element, in all four states that put the keyboard in a composer, and asserts nothing draws a ring — outline or `::after` border. It is falsification-checked: re-adding the wrapper ring turns it red.
+
+**Three carriers, and the third is the wash.** A surface that holds the keyboard is always wearing exactly one of:
+
 - the **caret**, when the surface itself has the keyboard and is being typed into;
-- the **wash** — the surface tint an entry shell adopts on `:focus-within` — which says *this composite control is the live one* while the caret inside it answers *where in it*.
+- the **ring**, on *non-text* stops — a chip, a cell, a button — which have no caret of their own;
+- the **wash** — the surface tint an entry shell adopts while the keyboard is anywhere inside it — which says *this composite control is the live one* while the caret inside it answers *where in it*.
 
-The wash is what makes a bottom-docked entry legible at a glance in a deck showing several of them: the caret is one blinking hairline and the eye finds the lit panel first. It is the [D122] container/element split applied to a compound control — the wash marks the container, the caret marks the position — and it is why the entry shell paints its focus surface rather than leaving the panel at rest with a caret in it. A surface that shows *none* of the three while holding the keyboard is a bug, and it is the specific bug worth watching for: an embedded editor whose host suppressed the global ring (the CodeMirror substrate clips it to a meaningless top/bottom bar) and then never drew a replacement. `TugEntryShell` draws that replacement as an `::after` overlay on whichever element is the authored stop, for **both** its occupants — the composer's input-area wrapper and the find bar's query field.
+The wash is what makes a bottom-docked entry legible at a glance in a deck showing several of them: the caret is one blinking hairline and the eye finds the lit panel first. It is the [D122] container/element split applied to a compound control — the wash marks the container, the caret marks the position.
+
+It is also what lets the ring go. The cycling **text stop** ([P11] — keyboard on the input area, editor blurred, `Return` descends back into typing) used to be the one state that justified a ring on an editor's box, because there is no caret there to carry anything. The wash carries it instead: the shell lights whether the keyboard arrived as a caret or as a stop, and the caret's *presence or absence* is what distinguishes the two. That is the honest signal — an editor with no caret is not being typed into, and it does not need a rectangle to say so. The wash therefore keys on the engine mark (`data-entry-keyboard`, mirrored onto the shell root) and not on `:focus-within` alone, which is false in the stop state because DOM focus is parked on the key sink outside the shell.
 
 **One entry shell is lit at a time, and the lit one owns `Return`.** With the find bar open a card shows two shells, each with a field whose own keymap owns `Return` — submit in the composer, find-next in the query field. So `Return`'s home genuinely follows the caret, and the button that promises it follows the caret too: the shell holding the caret lights its default button (`data-tug-entry-default`, the same offset ring + filled promotion `[data-default-ring]` paints), and the other stands its fill down to outlined. Two filled accent buttons on screen read as two live controls; exactly one may be. This is deliberately *not* the engine's `persistentDefaultRing`, which is a standing mount-scoped claim on one scope-wide Return-home — two shells would fight over that slot to express a state that is not standing at all.
 
