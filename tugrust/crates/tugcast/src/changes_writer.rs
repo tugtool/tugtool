@@ -25,10 +25,8 @@
 //! proves the owner is alive, so a refused write never triggers failover:
 //! taking the claim there would mean a healthy owner losing the database
 //! over a disagreement. A `4xx` refusal is permanent — the owner
-//! understood and will not accept — and the way that happens in practice
-//! is a follower forwarding a `Record` variant its older owner cannot
-//! deserialize. That is a version skew, not damage: nothing is corrupt
-//! and nothing is left pending, so it is reported to the caller as that
+//! understood the request and will not accept it — so nothing is corrupt
+//! and nothing is left pending, and it is reported to the caller as that
 //! one gesture's failure rather than latching the process-wide degraded
 //! flag the deck renders as a damaged ledger.
 
@@ -80,9 +78,7 @@ pub enum ForwardError {
     NoOwner,
     /// The owner answered and refused the write. An answer proves the owner
     /// is alive, so this is never a failover trigger. `permanent` marks a
-    /// refusal retrying cannot fix — the owner understood the request and
-    /// will not accept it, which is what a build too old to deserialize a
-    /// newer `Record` variant looks like from here.
+    /// refusal retrying cannot fix.
     Rejected { detail: String, permanent: bool },
     /// Transport failure talking to the owner.
     Transport(String),
@@ -153,10 +149,8 @@ impl ChangesForwarder {
                 .unwrap_or("unknown error")
                 .to_string()
         };
-        // 4xx: the owner understood the request and refused it. The one way
-        // that happens in practice is a record variant this owner's build
-        // does not know — a newer follower forwarding to an older owner —
-        // and no amount of retrying teaches it the variant.
+        // 4xx: the owner understood the request and refused it. Resending an
+        // unacceptable record cannot make it acceptable.
         if (400..500).contains(&status) {
             return Err(ForwardError::Rejected {
                 detail: detail(),
@@ -306,11 +300,10 @@ mod tests {
         .unwrap();
     }
 
-    /// An owner that answers `400` understood the request and refused it —
-    /// which is exactly what a build too old to deserialize a newer `Record`
-    /// variant does. That must classify as a permanent rejection: the caller
-    /// needs to hear "refused", not "unreachable", or a healthy owner gets
-    /// its claim taken and a version skew is reported as a damaged ledger.
+    /// An owner that answers `400` understood the request and refused it.
+    /// That must classify as a permanent rejection: the caller needs to hear
+    /// "refused", not "unreachable", or a healthy owner gets its claim taken
+    /// and one bad record is reported as a damaged ledger.
     #[tokio::test]
     async fn an_owner_that_refuses_the_record_is_a_permanent_rejection() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

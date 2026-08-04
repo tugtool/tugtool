@@ -184,9 +184,8 @@ pub enum LedgerError {
     Serde(#[from] serde_json::Error),
 
     /// The instance owning the shared changes ledger answered this forwarded
-    /// write with a refusal retrying cannot fix — in practice, a build too
-    /// old to deserialize the record. The owner is healthy and the database
-    /// is intact, so this is one gesture's failure and nothing more.
+    /// write with a refusal retrying cannot fix. The owner is healthy and the
+    /// database is intact, so this is one gesture's failure and nothing more.
     #[error("the changes-ledger owner refused the write: {0}")]
     ForwardRejected(String),
 }
@@ -3198,9 +3197,7 @@ impl SessionLedger {
             }) => {
                 tracing::error!(
                     detail,
-                    "the changes-ledger owner refused this write and always will — \
-                     it is very likely an older build that does not know this record; \
-                     rebuild every tug binary so the owner and its followers agree"
+                    "the changes-ledger owner refused this write and always will"
                 );
                 Err(LedgerError::ForwardRejected(detail))
             }

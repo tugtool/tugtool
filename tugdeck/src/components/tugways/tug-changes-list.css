@@ -136,7 +136,7 @@
   color: var(--tug7-element-tone-text-normal-accent-rest);
 }
 
-/* ---- Unattributed section label ---- */
+/* ---- Section labels ---- */
 
 .tug-changes-list-section-label {
   display: flex;
@@ -154,9 +154,16 @@
   margin-top: var(--tug-space-xs);
 }
 
-/* The "Claim all" bulk affordance sits at the section header's trailing edge:
-   an accent icon+text button whose casing matches the header's uppercase. */
-.tug-changes-list-claim-all {
+/* The caution tone marks a bucket asking for a decision. The session's own
+   files are the ordinary state, so their header stays muted. */
+[data-slot="tug-changes-list-session-label"] {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The bulk affordances sit at the section header's trailing edge: accent
+   icon+text buttons whose casing matches the header's uppercase. */
+.tug-changes-list-claim-all,
+.tug-changes-list-disclaim-all {
   flex: 0 0 auto;
   text-transform: uppercase;
   letter-spacing: 0.05em;

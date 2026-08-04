@@ -704,9 +704,15 @@ export interface TugChangesListProps {
   /** A claim round trip is in flight — every Claim affordance disables until
    *  the reply lands, so a slow or refused claim never invites a re-click. */
   claimPending?: boolean;
+  /** Optional label rendered above the session entry. Present only when the
+   *  section needs a header — which is what carries "Disclaim all". */
+  sessionLabel?: string;
   /** When set, session-entry rows show a Disclaim affordance that removes the
    *  path from this session's changeset — claim's inverse. */
   onDisclaimFile?: (path: string) => void;
+  /** When set (and the section has 1+ files), a "Disclaim all" button on the
+   *  session header renounces every path in one request — claim-all's inverse. */
+  onDisclaimAllFiles?: (paths: string[]) => void;
   /** A disclaim round trip is in flight — every Disclaim affordance disables
    *  until the reply lands. */
   disclaimPending?: boolean;
@@ -725,7 +731,9 @@ export function TugChangesList({
   onClaimOrphaned,
   onClaimAllOrphaned,
   claimPending,
+  sessionLabel,
   onDisclaimFile,
+  onDisclaimAllFiles,
   disclaimPending,
   className,
 }: TugChangesListProps): React.ReactElement {
@@ -740,7 +748,7 @@ export function TugChangesList({
             ? unattributedLabel
             : entry.kind === "orphaned"
               ? orphanedLabel
-              : undefined;
+              : sessionLabel;
         const onClaim =
           entry.kind === "unattributed"
             ? onClaimUnattributed
@@ -754,6 +762,9 @@ export function TugChangesList({
               ? onClaimAllOrphaned
               : undefined;
         const claimAllPaths = onClaimAll !== undefined ? diffablePathsOf(entry) : [];
+        const onDisclaimAll = entry.kind === "session" ? onDisclaimAllFiles : undefined;
+        const disclaimAllPaths =
+          onDisclaimAll !== undefined ? diffablePathsOf(entry) : [];
         return (
           <React.Fragment key={entry.id}>
             {label !== undefined ? (
@@ -782,6 +793,30 @@ export function TugChangesList({
                     }}
                   >
                     Claim all
+                  </TugPushButton>
+                ) : null}
+                {onDisclaimAll !== undefined && disclaimAllPaths.length >= 1 ? (
+                  <TugPushButton
+                    className="tug-changes-list-disclaim-all"
+                    subtype="icon-text"
+                    icon={<CornerUpRight size={12} />}
+                    size="2xs"
+                    emphasis="outlined"
+                    role="accent"
+                    disabled={disclaimPending}
+                    title={
+                      disclaimPending
+                        ? "Disclaiming…"
+                        : "Disclaim all files from this session"
+                    }
+                    aria-label="Disclaim all files from this session"
+                    data-testid="tug-changes-list-disclaim-all"
+                    onClick={(event) => {
+                      event?.stopPropagation();
+                      onDisclaimAll(disclaimAllPaths);
+                    }}
+                  >
+                    Disclaim all
                   </TugPushButton>
                 ) : null}
               </div>
