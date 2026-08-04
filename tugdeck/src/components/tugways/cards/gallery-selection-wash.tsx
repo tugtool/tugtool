@@ -269,6 +269,7 @@ function AbList({ arm }: { arm: "shipped" | "candidate" }): React.ReactElement {
         inline
         scrollKey={`sw-ab-${arm}`}
         interactive={false}
+        rowLayout="flush"
       />
     </div>
   );

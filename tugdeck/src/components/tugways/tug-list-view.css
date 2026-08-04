@@ -329,6 +329,15 @@ body {
   display: block;
   /* Anchor for the keyboard-cursor edge bar (`::before`, below). */
   position: relative;
+  /* Square, always. `focus-ring.css` gives everything carrying a keyboard mark
+     a default ring radius at zero specificity, so a flat CONTAINER key-view
+     (a radio / choice / option / list / accordion root) doesn't wear a harsh
+     square ring. A cell is not a container: it is a full-bleed row, its cursor
+     mark is a leading-edge bar rather than a ring, and its selection fill has
+     to reach the row's corners square — a rounded one reads as a corner cut out
+     of the band. The cursor row and the selected row are the same row in a
+     `singleSelect` picker, which is where that showed. */
+  border-radius: 0;
 }
 
 /* ---- Offscreen-skip (inline mode, opt-in) ----
