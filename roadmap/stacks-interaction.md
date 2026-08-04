@@ -30,9 +30,11 @@ This plan adds the local surface. A **stack badge** in the title bar makes the d
 - **Derive, never store.** A slot's stack is `DeckState.panes` filtered by `slot`, ordered by the array's own z-order. Nothing new is persisted and no serialization version moves.
 - **Render the picker from store data, not from resurrected DOM.** Buried panes are `visibility: hidden`; a picker built from the store never has to negotiate with the occlusion controller.
 - **Compose the components that exist.** The picker is a `TugPopupMenu` — the same component the title bar's `…` menu already uses — and the badge is a `TugButton` acting as its trigger. No hand-rolled menu, no hand-rolled list focus.
-- **Reach the pane the way the X button does.** `TugPane` already answers `CLOSE_PANE` by calling `titleBarRef.current?.requestClose()`. The reveal chord takes the identical path to a new `revealStack()` handle.
+- **Reach the pane the way the X button does.** `TugPane` already answers `CLOSE_PANE` by calling `titleBarRef.current?.requestClose()`. The reveal chord takes the identical path to a new `revealStack()` handle — which is also the one chain action a headless app-test is known to be able to drive.
+- **Resolve the pointer gesture where it is already parked.** The drag machine's pointer-up has a branch for "the pointer never travelled, so this was a click on the title bar." Cmd-click opens the picker from inside that branch rather than from a second handler the frame's pointer capture would hide the events from ([P05]).
 - **Own the chord at the menu bar.** AppKit resolves a menu key equivalent before the `WKWebView` ever sees a keydown, so ⌘R must be a menu item to fire reliably. Free it first, in its own commit, before anything depends on it.
-- **Sequence so each commit stands alone:** free the chord → derive the stack → build the picker → wire the pointer paths → wire the chord → gate its enablement → test → document.
+- **Find out what the test tier can see before writing the tests.** Two mechanisms this feature rides — the rAF-gated drag threshold and the WAAPI-gated menu selection — are the kind that pass by not running. Spec S07 settles the first from the code and probes the second at Step 3.
+- **Sequence so each commit stands alone:** free the chord ∥ derive the stack ∥ ready the menu → build the picker → wire the pointer path → wire the chord → gate its enablement → test → document. The first three are independent of one another.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -40,8 +42,8 @@ This plan adds the local surface. A **stack badge** in the title bar makes the d
 - Clicking the badge opens a menu listing every pane in that slot, topmost first, with the front pane check-marked. (app-test: count `[role="menuitem"]` rows in the opened menu; assert the labels and the checked row.)
 - Choosing a non-front row raises that pane: it becomes the deck's first responder and its frame carries the highest `z-index` of the slot. (app-test: `getFocusedCardId()` and a `z-index` read on both frames.)
 - Cmd-clicking a title bar opens the same picker and does **not** raise the pane it was clicked on. (app-test: `click(selector, { metaKey: true })`, then assert the menu is open and `getFocusedCardId()` is unchanged.)
-- Cmd-dragging a title bar still moves the pane (and still evicts it from its slot); it does not open the picker. (app-test: native drag with the command modifier; assert the frame moved and no menu is present.)
-- ⌘R opens the picker for the focused pane; the `Window ▸ Reveal Stack` item is validated **disabled** when the focused pane is free, is the Lens, or is alone in its slot. (app-test: `menuItemState("window.revealStack")` across the same seeded deck; `nativeKey("r", ["cmd"])` for the live chord.)
+- Cmd-dragging a title bar still moves the pane (and still evicts it from its slot); it does not open the picker. (app-test, **foreground tier** per Spec S07: native drag with the command modifier; assert the frame moved and no menu is present.)
+- ⌘R opens the picker for the focused pane and a second ⌘R closes it; the `Window ▸ Reveal Stack` item is validated **disabled** when the focused pane is free, is the Lens, or is alone in its slot. (app-test: `menuItemState("window.revealStack")` across the same seeded deck; `nativeKey("r", ["cmd"])` for the live chord.)
 - `Maker ▸ Reload` fires on ⇧⌘R and nothing fires on ⌘R in the Maker menu. (at0168's static structure table.)
 
 #### Scope {#scope}
@@ -119,8 +121,9 @@ This plan uses explicit `{#anchor}` headings, `[P##]` for plan-local decisions (
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | ⌘R shadowing something unnoticed | med | low | at0168's static table is asserted by identifier + key + modifier mask; the Reload move and the new item both land in it | any new `keyEquivalent: "r"` |
-| Cmd-click steals Cmd-drag on the title bar | med | med | open on pointer-**up** with no travel ([P05]) | a report that a background pane can't be Cmd-moved |
-| Controlled-open change destabilizes every existing popup menu | high | low | the new props are optional; absent them the component keeps its exact current uncontrolled behavior ([P06]) | any menu regression after Step 3 |
+| Cmd-click steals Cmd-drag on the title bar | med | med | resolve in the drag machine's existing no-travel branch, which already distinguishes the two ([P05]) | a report that a background pane can't be Cmd-moved |
+| Controlled-open change destabilizes every existing popup menu | high | low | the new props are optional; absent them the component keeps its exact current uncontrolled behavior ([P06]) — **and Step 3 gives the component the `@covers` line it has never had**, so the regression is detectable | any menu regression after Step 3 |
+| An app-test certifies a behavior the tier cannot exercise | high | med | Spec S07: the rAF-gated drag threshold is known and takes the foreground tier; the WAAPI-gated selection path is probed at Step 3, before at0347 is written | any new assertion that depends on a frame or an animation completing |
 | Badge crowds the title bar at six-up widths | low | med | ghost icon button on the existing control rhythm, hidden entirely at depth 1 | a six-up deck with long titles |
 
 **Risk R01: The picker raises a pane the user cannot then see** {#r01-raise-invisible}
@@ -204,14 +207,17 @@ transferFocusForActivation({
 
 #### [P05] Cmd-click opens the picker on pointer-up without travel; Cmd-drag still drags (DECIDED) {#p05-cmd-click-not-drag}
 
-**Decision:** `CardTitleBar`'s title-bar pointer handler, on a meta-modified primary press, records the origin and defers: on pointer-up with no travel beyond the drag threshold it opens the picker; if the pointer travels first, it hands off to the existing `onDragStart` path and never opens the picker.
+**Decision:** The Cmd-click decision is resolved **in the drag machine's own no-travel branch**, not by a second gesture handler. `handleTitleBarPointerDown` calls `onDragStart` on a meta-modified press exactly as it does today; `handleDragStart` records `event.metaKey` in a ref alongside the origin it already snapshots; and `onPointerUp`'s existing `if (!dragMoved.current)` early return — the branch whose comment already reads *"The pointer never travelled, so this was a click on the title bar"* — opens the picker when that ref is set. A drag past the threshold latches `dragMoved` and the branch is never reached, so Cmd-drag is untouched.
 
 **Rationale:**
 - Cmd-drag on a title bar is meaningful today and must survive: for a free pane it is the Mac convention of moving a background window without raising it, and for an imposed pane the drag is how it is *evicted* from its slot (`handlePaneMoved` with `evictSlot`). Opening a menu on Cmd-*press* would kill both.
-- The gesture interpreter already models this exact tension for cross-card activation — "a click and a drag want opposite outcomes here… park the decision; the gesture's ending resolves it" (`activation: "deferred"`). This is the same resolution applied one layer up.
+- The gesture interpreter already models this exact tension for cross-card activation — "a click and a drag want opposite outcomes here… park the decision; the gesture's ending resolves it" (`activation: "deferred"`). This is the same resolution applied one layer up — and the drag machine has *already* parked exactly this decision, so the resolution is a branch that exists rather than a mechanism that has to be built.
+- **A pointer-up handler on `CardTitleBar` could not see the release at all.** `handleDragStart` calls `frame.setPointerCapture(...)` on pointerdown and attaches its move/up listeners to the frame; while that capture is held every pointer event retargets to the frame, so the title bar is off the propagation path. (`handleClosePointerUp` works only because the close *button* takes the capture itself.)
+- **Deferring `onDragStart` until travel — the obvious alternative — costs three things.** The title bar would need its own capture and its own move listener; it would have to hand a native `PointerEvent` to a callback typed `(event: React.PointerEvent) => void` that reads `event.nativeEvent.pointerId`; and `captureFocusForDragStart` would run *after* the mousedown blur it exists to beat, losing the active card's focus bag on every Cmd-drag.
 
 **Implications:**
-- The pointer-up handler must confirm the release is still within the title bar, matching `handleClosePointerUp`'s existing inside-the-rect check.
+- Nothing new tracks travel or containment: `DRAG_MOVE_THRESHOLD_PX` and the capture-scoped release are the drag machine's, reused rather than restated. A release outside the title bar is a release outside the *frame*'s capture only if the pointer left the window, which the existing branch already tolerates.
+- The picker opens from `TugPane`, which already holds `titleBarRef` — the same handle Step 6's chain action calls. One opener, two callers.
 - No change to `gesture-interpreter.ts` is needed or made — see [P10].
 
 #### [P06] `TugPopupMenu` gains an optional controlled `open` / `onOpenChange` pair (DECIDED) {#p06-controlled-popup-menu}
@@ -236,13 +242,18 @@ transferFocusForActivation({
 - Pull-based validation from a cached `MenuState` is the established pattern for every conditional item in the bar (`selectionActive`, `session.*`, the Edit capability block).
 - A disabled item is silent. An enabled item that no-ops would beep or, worse, look broken.
 
+**⌘R while the picker is already open closes it, and the ordering that makes that deterministic is the chain's, not a race.** An open `TugPopupMenu` subscribes to `manager.observeDispatch` and closes on any chain dispatch that is not its own blink (`blinkingRef` is the sole exemption), and `REVEAL_STACK` travels the chain — so the chord's own dispatch reaches that observer. Two facts settle the outcome. First, `sendToFirstResponder` walks the chain and *then* calls `notifyDispatchObservers`, so the responder action always runs before any observer. Second, the subscription is gated on `open`, so a closed menu has no observer registered at all. `revealStack()` therefore **toggles** — `setStackMenuOpen((prev) => !prev)`, guarded by `slotStack.length > 1` — and both paths are single-valued: open → the toggle queues `false`, the observer then queues `false` again, the menu closes; closed → no observer exists, the toggle queues `true`, the menu opens. A chord that opens a surface should close it, and here that is also the only outcome the dispatch order permits.
+
 **Implications:**
 - `MenuStateDeckProjection` and `MenuStatePayload` grow one number; `MenuState` in `AppDelegate.swift` grows the matching `var stackDepth: Int = 0` and parses it.
 - `Window ▸ Reveal Stack` sits beside `Previous Card` / `Next Card` / `Cycle Panes`, the existing pane-navigation cluster.
+- The item's title stays `Reveal Stack` in both states. A verb that flips with visibility (the `session.toggleChanges` pattern) would need the open/closed bit on the menu-state wire, and a transient menu's open state is not something the host should be told about.
 
 #### [P08] The badge is a layers glyph plus the count, and it is the picker's trigger (DECIDED) {#p08-badge-form}
 
-**Decision:** The badge is a ghost `TugButton` (`subtype="icon"`, `emphasis="ghost"`, `role="action"`, `size="sm"`) rendering a `Layers` icon and the stack depth as its label, `data-testid="tug-pane-title-bar-stack-badge"`, placed at the head of `.tug-pane-title-bar-controls` — before the `…` menu, the collapse chevron, and the close box. It is the `TugPopupMenu` trigger.
+**Decision:** The badge is a ghost `TugButton` (`subtype="icon-text"`, `emphasis="ghost"`, `role="action"`, `size="sm"`) rendering a `Layers` icon and the stack depth as its label, `data-testid="tug-pane-title-bar-stack-badge"`, placed at the head of `.tug-pane-title-bar-controls` — before the `…` menu, the collapse chevron, and the close box. It is the `TugPopupMenu` trigger.
+
+`icon-text` is the subtype that carries both, and it is the one the component defines for this: `subtype="icon"` is the **square, icon-only** button, and passing it a label would render nothing. The icon rides `icon`, the count rides `children`, and the `aria-label` below is still required because the visible label is a bare number.
 
 **Rationale:**
 - One affordance that reads the same at depth 2 and depth 6, unlike a dot row which grows and stops being countable at a glance.
@@ -312,13 +323,16 @@ An app-test asserting badge counts must therefore not assume buried panes are un
              └─ responderChainManagerRef.sendToFirstResponder({ action: REVEAL_STACK, phase: "discrete" })
                  └─ TugPane's useResponder actions map
                      └─ titleBarRef.current?.revealStack()
-                         └─ CardTitleBar setStackMenuOpen(true)
+                         └─ CardTitleBar setStackMenuOpen(prev => !prev)   [P07] toggle
                              └─ TugPopupMenu (controlled open, [P06])
+                                 └─ …and then observeDispatch sees this very dispatch
+                                     and closes an already-open menu — which is why
+                                     the handle toggles rather than sets
 ```
 
 The last three hops are the `CLOSE_PANE` precedent exactly: `TugPane` answers a chain action by calling an imperative handle on `CardTitleBar`, which owns the transient UI state. `focus-lens` is the precedent for the first three (a menu selector → `sendControl` → `registerAction` → `sendToFirstResponder`).
 
-The pointer paths are shorter and share only the last hop: the badge click is Radix's own trigger handling, and the Cmd-click sets the same controlled state ([P05]).
+The two pointer paths are shorter and rejoin at the same handle. The badge click is Radix's own trigger handling — the badge *is* the trigger, so nothing is plumbed for it. The Cmd-click arrives from `TugPane`'s drag pointer-up, in the no-travel branch, and calls `revealStack()` on the same ref the chain action uses ([P05]) — so there is exactly one opener with three callers, not three openers.
 
 ---
 
@@ -399,6 +413,8 @@ const stackDepth = state.activePaneId === undefined
   : slotStackOf(state, focusedStack?.slot).length;
 ```
 
+**The invariant this rests on, stated because the two "focused"s are not the same concept.** `projectDeckState`'s `focusedStack` is `panes[panes.length - 1]` (z-order top, the reading behind `getFocusedCardId`), while the chord dispatches to the **first responder**, which is `activePaneId`'s pane (`getFirstResponderCardId`). The gate and the action agree because every raise path moves the pane to the end of the array *and* writes `activePaneId` in the same commit — `_commitStandardFirstResponderFlip` splices-and-pushes, and `focusCard` does the same — so whenever `activePaneId` is set, its pane **is** the last element. The `undefined` guard above covers the one state where they part: a deselected deck, where the array still has a last element and no pane is the first responder. If a future path ever sets `activePaneId` without re-ordering, this formula is where it will show up, and the unit test below (`stackDepth` 0 when `activePaneId` is undefined) is the tripwire.
+
 Swift side: `var stackDepth: Int = 0`, parsed as `payload["stackDepth"] as? Int ?? 0`.
 
 **Spec S04: `TugPopupMenu` controlled open** {#s04-controlled-open}
@@ -430,20 +446,49 @@ Every existing `setOpen(...)` call inside the component then routes through this
 **Spec S05: `CardTitleBarHandle.revealStack`** {#s05-reveal-stack-handle}
 
 ```ts
-/** Open the stack picker, as if the badge had been clicked. No-op when the
- *  pane holds no slot or its slot holds one pane (no badge is rendered). */
+/** Toggle the stack picker. Opens it as if the badge had been clicked;
+ *  closes it when it is already open, which is also what the chord's own
+ *  chain dispatch would do to it ([P07]). No-op when the pane holds no slot
+ *  or its slot holds one pane (no badge is rendered, so there is no anchor). */
 revealStack: () => void;
 ```
 
 Joins `requestClose` / `requestCloseWith` on the existing handle.
 
+**The open state must not outlive the badge.** `stackMenuOpen` can be `true` at the moment the badge stops rendering: a peer in the slot closes (⌘W, the X box), a drag evicts one, or a kind change clamps a slot — any of which drops `slotStack.length` to 1 while the menu is up. The trigger then unmounts with the menu open, so `useFocusTrap`'s `onCloseAutoFocus` never runs (the keyboard focus is left on a removed node) and the stale `true` means the badge mounts *already open* the next time this pane joins a stack. `CardTitleBar` therefore closes it on the way down:
+
+```ts
+useEffect(() => {
+  if (slotStack.length <= 1) setStackMenuOpen(false);
+}, [slotStack.length]);
+```
+
+This is the [P01] derivation paying off in the other direction: the picker's existence and its contents both follow the store, so the collapse case needs no notification — the prop it already reads is the signal.
+
+**Spec S07: which tier each assertion runs in, and the probe that decides** {#s07-test-tier}
+
+Background app-test windows run **no rAF** and throttle DOM timers. Two things this feature is built on live on the wrong side of that line, and both must be settled before at0347 is written rather than after.
+
+**Known — the drag threshold is rAF-gated.** `dragMoved.current = true` is set *only* inside `applyDragFrame`, which runs from `requestAnimationFrame`. In a background window a synthetic Cmd-drag therefore never latches as a move: it falls into the no-travel branch and — under [P05] — **opens the picker**. So at0347's "the frame moved and no menu is present" would fail on both halves, and would do so by inverting the feature rather than by missing it. That case runs `foreground: true`, or not at all.
+
+**Unknown — item selection is gated on a WAAPI promise.** `handleItemSelect` fires the caller's `onSelect` only inside `animate(target, blinkKeyframes, …).finished.then(...)`, a 350ms blink. Whether that promise resolves in a background window is not something this plan should guess at, and there is no precedent to inherit: **no test in the corpus opens a `TugPopupMenu` and clicks a row.** Every selection assertion in at0347 — and the ⌘R + arrow + Return keyboard path the non-goals name as the way through a stack — hangs off the answer.
+
+**The probe, run at #step-3:** in a scratch app-test, open the title bar's existing `…` menu on a seeded card, click one of its rows, and assert the item's effect landed. Cheap, and it is the only thing that has to happen in a particular order for Step 8 to be writable.
+
+| Probe result | at0347 |
+|---|---|
+| Selection lands in the background tier | One file. Only the Cmd-drag case carries `foreground: true`. |
+| Selection needs a foreground window | Split: at0347 keeps the badge, `data-stack-depth`, menu-opens, and row-contents assertions in the background tier; a foreground at0349 takes row selection, the raise, and Cmd-drag. |
+
+Either way the split runs along one line — **what can be observed without a frame, versus what needs one** — and the file that needs a frame declares `foreground: true` and earns it, per the harness's own `@foreground` convention.
+
 #### State Zone Mapping {#state-zone-mapping}
 
 | State | Zone | Mechanism | Law |
 |-------|------|-----------|-----|
-| Slot stack membership + order | structure (derived, not new) | `slotStackOf` over the deck store snapshot in `DeckCanvas`; passed to `TugPane` as a prop, as `placement` already is | [L02], [L09] |
+| Slot stack membership + order | structure (derived, not new) | `slotStackOf` over the `useSyncExternalStore` deck state in `DeckCanvas`, inside the `useMemo` that already builds `sortedStacks` / `zIndexMap`; passed to `TugPane` as a prop, as `placement` already is | [L02], [L09] |
 | `stackDepth` handed to a pane | structure (derived prop) | plain prop through `TugPane` → `CardTitleBar`; no store of its own | [L02] |
-| Stack-picker open/closed | local-data | `useState` in `CardTitleBar`, beside the existing `closeOpen`; fed to `TugPopupMenu`'s controlled pair | [L06] |
+| Stack-picker open/closed | local-data | `useState` in `CardTitleBar`, beside the existing `closeOpen`; fed to `TugPopupMenu`'s controlled pair | [L24] |
 | `data-stack-depth` on the frame | appearance / test hook | direct DOM attribute rendered by `TugPane`, beside the existing `data-imposed` | [L06] |
 | Menu-item enablement | structure mirrored outward | `HostMenuStatePublisher` diff + coalesce → `webkit.messageHandlers.menuState` | [L02] |
 | Badge presence | derived at render | `stackDepth > 1` in JSX; no state | [L02] |
@@ -459,7 +504,8 @@ Nothing here introduces external state that React reads outside `useSyncExternal
 | File | Purpose |
 |------|---------|
 | `tests/app-test/at0347-stack-badge-picker.test.ts` | Badge presence/absence, picker contents, raise-on-select, Cmd-click opens without raising, Cmd-drag still drags |
-| `tests/app-test/at0348-reveal-stack-chord.test.ts` | ⌘R opens the picker; `window.revealStack` enablement across free / Lens / depth-1 / depth-2; `maker.reload` on ⇧⌘R |
+| `tests/app-test/at0348-reveal-stack-chord.test.ts` | ⌘R opens the picker and a second ⌘R closes it; `window.revealStack` enablement across free / Lens / depth-1 / depth-2 |
+| `tests/app-test/at0349-stack-picker-foreground.test.ts` | **Conditional** — the `foreground: true` cases. Always holds the Cmd-drag case; holds row selection and the raise too if the Spec S07 probe finds WAAPI does not resolve in a background window. If the probe comes back clean, this file is just the Cmd-drag case and at0347 keeps the rest. |
 
 No new source files: every change lands in a module that already owns the concern.
 
@@ -473,7 +519,8 @@ No new source files: every change lands in a module that already owns the concer
 | `TugPaneProps.slotStack` | prop (new) | `tugdeck/src/components/chrome/tug-pane.tsx` | `readonly SlotStackEntry[]`; empty for free panes and the Lens |
 | `CardTitleBarProps.slotStack` | prop (new) | `tugdeck/src/components/chrome/tug-pane.tsx` | passed straight through |
 | `CardTitleBarProps.onRevealPane` | prop (new) | `tugdeck/src/components/chrome/tug-pane.tsx` | `(entry: SlotStackEntry) => void`; the raise, wired in `DeckCanvas` |
-| `CardTitleBarHandle.revealStack` | method (new) | `tugdeck/src/components/chrome/tug-pane.tsx` | Spec S05 |
+| `CardTitleBarHandle.revealStack` | method (new) | `tugdeck/src/components/chrome/tug-pane.tsx` | Spec S05; toggles ([P07]) |
+| `dragStartedWithMeta` | ref (new) | `tugdeck/src/components/chrome/tug-pane.tsx` | in `TugPane`'s drag state; read in `onPointerUp`'s no-travel branch ([P05]) |
 | `data-stack-depth` | DOM attr (new) | `tugdeck/src/components/chrome/tug-pane.tsx` | on the frame, beside `data-imposed` |
 | `TugPopupMenuProps.open` / `.onOpenChange` | props (new, optional) | `tugdeck/src/components/tugways/internal/tug-popup-menu.tsx` | Spec S04 |
 | `TUG_ACTIONS.REVEAL_STACK` | const (new) | `tugdeck/src/components/tugways/action-vocabulary.ts` | `"reveal-stack"`, with the payload comment block the file's convention requires |
@@ -522,11 +569,13 @@ No new source files: every change lands in a module that already owns the concer
 
 #### Step Status Ledger {#step-status-ledger}
 
+Steps 1, 2, and 3 are mutually independent and may land in any order; everything from Step 4 on is sequenced.
+
 | Step | Title | Status | Commit |
 |---|---|---|---|
 | #step-1 | Free ⌘R — move Maker ▸ Reload to ⇧⌘R | pending | — |
 | #step-2 | Derive the slot stack and hand it to every pane | pending | — |
-| #step-3 | Give TugPopupMenu an optional controlled open | pending | — |
+| #step-3 | Give TugPopupMenu an optional controlled open (+ its first `@covers`, + the Spec S07 probe) | pending | — |
 | #step-4 | The stack badge and the stack picker | pending | — |
 | #step-5 | Cmd-click the title bar opens the picker | pending | — |
 | #step-6 | Window ▸ Reveal Stack (⌘R) through the chain | pending | — |
@@ -547,6 +596,8 @@ No new source files: every change lands in a module that already owns the concer
 - `tugapp/Sources/AppDelegate.swift` — the `reloadItem` construction in the Maker menu
 - `tests/app-test/at0168-menu-structure.test.ts` — the static structure table
 
+**How much of ⌘R is actually taken.** The Maker menu is `isHidden = !makerModeEnabled`, and AppKit skips hidden items when matching key equivalents — so in the shipping default ⌘R already reaches nothing, and the collision this step resolves is **maker mode only**. That is still worth its own commit and still has to land first: maker mode is the mode this feature will be built and demoed in, and a chord that works for users but beeps for the person implementing it is not a chord anyone can trust.
+
 **Tasks:**
 - [ ] In `AppDelegate.swift`, change the `maker.reload` item from `keyEquivalent: "r"` to `keyEquivalent: "r", modifierMask: [.command, .shift]`, following the `edit.redo` / `file.openQuickly` pattern already used in the file for promoted chords.
 - [ ] Update at0168's table entry from `{ id: "maker.reload", key: "r", mods: MOD.command }` to `mods: MOD.command | MOD.shift`.
@@ -563,7 +614,7 @@ No new source files: every change lands in a module that already owns the concer
 
 #### Step 2: Derive the slot stack and hand it to every pane {#step-2}
 
-**Depends on:** #step-1
+**Depends on:** nothing — the derivation is independent of the chord, and this step may land before, after, or beside #step-1.
 
 **Commit:** `tugways(imposer): derive each slot's stack and hand it to its panes`
 
@@ -579,7 +630,8 @@ No new source files: every change lands in a module that already owns the concer
 - [ ] Add `slotStackOf(state, slot)` to `deck-store-selectors.ts` per Spec S01, beside `findLensPane`. Returns `[]` for `undefined`, preserves `panes` order.
 - [ ] Add `paneDisplayTitle(state, pane)` per Spec S02, lifting the fallback chain out of `projectDeckState`, and rewrite `projectDeckState` to call it (behavior identical).
 - [ ] Add the `SlotStackEntry` interface per Spec S06 to the same module.
-- [ ] In `deck-canvas.tsx`, alongside the existing `placementFor(stackState)` call in the `TugPane` render, build and pass `slotStack`: `slotStackOf(snapshot, stackState.slot)`, **reversed** to topmost-first (#z-order), mapped to `SlotStackEntry` via `paneDisplayTitle`, with `topmost` true for the first element. Compute the per-slot grouping once per render rather than per pane if the map is convenient; correctness, not micro-optimization, is the bar.
+- [ ] In `deck-canvas.tsx`, build a `slot → readonly SlotStackEntry[]` map **inside the existing `useMemo` that already produces `sortedStacks` and `zIndexMap`** — same input, same commit boundary — and pass `slotStack` beside `placement={placementFor(stackState)}` in the `TugPane` render. Entries are **reversed** to topmost-first (#z-order), mapped via `paneDisplayTitle`, with `topmost` true for the first element.
+- [ ] Read the deck from the `useSyncExternalStore` value the component already holds (`deckState`), **not** `store.getSnapshot()` — a render-time snapshot read is the [L02] violation this codebase keeps out by construction, and the memo above needs a value with render-stable identity anyway. Deriving inside that memo is also what keeps a pane's `slotStack` prop (and therefore the menu's `items` array) from being a fresh object on every unrelated render.
 - [ ] Add `slotStack?: readonly SlotStackEntry[]` to `TugPaneProps` with a doc comment stating (as `placement`'s does) that `DeckCanvas` is the only vantage point that can resolve it, and that the entries arrive display-resolved so the title bar needs no store access.
 - [ ] Render `data-stack-depth={String(slotStack.length)}` on the frame element beside the existing `data-imposed` attribute, for both test reach and future styling.
 
@@ -597,7 +649,7 @@ No new source files: every change lands in a module that already owns the concer
 
 #### Step 3: Give TugPopupMenu an optional controlled open {#step-3}
 
-**Depends on:** #step-1
+**Depends on:** nothing — independent of both the chord and the derivation.
 
 **Commit:** `tugways(popup-menu): accept an optional controlled open state`
 
@@ -606,18 +658,22 @@ No new source files: every change lands in a module that already owns the concer
 **Artifacts:**
 - `tugdeck/src/components/tugways/internal/tug-popup-menu.tsx`
 
+**`tug-popup-menu.tsx` has no `@covers` declaration anywhere in the corpus.** Nothing selects on a change to it, so `just app-test-changed` would run *nothing* for this diff and report green — a refactor of the component behind the title-bar `…` menu, `TugPopupButton`, `TugTabBar`'s overflow and add menus, and the gallery, guarded by nothing but the type-checker. Two tasks below fix that, and they are the reason this step is not a pure refactor commit.
+
 **Tasks:**
 - [ ] Add `open?: boolean` and `onOpenChange?: (open: boolean) => void` to `TugPopupMenuProps` with the doc comment from Spec S04.
 - [ ] Replace the bare `useState` with the controlled-or-not pair from Spec S04, funnelling **every** existing write — `handleOpenChange`, the `openHandle` from `TugPopupMenuTriggerContext`, `onEscapeDismiss`, the `observeDispatch` chain dismissal, and the blink-then-close selection path — through the single `setOpen` helper.
 - [ ] Confirm by reading that `useFocusTrap({ active: open })`, the `openSubKey` reset effect, and the `blinkingRef` guard all read the merged `open` value, not the internal state.
 - [ ] Update the component's module docblock — the "Open state is locally controlled" section — to describe the optional external control.
+- [ ] **Give the component a covering test.** Find the existing app-test that drives a `TugPopupMenu` consumer (a `TugTabBar` overflow menu or the title bar's `…` menu) and add `@covers tugdeck/src/components/tugways/internal/tug-popup-menu.tsx` to its header docblock, so this file is selectable forever after. If no such test exists, that fact is itself the finding: say so in the commit and fall back to `just app-test` (core tier) as this step's checkpoint rather than leaving `app-test-changed` to certify an empty selection.
+- [ ] **Run the selection probe for #step-8 (Spec S07) here**, while the component is already open in the editor. Its answer decides how at0347 is written, and finding it out at Step 8 costs a rewrite of two test files.
 
 **Tests:**
-- [ ] No new automated test at this step: the change is behavior-preserving for every current call site, and the controlled path is exercised end-to-end by at0347 (#step-8). The checkpoint below is the guard.
+- [ ] The `@covers` addition above, plus the Spec S07 probe. The controlled path itself is exercised end-to-end by at0347 (#step-8); what this step owes is that the *uncontrolled* path — every current call site — is still under a test that will actually run.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx eslint src && bunx vite build`
-- [ ] `just app-test-changed` (picks up the menu-consumer tests via `@covers`)
+- [ ] `just app-test-changed` — and read the selection it prints. An empty selection here means the `@covers` task above is not done; it does not mean the change is safe.
 
 ---
 
@@ -636,8 +692,8 @@ No new source files: every change lands in a module that already owns the concer
 
 **Tasks:**
 - [ ] Add `slotStack` and `onRevealPane` to `CardTitleBarProps`; pass both down from `TugPane`.
-- [ ] In `CardTitleBar`, add `const [stackMenuOpen, setStackMenuOpen] = useState(false)` beside the existing `closeOpen`.
-- [ ] Render, as the first child of `.tug-pane-title-bar-controls` and only when `slotStack.length > 1`, a `TugPopupMenu` whose `trigger` is a ghost `TugButton` per [P08] carrying the `Layers` icon from `lucide-react` and the count, `aria-label={`Stack of ${slotStack.length} cards`}`, `data-testid="tug-pane-title-bar-stack-badge"`.
+- [ ] In `CardTitleBar`, add `const [stackMenuOpen, setStackMenuOpen] = useState(false)` beside the existing `closeOpen`, and the depth-collapse effect from Spec S05 that closes it when `slotStack.length <= 1`.
+- [ ] Render, as the first child of `.tug-pane-title-bar-controls` and only when `slotStack.length > 1`, a `TugPopupMenu` whose `trigger` is a ghost `TugButton` per [P08] — `subtype="icon-text"`, the `Layers` icon from `lucide-react` on `icon`, the count as `children`, `aria-label={`Stack of ${slotStack.length} cards`}`, `data-testid="tug-pane-title-bar-stack-badge"`. Not `subtype="icon"`: that is the square icon-only button and it renders no label.
 - [ ] Build the menu `items` directly from `slotStack` — already topmost-first and display-resolved by Step 2 — as `{ id: entry.paneId, label: entry.title, selected: entry.topmost }`. Set `selected` on **every** item so the check column aligns, per `TugPopupMenuItem.selected`'s contract.
 - [ ] Pass `open={stackMenuOpen}` / `onOpenChange={setStackMenuOpen}` and `align="end"`, matching the `…` menu.
 - [ ] `onSelect={(paneId) => { const entry = slotStack.find(e => e.paneId === paneId); if (entry) onRevealPane?.(entry); }}`.
@@ -662,18 +718,21 @@ No new source files: every change lands in a module that already owns the concer
 **References:** [P05] Cmd-click not drag (#p05-cmd-click-not-drag), [P10] No interpreter change (#p10-no-interpreter-change), (#reveal-path)
 
 **Artifacts:**
-- `tugdeck/src/components/chrome/tug-pane.tsx` — `handleTitleBarPointerDown` and a new pointer-up path
+- `tugdeck/src/components/chrome/tug-pane.tsx` — `handleDragStart` (record the modifier) and its `onPointerUp` no-travel branch (act on it)
+
+**This step adds no gesture handler.** The whole change lands inside the drag machine `TugPane` already runs, for the reason [P05] gives: the frame takes pointer capture at pointerdown, so a `CardTitleBar` pointer-up handler would never see the release, and deferring `onDragStart` to dodge that would break the drag-start focus save. What is left is a ref and a branch.
 
 **Tasks:**
-- [ ] In `CardTitleBar.handleTitleBarPointerDown`, when `event.metaKey && event.button === 0` and a badge would render (`slotStack.length > 1`), record the origin point in a ref and **do not** call `onDragStart` yet.
-- [ ] Register a pointer-up handler for that gesture: if the pointer has not travelled beyond the drag threshold and the release is still inside the title bar's rect (the same containment test `handleClosePointerUp` performs), `setStackMenuOpen(true)`; otherwise do nothing.
-- [ ] If the pointer travels past the threshold before release, hand off to `onDragStart` so a Cmd-drag still moves the pane (and still evicts an imposed one). Reuse the existing drag threshold constant rather than introducing a second number.
-- [ ] Leave the `.tug-button` early-return at the top of the handler intact so a Cmd-click on the badge itself, the `…` button, the chevron, or the close box behaves as it does today.
-- [ ] Add a short comment citing [P05]'s rationale — that Cmd-drag on a title bar is both the background-window move and the slot eviction, so the decision has to wait for the gesture's ending.
+- [ ] In `handleDragStart`, beside the existing `dragStartPointer` snapshot, record `event.metaKey` into a new `dragStartedWithMeta` ref. Reset it at the end of the gesture with the other drag state (`dragOtherRects`, `latestAltKey`, `lastSnapResult`) so it cannot leak into the next press.
+- [ ] In `onPointerUp`'s existing `if (!dragMoved.current)` early-return branch — the one commented "The pointer never travelled, so this was a click on the title bar" — call `titleBarRef.current?.revealStack()` when `dragStartedWithMeta.current` is set, before the branch's state reset. Nothing else in that branch changes: it still commits no geometry and still leaves a derived pane in its slot.
+- [ ] Do **not** add a travel test, a containment test, or a second threshold: `dragMoved` already encodes travel against `DRAG_MOVE_THRESHOLD_PX`, and the frame's pointer capture already scopes the release.
+- [ ] Leave the `.tug-button` early-return at the top of `handleTitleBarPointerDown` intact so a Cmd-click on the badge itself, the `…` button, the chevron, or the close box behaves as it does today — that guard is what keeps `onDragStart` (and therefore this path) from firing on the controls.
+- [ ] Add a short comment citing [P05]: Cmd-drag on a title bar is both the background-window move and the slot eviction, so the decision waits for the gesture's ending — and this branch *is* that ending, already written.
 - [ ] Confirm by reading `gesture-interpreter.ts` that no change is needed there: the `metaKey` branch already suppresses activation and the title bar already carries `data-tug-fr-preserve`.
 
 **Tests:**
-- [ ] Covered by at0347 in #step-8: Cmd-click opens without raising; Cmd-drag moves and opens nothing.
+- [ ] Cmd-click-opens-without-raising is covered by at0347 in #step-8 and is background-safe: the no-travel branch runs on pointerup with no dependence on rAF.
+- [ ] Cmd-drag-still-drags is covered by at0347's **foreground** case — see Spec S07; a background window cannot latch `dragMoved` at all.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx eslint src && bunx vite build`
@@ -697,7 +756,7 @@ No new source files: every change lands in a module that already owns the concer
 
 **Tasks:**
 - [ ] Add `REVEAL_STACK: "reveal-stack"` to `TUG_ACTIONS` with the payload comment block the file's convention requires (`payload — none. Open the focused pane's slot-stack picker.`), placed near `MOVE_TO_SLOT`.
-- [ ] Add `revealStack` to `CardTitleBarHandle` per Spec S05 and implement it in the `useImperativeHandle` block as `setStackMenuOpen(true)`, guarded by `slotStack.length > 1`.
+- [ ] Add `revealStack` to `CardTitleBarHandle` per Spec S05 and implement it in the `useImperativeHandle` block as `setStackMenuOpen((prev) => !prev)`, guarded by `slotStack.length > 1`. The toggle is [P07]'s: the chord's own chain dispatch reaches the menu's `observeDispatch` subscription, and `notifyDispatchObservers` runs after the responder action, so a toggle is the one form that is single-valued in both directions. Step 5's Cmd-click reaches the same handle, where a toggle reads as the ordinary "click the badge again to dismiss".
 - [ ] In `TugPane`'s `useResponder` actions map, add `[TUG_ACTIONS.REVEAL_STACK]: (_event: ActionEvent) => { titleBarRef.current?.revealStack(); }` beside `CLOSE_PANE`, which is the identical shape.
 - [ ] In `action-dispatch.ts`, `registerAction("reveal-stack", …)` routing through `responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.REVEAL_STACK, phase: "discrete" })`, copying `focus-lens`'s null-guard and warn.
 - [ ] In `AppDelegate.swift`, add `@objc private func revealStack(_ sender: Any) { sendControl("reveal-stack") }`.
@@ -747,7 +806,7 @@ No new source files: every change lands in a module that already owns the concer
 
 **Commit:** `tugways(app-test): cover the stack badge, picker, and reveal chord`
 
-**References:** [P02] (#p02-badge-on-every-pane), [P04] (#p04-raise-path), [P05] (#p05-cmd-click-not-drag), [P07] (#p07-menu-owned-chord), (#success-criteria, #occlusion-interaction, #test-non-goals)
+**References:** [P02] (#p02-badge-on-every-pane), [P04] (#p04-raise-path), [P05] (#p05-cmd-click-not-drag), [P07] (#p07-menu-owned-chord), Spec S07 (#s07-test-tier), (#success-criteria, #occlusion-interaction, #test-non-goals)
 
 **Artifacts:**
 - `tests/app-test/at0347-stack-badge-picker.test.ts`
@@ -760,14 +819,15 @@ No new source files: every change lands in a module that already owns the concer
   - `data-stack-depth` reads `2` / `1` / `0` on the respective frames.
   - Click the badge; poll for the menu content element; assert two `[role="menuitem"]` rows, labels matching the two pane titles, topmost first, with the front pane's row checked.
   - Choose the back row; assert `getFocusedCardId()` is now the raised pane's card and that its frame's `z-index` exceeds the other's.
-  - `app.click(titleBarSelector, { metaKey: true })` on the front pane's title bar: menu opens and `getFocusedCardId()` is unchanged.
-  - Native Cmd-drag of a title bar past the drag threshold: the frame's `left` moves and no menu content is in the DOM.
+  - `app.click(titleBarSelector, { metaKey: true })` on the front pane's title bar: menu opens and `getFocusedCardId()` is unchanged. Background-safe — the no-travel branch runs on pointerup and needs no frame.
+  - Native Cmd-drag of a title bar past the drag threshold: the frame's `left` moves and no menu content is in the DOM. **`foreground: true`, per Spec S07** — `dragMoved` latches only inside an rAF callback, so in a background window this drag opens the picker instead of moving anything and the assertion inverts.
   - Same-width variant: the buried pane carries `data-occluded="true"` and its badge computes `visibility: hidden` — the [P02] claim stated honestly (#occlusion-interaction).
   - `@covers tugdeck/src/components/chrome/tug-pane.tsx`, `@covers tugdeck/src/components/chrome/deck-canvas.tsx`, `@covers tugdeck/src/deck-store-selectors.ts`, `@covers tugdeck/src/components/tugways/internal/tug-popup-menu.tsx`
+  - Honour Spec S07's split: if the #step-3 probe found that item selection needs a frame, the selection and raise assertions move to a foreground at0349 with the Cmd-drag case, and at0347 keeps what a frameless window can see. `log()`/`note()` whatever the split leaves out of the everyday tier — a silently narrowed test reads as coverage.
 - [ ] at0348 — the chord and its gate:
   - `menuItemState("window.revealStack")` is enabled with a stacked pane focused, and disabled with `p2` (depth 1), `pFree`, and the Lens focused.
-  - `nativeKey("r", ["cmd"])` with a stacked pane focused opens the picker.
-  - `menuItemState("maker.reload")` — the item's key equivalent is ⇧⌘R (the structural half stays at0168's; assert here only that ⌘R no longer reaches Reload, by pressing it and confirming the picker opened rather than a reload).
+  - `nativeKey("r", ["cmd"])` with a stacked pane focused opens the picker; a second `nativeKey("r", ["cmd"])` closes it ([P07]'s toggle).
+  - Nothing here re-asserts that ⌘R no longer reloads. at0168 owns that, structurally, and a "press ⌘R and confirm no reload" assertion would be vacuous in this bundle anyway: the Maker menu is hidden unless maker mode is on, and AppKit does not match key equivalents on hidden items — so the pass would prove nothing about the move.
   - `@covers tugapp/Sources/AppDelegate.swift`, `@covers tugdeck/src/lib/host-menu-state.ts`, `@covers tugdeck/src/action-dispatch.ts`, `@covers tugdeck/src/components/tugways/action-vocabulary.ts`
 - [ ] Both files: `describe.skipIf(!SHOULD_RUN)`, a `TEST_TIMEOUT_MS` in the 90s range, no fixed waits tied to animation (background windows run no rAF) — poll for the menu element instead.
 - [ ] Run `just app-test-covers-check` and fix any unresolved `@covers` path.
@@ -797,7 +857,7 @@ No new source files: every change lands in a module that already owns the concer
 
 **Tasks:**
 - [ ] `pane-model.md`: extend the imposition section's "a slot is a vertical stack whose top Pane is visible, and the Lens list is the switching surface" to name the local surface — the badge (depth at rest), the picker (built from the store, not from revealed DOM), the Cmd-click and ⌘R paths, and the fact that the raise is the same `transferFocusForActivation` every other switch uses.
-- [ ] `design-decisions.md`: add **[D123]** for the stack-navigation surface. Cite [D121] as the geometry it rests on, record that the stack is derived and never stored, that the picker is store-built because buried panes are `visibility: hidden`, that Cmd-click resolves on pointer-up so Cmd-drag survives, and that ⌘R is menu-owned because AppKit resolves key equivalents ahead of the web view. Name the touched files as the file's entries do.
+- [ ] `design-decisions.md`: add **[D123]** for the stack-navigation surface. Cite [D121] as the geometry it rests on, record that the stack is derived and never stored, that the picker is store-built because buried panes are `visibility: hidden`, that Cmd-click resolves in the drag machine's own no-travel branch (so Cmd-drag — both the background-window move and the slot eviction — survives, and no second gesture handler exists to fight the frame's pointer capture), that the chord toggles because its own chain dispatch reaches the menu's `observeDispatch` subscription, and that ⌘R is menu-owned because AppKit resolves key equivalents ahead of the web view. Name the touched files as the file's entries do.
 - [ ] `app-test-inventory.md`: summary entries for at0347 and at0348 in the established prose style.
 - [ ] Follow the no-hard-wrapping rule: one logical line per paragraph or bullet.
 
@@ -822,6 +882,7 @@ No new source files: every change lands in a module that already owns the concer
 - [ ] Walk every criterion in #success-criteria against the running debug app, in order.
 - [ ] Confirm no regression in the surfaces the controlled-open change touches: open the title-bar `…` menu, a `TugPopupButton`, and a `TugTabBar` overflow menu; check each opens, closes on Escape, closes on an outside click, and closes on an external chord.
 - [ ] Confirm ⌘R does nothing (no beep, no reload) with a free pane focused, and that ⇧⌘R still reloads in maker mode.
+- [ ] Confirm the picker cannot outlive its badge (Spec S05): with a two-deep slot's picker open, close the other pane in that slot from the keyboard. The menu goes away, focus is somewhere sane, and re-stacking the pane shows a **closed** badge rather than one that opens on mount.
 
 **Tests:**
 - [ ] `just app-test` (core tier) — the badge and the picker sit in the title bar, which every card surface renders.
@@ -862,5 +923,8 @@ No new source files: every change lands in a module that already owns the concer
 | ⌘R is free | at0168 asserts `maker.reload` on ⇧⌘R |
 | The stack is derived, not stored | unit tests on `slotStackOf`; no `TugPaneState` field added |
 | The picker raises correctly | at0347 asserts focused card and `z-index` after selection |
-| Cmd-drag survives Cmd-click | at0347 asserts the frame moved and no menu opened |
+| Cmd-drag survives Cmd-click | at0347's **foreground** case asserts the frame moved and no menu opened (Spec S07) |
 | The chord is gated | at0348 asserts `menuItemState("window.revealStack")` across four focus states |
+| The chord toggles | at0348 asserts a second ⌘R closes the picker |
+| `TugPopupMenu` is selectable by `app-test-changed` | a `@covers` line naming it resolves under `just app-test-covers-check` |
+| The picker cannot outlive its badge | closing a stacked peer with the picker open leaves no menu and no stale open state (Step 10 walk) |
