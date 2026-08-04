@@ -265,9 +265,12 @@ const LANGUAGE_LABELS: Record<string, string> = {
   cpp: "C++",
 };
 
+/** The file type a new, untitled Text File card starts on. */
+export const UNTITLED_LANGUAGE_ID = "md";
+
 /** Human-readable language name for the status bar (or "Plain Text"). */
 export function languageLabelFor(path: string | null): string {
-  if (path === null) return "Plain Text";
+  if (path === null) return LANGUAGE_LABELS[UNTITLED_LANGUAGE_ID];
   const ext = fileExtension(path);
   if (ext === null) return "Plain Text";
   return LANGUAGE_LABELS[ext] ?? "Plain Text";
@@ -312,9 +315,12 @@ export const SELECTABLE_LANGUAGES: readonly SelectableLanguage[] = [
   { id: "cpp", label: "C++", ext: "cpp" },
 ];
 
-/** The selectable-language id that matches `path`'s extension, else "text". */
+/**
+ * The selectable-language id that matches `path`'s extension, else "text".
+ * An untitled buffer (no path yet) starts on Markdown.
+ */
 export function languageIdForPath(path: string | null): string {
-  if (path === null) return "text";
+  if (path === null) return UNTITLED_LANGUAGE_ID;
   const ext = fileExtension(path);
   if (ext === null) return "text";
   const match = SELECTABLE_LANGUAGES.find((l) => l.ext === ext);

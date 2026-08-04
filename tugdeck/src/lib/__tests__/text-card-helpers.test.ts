@@ -99,7 +99,7 @@ describe("language identification", () => {
     expect(languageIdForPath("/x/foo.mjs")).toBe("js"); // alias → JavaScript → js
     expect(languageIdForPath("/x/foo.htm")).toBe("html"); // alias → HTML
     expect(languageIdForPath("/x/foo.txt")).toBe("text");
-    expect(languageIdForPath(null)).toBe("text");
+    expect(languageIdForPath(null)).toBe("md"); // untitled starts on Markdown
   });
 
   test("extensionForLanguageId round-trips selectable ids", () => {
@@ -111,7 +111,7 @@ describe("language identification", () => {
   test("languageLabelFor", () => {
     expect(languageLabelFor("/x/foo.md")).toBe("Markdown");
     expect(languageLabelFor("/x/foo.xyz")).toBe("Plain Text");
-    expect(languageLabelFor(null)).toBe("Plain Text");
+    expect(languageLabelFor(null)).toBe("Markdown");
   });
 });
 
