@@ -118,7 +118,7 @@ export function useModelPicker({
       iconRole: "agent",
       description: "Choose the model for this session.",
       onCommitDisposition: commitDisposition,
-      presentation: "bottom",
+      presentation: "rise",
       bottomAnchorSelector: PICKER_SHEET_ANCHOR,
       content: (close) => (
         <ModelPickerSheetBody

@@ -131,7 +131,7 @@ export function useEffortPicker({
       iconRole: "agent",
       description: "Choose how long Claude thinks before answering.",
       onCommitDisposition: commitDisposition,
-      presentation: "bottom",
+      presentation: "rise",
       bottomAnchorSelector: PICKER_SHEET_ANCHOR,
       content: (close) => (
         <EffortPickerSheetBody

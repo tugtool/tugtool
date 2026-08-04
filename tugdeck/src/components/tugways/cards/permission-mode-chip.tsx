@@ -252,7 +252,7 @@ export function usePermissionSheet({
       iconRole: "agent",
       description: "Choose how Claude handles file edits and commands.",
       onCommitDisposition: commitDisposition,
-      presentation: "bottom",
+      presentation: "rise",
       bottomAnchorSelector: PICKER_SHEET_ANCHOR,
       content: (close) => (
         <PermissionModeSheetBody

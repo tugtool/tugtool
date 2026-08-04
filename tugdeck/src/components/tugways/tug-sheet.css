@@ -292,11 +292,12 @@ body {
  * first/last keyframes in `SHEET_PRESENTATION_MOTION` (tug-sheet.tsx)
  * must match these resting states.
  *
- * All three land in the identical presented geometry — the resting
+ * All of them land in the identical presented geometry — the resting
  * state is the only difference [L06].
  *
  *   - top:        off-screen above the clip (window-shade drop).
  *   - bottom:     off-screen below its slot (mirror slide-up).
+ *   - rise:       a short fixed nudge below, transparent (roll + fade).
  *   - scale-fade: slightly shrunk and transparent (no slide).
  *
  * `data-tug-sheet-presentation` is always set by TugSheetContent, so
@@ -307,6 +308,13 @@ body {
 
 .tug-sheet-content[data-tug-sheet-presentation="bottom"] {
   transform: translateY(100%);
+}
+
+/* Nudged a short fixed distance below its resting spot and transparent — the
+   offset must match `SHEET_ROLL_PX` in tug-sheet.tsx. */
+.tug-sheet-content[data-tug-sheet-presentation="rise"] {
+  transform: translateY(28px);
+  opacity: 0;
 }
 
 .tug-sheet-content[data-tug-sheet-presentation="scale-fade"] {

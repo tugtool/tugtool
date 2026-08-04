@@ -128,6 +128,15 @@ export { SHADE_HEIGHT_DOMAIN } from "./shade-height";
  *   - `"bottom"`     Mirror of `"top"` from the opposite edge: the
  *                    panel slides up into place from below and slides
  *                    back down on dismiss.
+ *   - `"rise"`       The shade's motion in panel geometry: the panel rolls a
+ *                    short FIXED distance ({@link SHEET_ROLL_PX}) up into
+ *                    place while fading in, and back down while fading out.
+ *                    Unlike `"bottom"`, the distance does not scale with the
+ *                    panel — a tall sheet moves exactly as few pixels as a
+ *                    short one, so the entrance reads as a settle rather than
+ *                    a sweep. For sheets anchored near their trigger (the Z4B
+ *                    pickers above Z2), where a full-height slide is more
+ *                    movement than the moment deserves.
  *   - `"scale-fade"` The panel fades in while scaling up from slightly
  *                    smaller, and fades out while scaling back down.
  *                    No directional slide. The default.
@@ -148,7 +157,12 @@ export { SHADE_HEIGHT_DOMAIN } from "./shade-height";
  * no first-paint flash. The keyframes below must stay in sync with
  * those resting states.
  */
-export type TugSheetPresentation = "top" | "bottom" | "scale-fade" | "shade";
+export type TugSheetPresentation =
+  | "top"
+  | "bottom"
+  | "rise"
+  | "scale-fade"
+  | "shade";
 
 /**
  * How wide the sheet panel sits within its host pane.
@@ -206,11 +220,11 @@ interface SheetPresentationMotion {
  * the presented geometry in that mode (see `tug-sheet.css`).
  */
 /**
- * The shade's roll distance — a short fixed nudge (px, so a tall shade rolls the
- * same light distance as a short one) that replaces the old full-height
- * `translateY(±100%)` sweep.
+ * The roll distance shared by the `shade` and `rise` presentations — a short
+ * fixed nudge (px, so a tall surface rolls the same light distance as a short
+ * one) in place of a full-height `translateY(±100%)` sweep.
  */
-const SHADE_ROLL_PX = 28;
+const SHEET_ROLL_PX = 28;
 
 const SHEET_PRESENTATION_MOTION: Record<TugSheetPresentation, SheetPresentationMotion> = {
   top: {
@@ -220,6 +234,20 @@ const SHEET_PRESENTATION_MOTION: Record<TugSheetPresentation, SheetPresentationM
   bottom: {
     enter: [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }],
     exit: [{ transform: "translateY(0)" }, { transform: "translateY(100%)" }],
+  },
+  // The shade's roll + fade, carried over to panel geometry. The fade is what
+  // makes so short a move read as an entrance rather than a twitch — the roll
+  // alone would pop. Opacity targets 1 here (a panel is opaque), where the
+  // shade's targets its own `--tugx-shade-alpha`.
+  rise: {
+    enter: [
+      { transform: `translateY(${SHEET_ROLL_PX}px)`, opacity: 0 },
+      { transform: "translateY(0)", opacity: 1 },
+    ],
+    exit: [
+      { transform: "translateY(0)", opacity: 1 },
+      { transform: `translateY(${SHEET_ROLL_PX}px)`, opacity: 0 },
+    ],
   },
   "scale-fade": {
     enter: [
@@ -238,12 +266,12 @@ const SHEET_PRESENTATION_MOTION: Record<TugSheetPresentation, SheetPresentationM
   // paired scrim fade (below) carries the dimming.
   shade: {
     enter: [
-      { transform: `translateY(-${SHADE_ROLL_PX}px)` },
+      { transform: `translateY(-${SHEET_ROLL_PX}px)` },
       { transform: "translateY(0)" },
     ],
     exit: [
       { transform: "translateY(0)" },
-      { transform: `translateY(-${SHADE_ROLL_PX}px)` },
+      { transform: `translateY(-${SHEET_ROLL_PX}px)` },
     ],
   },
 };
@@ -256,12 +284,12 @@ const SHEET_PRESENTATION_MOTION: Record<TugSheetPresentation, SheetPresentationM
  */
 const SHADE_BOTTOM_MOTION: SheetPresentationMotion = {
   enter: [
-    { transform: `translateY(${SHADE_ROLL_PX}px)` },
+    { transform: `translateY(${SHEET_ROLL_PX}px)` },
     { transform: "translateY(0)" },
   ],
   exit: [
     { transform: "translateY(0)" },
-    { transform: `translateY(${SHADE_ROLL_PX}px)` },
+    { transform: `translateY(${SHEET_ROLL_PX}px)` },
   ],
 };
 

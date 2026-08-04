@@ -503,9 +503,11 @@ export function GallerySheet() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Presentation Styles</TugLabel>
         <div style={labelStyle}>
-          Same fully-presented geometry, three entrance/exit animations via the{" "}
+          Same fully-presented geometry, four entrance/exit animations via the{" "}
           <code>presentation</code> prop. Scale-fade — the default — fades in while
-          scaling up; top is the window-shade drop; bottom mirrors it from below.
+          scaling up; top is the window-shade drop; bottom mirrors it from below;
+          rise rolls a short fixed distance up while fading, so a tall panel moves
+          no more pixels than a short one.
         </div>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <TugPushButton
@@ -535,6 +537,21 @@ export function GallerySheet() {
             }
           >
             Bottom
+          </TugPushButton>
+          <TugPushButton
+            emphasis="outlined"
+            size="sm"
+            onClick={() =>
+              void showSheet({
+                title: "Rise",
+                description:
+                  "Rolls a short fixed distance up while fading in — the shade's motion in panel geometry.",
+                presentation: "rise",
+                content: (close) => <PresentationSheetBody close={close} />,
+              })
+            }
+          >
+            Rise
           </TugPushButton>
           <TugPushButton
             emphasis="outlined"
