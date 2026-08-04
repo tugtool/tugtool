@@ -296,21 +296,29 @@ export function useEntryDiff(
 export interface HunkElection {
   /** The elected ids for this path, or `null` when the file lands whole. */
   elected: readonly string[] | null;
+  /** The hunks the server places this session in ([P12]) — the default
+   *  election on a contended path, empty everywhere else. */
+  own: readonly string[];
+  /** The hunks another session claims too, marked in the diff. */
+  contested: readonly string[];
   /** Persist a new election; `null` restores whole-file landing. */
   onElect: (ids: readonly string[] | null) => void;
 }
 
 /**
  * The checked set for a file: the persisted election reconciled against the
- * hunks actually in the file ([P18]). Same rule the row's badge reads, so a
- * count and its boxes cannot disagree.
+ * hunks actually in the file ([P18]), or — with nothing persisted — this
+ * session's own hunks. Same rule the row's badge reads, so a count and its
+ * boxes cannot disagree.
  */
 function electedSet(
   ids: readonly string[],
   election: HunkElection | undefined,
 ): ReadonlySet<string> {
   if (election === undefined) return new Set(ids);
-  return new Set(reconcileHunkElection(ids, election.elected).elected);
+  return new Set(
+    reconcileHunkElection(ids, election.elected, election.own).elected,
+  );
 }
 
 /**
@@ -411,6 +419,7 @@ function FileDiffBody({
           data={{ source: "unified", text: file.unified, filePath: file.path }}
           embedded
           hunkIds={file.hunks}
+          contestedHunkIds={election?.contested}
           renderHunkAffordance={renderHunkAffordance}
         />
       </div>
@@ -478,6 +487,11 @@ export interface FileBlockData {
   shared: boolean;
   /** Bracket-hint provenance text ([P13]), when a bracket saw this path. */
   hint?: string;
+  /** The hunks the server places this session in ([P12]); present only on a
+   *  contended path, where they are the default election. */
+  own_hunks?: readonly string[];
+  /** The hunks another session claims too, marked in the expanded diff. */
+  contested_hunks?: readonly string[];
 }
 
 export function changesetFileData(file: ChangesetFile): FileBlockData {
@@ -487,6 +501,8 @@ export function changesetFileData(file: ChangesetFile): FileBlockData {
     op: file.op,
     origin: file.origin,
     shared: file.shared === true,
+    own_hunks: file.own_hunks,
+    contested_hunks: file.contested_hunks,
   };
 }
 
@@ -854,7 +870,11 @@ function EntryFiles({
         : entry.files.map((file) => unattributedFileData(file, ownSessionId));
 
   return (
-    <div className="tug-changes-list-file-list" data-entry-kind={entry.kind}>
+    <div
+      className="tug-changes-list-file-list"
+      data-entry-kind={entry.kind}
+      data-entry-owner={entry.kind === "session" ? entry.entry.owner_id : undefined}
+    >
       {files.map((file) => {
         const diffFile = diffSnapshot.payload?.files.find((f) => f.path === file.path);
         const counts =
@@ -866,6 +886,8 @@ function EntryFiles({
           onElectHunks !== undefined
             ? {
                 elected: hunkElection?.[file.path] ?? null,
+                own: file.own_hunks ?? [],
+                contested: file.contested_hunks ?? [],
                 onElect: (ids) => onElectHunks(file.path, ids),
               }
             : undefined;
@@ -878,7 +900,11 @@ function EntryFiles({
         const badge = ((): FileElectionBadge | null => {
           const ids = diffFile?.hunks;
           if (ids === undefined || election === undefined) return null;
-          const display = reconcileHunkElection(ids, election.elected);
+          const display = reconcileHunkElection(
+            ids,
+            election.elected,
+            election.own,
+          );
           if (display.stale) return { kind: "stale" };
           if (display.partial === null) return null;
           return { kind: "partial", ...display.partial };

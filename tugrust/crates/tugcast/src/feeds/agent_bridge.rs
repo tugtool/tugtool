@@ -34,7 +34,7 @@ use super::attribution::{
     PendingCalls, PendingCmd, PendingCmds, RECEIPT_MARKER, bash_command_for_tool,
     canonical_declared_paths, canonicalize_declared, declared_ops_for_command, exact_op_for_tool,
     file_path_for_tool, file_repo_root, op_for_declared_kind, op_for_receipt, parse_receipt_line,
-    repo_root_for, snapshot_worktree, top_level_type,
+    repo_root_for, snapshot_worktree, spans_for_tool_input, top_level_type,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
 use crate::path_resolver::CanonicalPath;
@@ -895,6 +895,7 @@ async fn record_exact_pending(
         ),
     };
     let named_path = pending.file_path.clone();
+    let spans = pending.spans.clone();
     let Some(row) = pending.into_row(
         tug_session_id.as_str(),
         tool_use_id,
@@ -910,7 +911,7 @@ async fn record_exact_pending(
         );
         return None;
     };
-    match ledger.record_file_event(&row) {
+    match ledger.record_file_event_with_spans(&row, &spans) {
         Ok(()) => Some(row.file_path),
         Err(err) => {
             crate::ledger_integrity::health::note_error("changes", &err);
@@ -936,6 +937,7 @@ async fn record_cmd_event(
     op: &str,
     tool_use_id: &str,
     parent_tool_use_id: Option<String>,
+    spans: &[crate::session_ledger::FileEventSpan],
     at: i64,
     tug_session_id: &TugSessionId,
     canonical_project_dir: &CanonicalPath,
@@ -979,7 +981,7 @@ async fn record_cmd_event(
         project_dir: row_project_dir.as_str().to_owned(),
         at,
     };
-    match ledger.record_file_event(&row) {
+    match ledger.record_file_event_with_spans(&row, spans) {
         Ok(()) => Some(row.file_path),
         Err(err) => {
             crate::ledger_integrity::health::note_error("changes", &err);
@@ -1029,6 +1031,8 @@ async fn mint_replayed_cmd_rows(
                 row_op,
                 tool_use_id,
                 cmd.parent_tool_use_id.clone(),
+                // A parsed command names files, not regions ([Q03]).
+                &[],
                 at,
                 tug_session_id,
                 canonical_project_dir,
@@ -1079,17 +1083,24 @@ async fn mint_receipt_rows(
             );
             continue;
         };
+        // The verb's own testimony of which hunks it applied is the
+        // strongest anchor there is — the id is already what the current
+        // diff's hunks are keyed by (Spec S05). It belongs to the path the
+        // bytes landed on; a rename's takeoff point carries none.
+        let hunk_spans = crate::feeds::attribution::hunk_spans(&receipt_op.hunks);
         // A rename names both ends, same as a parsed one.
-        let mut targets: Vec<&str> = vec![receipt_op.path.as_str()];
+        let mut targets: Vec<(&str, &[crate::session_ledger::FileEventSpan])> =
+            vec![(receipt_op.path.as_str(), &hunk_spans)];
         if let Some(orig) = receipt_op.orig_path.as_deref() {
-            targets.push(orig);
+            targets.push((orig, &[]));
         }
-        for target in targets {
+        for (target, spans) in targets {
             if let Some(path) = record_cmd_event(
                 Path::new(target),
                 op,
                 tool_use_id,
                 None,
+                spans,
                 at,
                 tug_session_id,
                 canonical_project_dir,
@@ -1837,6 +1848,15 @@ pub async fn relay_session_io(
                                                     exact_op_for_tool(&tu.tool_name),
                                                     file_path_for_tool(&tu.tool_name, &tu.input),
                                                 ) {
+                                                    // The anchors come from the
+                                                    // tool input, which replays
+                                                    // — so a backfilled row
+                                                    // carries the same evidence
+                                                    // a live one does.
+                                                    let spans = spans_for_tool_input(
+                                                        &tu.tool_name,
+                                                        &tu.input,
+                                                    );
                                                     pending_calls.insert(
                                                         tu.tool_use_id.clone(),
                                                         crate::feeds::attribution::PendingCall {
@@ -1845,6 +1865,7 @@ pub async fn relay_session_io(
                                                             op,
                                                             parent_tool_use_id: tu.parent_tool_use_id,
                                                             timestamp: tu.timestamp,
+                                                            spans,
                                                         },
                                                     );
                                                 } else if let Some(command) =
@@ -1960,6 +1981,8 @@ pub async fn relay_session_io(
                                         exact_op_for_tool(&tu.tool_name),
                                         file_path_for_tool(&tu.tool_name, &tu.input),
                                     ) {
+                                        let spans =
+                                            spans_for_tool_input(&tu.tool_name, &tu.input);
                                         pending_calls.insert(
                                             tu.tool_use_id.clone(),
                                             crate::feeds::attribution::PendingCall {
@@ -1968,6 +1991,7 @@ pub async fn relay_session_io(
                                                 op,
                                                 parent_tool_use_id: tu.parent_tool_use_id,
                                                 timestamp: tu.timestamp,
+                                                spans,
                                             },
                                         );
                                     } else if tu.tool_name == "Bash" {
@@ -2138,6 +2162,7 @@ pub async fn relay_session_io(
                                                     "renamed",
                                                     &tr.tool_use_id,
                                                     cmd.parent_tool_use_id.clone(),
+                                                    &[],
                                                     at,
                                                     tug_session_id,
                                                     &canonical_project_dir,
@@ -2705,6 +2730,7 @@ mod tests {
             "modified",
             "tu-1",
             None,
+            &[],
             1,
             &session,
             &canonical_project_dir,
@@ -2720,6 +2746,7 @@ mod tests {
             "modified",
             "tu-2",
             None,
+            &[],
             2,
             &session,
             &canonical_project_dir,
@@ -2764,6 +2791,7 @@ mod tests {
             op: "write",
             parent_tool_use_id: None,
             timestamp: None,
+            spans: Vec::new(),
         };
         let recorded = record_exact_pending(
             pending,
@@ -2796,6 +2824,57 @@ mod tests {
                 .is_empty(),
             "and not to the session's"
         );
+    }
+
+    /// Spans ride the row they belong to, through the same write — an Edit's
+    /// anchors are in the ledger the moment its row is, keyed to that row.
+    #[tokio::test]
+    async fn record_exact_pending_writes_the_calls_spans_with_its_row() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonicalize");
+        init_git_repo(&root);
+        std::fs::write(root.join("a.rs"), "x").expect("write");
+
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().expect("ledger");
+        let session = TugSessionId::new("sess");
+        let canonical_project_dir = CanonicalPath::from_raw(&root);
+        let project_dir = root.to_string_lossy().into_owned();
+        let mut cache: Option<CanonicalPath> = None;
+
+        let input = serde_json::json!({
+            "file_path": root.join("a.rs").to_string_lossy(),
+            "old_string": "x",
+            "new_string": "y",
+        });
+        let pending = crate::feeds::attribution::PendingCall {
+            tool_name: "Edit".to_owned(),
+            file_path: root.join("a.rs").to_string_lossy().into_owned(),
+            op: "edit",
+            parent_tool_use_id: None,
+            timestamp: None,
+            spans: spans_for_tool_input("Edit", &input),
+        };
+        let recorded = record_exact_pending(
+            pending,
+            "tu-1",
+            None,
+            "exact",
+            false,
+            &session,
+            &canonical_project_dir,
+            &mut cache,
+            &project_dir,
+            &ledger,
+        )
+        .await;
+        assert_eq!(recorded.as_deref(), Some("a.rs"));
+
+        let spans = ledger
+            .file_event_spans_for_paths(canonical_project_dir.as_str(), &["a.rs".to_owned()])
+            .expect("read back spans");
+        assert_eq!(spans.len(), 1, "the Edit's anchor landed: {spans:?}");
+        assert_eq!(spans[0].tug_session_id, "sess");
+        assert_eq!(spans[0].span.kind, "replace");
     }
 
     /// A session opened on a non-repo dir caches `None` and re-probes; once a

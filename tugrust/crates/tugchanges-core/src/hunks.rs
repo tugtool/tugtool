@@ -100,7 +100,17 @@ impl std::error::Error for HunkDrift {}
 /// Callers use the ids on [`Hunk`] rather than this directly; it is public so a
 /// test or a receipt-side computation can reproduce an identity from body text.
 pub fn hunk_id(body: &str) -> String {
-    let digest = Sha256::digest(body.as_bytes());
+    content_hash(body)
+}
+
+/// The identity of a piece of content: the first 16 hex characters of its
+/// SHA-256.
+///
+/// One rule for every content identity this system compares — a hunk body
+/// ([`hunk_id`]) and a span anchor's written text ([P11]) — so evidence
+/// minted on one side is comparable on the other without a second convention.
+pub fn content_hash(text: &str) -> String {
+    let digest = Sha256::digest(text.as_bytes());
     let mut out = String::with_capacity(16);
     for byte in digest.iter().take(8) {
         out.push_str(&format!("{byte:02x}"));

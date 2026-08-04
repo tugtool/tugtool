@@ -149,6 +149,72 @@ pub(crate) fn foreign_proof_sessions_for_path(
     Ok(out)
 }
 
+/// One span row with the owner and event time of its parent — the read side
+/// of [P12]. `at` rides along so the caller can apply the same row-liveness
+/// cut it applies to the parent: a span of a spent row is spent evidence.
+pub(crate) struct SpanRow {
+    pub session: String,
+    pub at: i64,
+    pub kind: String,
+    pub anchor: String,
+}
+
+/// Every **proof**-row span recorded for `file_path`, whoever owns it.
+///
+/// Joined to the parent so a stranded span can never speak, and restricted to
+/// proof origins for the same reason ownership is: a bracket row's whole-tree
+/// delta says nothing about regions, and its spans (it has none) must not
+/// stand in for evidence it does not have.
+pub(crate) fn spans_for_path(conn: &Connection, file_path: &str) -> Result<Vec<SpanRow>, String> {
+    // The table arrives with changes-schema v2, and tugcast is the only
+    // process that migrates. This reader runs against whatever is on disk —
+    // including a v1 database on a machine where tugcast has not restarted
+    // yet — so its absence means "no sub-file evidence", not an error. Every
+    // owner then claims the whole file ([P12]), which is precisely the answer
+    // that database's own vintage would have given.
+    if !spans_table_exists(conn) {
+        return Ok(Vec::new());
+    }
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT e.tug_session_id, e.at, s.kind, s.anchor
+             FROM file_event_spans s
+             JOIN file_events e
+               ON e.tug_session_id = s.tug_session_id
+              AND e.tool_use_id = s.tool_use_id
+              AND e.file_path = s.file_path
+             WHERE s.file_path = ?1 AND e.origin IN {PROOF_ORIGINS_SQL}
+             ORDER BY e.tug_session_id, e.at, s.seq",
+        ))
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([file_path], |r| {
+            Ok(SpanRow {
+                session: r.get::<_, String>(0)?,
+                at: r.get::<_, i64>(1)?,
+                kind: r.get::<_, String>(2)?,
+                anchor: r.get::<_, String>(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
+/// Whether this database carries the schema-v2 spans table.
+fn spans_table_exists(conn: &Connection) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'file_event_spans'",
+        [],
+        |r| r.get::<_, i64>(0),
+    )
+    .map(|count| count > 0)
+    .unwrap_or(false)
+}
+
 /// Whether a row's `origin` is **proof** of authorship — the tool input named
 /// the file (`exact` live, `replay` backfill of the same, `cmd` for a Bash
 /// command's literal operands or a `tugutil file` receipt), or a session
@@ -224,7 +290,10 @@ mod tests {
             "CREATE TABLE file_events (
                 tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
                 tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
-                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
+                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);
+             CREATE TABLE file_event_spans (
+                tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                seq INTEGER, kind TEXT, anchor TEXT);",
         )
         .unwrap();
         for (i, (session, file_path, origin, project_dir, at)) in rows.iter().enumerate() {
@@ -237,6 +306,66 @@ mod tests {
             .unwrap();
         }
         dir
+    }
+
+    /// A pre-v2 database has no spans table. Reading it must answer "no
+    /// sub-file evidence" rather than failing the whole `changes` call — this
+    /// reader runs on machines whose tugcast has not restarted into the new
+    /// schema yet.
+    #[test]
+    fn a_pre_v2_database_reads_as_span_less_rather_than_failing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sessions.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE file_events (
+                    tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                    tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
+                    parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
+            )
+            .unwrap();
+        }
+        let conn = open_readonly(&path).unwrap();
+        assert!(!spans_table_exists(&conn));
+        assert!(spans_for_path(&conn, "foo.rs").unwrap().is_empty());
+    }
+
+    #[test]
+    fn spans_are_read_with_their_owner_and_event_time() {
+        let repo = tempfile::tempdir().unwrap();
+        let repo_dir = repo.path().to_string_lossy().into_owned();
+        let db = seed(&[
+            ("mine", "foo.rs", "exact", &repo_dir, 5),
+            ("bracketer", "foo.rs", "bash", &repo_dir, 6),
+        ]);
+        {
+            let conn = Connection::open(db.path().join("sessions.db")).unwrap();
+            // `tu-0` is `mine`'s proof row; `tu-1` is the bracket row, whose
+            // spans must not be readable as evidence.
+            conn.execute(
+                "INSERT INTO file_event_spans VALUES ('mine','tu-0','foo.rs',0,'insert','{}')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO file_event_spans VALUES ('bracketer','tu-1','foo.rs',0,'insert','{}')",
+                [],
+            )
+            .unwrap();
+            // An orphan: no parent row names it, so the join drops it.
+            conn.execute(
+                "INSERT INTO file_event_spans VALUES ('ghost','tu-9','foo.rs',0,'insert','{}')",
+                [],
+            )
+            .unwrap();
+        }
+        let conn = open_readonly(&db.path().join("sessions.db")).unwrap();
+        let spans = spans_for_path(&conn, "foo.rs").unwrap();
+        assert_eq!(spans.len(), 1, "only the proof row's span speaks");
+        assert_eq!(spans[0].session, "mine");
+        assert_eq!(spans[0].at, 5);
+        assert_eq!(spans[0].kind, "insert");
     }
 
     #[test]

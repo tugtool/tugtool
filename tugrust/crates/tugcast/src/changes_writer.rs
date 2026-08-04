@@ -268,6 +268,7 @@ mod tests {
                 project_dir: "/proj".into(),
                 at: 1,
             },
+            spans: Vec::new(),
         }
     }
 
@@ -280,7 +281,7 @@ mod tests {
         assert_eq!(fwd.pending_len(), PENDING_CAP);
         let drained = fwd.take_pending();
         assert!(
-            matches!(&drained[0], Record::FileEvent { row } if row.tug_session_id == "s3"),
+            matches!(&drained[0], Record::FileEvent { row, .. } if row.tug_session_id == "s3"),
             "the three oldest records are the ones dropped"
         );
         assert_eq!(fwd.pending_len(), 0);

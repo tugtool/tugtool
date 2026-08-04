@@ -588,6 +588,7 @@ mod tests {
             op: "write",
             parent_tool_use_id: None,
             timestamp: None,
+            spans: Vec::new(),
         };
         // The edit postdates the fixture's commit, so the row is live.
         let row = pending

@@ -68,6 +68,14 @@ impl ChangesetBumper {
 /// claims: you don't hand-save a deletion, so a lone bracket sweep over one is
 /// the session's own shell work. A plain content modify (`.M`/`M.`) is not
 /// structural — that's the ambiguous case attribution stays conservative on.
+/// How many contended-path diffs the contention pass runs at once.
+///
+/// Each is a `git diff` subprocess. Contention is normally zero paths, so
+/// this only matters in the workspace R09 warns about — many dirty paths that
+/// genuinely contend — where running them one after another would put the
+/// whole file's worth of subprocess latency on every recompute.
+const CONTENTION_DIFF_CONCURRENCY: usize = 8;
+
 fn status_is_structural(status: &str) -> bool {
     status == "??" || status.chars().any(|c| matches!(c, 'A' | 'D' | 'R'))
 }
@@ -296,6 +304,8 @@ pub(crate) async fn compose_snapshot(
                 origin: pfe.event.origin.clone(),
                 shared: false,
                 last_touched: pfe.event.at,
+                own_hunks: Vec::new(),
+                contested_hunks: Vec::new(),
             });
         // Provenance display follows proof rows: a later bracket sweep never
         // overwrites the op/origin a proof row established.
@@ -333,6 +343,9 @@ pub(crate) async fn compose_snapshot(
     // unattributed rows as `hinted_by` provenance (a hint for the
     // disposition decision, never an attribution).
     let mut bracket_hints: HashMap<String, Vec<String>> = HashMap::new();
+    // Paths with two or more proof owners, resolved after this loop — the
+    // verdict needs a `git diff`, and this loop must stay string-only.
+    let mut contended_paths: Vec<(String, HashSet<String>)> = Vec::new();
     for path in &all_paths {
         let proof_ids = proof_owners.get(path);
         let holders: Vec<String> = owners
@@ -366,11 +379,47 @@ pub(crate) async fn compose_snapshot(
         }
         if let Some(proof_ids) = proof_ids {
             if proof_ids.len() > 1 {
-                for id in proof_ids {
-                    if let Some(file) = owners.get_mut(id).and_then(|agg| agg.files.get_mut(path)) {
-                        file.shared = true;
-                    }
+                contended_paths.push((path.clone(), proof_ids.clone()));
+            }
+        }
+    }
+    // Hunk-aware contention ([P12], [P14]) for the paths that actually have
+    // two or more proof owners — normally none, and bounded by the dirty set
+    // when not (Risk R09). Everything before this point is string work; this
+    // is the only place the composition spends a `git diff`, and it spends it
+    // only where a file-level SHARED would otherwise have been asserted.
+    //
+    // The diffs run concurrently, bounded by `CONTENTION_DIFF_CONCURRENCY`:
+    // each one is a subprocess, and a workspace where many paths genuinely
+    // contend would otherwise pay for them end to end.
+    let mut verdicts = Vec::with_capacity(contended_paths.len());
+    for batch in contended_paths.chunks(CONTENTION_DIFF_CONCURRENCY) {
+        verdicts.extend(
+            futures::future::join_all(batch.iter().map(|(path, proof_ids)| {
+                contention_verdict(&repo_root, path, proof_ids, ledger)
+            }))
+            .await,
+        );
+    }
+    for ((path, proof_ids), verdict) in contended_paths.iter().zip(verdicts) {
+        for id in proof_ids {
+            let Some(file) = owners.get_mut(id).and_then(|agg| agg.files.get_mut(path)) else {
+                continue;
+            };
+            match &verdict {
+                Some((verdict, hunks)) => {
+                    file.shared = verdict.shared;
+                    file.own_hunks = verdict.hunks_of(id, hunks);
+                    file.contested_hunks = verdict
+                        .contested
+                        .iter()
+                        .filter(|hid| file.own_hunks.contains(hid))
+                        .cloned()
+                        .collect();
                 }
+                // No verdict to be had (no spans, no readable diff): the
+                // file-level answer stands, which is what it always was.
+                None => file.shared = true,
             }
         }
     }
@@ -593,6 +642,63 @@ pub(crate) fn apply_session_rows(snapshot: &mut ChangesetSnapshot, rows: &[Sessi
 }
 
 /// Deterministic entry order: sessions (by id) before dashes (by ref).
+/// The hunk-aware read of one contended path ([P12], [P14]), or `None` when
+/// there is nothing to refine with — no live spans among the owners, or no
+/// readable hunks. The caller falls back to file-level SHARED there, which is
+/// the answer this whole pass exists to narrow and must never widen past.
+///
+/// The hunks come from the **async** diff spelling ([P16] flags), not from
+/// `tugchanges_core::file_hunks`: that is `std::process::Command`, and this
+/// runs on a tokio runtime thread. Both spellings carry `HUNK_DIFF_FLAGS`, so
+/// the ids agree by Spec S06's contract — which is what lets the deck's
+/// checkboxes and this verdict speak about the same hunks.
+async fn contention_verdict(
+    repo_root: &Path,
+    path: &str,
+    proof_ids: &HashSet<String>,
+    ledger: Option<&SessionLedger>,
+) -> Option<(tugchanges_core::ContentionVerdict, Vec<tugchanges_core::Hunk>)> {
+    let ledger = ledger?;
+    let canonical_root = CanonicalPath::from_raw(repo_root);
+    let spans = ledger
+        .file_event_spans_for_paths(canonical_root.as_str(), &[path.to_owned()])
+        .unwrap_or_else(|err| {
+            crate::ledger_integrity::health::note_error("changes", &err);
+            tracing::warn!(path, error = %err, "span read failed; contention stays file-level");
+            Vec::new()
+        });
+    let mut by_session: HashMap<&str, Vec<tugchanges_core::Anchor>> = HashMap::new();
+    for row in &spans {
+        if !proof_ids.contains(&row.tug_session_id) {
+            continue;
+        }
+        by_session
+            .entry(row.tug_session_id.as_str())
+            .or_default()
+            .push(tugchanges_core::Anchor::from_span(
+                &row.span.kind,
+                &row.span.anchor,
+            ));
+    }
+    if by_session.is_empty() {
+        return None;
+    }
+    let diff = super::git::fetch_git_diff(repo_root, &[path.to_owned()]).await?;
+    let hunks = tugchanges_core::parse_hunks(&diff);
+    if hunks.is_empty() {
+        return None;
+    }
+    let owners: Vec<tugchanges_core::OwnerAnchors> = proof_ids
+        .iter()
+        .map(|id| tugchanges_core::OwnerAnchors {
+            session: id.clone(),
+            anchors: by_session.get(id.as_str()).cloned().unwrap_or_default(),
+        })
+        .collect();
+    let verdict = tugchanges_core::classify_contention(&hunks, &owners);
+    Some((verdict, hunks))
+}
+
 fn entry_sort_key(entry: &ChangesetEntry) -> (u8, &str) {
     match entry {
         ChangesetEntry::Session { owner_id, .. } => (0, owner_id.as_str()),
@@ -920,6 +1026,8 @@ fn parse_name_status(output: &str) -> Vec<ChangesetFile> {
             origin: "dash".to_owned(),
             shared: false,
             last_touched: 0,
+            own_hunks: Vec::new(),
+            contested_hunks: Vec::new(),
         });
     }
     files
@@ -1077,6 +1185,157 @@ mod tests {
             project_dir: project.to_string_lossy().into_owned(),
             at: 1_700_000_000_000,
         }
+    }
+
+    /// The feed's half of M03: two sessions in one file, each with anchors
+    /// placing it in a different hunk, compose as co-owners without SHARED —
+    /// and each carries its own hunks on the wire for the picker's default
+    /// election. The verdict and its ids come from the async diff spelling,
+    /// so this also exercises Spec S06's agreement from the feed side.
+    #[tokio::test]
+    async fn compose_reads_disjoint_regions_of_one_file_as_uncontended() {
+        let (_dir, root) = init_repo();
+        let original: String = (1..=60).map(|n| format!("line{n:03}\n")).collect();
+        std::fs::write(root.join("both.txt"), &original).unwrap();
+        git(&root, &["add", "both.txt"]);
+        git(&root, &["commit", "-q", "-m", "long file"]);
+        let edited = original
+            .replace("line005\n", "TOP-EDIT\n")
+            .replace("line050\n", "BOTTOM-EDIT\n");
+        std::fs::write(root.join("both.txt"), &edited).unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        for (i, (session, written)) in [("sess-alpha", "TOP-EDIT"), ("sess-beta", "BOTTOM-EDIT")]
+            .into_iter()
+            .enumerate()
+        {
+            ledger
+                .record_spawn(session, "ws", &root.to_string_lossy(), "card", 0, None)
+                .unwrap();
+            let mut row = event(session, &format!("tu-{i}"), &root.join("both.txt"), &root);
+            // The file is tracked, so the row must post-date its commit.
+            row.at = 9_000_000_000_000;
+            let anchor = serde_json::json!({
+                "new_hash": tugchanges_core::content_hash(written),
+                "new_head": written,
+                "new_len": written.len(),
+            })
+            .to_string();
+            let spans = vec![crate::session_ledger::FileEventSpan {
+                seq: 0,
+                kind: "insert".to_owned(),
+                anchor,
+            }];
+            ledger.record_file_event_with_spans(&row, &spans).unwrap();
+        }
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let files: Vec<&ChangesetFile> = snapshot
+            .changesets
+            .iter()
+            .filter_map(|entry| match entry {
+                ChangesetEntry::Session { files, .. } => files.first(),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(files.len(), 2, "both sessions own the file");
+        for file in &files {
+            assert_eq!(file.path, "both.txt");
+            assert!(!file.shared, "disjoint regions do not contend");
+            assert_eq!(file.own_hunks.len(), 1, "one region each");
+            assert!(file.contested_hunks.is_empty());
+        }
+        assert_ne!(
+            files[0].own_hunks, files[1].own_hunks,
+            "and the regions are different ones"
+        );
+    }
+
+    /// The same file, the same region: still SHARED, and the wire says which
+    /// hunk the contention is in.
+    #[tokio::test]
+    async fn compose_still_shares_a_file_two_sessions_edited_in_one_region() {
+        let (_dir, root) = init_repo();
+        let original: String = (1..=60).map(|n| format!("line{n:03}\n")).collect();
+        std::fs::write(root.join("both.txt"), &original).unwrap();
+        git(&root, &["add", "both.txt"]);
+        git(&root, &["commit", "-q", "-m", "long file"]);
+        std::fs::write(
+            root.join("both.txt"),
+            original.replace("line005\n", "TOP-EDIT\n"),
+        )
+        .unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        for (i, session) in ["sess-alpha", "sess-beta"].into_iter().enumerate() {
+            ledger
+                .record_spawn(session, "ws", &root.to_string_lossy(), "card", 0, None)
+                .unwrap();
+            let mut row = event(session, &format!("tu-{i}"), &root.join("both.txt"), &root);
+            row.at = 9_000_000_000_000;
+            let anchor = serde_json::json!({
+                "new_hash": tugchanges_core::content_hash("TOP-EDIT"),
+                "new_head": "TOP-EDIT",
+                "new_len": 8,
+            })
+            .to_string();
+            ledger
+                .record_file_event_with_spans(
+                    &row,
+                    &[crate::session_ledger::FileEventSpan {
+                        seq: 0,
+                        kind: "insert".to_owned(),
+                        anchor,
+                    }],
+                )
+                .unwrap();
+        }
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        for entry in &snapshot.changesets {
+            let ChangesetEntry::Session { files, .. } = entry else {
+                continue;
+            };
+            assert!(files[0].shared, "one region, two owners");
+            assert_eq!(files[0].contested_hunks, files[0].own_hunks);
+        }
+    }
+
+    /// Risk R09's bound, structurally: a dirty set nobody contends spends no
+    /// diffs at all. Asserted through the wire rather than a clock — every
+    /// file coming back with no hunk ids is only possible if the contention
+    /// pass never ran for any of them.
+    #[tokio::test]
+    async fn compose_runs_no_contention_pass_when_nothing_contends() {
+        let (_dir, root) = init_repo();
+        for i in 0..25 {
+            std::fs::write(root.join(format!("f{i:02}.txt")), "x").unwrap();
+        }
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .record_spawn("sess-alpha", "ws", &root.to_string_lossy(), "card", 0, None)
+            .unwrap();
+        for i in 0..25 {
+            ledger
+                .record_file_event(&event(
+                    "sess-alpha",
+                    &format!("tu-{i}"),
+                    &root.join(format!("f{i:02}.txt")),
+                    &root,
+                ))
+                .unwrap();
+        }
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let ChangesetEntry::Session { files, .. } = &snapshot.changesets[0] else {
+            panic!("expected session entry");
+        };
+        assert_eq!(files.len(), 25);
+        assert!(
+            files
+                .iter()
+                .all(|f| !f.shared && f.own_hunks.is_empty() && f.contested_hunks.is_empty()),
+            "a sole owner is never contended, and never costs a diff"
+        );
     }
 
     #[tokio::test]

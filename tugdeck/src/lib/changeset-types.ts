@@ -24,10 +24,18 @@ export interface ChangesetFile {
   op: string;
   /** Attribution origin: exact | bash | turn | replay | dash. */
   origin: string;
-  /** True when more than one changeset owns this file (per-file contention). */
+  /** True when more than one changeset owns this file **and** their claimed
+   *  regions overlap ([P12]). Two sessions editing disjoint parts of one file
+   *  are co-owners without contending. */
   shared: boolean;
   /** Epoch milliseconds of the most recent attribution event for this file. */
   last_touched: number;
+  /** The hunks this owner's evidence places it in, by [P06] id. Absent means
+   *  file-level: nobody else owns the path, or this owner's evidence cannot
+   *  say where it wrote and claims the file whole. */
+  own_hunks?: string[];
+  /** The hunks another owner claims too — where the contention actually is. */
+  contested_hunks?: string[];
 }
 
 /** A dirty file no owner claims (hand edits, detached background writes). */
@@ -159,7 +167,16 @@ export function isChangesetFile(value: unknown): value is ChangesetFile {
     typeof value.op === "string" &&
     typeof value.origin === "string" &&
     typeof value.shared === "boolean" &&
-    typeof value.last_touched === "number"
+    typeof value.last_touched === "number" &&
+    isOptionalStringArray(value.own_hunks) &&
+    isOptionalStringArray(value.contested_hunks)
+  );
+}
+
+function isOptionalStringArray(value: unknown): value is string[] | undefined {
+  return (
+    value === undefined ||
+    (Array.isArray(value) && value.every((s) => typeof s === "string"))
   );
 }
 

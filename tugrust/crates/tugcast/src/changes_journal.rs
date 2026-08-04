@@ -37,7 +37,9 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use crate::session_ledger::{ChangesetDraftRow, FileEventKey, FileEventRewrite, FileEventRow};
+use crate::session_ledger::{
+    ChangesetDraftRow, FileEventKey, FileEventRewrite, FileEventRow, FileEventSpan,
+};
 
 /// Rotate the journal at open when it exceeds this size. Attribution rows
 /// are ~200 bytes; this horizon is years of normal use.
@@ -47,15 +49,30 @@ const ROTATE_BYTES: u64 = 32 * 1024 * 1024;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "t")]
 pub enum Record {
-    /// `record_file_event` — idempotent insert on the natural PK.
+    /// `record_file_event` — idempotent insert on the natural PK, carrying
+    /// the row's sub-file evidence. `spans` defaults to empty so journal
+    /// lines written before span capture existed still parse.
     #[serde(rename = "fe")]
-    FileEvent { row: FileEventRow },
+    FileEvent {
+        row: FileEventRow,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        spans: Vec<FileEventSpan>,
+    },
     /// `record_file_events` — one user gesture's whole batch of attribution
     /// rows, applied in a single transaction so the batch lands whole or not
     /// at all. Each row keeps the single insert's `ON CONFLICT DO NOTHING`
     /// semantics, so replay is idempotent.
+    ///
+    /// `spans` is index-parallel to `rows` — `spans[i]` belongs to `rows[i]`,
+    /// and a shorter (or empty) vector means the remaining rows carry none.
+    /// A parallel vector rather than a row-and-spans pair because the pair
+    /// would change the shape of every `fe_batch` line already on disk.
     #[serde(rename = "fe_batch")]
-    FileEventBatch { rows: Vec<FileEventRow> },
+    FileEventBatch {
+        rows: Vec<FileEventRow>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        spans: Vec<Vec<FileEventSpan>>,
+    },
     /// Session eviction / deletion: drop every attribution row of one session.
     #[serde(rename = "fe_del_session")]
     DeleteSession { session: String },
@@ -256,13 +273,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = dir.path().join("changes.db");
         let journal = ChangesJournal::open(&db).unwrap();
-        journal.append(&Record::FileEvent { row: sample_row() });
+        journal.append(&Record::FileEvent {
+            row: sample_row(),
+            spans: Vec::new(),
+        });
         journal.append(&Record::DeleteSession {
             session: "s9".into(),
         });
         let records = ChangesJournal::read_records(&journal_path_for(&db));
         assert_eq!(records.len(), 2);
-        assert!(matches!(&records[0], Record::FileEvent { row } if row.file_path == "src/a.rs"));
+        assert!(matches!(&records[0], Record::FileEvent { row, .. } if row.file_path == "src/a.rs"));
         assert!(matches!(&records[1], Record::DeleteSession { session } if session == "s9"));
     }
 
@@ -279,6 +299,32 @@ mod tests {
             }
             .shapes_rows()
         );
+    }
+
+    /// Journal lines written before span capture existed carry no `spans`
+    /// key at all. They must still parse — a replay that dropped them would
+    /// lose exactly the attribution the rebuild exists to restore.
+    #[test]
+    fn a_span_less_line_from_before_the_spans_field_still_parses() {
+        let line = r#"{"t":"fe","row":{"tug_session_id":"s1","tool_use_id":"t1",
+            "file_path":"src/a.rs","tool_name":"Write","op":"modified",
+            "origin":"exact","ambiguous":false,"parent_tool_use_id":null,
+            "project_dir":"/proj","at":42}}"#
+            .replace('\n', "");
+        let record: Record = serde_json::from_str(&line).expect("v1 line parses");
+        match record {
+            Record::FileEvent { row, spans } => {
+                assert_eq!(row.file_path, "src/a.rs");
+                assert!(spans.is_empty());
+            }
+            other => panic!("wrong variant: {other:?}"),
+        }
+
+        let batch = r#"{"t":"fe_batch","rows":[]}"#;
+        assert!(matches!(
+            serde_json::from_str::<Record>(batch).expect("v1 batch line parses"),
+            Record::FileEventBatch { rows, spans } if rows.is_empty() && spans.is_empty()
+        ));
     }
 
     #[test]
@@ -308,7 +354,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = dir.path().join("changes.db");
         let journal = ChangesJournal::open(&db).unwrap();
-        journal.append(&Record::FileEvent { row: sample_row() });
+        journal.append(&Record::FileEvent {
+            row: sample_row(),
+            spans: Vec::new(),
+        });
         let path = journal_path_for(&db);
         let mut text = std::fs::read_to_string(&path).unwrap();
         text.push_str("{\"t\":\"fe\",\"row\":{\"tug_ses"); // torn write

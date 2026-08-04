@@ -1806,6 +1806,18 @@ struct SeedSession {
     name: Option<String>,
 }
 
+/// One file event to seed, with the sub-file evidence that decides whether
+/// two owners of the path contend ([P12]). `spans` is optional and flattened
+/// alongside the row's own fields, so a spec written before spans existed
+/// still reads.
+#[derive(serde::Deserialize)]
+struct SeedFileEvent {
+    #[serde(flatten)]
+    row: session_ledger::FileEventRow,
+    #[serde(default)]
+    spans: Vec<session_ledger::FileEventSpan>,
+}
+
 /// The seed spec's whole shape: live sessions and the file events that make
 /// them own something.
 #[derive(serde::Deserialize)]
@@ -1813,7 +1825,7 @@ struct SeedSpec {
     #[serde(default)]
     sessions: Vec<SeedSession>,
     #[serde(default)]
-    file_events: Vec<session_ledger::FileEventRow>,
+    file_events: Vec<SeedFileEvent>,
 }
 
 /// Seed this instance's ledger from a JSON spec and exit.
@@ -1912,7 +1924,7 @@ fn seed_ledger(spec_path: &std::path::Path) -> ! {
         }
     }
     for event in &spec.file_events {
-        if let Err(e) = ledger.record_file_event(event) {
+        if let Err(e) = ledger.record_file_event_with_spans(&event.row, &event.spans) {
             eprintln!("tugcast: error: record_file_event failed: {e}");
             std::process::exit(1);
         }

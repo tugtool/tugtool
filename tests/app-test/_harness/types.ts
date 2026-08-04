@@ -434,6 +434,24 @@ export interface LedgerSeedFileEvent {
   project_dir: string;
   /** Epoch ms. Must post-date the path's last commit to stay live. */
   at: number;
+  /**
+   * Sub-file evidence ([P11]) — what this call wrote *inside* the file, which
+   * is what decides whether two owners of the path contend ([P12]). Omit for
+   * a span-less row, which claims the whole file exactly as it did before
+   * spans existed.
+   */
+  spans?: LedgerSeedSpan[];
+}
+
+/** One content anchor on a seeded file event (Spec S04). */
+export interface LedgerSeedSpan {
+  /** Ordinal within the row, from 0. */
+  seq: number;
+  /** `whole` | `insert` | `replace` | `hunk`. */
+  kind: string;
+  /** JSON anchor: `{"new_hash","new_head","new_len"}` for insert/replace,
+   *  `{"hunk_id"}` for hunk, `{}` for whole. */
+  anchor: string;
 }
 
 /** See {@link LaunchTugAppOptions.seedLedger}. */

@@ -315,10 +315,21 @@ pub struct ChangesetFile {
     pub op: String,
     /// Attribution origin: exact | bash | turn | replay | dash.
     pub origin: String,
-    /// True when more than one changeset owns this file.
+    /// True when more than one changeset owns this file **and** their claimed
+    /// regions overlap ([P12]). Two sessions editing disjoint parts of one
+    /// file are co-owners without contending.
     pub shared: bool,
     /// Epoch milliseconds of the most recent attribution event for this file.
     pub last_touched: i64,
+    /// The hunks this owner's evidence places it in, by [P06] id. Absent
+    /// (empty) means file-level: either nobody else owns the path, or this
+    /// owner's evidence cannot say where it wrote and claims the file whole.
+    /// Additive — an older deck ignores it and behaves exactly as before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub own_hunks: Vec<String>,
+    /// The hunks another owner claims too — where the contention actually is.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contested_hunks: Vec<String>,
 }
 
 /// A file the attribution engine has no owner for (hand edits, detached

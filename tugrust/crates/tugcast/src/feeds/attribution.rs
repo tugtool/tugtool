@@ -199,6 +199,120 @@ pub fn file_path_for_tool(tool_name: &str, input: &serde_json::Value) -> Option<
         .map(|s| s.to_owned())
 }
 
+/// Bytes of an anchor's written text kept as the `new_head` excerpt. Long
+/// enough that a head is distinctive against a file's other insertions,
+/// short enough that a large `Write` does not put its whole body in the
+/// ledger — the hash carries exactness, the head carries matchability
+/// against a hunk that only *contains* the insertion.
+pub const SPAN_HEAD_CAP: usize = 200;
+
+/// Anchors one tool call may record. Beyond it the call records a single
+/// `whole` span instead: an edit touching more than this many regions is
+/// effectively a rewrite, and widening to the whole file ([P12]) is both
+/// cheaper and the conservative reading.
+pub const SPANS_PER_EVENT_CAP: usize = 32;
+
+/// The `whole` span — the anchor-free assertion that a call's evidence
+/// covers the entire file. Written for `Write`/`NotebookEdit` (which replace
+/// the file wholesale), for a claim (a whole-file assertion by hand), and
+/// wherever a finer reading is unavailable.
+pub fn whole_span() -> crate::session_ledger::FileEventSpan {
+    crate::session_ledger::FileEventSpan {
+        seq: 0,
+        kind: "whole".to_owned(),
+        anchor: "{}".to_owned(),
+    }
+}
+
+/// Truncate `text` to at most [`SPAN_HEAD_CAP`] bytes on a character
+/// boundary — a byte-sliced excerpt of multi-byte text would not be a
+/// string at all.
+fn head_excerpt(text: &str) -> &str {
+    if text.len() <= SPAN_HEAD_CAP {
+        return text;
+    }
+    let mut end = SPAN_HEAD_CAP;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
+/// The content anchors an exact tool's input yields ([P11], Spec S04).
+///
+/// What the call *wrote*, never where it wrote it: line numbers die the
+/// moment another edit lands above them, while written text still matches
+/// against the current diff at read time. `Write` and `NotebookEdit` replace
+/// the file wholesale and so carry a single `whole` anchor; `Edit` and
+/// `MultiEdit` carry one anchor per edit — `replace` when it named an
+/// `old_string`, `insert` when it did not.
+///
+/// An empty result means this tool contributes no sub-file evidence, which
+/// widens its owner to a whole-file claim by rule ([P12]) — the same answer
+/// the system gave before spans existed.
+pub fn spans_for_tool_input(
+    tool_name: &str,
+    input: &serde_json::Value,
+) -> Vec<crate::session_ledger::FileEventSpan> {
+    match tool_name {
+        "Write" | "NotebookEdit" => vec![whole_span()],
+        "Edit" => edit_spans(std::slice::from_ref(input)),
+        "MultiEdit" => match input.get("edits").and_then(|v| v.as_array()) {
+            Some(edits) => edit_spans(edits),
+            None => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+/// One `insert`/`replace` anchor per edit object, or a single `whole` anchor
+/// when there are more edits than [`SPANS_PER_EVENT_CAP`].
+fn edit_spans(edits: &[serde_json::Value]) -> Vec<crate::session_ledger::FileEventSpan> {
+    if edits.len() > SPANS_PER_EVENT_CAP {
+        return vec![whole_span()];
+    }
+    let mut spans = Vec::new();
+    for edit in edits {
+        let Some(new_string) = edit.get("new_string").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let old_string = edit.get("old_string").and_then(|v| v.as_str());
+        let replaced = old_string.is_some_and(|s| !s.is_empty());
+        let mut anchor = serde_json::json!({
+            "new_hash": tugchanges_core::hunks::content_hash(new_string),
+            "new_head": head_excerpt(new_string),
+            "new_len": new_string.len(),
+        });
+        if replaced {
+            anchor["old_hash"] =
+                serde_json::Value::String(tugchanges_core::hunks::content_hash(old_string.unwrap()));
+        }
+        spans.push(crate::session_ledger::FileEventSpan {
+            seq: spans.len() as i64,
+            kind: if replaced { "replace" } else { "insert" }.to_owned(),
+            anchor: anchor.to_string(),
+        });
+    }
+    spans
+}
+
+/// The `hunk` anchors a verb receipt's applied-hunk ids yield (Spec S05) —
+/// the strongest anchor kind there is, since the id is already the identity
+/// the current diff's hunks are keyed by.
+pub fn hunk_spans(ids: &[String]) -> Vec<crate::session_ledger::FileEventSpan> {
+    if ids.len() > SPANS_PER_EVENT_CAP {
+        return vec![whole_span()];
+    }
+    ids.iter()
+        .enumerate()
+        .map(|(seq, id)| crate::session_ledger::FileEventSpan {
+            seq: seq as i64,
+            kind: "hunk".to_owned(),
+            anchor: serde_json::json!({ "hunk_id": id }).to_string(),
+        })
+        .collect()
+}
+
 /// A `tool_use` frame's attribution facts, held until its `tool_result`
 /// arrives. Only exact-attributable calls with a resolvable path ever
 /// become a `PendingCall`.
@@ -212,6 +326,11 @@ pub struct PendingCall {
     /// row's `at` on the replay path so a backfilled row keeps historical
     /// time; `None` on the live path, where frame-arrival time is used.
     pub timestamp: Option<i64>,
+    /// The call's sub-file evidence, read from the tool input at `tool_use`
+    /// time — the only moment it is on the stream. Written with the row on
+    /// the successful `tool_result`. The replay path carries the same
+    /// anchors, because the tool input replays.
+    pub spans: Vec<crate::session_ledger::FileEventSpan>,
 }
 
 impl PendingCall {
@@ -615,6 +734,11 @@ pub struct ReceiptOp {
     pub path: String,
     #[serde(default)]
     pub orig_path: Option<String>,
+    /// The [P06] ids of the hunks the verb actually applied (Spec S05).
+    /// Additive and optional — a receipt without it mints a span-less row,
+    /// which widens to a whole-file claim exactly as before.
+    #[serde(default)]
+    pub hunks: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -896,6 +1020,7 @@ mod tests {
             op: "write",
             parent_tool_use_id: None,
             timestamp: None,
+            spans: Vec::new(),
         }
     }
 
@@ -1256,11 +1381,13 @@ mod tests {
                     op: "deleted".to_owned(),
                     path: "/abs/a.ts".to_owned(),
                     orig_path: None,
+                    hunks: Vec::new(),
                 },
                 ReceiptOp {
                     op: "renamed".to_owned(),
                     path: "/abs/new.ts".to_owned(),
                     orig_path: Some("/abs/old.ts".to_owned()),
+                    hunks: Vec::new(),
                 },
             ]
         );
@@ -1283,6 +1410,141 @@ mod tests {
         let broken = parse_receipt_line("TUG-FILE-RECEIPT: {\"ops\":[");
         assert!(broken.ops.is_empty());
         assert!(broken.malformed);
+    }
+
+    // ---- span capture ([P11], Spec S04, Spec S05) -----------------------
+
+    fn anchor_of(span: &crate::session_ledger::FileEventSpan) -> serde_json::Value {
+        serde_json::from_str(&span.anchor).expect("anchor is JSON")
+    }
+
+    #[test]
+    fn a_write_asserts_the_whole_file() {
+        let input = serde_json::json!({"file_path": "/p/a.rs", "content": "hello"});
+        let spans = spans_for_tool_input("Write", &input);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].kind, "whole");
+        assert_eq!(anchor_of(&spans[0]), serde_json::json!({}));
+
+        // A notebook edit replaces its cell wholesale, same reading.
+        let notebook = serde_json::json!({"notebook_path": "/p/a.ipynb"});
+        assert_eq!(spans_for_tool_input("NotebookEdit", &notebook)[0].kind, "whole");
+    }
+
+    #[test]
+    fn an_edit_anchors_on_what_it_wrote_not_where() {
+        let input = serde_json::json!({
+            "file_path": "/p/a.rs",
+            "old_string": "let x = 1;",
+            "new_string": "let x = 2;",
+        });
+        let spans = spans_for_tool_input("Edit", &input);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].kind, "replace");
+        assert_eq!(spans[0].seq, 0);
+        let anchor = anchor_of(&spans[0]);
+        assert_eq!(
+            anchor["new_hash"],
+            tugchanges_core::hunks::content_hash("let x = 2;")
+        );
+        assert_eq!(anchor["new_head"], "let x = 2;");
+        assert_eq!(anchor["new_len"], 10);
+        assert_eq!(
+            anchor["old_hash"],
+            tugchanges_core::hunks::content_hash("let x = 1;")
+        );
+        // Nothing in the anchor is a line number — that is the whole point.
+        assert!(anchor.get("line").is_none() && anchor.get("offset").is_none());
+    }
+
+    #[test]
+    fn an_edit_with_no_old_string_is_an_insert() {
+        let input = serde_json::json!({
+            "file_path": "/p/a.rs",
+            "old_string": "",
+            "new_string": "added\n",
+        });
+        let spans = spans_for_tool_input("Edit", &input);
+        assert_eq!(spans[0].kind, "insert");
+        assert!(anchor_of(&spans[0]).get("old_hash").is_none());
+    }
+
+    #[test]
+    fn a_multi_edit_anchors_every_edit_in_order() {
+        let input = serde_json::json!({
+            "file_path": "/p/a.rs",
+            "edits": [
+                {"old_string": "a", "new_string": "A"},
+                {"old_string": "", "new_string": "B"},
+            ],
+        });
+        let spans = spans_for_tool_input("MultiEdit", &input);
+        assert_eq!(spans.len(), 2);
+        assert_eq!((spans[0].seq, spans[0].kind.as_str()), (0, "replace"));
+        assert_eq!((spans[1].seq, spans[1].kind.as_str()), (1, "insert"));
+    }
+
+    #[test]
+    fn an_edit_past_the_anchor_cap_widens_to_whole() {
+        let edits: Vec<serde_json::Value> = (0..=SPANS_PER_EVENT_CAP)
+            .map(|n| serde_json::json!({"old_string": format!("a{n}"), "new_string": format!("b{n}")}))
+            .collect();
+        let input = serde_json::json!({"file_path": "/p/a.rs", "edits": edits});
+        let spans = spans_for_tool_input("MultiEdit", &input);
+        assert_eq!(spans.len(), 1, "past the cap the call claims the file");
+        assert_eq!(spans[0].kind, "whole");
+    }
+
+    #[test]
+    fn a_long_insertion_keeps_a_capped_head_and_a_full_hash() {
+        let long = "x".repeat(SPAN_HEAD_CAP * 3);
+        let input = serde_json::json!({
+            "file_path": "/p/a.rs",
+            "old_string": "",
+            "new_string": long,
+        });
+        let anchor = anchor_of(&spans_for_tool_input("Edit", &input)[0]);
+        assert_eq!(anchor["new_head"].as_str().unwrap().len(), SPAN_HEAD_CAP);
+        assert_eq!(anchor["new_len"], long.len());
+        assert_eq!(anchor["new_hash"], tugchanges_core::hunks::content_hash(&long));
+    }
+
+    #[test]
+    fn a_head_excerpt_never_splits_a_character() {
+        // Three-byte characters do not divide the cap evenly, so a naive byte
+        // slice would panic here.
+        let text = "é".repeat(SPAN_HEAD_CAP);
+        let head = head_excerpt(&text);
+        assert!(head.len() <= SPAN_HEAD_CAP);
+        assert!(text.starts_with(head));
+    }
+
+    #[test]
+    fn a_bash_call_yields_no_spans() {
+        // A parsed command names files, not regions ([Q03]) — span-less
+        // evidence widens to the whole file by rule, today's exact behavior.
+        let input = serde_json::json!({"command": "sed -i '' s/a/b/ x.rs"});
+        assert!(spans_for_tool_input("Bash", &input).is_empty());
+    }
+
+    #[test]
+    fn a_receipts_hunk_ids_become_hunk_anchors() {
+        let spans = hunk_spans(&["aaaa1111bbbb2222".to_owned(), "cccc3333dddd4444".to_owned()]);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[1].kind, "hunk");
+        assert_eq!(anchor_of(&spans[1])["hunk_id"], "cccc3333dddd4444");
+    }
+
+    #[test]
+    fn a_receipt_carries_its_hunk_ids_and_still_reads_without_them() {
+        let with = "TUG-FILE-RECEIPT: {\"ops\":[{\"op\":\"modified\",\"path\":\"/abs/a.ts\",\"hunks\":[\"aaaa1111bbbb2222\"]}]}";
+        let scan = parse_receipt_line(with);
+        assert_eq!(scan.ops[0].hunks, vec!["aaaa1111bbbb2222".to_owned()]);
+
+        // A receipt from a build that predates Spec S05 still reads — it just
+        // has nothing to say about regions.
+        let without = "TUG-FILE-RECEIPT: {\"ops\":[{\"op\":\"modified\",\"path\":\"/abs/a.ts\"}]}";
+        assert!(parse_receipt_line(without).ops[0].hunks.is_empty());
     }
 
     #[test]

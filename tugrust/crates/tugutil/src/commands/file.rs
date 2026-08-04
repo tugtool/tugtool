@@ -28,6 +28,13 @@ struct ReceiptOp {
     path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     orig_path: Option<String>,
+    /// The hunks this edit is responsible for, by their [P06] id (Spec S05) —
+    /// the sub-file half of the verb's testimony. Additive: a receipt without
+    /// it mints a span-less row, which claims the whole file exactly as
+    /// before. Omitted when the verb has nothing to say about regions (a
+    /// delete, a rename, a file outside any repo).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    hunks: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -41,6 +48,7 @@ impl Receipt {
             op: "deleted",
             path: path.to_string_lossy().into_owned(),
             orig_path: None,
+            hunks: Vec::new(),
         });
     }
 
@@ -49,14 +57,18 @@ impl Receipt {
             op: "renamed",
             path: to.to_string_lossy().into_owned(),
             orig_path: Some(from.to_string_lossy().into_owned()),
+            hunks: Vec::new(),
         });
     }
 
-    fn modified(&mut self, path: &Path) {
+    /// A modification, naming the regions it produced (Spec S05) where the
+    /// verb can read them.
+    fn modified(&mut self, path: &Path, hunks: Vec<String>) {
         self.ops.push(ReceiptOp {
             op: "modified",
             path: path.to_string_lossy().into_owned(),
             orig_path: None,
+            hunks,
         });
     }
 
@@ -65,6 +77,7 @@ impl Receipt {
             op: "created",
             path: path.to_string_lossy().into_owned(),
             orig_path: None,
+            hunks: Vec::new(),
         });
     }
 
@@ -270,6 +283,7 @@ fn edit_by_patch(source: &str) -> Result<(), AppError> {
     // Remember each target's bytes so the receipt can name only the files that
     // actually moved — a patch may name a file and leave it identical.
     let before: Vec<Option<Vec<u8>>> = targets.iter().map(|p| std::fs::read(p).ok()).collect();
+    let hunks_before: Vec<Vec<String>> = targets.iter().map(|p| current_hunk_ids(p)).collect();
 
     // Validate first: a patch that will not apply must change nothing and
     // testify to nothing.
@@ -277,7 +291,7 @@ fn edit_by_patch(source: &str) -> Result<(), AppError> {
     git_apply(&text, false)?;
 
     let mut receipt = Receipt::default();
-    for (target, was) in targets.iter().zip(before) {
+    for ((target, was), was_hunks) in targets.iter().zip(before).zip(hunks_before) {
         let now = std::fs::read(target).ok();
         if now == was {
             continue;
@@ -285,11 +299,37 @@ fn edit_by_patch(source: &str) -> Result<(), AppError> {
         match (was, &now) {
             (None, Some(_)) => receipt.created(target),
             (Some(_), None) => receipt.deleted(target),
-            _ => receipt.modified(target),
+            _ => receipt.modified(target, hunks_this_edit_produced(target, &was_hunks)),
         }
     }
     receipt.emit();
     Ok(())
+}
+
+/// One file's current diff hunks by [P06] id, empty when the path is in no
+/// repo, is untracked, or git refuses — an unreadable diff costs the receipt
+/// its regions, never its file.
+fn current_hunk_ids(target: &Path) -> Vec<String> {
+    let Some(dir) = target.parent() else {
+        return Vec::new();
+    };
+    tugchanges_core::hunks::file_hunks(dir, &target.to_string_lossy())
+        .map(|hunks| hunks.into_iter().map(|h| h.id).collect())
+        .unwrap_or_default()
+}
+
+/// The ids present in the file's diff *now* that were not there before the
+/// edit — the regions this edit is responsible for.
+///
+/// The difference, not the whole current diff: a file the session merely
+/// touched one region of must not testify to regions someone else wrote. A
+/// hunk this edit rewrote gets a new id (identity is content), so it lands
+/// here correctly, and a hunk it did not touch keeps its old id and does not.
+fn hunks_this_edit_produced(target: &Path, before: &[String]) -> Vec<String> {
+    current_hunk_ids(target)
+        .into_iter()
+        .filter(|id| !before.contains(id))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +376,7 @@ fn edit_by_substitution(
     let target = absolute(Path::new(path));
     let original = std::fs::read_to_string(&target)
         .map_err(|e| AppError::Exit1(format!("{}: {e}", target.display())))?;
+    let hunks_before = current_hunk_ids(&target);
 
     // `--count 0` is refused rather than interpreted. `str::replacen(…, 0)`
     // replaces nothing and `Regex::replacen(…, 0)` replaces *everything*, so
@@ -375,7 +416,7 @@ fn edit_by_substitution(
         .map_err(|e| AppError::Exit1(format!("{}: {e}", target.display())))?;
 
     let mut receipt = Receipt::default();
-    receipt.modified(&target);
+    receipt.modified(&target, hunks_this_edit_produced(&target, &hunks_before));
     receipt.emit();
     Ok(())
 }

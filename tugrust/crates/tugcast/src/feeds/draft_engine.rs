@@ -754,6 +754,8 @@ mod tests {
                 origin: "exact".to_string(),
                 shared: false,
                 last_touched: 1,
+                own_hunks: Vec::new(),
+                contested_hunks: Vec::new(),
             }],
             draft: None,
         };

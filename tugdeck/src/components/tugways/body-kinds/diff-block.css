@@ -304,6 +304,14 @@ body {
   display: none;
 }
 
+/* A hunk another session also claims ([P12]). A rule on the band rather than
+ * a badge on the file: contention is a property of the region, and the mark
+ * belongs where the overlap is. */
+.tugx-diff-hunk[data-contested="true"] > .tugx-diff-hunk-lead,
+.tugx-diff-hunk[data-contested="true"] > .tugx-diff-hunk-header {
+  border-left: 2px solid var(--tug7-element-global-border-accent-bold-rest);
+}
+
 .tugx-diff-hunk-rows {
   display: block;
   padding: var(--tugx-diff-rows-padding);

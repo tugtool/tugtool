@@ -23,10 +23,13 @@
 //!   rows it absorbs, so a spent row neither attributes nor contends when the
 //!   file goes dirty again later. Ties break toward spent, degrading to
 //!   `unattributed` — visible, never falsely claimed.
-//! - **Contention is per-file, computed here at read time.** An attributed
-//!   path that other sessions also hold live rows for is `shared` (with the
-//!   claimant list); capture never records a cross-session judgment, and
-//!   wall-clock overlap between sessions is never evidence.
+//! - **Contention is computed here at read time, per region.** An attributed
+//!   path that other sessions also hold live rows for names them in
+//!   `sessions`; it is `shared` only when the owners' claimed regions actually
+//!   overlap ([`crate::contention`], [P12]) — and an owner whose evidence
+//!   cannot say where it wrote claims the whole file, which reproduces the
+//!   file-level answer exactly. Capture never records a cross-session
+//!   judgment, and wall-clock overlap between sessions is never evidence.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -35,7 +38,9 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 use serde::Serialize;
 
+use crate::contention;
 use crate::git::{self, repo_root_for};
+use crate::hunks;
 use crate::ledger;
 
 /// Options for [`changes`]. `session` defaults from `$TUG_SESSION_ID`; `project`
@@ -51,9 +56,12 @@ pub struct ChangesOptions {
 
 /// One changed file (Spec S01). `git_status` is the two-char porcelain-v1 code
 /// (`" M"`, `"M "`, `"??"`, …), empty for an `--all` row no longer dirty.
-/// `shared` marks per-file contention — other sessions also hold live rows for
-/// the path — with `sessions` naming the claimants. `diff` is present only
-/// when requested.
+/// `sessions` names the other live proof owners of the path; `shared` marks
+/// genuine contention among them — true when the owners' claimed *regions*
+/// overlap ([P12]), so two sessions editing disjoint parts of one file are
+/// co-owners without being contended. An owner that recorded no regions
+/// claims the whole file, which is how the file-level answer survives for
+/// evidence that cannot say more. `diff` is present only when requested.
 #[derive(Debug, Clone, Serialize)]
 pub struct Change {
     pub path: String,
@@ -273,6 +281,54 @@ pub fn changes(opts: ChangesOptions) -> Result<ChangesReport, ChangesError> {
 /// `all` additionally keeps this session's committed/reverted files (an event
 /// row but no longer dirty) in `attributed` — a history view, so liveness does
 /// not apply there.
+/// Whether this session's work on `path` actually collides with the other
+/// owners' — the hunk-aware reading of SHARED ([P12], [P14]).
+///
+/// Called only for a path that already has two or more live proof owners, so
+/// the cost it adds is bounded by contention, not by the dirty set (Risk R09).
+/// It short-circuits twice more before spending anything on git: with no live
+/// spans at all every owner claims the whole file, which is the answer the
+/// pre-spans engine gave; and a diff that will not read leaves the same
+/// answer. `true` is the conservative verdict everywhere, so a failure here
+/// costs an over-warning, never a false sole claim.
+fn paths_contend(
+    conn: &Connection,
+    repo_root: &Path,
+    path: &str,
+    session: &str,
+    foreign: &[String],
+    min_live: i64,
+) -> Result<bool, String> {
+    let spans = ledger::spans_for_path(conn, path)?;
+    let mut by_session: HashMap<&str, Vec<contention::Anchor>> = HashMap::new();
+    for row in &spans {
+        if row.at < min_live {
+            continue;
+        }
+        by_session
+            .entry(row.session.as_str())
+            .or_default()
+            .push(contention::Anchor::from_span(&row.kind, &row.anchor));
+    }
+    if by_session.is_empty() {
+        return Ok(true);
+    }
+    let hunks = match hunks::file_hunks(repo_root, path) {
+        Ok(hunks) if !hunks.is_empty() => hunks,
+        // No readable hunks (an untracked file's diff is empty, git refused):
+        // nothing to place the anchors against.
+        _ => return Ok(true),
+    };
+    let owners: Vec<contention::OwnerAnchors> = std::iter::once(session)
+        .chain(foreign.iter().map(String::as_str))
+        .map(|id| contention::OwnerAnchors {
+            session: id.to_owned(),
+            anchors: by_session.get(id).cloned().unwrap_or_default(),
+        })
+        .collect();
+    Ok(contention::classify_contention(&hunks, &owners).shared)
+}
+
 fn compute_changes(
     conn: &Connection,
     repo_root: &Path,
@@ -356,12 +412,16 @@ fn compute_changes(
 
         if let Some(latest) = latest_self_proof {
             // This session provably edited the file. Contention requires
-            // another session's *proof* row — bracket rows never mark shared.
+            // another session's *proof* row — bracket rows never mark shared —
+            // and, where both sides recorded where they wrote, that their
+            // regions actually overlap ([P12]).
+            let shared = !foreign_proof.is_empty()
+                && paths_contend(conn, repo_root, path, session, &foreign_proof, min_live)?;
             attributed.push(Change {
                 path: path.clone(),
                 op: latest.op.clone(),
                 origin: latest.origin.clone(),
-                shared: !foreign_proof.is_empty(),
+                shared,
                 sessions: foreign_proof,
                 git_status,
                 diff: None,
@@ -548,7 +608,10 @@ mod tests {
              CREATE TABLE file_events (
                 tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
                 tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
-                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
+                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);
+             CREATE TABLE file_event_spans (
+                tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                seq INTEGER, kind TEXT, anchor TEXT);",
         )
         .unwrap();
         conn.execute("INSERT INTO sessions (session_id) VALUES (?1)", [session])
@@ -790,7 +853,10 @@ mod tests {
              CREATE TABLE file_events (
                 tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
                 tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
-                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
+                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);
+             CREATE TABLE file_event_spans (
+                tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                seq INTEGER, kind TEXT, anchor TEXT);",
         )
         .unwrap();
         let mut seen: Vec<String> = Vec::new();
@@ -824,7 +890,10 @@ mod tests {
              CREATE TABLE file_events (
                 tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
                 tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
-                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
+                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);
+             CREATE TABLE file_event_spans (
+                tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                seq INTEGER, kind TEXT, anchor TEXT);",
         )
         .unwrap();
         let mut seen: Vec<String> = Vec::new();
@@ -944,7 +1013,10 @@ mod tests {
              CREATE TABLE file_events (
                 tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
                 tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
-                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
+                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);
+             CREATE TABLE file_event_spans (
+                tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                seq INTEGER, kind TEXT, anchor TEXT);",
         )
         .unwrap();
         let mut seen: Vec<String> = Vec::new();
@@ -1027,6 +1099,164 @@ mod tests {
         assert_eq!(mine.sessions, vec!["theirs".to_string()]);
         assert!(buckets.foreign.is_empty());
         assert!(buckets.unattributed.is_empty());
+    }
+
+    /// A row on a *tracked* file must postdate the commit that created it, or
+    /// the liveness cut spends it before contention is ever asked about.
+    fn now_millis() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0)
+    }
+
+    /// A repo with one tracked 60-line file, dirtied in two regions far
+    /// enough apart that git keeps them as separate hunks.
+    fn init_two_region_repo() -> (tempfile::TempDir, String) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .args(args)
+                    .current_dir(root)
+                    .output()
+                    .expect("git")
+                    .status
+                    .success(),
+                "git {args:?}"
+            );
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@t.test"]);
+        git(&["config", "user.name", "t"]);
+        let original: String = (1..=60).map(|n| format!("line{n:03}\n")).collect();
+        std::fs::write(root.join("both.rs"), &original).unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-q", "-m", "init"]);
+        let edited = original
+            .replace("line005\n", "TOP-EDIT\n")
+            .replace("line050\n", "BOTTOM-EDIT\n");
+        std::fs::write(root.join("both.rs"), &edited).unwrap();
+        let rootstr = root.to_string_lossy().into_owned();
+        (dir, rootstr)
+    }
+
+    /// Seed two proof rows on one path, each with one `insert` anchor naming
+    /// the text that session wrote.
+    fn seed_two_owners_with_anchors(
+        project_dir: &str,
+        path: &str,
+        owners: &[(&str, &str)],
+    ) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = Connection::open(dir.path().join("sessions.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
+             CREATE TABLE file_events (
+                tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
+                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);
+             CREATE TABLE file_event_spans (
+                tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                seq INTEGER, kind TEXT, anchor TEXT);",
+        )
+        .unwrap();
+        for (i, (session, written)) in owners.iter().enumerate() {
+            conn.execute("INSERT INTO sessions (session_id) VALUES (?1)", [session])
+                .unwrap();
+            let tool_use_id = format!("tu-{i}");
+            conn.execute(
+                "INSERT INTO file_events
+                    (tug_session_id, tool_use_id, file_path, tool_name, op, origin, ambiguous, project_dir, at)
+                 VALUES (?1, ?2, ?3, 'Edit', 'edit', 'exact', 0, ?4, ?5)",
+                rusqlite::params![session, tool_use_id, path, project_dir, now_millis() + 2_000 + i as i64],
+            )
+            .unwrap();
+            let anchor = serde_json::json!({
+                "new_hash": crate::hunks::content_hash(written),
+                "new_head": written,
+                "new_len": written.len(),
+            })
+            .to_string();
+            conn.execute(
+                "INSERT INTO file_event_spans
+                    (tug_session_id, tool_use_id, file_path, seq, kind, anchor)
+                 VALUES (?1, ?2, ?3, 0, 'insert', ?4)",
+                rusqlite::params![session, tool_use_id, path, anchor],
+            )
+            .unwrap();
+        }
+        dir
+    }
+
+    /// The point of M03: two sessions in one file, each with anchors placing
+    /// it in a different hunk, are co-owners without contending.
+    #[test]
+    fn disjoint_regions_of_one_file_are_not_shared() {
+        let (repo, rootstr) = init_two_region_repo();
+        let db = seed_two_owners_with_anchors(
+            &rootstr,
+            "both.rs",
+            &[("mine", "TOP-EDIT"), ("theirs", "BOTTOM-EDIT")],
+        );
+
+        let mine = compute_changes(&open(&db), repo.path(), "mine", false).unwrap();
+        assert_eq!(mine.attributed.len(), 1);
+        assert!(
+            !mine.attributed[0].shared,
+            "disjoint regions do not contend"
+        );
+        assert_eq!(
+            mine.attributed[0].sessions,
+            vec!["theirs".to_string()],
+            "the co-owner is still named"
+        );
+
+        // The same read from the other side — the verdict is symmetric.
+        let theirs = compute_changes(&open(&db), repo.path(), "theirs", false).unwrap();
+        assert_eq!(theirs.attributed.len(), 1);
+        assert!(!theirs.attributed[0].shared);
+    }
+
+    #[test]
+    fn the_same_region_edited_by_both_is_still_shared() {
+        let (repo, rootstr) = init_two_region_repo();
+        let db = seed_two_owners_with_anchors(
+            &rootstr,
+            "both.rs",
+            &[("mine", "TOP-EDIT"), ("theirs", "TOP-EDIT")],
+        );
+        let mine = compute_changes(&open(&db), repo.path(), "mine", false).unwrap();
+        assert_eq!(mine.attributed.len(), 1);
+        assert!(mine.attributed[0].shared, "one region, two owners");
+    }
+
+    /// The pre-spans world must survive intact: an owner that recorded no
+    /// regions claims the whole file, so the file-level answer stands ([P12]).
+    #[test]
+    fn a_span_less_co_owner_still_contends_at_file_level() {
+        let (repo, rootstr) = init_two_region_repo();
+        let db = seed_two_owners_with_anchors(&rootstr, "both.rs", &[("mine", "TOP-EDIT")]);
+        {
+            // `legacy` holds a proof row with no spans at all.
+            let conn = Connection::open(db.path().join("sessions.db")).unwrap();
+            conn.execute("INSERT INTO sessions (session_id) VALUES ('legacy')", [])
+                .unwrap();
+            conn.execute(
+                "INSERT INTO file_events
+                    (tug_session_id, tool_use_id, file_path, tool_name, op, origin, ambiguous, project_dir, at)
+                 VALUES ('legacy', 'tu-legacy', 'both.rs', 'Bash', 'modified', 'cmd', 0, ?1, ?2)",
+                rusqlite::params![rootstr, now_millis() + 2_010],
+            )
+            .unwrap();
+        }
+        let mine = compute_changes(&open(&db), repo.path(), "mine", false).unwrap();
+        assert_eq!(mine.attributed.len(), 1);
+        assert!(
+            mine.attributed[0].shared,
+            "evidence that cannot say where widens to the whole file"
+        );
     }
 
     #[test]

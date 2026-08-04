@@ -589,10 +589,10 @@ The contract, after [P16] and [P17]:
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] `tuglaws/tracking-changes.md`: add Disclaim to the origins/consumers tables; document span capture, [P12] widening, and the hunk-level SHARED rule; note the partial-commit liveness consequence ([P08]).
+- [x] `tuglaws/tracking-changes.md`: add Disclaim to the origins/consumers tables; document span capture, [P12] widening, and the hunk-level SHARED rule; note the partial-commit liveness consequence ([P08]). *(Disclaim rides the read side + the consumers table rather than the origins table — it writes no row, it deletes them.)*
 - [ ] `tuglaws/design-decisions.md`: candidate global promotions after the plan lands (disclaim semantics; hunk-identity rule) — user's call at landing time.
-- [ ] **(M02A)** `tugchanges-core/src/hunks.rs` module doc: state Spec S06's agreement contract where the next reader of the id rule will look — the shared flags, the no-`-U<n>` rule, and the three differences that provably cannot move an id.
-- [ ] **(M02A)** `tuglaws/tracking-changes.md` §"Below the file: hunk election": add a sentence that the elections ride the draft selection as opaque JSON and that the wire projection must not narrow it ([P15]).
+- [x] **(M02A)** `tugchanges-core/src/hunks.rs` module doc: state Spec S06's agreement contract where the next reader of the id rule will look — the shared flags, the no-`-U<n>` rule, and the three differences that provably cannot move an id.
+- [x] **(M02A)** `tuglaws/tracking-changes.md` §"Below the file: hunk election": add a sentence that the elections ride the draft selection as opaque JSON and that the wire projection must not narrow it ([P15]).
 
 ---
 
@@ -644,12 +644,12 @@ The contract, after [P16] and [P17]:
 | #step-11d | Election reconciliation + control affordances | done | 7ad7acd3d |
 | #step-11e | Diff-block CSS de-duplication | done | f5ccee427 |
 | #step-11f | Disclaim storage-form spike | done | e67da36f4 |
-| #step-11g | M02A integration checkpoint | done — HV1–HV8 automated | uncommitted |
-| #step-12 | Schema v2: spans table | pending | — |
-| #step-13 | Span capture | pending | — |
-| #step-14 | Hunk-aware contention verdict | pending | — |
-| #step-15 | Contention UI + default election | pending | — |
-| #step-16 | M03 integration checkpoint | pending | — |
+| #step-11g | M02A integration checkpoint | done — HV1–HV8 automated | 36f89022a |
+| #step-12 | Schema v2: spans table | done | 9dd4cd0f7 |
+| #step-13 | Span capture | done | 30334aa26 |
+| #step-14 | Hunk-aware contention verdict | done | b80cc65d0 |
+| #step-15 | Contention UI + default election | done | a84d76720 |
+| #step-16 | M03 integration checkpoint | done — live-db migration pending the user's build | b29c8545b |
 
 #### Step 1: Atomic batch claim record {#step-1}
 

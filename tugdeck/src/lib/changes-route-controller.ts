@@ -252,10 +252,17 @@ export class ChangesRouteController {
     // what the user actually stated: dropping ids that have drifted would land
     // a commit they never elected. `CommitError::HunkDrift` naming the path and
     // the ids is the authority here, and a loud refusal is the better failure.
+    //
+    // With nothing stated for a path, the default rides too: on a contended
+    // file the server placed this session in particular hunks ([P12]), and
+    // those are what the row shows checked. Sending whole-file there would
+    // land the co-owner's regions under this session's message while the
+    // boxes said otherwise.
     const election = this.hunkElection();
+    const own = this.ownHunks();
     const hunks: Record<string, string[]> = {};
     for (const path of files) {
-      const ids = election[path];
+      const ids = election[path] ?? own[path];
       if (ids !== undefined && ids.length > 0) hunks[path] = [...ids];
     }
     // Carry the session's display name + id so `do_changeset_commit` appends a
@@ -282,6 +289,21 @@ export class ChangesRouteController {
    */
   hunkElection(): Readonly<Record<string, readonly string[]>> {
     return this._snapshot.entry?.draft?.selection?.hunks ?? {};
+  }
+
+  /**
+   * Per-path, the hunks the server places this session in ([P12]) — the
+   * default election on a contended file. Empty for every path the server
+   * found no contention on, which is the whole-file default this landing had
+   * before contention was hunk-aware.
+   */
+  private ownHunks(): Readonly<Record<string, readonly string[]>> {
+    const out: Record<string, readonly string[]> = {};
+    for (const file of this._snapshot.entry?.files ?? []) {
+      const ids = file.own_hunks;
+      if (ids !== undefined && ids.length > 0) out[file.path] = ids;
+    }
+    return out;
   }
 
   /**

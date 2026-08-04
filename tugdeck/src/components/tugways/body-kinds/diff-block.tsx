@@ -194,6 +194,14 @@ export interface DiffBlockProps {
   hunkIds?: readonly string[];
 
   /**
+   * Ids of hunks another session also claims ([P12]). Marked with
+   * `data-contested` on the hunk element and styled from CSS ([L06]) — the
+   * band says where the contention actually is, instead of the whole file
+   * wearing a badge for one overlapping region.
+   */
+  contestedHunkIds?: readonly string[];
+
+  /**
    * Render a host-owned control alongside one hunk's `@@` header — the slot
    * the Changes card's per-hunk election checkbox lands in. DiffBlock supplies
    * the hunk's id and index and paints the layout; the host owns the control,
@@ -495,6 +503,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   embedded = false,
   suppressHeader = false,
   hunkIds,
+  contestedHunkIds,
   renderHunkAffordance,
   cardId,
   viewMode: viewModeProp,
@@ -1199,6 +1208,8 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
           {renderData.map((hunkData, index) => {
             const isHunkCollapsed = collapsedHunks.has(hunkKey(index));
             const hunkId = hunkIds?.[index];
+            const contested =
+              hunkId !== undefined && contestedHunkIds?.includes(hunkId) === true;
             const affordance =
               hunkId !== undefined && renderHunkAffordance !== undefined
                 ? renderHunkAffordance(hunkId, index)
@@ -1231,6 +1242,12 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
                 data-hunk-index={index}
                 data-hunk-id={hunkId}
                 data-collapsed={isHunkCollapsed ? "true" : "false"}
+                data-contested={contested ? "true" : undefined}
+                title={
+                  contested
+                    ? "Another session claims this hunk too"
+                    : undefined
+                }
               >
                 {affordance !== null ? (
                   <div

@@ -111,12 +111,34 @@ const TAG_SUFFIX_CAP: u32 = 50;
 /// an individual instance must never reshape the machine-global schema on
 /// its own ([D112]). Builds seeing a *newer* on-disk version refuse to
 /// write the shared tables entirely.
-pub const CHANGES_SCHEMA_VERSION: i64 = 1;
+pub const CHANGES_SCHEMA_VERSION: i64 = 2;
 
 /// Registered, human-approved migrations for the shared changes schema:
 /// `(from_version, sql)` applied in order to reach `from_version + 1`.
-/// Empty today — version 1 is the first stamped shape.
-const CHANGES_MIGRATIONS: &[(i64, &str)] = &[];
+/// Version 1 was the first stamped shape; version 2 adds the additive
+/// `file_event_spans` child table ([P10]) and touches nothing existing.
+const CHANGES_MIGRATIONS: &[(i64, &str)] = &[(1, CREATE_FILE_EVENT_SPANS_SQL)];
+
+/// The `file_event_spans` DDL, in one place: the v1→v2 migration and the
+/// idempotent bootstrap block both run it, so a migrated database and a
+/// fresh one cannot end up with different shapes.
+const CREATE_FILE_EVENT_SPANS_SQL: &str = "
+    -- Sub-file evidence for a `file_events` row (Spec S04): what the tool
+    -- call wrote *inside* the file, so two sessions editing disjoint
+    -- regions of one path read as disjoint rather than contested. Rows are
+    -- children of `file_events` — same first three key columns plus a
+    -- per-row ordinal — and every applier that moves or removes the parent
+    -- carries them along. `anchor` is content, never a line number ([P11]).
+    CREATE TABLE IF NOT EXISTS changes.file_event_spans (
+        tug_session_id TEXT NOT NULL,
+        tool_use_id    TEXT NOT NULL,
+        file_path      TEXT NOT NULL,
+        seq            INTEGER NOT NULL,
+        kind           TEXT NOT NULL,
+        anchor         TEXT NOT NULL,
+        PRIMARY KEY (tug_session_id, tool_use_id, file_path, seq)
+    );
+";
 
 /// `<changes-db>.schema-version` — a plain-text sidecar stamped by every
 /// owner that bootstraps or migrates the shared schema. It exists because
@@ -622,6 +644,42 @@ pub struct FileEventRewrite {
     pub new_file_path: String,
 }
 
+/// One piece of sub-file evidence for a `file_events` row — what a tool call
+/// wrote *inside* the file, so a path two sessions both touched can be read
+/// as two disjoint regions instead of one contested file ([P10]).
+///
+/// A span is a child of its `file_events` row: it shares that row's
+/// `(tug_session_id, tool_use_id, file_path)` key and adds `seq`, the
+/// per-row ordinal. Every applier that moves or removes the parent carries
+/// the children with it.
+///
+/// `anchor` is content, never a line number ([P11]) — line numbers die the
+/// moment any other edit lands above them, while content still matches
+/// against the current diff at read time. It holds JSON whose shape follows
+/// `kind`: `{"new_hash","new_head","new_len","old_hash"?}` for `insert` and
+/// `replace`, `{"hunk_id"}` for `hunk`, and `{}` for `whole` (a whole-file
+/// assertion carries no region).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileEventSpan {
+    /// Ordinal within the parent row, from 0.
+    pub seq: i64,
+    /// `whole` | `insert` | `replace` | `hunk`.
+    pub kind: String,
+    /// The content anchor as JSON — see the struct doc for the shapes.
+    pub anchor: String,
+}
+
+/// One [`FileEventSpan`] with the parent key that owns it — the shape the
+/// contention read side works in, where a span means nothing without knowing
+/// whose it is and which file it is about.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileEventSpanRow {
+    pub tug_session_id: String,
+    pub tool_use_id: String,
+    pub file_path: String,
+    pub span: FileEventSpan,
+}
+
 /// One `file_events` row named by its primary key, for a keyed delete.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileEventKey {
@@ -866,7 +924,7 @@ impl SessionLedger {
                 &conn,
                 "changes",
                 corrupt_path,
-                &["file_events", "changeset_drafts"],
+                &["file_events", "file_event_spans", "changeset_drafts"],
                 "changes",
             );
         }
@@ -960,20 +1018,31 @@ impl SessionLedger {
     ) -> Result<usize, LedgerError> {
         use crate::changes_journal::Record;
         let touched = match record {
-            Record::FileEvent { row } => Self::insert_file_event(conn, row)?,
-            Record::FileEventBatch { rows } => {
+            Record::FileEvent { row, spans } => {
+                Self::insert_file_event(conn, row)? + Self::insert_file_event_spans(conn, row, spans)?
+            }
+            Record::FileEventBatch { rows, spans } => {
                 let tx = conn.unchecked_transaction()?;
                 let mut inserted = 0usize;
-                for row in rows {
+                for (i, row) in rows.iter().enumerate() {
                     inserted += Self::insert_file_event(&tx, row)?;
+                    if let Some(row_spans) = spans.get(i) {
+                        inserted += Self::insert_file_event_spans(&tx, row, row_spans)?;
+                    }
                 }
                 tx.commit()?;
                 inserted
             }
-            Record::DeleteSession { session } => conn.execute(
-                "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
-                params![session],
-            )?,
+            Record::DeleteSession { session } => {
+                conn.execute(
+                    "DELETE FROM changes.file_event_spans WHERE tug_session_id = ?1",
+                    params![session],
+                )?;
+                conn.execute(
+                    "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
+                    params![session],
+                )?
+            }
             Record::Sever {
                 project_dir,
                 paths,
@@ -1689,6 +1758,7 @@ impl SessionLedger {
             );
             ",
         )?;
+        conn.execute_batch(CREATE_FILE_EVENT_SPANS_SQL)?;
         conn.pragma_update(
             Some(rusqlite::DatabaseName::Attached("changes")),
             "user_version",
@@ -2886,7 +2956,22 @@ impl SessionLedger {
     /// already-recorded `origin='replay'` back to `exact`, or vice
     /// versa) — the point of change is recorded once.
     pub fn record_file_event(&self, row: &FileEventRow) -> Result<(), LedgerError> {
-        self.write_change(crate::changes_journal::Record::FileEvent { row: row.clone() })?;
+        self.record_file_event_with_spans(row, &[])
+    }
+
+    /// Record a `file_events` row together with its sub-file evidence, as one
+    /// journal record: the spans are children of the row and must land with
+    /// it, not after it, or a crash between the two leaves evidence for a row
+    /// that does not exist.
+    pub fn record_file_event_with_spans(
+        &self,
+        row: &FileEventRow,
+        spans: &[FileEventSpan],
+    ) -> Result<(), LedgerError> {
+        self.write_change(crate::changes_journal::Record::FileEvent {
+            row: row.clone(),
+            spans: spans.to_vec(),
+        })?;
         Ok(())
     }
 
@@ -2896,11 +2981,22 @@ impl SessionLedger {
     /// forwarder unit, and one replay unit, so a partial write is not a
     /// state the receipt has to describe. A no-op for an empty batch.
     pub fn record_file_events(&self, rows: &[FileEventRow]) -> Result<(), LedgerError> {
+        self.record_file_events_with_spans(rows, &[])
+    }
+
+    /// The batch write with per-row spans, `spans[i]` belonging to `rows[i]`.
+    /// A shorter (or empty) `spans` leaves the remaining rows span-less.
+    pub fn record_file_events_with_spans(
+        &self,
+        rows: &[FileEventRow],
+        spans: &[Vec<FileEventSpan>],
+    ) -> Result<(), LedgerError> {
         if rows.is_empty() {
             return Ok(());
         }
         self.write_change(crate::changes_journal::Record::FileEventBatch {
             rows: rows.to_vec(),
+            spans: spans.to_vec(),
         })?;
         Ok(())
     }
@@ -2927,6 +3023,120 @@ impl SessionLedger {
                 row.at,
             ],
         )?)
+    }
+
+    /// Every span held for the given repo-relative paths under `project_dir`,
+    /// carrying the parent key that owns it.
+    ///
+    /// The read side of [P12]: a path with two live proof owners is contested
+    /// only where their claimed regions intersect, and this is where those
+    /// regions come from. Matched through [`file_path_spellings`] for the same
+    /// reason the ownership deletes are — legacy rows hold an absolute
+    /// spelling until the backfill reaches them, and a query that saw only the
+    /// repo-relative form would read those owners as span-less and widen them.
+    pub fn file_event_spans_for_paths(
+        &self,
+        project_dir: &str,
+        paths: &[String],
+    ) -> Result<Vec<FileEventSpanRow>, LedgerError> {
+        if paths.is_empty() {
+            return Ok(Vec::new());
+        }
+        let spellings = Self::file_path_spellings(project_dir, paths);
+        let placeholders = (2..2 + spellings.len())
+            .map(|n| format!("?{n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT s.tug_session_id, s.tool_use_id, s.file_path, s.seq, s.kind, s.anchor
+             FROM changes.file_event_spans s
+             JOIN changes.file_events e
+               ON e.tug_session_id = s.tug_session_id
+              AND e.tool_use_id = s.tool_use_id
+              AND e.file_path = s.file_path
+             WHERE e.project_dir = ?1
+               AND s.file_path IN ({placeholders})
+             ORDER BY s.tug_session_id, s.file_path, s.tool_use_id, s.seq"
+        );
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(&sql)?;
+        let mut params: Vec<&dyn rusqlite::ToSql> = vec![&project_dir];
+        for p in &spellings {
+            params.push(p);
+        }
+        let rows = stmt.query_map(params.as_slice(), |r| {
+            Ok(FileEventSpanRow {
+                tug_session_id: r.get(0)?,
+                tool_use_id: r.get(1)?,
+                file_path: r.get(2)?,
+                span: FileEventSpan {
+                    seq: r.get(3)?,
+                    kind: r.get(4)?,
+                    anchor: r.get(5)?,
+                },
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    /// Insert one row's spans, keyed to that row — shared by the live path and
+    /// journal replay. Idempotent on the child key exactly as the parent
+    /// insert is, so a re-streamed frame re-inserting nothing is a no-op.
+    /// Returns the number of span rows that landed; the caller folds it into
+    /// the record's touched count so a record adding only spans to a row that
+    /// already exists is still journaled.
+    fn insert_file_event_spans(
+        conn: &Connection,
+        row: &FileEventRow,
+        spans: &[FileEventSpan],
+    ) -> Result<usize, LedgerError> {
+        let mut inserted = 0usize;
+        for span in spans {
+            inserted += conn.execute(
+                "INSERT INTO changes.file_event_spans (
+                    tug_session_id, tool_use_id, file_path, seq, kind, anchor
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT (tug_session_id, tool_use_id, file_path, seq) DO NOTHING",
+                params![
+                    row.tug_session_id,
+                    row.tool_use_id,
+                    row.file_path,
+                    span.seq,
+                    span.kind,
+                    span.anchor,
+                ],
+            )?;
+        }
+        Ok(inserted)
+    }
+
+    /// Delete the spans of every `file_events` row the given predicate
+    /// selects, by joining on the parent's key.
+    ///
+    /// Spans carry no `project_dir` of their own — they are addressed only
+    /// through their parent — so an ownership delete must resolve the parents
+    /// first and remove their children *before* the parents go, or the
+    /// children are stranded with nothing left to name them (Risk R10).
+    /// `parent_where` is spliced with the same numbered parameters the
+    /// parent delete uses.
+    fn delete_spans_of_matching_events(
+        conn: &Connection,
+        parent_where: &str,
+        params: &[&dyn rusqlite::ToSql],
+    ) -> Result<usize, LedgerError> {
+        let sql = format!(
+            "DELETE FROM changes.file_event_spans
+             WHERE (tug_session_id, tool_use_id, file_path) IN (
+                 SELECT tug_session_id, tool_use_id, file_path
+                 FROM changes.file_events
+                 WHERE {parent_where}
+             )"
+        );
+        Ok(conn.execute(&sql, params)?)
     }
 
     /// Sever every other session's ownership of the given repo-relative paths
@@ -2992,9 +3202,8 @@ impl SessionLedger {
             .map(|n| format!("?{n}"))
             .collect::<Vec<_>>()
             .join(", ");
-        let sql = format!(
-            "DELETE FROM changes.file_events
-             WHERE project_dir = ?1
+        let predicate = format!(
+            "project_dir = ?1
                AND tug_session_id != ?2
                AND file_path IN ({placeholders})"
         );
@@ -3002,7 +3211,11 @@ impl SessionLedger {
         for p in &spellings {
             params.push(p);
         }
-        Ok(conn.execute(&sql, params.as_slice())?)
+        Self::delete_spans_of_matching_events(conn, &predicate, params.as_slice())?;
+        Ok(conn.execute(
+            &format!("DELETE FROM changes.file_events WHERE {predicate}"),
+            params.as_slice(),
+        )?)
     }
 
     /// Renounce one session's ownership of the given repo-relative paths under
@@ -3040,9 +3253,8 @@ impl SessionLedger {
             .map(|n| format!("?{n}"))
             .collect::<Vec<_>>()
             .join(", ");
-        let sql = format!(
-            "DELETE FROM changes.file_events
-             WHERE project_dir = ?1
+        let predicate = format!(
+            "project_dir = ?1
                AND tug_session_id = ?2
                AND file_path IN ({placeholders})"
         );
@@ -3050,7 +3262,11 @@ impl SessionLedger {
         for p in &spellings {
             params.push(p);
         }
-        Ok(conn.execute(&sql, params.as_slice())?)
+        Self::delete_spans_of_matching_events(conn, &predicate, params.as_slice())?;
+        Ok(conn.execute(
+            &format!("DELETE FROM changes.file_events WHERE {predicate}"),
+            params.as_slice(),
+        )?)
     }
 
     /// Delete `file_events` rows naming files outside the project's repo, by
@@ -3082,6 +3298,11 @@ impl SessionLedger {
     ) -> Result<usize, LedgerError> {
         let mut deleted = 0usize;
         for key in keys {
+            conn.execute(
+                "DELETE FROM changes.file_event_spans
+                 WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                params![key.tug_session_id, key.tool_use_id, key.file_path],
+            )?;
             deleted += conn.execute(
                 "DELETE FROM changes.file_events
                  WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
@@ -3181,6 +3402,10 @@ impl SessionLedger {
         if forwarding {
             return Ok(());
         }
+        tx.execute(
+            "DELETE FROM changes.file_event_spans WHERE tug_session_id = ?1",
+            params![session_id],
+        )?;
         tx.execute(
             "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
             params![session_id],
@@ -3557,6 +3782,14 @@ impl SessionLedger {
                         canonical_project_dir,
                     ],
                 )?;
+                // The survivor keeps its own spans; the legacy row's go with
+                // the legacy row rather than being stranded under a key
+                // nothing names any more (Risk R10).
+                conn.execute(
+                    "DELETE FROM changes.file_event_spans
+                     WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                    params![rw.tug_session_id, rw.tool_use_id, rw.old_file_path],
+                )?;
                 conn.execute(
                     "DELETE FROM changes.file_events
                      WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
@@ -3564,6 +3797,20 @@ impl SessionLedger {
                 )?;
             }
             None => {
+                // The spans move with their parent. `OR REPLACE` because a
+                // span orphaned at the target key by an earlier partial
+                // rewrite must yield to the row that actually owns it — the
+                // parent-level branch is already collision-free.
+                conn.execute(
+                    "UPDATE OR REPLACE changes.file_event_spans SET file_path = ?4
+                     WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                    params![
+                        rw.tug_session_id,
+                        rw.tool_use_id,
+                        rw.old_file_path,
+                        rw.new_file_path,
+                    ],
+                )?;
                 conn.execute(
                     "UPDATE changes.file_events SET file_path = ?4, project_dir = ?5
                      WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
@@ -5585,6 +5832,68 @@ mod tests {
         assert_eq!(body, "precious", "future table left untouched");
     }
 
+    /// A database stamped at the previous version migrates forward through
+    /// its registered entry: the new child table appears, every existing row
+    /// survives, and the stamp advances on the database and the sidecar
+    /// together (the sidecar is what stops an older build rebuilding a newer
+    /// schema after corruption).
+    #[test]
+    fn a_v1_changes_db_migrates_to_v2_keeping_its_rows() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.db");
+        let changes_sibling = dir.path().join("sessions.db.changes");
+        {
+            let conn = Connection::open(&changes_sibling).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE file_events (
+                    tug_session_id TEXT NOT NULL, tool_use_id TEXT NOT NULL,
+                    file_path TEXT NOT NULL, tool_name TEXT NOT NULL,
+                    op TEXT NOT NULL, origin TEXT NOT NULL,
+                    ambiguous INTEGER NOT NULL DEFAULT 0,
+                    parent_tool_use_id TEXT, project_dir TEXT NOT NULL,
+                    at INTEGER NOT NULL,
+                    PRIMARY KEY (tug_session_id, tool_use_id, file_path));
+                 INSERT INTO file_events VALUES
+                    ('s1','tu-1','a.rs','Write','write','exact',0,NULL,'/proj',1);",
+            )
+            .unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+        }
+        std::fs::write(
+            dir.path().join("sessions.db.changes.schema-version"),
+            "1\n",
+        )
+        .unwrap();
+
+        let ledger = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
+        // The pre-existing row is still there and still readable.
+        let rows = ledger.file_events_for_session("s1").unwrap();
+        assert_eq!(rows.len(), 1);
+        // …and the new table exists, so a spanned write lands.
+        record_with_spans(
+            &ledger,
+            &sample_file_event("s1", "tu-2", "b.rs"),
+            &[sample_span(0, "insert")],
+        );
+        assert_eq!(spans_of(&ledger, "s1").len(), 1);
+        drop(ledger);
+
+        let conn = Connection::open(&changes_sibling).unwrap();
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, CHANGES_SCHEMA_VERSION);
+        assert_eq!(
+            read_changes_schema_sidecar(&changes_sibling),
+            Some(CHANGES_SCHEMA_VERSION),
+            "the sidecar advances with the database"
+        );
+    }
+
     #[test]
     fn fresh_changes_schema_is_stamped_and_writable() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -5763,7 +6072,7 @@ mod tests {
         )
         .into_iter()
         .filter_map(|r| match r {
-            crate::changes_journal::Record::FileEvent { row } => Some(row.file_path),
+            crate::changes_journal::Record::FileEvent { row, .. } => Some(row.file_path),
             _ => None,
         })
         .collect();
@@ -6632,6 +6941,223 @@ mod tests {
             project_dir: "/proj".to_owned(),
             at: 1_700_000_000_000,
         }
+    }
+
+    // ---- file_event_spans: the children of a file_events row -----------
+
+    fn sample_span(seq: i64, kind: &str) -> FileEventSpan {
+        FileEventSpan {
+            seq,
+            kind: kind.to_owned(),
+            anchor: format!("{{\"new_hash\":\"h{seq}\"}}"),
+        }
+    }
+
+    /// Every `(tool_use_id, file_path, seq, kind)` span a session holds. A
+    /// stranded span is invisible from the read side, so the R10 tests assert
+    /// on the table itself.
+    fn spans_of(ledger: &SessionLedger, session: &str) -> Vec<(String, String, i64, String)> {
+        let conn = ledger.db.lock().expect("ledger mutex");
+        let mut stmt = conn
+            .prepare(
+                "SELECT tool_use_id, file_path, seq, kind FROM changes.file_event_spans
+                 WHERE tug_session_id = ?1 ORDER BY file_path, tool_use_id, seq",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map(params![session], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    }
+
+    /// Total span rows in the table, whoever owns them — the orphan detector.
+    fn total_spans(ledger: &SessionLedger) -> i64 {
+        let conn = ledger.db.lock().expect("ledger mutex");
+        conn.query_row("SELECT COUNT(*) FROM changes.file_event_spans", [], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    }
+
+    fn record_with_spans(ledger: &SessionLedger, row: &FileEventRow, spans: &[FileEventSpan]) {
+        ledger
+            .apply_forwarded_change(crate::changes_journal::Record::FileEvent {
+                row: row.clone(),
+                spans: spans.to_vec(),
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn spans_land_with_their_row_and_replay_idempotently() {
+        let l = fresh();
+        let row = sample_file_event("s1", "tu-1", "a.rs");
+        let spans = [sample_span(0, "insert"), sample_span(1, "replace")];
+        record_with_spans(&l, &row, &spans);
+        assert_eq!(spans_of(&l, "s1").len(), 2);
+
+        // Replay re-applies the same record; the child key collapses it just
+        // as the parent PK collapses the row.
+        record_with_spans(&l, &row, &spans);
+        assert_eq!(spans_of(&l, "s1").len(), 2, "replay is idempotent");
+        assert_eq!(l.file_events_for_session("s1").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_batch_carries_each_rows_own_spans() {
+        let l = fresh();
+        let rows = vec![
+            sample_file_event("s1", "claim:1", "a.rs"),
+            sample_file_event("s1", "claim:1", "b.rs"),
+        ];
+        l.apply_forwarded_change(crate::changes_journal::Record::FileEventBatch {
+            rows,
+            spans: vec![vec![sample_span(0, "whole")], vec![sample_span(0, "whole")]],
+        })
+        .unwrap();
+        let spans = spans_of(&l, "s1");
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].1, "a.rs");
+        assert_eq!(spans[1].1, "b.rs");
+    }
+
+    /// Risk R10: a rewrite that *renames* the parent must carry its spans to
+    /// the new `file_path`. The repo-relative backfill runs rewrites in bulk,
+    /// so this is the common path, not a corner.
+    #[test]
+    fn a_rewrite_carries_its_spans_to_the_new_path() {
+        let l = fresh();
+        let row = sample_file_event("sess", "tu-1", "/proj/a.txt");
+        record_with_spans(&l, &row, &[sample_span(0, "insert")]);
+
+        l.backfill_file_events_repo_relative(
+            "/proj",
+            &[FileEventRewrite {
+                tug_session_id: "sess".to_owned(),
+                tool_use_id: "tu-1".to_owned(),
+                old_file_path: "/proj/a.txt".to_owned(),
+                new_file_path: "a.txt".to_owned(),
+            }],
+        )
+        .unwrap();
+
+        let spans = spans_of(&l, "sess");
+        assert_eq!(spans.len(), 1, "the span survived the rewrite");
+        assert_eq!(spans[0].1, "a.txt", "and moved with its parent");
+    }
+
+    /// Risk R10, the other rewrite branch: when the legacy row merges into an
+    /// existing survivor the legacy row is deleted — its spans must go with
+    /// it rather than being stranded under a key nothing names.
+    #[test]
+    fn a_rewrite_that_merges_into_a_survivor_strands_no_spans() {
+        let l = fresh();
+        let abs = sample_file_event("sess", "tu-1", "/proj/a.txt");
+        record_with_spans(&l, &abs, &[sample_span(0, "insert")]);
+        let rel = sample_file_event("sess", "tu-1", "a.txt");
+        record_with_spans(&l, &rel, &[sample_span(0, "replace")]);
+
+        l.backfill_file_events_repo_relative(
+            "/proj",
+            &[FileEventRewrite {
+                tug_session_id: "sess".to_owned(),
+                tool_use_id: "tu-1".to_owned(),
+                old_file_path: "/proj/a.txt".to_owned(),
+                new_file_path: "a.txt".to_owned(),
+            }],
+        )
+        .unwrap();
+
+        let spans = spans_of(&l, "sess");
+        assert_eq!(spans.len(), 1, "no orphan left behind: {spans:?}");
+        assert_eq!(spans[0].1, "a.txt");
+        assert_eq!(spans[0].3, "replace", "the survivor's own span is kept");
+    }
+
+    #[test]
+    fn purge_out_of_repo_takes_the_spans_with_the_row() {
+        let l = fresh();
+        let row = sample_file_event("s1", "tu-2", "/away/note.md");
+        record_with_spans(&l, &row, &[sample_span(0, "whole")]);
+        record_with_spans(
+            &l,
+            &sample_file_event("s1", "tu-1", "a.rs"),
+            &[sample_span(0, "insert")],
+        );
+
+        l.purge_file_events_out_of_repo(
+            "/proj",
+            &[FileEventKey {
+                tug_session_id: "s1".to_owned(),
+                tool_use_id: "tu-2".to_owned(),
+                file_path: "/away/note.md".to_owned(),
+            }],
+        )
+        .unwrap();
+
+        let spans = spans_of(&l, "s1");
+        assert_eq!(spans.len(), 1, "only the purged row's span went");
+        assert_eq!(spans[0].1, "a.rs");
+    }
+
+    #[test]
+    fn evicting_a_session_takes_its_spans() {
+        let l = fresh();
+        seed_live(&l, "s1", WS_A, "card", millis(9));
+        record_with_spans(
+            &l,
+            &sample_file_event("s1", "tu-1", "a.rs"),
+            &[sample_span(0, "insert")],
+        );
+        record_with_spans(
+            &l,
+            &sample_file_event("s2", "tu-1", "b.rs"),
+            &[sample_span(0, "insert")],
+        );
+
+        l.apply_forwarded_change(crate::changes_journal::Record::DeleteSession {
+            session: "s1".to_owned(),
+        })
+        .unwrap();
+
+        assert!(spans_of(&l, "s1").is_empty(), "the evicted session's spans");
+        assert_eq!(total_spans(&l), 1, "another session's spans are untouched");
+    }
+
+    #[test]
+    fn severing_and_disclaiming_take_their_spans() {
+        let l = fresh();
+        record_with_spans(
+            &l,
+            &sample_file_event("dead", "tu-1", "a.rs"),
+            &[sample_span(0, "insert")],
+        );
+        record_with_spans(
+            &l,
+            &sample_file_event("dead", "tu-2", "b.rs"),
+            &[sample_span(0, "insert")],
+        );
+        record_with_spans(
+            &l,
+            &sample_file_event("live", "claim:1", "a.rs"),
+            &[sample_span(0, "whole")],
+        );
+
+        l.sever_file_ownership_except("/proj", &["a.rs".to_owned()], "live")
+            .unwrap();
+        let dead = spans_of(&l, "dead");
+        assert_eq!(dead.len(), 1, "severed row's span went: {dead:?}");
+        assert_eq!(dead[0].1, "b.rs");
+        assert_eq!(spans_of(&l, "live").len(), 1, "claimant keeps its span");
+
+        l.disclaim_file_ownership("/proj", &["a.rs".to_owned()], "live")
+            .unwrap();
+        assert!(
+            spans_of(&l, "live").is_empty(),
+            "renouncing the file renounces its evidence"
+        );
     }
 
     #[test]

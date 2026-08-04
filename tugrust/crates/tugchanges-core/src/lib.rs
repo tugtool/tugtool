@@ -8,6 +8,7 @@
 
 pub mod changes;
 pub mod commit;
+pub mod contention;
 pub mod git;
 pub mod hunks;
 mod ledger;
@@ -17,14 +18,15 @@ pub mod trailer;
 
 pub use changes::{Change, ChangesError, ChangesOptions, ChangesReport, ForeignChange, changes};
 pub use commit::{Aggregate, CommitError, CommitOptions, CommitReceipt, LeftBehind, commit};
+pub use contention::{Anchor, Claim, ContentionVerdict, OwnerAnchors, classify_contention};
 pub use git::{
     DiffFile, DiffFileStatus, FileStat, NumstatEntry, StatusEntry, StatusReport, file_stats,
     git_output, git_stdout, normalize_xy, parse_name_status, parse_numstat,
     parse_status_porcelain_v2, parse_unified_diff, repo_root_for,
 };
 pub use hunks::{
-    HUNK_DIFF_FLAGS, Hunk, HunkDrift, file_diff_hunks, file_header, file_hunks, filtered_patch,
-    hunk_id, parse_hunks,
+    HUNK_DIFF_FLAGS, Hunk, HunkDrift, content_hash, file_diff_hunks, file_header, file_hunks,
+    filtered_patch, hunk_id, parse_hunks,
 };
 pub use preflight::{
     DiffOptions, DiffReport, LogEntry, LogOptions, LogReport, PreflightOptions, PreflightReport,

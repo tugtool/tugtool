@@ -333,3 +333,100 @@ fn the_patch_can_come_from_stdin() {
         "const c = 2;\n"
     );
 }
+
+/// Spec S05: the verb names the regions its bytes landed in, by the same
+/// [P06] identity the diff wire and the landing engine use — which is what
+/// lets the relay mint `hunk` spans that match against a later diff.
+#[test]
+fn a_substitution_receipt_names_the_hunk_it_produced() {
+    let (_dir, root) = init_repo();
+    let out = edit(
+        &root,
+        &[
+            "--path",
+            "src/x.ts",
+            "--replace",
+            "const a = 1;",
+            "--with",
+            "const a = 2;",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let ops = receipt_ops(&out);
+    let hunks: Vec<String> = ops[0]["hunks"]
+        .as_array()
+        .expect("the receipt names its hunks")
+        .iter()
+        .map(|v| v.as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(hunks.len(), 1, "one edit, one region");
+
+    // The id is the one the engine computes for the file's current diff —
+    // the agreement the whole feature rests on.
+    let engine: Vec<String> = tugchanges_core::hunks::file_hunks(&root, "src/x.ts")
+        .expect("engine hunks")
+        .into_iter()
+        .map(|h| h.id)
+        .collect();
+    assert_eq!(hunks, engine);
+}
+
+/// A second edit reports only what *it* changed. Naming the file's whole
+/// current diff would testify to regions another session wrote — a false
+/// sole claim, the one direction [P12] forbids.
+#[test]
+fn a_second_edit_reports_only_its_own_region() {
+    let (_dir, root) = init_repo();
+    // Two edits far enough apart that git keeps them in separate hunks.
+    let long: String = (1..=60).map(|n| format!("line{n:03}\n")).collect();
+    std::fs::write(root.join("src/long.ts"), &long).unwrap();
+    git(&root, &["add", "-A"]);
+    git(&root, &["commit", "-q", "-m", "long"]);
+
+    let first = edit(
+        &root,
+        &["--path", "src/long.ts", "--replace", "line005", "--with", "FIVE"],
+    );
+    assert!(first.status.success());
+    let first_hunks: Vec<serde_json::Value> =
+        receipt_ops(&first)[0]["hunks"].as_array().unwrap().clone();
+    assert_eq!(first_hunks.len(), 1);
+
+    let second = edit(
+        &root,
+        &["--path", "src/long.ts", "--replace", "line050", "--with", "FIFTY"],
+    );
+    assert!(second.status.success());
+    let second_hunks: Vec<serde_json::Value> =
+        receipt_ops(&second)[0]["hunks"].as_array().unwrap().clone();
+    assert_eq!(second_hunks.len(), 1, "only the new region");
+    assert_ne!(second_hunks[0], first_hunks[0]);
+}
+
+/// A created file has no diff to read hunks from ([P07]), so the receipt says
+/// nothing about regions — and the row it mints widens to the whole file,
+/// which is exactly right for a file this session brought into existence.
+#[test]
+fn a_created_file_names_no_hunks() {
+    let (_dir, root) = init_repo();
+    let patch = root.join("new.diff");
+    std::fs::write(
+        &patch,
+        "--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1 @@\n+const n = 1;\n",
+    )
+    .unwrap();
+    let out = edit(&root, &["--patch", patch.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let ops = receipt_ops(&out);
+    assert_eq!(ops[0]["op"], "created");
+    assert!(ops[0].get("hunks").is_none(), "no regions to name");
+}

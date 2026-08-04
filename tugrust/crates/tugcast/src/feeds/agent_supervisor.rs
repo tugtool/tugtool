@@ -4201,10 +4201,18 @@ impl AgentSupervisor {
                 at,
             });
         }
+        // A claim is a whole-file assertion by hand — the user is saying the
+        // file is theirs, not which regions of it are — so every claimed row
+        // carries a `whole` span, which widens its owner to the whole file at
+        // read time ([P12]).
+        let spans: Vec<Vec<crate::session_ledger::FileEventSpan>> = rows
+            .iter()
+            .map(|_| vec![crate::feeds::attribution::whole_span()])
+            .collect();
         // The whole gesture is one journaled, transactional batch: `claimed`
         // is the mapped row count or zero, never a partial tally the deck
         // has to interpret.
-        let claimed = match ledger.record_file_events(&rows) {
+        let claimed = match ledger.record_file_events_with_spans(&rows, &spans) {
             Ok(()) => rows.len(),
             Err(err) => {
                 warn!(error = %err, project_dir, "changeset_claim batch failed");
@@ -7425,6 +7433,8 @@ mod tests {
                 origin: "exact".to_string(),
                 shared: false,
                 last_touched: 1,
+                own_hunks: Vec::new(),
+                contested_hunks: Vec::new(),
             }],
             draft: None,
         };
