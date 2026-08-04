@@ -246,6 +246,12 @@ export class ChangesRouteController {
     // A path whose hunks are only partly elected rides `hunks`; everything
     // else stages whole. Elections for paths that have since left the landing
     // set are dropped rather than sent — the server refuses an out-of-set key.
+    //
+    // The election goes out **unreconciled** ([P18]). The row reconciles it
+    // against the file's current hunks for display, but the wire must carry
+    // what the user actually stated: dropping ids that have drifted would land
+    // a commit they never elected. `CommitError::HunkDrift` naming the path and
+    // the ids is the authority here, and a loud refusal is the better failure.
     const election = this.hunkElection();
     const hunks: Record<string, string[]> = {};
     for (const path of files) {

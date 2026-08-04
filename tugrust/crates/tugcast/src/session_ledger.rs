@@ -656,9 +656,10 @@ pub struct ChangesetDraftRow {
     /// never machine-clobbered; only an explicit forced regenerate resets
     /// it.
     pub edited: bool,
-    /// Persisted selection dispositions: a JSON
-    /// `{"include": [paths], "exclude": [paths]}` of repo-relative
-    /// overrides against the default selection rule, or `None` when the
+    /// The persisted selection, stored and served verbatim: a free-form
+    /// JSON object the client alone interprets (path-level
+    /// `include`/`exclude` overrides against the default rule, per-file
+    /// hunk elections, whatever it grows next), or `None` when the
     /// defaults stand.
     pub selection: Option<String>,
 }
@@ -2951,6 +2952,31 @@ impl SessionLedger {
         })
     }
 
+    /// Every stored spelling of the given repo-relative paths under
+    /// `project_dir`, for an ownership delete's `file_path IN (…)`.
+    ///
+    /// `file_events.file_path` has held two forms: the repo-relative key that
+    /// capture writes today, and the absolute path older rows carry. The read
+    /// side reconciles them (`repo_relative_key`: a relative path is itself, an
+    /// absolute one is stripped of the repo root), so a delete that matched
+    /// only the relative form would under-delete against exactly the rows the
+    /// compose-side backfill has not reached yet — silently leaving a session
+    /// owning a file it renounced. This is the inverse of that rule, and it is
+    /// pure string work: an ownership delete is replayed from the journal, so
+    /// it must not depend on the filesystem being in any particular state.
+    ///
+    /// Deliberately not a `LIKE '%/' || path` suffix match, which would also
+    /// delete `vendor/a.rs` when the caller named `a.rs`.
+    fn file_path_spellings(project_dir: &str, paths: &[String]) -> Vec<String> {
+        let root = project_dir.trim_end_matches('/');
+        let mut out = Vec::with_capacity(paths.len() * 2);
+        for path in paths {
+            out.push(path.clone());
+            out.push(format!("{root}/{path}"));
+        }
+        out
+    }
+
     /// The bare severing delete — shared with journal replay.
     fn sever_file_ownership_sql(
         conn: &Connection,
@@ -2958,7 +2984,12 @@ impl SessionLedger {
         paths: &[String],
         keep_session_id: &str,
     ) -> Result<usize, LedgerError> {
-        let placeholders = std::iter::repeat_n("?", paths.len())
+        let spellings = Self::file_path_spellings(project_dir, paths);
+        // Numbered explicitly from ?3. Mixing anonymous `?` in after `?1`/`?2`
+        // is correct — SQLite numbers an anonymous parameter one past the
+        // highest assigned — but correct by a rule nobody reading it recalls.
+        let placeholders = (3..3 + spellings.len())
+            .map(|n| format!("?{n}"))
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
@@ -2968,7 +2999,7 @@ impl SessionLedger {
                AND file_path IN ({placeholders})"
         );
         let mut params: Vec<&dyn rusqlite::ToSql> = vec![&project_dir, &keep_session_id];
-        for p in paths {
+        for p in &spellings {
             params.push(p);
         }
         Ok(conn.execute(&sql, params.as_slice())?)
@@ -3004,7 +3035,9 @@ impl SessionLedger {
         paths: &[String],
         session_id: &str,
     ) -> Result<usize, LedgerError> {
-        let placeholders = std::iter::repeat_n("?", paths.len())
+        let spellings = Self::file_path_spellings(project_dir, paths);
+        let placeholders = (3..3 + spellings.len())
+            .map(|n| format!("?{n}"))
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
@@ -3014,7 +3047,7 @@ impl SessionLedger {
                AND file_path IN ({placeholders})"
         );
         let mut params: Vec<&dyn rusqlite::ToSql> = vec![&project_dir, &session_id];
-        for p in paths {
+        for p in &spellings {
             params.push(p);
         }
         Ok(conn.execute(&sql, params.as_slice())?)
@@ -6880,6 +6913,91 @@ mod tests {
             l.disclaim_file_ownership("/proj", &["a.rs".to_owned()], "mine")
                 .unwrap(),
             0
+        );
+    }
+
+    /// `file_events.file_path` has held more than one spelling over the life
+    /// of the table — new capture writes the repo-relative key, older rows are
+    /// absolute — and the read side reconciles them (`repo_relative_key`, plus
+    /// the opportunistic backfill). The delete side does not: it matches the
+    /// stored string. A session that disclaims a file whose row predates the
+    /// backfill keeps owning it, and every existing disclaim test seeds via
+    /// claim, which writes the new form, so none of them would notice.
+    #[test]
+    fn disclaim_matches_a_legacy_absolute_file_path() {
+        let l = fresh();
+        // The legacy form: an absolute path under the project dir.
+        l.record_file_event(&sample_file_event("mine", "tu-1", "/proj/a.rs"))
+            .unwrap();
+        // The new form, same file, so the fix cannot be "match absolute only".
+        l.record_file_event(&sample_file_event("mine", "tu-2", "a.rs"))
+            .unwrap();
+
+        let deleted = l
+            .disclaim_file_ownership("/proj", &["a.rs".to_owned()], "mine")
+            .unwrap();
+
+        assert_eq!(deleted, 2, "both spellings of the same file are renounced");
+        assert!(
+            l.file_events_for_session("mine").unwrap().is_empty(),
+            "the disclaiming session holds nothing on the path in any spelling"
+        );
+    }
+
+    /// The same gap on the sever side — [L27]'s fix-the-class rule applied to
+    /// a SQL predicate: a claim severs other sessions' rows for the path, and
+    /// a legacy-form row must be severed too or the claim leaves the file
+    /// shared when it reported sole ownership.
+    #[test]
+    fn sever_matches_a_legacy_absolute_file_path() {
+        let l = fresh();
+        l.record_file_event(&sample_file_event("other", "tu-1", "/proj/a.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("other", "tu-2", "a.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("mine", "tu-3", "a.rs"))
+            .unwrap();
+
+        let deleted = l
+            .sever_file_ownership_except("/proj", &["a.rs".to_owned()], "mine")
+            .unwrap();
+
+        assert_eq!(deleted, 2, "both of the other session's spellings go");
+        assert!(l.file_events_for_session("other").unwrap().is_empty());
+        assert_eq!(
+            l.file_events_for_session("mine").unwrap().len(),
+            1,
+            "the claiming session keeps its own row"
+        );
+    }
+
+    /// Matching the absolute spelling must not widen into a suffix match: a
+    /// row for `vendor/a.rs` is a different file from `a.rs` and survives.
+    #[test]
+    fn disclaim_does_not_over_delete_a_path_that_merely_ends_the_same() {
+        let l = fresh();
+        l.record_file_event(&sample_file_event("mine", "tu-1", "vendor/a.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("mine", "tu-2", "/proj/vendor/a.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("mine", "tu-3", "/proj/a.rs"))
+            .unwrap();
+
+        let deleted = l
+            .disclaim_file_ownership("/proj", &["a.rs".to_owned()], "mine")
+            .unwrap();
+
+        assert_eq!(deleted, 1, "only the named file, in either spelling");
+        let left: Vec<String> = l
+            .file_events_for_session("mine")
+            .unwrap()
+            .iter()
+            .map(|r| r.file_path.clone())
+            .collect();
+        assert_eq!(
+            left.len(),
+            2,
+            "both spellings of vendor/a.rs survive: {left:?}"
         );
     }
 

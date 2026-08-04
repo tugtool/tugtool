@@ -200,6 +200,24 @@ body {
 
 .tugx-diff-hunk {
   border-bottom: 1px solid var(--tugx-block-strip-border);
+
+  /* Where the hunk's pinned row lands: the upstream pin chain, summed once.
+   * Whichever element takes the pin — the bare hunk header, or the lead band
+   * when there is an affordance beside it — references this rather than
+   * respelling the sum.
+   *  - `--tugx-pin-stack-top`: entry-header.
+   *  - `--tugx-block-header-height`: wrapper-chrome header.
+   *  - `--tugx-diff-header-height`: diff identity header (0 when embedded —
+   *    the chrome owns identity then).
+   *
+   * There is no `--tugx-diff-actions-height` term: fold cue + view-toggle live
+   * inside the identity / chrome header itself, not as a separate row beneath,
+   * so there is no additional band the hunk header has to clear. */
+  --tugx-diff-hunk-pin-top: calc(
+    var(--tugx-pin-stack-top, 0px)
+    + var(--tugx-block-header-height, 0px)
+    + var(--tugx-diff-header-height, 0px)
+  );
 }
 
 .tugx-diff-hunk:last-child {
@@ -213,17 +231,8 @@ body {
  * lines. The cue's appearance still flows through its own
  * `--tugx-cue-*` slots; we only add positioning here.
  *
- * Sticky `top` calc consumes the upstream pin chain so the hunk
- * header lands directly below the identity / chrome header:
- *  - `--tugx-pin-stack-top`: entry-header.
- *  - `--tugx-block-header-height`: wrapper-chrome header.
- *  - `--tugx-diff-header-height`: diff identity header (0 when
- *    embedded — the chrome owns identity then).
- *
- * There is no `--tugx-diff-actions-height` term: fold cue +
- * view-toggle live inside the identity / chrome header itself,
- * not as a separate row beneath, so there's no additional band the
- * hunk header has to clear.
+ * The sticky `top` is `--tugx-diff-hunk-pin-top`, summed once on
+ * `.tugx-diff-hunk` — see there for what the chain consumes.
  *
  * The hunk header's containing block is `.tugx-diff-hunk` (its
  * parent), so as the user scrolls past one hunk into the next, the
@@ -238,11 +247,7 @@ body {
    * (`2xs` / `icon-xs`) reads too small against the code rows. */
   --tugx-cue-font-size: var(--tugx-block-code-font-size);
   --tugx-cue-icon-size: var(--tug-icon-size-sm);
-  top: calc(
-    var(--tugx-pin-stack-top, 0px)
-    + var(--tugx-block-header-height, 0px)
-    + var(--tugx-diff-header-height, 0px)
-  );
+  top: var(--tugx-diff-hunk-pin-top);
   /* `z-index: 0` (NOT 1, NOT auto with no value): the hunk header
    * must paint BELOW the level-1 sticky chrome (entry header,
    * wrapper-chrome header, diff identity header), so when one hunk's
@@ -260,20 +265,25 @@ body {
 /* When a host supplies a per-hunk control (`renderHunkAffordance` — the
    Changes card's election checkbox), the control and the `@@` cue share one
    band. The band takes over the sticky pin so the control stays reachable
-   while the hunk's lines scroll under it, and carries the cue's own muted
-   surface so the pinned row is opaque over the code beneath. */
+   while the hunk's lines scroll under it, and paints an opaque surface so the
+   pinned row does not show the code scrolling beneath it.
+
+   The band cannot simply let the cue paint: the affordance sits beside the
+   cue, not inside it, so the cue's own surface stops short of the control.
+   The band therefore declares its own alias — which must track the value
+   `TugCue`'s `muted` role resolves to, or the row splits visually down the
+   middle where the cue begins. Naming a `--tugx-cue-*` slot here instead would
+   reach into another component's tier ([L20]); this alias is the seam. */
 .tugx-diff-hunk-lead {
+  --tugx-diff-hunk-band-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
+
   display: flex;
   align-items: center;
   gap: var(--tug-space-sm);
   position: sticky;
-  top: calc(
-    var(--tugx-pin-stack-top, 0px)
-    + var(--tugx-block-header-height, 0px)
-    + var(--tugx-diff-header-height, 0px)
-  );
+  top: var(--tugx-diff-hunk-pin-top);
   z-index: 0;
-  background: var(--tug7-surface-global-primary-normal-sunken-rest);
+  background: var(--tugx-diff-hunk-band-bg);
 }
 
 .tugx-diff-hunk-affordance {

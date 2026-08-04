@@ -634,13 +634,13 @@ The contract, after [P16] and [P17]:
 | #step-9 | Hunk election UI + draft selection | done | 65eaadd23 |
 | #step-10 | file stage verb + shell steering | done | eca819ad5 |
 | #step-11 | M02 integration checkpoint | done | 92d3cd2e3 |
-| #step-11a | Carry the election through the draft projection | pending | — |
-| #step-11b | One diff spelling for hunk identity | pending | — |
-| #step-11c | One diff-body component | pending | — |
-| #step-11d | Election reconciliation + control affordances | pending | — |
-| #step-11e | Diff-block CSS de-duplication | pending | — |
-| #step-11f | Disclaim storage-form spike | pending | — |
-| #step-11g | M02A integration checkpoint | pending | — |
+| #step-11a | Carry the election through the draft projection | done | 1bb9a3e19 |
+| #step-11b | One diff spelling for hunk identity | done | eff9287fd |
+| #step-11c | One diff-body component | done | 41c80f2be |
+| #step-11d | Election reconciliation + control affordances | done | 7ad7acd3d |
+| #step-11e | Diff-block CSS de-duplication | done | f5ccee427 |
+| #step-11f | Disclaim storage-form spike | done | e67da36f4 |
+| #step-11g | M02A integration checkpoint | tests green; HV1–HV8 pending | — |
 | #step-12 | Schema v2: spans table | pending | — |
 | #step-13 | Span capture | pending | — |
 | #step-14 | Hunk-aware contention verdict | pending | — |

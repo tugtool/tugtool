@@ -380,23 +380,16 @@ pub struct ChangesetDraft {
     /// machine-clobbered.
     #[serde(default)]
     pub edited: bool,
-    /// Persisted selection dispositions: repo-relative path overrides
-    /// against the default selection rule, when any exist.
+    /// The persisted selection, carried verbatim.
+    ///
+    /// The column is free-form and the client is its only interpreter: the
+    /// deck writes path-level `include`/`exclude` lists and per-file hunk
+    /// elections into the same object, and reads the shape back through its
+    /// own validator. Rust must **not** narrow this to a struct — serde drops
+    /// unknown fields, so a typed projection silently deletes any key the
+    /// struct does not name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selection: Option<ChangesetDraftSelection>,
-}
-
-/// The persisted selection overrides riding a [`ChangesetDraft`]: deltas
-/// against the default rule (session files on unless shared, unattributed
-/// off). Paths are repo-relative.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-pub struct ChangesetDraftSelection {
-    /// Paths elected into the landing beyond the default rule.
-    #[serde(default)]
-    pub include: Vec<String>,
-    /// Paths excluded from the landing against the default rule.
-    #[serde(default)]
-    pub exclude: Vec<String>,
+    pub selection: Option<serde_json::Value>,
 }
 
 /// One owner's slice of the workspace's dirty state on the CHANGESET feed.
@@ -1088,6 +1081,35 @@ mod tests {
         assert!(json.contains(r#""kind":"dash""#));
         // A present draft rides the wire.
         assert!(json.contains(r#""message":"Do the thing""#));
+    }
+
+    /// The draft's selection is opaque: every key the client wrote survives
+    /// a round trip through the Rust type, including ones no Rust type
+    /// names. A typed projection here would silently delete them — which is
+    /// how the hunk elections were written to the ledger and then dropped on
+    /// the way back out.
+    #[test]
+    fn test_changeset_draft_selection_survives_unknown_keys() {
+        let stored = r#"{"include":["a.rs"],"exclude":["b.rs"],"hunks":{"f.txt":["abc123"]}}"#;
+        let draft = ChangesetDraft {
+            fingerprint: "fp".to_string(),
+            message: "m".to_string(),
+            updated_at: 1,
+            edited: false,
+            selection: Some(serde_json::from_str(stored).unwrap()),
+        };
+
+        let round_tripped: ChangesetDraft =
+            serde_json::from_str(&serde_json::to_string(&draft).unwrap()).unwrap();
+        let selection = round_tripped.selection.expect("selection rides the wire");
+
+        assert_eq!(selection["include"], serde_json::json!(["a.rs"]));
+        assert_eq!(selection["exclude"], serde_json::json!(["b.rs"]));
+        assert_eq!(
+            selection["hunks"],
+            serde_json::json!({"f.txt": ["abc123"]}),
+            "a key the Rust side does not name must still round-trip"
+        );
     }
 
     #[test]

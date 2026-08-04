@@ -861,17 +861,28 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 
   // -- Per-hunk collapsed state ---------------------------------------------
 
-  const [collapsedHunks, setCollapsedHunks] = React.useState<Set<number>>(
-    () => new Set(),
+  // Keyed by the hunk's content id, not its position: an edit that inserts a
+  // hunk above a collapsed one shifts every index below it, and a collapse
+  // keyed by index would migrate onto a band the user never folded ([L23]).
+  // The index is the fallback for the diffs the wire sends no ids for —
+  // created and binary files, which have none by design. A diff carries ids
+  // for all of its hunks or for none, so the two keyings never mix.
+  const [collapsedHunks, setCollapsedHunks] = React.useState<
+    Set<string | number>
+  >(() => new Set());
+
+  const hunkKey = React.useCallback(
+    (index: number): string | number => hunkIds?.[index] ?? index,
+    [hunkIds],
   );
 
-  const toggleHunk = React.useCallback((index: number) => {
+  const toggleHunk = React.useCallback((key: string | number) => {
     setCollapsedHunks((prev) => {
       const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
+      if (next.has(key)) {
+        next.delete(key);
       } else {
-        next.add(index);
+        next.add(key);
       }
       return next;
     });
@@ -1182,7 +1193,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       {!collapsed && renderData !== null ? (
         <div className="tugx-diff-hunks" data-slot={DATA_SLOT_HUNKS}>
           {renderData.map((hunkData, index) => {
-            const isHunkCollapsed = collapsedHunks.has(index);
+            const isHunkCollapsed = collapsedHunks.has(hunkKey(index));
             const hunkId = hunkIds?.[index];
             const affordance =
               hunkId !== undefined && renderHunkAffordance !== undefined
@@ -1202,7 +1213,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
                 }
                 aria-expanded={!isHunkCollapsed}
                 aria-label={isHunkCollapsed ? "Expand hunk" : "Collapse hunk"}
-                onClick={() => toggleHunk(index)}
+                onClick={() => toggleHunk(hunkKey(index))}
                 className="tugx-diff-hunk-header"
               >
                 {composeHunkHeader(hunkData.hunk)}
@@ -1222,12 +1233,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
                     className="tugx-diff-hunk-lead"
                     data-slot={DATA_SLOT_HUNK_LEAD}
                   >
-                    <span
-                      className="tugx-diff-hunk-affordance"
-                      // The affordance is its own gesture — a click on it must
-                      // never also fold the hunk behind it.
-                      onClick={(event) => event.stopPropagation()}
-                    >
+                    <span className="tugx-diff-hunk-affordance">
                       {affordance}
                     </span>
                     {cue}

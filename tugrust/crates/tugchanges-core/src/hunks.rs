@@ -10,11 +10,54 @@
 //! Identity is computed here and nowhere else — the deck receives ids over the
 //! wire and never re-derives them, so the checkbox, the draft election, and the
 //! commit filter cannot disagree.
+//!
+//! # The id-agreement contract
+//!
+//! Two independent readers run `git diff` and hash the result: the **wire**
+//! (`tugcast::feeds::git`, async, serving the ids the deck's checkboxes are
+//! keyed by) and the **engine** ([`file_hunks`] below, sync, filtering the
+//! patch the landing stages). They cannot share a function — one runs git
+//! through tokio, the other through `std::process` — so what they share is the
+//! argument list and the parse. Where that drifts, every election drifts with
+//! it.
+//!
+//! - Both MUST carry every flag in [`HUNK_DIFF_FLAGS`]. `--no-ext-diff` is not
+//!   a nicety: an external diff driver (`diff.external`, or a `*.diff=driver`
+//!   gitattribute) emits text that is not a unified diff at all.
+//! - Neither may pass `-U<n>`. Context width is inherited from the machine's
+//!   `diff.context`, so the two sides agree with each other by construction —
+//!   which is the only agreement the contract needs. Pinning `-U3` would also
+//!   silently override what the diff card renders for anyone who set it.
+//!
+//! Three differences between the two spellings are allowed, because none can
+//! move an id:
+//!
+//! - `-c core.quotepath=false` (wire only) changes header path spelling, never
+//!   body lines, and the header is not hashed.
+//! - `-M` (wire only) changes how a *rename* is presented, and a rename never
+//!   carries an election: an unstaged rename surfaces as Deleted-plus-Added, a
+//!   created file gets no ids, and a staged rename means a dirty index, which
+//!   the partial landing refuses.
+//! - `HEAD` (wire) vs. the index (engine) as base are equal whenever the index
+//!   is clean, which the partial landing already requires.
+//!
+//! The agreement is verified by a test that crosses the boundary — it lives on
+//! the tugcast side, which depends on this crate rather than the reverse.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
+use std::path::Path;
 
 use sha2::{Digest, Sha256};
+
+use crate::git;
+
+/// The flags every `git diff` whose output feeds hunk identity must carry.
+///
+/// Spliced into both the async wire spelling and the sync engine spelling; see
+/// the module doc for the contract they uphold, and note the deliberate
+/// absence of `-U<n>`.
+pub const HUNK_DIFF_FLAGS: &[&str] = &["--no-color", "--no-ext-diff"];
 
 /// One hunk of a single file's unified diff.
 ///
@@ -63,6 +106,27 @@ pub fn hunk_id(body: &str) -> String {
         out.push_str(&format!("{byte:02x}"));
     }
     out
+}
+
+/// The engine-side diff of one working-tree file against the index, run with
+/// the canonical [`HUNK_DIFF_FLAGS`], returned with its hunks already parsed.
+///
+/// One function so the spelling is single-sourced, and one git run so the text
+/// a caller builds a patch header from and the hunks it filters by are the
+/// same read. A path with no changes yields empty text and no hunks.
+pub fn file_diff_hunks(repo_root: &Path, path: &str) -> Result<(String, Vec<Hunk>), String> {
+    let mut args: Vec<&str> = vec!["diff"];
+    args.extend_from_slice(HUNK_DIFF_FLAGS);
+    args.extend_from_slice(&["--", path]);
+    let diff = git::git_stdout(repo_root, &args)?;
+    let hunks = parse_hunks(&diff);
+    Ok((diff, hunks))
+}
+
+/// One working-tree file's current hunks — the engine's half of the
+/// id-agreement contract in this module's doc.
+pub fn file_hunks(repo_root: &Path, path: &str) -> Result<Vec<Hunk>, String> {
+    file_diff_hunks(repo_root, path).map(|(_, hunks)| hunks)
 }
 
 /// Split one file's unified diff into its hunks.

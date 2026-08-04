@@ -653,12 +653,14 @@ pub(crate) fn draft_from_row(row: &crate::session_ledger::ChangesetDraftRow) -> 
         message: row.message.clone(),
         updated_at: row.updated_at,
         edited: row.edited,
-        // A selection that fails to parse (hand-mangled row) reads as no
-        // overrides rather than poisoning the snapshot.
+        // The selection projects opaquely — every key the client wrote comes
+        // back, including ones no Rust type names. A selection that fails to
+        // parse (hand-mangled row) reads as no overrides rather than
+        // poisoning the snapshot.
         selection: row
             .selection
             .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok()),
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()),
     }
 }
 
@@ -2215,5 +2217,48 @@ mod tests {
             x_after[0].file_path.starts_with('/'),
             "X's row stays absolute — no boot walk"
         );
+    }
+
+    fn draft_row(selection: Option<&str>) -> crate::session_ledger::ChangesetDraftRow {
+        crate::session_ledger::ChangesetDraftRow {
+            owner_kind: "session".to_string(),
+            owner_id: "sess-1".to_string(),
+            project_dir: "/tmp/p".to_string(),
+            fingerprint: "fp".to_string(),
+            message: "Do the thing".to_string(),
+            updated_at: 7,
+            edited: false,
+            selection: selection.map(str::to_string),
+        }
+    }
+
+    /// The outbound projection is opaque: whatever the client stored in the
+    /// selection column reaches it again unchanged. Narrowing this to a
+    /// struct is how the hunk elections were dropped between the ledger and
+    /// the deck — serde discards the fields the struct does not name.
+    #[test]
+    fn draft_projection_preserves_unnamed_selection_keys() {
+        let stored = r#"{"include":["a.rs"],"exclude":[],"hunks":{"f.txt":["abc123","def456"]}}"#;
+        let draft = draft_from_row(&draft_row(Some(stored)));
+        let selection = draft.selection.expect("selection projects");
+
+        assert_eq!(selection["include"], serde_json::json!(["a.rs"]));
+        assert_eq!(
+            selection["hunks"],
+            serde_json::json!({"f.txt": ["abc123", "def456"]}),
+            "a key no Rust type names must survive the projection"
+        );
+    }
+
+    /// A hand-mangled selection reads as no overrides rather than poisoning
+    /// the snapshot.
+    #[test]
+    fn draft_projection_drops_a_malformed_selection() {
+        assert!(
+            draft_from_row(&draft_row(Some("{not json")))
+                .selection
+                .is_none()
+        );
+        assert!(draft_from_row(&draft_row(None)).selection.is_none());
     }
 }

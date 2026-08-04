@@ -78,7 +78,9 @@ export interface GitDiffSnapshot {
   phase: GitDiffPhase;
   /** Correlation id of the in-flight (or last) request; `null` before any. */
   requestId: string | null;
-  /** The resolved payload when `phase === "ready"`. */
+  /** The last resolved payload — retained while a refetch is in flight, so a
+   *  consumer can keep rendering what it has; `null` before the first one and
+   *  after an error. */
   payload: GitDiffPayload | null;
   /** Human-readable error when `phase === "error"`. */
   error: string | null;
@@ -347,7 +349,17 @@ export class GitDiffStore {
         query.paths = this._scope.paths;
       }
     }
-    this._set({ phase: "loading", requestId, payload: null, error: null });
+    // The last resolved payload rides through the refetch. A consumer that
+    // wants a spinner branches on `phase` first (the sheet and the diff card
+    // do); one rendering an already-open diff keeps rendering it until the new
+    // payload lands, so a refresh never tears the diff down and takes its
+    // collapsed bands, view mode, and scroll with it ([L23], [L26]).
+    this._set({
+      phase: "loading",
+      requestId,
+      payload: this._snapshot.payload,
+      error: null,
+    });
     const bytes = new TextEncoder().encode(JSON.stringify(query));
     conn.send(FeedId.GIT_DIFF_QUERY, bytes);
   }

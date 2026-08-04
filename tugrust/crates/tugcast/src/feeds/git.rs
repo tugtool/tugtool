@@ -15,6 +15,7 @@ use tugcast_core::types::{
     FileStatus, GitCommitFile, GitCommitFilesSnapshot, GitDiffFile, GitDiffFileStatus,
     GitDiffSnapshot, GitLogCommit, GitLogSnapshot, GitStatus,
 };
+use tugchanges_core::HUNK_DIFF_FLAGS;
 
 /// Parse git status --porcelain=v2 --branch output into GitStatus.
 ///
@@ -575,21 +576,14 @@ pub(crate) async fn fetch_dash_diff(
     }
 }
 
-/// Run `git diff --no-color -M <target>` in `dir`, returning stdout on success.
+/// Run `git diff -M <target>` in `dir` with the canonical hunk-identity flags,
+/// returning stdout on success.
 async fn run_git_diff_against(dir: &Path, target: &str) -> Option<String> {
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &dir.to_string_lossy(),
-            "-c",
-            "core.quotepath=false",
-            "diff",
-            "--no-color",
-            "-M",
-            target,
-        ])
-        .output()
-        .await;
+    let dir = dir.to_string_lossy();
+    let mut args: Vec<&str> = vec!["-C", &dir, "-c", "core.quotepath=false", "diff"];
+    args.extend_from_slice(HUNK_DIFF_FLAGS);
+    args.extend_from_slice(&["-M", target]);
+    let output = Command::new("git").args(&args).output().await;
     match output {
         Ok(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).into_owned()),
         Ok(o) => {
@@ -664,19 +658,13 @@ async fn list_untracked_paths(repo_dir: &Path, paths: &[String]) -> Vec<String> 
 /// `new file mode` / `--- /dev/null` form and exits 1 when the file has
 /// content, so both 0 and 1 are success here.
 async fn synthesize_untracked_diff(repo_dir: &Path, path: &str) -> Option<String> {
+    let mut args: Vec<&str> = vec!["-c", "core.quotepath=false", "diff"];
+    args.extend_from_slice(HUNK_DIFF_FLAGS);
+    args.extend_from_slice(&["--no-index", "--", "/dev/null", path]);
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_dir)
-        .args([
-            "-c",
-            "core.quotepath=false",
-            "diff",
-            "--no-color",
-            "--no-index",
-            "--",
-            "/dev/null",
-            path,
-        ])
+        .args(&args)
         .output()
         .await;
     match output {
@@ -725,16 +713,11 @@ pub(crate) async fn fetch_git_diff_with_untracked(
 /// committed files.
 pub(crate) async fn fetch_git_diff(repo_dir: &Path, paths: &[String]) -> Option<String> {
     let mut cmd = Command::new("git");
-    cmd.args([
-        "-C",
-        &repo_dir.to_string_lossy(),
-        "-c",
-        "core.quotepath=false",
-        "diff",
-        "--no-color",
-        "-M",
-        GIT_DIFF_BASE,
-    ]);
+    let dir = repo_dir.to_string_lossy();
+    let mut args: Vec<&str> = vec!["-C", &dir, "-c", "core.quotepath=false", "diff"];
+    args.extend_from_slice(HUNK_DIFF_FLAGS);
+    args.extend_from_slice(&["-M", GIT_DIFF_BASE]);
+    cmd.args(&args);
     if !paths.is_empty() {
         cmd.arg("--");
         cmd.args(paths);
@@ -1676,5 +1659,88 @@ index 1111111..2222222 100644
         assert_eq!(snapshot.commits[0].author, "Ünïcode Nàme");
         assert_eq!(snapshot.commits[0].subject, "", "empty subject stays empty");
         assert_eq!(snapshot.commits[0].sha.len(), 40);
+    }
+
+    /// The id-agreement contract, crossing the boundary it protects: the ids
+    /// the wire serves to the deck's checkboxes must equal, element for
+    /// element, the ids the landing engine computes when it filters the patch.
+    ///
+    /// The two run git through different process libraries against different
+    /// bases, so nothing but this test says they agree. Both spellings carry
+    /// `HUNK_DIFF_FLAGS`; that is what makes the equality hold.
+    /// A repo whose `wide.txt` is dirty in two regions far enough apart that
+    /// git emits two hunks — edits ~60 lines apart, since git merges hunks
+    /// whose gap is within twice the context width.
+    async fn init_two_hunk_repo() -> TempDir {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().to_path_buf();
+        git_in(&repo, &["init"]).await;
+        git_in(&repo, &["config", "user.name", "test"]).await;
+        git_in(&repo, &["config", "user.email", "test@test.com"]).await;
+
+        let base: String = (1..=120).map(|n| format!("line {n}\n")).collect();
+        fs::write(repo.join("wide.txt"), &base).unwrap();
+        git_in(&repo, &["add", "-A"]).await;
+        git_in(&repo, &["commit", "-m", "init"]).await;
+
+        let dirty: String = (1..=120)
+            .map(|n| match n {
+                20 | 90 => format!("line {n} CHANGED\n"),
+                _ => format!("line {n}\n"),
+            })
+            .collect();
+        fs::write(repo.join("wide.txt"), &dirty).unwrap();
+        temp
+    }
+
+    /// Assert the two readers produce the same ids for `wide.txt`.
+    async fn assert_hunk_ids_agree(repo: &Path) {
+        let wire = fetch_git_diff_with_untracked(repo, &[])
+            .await
+            .expect("wire diff");
+        let wire_file = parse_git_diff(&wire)
+            .into_iter()
+            .find(|f| f.path == "wide.txt")
+            .expect("the dirty file is on the wire");
+        let engine_ids: Vec<String> = tugchanges_core::file_hunks(repo, "wide.txt")
+            .expect("engine hunks")
+            .into_iter()
+            .map(|h| h.id)
+            .collect();
+
+        assert_eq!(engine_ids.len(), 2, "two well-separated edits, two hunks");
+        assert_eq!(
+            wire_file.hunks, engine_ids,
+            "the wire's ids and the engine's ids are one contract"
+        );
+    }
+
+    #[tokio::test]
+    async fn hunk_ids_agree_across_the_wire_and_engine_boundary() {
+        let temp = init_two_hunk_repo().await;
+        assert_hunk_ids_agree(temp.path()).await;
+    }
+
+    /// The same agreement under a configured external diff driver — the
+    /// condition `--no-ext-diff` exists for. A driver emits text that is not a
+    /// unified diff at all, so a reader missing the flag produces no ids
+    /// rather than different ones.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hunk_ids_agree_under_an_external_diff_driver() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = init_two_hunk_repo().await;
+        let repo = temp.path().to_path_buf();
+        let driver = repo.join("noisy-diff.sh");
+        fs::write(&driver, "#!/bin/sh\necho 'not a unified diff at all'\n").unwrap();
+        fs::set_permissions(&driver, fs::Permissions::from_mode(0o755)).unwrap();
+        git_in(
+            &repo,
+            &["config", "diff.external", driver.to_str().unwrap()],
+        )
+        .await;
+
+        assert_hunk_ids_agree(&repo).await;
     }
 }

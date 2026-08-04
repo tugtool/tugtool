@@ -143,6 +143,12 @@
   color: var(--tug7-element-tone-text-normal-caution-rest);
 }
 
+/* A drifted election is a refusal waiting to happen, not a disposition —
+   louder than the partial count it stands in for. */
+.tug-changes-list-badge-stale {
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+
 /* ---- Section labels ---- */
 
 .tug-changes-list-section-label {

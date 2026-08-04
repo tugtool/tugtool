@@ -22,7 +22,10 @@ pub use git::{
     git_output, git_stdout, normalize_xy, parse_name_status, parse_numstat,
     parse_status_porcelain_v2, parse_unified_diff, repo_root_for,
 };
-pub use hunks::{Hunk, HunkDrift, file_header, filtered_patch, hunk_id, parse_hunks};
+pub use hunks::{
+    HUNK_DIFF_FLAGS, Hunk, HunkDrift, file_diff_hunks, file_header, file_hunks, filtered_patch,
+    hunk_id, parse_hunks,
+};
 pub use preflight::{
     DiffOptions, DiffReport, LogEntry, LogOptions, LogReport, PreflightOptions, PreflightReport,
     diff, log, preflight,

@@ -33,7 +33,7 @@ use serde::Serialize;
 
 use crate::changes::{ChangesOptions, resolve_changes};
 use crate::git::{self, FileStat, repo_root_for};
-use crate::hunks::{HunkDrift, file_header, filtered_patch, parse_hunks};
+use crate::hunks::{HunkDrift, file_diff_hunks, file_header, filtered_patch};
 
 /// Options for [`commit`]. `message` is required. Disposition precedence
 /// ([P04], Table T01): `paths` > `tree` > (`include_unattributed` /
@@ -364,12 +364,7 @@ fn stage_partial_and_commit(
                 "{path} is not tracked; a created file has no electable hunks and stages whole or not at all"
             )));
         }
-        let diff = git::git_stdout(
-            repo_root,
-            &["diff", "--no-color", "--no-ext-diff", "--", path],
-        )
-        .map_err(CommitError::Other)?;
-        let parsed = parse_hunks(&diff);
+        let (diff, parsed) = file_diff_hunks(repo_root, path).map_err(CommitError::Other)?;
         let patch =
             filtered_patch(&file_header(&diff), &parsed, selected).map_err(|e| match e {
                 HunkDrift::Missing(ids) => CommitError::HunkDrift {
@@ -913,10 +908,20 @@ mod tests {
     }
 
     fn hunk_ids(root: &Path, path: &str) -> Vec<String> {
-        let diff = git_out(root, &["diff", "--no-color", "--no-ext-diff", "--", path]);
-        let ids: Vec<String> = parse_hunks(&diff).into_iter().map(|h| h.id).collect();
+        let (diff, hunks) = file_diff_hunks(root, path).expect("file diff");
+        let ids: Vec<String> = hunks.into_iter().map(|h| h.id).collect();
         assert_eq!(ids.len(), 3, "expected three hunks; diff was: {diff}");
         ids
+    }
+
+    #[test]
+    fn file_hunks_on_a_clean_path_is_empty_not_an_error() {
+        let repo = init_repo();
+        assert_eq!(
+            crate::hunks::file_hunks(repo.path(), "base.txt"),
+            Ok(Vec::new()),
+            "no changes is an empty list, not a failure"
+        );
     }
 
     fn elect(path: &str, ids: &[&str]) -> Option<BTreeMap<String, Vec<String>>> {

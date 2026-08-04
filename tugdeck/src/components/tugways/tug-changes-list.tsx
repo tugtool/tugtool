@@ -61,6 +61,7 @@ import {
   getEntryDiffStore,
   releaseEntryDiffStore,
 } from "@/lib/changeset-diff-store";
+import { reconcileHunkElection } from "@/lib/hunk-election";
 import {
   diffDescriptorKey,
   type DiffDescriptor,
@@ -299,17 +300,28 @@ export interface HunkElection {
   onElect: (ids: readonly string[] | null) => void;
 }
 
-/** The elected set for a file, resolving "no entry" to "every hunk". */
+/**
+ * The checked set for a file: the persisted election reconciled against the
+ * hunks actually in the file ([P18]). Same rule the row's badge reads, so a
+ * count and its boxes cannot disagree.
+ */
 function electedSet(
   ids: readonly string[],
   election: HunkElection | undefined,
 ): ReadonlySet<string> {
-  if (election?.elected == null) return new Set(ids);
-  return new Set(election.elected);
+  if (election === undefined) return new Set(ids);
+  return new Set(reconcileHunkElection(ids, election.elected).elected);
 }
 
 /**
- * A file's inline diff with a per-hunk election checkbox in each `@@` band.
+ * A file's inline diff — with a per-hunk election checkbox in each `@@` band
+ * wherever a hunk can actually be elected.
+ *
+ * One component for every diff, branching internally on whether there is an
+ * election ([L26]). The predicate moves at runtime — edit a one-hunk file into
+ * two while its row is open and the aggregate recomposes — so a call site that
+ * swapped between two component types would unmount the open diff, taking its
+ * collapsed bands, view mode, and scroll with it.
  *
  * The responder wiring lives here rather than in `DiffBlock` ([D05], [L11]):
  * `DiffBlock` paints the slot and hands back each hunk's id, this component
@@ -317,20 +329,27 @@ function electedSet(
  * last elected hunk is refused at the control — a file in the landing set with
  * nothing elected is a refusal server-side, so the UI never offers it.
  */
-function HunkElectionDiff({
+function FileDiffBody({
   file,
   election,
 }: {
   file: GitDiffFile;
-  election: HunkElection;
+  election?: HunkElection;
 }): React.ReactElement {
   const ids = file.hunks ?? [];
   const elected = electedSet(ids, election);
-  const senderId = useCallback((id: string) => `hunk:${file.path}:${id}`, [file.path]);
-  const toggle = useMemo(() => {
-    const bindings: Record<string, (value: boolean) => void> = {};
+  const senderId = useCallback(
+    (id: string) => `hunk:${file.path}:${id}`,
+    [file.path],
+  );
+  // Built plainly, not memoized: `useResponderForm` reads the bindings through
+  // a ref it refreshes every render, so there is nothing for a memo to save —
+  // and a memo that actually held would freeze each closure over a stale
+  // `elected` and break toggling.
+  const toggle: Record<string, (value: boolean) => void> = {};
+  if (election !== undefined) {
     for (const id of ids) {
-      bindings[senderId(id)] = (next: boolean) => {
+      toggle[senderId(id)] = (next: boolean) => {
         const nextElected = ids.filter((candidate) =>
           candidate === id ? next : elected.has(candidate),
         );
@@ -341,33 +360,58 @@ function HunkElectionDiff({
         );
       };
     }
-    return bindings;
-  }, [ids, elected, election, senderId]);
+  }
+  // Unconditional: hooks may not be conditional, and the form is cheap when
+  // there is nothing bound to it.
   const form = useResponderForm({ toggle });
+
+  // Hunk controls only where a hunk can actually be elected: the server sends
+  // ids for tracked, textual files and none for a created file (whose diff it
+  // synthesizes) or a binary one, and the landing engine refuses an election
+  // on either ([P07]). The ids ride every diff regardless — identity is what
+  // the wire serves, and an affordance is a separate question.
+  const renderHunkAffordance =
+    election !== undefined && ids.length > 1
+      ? (hunkId: string) => {
+          const checked = elected.has(hunkId);
+          // The sole remaining hunk cannot be unchecked: an empty election
+          // on a landing path is a server-side refusal, not a disposition.
+          const isLast = checked && elected.size === 1;
+          const box = (
+            <TugCheckbox
+              checked={checked}
+              disabled={isLast}
+              size="sm"
+              senderId={senderId(hunkId)}
+              aria-label={`Land this hunk of ${file.path}`}
+              data-testid="tug-changes-list-hunk-elect"
+            />
+          );
+          // A disabled control with no stated reason reads as broken. The
+          // tooltip rides a wrapper this caller owns rather than widening
+          // `TugCheckbox` — which declares no `title` — for one caller.
+          return isLast ? (
+            <span title="At least one hunk must land — a file in the landing set with nothing elected is refused">
+              {box}
+            </span>
+          ) : (
+            box
+          );
+        }
+      : undefined;
 
   return (
     <form.ResponderScope>
+      {/* Unconditional wrapper: rendering it only when there is an election
+          would be the same mount-identity breach one level down. It is
+          unstyled, and the diff's sticky pin chain is unaffected — the pin's
+          containing block is `.tugx-diff-hunk`. */}
       <div ref={form.responderRef}>
         <DiffBlock
           data={{ source: "unified", text: file.unified, filePath: file.path }}
           embedded
-          hunkIds={ids}
-          renderHunkAffordance={(hunkId) => {
-            const checked = elected.has(hunkId);
-            // The sole remaining hunk cannot be unchecked: an empty election
-            // on a landing path is a server-side refusal, not a disposition.
-            const isLast = checked && elected.size === 1;
-            return (
-              <TugCheckbox
-                checked={checked}
-                disabled={isLast}
-                size="sm"
-                senderId={senderId(hunkId)}
-                aria-label={`Land this hunk of ${file.path}`}
-                data-testid="tug-changes-list-hunk-elect"
-              />
-            );
-          }}
+          hunkIds={file.hunks}
+          renderHunkAffordance={renderHunkAffordance}
         />
       </div>
     </form.ResponderScope>
@@ -387,7 +431,13 @@ function fileBlockBody(
       </p>
     );
   }
-  if (snapshot.phase === "loading" || snapshot.payload === null) {
+  // The notice is for having nothing to show, not for a request being in
+  // flight: the store keeps the last payload across a refetch, and an open
+  // diff must keep rendering it rather than blanking to a notice and back.
+  // Swapping to a `<p>` and back is a remount, which loses the collapsed
+  // bands, the view mode, and the scroll — the same [L23] loss the one-body
+  // unification exists to prevent, arriving one level up.
+  if (snapshot.payload === null) {
     return (
       <p className="tug-changes-list-file-block-notice" role="status">
         Loading diff…
@@ -409,22 +459,11 @@ function fileBlockBody(
       </p>
     );
   }
-  // Hunk controls only where a hunk can actually be elected: the server sends
-  // ids for tracked, textual files and none for a created file (whose diff it
-  // synthesizes) or a binary one, and the landing engine refuses an election
-  // on either ([P07]).
-  if (election !== undefined && (file.hunks?.length ?? 0) > 1) {
-    return <HunkElectionDiff file={file} election={election} />;
-  }
-  // The ids ride every diff, not only the electable ones: identity is what the
-  // wire serves, and an affordance is a separate question.
-  return (
-    <DiffBlock
-      data={{ source: "unified", text: file.unified, filePath: file.path }}
-      embedded
-      hunkIds={file.hunks}
-    />
-  );
+  // One component type for every diff, whatever the hunk count and whatever
+  // the entry kind ([L26]) — the branch that used to live here now lives
+  // inside `FileDiffBody`. The notice branches above stay `<p>`: those are
+  // genuinely different entities, not phases of the same one.
+  return <FileDiffBody file={file} election={election} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -493,17 +532,26 @@ function orphanedFileData(file: OrphanedFile): FileBlockData {
   };
 }
 
+/**
+ * What a row's badge says about the file's election — the reconciled shape,
+ * not the raw persisted one, so the badge and the checkboxes read the same
+ * rule ([P18]).
+ */
+export type FileElectionBadge =
+  | { kind: "partial"; elected: number; total: number }
+  | { kind: "stale" };
+
 function FileIdentity({
   file,
   projectRoot,
   highlightQuery,
-  partial = null,
+  election = null,
 }: {
   file: FileBlockData;
   projectRoot: string;
   highlightQuery?: string;
-  /** See {@link ChangesFileRow}'s `partial`. */
-  partial?: { elected: number; total: number } | null;
+  /** See {@link ChangesFileRow}'s `election`. */
+  election?: FileElectionBadge | null;
 }) {
   const provenance =
     file.origin === ""
@@ -516,7 +564,10 @@ function FileIdentity({
   // only when the cluster has something in it. A badge-only or hint-only row
   // gets the same single divider a provenance row does; a bare row gets none.
   const hasMeta =
-    file.shared || provenance !== null || file.hint !== undefined || partial !== null;
+    file.shared ||
+    provenance !== null ||
+    file.hint !== undefined ||
+    election !== null;
   return (
     <span className="tug-changes-list-file-identity">
       <FilePathLink
@@ -528,14 +579,27 @@ function FileIdentity({
       />
       {hasMeta ? (
         <span className="tug-changes-list-file-meta">
-          {partial !== null ? (
-            <span
-              className="tug-changes-list-badge tug-changes-list-badge-partial"
-              data-testid="tug-changes-list-file-partial"
-              title={`Only ${partial.elected} of this file's ${partial.total} hunks will land`}
-            >
-              {`${partial.elected} of ${partial.total} hunks`}
-            </span>
+          {election !== null ? (
+            election.kind === "partial" ? (
+              <span
+                className="tug-changes-list-badge tug-changes-list-badge-partial"
+                data-testid="tug-changes-list-file-partial"
+                title={`Only ${election.elected} of this file's ${election.total} hunks will land`}
+              >
+                {`${election.elected} of ${election.total} hunks`}
+              </span>
+            ) : (
+              // Every box is checked, but not because the file lands whole —
+              // saying nothing here would assert a landing the engine is about
+              // to refuse.
+              <span
+                className="tug-changes-list-badge tug-changes-list-badge-stale"
+                data-testid="tug-changes-list-file-stale-election"
+                title="The hunks elected for this file are no longer in it — the landing will refuse until they are re-elected"
+              >
+                stale election
+              </span>
+            )
           ) : null}
           {file.shared ? (
             <span className="tug-changes-list-badge tug-changes-list-badge-shared">
@@ -572,7 +636,7 @@ export function ChangesFileRow({
   file,
   projectRoot,
   counts,
-  partial = null,
+  election = null,
   expanded,
   onToggle,
   popOut,
@@ -591,9 +655,10 @@ export function ChangesFileRow({
   /** The `+N −M` pair when known (live: from the eager entry diff; receipt:
    *  from the frozen record). Absent → no badges (binary, still loading). */
   counts: { added: number; removed: number } | null;
-  /** When only some of the file's hunks are elected ([P09]), the counts —
-   *  the row says `2 of 3 hunks` rather than reading as a whole landing. */
-  partial?: { elected: number; total: number } | null;
+  /** What the row says about the file's hunk election ([P09], [P18]): a
+   *  partial landing counts the elected hunks, a wholly-drifted one says so
+   *  rather than reading as a whole landing. Absent → nothing to say. */
+  election?: FileElectionBadge | null;
   expanded: boolean;
   onToggle: (expanded: boolean) => void;
   popOut: DiffDescriptor | null;
@@ -617,7 +682,8 @@ export function ChangesFileRow({
       data-testid="tug-changes-list-file-block"
       data-path={file.path}
       data-expanded={expanded ? "true" : undefined}
-      data-partial={partial !== null ? "true" : undefined}
+      data-partial={election?.kind === "partial" ? "true" : undefined}
+      data-stale-election={election?.kind === "stale" ? "true" : undefined}
     >
       <div
         className="tug-changes-list-row-hit"
@@ -704,7 +770,7 @@ export function ChangesFileRow({
             file={file}
             projectRoot={projectRoot}
             highlightQuery={highlightQuery}
-            partial={partial}
+            election={election}
           />
         </TugListRow>
       </div>
@@ -803,23 +869,27 @@ function EntryFiles({
                 onElect: (ids) => onElectHunks(file.path, ids),
               }
             : undefined;
-        // The row says so when only part of the file lands — a landing that
-        // reads whole but isn't would be a resting lie.
-        const electedCount = hunkElection?.[file.path]?.length;
-        const hunkCount = diffFile?.hunks?.length;
-        const partial =
-          electedCount !== undefined &&
-          hunkCount !== undefined &&
-          electedCount < hunkCount
-            ? { elected: electedCount, total: hunkCount }
-            : null;
+        // The row says so when only part of the file lands, and says so
+        // differently when the election has drifted out of the file entirely —
+        // a landing that reads whole but isn't would be a resting lie either
+        // way. The badge computes here rather than in the body because a
+        // collapsed row has no body, and it reads the same rule the boxes do
+        // ([P18]), so the two cannot disagree about the count.
+        const badge = ((): FileElectionBadge | null => {
+          const ids = diffFile?.hunks;
+          if (ids === undefined || election === undefined) return null;
+          const display = reconcileHunkElection(ids, election.elected);
+          if (display.stale) return { kind: "stale" };
+          if (display.partial === null) return null;
+          return { kind: "partial", ...display.partial };
+        })();
         return (
           <ChangesFileRow
             key={file.path}
             file={file}
             projectRoot={projectRoot}
             counts={counts}
-            partial={partial}
+            election={badge}
             expanded={expanded}
             onToggle={(next) => onToggleFile(entry.id, file.path, !next)}
             popOut={filePopOutDescriptor(entry.project, file.path)}
