@@ -4428,11 +4428,14 @@ export function SessionCardBody({
               // lives in the Changes shade's composer ([P02]/[P15]) — the
               // entry carries no changeset plumbing.
               // The editor stands down (read-only + caret off + dimmed)
-              // while an inline dialog owns the keyboard and while cycling
-              // (the cycling-mode indicator, [P12] revised: reuse the
-              // deactivated path as the "blur") — cycling needs the chips
-              // keyboard-reachable, so these must NOT inert the subtree.
-              deactivated={inlineDialogPending || cycle.cycling}
+              // only while an inline dialog owns the keyboard ([P06]) —
+              // which must NOT inert the subtree (the dialog needs the
+              // card alive around it). NOT during cycling: the editor is a
+              // live stop of the cycle that grants the caret when the walk
+              // lands on it, and a deactivated stop is a disabled one,
+              // which the walk skips — standing it down while cycling
+              // removes the composer from traversal entirely.
+              deactivated={inlineDialogPending}
               // A resume replay disables the WHOLE entry — route toggle,
               // chips, and submit included — via the inert subtree: nothing
               // here can act on a session that is still reconstructing. It
@@ -4468,7 +4471,6 @@ export function SessionCardBody({
               attachmentFocusGroup={SESSION_CYCLE_GROUP}
               attachmentFocusOrderBase={SESSION_CYCLE_ORDER_ATTACHMENT_BASE}
               onAttachmentCountChange={setAttachmentCount}
-              onResumeTyping={() => cycle.exit()}
               localCommandTargetId={`${cardId}-card-content`}
               codeSessionStore={codeSessionStore}
               shellSessionStore={shellSessionStore}

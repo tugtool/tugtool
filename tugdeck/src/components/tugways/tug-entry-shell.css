@@ -153,19 +153,17 @@ body {
    detail, and a user sees one rectangle around their text either way. So there
    is no ring in a shell at all, in any state ([L06] / focus-language.md).
 
-   That leaves the cycling stop state — the keyboard on the input area with the
-   editor blurred, where `Return` descends back into typing ([P11]) — needing a
-   carrier, since there is no caret there to be one. The WASH is that carrier:
-   the shell adopts its focus surface whenever the keyboard is anywhere inside
-   it, by caret or by stop, so the panel reads as the live one either way. The
-   caret then answers the finer question the wash does not — *typing here*
-   versus *parked on this stop* — which is the [D122] container/element split
-   doing exactly its job.
+   There is no caret-less keyboard state left to carry: the editor's cycle stop
+   registers the substrate itself, so every keyboard landing grants the caret
+   (focus-language.md). The WASH answers the container question beside it —
+   *this composite control is the live one* — while the caret answers *where in
+   it*, the [D122] container/element split doing exactly its job.
    ----------------------------------------------------------------------------- */
 
-/* The stop state washes like the caret state: `:focus-within` covers the caret,
-   `[data-entry-keyboard]` covers the engine-routed stop (where DOM focus is
-   parked on the key sink OUTSIDE the shell, so the pseudo-class is false). */
+/* Keyed on the engine mark, not on DOM focus alone: `:focus-within` covers the
+   caret in a key window, `[data-entry-keyboard]` keeps the wash honest where
+   WebKit withholds the pseudo-class (a window that is not key) and for any
+   engine-routed key view inside the shell. */
 .tug-entry-shell[data-entry-keyboard] {
   background-color: var(--tugx-entry-shell-editor-focus);
 }
@@ -246,17 +244,21 @@ html[data-app-active="false"]
 }
 
 /* Lit — this shell's field holds the keyboard, so its default is the button
-   Return fires: the fill comes back and the ring goes on. */
+   Return fires: the fill comes back and the ring goes on. Carries the same
+   `:not()` guards as the rest rule, which also puts it above the card's
+   `[data-cycling]` fill stand-down (`tug-prompt-entry.css`): the caret in the
+   field is the focused stop, however it arrived, and the default that serves
+   it lights the same whether the caret was clicked in or cycled in. */
 /* @tug-renders-on: --tug7-surface-control-primary-filled-action-rest */
 .tug-entry-shell[data-entry-keyboard]
-  [data-tug-entry-default].tug-button-filled-action {
+  [data-tug-entry-default].tug-button-filled-action:not([data-key-view-kbd]):not([data-key-cursor]) {
   background-color: var(--tug7-surface-control-primary-filled-action-rest);
   color: var(--tug7-element-control-text-filled-action-rest);
   border-color: var(--tug7-element-control-border-filled-action-rest);
 }
 /* @tug-renders-on: --tug7-surface-control-primary-filled-action-rest */
 .tug-entry-shell[data-entry-keyboard]
-  [data-tug-entry-default].tug-button-filled-action svg {
+  [data-tug-entry-default].tug-button-filled-action:not([data-key-view-kbd]):not([data-key-cursor]) svg {
   color: var(--tug7-element-control-icon-filled-action-rest);
 }
 .tug-entry-shell[data-entry-keyboard]

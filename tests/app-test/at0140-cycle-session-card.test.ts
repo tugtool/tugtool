@@ -93,7 +93,6 @@ const EFFORT_CHIP = `${CARD} [data-slot="effort-chip"]`;
 // grid row beneath the status cells. Live in the harness (the pulse store
 // attaches on the real connection and `pulse/enabled` defaults on).
 const PULSE = `${CARD} [data-slot="session-pulse-legend"]`;
-const INPUT_AREA = `${CARD} .tug-prompt-entry-input-area`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 // The five Z2 status cells. Each is its own leaf cycle stop ([P10]
 // revised — no item-group roving): the cell `<button>` carries
@@ -200,7 +199,7 @@ function effortModelCapabilities() {
 
 describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", () => {
   test(
-    "⌥⇥ seeds the route, Tab tours route → Claude Code → Session → Project → Mode → Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → WORK → BTW → PULSE → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, Return on the editor stop resumes typing",
+    "⌥⇥ seeds the route, Tab tours route → Claude Code → Session → Project → Mode → Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → WORK → BTW → PULSE → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, landing on the editor stop grants the caret",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-session-card" });
       try {
@@ -277,8 +276,11 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         // BTW → PULSE (its own one-node row beneath the status cells).
         await app.waitForCondition<boolean>(hasKeyView(PULSE), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
-        // PULSE → editor.
-        await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
+        // PULSE → editor. The editor's stop carries its focus contract, so
+        // landing on it GRANTS the caret — no parked blurred state.
+        await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
+        // Tab from the (empty) editor hands off at the editor's seat and wraps
+        // to the route.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
         // ⌥⇥ off → back to the editor caret.
@@ -304,11 +306,13 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
 
-        // (4) Tab tours the stops left→right, up to the editor, then wraps back
-        // to the route (trapped): route → Claude Code → Session → Project →
-        // Mode → Model → Effort → submit → STATE … WORK → BTW → PULSE → editor →
-        // route. The editor is the last stop — a text stop: the input area
-        // takes the ring while the editor stays blurred.
+        // (4) Tab tours the stops left→right, up to the editor: route → Claude
+        // Code → Session → Project → Mode → Model → Effort → submit → STATE …
+        // WORK → BTW → PULSE → editor. The editor is the last stop — a text
+        // stop that carries the editor's own focus contract, so landing on it
+        // grants the caret. With a draft in the field the tour ends there (Tab
+        // is the editor's again — it indents); the empty-editor wrap back to
+        // the route was pinned in (2).
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(CLAUDE_CHIP), { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(ROUTE_HAS_KEY_VIEW)).toBe(false);
@@ -346,28 +350,12 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         // BTW → PULSE (the last leaf before the editor).
         await app.waitForCondition<boolean>(hasKeyView(PULSE), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
-        await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
-        // The editor text-stop holds the ring but the caret is NOT active (the
-        // editor is blurred during cycling).
-        expect(await app.evalJS<boolean>(EDITOR_FOCUSED)).toBe(false);
-        await app.nativeKey("Tab");
-        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
-
-        // (5) Return on the editor text-stop resumes typing ([P11]): it descends
-        // into the editor, which exits cycling and returns the caret. First Tab
-        // back onto the editor stop, then Return.
-        await app.nativeKey("Tab", ["alt"]); // exit cycling (back to editor)
-        await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
+        // The landing grants the caret — resuming typing IS the landing, no
+        // Return required. The draft is intact under the caret.
         await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
-        // Re-enter, walk to the editor stop, and Return to resume typing.
+
+        // (5) ⌥⇥ exits cycling from the granted editor; the caret stays put.
         await app.nativeKey("Tab", ["alt"]);
-        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        // route→Claude→Session→Project→Mode→Model→Effort→submit→STATE→TIME→
-        // TOKENS→CONTEXT→WORK→BTW→PULSE→editor (15 Tabs from the seeded route
-        // to the editor text-stop).
-        for (let i = 0; i < 15; i++) await app.nativeKey("Tab");
-        await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
-        await app.nativeKey("Return");
         await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
 
@@ -472,7 +460,7 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         // the route) — and NOT to the editor, which is excluded from the grid.
         await app.nativeKey("ArrowUp");
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
-        expect(await app.evalJS<boolean>(hasKeyView(INPUT_AREA))).toBe(false);
+        expect(await app.evalJS<boolean>(EDITOR_FOCUSED)).toBe(false);
 
         // Exit, type so the full toolbar (incl. submit) is live.
         await app.nativeKey("Tab", ["alt"]);
@@ -516,9 +504,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await app.waitForCondition<boolean>(hasKeyView(Z2_STATE), { timeoutMs: 6000 });
         await app.nativeKey("ArrowUp");
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
-        // Across the whole arrow sequence the editor was never an arrow stop and
-        // the card never left cycling (no dead-end, no beep).
-        expect(await app.evalJS<boolean>(hasKeyView(INPUT_AREA))).toBe(false);
+        // Across the whole arrow sequence the caret never landed in the editor
+        // and the card never left cycling (no dead-end, no beep).
+        expect(await app.evalJS<boolean>(EDITOR_FOCUSED)).toBe(false);
         expect(await app.evalJS<string | null>(CYCLING)).toBe("true");
       } catch (err) {
         const tail = app.tailLog(200);

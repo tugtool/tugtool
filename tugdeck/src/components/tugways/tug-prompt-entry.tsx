@@ -35,7 +35,6 @@ import { TugEntryShell } from "./tug-entry-shell";
 import React, {
   useCallback,
   useContext,
-  useId,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -112,7 +111,6 @@ import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
 import type { SessionSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
 import { useResponder } from "./use-responder";
-import { useFocusable } from "./use-focusable";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useResponderChain } from "./responder-chain-provider";
@@ -903,12 +901,12 @@ export interface TugPromptEntryProps {
   /**
    * Authors the **editor input area** itself into a focus group ([P02]) as a
    * **text stop** — the last stop of the session card's keyboard-focus cycle
-   * ([P10]/[P11]). When set, the input-area wrapper registers a focusable: the
-   * cycle can land the ring on it (the editor stays blurred via `deactivated`),
-   * and Return "descends" into the editor — `onResumeTyping` fires to drop the
-   * user back into typing (the host exits cycling). Omitted by non-cycling
-   * hosts. The editor is a responder (caret), so this is the *only* way it joins
-   * the walk; it never becomes a plain Tab stop.
+   * ([P10]/[P11]). When set, the editor substrate itself registers as the
+   * focusable, under its responder id — so the stop carries the editor's focus
+   * CONTRACT, the engine routes it `dom-granted`, and any traversal that lands
+   * the key view here (Tab, ⌥⇥, an arrow) GRANTS the caret. The blinking caret
+   * is the stop's whole focus indication; there is no blurred parked state and
+   * nothing for a ring or wash to mark. Omitted by non-cycling hosts.
    */
   editorFocusGroup?: string;
   /** Order of the editor text-stop within {@link editorFocusGroup}. */
@@ -939,12 +937,6 @@ export interface TugPromptEntryProps {
    * to move along. Supplying the callback is what makes the exit land somewhere.
    */
   onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
-  /**
-   * Fired when the cycle's Return-into-text gesture lands on the editor stop
-   * ([P11]): the host should exit cycling so the editor reactivates and the
-   * caret returns. Paired with {@link editorFocusGroup}.
-   */
-  onResumeTyping?: () => void;
   /**
    * Authors the `Z4C` compose-phase attachment tiles into a focus group
    * ([P02]) — forwarded to `TugAttachmentPreview` so each image-attachment
@@ -1064,7 +1056,6 @@ export const TugPromptEntry = React.forwardRef<
     editorFocusOrder,
     onTabWhenEmpty,
     onArrowExit,
-    onResumeTyping,
     attachmentFocusGroup,
     attachmentFocusOrderBase,
     onAttachmentCountChange,
@@ -1096,32 +1087,11 @@ export const TugPromptEntry = React.forwardRef<
     if (deactivated) textEditorRef.current?.blur();
   }, [deactivated]);
 
-  // Editor-as-text-stop ([P10]/[P11]). When a host authors the editor into a
-  // cycle (`editorFocusGroup`), the input-area wrapper registers a focusable so
-  // the cycle can land the ring on it (the editor itself stays blurred via
-  // `deactivated`). Its key-view `behavior` declares the input descendable: a
-  // Return resolves to `descend` (intercepted, so the scope's default button
-  // never fires) and fires `onResumeTyping`, dropping the user back into the
-  // editor. Read through a ref ([L07]) so the behavior closure (captured by the
-  // engine at registration) never goes stale. The wrapper takes `tabIndex={-1}`
-  // so the engine can land DOM focus on it without putting it in the native Tab
-  // order; the real caret is the editor inside.
-  const onResumeTypingRef = useRef(onResumeTyping);
-  useLayoutEffect(() => {
-    onResumeTypingRef.current = onResumeTyping;
-  }, [onResumeTyping]);
-  const editorStopId = useId();
-  const { focusableRef: editorStopRef } = useFocusable({
-    id: editorStopId,
-    group: editorFocusGroup ?? "",
-    order: editorFocusOrder ?? 0,
-    register: editorFocusGroup !== undefined,
-    behavior: () => ({
-      container: "none",
-      currentItemDescendable: true,
-      onDescend: () => onResumeTypingRef.current?.(),
-    }),
-  });
+  // Editor-as-text-stop ([P10]/[P11]): the editor substrate registers itself
+  // into the host's cycle (`focusGroup`/`focusOrder` on `TugTextEditor` below),
+  // under its own responder id — landing the key view here resolves the
+  // editor's focus contract and grants the caret. No wrapper stop, no parked
+  // blurred state: the blinking caret is the stop's focus indication.
 
   // Inline-attachment wiring. The per-card bytes-store and the
   // attachment-error publisher come from `codeSessionStore`; both are
@@ -3421,8 +3391,6 @@ export const TugPromptEntry = React.forwardRef<
             ) : undefined
           }
           inputAreaClassName="tug-prompt-entry-input-area"
-          inputAreaRef={editorStopRef as (el: HTMLDivElement | null) => void}
-          inputAreaTabIndex={editorFocusGroup !== undefined ? -1 : undefined}
           accessoryRow={entryAccessoryRow}
           toolbarClassName="tug-prompt-entry-toolbar"
           toolbarLeading={entryRouteChoice}
@@ -3465,6 +3433,8 @@ export const TugPromptEntry = React.forwardRef<
               attachmentBytesStore={attachmentBytesStore}
               onAttachmentError={publishAttachmentError}
               historyProvider={currentHistoryProvider}
+              focusGroup={editorFocusGroup}
+              focusOrder={editorFocusOrder}
               onArrowExit={onArrowExit}
               // Code Return semantics: Return inserts a newline; Shift+Return
               // (or the Z5 button) submits. A host override wins when supplied.

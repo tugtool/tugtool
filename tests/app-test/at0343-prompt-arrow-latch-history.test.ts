@@ -14,9 +14,9 @@
  *    editor's own seat, so the ring lands on the adjacent cycle stop;
  *  - holding Up (auto-repeat) parks at the edge and never crosses;
  *  - an empty composer needs no latch press — one Up leaves;
- *  - arrowing back onto the editor's stop rings the INPUT-AREA wrapper with no
- *    caret, never the editor itself — the ring and the caret are never both on
- *    the composer;
+ *  - arrowing back onto the editor's stop GRANTS the caret: the stop carries
+ *    the editor's focus contract, so landing on it is landing in the editor,
+ *    and the blinking caret — never a ring — is the focus indication;
  *  - Cmd-Up away from the start is still `cursorDocStart` and leaves the draft
  *    alone; at the start it recalls the previous entry.
  *
@@ -137,7 +137,7 @@ async function seedCardWithCaret(
 
 describe.skipIf(!SHOULD_RUN)("at0343 — the composer's arrow latch and Cmd-history", () => {
   test(
-    "a plain Up arms before it leaves, a repeat never leaves, and the ring lands on the input area — never the editor",
+    "a plain Up arms before it leaves, a repeat never leaves, and arrowing back grants the caret — never a ring",
     async () => {
       const app = await seedCardWithCaret("at0343-prompt-arrow-latch");
       try {
@@ -192,25 +192,33 @@ describe.skipIf(!SHOULD_RUN)("at0343 — the composer's arrow latch and Cmd-hist
         expect(await docText(app)).toBe("alpha");
 
         // Down comes back onto the editor's stop — the row this phase added to
-        // the cycle's grid. The ring lands on the INPUT-AREA wrapper with the
-        // editor still blurred; the editor itself never wears the ring.
+        // the cycle's grid. The stop carries the editor's focus CONTRACT, so
+        // landing on it grants the caret: the editor blinks, no Return needed,
+        // and neither the editor nor its input-area wrapper paints a ring.
         await pressKey(app, "ArrowDown");
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(INPUT_AREA)}) !== null
-            && document.querySelector(${JSON.stringify(INPUT_AREA)}).hasAttribute("data-key-view-kbd")`,
-          { timeoutMs: 3000 },
-        );
-        expect(
-          await app.evalJS<boolean>(
-            `document.querySelector(${JSON.stringify(EDITOR_HOST)}).hasAttribute("data-key-view-kbd")`,
-          ),
-        ).toBe(false);
-        expect(await app.evalJS<boolean>(CARET_IN_EDITOR)).toBe(false);
-
-        // Return descends back into typing — the editor-as-text-stop contract
-        // the arrow traversal has to leave intact.
-        await pressKey(app, "Enter");
         await app.waitForCondition<boolean>(CARET_IN_EDITOR, { timeoutMs: 3000 });
+        expect(
+          await app.evalJS<string>(
+            `(function(){
+              var out = [];
+              for (var sel of [${JSON.stringify(EDITOR_HOST)}, ${JSON.stringify(INPUT_AREA)}]) {
+                var el = document.querySelector(sel);
+                if (el === null) continue;
+                var s = getComputedStyle(el);
+                if (s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0) {
+                  out.push(sel + " outline=" + s.outline);
+                }
+                var after = getComputedStyle(el, "::after");
+                if (after.content !== "none" && parseFloat(after.borderTopWidth) > 0) {
+                  out.push(sel + " ::after border");
+                }
+              }
+              return out.join(" | ");
+            })()`,
+          ),
+        ).toBe("");
+        // The draft survived the round trip untouched.
+        expect(await docText(app)).toBe("alpha");
 
         // No arrow in the tour ended with a raw focus write behind the engine.
         const report = await app.evalJS<{

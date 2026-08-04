@@ -5,10 +5,10 @@
  *
  * The blinking caret is a full carrier of keyboard focus, not a hint that wants
  * a ring's help. An editor holding the keyboard blinks, and that is the whole
- * signal — a ring drawn beside a live caret is an **illegal state by design**,
- * not a harmless redundancy. When the keyboard is on an editor's *stop* with
- * the editor stood down and blurred there is no caret to carry anything, and
- * that is what the stop's own ring is for; it lives on the stop.
+ * signal — a ring drawn on or around an editor is an **illegal state by
+ * design**, not a harmless redundancy. There is no keyboard state of an editor
+ * without the caret: an editor's cycle stop carries the editor's own focus
+ * contract, so every traversal that lands on it grants the caret.
  *
  * This kept being re-broken from opposite directions — first a rule that ringed
  * any editor authored into a focus group (which lit the ⌘F query field the
@@ -23,16 +23,17 @@
  *   1. Caret clicked into the composer.
  *   2. Caret in the ⌘F query field — two editors mounted, one of them live.
  *   3. Caret in the composer with the find bar still open — the other way round.
- *   4. The **cycling stop** state: ⌥⇥ walked to the composer's text stop, where
- *      the editor is blurred and the keyboard is on its input-area wrapper.
- *      This is the state the ring survived longest in — a click never reaches
- *      it, so the first three cases all passed while the wrapper still drew an
- *      orange rectangle around the composer. What marks this state now is the
- *      shell's wash, not a ring.
+ *   4. The **cycling stop**: ⌥⇥ walked round the card's cycle to the composer's
+ *      text stop. The stop registers under the editor's own responder id, so it
+ *      carries the editor's focus contract and landing on it GRANTS the caret —
+ *      there is no blurred parked state left for a ring (or an invisible wash)
+ *      to mark. This is the state the ring survived longest in — a click never
+ *      reaches it, so the first three cases all passed while the input-area
+ *      wrapper still drew an orange rectangle around the composer.
  *
- * In each: nothing on the card draws a ring around editor text, and in 1–3 the
- * editor holding the keyboard really is holding it, so the assertion is "no
- * ring" and not merely "nothing has focus".
+ * In each: nothing on the card draws a ring around editor text, and the editor
+ * holding the keyboard really is holding it, so the assertion is "no ring" and
+ * not merely "nothing has focus".
  *
  * @covers tugdeck/src/components/tugways/tug-text-editor.css
  * @covers tugdeck/src/components/tugways/tug-entry-shell.css
@@ -197,35 +198,37 @@ describe.skipIf(!SHOULD_RUN)("AT0345: a text editor never wears a ring", () => {
           "the caret returning to the composer rings neither editor",
         ).toBe("");
 
-        // --- 4. The cycling stop. ⌥⇥ opens the card's cycle, then Tab walks to
-        //        the composer's text stop, where the editor is blurred and the
-        //        keyboard sits on the input-area wrapper. No click reaches this
+        // --- 4. The cycling stop. ⌥⇥ opens the card's cycle (the caret leaves
+        //        the composer), then Tab walks round to the composer's text
+        //        stop. The stop carries the editor's focus contract, so
+        //        arriving GRANTS the caret — the blinking caret is the whole
+        //        focus indication, and nothing rings. No click reaches this
         //        state, which is how a ring lived here through three green
         //        assertions above. ---
-        const INPUT_AREA = `${CARD} .tug-prompt-entry-input-area`;
         await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(`!(${focused(EDITOR)})`, {
+          timeoutMs: 8000,
+        });
         let reached = false;
         for (let i = 0; i < CYCLE_STOP_LIMIT && !reached; i++) {
-          reached = await app.evalJS<boolean>(
-            `document.querySelector(${JSON.stringify(INPUT_AREA)})?.hasAttribute("data-key-view-kbd") === true`,
-          );
-          if (!reached) await app.nativeKey("Tab");
+          await app.nativeKey("Tab");
+          reached = await app.evalJS<boolean>(focused(EDITOR));
         }
-        expect(reached, "the cycle walk reaches the composer's text stop").toBe(true);
         expect(
-          await app.evalJS<boolean>(focused(EDITOR)),
-          "the editor is stood down at its own stop — no caret to carry focus",
-        ).toBe(false);
+          reached,
+          "the cycle walk reaches the composer's text stop, which grants the caret",
+        ).toBe(true);
         expect(
           await app.evalJS<string>(RINGED_EDITORS),
-          "the composer's text stop is marked by the shell's wash, never a ring",
+          "the granted caret is the focus indication — never a ring",
         ).toBe("");
-        // …and the wash IS on, so the state is not simply unmarked.
+        // …and the shell knows the keyboard is here (this is what lights the
+        // entry's default button), so the state is not simply unmarked.
         expect(
           await app.evalJS<boolean>(
             `document.querySelector('${CARD} [data-slot="tug-prompt-entry"]')?.hasAttribute("data-entry-keyboard") === true`,
           ),
-          "the shell washes to say the keyboard is here",
+          "the shell registers the keyboard's presence",
         ).toBe(true);
       } finally {
         await app.close();
