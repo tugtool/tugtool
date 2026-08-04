@@ -1321,7 +1321,12 @@ mod tests {
         // absolute path.
         assert!(is_reparented_orphan(&row(42, 1, 3600, "tugcode"), floor));
         assert!(is_reparented_orphan(
-            &row(42, 1, 3600, "/opt/tug/bin/claude --output-format stream-json"),
+            &row(
+                42,
+                1,
+                3600,
+                "/opt/tug/bin/claude --output-format stream-json"
+            ),
             floor
         ));
     }

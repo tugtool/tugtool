@@ -217,11 +217,17 @@ pub fn find_for_cwd(cwd: &Path) -> Result<Option<Instance>, Error> {
 /// says "not a linked worktree"); that gitdir holds a `commondir` pointing
 /// at the shared `.git`, whose parent is the main checkout.
 fn linked_worktree_base(cwd: &Path) -> Option<PathBuf> {
-    let dot_git = cwd.ancestors().map(|d| d.join(".git")).find(|p| p.exists())?;
+    let dot_git = cwd
+        .ancestors()
+        .map(|d| d.join(".git"))
+        .find(|p| p.exists())?;
     let gitdir = std::fs::read_to_string(&dot_git)
         .ok()?
         .lines()
-        .find_map(|line| line.strip_prefix("gitdir:").map(|p| PathBuf::from(p.trim())))?;
+        .find_map(|line| {
+            line.strip_prefix("gitdir:")
+                .map(|p| PathBuf::from(p.trim()))
+        })?;
     let gitdir = match gitdir.is_absolute() {
         true => gitdir,
         false => dot_git.parent()?.join(gitdir),

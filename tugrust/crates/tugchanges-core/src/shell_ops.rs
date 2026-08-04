@@ -688,12 +688,12 @@ fn scan_editor_flag(verb: &str, text: &str) -> EditorFlag {
             'i' => {
                 return EditorFlag::InPlace {
                     suffix_follows: false,
-                }
+                };
             }
             'e' | 'E' => {
                 return EditorFlag::Script {
                     inline: offset + c.len_utf8() < text.len(),
-                }
+                };
             }
             'M' | 'm' | 'F' | 'I' | 'x' => return EditorFlag::Plain,
             _ => {}

@@ -263,9 +263,7 @@ fn edit_by_patch(source: &str) -> Result<(), AppError> {
     let text = read_patch(source)?;
     let targets = patch_targets(&text);
     if targets.is_empty() {
-        return Err(AppError::Exit1(
-            "the patch names no files".to_string(),
-        ));
+        return Err(AppError::Exit1("the patch names no files".to_string()));
     }
 
     // Remember each target's bytes so the receipt can name only the files that

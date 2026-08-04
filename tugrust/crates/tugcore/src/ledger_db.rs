@@ -362,5 +362,4 @@ mod tests {
             "ad-hoc `Connection::open(` outside tugcore::ledger_db — route these through the chokepoint: {offenders:#?}"
         );
     }
-
 }

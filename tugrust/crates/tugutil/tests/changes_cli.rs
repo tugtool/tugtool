@@ -773,11 +773,9 @@ fn draft_set_preserves_the_users_project_spelling() {
 fn draft_column(ledger: &Path, column: &str) -> String {
     Connection::open(ledger.join("changes.db"))
         .unwrap()
-        .query_row(
-            &format!("SELECT {column} FROM changeset_drafts"),
-            [],
-            |r| r.get(0),
-        )
+        .query_row(&format!("SELECT {column} FROM changeset_drafts"), [], |r| {
+            r.get(0)
+        })
         .unwrap()
 }
 
@@ -810,7 +808,10 @@ fn draft_set_defaults_the_owner_to_the_dash_it_runs_in() {
     assert!(stdout.contains("dash:tugcast-perf"), "{stdout}");
 
     assert_eq!(draft_column(ledger.path(), "owner_kind"), "dash");
-    assert_eq!(draft_column(ledger.path(), "owner_id"), "tugdash/tugcast-perf");
+    assert_eq!(
+        draft_column(ledger.path(), "owner_id"),
+        "tugdash/tugcast-perf"
+    );
 }
 
 #[test]

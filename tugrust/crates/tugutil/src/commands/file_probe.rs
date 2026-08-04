@@ -366,7 +366,10 @@ fn declared_patch_paths(patch: &str) -> Vec<PathBuf> {
     };
 
     for line in patch.lines() {
-        if let Some(rest) = line.strip_prefix("+++ ").or_else(|| line.strip_prefix("--- ")) {
+        if let Some(rest) = line
+            .strip_prefix("+++ ")
+            .or_else(|| line.strip_prefix("--- "))
+        {
             // `git diff` appends a tab and a timestamp on some producers.
             push(rest.split('\t').next().unwrap_or(rest).trim(), true);
         } else if let Some(rest) = line

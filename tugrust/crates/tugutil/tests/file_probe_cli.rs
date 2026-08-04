@@ -84,7 +84,11 @@ fn a_probe_shows_the_patched_content_and_restores_bytes_and_mtime() {
         &["--patch", patch.to_str().unwrap(), "--", "cat", "src/x.ts"],
     );
 
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     // The command saw the patch…
     assert_eq!(String::from_utf8_lossy(&out.stdout), "const a = 2;\n");
     // …and the tree did not keep it.
@@ -108,10 +112,7 @@ fn a_probe_leaves_git_status_exactly_as_it_found_it() {
         String::from_utf8_lossy(&out.stdout).into_owned()
     };
     let before = status(&root);
-    let out = probe(
-        &root,
-        &["--patch", patch.to_str().unwrap(), "--", "true"],
-    );
+    let out = probe(&root, &["--patch", patch.to_str().unwrap(), "--", "true"]);
     assert!(out.status.success());
     assert_eq!(status(&root), before);
 }
@@ -136,11 +137,12 @@ fn pre_existing_uncommitted_work_survives_a_probe() {
 ",
     );
 
-    let out = probe(
-        &root,
-        &["--patch", patch.to_str().unwrap(), "--", "true"],
+    let out = probe(&root, &["--patch", patch.to_str().unwrap(), "--", "true"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
     );
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     assert_eq!(std::fs::read(&target).unwrap(), mine);
 }
 
@@ -170,7 +172,11 @@ fn a_file_the_patch_creates_is_gone_afterwards() {
         ],
     );
     // The command saw the created file…
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     // …and it is not there now.
     assert!(!created.exists());
 }
@@ -273,7 +279,11 @@ fn a_rename_riding_along_with_a_hunked_file_is_still_restored() {
         ],
     );
     // The command saw the renamed file…
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     // …and the rename was undone on the way out.
     assert!(
         root.join("src/keep.ts").exists(),
@@ -311,14 +321,14 @@ fn a_mode_only_change_is_restored() {
         .unwrap();
     let patch = write_patch(&root, &String::from_utf8_lossy(&out.stdout));
     git(&root, &["reset", "-q", "--hard"]);
-    std::fs::set_permissions(
-        &target,
-        std::fs::Permissions::from_mode(before),
-    )
-    .unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(before)).unwrap();
 
     let out = probe(&root, &["--patch", patch.to_str().unwrap(), "--", "true"]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert_eq!(
         std::fs::metadata(&target).unwrap().permissions().mode(),
         before,
@@ -346,6 +356,10 @@ fn an_extra_path_is_protected_even_when_the_command_writes_it() {
             "echo clobbered > src/other.ts",
         ],
     );
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert_eq!(std::fs::read_to_string(&other).unwrap(), "untouched\n");
 }

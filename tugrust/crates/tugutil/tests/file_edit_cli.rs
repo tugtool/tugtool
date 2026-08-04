@@ -76,7 +76,11 @@ fn a_literal_substitution_edits_the_file_and_reports_one_modified_op() {
         ],
     );
 
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert_eq!(
         std::fs::read_to_string(root.join("src/x.ts")).unwrap(),
         "const a = 2;\nconst b = 1;\n"
@@ -108,7 +112,14 @@ fn every_occurrence_goes_unless_count_bounds_it() {
     let out = edit(
         &root,
         &[
-            "--path", "src/x.ts", "--replace", "= 1;", "--with", "= 9;", "--count", "1",
+            "--path",
+            "src/x.ts",
+            "--replace",
+            "= 1;",
+            "--with",
+            "= 9;",
+            "--count",
+            "1",
         ],
     );
     assert!(out.status.success());
@@ -126,7 +137,14 @@ fn count_zero_is_refused_in_both_modes_rather_than_meaning_two_things() {
     for extra in [vec![], vec!["--regex"]] {
         let mut args = extra.clone();
         args.extend_from_slice(&[
-            "--path", "src/x.ts", "--replace", "= 1;", "--with", "= 9;", "--count", "0",
+            "--path",
+            "src/x.ts",
+            "--replace",
+            "= 1;",
+            "--with",
+            "= 9;",
+            "--count",
+            "0",
         ]);
         let out = edit(&root, &args);
         assert!(!out.status.success(), "--count 0 {extra:?} should refuse");
@@ -152,7 +170,11 @@ fn a_regex_substitution_supports_captures() {
             "let $1 = 2;",
         ],
     );
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert_eq!(
         std::fs::read_to_string(root.join("src/x.ts")).unwrap(),
         "let a = 2;\nlet b = 2;\n"
@@ -204,7 +226,11 @@ fn a_multi_file_diff_reports_one_op_per_file_that_actually_moved() {
     .unwrap();
 
     let out = edit(&root, &["--patch", patch.to_str().unwrap()]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let ops = receipt_ops(&out);
     assert_eq!(ops.len(), 2);
@@ -239,7 +265,11 @@ fn a_patch_creating_a_file_reports_it_as_created() {
     .unwrap();
 
     let out = edit(&root, &["--patch", patch.to_str().unwrap()]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let ops = receipt_ops(&out);
     assert_eq!(ops.len(), 1);
     assert_eq!(ops[0]["op"], "created");
@@ -288,13 +318,15 @@ fn the_patch_can_come_from_stdin() {
         .stdin
         .take()
         .unwrap()
-        .write_all(
-            b"--- a/src/y.ts\n+++ b/src/y.ts\n@@ -1 +1 @@\n-const c = 1;\n+const c = 2;\n",
-        )
+        .write_all(b"--- a/src/y.ts\n+++ b/src/y.ts\n@@ -1 +1 @@\n-const c = 1;\n+const c = 2;\n")
         .unwrap();
     let out = child.wait_with_output().unwrap();
 
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert_eq!(receipt_ops(&out).len(), 1);
     assert_eq!(
         std::fs::read_to_string(root.join("src/y.ts")).unwrap(),
