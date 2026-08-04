@@ -10,7 +10,7 @@
 |------|-------|
 | Owner | Ken Kocienda |
 | Status | draft |
-| Target branch | main (three separate dash passes; see #strategy) |
+| Target branch | main (four separate dash passes; see #strategy) |
 | Last updated | 2026-08-04 |
 
 ---
@@ -25,7 +25,8 @@ No interactivity is needed for any of this: `git add -p` is a prompting UI over 
 
 #### Strategy {#strategy}
 
-- Three parts, three dash passes, one plan. Each part ends at an integration-checkpoint step and is independently landable: **M01** (steps 1–5) claim/disclaim/polish; **M02** (steps 6–11) hunk-level selection and landing; **M03** (steps 12–16) span capture and hunk-aware SHARED.
+- Four parts, four dash passes, one plan. Each part ends at an integration-checkpoint step and is independently landable: **M01** (steps 1–5) claim/disclaim/polish; **M02** (steps 6–11) hunk-level selection and landing; **M02A** (steps 11a–11g) closing the loop on M02's audit findings; **M03** (steps 12–16) span capture and hunk-aware SHARED.
+- **M02A is a correction pass, not new capability.** A post-landing audit of M01+M02 (see #m02-audit) found the hunk-election UI inert end-to-end — the election is written to the ledger but stripped on the way back out — plus a missing guard on the invariant the whole feature rests on (wire hunk ids equal engine hunk ids), an [L26] mount-identity violation, and a set of smaller coherence defects. M02A lands before M03 because M03's contention verdict consumes the same hunk ids and adds two more readers of "this file's current hunks"; shipping M03 on an unguarded id contract multiplies the drift surface rather than fixing it.
 - Mechanics before attribution: M02 ships the hunk model, partial staging, and the hunk-picker UI with *manual* election (which alone softens SHARED pain — a shared file stops being all-or-nothing); M03 then makes the engine *know* whose hunks are whose.
 - Respect the existing doctrine at every step: proof decides, correlation suggests; degradation is always toward `unattributed` (visible, never falsely claimed); a dirty file is never invisible; spans **annotate**, `git diff` **decides** — the same two-layer split one level down.
 - Avoid the `changes.db` schema gate until it is truly needed: M01 and M02 are schema-free (new journal records, the free-form `changeset_drafts.selection` TEXT, additive wire fields). Only M03 bumps `CHANGES_SCHEMA_VERSION` to 2, with a purely additive new table.
@@ -41,6 +42,14 @@ No interactivity is needed for any of this: `git add -p` is a prompting UI over 
 - With spans captured, two sessions editing disjoint regions of one file show **no** SHARED badge and each session's default landing takes its own hunks; two sessions editing the same region still show SHARED (Rust test seeding two sessions' span rows).
 - `cargo nextest run` green, `bunx vite build` green, `just app-test-changed` green at each part's integration checkpoint.
 
+M02A adds:
+
+- A hunk election written from the Changes shade survives the server round trip: after clicking a hunk's checkbox, the box **stays** in the state the user left it and the row shows `N of M hunks` (hand-verified in the running app, since no app-test can reach a session-entry row — see #session-entry-wall; plus a Rust unit test asserting `hunks` survives the draft projection, which is the mechanism that was broken).
+- Landing a partial file from the shade produces a commit containing only the elected hunks (hand-verified end-to-end in the running app).
+- A Rust test crossing the wire/engine boundary asserts the hunk ids the deck receives are byte-identical to the ids the landing engine accepts, for the same repo state (`feeds/git.rs`).
+- The expanded diff of a file that crosses the one-hunk/two-hunk boundary while its row is open keeps its collapsed-hunk state and scroll position — no unmount ([L26]).
+- `cargo nextest run` green, `bun test` green, `bunx vite build` green, `just app-test-changed` green.
+
 #### Scope {#scope}
 
 1. Atomic batch claim (one journal record, all-or-nothing).
@@ -50,6 +59,7 @@ No interactivity is needed for any of this: `git add -p` is a prompting UI over 
 5. Hunk-level election in the draft selection, per-hunk checkboxes in the inline diff, partial staging in `commit`, wire plumbing (`changeset_commit.hunks`), `tugutil commit --hunks`.
 6. `tugutil file stage` (non-interactive index staging verb) and shell-route steering for interactive `-p` git invocations.
 7. `changes.file_event_spans` table (schema v2), span capture for exact tools and `tugutil file edit` receipts, hunk-aware SHARED in both readers, contested-hunk UI.
+8. **(M02A)** Opaque pass-through for the draft selection so `hunks` survives the wire projection; one canonical diff spelling for hunk identity plus the cross-boundary id test; the [L26] diff-body unification; election display reconciliation; diff-block CSS de-duplication; a disclaim storage-form spike.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -57,12 +67,12 @@ No interactivity is needed for any of this: `git add -p` is a prompting UI over 
 - No carry-forward re-minting of ledger rows for the un-landed remainder of a partial commit — deferred with rationale ([Q02], [P08]).
 - No span capture for `bash`/`turn` bracket rows or parsed `cmd` rows — correlation evidence stays whole-file ([Q03]).
 - No change to the dash-lane `tugutil dash join` path (`tugdash-core/src/ops.rs` `commit_worktree_dirt` stays `git add -A`); hunk election is a main-lane landing feature.
-- No "Disclaim all" bulk button (the wire takes `files[]`, so it is a later affordance, not a later protocol).
+- ~~No "Disclaim all" bulk button~~ — **superseded**: M01 shipped one at the user's request (`tug-changes-list.tsx`, `data-testid="tug-changes-list-disclaim-all"`). Recorded here rather than deleted so the change of mind is visible.
 - No line-level (sub-hunk) staging; hunks (with git's own splitting granularity) are the unit.
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- M02 steps depend on M01 only for repo state (no functional coupling); M03 depends on M02's hunk model (`tugchanges-core::hunks`) and hunk-id spec (Spec S02).
+- M02 steps depend on M01 only for repo state (no functional coupling); M02A depends on M02 having landed (it corrects it); M03 depends on M02's hunk model (`tugchanges-core::hunks`), the hunk-id spec (Spec S02), **and M02A's canonical diff spelling ([P16])** — M03's verdict fn needs "this file's current hunks" in two more readers, and it must use the same spelling or the ids it emits as `own_hunks`/`contested_hunks` will not match the ids the deck's checkboxes are keyed by.
 - The implementing session must rebuild all `tug*` binaries after M03's schema bump — an older binary on the machine loses shared-table write access by design (see #rollout).
 
 #### Constraints {#constraints}
@@ -122,6 +132,9 @@ No interactivity is needed for any of this: `git add -p` is a prompting UI over 
 | Anchor false positives mis-assigning a hunk (R03) | high | low | exact-content matching first, widen-to-file on any ambiguity ([P12]) | any observed wrong per-hunk ownership |
 | Dual-reader SHARED drift (R04) | med | med | extract the overlap decision into tugchanges-core, consumed by both ([P14]) | any new third reader |
 | Index-clean precondition trips on hand-staged work (R05) | low | low | typed refusal naming the staged paths; raw git is read-only by policy anyway | recurring refusals in practice |
+| Typed wire projections silently drop free-form fields (R06) | high | med | make the selection opaque ([P15]); a unit test asserts an unknown key survives the projection | any new field added to a "free-form" column |
+| Wire ids and engine ids diverge (R07) | high | med | one canonical diff spelling ([P16]) + a cross-boundary id test; drift refusal is the safety net, not the fix | any new reader of a file's current hunks (M03 adds two) |
+| Stale elections accumulate invisibly (R08) | med | high (today) | display reconciliation ([P18]); the engine's typed drift refusal stays the authority at land time | a user reports a landing refused for hunks they never elected |
 
 **Risk R01: Journal-format forward compatibility** {#r01-journal-compat}
 
@@ -134,6 +147,24 @@ No interactivity is needed for any of this: `git add -p` is a prompting UI over 
 - **Risk:** content-anchor matching assigns a hunk to the wrong session (e.g. two sessions inserted identical text).
 - **Mitigation:** identical insertions genuinely are contested — matching both sessions marks the hunk shared, which is the *correct* reading; any anchor that matches zero hunks or matches ambiguously widens that session's claim to the whole file ([P12]), reproducing today's file-level behavior. The failure direction is over-report of SHARED, never a false sole claim.
 - **Residual risk:** more SHARED badges than theoretically minimal; never fewer than correct.
+
+**Risk R06: A typed projection over a "free-form" column** {#r06-typed-projection}
+
+- **Risk:** `changeset_drafts.selection` is a free-form TEXT column, but the *outbound* wire projection deserializes it into a two-field Rust struct, so any key that struct does not name is dropped on the way to the deck. This already happened: M02's `hunks` field was written correctly and stripped on read, leaving the whole election UI inert (#m02-audit).
+- **Mitigation:** [P15] makes the projection opaque, so the column's freedom is real end to end. A unit test asserts an unknown key survives, which fails loudly if anyone re-types the field later.
+- **Residual risk:** the deck's `isOptionalDraftSelection` validator is now the only shape guard on the selection. That is the correct place for it (the deck is the only consumer that interprets the shape), but it means a malformed selection is caught at render, not at write.
+
+**Risk R07: Wire ids and engine ids diverge** {#r07-id-divergence}
+
+- **Risk:** hunk identity is a hash of the diff *body text*, so any difference in how the two sides invoke `git diff` — an external diff driver, a different context width, a different base — yields different ids for the same file. Every election then drifts and every partial landing refuses. M02 shipped with `--no-ext-diff` on the engine (`tugchanges-core/src/commit.rs`) and **not** on the wire (`tugcast/src/feeds/git.rs`), which is exactly this hazard half-mitigated, and with no test crossing the boundary.
+- **Mitigation:** [P16] gives both sides one shared flag list and one engine-side function; a Rust test in `feeds/git.rs` builds a real repo and asserts the two id lists are equal.
+- **Residual risk:** the two sides still differ in base (`HEAD` vs the index) and rename detection (`-M` vs none). Those agree only because partial staging requires a clean index and because created/renamed files are excluded from election ([P07]) — a real coupling, now written down in [P17] rather than left implicit.
+
+**Risk R08: Stale elections accumulate invisibly** {#r08-stale-elections}
+
+- **Risk:** an election names ids that no longer exist in the file (the user edited the hunk). Today the row renders every checkbox unchecked *and* a `N of M hunks` badge — an incoherent state the user cannot read. Because M02's writes persisted while the reads were stripped, live ledgers may already hold elections nobody has ever seen.
+- **Mitigation:** [P18] reconciles the persisted election against the current ids for display; the engine's `CommitError::HunkDrift` stays the authority at land time.
+- **Residual risk:** the deck still sends unreconciled ids on the commit (the controller has no access to the diff), so a stale election surfaces as a typed refusal rather than being silently corrected. That is the intended failure direction — refuse loudly, never land something the user did not elect.
 
 ---
 
@@ -256,6 +287,87 @@ No interactivity is needed for any of this: `git add -p` is a prompting UI over 
 
 **Rationale:** The file-level SHARED rule already exists twice ("they must stay in sync" is a standing hazard); the hunk-level rule is too intricate to hand-mirror. tugcast already depends on tugchanges-core (`shell_ops`, diff parsing), so the dependency direction exists.
 
+#### [P15] The draft selection is opaque on the wire (DECIDED) {#p15-opaque-selection}
+
+**Decision:** `ChangesetDraft.selection` (`tugrust/crates/tugcast-core/src/types.rs`) becomes `Option<serde_json::Value>`, and the `ChangesetDraftSelection` struct beside it is deleted. The deck's `changeset-types.ts` keeps the typed `ChangesetDraftSelection` interface and its `isOptionalDraftSelection` validator — the deck is the only consumer that interprets the shape.
+
+**Rationale:**
+- [P09] states the selection column is free-form and machine-global, and the *column* is: `parse_changeset_draft_set_payload` stores `value.get("selection")` as a verbatim `v.to_string()`, and `ChangesetDraftRow.selection` is an `Option<String>`. Only the outbound projection (`feeds/changeset.rs::draft_from_row`) narrows it, by deserializing into a struct naming exactly `include` and `exclude`. Serde ignores unknown fields, so `hunks` was written and then silently dropped.
+- **No Rust code reads `include` or `exclude`.** A grep across `tugrust/crates/` finds `ChangesetDraftSelection` only at its own definition and at the `ChangesetDraft.selection` field. The type buys nothing and costs the plan its extensibility premise.
+- An opaque `Value` makes the freedom real: M03 can add fields to the selection without another Rust edit, which is what [P09] promised.
+
+**Implications:**
+- `draft_from_row` becomes `serde_json::from_str::<serde_json::Value>(s).ok()`, preserving today's "a hand-mangled row reads as no overrides rather than poisoning the snapshot" guard.
+- Struct literals constructing `ChangesetDraft` in `tugcast-core/src/types.rs` tests need updating; `serde_json` is already a real (non-dev) dependency of `tugcast-core`, so no manifest change.
+- Nothing changes on the write path, on `changeset_drafts`, or on the deck's types. This is a wire-projection fix only.
+
+#### [P16] One canonical diff spelling for hunk identity (DECIDED) {#p16-canonical-diff-spelling}
+
+**Decision:** `tugchanges-core::hunks` owns both halves of the contract:
+- `pub const HUNK_DIFF_FLAGS: &[&str] = &["--no-color", "--no-ext-diff"];` — the flags every `git diff` whose output feeds hunk identity must carry, spliced in by both the async tugcast feed and the sync engine.
+- `pub fn file_hunks(repo_root: &Path, path: &str) -> Result<Vec<Hunk>, String>` — the engine-side spelling, one function, called by `commit.rs`'s partial branch and by the cross-boundary test.
+
+**Rationale:**
+- The two sides cannot share a function: `tugcast/src/feeds/git.rs` runs git through `tokio::process::Command` and `tugchanges-core` through `std::process::Command`. What they *can* share is the argument list and the parse, which is exactly where divergence bites.
+- An external diff driver (`diff.external`, or a `*.diff=driver` gitattribute) makes git emit text that is not a unified diff at all. [P07] identified this and put `--no-ext-diff` on the engine; the wire side never got it, so the id contract has been unguarded since M02 landed.
+- One shared const is auditable by grep; a test that crosses the boundary is auditable by running it. Both are cheaper than the drift refusal they prevent.
+
+**Implications:**
+- The three `git diff` invocations in `feeds/git.rs` — `run_git_diff_against`, `synthesize_untracked_diff`, and `fetch_git_diff` — all gain the shared flags.
+- `commit.rs`'s partial branch stops spelling its own `git diff` and calls `file_hunks`.
+- The cross-boundary test lives in `feeds/git.rs` (tugcast depends on tugchanges-core, not the reverse).
+
+#### [P17] Context width is machine-relative; base and rename detection are not part of the id contract (DECIDED) {#p17-id-contract-boundaries}
+
+**Decision:** hunk ids are **not** pinned to `-U3`. Both sides inherit the machine's `diff.context`, and the id contract is "same machine, same config, same moment" — not "same everywhere". The wire's `-M` and `HEAD` base and the engine's rename-free index base are likewise left as they are, and the reason they agree is documented rather than enforced.
+
+**Rationale:**
+- Both readers run on one machine and read one git config, so they always agree with each other, which is the only agreement the contract needs. Forcing `-U3` would also silently change what the diff card renders for anyone who has set `diff.context`.
+- `git diff HEAD` (wire) and `git diff` (engine) are identical exactly when the index is clean, which partial staging already requires ([P07]).
+- `-M` only changes how a *rename* is presented, and renames never carry an election: an unstaged rename surfaces as Deleted-plus-Added, and a created file gets no ids at all ([P07]); a staged rename means a dirty index, which the landing refuses.
+
+**Implications:**
+- If `diff.context` changes between the deck rendering ids and the user landing, the elections drift and the landing refuses — the designed failure, not a bug.
+- `-c core.quotepath=false` (wire only) affects header path spelling, never body lines, so it cannot move an id. `filtered_patch` emits the engine's own header, so the patch stays self-consistent.
+- These three facts belong in the `hunks.rs` module doc, where the next reader of the id rule will look.
+
+#### [P18] The deck reconciles elections for display; the engine decides at land time (DECIDED) {#p18-display-reconciliation}
+
+**Decision:** the diff body intersects the persisted election with the file's current ids before rendering. An election whose intersection is empty renders as whole-file (every box checked). The controller's `commit()` keeps sending the persisted election unreconciled, and `CommitError::HunkDrift` remains the authority.
+
+**Rationale:**
+- The two-layer split this plan already uses one level down: the view suggests, the engine decides. The controller has no access to the diff (it lives in the per-entry `GitDiffStore`), so reconciliation is only possible where the ids are — in the component.
+- Without it a stale election renders every checkbox unchecked *beside* a `2 of 3 hunks` badge, and the "can't uncheck the last hunk" guard never engages because nothing is checked.
+- Reconciling for display but not for the wire is deliberate: silently dropping stale ids from a landing would land something the user did not elect. A loud typed refusal naming the path and ids is the better failure.
+
+**Implications:**
+- The reconciled count feeds the `N of M hunks` badge, so the badge and the checkboxes can no longer disagree.
+- `EntryFiles` currently computes `partial` from the raw `hunkElection` map; that computation moves to the reconciled set.
+
+#### [P19] One diff-body component (DECIDED) {#p19-one-diff-body}
+
+**Decision:** `fileBlockBody` returns a single `FileDiffBody` component for every non-notice case. It calls `useResponderForm` unconditionally and passes `renderHunkAffordance` only when there is something to elect. `HunkElectionDiff` is deleted.
+
+**Rationale:**
+- M02 shipped two component types swapped on `election !== undefined && (file.hunks?.length ?? 0) > 1`. That predicate moves at runtime — edit a one-hunk file into two while its row is open and the aggregate recomposes — and swapping which component the parent renders is precisely the [L26] failure: the open diff unmounts, taking its collapsed-hunk set, view mode, and scroll with it.
+- [L26] prescribes the fix in its own words: "write one component that branches internally on phase."
+
+**Implications:**
+- The notice branches (`error` / `loading` / `no diff` / `binary`) keep returning `<p>` elements. Those are genuinely different entities and predate this plan.
+- Hooks must be unconditional, which is why the branch moves inside the component rather than staying at the call site.
+
+#### [P20] Session-entry affordances are hand-verified, not app-tested (DECIDED) {#p20-hand-verification}
+
+**Decision:** the hunk-election checkbox, the partial landing, and the `N of M hunks` badge are verified by a scripted manual pass in the running debug app, recorded as an explicit checklist in #step-11g. No app-test is written for them.
+
+**Rationale:**
+- A session-entry row requires the ledger to hold live proof rows for a session id the harness owns, and `app.bindSession` is a synthetic client-side binding the ledger knows nothing about. at0332 and at0253 already record this wall; at0333 works only because it drives an *unattributed* row.
+- Writing an app-test that cannot reach the affordance, or faking a ledger session to make it reachable, would both be worse than an honest manual checklist — the first is theatre, the second tests a fixture instead of the product.
+
+**Implications:**
+- The mechanism that broke (the wire projection) gets a Rust unit test, so the *class* of failure is guarded even though the surface is not.
+- If the harness later grows a way to seed real ledger sessions, this decision should be revisited and the checklist promoted to an app-test.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -281,6 +393,44 @@ Existing patch machinery to reuse: `tugutil/src/commands/file_probe.rs` — `git
 #### Hunk-aware read side (M03 sketch) {#hunk-read-side}
 
 `tugchanges-core/src/changes.rs::compute_changes` classifies each dirty path from live rows (`ledger.rs`: `PROOF_ORIGINS = ["exact","replay","claim","cmd"]`; `foreign_proof_sessions_for_path` = canonical-root match + `max_proof_at >= min_live_at_ms`); `shared = !foreign_proof.is_empty()`. tugcast `feeds/changeset.rs` composes the aggregate with its own `proof_owners: HashMap<path, HashSet<session>>` and marks `file.shared = true` when `len() > 1`. M03 inserts one step in both: when a path has ≥2 proof owners, load spans for the live rows, parse the path's current hunks (M02's module), call the shared tugchanges-core verdict fn ([P14]), and emit per-owner hunk sets alongside the boolean. The wire `ChangesetFile` (deck `lib/changeset-types.ts`) gains optional `own_hunks?: string[]` / `contested_hunks?: string[]` — additive, absent means file-level.
+
+#### M02 post-landing audit — findings and evidence {#m02-audit}
+
+M01 (`818968a18`) and M02 (`2d61f429f`) were audited against the tuglaws and the real code after landing. M01 came back sound. M02's engine, CLI, and wire are sound; its deck path is not. The findings below are what M02A fixes, each with the evidence that established it, so a cold reader can confirm rather than trust.
+
+**F1 — the election never reaches the deck (blocking).** `changeset_draft_set` stores the selection verbatim (`parse_changeset_draft_set_payload` does `Some(v.to_string())`; `ChangesetDraftRow.selection` is `Option<String>`), so the write is correct and `hunks` is in the ledger. The read-back is not: `feeds/changeset.rs::draft_from_row` deserializes into `tugcast_core::ChangesetDraftSelection`, a struct with exactly `include` and `exclude`, and serde drops unknown fields. Proven with a throwaway test on the real type: `{"include":["a.rs"],"exclude":[],"hunks":{"f.txt":["abc…"]}}` deserializes and re-serializes as `{"include":["a.rs"],"exclude":[]}`. Consequences: `ChangesRouteController.hunkElection()` always returns `{}`; every checkbox renders checked and snaps back after a click (a resting lie); the `N of M hunks` badge never appears; `commit()` never sends `hunks`. **The `HunkElectionDiff` render path has never executed — not in any test, not in the app.** Fixed by [P15] / #step-11a.
+
+**F2 — nothing pins wire ids to engine ids.** The feed test asserts the feed's ids equal `parse_hunks` of the same text (near-tautological); `commit.rs`'s tests compute ids from their own `git diff`. No test crosses the boundary, and the boundary is the entire contract. Fixed by [P16] / #step-11b.
+
+**F3 — `--no-ext-diff` is half-applied.** [P07] reasoned that an external diff driver "would break both the patch and id agreement with the wire's ids", then the flag landed only on `commit.rs`. `feeds/git.rs` runs `-c core.quotepath=false diff --no-color -M HEAD` with no `--no-ext-diff`, at all three call sites. Fixed by [P16] / #step-11b.
+
+**F4 — [L26] mount-identity violation.** `fileBlockBody` returns `<HunkElectionDiff>` or `<DiffBlock>` on a predicate that moves at runtime. Fixed by [P19] / #step-11c.
+
+**F5 — no display reconciliation for stale elections.** Fixed by [P18] / #step-11d.
+
+**F6 — dead code asserting a hazard that does not exist.** `diff-block.tsx` wraps the affordance in a span carrying `onClick={(event) => event.stopPropagation()}` with a comment claiming a click "must never also fold the hunk behind it". The hunk cue's handler is on a *sibling* element, not an ancestor, and `TugCheckbox` dispatches through the responder chain rather than DOM bubbling — so the handler is unreachable and the comment describes nothing. Delete both. #step-11d.
+
+**F7 — a `useMemo` that never memoizes.** `HunkElectionDiff`'s toggle-bindings memo lists `[ids, elected, election, senderId]`, and both `elected` (a fresh `Set`) and `election` (a fresh object literal from `EntryFiles`) change every render. It is free — `useResponderForm` reads bindings through a ref (`bindingsRef.current = bindings` on every render), so churn costs nothing and no closure goes stale. But the code is correct *because* the memo fails: stabilizing those deps would freeze the closures over an old `elected` and break toggling. Drop the memo. #step-11d.
+
+**F8 — the disabled last checkbox is unexplained.** Note `TugCheckboxProps` declares no `title`; hyphenated JSX attributes such as `data-testid` bypass TypeScript's excess-property check, but `title` would not. Put the tooltip on the wrapping `.tugx-diff-hunk-affordance` span rather than widening the shared component. #step-11d.
+
+**F9 — the sticky pin chain is duplicated.** `diff-block.css` now carries the same three-term `calc(var(--tugx-pin-stack-top,0px) + var(--tugx-block-header-height,0px) + var(--tugx-diff-header-height,0px))` twice, on `.tugx-diff-hunk-header` and on `.tugx-diff-hunk-lead`. #step-11e.
+
+**F10 — the band hardcodes TugCue's surface.** `.tugx-diff-hunk-lead` sets `background: var(--tug7-surface-global-primary-normal-sunken-rest)`, which is the value `TugCue`'s `muted` role resolves to. Not a literal [L20] breach (it names no `--tugx-cue-*` token) but the same coupling by another route: retint the cue and the band splits down the middle. #step-11e.
+
+**F11 — disclaim matches one storage form (unconfirmed).** `disclaim_file_ownership_sql` deletes on `file_path IN (…)` using `repo_relative_key`-mapped paths, while `file_events.file_path` has historically held several spellings — `feeds/changeset.rs` carries an opportunistic lazy backfill (`backfill_file_events_repo_relative`, guarded by `backfill_marker`) precisely because of that. The backfill probably makes disclaim correct in practice, and M01's tests seed via claim, which writes the new form — so no test would notice if it were not. This is a spike, not a known defect: #step-11f.
+
+Two things the audit checked and found clean, recorded so M02A does not re-litigate them: M01's batch claim is genuinely atomic (one `fe_batch` record, one explicit `unchecked_transaction` around N `insert_file_event` calls, per-row `ON CONFLICT DO NOTHING` preserved, and `record_file_events_replays_from_the_journal_after_destruction` proves replay does not nest transactions); and `bun run audit:tokens lint` reports zero violations, so M02 introduced no [L16] or [L17] debt.
+
+#### Why the session-entry affordance is not app-testable {#session-entry-wall}
+
+The hunk-election controls render only on `entry.kind === "session"` rows. A session entry exists only when the ledger holds live proof rows for that session id, and the app-test harness's `app.bindSession` is a synthetic client-side binding the ledger knows nothing about — so the shade shows the project's *unattributed* bucket and never a session entry. at0332 records this wall for claim/disclaim and at0253 for the commit round trip; at0333 passes only because it drives an unattributed row, where ids are served but no affordance renders.
+
+This is why [P20] accepts a manual checklist for the affordance itself while insisting the *mechanism* that broke (the wire projection) gets a unit test. The lesson from F1 is not "write more app-tests" — it is that "this path is untestable" must trigger a hand-verification, not a note in a docblock.
+
+#### The landing gesture's path to `hunks` {#landing-path}
+
+Recorded because it is easy to re-derive wrongly. The Session card's `/commit` resolves through `commit-mode-controller.ts`, which calls `changesController.commit(text)` — the `ChangesRouteController` method that assembles `hunks` from the election and forwards it to `ChangesetVerbStore.commit`. There is no second path that reaches the verb store directly, so fixing F1 is sufficient to make partial landing reachable from the UI; no additional plumbing is needed.
 
 ---
 
@@ -318,6 +468,20 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 
 `TUG-FILE-RECEIPT` ops gain an optional additive field: `{"op":"modified","path":"/abs/x.ts","hunks":["<hunk id>", …]}` — the [P06] ids of the hunks `tugutil file edit --patch` actually applied. The relay's `parse_receipt_line` (`tugcast/src/feeds/attribution.rs`, which already ignores unknown fields) learns to read it and mint `kind='hunk'` span rows alongside the `cmd` file event. `tugutil file edit --replace` computes the resulting hunk post-substitution the same way.
 
+**Spec S06: The hunk-identity agreement contract** {#s06-id-agreement}
+
+Two independent readers must produce byte-identical hunk ids for the same repo state, or every election drifts:
+
+1. **The wire** — `tugcast/src/feeds/git.rs`, async, `-c core.quotepath=false diff --no-color -M HEAD` (plus `--no-index` for the untracked synthesis), parsed by `parse_git_diff` → `tugchanges_core::parse_hunks`.
+2. **The engine** — `tugchanges-core/src/commit.rs`, sync, `diff --no-color --no-ext-diff -- <path>`, parsed by `parse_hunks`.
+
+The contract, after [P16] and [P17]:
+
+- Both MUST carry every flag in `tugchanges_core::hunks::HUNK_DIFF_FLAGS` (`--no-color`, `--no-ext-diff`). An external diff driver emits text that is not a unified diff, so this is not a nicety.
+- Neither may pass `-U<n>`. Context width is inherited from the machine's `diff.context` and is therefore equal on both sides ([P17]).
+- Differences that provably cannot move an id, and are therefore allowed: `-c core.quotepath=false` (header path spelling only), `-M` (rename *presentation*; renames never carry elections), and `HEAD` vs the index as base (equal whenever the index is clean, which partial staging requires).
+- The agreement is verified by a test that builds a real repo, dirties a file into ≥2 hunks, and asserts the two id lists are equal element-for-element.
+
 #### State Zone Mapping (tugdeck/tugways) {#state-zone-mapping}
 
 | State | Zone | Mechanism | Law |
@@ -326,6 +490,8 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 | Hunk checkbox elections | external (durable) | written to the draft selection via the existing draft write path on every toggle settle; read back through the changeset feed's draft snapshot | [L02] |
 | Metadata divider, icon swap | appearance | CSS + JSX structure only | [L06] |
 | Contested-hunk marking in the diff | appearance | CSS classes on hunk rows driven by server-supplied ids | [L06] |
+| Reconciled election (persisted ∩ current ids) | local data, derived | computed in `FileDiffBody` from props each render — no store, no `useState`; the persisted election stays the single source and the diff store supplies the ids ([P18]) | [L24], [L02] |
+| Diff-body mount identity across the 1↔2-hunk boundary | structure | one component type branching internally; never two swapped at the call site ([P19]) | [L26] |
 
 ---
 
@@ -366,6 +532,10 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 | span capture in `PendingCall`/`into_row` path | Rust | `tugcast/src/feeds/attribution.rs` | [P11] anchors from tool input |
 | overlap verdict fn (`classify_contention` or similar) | Rust | `tugchanges-core` | [P14], consumed by `changes.rs` + tugcast `feeds/changeset.rs` |
 | interactive-staging detection | TS | deck shell-routing layer (beside `lib/shell-line-classifier.ts` / the prompt-entry submit routing) | [P13] |
+| `HUNK_DIFF_FLAGS`, `file_hunks` | const/fn | `tugchanges-core/src/hunks.rs` | [P16], Spec S06 |
+| `ChangesetDraft.selection` → `Option<serde_json::Value>`; delete `ChangesetDraftSelection` | field/struct | `tugcast-core/src/types.rs` | [P15] |
+| `FileDiffBody` (replaces `HunkElectionDiff`) | TSX | `tugdeck/src/components/tugways/tug-changes-list.tsx` | [P18], [P19] |
+| `--tugx-diff-hunk-pin-top` | CSS custom property | `tugdeck/src/components/tugways/body-kinds/diff-block.css` | F9 (#m02-audit) |
 
 ---
 
@@ -373,6 +543,8 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 
 - [ ] `tuglaws/tracking-changes.md`: add Disclaim to the origins/consumers tables; document span capture, [P12] widening, and the hunk-level SHARED rule; note the partial-commit liveness consequence ([P08]).
 - [ ] `tuglaws/design-decisions.md`: candidate global promotions after the plan lands (disclaim semantics; hunk-identity rule) — user's call at landing time.
+- [ ] **(M02A)** `tugchanges-core/src/hunks.rs` module doc: state Spec S06's agreement contract where the next reader of the id rule will look — the shared flags, the no-`-U<n>` rule, and the three differences that provably cannot move an id.
+- [ ] **(M02A)** `tuglaws/tracking-changes.md` §"Below the file: hunk election": add a sentence that the elections ride the draft selection as opaque JSON and that the wire projection must not narrow it ([P15]).
 
 ---
 
@@ -390,6 +562,8 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 #### What stays out of tests {#test-non-goals}
 
 - No jsdom/mock-store render tests — banned pattern; deck behavior is covered by app-tests driving the real app.
+- **(M02A)** No app-test for the hunk-election checkbox, the partial landing, or the `N of M hunks` badge — a session-entry row is not reachable from the harness (#session-entry-wall). Covered by the hand-verification checklist in #step-11g per [P20], with the mechanism that failed (the wire projection) covered by a Rust unit test in #step-11a.
+- **(M02A)** No test that asserts a `git diff` invocation "contains the right flags" by inspecting an argument vector — it would pass while the ids still diverged. The cross-boundary id test (Spec S06) proves the thing that matters instead.
 - No full app-test corpus runs — selection is derived (`just app-test-changed`); core tier only if an unscopeable surface is touched.
 - No tests of git's own `apply` semantics — we test our filtered-patch construction and refusal paths, trusting git on application.
 
@@ -397,9 +571,9 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 
 ### Execution Steps {#execution-steps}
 
-> **Commit after all checkpoints pass.** Steps 1–5 are dash pass 1 (Milestone M01), 6–11 dash pass 2 (M02), 12–16 dash pass 3 (M03).
+> **Commit after all checkpoints pass.** Steps 1–5 are dash pass 1 (Milestone M01), 6–11 dash pass 2 (M02), 11a–11g dash pass 3 (M02A), 12–16 dash pass 4 (M03).
 
-**Milestone M01: Claim/Disclaim/Polish** {#m01-claim-disclaim-polish} · **Milestone M02: Hunk-level landing** {#m02-hunk-landing} · **Milestone M03: Spans + hunk-aware SHARED** {#m03-spans-shared}
+**Milestone M01: Claim/Disclaim/Polish** {#m01-claim-disclaim-polish} · **Milestone M02: Hunk-level landing** {#m02-hunk-landing} · **Milestone M02A: Close the loop on M02** {#m02a-close-the-loop} · **Milestone M03: Spans + hunk-aware SHARED** {#m03-spans-shared}
 
 #### Step Status Ledger {#step-status-ledger}
 
@@ -416,6 +590,13 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 | #step-9 | Hunk election UI + draft selection | done | 65eaadd23 |
 | #step-10 | file stage verb + shell steering | done | eca819ad5 |
 | #step-11 | M02 integration checkpoint | done | 92d3cd2e3 |
+| #step-11a | Carry the election through the draft projection | pending | — |
+| #step-11b | One diff spelling for hunk identity | pending | — |
+| #step-11c | One diff-body component | pending | — |
+| #step-11d | Election reconciliation + control affordances | pending | — |
+| #step-11e | Diff-block CSS de-duplication | pending | — |
+| #step-11f | Disclaim storage-form spike | pending | — |
+| #step-11g | M02A integration checkpoint | pending | — |
 | #step-12 | Schema v2: spans table | pending | — |
 | #step-13 | Span capture | pending | — |
 | #step-14 | Hunk-aware contention verdict | pending | — |
@@ -669,6 +850,187 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 
 ---
 
+#### Step 11a: Carry the election through the draft projection {#step-11a}
+
+**Depends on:** #step-11
+
+**Commit:** `tugcast(changes-rework): the draft selection is opaque on the wire`
+
+**References:** [P15] Opaque selection, [P09] Selection hunks, Risk R06, (#m02-audit) F1, (#landing-path)
+
+**Artifacts:** `ChangesetDraft.selection` as `Option<serde_json::Value>`; `ChangesetDraftSelection` deleted; a projection round-trip test.
+
+**Tasks:**
+- [ ] In `tugrust/crates/tugcast-core/src/types.rs`: change `ChangesetDraft.selection` to `Option<serde_json::Value>` (keep `#[serde(default, skip_serializing_if = "Option::is_none")]`) and delete the `ChangesetDraftSelection` struct. `serde_json` is already a real dependency of `tugcast-core` — no manifest change.
+- [ ] In `tugrust/crates/tugcast/src/feeds/changeset.rs::draft_from_row`: deserialize into `serde_json::Value`. Keep the existing `.ok()` so a hand-mangled row still reads as no overrides rather than poisoning the snapshot; keep the comment saying so.
+- [ ] Fix the `ChangesetDraft` struct literals in `tugcast-core/src/types.rs`'s tests that the field-type change breaks.
+- [ ] Confirm no other Rust reader is affected: a grep for `ChangesetDraftSelection` across `tugrust/crates/` should come back empty afterwards, and nothing reads `.include` / `.exclude` in Rust today.
+- [ ] Leave the deck untouched — `changeset-types.ts` keeps the typed interface and `isOptionalDraftSelection`, which is the correct home for the shape guard.
+
+**Tests:**
+- [ ] Rust unit (in `tugcast-core/src/types.rs`, beside the existing `ChangesetDraft` serde tests): a selection JSON carrying `include`, `exclude`, **and** an unknown key survives the projection with the unknown key intact. Name it for the invariant, not the field — this test exists to catch anyone re-narrowing the projection, which is how F1 happened.
+- [ ] Rust unit: a malformed selection string still projects to `None`.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast -p tugcast-core`
+- [ ] `cd tugdeck && bunx tsc --noEmit`
+
+---
+
+#### Step 11b: One diff spelling for hunk identity {#step-11b}
+
+**Depends on:** #step-11
+
+**Commit:** `tugchanges-core(changes-rework): one diff spelling for hunk identity, pinned by a cross-boundary test`
+
+**References:** [P16] Canonical diff spelling, [P17] Id contract boundaries, [P06] Hunk identity, Spec S06, Risk R07, (#m02-audit) F2 F3
+
+**Artifacts:** `HUNK_DIFF_FLAGS`, `file_hunks` in `tugchanges-core/src/hunks.rs`; `feeds/git.rs` carrying the shared flags; the cross-boundary id test.
+
+**Tasks:**
+- [ ] Add to `tugrust/crates/tugchanges-core/src/hunks.rs`: `pub const HUNK_DIFF_FLAGS: &[&str] = &["--no-color", "--no-ext-diff"];` and `pub fn file_hunks(repo_root: &Path, path: &str) -> Result<Vec<Hunk>, String>` running `git diff <HUNK_DIFF_FLAGS> -- <path>` through the existing `git::git_stdout` and parsing with `parse_hunks`. Re-export both from `lib.rs` beside the existing `hunks` exports.
+- [ ] Record Spec S06's contract in the `hunks.rs` module doc: the shared flags, the no-`-U<n>` rule ([P17]), and the three differences that provably cannot move an id.
+- [ ] In `tugrust/crates/tugcast/src/feeds/git.rs`, splice `HUNK_DIFF_FLAGS` into all three `git diff` invocations — `run_git_diff_against`, `synthesize_untracked_diff`, and `fetch_git_diff`. They currently pass `--no-color` by hand and no `--no-ext-diff`.
+- [ ] In `tugrust/crates/tugchanges-core/src/commit.rs`, replace the partial branch's hand-spelled `git diff --no-color --no-ext-diff -- <path>` + `parse_hunks` pair with a call to `file_hunks`.
+
+**Tests:**
+- [ ] Rust integration in `feeds/git.rs` (Spec S06): build a real repo, commit a file, dirty it in two well-separated regions so git emits ≥2 hunks, then compare the wire's ids (`fetch_git_diff_with_untracked` → `parse_git_diff` → `.hunks`) against the engine's (`tugchanges_core::file_hunks` → ids) and assert element-for-element equality. Note for the author: edits ~60 lines apart are needed — git merges hunks whose gap is within twice the context width, and 30-line separation was empirically not enough during M02.
+- [ ] Rust unit: `file_hunks` on a path with no changes returns an empty vec rather than erroring.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugchanges-core -p tugcast`
+
+---
+
+#### Step 11c: One diff-body component {#step-11c}
+
+**Depends on:** #step-11a
+
+**Commit:** `tugdeck(changes-rework): one diff-body component — stable mount identity across the hunk-count boundary`
+
+**References:** [P19] One diff body, [L26] Mount identity, State Zone Mapping (#state-zone-mapping), (#m02-audit) F4
+
+**Artifacts:** `FileDiffBody` replacing `HunkElectionDiff` in `tug-changes-list.tsx`.
+
+**Tasks:**
+- [ ] In `tugdeck/src/components/tugways/tug-changes-list.tsx`, replace `HunkElectionDiff` with `FileDiffBody`, taking the same `{ file, election? }` props. It calls `useResponderForm` unconditionally (hooks may not be conditional) and passes `renderHunkAffordance` to `DiffBlock` only when `election !== undefined && ids.length > 1`.
+- [ ] Collapse `fileBlockBody`'s two returns into one `<FileDiffBody file={file} election={election} />` so the diff case renders a single component type regardless of hunk count. Leave the `error` / `loading` / `no diff` / `binary` branches returning `<p>` — those are genuinely different entities and predate this plan.
+- [ ] Verify the [L26] triple by inspection and say so in the commit body: **key** (the row keys by `file.path`, unchanged), **component type** (now one), **renderer reference** (`fileBlockBody` is a plain function inlined at the call site, not a renderer map — no lambda-identity hazard).
+- [ ] Keep the `ResponderScope` + `responderRef` wrapper `<div>` unstyled and confirm it does not disturb the diff's sticky pin chain (the pin's containing block is `.tugx-diff-hunk`, which is unaffected by an ancestor static div).
+
+**Tests:**
+- [ ] Extend `tests/app-test/at0333-changes-hunk-ids.test.ts`: with the file's row expanded, collapse one hunk band, then rewrite the file so its hunk count changes, wait for the re-composed diff, and assert the collapsed band is **still collapsed** and the diff's `data-slot="diff-body"` element is the same node (capture it via a marker attribute set before the transition). This is reachable on an unattributed row — it exercises mount identity, not the election.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit`
+- [ ] `cd tugdeck && bunx vite build`
+- [ ] `just app-test-changed`
+
+---
+
+#### Step 11d: Election reconciliation + control affordances {#step-11d}
+
+**Depends on:** #step-11c
+
+**Commit:** `tugdeck(changes-rework): reconcile stale hunk elections for display; drop dead affordance code`
+
+**References:** [P18] Display reconciliation, Risk R08, (#m02-audit) F5 F6 F7 F8
+
+**Artifacts:** reconciled election in `FileDiffBody`; `partial` derived from the reconciled set; three deletions.
+
+**Tasks:**
+- [ ] In `FileDiffBody`, intersect the persisted election with the file's current ids before rendering: `elected = election.elected === null ? ids : election.elected.filter((id) => ids.includes(id))`, and treat an empty result as whole-file (every box checked). This kills the "every box unchecked beside a `2 of 3 hunks` badge" state.
+- [ ] Move the `partial` computation out of `EntryFiles` (where it reads the raw `hunkElection` map against `diffFile.hunks.length`) so the badge and the checkboxes are derived from the same reconciled set and cannot disagree. `EntryFiles` currently computes it inline just above the `<ChangesFileRow>` return; the row still takes `partial` as a prop.
+- [ ] Leave `ChangesRouteController.commit()` sending the **unreconciled** persisted election — [P18]'s deliberate split. Add a one-line comment there saying the engine's `CommitError::HunkDrift` is the authority, so a future reader does not "fix" it into silently dropping ids.
+- [ ] Delete the `onClick={(event) => event.stopPropagation()}` and its comment from the `.tugx-diff-hunk-affordance` span in `diff-block.tsx` (F6 — the cue's handler is a sibling and `TugCheckbox` dispatches through the responder chain).
+- [ ] Delete the toggle-bindings `useMemo` (F7); build the bindings object plainly. `useResponderForm` reads them through a ref, so there is nothing to memoize and the memo's failure was load-bearing.
+- [ ] Put a `title` explaining why the sole remaining hunk cannot be unchecked on the wrapping `.tugx-diff-hunk-affordance` span, not on `TugCheckbox` — `TugCheckboxProps` declares no `title`, and widening a shared component for one caller is the wrong trade (F8).
+
+**Tests:**
+- [ ] Pure-logic `bun:test` for the reconciliation rule as a standalone exported function over `(ids, persistedElection)` → `{ elected, partial }`: no drift, partial drift, total drift, and the `null` (whole-file) case. Export it from `tug-changes-list.tsx` so the test needs no DOM.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test src/lib/__tests__/ && bunx tsc --noEmit`
+- [ ] `cd tugdeck && bunx vite build`
+- [ ] `just app-test-changed`
+
+---
+
+#### Step 11e: Diff-block CSS de-duplication {#step-11e}
+
+**Depends on:** #step-11c
+
+**Commit:** `tugdeck(changes-rework): one pin chain, one band surface in the diff hunk header`
+
+**References:** [L20] Token scoping, (#m02-audit) F9 F10
+
+**Tasks:**
+- [ ] In `tugdeck/src/components/tugways/body-kinds/diff-block.css`, hoist the duplicated three-term sticky `calc()` into a single custom property (e.g. `--tugx-diff-hunk-pin-top`) declared once on `.tugx-diff-hunk`, and have both `.tugx-diff-hunk-header` and `.tugx-diff-hunk-lead` reference it. Keep the existing explanatory comment on the definition, not on both uses.
+- [ ] Stop `.tugx-diff-hunk-lead` hardcoding `var(--tug7-surface-global-primary-normal-sunken-rest)`. The band exists to be visually continuous with the `TugCue` inside it, so make that relationship explicit: either give the band `background: transparent` and let the cue paint the whole row (preferred if the cue can be made to fill the band), or declare a `--tugx-diff-hunk-band-bg` alias on the diff-block side with a comment naming the cue's muted role as the value it must track. Do not reference `--tugx-cue-*` — that would be a real [L20] breach.
+- [ ] Re-run the token lint; it was zero-violation before this step and must stay so.
+
+**Tests:**
+- [ ] None beyond the checkpoint — this is appearance-only, and the app-test corpus already renders diffs on every changes-card suite.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun run audit:tokens lint` (zero violations)
+- [ ] `cd tugdeck && bunx vite build`
+- [ ] `just app-test-changed`
+
+---
+
+#### Step 11f: Disclaim storage-form spike {#step-11f}
+
+**Depends on:** #step-11
+
+**Commit:** `tugcast(changes-rework): pin disclaim against legacy file_path storage forms`
+
+**References:** [P02] Disclaim semantics, (#m02-audit) F11, (#claim-flow)
+
+**Tasks:**
+- [ ] **Spike first, fix only if it fails.** Add a ledger test that seeds a `file_events` row whose `file_path` is in the legacy *absolute* form for a session, then calls `SessionLedger::disclaim_file_ownership` with the repo-relative key, and asserts the row is gone. M01's existing tests seed via claim, which writes the repo-relative form, so none of them would catch an under-delete.
+- [ ] If the test passes, keep it as a drift guard and stop — the opportunistic lazy backfill (`backfill_file_events_repo_relative`, guarded by `backfill_marker` in `feeds/changeset.rs`) is doing the work and the test now says so.
+- [ ] If it fails, extend `disclaim_file_ownership_sql` to match the same set of spellings the read side reconciles, and mirror the change into `sever_file_ownership_sql` if it has the same gap — [L27]'s "fix the class, not the instance" applies to SQL predicates too.
+- [ ] While in the file: the disclaim SQL mixes numbered (`?1`, `?2`) and anonymous (`?`) placeholders. It is correct — SQLite numbers an anonymous parameter one past the highest assigned — but it is correct by a rule nobody reading it will recall. Renumber the `IN` placeholders explicitly (`?3`, `?4`, …) or convert the whole statement to anonymous.
+
+**Tests:**
+- [ ] The seeded legacy-form disclaim test above (kept either way).
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast`
+
+---
+
+#### Step 11g: M02A integration checkpoint {#step-11g}
+
+**Depends on:** #step-11a, #step-11b, #step-11c, #step-11d, #step-11e, #step-11f
+
+**Commit:** `N/A (verification only)`
+
+**References:** Milestone M02A, [P20] Hand verification, (#success-criteria), (#session-entry-wall)
+
+**Tasks:**
+- [ ] Build and launch a debug instance from the dash worktree (`just app-debug`) and walk the hand-verification checklist below. This is the only coverage the session-entry affordance gets ([P20]) — run it deliberately, not as a glance.
+- [ ] **HV1 — the election settles.** In a real session with attributed files, open the Changes shade, expand a file with ≥2 hunks, uncheck one. The box **stays** unchecked. Reload the card (Maker ▸ Reload) and it is still unchecked.
+- [ ] **HV2 — the row tells the truth.** That row shows `N of M hunks` with N matching the boxes.
+- [ ] **HV3 — the last hunk is protected.** Uncheck down to one; the remaining box is disabled and its tooltip says why.
+- [ ] **HV4 — the partial landing works.** Land from the shade. `git show HEAD` contains only the elected hunk; `git status` still shows the file dirty with the remainder; the receipt row appears in the transcript.
+- [ ] **HV5 — drift refuses honestly.** Elect a hunk, edit that hunk's content in the editor, then land. The refusal names the path and reads `hunk drift:` — it does not land a partial commit and does not leave anything staged (`git diff --cached` empty).
+- [ ] **HV6 — whole-file is still whole.** A file with every hunk checked lands whole and writes no `hunks` on the wire (confirm via the dev log or by the commit's content).
+- [ ] Record the checklist outcome in the dash round's summary so the verification is durable, not just remembered.
+- [ ] Land the #documentation-plan items marked (M02A).
+
+**Tests:**
+- [ ] `cd tugrust && cargo nextest run`
+- [ ] `cd tugdeck && bun test`
+- [ ] `cd tugdeck && bunx vite build`
+- [ ] `just app-test-changed`
+
+**Checkpoint:**
+- [ ] All four green, and HV1–HV6 all pass. A failure in any HV item is a blocker for M03, not a note — M03 consumes the same ids and the same selection column.
+
+---
+
 #### Step 12: Schema v2 — spans table {#step-12}
 
 **Commit:** `tugcast(changes-rework): changes.db v2 — file_event_spans (additive)`
@@ -776,23 +1138,28 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** A Changes system with an atomic batch claim, a first-class disclaim verb at every layer, consistent row metadata rendering, hunk-level election and landing over `git apply --cached`, and span-based hunk-aware SHARED that contends only on true overlaps — landed in three dash passes (M01/M02/M03) from this plan.
+**Deliverable:** A Changes system with an atomic batch claim, a first-class disclaim verb at every layer, consistent row metadata rendering, hunk-level election and landing over `git apply --cached` that actually round-trips end to end, and span-based hunk-aware SHARED that contends only on true overlaps — landed in four dash passes (M01/M02/M02A/M03) from this plan.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [ ] Every #success-criteria item verified by its named test or check.
 - [ ] `cargo nextest run` green workspace-wide; `bunx vite build` green; `just app-test-changed` green after each pass.
 - [ ] `tuglaws/tracking-changes.md` updated (disclaim, spans, hunk-aware SHARED, partial-commit liveness note).
+- [ ] The M02A hand-verification checklist HV1–HV6 (#step-11g) passes on a real build — the Changes shade's hunk election settles, lands partially, and refuses drift honestly.
 
 **Acceptance tests:**
 - [ ] Step-8 partial-landing integration tests.
+- [ ] Step-11a selection-projection round-trip test (an unknown key survives).
+- [ ] Step-11b cross-boundary hunk-id agreement test (Spec S06).
 - [ ] Step-14 verdict-fn unit table.
 - [ ] Step-15 two-session disjoint-edit app-test.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Carry-forward re-mint for a partial commit's remainder ([Q02]/[P08]).
-- [ ] "Disclaim all" bulk affordance.
+- [ ] ~~"Disclaim all" bulk affordance~~ — shipped in M01.
+- [ ] Reconcile the election on the *wire* as well as the display, so a stale id never reaches the engine ([P18] deliberately stops short; needs the controller to see the diff, which today lives in the per-entry `GitDiffStore`).
+- [ ] Promote the session-entry hand-verification (#step-11g HV1–HV6) to an app-test if the harness ever grows a way to seed real ledger sessions ([P20]).
 - [ ] Spans from `shell_ops`-parsed in-place editor commands (would require the grammar to model substitution effects — likely never worth it; [Q03]).
 - [ ] Promoting disclaim semantics and hunk identity into `tuglaws/design-decisions.md` as global `[D##]` entries.
 
@@ -800,4 +1167,5 @@ Rows are children of a `file_events` row (same first three key columns); deletio
 |------------|--------------|
 | M01 lands | #step-5 |
 | M02 lands | #step-11 |
+| M02A lands | #step-11g |
 | M03 lands | #step-16 |
