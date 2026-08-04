@@ -20,6 +20,13 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * Foreground: ⌘C is Edit ▸ Copy's key equivalent, so AppKit resolves it
+ * against the main menu before the web view sees a keydown. A background
+ * instance has no key window for that resolution to land in, and the chord
+ * dies there — the ⌘C half of this test asserts nothing without the screen.
+ *
+ * @foreground
+ *
  * @covers tugdeck/src/lib/transcript-export.ts
  * @covers tugdeck/src/lib/copy-as-plain-text.ts
  * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
@@ -198,7 +205,7 @@ describe.skipIf(!SHOULD_RUN)(
     test(
       "inline-accurate, atomic-widen, and cross-block selections via ⌘C",
       async () => {
-        const app = await launchTugApp({ testName: "at0188-transcript-copy-wiring" });
+        const app = await launchTugApp({ testName: "at0188-transcript-copy-wiring", foreground: true });
         try {
           await app.seedDeckState({
             state: {
