@@ -4,16 +4,17 @@
    the Done action row. Appearance only ([L06]). */
 
 /* The scroll region between the pinned header strip and the Done row. It
-   grows to fill the auto-sizing shade and scrolls when the diff overruns; the
-   stable scrollbar gutter reserves the track's width whether or not a scrollbar
-   is showing, so revealing one never hops the content ([P17]). */
+   grows to fill the auto-sizing shade and scrolls when the diff overruns. No
+   `scrollbar-gutter` reservation: a one-sided gutter insets the content on the
+   right only, which reads as uneven side margins under overlay scrollbars that
+   take no layout space anyway. The content's own padding is the whole inset,
+   so the left and right margins are equal ([P17]). */
 .session-changes-view {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  scrollbar-gutter: stable;
 }
 
 .session-changes-view-body {
