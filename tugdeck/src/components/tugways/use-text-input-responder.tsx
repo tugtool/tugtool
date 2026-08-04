@@ -423,6 +423,17 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     document.execCommand("copy");
   }, [disabled]);
 
+  const handleDelete = useCallback((): ActionHandlerResult => {
+    if (disabled) return;
+    if (!inputRef.current) return;
+    // Cut without the copy. execCommand routes the deletion through the
+    // native editing pipeline, so the WKWebView's NSUndoManager records it
+    // and ⌘Z reverts it — the same reason cut's continuation uses it.
+    return () => {
+      document.execCommand("delete");
+    };
+  }, [disabled, inputRef]);
+
   const handlePaste = useCallback((): ActionHandlerResult => {
     if (disabled) return;
     const el = inputRef.current;
@@ -717,6 +728,7 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
   const actions: Partial<Record<TugAction, ActionHandler>> = {
     [TUG_ACTIONS.CUT]: handleCut,
     [TUG_ACTIONS.COPY]: handleCopy,
+    [TUG_ACTIONS.DELETE]: handleDelete,
     [TUG_ACTIONS.PASTE]: handlePaste,
     [TUG_ACTIONS.PASTE_AS_QUOTE]: handlePasteAsQuote,
     [TUG_ACTIONS.PASTE_AS_PLAIN_TEXT]: handlePasteAsPlainText,
@@ -736,7 +748,22 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
   // DOM element stay stable across provider transitions, so caret
   // position, focus, and selection survive any test that wraps or
   // unwraps a provider around a mounted leaf control.
-  const { responderRef, ResponderScope } = useOptionalResponder({ id: responderId, actions });
+  const { responderRef, ResponderScope } = useOptionalResponder({
+    id: responderId,
+    actions,
+    // Delete writes, so it is dark on a read-only or disabled control. It
+    // deliberately does NOT gate on having a selection: the pushed edit
+    // block is republished on focus and registration changes, not on caret
+    // moves, so a selection-granular answer would be stale by the time the
+    // menu opened — the same reason Cut doesn't gate on one either. The
+    // handler no-ops when nothing is selected. Reads the live element at
+    // query time, never a captured value [L07].
+    validateAction: (action) => {
+      if (action !== TUG_ACTIONS.DELETE) return true;
+      const el = inputRef.current;
+      return el !== null && !disabled && !el.readOnly;
+    },
+  });
 
   // ---- Ref composition ----
   //

@@ -10,10 +10,15 @@
  * the harness).
  *
  * Assertions are by identifier only — titles localize and identity
- * never rides the title. Dynamic items
- * (View menu body, theme list, `window.pane.*`) are rebuilt in
- * `menuNeedsUpdate` on open and deliberately NOT asserted here — the
- * snapshot walks the menu tree without a tracking session.
+ * never rides the title.
+ *
+ * Also pins the enablement that used to be written imperatively at build
+ * time, where `autoenablesItems` silently overrode it: About / Settings,
+ * the four View zoom items, and Open Recent. The zoom items live in the
+ * dynamic View body, which the snapshot reaches because it runs each
+ * menu's `menuNeedsUpdate` the way a real open would. The theme list and
+ * `window.pane.*` are still not asserted here — their membership is
+ * deck- and filesystem-derived, not a structure contract.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
@@ -96,12 +101,13 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "window.previousCard", key: "[", mods: MOD.command | MOD.shift },
   { id: "window.nextCard", key: "]", mods: MOD.command | MOD.shift },
   { id: "window.cyclePanes", key: "`", mods: MOD.control },
-  // The two slot-stack items share one chord, and which of them holds it is a
-  // user preference the host applies from the menu-state push. Asserted at the
-  // default (Cycle Stack owns ⌘R, Reveal Stack is mouse-only); at0350 covers
-  // the swap. `key: ""` says mouse-only, not "no opinion" — a regression that
-  // left the chord on both items would make ⌘R ambiguous.
-  { id: "window.cycleStack", key: "r", mods: MOD.command },
+  // The two slot-stack items share one chord, and whether EITHER holds it is
+  // deck state: ⌘R is attached only while the focused pane's slot stack has
+  // somewhere to go, because a chord on a disabled item beeps instead of
+  // falling through. This deck is a single pane, so both are bare here — the
+  // depth ≤ 1 and depth > 1 halves both live in at0169, and at0350 covers
+  // which of the two owns it. `key: ""` says unattached, not "no opinion".
+  { id: "window.cycleStack", key: "" },
   { id: "window.revealStack", key: "" },
   { id: "window.enterFullScreen", key: "f", mods: MOD.command | MOD.control },
   { id: "window.bringAllToFront" },
@@ -212,6 +218,42 @@ describe.skipIf(!SHOULD_RUN)("AT0168: menu structure contract", () => {
           .filter((id) => (seen.has(id) ? true : (seen.add(id), false)))
           .filter((id) => id !== "window.enterFullScreen");
         expect(dupes, "our identifiers are unique").toEqual([]);
+
+        // Enablement that used to be written imperatively at build time and
+        // silently overridden by the validator's permissive default. All of
+        // it is validator-answered now, except Open Recent — that item has a
+        // submenu and no action, so AppKit resolves no validation target and
+        // its stored `isEnabled` is the answer.
+        //
+        // At the default page zoom: Actual Size has nowhere to go, Zoom In
+        // and Zoom Out do. (No document surface is frontmost on a fresh
+        // deck, so the page-zoom bounds are the live gate.)
+        const actualSize = await app.menuItemState("view.actualSize");
+        expect(actualSize.found, "view.actualSize present once the menu updates").toBe(true);
+        expect(actualSize.enabled, "Actual Size dark at 100%").toBe(false);
+        expect((await app.menuItemState("view.zoomIn")).enabled, "Zoom In live at 100%").toBe(true);
+        expect((await app.menuItemState("view.zoomOut")).enabled, "Zoom Out live at 100%").toBe(true);
+
+        // The hidden ⌘= alias tracks its visible sibling.
+        expect(
+          (await app.menuItemState("view.zoomInAlias")).enabled,
+          "the ⌘= alias tracks Zoom In",
+        ).toBe(true);
+
+        // About and Settings both open a card; the harness only reaches this
+        // point on a live frontend, so both validate enabled here. Their
+        // build-time `isEnabled = false` never gated anything.
+        expect((await app.menuItemState("app.about")).enabled, "About live once ready").toBe(true);
+        expect((await app.menuItemState("app.settings")).enabled, "Settings live once ready").toBe(true);
+
+        // Open Recent is dark on a deck that has opened no files. The parent
+        // carries AppKit's `submenuAction:`, so no validator answers for it —
+        // its enablement is the submenu's contents, and an empty MRU builds
+        // nothing but a disabled placeholder.
+        expect(
+          (await app.menuItemState("file.openRecent")).enabled,
+          "Open Recent dark with an empty MRU",
+        ).toBe(false);
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") process.stderr.write(`\n[at0168-structure] log tail:\n${tail}\n`);

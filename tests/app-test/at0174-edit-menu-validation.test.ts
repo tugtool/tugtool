@@ -170,6 +170,14 @@ describe.skipIf(!SHOULD_RUN)("AT0174: Edit-menu capability validation", () => {
         await expectEnabled(app, PASTE, true);
         await expectEnabled(app, SELECT_ALL, true);
 
+        // Delete rides the same focus-and-writability gate as Cut. Before
+        // this repair no responder registered a handler for it at all, so it
+        // was dark in every state the app could reach — the item existed and
+        // could never light. It deliberately does not track the selection:
+        // the edit block republishes on focus changes, not caret moves, so a
+        // selection-granular answer would be stale on menu open.
+        await expectEnabled(app, DELETE, true);
+
         // No surface implements find, so the Find items stay disabled
         // even with a text input focused.
         await expectEnabled(app, FIND, false);

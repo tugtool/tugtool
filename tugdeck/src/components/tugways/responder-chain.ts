@@ -1135,6 +1135,31 @@ export class ResponderChainManager {
     return false;
   }
 
+  /**
+   * Query whether the action is currently *enabled* at a named node — the
+   * per-node analogue of {@link nodeCanHandle}, and the targeted-dispatch
+   * counterpart to {@link validateAction}.
+   *
+   * `validateAction` asks the first responder's chain, which is the wrong
+   * question for a control that dispatches to an explicit target: a button
+   * inside a background card would be answered by whatever happens to hold
+   * focus. This asks the node the dispatch would actually reach.
+   *
+   * Answers `false` when the node does not handle the action at all —
+   * "can't" and "can, but not now" are both unavailable, matching
+   * `validateAction`'s own convention. A node that handles the action but
+   * registers no `validateAction` answers `true`.
+   */
+  validateActionAtNode<Extra extends string = never>(
+    nodeId: string,
+    action: TugAction<Extra>,
+  ): boolean {
+    const node = this.nodes.get(nodeId);
+    if (!node) return false;
+    if (!this.nodeCanHandle(nodeId, action)) return false;
+    return node.validateAction ? node.validateAction(action as TugAction) : true;
+  }
+
   // ---- Default button stack ----
 
   /**

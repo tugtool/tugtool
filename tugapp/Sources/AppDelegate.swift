@@ -61,8 +61,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// toggle.
     private var voiceOverObservation: NSKeyValueObservation?
     private var makerMenu: NSMenuItem!
-    private var aboutMenuItem: NSMenuItem?
-    private var settingsMenuItem: NSMenuItem?
+
+    /// Whether the frontend has signalled ready at least once. Gates About
+    /// and Settings, both of which open a card and so need a live deck.
+    /// Read by `validateMenuItem`: `autoenablesItems` is on, so a stored
+    /// `isEnabled` on those items would be overridden by the validator's
+    /// permissive default and the gate would never take effect.
+    private var frontendReady = false
 
     /// Sparkle self-update. Inactive for every identity but the stable
     /// release build (or a `TUG_SPARKLE_FEED` override), in which case the
@@ -811,9 +816,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
         let aboutItem = NSMenuItem(title: "About \(appName)", action: #selector(showAbout(_:)), keyEquivalent: "")
-        aboutItem.isEnabled = false
         aboutItem.identifier = NSUserInterfaceItemIdentifier("app.about")
-        self.aboutMenuItem = aboutItem
         appMenu.addItem(aboutItem)
         // Hidden rather than disabled when the updater is inactive — a
         // bundle that cannot replace itself should not advertise the
@@ -846,9 +849,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         logoutItem.identifier = NSUserInterfaceItemIdentifier("app.logout")
         appMenu.addItem(logoutItem)
         let settingsItem = NSMenuItem(title: "Settings...", action: #selector(showSettings(_:)), keyEquivalent: ",")
-        settingsItem.isEnabled = false
         settingsItem.identifier = NSUserInterfaceItemIdentifier("app.settings")
-        self.settingsMenuItem = settingsItem
         appMenu.addItem(settingsItem)
         appMenu.addItem(NSMenuItem.separator())
 
@@ -905,12 +906,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         // Open Recent ▸ — a dynamic submenu rebuilt on open from the
         // menuState MRU, filtered to files that still exist (NSMenuDelegate
-        // `menuNeedsUpdate`). Disabled when the list is empty.
+        // `menuNeedsUpdate`).
+        //
+        // The parent dims when the list is empty, and it dims by itself: the
+        // item carries a submenu and no action, so AppKit never asks
+        // `validateMenuItem` about it and instead enables it only when the
+        // submenu holds an enabled item. An empty MRU builds a lone disabled
+        // "No Recent Documents" placeholder, which is what makes the parent
+        // dark. Keeping the submenu's contents current is therefore the whole
+        // gate — an imperative `isEnabled` write here would be overwritten by
+        // AppKit's own update pass. Built once now so the rule has something
+        // to read before the first push, and rebuilt from `updateMenuState`
+        // whenever the MRU changes.
         let openRecentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "").identified("file.openRecent")
         let openRecentSubmenu = NSMenu(title: "Open Recent")
         openRecentSubmenu.delegate = self
         openRecentItem.submenu = openRecentSubmenu
         self.openRecentMenu = openRecentSubmenu
+        rebuildOpenRecentMenu(openRecentSubmenu)
         fileMenu.addItem(openRecentItem)
 
         // Save (⌘S): flush the focused editor's pending edits to disk
@@ -921,8 +934,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // chord; the web keybinding-map entry covers browser-only dev.
         fileMenu.addItem(NSMenuItem(title: "Save…", action: #selector(saveActiveEditor(_:)), keyEquivalent: "s").identified("file.save"))
         // Save As… (⇧⌘S) — the key equivalent is assigned DYNAMICALLY in
-        // updateMenuState only while a Text card is frontmost; a
-        // static ⇧⌘S would eat the Session card's Shell-route chord.
+        // updateMenuState only while a Text card is frontmost. The item
+        // validates disabled without one, and a chord on a disabled item is
+        // eaten at the menu bar with a beep instead of falling through, so a
+        // static ⇧⌘S would make the chord dead everywhere else rather than
+        // merely inapplicable.
         fileSaveAsMenuItem = NSMenuItem(title: "Save As…", action: #selector(saveAsActiveEditor(_:)), keyEquivalent: "").identified("file.saveAs")
         fileMenu.addItem(fileSaveAsMenuItem)
         // Save a Copy… — no chord; the revert/reload verbs collide with
@@ -1628,11 +1644,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("cycle-stack")
     }
 
-    /// Put ⌘R on whichever slot-stack item the frontend's `stackChord`
-    /// preference names, and clear it from the other. Called at menu-build
-    /// time and on every menu-state push — never from `validateMenuItem`,
-    /// which runs inside AppKit's key-equivalent scan.
+    /// Decide who, if anyone, holds ⌘R: whether the chord is attached at all
+    /// (only when the focused pane's stack has somewhere to go), and which of
+    /// the two slot-stack items carries it (the frontend's `stackChord`
+    /// preference). Called at menu-build time and on every menu-state push —
+    /// never from `validateMenuItem`, which runs inside AppKit's
+    /// key-equivalent scan.
+    ///
+    /// Both items validate disabled at depth ≤ 1, and a chord on a disabled
+    /// menu item is eaten at the menu bar with a beep rather than falling
+    /// through to the web view. Dimming the item is therefore not enough —
+    /// the chord has to come off, or ⌘R is dead everywhere instead of merely
+    /// inapplicable here.
     private func applyStackChordKeyEquivalent() {
+        guard menuState.stackDepth > 1 else {
+            windowCycleStackItem?.keyEquivalent = ""
+            windowCycleStackItem?.keyEquivalentModifierMask = []
+            windowRevealStackItem?.keyEquivalent = ""
+            windowRevealStackItem?.keyEquivalentModifierMask = []
+            return
+        }
         let cycleOwns = menuState.stackChord != "reveal"
         windowCycleStackItem?.keyEquivalent = cycleOwns ? "r" : ""
         windowCycleStackItem?.keyEquivalentModifierMask = cycleOwns ? [.command] : []
@@ -1747,10 +1778,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // AppKit's key-equivalent scan.
         applyStackChordKeyEquivalent()
 
-        // Dynamic ⇧⌘S for Save As…: assign the chord ONLY while a
-        // Text card is frontmost; clear it otherwise so ⇧⌘S falls through
-        // to the web view's Shell-route chord. Set here — outside AppKit's
-        // key-equivalent scan — not in validateMenuItem.
+        // Rebuild Open Recent here, where the MRU arrives, and not only when
+        // the submenu opens: the parent item's enablement is AppKit's own
+        // "does this submenu hold an enabled item" rule, so an out-of-date
+        // submenu leaves the parent live over an empty list.
+        if let openRecentMenu { rebuildOpenRecentMenu(openRecentMenu) }
+
+        // Dynamic ⇧⌘S for Save As…: assign the chord ONLY while a Text card
+        // is frontmost, and clear it otherwise — the same detach-rather-than-
+        // dim rule the stack chord follows above, because a chord left on a
+        // disabled item beeps instead of falling through. Set here — outside
+        // AppKit's key-equivalent scan — not in validateMenuItem.
         if let saveAs = fileSaveAsMenuItem {
             if menuState.file != nil {
                 saveAs.keyEquivalent = "s"
@@ -1773,6 +1811,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var focusedPaneActiveCardClosable: Bool {
         menuState.focusedPane?.closable ?? false
     }
+
+    /// Tolerance for page-zoom bound comparisons. Stepping by 0.1 accumulates
+    /// IEEE rounding error, so the Zoom In / Zoom Out / Actual Size gates
+    /// compare against the bounds with this slack.
+    private let pageZoomEpsilon: CGFloat = 0.005
 
     /// Whether the focused pane's active card is a session card — the
     /// card-type gate for the session-card command surfaces (Session items,
@@ -1840,6 +1883,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
 
         switch id {
+        // App tier. About and Settings each open a card, so both need a deck
+        // to open it into — dark until the frontend has signalled ready.
+        case "app.about", "app.settings":
+            return frontendReady
+        // View zoom. Reads `window.currentPageZoom` live rather than the
+        // pushed state: page zoom is the host's own property, changed by
+        // these very commands, and the read is a synchronous accessor so it
+        // is safe inside the validator.
+        //
+        // A document surface owns its own zoom range, which the host cannot
+        // see, so the page-zoom bounds stop being the right gate while one is
+        // frontmost — the items stay live and the surface clamps.
+        //
+        // Floating-point tolerance: stepping by 0.1 accumulates IEEE rounding
+        // error (0.6000000000000001 etc.), so the bound comparisons carry a
+        // small epsilon to avoid spurious disables right at the limits.
+        case "view.actualSize":
+            if menuState.document != nil { return true }
+            return abs(window.currentPageZoom - MainWindow.defaultPageZoom) > pageZoomEpsilon
+        case "view.zoomIn", "view.zoomInAlias":
+            if menuState.document != nil { return true }
+            return window.currentPageZoom < MainWindow.maxPageZoom - pageZoomEpsilon
+        case "view.zoomOut":
+            if menuState.document != nil { return true }
+            return window.currentPageZoom > MainWindow.minPageZoom + pageZoomEpsilon
         // Text-card save verbs. Gated on the File menu block,
         // which rides the payload only while a Text card is frontmost.
         // Automatic-mode Save must stay enabled whenever writable so its
@@ -2161,8 +2229,7 @@ extension AppDelegate: BridgeDelegate {
 
     func bridgeFrontendReady() {
         DispatchQueue.main.async {
-            self.aboutMenuItem?.isEnabled = true
-            self.settingsMenuItem?.isEnabled = true
+            self.frontendReady = true
 
             // Open any files the OS handed us before the deck was live
             // (cold launch by dropping a file on the icon). Control frames
@@ -2329,8 +2396,10 @@ extension AppDelegate: NSMenuDelegate {
     }
 
     /// Rebuild the View menu: the theme submenu and page-zoom commands.
-    /// Zoom enablement is computed here at build time (the pull-validation
-    /// exception) because it reads live `webView.pageZoom`, not MenuState.
+    /// Zoom enablement is not computed here — `autoenablesItems` is on, so a
+    /// stored `isEnabled` is overridden by the validator's permissive
+    /// default. The zoom predicates live in `validateMenuItem`, which reads
+    /// `window.currentPageZoom` synchronously the same way this did.
     private func rebuildViewMenu(_ menu: NSMenu) {
         menu.removeAllItems()
 
@@ -2348,35 +2417,18 @@ extension AppDelegate: NSMenuDelegate {
         // Safari's ergonomic shortcut so users don't have to hold
         // Shift to zoom in.
         menu.addItem(NSMenuItem.separator())
-        let zoom = window.currentPageZoom
-        // Floating-point tolerance — stepping by 0.1 accumulates IEEE
-        // rounding error (0.6000000000000001 etc.), so menu-enablement
-        // comparisons use a small epsilon to avoid spurious disables
-        // right at the bounds.
-        let epsilon: CGFloat = 0.005
-        // A document surface owns its own zoom range, which the host cannot
-        // see, so the page-zoom bounds stop being the right gate while one is
-        // frontmost — the items stay live and the surface clamps.
-        let documentZooms = menuState.document != nil
-        let actualSizeItem = NSMenuItem(title: "Actual Size", action: #selector(actualSize(_:)), keyEquivalent: "0").identified("view.actualSize")
-        actualSizeItem.isEnabled = documentZooms || abs(zoom - MainWindow.defaultPageZoom) > epsilon
-        menu.addItem(actualSizeItem)
-        let zoomInItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "+").identified("view.zoomIn")
-        zoomInItem.isEnabled = documentZooms || zoom < MainWindow.maxPageZoom - epsilon
-        menu.addItem(zoomInItem)
+        menu.addItem(NSMenuItem(title: "Actual Size", action: #selector(actualSize(_:)), keyEquivalent: "0").identified("view.actualSize"))
+        menu.addItem(NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "+").identified("view.zoomIn"))
         // ⌘= alias for Zoom In — visible item displays ⌘+, this hidden
         // sibling accepts ⌘= (no-shift) for ergonomic parity with
         // Safari. `allowsKeyEquivalentWhenHidden` keeps the shortcut
         // live even though the item is suppressed from the visible
         // menu. Both fire the same action.
         let zoomInAliasItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "=").identified("view.zoomInAlias")
-        zoomInAliasItem.isEnabled = zoomInItem.isEnabled
         zoomInAliasItem.isHidden = true
         zoomInAliasItem.allowsKeyEquivalentWhenHidden = true
         menu.addItem(zoomInAliasItem)
-        let zoomOutItem = NSMenuItem(title: "Zoom Out", action: #selector(zoomOut(_:)), keyEquivalent: "-").identified("view.zoomOut")
-        zoomOutItem.isEnabled = documentZooms || zoom > MainWindow.minPageZoom + epsilon
-        menu.addItem(zoomOutItem)
+        menu.addItem(NSMenuItem(title: "Zoom Out", action: #selector(zoomOut(_:)), keyEquivalent: "-").identified("view.zoomOut"))
     }
 
     /// Refresh the Window menu's dynamic pane-list slice in place: remove

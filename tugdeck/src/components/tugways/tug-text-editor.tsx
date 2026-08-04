@@ -2186,6 +2186,29 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       };
     }, [writeSelectionToNativeClipboard]);
 
+    // Delete: remove the selection without touching the clipboard. Same
+    // transaction shape as cut's continuation, minus the copy, so undo sees
+    // one atomic edit. A collapsed selection is a no-op — Delete acts on a
+    // selection, and `validateAction` dims the menu item when there isn't
+    // one. Deferred into a continuation like cut's, so a context-menu
+    // activation keeps the selection painted through the blink.
+    const handleDelete = useCallback((): ActionHandlerResult => {
+      const view = viewRef.current;
+      if (view === null) return;
+      view.focus();
+      return () => {
+        const live = viewRef.current;
+        if (live === null) return;
+        const { from, to } = live.state.selection.main;
+        if (from === to) return;
+        live.dispatch({
+          changes: { from, to, insert: "" },
+          selection: { anchor: from },
+          userEvent: "delete.selection",
+        });
+      };
+    }, []);
+
     // Paste: prefer the native bridge (Tug.app WKWebView) — Safari's
     // permission popup fires for both `navigator.clipboard.*` and
     // `document.execCommand("paste")`, so the only popup-free read
@@ -2366,6 +2389,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       [TUG_ACTIONS.REDO]: handleRedo,
       [TUG_ACTIONS.COPY]: handleCopy,
       [TUG_ACTIONS.CUT]: handleCut,
+      [TUG_ACTIONS.DELETE]: handleDelete,
       [TUG_ACTIONS.PASTE]: handlePaste,
       [TUG_ACTIONS.PASTE_AS_QUOTE]: handlePasteAsQuote,
       [TUG_ACTIONS.PASTE_AS_PLAIN_TEXT]: handlePasteAsPlainText,
@@ -2405,6 +2429,16 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         if (action === TUG_ACTIONS.REDO) {
           const view = viewRef.current;
           return view !== null && redoDepth(view.state) > 0;
+        }
+        // Delete writes, so it needs a writable document — the same gate
+        // Cut carries, and the same granularity: the pushed edit block is
+        // republished on focus and registration changes, not on caret moves,
+        // so a selection-granular answer here would be stale by the time the
+        // menu opened. The handler no-ops on a collapsed selection. Read from
+        // the live view at query time [L07].
+        if (action === TUG_ACTIONS.DELETE) {
+          const view = viewRef.current;
+          return view !== null && !view.state.readOnly;
         }
         return true;
       },

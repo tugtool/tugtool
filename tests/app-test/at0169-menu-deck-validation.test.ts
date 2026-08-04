@@ -80,6 +80,38 @@ function twoPanes() {
   };
 }
 
+/** Two panes sharing one slot — a stack the focused pane can switch within
+ *  (`stackDepth` 2). Both panes carry `slot: 0`; the projection's depth is
+ *  the length of the focused pane's slot stack. */
+function stackedPanes() {
+  return {
+    cards: [card("C0"), card("C1")],
+    panes: [
+      { ...pane("p1", ["C0"], 0), slot: 0 },
+      { ...pane("p2", ["C1"], 1), slot: 0 },
+    ],
+    activePaneId: "p2",
+    hasFocus: true,
+  };
+}
+
+/** Poll a menu item's key equivalent until it matches, then return it. */
+async function waitMenuKeyEquivalent(
+  app: App,
+  identifier: string,
+  want: string,
+  timeoutMs = 8000,
+): Promise<string | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  let last: string | undefined;
+  while (Date.now() < deadline) {
+    last = (await app.menuItemState(identifier)).keyEquivalent;
+    if (last === want) return last;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return last;
+}
+
 /** Poll the validated menu-item state until it matches `wantEnabled`. */
 async function waitMenuEnabled(
   app: App,
@@ -117,6 +149,22 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
         await expectEnabled(app, "window.previousCard", false);
         await expectEnabled(app, "window.nextCard", false);
         await expectEnabled(app, "window.cyclePanes", false);
+
+        // The slot stack has nowhere to go, so both stack items validate
+        // disabled — and neither may keep ⌘R. A chord on a disabled item is
+        // eaten at the menu bar with a beep instead of falling through to the
+        // web view, so leaving it attached would make ⌘R dead rather than
+        // merely inapplicable.
+        await expectEnabled(app, "window.cycleStack", false);
+        await expectEnabled(app, "window.revealStack", false);
+        expect(
+          await waitMenuKeyEquivalent(app, "window.cycleStack", ""),
+          "Cycle Stack drops ⌘R at depth ≤ 1",
+        ).toBe("");
+        expect(
+          await waitMenuKeyEquivalent(app, "window.revealStack", ""),
+          "Reveal Stack drops ⌘R at depth ≤ 1",
+        ).toBe("");
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") process.stderr.write(`\n[at0169-single] log tail:\n${tail}\n`);
@@ -178,6 +226,39 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") process.stderr.write(`\n[at0169-twopanes] log tail:\n${tail}\n`);
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "stacked panes: the stack items light up and one of them takes ⌘R",
+    async () => {
+      const app = await launchTugApp({ testName: "at0169-stack" });
+      try {
+        await app.seedDeckState({ state: stackedPanes(), focusCardId: "C1" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("C1")`,
+        );
+
+        await expectEnabled(app, "window.cycleStack", true);
+        await expectEnabled(app, "window.revealStack", true);
+
+        // Exactly one of the two carries the chord — which one is the user's
+        // `stackChord` preference, defaulting to Cycle Stack. Both holding it
+        // would make ⌘R ambiguous; neither holding it is the depth ≤ 1 state.
+        const cycle = await waitMenuKeyEquivalent(app, "window.cycleStack", "r");
+        expect(cycle, "Cycle Stack owns ⌘R by default once the stack is deep").toBe("r");
+        expect(
+          (await app.menuItemState("window.revealStack")).keyEquivalent,
+          "Reveal Stack stays mouse-only while Cycle Stack owns the chord",
+        ).toBe("");
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") process.stderr.write(`\n[at0169-stack] log tail:\n${tail}\n`);
         throw err;
       } finally {
         await app.close();

@@ -465,7 +465,18 @@ final class TestHarnessConnection {
     }
 
     /// Recursively serialize a menu. Must run on the main thread.
+    ///
+    /// Run the delegate's `menuNeedsUpdate` first: menus with an
+    /// `NSMenuDelegate` build their contents there, and AppKit calls it when
+    /// the menu is about to be displayed. Without it the View body, the theme
+    /// list, Open Recent's entries, and the `window.pane.*` slice are absent
+    /// from every snapshot — `menuItemState` answers `found: false` for items
+    /// that plainly exist on screen. Calling the delegate directly rather
+    /// than `NSMenu.update()` because `update()` does not run the callout
+    /// synchronously, so a snapshot taken in the same turn still sees the
+    /// stale tree.
     private func snapshotMenu(_ menu: NSMenu) -> [[String: Any]] {
+        menu.delegate?.menuNeedsUpdate?(menu)
         var items: [[String: Any]] = []
         for item in menu.items {
             // Validate before reading `state`: validators may refresh
@@ -500,6 +511,16 @@ final class TestHarnessConnection {
     private func validatedEnabled(_ item: NSMenuItem) -> Bool {
         if item.isSeparatorItem { return false }
         let autoenables = item.menu?.autoenablesItems ?? true
+        // A parent item carries AppKit's own `submenuAction:`, which resolves
+        // to a target that implements no validator — so the action path below
+        // would answer `true` for every submenu in the bar, including one
+        // standing over an empty list. AppKit's actual rule for an
+        // auto-enabling menu is that a submenu item is enabled when its
+        // submenu holds at least one enabled item; model that instead.
+        if autoenables, let submenu = item.submenu {
+            submenu.delegate?.menuNeedsUpdate?(submenu)
+            return submenu.items.contains { validatedEnabled($0) }
+        }
         guard autoenables, let action = item.action else {
             return item.isEnabled
         }

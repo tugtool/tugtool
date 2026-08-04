@@ -587,15 +587,23 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
 
   // Query the effective target for capability and enabled state.
   // Explicit `target` prop wins; otherwise use the parent responder
-  // (same target the dispatch will use). Both paths use nodeCanHandle
-  // — the button always validates against its dispatch target, never
-  // the first responder.
+  // (same target the dispatch will use) — the button always validates
+  // against its dispatch target, never the first responder.
+  //
+  // Two distinct questions, and they used to be one: `nodeCanHandle` asks
+  // whether the target handles the action at all, `validateActionAtNode`
+  // asks whether it is enabled right now. Aliasing the second to the first
+  // meant a responder's `validateAction` was written, registered, and never
+  // consulted by any button — a control could not go dim for the reason the
+  // menu item beside it did.
   // [D07] nodeCanHandle for per-node capability query
   const effectiveValidationTarget = target ?? parentId;
   const chainCanHandle = chainActive && effectiveValidationTarget !== null
     ? manager.nodeCanHandle(effectiveValidationTarget, action)
     : false;
-  const chainValidated = chainCanHandle;
+  const chainValidated = chainActive && effectiveValidationTarget !== null
+    ? manager.validateActionAtNode(effectiveValidationTarget, action)
+    : false;
 
   // isChainDisabled: chain is active and either canHandle is false OR validateAction is false.
   // When true, the button renders as aria-disabled (never hidden -- [D06] never-hide).

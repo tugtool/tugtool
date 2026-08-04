@@ -1175,6 +1175,26 @@ export const TugTextCardEditor = React.forwardRef<
     };
   }, [writeSelectionToClipboard]);
 
+  /** Remove the selection without touching the clipboard — cut's
+   *  continuation without the copy. No-ops on a collapsed selection;
+   *  `validateAction` dims the menu item in that state. */
+  const handleDelete = useCallback((): ActionHandlerResult => {
+    const live = viewRef.current;
+    if (live === null || readOnlyRef.current) return;
+    live.focus();
+    return () => {
+      const inner = viewRef.current;
+      if (inner === null) return;
+      const { from, to } = inner.state.selection.main;
+      if (from === to) return;
+      inner.dispatch({
+        changes: { from, to, insert: "" },
+        selection: { anchor: from },
+        userEvent: "delete.selection",
+      });
+    };
+  }, []);
+
   /** Insert clipboard text at the selection, via a transform. */
   const pasteWithTransform = useCallback(
     (transform: (text: string) => string): ActionHandlerResult => {
@@ -1277,6 +1297,7 @@ export const TugTextCardEditor = React.forwardRef<
     [TUG_ACTIONS.REDO]: handleRedo,
     [TUG_ACTIONS.COPY]: handleCopy,
     [TUG_ACTIONS.CUT]: handleCut,
+    [TUG_ACTIONS.DELETE]: handleDelete,
     [TUG_ACTIONS.PASTE]: handlePaste,
     [TUG_ACTIONS.PASTE_AS_QUOTE]: handlePasteAsQuote,
     [TUG_ACTIONS.PASTE_AS_PLAIN_TEXT]: handlePasteAsPlainText,
@@ -1304,6 +1325,7 @@ export const TugTextCardEditor = React.forwardRef<
       }
       if (
         action === TUG_ACTIONS.CUT ||
+        action === TUG_ACTIONS.DELETE ||
         action === TUG_ACTIONS.PASTE ||
         action === TUG_ACTIONS.PASTE_AS_QUOTE ||
         action === TUG_ACTIONS.PASTE_AS_PLAIN_TEXT ||

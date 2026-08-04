@@ -797,6 +797,15 @@ Read by the keymap UI (renders the row locked, no capture affordance) and by the
 
 Unit tests construct a **real** `ResponderChainManager` and register real responder nodes, then assert against `validateAction` / `queryActionState` / the computed mirror block. No mock chain, no fake store, no jsdom render assertions — the chain manager is plain TypeScript and runs in bun directly.
 
+#### Pre-existing red, baselined {#known-red}
+
+Two app-test cases fail on `main` with none of this plan's changes applied, verified by running them on the base checkout. They are **not** regressions from any step here, and neither should be read as a checkpoint failure:
+
+- `at0174-edit-menu-validation.test.ts` → *"native input: Undo rides the web view's NSUndoManager, cleared on blur"*. The synthesized ⌘Z does not revert the typed text. The test's own comment already notes that the harness's synthetic chords don't reach AppKit's menu matching the way a real keyboard's do (it says so explicitly for the redo half), so this is most likely the same delivery gap now biting the undo half under background-window key posting. It matters for [#step-14], which uses at0174 as the proof that a retired Swift tier still behaves — that step should expect 3/4 here, or fix the delivery first.
+- `at0046-tug-text-editor-first-responder-after-button-click.test.ts` → the *baseline* ⌘A assertion, before the button click the test is actually about.
+
+Both smell like one cause — a synthesized command-modified chord not landing — rather than two. Worth a dedicated look before [#step-19] rewrites the key pipeline, since a broken chord-delivery baseline would make that step's checkpoints unreadable.
+
 #### What stays out of tests {#test-non-goals}
 
 - **The Settings ▸ Keyboard pane's rendering** — covered by the app-test override round trip end to end (write an override, see the native chord move) rather than by DOM-render assertions, which the project bans.
@@ -812,11 +821,11 @@ Unit tests construct a **real** `ResponderChainManager` and register real respon
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Move imperative enablement into the validator | pending | — |
-| #step-2 | Detach ⌘R at stack depth ≤ 1 | pending | — |
-| #step-3 | Give Edit ▸ Delete a real handler | pending | — |
-| #step-4 | TugButton consults validateAction | pending | — |
-| #step-5 | Correct the lying chord labels | pending | — |
+| #step-1 | Move imperative enablement into the validator | done | `020fab587` |
+| #step-2 | Detach ⌘R at stack depth ≤ 1 | done | `e4ab2eb3e` |
+| #step-3 | Give Edit ▸ Delete a real handler | done | `12f2804e8` |
+| #step-4 | TugButton consults validateAction | done | `56533625b` |
+| #step-5 | Correct the lying chord labels | done | `181321d84` |
 | #step-6 | The registry table and dispatchCommand | pending | — |
 | #step-7 | Convert the Both loops and menu wires | pending | — |
 | #step-8 | Converge the Settings dual path; native entries and NATIVE_LOCKED | pending | — |

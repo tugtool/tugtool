@@ -87,6 +87,13 @@ export interface TextEditingMenuEntry {
  * Build the universal four-item text-editing menu. Order, labels,
  * and shortcut hints are fixed; disabled state is computed from
  * `caps`.
+ *
+ * The shortcut strings are authored here and match the bindings by hand,
+ * which is why two of them named the wrong chords for as long as they did —
+ * an authored string has nothing to disagree with until someone reads it.
+ * They are slated to be derived from the keymap registry, at which point a
+ * displayed chord and its binding cannot differ; the expectation test beside
+ * this file holds the line until then.
  */
 export function buildTextEditingMenuItems(
   caps: TextEditingMenuCapabilities,
@@ -108,7 +115,7 @@ export function buildTextEditingMenuItems(
     {
       action: TUG_ACTIONS.COPY_AS_PLAIN_TEXT,
       label: "Copy as Plain Text",
-      shortcut: "⇧⌘C",
+      shortcut: "⌥⇧⌘C",
       disabled: !hasSelection,
     },
     {
@@ -126,7 +133,7 @@ export function buildTextEditingMenuItems(
     {
       action: TUG_ACTIONS.PASTE_AS_PLAIN_TEXT,
       label: "Paste as Plain Text",
-      shortcut: "⇧⌘V",
+      shortcut: "⌥⇧⌘V",
       disabled: !canEdit,
     },
     { type: "separator" },
