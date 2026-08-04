@@ -96,13 +96,14 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "window.previousCard", key: "[", mods: MOD.command | MOD.shift },
   { id: "window.nextCard", key: "]", mods: MOD.command | MOD.shift },
   { id: "window.cyclePanes", key: "`", mods: MOD.control },
+  { id: "window.revealStack", key: "r", mods: MOD.command },
   { id: "window.enterFullScreen", key: "f", mods: MOD.command | MOD.control },
   { id: "window.bringAllToFront" },
   // Maker (items exist in the hidden menu). The gallery / hello-world
   // / active-pane creators are gated on BuildInfo.profile == "debug";
   // the app-test bundle's profile is "apptest", so they are absent here
   // and not asserted.
-  { id: "maker.reload", key: "r", mods: MOD.command },
+  { id: "maker.reload", key: "r", mods: MOD.command | MOD.shift },
   { id: "maker.jsConsole", key: "c", mods: MOD.command | MOD.option },
   { id: "maker.lens", key: "l", mods: MOD.command | MOD.option },
   { id: "maker.sourceTree" },

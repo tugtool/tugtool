@@ -524,6 +524,22 @@ export function initActionDispatch(
     }
   });
 
+  // reveal-stack: Open the focused pane's slot-stack picker — the title-bar
+  // menu listing every pane sharing its slot. Routed through the responder
+  // chain so the pane that is actually first responder answers, and its title
+  // bar (which owns the menu's open bit) does the work. The host validates
+  // Window ▸ Reveal Stack disabled below depth 2, so an inert press never
+  // arrives here.
+  registerAction("reveal-stack", () => {
+    if (responderChainManagerRef) {
+      responderChainManagerRef.sendToFirstResponder({
+        action: TUG_ACTIONS.REVEAL_STACK,
+        phase: "discrete",
+      });
+    } else {
+      console.warn("reveal-stack: responder chain manager not registered yet");
+    }
+  });
 
   // arrange-cards: Rearrange all cards on the canvas.
   // Swift sends arrange-cards with mode: "cascade" | "tile".

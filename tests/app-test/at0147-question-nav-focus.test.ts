@@ -15,6 +15,8 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
+ *
  * @covers tugdeck/src/components/tugways/chrome/session-question-dialog.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  */

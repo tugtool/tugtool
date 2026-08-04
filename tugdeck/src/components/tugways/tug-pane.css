@@ -475,6 +475,18 @@ body {
 }
 
 /*
+ * Slot-stack badge — the depth of the stack this pane stands in, and the
+ * trigger for the picker that switches between them. It carries a count, so
+ * unlike its icon-only neighbours its width would follow its content; the
+ * min-width clears a two-digit count so a ten-deep slot does not reflow the
+ * controls cluster the moment a pane joins or leaves.
+ */
+.tug-pane-title-bar-stack-badge {
+  min-width: calc(var(--tug-space-lg) + var(--tug-space-md));
+  justify-content: center;
+}
+
+/*
  * The icon follows the title-bar button's theme-aware text color in every
  * state. The shared ghost-action svg rules in tug-button.css pin the icon to
  * --tug7-element-control-icon-ghost-action-{hover,active} on interaction, which

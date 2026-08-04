@@ -118,6 +118,53 @@ describe("projectDeckState", () => {
       projectDeckState({ ...base, activePaneId: "p1" }).selectionActive,
     ).toBe(true);
   });
+
+  test("stackDepth counts the panes sharing the focused pane's slot", () => {
+    // p2 is last in the array, so it is the focused (z-order top) pane, and it
+    // shares slot 0 with p1.
+    const state: DeckState = {
+      ...deck(
+        [card("a"), card("b")],
+        [pane("p1", ["a"], { slot: 0 }), pane("p2", ["b"], { slot: 0 })],
+      ),
+      activePaneId: "p2",
+    };
+    expect(projectDeckState(state).stackDepth).toBe(2);
+  });
+
+  test("stackDepth is 1 for a focused pane alone in its slot", () => {
+    const state: DeckState = {
+      ...deck(
+        [card("a"), card("b")],
+        [pane("p1", ["a"], { slot: 0 }), pane("p2", ["b"], { slot: 1 })],
+      ),
+      activePaneId: "p2",
+    };
+    expect(projectDeckState(state).stackDepth).toBe(1);
+  });
+
+  test("stackDepth is 0 for a focused free pane — it holds no slot", () => {
+    const state: DeckState = {
+      ...deck(
+        [card("a"), card("b")],
+        [pane("p1", ["a"], { slot: 0 }), pane("p2", ["b"])],
+      ),
+      activePaneId: "p2",
+    };
+    expect(projectDeckState(state).stackDepth).toBe(0);
+  });
+
+  test("stackDepth is 0 when nothing is selected, even with a stack present", () => {
+    // The tripwire for the invariant the formula rests on: `focusedStack` is
+    // the array's last element while the chord dispatches to `activePaneId`'s
+    // pane. A deselected deck is the one state where those part.
+    const state = deck(
+      [card("a"), card("b")],
+      [pane("p1", ["a"], { slot: 0 }), pane("p2", ["b"], { slot: 0 })],
+    );
+    expect(state.activePaneId).toBeUndefined();
+    expect(projectDeckState(state).stackDepth).toBe(0);
+  });
 });
 
 describe("HostMenuStatePublisher", () => {

@@ -12,7 +12,7 @@
  * presentation: TugPopupButton passes a styled TugButton; tab bar triggers
  * pass TugButton ghost-option elements without chevrons.
  *
- * ## Open state is locally controlled
+ * ## Open state is locally controlled, and optionally externally
  *
  * The Radix Root is bound to a `useState<boolean>` here so TugPopupMenu
  * knows its own open state in React. Callers still get the uncontrolled
@@ -21,6 +21,15 @@
  * dispatches. The activation close path ("an item was picked") also uses
  * this controlled state to close cleanly instead of synthesizing a
  * document-level Escape keydown.
+ *
+ * A caller that must open the menu from somewhere other than a press on the
+ * trigger — a chord, or a gesture on a surface the trigger sits in — passes
+ * the optional `open` / `onOpenChange` pair. The prop then holds the truth
+ * and every internal transition reports outward. Both modes run through one
+ * `setOpen`, so the focus trap, the observeDispatch subscription, the
+ * sub-menu reset, and the blink-then-close selection path are the same code
+ * either way; a caller that omits `open` gets exactly the behavior it has
+ * always had.
  *
  * ## Chain-reactive dismissal via observeDispatch
  *
@@ -60,7 +69,7 @@
 
 import "../tug-menu.css";
 
-import React, { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { animate } from "@/components/tugways/tug-animator";
@@ -186,6 +195,21 @@ export interface TugPopupMenuProps {
    * Radix. Defaults to false; real consumers never set this.
    */
   defaultOpen?: boolean;
+  /**
+   * Controlled open state. Omit for the uncontrolled behavior every existing
+   * call site relies on. When supplied, this prop is authoritative and every
+   * internal transition — trigger press, Escape, click-outside, chain
+   * dismiss, item activation — reports through {@link onOpenChange} instead
+   * of writing local state.
+   *
+   * Exists for openers that are not a press on the trigger: a pane-level
+   * chord or gesture that must open a menu it does not own. Synthesizing a
+   * click on the trigger element would be a guess at whichever DOM event
+   * Radix happens to listen on, and a lie about what the user did.
+   */
+  open?: boolean;
+  /** Reports every open-state transition when {@link open} is supplied. */
+  onOpenChange?: (open: boolean) => void;
   /** data-testid for the menu content element. */
   "data-testid"?: string;
 }
@@ -220,6 +244,8 @@ export function TugPopupMenu({
   side,
   sideOffset = 3,
   defaultOpen = false,
+  open: openProp,
+  onOpenChange,
   "data-testid": dataTestId,
 }: TugPopupMenuProps) {
   const overlayRoot = useCanvasOverlay();
@@ -235,12 +261,31 @@ export function TugPopupMenu({
   // Tracks whether a blink animation is in progress to guard against re-entrant calls.
   const blinkingRef = useRef(false);
 
-  // Locally controlled open state. Radix Root is bound to this so
-  // TugPopupMenu can react to chain-driven dismiss requests without
-  // losing any of the built-in trigger/escape/click-outside behavior:
-  // those all continue to flow through Radix's internal open handlers
-  // back into our setOpen via onOpenChange.
-  const [open, setOpen] = useState(defaultOpen);
+  // Open state. Radix Root is bound to this so TugPopupMenu can react to
+  // chain-driven dismiss requests without losing any of the built-in
+  // trigger/escape/click-outside behavior: those all continue to flow
+  // through Radix's internal open handlers back into our setOpen.
+  //
+  // With no `open` prop the state is internal and the component behaves
+  // exactly as it always has. With one, the prop is the source of truth and
+  // every transition below reports outward instead of writing local state —
+  // the two paths share one `setOpen`, so the focus trap, the observeDispatch
+  // subscription, the `openSubKey` reset, and the blink-then-close selection
+  // path all read and write the same value in either mode.
+  const [openInternal, setOpenInternal] = useState(defaultOpen);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : openInternal;
+  // Kept identity-stable through a ref: `openHandle`'s memo and the
+  // observeDispatch subscription both capture this, and a fresh function per
+  // render would hand them a closure over a stale `onOpenChange`.
+  const setOpenImpl = useRef<(next: boolean) => void>(() => {});
+  setOpenImpl.current = (next: boolean): void => {
+    if (!isControlled) setOpenInternal(next);
+    onOpenChange?.(next);
+  };
+  const setOpen = useCallback((next: boolean): void => {
+    setOpenImpl.current(next);
+  }, []);
 
   // Engine focus trap ([P04]): the menu joins the engine model exactly as the
   // popover did, replacing the old service-popup binding. The trap captures the key

@@ -475,6 +475,8 @@ Background app-test windows run **no rAF** and throttle DOM timers. Two things t
 
 **The probe, run at #step-3:** in a scratch app-test, open the title bar's existing `…` menu on a seeded card, click one of its rows, and assert the item's effect landed. Cheap, and it is the only thing that has to happen in a particular order for Step 8 to be writable.
 
+**RESOLVED at #step-3 — selection lands in the background tier.** No scratch test was needed: `at0055-popup-close-restores-editor-focus.test.ts` already opens a `TugPopupMenu`, clicks one of its rows, and asserts the whole post-blink cascade (`.finished` → `onSelect` → `setOpen(false)` → `onCloseAutoFocus` → focus back on the editor's `contentDOM`). It runs, and passes, in the background group. The WAAPI blink promise therefore resolves without a frame, and the first row of the table below is the one that applies: **at0347 is one file**, and only the Cmd-drag case carries `foreground: true`. at0349 is not needed.
+
 | Probe result | at0347 |
 |---|---|
 | Selection lands in the background tier | One file. Only the Cmd-drag case carries `foreground: true`. |
@@ -573,16 +575,16 @@ Steps 1, 2, and 3 are mutually independent and may land in any order; everything
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Free ⌘R — move Maker ▸ Reload to ⇧⌘R | pending | — |
-| #step-2 | Derive the slot stack and hand it to every pane | pending | — |
-| #step-3 | Give TugPopupMenu an optional controlled open (+ its first `@covers`, + the Spec S07 probe) | pending | — |
-| #step-4 | The stack badge and the stack picker | pending | — |
-| #step-5 | Cmd-click the title bar opens the picker | pending | — |
-| #step-6 | Window ▸ Reveal Stack (⌘R) through the chain | pending | — |
-| #step-7 | Publish stackDepth and gate the menu item | pending | — |
-| #step-8 | App-tests | pending | — |
-| #step-9 | Documentation | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
+| #step-1 | Free ⌘R — move Maker ▸ Reload to ⇧⌘R | done | bb3240604 |
+| #step-2 | Derive the slot stack and hand it to every pane | done | 118f93b63 |
+| #step-3 | Give TugPopupMenu an optional controlled open (+ its first `@covers`, + the Spec S07 probe) | done | b1d1bb6bc |
+| #step-4 | The stack badge and the stack picker | done | 29dd573dd |
+| #step-5 | Cmd-click the title bar opens the picker | done | 2ce731e55 |
+| #step-6 | Window ▸ Reveal Stack (⌘R) through the chain | done | f8d2744b0 (walked before #step-5 — Step 5 calls the handle this step creates) |
+| #step-7 | Publish stackDepth and gate the menu item | done | f1bf0769b |
+| #step-8 | App-tests | done | 7e0fc5da5 |
+| #step-9 | Documentation | done | 951cd91e2 |
+| #step-10 | Integration checkpoint | done | a51f79bb1 |
 
 ---
 

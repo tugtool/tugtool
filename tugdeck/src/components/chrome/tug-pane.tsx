@@ -31,8 +31,9 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { ChevronDown, ChevronUp, MoreHorizontal, X, icons } from "lucide-react";
+import { ChevronDown, ChevronUp, Layers, MoreHorizontal, X, icons } from "lucide-react";
 import type { CardState, TugPaneState } from "@/layout-tree";
+import type { SlotStackEntry } from "@/deck-store-selectors";
 import type { CardMeta, CardSizePolicy } from "@/card-registry";
 import { DEFAULT_SIZE_POLICY, getRegistration } from "@/card-registry";
 import { computeSnap, computeResizeSnap } from "@/snap";
@@ -124,6 +125,13 @@ export interface CardTitleBarHandle {
      */
     guardScope?: "active" | "pane";
   }) => void;
+  /**
+   * Toggle the stack picker. Opens it as if the badge had been clicked;
+   * closes it when it is already open, which is also what the chord's own
+   * chain dispatch would do to it. No-op when the pane holds no slot or its
+   * slot holds one pane — no badge is rendered, so there is no anchor.
+   */
+  revealStack: () => void;
 }
 
 export interface CardTitleBarProps {
@@ -175,6 +183,15 @@ export interface CardTitleBarProps {
    * (the generic `…` affordance). Omitted → no `…` menu.
    */
   activeCardId?: string;
+  /**
+   * Every pane sharing this pane's slot, topmost first, already resolved for
+   * display — passed straight through from {@link TugPaneProps.slotStack}.
+   * Drives the stack badge (rendered only past depth 1) and the rows of the
+   * picker it opens. Empty for a free pane and for the Lens.
+   */
+  slotStack?: readonly SlotStackEntry[];
+  /** Raise the pane a picker row names. Wired in `DeckCanvas`. */
+  onRevealPane?: (entry: SlotStackEntry) => void;
   onCollapse: () => void;
   onClose?: () => void;
   onDragStart?: (event: React.PointerEvent) => void;
@@ -190,6 +207,8 @@ function CardTitleBar({
   resolveCloseGuard,
   confirmClose = false,
   activeCardId,
+  slotStack = EMPTY_SLOT_STACK,
+  onRevealPane,
   onCollapse,
   onClose,
   onDragStart,
@@ -225,6 +244,21 @@ function CardTitleBar({
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeIntent, setCloseIntent] = useState<CloseIntent | null>(null);
   const [closeAnchorEl, setCloseAnchorEl] = useState<HTMLButtonElement | null>(null);
+
+  // Slot-stack picker open state. Local-data [L24], beside `closeOpen`: it is
+  // transient UI the title bar owns, and the deck never hears about it.
+  const [stackMenuOpen, setStackMenuOpen] = useState(false);
+
+  // The open state must not outlive the badge. `slotStack.length` can drop to
+  // 1 while the picker is up — a peer in the slot closes, a drag evicts one, a
+  // kind change clamps a slot — and the trigger would then unmount open: the
+  // focus trap's `onCloseAutoFocus` never runs (keyboard focus left on a
+  // removed node) and the stale `true` would make the badge mount already-open
+  // the next time this pane joins a stack. The prop the picker already reads
+  // is the signal; nothing has to notify us.
+  useEffect(() => {
+    if (slotStack.length <= 1) setStackMenuOpen(false);
+  }, [slotStack.length]);
 
   // Drives the popover's copy only — not whether it appears.
   const isMultiTab = cardCount > 1;
@@ -385,7 +419,21 @@ function CardTitleBar({
       if (withCloseDecision(proceed, guardScope ?? "active")) return;
       proceed();
     },
-  }), [confirmClose, onClose, openCloseConfirm, paneCloseIntent, withCloseDecision]);
+    revealStack: () => {
+      // A pane with no stack has no badge, therefore no anchor to open at.
+      if (slotStack.length <= 1) return;
+      // Toggle, not set. The chord that reaches here travels the responder
+      // chain, and `sendToFirstResponder` runs the responder action before it
+      // notifies the dispatch observers — so an OPEN menu's observeDispatch
+      // subscription sees this same dispatch and closes it. Toggling is the
+      // one form that is single-valued in both directions: open → the toggle
+      // queues false and the observer queues false again, the menu closes;
+      // closed → the subscription is gated on `open` so no observer exists,
+      // and the toggle simply opens it. It also reads correctly for the
+      // pointer callers, where "again" ought to dismiss.
+      setStackMenuOpen((prev) => !prev);
+    },
+  }), [confirmClose, onClose, openCloseConfirm, paneCloseIntent, withCloseDecision, slotStack.length]);
 
   const handleCollapsePointerDown = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -436,6 +484,47 @@ function CardTitleBar({
       </span>
 
       <div className="tug-pane-title-bar-controls" data-testid="tug-pane-title-bar-controls">
+        {/* The slot's depth at rest, and the way into the panes behind this
+            one. The condition is `slotStack.length > 1` and nothing else — no
+            "am I on top?" test, which would need a second cross-pane fact the
+            title bar does not have. Every pane in the stack renders it,
+            because the badge describes the SLOT and a pane the user can see is
+            entitled to tell the truth about where it stands; occlusion hides
+            it along with everything else on a fully-covered pane, so a
+            same-width stack shows exactly one. */}
+        {slotStack.length > 1 && (
+          <TugPopupMenu
+            trigger={
+              <TugButton
+                subtype="icon-text"
+                emphasis="ghost"
+                role="action"
+                size="sm"
+                icon={<Layers />}
+                className="tug-pane-title-bar-stack-badge"
+                aria-label={`Stack of ${slotStack.length} cards`}
+                data-testid="tug-pane-title-bar-stack-badge"
+              >
+                {slotStack.length}
+              </TugButton>
+            }
+            align="end"
+            open={stackMenuOpen}
+            onOpenChange={setStackMenuOpen}
+            items={slotStack.map((entry) => ({
+              id: entry.paneId,
+              label: entry.title,
+              // Set on every row, not just the front one, so the check
+              // column aligns across the menu.
+              selected: entry.topmost,
+            }))}
+            onSelect={(paneId) => {
+              const entry = slotStack.find((e) => e.paneId === paneId);
+              if (entry) onRevealPane?.(entry);
+            }}
+            data-testid="tug-pane-title-bar-stack-menu"
+          />
+        )}
         {titleBarMenuItems !== null && titleBarMenuItems.length > 0 && (
           <TugPopupMenu
             trigger={
@@ -799,6 +888,22 @@ export interface TugPaneProps {
    */
   placement?: ImposedPlacement;
   /**
+   * Every pane sharing this pane's slot, topmost first — the slot's stack.
+   * Resolved by `DeckCanvas` for the same reason `placement` is: a pane cannot
+   * see its slot's other occupants from its own state.
+   *
+   * The entries arrive display-resolved (title and topmost flag already
+   * decided), so the title bar renders its stack picker from props alone and
+   * never reaches for the deck store. Absent for a free pane and for the Lens,
+   * which hold no slot and therefore stand in no stack.
+   */
+  slotStack?: readonly SlotStackEntry[];
+  /**
+   * Raise the pane a stack-picker row names. Wired in `DeckCanvas`, which is
+   * where the store lives; the pane and its title bar only report the choice.
+   */
+  onRevealPane?: (entry: SlotStackEntry) => void;
+  /**
    * Set only on the pane hosting the Lens, to the side the Lens holds
    * (`imposition.lens`). The Lens is imposed as the strip's fixed end rather
    * than a link in its chain, so it takes a pin instead of a `placement`: it
@@ -845,6 +950,10 @@ export interface TugPaneProps {
 // Resize edge descriptors
 // ---------------------------------------------------------------------------
 
+// One frozen empty array for every pane that holds no slot, so an absent
+// `slotStack` prop does not hand the title bar a fresh identity per render.
+const EMPTY_SLOT_STACK: readonly SlotStackEntry[] = [];
+
 type ResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 
 const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
@@ -876,6 +985,8 @@ export function TugPane({
   zIndex,
   onCardCollapsed,
   placement,
+  slotStack = EMPTY_SLOT_STACK,
+  onRevealPane,
   lensSide,
   isLensPane = false,
 }: TugPaneProps) {
@@ -1157,6 +1268,11 @@ export function TugPane({
       [TUG_ACTIONS.CLOSE_PANE]: (_event: ActionEvent) => {
         titleBarRef.current?.requestClose();
       },
+      // Same shape as CLOSE_PANE: the pane answers the chain by calling an
+      // imperative handle on the title bar, which owns the transient UI.
+      [TUG_ACTIONS.REVEAL_STACK]: (_event: ActionEvent) => {
+        titleBarRef.current?.revealStack();
+      },
       [TUG_ACTIONS.PREVIOUS_TAB]: (_event: ActionEvent) => handlePreviousTab(),
       [TUG_ACTIONS.NEXT_TAB]: (_event: ActionEvent) => handleNextTab(),
       [TUG_ACTIONS.SELECT_TAB]: (event: ActionEvent) => {
@@ -1375,6 +1491,11 @@ export function TugPane({
   // Whether the pointer has travelled far enough to make this a move rather
   // than a click. Until it has, the gesture commits nothing.
   const dragMoved = useRef(false);
+  // Whether the press that opened this gesture held the command key. Read only
+  // in the no-travel branch of `onPointerUp`, where a Cmd-click resolves as
+  // "reveal this pane's stack" — a Cmd-drag latches `dragMoved` and never
+  // reaches it.
+  const dragStartedWithMeta = useRef(false);
   // Canvas bounding rect snapshotted at drag-start; used for all clamping.
   const dragCanvasBounds = useRef<DOMRect | null>(null);
   // Most recent client-space pointer coordinates from onPointerMove.
@@ -1546,6 +1667,14 @@ export function TugPane({
       // to focus it, or to start a gesture and think better of it — leaves it
       // pinned where it was.
       dragMoved.current = false;
+      // Whether the press that started this gesture was meta-modified. A
+      // Cmd-drag on a title bar is meaningful today and must survive: for a
+      // free pane it is the Mac convention of moving a background window
+      // without raising it, and for an imposed pane the drag is how it is
+      // evicted from its slot. So Cmd does not decide anything on the way
+      // down — the decision waits for the gesture's ending, and the no-travel
+      // branch in `onPointerUp` below IS that ending, already written.
+      dragStartedWithMeta.current = event.metaKey;
       dragStartPosition.current = { x: position.x, y: position.y };
       latestDragPointer.current = { x: event.clientX, y: event.clientY };
 
@@ -1704,11 +1833,22 @@ export function TugPane({
         // Nothing was moved, nothing merges, and nothing is committed — in
         // particular a derived pane keeps the slot or the pin it started with.
         if (!dragMoved.current) {
+          // ...and if it was a Cmd-click, that click means "show me what is
+          // behind this pane". The same handle the ⌘R chord calls, so there is
+          // one opener with several callers rather than several openers. The
+          // gesture interpreter's own meta branch already suppressed
+          // activation for this press, which is exactly right: the picker
+          // opens without raising the pane it was clicked on.
+          if (dragStartedWithMeta.current) {
+            titleBarRef.current?.revealStack();
+          }
+          dragStartedWithMeta.current = false;
           dragOtherRects.current = [];
           latestAltKey.current = false;
           lastSnapResult.current = null;
           return;
         }
+        dragStartedWithMeta.current = false;
 
         // Close the occlusion bracket opened at the move latch; the commit
         // below (or the merge's store mutation) recomputes from final
@@ -2235,6 +2375,7 @@ export function TugPane({
       {...(imposed && placement !== undefined
         ? { "data-imposed": String(placement.slot) }
         : {})}
+      data-stack-depth={String(slotStack.length)}
       style={{
         position: "absolute",
         // Three geometry modes. The pinned Lens holds one side of the canvas
@@ -2311,6 +2452,8 @@ export function TugPane({
             resolveCloseGuard={resolveCloseGuard}
             confirmClose={paneConfirmClose}
             activeCardId={activeCardId}
+            slotStack={slotStack}
+            onRevealPane={onRevealPane}
             onCollapse={handleFrameCollapseToggle}
             onClose={handleTitleBarClose}
             onDragStart={handleDragStart}

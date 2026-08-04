@@ -80,6 +80,62 @@ export function findLensPane(state: DeckState): TugPaneState | undefined {
 }
 
 /**
+ * `slotStackOf(state, slot)` — every pane holding `slot`, in z-order
+ * (last = topmost, the order `DeckState.panes` itself carries). Empty when
+ * the slot is unoccupied.
+ *
+ * `undefined` never matches: a free pane and the Lens hold no slot, so they
+ * stand in no stack. The membership and the order are both fully determined
+ * by state the deck already owns, which is why nothing here is stored — a
+ * stored copy could only ever disagree with the array it was copied from.
+ */
+export function slotStackOf(
+  state: DeckState,
+  slot: number | undefined,
+): readonly TugPaneState[] {
+  if (slot === undefined) return [];
+  return state.panes.filter((p) => p.slot === slot);
+}
+
+/**
+ * `paneDisplayTitle(state, pane)` — the title a pane shows in any list: its
+ * own, else its active card's, else its first card's, else `"Untitled"`.
+ *
+ * One rule, two consumers: the host menu-state pane projection and the
+ * title bar's slot-stack picker both render the same name for a pane.
+ */
+export function paneDisplayTitle(
+  state: Pick<DeckState, "cards">,
+  pane: TugPaneState,
+): string {
+  const activeCard = state.cards.find((c) => c.id === pane.activeCardId);
+  const firstCard = state.cards.find((c) => c.id === pane.cardIds[0]);
+  return pane.title || activeCard?.title || firstCard?.title || "Untitled";
+}
+
+/**
+ * One row of a slot's stack, already resolved for display. Ordered
+ * topmost-first, matching the host menu-state convention.
+ *
+ * The title bar renders its picker from these and never reaches for the deck
+ * store: it has no access to one, and chrome driven entirely by props is what
+ * keeps chrome and content in their lanes ([L10]).
+ */
+export interface SlotStackEntry {
+  /** The pane this row raises. */
+  paneId: string;
+  /**
+   * The card id to activate — the pane's `activeCardId`, resolved at
+   * projection time so the raise needs no second store read.
+   */
+  cardId: string;
+  /** Display title, from {@link paneDisplayTitle}. */
+  title: string;
+  /** True for the pane currently at the front of the slot. */
+  topmost: boolean;
+}
+
+/**
  * `countWorkCards(state)` — how many cards the user is working in, i.e. every
  * card but the Lens. The Lens is app furniture (it opens by factory default),
  * so anything asking "does this deck hold work yet" — the setup wizard's

@@ -1160,6 +1160,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         wMenu.addItem(NSMenuItem(title: "Previous Card", action: #selector(previousCard(_:)), keyEquivalent: "[", modifierMask: [.command, .shift]).identified("window.previousCard"))
         wMenu.addItem(NSMenuItem(title: "Next Card", action: #selector(nextCard(_:)), keyEquivalent: "]", modifierMask: [.command, .shift]).identified("window.nextCard"))
         wMenu.addItem(NSMenuItem(title: "Cycle Panes", action: #selector(cyclePanes(_:)), keyEquivalent: "`", modifierMask: [.control]).identified("window.cyclePanes"))
+        // A slot is a stack of panes, only the top one visible. This opens the
+        // focused pane's picker so a buried one can be brought forward without
+        // a trip to the Lens. It belongs on the menu bar rather than in the
+        // keybinding map because AppKit resolves a menu key equivalent before
+        // the web view ever sees the keydown.
+        wMenu.addItem(NSMenuItem(title: "Reveal Stack", action: #selector(revealStack(_:)), keyEquivalent: "r").identified("window.revealStack"))
         // Anchor separator for the dynamic pane-list slice: pane items are
         // inserted directly after it (and removed by identifier prefix) on
         // every menu open. macOS hides the redundant separator pair when
@@ -1180,7 +1186,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainMenu.addItem(makerMenu)
         let mMenu = NSMenu(title: "Maker")
         makerMenu.submenu = mMenu
-        let reloadItem = NSMenuItem(title: "Reload", action: #selector(reload(_:)), keyEquivalent: "r").identified("maker.reload")
+        let reloadItem = NSMenuItem(title: "Reload", action: #selector(reload(_:)), keyEquivalent: "r", modifierMask: [.command, .shift]).identified("maker.reload")
         reloadItem.target = self
         mMenu.addItem(reloadItem)
         mMenu.addItem(NSMenuItem.separator())
@@ -1599,6 +1605,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("cycle-card")
     }
 
+    @objc private func revealStack(_ sender: Any) {
+        sendControl("reveal-stack")
+    }
+
     @objc private func sourceTree(_ sender: Any) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -1841,6 +1851,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "window.cyclePanes":
             return menuState.panes.count >= 2
                 || (!menuState.selectionActive && !menuState.panes.isEmpty)
+        // Reveal Stack takes no deselected-deck escape hatch, unlike the three
+        // above. It acts on a SPECIFIC pane's stack; with nothing selected
+        // there is no such pane, and picking one for the user would be a
+        // command with a non-obvious target. A free pane and the Lens hold no
+        // slot, and a pane alone in its slot has nowhere to switch to — all
+        // three publish depth 0 or 1 and validate disabled.
+        case "window.revealStack":
+            return menuState.stackDepth > 1
         // Edit / Find tier — first-responder edit capabilities, mirrored
         // from the web responder chain (MenuState.edit). Disabled when no
         // focused surface handles the action; Find stays disabled until a
@@ -2533,6 +2551,10 @@ struct MenuState {
     /// navigation commands stay active in that state so the user can
     /// re-activate a card.
     var selectionActive: Bool = false
+    /// How many panes share the focused pane's slot. 0 when that pane holds no
+    /// slot (a free pane, or the Lens) and when nothing is selected. Gates
+    /// Window ▸ Reveal Stack, which needs somewhere to switch to.
+    var stackDepth: Int = 0
 
     static let empty = MenuState()
 
@@ -2545,6 +2567,7 @@ struct MenuState {
 
     init(payload: [String: Any]) {
         selectionActive = payload["selectionActive"] as? Bool ?? false
+        stackDepth = payload["stackDepth"] as? Int ?? 0
         if let rawPanes = payload["panes"] as? [[String: Any]] {
             panes = rawPanes.compactMap { entry in
                 guard let id = entry["id"] as? String else { return nil }

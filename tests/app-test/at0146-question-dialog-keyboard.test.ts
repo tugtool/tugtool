@@ -18,6 +18,8 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
+ *
  * @covers tugdeck/src/components/tugways/chrome/session-question-dialog.tsx
  * @covers tugdeck/src/components/tugways/cards/session-jump-to-bottom-button.tsx
  * @covers tugdeck/src/components/tugways/internal/tug-button.tsx

@@ -28,6 +28,7 @@
  */
 
 import type { DeckState } from "../layout-tree";
+import { paneDisplayTitle, slotStackOf } from "../deck-store-selectors";
 import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 
@@ -318,6 +319,12 @@ export interface MenuStateDeckProjection {
    */
   selectionActive: boolean;
   /**
+   * Panes sharing the focused pane's slot. 0 when the focused pane holds no
+   * slot (free pane or Lens) and when nothing is selected. Gates
+   * Window ▸ Reveal Stack, which is enabled iff this exceeds 1.
+   */
+  stackDepth: number;
+  /**
    * Id of the focused pane's active card — used by the publisher to
    * select which dev block rides the payload. Module-internal: never
    * serialized onto the wire.
@@ -331,6 +338,8 @@ export interface MenuStatePayload {
   activeCard: MenuStateActiveCard | null;
   /** Whether a card is selected (see {@link MenuStateDeckProjection.selectionActive}). */
   selectionActive: boolean;
+  /** Focused pane's slot-stack depth (see {@link MenuStateDeckProjection.stackDepth}). */
+  stackDepth: number;
   /** Session-card session block; null unless the active card is a session card. */
   session: MenuStateSessionBlock | null;
   /** Text-card block; null unless the active card is a Text card. */
@@ -373,11 +382,9 @@ export function projectDeckState(state: DeckState): MenuStateDeckProjection {
   const panes = stacks
     .map((s) => {
       const activeCard = cardsById.get(s.activeCardId);
-      const firstCard = cardsById.get(s.cardIds[0]);
-      const title = s.title || activeCard?.title || firstCard?.title || "Untitled";
       return {
         id: s.id,
-        title,
+        title: paneDisplayTitle(state, s),
         focused: s.id === focusedId,
         cardCount: s.cardIds.length,
         closable: activeCard?.closable ?? false,
@@ -395,10 +402,29 @@ export function projectDeckState(state: DeckState): MenuStateDeckProjection {
       }
     : null;
 
+  // How many panes share the focused pane's slot.
+  //
+  // The two "focused"s here are not the same concept, so the invariant is
+  // worth stating: `focusedStack` is `panes[panes.length - 1]` (z-order top),
+  // while the chord this gates dispatches to the FIRST RESPONDER, which is
+  // `activePaneId`'s pane. They agree because every raise path moves the pane
+  // to the end of the array and writes `activePaneId` in the same commit, so
+  // whenever `activePaneId` is set its pane IS the last element. The
+  // `undefined` guard covers the one state where they part — a deselected
+  // deck, where the array still has a last element and no pane is the first
+  // responder. Reveal Stack acts on a specific pane's stack; with nothing
+  // selected there is no such pane, and a command that silently picks one for
+  // the user is the non-obvious-target failure.
+  const stackDepth =
+    state.activePaneId === undefined
+      ? 0
+      : slotStackOf(state, focusedStack?.slot).length;
+
   return {
     panes,
     activeCard,
     selectionActive: state.activePaneId !== undefined,
+    stackDepth,
     focusedActiveCardId: focusedActiveCard?.id ?? null,
   };
 }
@@ -417,6 +443,7 @@ export class HostMenuStatePublisher {
     panes: [],
     activeCard: null,
     selectionActive: false,
+    stackDepth: 0,
     focusedActiveCardId: null,
   };
   /**
@@ -508,7 +535,7 @@ export class HostMenuStatePublisher {
   }
 
   private flush(): void {
-    const { panes, activeCard, selectionActive, focusedActiveCardId } =
+    const { panes, activeCard, selectionActive, stackDepth, focusedActiveCardId } =
       this.deckProjection;
     const session =
       activeCard?.component === "session" && focusedActiveCardId !== null
@@ -530,6 +557,7 @@ export class HostMenuStatePublisher {
       panes,
       activeCard,
       selectionActive,
+      stackDepth,
       session,
       file,
       document,

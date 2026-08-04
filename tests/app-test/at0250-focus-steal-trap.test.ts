@@ -17,6 +17,13 @@
  *   4. leave the keyboard alive: a native ArrowDown still moves the Lens
  *      cursor.
  *
+ * The steal it stages is a raw DOM focus write, and the correction it asserts
+ * only happens in a window that owns the keyboard — the test waits on
+ * `document.hasFocus()` before touching anything. A background window never
+ * satisfies that, so this one earns its key window.
+ *
+ * @foreground
+ *
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/internal/
  */
@@ -96,6 +103,7 @@ describe.skipIf(!SHOULD_RUN)("at0250 — the watchdog's steal trap", () => {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0250-focus-steal-trap",
+          foreground: true,
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
         });
         try {

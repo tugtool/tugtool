@@ -285,6 +285,17 @@ export const TUG_ACTIONS = {
   //                 imposition, when nothing is selected, when the
   //                 selection is the Lens, or when N exceeds the
   //                 arrangement's slot count.
+  // REVEAL_STACK:   payload — none. Open the focused pane's slot-stack
+  //                 picker — the title-bar menu listing every pane sharing
+  //                 its slot. Used by ⌘R (Window ▸ Reveal Stack), answered
+  //                 by the pane, which delegates to its title bar's
+  //                 `revealStack()` handle. The handle toggles: this very
+  //                 dispatch reaches an open menu's `observeDispatch`
+  //                 subscription, and the responder action runs before any
+  //                 observer, so a toggle is the one form that is
+  //                 single-valued in both directions. The host validates
+  //                 the item disabled below depth 2, so an inert press
+  //                 never reaches here.
   // SELECT_COMPOSER_ROUTE: payload — `value: "prompt" | "changes"`. Select
   //                 one of the composer's two routes directly (as opposed to
   //                 TOGGLE_CHANGES_VIEW, which flips between them). Bound to
@@ -384,6 +395,7 @@ export const TUG_ACTIONS = {
   FOCUS_PREVIOUS: "focus-previous",
   FOCUS_PROMPT:   "focus-prompt",
   MOVE_TO_SLOT:   "move-to-slot",
+  REVEAL_STACK:   "reveal-stack",
   SELECT_COMPOSER_ROUTE: "select-composer-route",
   CYCLE_PERMISSION_MODE: "cycle-permission-mode",
   SET_PERMISSION_MODE: "set-permission-mode",

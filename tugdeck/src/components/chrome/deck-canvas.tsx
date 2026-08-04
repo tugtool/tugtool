@@ -35,7 +35,8 @@ import { usePaneFocusController } from "./pane-focus-controller";
 import { usePaneOcclusionController } from "./pane-occlusion-controller";
 import { getRegistration, getStackSizePolicy } from "@/card-registry";
 import { LENS_CARD_ID } from "@/lib/lens-card-id";
-import { findLensPane } from "@/deck-store-selectors";
+import { findLensPane, paneDisplayTitle } from "@/deck-store-selectors";
+import type { SlotStackEntry } from "@/deck-store-selectors";
 import type { DeckState, TugPaneState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { cardDragCoordinator } from "@/card-drag-coordinator";
@@ -240,6 +241,37 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     const sorted = [...panes].sort((a, b) => a.id.localeCompare(b.id));
     return { sortedStacks: sorted, zIndexMap: map };
   }, [panes, lensPaneId]);
+
+  // A slot is a stack: every pane holding it, the last one topmost ([D121]).
+  // The membership is derived here rather than stored, and here rather than in
+  // the pane, for the same reason `placement` is — a pane cannot see its
+  // slot's other occupants from its own state. Entries arrive at the title bar
+  // display-resolved, so the picker needs no store access.
+  //
+  // Keyed on `panes`/`cards` rather than on the whole deck snapshot so a pane's
+  // `slotStack` prop — and therefore the picker's `items` array — keeps a
+  // stable identity across renders that changed neither.
+  const slotStackByPaneId = useMemo(() => {
+    const bySlot = new Map<number, TugPaneState[]>();
+    for (const pane of panes) {
+      if (pane.slot === undefined) continue;
+      const members = bySlot.get(pane.slot);
+      if (members) members.push(pane);
+      else bySlot.set(pane.slot, [pane]);
+    }
+    const map = new Map<string, readonly SlotStackEntry[]>();
+    for (const members of bySlot.values()) {
+      // Topmost first, matching the host menu-state convention.
+      const entries: SlotStackEntry[] = [...members].reverse().map((pane, i) => ({
+        paneId: pane.id,
+        cardId: pane.activeCardId,
+        title: paneDisplayTitle({ cards }, pane),
+        topmost: i === 0,
+      }));
+      for (const pane of members) map.set(pane.id, entries);
+    }
+    return map;
+  }, [panes, cards]);
 
   // Build a cardId → hostStackId map so `CardHost` can look up its
   // host stack without re-scanning the stacks array on every render.
@@ -1067,6 +1099,25 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     [impositionKind],
   );
 
+  // Raise the pane a stack-picker row names. The same path `assignCardToSlot`
+  // takes for its raise, and for the same reason: a bare `activateCard` flips
+  // the first responder but skips the focus transfer, so the outgoing card
+  // never saves its focus bag and the incoming one never receives its focus
+  // claim — no caret until the user clicks into it. Picking the row that is
+  // already front is a same-bit refresh, which `activateCard` treats as a
+  // no-op that still refreshes the persisted pointer; no special case needed.
+  const handleRevealPane = useCallback(
+    (entry: SlotStackEntry) => {
+      transferFocusForActivation({
+        outgoingCardId: store.getFirstResponderCardId(),
+        incomingCardId: entry.cardId,
+        store,
+        commitMutation: () => store.activateCard(entry.cardId),
+      });
+    },
+    [store],
+  );
+
   // Merge `deckRootRef` (pane-focus-controller's query scope) and
   // `responderRef` (responder-chain wiring) onto the same element.
   // `useCallback` with `[responderRef]` keeps the callback identity
@@ -1186,6 +1237,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             )}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
             placement={placementFor(stackState)}
+            slotStack={slotStackByPaneId.get(stackState.id)}
+            onRevealPane={handleRevealPane}
             lensSide={
               stackState.id === lensPaneId && lensSide !== null
                 ? lensSide
