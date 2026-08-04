@@ -14,20 +14,25 @@
  *
  *   1. ⌘F opens the bar with the caret in the query field; typing a term
  *      paints both matches and actives one of them.
- *   2. ⌘G advances and ⇧⌘G retreats, from the query field.
- *   3. ⌘F while the bar is already open re-focuses the query field rather
- *      than toggling the bar shut.
+ *   2. ⌘G advances and ⇧⌘G retreats, from the query field — and Return /
+ *      ⇧Return do the same, but only while the caret is IN the field: back in
+ *      the composer Return is submit again. The keys follow the caret.
+ *   3. ⌘F toggles: fired from the composer while the bar is open it dismisses
+ *      it. Fired from *inside* the bar it does not — the bar's own responder
+ *      answers first and re-summons the query field, so the chord a user
+ *      presses to get back to a search they are already in never destroys it.
  *   4. Escape closes the bar and dissolves the highlights; ⌘G while closed is
  *      inert (nothing repaints).
  *   5. A second ⌘F reopens with the previous query pre-filled AND fully
  *      selected — the standard macOS behavior that makes clear-on-close
  *      painless.
- *   6. ⇧⌘C raises the Changes shade with the bar still open: find is not a
- *      shade, so the two coexist rather than displacing each other.
+ *   6. Find and Changes are mutually exclusive: ⇧⌘C with the bar open raises
+ *      the Changes shade and dismisses the bar.
  *
  * @covers tugdeck/src/components/tugways/tug-find-bar.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/components/tugways/keybinding-map.ts
+ * @covers tugdeck/src/lib/commit-mode-controller.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -42,7 +47,11 @@ const SID = "c7c0d1ea-0000-4000-8000-000000000339";
 const PROBE = "findbarprobe";
 
 const CARD = '[data-card-id="A"]';
-const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
+// Scoped to the prompt entry deliberately: once the bar is open the card holds
+// TWO `tug-text-editor`s, and the bar's comes first in DOM order — an unscoped
+// selector silently retargets every "click the composer" step at the query
+// field, which makes a ⌘F-from-outside-the-bar assertion test nothing.
+const EDITOR = `${CARD} [data-slot="tug-prompt-entry"] [data-slot="tug-text-editor"] .cm-content`;
 const FIND_BAR = `${CARD} [data-slot="session-card-find-bar"]`;
 const FIND_INPUT = `${FIND_BAR} [data-testid="session-card-find-input"] .cm-content`;
 const STATUS_BAR = `${CARD} [data-slot="session-card-status-bar"]`;
@@ -153,6 +162,25 @@ async function activeMatchRow(app: App): Promise<number> {
   );
 }
 
+/** List-cell index of the active match, or -1 — the expression form, for
+ *  waits that need it inline. */
+const activeRowExpr = `(() => {
+  const hl = CSS.highlights.get('transcript-find-active');
+  if (!hl) return -1;
+  for (const r of hl) {
+    const el = r.startContainer.parentElement;
+    const cell = el ? el.closest('[data-tug-list-cell-index]') : null;
+    return cell ? Number(cell.getAttribute('data-tug-list-cell-index')) : -1;
+  }
+  return -1;
+})()`;
+
+/** The session card's find walk — the base-mode Tab loop the bar opens. */
+const FIND_GROUP = "session-find-walk";
+
+/** The authored `group:order` of whatever currently holds the keyboard. */
+const FOCUS_KEY_EXPR = `(document.querySelector("[data-key-view]")?.getAttribute("data-tug-focus-key") || "")`;
+
 const queryFieldHasCaret = `(() => {
   const input = document.querySelector(${JSON.stringify(FIND_INPUT)});
   return input !== null && document.activeElement !== null &&
@@ -197,7 +225,7 @@ async function seedSession(app: App): Promise<void> {
 
 describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
   test(
-    "⌘F opens, ⌘G cycles, Escape closes and clears, a second ⌘F resumes the query",
+    "⌘F toggles, ⌘G cycles, Escape closes and clears, a reopen resumes the query, and Changes excludes it",
     async () => {
       const app = await launchTugApp({ testName: "at0339-session-find-bar" });
       try {
@@ -286,21 +314,61 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
           { timeoutMs: 6000 },
         );
 
-        // --- 3. ⌘F while open re-focuses the field; it does not toggle shut. ---
+        // --- 2b. Return follows the caret. In the query field it is the ↓
+        //         button's twin and advances the match; back in the composer
+        //         it is submit again and the match does not move. ---
+        await app.nativeKey("Enter");
+        await app.waitForCondition<boolean>(
+          `${activeRowExpr} !== ${firstRow}`,
+          { timeoutMs: 6000 },
+        );
+        await app.nativeKey("Enter", ["shift"]);
+        await app.waitForCondition<boolean>(
+          `${activeRowExpr} === ${firstRow}`,
+          { timeoutMs: 6000 },
+        );
+
+        await app.nativeClickAtElement(EDITOR);
+        await app.nativeType("not a search");
+        await app.nativeKey("Enter");
+        await new Promise((r) => setTimeout(r, 800));
+        expect(
+          await activeMatchRow(app),
+          "Return in the composer submits; it must not walk the search",
+        ).toBe(firstRow);
+        await app.nativeClickAtElement(FIND_INPUT);
+        await app.waitForCondition<boolean>(queryFieldHasCaret, {
+          timeoutMs: 8000,
+        });
+
+        // --- 3a. ⌘F from INSIDE the bar re-summons the field, never dismisses:
+        //         the bar's own responder is nearer the caret than the card's. ---
+        await chord(app, "KeyF", "f", { meta: true });
+        await new Promise((r) => setTimeout(r, 400));
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(FIND_BAR)}) !== null`,
+          ),
+          "⌘F with the caret in the query field must not close the bar",
+        ).toBe(true);
+        expect(await paintedCount(app)).toBe(2);
+
+        // --- 3b. ⌘F from the composer toggles the bar shut. ---
+        await app.nativeClickAtElement(EDITOR);
+        await chord(app, "KeyF", "f", { meta: true });
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FIND_BAR)}) === null`,
+          { timeoutMs: 8000 },
+        );
+        await waitForPaintedCount(app, 0);
+
+        // --- 4. Escape closes and dissolves; ⌘G while closed is inert. ---
         await app.nativeClickAtElement(EDITOR);
         await chord(app, "KeyF", "f", { meta: true });
         await app.waitForCondition<boolean>(queryFieldHasCaret, {
           timeoutMs: 8000,
         });
-        expect(
-          await app.evalJS<boolean>(
-            `document.querySelector(${JSON.stringify(FIND_BAR)}) !== null`,
-          ),
-          "⌘F on an open bar must not close it",
-        ).toBe(true);
-        expect(await paintedCount(app)).toBe(2);
-
-        // --- 4. Escape closes and dissolves; ⌘G while closed is inert. ---
+        await waitForPaintedCount(app, 2);
         await app.nativeKey("Escape");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(FIND_BAR)}) === null`,
@@ -342,19 +410,82 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
         ).toBe(PROBE);
         await waitForPaintedCount(app, 2);
 
-        // --- 6. Find is not a shade: Changes coexists with the open bar. ---
+        // --- 6. Find and Changes are mutually exclusive — one at a time. ---
         await app.nativeClickAtElement(EDITOR);
         await chord(app, "KeyC", "c", { meta: true, shift: true });
         await app.waitForCondition<boolean>(
           `document.querySelector('${CARD} .session-view-slot[data-active-view="changes"]') !== null`,
           { timeoutMs: 8000 },
         );
-        expect(
-          await app.evalJS<boolean>(
-            `document.querySelector(${JSON.stringify(FIND_BAR)}) !== null`,
-          ),
-          "raising Changes must not dismiss the find bar",
-        ).toBe(true);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FIND_BAR)}) === null`,
+          { timeoutMs: 8000 },
+        );
+
+        // …and back the other way: ⌘F leaves Changes.
+        await chord(app, "KeyF", "f", { meta: true });
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FIND_BAR)}) !== null`,
+          { timeoutMs: 8000 },
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${CARD} .session-view-slot[data-active-view="changes"]') === null`,
+          { timeoutMs: 8000 },
+        );
+
+        // --- 7. The bar is a keyboard surface. With the query emptied, Tab
+        //        walks its four stops and on to the composer, and the loop
+        //        closes back to the query field. ---
+        await app.waitForCondition<boolean>(queryFieldHasCaret, {
+          timeoutMs: 8000,
+        });
+        // The reopen seeded the remembered query SELECTED, so one Backspace
+        // empties it — and an empty field is what releases Tab to the walk.
+        await app.nativeKey("a", ["cmd"]);
+        await app.nativeKey("Backspace");
+        // An empty CM6 doc renders its placeholder widget, so the placeholder's
+        // presence is the emptiness probe — `textContent` would read the
+        // placeholder's own text and never be "".
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FIND_INPUT)} + " .cm-placeholder") !== null`,
+          { timeoutMs: 4000 },
+        );
+
+        for (const expected of [
+          `${FIND_GROUP}:1`,
+          `${FIND_GROUP}:2`,
+          `${FIND_GROUP}:3`,
+          `${FIND_GROUP}:4`,
+          `${FIND_GROUP}:0`,
+        ]) {
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(
+            `${FOCUS_KEY_EXPR} === ${JSON.stringify(expected)}`,
+            { timeoutMs: 6000 },
+          );
+        }
+
+        // --- 8. Dismissing while the keyboard is on a find control hands the
+        //        caret back to the composer — a surface that goes away owes
+        //        the keyboard somewhere to land. ---
+        await app.nativeKey("Tab"); // → options
+        await app.nativeKey("Tab"); // → find previous
+        await app.waitForCondition<boolean>(
+          `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${FIND_GROUP}:2`)}`,
+          { timeoutMs: 6000 },
+        );
+        await app.nativeKey("Escape");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FIND_BAR)}) === null`,
+          { timeoutMs: 8000 },
+        );
+        await app.waitForCondition<boolean>(
+          `(() => {
+            const el = document.querySelector(${JSON.stringify(EDITOR)});
+            return el !== null && el.contains(document.activeElement);
+          })()`,
+          { timeoutMs: 8000 },
+        );
       } finally {
         await app.close();
       }

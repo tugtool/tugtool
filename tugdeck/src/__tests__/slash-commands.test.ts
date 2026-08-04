@@ -87,20 +87,11 @@ describe("matchLocalSlashCommand", () => {
     expect(matchLocalSlashCommand("/btw")).toEqual({ name: "btw", args: "" });
   });
 
-  test("/changes is a bare route name, not an arg-taker", () => {
-    // It selects a route; there is nothing to say to a route.
-    expect(matchLocalSlashCommand("/changes")).toEqual({
-      name: "changes",
-      args: "",
-    });
-    expect(matchLocalSlashCommand("/changes foo")).toBeNull();
-  });
-
-  test("there is no /prompt — it could only ever be a no-op", () => {
-    // In the Changes route the composer is the commit-message editor, so no
-    // typed line is read as a command there; from the Prompt route `/prompt`
-    // names the route you are already on.
+  test("neither composer route has a typeable name", () => {
+    // A slash command is a one-shot verb; a route is a mode you stay in. The
+    // route gestures are the Z4A tabs, ⇧⌘P / ⇧⌘C, and Escape.
     expect(matchLocalSlashCommand("/prompt")).toBeNull();
+    expect(matchLocalSlashCommand("/changes")).toBeNull();
   });
 });
 

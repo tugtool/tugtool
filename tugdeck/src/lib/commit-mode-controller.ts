@@ -116,6 +116,7 @@ export class CommitModeController {
   private seedMessage: string | null = null;
   private snapshot: CommitModeSnapshot;
   private landHook: ((runCommit: () => void) => void) | null = null;
+  private messageProvider: (() => string) | null = null;
 
   constructor(deps: CommitModeControllerDeps) {
     this.deps = deps;
@@ -250,6 +251,29 @@ export class CommitModeController {
     this.active = true;
     this.snapshot = this.derive();
     this.fire();
+  }
+
+  /**
+   * Install the live read of the composer's message, so the controller can
+   * persist a typed draft on its own when the user leaves the route by a door
+   * that isn't the composer's ({@link leave}). The composer owns the document,
+   * so only it can supply this; `null` uninstalls on unmount.
+   */
+  setMessageProvider(read: (() => string) | null): void {
+    this.messageProvider = read;
+  }
+
+  /**
+   * The user leaving the route: persist whatever is typed so coming back
+   * resumes it, then exit. Distinct from {@link exit}, which is the bare
+   * state flip the land path uses *after* clearing the draft — persisting
+   * there would resurrect a message that has already been committed.
+   */
+  leave(): void {
+    if (!this.active) return;
+    const message = this.messageProvider?.() ?? "";
+    if (message.trim().length > 0) this.persistMessage(message);
+    this.exit();
   }
 
   /** Exit the mode (the composer clears back to the prompt). */

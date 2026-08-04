@@ -4,7 +4,17 @@
  * {@link FindSurface} (the Dev transcript's store-index engine, the Text
  * card's CodeMirror-search engine).
  *
- * Two pieces:
+ * Two pieces, count first — the cluster sits at the trailing edge of the find
+ * bar's toolbar, so the count reads leftmost, then the toggles that shape it,
+ * then the host's ↑ / ↓ pair. Result, then controls, in one group:
+ *
+ *  - **Count** — a read-only `‹active+1› of ‹total›` {@link TugBadge}
+ *    (tinted / action — the same coloration as the Z4B Mode / Model /
+ *    Effort chips; `No results` on a hitless query; `N+` when the engine
+ *    capped its enumeration), width-stabilized via {@link TugStableOverlay}
+ *    so stepping through matches never reflows the cluster. A badge is a
+ *    label, never a control — it emits no action, and it hides (never
+ *    unmounts) when there is no query, so the cluster's width is steady.
  *
  *  - **Options** — a {@link TugOptionGroup} of three independent toggles
  *    (Case sensitive · Entire word · Grep). Per [L11] the group emits a
@@ -15,14 +25,6 @@
  *    sees fit). The option value is *read* from the same surface snapshot
  *    ([L02]) — the engine is the single source, the group is a controlled
  *    face over it.
- *
- *  - **Count** — a read-only `‹active+1› of ‹total›` {@link TugBadge}
- *    (tinted / action — the same coloration as the Z4B Mode / Model /
- *    Effort chips; `No results` on a hitless query; `N+` when the engine
- *    capped its enumeration), width-stabilized via {@link TugStableOverlay}
- *    so stepping through matches never reflows the cluster. A badge is a
- *    label, never a control — it emits no action, and it hides (never
- *    unmounts) when there is no query, so the cluster's width is steady.
  *
  * **Refuses focus-steal ([L11]).** The toggle buttons carry
  * `data-tug-focus="refuse"` (from `TugOptionGroup`) so a click never pulls
@@ -150,17 +152,6 @@ export function TugFindCluster({
   return (
     <ResponderScope>
       <div className="tugx-find-cluster" data-slot="find-cluster">
-        <TugOptionGroup
-          size="sm"
-          emphasis="default"
-          role="action"
-          items={OPTION_ITEMS}
-          value={activeValues}
-          senderId={senderId}
-          aria-label="Find options"
-          focusGroup={focusGroup}
-          focusOrder={focusOrder}
-        />
         <TugBadge
           emphasis="tinted"
           role="action"
@@ -184,6 +175,17 @@ export function TugFindCluster({
             alternates={["No results", "888 of 888"]}
           />
         </TugBadge>
+        <TugOptionGroup
+          size="sm"
+          emphasis="default"
+          role="action"
+          items={OPTION_ITEMS}
+          value={activeValues}
+          senderId={senderId}
+          aria-label="Find options"
+          focusGroup={focusGroup}
+          focusOrder={focusOrder}
+        />
       </div>
     </ResponderScope>
   );

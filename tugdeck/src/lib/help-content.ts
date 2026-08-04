@@ -46,7 +46,7 @@ export interface HelpShortcut {
  * The shortcuts worth surfacing, each verified against `keybinding-map.ts` and
  * the Swift menus — a tight, true set, not the full binding table. `/` is the
  * one typed command namespace and `⌘/` opens its popup; `⇧⌘P` / `⇧⌘C` select
- * the composer's two routes ([D122]); `⌘F` opens the find bar with `⌘G` /
+ * the composer's two routes ([D122]); `⌘F` toggles the find bar with `⌘G` /
  * `⇧⌘G` cycling matches; `⇧⌘H` toggles the History shade; `⌃⌘P` cycles the
  * permission mode; `⌃\`` cycles the active card; `Esc` is the shared
  * CANCEL_DIALOG dismiss / interrupt.
@@ -56,7 +56,7 @@ export const HELP_SHORTCUTS: readonly HelpShortcut[] = [
   { keys: "⌘/", label: "Open the slash-command popup" },
   { keys: "⇧⌘P", label: "Prompt route" },
   { keys: "⇧⌘C", label: "Changes route — show or hide Changes" },
-  { keys: "⌘F", label: "Find in the transcript (⌘G / ⇧⌘G to cycle)" },
+  { keys: "⌘F", label: "Show / hide the find bar (⌘G / ⇧⌘G to cycle)" },
   { keys: "⇧⌘H", label: "Show or hide the History Shade" },
   { keys: "⌃⌘P", label: "Cycle the permission mode" },
   { keys: "⌃`", label: "Cycle the active card" },

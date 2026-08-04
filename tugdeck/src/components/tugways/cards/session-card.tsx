@@ -319,6 +319,22 @@ const SESSION_CYCLE_ORDER_PULSE = 14;
 const SESSION_CYCLE_ORDER_EDITOR = 15;
 const SESSION_CYCLE_ORDER_ATTACHMENT_BASE = 16;
 
+/**
+ * The find walk — the card's BASE-mode Tab loop, live only while the find bar
+ * is open. Cycling ([P10]) is the walk over the card's chrome; this is the
+ * much smaller walk over the two text surfaces the keyboard can be in at once
+ * and the controls between them: query → options → previous → next → composer
+ * → query. Both the bar's stops and the composer's are registered in the base
+ * mode, which is why the group exists at all — the composer renders inside the
+ * cycle scope and would otherwise be unreachable from here.
+ *
+ * The composer comes last so the very first Tab out of an empty composer lands
+ * on the query field, which is what a user reaching for the search wants.
+ */
+const SESSION_FIND_GROUP = "session-find-walk";
+const SESSION_FIND_ORDER_BASE = 0;
+const SESSION_FIND_ORDER_COMPOSER = SESSION_FIND_ORDER_BASE + 4;
+
 // What committing a Z4B settings picker (effort / model / permission mode) opened
 // from a cycle stop does to the cycle ([P15]). Both behaviors are first-class
 // framework features (see `TugSheet`'s `onCommitDisposition` and the engine's
@@ -2365,39 +2381,12 @@ export function SessionCardBody({
     });
   });
 
-  // Find bar: open/closed is structural (the bar mounts/unmounts above Z2),
-  // mirroring the Text card's `findOpen`. The session outlives the bar here —
-  // the transcript host binds its engine to it at card scope — so the bar
-  // never clears it; closing does.
-  //
-  // Closing ends the search but not the query: the last one is remembered and
-  // seeded back on the next ⌘F, which is what makes clear-on-close painless
-  // (Safari and Xcode behave the same way). It lives in a ref because nothing
-  // renders from it.
-  const [findBarOpen, setFindBarOpen] = useState(false);
-  const findBarRef = useRef<TugFindBarHandle | null>(null);
-  const lastFindQueryRef = useRef("");
-
-  const openFindBar = useCallback(() => {
-    // Fresh bar: it focuses its own field on mount. Already open: ⌘F must
-    // still land the caret in the query field, unconditionally.
-    setFindBarOpen(true);
-    findBarRef.current?.focusQuery();
-  }, []);
-
-  const closeFindBar = useCallback(() => {
-    lastFindQueryRef.current = findSession.getSnapshot().query;
-    setFindBarOpen(false);
-    findSession.clear();
-    entryDelegateRef.current?.focus();
-  }, [findSession, entryDelegateRef]);
-
   // [P03] Shade visibility is card chrome state, not route state. A per-card
   // `ShadeViewController` holds which transcript-slot view is showing; the
   // card reads it via `useSyncExternalStore` to pick the active pane. All
   // three panes stay mounted — only visibility flips, via CSS ([L26]/[L06]).
-  // Typed commands (`/changes`, `/history`) call `show`; hiding is chrome-only
-  // (Shade close affordance, Swift menu / keyboard toggles) ([P05]).
+  // Entering commit mode calls `show`; hiding is chrome-only (Shade close
+  // affordance, Swift menu / keyboard toggles) ([P05]).
   const shadeViewControllerRef = useRef<ShadeViewController | null>(null);
   if (shadeViewControllerRef.current === null) {
     shadeViewControllerRef.current = new ShadeViewController();
@@ -2422,6 +2411,53 @@ export function SessionCardBody({
     () => () => commitModeController.dispose(),
     [commitModeController],
   );
+
+  // Find bar: open/closed is structural (the bar mounts/unmounts above Z2),
+  // mirroring the Text card's `findOpen`. The session outlives the bar here —
+  // the transcript host binds its engine to it at card scope — so the bar
+  // never clears it; closing does.
+  //
+  // Closing ends the search but not the query: the last one is remembered and
+  // seeded back on the next ⌘F, which is what makes clear-on-close painless
+  // (Safari and Xcode behave the same way). It lives in a ref because nothing
+  // renders from it.
+  const [findBarOpen, setFindBarOpen] = useState(false);
+  const findBarRef = useRef<TugFindBarHandle | null>(null);
+  const lastFindQueryRef = useRef("");
+
+  const openFindBar = useCallback(() => {
+    // Find and Changes are mutually exclusive: both are modes that take over
+    // the bottom of the card, so summoning one leaves the other. `leave` (not
+    // a bare `exit`) persists a typed commit message, so coming back to
+    // Changes resumes it exactly as Cancel and the Z4A tab do.
+    commitModeController.leave();
+    // The bar focuses its own query field on mount.
+    setFindBarOpen(true);
+  }, [commitModeController]);
+
+  const closeFindBar = useCallback(() => {
+    lastFindQueryRef.current = findSession.getSnapshot().query;
+    // A surface that is holding the keyboard owes it somewhere to land when it
+    // goes away; a surface that is not must leave the keyboard alone. So the
+    // caret returns to the composer only when the bar had it — dismissing the
+    // bar from the Session menu while the caret sits in a transcript row must
+    // not yank it out of that row.
+    const returnCaret = findBarRef.current?.holdsKeyboard() ?? false;
+    setFindBarOpen(false);
+    findSession.clear();
+    if (returnCaret) entryDelegateRef.current?.focus();
+  }, [findSession, entryDelegateRef]);
+
+  // ⌘F / Edit ▸ Find… toggles. A find bar is a mode, and the chord that
+  // summons a mode is the chord that dismisses it — the same shape ⇧⌘C has on
+  // Changes. The open flag is read through a ref so the toggle keeps one
+  // identity across the open/close it causes ([L24] structure zone).
+  const findBarOpenRef = useRef(findBarOpen);
+  findBarOpenRef.current = findBarOpen;
+  const toggleFindBar = useCallback(() => {
+    if (findBarOpenRef.current) closeFindBar();
+    else openFindBar();
+  }, [openFindBar, closeFindBar]);
 
   useSessionCardObserver(cardId, codeSessionStore);
   // Landing receipts as transcript ink ([P09], Spec S04): every successful
@@ -2494,18 +2530,24 @@ export function SessionCardBody({
   // land, all via `commitModeController.exit()`) drops the sheet, unless the
   // shade has already swapped to History. Observing the mode's active flag is
   // what lets a composer-initiated exit close the sheet.
+  //
+  // Entering also dismisses the find bar — the other half of the Find/Changes
+  // exclusion `openFindBar` owns. Reading the flag rather than wiring each
+  // door is what makes every entrance agree: ⇧⌘C, `/commit`, the Z4A tab, the
+  // Session menu, and the failed-land re-entry.
   const prevCommitModeActiveRef = useRef(commitModeActive);
   useEffect(() => {
     const prev = prevCommitModeActiveRef.current;
     prevCommitModeActiveRef.current = commitModeActive;
     if (!prev && commitModeActive) {
+      if (findBarOpenRef.current) closeFindBar();
       shadeViewController.show("changes");
     } else if (prev && !commitModeActive) {
       if (shadeViewController.getSnapshot() === "changes") {
         shadeViewController.hide();
       }
     }
-  }, [commitModeActive, shadeViewController]);
+  }, [commitModeActive, shadeViewController, closeFindBar]);
   const handleChangesSheetOpenChange = useCallback(
     (open: boolean) => {
       if (!open && shadeViewController.getSnapshot() === "changes") {
@@ -3613,16 +3655,6 @@ export function SessionCardBody({
     // (confirm → interrupt every turn → `claude_logout` → TugSetup reopens);
     // the same nonce the File-menu "Log out…" bumps, so there's one flow.
     logout: () => requestLogout(),
-    // `/changes` — the one typeable route name. It is the only local command
-    // whose effect is a MODE rather than a surface: it selects a route and
-    // leaves you there, where every other command is a one-shot verb that
-    // returns you where you were. Idempotent against the controller's own
-    // `active` flag. (No `/prompt` twin — see `lib/slash-commands.ts`.)
-    //
-    // `/changes` and `/commit` are not redundant: `/commit [message]` enters
-    // with a seed message (an act of committing), `/changes` is the bare
-    // switch (an act of looking).
-    changes: () => commitModeController.enter(),
     // `/commit` — enters commit mode ([P03]/[P09]): the commit sheet rises
     // and the prompt entry becomes the message editor. A `/commit <message>`
     // seeds the composer with the args as an edited draft ([P05]); the `now`
@@ -3682,14 +3714,17 @@ export function SessionCardBody({
       [TUG_ACTIONS.FOCUS_PROMPT]: (_event: ActionEvent) => {
         entryDelegateRef.current?.focus();
       },
-      // ⌘F / Edit ▸ Find… — open the transcript find bar. Registering this
+      // ⌘F / Edit ▸ Find… — toggle the transcript find bar. Registering this
       // handler is also what ENABLES the menu item: `host-menu-state` derives
       // Edit ▸ Find…'s enablement from `chain.validateAction(FIND)`, so
       // without a handler AppKit eats the chord at the menu bar and it never
-      // reaches the web view. Idempotent: a second ⌘F re-summons the caret
-      // into the query field rather than toggling the bar shut.
+      // reaches the web view.
+      //
+      // The bar's OWN responder answers FIND while the caret is inside it (it
+      // re-summons the query field), so this handler only ever sees a ⌘F from
+      // outside the bar — which is exactly when "dismiss" is the right reading.
       [TUG_ACTIONS.FIND]: (_event: ActionEvent) => {
-        openFindBar();
+        toggleFindBar();
       },
       // ⌥⇥ toggles keyboard-focus-cycling: the editor's Tab gives way to a
       // trapped tour of the card's chrome zones, seeded on the submit
@@ -4214,6 +4249,8 @@ export function SessionCardBody({
                 dataSlot="session-card-find-bar"
                 inputTestId="session-card-find-input"
                 initialQuery={lastFindQueryRef.current}
+                focusGroup={SESSION_FIND_GROUP}
+                focusOrderBase={SESSION_FIND_ORDER_BASE}
               />
             ) : null}
             <div
@@ -4332,6 +4369,11 @@ export function SessionCardBody({
               routeFocusOrder={SESSION_CYCLE_ORDER_ROUTE}
               editorFocusGroup={SESSION_CYCLE_GROUP}
               editorFocusOrder={SESSION_CYCLE_ORDER_EDITOR}
+              // The composer's seat in the find walk — authored only while
+              // the bar is up, so Tab in a bare card still belongs to the
+              // editor and never rings the field the caret is already in.
+              composerStopFocusGroup={findBarOpen ? SESSION_FIND_GROUP : undefined}
+              composerStopFocusOrder={SESSION_FIND_ORDER_COMPOSER}
               attachmentFocusGroup={SESSION_CYCLE_GROUP}
               attachmentFocusOrderBase={SESSION_CYCLE_ORDER_ATTACHMENT_BASE}
               onAttachmentCountChange={setAttachmentCount}

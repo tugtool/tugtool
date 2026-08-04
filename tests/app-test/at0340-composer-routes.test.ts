@@ -18,10 +18,10 @@
  *   1. ⇧⌘C enters Changes (shade up, tab selected) and leaves it again.
  *   2. ⇧⌘P selects Prompt from Changes — and is a no-op while already on
  *      Prompt, since it names a route rather than toggling.
- *   3. `/changes` moves the tab; a one-shot verb (`/btw`) leaves it where it
- *      was. There is deliberately no `/prompt` — in Changes the composer is
- *      the commit-message editor, so nothing typed there is read as a
- *      command, which would leave `/prompt` a permanent no-op.
+ *   3. A one-shot verb (`/btw`) leaves the route where it was. Neither route
+ *      has a typeable name at all — a slash command is a verb that returns you
+ *      where you were, a route is a mode you stay in — so the doors are the
+ *      chords, the tab, and Escape.
  *   4. Draft stash-and-restore: a typed prompt survives Prompt → Changes →
  *      Prompt verbatim, and the composer holds the commit message in between.
  *
@@ -218,7 +218,7 @@ async function seedSession(app: App): Promise<void> {
 
 describe.skipIf(!SHOULD_RUN)("AT0340: the composer's two routes", () => {
   test(
-    "⇧⌘C, ⇧⌘P, /changes and /prompt all agree with the tab; a draft survives the round trip",
+    "⇧⌘C and ⇧⌘P agree with the tab, a verb leaves it alone, and a draft survives the round trip",
     async () => {
       const app = await launchTugApp({ testName: "at0340-composer-routes" });
       try {
@@ -255,20 +255,7 @@ describe.skipIf(!SHOULD_RUN)("AT0340: the composer's two routes", () => {
           "⇧⌘P on Prompt is a no-op, not a toggle into Changes",
         ).toBe("prompt");
 
-        // --- 3. `/changes` moves the tab; a one-shot verb does not. ---
-        await submitLine(app, "/changes");
-        await waitForRoute(app, "changes", "slash-changes");
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(CHANGES_ACTIVE)}) !== null`,
-          { timeoutMs: 8000 },
-        );
-
-        // There is no typed way BACK: in Changes the composer is the
-        // commit-message editor, so submit lands the message verbatim and
-        // nothing typed there is read as a command. ⇧⌘P is the way out.
-        await pressChord(app, "KeyP", "p", { meta: true, shift: true });
-        await waitForRoute(app, "prompt", "shift-cmd-p after slash-changes");
-
+        // --- 3. A one-shot verb leaves the route alone. ---
         await submitLine(app, "/btw what did I just say");
         await app.waitForCondition<boolean>(
           `document.querySelector('[data-slot="side-question-body"]') !== null`,

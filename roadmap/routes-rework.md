@@ -798,9 +798,9 @@ Registry order matters only for popup presentation; place `shell` and `btw` near
 
 - [ ] `tugdeck/src/lib/bang-commands.ts` is deleted and `rg -n 'bang|BANG' tugdeck/src tests/app-test` is empty (grep)
 - [ ] Z4A renders a two-segment Prompt | Changes control whose selection always agrees with `CommitModeController.getSnapshot().active` across all eight entry/exit paths (at0340)
-- [ ] ⌘F opens the Session find bar and Edit ▸ Find… validates enabled on a frontmost Session card (at0338 + manual menu check)
-- [ ] `/shell`, `/btw`, `/prompt`, `/changes` all match and dispatch; `/find` and `/history` do not exist (bun test + at0339)
-- [ ] ⇧⌘P selects Prompt and ⌃⌘P cycles the permission mode from both the binding and the Swift menu (at0339 + manual)
+- [ ] ⌘F opens the Session find bar and Edit ▸ Find… validates enabled on a frontmost Session card (at0339 + manual menu check)
+- [ ] `/shell` and `/btw` match and dispatch; `/find`, `/history`, `/prompt` and `/changes` do not exist (bun test + at0340)
+- [ ] ⇧⌘P selects Prompt and ⌃⌘P cycles the permission mode from both the binding and the Swift menu (at0340 + manual)
 - [ ] The Text card's find behavior is unchanged after the extraction (its existing app-tests, unmodified)
 - [ ] [D97]'s zone table names the real Z4A occupant and `/help` lists only chords that exist (manual)
 
@@ -821,11 +821,22 @@ Registry order matters only for popup presentation; place `shell` and `btw` near
 - [ ] Consider whether the Changes segment should carry the changed-file count, folding the Z4B commit cluster's "Changes / N files" into the tab itself.
 - [ ] `at0222-one-shot-commands.test.ts` is still `describe.skip` for an unrelated reason (its bare-command routing case pins the login-PATH membership check); re-enable when the bare-typed classifier work lands.
 
+#### Refinements after landing {#refinements}
+
+Everything below shipped on `main` after the dash joined, in response to using the thing. They amend the plan rather than extend it; [D122] carries the doctrine.
+
+- **Neither route has a typeable name.** `/prompt` never shipped (it could not act — see [P05]'s amendment), and `/changes` is now deleted too. A lone route command with no twin is a half-namespace nobody can predict from the other half, and a slash command is a one-shot verb where a route is a mode you stay in. `/commit [message]` remains the *verb*. Doors: the Z4A tabs, ⇧⌘P / ⇧⌘C, Escape.
+- **⌘F toggles.** The chord that summons a mode dismisses it. ⌘F pressed *inside* the bar is the exception — the bar's own responder answers first and re-summons the query field.
+- **Find and Changes exclude each other**, wired off `CommitModeController`'s active flag so every door agrees. Opening the bar leaves Changes via a new `leave()` (persists a typed message, unlike the land path's bare `exit()`). This reverses [P07]'s coexistence claim, which was right about find not being a *shade* and wrong about two bottom-of-card modes being able to share the space.
+- **The cluster moved to the trailing edge, count first** — count, options, ↑ / ↓ as one group. The absolute-centring CSS override went with it.
+- **The bar joined the focus language.** Its four controls are authored stops sharing a Tab loop with the composer (`query → options → previous → next → composer → query`), which needed two new primitives: `TugTextEditor.tabMovesFocusWhenEmpty` (an empty field releases Tab, since indenting nothing is not an edit) and `useFocusable`'s `mode` (the composer declares a base-mode seat because it renders inside the cycle scope). Escape now dismisses from any stop, not just the query field, and the dismissal returns the caret to the composer only when the bar was holding the keyboard.
+- **Return / ⇧Return follow the caret** — the ↓ / ↑ twins in the query field, submit in the composer. This already fell out of the substrate keymap; at0339 now pins it.
+
 | Checkpoint | Verification |
 |------------|--------------|
 | Bang layer gone | `rg -n 'bang\|BANG' tugdeck/src tests/app-test` empty; `lib/bang-commands.ts` absent |
 | Two routes visible and correct | `just app-test tests/app-test/at0340-composer-routes.test.ts` |
-| ⌘F claimed | `just app-test tests/app-test/at0338-session-find-bar.test.ts` + Edit ▸ Find… enabled |
+| ⌘F claimed | `just app-test tests/app-test/at0339-session-find-bar.test.ts` + Edit ▸ Find… enabled |
 | Text card unregressed | Its existing find app-tests pass unmodified |
 | Build clean | `cd tugdeck && bunx tsc --noEmit && bunx vite build` |
 | Whole app sane | `just app-test` (core tier) |

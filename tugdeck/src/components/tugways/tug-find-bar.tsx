@@ -4,10 +4,10 @@
  *
  * The bar composes the shared pieces — {@link TugEntryShell} (the entry panel
  * + toolbar shell), a {@link TugTextEditor} CM6 substrate as the query field,
- * the shared {@link TugFindCluster} (Case / Word / Grep + the count badge)
- * centred in the toolbar, and the ↑ / ↓ pair at the trailing edge (outlined
- * "Find previous" beside filled "Find next"). It docks immediately above the
- * host's status bar; ⌘F summons it, Escape dismisses — there is no ✕.
+ * and one trailing group holding the shared {@link TugFindCluster} (the count
+ * badge, then Case / Word / Grep) beside the ↑ / ↓ pair (outlined "Find
+ * previous" beside filled "Find next"). It docks immediately above the host's
+ * status bar; ⌘F summons and dismisses it, Escape dismisses — there is no ✕.
  *
  * Keys: Enter → next, Shift-Enter → previous, Escape → dismiss — a dedicated
  * find field follows the universal find-bar convention. Bound as a
@@ -49,6 +49,14 @@ import { useOptionalResponder } from "@/components/tugways/use-responder";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import type { FindSession } from "@/lib/find-session";
 
+/** The bar's four Tab stops, in reading order, as offsets from the host's
+ *  `focusOrderBase`. The query field leads because it is where ⌘F lands and
+ *  what every other control is about. */
+const FIND_STOP_QUERY = 0;
+const FIND_STOP_OPTIONS = 1;
+const FIND_STOP_PREVIOUS = 2;
+const FIND_STOP_NEXT = 3;
+
 export interface TugFindBarProps {
   /** The host's find session — the bar drives it, the host owns it. */
   session: FindSession;
@@ -74,6 +82,17 @@ export interface TugFindBarProps {
    * (the Text card) pass nothing.
    */
   initialQuery?: string;
+  /**
+   * Authors the bar's four controls — query field, option group, Previous,
+   * Next — into the host's Tab walk ([P02]), at `focusOrderBase + 0…3`. A find
+   * bar is a surface a keyboard user has to be able to *work*, not just type
+   * into: the option toggles change what the query means and the ↑ / ↓ pair is
+   * the gesture Return duplicates. Omitted by hosts that have not authored a
+   * walk for it, which leaves the controls plain pointer targets.
+   */
+  focusGroup?: string;
+  /** First of the four consecutive orders in {@link focusGroup}. Defaults to 0. */
+  focusOrderBase?: number;
 }
 
 /** Imperative surface the host drives: ⌘F on an already-open bar must put
@@ -83,6 +102,14 @@ export interface TugFindBarProps {
 export interface TugFindBarHandle {
   focusQuery(): void;
   refreshCount(): void;
+  /**
+   * Whether the keyboard is currently inside the bar — the caret in the query
+   * field, or the engine's key view on one of its controls (which parks
+   * `document.activeElement` on the key sink OUTSIDE the bar, so containment
+   * alone cannot answer this). The host asks before dismissing: a bar that
+   * holds the keyboard owes it somewhere to land.
+   */
+  holdsKeyboard(): boolean;
 }
 
 export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
@@ -96,11 +123,14 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
       dataSlot = "tug-find-bar",
       inputTestId,
       initialQuery,
+      focusGroup,
+      focusOrderBase = 0,
     }: TugFindBarProps,
     ref,
   ): React.ReactElement {
     const barResponderId = React.useId();
     const substrateRef = useRef<TugTextEditorDelegate | null>(null);
+    const barRootRef = useRef<HTMLDivElement | null>(null);
 
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
@@ -173,6 +203,19 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
         refreshCount: () => {
           session.refresh();
         },
+        holdsKeyboard: () => {
+          const root = barRootRef.current;
+          if (root === null) return false;
+          // Two registers, because the engine uses two ([P01]): a caret in the
+          // query field is real DOM focus (`dom-granted`), while a ring on the
+          // options or the ↑ / ↓ pair is `engine-routed` and parks
+          // `activeElement` on the key sink outside the bar — for those the
+          // projected `data-key-view` mark is the only local evidence.
+          return (
+            root.contains(document.activeElement) ||
+            root.querySelector("[data-key-view]") !== null
+          );
+        },
       }),
       [session],
     );
@@ -195,18 +238,46 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
         [TUG_ACTIONS.FIND_PREVIOUS]: () => {
           session.previous();
         },
+        // Escape dismisses from ANYWHERE in the bar, not just the query
+        // field. The field's own `Prec.high` keymap covers the caret case
+        // (and gets there first); this covers the ring — an option toggle or
+        // the ↑ / ↓ pair — where there is no CM6 to catch the key. A surface
+        // with one dismissal gesture that works from three of its four stops
+        // is a surface that reads as stuck.
+        [TUG_ACTIONS.CANCEL_DIALOG]: () => {
+          onCloseRef.current();
+        },
       },
     });
+
+    // One callback into the responder registration and the local root ref,
+    // which `holdsKeyboard` reads to answer "is the keyboard in here?".
+    const shellRef = React.useCallback(
+      (el: HTMLDivElement | null) => {
+        barRootRef.current = el;
+        (responderRef as (node: HTMLDivElement | null) => void)(el);
+      },
+      [responderRef],
+    );
 
     return (
       <ResponderScope>
         <TugEntryShell
-          ref={responderRef as (el: HTMLDivElement | null) => void}
+          ref={shellRef}
           className={className ? `tug-find-bar ${className}` : "tug-find-bar"}
           data-slot={dataSlot}
-          toolbarCenter={<TugFindCluster surface={session} />}
           toolbarTrailing={
             <>
+              {/* Everything about the search reads as one trailing group:
+                  what the search found, what it is searching FOR, and the
+                  two buttons that walk it. Centring the cluster instead put
+                  a card's width of empty toolbar between the count and the
+                  ↑/↓ pair that changes it. */}
+              <TugFindCluster
+                surface={session}
+                focusGroup={focusGroup}
+                focusOrder={focusOrderBase + FIND_STOP_OPTIONS}
+              />
               <TugPushButton
                 subtype="icon"
                 size="lg"
@@ -218,6 +289,8 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
                 onClick={() => session.previous()}
                 aria-label="Find previous"
                 icon={<ChevronUp size={18} strokeWidth={2.5} />}
+                focusGroup={focusGroup}
+                focusOrder={focusOrderBase + FIND_STOP_PREVIOUS}
               />
               <TugPushButton
                 subtype="icon"
@@ -227,6 +300,8 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
                 onClick={() => session.next()}
                 aria-label="Find next"
                 icon={<ChevronDown size={18} strokeWidth={2.5} />}
+                focusGroup={focusGroup}
+                focusOrder={focusOrderBase + FIND_STOP_NEXT}
               />
             </>
           }
@@ -241,6 +316,11 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
             /* The host owns its card-state-preservation slot; a transient
                find field must not stash editor state into the card bag. */
             preserveState={false}
+            /* An empty query has nothing to indent, so Tab is spent moving
+               the keyboard on through the bar's own stops instead. */
+            tabMovesFocusWhenEmpty
+            focusGroup={focusGroup}
+            focusOrder={focusOrderBase + FIND_STOP_QUERY}
             extensions={findBarExtensions}
           />
         </TugEntryShell>

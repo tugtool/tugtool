@@ -167,15 +167,13 @@ export const LOCAL_SLASH_COMMANDS = [
     description: "Compact the conversation in place to free up context",
     takesArgs: true,
   },
-  // There is deliberately no `/prompt` twin: in the Changes route the composer
-  // IS the commit-message editor, so submit lands the message verbatim and no
-  // typed line is ever read as a command there. A `/prompt` entry could only
-  // ever be a no-op typed from the route it already names. ⇧⌘P, ⇧⌘C, the Z4A
-  // tab, and Escape are the ways back.
-  {
-    name: "changes",
-    description: "Switch the composer to the Changes route",
-  },
+  // Neither route has a typeable name. A slash command is a one-shot verb that
+  // returns you where you were; a route is a mode you stay in, and the two do
+  // not belong in one namespace. `/prompt` could not work at all — in the
+  // Changes route the composer IS the commit-message editor, so submit lands
+  // the message verbatim and no typed line is ever read as a command there —
+  // and a lone `/changes` with no twin is a half-namespace nobody can predict.
+  // The route gestures are the Z4A tabs, ⇧⌘P / ⇧⌘C, and Escape.
   {
     name: "commit",
     description: "Open the commit dialog to author a message and land this session's changes",

@@ -72,6 +72,7 @@ import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { PromptHistoryStore } from "@/lib/prompt-history-store";
 
+import { BASE_FOCUS_MODE } from "./focus-manager";
 import {
   TugTextEditor,
   type TugTextEditorDelegate,
@@ -911,6 +912,25 @@ export interface TugPromptEntryProps {
   /** Order of the editor text-stop within {@link editorFocusGroup}. */
   editorFocusOrder?: number;
   /**
+   * Authors the **text field itself** into a focus group registered in the
+   * card's BASE focus mode — the walk that is live when the card is *not*
+   * focus-cycling. Distinct from {@link editorFocusGroup} in both what
+   * registers and which walk it joins: that one is the input-area wrapper as a
+   * cycle stop you descend into, this one is the editor's own responder, so a
+   * walk landing here lands the **caret** (`dom-granted`) rather than a ring
+   * you have to press Return to enter.
+   *
+   * It exists so a sibling surface that appears alongside the composer — the
+   * session card's find bar — can form one Tab loop with it. The composer sits
+   * inside the card's `CycleScope`, so the base-mode registration has to be
+   * declared, not inherited from the tree. Hosts pass this only while such a
+   * sibling is on screen; with the composer as the walk's only member Tab would
+   * ring the field the caret is already in.
+   */
+  composerStopFocusGroup?: string;
+  /** Order of the composer stop within {@link composerStopFocusGroup}. */
+  composerStopFocusOrder?: number;
+  /**
    * Fired when the cycle's Return-into-text gesture lands on the editor stop
    * ([P11]): the host should exit cycling so the editor reactivates and the
    * caret returns. Paired with {@link editorFocusGroup}.
@@ -1033,6 +1053,8 @@ export const TugPromptEntry = React.forwardRef<
     routeFocusOrder,
     editorFocusGroup,
     editorFocusOrder,
+    composerStopFocusGroup,
+    composerStopFocusOrder,
     onResumeTyping,
     attachmentFocusGroup,
     attachmentFocusOrderBase,
@@ -1554,12 +1576,18 @@ export const TugPromptEntry = React.forwardRef<
   // through the controller's own path (which clears the draft first), so it
   // never routes here — the persist below only ever runs on a user cancel.
   const exitCommitMode = useCallback(() => {
-    const controller = commitModeRef.current;
-    if (controller === undefined) return;
-    const message = readCommitMessage();
-    if (message.trim().length > 0) controller.persistMessage(message);
-    controller.exit();
-  }, [readCommitMessage]);
+    commitModeRef.current?.leave();
+  }, []);
+
+  // The composer owns the document, so it is the only thing that can read the
+  // typed message — hand the controller that read so a door OUTSIDE the
+  // composer (⌘F, which leaves Changes) persists the draft the same way
+  // Cancel and the Z4A tab do.
+  useLayoutEffect(() => {
+    if (commitMode === undefined) return;
+    commitMode.setMessageProvider(() => readCommitMessage());
+    return () => commitMode.setMessageProvider(null);
+  }, [commitMode, readCommitMessage]);
 
   // Auto-Message ([P06]): a typed message is protected by the Replace confirm;
   // an empty field drafts straight away. Read the editor live rather than the
@@ -3336,6 +3364,21 @@ export const TugPromptEntry = React.forwardRef<
               // `session-card.css` — so the gallery prompt keeps the 20-row cap
               // while the Dev prompt scrolls at a fraction of the card).
               maxRows={20}
+              // An empty composer has nothing to indent, so Tab moves the
+              // keyboard on instead of doing nothing visible — which is what
+              // makes the composer and the find bar above it one keyboard
+              // surface. The first typed character takes Tab back.
+              tabMovesFocusWhenEmpty
+              // The composer's seat in the card's base-mode walk, declared
+              // rather than inherited: this element renders inside the card's
+              // CycleScope, but the loop it belongs to is the one the find bar
+              // opens. Landing here is `dom-granted` — the caret comes back to
+              // the composer, no Return required.
+              focusGroup={composerStopFocusGroup}
+              focusOrder={composerStopFocusOrder}
+              focusMode={
+                composerStopFocusGroup !== undefined ? BASE_FOCUS_MODE : undefined
+              }
               // In commit mode the field is a plain-prose message editor:
               // read-only while the scribe streams a draft, and the slash /
               // mention / argument machinery stands down (submit lands the
