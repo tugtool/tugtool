@@ -34,6 +34,13 @@
  * again, it closes; closed → no observer is registered at all, the toggle
  * queues true, it opens.
  *
+ * The chord is a PREFERENCE, so the second test sets it before pressing.
+ * ⌘R belongs to whichever of the two slot-stack items the user names — Cycle
+ * Stack by default, Reveal Stack here — and only the key equivalent moves; both
+ * items exist and gate identically either way. That is why the gate test above
+ * needs no such setup, and why this one would otherwise be pressing a chord
+ * that cycles.
+ *
  * What this file deliberately does NOT assert: that ⌘R no longer reloads.
  * at0168 owns that structurally, by identifier and modifier mask. A "press ⌘R
  * and confirm no reload" assertion would be vacuous in this bundle anyway —
@@ -187,6 +194,12 @@ describe.skipIf(!SHOULD_RUN)(
           );
           await wait(AFTER_LAND_MS);
           await focusCard(app, "A");
+
+          // Put ⌘R on Reveal Stack. The host moves the key equivalent off
+          // Cycle Stack when the preference arrives on the menu-state push, so
+          // give that round-trip room before pressing.
+          await app.evalJS<null>(`(window.__tug.setStackChord("reveal"), null)`);
+          await wait(300);
 
           await waitForMenu(app, false);
 

@@ -2,9 +2,13 @@
  * settings-general-body.tsx — the General settings panel.
  *
  * App-wide preferences that belong to the app itself rather than to a card
- * type. Today that is one field: the **default project directory** — where
- * Tug looks when nothing else says otherwise (Open Quickly with no bound
- * card, and the session picker's path seed when there are no recents).
+ * type. Two today. The **default project directory** — where Tug looks when
+ * nothing else says otherwise (Open Quickly with no bound card, and the
+ * session picker's path seed when there are no recents). And **what ⌘R does
+ * to a slot's stack of panes**: cycle to the buried-longest one without
+ * putting anything on screen, or open the title-bar picker to read the stack
+ * first. Both commands stay in the Window menu either way; the setting moves
+ * only the chord.
  *
  * The stored value is optional: unset reads through to `<home>/tug`, shown
  * in the field as a placeholder so the user sees what they will get without
@@ -29,10 +33,17 @@
  * @module components/tugways/cards/settings-general-body
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { TugBox } from "../tug-box";
 import { TugLabel } from "../tug-label";
+import { TugChoiceGroup } from "../tug-choice-group";
 import { TugFileChooser } from "../tug-file-chooser";
+import { useResponderForm } from "../use-responder-form";
+import {
+  normalizeStackChord,
+  stackChordStore,
+  useStackChord,
+} from "@/stack-chord-store";
 import { useHostFacts } from "@/lib/host-facts-store";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import { probeDirExistence } from "@/lib/dir-existence";
@@ -115,34 +126,76 @@ export function SettingsGeneralBody() {
     [stored],
   );
 
+  // Which Window-menu item owns ⌘R. The store is the value's home — the host
+  // reads it off the menu-state push — so the control writes straight through
+  // and re-reads it, never holding a copy that could settle out of step.
+  const stackChord = useStackChord();
+  const stackChordId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectValue: {
+      [stackChordId]: (v: string) => stackChordStore.setChord(normalizeStackChord(v)),
+    },
+  });
+
   return (
-    <div className="settings-general" data-testid="settings-general">
-      <TugBox
-        label="Default Project Directory"
-        labelPosition="legend"
-        variant="bordered"
-        className="settings-general-group"
+    <ResponderScope>
+      <div
+        className="settings-general"
+        data-testid="settings-general"
+        ref={responderRef as (el: HTMLDivElement | null) => void}
       >
-        <div
-          className="settings-general-field"
-          data-testid="settings-default-project-dir-field"
+        <TugBox
+          label="Default Project Directory"
+          labelPosition="legend"
+          variant="bordered"
+          className="settings-general-group"
         >
-          <TugFileChooser
-            value={value}
-            onChange={setDraft}
-            base={value !== "" ? value : home ?? "/"}
-            kind="directory"
-            onSettle={settle}
-            placeholder={resolvedFallback}
-            aria-label="Default project directory"
+          <div
+            className="settings-general-field"
+            data-testid="settings-default-project-dir-field"
+          >
+            <TugFileChooser
+              value={value}
+              onChange={setDraft}
+              base={value !== "" ? value : home ?? "/"}
+              kind="directory"
+              onSettle={settle}
+              placeholder={resolvedFallback}
+              aria-label="Default project directory"
+            />
+          </div>
+          <TugLabel size="sm" emphasis="calm" className="settings-general-hint">
+            {missing
+              ? "This folder doesn't exist yet — it will be created the first time Tug needs it."
+              : "Where Tug looks when no session card says otherwise: Open Quickly with nothing open, and the new-session path when there are no recent projects."}
+          </TugLabel>
+        </TugBox>
+
+        <TugBox
+          label="Stacked Panes"
+          labelPosition="legend"
+          variant="bordered"
+          className="settings-general-group"
+        >
+          <TugChoiceGroup
+            className="settings-general-chord"
+            size="sm"
+            senderId={stackChordId}
+            value={stackChord}
+            aria-label="What Command-R does to a stack of panes"
+            data-testid="settings-stack-chord"
+            items={[
+              { value: "cycle", label: "⌘R cycles the stack" },
+              { value: "reveal", label: "⌘R shows the stack menu" },
+            ]}
           />
-        </div>
-        <TugLabel size="sm" emphasis="calm" className="settings-general-hint">
-          {missing
-            ? "This folder doesn't exist yet — it will be created the first time Tug needs it."
-            : "Where Tug looks when no session card says otherwise: Open Quickly with nothing open, and the new-session path when there are no recent projects."}
-        </TugLabel>
-      </TugBox>
-    </div>
+          <TugLabel size="sm" emphasis="calm" className="settings-general-hint">
+            {stackChord === "cycle"
+              ? "⌘R brings the pane that has been buried longest to the front — no menu, so a slot of N panes is back where it started after N presses. The picker is still on the title-bar badge, and on ⌘-click."
+              : "⌘R opens the title-bar picker so you can read the stack before choosing. Both commands stay in the Window menu either way."}
+          </TugLabel>
+        </TugBox>
+      </div>
+    </ResponderScope>
   );
 }

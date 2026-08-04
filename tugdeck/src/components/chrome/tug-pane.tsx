@@ -1286,6 +1286,24 @@ export function TugPane({
       [TUG_ACTIONS.REVEAL_STACK]: (_event: ActionEvent) => {
         titleBarRef.current?.revealStack();
       },
+      // The no-look counterpart: switch without reading anything. Nothing
+      // transient is put on screen, so this never reaches the title bar —
+      // the pane raises a peer through the same `onRevealPane` the picker's
+      // rows go through, which is what keeps one raise policy for both.
+      //
+      // The LAST entry is the one raised: `slotStack` is topmost-first, so
+      // that is the pane buried longest. Raising it is what makes repeated
+      // presses a ring rather than a two-pane ping-pong — every raise sends
+      // the outgoing front pane one place back, so a depth-N slot is home
+      // again after N presses and the user can count instead of look. It is
+      // also what ⌘` does with windows. The raise moves the first responder
+      // to the pane that came up, so the *next* press is answered by that
+      // pane reading its own freshly-ordered stack.
+      [TUG_ACTIONS.CYCLE_STACK]: (_event: ActionEvent) => {
+        if (slotStack.length <= 1) return;
+        const buried = slotStack[slotStack.length - 1];
+        if (buried) onRevealPane?.(buried);
+      },
       [TUG_ACTIONS.PREVIOUS_TAB]: (_event: ActionEvent) => handlePreviousTab(),
       [TUG_ACTIONS.NEXT_TAB]: (_event: ActionEvent) => handleNextTab(),
       [TUG_ACTIONS.SELECT_TAB]: (event: ActionEvent) => {

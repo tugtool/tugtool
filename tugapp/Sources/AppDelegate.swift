@@ -94,6 +94,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // AppKit's automatic window entries survive every open.
     private var windowMenu: NSMenu!
     private var windowPaneListAnchor: NSMenuItem?
+    /// The two slot-stack switching items. ⌘R moves between them as the
+    /// user's preference changes; held so `applyStackChordKeyEquivalent`
+    /// can reassign it outside AppKit's key-equivalent scan.
+    private var windowCycleStackItem: NSMenuItem?
+    private var windowRevealStackItem: NSMenuItem?
 
     /// File ▸ Open Recent submenu — rebuilt on open by the NSMenuDelegate
     /// from `menuState.recentDocuments`, filtered to still-existing files.
@@ -1160,12 +1165,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         wMenu.addItem(NSMenuItem(title: "Previous Card", action: #selector(previousCard(_:)), keyEquivalent: "[", modifierMask: [.command, .shift]).identified("window.previousCard"))
         wMenu.addItem(NSMenuItem(title: "Next Card", action: #selector(nextCard(_:)), keyEquivalent: "]", modifierMask: [.command, .shift]).identified("window.nextCard"))
         wMenu.addItem(NSMenuItem(title: "Cycle Panes", action: #selector(cyclePanes(_:)), keyEquivalent: "`", modifierMask: [.control]).identified("window.cyclePanes"))
-        // A slot is a stack of panes, only the top one visible. This opens the
-        // focused pane's picker so a buried one can be brought forward without
-        // a trip to the Lens. It belongs on the menu bar rather than in the
-        // keybinding map because AppKit resolves a menu key equivalent before
-        // the web view ever sees the keydown.
-        wMenu.addItem(NSMenuItem(title: "Reveal Stack", action: #selector(revealStack(_:)), keyEquivalent: "r").identified("window.revealStack"))
+        // A slot is a stack of panes, only the top one visible. Two ways to
+        // switch: Cycle brings the buried-longest pane straight forward (no
+        // menu, so the chord can be repeated without looking — a depth-N slot
+        // is home again after N presses), while Reveal opens the focused
+        // pane's picker to be read before choosing. Both live here rather than
+        // in the keybinding map because AppKit resolves a menu key equivalent
+        // before the web view ever sees the keydown — which is also why the
+        // ⌘R preference can only be honoured by moving the chord between these
+        // two items (see updateMenuState).
+        let cycleStackItem = NSMenuItem(title: "Cycle Stack", action: #selector(cycleStack(_:)), keyEquivalent: "").identified("window.cycleStack")
+        self.windowCycleStackItem = cycleStackItem
+        wMenu.addItem(cycleStackItem)
+        let revealStackItem = NSMenuItem(title: "Reveal Stack", action: #selector(revealStack(_:)), keyEquivalent: "").identified("window.revealStack")
+        self.windowRevealStackItem = revealStackItem
+        wMenu.addItem(revealStackItem)
+        applyStackChordKeyEquivalent()
         // Anchor separator for the dynamic pane-list slice: pane items are
         // inserted directly after it (and removed by identifier prefix) on
         // every menu open. macOS hides the redundant separator pair when
@@ -1609,6 +1624,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("reveal-stack")
     }
 
+    @objc private func cycleStack(_ sender: Any) {
+        sendControl("cycle-stack")
+    }
+
+    /// Put ⌘R on whichever slot-stack item the frontend's `stackChord`
+    /// preference names, and clear it from the other. Called at menu-build
+    /// time and on every menu-state push — never from `validateMenuItem`,
+    /// which runs inside AppKit's key-equivalent scan.
+    private func applyStackChordKeyEquivalent() {
+        let cycleOwns = menuState.stackChord != "reveal"
+        windowCycleStackItem?.keyEquivalent = cycleOwns ? "r" : ""
+        windowCycleStackItem?.keyEquivalentModifierMask = cycleOwns ? [.command] : []
+        windowRevealStackItem?.keyEquivalent = cycleOwns ? "" : "r"
+        windowRevealStackItem?.keyEquivalentModifierMask = cycleOwns ? [] : [.command]
+    }
+
     @objc private func sourceTree(_ sender: Any) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -1710,6 +1741,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if menuState.edit.nativeUndoToken != previousToken {
             window.editingUndoManager()?.removeAllActions()
         }
+
+        // ⌘R follows the user's slot-stack preference between Cycle Stack and
+        // Reveal Stack. Same discipline as Save As… below: set here, outside
+        // AppKit's key-equivalent scan.
+        applyStackChordKeyEquivalent()
 
         // Dynamic ⇧⌘S for Save As…: assign the chord ONLY while a
         // Text card is frontmost; clear it otherwise so ⇧⌘S falls through
@@ -1851,13 +1887,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "window.cyclePanes":
             return menuState.panes.count >= 2
                 || (!menuState.selectionActive && !menuState.panes.isEmpty)
-        // Reveal Stack takes no deselected-deck escape hatch, unlike the three
-        // above. It acts on a SPECIFIC pane's stack; with nothing selected
-        // there is no such pane, and picking one for the user would be a
-        // command with a non-obvious target. A free pane and the Lens hold no
-        // slot, and a pane alone in its slot has nowhere to switch to — all
-        // three publish depth 0 or 1 and validate disabled.
-        case "window.revealStack":
+        // The two slot-stack items take no deselected-deck escape hatch,
+        // unlike the three above. They act on a SPECIFIC pane's stack; with
+        // nothing selected there is no such pane, and picking one for the user
+        // would be a command with a non-obvious target. A free pane and the
+        // Lens hold no slot, and a pane alone in its slot has nowhere to
+        // switch to — all three publish depth 0 or 1 and validate disabled.
+        // Both gate identically whichever one currently holds ⌘R, so the
+        // preference changes the chord and nothing else.
+        case "window.revealStack", "window.cycleStack":
             return menuState.stackDepth > 1
         // Edit / Find tier — first-responder edit capabilities, mirrored
         // from the web responder chain (MenuState.edit). Disabled when no
@@ -2553,8 +2591,15 @@ struct MenuState {
     var selectionActive: Bool = false
     /// How many panes share the focused pane's slot. 0 when that pane holds no
     /// slot (a free pane, or the Lens) and when nothing is selected. Gates
-    /// Window ▸ Reveal Stack, which needs somewhere to switch to.
+    /// Window ▸ Reveal Stack and Window ▸ Cycle Stack, both of which need
+    /// somewhere to switch to.
     var stackDepth: Int = 0
+    /// Which Window-menu item owns ⌘R: `"cycle"` or `"reveal"`. Both items
+    /// always exist and are gated identically; the user's preference decides
+    /// only which one carries the key equivalent. It is decided here rather
+    /// than in the web view because AppKit resolves a menu key equivalent
+    /// before the WKWebView ever sees the keydown.
+    var stackChord: String = "cycle"
 
     static let empty = MenuState()
 
@@ -2568,6 +2613,7 @@ struct MenuState {
     init(payload: [String: Any]) {
         selectionActive = payload["selectionActive"] as? Bool ?? false
         stackDepth = payload["stackDepth"] as? Int ?? 0
+        stackChord = payload["stackChord"] as? String ?? "cycle"
         if let rawPanes = payload["panes"] as? [[String: Any]] {
             panes = rawPanes.compactMap { entry in
                 guard let id = entry["id"] as? String else { return nil }

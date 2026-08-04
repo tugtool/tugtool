@@ -231,6 +231,25 @@ describe("HostMenuStatePublisher", () => {
     expect(posted[0].panes).toHaveLength(1);
   });
 
+  test("carries the ⌘R slot-stack preference, and a change to it re-posts", async () => {
+    // The preference is not deck state — it rides this channel because the
+    // host is the only place the chord can move, AppKit resolving a menu key
+    // equivalent before the web view sees the keydown. So it has to survive
+    // the payload diff on its own, with no deck mutation to carry it.
+    const posted: MenuStatePayload[] = [];
+    const publisher = new HostMenuStatePublisher((p) => posted.push(p));
+    publisher.setDeckProjection(
+      projectDeckState(deck([card("a")], [pane("p1", ["a"])])),
+    );
+    await settle();
+    expect(posted[0].stackChord, "the default owner of ⌘R").toBe("cycle");
+
+    publisher.setStackChord("reveal");
+    await settle();
+    expect(posted).toHaveLength(2);
+    expect(posted[1].stackChord).toBe("reveal");
+  });
+
   test("suppresses identical consecutive payloads", async () => {
     const posted: MenuStatePayload[] = [];
     const publisher = new HostMenuStatePublisher((p) => posted.push(p));

@@ -32,8 +32,9 @@ import {
   ConnectionLifecycle,
   registerConnectionLifecycle,
 } from "./lib/connection-lifecycle";
-import { readLayout, readTheme, readCardStates, readDeckState, readKeyboardAccess, readFocusRingModality, pruneOrphanedCardDefaults } from "./settings-api";
+import { readLayout, readTheme, readCardStates, readDeckState, readKeyboardAccess, readFocusRingModality, readStackChord, pruneOrphanedCardDefaults } from "./settings-api";
 import { keyboardAccessStore, normalizeKeyboardAccessMode } from "./keyboard-access-store";
+import { stackChordStore, normalizeStackChord } from "./stack-chord-store";
 import { focusRingModalityStore, normalizeFocusRingModality } from "./focus-ring-modality-store";
 import { getThemeSetter } from "./action-dispatch";
 import {
@@ -272,6 +273,10 @@ if (!container) {
   focusRingModalityStore.initialize(
     normalizeFocusRingModality(readFocusRingModality(tugbankClient)),
   );
+
+  // Seed which Window-menu item owns ⌘R. The host reads it off the first
+  // menu-state push, so it has to be settled before `initHostMenuState` runs.
+  stackChordStore.initialize(normalizeStackChord(readStackChord(tugbankClient)));
 
   // Startup theme reconciliation, before first render so the app does not
   // flash the wrong theme and then restyle.
@@ -599,6 +604,15 @@ if (!container) {
           normalizeKeyboardAccessMode(kbEntry.value),
           { persist: false },
         );
+      }
+      // Which Window-menu item owns ⌘R, pushed from another process. The
+      // menu-state publisher subscribes to the store, so the host's key
+      // equivalent follows without a second channel.
+      const chordEntry = entries["stackChord"];
+      if (chordEntry && chordEntry.kind === "string" && typeof chordEntry.value === "string") {
+        stackChordStore.setChord(normalizeStackChord(chordEntry.value), {
+          persist: false,
+        });
       }
       // Focus-ring modality pushed from another process (e.g.
       // `tugbank write … focusRingModality pointer`). Apply with persist:false

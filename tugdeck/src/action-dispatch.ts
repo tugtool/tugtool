@@ -541,6 +541,22 @@ export function initActionDispatch(
     }
   });
 
+  // cycle-stack: Bring the buried-longest pane in the focused pane's slot to
+  // the front. Same route as reveal-stack — the first responder's pane
+  // answers — and the same host-side gate; what differs is that nothing
+  // transient appears on screen, so the chord can be repeated without
+  // reading anything.
+  registerAction("cycle-stack", () => {
+    if (responderChainManagerRef) {
+      responderChainManagerRef.sendToFirstResponder({
+        action: TUG_ACTIONS.CYCLE_STACK,
+        phase: "discrete",
+      });
+    } else {
+      console.warn("cycle-stack: responder chain manager not registered yet");
+    }
+  });
+
   // arrange-cards: Rearrange all cards on the canvas.
   // Swift sends arrange-cards with mode: "cascade" | "tile".
   registerAction("arrange-cards", (payload) => {

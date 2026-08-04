@@ -96,7 +96,13 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "window.previousCard", key: "[", mods: MOD.command | MOD.shift },
   { id: "window.nextCard", key: "]", mods: MOD.command | MOD.shift },
   { id: "window.cyclePanes", key: "`", mods: MOD.control },
-  { id: "window.revealStack", key: "r", mods: MOD.command },
+  // The two slot-stack items share one chord, and which of them holds it is a
+  // user preference the host applies from the menu-state push. Asserted at the
+  // default (Cycle Stack owns ⌘R, Reveal Stack is mouse-only); at0350 covers
+  // the swap. `key: ""` says mouse-only, not "no opinion" — a regression that
+  // left the chord on both items would make ⌘R ambiguous.
+  { id: "window.cycleStack", key: "r", mods: MOD.command },
+  { id: "window.revealStack", key: "" },
   { id: "window.enterFullScreen", key: "f", mods: MOD.command | MOD.control },
   { id: "window.bringAllToFront" },
   // Maker (items exist in the hidden menu). The gallery / hello-world

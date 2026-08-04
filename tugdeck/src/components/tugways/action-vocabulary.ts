@@ -296,6 +296,18 @@ export const TUG_ACTIONS = {
   //                 single-valued in both directions. The host validates
   //                 the item disabled below depth 2, so an inert press
   //                 never reaches here.
+  // CYCLE_STACK:    payload — none. Bring the pane that has been buried
+  //                 longest in the focused pane's slot to the front — the
+  //                 no-look counterpart to REVEAL_STACK, showing a card
+  //                 rather than a menu. Optionally on ⌘R (Window ▸ Cycle
+  //                 Stack); answered by the pane, which raises the LAST
+  //                 entry of the `slotStack` it already renders its badge
+  //                 from. Raising the bottom-most is what makes repeated
+  //                 presses a ring: each raise sends the outgoing pane to
+  //                 the back, so a depth-N slot returns home after N
+  //                 presses. It is also ⌘`'s convention for windows. The
+  //                 host validates the item disabled below depth 2, so an
+  //                 inert press never reaches here.
   // SELECT_COMPOSER_ROUTE: payload — `value: "prompt" | "changes"`. Select
   //                 one of the composer's two routes directly (as opposed to
   //                 TOGGLE_CHANGES_VIEW, which flips between them). Bound to
@@ -396,6 +408,7 @@ export const TUG_ACTIONS = {
   FOCUS_PROMPT:   "focus-prompt",
   MOVE_TO_SLOT:   "move-to-slot",
   REVEAL_STACK:   "reveal-stack",
+  CYCLE_STACK:    "cycle-stack",
   SELECT_COMPOSER_ROUTE: "select-composer-route",
   CYCLE_PERMISSION_MODE: "cycle-permission-mode",
   SET_PERMISSION_MODE: "set-permission-mode",

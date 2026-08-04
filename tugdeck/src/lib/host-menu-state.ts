@@ -33,6 +33,7 @@ import { paneTitleBarTextFor } from "./pane-title";
 import { cardTitleStore } from "./card-title-store";
 import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./card-session-binding-store";
+import { DEFAULT_STACK_CHORD, stackChordStore } from "../stack-chord-store";
 
 /**
  * Edit-menu capability block: per-action enablement for the native
@@ -342,6 +343,14 @@ export interface MenuStatePayload {
   selectionActive: boolean;
   /** Focused pane's slot-stack depth (see {@link MenuStateDeckProjection.stackDepth}). */
   stackDepth: number;
+  /**
+   * Which Window-menu item owns ⌘R: `"cycle"` (Cycle Stack) or `"reveal"`
+   * (Reveal Stack). Both items always exist and are gated identically; only
+   * the key equivalent moves, and it can only move on the host side because
+   * AppKit resolves a menu key equivalent before the web view sees the
+   * keydown.
+   */
+  stackChord: string;
   /** Session-card session block; null unless the active card is a session card. */
   session: MenuStateSessionBlock | null;
   /** Text-card block; null unless the active card is a Text card. */
@@ -479,6 +488,12 @@ export class HostMenuStatePublisher {
    * all-disabled until the first push.
    */
   private editCapabilities: MenuStateEditBlock = EMPTY_EDIT_CAPABILITIES;
+  /**
+   * Which Window-menu item owns ⌘R. Not deck state — a user preference — so
+   * it is fed by its own setter and defaults to the store's default until
+   * the wiring below pushes the seeded value.
+   */
+  private stackChord: string = DEFAULT_STACK_CHORD;
   /** Recent-document MRU, mirrored outward for the Open Recent submenu. */
   private recentDocuments: string[] = [];
   private lastSent: string | null = null;
@@ -528,6 +543,11 @@ export class HostMenuStatePublisher {
     this.scheduleFlush();
   }
 
+  setStackChord(chord: string): void {
+    this.stackChord = chord;
+    this.scheduleFlush();
+  }
+
   setRecentDocuments(paths: string[]): void {
     this.recentDocuments = paths;
     this.scheduleFlush();
@@ -566,6 +586,7 @@ export class HostMenuStatePublisher {
       activeCard,
       selectionActive,
       stackDepth,
+      stackChord: this.stackChord,
       session,
       file,
       document,
@@ -630,6 +651,14 @@ export function initHostMenuState(deck: DeckSource): void {
   // diffs the serialized payload, so a push that changes nothing costs
   // nothing.
   cardTitleStore.subscribe(push);
+  // ⌘R's owner is a preference, not deck state. The host is the only place
+  // the chord can actually move (AppKit resolves a menu key equivalent before
+  // the web view sees the keydown), so the setting rides this same channel.
+  const pushChord = (): void => {
+    publisher.setStackChord(stackChordStore.getChord());
+  };
+  stackChordStore.subscribe(pushChord);
+  pushChord();
   push();
 }
 

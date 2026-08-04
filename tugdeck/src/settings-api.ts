@@ -147,6 +147,19 @@ export function readFocusRingModality(client: TugbankClient): string | null {
 }
 
 /**
+ * Read which Window-menu item owns ⌘R (`cycle` / `reveal`) from the
+ * TugbankClient cache. Returns the raw string, or null if unset; the caller
+ * normalizes it. Stored under `dev.tugtool.app` / `stackChord`.
+ */
+export function readStackChord(client: TugbankClient): string | null {
+  const entry = client.get("dev.tugtool.app", "stackChord");
+  if (entry && entry.kind === "string" && typeof entry.value === "string") {
+    return entry.value;
+  }
+  return null;
+}
+
+/**
  * Read the focused card ID from the TugbankClient cache.
  * Returns the string value, or null if not stored.
  */
@@ -276,6 +289,21 @@ export function putFocusRingModality(mode: string): void {
     body: JSON.stringify({ kind: "string", value: mode }),
   }).catch((err) => {
     console.warn("[settings] PUT focusRingModality failed:", err);
+  });
+}
+
+/**
+ * Persist which Window-menu item owns ⌘R to tugbank under
+ * `dev.tugtool.app` / `stackChord`. Fire-and-forget, mirroring
+ * `putKeyboardAccess`.
+ */
+export function putStackChord(chord: string): void {
+  fetch("/api/defaults/dev.tugtool.app/stackChord", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "string", value: chord }),
+  }).catch((err) => {
+    console.warn("[settings] PUT stackChord failed:", err);
   });
 }
 
