@@ -1149,6 +1149,14 @@ export function TugPane({
     actions: {
       [TUG_ACTIONS.CLOSE]: (_event: ActionEvent) => handleChromeClose(),
       [TUG_ACTIONS.CLOSE_ALL]: (_event: ActionEvent) => handleCloseAll(),
+      // The X button, aimed from elsewhere — today the Lens's pane row. It
+      // delegates to the same `requestClose()` the chrome close goes through,
+      // so a remote close box inherits the X's whole policy rather than a
+      // second, weaker one: every hosted card's save guard runs, and a
+      // multi-tab pane still asks "Close N Tabs?" before anything dies.
+      [TUG_ACTIONS.CLOSE_PANE]: (_event: ActionEvent) => {
+        titleBarRef.current?.requestClose();
+      },
       [TUG_ACTIONS.PREVIOUS_TAB]: (_event: ActionEvent) => handlePreviousTab(),
       [TUG_ACTIONS.NEXT_TAB]: (_event: ActionEvent) => handleNextTab(),
       [TUG_ACTIONS.SELECT_TAB]: (event: ActionEvent) => {

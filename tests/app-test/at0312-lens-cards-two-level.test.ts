@@ -15,7 +15,8 @@
  *      picker) still present.
  *   B. **A multi-card pane's outline is open on arrival.** Four gallery tabs
  *      seeded by `addCard("gallery-buttons")` render as four subrows with zero
- *      clicks, and there is no per-pane fold control anywhere in the row.
+ *      clicks, and there is no per-pane fold control anywhere in the row. The
+ *      close box it does carry names the whole pane, because the row does.
  *   C. **A subrow fronts its tab.** Activating one changes its pane's
  *      `activeCardId` without changing which pane is active.
  *   D. **⌘L lands the cursor on a card, not on a collapse toggle.** Group
@@ -194,6 +195,7 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
         const stack = await app.evalJS<{
           tabCount: string;
           hasClose: boolean;
+          closeLabel: string;
           foldControls: number;
           subrowIndent: number;
           paneIndent: number;
@@ -210,6 +212,10 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
           return {
             tabCount: badge === null ? "" : badge.innerText,
             hasClose: paneId.querySelector(".lens-cards-row-close") !== null,
+            closeLabel: (function () {
+              var x = paneId.querySelector(".lens-cards-row-close");
+              return x === null ? "" : x.getAttribute("aria-label") || "";
+            })(),
             foldControls: paneId.querySelectorAll(
               '.lens-cards-header-chevron, [data-slot="block-fold-cue"]',
             ).length,
@@ -218,8 +224,11 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
           };
         })()`);
         expect(stack.tabCount).toBe("4 tabs");
-        // A stack row carries no close box — per-card close lives on subrows.
-        expect(stack.hasClose).toBe(false);
+        // The stack row's close box closes the PANE, not the front tab — the
+        // row stands for the pane, and its × has to mean what the row means.
+        // Per-card close is still on the subrows.
+        expect(stack.hasClose).toBe(true);
+        expect(stack.closeLabel).toBe("Close all 4 tabs");
         expect(stack.foldControls).toBe(0);
         // Indent is the ONLY thing marking a subrow as one.
         expect(stack.subrowIndent).toBeGreaterThan(stack.paneIndent);

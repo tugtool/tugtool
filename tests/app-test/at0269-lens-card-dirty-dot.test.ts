@@ -2,7 +2,9 @@
  * at0269-lens-card-dirty-dot.test.ts — the Lens **Cards** file row wears
  * the same unsaved-changes dot the text card's own header does, on the one line
  * it now is: the filename at the Sessions rows' title scale, the directory only
- * as the row's hover title, and a close box leading the row.
+ * as the row's hover title, and a close box leading the row — a close box that,
+ * on a dirty card, fronts and flashes the card before raising its save sheet,
+ * so the question never arrives somewhere the user isn't looking.
  *
  * Drives the real path: a real file opened in a real manual-mode Text card,
  * typed into with `execCommand` (the at0209/at0212 idiom), with the Lens open
@@ -164,6 +166,32 @@ describe.skipIf(!SHOULD_RUN)("at0269 — Lens text-file dirty dot", () => {
           await app.evalJS<number>(
             `document.querySelectorAll('${ROW_CLOSE}').length`,
           ),
+        ).toBe(1);
+
+        // And that close box, on a card holding unsaved work, does not just
+        // close: it fronts the card and flashes its pane exactly as a plain
+        // click on this row would, then raises the save sheet. The flash is
+        // the whole point — the question appears over on the card, which may
+        // be behind anything, so the Lens has to say where it went.
+        await app.nativeClickAtElement(ROW_CLOSE);
+        // Read the flash off the class, not off a computed color: the ring is
+        // a keyframed box-shadow, so mid-animation every paint-side reading is
+        // an interpolation of something. Read it FIRST, too — the class is set
+        // in the click handler and removed on `animationend`, so anything
+        // waited on in between could outlast it.
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector('.tug-pane[data-pane-id="p1"]')
+               .classList.contains("tug-pane-flash")`,
+          ),
+        ).toBe(true);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-testid="file-save-sheet-dont-save"]') !== null`,
+          { timeoutMs: 8000 },
+        );
+        // The sheet has the say — the card is still here.
+        expect(
+          await app.evalJS<number>(`document.querySelectorAll('${CARD}').length`),
         ).toBe(1);
       } finally {
         await app.close();

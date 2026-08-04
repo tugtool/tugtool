@@ -521,6 +521,18 @@ export const TUG_ACTIONS = {
   //                         confirm when any hosted card opts into
   //                         `confirmClose`, closes immediately otherwise.
   //                         Dispatched by File ▸ Close All Card Tabs (⌥⌘W).
+  // CLOSE_PANE:             payload — none. Close the whole pane addressed by
+  //                         the dispatch's target — the pane's own X button,
+  //                         aimed from somewhere else. The handler runs the
+  //                         title bar's close flow entire: every hosted card's
+  //                         save guard first, then the pane's confirm policy
+  //                         ("Close N Tabs?" on a multi-tab pane). Distinct
+  //                         from CLOSE_ALL, whose confirm is per-card because
+  //                         its caller is a deliberate menu command; this one
+  //                         answers a close box in a list, where a stray click
+  //                         must never destroy a stack outright. Sent with
+  //                         `sendToTarget(paneId, …)` — the pane registers it
+  //                         under its own id.
   // MINIMIZE:               payload — none. Minimize the first card.
   // MAXIMIZE:               payload — none. Maximize the first card.
   // SHOW_COMPONENT_GALLERY: payload — none. Open or focus the gallery card.
@@ -585,6 +597,7 @@ export const TUG_ACTIONS = {
   //                         by the transcript's image-atom annotations.
   CLOSE:                  "close",
   CLOSE_ALL:              "close-all",
+  CLOSE_PANE:             "close-pane",
   MINIMIZE:               "minimize",
   MAXIMIZE:               "maximize",
   SHOW_COMPONENT_GALLERY: "show-component-gallery",

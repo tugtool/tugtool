@@ -211,6 +211,13 @@ export type CardsRow =
       /** The key this row's arrangement position persists under ([P08]). */
       readonly orderKey: string;
       readonly cardCount: number;
+      /**
+       * Every hosted card is closable — whether a close box on the PANE row
+       * has anything to offer. A pane close takes all of its cards with it, so
+       * one card that refuses is enough to withhold the box; the surviving
+       * cards' own rows still carry theirs.
+       */
+      readonly closable: boolean;
       readonly rowKind: CardsPaneRowKind;
       readonly disambiguator: string | null;
     }
@@ -586,6 +593,7 @@ export function buildCardsRows(
         identity: entry.identity,
         orderKey: entry.orderKey,
         cardCount: entry.pane.cardIds.length,
+        closable: entry.cards.every((card) => card.closable),
         rowKind: multi ? "stack-pane" : PANE_KIND_FOR_GROUP[group],
         disambiguator: disambiguatorByPane.get(entry.pane.id) ?? null,
       });

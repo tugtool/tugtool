@@ -76,6 +76,7 @@ import type {
 } from "@/components/tugways/tug-list-view";
 import { useFocusManager } from "@/components/tugways/use-focusable";
 import { renderIcon } from "@/components/tugways/tug-tab-bar";
+import { getCardCloseGuard } from "@/lib/card-close-guard";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { classifyFileKind } from "@/lib/file-kinds";
 import { lensStore } from "@/lib/lens-store/lens-store";
@@ -126,11 +127,26 @@ let lastSelectedRowId: string | null = null;
 interface CardsCellContextValue {
   onRowPointerDown: (orderKey: string, event: React.PointerEvent) => void;
   onClose: (cardId: string) => void;
+  onClosePane: (paneId: string, activeCardId: string) => void;
   onGroupPointerDown: (group: LensCardsGroup, event: React.PointerEvent) => void;
   onToggleGroup: (group: LensCardsGroup) => void;
   filterQuery: string;
 }
 const CardsCellContext = React.createContext<CardsCellContextValue | null>(null);
+
+/**
+ * Whether closing this card will stop and ask rather than just close — the
+ * card's own close guard has unsaved work to raise a Save / Don't Save sheet
+ * over. It is asked BEFORE the close is sent, because the answer decides
+ * whether the Lens fronts the card first: only a close that puts a question on
+ * screen needs the user looking at the card it appears on.
+ *
+ * The pane's `close-tab` handler consults exactly this guard and nothing else,
+ * so the reading here and the behaviour there cannot disagree.
+ */
+function askedBeforeClosing(cardId: string): boolean {
+  return getCardCloseGuard(cardId)?.needsDecision() === true;
+}
 
 /** The band's live filter query, read straight from the store ([L02]). */
 function useCardsFilterQuery(): string {
@@ -198,6 +214,7 @@ function OneLineRow({
   subrow,
   showSlots,
   showClose,
+  closesPane,
   trailing,
 }: {
   identity: CardIdentity;
@@ -210,10 +227,20 @@ function OneLineRow({
   subrow: boolean;
   showSlots: boolean;
   showClose: boolean;
+  /**
+   * The close box closes this whole PANE rather than the row's own card. Only
+   * a multi-card pane row passes it — that row stands for the pane, not for
+   * any one of the cards in it, so its × has to mean the pane.
+   */
+  closesPane?: { paneId: string; cardCount: number };
   trailing?: React.ReactNode;
 }): React.ReactElement {
   const ctx = useCellContext();
   const hoverPath = identity.path !== null ? displayPath(identity.path) : "";
+  const closeLabel =
+    closesPane !== undefined
+      ? `Close all ${closesPane.cardCount} tabs`
+      : `Close ${identity.title}`;
   return (
     <TugListRow
       className={
@@ -232,14 +259,18 @@ function OneLineRow({
             className="lens-cards-row-close"
             icon={<X size={12} />}
             size="xs"
-            aria-label={`Close ${identity.title}`}
-            title={`Close ${identity.title}`}
+            aria-label={closeLabel}
+            title={closeLabel}
             focusGroup={ROW_ACTION_FOCUS_GROUP}
             focusOrder={0}
             onClick={(e) => {
               // Closing is not a row activation — stop it reaching the cell.
               e?.stopPropagation();
-              ctx.onClose(identity.cardId);
+              if (closesPane !== undefined) {
+                ctx.onClosePane(closesPane.paneId, identity.cardId);
+              } else {
+                ctx.onClose(identity.cardId);
+              }
             }}
           />
         ) : undefined
@@ -443,9 +474,14 @@ const ToolPaneCell: TugListViewCellRenderer<LensCardsDataSource> = ({
 
 /** A multi-card pane. It shows the active card's glyph and title, a muted tab
  *  count, and the slot picker — placement is pane geometry, so the picker
- *  belongs to the pane row. It carries NO close box: a one-click pane-wide
- *  close is a heavier gesture than this list should offer, and per-card close
- *  lives on the subrows. */
+ *  belongs to the pane row.
+ *
+ *  Its close box closes the whole pane, because the row IS the pane: the
+ *  subrows below it are how you reach any one card, so a × here that killed
+ *  only the front tab would be the one gesture in the section that doesn't do
+ *  what its row says. The weight is carried by the pane's own policy rather
+ *  than by withholding the affordance — `close-pane` runs the X's flow, and a
+ *  multi-tab pane always asks "Close N Tabs?" first. */
 const StackPaneCell: TugListViewCellRenderer<LensCardsDataSource> = ({
   index,
   dataSource,
@@ -461,7 +497,8 @@ const StackPaneCell: TugListViewCellRenderer<LensCardsDataSource> = ({
       group={row.group}
       subrow={false}
       showSlots
-      showClose={false}
+      showClose={row.closable}
+      closesPane={{ paneId: row.paneId, cardCount: row.cardCount }}
       trailing={
         <span className="lens-cards-row-tabs" data-testid="lens-cards-tab-count">
           {`${row.cardCount} tabs`}
@@ -745,9 +782,35 @@ function CardsSectionBody({
       // its card by a frame (the deck snapshot the rows were built from is one
       // render behind the unmount).
       if (chain === null || !chain.hasResponder(cardId)) return;
+      // A card with unsaved work answers this × with a sheet, and the sheet
+      // comes up on the card — which may be behind another pane, or be a
+      // background tab nobody can see. So front it first, exactly as a plain
+      // click on this row would, flash and all: the question has to arrive
+      // somewhere the user is already looking. A close that simply happens
+      // gets no announcement; the row vanishing is the whole answer.
+      if (askedBeforeClosing(cardId)) {
+        dispatchAction({ action: "focus-session-card", cardId });
+      }
       chain.sendToTarget(cardId, {
         action: TUG_ACTIONS.CLOSE_TAB,
         value: cardId,
+        phase: "discrete",
+      });
+    },
+    [chain],
+  );
+
+  // A pane row's × is the pane's own X, aimed from here. `close-pane` goes to
+  // the PANE's responder (registered under the pane id), which runs the title
+  // bar's close flow whole — save guards, then the confirm. A multi-tab pane
+  // always confirms, so this one always fronts and flashes: the popover it
+  // opens is anchored to that pane's X, off in the deck.
+  const onClosePane = useCallback(
+    (paneId: string, activeCardId: string): void => {
+      if (chain === null || !chain.hasResponder(paneId)) return;
+      dispatchAction({ action: "focus-session-card", cardId: activeCardId });
+      chain.sendToTarget(paneId, {
+        action: TUG_ACTIONS.CLOSE_PANE,
         phase: "discrete",
       });
     },
@@ -763,6 +826,7 @@ function CardsSectionBody({
     () => ({
       onRowPointerDown,
       onClose,
+      onClosePane,
       onGroupPointerDown,
       onToggleGroup,
       filterQuery,
@@ -770,6 +834,7 @@ function CardsSectionBody({
     [
       onRowPointerDown,
       onClose,
+      onClosePane,
       onGroupPointerDown,
       onToggleGroup,
       filterQuery,
