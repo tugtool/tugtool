@@ -105,6 +105,20 @@ export interface UseCycleModeResult {
    * exits are the ⌥⇥ `toggle` and the mouse-exit rule below.
    */
   exit: () => void;
+  /**
+   * Enter cycling **as if the ring were already on `fromFocusKey`**, then take
+   * one step (`1` forward, `-1` back). The second door into the cycle, for a
+   * text stop that wants to spend a bare `Tab` on movement: a field with
+   * nothing to indent has no use for the key, and the card's cycle is the card's
+   * Tab order — so the field enters it at its own seat and advances, exactly as
+   * if it had been cycling all along.
+   *
+   * Distinct from `toggle`, which seeds the commit-home ([P10]) because ⌥⇥ is
+   * a request for the walk itself rather than for the next stop from here.
+   * Returns `false` when there was nowhere to go (already cycling, disabled, or
+   * an empty walk), so the caller can leave the key unconsumed.
+   */
+  enterAt: (fromFocusKey: string, step: 1 | -1) => boolean;
   /** Wrap the card's cycle-able zones so they register into this mode. */
   CycleScope: React.FC<{ children: React.ReactNode }>;
   /** This card's stable cycle-scope id (for diagnostics / advanced wiring). */
@@ -187,24 +201,50 @@ export function useCycleMode({
     prevCyclingRef.current = cycling;
   }, [cycling]);
 
-  const enter = useCallback(() => {
-    if (ctx === null || !enabled) return;
-    // Push captures the current key view (the editor caret) for restore on pop.
-    // The mode carries the toggleable commit disposition ([P15]) — a stable
-    // wrapper reading the latest override (or the toggleable default) — and opts
-    // into Escape-exit: a bare Escape while a cycle stop holds the ring pops the
-    // cycle back to rest (the engine's `escapeExits`), since a focus-cycle, unlike
-    // a modal surface, has no surface that owns Escape.
-    ctx.pushFocusMode(scopeId, {
+  // Push captures the current key view (the editor caret) for restore on pop.
+  // The mode carries the toggleable commit disposition ([P15]) — a stable
+  // wrapper reading the latest override (or the toggleable default) — and opts
+  // into Escape-exit: a bare Escape while a cycle stop holds the ring pops the
+  // cycle back to rest (the engine's `escapeExits`), since a focus-cycle, unlike
+  // a modal surface, has no surface that owns Escape.
+  const pushMode = useCallback(() => {
+    ctx?.pushFocusMode(scopeId, {
       trapped: true,
       commitDisposition: (commit) => commitDispositionRef.current(commit),
       escapeExits: true,
     });
+  }, [ctx, scopeId]);
+
+  const enter = useCallback(() => {
+    if (ctx === null || !enabled) return;
+    pushMode();
     // Seed the commit-home — the lowest-order cycle stop ([P10]) — and paint the
     // keyboard ring on it.
     ctx.focusFirstInMode();
     ctx.focusKeyView();
-  }, [ctx, enabled, scopeId]);
+  }, [ctx, enabled, pushMode]);
+
+  const enterAt = useCallback(
+    (fromFocusKey: string, step: 1 | -1): boolean => {
+      if (ctx === null || !enabled) return false;
+      if (ctx.currentFocusMode() === scopeId) return false;
+      pushMode();
+      // Seed the ring on the CALLER's own stop, then step off it. Both writes
+      // are synchronous, so the seat is never painted — it exists only to give
+      // `advance` a position to move from. Without it the walk would treat the
+      // key view as absent from the mode and jump to the first / last stop,
+      // which is the ⌥⇥ gesture, not this one.
+      ctx.realizeTarget({ kind: "focus-key", focusKey: fromFocusKey }, "keyboard");
+      const moved = step === 1 ? ctx.focusNext() : ctx.focusPrevious();
+      if (moved === null) {
+        ctx.popFocusMode(scopeId, { moveDomFocus: false });
+        return false;
+      }
+      ctx.focusKeyView();
+      return true;
+    },
+    [ctx, enabled, scopeId, pushMode],
+  );
 
   const exit = useCallback(() => {
     if (ctx === null) return;
@@ -287,9 +327,10 @@ export function useCycleMode({
       cycling,
       toggle,
       exit,
+      enterAt,
       CycleScope: scopeRef.current!,
       scopeId,
     }),
-    [cycling, toggle, exit, scopeId],
+    [cycling, toggle, exit, enterAt, scopeId],
   );
 }

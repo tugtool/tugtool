@@ -72,7 +72,6 @@ import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { PromptHistoryStore } from "@/lib/prompt-history-store";
 
-import { BASE_FOCUS_MODE } from "./focus-manager";
 import {
   TugTextEditor,
   type TugTextEditorDelegate,
@@ -912,24 +911,14 @@ export interface TugPromptEntryProps {
   /** Order of the editor text-stop within {@link editorFocusGroup}. */
   editorFocusOrder?: number;
   /**
-   * Authors the **text field itself** into a focus group registered in the
-   * card's BASE focus mode — the walk that is live when the card is *not*
-   * focus-cycling. Distinct from {@link editorFocusGroup} in both what
-   * registers and which walk it joins: that one is the input-area wrapper as a
-   * cycle stop you descend into, this one is the editor's own responder, so a
-   * walk landing here lands the **caret** (`dom-granted`) rather than a ring
-   * you have to press Return to enter.
-   *
-   * It exists so a sibling surface that appears alongside the composer — the
-   * session card's find bar — can form one Tab loop with it. The composer sits
-   * inside the card's `CycleScope`, so the base-mode registration has to be
-   * declared, not inherited from the tree. Hosts pass this only while such a
-   * sibling is on screen; with the composer as the walk's only member Tab would
-   * ring the field the caret is already in.
+   * A bare `Tab` / `Shift-Tab` in an EMPTY composer. An empty field has
+   * nothing to indent, so the key is better spent on movement — but the entry
+   * does not own the card's Tab order, so it hands the gesture to the host,
+   * which enters its focus cycle at the editor's seat in it ([P10]). `step` is
+   * `1` forward, `-1` back. Return `true` to consume; a host that returns
+   * `false` (or is absent) leaves Tab to the editor, which indents as usual.
    */
-  composerStopFocusGroup?: string;
-  /** Order of the composer stop within {@link composerStopFocusGroup}. */
-  composerStopFocusOrder?: number;
+  onTabWhenEmpty?: (step: 1 | -1) => boolean;
   /**
    * Fired when the cycle's Return-into-text gesture lands on the editor stop
    * ([P11]): the host should exit cycling so the editor reactivates and the
@@ -1053,8 +1042,7 @@ export const TugPromptEntry = React.forwardRef<
     routeFocusOrder,
     editorFocusGroup,
     editorFocusOrder,
-    composerStopFocusGroup,
-    composerStopFocusOrder,
+    onTabWhenEmpty,
     onResumeTyping,
     attachmentFocusGroup,
     attachmentFocusOrderBase,
@@ -1838,6 +1826,11 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     onDoubleEscapeWhenEmptyRef.current = onDoubleEscapeWhenEmpty;
   }, [onDoubleEscapeWhenEmpty]);
+  // Same seam for the empty-Tab gesture.
+  const onTabWhenEmptyRef = useRef(onTabWhenEmpty);
+  useLayoutEffect(() => {
+    onTabWhenEmptyRef.current = onTabWhenEmpty;
+  }, [onTabWhenEmpty]);
   // Timestamp (performance.now) of the previous Escape keydown, used by
   // the editor keymap to recognise a double-Escape and reject auto-repeat.
   const lastEscapePressAtRef = useRef(0);
@@ -2094,6 +2087,35 @@ export const TugPromptEntry = React.forwardRef<
           },
         },
       ]),
+      // Empty-Tab gesture, the movement twin of empty-Escape above. An empty
+      // composer has nothing to indent, so Tab is better spent moving the
+      // keyboard — and where it moves is the card's own focus cycle, entered
+      // at the editor's seat in it, so this is the CARD's Tab order rather
+      // than a second one. The field keeps owning the key (the
+      // `data-tug-tab-consume` marker stands); it just spends it differently.
+      // Non-empty, or no host: `false` falls through and indents.
+      //
+      // `Prec.high` puts this ahead of the substrate's `indentWithTab` (default
+      // precedence) but still behind the `Prec.highest` typeahead popup and
+      // inline ghost, which claim Tab while they are showing. Neither can be
+      // open on an empty doc, which is why the empty gate is sufficient here
+      // for the same reason it is for Escape.
+      Prec.high(
+        keymap.of([
+          {
+            key: "Tab",
+            run: (view) =>
+              view.state.doc.length === 0 &&
+              (onTabWhenEmptyRef.current?.(1) ?? false),
+          },
+          {
+            key: "Shift-Tab",
+            run: (view) =>
+              view.state.doc.length === 0 &&
+              (onTabWhenEmptyRef.current?.(-1) ?? false),
+          },
+        ]),
+      ),
       // Lowest-precedence Escape catch-all. The handlers above return
       // `false` on the paths that should fall through (a single non-empty
       // Escape lets the completion layer dismiss; an auto-repeat tick is
@@ -3364,21 +3386,6 @@ export const TugPromptEntry = React.forwardRef<
               // `session-card.css` — so the gallery prompt keeps the 20-row cap
               // while the Dev prompt scrolls at a fraction of the card).
               maxRows={20}
-              // An empty composer has nothing to indent, so Tab moves the
-              // keyboard on instead of doing nothing visible — which is what
-              // makes the composer and the find bar above it one keyboard
-              // surface. The first typed character takes Tab back.
-              tabMovesFocusWhenEmpty
-              // The composer's seat in the card's base-mode walk, declared
-              // rather than inherited: this element renders inside the card's
-              // CycleScope, but the loop it belongs to is the one the find bar
-              // opens. Landing here is `dom-granted` — the caret comes back to
-              // the composer, no Return required.
-              focusGroup={composerStopFocusGroup}
-              focusOrder={composerStopFocusOrder}
-              focusMode={
-                composerStopFocusGroup !== undefined ? BASE_FOCUS_MODE : undefined
-              }
               // In commit mode the field is a plain-prose message editor:
               // read-only while the scribe streams a draft, and the slash /
               // mention / argument machinery stands down (submit lands the

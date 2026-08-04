@@ -17,17 +17,27 @@
  *   2. ⌘G advances and ⇧⌘G retreats, from the query field — and Return /
  *      ⇧Return do the same, but only while the caret is IN the field: back in
  *      the composer Return is submit again. The keys follow the caret.
- *   3. ⌘F toggles: fired from the composer while the bar is open it dismisses
- *      it. Fired from *inside* the bar it does not — the bar's own responder
- *      answers first and re-summons the query field, so the chord a user
- *      presses to get back to a search they are already in never destroys it.
+ *   3. ⌘F toggles, from the composer AND from inside the bar. The second is
+ *      the load-bearing half: ⌘F lands the caret in the query field, so the
+ *      second press of any real toggle attempt comes from inside the bar.
  *   4. Escape closes the bar and dissolves the highlights; ⌘G while closed is
  *      inert (nothing repaints).
  *   5. A second ⌘F reopens with the previous query pre-filled AND fully
  *      selected — the standard macOS behavior that makes clear-on-close
  *      painless.
  *   6. Find and Changes are mutually exclusive: ⇧⌘C with the bar open raises
- *      the Changes shade and dismisses the bar.
+ *      the Changes shade and dismisses the bar, and ⌘F leaves Changes again.
+ *   7. The bar's controls are stops in the CARD's one focus cycle, at the
+ *      orders its position on screen implies (after the Z4 toolbar, before
+ *      the Z2 cells) — not a walk of their own. `Tab` out of an EMPTY field
+ *      enters that cycle at the field's own seat and steps, so an empty
+ *      composer and an empty query field both move the keyboard along the
+ *      order ⌥⇥ already walks.
+ *   8. Dismissing the bar while the keyboard is on one of its controls hands
+ *      the caret back to the composer.
+ *   9. The empty-Tab rule with the bar CLOSED — the ordinary card. Tab and
+ *      ⇧Tab in an empty composer enter the cycle from either side; a
+ *      non-empty composer takes Tab back and indents.
  *
  * @covers tugdeck/src/components/tugways/tug-find-bar.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
@@ -175,8 +185,18 @@ const activeRowExpr = `(() => {
   return -1;
 })()`;
 
-/** The session card's find walk — the base-mode Tab loop the bar opens. */
-const FIND_GROUP = "session-find-walk";
+// The card's ONE focus cycle and the orders the find bar occupies in it. The
+// bar is not a walk of its own: its controls sit between the Z4 toolbar
+// (0…7) and the Z2 status cells (12…), which is where the bar sits on screen.
+const CYCLE_GROUP = "session-prompt-cycle";
+const FIND_ORDER_OPTIONS = 9;
+const FIND_ORDER_PREVIOUS = 10;
+const FIND_ORDER_NEXT = 11;
+const EDITOR_ORDER = 19;
+
+/** Backspaces `clearComposer` presses — comfortably over the longest string
+ *  this suite types into the composer. */
+const COMPOSER_CLEAR_KEYSTROKES = 20;
 
 /** The authored `group:order` of whatever currently holds the keyboard. */
 const FOCUS_KEY_EXPR = `(document.querySelector("[data-key-view]")?.getAttribute("data-tug-focus-key") || "")`;
@@ -186,6 +206,30 @@ const queryFieldHasCaret = `(() => {
   return input !== null && document.activeElement !== null &&
     (input.contains(document.activeElement) || input === document.activeElement);
 })()`;
+
+/** Empty the composer, whatever it holds. */
+/**
+ * Empty the composer with plain Backspaces rather than ⌘A. ⌘A is a
+ * chain-routed action and does not reliably reach this editor from a headless
+ * gesture (the at0287 chain-first-responder limit); Backspace is a bare key
+ * the focused substrate always gets, and an extra one on an empty doc is a
+ * no-op — so a bounded run is deterministic where the chord is not.
+ */
+async function clearComposer(app: App): Promise<void> {
+  await app.nativeClickAtElement(EDITOR);
+  await new Promise((r) => setTimeout(r, 200));
+  for (let i = 0; i < COMPOSER_CLEAR_KEYSTROKES; i++) {
+    await app.nativeKey("Backspace");
+  }
+  // The entry root's `data-empty` bridge is the designed emptiness probe —
+  // an empty editor still renders placeholder text into `textContent`.
+  // The entry root's `data-empty` bridge is the designed emptiness probe — an
+  // empty editor still renders placeholder text into `textContent`.
+  await app.waitForCondition<boolean>(
+    `document.querySelector('${CARD} [data-slot="tug-prompt-entry"]')?.getAttribute("data-empty") === "true"`,
+    { timeoutMs: 4000 },
+  );
+}
 
 async function seedSession(app: App): Promise<void> {
   await app.enableDeckTrace(true);
@@ -341,26 +385,30 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
           timeoutMs: 8000,
         });
 
-        // --- 3a. ⌘F from INSIDE the bar re-summons the field, never dismisses:
-        //         the bar's own responder is nearer the caret than the card's. ---
-        await chord(app, "KeyF", "f", { meta: true });
-        await new Promise((r) => setTimeout(r, 400));
-        expect(
-          await app.evalJS<boolean>(
-            `document.querySelector(${JSON.stringify(FIND_BAR)}) !== null`,
-          ),
-          "⌘F with the caret in the query field must not close the bar",
-        ).toBe(true);
-        expect(await paintedCount(app)).toBe(2);
-
-        // --- 3b. ⌘F from the composer toggles the bar shut. ---
-        await app.nativeClickAtElement(EDITOR);
+        // --- 3. ⌘F toggles, INCLUDING from inside the bar. ⌘F lands the caret
+        //        in the query field, so the second press is always "from
+        //        inside" — a toggle that declined to fire there would be
+        //        unreachable by the gesture everyone actually makes. ---
         await chord(app, "KeyF", "f", { meta: true });
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(FIND_BAR)}) === null`,
           { timeoutMs: 8000 },
         );
         await waitForPaintedCount(app, 0);
+
+        // …and from the composer too, both directions.
+        await app.nativeClickAtElement(EDITOR);
+        await chord(app, "KeyF", "f", { meta: true });
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FIND_BAR)}) !== null`,
+          { timeoutMs: 8000 },
+        );
+        await app.nativeClickAtElement(EDITOR);
+        await chord(app, "KeyF", "f", { meta: true });
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FIND_BAR)}) === null`,
+          { timeoutMs: 8000 },
+        );
 
         // --- 4. Escape closes and dissolves; ⌘G while closed is inert. ---
         await app.nativeClickAtElement(EDITOR);
@@ -433,14 +481,17 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
           { timeoutMs: 8000 },
         );
 
-        // --- 7. The bar is a keyboard surface. With the query emptied, Tab
-        //        walks its four stops and on to the composer, and the loop
-        //        closes back to the query field. ---
+        // --- 7. The bar's controls are stops in the CARD's one cycle, in the
+        //        card's own reading order — between the Z4 toolbar and the Z2
+        //        status cells, which is where the bar physically sits. Tab out
+        //        of an EMPTY field enters that cycle at the field's own seat
+        //        and steps, so this is the same walk ⌥⇥ opens, not a second
+        //        one. ---
         await app.waitForCondition<boolean>(queryFieldHasCaret, {
           timeoutMs: 8000,
         });
-        // The reopen seeded the remembered query SELECTED, so one Backspace
-        // empties it — and an empty field is what releases Tab to the walk.
+        // The reopen seeded the remembered query SELECTED, but clear it
+        // explicitly — an empty field is what makes Tab a movement key.
         await app.nativeKey("a", ["cmd"]);
         await app.nativeKey("Backspace");
         // An empty CM6 doc renders its placeholder widget, so the placeholder's
@@ -451,30 +502,57 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
           { timeoutMs: 4000 },
         );
 
-        for (const expected of [
-          `${FIND_GROUP}:1`,
-          `${FIND_GROUP}:2`,
-          `${FIND_GROUP}:3`,
-          `${FIND_GROUP}:4`,
-          `${FIND_GROUP}:0`,
+        // The bar's stops are a contiguous run INSIDE the card's one group,
+        // sitting between the Z4 toolbar (0…7) and the editor text stop —
+        // exactly the seat its position on screen implies. (The Z2 telemetry
+        // cells are authored stops too but stamp no `data-tug-focus-key`, so
+        // they are absent from this registry read and asserted by slot below.)
+        expect(
+          await app.evalJS<string>(
+            `Array.from(document.querySelectorAll('${CARD} [data-tug-focus-key]'))
+               .map(e => e.getAttribute('data-tug-focus-key'))
+               .filter(k => k.indexOf(${JSON.stringify(`${CYCLE_GROUP}:`)}) === 0)
+               .map(k => Number(k.split(':')[1]))
+               .sort((a, b) => a - b).join(",")`,
+          ),
+          "the find bar's four stops occupy 8…11 in the card's cycle group",
+        ).toBe(`0,1,2,3,4,5,6,7,8,9,10,11,${EDITOR_ORDER}`);
+
+        for (const order of [
+          FIND_ORDER_OPTIONS,
+          FIND_ORDER_PREVIOUS,
+          FIND_ORDER_NEXT,
         ]) {
           await app.nativeKey("Tab");
           await app.waitForCondition<boolean>(
-            `${FOCUS_KEY_EXPR} === ${JSON.stringify(expected)}`,
+            `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${CYCLE_GROUP}:${order}`)}`,
             { timeoutMs: 6000 },
           );
         }
 
-        // --- 8. Dismissing while the keyboard is on a find control hands the
-        //        caret back to the composer — a surface that goes away owes
-        //        the keyboard somewhere to land. ---
-        await app.nativeKey("Tab"); // → options
-        await app.nativeKey("Tab"); // → find previous
+        // Past the bar's last stop the walk carries straight on into the Z2
+        // status cells. This is the assertion that separates "participates in
+        // the card's order" from "has an order of its own" — a private walk
+        // would have wrapped back to the query field here.
+        await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
-          `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${FIND_GROUP}:2`)}`,
+          `document.querySelector('[data-key-view]')?.getAttribute('data-slot') === "tug-status-cell"`,
           { timeoutMs: 6000 },
         );
-        await app.nativeKey("Escape");
+
+        // ⇧Tab walks back into the bar the same way — not a one-way door.
+        await app.nativeKey("Tab", ["shift"]);
+        await app.waitForCondition<boolean>(
+          `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${CYCLE_GROUP}:${FIND_ORDER_NEXT}`)}`,
+          { timeoutMs: 6000 },
+        );
+
+        // --- 8. Dismissing while the keyboard is on a find control hands the
+        //        caret back to the composer — a surface that goes away owes
+        //        the keyboard somewhere to land. ⌘F is the dismissal here
+        //        because Escape at a cycle stop belongs to the cycle (it
+        //        ascends out of it), which is the language working, not a gap.
+        await chord(app, "KeyF", "f", { meta: true });
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(FIND_BAR)}) === null`,
           { timeoutMs: 8000 },
@@ -486,6 +564,62 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
           })()`,
           { timeoutMs: 8000 },
         );
+
+        // --- 9. The same rule with the bar CLOSED: Tab in an empty composer
+        //        is a movement key into the card's cycle, and ⇧Tab goes the
+        //        other way. This is the half that has to work in the ordinary
+        //        card, not just when find is up. ---
+        await clearComposer(app);
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(
+          `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${CYCLE_GROUP}:0`)}`,
+          { timeoutMs: 6000 },
+        );
+        // Escape ascends back out of the cycle and the caret returns.
+        await app.nativeKey("Escape");
+        await app.waitForCondition<boolean>(
+          `(() => {
+            const el = document.querySelector(${JSON.stringify(EDITOR)});
+            return el !== null && el.contains(document.activeElement);
+          })()`,
+          { timeoutMs: 8000 },
+        );
+        // ⇧Tab enters the same order from the other side — the stop BEFORE the
+        // editor, which here is the PULSE label or the last live Z2 cell.
+        // Asserted by ELEMENT, not by focus key: only stops authored with a
+        // group stamp `data-tug-focus-key`, and the Z2 cells do not, so a key
+        // comparison would read `""` off a perfectly good landing. The claim
+        // is that a ring exists and it is not the editor the caret came from.
+        await app.nativeKey("Tab", ["shift"]);
+        await app.waitForCondition<boolean>(
+          `(() => {
+            const kv = document.querySelector('[data-key-view]');
+            const caret = document.querySelector(${JSON.stringify(EDITOR)});
+            return kv !== null && caret !== null && !kv.contains(caret);
+          })()`,
+          { timeoutMs: 6000 },
+        );
+
+        // A NON-empty composer keeps Tab for itself — the field takes the key
+        // back the moment there is something to indent. If Tab had moved the
+        // keyboard the entry would have stood down and DOM focus would sit on
+        // a stop or the key sink, so "the caret is still here" is the whole
+        // assertion.
+        await app.nativeKey("Escape");
+        await app.nativeClickAtElement(EDITOR);
+        await app.nativeType("x");
+        await new Promise((r) => setTimeout(r, 200));
+        await app.nativeKey("Tab");
+        await new Promise((r) => setTimeout(r, 600));
+        expect(
+          await app.evalJS<boolean>(
+            `(() => {
+              const el = document.querySelector(${JSON.stringify(EDITOR)});
+              return el !== null && el.contains(document.activeElement);
+            })()`,
+          ),
+          "Tab in a non-empty composer indents; it must not move the keyboard",
+        ).toBe(true);
       } finally {
         await app.close();
       }

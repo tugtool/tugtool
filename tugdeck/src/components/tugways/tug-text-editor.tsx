@@ -797,16 +797,6 @@ export interface TugTextEditorProps
    * @default false
    */
   tabMovesFocus?: boolean;
-  /**
-   * Let Tab move keyboard focus while the document is EMPTY, and own it again
-   * the moment anything is typed. The middle setting between "Tab always
-   * indents" (the default) and {@link tabMovesFocus} ("Tab never indents"),
-   * for a field that is a peer of other fields on its surface: with nothing to
-   * indent, Tab is better spent moving the keyboard than doing nothing
-   * visible. Mount-time only. [L06]
-   * @default false
-   */
-  tabMovesFocusWhenEmpty?: boolean;
 
   // ---- Focus engine ([P01], [P02]) ----
 
@@ -823,12 +813,6 @@ export interface TugTextEditorProps
   focusGroup?: string;
   /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
   focusOrder?: number;
-  /**
-   * Register the stop into this focus mode rather than the surrounding
-   * scope's — for an editor whose position in the tree and whose walk
-   * disagree. See `useFocusable`'s `mode`.
-   */
-  focusMode?: string;
   /**
    * Walk policy when registered: `accept` (default) is an ordinary stop;
    * `skip` is reachable only in accessibility mode.
@@ -1056,7 +1040,6 @@ function buildExtensions(
     highlightActiveLineGutter: boolean;
     disabled: boolean;
     tabMovesFocus: boolean;
-    tabMovesFocusWhenEmpty: boolean;
   },
   hostExtensions: readonly Extension[],
 ): readonly Extension[] {
@@ -1246,7 +1229,7 @@ function buildExtensions(
     undoMenuStatePlugin,
     // `tabMovesFocus` fields suppress the marker so the document-level focus
     // walk advances focus on Tab instead of the surface swallowing it to indent.
-    initial.tabMovesFocus ? [] : tabConsumeMarker(initial.tabMovesFocusWhenEmpty),
+    initial.tabMovesFocus ? [] : tabConsumeMarker,
   ];
 }
 
@@ -1262,27 +1245,16 @@ function buildExtensions(
  * marker tracks focus, not completion state. The single-line `tug-input` /
  * `tug-textarea` deliberately never set it, so Tab tabs out of those as forms
  * expect. [L06] appearance-zone DOM write — never React state.
- *
- * `yieldWhenEmpty` adds one condition: an **empty** document releases Tab back
- * to the walk. Indenting nothing is not an edit, so on an empty field Tab has
- * no meaning to spend and the walk is the better claimant — which is what
- * makes a composer and the find bar above it one keyboard surface rather than
- * two fields you can only reach with the mouse. The moment a character lands
- * the field takes Tab back, so nobody typing ever loses the indent. That makes
- * the marker track the document as well as focus.
  */
-function tabConsumeMarker(yieldWhenEmpty: boolean) {
-  return EditorView.updateListener.of((update) => {
-    if (!update.focusChanged && !update.docChanged) return;
-    const yields = yieldWhenEmpty && update.state.doc.length === 0;
-    const owns = update.view.hasFocus && !update.state.readOnly && !yields;
-    if (owns) {
-      update.view.contentDOM.setAttribute(TAB_CONSUME_ATTRIBUTE, "true");
-    } else {
-      update.view.contentDOM.removeAttribute(TAB_CONSUME_ATTRIBUTE);
-    }
-  });
-}
+const tabConsumeMarker = EditorView.updateListener.of((update) => {
+  if (!update.focusChanged) return;
+  const owns = update.view.hasFocus && !update.state.readOnly;
+  if (owns) {
+    update.view.contentDOM.setAttribute(TAB_CONSUME_ATTRIBUTE, "true");
+  } else {
+    update.view.contentDOM.removeAttribute(TAB_CONSUME_ATTRIBUTE);
+  }
+});
 
 export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEditorProps>(
   function TugTextEditor(
@@ -1312,10 +1284,8 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       growDirection = "down",
       disabled = false,
       tabMovesFocus = false,
-      tabMovesFocusWhenEmpty = false,
       focusGroup,
       focusOrder = 0,
-      focusMode,
       focusPolicy,
       arrowRelease,
       lineWrap = false,
@@ -1655,7 +1625,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     const disabledRef = useRef(disabled);
     // Mount-time only (no compartment) — the value never changes at runtime.
     const tabMovesFocusRef = useRef(tabMovesFocus);
-    const tabMovesFocusWhenEmptyRef = useRef(tabMovesFocusWhenEmpty);
     useLayoutEffect(() => {
       placeholderRef.current = placeholder;
     }, [placeholder]);
@@ -2467,7 +2436,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       id: responderId,
       group: focusGroup ?? "",
       order: focusOrder,
-      mode: focusMode,
       policy: focusPolicy,
       register: focusGroup !== undefined,
     });
@@ -2502,7 +2470,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       const initialHighlightActiveLineGutter = highlightActiveLineGutterRef.current;
       const initialDisabled = disabledRef.current;
       const initialTabMovesFocus = tabMovesFocusRef.current;
-      const initialTabMovesFocusWhenEmpty = tabMovesFocusWhenEmptyRef.current;
 
       const state = EditorState.create({
         doc: "",
@@ -2524,7 +2491,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
             highlightActiveLineGutter: initialHighlightActiveLineGutter,
             disabled: initialDisabled,
             tabMovesFocus: initialTabMovesFocus,
-            tabMovesFocusWhenEmpty: initialTabMovesFocusWhenEmpty,
           },
           extensionsRef.current,
         ),

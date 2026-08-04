@@ -93,6 +93,15 @@ export interface TugFindBarProps {
   focusGroup?: string;
   /** First of the four consecutive orders in {@link focusGroup}. Defaults to 0. */
   focusOrderBase?: number;
+  /**
+   * A bare `Tab` / `Shift-Tab` in an EMPTY query field. An empty field has
+   * nothing to indent, so the key is better spent on movement — but the bar
+   * does not own a walk to move within, so it hands the gesture to the host,
+   * which enters its own focus cycle at this bar's seat in it. `step` is `1`
+   * forward, `-1` back. Return `true` to consume; a host that returns `false`
+   * (or is absent) leaves Tab to the field, which indents as usual.
+   */
+  onTabWhenEmpty?: (step: 1 | -1) => boolean;
 }
 
 /** Imperative surface the host drives: ⌘F on an already-open bar must put
@@ -125,6 +134,7 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
       initialQuery,
       focusGroup,
       focusOrderBase = 0,
+      onTabWhenEmpty,
     }: TugFindBarProps,
     ref,
   ): React.ReactElement {
@@ -134,6 +144,8 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
 
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
+    const onTabWhenEmptyRef = useRef(onTabWhenEmpty);
+    onTabWhenEmptyRef.current = onTabWhenEmpty;
 
     // The seed is a mount-time value, not a live prop: once the bar is open
     // the CM6 doc is the query's only home.
@@ -166,6 +178,25 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
                 onCloseRef.current();
                 return true;
               },
+            },
+            // An EMPTY query field spends Tab on movement rather than on an
+            // indent that would change nothing. The field keeps owning the key
+            // (the `data-tug-tab-consume` marker stands), it just hands the
+            // gesture to the host, which walks its own focus cycle from the
+            // bar's seat in it — so the bar moves along the CARD's Tab order
+            // rather than a private one. Non-empty, or no host: fall through
+            // and indent.
+            {
+              key: "Tab",
+              run: (view) =>
+                view.state.doc.length === 0 &&
+                (onTabWhenEmptyRef.current?.(1) ?? false),
+            },
+            {
+              key: "Shift-Tab",
+              run: (view) =>
+                view.state.doc.length === 0 &&
+                (onTabWhenEmptyRef.current?.(-1) ?? false),
             },
           ]),
         ),
@@ -223,27 +254,28 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
     // The bar is the responder for find NAVIGATION while it is open: with the
     // caret in the query field, ⌘G / ⇧⌘G walk field → bar and land here (the
     // host's own handlers are a sibling branch the walk from the field can
-    // never reach). FIND re-summons the caret into the field. The bar drives
-    // the search session (query, options, count) — it is the responder for
-    // the actions that mutate it ([L11]).
+    // never reach). The bar drives the search session (query, options, count)
+    // — it is the responder for the actions that mutate it ([L11]).
     const { ResponderScope, responderRef } = useOptionalResponder({
       id: barResponderId,
       actions: {
-        [TUG_ACTIONS.FIND]: () => {
-          substrateRef.current?.focus();
-        },
+        // No `FIND` handler here on purpose. ⌘F toggles the bar, and a
+        // toggle that declined to fire from inside the thing it toggles
+        // would be unreachable by the obvious gesture — ⌘F lands the caret
+        // in this field, so the second press is always "from inside". The
+        // host's handler is the only one, and it dismisses.
         [TUG_ACTIONS.FIND_NEXT]: () => {
           session.next();
         },
         [TUG_ACTIONS.FIND_PREVIOUS]: () => {
           session.previous();
         },
-        // Escape dismisses from ANYWHERE in the bar, not just the query
-        // field. The field's own `Prec.high` keymap covers the caret case
-        // (and gets there first); this covers the ring — an option toggle or
-        // the ↑ / ↓ pair — where there is no CM6 to catch the key. A surface
-        // with one dismissal gesture that works from three of its four stops
-        // is a surface that reads as stuck.
+        // Escape after a CLICK on one of the bar's controls. The query
+        // field's own `Prec.high` keymap covers the caret, and a host whose
+        // Tab order reached these controls owns Escape at that point (the
+        // session card's focus cycle ascends out of itself) — what is left is
+        // the pointer path, where the chain has promoted to this bar and
+        // nothing else would answer.
         [TUG_ACTIONS.CANCEL_DIALOG]: () => {
           onCloseRef.current();
         },
@@ -316,9 +348,6 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
             /* The host owns its card-state-preservation slot; a transient
                find field must not stash editor state into the card bag. */
             preserveState={false}
-            /* An empty query has nothing to indent, so Tab is spent moving
-               the keyboard on through the bar's own stops instead. */
-            tabMovesFocusWhenEmpty
             focusGroup={focusGroup}
             focusOrder={focusOrderBase + FIND_STOP_QUERY}
             extensions={findBarExtensions}

@@ -276,11 +276,13 @@ const SESSION_PROMPT_PLACEHOLDER = "Ask Claude to build, fix, or explain";
  */
 const SESSION_CYCLE_GROUP = "session-prompt-cycle";
 // Cycle order ([P10], revised): the cycle reads the card bottom toolbar
-// left→right, then up to the status cells and the PULSE strip, then into the
-// editor and its compose-phase attachment tiles, and **seeds at the route**
-// (order 0). Forward Tab: route → Claude Code → Session → Project → Mode →
-// Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → WORK →
-// PULSE → editor → attachment-1 … attachment-N → wrap; Shift+Tab reverses.
+// left→right, then up to the find bar (while it is open), the status cells and
+// the PULSE strip, then into the editor and its compose-phase attachment tiles,
+// and **seeds at the route** (order 0). Forward Tab: route → Claude Code →
+// Session → Project → Mode → Model → Effort → submit → find query → find
+// options → find previous → find next → STATE → TIME → TOKENS → CONTEXT →
+// WORK → PULSE → editor → attachment-1 … attachment-N → wrap; Shift+Tab
+// reverses.
 // Every Z4B chip (the route indicator, Session / Project badges, and the
 // Mode / Model / Effort pickers), the five Z2 status cells, and the PULSE
 // label are independent leaf stops (no arrow-roving); the editor is a text
@@ -307,33 +309,24 @@ const SESSION_CYCLE_ORDER_CWD = 4;
 // co-mounted with it (Table T01).
 const SESSION_CYCLE_ORDER_CHANGES = 4;
 const SESSION_CYCLE_ORDER_SUBMIT = 7;
+// The find bar's four controls ([D122]) — query field, option group, Find
+// previous, Find next — occupy 8…11 while the bar is open, and nothing at all
+// while it is closed (the stops unmount with it, and the walk skips what is
+// not rendered). They sit between the toolbar and the Z2 cells because that is
+// where the bar sits: the cycle reads the card upward from its bottom edge.
+const SESSION_CYCLE_ORDER_FIND_BASE = 8;
+const SESSION_CYCLE_FIND_STOP_COUNT = 4;
 // The Z2 status cells are five independent leaf stops ([P10] revised —
 // no arrow-roving): STATE / TIME / TOKENS / CONTEXT / WORK / BTW take
-// orders 8…13 (base + 0…5). The PULSE label
-// follows at 14 (its own one-node grid row beneath the status cells); the
-// editor (the text body) at 15; and the Z4C compose-phase attachment tiles
-// — one leaf stop each — the orders from 16 upward (base + tile index), so
+// orders 12…17 (base + 0…5). The PULSE label
+// follows at 18 (its own one-node grid row beneath the status cells); the
+// editor (the text body) at 19; and the Z4C compose-phase attachment tiles
+// — one leaf stop each — the orders from 20 upward (base + tile index), so
 // they Tab right after the editor.
-const SESSION_CYCLE_ORDER_STATUS_BASE = 8;
-const SESSION_CYCLE_ORDER_PULSE = 14;
-const SESSION_CYCLE_ORDER_EDITOR = 15;
-const SESSION_CYCLE_ORDER_ATTACHMENT_BASE = 16;
-
-/**
- * The find walk — the card's BASE-mode Tab loop, live only while the find bar
- * is open. Cycling ([P10]) is the walk over the card's chrome; this is the
- * much smaller walk over the two text surfaces the keyboard can be in at once
- * and the controls between them: query → options → previous → next → composer
- * → query. Both the bar's stops and the composer's are registered in the base
- * mode, which is why the group exists at all — the composer renders inside the
- * cycle scope and would otherwise be unreachable from here.
- *
- * The composer comes last so the very first Tab out of an empty composer lands
- * on the query field, which is what a user reaching for the search wants.
- */
-const SESSION_FIND_GROUP = "session-find-walk";
-const SESSION_FIND_ORDER_BASE = 0;
-const SESSION_FIND_ORDER_COMPOSER = SESSION_FIND_ORDER_BASE + 4;
+const SESSION_CYCLE_ORDER_STATUS_BASE = 12;
+const SESSION_CYCLE_ORDER_PULSE = 18;
+const SESSION_CYCLE_ORDER_EDITOR = 19;
+const SESSION_CYCLE_ORDER_ATTACHMENT_BASE = 20;
 
 // What committing a Z4B settings picker (effort / model / permission mode) opened
 // from a cycle stop does to the cycle ([P15]). Both behaviors are first-class
@@ -2435,17 +2428,30 @@ export function SessionCardBody({
     setFindBarOpen(true);
   }, [commitModeController]);
 
+  // The cycle is declared further down (it needs `sessionErrored`), but the
+  // find bar's close path has to reach it — a bar dismissed while the ring is
+  // on one of its stops has to hand the keyboard back. Structure-zone refs
+  // ([L24]), assigned right after `useCycleMode` below.
+  const cyclingRef = useRef(false);
+  const exitCycleRef = useRef<() => void>(() => {});
+
   const closeFindBar = useCallback(() => {
     lastFindQueryRef.current = findSession.getSnapshot().query;
-    // A surface that is holding the keyboard owes it somewhere to land when it
-    // goes away; a surface that is not must leave the keyboard alone. So the
-    // caret returns to the composer only when the bar had it — dismissing the
-    // bar from the Session menu while the caret sits in a transcript row must
-    // not yank it out of that row.
-    const returnCaret = findBarRef.current?.holdsKeyboard() ?? false;
+    // A surface holding the keyboard owes it somewhere to land when it goes
+    // away; a surface that is not must leave the keyboard alone. So the caret
+    // returns to the composer only when the bar had it — dismissing from the
+    // Session menu while the caret sits elsewhere must not yank it.
+    const heldKeyboard = findBarRef.current?.holdsKeyboard() ?? false;
     setFindBarOpen(false);
     findSession.clear();
-    if (returnCaret) entryDelegateRef.current?.focus();
+    if (!heldKeyboard) return;
+    // Two ways the keyboard could be in the bar, and each has its own way
+    // home. Cycling: leave the cycle and let its `restingFocus` land the
+    // caret — a raw editor claim while a mode is pushed is the focus-language
+    // bug that leaves the ring and the caret disagreeing. Not cycling: the
+    // caret was in the query field, so claim the composer directly.
+    if (cyclingRef.current) exitCycleRef.current();
+    else entryDelegateRef.current?.focus();
   }, [findSession, entryDelegateRef]);
 
   // ⌘F / Edit ▸ Find… toggles. A find bar is a mode, and the chord that
@@ -2723,6 +2729,8 @@ export function SessionCardBody({
     enabled: !sessionErrored,
     restingFocus: () => entryDelegateRef.current?.focus(),
   });
+  cyclingRef.current = cycle.cycling;
+  exitCycleRef.current = cycle.exit;
 
   // Count of Z4C compose-phase attachment tiles, surfaced from the prompt
   // entry's image-atom set so the spatial grid can size the attachment row to
@@ -2766,6 +2774,14 @@ export function SessionCardBody({
         k(SESSION_CYCLE_ORDER_EFFORT),
         k(SESSION_CYCLE_ORDER_SUBMIT),
       ],
+      // The find bar's row, present exactly while the bar is (rowGridOrder
+      // drops an empty row, so Up from a status cell reaches the toolbar
+      // directly when there is no bar).
+      findBarOpen
+        ? Array.from({ length: SESSION_CYCLE_FIND_STOP_COUNT }, (_, i) =>
+            k(SESSION_CYCLE_ORDER_FIND_BASE + i),
+          )
+        : [],
       [
         k(SESSION_CYCLE_ORDER_STATUS_BASE + 0),
         k(SESSION_CYCLE_ORDER_STATUS_BASE + 1),
@@ -2782,7 +2798,7 @@ export function SessionCardBody({
         k(SESSION_CYCLE_ORDER_ATTACHMENT_BASE + i),
       ),
     ]);
-  }, [attachmentCount, pulseStopPresent]);
+  }, [attachmentCount, pulseStopPresent, findBarOpen]);
   useSpatialOrder(cycle.scopeId, cycleSpatialOrder);
 
 
@@ -4240,18 +4256,31 @@ export function SessionCardBody({
               live only while the bar is open ([P13]).
             */}
             {findBarOpen ? (
-              <TugFindBar
-                ref={findBarRef}
-                session={findSession}
-                onClose={closeFindBar}
-                cardRootRef={sessionCardRootRef}
-                placeholder="Find in transcript"
-                dataSlot="session-card-find-bar"
-                inputTestId="session-card-find-input"
-                initialQuery={lastFindQueryRef.current}
-                focusGroup={SESSION_FIND_GROUP}
-                focusOrderBase={SESSION_FIND_ORDER_BASE}
-              />
+              // Under the SAME CycleScope the prompt entry uses, so the bar's
+              // four stops register into this card's one focus cycle rather
+              // than a walk of their own ([P10]) — the card has one Tab order
+              // and the bar takes its seat in it, between the Z4 toolbar and
+              // the Z2 cells.
+              <cycle.CycleScope>
+                <TugFindBar
+                  ref={findBarRef}
+                  session={findSession}
+                  onClose={closeFindBar}
+                  cardRootRef={sessionCardRootRef}
+                  placeholder="Find in transcript"
+                  dataSlot="session-card-find-bar"
+                  inputTestId="session-card-find-input"
+                  initialQuery={lastFindQueryRef.current}
+                  focusGroup={SESSION_CYCLE_GROUP}
+                  focusOrderBase={SESSION_CYCLE_ORDER_FIND_BASE}
+                  onTabWhenEmpty={(step) =>
+                    cycle.enterAt(
+                      `${SESSION_CYCLE_GROUP}:${SESSION_CYCLE_ORDER_FIND_BASE}`,
+                      step,
+                    )
+                  }
+                />
+              </cycle.CycleScope>
             ) : null}
             <div
               className="session-card-status-bar"
@@ -4369,11 +4398,15 @@ export function SessionCardBody({
               routeFocusOrder={SESSION_CYCLE_ORDER_ROUTE}
               editorFocusGroup={SESSION_CYCLE_GROUP}
               editorFocusOrder={SESSION_CYCLE_ORDER_EDITOR}
-              // The composer's seat in the find walk — authored only while
-              // the bar is up, so Tab in a bare card still belongs to the
-              // editor and never rings the field the caret is already in.
-              composerStopFocusGroup={findBarOpen ? SESSION_FIND_GROUP : undefined}
-              composerStopFocusOrder={SESSION_FIND_ORDER_COMPOSER}
+              // Tab in an EMPTY composer enters the card's cycle at the
+              // editor's own seat and steps — so the key moves the keyboard
+              // along the card's one Tab order instead of indenting nothing.
+              onTabWhenEmpty={(step) =>
+                cycle.enterAt(
+                  `${SESSION_CYCLE_GROUP}:${SESSION_CYCLE_ORDER_EDITOR}`,
+                  step,
+                )
+              }
               attachmentFocusGroup={SESSION_CYCLE_GROUP}
               attachmentFocusOrderBase={SESSION_CYCLE_ORDER_ATTACHMENT_BASE}
               onAttachmentCountChange={setAttachmentCount}

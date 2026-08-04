@@ -49,16 +49,6 @@ export interface UseFocusableOptions {
    */
   register?: boolean;
   /**
-   * Register into THIS focus mode instead of the surrounding scope's. The
-   * default — the mode from `FocusModeContext` — is right for everything that
-   * belongs to the surface it renders inside. The override exists for a stop
-   * whose *position in the tree* and whose *walk* disagree: the session card's
-   * composer sits inside the card's focus-cycle scope, but its text field must
-   * also be a stop in the card's BASE walk so the find bar's stops and the
-   * composer form one loop. Pass `BASE_FOCUS_MODE` for that; omit otherwise.
-   */
-  mode?: string;
-  /**
    * Transient "I consume Tab right now" predicate (e.g. an editor with an open
    * completion). Held by reference and read live, so toggling it does not
    * re-register the focusable.
@@ -122,8 +112,7 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
   // Structural fields are in the dep array so a change re-registers; the
   // function-typed `consumesTab` is intentionally NOT, to avoid thrashing the
   // effect on every render -- it is read live through `optionsRef`.
-  const { id, group, order, policy, register = true, mode } = options;
-  const registeredMode = mode ?? focusMode;
+  const { id, group, order, policy, register = true } = options;
   useLayoutEffect(() => {
     if (manager === null || !register) return;
     const ctx = manager.contextFor(cardId);
@@ -132,14 +121,14 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
       group,
       order,
       policy,
-      modes: [registeredMode],
+      modes: [focusMode],
       consumesTab: () => optionsRef.current.consumesTab?.() ?? false,
       behavior: () => optionsRef.current.behavior?.() ?? null,
     });
     return () => {
       ctx.unregisterFocusable(id);
     };
-  }, [manager, cardId, id, group, order, policy, register, registeredMode]);
+  }, [manager, cardId, id, group, order, policy, register, focusMode]);
 
   // A stop authored into a focus group opts into the focus-preservation axis
   // ([card-state-model]): a stable `data-tug-focus-key` (its authored
