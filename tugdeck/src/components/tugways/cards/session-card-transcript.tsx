@@ -638,6 +638,26 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
   // interleaved among the shell rows. The data source assigns it in
   // flat-row order across the whole (always fully loaded) shell ledger.
   const shellNumber = dataSource.shellOrdinalForRow(index);
+  // ⌘C / ⌘A / the right-click text menu for this row — the same cell menu the
+  // user and assistant cells mount. Without a COPY handler on the chain, Edit ▸
+  // Copy validates dark (its enablement IS `validateAction(COPY)`) and ⌘C, its
+  // key equivalent, dies in the menu bar before the web view ever sees it: a
+  // selection in a shell row painted and never copied.
+  //
+  // No `resolveCopyMarkdown`: shell ink is literal text (like the user row), so
+  // the copy is the selection verbatim, not markdown reconstructed from it.
+  const { ResponderScope, cellProps, bodyRef, menu } =
+    useTranscriptCellMenu({ codeSessionStore });
+  // One stable callback ref for both the responder registration and the menu /
+  // Select All body anchor. Inline would mint a new function each render, and
+  // React detaches + reattaches a changed callback ref on every one.
+  const cellRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      cellProps.ref(el);
+      bodyRef.current = el;
+    },
+    [cellProps.ref, bodyRef],
+  );
   const turn = row.turn;
   const message = turn?.messages[0];
   if (message === undefined || message.kind !== "shell_exchange") return null;
@@ -665,8 +685,11 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
   // outcome is the receipt itself).
   const isGitRow = matchesCommitReceipt(message.command);
   return (
+    <ResponderScope>
     <AnnotationScope value={annotation}>
     <div
+      {...cellProps}
+      ref={cellRef}
       className="session-card-transcript-shell-row"
       data-slot="session-transcript-shell-row"
       data-git-row={isGitRow ? "true" : undefined}
@@ -749,7 +772,9 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
         controls={isGitRow ? undefined : <SessionZ1B participant="shell" turn={turn} />}
       />
     </div>
+    {menu}
     </AnnotationScope>
+    </ResponderScope>
   );
 }, transcriptCellPropsEqual);
 
