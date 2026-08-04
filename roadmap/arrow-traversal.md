@@ -182,12 +182,12 @@ All five questions from the brief were answered by the owner on 2026-08-03. Reco
 
 #### [P03] Empty-input arrow release is engine policy, all four directions (DECIDED) {#p03-empty-release}
 
-**Decision:** A single shared predicate (Spec S02) in the document keyboard pipeline treats a textual `<input>` that is empty and currently the engine's key view as released for all four arrow directions — no per-component wiring. An explicit `data-tug-arrow-release` attribute on the active element overrides the automatic rule (its presence, including the empty string, is authoritative). Release crossings never fire on key auto-repeat (`event.repeat`).
+**Decision:** A single shared predicate (Spec S02) in the document keyboard pipeline treats a textual `<input>` that is empty and sits **inside the engine's current key view** as released for all four arrow directions — no per-component wiring. An explicit `data-tug-arrow-release` attribute on the active element overrides the automatic rule (its presence, including the empty string, is authoritative). Release crossings never fire on key auto-repeat (`event.repeat`).
 
 **Rationale:**
 - Centralizing in the pipeline's yield check is what makes this a *general* feature: `TugFilterField`, the picker's path field when cleared, and any future `TugInput` participate with zero new props.
 - All four directions per [Q03]: an empty field has no caret motion to protect.
-- The key-view gate (`data-key-view` attribute, stamped by the engine's projection on exactly one element) keeps plain non-engine forms untouched and prevents a stale engine key view from being walked while an unrelated input holds focus.
+- The key-view gate keeps plain non-engine forms untouched and prevents a stale engine key view from being walked while an unrelated input holds focus. It must be a **containment** test (`active.closest("[data-key-view]") !== null`), not an attribute-on-the-active-element test: the projection stamps `data-key-view` on the element resolved from `[data-responder-id]` / `[data-tug-focusable]` (`FocusContext.keyViewElement`), and a composite field registers its **wrapper** as the responder while `document.activeElement` is the inner `<input>` — `TugFilterField` is exactly this shape (`tug-filter-field.tsx`'s `setWrapperRef` passes the wrapper to `responderRef`). An attribute test on the input therefore never matches, which would leave the Lens filter and the picker's Up-from-list-top permanently held **and** send that arrow into the net's gate as unreleased text, ending unconsumed — a beep, against [P08].
 - Repeat-gating makes leaving a text surface always a discrete press — the general form of the latch's overshoot protection.
 
 **Implications:**
@@ -274,7 +274,7 @@ All five questions from the brief were answered by the owner on 2026-08-03. Reco
 
 **Rationale:**
 - The stop is currently excluded, and the code states the reason: *"it is deactivated while cycling and a focused editor keeps its caret arrows ([P25] editing-host yield), so it is deliberately left OUT of the grid."* The latch ([P05]) retires that premise — a focused editor no longer keeps its caret arrows unconditionally, and the editor stop is now a legitimate arrow destination.
-- Without the row, arrowing out of the editor via `enterAt` lands on the **Tab**-order neighbor, which need not be the stop below/above on screen; the phase's whole tenet is "the element in the direction of that arrow."
+- Without the row, the editor stop is off the spatial plane inside the cycle: an arrow that should cross *onto* or *through* it instead resolves against a grid that does not contain it, so the seams jump from PULSE straight to the attachments. The phase's tenet is "the element in the direction of that arrow," and the editor is one of those elements. (The exit gesture itself lands correctly either way — `enterAt` steps the linear numeric walk, where editor `19` already sits between PULSE `18` and attachments `20+`; the row is about arrows *within* the cycle, not about the handoff.)
 
 **Implications:**
 - The comment justifying the exclusion is rewritten in the same commit (a stale rationale is how this decision gets silently reverted).
@@ -362,22 +362,38 @@ The cursor-seed effect ("Land / clear the cursor as the container gains or loses
 
 `arrowFallbackListener(event)`, document-capture keydown, registered immediately after `keyViewDelegateListener` (and symmetrically removed in the cleanup). In order:
 
-1. Bail unless `arrowDirection(event.key)` is non-null and no modifier is held (same modifier set as `arrowNavListener`: meta/ctrl/alt/shift).
-2. Bail if `event.repeat` and the active element is a text surface (release crossings are discrete-press only; non-text engine stops keep repeat, so a held arrow still roves a list cursor via the earlier stage).
-3. Active-element gate: let `active = document.activeElement`. Proceed only when `active` is `null`, `document.body`, an element matching `[data-tug-key-sink]` (or inside one), **or** a text surface for which the shared release predicate (Spec S02) passes for this direction. Any other focused element (Radix menu item, native control, unreleased text) → bail.
-4. Bail if `focusManager.keyViewCaptures(key)` (defensive parity with the earlier stage).
-5. Call `focusManager.moveKeyViewLinear(direction)`. On a non-null id, realize it with `focusManager.place(null, { kind: "focusable", id }, { modality: "keyboard" })` and consume (`preventDefault` + `stopImmediatePropagation`). On `null` — nothing registered to move to — do **not** consume; decline and let the key continue (by [P09] no released text surface can reach this state with an empty walk, so this branch is a defensive no-op, not a beep path).
+1. Bail if `event.defaultPrevented` — the same guard `keyViewDelegateListener` and `engineScrollKeyListener` already carry, against a capture listener outside this ladder that calls `preventDefault` without `stopImmediatePropagation`.
+2. Bail unless `arrowDirection(event.key)` is non-null and no modifier is held (same modifier set as `arrowNavListener`: meta/ctrl/alt/shift).
+3. Bail if `event.repeat` and the active element is a text surface (release crossings are discrete-press only; non-text engine stops keep repeat, so a held arrow still roves a list cursor via the earlier stage).
+4. Active-element gate: let `active = document.activeElement`. Proceed only when `active` is `null`, `document.body`, an element matching `[data-tug-key-sink]` (or inside one), **or** a text surface for which the shared release predicate (Spec S02) passes for this direction. Any other focused element (Radix menu item, native control, unreleased text) → bail.
+5. Bail if `focusManager.keyViewCaptures(key)` (defensive parity with the earlier stage).
+6. Call `focusManager.moveKeyViewLinear(direction)`. On a non-null id, realize it with `focusManager.place(null, { kind: "focusable", id }, { modality: "keyboard" })` and consume (`preventDefault` + `stopImmediatePropagation`). On `null` — nothing registered to move to — do **not** consume; decline and let the key continue (by [P09] no released text surface can reach this state with an empty walk, so this branch is a defensive no-op, not a beep path).
 
 `FocusContext.moveKeyViewLinear(direction): string | null`: `down`/`right` → `this.focusNext()`, `up`/`left` → `this.focusPrevious()`; returns the moved focusable id, or `null` when the current mode has no participating focusables. It performs **no focus write** — realization belongs to the caller, so this method never becomes a second focus writer ([L22]). The [P01] site (a) replacement inside `moveKeyViewSpatial` calls it and then `focusKeyView()` (the context-internal path the existing liveliness net already uses), returning `true` regardless of the result — the group holds rather than beeping, preserving [P08]. Delegated on `FocusManager` like the other key-view calls.
 
 **Spec S02: The text-surface release predicate** {#s02-release-predicate}
 
-One exported helper (new module `tugdeck/src/components/tugways/arrow-release.ts`) used by `arrowNavListener` (replacing its inline check) and `arrowFallbackListener`:
+A new module `tugdeck/src/components/tugways/arrow-release.ts` exporting a **pure predicate** plus a thin DOM adapter, used by `arrowNavListener` (replacing its inline check) and `arrowFallbackListener`. The split exists because tugdeck's `bun test` runs **DOM-free** (`bunfig.toml` preloads only console silencing; the existing suites are pure by policy and the engine itself guards on `typeof document === "undefined"`) — so the policy is expressed over a plain structural value the unit test can build by hand, and the one place that touches the DOM is covered end-to-end by the app-tests.
 
-- Input: the active element and a `SpatialDirection`; output: `"not-text" | "released" | "held"`.
-- An element that is not INPUT/TEXTAREA/contentEditable → `"not-text"` (callers treat per their own gates).
-- If the element carries `data-tug-arrow-release`, that attribute is authoritative: released iff its space-separated tokens include the direction. (This is the editor channel — emptiness and the latch are both projected into it by the substrate, per [P05].)
-- Otherwise, auto-release: released iff the element is an `<input>` whose `type` is textual (`text`, `search`, `url`, `email`, `tel`, or missing), whose `value === ""`, and which carries the engine's `data-key-view` attribute (the projection stamps it on exactly one element — the current key view — so non-engine forms and stale-focus configurations never release). All four directions release ([Q03]).
+```
+interface ArrowReleaseSubject {
+  tag: string;                  // uppercased tagName
+  contentEditable: boolean;
+  inputType: string | null;     // the `type` attribute; null when absent
+  value: string | null;         // the input's value; null for non-inputs
+  releaseAttr: string | null;   // data-tug-arrow-release; null when absent
+  inKeyView: boolean;           // is, or is contained in, the [data-key-view] element
+}
+
+arrowReleaseSubject(active: Element | null): ArrowReleaseSubject | null   // DOM adapter
+resolveArrowRelease(subject: ArrowReleaseSubject | null, direction: SpatialDirection):
+  "not-text" | "released" | "held"
+```
+
+- A `null` subject (no active element) or a subject that is not INPUT/TEXTAREA/contentEditable → `"not-text"` (callers treat per their own gates).
+- If `releaseAttr !== null`, the attribute is authoritative: released iff its space-separated tokens include the direction. (This is the editor channel — emptiness and the latch are both projected into it by the substrate, per [P05].)
+- Otherwise, auto-release: released iff the subject is an `<input>` whose `inputType` is textual (`text`, `search`, `url`, `email`, `tel`, or `null`), whose `value === ""`, and whose `inKeyView` is true. All four directions release ([Q03]).
+- `inKeyView` is a **containment** test in the adapter — `active.closest("[data-key-view]") !== null`, not `active.hasAttribute("data-key-view")`. The projection stamps the mark on the responder/focusable element, which for a composite field is the wrapper, not the inner `<input>` that holds DOM focus ([P03] rationale). Getting this wrong disables the feature on every `TugFilterField` in the app.
 - TEXTAREA and contentEditable without the attribute are always `"held"` (multi-line surfaces own their emptiness semantics via the attribute — the editor after [P05]).
 - Callers must apply the repeat rule: a `"released"` verdict on `event.repeat` is treated as `"held"`.
 
@@ -475,7 +491,9 @@ No new React state is introduced anywhere in this phase.
 | `FocusContext.moveKeyViewSpatial` | method (modified) | `tugways/focus-manager.ts` | edge clamp → linear walk ([P01] site a) |
 | `arrowFallbackListener` | fn (new) | `tugways/responder-chain-provider.tsx` | Spec S01 stage; registered after `keyViewDelegateListener` |
 | `arrowNavListener` | fn (modified) | `tugways/responder-chain-provider.tsx` | inline release check → Spec S02 helper + repeat rule |
-| `resolveArrowRelease` | fn (new) | `tugways/arrow-release.ts` | Spec S02 |
+| `resolveArrowRelease` | fn (new) | `tugways/arrow-release.ts` | Spec S02 — pure predicate over `ArrowReleaseSubject`, unit-testable DOM-free |
+| `ArrowReleaseSubject` | interface (new) | `tugways/arrow-release.ts` | Spec S02 — the structural view the predicate reads |
+| `arrowReleaseSubject` | fn (new) | `tugways/arrow-release.ts` | Spec S02 — the one DOM read; `inKeyView` via `closest("[data-key-view]")` |
 | `TugListViewProps.spatialCursor` | prop (removed) | `tugways/tug-list-view.tsx` | handle registration now gated only on engine-active + focus group |
 | `SpatialCursorHandle.axis` | field (new, optional) | `tugways/focus-manager.ts` | [P12]; `"vertical" \| "both"`, default `"both"`; `TugListView` declares `"vertical"` |
 | `TugTextEditorProps.onArrowExit` | prop (new) | `tugways/tug-text-editor.tsx` | [P09] `(step: 1 \| -1) => boolean`; mirrors `onTabWhenEmpty`'s shape |
@@ -551,13 +569,13 @@ No new React state is introduced anywhere in this phase.
 **Artifacts:** `FocusContext.moveKeyViewLinear` (+ `FocusManager` delegation); `moveKeyViewSpatial` edge-clamp clause replaced; `spatial-nav.test.ts` updated/extended.
 
 **Tasks:**
-- [ ] In `tugdeck/src/components/tugways/focus-manager.ts`, add `moveKeyViewLinear(direction: SpatialDirection): boolean` to `FocusContext` per Spec S01 (down/right → `focusNext`, up/left → `focusPrevious`, then `focusKeyView()`; wrap comes free from the modulo walk). Delegate on `FocusManager` alongside `moveKeyViewSpatial`.
-- [ ] Replace the final clause of `moveKeyViewSpatial` (the "group at an edge in a scope with NO declared order: hold the cursor (clamp)" branch) with: call `moveKeyViewLinear(direction)`; return `true` regardless of its result (consumption holds even when there is nowhere to go, [P08]). Update the method docstring ("holds at an undeclared edge" → "walks on from an undeclared edge").
+- [ ] In `tugdeck/src/components/tugways/focus-manager.ts`, add `moveKeyViewLinear(direction: SpatialDirection): string | null` to `FocusContext` per Spec S01: down/right → `focusNext()`, up/left → `focusPrevious()`, returning the moved focusable id (or `null` when the current mode has no participating focusables); wrap comes free from the modulo walk. It performs **no focus write** — realization belongs to the caller, so this method never becomes a second focus writer ([L22]). Delegate on `FocusManager` alongside `moveKeyViewSpatial`.
+- [ ] Replace the final clause of `moveKeyViewSpatial` (the "group at an edge in a scope with NO declared order: hold the cursor (clamp)" branch) with: call `moveKeyViewLinear(direction)` and, on a non-null id, follow it with `this.focusKeyView()` — the context-internal realization the existing in-scope liveliness net already uses. Return `true` regardless of the result (consumption holds even when there is nowhere to go, [P08]). Update the method docstring ("holds at an undeclared edge" → "walks on from an undeclared edge").
 - [ ] Leave the `order === undefined && handle === undefined → return false` branch exactly as is (the net stage in #step-3 owns that case; the delegate stage must keep running between them).
 
 **Tests:**
 - [ ] `spatial-nav.test.ts`: amend the "never-beep boundaries" cases — a group cursor at its edge with no declared order now moves the key view to the adjacent focusable (wrapping at the registry ends) and still returns true.
-- [ ] New unit: `moveKeyViewLinear` wraps at both ends and returns false on an empty/singleton registry without throwing.
+- [ ] New unit: `moveKeyViewLinear` returns the moved focusable id and wraps at both ends; returns `null` on an empty registry without throwing; and moves the key view without writing focus (a singleton registry re-returns its one id).
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test src/components/tugways/__tests__/spatial-nav.test.ts`
@@ -576,11 +594,12 @@ No new React state is introduced anywhere in this phase.
 **Artifacts:** `tugdeck/src/components/tugways/arrow-release.ts` (+ unit test); `arrowNavListener` consuming the helper.
 
 **Tasks:**
-- [ ] Create `arrow-release.ts` exporting `resolveArrowRelease(active: Element | null, direction: SpatialDirection): "not-text" | "released" | "held"` per Spec S02: explicit `data-tug-arrow-release` attribute authoritative when present; else auto-release for empty textual `<input>`s carrying `data-key-view`; TEXTAREA/contentEditable without the attribute always held.
-- [ ] In `responder-chain-provider.tsx`, replace `arrowNavListener`'s inline text-surface check with the helper, adding the repeat rule: a `"released"` verdict with `event.repeat` is treated as `"held"` (the surface keeps the key; crossing out of text is discrete-press only).
+- [ ] Create `arrow-release.ts` per Spec S02: the `ArrowReleaseSubject` structural type, the pure `resolveArrowRelease(subject, direction)` predicate (explicit `data-tug-arrow-release` authoritative when present; else auto-release for an empty textual `<input>` with `inKeyView`; TEXTAREA/contentEditable without the attribute always held), and the `arrowReleaseSubject(active)` DOM adapter — whose `inKeyView` is `active.closest("[data-key-view]") !== null`, **not** an attribute test on the active element itself (the mark lands on the responder wrapper, not the inner input).
+- [ ] In `responder-chain-provider.tsx`, replace `arrowNavListener`'s inline text-surface check with `resolveArrowRelease(arrowReleaseSubject(document.activeElement), direction)`, adding the repeat rule: a `"released"` verdict with `event.repeat` is treated as `"held"` (the surface keeps the key; crossing out of text is discrete-press only).
 
 **Tests:**
-- [ ] `__tests__/arrow-release.test.ts`: attribute-authoritative (including empty-string attribute = release nothing); auto-release only for empty + textual type + `data-key-view` present; non-empty, non-textual (`type="number"`), and attribute-less TEXTAREA/contentEditable all held. (Real DOM elements via `document.createElement` — bun's DOM is real enough for attribute/tag logic; no rendering involved.)
+- [ ] `__tests__/arrow-release.test.ts`, driving `resolveArrowRelease` with hand-built `ArrowReleaseSubject` values — **no DOM**: tugdeck's `bun test` has none (`bunfig.toml` preloads only console silencing; the existing suites are pure by policy), so `document.createElement` would throw. Cases: attribute-authoritative (including empty-string attribute = release nothing); auto-release only for empty + textual type + `inKeyView`; `inKeyView: false` held (the stale-key-view guard); non-empty, non-textual (`type="number"`), and attribute-less TEXTAREA/contentEditable all held.
+- [ ] The `arrowReleaseSubject` adapter's DOM reads are covered end-to-end by the Step 5 / Step 6 app-tests — the Lens filter and picker traversals fail outright if the `inKeyView` containment read is wrong.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test src/components/tugways/__tests__/arrow-release.test.ts`
@@ -599,7 +618,7 @@ No new React state is introduced anywhere in this phase.
 **Artifacts:** `arrowFallbackListener` in `responder-chain-provider.tsx`, registered (and cleaned up) immediately after `keyViewDelegateListener`.
 
 **Tasks:**
-- [ ] Implement `arrowFallbackListener` per Spec S01 (modifier bail; repeat-on-text bail; active-element gate {null, body, key sink, released text}; `keyViewCaptures` bail; consume iff `focusManager.moveKeyViewLinear(direction)`).
+- [ ] Implement `arrowFallbackListener` per Spec S01, in that order: `event.defaultPrevented` bail (parity with `keyViewDelegateListener` / `engineScrollKeyListener`); modifier bail; repeat-on-text bail; active-element gate {null, body, key sink, released text}; `keyViewCaptures` bail; then `moveKeyViewLinear(direction)` and, on a non-null id, `place(null, { kind: "focusable", id }, { modality: "keyboard" })` + consume. A `null` id declines without consuming.
 - [ ] Register it in the listener block after `keyViewDelegateListener` and before `engineScrollKeyListener`, with the matching `removeEventListener` in the cleanup; extend the ladder ordering comment to name the new stage and why it sits there (row scopes and `onKey` consumers run first; text surfaces are gated, not raced).
 
 **Tests:**
@@ -746,6 +765,7 @@ No new React state is introduced anywhere in this phase.
 - [ ] Forward `onArrowExit` through `TugPromptEntry` to the editor, documented beside `onTabWhenEmpty` (same shape, same contract: return `true` to consume).
 - [ ] In `cards/session-card.tsx`, wire it to `cycle.enterAt(\`${SESSION_CYCLE_GROUP}:${SESSION_CYCLE_ORDER_EDITOR}\`, step)` — the same call the existing `onTabWhenEmpty` makes, so the arrow exit and the Tab exit land identically.
 - [ ] Add `SESSION_CYCLE_ORDER_EDITOR` to `cycleSpatialOrder` as its own single-node row per [P10] (natural seat: between the PULSE row and the attachment row) and **rewrite the comment** that justifies its exclusion — it currently reads "a focused editor keeps its caret arrows … so it is deliberately left OUT of the grid", which the latch retires. Verify the seat by keyboard walk against the rendered layout before committing.
+- [ ] Expect the grid edit **not** to change where the exit itself lands: `enterAt` seeds the seat and steps with `focusNext`/`focusPrevious` — the linear numeric walk — and editor `19` already sits between PULSE `18` and the attachments `20+`, so the landing is right before and after this edit. What the row buys is arrows *inside* the cycle reaching and crossing the editor stop spatially. (With no attachments and the pulse strip hidden, Down from the editor wraps to the route chip — [Q02]'s wrap, working as decided.)
 - [ ] Author the app-test on the shell route (`@covers` the keymap module, `tug-text-editor.tsx`, `tug-prompt-entry.tsx`, `cards/session-card.tsx`, `arrow-release.ts`, `responder-chain-provider.tsx`): type text; plain Up walks the caret to the start and the first boundary press does not leave the editor; the second discrete Up puts the card in its cycle mode with the ring on the expected adjacent stop; hold Up (repeat) from a re-entered editor — focus never leaves; clear to empty — a single Up exits; Cmd-Up at start recalls the previous command; and per [P11] assert `data-key-view-kbd` lands on `.tug-prompt-entry-input-area`, never on `.tug-text-editor`.
 
 **Tests:**
