@@ -113,10 +113,15 @@ export interface UseCycleModeResult {
    * Tab order — so the field enters it at its own seat and advances, exactly as
    * if it had been cycling all along.
    *
+   * Works the same whether or not the cycle is already up: a text stop can be
+   * *reached* by the walk (⇥ into the field) as readily as clicked into, and
+   * both carets must spend the next `Tab` the same way. Entering is therefore
+   * conditional — the step is not.
+   *
    * Distinct from `toggle`, which seeds the commit-home ([P10]) because ⌥⇥ is
    * a request for the walk itself rather than for the next stop from here.
-   * Returns `false` when there was nowhere to go (already cycling, disabled, or
-   * an empty walk), so the caller can leave the key unconsumed.
+   * Returns `false` only when there was nowhere to go (disabled, or an empty
+   * walk), so the caller can leave the key unconsumed.
    */
   enterAt: (fromFocusKey: string, step: 1 | -1) => boolean;
   /** Wrap the card's cycle-able zones so they register into this mode. */
@@ -227,17 +232,22 @@ export function useCycleMode({
   const enterAt = useCallback(
     (fromFocusKey: string, step: 1 | -1): boolean => {
       if (ctx === null || !enabled) return false;
-      if (ctx.currentFocusMode() === scopeId) return false;
-      pushMode();
+      // The walk may already be up — this stop can be *arrived at* by ⇥ as well
+      // as clicked into, and a caret is a caret either way. Push only if we are
+      // not already inside; the step below is unconditional, which is the whole
+      // point (a field reached by Tab must still spend the next Tab on Tab).
+      const wasCycling = ctx.currentFocusMode() === scopeId;
+      if (!wasCycling) pushMode();
       // Seed the ring on the CALLER's own stop, then step off it. Both writes
       // are synchronous, so the seat is never painted — it exists only to give
       // `advance` a position to move from. Without it the walk would treat the
       // key view as absent from the mode and jump to the first / last stop,
-      // which is the ⌥⇥ gesture, not this one.
+      // which is the ⌥⇥ gesture, not this one. Already cycling, the seed is a
+      // no-op re-place on the stop the ring is on.
       ctx.realizeTarget({ kind: "focus-key", focusKey: fromFocusKey }, "keyboard");
       const moved = step === 1 ? ctx.focusNext() : ctx.focusPrevious();
       if (moved === null) {
-        ctx.popFocusMode(scopeId, { moveDomFocus: false });
+        if (!wasCycling) ctx.popFocusMode(scopeId, { moveDomFocus: false });
         return false;
       }
       ctx.focusKeyView();

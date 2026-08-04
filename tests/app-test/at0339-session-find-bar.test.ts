@@ -43,6 +43,7 @@
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/components/tugways/keybinding-map.ts
  * @covers tugdeck/src/lib/commit-mode-controller.ts
+ * @covers tugdeck/src/components/tugways/use-cycle-mode.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -542,6 +543,39 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
 
         // ⇧Tab walks back into the bar the same way — not a one-way door.
         await app.nativeKey("Tab", ["shift"]);
+        await app.waitForCondition<boolean>(
+          `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${CYCLE_GROUP}:${FIND_ORDER_NEXT}`)}`,
+          { timeoutMs: 6000 },
+        );
+
+        // --- 7b. A field the walk ARRIVED at spends Tab exactly like a field
+        //         that was clicked into. Walking back to the query field leaves
+        //         the caret there with the cycle already up — and the next Tab
+        //         must still move rather than fall through to `indentWithTab`
+        //         and type a tab character into the query. ---
+        await app.nativeKey("Tab", ["shift"]);
+        await app.nativeKey("Tab", ["shift"]);
+        await app.nativeKey("Tab", ["shift"]);
+        await app.waitForCondition<boolean>(queryFieldHasCaret, {
+          timeoutMs: 6000,
+        });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(
+          `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${CYCLE_GROUP}:${FIND_ORDER_OPTIONS}`)}`,
+          { timeoutMs: 6000 },
+        );
+        // …and nothing was typed on the way out: the placeholder still stands,
+        // which it would not if a tab character had landed in the doc.
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(FIND_INPUT)} + " .cm-placeholder") !== null`,
+          ),
+          "Tab out of a tabbed-into query field moves without typing into it",
+        ).toBe(true);
+
+        // Park the ring back on the bar for the dismissal below.
+        await app.nativeKey("Tab");
+        await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${CYCLE_GROUP}:${FIND_ORDER_NEXT}`)}`,
           { timeoutMs: 6000 },

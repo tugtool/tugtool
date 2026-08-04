@@ -13,7 +13,7 @@
   /* Same contrasting rule the status bar draws against the content above. */
   border-top: 1px solid var(--tug7-element-global-divider-normal-default-rest);
   /* A find field opens one line tall (the substrate's own minimum) and
-     grows with a longer query up to its `maxRows` cap — no tall prompt
-     floor here. */
+     soft-wraps, growing with a longer query up to its `maxRows` cap — no tall
+     prompt floor here. */
   --tug-text-editor-min-height: 0;
 }

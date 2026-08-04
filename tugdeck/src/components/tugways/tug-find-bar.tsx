@@ -341,7 +341,12 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
           <TugTextEditor
             ref={substrateRef}
             borderless
-            maxRows={6}
+            // A query is prose, not code: it soft-wraps and the field grows
+            // with it, the same bargain the composer strikes. A find field
+            // that scrolled sideways would hide the very text you are
+            // checking against the results.
+            lineWrap
+            maxRows={8}
             placeholder={placeholder}
             aria-label={placeholder}
             data-testid={inputTestId}
