@@ -77,6 +77,7 @@ import { GalleryListViewFilter } from "./gallery-list-view-filter";
 import { GalleryListViewFocus } from "./gallery-list-view-focus";
 import { GalleryFocusLanguage } from "./gallery-focus-language";
 import { GalleryFocusWash } from "./gallery-focus-wash";
+import { GallerySelectionWash } from "./gallery-selection-wash";
 import { GalleryCycleDemo } from "./gallery-cycle-demo";
 import { GalleryListViewHeaders } from "./gallery-list-view-headers";
 import { GalleryTugListRow } from "./gallery-tug-list-row";
@@ -961,6 +962,27 @@ export function registerGalleryCards(): void {
     componentId: "gallery-focus-wash",
     contentFactory: (_cardId) => <GalleryFocusWash />,
     defaultMeta: { title: "Focus Wash (spike)", icon: "List", closable: true },
+    family: "maker",
+    acceptsFamilies: ["maker"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.architecture,
+  });
+
+  // Design spike for the committed-SELECTION mark — the counterpart to the focus
+  // wash above. The alpha ramp, the source-token comparison, six candidate
+  // treatments, the cursor-meets-selection collision a `singleSelect` picker
+  // creates on every keystroke, the unfocused-list case, and an A/B of the
+  // shipped slab against the candidate on real `TugListView` + `TugListRow`.
+  // Judged by eye in BOTH themes; retire the card once the treatment lands in
+  // `tug-list-row.css`.
+  registerCard({
+    componentId: "gallery-selection-wash",
+    contentFactory: (_cardId) => <GallerySelectionWash />,
+    defaultMeta: {
+      title: "Selection Wash (spike)",
+      icon: "List",
+      closable: true,
+    },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

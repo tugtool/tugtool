@@ -104,7 +104,6 @@ body {
 /* ---- Content panel (the sheet itself) ---- */
 
 .tug-sheet-content {
-  /* @tug-renders-on: --tugx-sheet-bg */
   background-color: var(--tugx-sheet-bg);
   color: var(--tugx-sheet-fg);
   border: 1px solid var(--tugx-sheet-border);
@@ -140,6 +139,7 @@ body {
    wash over a full-height scrolling panel reads as noise, not focus ([Q02]: tint
    "where the surface allows"). The quiet within variant marks "contains the
    active control". Role-resolved, default action. */
+/* @tug-renders-on: --tugx-sheet-bg */
 .tug-sheet-content[data-key-view-kbd] {
   outline: none;
   border-color: var(--tugx-focus-ring);
@@ -346,8 +346,8 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
 
 /* ---- Sheet header: role icon left, title + description right (TugAlert layout) ---- */
 
+/* @tug-renders-on: --tugx-sheet-bg */
 .tug-sheet-header {
-  /* @tug-renders-on: --tugx-sheet-bg */
   color: var(--tugx-sheet-header-fg);
   display: flex;
   /* One-line header (title only): icon centered on the single line.
@@ -374,8 +374,8 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
 
 /* ---- Header icon column ---- */
 
+/* @tug-renders-on: --tugx-sheet-bg */
 .tug-sheet-icon {
-  /* @tug-renders-on: --tugx-sheet-bg */
   color: var(--tugx-sheet-icon-fg);
   flex-shrink: 0;
   display: flex;
@@ -551,6 +551,7 @@ body[data-tug-motion="off"] .tug-sheet-shade-scrim {
    over the transcript. The edge border flips to the top so the "over" cue reads
    from the direction it grows. Geometry only [L06]; the rise/drop motion is the
    mirrored resting transform below. */
+/* @tug-renders-on: --tugx-shade-bg */
 .tug-sheet-shade[data-shade-anchor="bottom"] {
   top: auto;
   bottom: 0;
