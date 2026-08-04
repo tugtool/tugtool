@@ -43,7 +43,8 @@ The end state the audit argues for is Cocoa's own shape: `NSApp.sendAction` is t
 - Edit ▸ Delete is enabled whenever a text-editing surface with a selection is focused, and disabled otherwise (app-test asserting `menuItemState("edit.delete").enabled` flips with focus).
 - ⌘R at stack depth ≤ 1 is attached to no menu item, so the chord falls through instead of beeping (app-test asserting `keyEquivalent == ""` on both `window.cycleStack` and `window.revealStack` at depth 1).
 - Every chord displayed anywhere in the UI (context-menu shortcut hints, keymap pane, help sheet) is rendered from the keymap registry, so no displayed chord can disagree with its binding (verified by a unit test that renders `buildTextEditingMenuItems` shortcut strings from the registry and compares against `formatChord` of the live binding).
-- `resolveChord(chord)` answers, for any chord, the ordered resolution stack with `active`/`shadowedBy` per entry; `bindingsFor(commandId)` answers whether each of a command's bindings is live (unit tests over a constructed multi-scope registry).
+- `resolveChord(chord)` answers, for any chord, the ordered resolution stack — native layer included ([P15]) — with `active`/`shadowedBy` per entry; `bindingsFor(commandId)` answers whether each of a command's bindings is live (unit tests over a constructed multi-layer registry, including the case where a menu item preempts a scoped binding and the case where a disabled item eats the chord entirely).
+- No `menuEligible` binding shares a chord with any scoped binding (the collision lint from [P15], run as a unit test over the whole table).
 - A user rebinds a command in Settings ▸ Keyboard, and both the JS layer and the native menu bar honor the new chord without a restart (app-test: write a keymap override through the store, assert `menuItemState(<identifier>).keyEquivalent` changed, then assert the old chord no longer dispatches).
 - Deleting a `dev.tugtool.keymap` override restores the registry default (app-test round trip).
 - `tuglaws/menus.md` names every top-level `menuState` key the Swift decoder parses, and its control-frame catalog matches the registry table (verified by a unit test that regenerates the catalog section's rows from the registry and diffs against the checked-in doc).
@@ -74,7 +75,7 @@ The end state the audit argues for is Cocoa's own shape: `NSApp.sendAction` is t
 
 - The audit brief's inventory ([roadmap/command-action-audit-brief.md](command-action-audit-brief.md)) is the assignment sheet for which commands exist and where their handlers live. This plan does not re-derive it.
 - tugbank defaults over `/api/defaults/<domain>/<key>` and the boot-time `TugbankClient` snapshot read in `main.tsx` — the persistence substrate for keymap overrides.
-- The `menuState` WKScriptMessage channel (`host-menu-state.ts` ⇄ `AppDelegate.updateMenuState(_:)`) — the only Swift↔JS state path, and the carrier for the new `commands` block.
+- The `menuState` WKScriptMessage channel (`lib/host-menu-state.ts` ⇄ `AppDelegate.updateMenuState(_:)`) — the only Swift↔JS state path, and the carrier for the new `commands` block.
 - The app-test harness's `menuSnapshot` / `menuItemState` verbs (`TestHarnessConnection.swift`) — the regression surface for every menu assertion in this plan.
 
 #### Constraints {#constraints}
@@ -84,6 +85,8 @@ The end state the audit argues for is Cocoa's own shape: `NSApp.sendAction` is t
 - **`autoenablesItems` is on everywhere.** Imperative `isEnabled` writes are silently overridden by the validator's `default: return true`. Every gate must be a validator branch.
 - **An `NSMenuItem` carries exactly one key equivalent.** With multi-chord commands, the Swift sweep applies the first menu-eligible binding and leaves the rest to the JS funnel. That is a display constraint of the menu, never a constraint of the model.
 - **A chord on a disabled menu item is eaten at the menu bar with a beep** — it does not fall through to the web view. Any command whose menu item can validate disabled while its chord should still work must have the chord detached, not just the item dimmed.
+- **AppKit resolves a menu key equivalent before the web view sees a `keydown`.** Any chord on a menu item is therefore outside the JS funnel's reach entirely — it is not "first in the JS order", it is a layer above it ([P15]). This is what makes menu promotion a chord decision and not only a discoverability one.
+- **`menuNeedsUpdate` rebuilds discard swept chords.** The View, Window pane-list, theme, and Open Recent menus `removeAllItems()` and reconstruct from construction-time literals, and the push only fires on a changed projection — so the chord sweep must run at the tail of each rebuild as well as from `updateMenuState`.
 - **A hidden menu's chords fall through** unless `allowsKeyEquivalentWhenHidden` is set. The Maker menu is hidden when maker mode is off, so ⌘L / ⌥⌘L / ⇧⌘R / ⌘T / ⌥⌘C reach the JS layer in that state. The keymap's conflict view has to model this.
 - **Warnings are errors** in the Rust workspace; `bunx tsc --noEmit` and `bunx vite build` must both pass for tugdeck (the debug app loads the production rollup bundle).
 - **`evalJS` wedges above roughly 8KB of payload**, so any harness-facing registry snapshot must be filterable rather than dumping the whole table.
@@ -149,6 +152,7 @@ The end state the audit argues for is Cocoa's own shape: `NSApp.sendAction` is t
 |------|--------|------------|------------|--------------------|
 | Registry migration silently changes routing for some command | high | med | Behavior-neutral milestone with the app-test corpus as the checkpoint; per-command routing is transcribed from the existing call site, never inferred | Any at0167–at0179 regression |
 | `commands` mirror block inflates the menuState payload / post rate | med | low | Only menu-exposed, non-parameterized commands ride it; the publisher's serialized diff already suppresses no-op posts | A measurable rise in `menuState` post frequency |
+| The mirror's **recompute** cost, not its payload: ~60–80 predicates replace `computeEditCapabilities`'s 13, on the same triggers | med | med | Measure before and after in [#step-13] rather than assuming; keep the per-keystroke refresher path narrow if the measurement says to (see R04) | Any q99 regression in the typing probes |
 | Swift chord sweep fights AppKit's key-equivalent scan | high | low | Sweep runs only in `updateMenuState`, the site the two shipped dynamic chords already use | Any beep-instead-of-fire report |
 | Keymap override lets the user strand a chord (or themselves) | med | med | `NATIVE_LOCKED` policy list, per-row and global reset, shadowing rendered inline before the binding is committed | A support report of an unrecoverable keymap |
 | Menu identifier drift between registry `menuItemId` and Swift construction | med | med | Harness assertion that every `menuItemId` in the table resolves to a real item, run in the menu-structure app-test | Any `found: false` from `menuItemState` |
@@ -169,14 +173,24 @@ The end state the audit argues for is Cocoa's own shape: `NSApp.sendAction` is t
 - **Mitigation:**
   - Keep the existing two-trigger model: `validationVersion` bumps plus the explicit refresher escape hatch, generalized from edit caps to the whole block.
   - Require every registry predicate to read live state at call time (refs and store snapshots, never captured closures) per [L07].
-  - Where a predicate depends on a store the chain cannot see, the store's publisher subscribes the refresher — the same wiring `host-menu-state.ts` already does for `cardSessionBindingStore` and `cardTitleStore`.
+  - Where a predicate depends on a store the chain cannot see, the store's publisher subscribes the refresher — the same wiring `lib/host-menu-state.ts` already does for `cardSessionBindingStore` and `cardTitleStore`.
 - **Residual risk:** A newly-added predicate can still read an unsubscribed store; the reviewer's checklist item is "what makes this recompute?".
+
+**Risk R04: The generalized mirror recompute lands on a hot path** {#r04-recompute-cost}
+
+- **Risk:** `publishEditCaps` in `responder-chain-provider.tsx` computes 13 capabilities today. [#step-13] generalizes it to every non-parameterized entry with a `menuItemId` — 60–80 predicates, each a chain walk plus store reads — on the *same* three triggers: every `validationVersion` bump (focus / register / unregister), a microtask on every `focusin`/`focusout`, and `requestEditMenuStateRefresh` from `tug-text-editor/undo-menu-state-plugin.ts`, which runs inside a CM6 `update`. This repo has an open typing-lag program; a 5–6× multiplier on a closure reachable from a CM6 update is not something to assume away.
+- **Mitigation:**
+  - The undo plugin already gates: it republishes only when undo/redo *availability or label* changes, so a continued typing run requests nothing. Preserve that gate exactly — do not widen the refresher's trigger while widening its work.
+  - Measure in [#step-13]'s checkpoint with the synthetic typist and the deck probes, before the predicates are populated in [#step-14] and while the delta is still attributable.
+  - If the measurement says the whole block is too much for the keystroke-reachable path, split the recompute: the edit family (which is what the refresher actually cares about) recomputes on the refresher, the rest on `validationVersion` only. The wire shape does not change, so this is a local decision made on data.
+- **Residual risk:** A predicate added later that is individually expensive (a filesystem-shaped or serialize-shaped read) reintroduces the cost with no signal. The reviewer's checklist item from R02 — "what makes this recompute?" — gains a sibling: "what does it cost each time?".
 
 **Risk R03: Chord conversion loses fidelity between `code` and `keyEquivalent`** {#r03-chord-conversion}
 
 - **Risk:** `KeyboardEvent.code` and `NSMenuItem.keyEquivalent` are different alphabets — `"ArrowUp"` is `NSUpArrowFunctionKey`, `"Escape"` is `\u{1b}`, and shifted punctuation (⌘+ vs ⌘=) is genuinely ambiguous in AppKit. A bad conversion produces a chord that renders wrong or fires never.
 - **Mitigation:**
   - One conversion function (`codeToKeyEquivalent`) with an explicit table for every code the registry actually uses, plus a unit test that round-trips every binding in the table.
+  - Shifted punctuation resolves to the shifted *character* with `shift` suppressed from the mask, per the table in [#chord-conversion] — the conversion returns the pair `(keyEquivalent, mask)`, never a character and a mask computed independently.
   - Keep ⌘+ and ⌘= as two separate bindings on the same command, which is what the current hidden-alias item already models.
   - The menu-structure app-test asserts the resulting `keyEquivalent` and `modifierMask` for a spot-check set, so a conversion regression fails a test rather than a user's finger.
 - **Residual risk:** A future binding on an untabled code fails at runtime; the conversion function throws in dev rather than returning an empty string, so it surfaces immediately.
@@ -279,16 +293,31 @@ The end state the audit argues for is Cocoa's own shape: `NSApp.sendAction` is t
 
 #### [P08] Dispatch routing and activation scope are orthogonal fields (DECIDED) {#p08-routing-vs-scope}
 
-**Decision:** `routing` (how a command dispatches) lives on the command entry. `scope` (where a binding is live) lives on the binding: `"global"`, `{ responder: id }`, or `{ mode: id }`. Resolution order is focus mode, then the first-responder walk innermost-first, then global.
+**Decision:** `routing` (how a command dispatches) lives on the command entry. `scope` (where a binding is live) lives on the binding: `"global"`, `{ responder: id }`, or `{ mode: id }`. The **JS** resolution order is focus mode, then the first-responder walk innermost-first, then global. The full in-app order puts a fourth layer *above* all three — see [P15].
 
 **Rationale:**
 - Today's `KeyBinding.scope` field conflates the two — it names dispatch routing (`"first-responder"` | `"key-card"`) while `useKeybindings` separately encodes activation context by *where* it registers. Under one table those must be distinct fields or "innermost scope wins" is meaningless.
-- The stated order is exactly what stage 1 in `responder-chain-provider.tsx` already does (`manager.resolveKeybinding(event, [mode])` then `matchKeybinding(event)`), so formalizing it changes no behavior.
+- The stated JS order is exactly what stage 1 in `responder-chain-provider.tsx` already does (`manager.resolveKeybinding(event, [mode])` then `matchKeybinding(event)`), so formalizing it changes no behavior.
 - Cocoa's analogue is the same split: `performKeyEquivalent:` walks the view hierarchy for activation, and the resolved action then routes through `sendAction`.
 
 **Implications:**
 - The `KeyBinding.scope` field is renamed to `routing` where it survives, and the migration must touch every entry in `KEYBINDINGS` and every `useKeybindings` call site.
 - Scoped bindings register through `manager.registerKeybinding` as today for *resolution*, and are additionally readable by `resolveChord` for *visibility* — one source of truth, two readers.
+
+#### [P15] The native menu is the outermost resolution layer, and `resolveChord` must model it (DECIDED) {#p15-native-layer}
+
+**Decision:** `resolveChord` returns a four-layer stack — `native`, then mode, then the responder walk innermost-first, then global. The `native` layer is present for a chord when some menu item carries it as a key equivalent, and it is *active* (and therefore shadows every JS layer beneath it) when that item validates enabled and its enclosing menu is either visible or carries `allowsKeyEquivalentWhenHidden`.
+
+**Rationale:**
+- In the shipped app AppKit's key-equivalent scan runs before the web view sees a `keydown` at all, so a menu-eligible chord preempts every scoped binding regardless of focus. This inverts [P08]'s innermost-first order in exactly the case the keymap UI exists to explain.
+- The codebase already knows this and reasons about it by hand: `pdf-view.tsx` declines to bind ⌘1–⌘3 ("a viewer is not the place to redefine a deck-wide navigation command") and declines the zoom chords outright ("they belong to the host's View menu and never reach the web view at all"). That comment is a hand-maintained shadowing analysis; it is exactly what `resolveChord` should be answering.
+- A three-layer answer would report a scoped binding `active` when the user's finger reaches a menu item instead — a lie in the one surface whose entire job is to be believed, and the same class of lie [P11] retires.
+- Every input is already in hand: `menuChords()` knows which chords are menu-eligible, the `commands` mirror knows each item's `enabled`, and the Maker menu's hidden state is the one hiddenness case (its ⌘L / ⌥⌘L / ⇧⌘R / ⌘T / ⌥⌘C fall through when maker mode is off).
+
+**Implications:**
+- `ChordResolution` carries a `layer` discriminator; the native entry names the `menuItemId` rather than a `BindingScope`.
+- A disabled menu item's chord is *not* a fallthrough — per [#constraints] it is eaten with a beep — so the native layer at `enabled: false` renders as "eaten, reaches nothing", a third state the pane must show and neither `active` nor `shadowedBy` expresses.
+- The door-coverage lint gains a sibling: a **collision lint** failing when a `menuEligible` binding shares a chord with any scoped binding. Today's only clean answer is to not create the collision; the lint is what keeps [#step-16] from creating one silently.
 
 #### [P09] Chords match on `code`; the display label is separate data (DECIDED) {#p09-chord-identity}
 
@@ -373,7 +402,7 @@ The end state the audit argues for is Cocoa's own shape: `NSApp.sendAction` is t
 
 Six distinct paths, all landing on the same three mechanisms:
 
-1. **Swift menu item → `sendControl(wire)` → CONTROL frame → `dispatchAction` → registered handler.** Roughly fifty distinct wires from `AppDelegate.swift`'s selectors. For thirty-two of them the handler is a one-line re-dispatch back onto the chain (the "Both" identity entries), grouped in `action-dispatch.ts` into three loops: a plain `sendToFirstResponder` loop, a `sendToFirstResponderForContinuation` loop whose continuation is invoked immediately, and a `sendToKeyCard` loop.
+1. **Swift menu item → `sendControl(wire)` → CONTROL frame → `dispatchAction` → registered handler.** Roughly fifty distinct wires from `AppDelegate.swift`'s selectors. For thirty-two of them the handler is a one-line re-dispatch back onto the chain (the "Both" identity entries), grouped in `action-dispatch.ts` into four loops — a `sendToFirstResponder` save-verb loop, a `sendToFirstResponder` zoom loop, a `sendToFirstResponderForContinuation` loop whose continuation is invoked immediately, and a `sendToKeyCard` loop — plus a handful of standalone adapters of the same shape (`close`, `close-all`, `add-card-to-active-pane`, `show-component-gallery`).
 2. **Keybinding → stage 1 capture listener → chain dispatch.** `responder-chain-provider.tsx`'s `captureListener` resolves `manager.resolveKeybinding(event, [focusMode])` first, then falls back to the static `matchKeybinding(event)`, then dispatches by `binding.scope` (`key-card` vs first-responder), copying `binding.value` onto the event.
 3. **`TugButton` with an `action` prop → `sendToTarget` or `useControlDispatch`.** Validation is `nodeCanHandle` against the dispatch target.
 4. **`run-card-command` slash bridges.** Twenty menu items carrying a slash-command name in `representedObject`; one handler re-dispatches `RUN_SLASH_COMMAND` key-card-scoped with `{name, args}`.
@@ -405,7 +434,7 @@ dispatchCommand(id, payload?)
 **Funnel #2** is `keymap-registry.ts`. It holds `Map<commandId, KeymapBinding[]>` seeded from the table's defaults and overlaid with tugbank overrides, is subscribable ([L02]), and exposes:
 
 - `matchChord(event): { commandId, binding } | null` — the global layer, replacing the static `KEYBINDING_INDEX` lookup.
-- `resolveChord(chord, scope?): ResolutionEntry[]` — the full stack, innermost-first, each entry marked `active` or `shadowedBy`.
+- `resolveChord(chord, scope?): ChordResolution[]` — the full stack, native layer first and then innermost-first ([P15]), each entry marked `active` or `shadowedBy`.
 - `bindingsFor(commandId): (KeymapBinding & { active, shadowedBy? })[]`.
 - `menuChords(): Record<menuItemId, ChordSpec | null>` — what the mirror publishes.
 
@@ -417,7 +446,9 @@ The audit's most load-bearing finding: `tugapp/Sources` contains **no** `perform
 
 Two shipped precedents prove the sweep is safe at that site: `applyStackChordKeyEquivalent()` moves ⌘R between two Window items, and the dynamic ⇧⌘S attaches Save As only while a Text card is frontmost. Both mutate key equivalents from `updateMenuState(_:)` and both carry the comment explaining why never from `validateMenuItem` — AppKit's closed-menu key-equivalent scan runs the validator, and mutating a key equivalent inside that scan is undefined.
 
-The sweep is a recursive walk of `NSApp.mainMenu` (~120 items) applying `commands[item.identifier].chord`, running only when `updateMenuState` fires — which is only when the serialized menu projection actually changed, because `HostMenuStatePublisher` diffs before posting. No index of items is maintained, so dynamic rebuilds (View, Window, Theme, Open Recent) cannot leave a stale reference behind.
+The sweep is a recursive walk of `NSApp.mainMenu` (~120 items) applying `commands[item.identifier].chord`. No index of items is maintained, so dynamic rebuilds (View, Window, Theme, Open Recent) cannot leave a stale reference behind.
+
+It cannot run *only* from `updateMenuState`, though, and this is the one place the "push is the single source" story needs a second call site. `rebuildViewMenu`, `rebuildOpenRecentMenu`, the Window pane slice, and the theme submenu each `removeAllItems()` and reconstruct their items from construction-time `keyEquivalent` literals — and `updateMenuState` fires only when the serialized projection changes, because `HostMenuStatePublisher` diffs before posting. So a rebuild that happens after a rebind restores the *literal*, and nothing republishes to correct it: open the View menu once after rebinding ⌘+ and the old chord is back until some unrelated state change happens by. The sweep therefore runs from two sites — `updateMenuState(_:)` for the whole tree, and the tail of each `menuNeedsUpdate` rebuild for the menu it just rebuilt. Both are outside `validateMenuItem`, which is the constraint that actually matters.
 
 #### The code → keyEquivalent conversion {#chord-conversion}
 
@@ -427,7 +458,8 @@ The sweep is a recursive walk of `NSApp.mainMenu` (~120 items) applying `command
 |---|---|---|
 | `KeyA`…`KeyZ` | lowercase letter | AppKit renders ⇧ from the modifier mask, not from case |
 | `Digit0`…`Digit9` | the digit | |
-| `Comma` `Period` `Slash` `Semicolon` `Quote` `Backslash` `BracketLeft` `BracketRight` `Backquote` `Minus` `Equal` | the US-layout punctuation character | ⌘+ is authored as a separate binding on `Equal` with `shift`, matching today's visible ⌘+ item and its hidden ⌘= alias |
+| `Comma` `Period` `Slash` `Semicolon` `Quote` `Backslash` `BracketLeft` `BracketRight` `Backquote` `Minus` `Equal` | the US-layout **unshifted** punctuation character | when the binding carries `shift`, see the row below |
+| the same codes **with `shift`** | the US-layout **shifted** character (`Equal`→`+`, `Slash`→`?`, `Minus`→`_`, `Digit1`→`!`, …), and **`shift` is dropped from the modifier mask** | This is R03's ambiguity, resolved: the shipped Zoom In item is `NSMenuItem(keyEquivalent: "+")` with a bare `.command` mask, so a naive `"="` + ⇧⌘ conversion would still *match* at runtime but would render the menu as ⇧⌘= instead of ⌘+. The character carries the shift; the mask must not carry it twice. ⌘= stays a second binding on unshifted `Equal`, matching today's hidden alias item |
 | `ArrowUp` `ArrowDown` `ArrowLeft` `ArrowRight` | `NSUpArrowFunctionKey` … | `\u{F700}`–`\u{F703}` |
 | `Escape` | `\u{1b}` | |
 | `Tab` | `\t` | |
@@ -508,6 +540,10 @@ export interface CommandEntry {
   /** Payload set discovered at runtime — excluded from the mirror, the keymap
    *  UI's rebindable rows, and the door-coverage lint ([P05]). */
   readonly parameterized?: boolean;
+  /** No door by design: the entry exists so the command is named and visible,
+   *  but it has neither a `menuItemId` nor `bindings` and is exempt from the
+   *  door-coverage lint. Carries a comment naming what blocks the door. */
+  readonly internal?: boolean;
 }
 
 export interface CommandValidationSource {
@@ -549,14 +585,28 @@ export interface CommandBinding {
   readonly menuEligible?: boolean;
 }
 
-/** What resolveChord answers for one chord ([#step-18]). */
+/** What resolveChord answers for one chord ([#step-18], [P15]). */
+export type ResolutionLayer =
+  /** An NSMenuItem carries this chord — AppKit resolves it before the web
+   *  view sees a keydown, so this layer sits above all three JS layers. */
+  | { readonly kind: "native"; readonly menuItemId: string;
+      /** false → the item validates disabled: the chord is eaten with a
+       *  beep and reaches nothing at all ([#constraints]). */
+      readonly enabled: boolean;
+      /** false → the enclosing menu is hidden without
+       *  allowsKeyEquivalentWhenHidden, so the chord falls through to JS. */
+      readonly claims: boolean }
+  | { readonly kind: "js"; readonly scope: BindingScope };
+
 export interface ChordResolution {
   readonly commandId: string;
-  readonly scope: BindingScope;
+  readonly layer: ResolutionLayer;
   readonly active: boolean;
-  readonly shadowedBy?: { readonly commandId: string; readonly scope: BindingScope };
+  readonly shadowedBy?: { readonly commandId: string; readonly layer: ResolutionLayer };
 }
 ```
+
+`resolveChord` orders the stack native-first. A native entry with `claims: true` is `active` when `enabled` and shadows every JS entry below it; with `claims: true, enabled: false` it is not `active` and nothing below it is either — the chord is dead in the app, which is the state the pane must name rather than silently attributing to the first JS binding. With `claims: false` it is skipped and the JS layers resolve as [P08] states.
 
 **Spec S03: The `commands` mirror block** {#s03-mirror-block}
 
@@ -584,7 +634,36 @@ export interface MenuCommandGate {
 //   commands: Record<string /* NSMenuItem identifier */, MenuCommandGate>
 ```
 
-Swift decodes it into `[String: CommandGate]` and consumes it at two sites:
+The `chord` field is **three-state**, and all three states are load-bearing: *absent* means "leave the constructed key equivalent alone", *`null`* means "detach it" (how ⌘R clears at stack depth ≤ 1 and how a rebound-away command releases its chord), and *present* means "apply this". Swift's `Codable` collapses absent and null by default, so the decoder must distinguish them explicitly:
+
+```swift
+struct CommandGate: Decodable {
+    let enabled: Bool
+    let state: Bool?
+    let title: String?
+    /// .absent → leave the item's key equivalent alone
+    /// .detach → clear it
+    /// .apply  → set it
+    enum ChordField { case absent, detach, apply(ChordSpec) }
+    let chord: ChordField
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        state = try c.decodeIfPresent(Bool.self, forKey: .state)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        if !c.contains(.chord) {
+            chord = .absent
+        } else if try c.decodeNil(forKey: .chord) {
+            chord = .detach
+        } else {
+            chord = .apply(try c.decode(ChordSpec.self, forKey: .chord))
+        }
+    }
+}
+```
+
+`ChordSpec` carries the four modifier booleans, not a mask; the mask is assembled Swift-side from them so the wire stays readable and no `NSEvent.ModifierFlags` raw value crosses the boundary. Swift consumes the block at two sites:
 
 ```swift
 // validateMenuItem — the new FIRST tier, ahead of every hand-rolled case.
@@ -594,21 +673,26 @@ if let gate = menuState.commands[id] {
     return gate.enabled
 }
 
-// updateMenuState — the chord sweep. Never from validateMenuItem.
-private func applyCommandChords() {
-    guard let main = NSApp.mainMenu else { return }
-    func sweep(_ menu: NSMenu) {
-        for item in menu.items {
-            if let id = item.identifier?.rawValue,
-               let gate = menuState.commands[id],
-               let chordField = gate.chordField {          // present in the payload
-                item.keyEquivalent = chordField?.keyEquivalent ?? ""
-                item.keyEquivalentModifierMask = chordField?.modifierMask ?? []
+// updateMenuState, and the tail of every menuNeedsUpdate rebuild
+// (#swift-key-surface). Never from validateMenuItem.
+private func applyCommandChords(in menu: NSMenu? = nil) {
+    guard let root = menu ?? NSApp.mainMenu else { return }
+    for item in root.items {
+        if let id = item.identifier?.rawValue,
+           let gate = menuState.commands[id] {
+            switch gate.chord {
+            case .absent:
+                break
+            case .detach:
+                item.keyEquivalent = ""
+                item.keyEquivalentModifierMask = []
+            case .apply(let spec):
+                item.keyEquivalent = spec.keyEquivalent
+                item.keyEquivalentModifierMask = spec.modifierMask
             }
-            if let sub = item.submenu { sweep(sub) }
         }
+        if let sub = item.submenu { applyCommandChords(in: sub) }
     }
-    sweep(main)
 }
 ```
 
@@ -644,7 +728,8 @@ Read by the keymap UI (renders the row locked, no capture affordance) and by the
 | Keymap pane's selected row / search text | local-data | `useState` in the pane | [L02] |
 | Chord-capture armed state | local-data + appearance | `useState` for armed/not; the "press a chord" affordance styling is CSS on a data attribute | [L02], [L06] |
 | Chord-capture focus containment | structure | `useFocusTrap` pushing a focus mode so the capture surface owns every chord while armed | [L03] |
-| Shadowing display per row | derived — no stored state | computed from `resolveChord` at render | — |
+| Native menu key equivalents | outward mirror with a **second writer** | swept from the push, and re-swept at the tail of every `menuNeedsUpdate` rebuild — the rebuild is the second writer, and the reason the sweep is not single-site ([P15], #swift-key-surface) | [L02] (deliberately not a store) |
+| Shadowing display per row | derived — no stored state | computed from `resolveChord` at render, native layer included ([P15]) | — |
 
 ---
 
@@ -657,7 +742,7 @@ Read by the keymap UI (renders the row locked, no capture affordance) and by the
 | `tugdeck/src/components/tugways/command-registry.ts` | The `COMMANDS` table, `CommandEntry`/`CommandBinding`/`Chord` types, `COMMANDS_BY_ID`, `NATIVE_LOCKED`, lookup helpers ([P01], Spec S01) |
 | `tugdeck/src/command-dispatch.ts` | `dispatchCommand`, `validateCommand`, `queryCommandState`, command observers ([P04]) |
 | `tugdeck/src/components/tugways/chord-format.ts` | `codeToKeyEquivalent`, `formatChord`, `chordFromEvent`, `chordKey` — the only place either key alphabet is spelled ([P09], #chord-conversion) |
-| `tugdeck/src/components/tugways/keymap-registry.ts` | `keymapRegistry` singleton: `matchChord`, `resolveChord`, `bindingsFor`, `menuChords` ([P08], Spec S02) |
+| `tugdeck/src/components/tugways/keymap-registry.ts` | `keymapRegistry` singleton: `matchChord`, `resolveChord` (native layer first), `bindingsFor`, `menuChords`, the collision lint ([P08], [P15], Spec S02) |
 | `tugdeck/src/keymap-override-store.ts` | tugbank-backed override store, boot seed, DEFAULTS-push application ([P14], Spec S04) |
 | `tugdeck/src/components/tugways/cards/settings-keymap-body.tsx` | Settings ▸ Keyboard pane |
 | `tugdeck/src/components/tugways/cards/settings-keymap-body.css` | Its layout |
@@ -674,8 +759,8 @@ Read by the keymap UI (renders the row locked, no capture affordance) and by the
 | `ResponderChainManager.validateActionInKeyCard` | method | `responder-chain.ts` | Walk from the key card's `card-content` node, matching key-card routing ([P06]) |
 | `ResponderChainManager.queryActionStateInKeyCard` | method | `responder-chain.ts` | Same, for state |
 | `ResponderChainManager.activeKeybindings` | method (modified) | `responder-chain.ts` | Return `{ scopeId, binding }` pairs so `resolveChord` can attribute scope |
-| `computeCommandCapabilities` | function | `host-menu-state.ts` | Generalizes `computeEditCapabilities`; produces the `commands` block (Spec S03) |
-| `MenuStatePayload.commands` | field | `host-menu-state.ts` | The mirror block ([P13]) |
+| `computeCommandCapabilities` | function | `lib/host-menu-state.ts` | Generalizes `computeEditCapabilities`; produces the `commands` block (Spec S03) |
+| `MenuStatePayload.commands` | field | `lib/host-menu-state.ts` | The mirror block ([P13]) |
 | `MenuState.commands` / `MenuState.CommandGate` | struct + field | `AppDelegate.swift` | Decoder for the block |
 | `AppDelegate.applyCommandChords()` | method | `AppDelegate.swift` | Recursive chord sweep, called from `updateMenuState` ([P10]) |
 | `AppDelegate.validateMenuItem(_:)` | method (modified) | `AppDelegate.swift` | New first tier; hand-rolled tiers deleted as they migrate |
@@ -693,6 +778,7 @@ Read by the keymap UI (renders the row locked, no capture affordance) and by the
 
 - [ ] `tuglaws/menus.md` — full refresh: correct the `dev`→`session` wire block name, add the six undocumented top-level `menuState` keys plus `commands`, replace the five-tier validation table with the mirror-first model, regenerate the control-frame catalog from the registry, add the chord table, drop `maker.sessionPanel` and `show-dev-panel-toggle`, state the theme-scan source.
 - [ ] `tuglaws/action-naming.md` — add the command-registry layer above the three-way classification: a name's classification becomes a consequence of its entry's `routing`.
+- [ ] `tuglaws/menus.md` — state the four-layer chord resolution order ([P15]) as doctrine: the native menu resolves before the web view sees a keydown, so menu placement is a chord decision. This is the fact `pdf-view.tsx` currently carries as a local comment.
 - [ ] `tuglaws/responder-chain.md` — document `queryActionState` alongside `canHandle` / `validateAction`, and the key-card-scoped validation variants.
 - [ ] `tuglaws/focus-language.md` — note the chord-capture focus mode as a sanctioned trap.
 - [ ] `tests/app-test/README.md` — the new at0180–at0182 entries and what each pins.
@@ -929,8 +1015,8 @@ Unit tests construct a **real** `ResponderChainManager` and register real respon
 - `action-dispatch.ts` — the three re-dispatch loops deleted.
 
 **Tasks:**
-- [ ] Walk `action-dispatch.ts` top to bottom and write one entry per command-shaped `registerAction`, transcribing routing from the call site verbatim — not inferring it. The three loops map directly: the `sendToFirstResponder` group and the continuation group both become `routing: "first-responder"`; the `sendToKeyCard` group becomes `routing: "key-card"`.
-- [ ] Delete the three loops and the individual trivial adapters they replace (`show-component-gallery`, `focus-lens`, `reveal-stack`, `cycle-stack`, `close`, `close-all`, `add-card-to-active-pane`, the save family, the zoom family).
+- [ ] Walk `action-dispatch.ts` top to bottom and write one entry per command-shaped `registerAction`, transcribing routing from the call site verbatim — not inferring it. The four loops map directly: the save-verb, zoom, and continuation groups all become `routing: "first-responder"`; the `sendToKeyCard` group becomes `routing: "key-card"`.
+- [ ] Delete the four loops and the individual trivial adapters they replace (`show-component-gallery`, `focus-lens`, `reveal-stack`, `cycle-stack`, `close`, `close-all`, `add-card-to-active-pane`, the save family, the zoom family).
 - [ ] Keep as `routing: "registry"` the wires with real bodies: `new-text-card`, `open-quickly`, `open-file`, `open-diff`, `clear-recent-documents`, `next-theme`, `set-theme`, `show-card`, `arrange-cards`, `focus-pane`, `setup`, `logout`, `source-tree`, `toggle-lens`, `set-imposition`, `set-imposition-lens`, `assign-slot`, `focus-session-card`, `reload`.
 - [ ] Expand the twenty `run-card-command` bridges into twenty entries per [P05], each `routing: "key-card"`, `action: TUG_ACTIONS.RUN_SLASH_COMMAND`, `payload: { name, args }`, and each naming its existing menu identifier (`session.rewind`, `session.compact`, `edit.copyLastResponse`, …). The `run-card-command` wire itself stays registered for the Swift selector, and its handler resolves the incoming `name` to the entry.
 - [ ] Expand `set-permission-mode` into four entries and `move-to-slot` into nine, per [P05].
@@ -1089,28 +1175,30 @@ Unit tests construct a **real** `ResponderChainManager` and register real respon
 
 **Commit:** `tugways(command-funnel): publish a per-command menu gate block and read it in the Swift validator`
 
-**References:** [P02] identifier join, [P07] state hook, [P13] mirror shape, Spec S03, Risk R02, (#swift-tier-retirement)
+**References:** [P02] identifier join, [P07] state hook, [P13] mirror shape, Spec S03, Risk R02, Risk R04, (#swift-tier-retirement)
 
 **Artifacts:**
-- `host-menu-state.ts` — `computeCommandCapabilities`, `MenuStatePayload.commands`, publisher field.
+- `lib/host-menu-state.ts` — `computeCommandCapabilities`, `MenuStatePayload.commands`, publisher field.
 - `responder-chain-provider.tsx` — publishes the block alongside the edit caps.
 - `AppDelegate.swift` — `MenuState.commands` decode, the new first tier in `validateMenuItem`.
 
 **Tasks:**
 - [ ] Write `computeCommandCapabilities(chain)`: for every non-parameterized entry with a `menuItemId`, compute `enabled` ([P06]: `validate` if present, else the routing-matched chain walk), `state` (from `state` or `queryActionState`, narrowed to boolean), and `title` (from `dynamicTitle`). Return the `Record<menuItemId, MenuCommandGate>`.
 - [ ] Add `commands` to `MenuStatePayload` and a `setCommandCapabilities` setter on `HostMenuStatePublisher`, joining the existing microtask-coalesced diffed flush.
-- [ ] In `responder-chain-provider.tsx`, publish the block from the same `publishEditCaps` closure (rename it to reflect both) so both mirrors share one recompute, one `manager.subscribe`, and the existing `registerEditCapsRefresher` escape hatch. Generalize the refresher's name to match ([P07], Risk R02).
+- [ ] In `responder-chain-provider.tsx`, publish the block from the same `publishEditCaps` closure (rename it to reflect both) so both mirrors share one recompute, one `manager.subscribe`, and the existing `registerEditCapsRefresher` escape hatch. Generalize the refresher's name to match ([P07], Risk R02). Keep the undo plugin's availability/label gate exactly as it is — the closure's work is what grows here, not its trigger set (Risk R04).
+- [ ] Measure the recompute before and after, with the block empty and with it populated, using the synthetic typist (`AT9996_TYPIST=1`) and the deck probes. Record the numbers in the step; if the keystroke-reachable path regresses, split the recompute per Risk R04 before [#step-14] populates 60–80 predicates on top of it.
 - [ ] Add `MenuState.CommandGate` and `MenuState.commands` to the Swift decoder, defensively per the struct's existing discipline: a missing block reads as empty, so items fall through to the hand-rolled tiers unchanged.
 - [ ] Add the first tier to `validateMenuItem` per Spec S03, ahead of the `session.` prefix block. With the block empty (cold start) every item still reaches its existing tier, which is what makes this step non-breaking on its own.
 - [ ] Add a harness-facing assertion path: every `menuItemId` in the table resolves to a real menu item (`menuItemState(id).found`), so [P02]'s hand-maintained join is machine-checked.
 
 **Tests:**
 - [ ] Unit: `computeCommandCapabilities` over a real chain with real registrations — an entry with a chain-routed action reflects `validateAction`; a `key-card` entry reflects the key-card walk; a `validate`-carrying registry entry reflects its predicate.
-- [ ] New `tests/app-test/at0180-command-registry-gates.test.ts` (`@covers` the registry, `host-menu-state.ts`, `AppDelegate.swift`): assert every `menuItemId` in the pushed block is `found` in `menuSnapshot`.
+- [ ] New `tests/app-test/at0180-command-registry-gates.test.ts` (`@covers` the registry, `lib/host-menu-state.ts`, `AppDelegate.swift`): assert every `menuItemId` in the pushed block is `found` in `menuSnapshot`.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
 - [ ] `just build-app && just app-test at0180-command-registry-gates.test.ts at0168-menu-structure.test.ts`
+- [ ] The Risk R04 measurement, recorded in the step: recompute cost with the block empty vs. populated, and the typist q50/q99 either side.
 
 ---
 
@@ -1158,7 +1246,7 @@ Unit tests construct a **real** `ResponderChainManager` and register real respon
 **Artifacts:**
 - `text-editing-menu.ts` — dimming from the chain.
 - `internal/tug-button.tsx` — registry-aware validation.
-- The theme store / `host-menu-state.ts` / `AppDelegate.swift` — theme name pushed.
+- The theme store / `lib/host-menu-state.ts` / `AppDelegate.swift` — theme name pushed.
 
 **Tasks:**
 - [ ] Rewrite `buildTextEditingMenuItems` to take a validity source rather than `{hasSelection, canEdit}`: each entry's `disabled` becomes `!validateCommand(entry)`. The two independent sources for the same six items collapse to one (defect 10). Keep the caller's ability to pass an explicit source so the sampled-at-menu-open-time semantics of the annotation copies are preserved.
@@ -1183,22 +1271,33 @@ Unit tests construct a **real** `ResponderChainManager` and register real respon
 
 **Commit:** `tugapp(command-funnel): give the chord-only commands menu doors`
 
-**References:** [Q02] menu placement, [P02] identifier join, (#defect-mapping)
+**References:** [Q02] menu placement, [P02] identifier join, [P15] native layer, (#defect-mapping)
 
 **Artifacts:**
 - `AppDelegate.swift` — new menu items with identifiers.
 - `command-registry.ts` — `menuItemId` filled in on the promoted entries.
 
+**Promotion is not free, and this step is where the cost is paid.** Giving a chord-only command a menu item moves its chord out of the JS funnel and into AppKit's key-equivalent scan, which runs before the web view sees a `keydown` at all ([P15]). Three consequences follow for every row promoted:
+
+1. The chord stops being scoped. ⌘1–⌘9 is a stage-1 binding today, shadowable by any responder that wants those digits; as Window-menu items it is claimed globally and unconditionally, including inside every text surface. `pdf-view.tsx` already declines ⌘1–⌘3 by hand for exactly this reason, and that hand-reasoning becomes wrong in the other direction once the item exists.
+2. A promoted command with no validity predicate is *always* enabled, so its chord is always eaten. Every promoted row must carry a `validate`.
+3. A promoted command that validates disabled **beeps** — it does not fall through ([#constraints]). So every promoted row whose chord should still reach JS when the command is inapplicable must publish a `null` chord in that state, not merely a disabled item.
+
+So each row below is a judgment about the chord, not just about menu real estate, and [Q02]'s per-row strike list is where a row that fails these three is struck.
+
 **Tasks:**
 - [ ] Add Session-menu items for the transcript navigation group (`previous-turn`, `next-turn`, `first-turn`, `last-turn`), the command picker (`open-command-picker`), the composer route select (`select-composer-route:prompt`, `select-composer-route:changes` — Changes already has an item via the toggle, so decide between converging or keeping both), and `cycle-focus-mode`.
 - [ ] Add a Maker-menu (or Help-menu) item for `show-devtools` (⌥⌘/).
-- [ ] Add Window-menu slot items for `move-to-slot:1` … `move-to-slot:9`.
+- [ ] Add Window-menu slot items for `move-to-slot:1` … `move-to-slot:9`. This is the row the promotion cost bites hardest: nine digit chords leave the JS funnel at once. Either carry a `validate` that is false (and a `null` chord) whenever the focused surface wants its digits, or strike the row and leave the nine as chord-only entries the keymap UI can still show.
 - [ ] Stamp each with a namespaced identifier following the existing convention, and fill in the matching `menuItemId` in the registry so the mirror gates them for free.
+- [ ] Give every promoted row a `validate` predicate and decide its disabled-state chord: `null` (falls through to JS) or attached (beeps). Record the choice per row — an attached chord on a disabled item is a deliberate "nothing else may have this", not a default.
+- [ ] Run the [P15] collision lint after each promotion; a promoted chord that collides with a scoped binding is struck or rescoped, never landed.
 - [ ] Strike any row from this list per [Q02] without touching another step.
 
 **Tests:**
 - [ ] `at0168-menu-structure.test.ts` — assert the new items exist with their identifiers and chords.
 - [ ] `at0180` — assert each new item's enablement follows its registry predicate (e.g. turn navigation disabled with no turns).
+- [ ] `at0181` — for each promoted row whose disabled state should fall through, assert `keyEquivalent === ""` in that state (the [#step-2] ⌘R assertion generalized).
 
 **Checkpoint:**
 - [ ] `just build-app`
@@ -1248,14 +1347,18 @@ Unit tests construct a **real** `ResponderChainManager` and register real respon
 **Tasks:**
 - [ ] Write `chord-format.ts`: `chordKey` (the O(1) lookup identity, moved from `keybinding-map.ts`), `chordMatchesEvent` (the existing exact-modifier rule, moved), `chordFromEvent`, `codeToKeyEquivalent` per [#chord-conversion] (throwing in dev on an untabled code), and `formatChord` producing the display string from modifiers plus label.
 - [ ] Write `keymap-registry.ts`: a subscribable singleton holding the merged default+override binding lists, a precompiled chord index for the global layer, and the four public reads (`matchChord`, `resolveChord`, `bindingsFor`, `menuChords`).
-- [ ] Implement `resolveChord(chord, scope?)` per Spec S02: collect every binding on that chord across layers — focus mode, the responder walk innermost-first (read from `manager.activeKeybindings()`), then global — order them, mark the first `active` and every later one `shadowedBy` the winner. The order must be identical to stage 1's actual resolution order, and the test asserts that by driving both.
+- [ ] Implement `resolveChord(chord, scope?)` per Spec S02 and [P15]: collect every binding on that chord across layers — the native menu layer first, then focus mode, then the responder walk innermost-first (read from `manager.activeKeybindings()`), then global — order them, mark the first `active` and every later one `shadowedBy` the winner. The three JS layers' order must be identical to stage 1's actual resolution order, and the test asserts that by driving both.
+- [ ] Build the native layer from data the plan already has: `menuChords()` for which chords are menu-eligible, the `commands` mirror's `enabled` for whether the item validates live, and the Maker menu's hidden state for the one `allowsKeyEquivalentWhenHidden` fallthrough case. A `claims: true, enabled: false` entry means the chord is eaten with a beep and nothing below it is reachable — model that state explicitly rather than falling through to the first JS binding.
+- [ ] Add the collision lint ([P15]): fail when a `menuEligible` binding shares a chord with any scoped binding. It is what keeps [#step-16] from silently stealing a scoped chord.
 - [ ] Change `ResponderChainManager.activeKeybindings` to return `{ scopeId, binding }` pairs so `resolveChord` can attribute a scope to each hit. Update its one existing caller (`warnDuplicateChords`).
 - [ ] Implement `menuChords()` returning `Record<menuItemId, ChordSpec | null>` — the first `menuEligible` binding's converted form, or `null` when a command has none.
 
 **Tests:**
-- [ ] Unit: `codeToKeyEquivalent` round-trips every code the table binds; an untabled code throws in dev.
+- [ ] Unit: `codeToKeyEquivalent` round-trips every code the table binds; an untabled code throws in dev; a shifted-punctuation binding returns the shifted character with `shift` absent from the mask, so ⌘+ converts to `("+", [.command])` and matches the shipped item byte for byte.
 - [ ] Unit: `formatChord` for the modifier permutations, including the ⌥⇧⌘C / ⌥⇧⌘V pair that [#step-5] hand-fixed.
 - [ ] Unit: `resolveChord` over a constructed multi-layer registry — a mode binding shadows a responder binding shadows a global binding; the shadowed entries name their shadower; an unbound chord answers an empty stack.
+- [ ] Unit: the native layer — an enabled menu item shadows a scoped binding on the same chord ([P15]); a disabled one leaves the whole stack unreachable; a hidden-menu item with `allowsKeyEquivalentWhenHidden` false lets the JS layers resolve. The ⌘1–⌘9 / PDF-card case is the concrete fixture, since `pdf-view.tsx` reasons about it by hand today.
+- [ ] Unit: the collision lint over the real table — no `menuEligible` binding shares a chord with a scoped binding.
 - [ ] Unit: `bindingsFor` marks a command's shadowed binding as inactive and names the winner.
 
 **Checkpoint:**
@@ -1303,18 +1406,20 @@ Unit tests construct a **real** `ResponderChainManager` and register real respon
 **References:** [P10] chords via push, [P13] mirror shape, Spec S03, Risk R03, (#swift-key-surface)
 
 **Artifacts:**
-- `host-menu-state.ts` — `chord` filled into each gate from `menuChords()`.
+- `lib/host-menu-state.ts` — `chord` filled into each gate from `menuChords()`.
 - `AppDelegate.swift` — `applyCommandChords()`; construction-time literals reduced to defaults.
 
 **Tasks:**
 - [ ] Fill `MenuCommandGate.chord` in `computeCommandCapabilities` from `keymapRegistry.menuChords()`, and subscribe the mirror's recompute to the keymap registry so a binding change republishes.
-- [ ] Add `applyCommandChords()` to `AppDelegate` per Spec S03 — a recursive sweep of `NSApp.mainMenu` applying each identified item's chord — and call it from `updateMenuState(_:)`.
+- [ ] Add `applyCommandChords(in menu: NSMenu? = nil)` to `AppDelegate` per Spec S03 — a recursive sweep applying each identified item's chord, defaulting to `NSApp.mainMenu` — and call it from `updateMenuState(_:)`.
+- [ ] Call the scoped form at the tail of every `menuNeedsUpdate` rebuild that reconstructs items: `rebuildViewMenu`, `rebuildOpenRecentMenu`, the Window pane-list refresh, and the theme submenu's delegate. Without this a rebuilt item silently reverts to its construction-time literal and stays there until the next unrelated push (#swift-key-surface).
 - [ ] Retire `applyStackChordKeyEquivalent()` and the dynamic ⇧⌘S block: both become ordinary registry outputs. The stack chord becomes two bindings whose `menuEligible` flag follows `stackChordStore`, and the depth-≤1 detach from [#step-2] becomes a `null` chord. Save As's chord becomes `null` when no Text card is frontmost.
 - [ ] Keep the construction-time `keyEquivalent` literals as the pre-push defaults ([P10]); add a comment at `buildMenuBar` stating they are defaults the sweep replaces.
 - [ ] Confirm `allowsKeyEquivalentWhenHidden` on `view.zoomInAlias` survives the sweep (the sweep writes `keyEquivalent` and the mask only).
 
 **Tests:**
-- [ ] New `tests/app-test/at0181-keymap-chord-sweep.test.ts` (`@covers` `keymap-registry.ts`, `host-menu-state.ts`, `AppDelegate.swift`): assert a spot-check set of identifiers carries the expected `keyEquivalent` and `modifierMask` after the first push — including an arrow-key chord, a punctuation chord, and a four-modifier chord.
+- [ ] New `tests/app-test/at0181-keymap-chord-sweep.test.ts` (`@covers` `keymap-registry.ts`, `lib/host-menu-state.ts`, `AppDelegate.swift`): assert a spot-check set of identifiers carries the expected `keyEquivalent` and `modifierMask` after the first push — including an arrow-key chord, a punctuation chord, and a four-modifier chord.
+- [ ] `at0181` — the rebuild case: read a View-menu item's `keyEquivalent`, force the rebuild (`menuSnapshot` walks the tree and the delegate rebuilds on open), and assert the swept chord survived rather than reverting to the construction literal.
 - [ ] `at0169` — the stack-chord assertions from [#step-2] now exercise the sweep instead of the retired method.
 
 **Checkpoint:**
@@ -1338,8 +1443,8 @@ Unit tests construct a **real** `ResponderChainManager` and register real respon
 **Tasks:**
 - [ ] Migrate the commit-mode ⇧⌘M listener in `tug-prompt-entry.tsx` to a `useKeybindings` registration scoped to the commit-mode focus scope, dispatching a `commit-auto-message` command. It is a raw, unregistered capture listener today — invisible to every audit surface and to conflict detection.
 - [ ] Classify the ⌘. / Escape branches in the same listener: they are commit-mode's cancel/exit and duplicate the chain's `cancel-dialog` priority ladder. Either route them through scoped bindings on `exit-commit-mode` / `cancel-commit-draft` commands, or formally mark them substrate-local with a comment naming why. Prefer the former — they are commands, not text-editing currency.
-- [ ] Sweep for any remaining raw `addEventListener("keydown", …, true)` that matches on modifier chords, and give each the same treatment.
-- [ ] Replace every authored chord string in UI code with `formatChord(bindingsFor(commandId)[0]?.chord)`, starting with `buildTextEditingMenuItems`'s six entries ([P11]) — which structurally closes defect 6 that [#step-5] patched by hand.
+- [ ] Sweep the remaining raw `addEventListener("keydown", …, true)` sites and give each the same treatment — migrate, or mark substrate-local with a comment naming why. This is not a one-file task: beyond `tug-prompt-entry.tsx` the capture-phase listeners are `block-reorder.ts`, `snippets-section.tsx`, `tug-editor-context-menu.tsx`, `tug-placard.tsx`, `card-drag-coordinator.ts`, `dev-error-overlay.ts`, and `tug-text-card-editor/anchor-links.ts`. Most are Escape or modifier-hold and will classify rather than migrate, but each needs the judgment written down — an unclassified listener is exactly the invisible chord claim this step exists to end.
+- [ ] Replace every authored chord string in UI code with `formatChord(bindingsFor(commandId)[0]?.chord)` ([P11]). `buildTextEditingMenuItems`'s six entries are the ones [#step-5] patched by hand, and this structurally closes defect 6 — but they are not the only site: `pdf-view.tsx`'s context menu authors `⌘+` / `⌘−` / `⌘0` too, and the sweep is for `TugContextMenuEntry.shortcut` wherever it is spelled, not for one file.
 
 **Tests:**
 - [ ] Unit: the context-menu entries' shortcut strings equal `formatChord` of the live bindings — the test that makes an authored-string regression impossible.
@@ -1457,6 +1562,7 @@ Unit tests construct a **real** `ResponderChainManager` and register real respon
 - [ ] Walk every criterion in [#success-criteria] and record how it was verified.
 - [ ] Confirm the audit brief's §F ledger is closed: twelve defects, each traced to a landed step per [#defect-mapping].
 - [ ] Confirm no surface in the codebase authors a chord string, defines a second validity for a command, or claims a chord the keymap registry cannot see.
+- [ ] Confirm `pdf-view.tsx`'s hand-written shadowing comment (why the viewer declines ⌘1–⌘3 and the zoom chords) is now an observation `resolveChord` makes, not a fact a reader has to know — and rewrite or delete it accordingly.
 
 **Tests:**
 - [ ] The full menu/keybinding app-test family plus the three new files.
@@ -1481,7 +1587,9 @@ Unit tests construct a **real** `ResponderChainManager` and register real respon
 - [ ] `validateMenuItem`'s hand-rolled cases are the native-undo branch and the parameterized families; every other statically-built item is gated by `menuState.commands` (read the file; at0167–at0174 green).
 - [ ] `KEYBINDINGS` and `matchKeybinding` no longer exist; stage 1 resolves through the keymap registry (grep).
 - [ ] `applyStackChordKeyEquivalent` and the dynamic ⇧⌘S block no longer exist; both are registry outputs applied by `applyCommandChords` (grep).
-- [ ] `resolveChord` answers the full resolution stack with shadowing for any chord, and `bindingsFor` marks each of a command's bindings live or shadowed (unit tests).
+- [ ] `resolveChord` answers the full resolution stack with shadowing for any chord — native layer first ([P15]) — and `bindingsFor` marks each of a command's bindings live or shadowed (unit tests).
+- [ ] The collision lint passes: no `menuEligible` binding shares a chord with a scoped binding (unit test over the real table).
+- [ ] A chord swept onto a dynamically-rebuilt menu survives the rebuild (at0181).
 - [ ] A rebind in Settings ▸ Keyboard moves both the web binding and the native key equivalent without a restart; a reset restores the default (at0182).
 - [ ] `NATIVE_LOCKED` is the only place lockedness is decided, and a write against a locked id is rejected (unit test).
 - [ ] No UI surface authors a chord string (unit test comparing rendered shortcuts to `formatChord` of the live bindings).
