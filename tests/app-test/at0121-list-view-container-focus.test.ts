@@ -75,6 +75,7 @@ const CONTAINER_PROBE = `(function(){
   var ringBefore = ring ? getComputedStyle(ring, "::before") : null;
   return {
     outline: cs.outlineWidth,
+    frameWidth: cs.borderLeftWidth,
     backgroundImage: cs.backgroundImage,
     ringOutline: ringBefore ? ringBefore.outlineWidth : null,
     ringHeight: ringBefore ? parseFloat(ringBefore.height) || 0 : 0,
@@ -102,6 +103,7 @@ const ALL_ROWS_NON_FOCUSABLE = `(function(){
 
 interface ContainerProbe {
   outline: string;
+  frameWidth: string;
   backgroundImage: string;
   ringOutline: string | null;
   ringHeight: number;
@@ -160,10 +162,15 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         expect(onContainer?.keyboardReached).toBe(true);
         expect(parseFloat(onContainer?.ringOutline ?? "0")).toBeGreaterThan(0);
         expect(onContainer?.ringHeight ?? 0).toBeGreaterThan(0);
-        // The scroller wears the BOUNDARY COVER — the stroke that claims the
-        // enclosing border, painted outside the scrollport where no row can
-        // reach. Thinner than the overlay's body; present only under focus.
-        expect(parseFloat(onContainer?.outline ?? "0")).toBeGreaterThan(0);
+        // Both layers describe ONE band and therefore carry the SAME width —
+        // the scroller's outline (painted before descendants, so rows cover it
+        // inside the scrollport) and the overlay's stroke (a positioned
+        // descendant, which they cannot). Their union is the ring; asserting
+        // the widths match is what keeps them one band rather than two
+        // concentric rings at two weights.
+        expect(parseFloat(onContainer?.outline ?? "0")).toBe(
+          parseFloat(onContainer?.ringOutline ?? "-1"),
+        );
         expect(onContainer?.backgroundImage ?? "none").toBe("none");
         // "The list is one stop" is an ENGINE fact, not a tabindex fact. Once
         // the focus engine drives the card the container renders no tabindex

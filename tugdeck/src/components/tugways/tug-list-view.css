@@ -111,10 +111,11 @@ body {
   /* `--tugx-list-view-cursor-bar-inset` — OPT-IN knob, deliberately not
      declared here. How far in from the row's leading edge the bar starts
      WHILE THE CONTAINER RING IS UP (the rule below applies it only under the
-     keyboard attributes). Its default is the ring's BODY width — the share of
-     the ring inside the scrollport — resolved at the focused scroller, so the
-     bar lands flush against the ring's inner edge with no seam and no
-     overlap, whatever the host's frame math makes the body. A declaration
+     keyboard attributes). Its default is how far the ring reaches past the
+     row's leading edge, resolved at the focused scroller, so the bar lands
+     flush against the ring's inner edge with no seam and no overlap —
+     including the zero case, where the list's own padding already holds the
+     rows clear of the ring and the bar wants no inset at all. A declaration
      here would freeze that formula against body's values instead ([L17]
      substitution happens at the declaring element). At rest the bar sits on
      the raw edge. */
@@ -259,20 +260,45 @@ body {
      cover an outline at its edge. Lifting the focused scroller into a
      stacking context paints its outline after sibling chrome. Focus-time
      only, so at-rest stacking is untouched. */
-  /* The two strokes split ONE width — `--tugx-focus-container-ring-width` is
-     the ring's TOTAL weight, same as on the other five containers. The cover
-     takes the boundary's share (the frame, or 1px for a bare host rule); the
-     overlay's body takes the remainder, clamped so a thick frame never asks
-     for a negative body. */
-  --tugx-list-view-ring-cover-width: max(var(--tugx-list-view-frame-width), 1px);
-  --tugx-list-view-ring-body-width: max(
-    var(--tugx-focus-container-ring-width) - var(--tugx-list-view-ring-cover-width),
+  /* ONE band, TWO layers. The ring occupies the outermost
+     `--tugx-focus-container-ring-width` pixels of the BORDER BOX — the same
+     band on all four sides, so the frame is claimed where there is one and
+     the width never varies by side. Two layers paint that one band because no
+     single layer can reach all of it:
+
+       · this outline, which paints the whole band but is painted BEFORE the
+         scroller's descendants, so rows and sticky headers cover it wherever
+         they paint — which is exactly the scrollport, and nowhere else;
+       · the overlay's `::before` (below), a positioned descendant that
+         outranks them, aligned to the same band and clipped to the scrollport.
+
+     Their union is the complete ring, and the division of labour falls out of
+     the clip rather than being arranged. THE SCROLLBAR SIDE is the case that
+     makes it necessary: a classic scrollbar's track lies inside the border box
+     but OUTSIDE the scrollport, so the overlay is clipped short of it — the
+     ring would stop at the track's inner edge and read as a line drawn down
+     the inside of the scrollbar. Nothing paints in the track either, so the
+     outline stands there unoccluded and the ring closes around the scrollbar,
+     which is where a list's boundary belongs.
+
+     The z-index lift is for the BOTTOM stroke: a host rule below the list
+     usually belongs to the NEXT sibling section, which paints later and would
+     cover an outline at its edge. Focus-time only, so at-rest stacking is
+     untouched. */
+  outline: var(--tugx-focus-container-ring-width) solid
+    var(--tugx-focus-container-ring);
+  outline-offset: calc(-1 * var(--tugx-focus-container-ring-width));
+  z-index: 1;
+
+  /* How far the ring's inner edge reaches past a row's leading edge — the
+     band, less everything between the border box and the row's content. Zero
+     when the list's own padding already holds the rows clear of it. The
+     cursor caret reads this so it starts where the ring stops. */
+  --tugx-list-view-ring-inner-overlap: max(
+    var(--tugx-focus-container-ring-width) - var(--tugx-list-view-frame-width) -
+      var(--tugx-list-view-padding-inline),
     0px
   );
-  outline: var(--tugx-list-view-ring-cover-width) solid
-    var(--tugx-focus-container-ring);
-  outline-offset: calc(-1 * var(--tugx-list-view-frame-width));
-  z-index: 1;
 }
 
 .tug-list-view-ring {
@@ -291,25 +317,40 @@ body {
 .tug-list-view:is([data-key-view-kbd], [data-key-within]) > .tug-list-view-ring::before {
   content: "";
   position: absolute;
-  top: 0;
-  /* The anchor is content-box wide; the ring spans the scroller's padding box,
-     flush with the edge the host clips at. */
-  inset-inline: calc(-1 * var(--tugx-list-view-padding-inline));
-  /* Published by the component ([L06]); 0 until the first measure, so an
-     unmeasured list draws nothing rather than a wrong box. */
-  height: var(--tugx-list-view-scrollport-height, 0px);
   pointer-events: none;
-  /* The overlay spans the PADDING box, one frame-width inside the border box
-     the radius is authored against — so it wears the frame's INNER radius, and
-     the body stroke's curve runs concentric with the cover's instead of
-     crossing it at each corner. */
-  border-radius: max(
-    var(--tugx-list-view-radius) - var(--tugx-list-view-frame-width),
-    0px
+  /* THE BORDER BOX, reconstructed from inside. The anchor is a content-box
+     wide, scrollport-top block, so growing it by the padding and the frame on
+     each side lands this box exactly on the scroller's border box — the same
+     box the outline above rings. Both layers then describe ONE band, and the
+     overlay's job is only to repaint the part of it that rows would otherwise
+     cover. Aligning to the padding box instead would put the two strokes a
+     frame apart and draw the ring twice at two radii.
+
+     The scrollport height is the one term CSS cannot reach from in here, so
+     the component publishes it ([L06]); 0 until the first measure, so an
+     unmeasured list draws nothing rather than a wrong box. */
+  top: calc(-1 * var(--tugx-list-view-frame-width));
+  inset-inline-start: calc(
+    -1 * (var(--tugx-list-view-padding-inline) + var(--tugx-list-view-frame-width))
   );
-  outline: var(--tugx-list-view-ring-body-width) solid
+  /* …plus the scrollbar track on the end side, which the anchor's content box
+     excludes. Without it this stroke stops at the scrollport edge — inside
+     the clip, so it survives — and draws a line down the INSIDE of the
+     scrollbar. Pushed out to the border box it is clipped away instead, and
+     the outline above carries the ring around the track's outer edge. */
+  inset-inline-end: calc(
+    -1 * (var(--tugx-list-view-padding-inline) + var(--tugx-list-view-frame-width) +
+          var(--tugx-list-view-scrollbar-width, 0px))
+  );
+  height: calc(
+    var(--tugx-list-view-scrollport-height, 0px) + 2 *
+      var(--tugx-list-view-frame-width)
+  );
+  /* The frame's own radius, since this box IS the border box. */
+  border-radius: var(--tugx-list-view-radius);
+  outline: var(--tugx-focus-container-ring-width) solid
     var(--tugx-focus-container-ring);
-  outline-offset: calc(-1 * var(--tugx-list-view-ring-body-width));
+  outline-offset: calc(-1 * var(--tugx-focus-container-ring-width));
 }
 
 /* ---- A carry suppresses the cursor bar ----
@@ -509,7 +550,7 @@ body {
 .tug-list-view[data-key-within] .tug-list-view-cell[data-key-cursor]::before {
   inset-inline-start: var(
     --tugx-list-view-cursor-bar-inset,
-    var(--tugx-list-view-ring-body-width, 0px)
+    var(--tugx-list-view-ring-inner-overlap, 0px)
   );
 }
 

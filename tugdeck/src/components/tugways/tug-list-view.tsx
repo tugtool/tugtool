@@ -1847,22 +1847,46 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
 
     // The container focus-ring overlay — the sticky first child that paints
     // the ring over the rows (see `.tug-list-view-ring` in the CSS pair). Its
-    // `::before` needs the scrollport height, which CSS cannot express from
-    // inside a scroller, so the effect below publishes it as a custom property
-    // on this element — a direct style write, not React state ([L06]).
+    // geometry reconstructs the scroller's border box from a content-box-wide
+    // anchor, and two terms of that cannot be expressed in CSS from inside a
+    // scroller: the scrollport height, and the width of a classic scrollbar's
+    // track (zero under the overlay scrollbars this platform uses by default,
+    // which is why the track went unaccounted for). The effect below
+    // publishes both as custom properties on this element — direct style
+    // writes, not React state ([L06]).
     const ringElRef = React.useRef<HTMLDivElement | null>(null);
     const ringHeightRef = React.useRef<number>(-1);
-    const publishRingHeight = React.useCallback(() => {
+    const ringScrollbarRef = React.useRef<number>(-1);
+    const publishRingMetrics = React.useCallback(() => {
       const scroller = scrollContainerRef.current;
       const ringEl = ringElRef.current;
       if (scroller === null || ringEl === null) return;
       const height = scroller.clientHeight;
-      if (height === ringHeightRef.current) return;
-      ringHeightRef.current = height;
-      ringEl.style.setProperty(
-        "--tugx-list-view-scrollport-height",
-        `${height}px`,
+      if (height !== ringHeightRef.current) {
+        ringHeightRef.current = height;
+        ringEl.style.setProperty(
+          "--tugx-list-view-scrollport-height",
+          `${height}px`,
+        );
+      }
+      // `offsetWidth - clientWidth` is the border box minus the scrollport:
+      // the two frame borders plus the scrollbar track. Subtracting the
+      // borders leaves the track alone.
+      const style = window.getComputedStyle(scroller);
+      const borders =
+        (Number.parseFloat(style.borderLeftWidth) || 0) +
+        (Number.parseFloat(style.borderRightWidth) || 0);
+      const scrollbar = Math.max(
+        0,
+        scroller.offsetWidth - scroller.clientWidth - borders,
       );
+      if (scrollbar !== ringScrollbarRef.current) {
+        ringScrollbarRef.current = scrollbar;
+        ringEl.style.setProperty(
+          "--tugx-list-view-scrollbar-width",
+          `${scrollbar}px`,
+        );
+      }
     }, []);
 
     // Map<index, HTMLElement> populated by cell-wrapper ref callbacks.
@@ -2496,19 +2520,19 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // Keep the focus-ring overlay sized to the scrollport. The observer covers
     // resizes that reach no cell (a height-only pane resize); the synchronous
     // call covers mount and test environments where `ResizeObserver` is a
-    // no-op stub. One property write, only on change.
+    // no-op stub. One property write per metric, only on change.
     React.useLayoutEffect(() => {
-      publishRingHeight();
+      publishRingMetrics();
       const scroller = scrollContainerRef.current;
       if (scroller === null) return;
       const ringObserver = new ResizeObserver(() => {
-        publishRingHeight();
+        publishRingMetrics();
       });
       ringObserver.observe(scroller);
       return () => {
         ringObserver.disconnect();
       };
-    }, [publishRingHeight]);
+    }, [publishRingMetrics]);
 
     // Front-insert scroll-hold ([L23], [L06], [L22]). Runs after every
     // commit; updates the prepend trackers and, when render captured a
