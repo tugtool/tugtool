@@ -41,19 +41,19 @@ describe("createFixtureSessionMetadataStore", () => {
     const store = createFixtureSessionMetadataStore(rawJsonl);
     const snapshot = store.getSnapshot();
 
-    // Payload counts for the shipped v2.1.217 capture. The tugplug skills
+    // Payload counts for the shipped v2.1.222 capture. The tugplug skills
     // are the prefixed set (audit/dash/devise/draft/history/implement/vet);
     // the agent list is the built-in Claude Code set:
-    //   slash_commands: 51  (23 upgrade to "skill", 28 stay "local")
+    //   slash_commands: 53  (23 upgrade to "skill", 30 stay "local")
     //   agents: 5
-    //   total after dedup: 56
-    expect(snapshot.slashCommands.length).toBe(56);
+    //   total after dedup: 58
+    expect(snapshot.slashCommands.length).toBe(58);
 
     const byCategory = new Map<string, number>();
     for (const cmd of snapshot.slashCommands) {
       byCategory.set(cmd.category, (byCategory.get(cmd.category) ?? 0) + 1);
     }
-    expect(byCategory.get("local")).toBe(28);
+    expect(byCategory.get("local")).toBe(30);
     expect(byCategory.get("skill")).toBe(23);
     expect(byCategory.get("agent")).toBe(5);
   });
@@ -74,13 +74,15 @@ describe("createFixtureSessionMetadataStore", () => {
     }
   });
 
-  it("narrows `com` to compact", () => {
+  it("narrows `com` to the two compact commands, prefix match first", () => {
     // `tugplug:commit` left the capture at v2.1.217 — landing is the
     // user's gesture (`/commit` in the composer), not a plugin skill.
+    // `autocompact` arrived in v2.1.222 and carries `com` as a substring,
+    // so it is offered but ranks below the `compact` prefix match.
     const store = createFixtureSessionMetadataStore(rawJsonl);
     const provider = store.getCommandCompletionProvider();
-    const names = provider("com").map((h) => h.label).sort();
-    expect(names).toEqual(["compact"]);
+    const names = provider("com").map((h) => h.label);
+    expect(names).toEqual(["compact", "autocompact"]);
   });
 
   it("rejects empty JSONL", () => {

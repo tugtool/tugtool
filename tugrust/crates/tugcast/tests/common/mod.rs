@@ -1010,6 +1010,34 @@ impl TestWs {
         terminator_type: &str,
         timeout: Duration,
     ) -> Result<Vec<serde_json::Value>, String> {
+        match self
+            .collect_code_output_until_partial(tug_session_id, terminator_type, timeout)
+            .await
+        {
+            (events, None) => Ok(events),
+            (_, Some(reason)) => Err(reason),
+        }
+    }
+
+    /// Like [`collect_code_output_until`], but a timeout or socket error
+    /// hands back the frames collected so far alongside the reason instead
+    /// of dropping them.
+    ///
+    /// A turn that never reaches its terminator is only diagnosable from the
+    /// tail it did produce. Discarding that tail renders a hung turn
+    /// indistinguishable from a session that emitted nothing at all — and
+    /// downstream the difference is stark: the catalog differ reads an empty
+    /// event list as every event type having vanished from the protocol, and
+    /// reports a stalled probe as catastrophic drift.
+    ///
+    /// `Some(reason)` means the terminator never arrived; the returned events
+    /// are a partial prefix and must not be treated as a complete turn.
+    pub async fn collect_code_output_until_partial(
+        &mut self,
+        tug_session_id: &str,
+        terminator_type: &str,
+        timeout: Duration,
+    ) -> (Vec<serde_json::Value>, Option<String>) {
         let deadline = Instant::now() + timeout;
         let mut out = Vec::new();
         loop {
@@ -1021,7 +1049,7 @@ impl TestWs {
                 let is_terminator = f.payload["type"].as_str() == Some(terminator_type);
                 out.push(f.payload);
                 if is_terminator {
-                    return Ok(out);
+                    return (out, None);
                 }
                 continue;
             }
@@ -1031,7 +1059,7 @@ impl TestWs {
             // growing the buffer by exactly one frame).
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return Err("collect_code_output: timed out".into());
+                return (out, Some("collect_code_output: timed out".into()));
             }
             match tokio::time::timeout(remaining, self.stream.next()).await {
                 Ok(Some(Ok(Message::Binary(bytes)))) => {
@@ -1047,10 +1075,10 @@ impl TestWs {
                 }
                 Ok(Some(Ok(_))) => continue,
                 Ok(Some(Err(e))) => {
-                    return Err(format!("collect_code_output: ws recv error: {e}"));
+                    return (out, Some(format!("collect_code_output: ws recv error: {e}")));
                 }
-                Ok(None) => return Err("collect_code_output: ws closed".into()),
-                Err(_) => return Err("collect_code_output: timed out".into()),
+                Ok(None) => return (out, Some("collect_code_output: ws closed".into())),
+                Err(_) => return (out, Some("collect_code_output: timed out".into())),
             }
         }
     }

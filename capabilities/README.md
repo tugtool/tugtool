@@ -26,25 +26,37 @@ capabilities/
   build phase resolves `LATEST`, copies `capabilities/<version>/system-metadata.jsonl`
   into `Tug.app/Contents/Resources/capabilities/system-metadata.jsonl`, and
   the Swift host loads it on startup.
-- **tugdeck (Vite).** A build-time virtual module (to be added in D6) resolves
-  `LATEST` and inlines the payload into the tugdeck bundle so the slash-command
-  popup is populated synchronously.
+- **tugdeck (Vite).** The `capabilities-virtual-module` plugin in
+  `tugdeck/vite.config.ts` resolves `LATEST` and inlines the payload into the
+  tugdeck bundle behind `virtual:capabilities/system-metadata`, so the
+  slash-command popup is populated synchronously.
+- **`tugdeck/src/__tests__/system-metadata-fixture.test.ts`.** Reads the shipped
+  snapshot off disk and pins its command / skill / agent counts. A capture that
+  changes what claude offers changes those numbers — update them alongside the
+  snapshot.
 
-## How snapshots get here (today vs. D6 target)
+## How snapshots get here
 
-- **Today (scaffold commit):** the `2.1.105` payload was hand-extracted from
-  `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/test-28-system-metadata-deep-dive.jsonl`
-  via a single-line `grep`. `LATEST` was set by hand.
-- **After D6:** the capture pipeline auto-writes the snapshot as part of the
-  stream-json catalog's version-bump runbook (see
-  `roadmap/tugplan-golden-stream-json-catalog.md#deep-version-bump-runbook`),
-  and the runbook updates `LATEST` accordingly.
+The capture binary writes the snapshot and rolls `LATEST` as the final step of
+the stream-json catalog's version-bump runbook (see
+`tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md#version-bump-runbook`).
+Run it via:
 
-## Manual rotation (until D6 automates it)
+```sh
+just capture-capabilities
+```
+
+The payload is the `system_metadata` event from probe-28
+(`test-28-system-metadata-deep-dive`), normalized the same way the catalog
+fixtures are.
+
+## Manual rotation
+
+Only needed when re-deriving a snapshot from a catalog version already on disk.
 
 ```sh
 # 1. Pick the desired stream-json catalog version.
-VER=2.1.105
+VER=2.1.222
 
 # 2. Extract the system_metadata event from probe-28.
 mkdir -p capabilities/$VER

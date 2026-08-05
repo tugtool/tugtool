@@ -809,24 +809,39 @@ pub async fn execute_probe(
         _ => "turn_complete",
     };
     let events = match ws
-        .collect_code_output_until(
+        .collect_code_output_until_partial(
             &tug_session_id,
             terminator,
             Duration::from_secs(probe.timeout_secs),
         )
         .await
     {
-        Ok(mut events) => {
+        (mut events, None) => {
             for event in events.iter_mut() {
                 normalize_event(event);
             }
             events
         }
-        Err(e) => {
+        // The partial prefix stays OUT of `events` — a half-captured turn
+        // must never reach the fixture writer. It rides in the reason
+        // instead, which is what a human reads when the probe stalls: the
+        // tail names where the stream stopped, and the count distinguishes
+        // "the turn hung mid-stream" from "the session emitted nothing".
+        (partial, Some(e)) => {
             return CapturedProbe {
                 name: probe.name.to_string(),
                 events: Vec::new(),
-                status: ProbeStatus::Failed(format!("collect_code_output: {e}")),
+                status: ProbeStatus::Failed(format!(
+                    "collect_code_output: {e} — {} event(s) before the stall, tail: {:?}",
+                    partial.len(),
+                    partial
+                        .iter()
+                        .rev()
+                        .take(12)
+                        .rev()
+                        .filter_map(|e| event_type_of(e))
+                        .collect::<Vec<_>>(),
+                )),
                 runtime_ms: start.elapsed().as_millis(),
             };
         }
@@ -1178,6 +1193,12 @@ pub async fn capture_with_stability(
                 ms = run_start.elapsed().as_millis(),
                 ev = captured.events.len(),
             );
+            // A failure's reason is the whole diagnosis — without it the log
+            // says only that a probe produced no events, which reads as a
+            // dead session no matter which way it actually died.
+            if let ProbeStatus::Failed(reason) = &captured.status {
+                println!("[capture]     reason: {reason}");
+            }
             runs.push(captured);
         }
         let first = runs.remove(0);
