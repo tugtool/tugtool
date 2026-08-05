@@ -11,12 +11,13 @@
  * The gallery `TugListView (focus)` card mounts a container-stop list. The test
  * proves:
  *   - **rows are not Tab stops:** no cell wrapper is a native Tab stop;
- *   - **Tab → one stop, perimeter ring on the container:** Tab lands the key view
+ *   - **Tab → one stop, perimeter ring via the overlay:** Tab lands the key view
  *     on the scroll container, which marks the whole list as the focused
- *     container with a ring on its perimeter (an inset `outline`). A list is a
- *     large scroll area, so it uses the perimeter ring rather than the behind-tint
- *     the small item-groups use ([P02], by-archetype split) — the tint lit too
- *     many pixels and drowned the cursor row;
+ *     container with a perimeter ring. The ring is painted by the
+ *     `.tug-list-view-ring` overlay (a sticky first child), NOT by an outline on
+ *     the scroller — an outline is painted before positioned descendants, so
+ *     selected rows and sticky group headers cut it; the overlay paints over
+ *     them. The scroller itself draws no outline in any state;
  *   - **cursor lands on the first row:** the first cell carries `data-key-cursor`
  *     (its ring) while the container holds the key view.
  *
@@ -60,14 +61,23 @@ function deckShape() {
   };
 }
 
-// Container snapshot: behind-tint + suppressed ring + keyboard marker + tab stop.
+// Container snapshot: the scroller's own (suppressed) marks, the ring
+// overlay's stroke + measured height, the keyboard marker, and the tab stop.
+// The ring lives on `.tug-list-view-ring::before` — its outline width is the
+// mark, and its height must be the published scrollport measure (0 would mean
+// the ring resolves but paints a zero-height box: present in style, invisible
+// in the app).
 const CONTAINER_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(CONTAINER)});
   if (!el) return null;
   var cs = getComputedStyle(el);
+  var ring = el.querySelector(".tug-list-view-ring");
+  var ringBefore = ring ? getComputedStyle(ring, "::before") : null;
   return {
     outline: cs.outlineWidth,
     backgroundImage: cs.backgroundImage,
+    ringOutline: ringBefore ? ringBefore.outlineWidth : null,
+    ringHeight: ringBefore ? parseFloat(ringBefore.height) || 0 : 0,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
     tabIndex: el.getAttribute("tabindex"),
     registered: el.hasAttribute("data-tug-focusable"),
@@ -93,6 +103,8 @@ const ALL_ROWS_NON_FOCUSABLE = `(function(){
 interface ContainerProbe {
   outline: string;
   backgroundImage: string;
+  ringOutline: string | null;
+  ringHeight: number;
   keyboardReached: boolean;
   tabIndex: string | null;
   registered: boolean;
@@ -132,12 +144,13 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         // (2) Tab → the container is the one stop: it takes the key view and
-        // marks itself as the focused container with a background WASH and no
-        // stroke of any kind. Rings mark elements, washes mark containers — the
-        // single stroke-or-bar on this surface belongs to the cursor row inside
-        // the list, asserted in (3). The `outlineWidth === "0px"` half is not
-        // redundant with the wash assertion: a container that painted both would
-        // be exactly the nested-marks conflation this treatment retired.
+        // the ring OVERLAY paints the perimeter stroke. The scroller itself
+        // stays at zero outline in the focused state too — an outline there is
+        // painted under selected rows and sticky group headers, which is the
+        // occlusion the overlay exists to end; a scroller that painted both
+        // would be marking twice. The overlay's box must also stand at the
+        // measured scrollport height — a stroke on a zero-height box passes a
+        // style read and draws nothing.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(CONTAINER)}).hasAttribute("data-key-view-kbd")`,
@@ -145,9 +158,9 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         );
         const onContainer = await app.evalJS<ContainerProbe>(CONTAINER_PROBE);
         expect(onContainer?.keyboardReached).toBe(true);
-        // The container rings itself with an inset outline and paints no
-        // background mark.
-        expect(parseFloat(onContainer?.outline ?? "0")).toBeGreaterThan(0);
+        expect(parseFloat(onContainer?.ringOutline ?? "0")).toBeGreaterThan(0);
+        expect(onContainer?.ringHeight ?? 0).toBeGreaterThan(0);
+        expect(parseFloat(onContainer?.outline ?? "0")).toBe(0);
         expect(onContainer?.backgroundImage ?? "none").toBe("none");
         // "The list is one stop" is an ENGINE fact, not a tabindex fact. Once
         // the focus engine drives the card the container renders no tabindex

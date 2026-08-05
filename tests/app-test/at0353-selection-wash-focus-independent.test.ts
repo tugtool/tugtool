@@ -61,7 +61,10 @@ const PAINT_PROBE = `(function(){
     backgroundColor: rowStyle.backgroundColor,
     backgroundImage: rowStyle.backgroundImage,
     hostSurface: host ? getComputedStyle(host).backgroundColor : null,
-    containerRing: list ? getComputedStyle(list).outlineWidth : "0px",
+    containerRing: (function(){
+      var ring = list ? list.querySelector(".tug-list-view-ring") : null;
+      return ring ? getComputedStyle(ring, "::before").outlineWidth : "0px";
+    })(),
     listHasKeyView: list ? list.hasAttribute("data-key-view-kbd") : false,
   };
 })()`;
@@ -152,13 +155,16 @@ describe.skipIf(!SHOULD_RUN)("at0353 — the selection wash ignores the focus wa
         // …with the selection wash riding above it as a background layer.
         expect(focused?.backgroundImage ?? "none").not.toBe("none");
 
-        // (2) Key view up to the filter field — the list's wash drains.
+        // (2) Key view up to the filter field — the list's ring goes down. Read
+        // where the ring lives: the `.tug-list-view-ring` overlay's `::before`,
+        // not an outline on the scroller (which never paints one).
         await pressKey(app, "ArrowUp");
         await app.waitForCondition<boolean>(hasKeyView(FILTER), { timeoutMs: 3000 });
         await app.waitForCondition<boolean>(
           `(function(){
             var el = document.querySelector(${JSON.stringify(SESSIONS)});
-            return el ? getComputedStyle(el).outlineWidth === "0px" : false;
+            var ring = el ? el.querySelector(".tug-list-view-ring") : null;
+            return ring ? getComputedStyle(ring, "::before").outlineWidth === "0px" : false;
           })()`,
           { timeoutMs: 3000 },
         );

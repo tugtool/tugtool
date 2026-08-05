@@ -1845,6 +1845,26 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       [],
     );
 
+    // The container focus-ring overlay — the sticky first child that paints
+    // the ring over the rows (see `.tug-list-view-ring` in the CSS pair). Its
+    // `::before` needs the scrollport height, which CSS cannot express from
+    // inside a scroller, so the effect below publishes it as a custom property
+    // on this element — a direct style write, not React state ([L06]).
+    const ringElRef = React.useRef<HTMLDivElement | null>(null);
+    const ringHeightRef = React.useRef<number>(-1);
+    const publishRingHeight = React.useCallback(() => {
+      const scroller = scrollContainerRef.current;
+      const ringEl = ringElRef.current;
+      if (scroller === null || ringEl === null) return;
+      const height = scroller.clientHeight;
+      if (height === ringHeightRef.current) return;
+      ringHeightRef.current = height;
+      ringEl.style.setProperty(
+        "--tugx-list-view-scrollport-height",
+        `${height}px`,
+      );
+    }, []);
+
     // Map<index, HTMLElement> populated by cell-wrapper ref callbacks.
     // Used by `getElementForIndex` for direct DOM addressing without a
     // querySelector roundtrip. Cleaned up by the ref callback when a
@@ -2472,6 +2492,23 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // tracked (matches the SmartScroll-install effect's pattern).
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Keep the focus-ring overlay sized to the scrollport. The observer covers
+    // resizes that reach no cell (a height-only pane resize); the synchronous
+    // call covers mount and test environments where `ResizeObserver` is a
+    // no-op stub. One property write, only on change.
+    React.useLayoutEffect(() => {
+      publishRingHeight();
+      const scroller = scrollContainerRef.current;
+      if (scroller === null) return;
+      const ringObserver = new ResizeObserver(() => {
+        publishRingHeight();
+      });
+      ringObserver.observe(scroller);
+      return () => {
+        ringObserver.disconnect();
+      };
+    }, [publishRingHeight]);
 
     // Front-insert scroll-hold ([L23], [L06], [L22]). Runs after every
     // commit; updates the prepend trackers and, when render captured a
@@ -5785,6 +5822,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             : 0
         }
       >
+        {/* Focus-ring overlay — a sticky, zero-interaction first child that
+            doubles as the top breathing spacer (its in-flow height is the old
+            `::before` spacer's). First in flow, its static position is exactly
+            the scrollport top, so `position: sticky; top: 0` holds it there at
+            every scroll offset; its `::before` then paints the container ring
+            OVER the rows, the selection fills, and the sticky group headers —
+            the one paint order an `outline` on the scroller can never reach,
+            since an outline is painted before positioned descendants. */}
+        <div ref={ringElRef} className="tug-list-view-ring" aria-hidden="true" />
         {/* Leading content — a permanent, un-indexed element above row 0 that
             scrolls with the content (see `leadingContent` prop). Sits ABOVE
             the top spacer, because the spacer stands in for evicted rows:
