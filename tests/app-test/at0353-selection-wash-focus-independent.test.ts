@@ -61,7 +61,7 @@ const PAINT_PROBE = `(function(){
     backgroundColor: rowStyle.backgroundColor,
     backgroundImage: rowStyle.backgroundImage,
     hostSurface: host ? getComputedStyle(host).backgroundColor : null,
-    containerWash: list ? getComputedStyle(list).backgroundImage : "none",
+    containerRing: list ? getComputedStyle(list).outlineWidth : "0px",
     listHasKeyView: list ? list.hasAttribute("data-key-view-kbd") : false,
   };
 })()`;
@@ -70,7 +70,7 @@ interface PaintProbe {
   backgroundColor: string;
   backgroundImage: string;
   hostSurface: string | null;
-  containerWash: string;
+  containerRing: string;
   listHasKeyView: boolean;
 }
 
@@ -141,15 +141,7 @@ describe.skipIf(!SHOULD_RUN)("at0353 — the selection wash ignores the focus wa
         // (1) List focused: the container wash is up, painted behind the rows.
         const focused = await app.evalJS<PaintProbe>(PAINT_PROBE);
         expect(focused?.listHasKeyView).toBe(true);
-        expect(focused?.containerWash ?? "none").not.toBe("none");
-        // The wash resolves OPAQUE here, because the picker publishes the
-        // surface it paints and the wash mixes against it rather than against
-        // `transparent`. An alpha term in the serialized value means the
-        // publication was lost somewhere above and the mark is compositing
-        // again — the state every mark stacked over it then inherits.
-        expect(focused?.containerWash ?? "").not.toMatch(
-          /rgba\(|\/\s*0?\.\d/,
-        );
+        expect(parseFloat(focused?.containerRing ?? "0")).toBeGreaterThan(0);
         // The row's own base layer IS the picker's surface — the ground it would
         // have composited against had it stayed translucent. This is the
         // load-bearing assertion: with the ground opaque and equal to the
@@ -166,7 +158,7 @@ describe.skipIf(!SHOULD_RUN)("at0353 — the selection wash ignores the focus wa
         await app.waitForCondition<boolean>(
           `(function(){
             var el = document.querySelector(${JSON.stringify(SESSIONS)});
-            return el ? getComputedStyle(el).backgroundImage === "none" : false;
+            return el ? getComputedStyle(el).outlineWidth === "0px" : false;
           })()`,
           { timeoutMs: 3000 },
         );

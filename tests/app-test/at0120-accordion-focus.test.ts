@@ -173,8 +173,8 @@ describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single item-container stop 
         await app.waitForCondition<boolean>(`${CURSOR_HEADER} === "first"`, { timeoutMs: 6000 });
         const onAcc = await app.evalJS<AccProbe>(ACC_PROBE);
         expect(onAcc?.keyboardReached).toBe(true);
-        expect(onAcc?.outline).toBe("0px");
-        expect(onAcc?.backgroundImage).not.toBe("none");
+        expect(parseFloat(onAcc?.outline ?? "0")).toBeGreaterThan(0);
+        expect(onAcc?.backgroundImage).toBe("none");
         expect(await app.evalJS<string>(STATE(HDR_FIRST))).toBe("closed");
 
         // (1b) The cursor trigger wears the leading-edge BAR — the element-level

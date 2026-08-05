@@ -6,24 +6,25 @@ body {
      selection, cursors, spinners, tab underlines, color-well) resolves here. */
   --tugx-accent: --tug-color(orange, l: 755, c: 1000);
 
-  /* The container focus wash — what an item-group container (list, accordion,
-     radio / choice / option group, tab bar) wears while it holds the keyboard.
-     It is a two-part step off the surface the container sits on: the ground
-     first SINKS toward `-well` by `-depth`, then the accent `-tint` LIFTS off
-     that sunk ground by `-strength`. Both halves resolve opaquely, so the step
-     is the same designed move on every ground; a role-bearing group tints
-     toward its own role colour off the same sunk ground. Tune all four by eye,
-     per theme — the depth is the safe axis, the tint strength the loud one.
-     See `styles/focus-ring.css`.
+  /* The container focus RING — the stroke an item-group container (list,
+     accordion, radio / choice / option group, tab bar) wears while it holds
+     the keyboard. Two knobs tune it, and they fail in opposite directions:
 
-     The well is this theme's tint hue taken well below its darkest surface, so
-     the recession stays in-family rather than going grey. The depth lands a
-     card's default surface at about the lightness of the Lens's own well —
-     the ground this whole treatment was designed against. */
-  --tugx-focus-container-wash-well: --tug-color(indigo-violet, l: 170, c: 20);
-  --tugx-focus-container-wash-depth: 35%;
-  --tugx-focus-container-wash-tint: var(--tugx-accent);
-  --tugx-focus-container-wash-strength: 7%;
+       `-tone`   how much accent survives being pulled toward the surface the
+                 container sits on. Lower = quieter. Turn this DOWN when the
+                 ring shouts.
+       `-width`  the thickness, in `styles/focus-ring.css` (geometry, not a
+                 theme decision). Turn this UP when the ring does not read.
+
+     The pull is what keeps a container perimeter from reading as a hard bright
+     rectangle, and it resolves opaquely against the host's published
+     `--tugx-ambient-surface`, so the ring sits the same designed distance off
+     its ground on a sheet, in a Lens well, or on the canvas. The movement
+     caret inside the container keeps the accent at FULL strength — the gap
+     between the two is what says "container" vs. "element".
+     See `styles/focus-ring.css`. */
+  --tugx-focus-container-ring-tint: var(--tugx-accent);
+  --tugx-focus-container-ring-tone: 68%;
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));

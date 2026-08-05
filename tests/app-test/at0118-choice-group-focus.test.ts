@@ -13,19 +13,20 @@
  * The gallery `Focus Walk` panel authors a three-segment group (value `alpha`
  * selected). The test proves the **item-group focus treatment** ([P02] of the
  * focus-language plan): the group is one stop, but the ring does NOT wrap the
- * container — the container carries a faint behind-tint and the *cursor segment*
- * carries the single ring (the fix for the route group's double-ring).
+ * container in the LEAF ring — the container carries the toned container ring
+ * and the *cursor segment* carries the full-accent one, a step thinner (the fix
+ * for the route group's double-ring, which was two leaf rings at two scales).
  *   - **no ring / no tint at rest:** before keyboard focus the group has neither;
- *   - **Tab → one stop; behind-tint on the group, NOT a ring; ring on the
- *     cursor segment:** Tab marks the group key-view, paints the behind-tint on
- *     the container (its outline stays 0 — no container ring), and parks the ring
+ *   - **Tab → one stop; toned ring on the group, full-accent ring on the
+ *     cursor segment:** Tab marks the group key-view, rings the container with
+ *     the toned container token (strictly thicker), and parks the element ring
  *     on the cursor segment `alpha`;
  *   - **arrows move the ring WITHOUT committing ([P24]):** ArrowDown moves the
  *     cursor (and ring) to `beta` while `alpha` stays active and `beta` stays
  *     inactive — no selection change. **Space** then commits `beta` (activates
  *     `beta`, deactivates `alpha`). ArrowUp moves the ring back to `alpha` without
  *     changing the active segment; Space commits `alpha`. The group keeps the key
- *     view + behind-tint throughout (no container ring).
+ *     view + container ring throughout.
  *
  * @covers tugdeck/src/components/tugways/tug-choice-group.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
@@ -67,7 +68,7 @@ function deckShape() {
 }
 
 // The group container's focus marks ([P02]): the item-group model gives the
-// container a behind-tint, NOT a ring — `outline` stays 0 while `backgroundImage`
+// container the toned CONTAINER ring — `outline` carries a width while `backgroundImage`
 // carries the tint gradient when the group holds the key view.
 const GROUP_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(GROUP)});
@@ -141,7 +142,7 @@ describe.skipIf(!SHOULD_RUN)("AT0118: choice group is a single item-container st
         await app.waitForCondition<boolean>(appIsActive(), { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
-        // (1) At rest: no key view, no container ring, no behind-tint; `alpha`
+        // (1) At rest: no key view, no container ring, no background mark; `alpha`
         // is the active segment.
         const atRest = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(atRest?.keyboardReached).toBe(false);
@@ -151,21 +152,28 @@ describe.skipIf(!SHOULD_RUN)("AT0118: choice group is a single item-container st
         expect(alphaRest?.state).toBe("active");
 
         // (2) Tab → one stop with the item-group treatment: the GROUP holds the
-        // key view and paints the behind-tint but NOT a ring (outline stays 0 —
-        // the double-ring guard), and the single ring lands on the cursor segment
+        // key view and wears the toned CONTAINER ring, and the full-accent
+        // element ring lands on the cursor segment
         // `alpha`.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(`${CURSOR_SEGMENT} === "alpha"`, { timeoutMs: 6000 });
         const onGroup = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(onGroup?.keyboardReached).toBe(true);
-        expect(parseFloat(onGroup?.outline ?? "0")).toBe(0);
-        expect(onGroup?.behindTint.startsWith("linear-gradient")).toBe(true);
+        expect(parseFloat(onGroup?.outline ?? "0")).toBeGreaterThan(0);
+        expect(onGroup?.behindTint).toBe("none");
         const cursorRingOnAlpha = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
         expect(parseFloat(cursorRingOnAlpha ?? "0")).toBeGreaterThan(0);
+        // The container's stroke must be strictly thicker than the cursor's. Both
+        // marks are strokes now, so the weight gap is the only thing keeping
+        // "which container" and "which element" legible as two answers; a
+        // container repointed at the leaf token collapses them to equal.
+        expect(parseFloat(onGroup?.outline ?? "0")).toBeGreaterThan(
+          parseFloat(cursorRingOnAlpha ?? "0"),
+        );
 
         // (3) ArrowDown → the cursor (and its ring) move to `beta`, but the active
         // segment does NOT follow ([P24]): `alpha` stays active and `beta` stays
-        // inactive. The group keeps the key view + behind-tint (no container ring).
+        // inactive. The group keeps the key view and its container ring.
         await app.nativeKey("ArrowDown");
         await app.waitForCondition<boolean>(`${CURSOR_SEGMENT} === "beta"`, { timeoutMs: 6000 });
         const alphaAfterMove = await app.evalJS<SegmentProbe>(PROBE(SEG_ALPHA));
@@ -175,7 +183,7 @@ describe.skipIf(!SHOULD_RUN)("AT0118: choice group is a single item-container st
         expect(betaAfterMove?.state).toBe("inactive"); // ringed but not committed
         const ringStill = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(ringStill?.keyboardReached).toBe(true);
-        expect(parseFloat(ringStill?.outline ?? "0")).toBe(0);
+        expect(parseFloat(ringStill?.outline ?? "0")).toBeGreaterThan(0);
         const cursorRingOnBeta = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
         expect(parseFloat(cursorRingOnBeta ?? "0")).toBeGreaterThan(0);
 

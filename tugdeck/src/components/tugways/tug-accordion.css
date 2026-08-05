@@ -181,24 +181,23 @@
    header), arrows move a cursor over the triggers, Space toggles the cursor
    section, and Enter descends into an open section.
 
-   Rings mark ELEMENTS; washes mark CONTAINERS. So the container takes a
-   background WASH and no stroke, and the cursor trigger takes a leading-edge
-   BAR — the same two marks, in the same roles, that `TugListView` uses. The two
-   components share the archetype (full-width rows, descendable) and now share
-   the vocabulary; the shape of an element mark follows the shape of the item,
+   The container takes a toned RING and the cursor trigger takes a leading-edge
+   BAR at full accent — the same two marks, in the same roles, that
+   `TugListView` uses. Both are strokes, and the weight and tone gap between
+   them is what keeps "which container" and "which element" apart. The two
+   components share the archetype (full-width rows, descendable) and share the
+   vocabulary; the shape of an element mark follows the shape of the item,
    which is why the inline chip groups (radio, choice, option, tab) ring their
    cursor instead of barring it.
 
-   It keeps the FULL-strength wash through a descend rather than dropping to the
+   It keeps the FULL-strength mark through a descend rather than dropping to the
    quiet within-mark: a descend goes deeper into this accordion rather than out
    of it, and the mark is what says which group the descended content belongs
    to. */
 .tug-accordion:is([data-key-view-kbd], [data-key-within]) {
-  outline: none;
-  background-image: linear-gradient(
-    var(--tugx-focus-container-wash),
-    var(--tugx-focus-container-wash)
-  );
+  outline: var(--tugx-focus-container-ring-width) solid
+    var(--tugx-focus-container-ring);
+  outline-offset: var(--tugx-focus-container-ring-offset);
 }
 
 /* The movement cursor on a trigger is a leading-edge bar, matching the list's

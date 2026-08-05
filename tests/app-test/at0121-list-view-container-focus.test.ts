@@ -145,8 +145,10 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         );
         const onContainer = await app.evalJS<ContainerProbe>(CONTAINER_PROBE);
         expect(onContainer?.keyboardReached).toBe(true);
-        expect(onContainer?.outline).toBe("0px");
-        expect(onContainer?.backgroundImage ?? "none").not.toBe("none");
+        // The container rings itself with an inset outline and paints no
+        // background mark.
+        expect(parseFloat(onContainer?.outline ?? "0")).toBeGreaterThan(0);
+        expect(onContainer?.backgroundImage ?? "none").toBe("none");
         // "The list is one stop" is an ENGINE fact, not a tabindex fact. Once
         // the focus engine drives the card the container renders no tabindex
         // at all (tug-list-view's no-tabindex rule) — a tabindex'd container is

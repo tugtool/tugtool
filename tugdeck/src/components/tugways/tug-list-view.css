@@ -155,27 +155,48 @@ body {
 }
 
 /* ---- Focus language — item-group treatment ([P01]) ----
-   Rings mark ELEMENTS; washes mark CONTAINERS. The list is ONE item-container
-   stop, so it never wears the leaf ring, and it no longer wears a perimeter one
-   either: when it holds the keyboard key view it marks the whole list with a
-   background WASH, and the cursor row carries the single element-level mark (the
-   leading-edge bar, below).
+   The list is ONE item-container stop. It never wears the LEAF ring (full
+   accent, for elements); when it holds the keyboard key view it wears the toned
+   CONTAINER ring around its own edge, and the cursor row carries the
+   element-level mark (the leading-edge bar, below, at full accent).
 
-   The ring is gone from here on purpose. A ring around the list and a mark on
-   the cursor row were answering two different questions — "which container?" and
-   "which element?" — in the same vocabulary, in the same hue, at two scales.
-   That is the focus/selection conflation the focus language exists to prevent,
-   arriving one level up. A wash is a different KIND of mark (area, not stroke),
-   so the two questions stop competing; see tuglaws/focus-language.md.
+   Both marks are strokes, and they are told apart by weight and tone rather
+   than by kind. An earlier design made the container mark a background WASH
+   precisely to avoid two strokes at two scales — the argument being that "which
+   container" and "which element" should not be asked in one vocabulary. It
+   reads well and did not survive the app: an area mark tints every pixel of
+   content sitting on it, and no strength of it both marked the list and left
+   the rows alone. See `styles/focus-ring.css` for the full account.
 
-   The wash is sufficient here precisely BECAUSE the cursor bar sits inside it.
-   Where there is no cursor row to mark, the ring comes back alongside the wash —
-   an opt-in rule, further down.
+   THE RING IS INSET, and the offset is not a taste choice. An `outline` paints
+   entirely OUTSIDE the border box, and this list is routinely edge-to-edge in a
+   clipping host — a Lens band (`.lens-sections` is `overflow: hidden` at zero
+   inline padding), a rail. An outset ring there is simply gone: the clip takes
+   the side strokes and most of the rest, leaving a single rule floating at the
+   top. A negative offset of exactly one ring-width pulls the whole stroke
+   inside the list's own box, where no host can clip it, and lands it flush
+   against the cursor caret at the leading edge rather than a caret-width away.
 
-   `background-attachment` defaults to `scroll`, which for a scroll container
-   means the background is fixed with regard to the element's BORDER BOX and does
-   not travel with the content. So the wash covers the visible scrollport and
-   stays put, for free — see the note where the inset ring used to be.
+   Both alternatives to a negative offset are worse: `box-shadow: inset` paints
+   with the element's background, UNDER every descendant, and a real `border`
+   takes layout space and holds the rows off the host's edge — the one thing an
+   edge-to-edge list must not do.
+
+   KNOWN LIMITATION — the ring is painted over by some list content. An
+   outline is painted with the element that owns it, BEFORE that element's
+   positioned descendants and descendant stacking contexts, and this list has
+   both: a `TugListRow` is a stacking context (it owns its press layer) and a
+   sticky group header is positioned. So a selected row's opaque ground erases
+   the stroke along its own edges, and a sticky header cuts the side strokes.
+   Painting the ring outside the border box would put it beyond the scroller's
+   clip and out of reach of both — but that is the outset ring the first
+   paragraph rules out, so the two constraints are in direct conflict and the
+   offset wins. Closing this needs a mark that is itself a positioned descendant
+   (see the overlay-ring note below); anything less is a trade, not a fix.
+
+   Because the list IS the scroll container, the outline rides its border box
+   and stays pinned to the scrollport while the content scrolls under it — no
+   sticky child, no measured height. (See the overlay-ring note below.)
 
    On Enter-descend the container drops the key view for an accessory inside one
    of its rows and the engine marks it `[data-key-within]`. The list keeps the
@@ -192,42 +213,32 @@ body {
      is specificity (0,1,0) and so is the global `[data-key-within]` outline in
      `focus-ring.css`, so which one won would come down to bundle order. This
      selector is (0,2,0) and beats it outright. */
-  outline: none;
-  background-image: linear-gradient(
-    var(--tugx-focus-container-wash),
-    var(--tugx-focus-container-wash)
-  );
+  outline: var(--tugx-focus-container-ring-width) solid
+    var(--tugx-focus-container-ring);
+  outline-offset: calc(-1 * var(--tugx-focus-container-ring-width));
 }
 
-/* ---- Why there is no overlay ring here any more ----
+/* ---- Why the ring is a negative offset and not an overlay ----
    Kept as history because this is machinery somebody could reasonably rebuild,
    and the reason not to is not obvious from what remains.
 
-   An edge-to-edge list inside a clipping host — a Lens band, a rail — has
-   nowhere to put an outset outline: it falls outside the host's overflow and
-   never paints. Bringing the ring inside was ruled out twice over. Not an inset
-   outline or box-shadow: a `TugListRow` is a stacking context (it owns its press
-   layer), so it paints AFTER the container's border/outline phase and any row
-   with an opaque fill punches a hole in the ring exactly where it sits. Not a
-   real border either: that takes layout space and holds the rows off the host's
-   edge, which is the one thing an edge-to-edge list must not do.
+   The ring above was once an overlay — a zero-height `position: sticky` child
+   pinned to the scrollport, painting the ring as an absolutely-positioned
+   `::before`. It solved the occlusion the offset note calls a known limitation,
+   and it is the only thing that does: an overlay is a positioned descendant, so
+   it paints AFTER the rows and the sticky headers and cannot be covered by
+   either. Its cost was the height. A percentage there could not come from CSS,
+   so the component measured `clientHeight` in a layout effect, published it as
+   a custom property, and kept it current with a `ResizeObserver`; the cursor
+   bar then had to be inset by a ring-width so the two marks stacked instead of
+   overlapping.
 
-   What was left was an overlay — a zero-height `position: sticky` child pinned
-   to the scrollport, painting the ring as an absolutely-positioned `::before`.
-   Its height could not come from CSS (a percentage inside a scroller resolves
-   against the SCROLLED length, not the window onto it), so the component
-   measured `clientHeight` in a layout effect, published it as a custom property,
-   and kept it current with a `ResizeObserver`. The cursor bar then had to be
-   inset by a ring-width so the two marks stacked instead of overlapping.
-
-   A background wash needs none of it: no offset, no clipping interaction, no
-   radius negotiation, no stacking-context fight, no measured height, no layout
-   cost — and, per the note above, `background-attachment: scroll` already pins
-   it to the scrollport, which is the exact property the sticky child and the
-   `clientHeight` publisher existed to synthesize. The overlay was not merely
-   unnecessary; it was hand-built from parts the platform gives away.
-
-   So: do not reintroduce an overlay ring for the next edge-to-edge surface. */
+   That is the trade on the table if the occlusion has to go: a measured,
+   observed, JS-maintained mark, or a stroke that some rows paint over. It was
+   judged not worth it once. If it is judged worth it again, the modern shape is
+   probably a non-scrolling wrapper element with an `inset: 0` overlay — no
+   measurement, because the wrapper is not a scroller — at the cost of a DOM
+   level that every consumer's sizing CSS currently reaches through. */
 
 /* ---- A carry suppresses the cursor bar ----
    While a host declares `data-tug-carrying` on an ancestor — a block reorder is
@@ -239,20 +250,25 @@ body {
    in flight and is unchanged when it ends, so the bar is simply drawn again at
    the drop, on whatever was set down.
 
-   The CONTAINER mark stays up, and that is a deliberate narrowing. The container
-   half of this exception existed for a reason about SHAPE: a ring drawn around
-   the whole list is the one shape that swallows a drop caret sitting at that
-   list's top or bottom edge outright, collapsing "where is the keyboard" and
-   "where will this land" into one rectangle. A wash draws no edge and sits
-   behind the content, so it cannot swallow the caret at any position, and the
-   reason evaporates with the ring. The keyboard has not moved during a carry;
-   the language's preference is that marks stand down only when they actively
-   mislead. See tuglaws/focus-language.md, "A carry suppresses the focus marks."
-   Do not restore the container half. */
+   THE CONTAINER MARK STANDS DOWN TOO, for a reason about SHAPE rather than
+   about the keyboard. A ring drawn around the whole list is the one shape that
+   swallows a drop caret sitting at that list's top or bottom edge outright,
+   collapsing "where is the keyboard" and "where will this land" into a single
+   rectangle — and an inset ring sits even closer to the caret's line than an
+   outset one would. This half of the exception was dropped for the length of
+   the wash era, when the container mark was an area that drew no edge and so
+   could not swallow anything; it comes back with the ring, because the hazard
+   comes back with the ring. The keyboard has not moved during a carry; the
+   language's preference is that marks stand down only when they actively
+   mislead, and a boundary drawn across a drop target misleads.
+   See tuglaws/focus-language.md, "A carry suppresses the focus marks." */
 [data-tug-carrying="true"]
   .tug-list-view
   .tug-list-view-cell[data-key-cursor]::before {
   background: transparent;
+}
+[data-tug-carrying="true"] .tug-list-view:is([data-key-view-kbd], [data-key-within]) {
+  outline: none;
 }
 
 /* Block-axis breathing room — implemented as scroll-flow children

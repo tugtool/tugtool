@@ -148,8 +148,8 @@ describe.skipIf(!SHOULD_RUN)("AT0116: tab bar is a single item-container stop (l
         const onBar = await app.evalJS<BarProbe>(BAR_PROBE);
         expect(onBar?.keyboardReached).toBe(true);
         // Behind-tint present (a gradient), no leaf ring on the bar.
-        expect(onBar?.behindTint.startsWith("linear-gradient")).toBe(true);
-        expect(parseFloat(onBar?.outline ?? "0")).toBe(0);
+        expect(onBar?.behindTint).toBe("none");
+        expect(parseFloat(onBar?.outline ?? "0")).toBeGreaterThan(0);
         const tab1Focused = await app.evalJS<TabProbe>(PROBE(TAB1));
         expect(tab1Focused?.cursor).toBe(true);
         expect(tab1Focused?.active).toBe("true");

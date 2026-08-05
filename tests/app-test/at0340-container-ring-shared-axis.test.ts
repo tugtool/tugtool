@@ -1,8 +1,9 @@
 /**
- * at0340-container-wash-shared-axis.test.ts — all six item-group containers mark
+ * at0340-container-ring-shared-axis.test.ts — all six item-group containers mark
  * keyboard focus on ONE axis, at one strength.
  *
- * Rings mark elements, washes mark containers. Six components implement the
+ * Element and container both ring; tone and weight tell them apart. Six
+ * components implement the
  * container half — `TugListView`, `TugAccordion`, `TugRadioGroup`,
  * `TugChoiceGroup`, `TugOptionGroup`, `TugTabBar` — and each paints its own
  * rule, so nothing structural stops them drifting apart again. They drifted
@@ -12,10 +13,10 @@
  * past all of it with a local override at a different strength entirely.
  *
  * What this suite pins is the thing no per-component suite can see. at0116–at0121
- * each prove their own container washes and does not stroke; only a probe that
+ * each prove their own container rings; only a probe that
  * holds all six at once can prove they resolve the SAME value. If someone
  * repoints one component back to `--tugx-focus-tint`, or a host declares a local
- * `--tugx-focus-container-wash` on a component's behalf, every per-component
+ * `--tugx-focus-container-ring` on a component's behalf, every per-component
  * suite still passes and this one fails.
  *
  * It reads the resolved custom property rather than a painted `backgroundImage`,
@@ -24,7 +25,7 @@
  * about the axis. The at-rest half — no container paints a mark before the
  * keyboard arrives — comes along for free and is worth having.
  *
- * The wash is declared on the engine's own attributes (`focus-ring.css`), not on
+ * The ring colour is declared on the engine's own attributes (`focus-ring.css`), not on
  * `body`, because the formula resolves against the surface each container sits
  * on and a custom property substitutes its `var()`s at the element that DECLARES
  * it — declared once high up, every container in the app would inherit one value
@@ -81,7 +82,7 @@ function deckShape() {
   };
 }
 
-// For each container: the marks it paints at rest, then the container-wash
+// For each container: the marks it paints at rest, then the container-ring
 // token it resolves once it wears the engine's keyboard attribute.
 // `getPropertyValue` on a custom property returns the resolved substitution, so
 // two containers reading the same token return byte-identical strings — and a
@@ -99,18 +100,16 @@ const AXIS_PROBE = `(function(){
     var hadAttr = el.hasAttribute("data-key-view-kbd");
     if (!hadAttr) el.setAttribute("data-key-view-kbd", "");
     var lit = getComputedStyle(el);
-    var wash = lit.getPropertyValue("--tugx-focus-container-wash").trim();
-    var tint = lit.getPropertyValue("--tugx-focus-container-wash-tint").trim();
-    var strength = lit
-      .getPropertyValue("--tugx-focus-container-wash-strength")
-      .trim();
+    var ring = lit.getPropertyValue("--tugx-focus-container-ring").trim();
+    var tint = lit.getPropertyValue("--tugx-focus-container-ring-tint").trim();
+    var tone = lit.getPropertyValue("--tugx-focus-container-ring-tone").trim();
     if (!hadAttr) el.removeAttribute("data-key-view-kbd");
     return {
       id: g.id,
       found: true,
-      wash: wash,
+      ring: ring,
       tint: tint,
-      strength: strength,
+      tone: tone,
       restOutline: restOutline,
       restBackgroundImage: restBackgroundImage,
     };
@@ -120,18 +119,18 @@ const AXIS_PROBE = `(function(){
 interface AxisRow {
   id: string;
   found: boolean;
-  wash?: string;
+  ring?: string;
   tint?: string;
-  strength?: string;
+  tone?: string;
   restOutline?: string;
   restBackgroundImage?: string;
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0340: every item-group container shares one wash axis", () => {
+describe.skipIf(!SHOULD_RUN)("AT0340: every item-group container shares one ring axis", () => {
   test(
-    "all six resolve the same --tugx-focus-container-wash, and none marks at rest",
+    "all six resolve the same --tugx-focus-container-ring axis, and none marks at rest",
     async () => {
-      const app = await launchTugApp({ testName: "at0340-container-wash-shared-axis" });
+      const app = await launchTugApp({ testName: "at0340-container-ring-shared-axis" });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -164,16 +163,16 @@ describe.skipIf(!SHOULD_RUN)("AT0340: every item-group container shares one wash
 
         // (1) The axis is shared — one hue, one strength, across all six.
         //
-        // The AXIS is what has to match, not the resolved colour. The wash is a
+        // The AXIS is what has to match, not the resolved colour. The ring is a
         // designed step off the surface each container sits on, so a container
         // that paints its own surface (a choice group's segment track) lifts off
         // that one while a list lifts off the pane, and their resolved values
         // differ by exactly that term. What must never differ is the pair the
         // theme authored: a component that repointed to `--tugx-focus-tint`, or
-        // a host that declared a wash on a component's behalf at its own
+        // a host that declared a ring colour on a component's behalf at its own
         // strength — the drift this suite exists to catch — moves one of these.
         const tints = (rows ?? []).map((r) => r.tint ?? "");
-        const strengths = (rows ?? []).map((r) => r.strength ?? "");
+        const strengths = (rows ?? []).map((r) => r.tone ?? "");
         expect(tints[0]).not.toBe("");
         expect(strengths[0]).not.toBe("");
         for (let i = 1; i < tints.length; i += 1) {
@@ -187,19 +186,19 @@ describe.skipIf(!SHOULD_RUN)("AT0340: every item-group container shares one wash
           ).toBe(strengths[0]);
         }
 
-        // …and every container resolves a wash built from that axis. A custom
+        // …and every container resolves a ring colour built from that axis. A custom
         // property is SUBSTITUTED rather than computed to a colour, so this
         // reads back as the `color-mix()` expression with its `var()`s filled
         // in — which is what lets the theme's tint be found inside it. An
         // unresolved token would read as the empty string, and a token that
         // resolved invalid would collapse every rule reading it.
         for (const row of rows ?? []) {
-          expect(row.wash ?? "", `card ${row.id} resolves a wash`).toContain(
+          expect(row.ring ?? "", `card ${row.id} resolves a ring colour`).toContain(
             "color-mix",
           );
           expect(
-            row.wash ?? "",
-            `card ${row.id} lifts toward the authored tint`,
+            row.ring ?? "",
+            `card ${row.id} tones the authored tint`,
           ).toContain(tints[0]);
           // The mix resolves against a real surface, not the `transparent`
           // fallback: every container here either sits in a pane or paints its
@@ -207,19 +206,19 @@ describe.skipIf(!SHOULD_RUN)("AT0340: every item-group container shares one wash
           // publication was lost and the mark went back to something anything
           // above it composites through.
           expect(
-            row.wash ?? "",
-            `card ${row.id} lifts off a published surface`,
+            row.ring ?? "",
+            `card ${row.id} tones against a published surface`,
           ).not.toContain("transparent");
         }
 
         // (2) Nothing marks at rest. The keyboard has not reached any of these
-        // containers, so no wash and no stroke — the focus language paints only
+        // containers, so no stroke and no background mark — the language paints only
         // on the engine's own keyboard signal, never on mere presence.
         for (const row of rows ?? []) {
           expect(row.restOutline, `card ${row.id} draws no stroke at rest`).toBe("0px");
           expect(
             row.restBackgroundImage ?? "none",
-            `card ${row.id} paints no wash at rest`,
+            `card ${row.id} paints no background mark at rest`,
           ).toBe("none");
         }
       } finally {

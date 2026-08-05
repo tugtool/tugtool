@@ -224,19 +224,18 @@
    Focus language — item-group treatment ([P01]/[P02]/[P03])
    ----------------------------------------------------------------------------
    The segmented control is ONE Tab stop. When it holds the key view, override
-   the global leaf ring → a faint behind-tint on the track (composed over its
-   own background via `background-image`), and let the cursor SEGMENT carry the
-   single ring (global `[data-key-cursor]`). This is the fix for the route
-   group's double-ring (container leaf ring + cursor ring stacked): the
-   container no longer rings, only the cursor does. Role-resolved via
-   `--tugx-focus-tint` (default `action`, role-injected by `buildRoleStyle`).
+   the global leaf ring → the toned CONTAINER ring on the track, and let the
+   cursor SEGMENT carry the full-accent one (global `[data-key-cursor]`). This
+   is what keeps the route group's two strokes readable as two marks: the
+   container's is quieter and thicker, the cursor's is brighter and tighter,
+   where before both were the same leaf ring at two scales. Role-resolved via
+   `--tugx-focus-container-ring` (default `action`, role-injected by
+   `buildRoleStyle`).
    ========================================================================== */
 .tug-choice-group[data-key-view-kbd] {
-  outline: none;
-  background-image: linear-gradient(
-    var(--tugx-focus-container-wash),
-    var(--tugx-focus-container-wash)
-  );
+  outline: var(--tugx-focus-container-ring-width) solid
+    var(--tugx-focus-container-ring);
+  outline-offset: var(--tugx-focus-container-ring-offset);
 }
 
 /* A segmented control is a single Tab stop and never a descend target — its

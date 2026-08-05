@@ -248,25 +248,23 @@
    Focus language — item-group treatment ([P01]/[P02]/[P03])
    ----------------------------------------------------------------------------
    The group is ONE Tab stop. When it holds the keyboard key view the global
-   leaf-ring rule (`focus-ring.css`) would ring the whole container — wrong for
-   a group. Override it to a faint behind-tint on the container instead, and let
-   the cursor ITEM carry the single ring (the global `[data-key-cursor]` rule).
-   The wash composes over the container via `background-image` so it works
-   whether or not the container has its own background; role-resolved through
-   `--tugx-focus-container-wash` (default `action`, role-injected by
-   `buildRoleStyle`).
+   leaf-ring rule (`focus-ring.css`) would ring the container at full accent —
+   the LEAF treatment, too loud for a group and indistinguishable from the ring
+   the cursor item carries. Override it to the toned CONTAINER ring instead, and
+   let the cursor ITEM keep the full-accent one (the global `[data-key-cursor]`
+   rule). Role-resolved through `--tugx-focus-container-ring` (default `action`,
+   role-injected by `buildRoleStyle`).
 
-   This reads the shared CONTAINER-WASH token, not `--tugx-focus-tint`. All six
-   item-groups now sit on one axis at one strength, so "which container holds
-   the keyboard" reads the same everywhere; `--tugx-focus-tint` stays the LEAF
-   behind-tint, worn by controls that also carry a ring.
+   This reads the shared CONTAINER-RING token, not `--tugx-focus-ring` or
+   `--tugx-focus-tint`. All six item-groups sit on one axis at one tone, so
+   "which container holds the keyboard" reads the same everywhere;
+   `--tugx-focus-ring` stays the LEAF ring and `--tugx-focus-tint` the leaf
+   behind-tint, both worn by controls rather than by groups.
    ========================================================================== */
 [data-slot="tug-radio-group"][data-key-view-kbd] {
-  outline: none;
-  background-image: linear-gradient(
-    var(--tugx-focus-container-wash),
-    var(--tugx-focus-container-wash)
-  );
+  outline: var(--tugx-focus-container-ring-width) solid
+    var(--tugx-focus-container-ring);
+  outline-offset: var(--tugx-focus-container-ring-offset);
 }
 
 /* A radio group is a single Tab stop, never a descend target — its items move a

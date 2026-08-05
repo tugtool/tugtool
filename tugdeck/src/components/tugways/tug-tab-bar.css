@@ -146,8 +146,8 @@ body {
    Focus language — item-group treatment ([P01]/[P02]/[P08])
    ----------------------------------------------------------------------------
    The tab bar is ONE Tab stop. When it holds the key view, override the global
-   leaf ring → a faint behind-tint on the bar (a gradient overlay composed over
-   its own background, [Q02]), and let the cursor TAB carry the single ring. The
+   leaf ring → the toned CONTAINER ring on the bar, and let the cursor TAB carry
+   the full-accent one. The
    tab bar commits live ([P08] automatic activation), so the cursor always rides
    the active tab: the focused tab shows the cursor ring (keyboard is here) over
    its background fill (selection). The ring hugs the tab edges flush, so its
@@ -155,11 +155,9 @@ body {
    selection underline as one cohesive treatment, not two misaligned blue marks.
    ========================================================================== */
 .tug-tab-bar[data-key-view-kbd] {
-  outline: none;
-  background-image: linear-gradient(
-    var(--tugx-focus-container-wash),
-    var(--tugx-focus-container-wash)
-  );
+  outline: var(--tugx-focus-container-ring-width) solid
+    var(--tugx-focus-container-ring);
+  outline-offset: var(--tugx-focus-container-ring-offset);
 }
 
 /* A tab bar is a single Tab stop and never a descend target, so it must never

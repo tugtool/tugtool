@@ -149,15 +149,20 @@ body {
   --tugx-list-row-selected-bg:            var(--tug7-surface-selection-primary-normal-quiet-rest);
   /* The OPAQUE ground the selection wash is laid over. A selected row paints
      two layers — this ground, then the wash above it — so the wash composites
-     against the surface the list sits on and nothing else. Without it the wash
-     composites against whatever is behind the row, and the container focus wash
-     (`--tugx-focus-container-wash`, an accent tint painted behind the rows when
-     the list holds the key view) is behind the row: ~5% of the accent hue then
-     survives THROUGH the 18% blue and the selection turns muddy the moment the
-     list takes focus. Two area marks in different hues cannot stack; the
-     selection wins where they overlap, which is the same call the striping band
-     already makes ("a row that paints a selection fill drops its band",
-     `tug-list-view.css`).
+     against the surface the list sits on and nothing else, whatever else the
+     list may be painting behind its rows.
+
+     It was written for a container focus mark that no longer exists: the list
+     used to answer "the keyboard is here" with an accent WASH painted behind
+     its rows, and ~5% of that accent survived through an 18% blue selection,
+     so a selected row went muddy the instant its list took focus. The
+     container mark is a perimeter ring now and nothing paints behind the rows,
+     so that particular collision is gone — but the ground stays, because the
+     rule it encodes is general and cheap: two area marks in different hues
+     cannot stack, and the selection wins where they overlap. That is the same
+     call the striping band already makes ("a row that paints a selection fill
+     drops its band", `tug-list-view.css`), and the next thing to paint behind
+     a row will find it already settled.
 
      The value is the host's business, not the row's: a row cannot see what it
      is painted on. Hosts that paint their own opaque surface publish it as

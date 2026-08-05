@@ -158,19 +158,17 @@
    Focus language — item-group treatment ([P01]/[P02]/[P03])
    ----------------------------------------------------------------------------
    The option group is ONE Tab stop (a multi-select toolbar). When it holds the
-   key view, override the global leaf ring → a faint behind-tint on the track
-   (composed over its own background via `background-image`), and let the cursor
-   ITEM carry the single ring (global `[data-key-cursor]`). The ring sits over
-   the on-state fill of a selected item so multi-select reads without an added
-   checkmark ([P02]). Role-resolved via `--tugx-focus-tint` (default `action`,
+   key view, override the global leaf ring → the toned CONTAINER ring on the
+   track, and let the cursor ITEM carry the full-accent one (global
+   `[data-key-cursor]`). The cursor ring sits over the on-state fill of a
+   selected item so multi-select reads without an added checkmark ([P02]).
+   Role-resolved via `--tugx-focus-container-ring` (default `action`,
    role-injected by `buildRoleStyle`).
    ========================================================================== */
 .tug-option-group[data-key-view-kbd] {
-  outline: none;
-  background-image: linear-gradient(
-    var(--tugx-focus-container-wash),
-    var(--tugx-focus-container-wash)
-  );
+  outline: var(--tugx-focus-container-ring-width) solid
+    var(--tugx-focus-container-ring);
+  outline-offset: var(--tugx-focus-container-ring-offset);
 }
 
 /* An option group is a single Tab stop and never a descend target, so it must
