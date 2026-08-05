@@ -23,8 +23,10 @@ import {
   commandWire,
   type CommandRouting,
 } from "../command-registry";
+import { type Chord } from "../command-registry";
+import { formatChord } from "../chord-format";
+import { keymapRegistry } from "../keymap-registry";
 import { TUG_ACTIONS } from "../action-vocabulary";
-import { KEYBINDINGS } from "../keybinding-map";
 
 /**
  * command id → the mechanism the pre-migration code used.
@@ -96,12 +98,45 @@ const PRE_MIGRATION_MECHANISM: Readonly<Record<string, CommandRouting>> = {
   "focus-session-card": "registry",
 };
 
+/**
+ * Commands deliberately re-homed after the behavior-neutral migration.
+ *
+ * Each had its body in `action-dispatch.ts` and so existed nowhere the
+ * responder chain could see: not dispatchable in browser dev, not askable
+ * for validity, not shadowable. Each acts on the deck, and DeckCanvas is the
+ * deck's responder, so the body moved there and the routing moved with it.
+ *
+ * This is a routing change, which is exactly what the table above exists to
+ * catch — so it is declared here rather than by editing the history. The
+ * pre-migration column stays honest, and a move nobody declared still fails.
+ */
+const RE_HOMED_ONTO_THE_CHAIN: ReadonlySet<string> = new Set([
+  TUG_ACTIONS.NEW_TEXT_CARD,
+  TUG_ACTIONS.OPEN_FILE,
+  TUG_ACTIONS.OPEN_QUICKLY,
+  TUG_ACTIONS.CLEAR_RECENT_DOCUMENTS,
+  TUG_ACTIONS.ARRANGE_CARDS,
+  TUG_ACTIONS.FOCUS_PANE,
+]);
+
 describe("routing matches the pre-migration mechanism", () => {
   for (const [id, mechanism] of Object.entries(PRE_MIGRATION_MECHANISM)) {
-    test(`${id} still routes ${mechanism}`, () => {
-      expect(COMMANDS_BY_ID.get(id)?.routing).toBe(mechanism);
+    const expected = RE_HOMED_ONTO_THE_CHAIN.has(id) ? "first-responder" : mechanism;
+    const why = RE_HOMED_ONTO_THE_CHAIN.has(id)
+      ? `routes ${expected}, re-homed from ${mechanism}`
+      : `still routes ${mechanism}`;
+    test(`${id} ${why}`, () => {
+      expect(COMMANDS_BY_ID.get(id)?.routing).toBe(expected);
     });
   }
+
+  test("every re-homed command is one the pre-migration table records", () => {
+    // A re-homing declared for a command the drift guard never covered
+    // would be a claim about a migration that did not happen to it.
+    for (const id of RE_HOMED_ONTO_THE_CHAIN) {
+      expect(PRE_MIGRATION_MECHANISM[id], `${id} is in the drift table`).toBe("registry");
+    }
+  });
 
   test("the per-value families inherit the mechanism their wire used", () => {
     // Twenty slash bridges and four permission modes were one key-card
@@ -213,44 +248,102 @@ describe("every Swift wire lands somewhere", () => {
   }
 });
 
-/**
- * The table now carries every shipped chord as a default binding, while
- * `KEYBINDINGS` is still the map the key pipeline reads. Two copies of one
- * fact is exactly the drift this plan exists to end, so until the pipeline
- * reads the table the two are held identical here.
- */
-describe("default bindings mirror the live keybinding map", () => {
-  function chordKey(b: {
-    key: string;
-    ctrl?: boolean;
-    meta?: boolean;
-    shift?: boolean;
-    alt?: boolean;
-  }): string {
-    return `${b.key}|${b.ctrl ? 1 : 0}${b.meta ? 1 : 0}${b.shift ? 1 : 0}${b.alt ? 1 : 0}`;
-  }
 
-  const tableChords = new Map<string, { id: string; preventDefault: boolean }>();
+/**
+ * Every chord the deleted static map held, and the command it must reach.
+ *
+ * The map was the key pipeline's only source of chords; the table is now.
+ * That is a migration of forty facts, and a mis-transcribed modifier turns a
+ * working chord into one that fires the wrong command — or nothing — with
+ * nothing to catch it. So the map's contents are transcribed here as an
+ * expectation, read off the file before it was deleted, and resolved through
+ * the pipeline's actual entry point rather than by reading the table back.
+ */
+const SHIPPED_CHORDS: ReadonlyArray<readonly [chord: string, commandId: string]> = [
+  ["⌃`", TUG_ACTIONS.CYCLE_CARD],
+  ["⌘A", TUG_ACTIONS.SELECT_ALL],
+  ["⌘X", TUG_ACTIONS.CUT],
+  ["⌘C", TUG_ACTIONS.COPY],
+  ["⌥⇧⌘C", TUG_ACTIONS.COPY_AS_PLAIN_TEXT],
+  ["⌘V", TUG_ACTIONS.PASTE],
+  ["⌥⌘V", TUG_ACTIONS.PASTE_AS_QUOTE],
+  ["⌥⇧⌘V", TUG_ACTIONS.PASTE_AS_PLAIN_TEXT],
+  ["⌘Z", TUG_ACTIONS.UNDO],
+  ["⇧⌘Z", TUG_ACTIONS.REDO],
+  ["⌘W", TUG_ACTIONS.CLOSE],
+  ["⌥⌘W", TUG_ACTIONS.CLOSE_ALL],
+  ["⌘T", TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE],
+  ["⌘K", TUG_ACTIONS.FOCUS_PROMPT],
+  ["⌘,", TUG_ACTIONS.SHOW_SETTINGS],
+  ["⌘L", TUG_ACTIONS.FOCUS_LENS],
+  ["⌥⌘L", TUG_ACTIONS.TOGGLE_LENS],
+  ["⌘.", TUG_ACTIONS.CANCEL_DIALOG],
+  ["⎋", TUG_ACTIONS.CANCEL_DIALOG],
+  ["⌘F", TUG_ACTIONS.FIND],
+  ["⌘G", TUG_ACTIONS.FIND_NEXT],
+  ["⇧⌘G", TUG_ACTIONS.FIND_PREVIOUS],
+  ["⌘S", TUG_ACTIONS.SAVE],
+  ["⌘{", TUG_ACTIONS.PREVIOUS_TAB],
+  ["⌘}", TUG_ACTIONS.NEXT_TAB],
+  ["⇧⌘P", `${TUG_ACTIONS.SELECT_COMPOSER_ROUTE}:prompt`],
+  ["⌃⌘P", TUG_ACTIONS.CYCLE_PERMISSION_MODE],
+  ["⌘/", TUG_ACTIONS.OPEN_COMMAND_PICKER],
+  ["⌥⌘/", TUG_ACTIONS.SHOW_DEVTOOLS],
+  ["⇧⌘C", TUG_ACTIONS.TOGGLE_CHANGES_VIEW],
+  ["⇧⌘H", TUG_ACTIONS.TOGGLE_HISTORY_VIEW],
+  ["⌥⇥", TUG_ACTIONS.CYCLE_FOCUS_MODE],
+  ["⌥⌘↑", TUG_ACTIONS.PREVIOUS_TURN],
+  ["⌥⌘↓", TUG_ACTIONS.NEXT_TURN],
+  ["⌥⇧⌘↑", TUG_ACTIONS.FIRST_TURN],
+  ["⌥⇧⌘↓", TUG_ACTIONS.LAST_TURN],
+  ...Array.from(
+    { length: 9 },
+    (_unused, i) => [`⌘${i + 1}`, `${TUG_ACTIONS.MOVE_TO_SLOT}:${i + 1}`] as const,
+  ),
+];
+
+describe("every chord the static map held reaches the same command", () => {
+  // Keyed by the rendered chord rather than by a modifier record, so the
+  // expectation reads the way the keymap pane will show it and a wrong
+  // modifier is visible in the row itself.
+  const byRendering = new Map<string, { commandId: string; chord: Chord }>();
   for (const entry of COMMANDS) {
     for (const binding of entry.bindings ?? []) {
-      tableChords.set(chordKey(binding.chord), {
-        id: entry.id,
-        preventDefault: binding.preventDefault === true,
+      if (binding.scope.kind !== "global") continue;
+      byRendering.set(formatChord(binding.chord), {
+        commandId: entry.id,
+        chord: binding.chord,
       });
     }
   }
 
-  for (const binding of KEYBINDINGS) {
-    const key = chordKey(binding);
-    const label =
-      binding.value === undefined
-        ? binding.action
-        : `${binding.action}:${String(binding.value)}`;
-    test(`${key} is a default binding of ${label}`, () => {
-      const found = tableChords.get(key);
-      expect(found).toBeDefined();
-      expect(found?.id).toBe(label);
-      expect(found?.preventDefault).toBe(binding.preventDefaultOnMatch === true);
+  for (const [rendering, commandId] of SHIPPED_CHORDS) {
+    test(`${rendering} fires ${commandId}`, () => {
+      const found = byRendering.get(rendering);
+      expect(found, `${rendering} is bound`).toBeDefined();
+      expect(found?.commandId).toBe(commandId);
+      // …and the pipeline's own lookup agrees, so this is a statement about
+      // what the app does rather than about what the table says.
+      const chord = found!.chord;
+      const event = {
+        code: chord.key,
+        ctrlKey: chord.ctrl === true,
+        metaKey: chord.meta === true,
+        shiftKey: chord.shift === true,
+        altKey: chord.alt === true,
+      } as KeyboardEvent;
+      expect(keymapRegistry.matchChord(event)?.commandId).toBe(commandId);
     });
   }
+
+  test("the global layer holds nothing the map did not, except AppKit's own", () => {
+    // The table also names Quit, Hide, Minimize and Full Screen so the keymap
+    // UI can show them. They are `native`: represented, never JS-routed.
+    const extra = [...byRendering.entries()]
+      .filter(([rendering]) => !SHIPPED_CHORDS.some(([r]) => r === rendering))
+      .map(([, v]) => v.commandId);
+    for (const id of extra) {
+      expect(COMMANDS_BY_ID.get(id)?.routing, `${id} is AppKit's`).toBe("native");
+    }
+  });
 });

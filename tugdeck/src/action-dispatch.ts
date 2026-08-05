@@ -29,12 +29,8 @@ import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { isCommandId } from "@/components/tugways/command-registry";
 import { dispatchCommand } from "./command-dispatch";
-import { openFileInCard } from "@/lib/open-file-in-card";
 import { openDiffInCard } from "@/lib/open-diff-in-card";
 import { isDiffDescriptor } from "@/lib/git-diff-store";
-import { allocateUntitledNumber } from "@/lib/untitled-naming";
-import { clearRecentDocuments } from "@/lib/recent-documents";
-import { openOpenQuickly } from "@/lib/open-quickly-store";
 import { isImpositionKind, isLensSide } from "@/lib/layout-imposer";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
@@ -479,52 +475,6 @@ export function initActionDispatch(
     deckManager.toggleLensPane();
   });
 
-  // arrange-cards: Rearrange all cards on the canvas.
-  // Swift sends arrange-cards with mode: "cascade" | "tile".
-  registerAction("arrange-cards", (payload) => {
-    const mode = payload.mode;
-    if (mode !== "cascade" && mode !== "tile") {
-      console.warn("arrange-cards: invalid mode", payload);
-      return;
-    }
-    deckManager.arrangeCards(mode);
-  });
-
-  // focus-pane: Bring a pane to front by activating its active card.
-  //
-  // Swift builds a pane list from the `menuState` push (see
-  // `lib/host-menu-state.ts`) and emits `focus-pane` with
-  // `payload.paneId` when the user picks an entry.
-  // Routes through `activateCard` on the pane's `activeCardId`
-  // so the menu selection fires the full will/didDeactivate +
-  // will/didActivate transition and promotes the responder chain —
-  // `focusCard` alone would only reorder z-order and skip the lifecycle
-  // events.
-  registerAction("focus-pane", (payload) => {
-    const paneId = payload.paneId;
-    if (typeof paneId !== "string") {
-      console.warn("focus-pane: missing or invalid pane id (payload.paneId)", payload);
-      return;
-    }
-    const pane = deckManager.getSnapshot().panes.find((s) => s.id === paneId);
-    if (!pane) {
-      console.warn(`focus-pane: no pane with id "${paneId}"`);
-      return;
-    }
-    // Phase E.11 Step 4i D9b — runtime activation routed through
-    // `transferFocusForActivation` so the menu activation fires
-    // SAVE outgoing → commit → `applyBagFocus` on incoming. Raw
-    // `activateCard` would flip the composite responder bit but
-    // skip the focus claim.
-    const incomingCardId = pane.activeCardId;
-    transferFocusForActivation({
-      outgoingCardId: deckManager.getFirstResponderCardId(),
-      incomingCardId,
-      store: deckManager,
-      commitMutation: () => deckManager.activateCard(incomingCardId),
-    });
-  });
-
   // set-imposition: choose the deck's N-up arrangement, or turn it off.
   // Dispatched by the Lens Layouts section's kind picker. `kind: null` clears
   // it, freezing every imposed pane where the user last saw it.
@@ -620,25 +570,6 @@ export function initActionDispatch(
     }
   });
 
-  // open-file: open a path in a Text card. Path-keyed reuse — a card
-  // already bound to the path is activated (raised, focus-claimed) and
-  // jumped to the requested line; otherwise a new Text card is created
-  // seeded with the path so it opens directly on the file. Dispatched
-  // by transcript file references (tool-call headers, file blocks,
-  // file atoms) via `dispatchCommand`, and by the Swift File ▸ Open…
-  // menu as a Control frame.
-  registerAction(TUG_ACTIONS.OPEN_FILE, (payload) => {
-    const path = payload.path;
-    if (typeof path !== "string" || path.trim() === "") {
-      console.warn("open-file: missing or invalid path parameter", payload);
-      return;
-    }
-    const line = typeof payload.line === "number" ? payload.line : undefined;
-    const endLine =
-      typeof payload.endLine === "number" ? payload.endLine : undefined;
-    openFileInCard(deckManager, path, line, endLine);
-  });
-
   // open-diff: pop a diff descriptor out into a Diff card. Descriptor-keyed
   // reuse — a card already showing the same descriptor is activated;
   // otherwise a new Diff card is created seeded with it. Dispatched by the
@@ -652,39 +583,6 @@ export function initActionDispatch(
     openDiffInCard(deckManager, descriptor);
   });
 
-  // clear-recent-documents: File ▸ Open Recent ▸ Clear Menu. Empties the
-  // MRU list and re-publishes it to the host.
-  registerAction("clear-recent-documents", () => {
-    clearRecentDocuments();
-  });
-
-  // open-quickly: File ▸ Open Quickly (⇧⌘O). Opens the deck-global
-  // file-search popup (OpenQuicklyOverlay); Return there opens the file.
-  registerAction("open-quickly", () => {
-    openOpenQuickly();
-  });
-
-  // new-text-card (Control only): File ▸ New Text Card (⌥⌘N). Opens a new
-  // untitled manual buffer in its own Text card — no file exists until the
-  // first Save. Not responder-routed; menu-only, like show-card.
-  registerAction("new-text-card", () => {
-    const draftId = crypto.randomUUID();
-    const newId = deckManager.addCard("text", {
-      draftId,
-      untitled: true,
-      untitledNumber: allocateUntitledNumber(),
-      anchor: { line: 1, ch: 0 },
-      scrollTop: 0,
-    });
-    if (newId !== null && deckManager.getFirstResponderCardId() !== newId) {
-      transferFocusForActivation({
-        outgoingCardId: deckManager.getFirstResponderCardId(),
-        incomingCardId: newId,
-        store: deckManager,
-        commitMutation: () => deckManager.activateCard(newId),
-      });
-    }
-  });
 
   // ---- Parameterized menu wires ----
   //

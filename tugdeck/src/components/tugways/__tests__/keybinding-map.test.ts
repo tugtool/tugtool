@@ -1,24 +1,26 @@
 /**
- * keybinding-map — pure-logic tests for the static chord map, focused on the
- * permission-cycle / focus-walk boundary.
+ * The global chord layer, now resolved through the command registry.
  *
- * Tug departs from the Claude Code TUI: the terminal cycles the permission mode
- * on Shift+Tab, but in a GUI Shift+Tab must be reverse-focus navigation. So
- * permission cycling lives on a key-card-scoped chord — ⌃⌘P, since ⇧⌘P is the
- * composer's Prompt route — and Tab / Shift-Tab are owned by the focus-walk
- * stage in `responder-chain-provider.tsx`, deliberately absent from this static
- * map. These tests pin that contract against `matchKeybinding`, which reads
- * only `code` + the four modifier flags, so a plain object stands in for a
- * `KeyboardEvent` with no DOM.
+ * These pins used to read a static map; the map is gone, and the same facts
+ * are asserted against `keymapRegistry.matchChord`, which resolves a chord to
+ * a *command id* rather than to an action-plus-payload. Every chord the map
+ * held has to resolve to the same behavior it did — that is the whole
+ * contract of moving it — so the cases are unchanged in substance and only
+ * changed in what they ask.
+ *
+ * The boundary case is still the interesting one. Tug departs from the Claude
+ * Code TUI: the terminal cycles the permission mode on Shift+Tab, but in a GUI
+ * Shift+Tab must be reverse-focus navigation. So permission cycling lives on
+ * ⌃⌘P — ⇧⌘P is the composer's Prompt route — and Tab / Shift-Tab belong to the
+ * focus-walk stage in `responder-chain-provider.tsx`, deliberately bound
+ * nowhere in the table.
  */
 
 import { describe, expect, test } from "bun:test";
 
-import {
-  KEYBINDINGS,
-  keyBindingMatchesEvent,
-  matchKeybinding,
-} from "../keybinding-map";
+import { keymapRegistry } from "../keymap-registry";
+import { COMMANDS, COMMANDS_BY_ID } from "../command-registry";
+import { chordKey, chordMatchesEvent } from "../chord-format";
 import { TUG_ACTIONS } from "../action-vocabulary";
 
 function keyEvent(
@@ -34,118 +36,120 @@ function keyEvent(
   } as KeyboardEvent;
 }
 
-describe("keybinding-map: the two P chords", () => {
-  test("⇧⌘P selects the Prompt route, key-card scope, preventDefault", () => {
-    const binding = matchKeybinding(keyEvent("KeyP", { meta: true, shift: true }));
-    expect(binding).not.toBeNull();
-    expect(binding?.action).toBe(TUG_ACTIONS.SELECT_COMPOSER_ROUTE);
-    expect(binding?.value).toBe("prompt");
-    expect(binding?.scope).toBe("key-card");
-    expect(binding?.preventDefaultOnMatch).toBe(true);
+describe("the two P chords", () => {
+  test("⇧⌘P selects the Prompt route, key-card routed, preventDefault", () => {
+    const match = keymapRegistry.matchChord(keyEvent("KeyP", { meta: true, shift: true }));
+    expect(match).not.toBeNull();
+    const entry = COMMANDS_BY_ID.get(match?.commandId ?? "");
+    expect(entry?.action).toBe(TUG_ACTIONS.SELECT_COMPOSER_ROUTE);
+    expect(entry?.payload).toBe("prompt");
+    expect(entry?.routing).toBe("key-card");
+    expect(match?.binding.preventDefault).toBe(true);
   });
 
-  test("⌃⌘P cycles the permission mode, key-card scope, preventDefault", () => {
-    const binding = matchKeybinding(keyEvent("KeyP", { meta: true, ctrl: true }));
-    expect(binding).not.toBeNull();
-    expect(binding?.action).toBe(TUG_ACTIONS.CYCLE_PERMISSION_MODE);
-    expect(binding?.scope).toBe("key-card");
-    expect(binding?.preventDefaultOnMatch).toBe(true);
+  test("⌃⌘P cycles the permission mode, key-card routed, preventDefault", () => {
+    const match = keymapRegistry.matchChord(keyEvent("KeyP", { meta: true, ctrl: true }));
+    expect(match?.commandId).toBe(TUG_ACTIONS.CYCLE_PERMISSION_MODE);
+    expect(COMMANDS_BY_ID.get(TUG_ACTIONS.CYCLE_PERMISSION_MODE)?.routing).toBe("key-card");
+    expect(match?.binding.preventDefault).toBe(true);
   });
 
   test("bare ⌘P matches neither (exact modifier match)", () => {
-    expect(matchKeybinding(keyEvent("KeyP", { meta: true }))).toBeNull();
+    expect(keymapRegistry.matchChord(keyEvent("KeyP", { meta: true }))).toBeNull();
   });
 
   test("⇧P without Cmd matches neither", () => {
-    expect(matchKeybinding(keyEvent("KeyP", { shift: true }))).toBeNull();
+    expect(keymapRegistry.matchChord(keyEvent("KeyP", { shift: true }))).toBeNull();
   });
 });
 
-describe("keybinding-map: Tab is owned by the focus-walk stage, not this map", () => {
-  test("Tab and Shift-Tab are absent from the static map", () => {
-    expect(matchKeybinding(keyEvent("Tab"))).toBeNull();
-    expect(matchKeybinding(keyEvent("Tab", { shift: true }))).toBeNull();
+describe("Tab belongs to the focus-walk stage, not to any binding", () => {
+  test("plain Tab and Shift-Tab resolve to no command", () => {
+    expect(keymapRegistry.matchChord(keyEvent("Tab"))).toBeNull();
+    expect(keymapRegistry.matchChord(keyEvent("Tab", { shift: true }))).toBeNull();
+  });
+
+  test("⌥⇥ is a chord, because the focus walk bails on any modifier", () => {
+    expect(keymapRegistry.matchChord(keyEvent("Tab", { alt: true }))?.commandId).toBe(
+      TUG_ACTIONS.CYCLE_FOCUS_MODE,
+    );
   });
 });
 
-describe("keybinding-map: precompiled index invariants", () => {
-  // The chord identity: exact `code` + exact state of all four modifier
-  // flags — the same tuple `keyBindingMatchesEvent` compares.
-  const chordOf = (b: (typeof KEYBINDINGS)[number]): string =>
-    `${b.key}|${b.ctrl ?? false}|${b.meta ?? false}|${b.shift ?? false}|${b.alt ?? false}`;
+describe("index invariants", () => {
+  const globalBindings = COMMANDS.flatMap((entry) =>
+    (entry.bindings ?? [])
+      .filter((b) => b.scope.kind === "global")
+      .map((binding) => ({ id: entry.id, binding })),
+  );
 
-  test("no two bindings share a chord", () => {
-    // The precompiled map is first-writer-wins on a duplicate chord —
-    // correct only while duplicates don't exist. A duplicate added
-    // mid-table would silently shadow the later binding; fail loudly
-    // here instead.
+  test("no two commands share a chord", () => {
+    // The index is first-writer-wins on a duplicate, which is correct only
+    // while duplicates do not exist. A duplicate added mid-table would
+    // silently shadow the later command; fail loudly here instead.
     const seen = new Map<string, string>();
-    for (const binding of KEYBINDINGS) {
-      const chord = chordOf(binding);
-      const holder = seen.get(chord);
-      expect(
-        holder,
-        `chord ${chord} bound to both "${holder}" and "${binding.action}"`,
-      ).toBeUndefined();
-      seen.set(chord, binding.action);
+    for (const { id, binding } of globalBindings) {
+      const key = chordKey(binding.chord);
+      const holder = seen.get(key);
+      expect(holder, `chord ${key} bound to both "${holder}" and "${id}"`).toBeUndefined();
+      seen.set(key, id);
     }
   });
 
-  test("map lookup agrees with a linear keyBindingMatchesEvent scan for every binding", () => {
-    // Full parity: for each binding's own chord, the O(1) map must
-    // return exactly what the old first-match scan returned.
-    for (const binding of KEYBINDINGS) {
-      const event = keyEvent(binding.key, {
-        ctrl: binding.ctrl,
-        meta: binding.meta,
-        shift: binding.shift,
-        alt: binding.alt,
+  test("the index agrees with a linear scan for every binding's own chord", () => {
+    for (const { id, binding } of globalBindings) {
+      const event = keyEvent(binding.chord.key, {
+        ctrl: binding.chord.ctrl,
+        meta: binding.chord.meta,
+        shift: binding.chord.shift,
+        alt: binding.chord.alt,
       });
-      const scanned = KEYBINDINGS.find((b) => keyBindingMatchesEvent(event, b)) ?? null;
-      expect(matchKeybinding(event)).toBe(scanned);
+      const scanned = globalBindings.find((b) =>
+        chordMatchesEvent(event, b.binding.chord),
+      )?.id;
+      expect(scanned).toBe(id);
+      expect(keymapRegistry.matchChord(event)?.commandId).toBe(id);
     }
   });
 
   test("a chord with one extra modifier never matches", () => {
-    // Exact-modifier discipline survives the map conversion: adding a
-    // modifier a binding didn't declare must miss.
-    for (const binding of KEYBINDINGS) {
-      const extra = keyEvent(binding.key, {
-        ctrl: binding.ctrl,
-        meta: binding.meta,
-        shift: binding.shift,
-        alt: !(binding.alt ?? false),
+    for (const { binding } of globalBindings) {
+      const extra = keyEvent(binding.chord.key, {
+        ctrl: binding.chord.ctrl,
+        meta: binding.chord.meta,
+        shift: binding.chord.shift,
+        alt: !(binding.chord.alt ?? false),
       });
-      const scanned = KEYBINDINGS.find((b) => keyBindingMatchesEvent(extra, b)) ?? null;
-      expect(matchKeybinding(extra)).toBe(scanned);
+      const scanned =
+        globalBindings.find((b) => chordMatchesEvent(extra, b.binding.chord))?.id ?? null;
+      expect(keymapRegistry.matchChord(extra)?.commandId ?? null).toBe(scanned);
     }
   });
 });
 
-describe("keybinding-map: the digit row is move-to-slot, whole", () => {
-  test("⌘1..⌘9 each carry their own 1-based slot number", () => {
+describe("the digit row is move-to-slot, whole", () => {
+  test("⌘1..⌘9 each resolve to their own slot command", () => {
     for (let n = 1; n <= 9; n++) {
-      const binding = matchKeybinding(keyEvent(`Digit${n}`, { meta: true }));
-      expect(binding).not.toBeNull();
-      expect(binding?.action).toBe(TUG_ACTIONS.MOVE_TO_SLOT);
-      expect(binding?.value).toBe(n);
+      const match = keymapRegistry.matchChord(keyEvent(`Digit${n}`, { meta: true }));
+      expect(match?.commandId).toBe(`${TUG_ACTIONS.MOVE_TO_SLOT}:${n}`);
+      expect(COMMANDS_BY_ID.get(match?.commandId ?? "")?.payload).toBe(n);
     }
   });
 
   test("all nine digits are bound, though six-up is the largest arrangement", () => {
     // The out-of-range numbers are bound on purpose: an unbound chord falls
-    // through to a macOS beep, and a slot the arrangement doesn't have should
-    // be silent. The range gate lives in DeckCanvas's handler, not here.
+    // through to a macOS beep, and a slot the arrangement does not have
+    // should be silent. The range gate lives in DeckCanvas's handler.
     for (let n = 7; n <= 9; n++) {
-      expect(matchKeybinding(keyEvent(`Digit${n}`, { meta: true }))).not.toBeNull();
+      expect(keymapRegistry.matchChord(keyEvent(`Digit${n}`, { meta: true }))).not.toBeNull();
     }
   });
 
   test("a bare digit is not a chord", () => {
-    expect(matchKeybinding(keyEvent("Digit1"))).toBeNull();
+    expect(keymapRegistry.matchChord(keyEvent("Digit1"))).toBeNull();
   });
 
-  test("⌘0 is the host's Actual Size and is absent from this map", () => {
-    expect(matchKeybinding(keyEvent("Digit0", { meta: true }))).toBeNull();
+  test("⌘0 is the host's Actual Size and is bound to nothing here", () => {
+    expect(keymapRegistry.matchChord(keyEvent("Digit0", { meta: true }))).toBeNull();
   });
 });

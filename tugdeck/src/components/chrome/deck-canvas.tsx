@@ -46,6 +46,9 @@ import { selectionGuard } from "@/components/tugways/selection-guard";
 import { copySelectionAsPlainText } from "@/lib/copy-as-plain-text";
 import { openFileInCard } from "@/lib/open-file-in-card";
 import { revealPathInFinder } from "@/lib/os-open";
+import { openOpenQuickly } from "@/lib/open-quickly-store";
+import { clearRecentDocuments } from "@/lib/recent-documents";
+import { allocateUntitledNumber } from "@/lib/untitled-naming";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { flipDelta, springKeyframes } from "@/lib/pane-flip";
 import { dispatchCommand } from "@/command-dispatch";
@@ -186,6 +189,11 @@ const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
   TUG_ACTIONS.OPEN_FILE,
   TUG_ACTIONS.REVEAL_IN_FINDER,
   TUG_ACTIONS.MOVE_TO_SLOT,
+  TUG_ACTIONS.NEW_TEXT_CARD,
+  TUG_ACTIONS.OPEN_QUICKLY,
+  TUG_ACTIONS.CLEAR_RECENT_DOCUMENTS,
+  TUG_ACTIONS.ARRANGE_CARDS,
+  TUG_ACTIONS.FOCUS_PANE,
 ]);
 
 /**
@@ -481,9 +489,86 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       // richer `{ path, line }` form arrives via `dispatchCommand` and
       // is handled by the registry body in `action-dispatch.ts`. Both converge on
       // `openFileInCard` (path-keyed Text-card reuse).
+      // Two callers, two shapes: a context-menu item names a path and
+      // nothing else, while the host's File ▸ Open… and the transcript's
+      // file references carry a line range to jump to.
       [TUG_ACTIONS.OPEN_FILE]: (event: ActionEvent) => {
-        if (typeof event.value !== "string" || event.value === "") return;
-        openFileInCard(store, event.value);
+        const target = event.value;
+        if (typeof target === "string") {
+          if (target === "") return;
+          openFileInCard(store, target);
+          return;
+        }
+        if (typeof target !== "object" || target === null) return;
+        const { path, line, endLine } = target as {
+          path?: unknown;
+          line?: unknown;
+          endLine?: unknown;
+        };
+        if (typeof path !== "string" || path.trim() === "") {
+          console.warn("open-file: missing or invalid path", target);
+          return;
+        }
+        openFileInCard(
+          store,
+          path,
+          typeof line === "number" ? line : undefined,
+          typeof endLine === "number" ? endLine : undefined,
+        );
+      },
+      // An untitled manual buffer — no file exists until the first Save,
+      // so the draft id is the card's identity until then.
+      [TUG_ACTIONS.NEW_TEXT_CARD]: (_event: ActionEvent) => {
+        const newId = store.addCard("text", {
+          draftId: crypto.randomUUID(),
+          untitled: true,
+          untitledNumber: allocateUntitledNumber(),
+          anchor: { line: 1, ch: 0 },
+          scrollTop: 0,
+        });
+        if (newId === null || store.getFirstResponderCardId() === newId) return;
+        transferFocusForActivation({
+          outgoingCardId: store.getFirstResponderCardId(),
+          incomingCardId: newId,
+          store,
+          commitMutation: () => store.activateCard(newId),
+        });
+      },
+      [TUG_ACTIONS.OPEN_QUICKLY]: (_event: ActionEvent) => {
+        openOpenQuickly();
+      },
+      [TUG_ACTIONS.CLEAR_RECENT_DOCUMENTS]: (_event: ActionEvent) => {
+        clearRecentDocuments();
+      },
+      [TUG_ACTIONS.ARRANGE_CARDS]: (event: ActionEvent) => {
+        const mode = (event.value as { mode?: unknown } | undefined)?.mode;
+        if (mode !== "cascade" && mode !== "tile") {
+          console.warn("arrange-cards: invalid mode", event.value);
+          return;
+        }
+        store.arrangeCards(mode);
+      },
+      // Through `transferFocusForActivation` rather than `activateCard`
+      // alone: a menu pick has to fire the full outgoing-save → commit →
+      // incoming-focus transition, not just reorder z.
+      [TUG_ACTIONS.FOCUS_PANE]: (event: ActionEvent) => {
+        const paneId = (event.value as { paneId?: unknown } | undefined)?.paneId;
+        if (typeof paneId !== "string") {
+          console.warn("focus-pane: missing or invalid paneId", event.value);
+          return;
+        }
+        const pane = store.getSnapshot().panes.find((s) => s.id === paneId);
+        if (pane === undefined) {
+          console.warn(`focus-pane: no pane with id "${paneId}"`);
+          return;
+        }
+        const incomingCardId = pane.activeCardId;
+        transferFocusForActivation({
+          outgoingCardId: store.getFirstResponderCardId(),
+          incomingCardId,
+          store,
+          commitMutation: () => store.activateCard(incomingCardId),
+        });
       },
       [TUG_ACTIONS.REVEAL_IN_FINDER]: (event: ActionEvent) => {
         if (typeof event.value !== "string" || event.value === "") return;

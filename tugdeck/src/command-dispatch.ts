@@ -71,12 +71,35 @@ function registryPayload(
   return base;
 }
 
+/**
+ * The `ActionEvent.value` a chain dispatch carries.
+ *
+ * Three shapes reach here, in priority order:
+ *
+ * 1. The entry's static payload — a per-value row ([P05]) says what it
+ *    carries and no caller may override it.
+ * 2. The caller's `value` — what a chain-native caller sends, and the shape
+ *    a context-menu item or a button uses.
+ * 3. The caller's remaining fields — what a **control frame** sends. The
+ *    host's `sendControl(action, params:)` puts its parameters at the top
+ *    level of the frame (`{ action: "focus-pane", paneId: "p1" }`), because
+ *    that is the wire the registered handlers were written against. A
+ *    command that has since moved onto a responder still has to receive
+ *    them, so the frame's own fields become the value rather than being
+ *    dropped on the floor.
+ *
+ * `action` is stripped: it is the frame's envelope, not a parameter, and a
+ * handler reading it back would be reading its own name.
+ */
 function resolveValue(
   entry: CommandEntry,
   payload: Record<string, unknown> | undefined,
 ): unknown {
   if (entry.payload !== undefined) return entry.payload;
-  return payload?.value;
+  if (payload === undefined) return undefined;
+  if (payload.value !== undefined) return payload.value;
+  const { action: _envelope, ...params } = payload;
+  return Object.keys(params).length > 0 ? params : undefined;
 }
 
 /**
@@ -149,9 +172,16 @@ export function dispatchCommand(
       handled = result.handled;
       break;
     }
-    case "key-card":
-      handled = manager.sendToKeyCard(event);
+    case "key-card": {
+      // Continuation-aware for the same reason first-responder is: a handler
+      // that defers its visible work into a continuation gets that work run.
+      // `sendToKeyCard` drops it, which would be a silent no-op for exactly
+      // the handlers careful enough to two-phase themselves.
+      const result = manager.sendToKeyCardForContinuation(event);
+      result.continuation?.();
+      handled = result.handled;
       break;
+    }
     case "target": {
       const targetId = payload?.targetId;
       if (typeof targetId !== "string") {

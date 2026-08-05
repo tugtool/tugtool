@@ -1082,6 +1082,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sessionMenu.addItem(NSMenuItem(title: "Stop", action: #selector(stopSession(_:)), keyEquivalent: "").identified("session.stop"))
         sessionMenu.addItem(NSMenuItem.separator())
 
+        // Transcript navigation and the card's two keyboard affordances.
+        // These were chord-only until now — working commands with no
+        // discoverable door — so the menu is what makes them findable.
+        //
+        // They are built WITHOUT key equivalents on purpose. Their chords
+        // belong to the command registry, which publishes them per item in
+        // the menu-state gate along with the item's enablement, and the
+        // chord sweep applies them from there. Stamping a construction-time
+        // literal here would put a second author on the same key equivalent
+        // and would attach the chord to an item that can validate disabled —
+        // where AppKit eats it with a beep instead of letting the web view
+        // have it. Until the sweep runs, the frontend's own key pipeline
+        // serves these chords exactly as it did before the items existed.
+        sessionMenu.addItem(NSMenuItem(title: "Previous Turn", action: #selector(previousTurn(_:)), keyEquivalent: "").identified("session.previousTurn"))
+        sessionMenu.addItem(NSMenuItem(title: "Next Turn", action: #selector(nextTurn(_:)), keyEquivalent: "").identified("session.nextTurn"))
+        sessionMenu.addItem(NSMenuItem(title: "First Turn", action: #selector(firstTurn(_:)), keyEquivalent: "").identified("session.firstTurn"))
+        sessionMenu.addItem(NSMenuItem(title: "Last Turn", action: #selector(lastTurn(_:)), keyEquivalent: "").identified("session.lastTurn"))
+        sessionMenu.addItem(NSMenuItem.separator())
+        sessionMenu.addItem(NSMenuItem(title: "Open Command Picker", action: #selector(openCommandPicker(_:)), keyEquivalent: "").identified("session.commandPicker"))
+        sessionMenu.addItem(NSMenuItem(title: "Cycle Focus Mode", action: #selector(cycleFocusMode(_:)), keyEquivalent: "").identified("session.cycleFocusMode"))
+        sessionMenu.addItem(NSMenuItem.separator())
+
         func sessionCommandItem(_ title: String, _ command: String, _ id: String) -> NSMenuItem {
             let item = NSMenuItem(title: title, action: #selector(runCardCommand(_:)), keyEquivalent: "").identified(id)
             item.representedObject = command
@@ -1222,6 +1244,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mMenu.addItem(reloadItem)
         mMenu.addItem(NSMenuItem.separator())
         mMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]).identified("maker.jsConsole"))
+        // Show DevTools (⌥⌘/) — the frontend's own inspector card, beside
+        // the host's console. Chord left to the registry's sweep, like the
+        // Session items. Placing it in the Maker menu is also what keeps the
+        // chord working outside maker mode: the menu is hidden then, and a
+        // hidden menu's key equivalents fall through to the web view.
+        mMenu.addItem(NSMenuItem(title: "Show DevTools", action: #selector(showDevTools(_:)), keyEquivalent: "").identified("maker.devTools"))
         mMenu.addItem(NSMenuItem(title: "Focus Lens", action: #selector(focusLens(_:)), keyEquivalent: "l").identified("maker.focusLens"))
         mMenu.addItem(NSMenuItem(title: "Show Lens", action: #selector(showLens(_:)), keyEquivalent: "l", modifierMask: [.command, .option]).identified("maker.lens"))
         if BuildInfo.profile == "debug" {
@@ -1520,6 +1548,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func stopSession(_ sender: Any?) {
         sendControl("interrupt-session")
+    }
+
+    // Transcript navigation and the session card's keyboard affordances —
+    // chain round-trips through the command funnel, which routes each wire
+    // to the key card by its registry entry.
+    @objc private func previousTurn(_ sender: Any?) {
+        sendControl("previous-turn")
+    }
+
+    @objc private func nextTurn(_ sender: Any?) {
+        sendControl("next-turn")
+    }
+
+    @objc private func firstTurn(_ sender: Any?) {
+        sendControl("first-turn")
+    }
+
+    @objc private func lastTurn(_ sender: Any?) {
+        sendControl("last-turn")
+    }
+
+    @objc private func openCommandPicker(_ sender: Any?) {
+        sendControl("open-command-picker")
+    }
+
+    @objc private func cycleFocusMode(_ sender: Any?) {
+        sendControl("cycle-focus-mode")
+    }
+
+    @objc private func showDevTools(_ sender: Any?) {
+        sendControl("show-devtools")
     }
 
     @objc private func setPermissionModeFromMenu(_ sender: NSMenuItem) {

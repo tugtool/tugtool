@@ -207,6 +207,29 @@ export interface CommandEntry {
   readonly mirrored?: boolean;
   /** Default bindings — a list from day one ([P08]). */
   readonly bindings?: readonly CommandBinding[];
+  /**
+   * What becomes of this command's key equivalent while the command
+   * validates disabled.
+   *
+   * A chord on a disabled menu item is eaten at the menu bar with a beep; it
+   * does not fall through to the web view. So dimming an item is not the
+   * whole decision — the chord has to be decided too, and the two answers
+   * are genuinely different commands:
+   *
+   * - `"keep"` — the command owns the chord outright. Nothing else may have
+   *   it, and the beep is honest feedback that the user pressed the right
+   *   keys at the wrong moment. This is the default, and it is what every
+   *   item built with a construction-time key equivalent already does.
+   * - `"detach"` — the command claims the chord only while it is
+   *   applicable. The gate publishes a `null` chord in the disabled state,
+   *   which releases the key equivalent and lets the chord reach the JS
+   *   funnel, where a scoped binding may still want it.
+   *
+   * `"detach"` is the answer for a command promoted from a scoped JS
+   * binding to a menu item: the chord was shadowable before the promotion,
+   * and detaching is what keeps it shadowable after.
+   */
+  readonly disabledChord?: "keep" | "detach";
   /** Validity override; chain-routed entries default to the chain walk ([P06]). */
   readonly validate?: (chain: CommandValidationSource) => boolean;
   /** Checkmark / radio / toggle projection ([P07]). */
@@ -234,13 +257,14 @@ export interface CommandEntry {
 /** A default global binding, the shape most of the table's chords take. */
 function chord(
   spec: Chord,
-  options: { preventDefault?: boolean } = {},
+  options: { preventDefault?: boolean; menuEligible?: boolean } = {},
 ): CommandBinding {
   return {
     chord: spec,
     scope: GLOBAL_SCOPE,
     source: "default",
     ...(options.preventDefault === true ? { preventDefault: true } : {}),
+    ...(options.menuEligible === true ? { menuEligible: true } : {}),
   };
 }
 
@@ -281,6 +305,16 @@ function sessionSettingsChangeable(chain: CommandValidationSource): boolean {
  */
 function deckDeselectedWithPanes(chain: CommandValidationSource): boolean {
   return !chain.menu.selectionActive && chain.menu.paneCount > 0;
+}
+
+/**
+ * A session card is frontmost and its transcript has something to move
+ * through. The transcript navigation commands are no-ops on an empty
+ * transcript, and their menu items say so rather than offering a gesture
+ * with nowhere to go.
+ */
+function transcriptNavigable(chain: CommandValidationSource): boolean {
+  return chain.menu.sessionCardFrontmost && (chain.menu.session?.hasTurns ?? false);
 }
 
 /** Somewhere to navigate to: a multi-card pane, or a deck to re-enter. */
@@ -381,7 +415,21 @@ const PERMISSION_MODE_COMMANDS: readonly CommandEntry[] = PERMISSION_MODES.map(
 /**
  * ⌘1…⌘9 are nine distinct user-facing commands, not one command with a
  * number ([P05]) — the keymap UI has to show nine rows, and each one is
- * separately rebindable. No menu item today; the chord is the door.
+ * separately rebindable. The chord is the door; the Window menu is not.
+ *
+ * Deliberately unpromoted ([Q02]). Nine Window-menu items would move nine
+ * digit chords out of the JS funnel and into AppKit's key-equivalent scan
+ * at once, where they are claimed unconditionally — inside every text
+ * surface, and above any responder that wants its digits. `pdf-view.tsx`
+ * already declines ⌘1–⌘3 by hand precisely so the deck keeps them; a menu
+ * item would take that choice away from it and from every surface after
+ * it. Detaching on a `validate` would need the frontend to know "the
+ * focused surface wants its digits", which is not a fact anything
+ * publishes today.
+ *
+ * So the nine stay chord-only registry entries: fully visible to the
+ * keymap UI and the shadowing view, and still shadowable by the surfaces
+ * that need to shadow them.
  */
 const SLOT_COMMANDS: readonly CommandEntry[] = Array.from({ length: 9 }, (_, i) => {
   const n = i + 1;
@@ -398,21 +446,25 @@ const SLOT_COMMANDS: readonly CommandEntry[] = Array.from({ length: 9 }, (_, i) 
 export const COMMANDS: readonly CommandEntry[] = [
   // ---- File ----
   {
-    id: "new-text-card",
+    id: TUG_ACTIONS.NEW_TEXT_CARD,
     title: "New Text File",
-    routing: "registry",
+    routing: "first-responder",
     menuItemId: "file.newTextCard",
   },
   {
     id: TUG_ACTIONS.OPEN_FILE,
     title: "Open File…",
-    routing: "registry",
+    routing: "first-responder",
     menuItemId: "file.openFile",
   },
   {
-    id: "open-quickly",
+    // Two gates, and they answer different questions. The predicate is
+    // the one that matters: a search with no root cannot run, and the
+    // chain cannot know that. The canvas's handler is what makes the
+    // command reachable at all.
+    id: TUG_ACTIONS.OPEN_QUICKLY,
     title: "Open Quickly…",
-    routing: "registry",
+    routing: "first-responder",
     menuItemId: "file.openQuickly",
     mirrored: true,
     validate: (chain) => chain.menu.openQuickly,
@@ -426,9 +478,9 @@ export const COMMANDS: readonly CommandEntry[] = [
     internal: true,
   },
   {
-    id: "clear-recent-documents",
+    id: TUG_ACTIONS.CLEAR_RECENT_DOCUMENTS,
     title: "Clear Menu",
-    routing: "registry",
+    routing: "first-responder",
     menuItemId: "file.openRecent.clear",
   },
   {
@@ -739,16 +791,16 @@ export const COMMANDS: readonly CommandEntry[] = [
   {
     // Two menu items — Cascade and Tile — for one wire; per-value rows and
     // their menu placement are a later judgment.
-    id: "arrange-cards",
+    id: TUG_ACTIONS.ARRANGE_CARDS,
     title: "Arrange Cards",
-    routing: "registry",
+    routing: "first-responder",
     parameterized: true,
   },
   {
     // The pane list is rebuilt per open, so the payload set is runtime.
-    id: "focus-pane",
+    id: TUG_ACTIONS.FOCUS_PANE,
     title: "Focus Pane",
-    routing: "registry",
+    routing: "first-responder",
     parameterized: true,
   },
   {
@@ -942,6 +994,12 @@ export const COMMANDS: readonly CommandEntry[] = [
     // in the host and never sends the wire. The registered handler reaches
     // the same picker through the `sourceTree` script-message bridge, so
     // the command works — nothing sends it.
+    //
+    // Stays `registry` with the other app-level singletons. Its whole body
+    // is one post to a host script-message handler: no deck state, no
+    // responder that owns it, and no validity anything could be asked
+    // for. A chain identity would give it a home that has no relationship
+    // to what it does.
     id: "source-tree",
     title: "Source Tree…",
     routing: "registry",
@@ -1139,15 +1197,39 @@ export const COMMANDS: readonly CommandEntry[] = [
     id: TUG_ACTIONS.SHOW_DEVTOOLS,
     title: "Show DevTools",
     routing: "first-responder",
-    bindings: [chord({ key: "Slash", meta: true, alt: true, label: "/" }, { preventDefault: true })],
+    menuItemId: "maker.devTools",
+    bindings: [
+      chord(
+        { key: "Slash", meta: true, alt: true, label: "/" },
+        { preventDefault: true, menuEligible: true },
+      ),
+    ],
+    mirrored: true,
+    // The canvas handles it unconditionally, so the default chain walk
+    // answers true and the item never dims — which is why it can keep its
+    // chord attached without ever eating one.
+    disabledChord: "keep",
   },
   {
     id: TUG_ACTIONS.OPEN_COMMAND_PICKER,
     title: "Open Command Picker",
     routing: "key-card",
-    bindings: [chord({ key: "Slash", meta: true, label: "/" }, { preventDefault: true })],
+    menuItemId: "session.commandPicker",
+    bindings: [
+      chord({ key: "Slash", meta: true, label: "/" }, { preventDefault: true, menuEligible: true }),
+    ],
+    mirrored: true,
+    // No predicate: the key-card walk asks the frontmost card whether it has
+    // a command picker, which is the whole question.
+    disabledChord: "detach",
   },
   {
+    // NOT promoted. ⇧⌘P selects the composer's Prompt route — the route
+    // chips are its door, and the Changes route already has a Session-menu
+    // item in the Show/Hide Changes toggle. A second item for the other
+    // half would name a control's internal state as a menu command, and
+    // promoting ⇧⌘P would take a plain letter chord out of the JS funnel
+    // for a gesture whose surface is two clicks away ([Q02]).
     id: `${TUG_ACTIONS.SELECT_COMPOSER_ROUTE}:prompt`,
     title: "Prompt Route",
     routing: "key-card",
@@ -1159,45 +1241,72 @@ export const COMMANDS: readonly CommandEntry[] = [
     id: TUG_ACTIONS.CYCLE_FOCUS_MODE,
     title: "Cycle Focus Mode",
     routing: "key-card",
-    bindings: [chord({ key: "Tab", alt: true, label: "Tab" }, { preventDefault: true })],
+    menuItemId: "session.cycleFocusMode",
+    bindings: [
+      chord({ key: "Tab", alt: true, label: "Tab" }, { preventDefault: true, menuEligible: true }),
+    ],
+    mirrored: true,
+    disabledChord: "detach",
   },
   {
     id: TUG_ACTIONS.PREVIOUS_TURN,
     title: "Previous Turn",
     routing: "key-card",
+    menuItemId: "session.previousTurn",
     bindings: [
-      chord({ key: "ArrowUp", alt: true, meta: true, label: "ArrowUp" }, { preventDefault: true }),
+      chord(
+        { key: "ArrowUp", alt: true, meta: true, label: "ArrowUp" },
+        { preventDefault: true, menuEligible: true },
+      ),
     ],
+    mirrored: true,
+    validate: transcriptNavigable,
+    disabledChord: "detach",
   },
   {
     id: TUG_ACTIONS.NEXT_TURN,
     title: "Next Turn",
     routing: "key-card",
+    menuItemId: "session.nextTurn",
     bindings: [
-      chord({ key: "ArrowDown", alt: true, meta: true, label: "ArrowDown" }, { preventDefault: true }),
+      chord(
+        { key: "ArrowDown", alt: true, meta: true, label: "ArrowDown" },
+        { preventDefault: true, menuEligible: true },
+      ),
     ],
+    mirrored: true,
+    validate: transcriptNavigable,
+    disabledChord: "detach",
   },
   {
     id: TUG_ACTIONS.FIRST_TURN,
     title: "First Turn",
     routing: "key-card",
+    menuItemId: "session.firstTurn",
     bindings: [
       chord(
         { key: "ArrowUp", alt: true, shift: true, meta: true, label: "ArrowUp" },
-        { preventDefault: true },
+        { preventDefault: true, menuEligible: true },
       ),
     ],
+    mirrored: true,
+    validate: transcriptNavigable,
+    disabledChord: "detach",
   },
   {
     id: TUG_ACTIONS.LAST_TURN,
     title: "Last Turn",
     routing: "key-card",
+    menuItemId: "session.lastTurn",
     bindings: [
       chord(
         { key: "ArrowDown", alt: true, shift: true, meta: true, label: "ArrowDown" },
-        { preventDefault: true },
+        { preventDefault: true, menuEligible: true },
       ),
     ],
+    mirrored: true,
+    validate: transcriptNavigable,
+    disabledChord: "detach",
   },
 ];
 

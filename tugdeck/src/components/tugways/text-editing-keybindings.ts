@@ -5,12 +5,13 @@
  * Scope: this registry is consumed by the text-editing substrates
  * themselves (`useTextInputResponder` for native `<input>` /
  * `<textarea>`; the CM6 keymap layer for `tug-text-editor`). It is
- * NOT consumed by the global `keybinding-map.ts` capture-phase
- * pipeline. Movement and deletion only ever target the focused text
- * input, so the chain abstraction adds nothing here — see [DM01] in
+ * NOT consumed by the global capture-phase pipeline. Movement and
+ * deletion only ever target the focused text input, so the chain
+ * abstraction adds nothing here — see [DM01] in
  * `tugplan-text-editing-keybindings.md` for the rationale, and
- * `keybinding-map.ts` for the cross-substrate semantics that *do*
- * belong on the global pipeline (Cmd-A, Cmd-W, Cmd-T, Cmd-1..9, etc.).
+ * `command-registry.ts` for the cross-substrate semantics that *do*
+ * belong on the global pipeline (Cmd-A, Cmd-W, Cmd-T, Cmd-1..9, etc.),
+ * where they are default `bindings` on their command's entry.
  *
  * Why a separate module: the registry is the data layer a future
  * settings UI for keybinding remap will read and write. Per [DM06],
@@ -31,10 +32,10 @@
  * `tugplan-text-editing-keybindings.md` is the documentation; this
  * registry is for live bindings only.
  *
- * Shape: `EditingKeybinding` mirrors `KeyBinding` in
- * `keybinding-map.ts` but without `preventDefaultOnMatch`, `value`,
- * and `scope` (none of which apply to substrate-local editing
- * dispatch). It adds `shiftExtends`: when true, the matcher accepts
+ * Shape: `EditingKeybinding` mirrors `Chord` in
+ * `command-registry.ts` but without the display label, and without the
+ * `preventDefault` / payload / routing a command binding carries (none
+ * of which apply to substrate-local editing dispatch). It adds `shiftExtends`: when true, the matcher accepts
  * the keystroke regardless of `event.shiftKey`, and the substrate
  * handler reads `shiftKey` separately to decide motion-vs-selection
  * per [DM05]. Without `shiftExtends`, the matcher demands an exact
@@ -50,8 +51,8 @@ import { TUG_ACTIONS } from "./action-vocabulary";
  * A single text-editing keybinding entry.
  *
  * `key` uses the `KeyboardEvent.code` value (layout-independent),
- * matching `KeyBinding` in `keybinding-map.ts`. Modifier flags
- * default to false when absent.
+ * matching `Chord` in `command-registry.ts`. Modifier flags default
+ * to false when absent.
  *
  * `shiftExtends` is the only field new to this module: when true,
  * the matcher accepts the keystroke regardless of `event.shiftKey`,
@@ -76,8 +77,8 @@ export interface EditingKeybinding {
    * held) or collapse it (Shift not held). Per [DM05].
    *
    * When false (or absent), `event.shiftKey` must equal `shift ??
-   * false` exactly for the binding to match — same exact-shift
-   * semantics `keybinding-map.ts`'s `matchKeybinding` uses.
+   * false` exactly for the binding to match — the same exact-shift
+   * semantics `chordMatchesEvent` uses.
    */
   shiftExtends?: boolean;
 }
@@ -139,9 +140,9 @@ export function setEditingKeybindings(next: EditingKeybinding[]): void {
  * Returns the matched `EditingKeybinding` so the caller can read
  * `action` and `shiftExtends`, or `null` if no binding matches.
  *
- * Modifier matching mirrors `matchKeybinding` in
- * `keybinding-map.ts` for `ctrl` / `meta` / `alt` (exact match;
- * absent flag means false). The shift comparison branches on
+ * Modifier matching mirrors `chordMatchesEvent` in
+ * `chord-format.ts` for `ctrl` / `meta` / `alt` (exact match; absent
+ * flag means false). The shift comparison branches on
  * `shiftExtends`:
  *
  *   - `shiftExtends: true` — the matcher accepts the keystroke
@@ -151,7 +152,7 @@ export function setEditingKeybindings(next: EditingKeybinding[]): void {
  *
  *   - `shiftExtends: false | undefined` — `event.shiftKey` must
  *     equal `binding.shift ?? false` exactly, same as
- *     `matchKeybinding`.
+ *     `chordMatchesEvent`.
  *
  * The function is pure and re-reads the registry on every call so
  * a `setEditingKeybindings` swap takes effect on the next

@@ -169,19 +169,12 @@ export function computeEditCapabilities(
 // ---------------------------------------------------------------------------
 
 /**
- * A chord in the host's alphabet: the `keyEquivalent` character plus the
- * four modifier booleans. The `KeyboardEvent.code` → character conversion
- * happens on this side, so the host applies the result verbatim and
- * assembles the modifier mask from the booleans — no `NSEvent.ModifierFlags`
- * raw value ever crosses the boundary.
+ * A chord in the host's alphabet. Declared where the conversion that
+ * produces it lives, so the wire shape and the only function that can fill
+ * it are never two separate opinions.
  */
-export interface ChordSpec {
-  readonly keyEquivalent: string;
-  readonly command?: boolean;
-  readonly shift?: boolean;
-  readonly option?: boolean;
-  readonly control?: boolean;
-}
+import type { ChordSpec } from "@/components/tugways/chord-format";
+export type { ChordSpec };
 
 /**
  * One menu item's gate: everything the host needs to present the item,

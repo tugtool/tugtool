@@ -643,6 +643,34 @@ export const TUG_ACTIONS = {
   HIDE_LENS_PANE:         "hide-lens-pane",
   MOVE_PANE:              "move-pane",
 
+  // ---- Deck verbs that were menu wires only ----
+  //
+  // These arrived as Control frames from the host menu and were serviced
+  // by a registered handler, so they existed nowhere the responder chain
+  // could see: not dispatchable in browser dev, not askable for validity,
+  // not shadowable, not bindable. They act on the deck, DeckCanvas is the
+  // deck's responder, and naming them is what lets it answer for them.
+  //
+  // NEW_TEXT_CARD:           payload — none. Open an untitled manual
+  //                          buffer in its own Text card; no file exists
+  //                          until the first Save. File ▸ New Text File.
+  // OPEN_QUICKLY:            payload — none. Open the deck-global
+  //                          file-search popup. File ▸ Open Quickly.
+  // CLEAR_RECENT_DOCUMENTS:  payload — none. Empty the MRU list and
+  //                          re-publish it to the host. File ▸ Open Recent
+  //                          ▸ Clear Menu.
+  // ARRANGE_CARDS:           payload — `{ mode: "cascade" | "tile" }`.
+  //                          Rearrange every pane on the canvas.
+  //                          Window ▸ Cascade / Tile.
+  // FOCUS_PANE:              payload — `{ paneId: string }`. Bring a pane
+  //                          to front through the full activation
+  //                          transition. The Window menu's pane list.
+  NEW_TEXT_CARD:          "new-text-card",
+  OPEN_QUICKLY:           "open-quickly",
+  CLEAR_RECENT_DOCUMENTS: "clear-recent-documents",
+  ARRANGE_CARDS:          "arrange-cards",
+  FOCUS_PANE:             "focus-pane",
+
   // ---- Commit mode ----
   //
   // `enter` has doors (the ⇧⌘P route select and `/commit`); its two exits

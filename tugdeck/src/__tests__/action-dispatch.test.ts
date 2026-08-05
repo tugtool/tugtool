@@ -673,6 +673,10 @@ describe("initActionDispatch: menu-command chain adapters", () => {
           },
         };
       },
+      sendToKeyCardForContinuation(event: ActionEvent) {
+        keyCard.push(event);
+        return { handled: true };
+      },
       sendToKeyCard(event: ActionEvent): boolean {
         keyCard.push(event);
         return true;
@@ -755,6 +759,10 @@ describe("initActionDispatch: run-card-command", () => {
     initActionDispatch(conn as any, deck as any);
     const keyCard: ActionEvent[] = [];
     registerResponderChainManager({
+      sendToKeyCardForContinuation(event: ActionEvent) {
+        keyCard.push(event);
+        return { handled: true };
+      },
       sendToKeyCard(event: ActionEvent): boolean {
         keyCard.push(event);
         return true;
@@ -799,6 +807,10 @@ describe("initActionDispatch: set-permission-mode", () => {
     initActionDispatch(conn as any, deck as any);
     const keyCard: ActionEvent[] = [];
     registerResponderChainManager({
+      sendToKeyCardForContinuation(event: ActionEvent) {
+        keyCard.push(event);
+        return { handled: true };
+      },
       sendToKeyCard(event: ActionEvent): boolean {
         keyCard.push(event);
         return true;

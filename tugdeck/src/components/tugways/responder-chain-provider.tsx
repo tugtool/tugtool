@@ -29,7 +29,9 @@ import { arrowDirection } from "./spatial-order";
 import { arrowReleaseSubject, resolveArrowRelease } from "./arrow-release";
 import { keyboardAccessStore } from "../../keyboard-access-store";
 import { focusRingModalityStore } from "../../focus-ring-modality-store";
-import { matchKeybinding } from "./keybinding-map";
+import { keymapRegistry, type ScopedBinding } from "./keymap-registry";
+import { COMMANDS_BY_ID } from "./command-registry";
+import { dispatchCommand } from "../../command-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { selectionGuard } from "./selection-guard";
 import { registerResponderChainManager } from "../../action-dispatch";
@@ -199,6 +201,34 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // dispatch "add-card-to-active-pane" through the chain without importing React context.
     // ([D06], [D09])
     registerResponderChainManager(manager);
+
+    // ---- The keymap registry's view of the scoped layers ----
+    // The registry holds the global layer itself, but the mode and responder
+    // layers are the chain's to know, and they change with every focus move —
+    // so it reads them through this rather than caching a copy. The native
+    // layer is the menu mirror's and arrives with the chord sweep; until then
+    // `resolveChord` answers over the three JS layers, which is the whole
+    // answer in browser dev and the JS half of it in the app.
+    keymapRegistry.setEnvironment({
+      scopedBindings: (): readonly ScopedBinding[] => {
+        const mode = focusManager.currentFocusMode();
+        return manager
+          .liveKeybindings(mode === BASE_FOCUS_MODE ? [] : [mode])
+          .map((live) => ({
+            // A scoped binding may name a command, or a substrate verb that
+            // is outside the table by declaration ([#non-goals]) — the
+            // shadowing view wants both, because either one takes the chord.
+            commandId: live.binding.action,
+            chord: live.binding,
+            scope:
+              live.kind === "mode"
+                ? { kind: "mode" as const, modeId: live.scopeId }
+                : { kind: "responder" as const, responderId: live.scopeId },
+            depth: live.depth,
+          }));
+      },
+      nativeChords: () => [],
+    });
 
     // ---- Edit-menu capability mirror ----
     // Mirror the focused responder's edit-action capabilities outward to
@@ -559,10 +589,37 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // walk, innermost-first. Fall back to the static global map. Both layers
       // share one match rule and one dispatch path below.
       const mode = focusManager.currentFocusMode();
-      const binding =
-        manager.resolveKeybinding(event, mode === BASE_FOCUS_MODE ? [] : [mode]) ??
-        matchKeybinding(event);
-      if (binding === null) return;
+      const binding = manager.resolveKeybinding(
+        event,
+        mode === BASE_FOCUS_MODE ? [] : [mode],
+      );
+
+      // No scoped claim: the global layer answers, and it answers with a
+      // COMMAND. Everything past this point — routing, payload, the
+      // continuation — is read from the registry entry rather than from the
+      // binding, which is what makes a chord and a menu item two doors on one
+      // row instead of two implementations that have to be kept in step.
+      if (binding === null) {
+        const match = keymapRegistry.matchChord(event);
+        if (match === null) return;
+        // ⌘Q, ⌘H, ⌘M, ⌃⌘F: named in the table so the keymap UI can show
+        // them, performed by AppKit, never routed through JS. The chord
+        // passes through untouched.
+        if (COMMANDS_BY_ID.get(match.commandId)?.routing === "native") return;
+        if (
+          match.commandId === TUG_ACTIONS.CANCEL_DIALOG &&
+          event.key === "Escape" &&
+          mode !== BASE_FOCUS_MODE
+        ) {
+          return;
+        }
+        if (match.binding.preventDefault === true) event.preventDefault();
+        if (dispatchCommand(match.commandId)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+        return;
+      }
       // Escape on any non-base focus mode yields to the engine's Escape ladder
       // (the act-dispatch listener below), which is the single arbiter ([P02]
       // final form). Every dismissable surface now pushes a mode with an

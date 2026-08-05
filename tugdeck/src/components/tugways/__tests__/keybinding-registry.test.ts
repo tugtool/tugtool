@@ -135,10 +135,15 @@ describe("registry lifecycle", () => {
     m.registerKeybinding("parent", () => [
       { key: "KeyW", meta: true, action: TUG_ACTIONS.CLOSE },
     ]);
-    expect(m.activeKeybindings("child").map((b) => b.action)).toEqual([
+    expect(m.activeKeybindings("child").map((b) => b.binding.action)).toEqual([
       TUG_ACTIONS.SUBMIT,
     ]);
-    expect(m.activeKeybindings().length).toBe(2);
+    // Each pair names the scope it came from — the fact a resolution order
+    // is built out of.
+    expect(m.activeKeybindings().map((b) => b.scopeId).sort()).toEqual([
+      "child",
+      "parent",
+    ]);
     expect(m.activeKeybindings("nobody")).toEqual([]);
   });
 

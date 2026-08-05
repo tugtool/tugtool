@@ -66,7 +66,7 @@
 import { createContext } from "react";
 import type { TugAction } from "./action-vocabulary";
 import type { KeyBinding } from "./keybinding-map";
-import { keyBindingMatchesEvent } from "./keybinding-map";
+import { chordMatchesEvent } from "./chord-format";
 
 export type { TugAction, GalleryAction } from "./action-vocabulary";
 
@@ -299,6 +299,38 @@ export type KeyResponderObserver = (responderId: string | null) => void;
  */
 export type KeybindingSource = () => readonly KeyBinding[];
 
+/** Which kind of context a scoped binding was registered under. */
+export type KeybindingScopeKind = "responder" | "mode";
+
+/**
+ * A registered binding paired with the scope it lives under — a responder
+ * id, or a focus-mode id. What `activeKeybindings` answers, because a
+ * binding without its scope cannot be placed in a resolution order.
+ *
+ * The `kind` is recorded at registration rather than inferred from the id:
+ * a responder id and a mode id are both opaque strings, and guessing which
+ * one a scope is would put the two resolution layers in the wrong order
+ * exactly when a floating surface is open.
+ */
+export interface ScopedKeyBinding {
+  readonly scopeId: string;
+  readonly kind: KeybindingScopeKind;
+  readonly binding: KeyBinding;
+}
+
+/**
+ * A live scoped binding, with its distance from the innermost claimant.
+ *
+ * `depth` 0 is whatever `resolveKeybinding` would consult first — the
+ * current focus mode when one is pushed, otherwise the first responder —
+ * and each step outward adds one. It is the sort key a shadowing view
+ * orders the JS layers by, and it is computed here because the chain is the
+ * only thing that knows the walk.
+ */
+export interface LiveKeyBinding extends ScopedKeyBinding {
+  readonly depth: number;
+}
+
 /**
  * Internal subscription record for `observeKeyResponder`. Stores the
  * tier the observer is interested in, the callback to invoke, and the
@@ -378,6 +410,8 @@ export class ResponderChainManager {
   // scope is a responder id or a focus-mode id; resolution checks the active
   // focus mode then the first-responder parentId walk, innermost-first.
   private keybindingSources: Map<string, Set<KeybindingSource>> = new Map();
+  /** What each registered scope id is — a responder, or a focus mode. */
+  private keybindingScopeKinds: Map<string, KeybindingScopeKind> = new Map();
 
   // ---- Registration ----
 
@@ -1310,12 +1344,17 @@ export class ResponderChainManager {
    * scope ends up with two bindings on the same chord (otherwise the first
    * found would silently shadow the other).
    */
-  registerKeybinding(scopeId: string, source: KeybindingSource): () => void {
+  registerKeybinding(
+    scopeId: string,
+    source: KeybindingSource,
+    kind: KeybindingScopeKind = "responder",
+  ): () => void {
     let set = this.keybindingSources.get(scopeId);
     if (set === undefined) {
       set = new Set();
       this.keybindingSources.set(scopeId, set);
     }
+    this.keybindingScopeKinds.set(scopeId, kind);
     set.add(source);
     this.warnDuplicateChords(scopeId);
     return () => {
@@ -1324,6 +1363,7 @@ export class ResponderChainManager {
       current.delete(source);
       if (current.size === 0) {
         this.keybindingSources.delete(scopeId);
+        this.keybindingScopeKinds.delete(scopeId);
       }
     };
   }
@@ -1359,21 +1399,60 @@ export class ResponderChainManager {
 
   /**
    * The bindings registered at `scopeId` (or every registered binding when
-   * omitted). For a discoverability surface / command palette and accessibility
-   * enumeration. Not in-context-filtered — callers that want "live right now"
-   * intersect with the current scope walk.
+   * omitted), each paired with the scope it was registered under.
+   *
+   * The scope is not decoration: a chord's resolution depends entirely on
+   * *where* a binding lives, so a flat list of bindings cannot answer who
+   * gets the chord — which is the question `resolveChord` exists to answer.
+   * Callers that want "live right now" intersect with the current scope walk.
    */
-  activeKeybindings(scopeId?: string): KeyBinding[] {
-    const collect = (set: Set<KeybindingSource> | undefined): KeyBinding[] =>
-      set === undefined ? [] : [...set].flatMap((source) => [...source()]);
-    if (scopeId !== undefined) {
-      return collect(this.keybindingSources.get(scopeId));
-    }
-    const all: KeyBinding[] = [];
-    for (const set of this.keybindingSources.values()) {
-      all.push(...collect(set));
+  activeKeybindings(scopeId?: string): ScopedKeyBinding[] {
+    if (scopeId !== undefined) return this.bindingsAtScope(scopeId);
+    const all: ScopedKeyBinding[] = [];
+    for (const id of this.keybindingSources.keys()) {
+      all.push(...this.bindingsAtScope(id));
     }
     return all;
+  }
+
+  /**
+   * Every scoped binding live right now, in the order
+   * {@link resolveKeybinding} would consult them: the extra scopes first
+   * (the current focus mode), then the first-responder walk outward.
+   *
+   * This is the enumeration a shadowing view needs and `activeKeybindings`
+   * cannot give: the same set, but placed. Deriving it here rather than in
+   * the reader is what keeps the displayed order and the fired order from
+   * being two independent implementations of "innermost first".
+   */
+  liveKeybindings(extraScopes: readonly string[] = []): LiveKeyBinding[] {
+    const live: LiveKeyBinding[] = [];
+    let depth = 0;
+    const take = (scopeId: string): void => {
+      const found = this.bindingsAtScope(scopeId);
+      if (found.length === 0) return;
+      for (const entry of found) live.push({ ...entry, depth });
+      depth += 1;
+    };
+    for (const scopeId of extraScopes) take(scopeId);
+    let currentId: string | null = this.firstResponderId;
+    while (currentId !== null) {
+      take(currentId);
+      const node: ResponderNode | undefined = this.nodes.get(currentId);
+      if (node === undefined) break;
+      currentId = node.parentId;
+    }
+    return live;
+  }
+
+  /** The registered bindings at one scope, tagged with what that scope is. */
+  private bindingsAtScope(scopeId: string): ScopedKeyBinding[] {
+    const set = this.keybindingSources.get(scopeId);
+    if (set === undefined) return [];
+    const kind = this.keybindingScopeKinds.get(scopeId) ?? "responder";
+    return [...set].flatMap((source) =>
+      [...source()].map((binding) => ({ scopeId, kind, binding })),
+    );
   }
 
   /** First binding at `scopeId` matching the event, or null. */
@@ -1385,7 +1464,7 @@ export class ResponderChainManager {
     if (set === undefined) return null;
     for (const source of set) {
       for (const binding of source()) {
-        if (keyBindingMatchesEvent(event, binding)) return binding;
+        if (chordMatchesEvent(event, binding)) return binding;
       }
     }
     return null;
@@ -1394,7 +1473,7 @@ export class ResponderChainManager {
   /** Dev-only: warn when one scope has two bindings on the same chord. */
   private warnDuplicateChords(scopeId: string): void {
     if (typeof process !== "undefined" && process.env?.NODE_ENV === "production") return;
-    const bindings = this.activeKeybindings(scopeId);
+    const bindings = this.activeKeybindings(scopeId).map((entry) => entry.binding);
     const seen = new Set<string>();
     for (const b of bindings) {
       const chord = `${b.key}|${!!b.ctrl}|${!!b.meta}|${!!b.shift}|${!!b.alt}`;

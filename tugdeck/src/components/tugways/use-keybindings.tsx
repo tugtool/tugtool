@@ -5,13 +5,17 @@
  * scope is in context**: on the first-responder `parentId` walk (responder-
  * scoped, the default) or while a floating surface's focus mode is current
  * (mode-local, `{ mode: true }`). The capture-phase Stage 1 resolves these
- * before the static global `KEYBINDINGS` map, innermost-first — the keyboard
+ * before the command registry's global layer, innermost-first — the keyboard
  * analog of the responder chain's action walk (Cocoa's `performKeyEquivalent:`).
  *
- * Entries cite `TUG_ACTIONS.*` constants and carry the same `KeyBinding` shape
- * as the static map (`scope` still selects *dispatch routing* —
- * `first-responder` vs `key-card` — orthogonally to *activation context*). The
- * matched action dispatches through the chain exactly as a static binding does.
+ * Entries cite `TUG_ACTIONS.*` constants and dispatch an action directly,
+ * rather than naming a command id. That is deliberate: the verbs registered
+ * this way are substrate-local — the PDF card's scroll keys, the gallery's
+ * demo chord — and are declared outside the command table on purpose. A
+ * scoped binding on a real command would name the command; these have no
+ * command to name. `scope` on the entry still selects *dispatch routing*
+ * (`first-responder` vs `key-card`), orthogonally to *activation context*,
+ * which is what the `mode` option and the registration scope decide.
  *
  * Bindings are read live at resolve time (the source closure returns the
  * current render's array), so handler/chord changes flow through without
@@ -57,8 +61,14 @@ export function useKeybindings(
   const bindingsRef = useRef(bindings);
   bindingsRef.current = bindings;
 
+  // The kind travels with the registration, not inferred from the id: a
+  // responder id and a mode id are both opaque strings, and a shadowing view
+  // that guessed would order the two layers wrongly exactly when a floating
+  // surface is open ([P08]).
+  const kind = options?.mode === true ? "mode" : "responder";
+
   useLayoutEffect(() => {
     if (manager === null || scopeId === null) return;
-    return manager.registerKeybinding(scopeId, () => bindingsRef.current);
-  }, [manager, scopeId]);
+    return manager.registerKeybinding(scopeId, () => bindingsRef.current, kind);
+  }, [manager, scopeId, kind]);
 }

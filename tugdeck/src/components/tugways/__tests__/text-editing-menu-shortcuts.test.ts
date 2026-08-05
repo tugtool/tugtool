@@ -16,7 +16,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildTextEditingMenuItems } from "../text-editing-menu";
-import { KEYBINDINGS } from "../keybinding-map";
+import { keymapRegistry } from "../keymap-registry";
+import { formatChord } from "../chord-format";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { TugAction } from "../action-vocabulary";
 
@@ -30,20 +31,6 @@ const EXPECTED_SHORTCUTS: ReadonlyArray<readonly [TugAction, string]> = [
   [TUG_ACTIONS.PASTE_AS_PLAIN_TEXT, "⌥⇧⌘V"],
   [TUG_ACTIONS.SELECT_ALL, "⌘A"],
 ];
-
-/** Render a chord the way the menu spells it: ⌃⌥⇧⌘ in Apple's order. */
-function formatBinding(b: {
-  ctrl?: boolean;
-  alt?: boolean;
-  shift?: boolean;
-  meta?: boolean;
-  key: string;
-}): string {
-  const mods =
-    (b.ctrl ? "⌃" : "") + (b.alt ? "⌥" : "") + (b.shift ? "⇧" : "") + (b.meta ? "⌘" : "");
-  const letter = b.key.startsWith("Key") ? b.key.slice(3) : b.key;
-  return `${mods}${letter}`;
-}
 
 describe("text-editing menu shortcut hints", () => {
   const entries = buildTextEditingMenuItems({ hasSelection: true });
@@ -61,11 +48,12 @@ describe("text-editing menu shortcut hints", () => {
 
   test("every hint agrees with the binding that actually fires the command", () => {
     // The point of the repair: the hint and the binding are two spellings of
-    // one fact, and they disagreed. Compare them directly.
+    // one fact, and they disagreed. Compare them through the one renderer,
+    // so the comparison itself cannot be a third spelling.
     for (const [action, want] of EXPECTED_SHORTCUTS) {
-      const binding = KEYBINDINGS.find((b) => b.action === action);
+      const [binding] = keymapRegistry.bindingsFor(action);
       expect(binding, `${action} has a binding`).toBeDefined();
-      expect(formatBinding(binding!), `${action} hint vs binding`).toBe(want);
+      expect(formatChord(binding.binding.chord), `${action} hint vs binding`).toBe(want);
     }
   });
 

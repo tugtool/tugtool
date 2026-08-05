@@ -234,3 +234,107 @@ describe("the vocabulary is fully accounted for", () => {
     }
   });
 });
+
+describe("promoted commands", () => {
+  /**
+   * The commands that traded a chord-only existence for a menu door, and
+   * the two decisions each promotion carries: which item it drives, and
+   * what happens to its chord while the item validates disabled.
+   *
+   * A promotion is not free — a menu item's key equivalent is resolved by
+   * AppKit before the web view sees a keydown, so the chord leaves the JS
+   * funnel and is claimed unconditionally. Both columns are therefore
+   * checked-in judgments rather than derivable facts, which is exactly the
+   * kind of thing that drifts silently.
+   */
+  const PROMOTED: ReadonlyArray<[id: string, menuItemId: string, disabled: "keep" | "detach"]> = [
+    [TUG_ACTIONS.PREVIOUS_TURN, "session.previousTurn", "detach"],
+    [TUG_ACTIONS.NEXT_TURN, "session.nextTurn", "detach"],
+    [TUG_ACTIONS.FIRST_TURN, "session.firstTurn", "detach"],
+    [TUG_ACTIONS.LAST_TURN, "session.lastTurn", "detach"],
+    [TUG_ACTIONS.OPEN_COMMAND_PICKER, "session.commandPicker", "detach"],
+    [TUG_ACTIONS.CYCLE_FOCUS_MODE, "session.cycleFocusMode", "detach"],
+    [TUG_ACTIONS.SHOW_DEVTOOLS, "maker.devTools", "keep"],
+  ];
+
+  test("each drives its item and records its disabled-state chord", () => {
+    for (const [id, menuItemId, disabled] of PROMOTED) {
+      const entry = COMMANDS_BY_ID.get(id);
+      expect(entry, `${id} is in the table`).toBeDefined();
+      expect(entry?.menuItemId, `${id} drives ${menuItemId}`).toBe(menuItemId);
+      expect(entry?.disabledChord, `${id} decided its disabled-state chord`).toBe(disabled);
+    }
+  });
+
+  test("each publishes a gate, so the item is not left to the default-true tier", () => {
+    for (const [id] of PROMOTED) {
+      expect(COMMANDS_BY_ID.get(id)?.mirrored, `${id} is mirrored`).toBe(true);
+    }
+  });
+
+  test("each marks the binding the native menu is to carry", () => {
+    for (const [id] of PROMOTED) {
+      const bindings = COMMANDS_BY_ID.get(id)?.bindings ?? [];
+      expect(bindings.length, `${id} still has its chord`).toBeGreaterThan(0);
+      expect(
+        bindings.some((b) => b.menuEligible === true),
+        `${id} names a menu-eligible binding for the sweep to apply`,
+      ).toBe(true);
+    }
+  });
+
+  test("a detaching command is one that can actually dim", () => {
+    // "detach" only means anything on an item that validates disabled
+    // sometimes; on an always-enabled item it is a promise nothing tests.
+    for (const [id, , disabled] of PROMOTED) {
+      if (disabled !== "detach") continue;
+      const entry = COMMANDS_BY_ID.get(id);
+      const gateable =
+        entry?.validate !== undefined ||
+        entry?.routing === "key-card" ||
+        entry?.routing === "first-responder";
+      expect(gateable, `${id} has a gate that can answer false`).toBe(true);
+    }
+  });
+
+  test("the slot commands stayed chord-only", () => {
+    // ⌘1–⌘9 are deliberately unpromoted: nine Window-menu items would take
+    // nine digit chords out of the JS funnel at once, above every surface
+    // that wants its digits.
+    for (let n = 1; n <= 9; n += 1) {
+      const entry = COMMANDS_BY_ID.get(`${TUG_ACTIONS.MOVE_TO_SLOT}:${n}`);
+      expect(entry?.menuItemId, `slot ${n} has no menu item`).toBeUndefined();
+      expect(entry?.bindings?.length, `slot ${n} keeps its chord`).toBe(1);
+    }
+  });
+
+  test("no menu-eligible binding shares a chord with another command", () => {
+    // The seed of the collision lint: a promoted chord that another entry
+    // also claims is a chord one of them silently loses.
+    const key = (b: { chord: { key: string; ctrl?: boolean; meta?: boolean; shift?: boolean; alt?: boolean } }) =>
+      [b.chord.key, b.chord.ctrl, b.chord.meta, b.chord.shift, b.chord.alt].join("|");
+    const eligible = new Map<string, string>();
+    const collisions: string[] = [];
+    for (const entry of COMMANDS) {
+      for (const binding of entry.bindings ?? []) {
+        if (binding.menuEligible !== true) continue;
+        const k = key(binding);
+        const owner = eligible.get(k);
+        if (owner !== undefined) collisions.push(`${k}: ${owner} and ${entry.id}`);
+        eligible.set(k, entry.id);
+      }
+    }
+    expect(collisions).toEqual([]);
+
+    for (const entry of COMMANDS) {
+      for (const binding of entry.bindings ?? []) {
+        if (binding.menuEligible === true) continue;
+        const owner = eligible.get(key(binding));
+        if (owner !== undefined && owner !== entry.id) {
+          collisions.push(`${entry.id} is shadowed by menu-eligible ${owner}`);
+        }
+      }
+    }
+    expect(collisions).toEqual([]);
+  });
+});

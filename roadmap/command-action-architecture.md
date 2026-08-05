@@ -843,10 +843,10 @@ Both smell like one cause — a synthesized command-modified chord not landing �
 | #step-13 | The commands mirror block, end to end | done | `648c83117` |
 | #step-14 | Populate validate and state; retire the Swift tiers | done | `4849d4e3a` |
 | #step-15 | Converge TugButton, the context menus, and the theme push | done | `bbbe29b0f` |
-| #step-16 | Promote the chord-only commands to menu items | pending | — |
-| #step-17 | Give the control-frame-only commands chain identities | pending | — |
-| #step-18 | The keymap registry, chord format, and resolveChord | pending | — |
-| #step-19 | Stage 1 and the static map read the registry | pending | — |
+| #step-16 | Promote the chord-only commands to menu items | done | `0abe0d9ee` |
+| #step-17 | Give the control-frame-only commands chain identities | done | `1d08545d3` |
+| #step-18 | The keymap registry, chord format, and resolveChord | done | `1e682614e` |
+| #step-19 | Stage 1 and the static map read the registry | done | `9e8e81e1e` |
 | #step-20 | The Swift chord sweep | pending | — |
 | #step-21 | Migrate or classify the raw capture listeners; derive displayed chords | pending | — |
 | #step-22 | Keymap overrides in tugbank | pending | — |

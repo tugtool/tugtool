@@ -171,6 +171,12 @@ export interface IDeckManagerStore {
   centerPane: (cardId: string) => void;
 
   /**
+   * Rearrange every free-floating pane on the canvas — overlapped from the
+   * top-left, or laid out side by side. Window ▸ Cascade / Tile.
+   */
+  arrangeCards: (mode: "cascade" | "tile") => void;
+
+  /**
    * Show the Lens: activate the existing Lens card if one exists, else
    * create the anchored rail pane hosting a fresh Lens card at the
    * persisted reopen width. Returns the Lens card id, or null when the

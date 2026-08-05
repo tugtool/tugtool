@@ -128,14 +128,51 @@ describe("target routing", () => {
 describe("registry routing", () => {
   test("lands on the handler registerAction holds, with the frame's payload", () => {
     const seen: Array<Record<string, unknown>> = [];
-    registerAction("open-quickly", (payload) => { seen.push(payload); });
+    registerAction("next-theme", (payload) => { seen.push(payload); });
 
-    expect(dispatchCommand("open-quickly", { action: "open-quickly" })).toBe(true);
-    expect(seen).toEqual([{ action: "open-quickly" }]);
+    expect(dispatchCommand("next-theme", { action: "next-theme" })).toBe(true);
+    expect(seen).toEqual([{ action: "next-theme" }]);
   });
 
   test("an unregistered body is unhandled", () => {
-    expect(dispatchCommand("open-quickly")).toBe(false);
+    expect(dispatchCommand("next-theme")).toBe(false);
+  });
+});
+
+describe("a control frame's named parameters reach a chain handler", () => {
+  test("the frame's own fields become the ActionEvent value", () => {
+    // `sendControl(action, params:)` puts its parameters at the top level of
+    // the frame rather than under `value`, because that is the wire the
+    // registered handlers were written against. A command that has since
+    // moved onto a responder still has to receive them.
+    let seen: unknown = "unset";
+    const chain = chainWith({
+      id: "canvas",
+      parentId: null,
+      actions: { [TUG_ACTIONS.FOCUS_PANE]: (event) => { seen = event.value; } },
+    });
+    chain.makeFirstResponder("canvas");
+
+    expect(
+      dispatchCommand(TUG_ACTIONS.FOCUS_PANE, { action: "focus-pane", paneId: "p1" }),
+    ).toBe(true);
+    // The envelope is stripped; the parameters are not.
+    expect(seen).toEqual({ paneId: "p1" });
+  });
+
+  test("an explicit value still wins over the frame's other fields", () => {
+    let seen: unknown = "unset";
+    const chain = chainWith({
+      id: "canvas",
+      parentId: null,
+      actions: { [TUG_ACTIONS.OPEN_FILE]: (event) => { seen = event.value; } },
+    });
+    chain.makeFirstResponder("canvas");
+
+    expect(
+      dispatchCommand(TUG_ACTIONS.OPEN_FILE, { action: "open-file", value: "/tmp/x", path: "/ignored" }),
+    ).toBe(true);
+    expect(seen).toBe("/tmp/x");
   });
 });
 
