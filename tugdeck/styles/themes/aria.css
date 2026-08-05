@@ -6,6 +6,18 @@ body {
      selection, cursors, spinners, tab underlines, color-well) resolves here. */
   --tugx-accent: --tug-color(orange, l: 755, c: 1000);
 
+  /* The container focus wash — what an item-group container (list, accordion,
+     radio / choice / option group, tab bar) wears while it holds the keyboard.
+     `-tint` is the hue the container lifts TOWARD, `-strength` how far it
+     lifts. The pair resolves opaquely against the surface the container sits
+     on, so the lift is the same designed step on every ground; a role-bearing
+     group tints toward its own role colour by this same strength. A light
+     theme carries a few more points than a dark one — the same lift over a
+     pale ground moves less. Tune both by eye, per theme. See
+     `styles/focus-ring.css`. */
+  --tugx-focus-container-wash-tint: var(--tugx-accent);
+  --tugx-focus-container-wash-strength: 10%;
+
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
   --tug-motion-duration-glacial: calc(500ms * var(--tug-timing));

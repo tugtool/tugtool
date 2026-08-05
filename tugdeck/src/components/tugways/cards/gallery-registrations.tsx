@@ -76,8 +76,6 @@ import { GalleryListView } from "./gallery-list-view";
 import { GalleryListViewFilter } from "./gallery-list-view-filter";
 import { GalleryListViewFocus } from "./gallery-list-view-focus";
 import { GalleryFocusLanguage } from "./gallery-focus-language";
-import { GalleryFocusWash } from "./gallery-focus-wash";
-import { GallerySelectionWash } from "./gallery-selection-wash";
 import { GalleryCycleDemo } from "./gallery-cycle-demo";
 import { GalleryListViewHeaders } from "./gallery-list-view-headers";
 import { GalleryTugListRow } from "./gallery-tug-list-row";
@@ -952,42 +950,11 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.architecture,
   });
 
-  // Design spike for the container focus WASH — the alpha ramp, the source-token
-  // comparison, the within ratio, and an A/B of the shipped ring against the
-  // proposed wash on real `TugListView` instances. Judged by eye in BOTH themes;
-  // the light ground is what constrains the value. Backs
-  // `roadmap/focus-language-wash.md` [Q01]/[Q02]; retire the card once the value
-  // lands in `focus-ring.css`.
-  registerCard({
-    componentId: "gallery-focus-wash",
-    contentFactory: (_cardId) => <GalleryFocusWash />,
-    defaultMeta: { title: "Focus Wash (spike)", icon: "List", closable: true },
-    family: "maker",
-    acceptsFamilies: ["maker"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.architecture,
-  });
-
-  // Design spike for the committed-SELECTION mark — the counterpart to the focus
-  // wash above. The alpha ramp, the source-token comparison, six candidate
-  // treatments, the cursor-meets-selection collision a `singleSelect` picker
-  // creates on every keystroke, the unfocused-list case, and an A/B of the
-  // shipped slab against the candidate on real `TugListView` + `TugListRow`.
-  // Judged by eye in BOTH themes; retire the card once the treatment lands in
-  // `tug-list-row.css`.
-  registerCard({
-    componentId: "gallery-selection-wash",
-    contentFactory: (_cardId) => <GallerySelectionWash />,
-    defaultMeta: {
-      title: "Selection Wash (spike)",
-      icon: "List",
-      closable: true,
-    },
-    family: "maker",
-    acceptsFamilies: ["maker"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.architecture,
-  });
+  // The `Focus Wash` and `Selection Wash` spike cards stood here. Both landed:
+  // the container wash is a theme-authored step in `focus-ring.css` + the theme
+  // files, the committed selection is an opaque ground plus a wash in
+  // `tug-list-row.css`. A spike card is scaffolding for a decision, and the
+  // decisions are made — the shipped surfaces are where these are judged now.
 
   // Keyboard-focus-cycling app-test fixture for the `useCycleMode` primitive
   // (⌥⇥ toggles a trapped cycle scope; Tab wraps the stops; toggle off restores

@@ -39,6 +39,9 @@
   column-gap: 4px;
   width: fit-content;
   background-color: var(--tug7-surface-segment-primary-normal-plain-rest);
+  /* Publishes its own track as the surface its focus wash lifts off — the same
+     self-publication `tug-choice-group.css` documents. */
+  --tugx-ambient-surface: var(--tug7-surface-segment-primary-normal-plain-rest);
   border: 1px solid var(--tug7-element-segment-border-normal-plain-rest);
   padding: 2px;
   user-select: none;

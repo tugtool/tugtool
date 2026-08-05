@@ -570,6 +570,12 @@ body {
   flex: 1;
   overflow: auto;
   background-color: var(--tugx-pane-bg);
+  /* The pane content area is the surface nearly every card is painted on, so
+     it publishes it: a container inside a card that marks keyboard focus with
+     a wash lifts off THIS, and a selected list row lays its selection over it.
+     Single writer, many readers — see the contract note in `tug-list-row.css`.
+     A card that paints its own surface over this one publishes that in turn. */
+  --tugx-ambient-surface: var(--tugx-pane-bg);
   min-height: 0; /* needed for flex children to allow scroll */
   /* Explicitly none — do not rely on inheritance from body through
      intermediate elements. Individual content components opt in to

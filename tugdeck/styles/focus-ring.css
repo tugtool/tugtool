@@ -168,22 +168,41 @@ body {
      Key (cobalt / blue), the container wash is Accent (orange), so a strong
      wash can never be misread as selection. Keep them apart in any new theme.
 
-     THE VALUES ARE THE MINIMUM THAT READS, and that is deliberate. They were
-     landed by eye on the `gallery-focus-wash` spike card, which ramps eight
-     alphas across the three grounds a container actually sits on, in both
-     modes. In each mode the lowest rung that registers is also the rung that
-     reads best — the wash does not want headroom above it. By 15% the wash has
-     begun reading as a FILLED SURFACE rather than a lit one, which is the
-     failure this whole design exists to avoid. Raising these is the failure
-     direction; if a container reads as unmarked, look at what sits on top of
-     it before reaching for the alpha.
+     THE WASH IS A DESIGNED STEP OFF THE SURFACE, NOT A FIXED COLOUR. Each
+     theme authors the two knobs below — which hue the container lifts toward
+     (`-tint`) and how far it lifts (`-strength`) — and the formula resolves
+     them against the surface the container actually sits on, published by its
+     host as `--tugx-ambient-surface`. So a focused list lifts by the same
+     designed amount on a sheet, in a Lens well, or on the canvas, instead of
+     landing on one absolute colour that is a whisper on one ground and a slab
+     on another. The knobs live in the theme files because they are a design
+     decision per theme, not one number the language imposes on all six; the
+     light themes carry a few more points to clear their pale ground, and they
+     now say so themselves rather than through a mode override here.
 
-     The two modes genuinely differ — light needs a few more points to clear
-     its pale ground — so the alpha is a knob of its own and the light override
-     moves only it. Holding the alpha separately from the colour is also what
-     lets `buildRoleStyle` inject a role-resolved wash inline and still pick up
-     the per-mode strength: an inline style cannot carry a media/attribute
-     variant, but it can read an inherited custom property. */
+     The result is OPAQUE, and that is the point of resolving against the
+     ambient surface rather than against `transparent`. A translucent mark is a
+     mark anything underneath can shine through: the row selection wash used to
+     composite with this one and come out a muddy third colour nobody chose
+     (see `tug-list-row.css`). An opaque step is the same pixels — mixing a
+     tint at X% with `transparent` and painting it over ground G yields exactly
+     what mixing it with G opaquely does — with none of the compositing
+     hazard. The `transparent` fallback below preserves that identity for a
+     host that publishes no surface: those containers keep painting the
+     translucent wash they always did, pixel for pixel.
+
+     THE STRENGTHS ARE THE MINIMUM THAT READS, and that is deliberate. Past
+     roughly 15% the wash begins reading as a FILLED SURFACE rather than a lit
+     one, which is the failure this whole design exists to avoid. Raising them
+     is the failure direction; if a container reads as unmarked, look at what
+     sits on top of it before reaching for the strength.
+
+     Holding the strength as its own knob is also what lets `buildRoleStyle`
+     inject a role-resolved wash inline and still pick up the theme's strength:
+     an inline style cannot carry a media or attribute variant, but it can read
+     an inherited custom property. A role-bearing group tints toward its own
+     role colour by the same authored amount — the base treatment is designed
+     once and every role wears it. */
   /* THE MOVEMENT CURSOR'S BAR — the element-level mark inside a full-width row
      container. A leading-edge stripe on the cursor row, drawn on the Accent
      axis so it reads distinctly from the Key selection fill it may overlay
@@ -213,22 +232,49 @@ body {
      read a reduced variant, so it is not declared — see the note in each chip
      group's CSS. The global `[data-key-within]` outline below still serves
      containers that are NOT item-groups, which is the case it was written for. */
-  --tugx-focus-container-wash-alpha: 6%;
-  --tugx-focus-container-wash: color-mix(
-    in srgb,
-    var(--tug7-element-global-fill-normal-accent-rest)
-      var(--tugx-focus-container-wash-alpha),
-    transparent
-  );
+  /* The wash itself is NOT declared here — see the rule below `body`. */
 }
 
-/* Light themes carry the container wash a few points stronger to clear their
-   pale ground. `data-theme-mode` rides <html>, but the role-axis colours must
-   resolve on `body` (a `var(--tug7-*)` evaluated at `:root` is above the theme
-   scope and resolves invalid), so the selector needs both parts. Only the
-   alpha moves — the source token and the formula are shared. */
-:root[data-theme-mode="light"] body {
-  --tugx-focus-container-wash-alpha: 10%;
+/* THE WASH IS RESOLVED WHERE IT IS WORN, and it has to be.
+   A custom property's `var()`s are substituted at the element that DECLARES
+   it, and what inherits from there is the already-substituted value. Declared
+   on `body`, this formula's `var(--tugx-ambient-surface)` would resolve
+   against `body` — where nothing publishes a surface — and every container in
+   the app would inherit a wash already flattened against the `transparent`
+   fallback, no matter what its own host published. The mark would silently
+   stay translucent everywhere and the whole point of the step would be lost.
+   (It shipped that way for one build; the app-test caught it.)
+
+   So the declaration rides the engine's own attributes: the wash is resolved
+   on exactly the elements that can wear it, against the surface each of them
+   actually sits on. Those attributes are also the gate every consuming rule
+   already uses, so nothing computes this that would not paint it — which is
+   the other reason not to reach for `*` here, on a canvas whose node counts
+   run to five figures.
+
+   The two knobs are read as `var()` FALLBACKS rather than declared anywhere:
+   a theme declares them on `body`, and a default stated in another `body`
+   rule at equal specificity would be settled by bundle order — silently
+   losing to every theme, or beating one, depending on the import graph. As
+   fallbacks they cannot be shadowed: a theme that says nothing gets the app's
+   shipped default (the accent fill, at the dark-mode strength).
+
+   `buildRoleStyle` writes this same property INLINE on a role-bearing group
+   with the role colour substituted for the tint. An inline style is a
+   declaration on the element itself, so its `var(--tugx-ambient-surface)`
+   resolves against that group's own host — the same resolution this rule
+   gets, arrived at the same way — and inline beats an attribute selector, so
+   the role wins where both apply. */
+:is([data-key-view-kbd], [data-key-within]) {
+  --tugx-focus-container-wash: color-mix(
+    in srgb,
+    var(
+        --tugx-focus-container-wash-tint,
+        var(--tug7-element-global-fill-normal-accent-rest)
+      )
+      var(--tugx-focus-container-wash-strength, 6%),
+    var(--tugx-ambient-surface, transparent)
+  );
 }
 
 :focus-visible {

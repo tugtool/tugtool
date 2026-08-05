@@ -124,6 +124,10 @@ body {
    * the body. */
   margin: 0;
   background: var(--tugx-block-surface);
+  /* The block panel publishes its surface for anything inside it that has a
+     translucent mark to composite — a focused list in a body kind, a selected
+     row. See the contract note in `tug-list-row.css`. */
+  --tugx-ambient-surface: var(--tugx-block-surface);
   /* Every block rounds all four corners — a tool call is its own card, never
    * fused into a run. The radius is on the chrome (the whole header+body
    * panel), so the bottom corners sit at the bottom of whatever is showing —
@@ -154,6 +158,9 @@ body {
    * here as well as painting the region directly. */
   --tugx-block-bg: var(--tugx-block-well-bg);
   background: var(--tugx-block-well-bg);
+  /* The well is a second surface inside the panel, so it re-publishes: content
+     sunk into it composites against the well, not against the panel above. */
+  --tugx-ambient-surface: var(--tugx-block-well-bg);
   /* Ring the well in the SAME hairline the header draws beneath itself
    * (`--tugx-block-strip-border` → `--tugx-block-hairline`). The header's
    * border-bottom already IS the well's top edge, so only the other three sides

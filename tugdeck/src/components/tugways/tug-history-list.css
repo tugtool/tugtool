@@ -89,6 +89,9 @@
 .tug-history-list-commit-detail {
   --tugx-block-bg: var(--tugx-block-well-bg);
   background: var(--tugx-block-well-bg);
+  /* Publishes the well for descendants that composite against what they sit on
+     — see the contract note in `tug-list-row.css`. */
+  --tugx-ambient-surface: var(--tugx-block-well-bg);
   border: 1px solid var(--tugx-block-hairline);
   border-radius: var(--tugx-block-chrome-radius);
   /* Inset from the row's edges so the well reads as a panel under the row

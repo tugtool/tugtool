@@ -35,6 +35,9 @@
   /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
   border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
+  /* A filled box paints its own surface, so it publishes it for descendants
+     that composite against what they sit on — see `tug-list-row.css`. */
+  --tugx-ambient-surface: var(--tug7-surface-global-primary-normal-sunken-rest);
 }
 
 .tug-box-separator {

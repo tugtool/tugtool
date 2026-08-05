@@ -85,6 +85,9 @@ body {
   overflow-y: hidden;
   height: var(--tug-chrome-height);
   background-color: var(--tugx-tab-bar-bg);
+  /* Publishes its own bar surface as the ground its focus wash lifts off — the
+     same self-publication `tug-choice-group.css` documents. */
+  --tugx-ambient-surface: var(--tugx-tab-bar-bg);
   border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
   /* Square corners — the bar sits flush under the title bar's bottom edge. A
      radius here would round the top corners and reveal the pane background

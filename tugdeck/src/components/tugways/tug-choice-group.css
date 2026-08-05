@@ -45,6 +45,12 @@
   column-gap: 4px;
   width: fit-content;
   background-color: var(--tug7-surface-segment-primary-normal-plain-rest);
+  /* The group paints its own track, so it publishes it: the container focus
+     wash it wears resolves against `--tugx-ambient-surface` at this element,
+     and without this it would lift off whatever the HOST publishes while
+     painting over the track instead. A surface-painting element publishes to
+     itself — see the contract note in `tug-list-row.css`. */
+  --tugx-ambient-surface: var(--tug7-surface-segment-primary-normal-plain-rest);
   border: 1px solid var(--tug7-element-segment-border-normal-plain-rest);
   padding: 2px;
   user-select: none;

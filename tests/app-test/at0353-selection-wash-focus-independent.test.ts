@@ -142,6 +142,14 @@ describe.skipIf(!SHOULD_RUN)("at0353 — the selection wash ignores the focus wa
         const focused = await app.evalJS<PaintProbe>(PAINT_PROBE);
         expect(focused?.listHasKeyView).toBe(true);
         expect(focused?.containerWash ?? "none").not.toBe("none");
+        // The wash resolves OPAQUE here, because the picker publishes the
+        // surface it paints and the wash mixes against it rather than against
+        // `transparent`. An alpha term in the serialized value means the
+        // publication was lost somewhere above and the mark is compositing
+        // again — the state every mark stacked over it then inherits.
+        expect(focused?.containerWash ?? "").not.toMatch(
+          /rgba\(|\/\s*0?\.\d/,
+        );
         // The row's own base layer IS the picker's surface — the ground it would
         // have composited against had it stayed translucent. This is the
         // load-bearing assertion: with the ground opaque and equal to the

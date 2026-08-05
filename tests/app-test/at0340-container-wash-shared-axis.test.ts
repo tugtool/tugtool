@@ -19,11 +19,20 @@
  * suite still passes and this one fails.
  *
  * It reads the resolved custom property rather than a painted `backgroundImage`,
- * and that is deliberate: the property resolves on every container whether or
- * not it holds the keyboard, so the six can be compared in one shot without a
+ * and that is deliberate: the six can then be compared in one shot without a
  * six-way Tab dance whose failures would be about focus routing rather than
  * about the axis. The at-rest half — no container paints a mark before the
  * keyboard arrives — comes along for free and is worth having.
+ *
+ * The wash is declared on the engine's own attributes (`focus-ring.css`), not on
+ * `body`, because the formula resolves against the surface each container sits
+ * on and a custom property substitutes its `var()`s at the element that DECLARES
+ * it — declared once high up, every container in the app would inherit one value
+ * flattened against whatever `body` sees. So the token does not exist on a
+ * container at rest, and the probe stamps `data-key-view-kbd` to resolve it,
+ * after reading the at-rest marks and before restoring the DOM. That is a style
+ * question being asked in style terms; where the ENGINE puts that attribute is
+ * at0116–at0121's subject, not this suite's.
  *
  * @covers tugdeck/styles/focus-ring.css
  * @covers tugdeck/src/components/tugways/tug-list-view.css
@@ -72,23 +81,38 @@ function deckShape() {
   };
 }
 
-// For each container: the resolved container-wash token, plus the marks it
-// paints at rest. `getPropertyValue` on a custom property returns the resolved
-// substitution, so two containers reading the same token return byte-identical
-// strings — and a container reading a DIFFERENT token returns a different one
-// even when both happen to land on the same colour.
+// For each container: the marks it paints at rest, then the container-wash
+// token it resolves once it wears the engine's keyboard attribute.
+// `getPropertyValue` on a custom property returns the resolved substitution, so
+// two containers reading the same token return byte-identical strings — and a
+// container reading a DIFFERENT token returns a different one even when both
+// happen to land on the same colour. The rest read comes first, and the
+// attribute is removed before the probe returns, so nothing observes it.
 const AXIS_PROBE = `(function(){
   var groups = ${JSON.stringify(GROUPS.map((g) => ({ id: g.id, sel: g.sel })))};
   return groups.map(function(g){
     var el = document.querySelector('[data-card-id="' + g.id + '"] ' + g.sel);
     if (el === null) return { id: g.id, found: false };
     var cs = getComputedStyle(el);
+    var restOutline = cs.outlineWidth;
+    var restBackgroundImage = cs.backgroundImage;
+    var hadAttr = el.hasAttribute("data-key-view-kbd");
+    if (!hadAttr) el.setAttribute("data-key-view-kbd", "");
+    var lit = getComputedStyle(el);
+    var wash = lit.getPropertyValue("--tugx-focus-container-wash").trim();
+    var tint = lit.getPropertyValue("--tugx-focus-container-wash-tint").trim();
+    var strength = lit
+      .getPropertyValue("--tugx-focus-container-wash-strength")
+      .trim();
+    if (!hadAttr) el.removeAttribute("data-key-view-kbd");
     return {
       id: g.id,
       found: true,
-      wash: cs.getPropertyValue("--tugx-focus-container-wash").trim(),
-      restOutline: cs.outlineWidth,
-      restBackgroundImage: cs.backgroundImage,
+      wash: wash,
+      tint: tint,
+      strength: strength,
+      restOutline: restOutline,
+      restBackgroundImage: restBackgroundImage,
     };
   });
 })()`;
@@ -97,6 +121,8 @@ interface AxisRow {
   id: string;
   found: boolean;
   wash?: string;
+  tint?: string;
+  strength?: string;
   restOutline?: string;
   restBackgroundImage?: string;
 }
@@ -136,25 +162,54 @@ describe.skipIf(!SHOULD_RUN)("AT0340: every item-group container shares one wash
           expect(row.found, `container for card ${row.id} is mounted`).toBe(true);
         }
 
-        // (1) The axis is shared. One resolved value across all six, and it is
-        // actually a value — an unresolved token reads as the empty string, and
-        // a token that resolved invalid would collapse every rule reading it.
+        // (1) The axis is shared — one hue, one strength, across all six.
         //
-        // A custom property is SUBSTITUTED rather than computed to a colour, so
-        // this reads back as the `color-mix()` expression with its `var()`s
-        // filled in, not as `rgb(...)`. That makes the equality below a stronger
-        // check than a colour comparison would be: two containers reading
-        // different tokens that happen to land on the same pixel would still
-        // differ here.
-        const washes = (rows ?? []).map((r) => r.wash ?? "");
-        expect(washes[0]).not.toBe("");
-        expect(washes[0]).toContain("color-mix");
-        expect(washes[0]).toContain("transparent");
-        for (let i = 1; i < washes.length; i += 1) {
+        // The AXIS is what has to match, not the resolved colour. The wash is a
+        // designed step off the surface each container sits on, so a container
+        // that paints its own surface (a choice group's segment track) lifts off
+        // that one while a list lifts off the pane, and their resolved values
+        // differ by exactly that term. What must never differ is the pair the
+        // theme authored: a component that repointed to `--tugx-focus-tint`, or
+        // a host that declared a wash on a component's behalf at its own
+        // strength — the drift this suite exists to catch — moves one of these.
+        const tints = (rows ?? []).map((r) => r.tint ?? "");
+        const strengths = (rows ?? []).map((r) => r.strength ?? "");
+        expect(tints[0]).not.toBe("");
+        expect(strengths[0]).not.toBe("");
+        for (let i = 1; i < tints.length; i += 1) {
           expect(
-            washes[i],
-            `card ${rows?.[i]?.id} resolves the same container wash as card ${rows?.[0]?.id}`,
-          ).toBe(washes[0]);
+            tints[i],
+            `card ${rows?.[i]?.id} lifts toward the same hue as card ${rows?.[0]?.id}`,
+          ).toBe(tints[0]);
+          expect(
+            strengths[i],
+            `card ${rows?.[i]?.id} lifts by the same strength as card ${rows?.[0]?.id}`,
+          ).toBe(strengths[0]);
+        }
+
+        // …and every container resolves a wash built from that axis. A custom
+        // property is SUBSTITUTED rather than computed to a colour, so this
+        // reads back as the `color-mix()` expression with its `var()`s filled
+        // in — which is what lets the theme's tint be found inside it. An
+        // unresolved token would read as the empty string, and a token that
+        // resolved invalid would collapse every rule reading it.
+        for (const row of rows ?? []) {
+          expect(row.wash ?? "", `card ${row.id} resolves a wash`).toContain(
+            "color-mix",
+          );
+          expect(
+            row.wash ?? "",
+            `card ${row.id} lifts toward the authored tint`,
+          ).toContain(tints[0]);
+          // The mix resolves against a real surface, not the `transparent`
+          // fallback: every container here either sits in a pane or paints its
+          // own surface, and both publish. A `transparent` means the
+          // publication was lost and the mark went back to something anything
+          // above it composites through.
+          expect(
+            row.wash ?? "",
+            `card ${row.id} lifts off a published surface`,
+          ).not.toContain("transparent");
         }
 
         // (2) Nothing marks at rest. The keyboard has not reached any of these
