@@ -8,15 +8,26 @@ body {
 
   /* The container focus wash — what an item-group container (list, accordion,
      radio / choice / option group, tab bar) wears while it holds the keyboard.
-     `-tint` is the hue the container lifts TOWARD, `-strength` how far it
-     lifts. The pair resolves opaquely against the surface the container sits
-     on, so the lift is the same designed step on every ground; a role-bearing
-     group tints toward its own role colour by this same strength. A light
-     theme carries a few more points than a dark one — the same lift over a
-     pale ground moves less. Tune both by eye, per theme. See
-     `styles/focus-ring.css`. */
+     It is a two-part step off the surface the container sits on: the ground
+     first SINKS toward `-well` by `-depth`, then the accent `-tint` LIFTS off
+     that sunk ground by `-strength`. Both halves resolve opaquely, so the step
+     is the same designed move on every ground; a role-bearing group tints
+     toward its own role colour off the same sunk ground. Tune all four by eye,
+     per theme — the depth is the safe axis, the tint strength the loud one.
+     See `styles/focus-ring.css`.
+
+     A light theme SINKS TOWARD THE ACCENT, not toward a neutral. On the dark
+     themes the well is a deepened tint hue and the sink reads as recession;
+     over a near-white ground the same move reads as grey, and grey plus a few
+     points of orange is tan — the muddiness this whole treatment exists to
+     avoid, arriving from the light side. Pointing the well at a deepened
+     accent instead makes the recession WARM, so the wash lands on a brighter
+     colour rather than on a dulled one. `-depth` now sets how much colour the
+     band carries, and `-strength` still puts the accent proper on top. */
+  --tugx-focus-container-wash-well: --tug-color(orange, l: 700, c: 500);
+  --tugx-focus-container-wash-depth: 18%;
   --tugx-focus-container-wash-tint: var(--tugx-accent);
-  --tugx-focus-container-wash-strength: 10%;
+  --tugx-focus-container-wash-strength: 6%;
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));

@@ -101,16 +101,23 @@ export function buildRoleStyle(
     style["--tugx-focus-tint"] = `color-mix(in srgb, var(--tug7-surface-toggle-primary-normal-${suffix}-rest) 18%, transparent)`;
     // The container wash follows the role too, or a role-bearing group would
     // wash accent-orange while ringing its own role colour. Only the TINT is
-    // written here: the strength and the ground come from the inherited knobs,
-    // so a role-bearing group and a role-less one lift by the same designed
-    // step off the same surface, and both pick up whatever the live theme
-    // authored — an inline style cannot carry a per-theme or per-mode variant
-    // of its own, but it can read an inherited custom property. The formula is
-    // `focus-ring.css`'s, restated because an inline style has no other way to
-    // substitute one term of it. (The `-tint` line above writes a literal 18%;
-    // that is the leaf mark, a different token, and is left alone.)
+    // written here: the strength and the sunk ground come from the properties
+    // the language already resolved on this element, so a role-bearing group
+    // and a role-less one take the same designed step off the same surface,
+    // and both pick up whatever the live theme authored — an inline style
+    // cannot carry a per-theme or per-mode variant of its own, but it can read
+    // a custom property. The formula is `focus-ring.css`'s, restated because
+    // an inline style has no other way to substitute one term of it. (The
+    // `-tint` line above writes a literal 18%; that is the leaf mark, a
+    // different token, and is left alone.)
+    //
+    // The ground is only declared while the group wears a keyboard attribute —
+    // that is where the language resolves it — and this style is written at
+    // rest too, so it carries the same fallback chain the CSS does. Nothing
+    // reads the wash at rest, but a property that resolves is easier to probe
+    // than one that is guaranteed-invalid half the time.
     style["--tugx-focus-container-wash"] =
-      `color-mix(in srgb, var(--tug7-surface-toggle-primary-normal-${suffix}-rest) var(--tugx-focus-container-wash-strength, 6%), var(--tugx-ambient-surface, transparent))`;
+      `color-mix(in srgb, var(--tug7-surface-toggle-primary-normal-${suffix}-rest) var(--tugx-focus-container-wash-strength, 6%), var(--tugx-focus-container-wash-ground, var(--tugx-ambient-surface, var(--tug7-surface-global-primary-normal-default-rest))))`;
   }
   return style as React.CSSProperties;
 }

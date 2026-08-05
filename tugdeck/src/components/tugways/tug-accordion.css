@@ -222,8 +222,17 @@
   position: absolute;
   inset-block: 0;
   inset-inline-start: 0;
-  width: var(--tugx-focus-cursor-bar-width);
+  /* Bar plus nose, the nose cut out of the extra width — the same shape the
+     list's cursor row draws, from the same knobs. */
+  width: calc(var(--tugx-focus-cursor-bar-width) + var(--tugx-focus-cursor-bar-point));
   background: var(--tugx-focus-cursor-bar-color);
+  clip-path: polygon(
+    0 0,
+    var(--tugx-focus-cursor-bar-width) 0,
+    100% 50%,
+    var(--tugx-focus-cursor-bar-width) 100%,
+    0 100%
+  );
   /* Over any fill the trigger paints, including its hover background. */
   z-index: 1;
 }

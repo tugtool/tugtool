@@ -78,6 +78,7 @@ body {
      references B's tokens"). The old names survive as fallbacks so existing
      consumers that set them keep working. */
   --tugx-list-view-cursor-bar-width:   var(--tugx-focus-cursor-bar-width);
+  --tugx-list-view-cursor-bar-point:   var(--tugx-focus-cursor-bar-point);
   --tugx-list-view-cursor-bar-color:   var(--tugx-focus-cursor-bar-color);
   /* How far in from the row's leading edge the bar starts. Always zero now: the
      container mark is a wash sitting BEHIND the rows, so nothing shares the
@@ -399,8 +400,19 @@ body {
      pseudo-element and generated ahead of the row, so at the default `auto` it
      would paint UNDER the row and vanish on any filled row. */
   z-index: 1;
-  width: var(--tugx-list-view-cursor-bar-width);
+  /* The box is the bar PLUS its nose, and the nose is cut out of the extra
+     width by the clip. Widening the box rather than adding a second element
+     keeps the caret one paint: an `::after` triangle would have to track the
+     bar's colour, its inset, and the row's height independently. */
+  width: calc(var(--tugx-list-view-cursor-bar-width) + var(--tugx-list-view-cursor-bar-point));
   background: var(--tugx-list-view-cursor-bar-color);
+  clip-path: polygon(
+    0 0,
+    var(--tugx-list-view-cursor-bar-width) 0,
+    100% 50%,
+    var(--tugx-list-view-cursor-bar-width) 100%,
+    0 100%
+  );
 }
 .tug-list-view[data-key-view-kbd] .tug-list-view-cell[data-key-cursor]::before,
 .tug-list-view[data-key-within] .tug-list-view-cell[data-key-cursor]::before {

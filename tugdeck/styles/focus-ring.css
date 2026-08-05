@@ -92,10 +92,10 @@
   /* Drag-and-drop accent ring thickness — one knob for every drop affordance
      (editor, composer input area, attachment zone, tab-bar drop targets). */
   --tugx-drop-ring-width: 2px;
-  /* List keyboard-focus width — the leading-edge cursor caret AND the matching
-     container focus ring on lists (TugListView, QuestionDialog options, the dev
-     picker hosts) share this one value, so the ring and the caret read at the
-     same thickness and align at the top-left corner. */
+  /* List container focus-ring width (TugListView, QuestionDialog options, the
+     dev picker hosts). The movement caret used to share this value; it no
+     longer does — it is a different mark with its own weight, and its knobs
+     are `--tugx-focus-cursor-bar-*` on `body` below. */
   --tugx-list-key-ring-width: 2px;
 }
 
@@ -169,33 +169,52 @@ body {
      wash can never be misread as selection. Keep them apart in any new theme.
 
      THE WASH IS A DESIGNED STEP OFF THE SURFACE, NOT A FIXED COLOUR. Each
-     theme authors the two knobs below — which hue the container lifts toward
-     (`-tint`) and how far it lifts (`-strength`) — and the formula resolves
-     them against the surface the container actually sits on, published by its
-     host as `--tugx-ambient-surface`. So a focused list lifts by the same
-     designed amount on a sheet, in a Lens well, or on the canvas, instead of
-     landing on one absolute colour that is a whisper on one ground and a slab
-     on another. The knobs live in the theme files because they are a design
-     decision per theme, not one number the language imposes on all six; the
-     light themes carry a few more points to clear their pale ground, and they
-     now say so themselves rather than through a mode override here.
+     theme authors the knobs below and the formula resolves them against the
+     surface the container actually sits on, published by its host as
+     `--tugx-ambient-surface`. So a focused list takes the same designed step
+     on a sheet, in a Lens well, or on the canvas, instead of landing on one
+     absolute colour that is a whisper on one ground and a slab on another.
+     The knobs live in the theme files because they are a design decision per
+     theme, not one number the language imposes on all six.
+
+     THE STEP HAS TWO PARTS, AND IT NEEDS BOTH — sink, then tint:
+
+       1. SINK. The container deepens toward `-well` by `-depth`: a focused
+          container reads as recessed, the way the Lens's own well does.
+       2. TINT. The accent (`-tint`) then lifts off THAT ground by `-strength`.
+
+     The tint alone was the first shape of this and it did not survive contact
+     with a real surface. An accent laid straight onto a mid-tone ground is a
+     muddy third colour — brio's orange over the picker's sheet came out brown,
+     a hue nobody chose, and the other five were no better for being quieter.
+     What reads is the accent over a DEEPER ground: the same orange over the
+     Lens's well is the mark the design wanted all along. The sink is what
+     makes that ground available on every surface rather than only where a host
+     happened to paint a well. The two parts are separately authored because
+     they answer different questions — how recessed, and how warm — and a theme
+     will want to move one without the other.
 
      The result is OPAQUE, and that is the point of resolving against the
-     ambient surface rather than against `transparent`. A translucent mark is a
-     mark anything underneath can shine through: the row selection wash used to
-     composite with this one and come out a muddy third colour nobody chose
-     (see `tug-list-row.css`). An opaque step is the same pixels — mixing a
-     tint at X% with `transparent` and painting it over ground G yields exactly
-     what mixing it with G opaquely does — with none of the compositing
-     hazard. The `transparent` fallback below preserves that identity for a
-     host that publishes no surface: those containers keep painting the
-     translucent wash they always did, pixel for pixel.
+     ambient surface. A translucent mark is a mark anything underneath can
+     shine through: the row selection wash used to composite with this one and
+     come out a muddy third colour nobody chose (see `tug-list-row.css`).
 
-     THE STRENGTHS ARE THE MINIMUM THAT READS, and that is deliberate. Past
-     roughly 15% the wash begins reading as a FILLED SURFACE rather than a lit
-     one, which is the failure this whole design exists to avoid. Raising them
-     is the failure direction; if a container reads as unmarked, look at what
-     sits on top of it before reaching for the strength.
+     A host that publishes NO surface falls back to the app's default surface
+     rather than to `transparent`. Under the tint-only formula `transparent`
+     was exactly right — mixing a tint at X% with `transparent` and painting
+     it over ground G is pixel-identical to mixing it with G opaquely, so an
+     unpublished host kept the wash it always had. A SINK has no such
+     identity: mixed with `transparent` it is a 35%-alpha dark scrim, which
+     over an unknown ground is both translucent (the hazard) and heavy (the
+     wrong mark). Guessing the standard surface is wrong by a shade at worst
+     when a host forgets to publish; the scrim would be wrong by a mark.
+
+     THE TINT STRENGTH IS THE MINIMUM THAT READS, and that is deliberate. Past
+     roughly 15% the accent stops lighting the container and starts colouring
+     it — a filled surface, which is the failure this whole design exists to
+     avoid. Raising it is the failure direction; if a container reads as
+     unmarked, reach for the DEPTH first. The depth is the safe axis: a deeper
+     ground is still a neutral ground, and it is doing most of the work here.
 
      Holding the strength as its own knob is also what lets `buildRoleStyle`
      inject a role-resolved wash inline and still pick up the theme's strength:
@@ -216,8 +235,25 @@ body {
      `--tugx-list-view-*` token would violate [L20] ("A never overrides,
      aliases, or references B's tokens"), and the token is not the list's
      furniture any more. `tug-list-view.css` keeps its old
-     `--tugx-list-view-cursor-bar-*` names as aliases onto these. */
-  --tugx-focus-cursor-bar-width: var(--tugx-list-key-ring-width);
+     `--tugx-list-view-cursor-bar-*` names as aliases onto these.
+
+     THE CARET IS THE LOUDEST THING ON THE SURFACE, and it is meant to be. It
+     is the one mark that answers "where am I", so it carries the accent at
+     full strength while the container wash around it stays a recession — the
+     eye should land on the caret first and read everything else as ground.
+     That is also why it is wider than the container ring it used to match:
+     the two are different marks answering different questions, and sharing a
+     thickness only ever made the caret quieter than it should be.
+
+     `-point` is how far the nose juts past the bar's flat body. The caret is
+     not a plain stripe: its trailing edge comes to a shallow point at the
+     item's mid-height, tapering from the top edge and from the bottom edge,
+     so it reads as an indicator aimed at the row rather than as a rule beside
+     it. Keep it SMALL — over a tall row that taper is nearly vertical and
+     reads as a subtle bevel, which is the intent; a large value turns the
+     caret into a dart that competes with the content. */
+  --tugx-focus-cursor-bar-width: 4px;
+  --tugx-focus-cursor-bar-point: 3px;
   --tugx-focus-cursor-bar-color: var(--tug7-element-global-fill-normal-accent-rest);
 
   /* There is deliberately NO reduced "within" variant of the wash. The design
@@ -259,13 +295,29 @@ body {
    fallbacks they cannot be shadowed: a theme that says nothing gets the app's
    shipped default (the accent fill, at the dark-mode strength).
 
-   `buildRoleStyle` writes this same property INLINE on a role-bearing group
-   with the role colour substituted for the tint. An inline style is a
-   declaration on the element itself, so its `var(--tugx-ambient-surface)`
-   resolves against that group's own host — the same resolution this rule
-   gets, arrived at the same way — and inline beats an attribute selector, so
-   the role wins where both apply. */
+   `buildRoleStyle` writes the wash INLINE on a role-bearing group with the
+   role colour substituted for the tint. An inline style is a declaration on
+   the element itself, so its `var()`s resolve against that group's own host —
+   the same resolution this rule gets, arrived at the same way — and inline
+   beats an attribute selector, so the role wins where both apply. It reaches
+   for the sunk ground below by name, which is why that half is its own
+   property: the role changes the tint and nothing else, and the recession is
+   the same for every role. */
 :is([data-key-view-kbd], [data-key-within]) {
+  /* Part 1 — the container sinks. */
+  --tugx-focus-container-wash-ground: color-mix(
+    in srgb,
+    var(
+        --tugx-focus-container-wash-well,
+        var(--tug7-surface-global-primary-normal-canvas-rest)
+      )
+      var(--tugx-focus-container-wash-depth, 35%),
+    var(
+      --tugx-ambient-surface,
+      var(--tug7-surface-global-primary-normal-default-rest)
+    )
+  );
+  /* Part 2 — the accent lifts off the sunk ground. */
   --tugx-focus-container-wash: color-mix(
     in srgb,
     var(
@@ -273,7 +325,7 @@ body {
         var(--tug7-element-global-fill-normal-accent-rest)
       )
       var(--tugx-focus-container-wash-strength, 6%),
-    var(--tugx-ambient-surface, transparent)
+    var(--tugx-focus-container-wash-ground)
   );
 }
 
