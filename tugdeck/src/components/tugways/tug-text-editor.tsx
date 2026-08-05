@@ -2031,7 +2031,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       menu: contextMenu,
     } = useTextSurfaceContextMenu({
       adapterRef: cmAdapterRef,
-      capabilities: { canEdit: true },
       // Target-dependent extras: a right-click on a path-bearing atom
       // chip (`<img data-atom-type="file">`) offers "Open in Editor",
       // jumping straight from a prompt mention to the Text card.

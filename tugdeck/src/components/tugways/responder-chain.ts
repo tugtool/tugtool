@@ -202,6 +202,17 @@ export interface ResponderNode<Extra extends string = never> {
   canHandle?: (action: TugAction<Extra>) => boolean;
   validateAction?: (action: TugAction<Extra>) => boolean;
   /**
+   * Optional display-state hook, the sibling of `validateAction`. Answers
+   * the action's current *state* rather than its availability: a boolean
+   * for a checkmark or toggle, a string for a value a caller narrows
+   * itself (the current permission mode, the current composer route).
+   *
+   * Walked exactly like `validateAction` — the first node that handles the
+   * action terminates the walk and answers. `undefined` means "no state to
+   * show". Never consulted during dispatch.
+   */
+  queryActionState?: (action: TugAction<Extra>) => boolean | string | undefined;
+  /**
    * Optional tier tag. Consumed by `getKeyResponderOfKind` to find the
    * nearest ancestor of a given tier from the current first responder.
    * Untagged responders are skipped during the walk. Most responders
@@ -911,21 +922,85 @@ export class ResponderChainManager {
    * Returns false if no responder can handle the action.
    */
   validateAction<Extra extends string = never>(action: TugAction<Extra>): boolean {
-    let currentId: string | null = this.firstResponderId;
+    const node = this.findValidationResponder(this.firstResponderId, action);
+    if (!node) return false;
+    return node.validateAction ? node.validateAction(action as TugAction) : true;
+  }
+
+  /**
+   * Query the action's current display state — checkmark, toggle, or a
+   * value string ([P07] of the command-funnel plan). Walks from the first
+   * responder exactly like {@link validateAction}: the first node that
+   * handles the action terminates the walk and answers its
+   * `queryActionState`.
+   *
+   * Answers `undefined` when no responder handles the action, and when the
+   * handling responder registers no `queryActionState` — "nothing to show"
+   * is one answer, not two.
+   */
+  queryActionState<Extra extends string = never>(
+    action: TugAction<Extra>,
+  ): boolean | string | undefined {
+    const node = this.findValidationResponder(this.firstResponderId, action);
+    return node?.queryActionState?.(action as TugAction);
+  }
+
+  /**
+   * `validateAction` asked from the key card's content responder instead of
+   * the first responder, so a key-card-routed command is validated by the
+   * node the dispatch would actually reach.
+   *
+   * Answers `false` when there is no key card or no content-scope responder
+   * inside it — the same "no one to ask" answer `validateAction` gives.
+   */
+  validateActionInKeyCard<Extra extends string = never>(
+    action: TugAction<Extra>,
+  ): boolean {
+    const contentId = this.findKeyCardContentId();
+    if (contentId === null) return false;
+    const node = this.findValidationResponder(contentId, action);
+    if (!node) return false;
+    return node.validateAction ? node.validateAction(action as TugAction) : true;
+  }
+
+  /**
+   * `queryActionState` asked from the key card's content responder — the
+   * state sibling of {@link validateActionInKeyCard}. Answers `undefined`
+   * with no key card.
+   */
+  queryActionStateInKeyCard<Extra extends string = never>(
+    action: TugAction<Extra>,
+  ): boolean | string | undefined {
+    const contentId = this.findKeyCardContentId();
+    if (contentId === null) return undefined;
+    const node = this.findValidationResponder(contentId, action);
+    return node?.queryActionState?.(action as TugAction);
+  }
+
+  /**
+   * Walk upward from `startId` and return the first node that handles the
+   * action by the validation-query rule (actions map, then the advisory
+   * `canHandle`). Null when the walk falls off the root.
+   *
+   * The shared spine of `validateAction` / `queryActionState` and their
+   * key-card variants, so validity and state can never disagree about
+   * which responder is answering.
+   */
+  private findValidationResponder<Extra extends string = never>(
+    startId: string | null,
+    action: TugAction<Extra>,
+  ): ResponderNode | null {
+    let currentId: string | null = startId;
     while (currentId !== null) {
       const node = this.nodes.get(currentId);
       if (!node) break;
       const handles =
         lookupHandler(node, action) !== undefined ||
         (node.canHandle ? node.canHandle(action as TugAction) : false);
-      if (handles) {
-        return node.validateAction
-          ? node.validateAction(action as TugAction)
-          : true;
-      }
+      if (handles) return node;
       currentId = node.parentId;
     }
-    return false;
+    return null;
   }
 
   // ---- Explicit-target dispatch ----

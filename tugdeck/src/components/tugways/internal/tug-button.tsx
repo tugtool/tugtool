@@ -596,6 +596,16 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // meant a responder's `validateAction` was written, registered, and never
   // consulted by any button — a control could not go dim for the reason the
   // menu item beside it did.
+  //
+  // A button does NOT defer to its command's registry `validate` predicate,
+  // and the reason is scope. Those predicates answer for a MENU item, so
+  // they are written against the frontmost card — `interrupt-session` is
+  // enabled when the frontmost session card has a turn to interrupt. A
+  // button asks about the card it lives in. Handing a background card's Stop
+  // button the frontmost card's answer would dim it for a turn running
+  // somewhere else. Both surfaces bottom out in the same responder-registered
+  // `validateAction`; they differ only in which node they ask, which is
+  // exactly what makes each one right for its own question.
   // [D07] nodeCanHandle for per-node capability query
   const effectiveValidationTarget = target ?? parentId;
   const chainCanHandle = chainActive && effectiveValidationTarget !== null

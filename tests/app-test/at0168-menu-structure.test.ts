@@ -27,7 +27,18 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
+import { launchTugApp, type App } from "./_harness";
+
+/**
+ * The item's validated enabled state, asserting it exists first. Reading
+ * `.enabled` off the raw result does not type-check: `menuItemState` returns
+ * a discriminated union, and a missing item carries no state at all.
+ */
+async function itemEnabled(app: App, identifier: string): Promise<boolean> {
+  const state = await app.menuItemState(identifier);
+  expect(state.found, `${identifier} present in the menu`).toBe(true);
+  return state.found ? state.enabled : false;
+}
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -228,30 +239,28 @@ describe.skipIf(!SHOULD_RUN)("AT0168: menu structure contract", () => {
         // At the default page zoom: Actual Size has nowhere to go, Zoom In
         // and Zoom Out do. (No document surface is frontmost on a fresh
         // deck, so the page-zoom bounds are the live gate.)
-        const actualSize = await app.menuItemState("view.actualSize");
-        expect(actualSize.found, "view.actualSize present once the menu updates").toBe(true);
-        expect(actualSize.enabled, "Actual Size dark at 100%").toBe(false);
-        expect((await app.menuItemState("view.zoomIn")).enabled, "Zoom In live at 100%").toBe(true);
-        expect((await app.menuItemState("view.zoomOut")).enabled, "Zoom Out live at 100%").toBe(true);
+        expect(await itemEnabled(app, "view.actualSize"), "Actual Size dark at 100%").toBe(false);
+        expect(await itemEnabled(app, "view.zoomIn"), "Zoom In live at 100%").toBe(true);
+        expect(await itemEnabled(app, "view.zoomOut"), "Zoom Out live at 100%").toBe(true);
 
         // The hidden ⌘= alias tracks its visible sibling.
         expect(
-          (await app.menuItemState("view.zoomInAlias")).enabled,
+          await itemEnabled(app, "view.zoomInAlias"),
           "the ⌘= alias tracks Zoom In",
         ).toBe(true);
 
         // About and Settings both open a card; the harness only reaches this
         // point on a live frontend, so both validate enabled here. Their
         // build-time `isEnabled = false` never gated anything.
-        expect((await app.menuItemState("app.about")).enabled, "About live once ready").toBe(true);
-        expect((await app.menuItemState("app.settings")).enabled, "Settings live once ready").toBe(true);
+        expect(await itemEnabled(app, "app.about"), "About live once ready").toBe(true);
+        expect(await itemEnabled(app, "app.settings"), "Settings live once ready").toBe(true);
 
         // Open Recent is dark on a deck that has opened no files. The parent
         // carries AppKit's `submenuAction:`, so no validator answers for it —
         // its enablement is the submenu's contents, and an empty MRU builds
         // nothing but a disabled placeholder.
         expect(
-          (await app.menuItemState("file.openRecent")).enabled,
+          await itemEnabled(app, "file.openRecent"),
           "Open Recent dark with an empty MRU",
         ).toBe(false);
       } catch (err) {

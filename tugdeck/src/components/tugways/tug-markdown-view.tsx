@@ -1192,6 +1192,13 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       [TUG_ACTIONS.PASTE]: handlePaste,
       [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
     },
+    // The mutating verbs are absorbed here so they stop at a read-only
+    // surface instead of walking up to something that would perform them —
+    // but absorbing is not handling, and every surface that shows these
+    // commands asks this hook. Without it the native Edit menu lights Cut
+    // and Paste over a view that will never do either.
+    validateAction: (action) =>
+      action !== TUG_ACTIONS.CUT && action !== TUG_ACTIONS.PASTE,
   });
 
   // ---- Right-click menu via shared hook ----
@@ -1212,7 +1219,6 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     menu: contextMenuNode,
   } = useTextSurfaceContextMenu({
     adapterRef: null,
-    capabilities: { canEdit: false },
     hasSelectionOverride: () => {
       if (selectAllActiveRef.current) return true;
       const blockContainer = blockContainerRef.current;

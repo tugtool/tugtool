@@ -529,6 +529,13 @@ export interface CommandEntry {
   /** The NSMenuItem identifier this command drives ([P02]). Absent for
    *  chord-only / palette-only commands. */
   readonly menuItemId?: string;
+  /** Publish this item's gate in the menuState `commands` block ([P13]).
+   *  Per item because the migration is per item: an entry is mirrored in
+   *  the same change that deletes its hand-rolled Swift tier, so exactly
+   *  one definition of its enablement is ever live. An entry with no
+   *  answer of its own must not be mirrored — a default-true gate would
+   *  silently light an item its tier was gating. */
+  readonly mirrored?: boolean;
   /** Default bindings. A LIST from day one ([P08], brief §G.5.2). */
   readonly bindings?: readonly CommandBinding[];
   /** Validity override. Chain-routed entries default to the chain walk ([P06]). */
@@ -832,10 +839,10 @@ Both smell like one cause — a synthesized command-modified chord not landing �
 | #step-9 | Give ids to the store verbs and raw-string dispatches | done | `be37da9b8` |
 | #step-10 | Route the direct-call emitters through the funnel | done | `f463d85e5` |
 | #step-11 | Integration checkpoint — funnel #1 is behavior-neutral | done | `3c520c817` |
-| #step-12 | queryActionState and key-card-scoped validation | pending | — |
-| #step-13 | The commands mirror block, end to end | pending | — |
-| #step-14 | Populate validate and state; retire the Swift tiers | pending | — |
-| #step-15 | Converge TugButton, the context menus, and the theme push | pending | — |
+| #step-12 | queryActionState and key-card-scoped validation | done | `783e206f7` |
+| #step-13 | The commands mirror block, end to end | done | `648c83117` |
+| #step-14 | Populate validate and state; retire the Swift tiers | done | `4849d4e3a` |
+| #step-15 | Converge TugButton, the context menus, and the theme push | done | `bbbe29b0f` |
 | #step-16 | Promote the chord-only commands to menu items | pending | — |
 | #step-17 | Give the control-frame-only commands chain identities | pending | — |
 | #step-18 | The keymap registry, chord format, and resolveChord | pending | — |

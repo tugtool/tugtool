@@ -812,7 +812,6 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     menu: hookMenu,
   } = useTextSurfaceContextMenu({
     adapterRef,
-    capabilities: { canEdit: true },
   });
 
   // Native mousedown listener: stop the secondary-click selection clobber at the

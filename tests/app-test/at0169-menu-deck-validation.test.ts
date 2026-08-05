@@ -105,7 +105,8 @@ async function waitMenuKeyEquivalent(
   const deadline = Date.now() + timeoutMs;
   let last: string | undefined;
   while (Date.now() < deadline) {
-    last = (await app.menuItemState(identifier)).keyEquivalent;
+    const state = await app.menuItemState(identifier);
+    last = state.found ? state.keyEquivalent : undefined;
     if (last === want) return last;
     await new Promise((r) => setTimeout(r, 100));
   }
@@ -252,8 +253,9 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
         // would make ⌘R ambiguous; neither holding it is the depth ≤ 1 state.
         const cycle = await waitMenuKeyEquivalent(app, "window.cycleStack", "r");
         expect(cycle, "Cycle Stack owns ⌘R by default once the stack is deep").toBe("r");
+        const reveal = await app.menuItemState("window.revealStack");
         expect(
-          (await app.menuItemState("window.revealStack")).keyEquivalent,
+          reveal.found ? reveal.keyEquivalent : undefined,
           "Reveal Stack stays mouse-only while Cycle Stack owns the chord",
         ).toBe("");
       } catch (err) {

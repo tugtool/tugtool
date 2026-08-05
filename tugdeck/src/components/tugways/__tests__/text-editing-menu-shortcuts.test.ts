@@ -46,7 +46,7 @@ function formatBinding(b: {
 }
 
 describe("text-editing menu shortcut hints", () => {
-  const entries = buildTextEditingMenuItems({ hasSelection: true, canEdit: true });
+  const entries = buildTextEditingMenuItems({ hasSelection: true });
 
   test("every hint matches its expectation", () => {
     for (const [action, want] of EXPECTED_SHORTCUTS) {

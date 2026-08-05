@@ -9,7 +9,7 @@
  *     `validateAction`, but the chain only recomputes on
  *     validation-version changes (focus / register / unregister) —
  *     typing changes the depth without any of those. The plugin asks the
- *     edit-caps publisher to recompute when availability (depth > 0) or
+ *     menu-caps publisher to recompute when availability (depth > 0) or
  *     the menu labels change — not on every keystroke: a continued
  *     typing run alters neither, so it publishes nothing. The publisher
  *     additionally diffs the serialized payload, so even a redundant
@@ -36,7 +36,7 @@ import type { ViewUpdate } from "@codemirror/view";
 import { redoDepth, undoDepth } from "@codemirror/commands";
 
 import {
-  requestEditMenuStateRefresh,
+  requestMenuStateRefresh,
   setEditUndoLabels,
 } from "@/lib/host-menu-state";
 
@@ -87,7 +87,7 @@ export const undoMenuStatePlugin: Extension = ViewPlugin.fromClass(
       const published = `${this.stacks.done.length > 0}|${undoLabel}|${this.stacks.undone.length > 0}|${redoLabel}`;
       if (published !== this.lastPublished) {
         this.lastPublished = published;
-        requestEditMenuStateRefresh();
+        requestMenuStateRefresh();
       }
     }
 

@@ -655,7 +655,6 @@ export function useTranscriptCellMenu({
     menu,
   } = useTextSurfaceContextMenu({
     adapterRef,
-    capabilities: { canEdit: false },
     extraEntries,
     hideStandardItems,
     suppressSelectionChange,

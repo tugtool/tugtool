@@ -30,6 +30,7 @@ import React, {
 } from "react";
 import { putTheme } from "../settings-api";
 import { registerThemeSetter, registerThemeGetter } from "../action-dispatch";
+import { publishActiveTheme } from "../lib/host-menu-state";
 import { notifyThemeChange } from "../theme-tokens";
 import { BASE_THEME_NAME } from "../theme-constants";
 
@@ -261,9 +262,12 @@ export function TugThemeProvider({
   // Stable ref always pointing at the current theme name.
   const themeRef = useRef<string>(initialTheme);
 
-  // Keep themeRef current so the getter always returns the latest value.
+  // Keep themeRef current so the getter always returns the latest value, and
+  // mirror the name outward for the host's Theme submenu checkmark — however
+  // the theme changed, including the paths the host cannot see.
   useEffect(() => {
     themeRef.current = theme;
+    publishActiveTheme(theme);
   });
 
   // Register stable wrappers with the action-dispatch system once on mount.

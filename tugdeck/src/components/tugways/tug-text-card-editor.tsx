@@ -1070,7 +1070,6 @@ export const TugTextCardEditor = React.forwardRef<
     menu: contextMenu,
   } = useTextSurfaceContextMenu({
     adapterRef: cmAdapterRef,
-    capabilities: { canEdit: !readOnly },
   });
 
   useLayoutEffect(() => {

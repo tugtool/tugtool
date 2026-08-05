@@ -18,7 +18,7 @@
  *   - Paste as Quote / Paste as Plain Text require an editable surface.
  *   - Select All is always enabled.
  *
- * Consumers pass capability flags (`hasSelection`, `canEdit`) and
+ * Consumers pass the sampled selection and
  * receive an items array shaped like both `TugContextMenu`'s and
  * `TugEditorContextMenu`'s entry types. The two component types are
  * structurally identical for the fields used here, so consumers
@@ -44,10 +44,23 @@
 
 import { TUG_ACTIONS } from "./action-vocabulary";
 import type { TugAction } from "./action-vocabulary";
+import { validateCommandId } from "./command-registry";
+import type { CommandValidationSource } from "./command-registry";
+import { commandValidationSource } from "@/lib/host-menu-state";
 
 /**
- * Capability flags read by `buildTextEditingMenuItems` to decide
- * which of the four items are enabled.
+ * What `buildTextEditingMenuItems` reads to decide which items are enabled.
+ *
+ * Two inputs, and the split is the point. **Editability comes from the
+ * chain** — the same `validateAction` the native Edit menu is gated on, so
+ * the context menu and the menu bar cannot disagree about whether a surface
+ * accepts a paste. **Selection comes from the caller**, sampled when the
+ * menu opens, because it is the one fact the chain deliberately does not
+ * carry: the menu-state mirror republishes on focus and registration
+ * changes, not on caret moves, so a selection-granular answer from the
+ * chain would be stale by the time a menu opened. A context menu is built
+ * at the instant it opens and can read the live selection; the menu bar is
+ * validated from a snapshot and cannot.
  */
 export interface TextEditingMenuCapabilities {
   /**
@@ -57,12 +70,12 @@ export interface TextEditingMenuCapabilities {
    */
   hasSelection: boolean;
   /**
-   * True iff the menu's host accepts text mutations. Editable
-   * substrates (CodeMirror editor, contenteditable) pass `true`;
-   * read-only surfaces (transcript view) pass `false`. When false:
-   * Cut and Paste are disabled — they have nowhere to land.
+   * Where editability comes from: the command table's validity, asked of
+   * the chain. Defaults to the live source, which is what every in-app
+   * surface wants; a caller passes its own only to build a menu for a
+   * surface other than the focused one.
    */
-  canEdit: boolean;
+  source?: CommandValidationSource;
 }
 
 /**
@@ -84,9 +97,9 @@ export interface TextEditingMenuEntry {
 }
 
 /**
- * Build the universal four-item text-editing menu. Order, labels,
- * and shortcut hints are fixed; disabled state is computed from
- * `caps`.
+ * Build the universal text-editing menu. Order, labels, and shortcut hints
+ * are fixed; disabled state is the command's own validity, narrowed by the
+ * sampled selection for the items that need one.
  *
  * The shortcut strings are authored here and match the bindings by hand,
  * which is why two of them named the wrong chords for as long as they did —
@@ -98,49 +111,56 @@ export interface TextEditingMenuEntry {
 export function buildTextEditingMenuItems(
   caps: TextEditingMenuCapabilities,
 ): TextEditingMenuEntry[] {
-  const { hasSelection, canEdit } = caps;
+  const { hasSelection } = caps;
+  const source = caps.source ?? commandValidationSource();
+  /** The command's own validity, and a selection where one is required. */
+  const off = (command: string, needsSelection: boolean): boolean =>
+    (validateCommandId(command, source) ?? true) === false ||
+    (needsSelection && !hasSelection);
+
   return [
     {
       action: TUG_ACTIONS.CUT,
       label: "Cut",
       shortcut: "⌘X",
-      disabled: !hasSelection || !canEdit,
+      disabled: off(TUG_ACTIONS.CUT, true),
     },
     {
       action: TUG_ACTIONS.COPY,
       label: "Copy",
       shortcut: "⌘C",
-      disabled: !hasSelection,
+      disabled: off(TUG_ACTIONS.COPY, true),
     },
     {
       action: TUG_ACTIONS.COPY_AS_PLAIN_TEXT,
       label: "Copy as Plain Text",
       shortcut: "⌥⇧⌘C",
-      disabled: !hasSelection,
+      disabled: off(TUG_ACTIONS.COPY_AS_PLAIN_TEXT, true),
     },
     {
       action: TUG_ACTIONS.PASTE,
       label: "Paste",
       shortcut: "⌘V",
-      disabled: !canEdit,
+      disabled: off(TUG_ACTIONS.PASTE, false),
     },
     {
       action: TUG_ACTIONS.PASTE_AS_QUOTE,
       label: "Paste as Quote",
       shortcut: "⌥⌘V",
-      disabled: !canEdit,
+      disabled: off(TUG_ACTIONS.PASTE_AS_QUOTE, false),
     },
     {
       action: TUG_ACTIONS.PASTE_AS_PLAIN_TEXT,
       label: "Paste as Plain Text",
       shortcut: "⌥⇧⌘V",
-      disabled: !canEdit,
+      disabled: off(TUG_ACTIONS.PASTE_AS_PLAIN_TEXT, false),
     },
     { type: "separator" },
     {
       action: TUG_ACTIONS.SELECT_ALL,
       label: "Select All",
       shortcut: "⌘A",
+      disabled: off(TUG_ACTIONS.SELECT_ALL, false),
     },
   ];
 }

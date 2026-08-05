@@ -1805,86 +1805,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
-    /// Card count of the focused pane (0 when nothing is focused). Drives
-    /// Close-All-Cards and card-navigation enablement.
-    private var focusedPaneCardCount: Int {
-        menuState.focusedPane?.cardCount ?? 0
-    }
-
-    /// Whether the focused pane's active card is closable (false when
-    /// nothing is focused). Drives Close-Card / Close-Pane enablement.
-    private var focusedPaneActiveCardClosable: Bool {
-        menuState.focusedPane?.closable ?? false
-    }
-
     /// Tolerance for page-zoom bound comparisons. Stepping by 0.1 accumulates
     /// IEEE rounding error, so the Zoom In / Zoom Out / Actual Size gates
     /// compare against the bounds with this slack.
     private let pageZoomEpsilon: CGFloat = 0.005
 
-    /// Whether the focused pane's active card is a session card — the
-    /// card-type gate for the session-card command surfaces (Session items,
-    /// Copy Last Response, Export Transcript, Help shortcuts).
-    private var sessionCardFrontmost: Bool {
-        menuState.activeCard?.component == "session"
-    }
-
     /// Auto-enable hook (`autoenablesItems` is on by default). Consulted
     /// for menu items whose nil-target action resolves to this delegate.
-    /// All enablement is pull-based from the cached MenuState, keyed on
-    /// the item's stable identifier (identity never rides the title).
-    /// Tiers: deck state (close / new-in-pane / card navigation), edit
-    /// capability (Cut / Copy / Paste / Delete / Select All / Undo / Redo
-    /// and the Find items, from the focused responder's edit block — undo
-    /// and redo carry the focused editor's history depth), card type
-    /// (session-card command surfaces), and session state (transcript facts
-    /// from the session block). Anything without a predicate here stays
-    /// enabled.
+    ///
+    /// Enablement is pull-based from the cached MenuState, keyed on the
+    /// item's stable identifier (identity never rides the title). Almost
+    /// every item is answered by the first tier below, from the gate its
+    /// own command published. What remains here are the items whose truth
+    /// is not the frontend's:
+    ///
+    /// - **Host-owned live state.** The View zoom bounds read
+    ///   `window.currentPageZoom`, and Undo / Redo read the web view's
+    ///   NSUndoManager while a native text control is focused.
+    /// - **Host-owned readiness.** About and Settings each open a card, so
+    ///   both wait on the frontend having signalled ready.
+    /// - **Menu structure with no command behind it.** The Permission Mode
+    ///   submenu parent.
+    ///
+    /// Anything without a predicate here stays enabled.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let id = menuItem.identifier?.rawValue else { return true }
 
-        // Session menu: every item needs a frontmost session card (card-type
-        // tier); below that, Focus Prompt works on any session card, Stop
-        // needs an interruptible turn, Rewind needs a bound session with
-        // committed turns, and everything else needs a bound session.
-        if id.hasPrefix("session.") {
-            // Permission-mode radio checkmarks refresh here, during the
-            // validation sweep — AppKit validates every item when its
-            // menu opens (and the harness snapshot runs the same path),
-            // so state-setting inside validateMenuItem is the single
-            // mechanism; no menuNeedsUpdate rebuild is involved.
-            if id.hasPrefix("session.permissionMode."),
-               let mode = menuItem.representedObject as? String {
-                menuItem.state = (mode == menuState.session?.permissionMode) ? .on : .off
-            }
-            guard sessionCardFrontmost else { return false }
-            // The Mode control must not change mid-turn. The whole Permission
-            // Mode submenu — the parent item, every radio, and Cycle (whose
-            // ⌃⌘P key equivalent is validated even while the menu is closed) —
-            // gates on the same `canChangeSettings` (canSubmit) the Z4B chips
-            // do, so a disabled item beeps instead of racing the running turn.
-            if id.hasPrefix("session.permissionMode") {
-                return (menuState.session?.sessionBound ?? false)
-                    && (menuState.session?.canChangeSettings ?? false)
-            }
-            switch id {
-            case "session.focusPrompt":
-                return true
-            case "session.stop":
-                return menuState.session?.canInterrupt ?? false
-            case "session.rewind":
-                return (menuState.session?.sessionBound ?? false) && (menuState.session?.hasTurns ?? false)
-            case "session.toggleChanges":
-                // Verb flips with live visibility (Spec S04); enabled on a bound
-                // session card so the Shade can be summoned / dismissed.
-                menuItem.title = (menuState.session?.changesVisible ?? false) ? "Hide Changes" : "Show Changes"
-                return menuState.session?.sessionBound ?? false
-            case "session.toggleHistory":
-                menuItem.title = (menuState.session?.historyVisible ?? false) ? "Hide History" : "Show History"
-                return menuState.session?.sessionBound ?? false
-            default:
-                return menuState.session?.sessionBound ?? false
-            }
+        // Registry tier, ahead of everything hand-rolled. A command that
+        // publishes a gate has answered for itself — enablement, checkmark,
+        // and dynamic title all come from the one table the frontend
+        // dispatches from, so the item cannot be lit here and dead there.
+        // Items that have not moved yet publish no gate and fall through.
+        if let gate = menuState.commands[id] {
+            if let title = gate.title { menuItem.title = title }
+            if let on = gate.state { menuItem.state = on ? .on : .off }
+            return gate.enabled
+        }
+
+        // The Permission Mode submenu's PARENT item carries no command — it
+        // is menu structure, so no registry entry gates it — while every
+        // item inside it does. It gates on the same `canChangeSettings`
+        // (canSubmit) its contents do, so the whole submenu dims together
+        // and a mode change can never race a running turn.
+        if id == "session.permissionMode" {
+            return (menuState.session?.sessionBound ?? false)
+                && (menuState.session?.canChangeSettings ?? false)
         }
 
         switch id {
@@ -1913,71 +1878,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "view.zoomOut":
             if menuState.document != nil { return true }
             return window.currentPageZoom > MainWindow.minPageZoom + pageZoomEpsilon
-        // Text-card save verbs. Gated on the File menu block,
-        // which rides the payload only while a Text card is frontmost.
-        // Automatic-mode Save must stay enabled whenever writable so its
-        // ⌘S never validates disabled — a disabled matching chord beeps
-        // and never reaches the web view.
-        case "file.save":
-            guard let file = menuState.file else { return false }
-            // Manual mode: a conflict keeps Save ENABLED — it is the
-            // re-entry to the conflict sheet after a Cancel (the write
-            // re-adjudicates and re-presents). Automatic mode keeps the
-            // conflict gate: its flush no-ops on conflict. Mirrors
-            // computeFileMenuGates in host-menu-state.ts.
-            if file.readOnly { return false }
-            return file.mode == "automatic"
-                ? !file.conflict
-                : (file.dirty || file.untitled || file.conflict)
-        case "file.saveAs", "file.saveACopy":
-            return menuState.file != nil
-        // Open Quickly needs a project (the frontmost card's workspace) to
-        // search; disabled when none is open.
-        case "file.openQuickly":
-            return menuState.openQuickly
-        case "file.revertToSaved":
-            guard let file = menuState.file else { return false }
-            return file.dirty && file.hasPath
-        case "file.reloadFromDisk":
-            guard let file = menuState.file else { return false }
-            return file.hasPath
-        // Deck-state tier.
-        case "file.closeCard":
-            return focusedPaneActiveCardClosable
-        case "file.closeAllCardTabs":
-            return focusedPaneCardCount > 1
-        case "maker.newCardInPane":
-            return !menuState.panes.isEmpty
-        // Card / pane navigation. Normally gated on having somewhere to go
-        // (a multi-card pane, or ≥2 panes). The corner case: when the deck is
-        // deselected (a click on the empty canvas — `selectionActive` false)
-        // but a pane exists, all three stay active and re-activate a card, so
-        // the user can recover focus by keyboard or menu. Once a card is
-        // active again they fall back to the normal gate.
-        case "window.previousCard", "window.nextCard":
-            return focusedPaneCardCount > 1
-                || (!menuState.selectionActive && !menuState.panes.isEmpty)
-        case "window.cyclePanes":
-            return menuState.panes.count >= 2
-                || (!menuState.selectionActive && !menuState.panes.isEmpty)
-        // The two slot-stack items take no deselected-deck escape hatch,
-        // unlike the three above. They act on a SPECIFIC pane's stack; with
-        // nothing selected there is no such pane, and picking one for the user
-        // would be a command with a non-obvious target. A free pane and the
-        // Lens hold no slot, and a pane alone in its slot has nowhere to
-        // switch to — all three publish depth 0 or 1 and validate disabled.
-        // Both gate identically whichever one currently holds ⌘R, so the
-        // preference changes the chord and nothing else.
-        case "window.revealStack", "window.cycleStack":
-            return menuState.stackDepth > 1
-        // Edit / Find tier — first-responder edit capabilities, mirrored
-        // from the web responder chain (MenuState.edit). Disabled when no
-        // focused surface handles the action; Find stays disabled until a
-        // find-capable surface is focused (no surface implements it yet).
-        //
         // Undo / Redo: titles AND enablement set here, during the
-        // validation sweep (the sanctioned AppKit pattern, same as the
-        // permission-mode checkmarks; identity never rides the title).
+        // validation sweep (the sanctioned AppKit pattern; identity never
+        // rides the title). They are the one Edit pair the registry does
+        // not gate, because one of their two sources is live AppKit state
+        // the frontend cannot see.
         // Two sources, discriminated by nativeUndoToken:
         //   - Native text control focused (token != 0): the web view's
         //     NSUndoManager is the live truth — canUndo/canRedo and its
@@ -2004,35 +1909,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             menuItem.title = menuState.edit.redoLabel.isEmpty
                 ? "Redo" : "Redo \(menuState.edit.redoLabel)"
             return menuState.edit.redo
-        case "edit.cut":
-            return menuState.edit.cut
-        case "edit.copy":
-            return menuState.edit.copy
-        // Copy as Plain Text shares the copy gate — both need a selection.
-        case "edit.copyAsPlainText":
-            return menuState.edit.copy
-        case "edit.paste":
-            return menuState.edit.paste
-        // Paste variants share the paste gate — both need an editable
-        // surface and nothing else.
-        case "edit.pasteAsQuote", "edit.pasteAsPlainText":
-            return menuState.edit.paste
-        case "edit.delete":
-            return menuState.edit.delete
-        case "edit.selectAll":
-            return menuState.edit.selectAll
-        case "edit.find":
-            return menuState.edit.find
-        case "edit.findNext":
-            return menuState.edit.findNext
-        case "edit.findPrevious":
-            return menuState.edit.findPrevious
-        // Card-type tier.
-        case "file.exportTranscript", "help.shortcuts":
-            return sessionCardFrontmost
-        // Card-type + session-state tiers.
-        case "edit.copyLastResponse":
-            return sessionCardFrontmost && (menuState.session?.hasAssistantMessage ?? false)
         default:
             return true
         }
@@ -2329,15 +2205,17 @@ extension AppDelegate: NSMenuDelegate {
         guard menu === themeMenu else { return }
         menu.removeAllItems()
 
-        // Read the active theme from tugbank on every menu open. tugbank
-        // is the single source of truth, and the web layer changes the
-        // theme on its own (keyboard Next Theme, etc.) without routing
-        // through `selectTheme` — so a cached value would leave the
-        // checkmark stale. Re-reading keeps it correct regardless of how
-        // the theme was last changed.
+        // Which theme is current comes from the push. The web layer changes
+        // the theme by paths this side never sees (keyboard Next Theme, the
+        // Settings pane), so a value cached at selection time would go stale
+        // — which is why this used to re-read tugbank on every open, a
+        // subprocess read on the path that must finish before the menu can
+        // draw. The frontend now republishes on every change instead.
+        // Empty means no push has landed yet; the base theme is what the
+        // frontend boots into, so the checkmark starts there rather than
+        // nowhere.
         activeThemeName =
-            ProcessManager.readTugbank(domain: TugConfig.domain, key: "theme")
-            ?? baseThemeName
+            menuState.activeTheme.isEmpty ? baseThemeName : menuState.activeTheme
 
         // Read theme names directly from shipped CSS files on disk, plus each
         // theme's mode from its header comment. sourceTreePath is the tugtool
@@ -2626,6 +2504,24 @@ struct MenuState {
         )
     }
 
+    /// One menu item's gate, projected from the web command registry and
+    /// keyed on the wire by the item's `NSUserInterfaceItemIdentifier`.
+    ///
+    /// The registry is the frontend's table of user-invocable commands, and
+    /// every fact this struct carries is one the frontend already had to
+    /// know to dispatch the command. Sending them together is what lets the
+    /// validator's first tier be four lines and lets a hand-rolled case be
+    /// deleted the moment its command starts publishing a gate — never both
+    /// at once, so there is one definition of an item's enablement.
+    struct CommandGate {
+        let enabled: Bool
+        /// Checkmark; nil means the item does not participate in the check
+        /// column, and its state is left as constructed.
+        let state: Bool?
+        /// Dynamic title; nil means keep the title the menu was built with.
+        let title: String?
+    }
+
     var panes: [Pane] = []
     var activeCard: ActiveCard?
     var session: Session?
@@ -2635,12 +2531,20 @@ struct MenuState {
     /// that document instead of the whole web view.
     var document: Document?
     var edit: Edit = .disabled
+    /// Per-item gates from the command registry, keyed by item identifier.
+    /// Empty before the first push and for every item that has not moved
+    /// yet — an absent gate means "ask the hand-rolled tier below".
+    var commands: [String: CommandGate] = [:]
     /// Recent-document paths (newest first) for File ▸ Open Recent. The
     /// submenu delegate filters these to files that still exist.
     var recentDocuments: [String] = []
     /// Whether Open Quickly is available — the frontmost card is in a
     /// project. Gates File ▸ Open Quickly.
     var openQuickly: Bool = false
+    /// The active theme's name — the Theme submenu's checkmark. The
+    /// submenu's membership is still a filesystem scan (genuinely dynamic);
+    /// only which one is current rides the push.
+    var activeTheme: String = ""
     /// Whether a card is selected. `false` when the deck is deselected (a
     /// click on the empty canvas cleared the active card) — the card / pane
     /// navigation commands stay active in that state so the user can
@@ -2731,6 +2635,7 @@ struct MenuState {
             recentDocuments = rawRecents
         }
         openQuickly = payload["openQuickly"] as? Bool ?? false
+        activeTheme = payload["activeTheme"] as? String ?? ""
         if let rawEdit = payload["edit"] as? [String: Any] {
             edit = Edit(
                 cut: rawEdit["cut"] as? Bool ?? false,
@@ -2747,6 +2652,21 @@ struct MenuState {
                 findNext: rawEdit["findNext"] as? Bool ?? false,
                 findPrevious: rawEdit["findPrevious"] as? Bool ?? false
             )
+        }
+        if let rawCommands = payload["commands"] as? [String: Any] {
+            for (itemId, rawGate) in rawCommands {
+                guard let gate = rawGate as? [String: Any],
+                      let enabled = gate["enabled"] as? Bool else { continue }
+                // A gate that cannot be read at all is dropped rather than
+                // defaulted: an unreadable gate is not a claim of "enabled",
+                // and dropping it leaves the item on whichever tier still
+                // owns it.
+                commands[itemId] = CommandGate(
+                    enabled: enabled,
+                    state: gate["state"] as? Bool,
+                    title: gate["title"] as? String
+                )
+            }
         }
     }
 }

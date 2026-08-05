@@ -504,9 +504,9 @@ Four things that must be true for this to work:
 
 4. **Handlers read current state through refs, not closures.** `useResponder` registers once at mount and uses a live proxy over `optionsRef.current.actions` to pick up handler identity changes on re-render, so stale-closure bugs in the handler *function identity* are handled by the hook. But if the handler body closes over a stale React state snapshot (`const [tabs] = useState(...)`; `handler uses tabs`), the bug is yours. Use a ref (`tabsRef.current`) for any state the handler reads at dispatch time. This is [L07] and it is the most common chain bug in PRs.
 
-### `canHandle` and `validateAction`
+### `canHandle`, `validateAction`, and `queryActionState`
 
-Both are optional advisory callbacks on the responder node. They are not consulted during dispatch — only during capability queries.
+All three are optional advisory callbacks on the responder node. None is consulted during dispatch — only during capability queries.
 
 - **`canHandle(action)`** lets a responder claim it can handle actions outside its static `actions` map. Used by `DeckCanvas` as a last-resort responder that advertises a broader capability surface than its literal handler set. If omitted, the chain treats the `actions` map as authoritative and skips the advisory branch entirely (which is the path most responders want).
 
@@ -516,7 +516,19 @@ Both are optional advisory callbacks on the responder node. They are not consult
 
 - **`validateAction(action)`** answers "is this action currently enabled?" for UI that wants to gray out a menu item. Defaults to `true` if omitted. Called by the chain's `validateAction` query, which is what `TugEditorContextMenu` uses to dim its own items based on current selection state.
 
-Leave both out unless you know you need them. The audit recommendation in A6 is that the overwhelming majority of responders provide neither; the chain's dispatch/query code has a fast path that skips the advisory branches entirely when they're absent.
+- **`queryActionState(action)`** answers "what does this action currently show?" — `true`/`false` for a checkmark or toggle, a string for a radio family's current value (the permission mode, the composer route), `undefined` for "nothing to show". It walks exactly like `validateAction`: the first node that handles the action terminates the walk and answers, so a responder that handles the action and registers no state hook answers `undefined` rather than deferring to an ancestor's opinion.
+
+  Validity and state are different questions and neither substitutes for the other: **validity is enablement, state is display.** A menu item can be enabled and unchecked, disabled and checked, or both. Neither is consulted during dispatch — a disabled action that is dispatched anyway still runs; the gate is the UI's, not the chain's.
+
+Leave all three out unless you know you need them. The audit recommendation in A6 is that the overwhelming majority of responders provide none of them; the chain's dispatch/query code has a fast path that skips the advisory branches entirely when they're absent.
+
+#### Asking from the key card instead of the first responder
+
+`validateAction` and `queryActionState` walk from the first responder, which is the right question for a command that dispatches there. A **key-card-routed** command does not: it dispatches to the key card's `card-content` responder, so validating it from the first responder would let whatever holds focus answer for a card it isn't in.
+
+`validateActionInKeyCard(action)` and `queryActionStateInKeyCard(action)` walk from that same content node — the one `sendToKeyCard` would reach — and answer `false` / `undefined` when there is no key card or no content-scope responder inside it. Match the query to the command's routing; a mismatch is how a menu item ends up enabled by a responder that will never receive the dispatch.
+
+`validateActionAtNode(nodeId, action)` is the third variant, for a control that dispatches to an explicit target (`TugButton`'s `sendToTarget`): it asks exactly that node, and answers `false` when the node does not handle the action at all.
 
 ### `focus` — substrate-supplied focus callback
 

@@ -111,6 +111,13 @@ export interface UseResponderOptions<Extra extends string = never> {
   /** Per-action enabled-state query. Defaults to true if omitted. */
   validateAction?: (action: TugAction<Extra>) => boolean;
   /**
+   * Per-action display-state query — the checkmark/toggle/value sibling of
+   * `validateAction`. Returns a boolean for a check state, a string for a
+   * current value, `undefined` for "nothing to show". Consulted only by
+   * `queryActionState()` queries, never by dispatch.
+   */
+  queryActionState?: (action: TugAction<Extra>) => boolean | string | undefined;
+  /**
    * Optional tier tag for `getKeyResponderOfKind` walks. Most
    * responders leave this unset; tier-defining nodes opt in (e.g.,
    * `TugCard` passes `kind: "card"`). Captured at mount and stored on
@@ -332,6 +339,9 @@ export function useOptionalResponder<Extra extends string = never>(
   // structural shape changes, which are not expected to happen.
   const hasCanHandleAtMount = useRef(options.canHandle !== undefined);
   const hasValidateActionAtMount = useRef(options.validateAction !== undefined);
+  const hasQueryActionStateAtMount = useRef(
+    options.queryActionState !== undefined,
+  );
   // The tier tag is a structural property of the responder, captured
   // at mount. Changing it later does not re-register; that matches
   // canHandle / validateAction and is the right behavior because a
@@ -445,6 +455,10 @@ export function useOptionalResponder<Extra extends string = never>(
     if (hasValidateActionAtMount.current) {
       node.validateAction = (action: TugAction<Extra>) =>
         optionsRef.current.validateAction?.(action) ?? true;
+    }
+    if (hasQueryActionStateAtMount.current) {
+      node.queryActionState = (action: TugAction<Extra>) =>
+        optionsRef.current.queryActionState?.(action);
     }
     if (kindAtMount.current !== undefined) {
       node.kind = kindAtMount.current;

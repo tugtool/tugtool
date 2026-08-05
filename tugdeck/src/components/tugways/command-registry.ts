@@ -98,15 +98,80 @@ export type CommandRouting =
   | "native";
 
 /**
- * What a validity or state predicate is allowed to ask. Deliberately a
- * narrow interface rather than the whole chain manager: a predicate reads
- * the chain's answers, it does not dispatch.
+ * The menu-relevant facts that live outside the responder chain: which card
+ * is frontmost and what it is currently able to do, how the deck is shaped,
+ * whether Open Quickly has a root.
+ *
+ * Structurally declared here rather than imported so the table keeps its one
+ * dependency. Every field is already a fact the frontend had to publish for
+ * the host to validate a menu at all — this is the same data, read by the
+ * predicate that owns the item instead of by a hand-rolled case.
+ */
+export interface CommandMenuFacts {
+  /** The focused pane's active card is a session card. */
+  readonly sessionCardFrontmost: boolean;
+  /** The frontmost session card's live state; null when none is frontmost. */
+  readonly session: {
+    readonly sessionBound: boolean;
+    readonly canInterrupt: boolean;
+    readonly canChangeSettings: boolean;
+    readonly permissionMode: string;
+    readonly hasAssistantMessage: boolean;
+    readonly hasTurns: boolean;
+    readonly changesVisible: boolean;
+    readonly historyVisible: boolean;
+  } | null;
+  /**
+   * The frontmost Text card's File-menu gates, already reduced from its
+   * block by the one function that owns that matrix; null when no Text card
+   * is frontmost.
+   */
+  readonly fileGates: {
+    readonly save: boolean;
+    readonly saveAs: boolean;
+    readonly saveACopy: boolean;
+    readonly revert: boolean;
+    readonly reload: boolean;
+  } | null;
+  /** Open Quickly has a search root. */
+  readonly openQuickly: boolean;
+  readonly paneCount: number;
+  /** Cards in the focused pane; 0 when nothing is focused. */
+  readonly focusedPaneCardCount: number;
+  /** The focused pane's active card can be closed. */
+  readonly focusedPaneActiveCardClosable: boolean;
+  /** A card is selected — false on a deck deselected by a canvas click. */
+  readonly selectionActive: boolean;
+  /** How many panes share the focused pane's slot. */
+  readonly stackDepth: number;
+}
+
+/** Nothing focused, nothing open — the answer before the first push. */
+export const EMPTY_MENU_FACTS: CommandMenuFacts = {
+  sessionCardFrontmost: false,
+  session: null,
+  fileGates: null,
+  openQuickly: false,
+  paneCount: 0,
+  focusedPaneCardCount: 0,
+  focusedPaneActiveCardClosable: false,
+  selectionActive: false,
+  stackDepth: 0,
+};
+
+/**
+ * What a validity or state predicate is allowed to ask: the chain's answers
+ * and the published menu facts. Deliberately a narrow interface rather than
+ * the whole chain manager — a predicate reads, it does not dispatch — and a
+ * plain value rather than a store read, so every predicate is a pure
+ * function of its inputs and unit-testable without mounting anything.
  */
 export interface CommandValidationSource {
   validateAction(action: string): boolean;
   validateActionInKeyCard(action: string): boolean;
   queryActionState(action: string): boolean | string | undefined;
   queryActionStateInKeyCard(action: string): boolean | string | undefined;
+  readonly menu: CommandMenuFacts;
 }
 
 export interface CommandEntry {
@@ -127,6 +192,19 @@ export interface CommandEntry {
   readonly payload?: unknown;
   /** The `NSMenuItem` identifier this command drives ([P02]). */
   readonly menuItemId?: string;
+  /**
+   * Publish this item's gate — enablement, check state, dynamic title — in
+   * the menuState `commands` block, where the host's validator reads it
+   * ahead of every hand-rolled case ([P13]).
+   *
+   * This is the migration switch, and it is per item on purpose. The host
+   * still hand-rolls a validation tier for the items that have not moved
+   * yet; an item is mirrored in the same change that deletes its tier, so
+   * exactly one definition of its enablement is live at any moment. An
+   * entry with no answer of its own must not be mirrored: a published
+   * default-true gate would silently light an item its tier was gating.
+   */
+  readonly mirrored?: boolean;
   /** Default bindings — a list from day one ([P08]). */
   readonly bindings?: readonly CommandBinding[];
   /** Validity override; chain-routed entries default to the chain walk ([P06]). */
@@ -166,15 +244,76 @@ function chord(
   };
 }
 
+/* ---------------------------------------------------------------------------
+ * Shared predicates
+ *
+ * The session card's command surfaces gate in two tiers — the frontmost card
+ * must be a session card at all, and below that the specific command needs a
+ * bound session, an interruptible turn, or a transcript with turns in it.
+ * Naming the tiers keeps thirty-odd entries from each spelling the same
+ * condition slightly differently.
+ * ------------------------------------------------------------------------- */
+
+/** A session card is frontmost — the card-type tier every Session item needs. */
+function sessionCardFrontmost(chain: CommandValidationSource): boolean {
+  return chain.menu.sessionCardFrontmost;
+}
+
+/** A session card is frontmost and bound to a session. */
+function sessionBound(chain: CommandValidationSource): boolean {
+  return chain.menu.sessionCardFrontmost && (chain.menu.session?.sessionBound ?? false);
+}
+
+/**
+ * The Mode / Model / Effort controls may be changed — the session is idle.
+ * The whole Permission Mode submenu gates on this the same way the composer's
+ * chips do, so a mode change can never race a running turn.
+ */
+function sessionSettingsChangeable(chain: CommandValidationSource): boolean {
+  return sessionBound(chain) && (chain.menu.session?.canChangeSettings ?? false);
+}
+
+/**
+ * A canvas-background click deselects the deck while leaving its panes
+ * standing. The card and pane navigation commands stay live in that state so
+ * the user can re-activate a card by keyboard or menu instead of having to
+ * find one with the mouse.
+ */
+function deckDeselectedWithPanes(chain: CommandValidationSource): boolean {
+  return !chain.menu.selectionActive && chain.menu.paneCount > 0;
+}
+
+/** Somewhere to navigate to: a multi-card pane, or a deck to re-enter. */
+function cardNavigationAvailable(chain: CommandValidationSource): boolean {
+  return chain.menu.focusedPaneCardCount > 1 || deckDeselectedWithPanes(chain);
+}
+
 /**
  * One entry per slash-command bridge. Each is an individually addressable
  * command — its own title, its own menu item, its own future validity —
  * dispatching the one `run-slash-command` action with a different name
  * ([P05]). The Swift items carry the same name in `representedObject`.
  */
-const SLASH_BRIDGES: ReadonlyArray<[name: string, title: string, menuItemId: string]> = [
-  ["export", "Export Session…", "file.exportTranscript"],
-  ["copy", "Copy Last Response", "edit.copyLastResponse"],
+type SlashBridge = readonly [
+  name: string,
+  title: string,
+  menuItemId: string,
+  /** Defaults to `sessionBound` — a bound session is what a slash command runs against. */
+  validate?: (chain: CommandValidationSource) => boolean,
+];
+
+const SLASH_BRIDGES: readonly SlashBridge[] = [
+  // Export writes the transcript the card already holds, so it needs the
+  // card and not a live session.
+  ["export", "Export Session…", "file.exportTranscript", sessionCardFrontmost],
+  [
+    "copy",
+    "Copy Last Response",
+    "edit.copyLastResponse",
+    (chain) =>
+      chain.menu.sessionCardFrontmost &&
+      (chain.menu.session?.hasAssistantMessage ?? false),
+  ],
   ["clear", "Clear Session", "session.new"],
   ["resume", "Resume Session…", "session.resume"],
   ["rename", "Rename Session…", "session.rename"],
@@ -182,7 +321,13 @@ const SLASH_BRIDGES: ReadonlyArray<[name: string, title: string, menuItemId: str
   ["model", "Model…", "session.model"],
   ["effort", "Reasoning Effort…", "session.effort"],
   ["permissions", "Permission Rules…", "session.permissionRules"],
-  ["rewind", "Rewind…", "session.rewind"],
+  // Rewind needs somewhere to rewind to.
+  [
+    "rewind",
+    "Rewind…",
+    "session.rewind",
+    (chain) => sessionBound(chain) && (chain.menu.session?.hasTurns ?? false),
+  ],
   ["compact", "Compact Conversation", "session.compact"],
   ["add-dir", "Add Working Directory…", "session.addDir"],
   ["diff", "Show Code Changes", "session.diff"],
@@ -192,17 +337,20 @@ const SLASH_BRIDGES: ReadonlyArray<[name: string, title: string, menuItemId: str
   ["agents", "Agents", "session.agents"],
   ["hooks", "Hooks", "session.hooks"],
   ["memory", "Memory", "session.memory"],
-  ["help", "Keyboard Shortcuts & Commands", "help.shortcuts"],
+  // The shortcuts sheet is card documentation, not session work.
+  ["help", "Keyboard Shortcuts & Commands", "help.shortcuts", sessionCardFrontmost],
 ];
 
 const SLASH_BRIDGE_COMMANDS: readonly CommandEntry[] = SLASH_BRIDGES.map(
-  ([name, title, menuItemId]) => ({
+  ([name, title, menuItemId, validate]) => ({
     id: `${TUG_ACTIONS.RUN_SLASH_COMMAND}:${name}`,
     title,
     routing: "key-card" as const,
     action: TUG_ACTIONS.RUN_SLASH_COMMAND,
     payload: { name, args: "" },
     menuItemId,
+    mirrored: true,
+    validate: validate ?? sessionBound,
   }),
 );
 
@@ -222,6 +370,11 @@ const PERMISSION_MODE_COMMANDS: readonly CommandEntry[] = PERMISSION_MODES.map(
     action: TUG_ACTIONS.SET_PERMISSION_MODE,
     payload: mode,
     menuItemId: `session.permissionMode.${mode}`,
+    mirrored: true,
+    validate: sessionSettingsChangeable,
+    // The radio's mark: one resolver answers the current mode and each
+    // per-value entry narrows it to its own row ([P05], [P07]).
+    state: (chain: CommandValidationSource) => chain.menu.session?.permissionMode === mode,
   }),
 );
 
@@ -261,6 +414,8 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Open Quickly…",
     routing: "registry",
     menuItemId: "file.openQuickly",
+    mirrored: true,
+    validate: (chain) => chain.menu.openQuickly,
   },
   {
     // Its door is the changeset card's pop-out affordance — a control, not
@@ -282,6 +437,8 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "file.closeCard",
     bindings: [chord({ key: "KeyW", meta: true, label: "w" })],
+    mirrored: true,
+    validate: (chain) => chain.menu.focusedPaneActiveCardClosable,
   },
   {
     id: TUG_ACTIONS.CLOSE_ALL,
@@ -289,37 +446,55 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "file.closeAllCardTabs",
     bindings: [chord({ key: "KeyW", meta: true, alt: true, label: "w" })],
+    mirrored: true,
+    validate: (chain) => chain.menu.focusedPaneCardCount > 1,
   },
+  // The save family gates on the frontmost Text card's block, reduced by
+  // the one function that owns that matrix ([P06]: the gate is asked of the
+  // surface that would perform, and the block is that surface's answer).
+  // Automatic-mode Save stays enabled whenever the card is writable — a
+  // disabled item eats its own ⌘S with a beep rather than letting it
+  // through.
   {
     id: TUG_ACTIONS.SAVE,
     title: "Save…",
     routing: "first-responder",
     menuItemId: "file.save",
     bindings: [chord({ key: "KeyS", meta: true, label: "s" }, { preventDefault: true })],
+    mirrored: true,
+    validate: (chain) => chain.menu.fileGates?.save ?? false,
   },
   {
     id: TUG_ACTIONS.SAVE_AS,
     title: "Save As…",
     routing: "first-responder",
     menuItemId: "file.saveAs",
+    mirrored: true,
+    validate: (chain) => chain.menu.fileGates?.saveAs ?? false,
   },
   {
     id: TUG_ACTIONS.SAVE_A_COPY,
     title: "Save a Copy…",
     routing: "first-responder",
     menuItemId: "file.saveACopy",
+    mirrored: true,
+    validate: (chain) => chain.menu.fileGates?.saveACopy ?? false,
   },
   {
     id: TUG_ACTIONS.REVERT_TO_SAVED,
     title: "Revert to Saved",
     routing: "first-responder",
     menuItemId: "file.revertToSaved",
+    mirrored: true,
+    validate: (chain) => chain.menu.fileGates?.revert ?? false,
   },
   {
     id: TUG_ACTIONS.RELOAD_FROM_DISK,
     title: "Reload from Disk",
     routing: "first-responder",
     menuItemId: "file.reloadFromDisk",
+    mirrored: true,
+    validate: (chain) => chain.menu.fileGates?.reload ?? false,
   },
 
   // ---- Edit ----
@@ -329,12 +504,19 @@ export const COMMANDS: readonly CommandEntry[] = [
   // responder chain holds, and no control frame is sent. They are
   // represented here so they are nameable and visible to the keymap UI
   // rather than being commands the user cannot find ([P04]).
+  //
+  // AppKit performs them, but the chain decides whether they are available:
+  // a native-routed entry has no responder to defer to, so each names the
+  // chain query explicitly. This is the same answer `validateAction` gives
+  // the Edit block today, asked by the item that needs it.
   {
     id: TUG_ACTIONS.CUT,
     title: "Cut",
     routing: "native",
     menuItemId: "edit.cut",
     bindings: [chord({ key: "KeyX", meta: true, label: "x" }, { preventDefault: true })],
+    mirrored: true,
+    validate: (chain) => chain.validateAction(TUG_ACTIONS.CUT),
   },
   {
     id: TUG_ACTIONS.COPY,
@@ -342,6 +524,8 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "native",
     menuItemId: "edit.copy",
     bindings: [chord({ key: "KeyC", meta: true, label: "c" }, { preventDefault: true })],
+    mirrored: true,
+    validate: (chain) => chain.validateAction(TUG_ACTIONS.COPY),
   },
   {
     id: TUG_ACTIONS.PASTE,
@@ -349,12 +533,16 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "native",
     menuItemId: "edit.paste",
     bindings: [chord({ key: "KeyV", meta: true, label: "v" }, { preventDefault: true })],
+    mirrored: true,
+    validate: (chain) => chain.validateAction(TUG_ACTIONS.PASTE),
   },
   {
     id: TUG_ACTIONS.DELETE,
     title: "Delete",
     routing: "native",
     menuItemId: "edit.delete",
+    mirrored: true,
+    validate: (chain) => chain.validateAction(TUG_ACTIONS.DELETE),
   },
   {
     id: TUG_ACTIONS.SELECT_ALL,
@@ -362,7 +550,13 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "native",
     menuItemId: "edit.selectAll",
     bindings: [chord({ key: "KeyA", meta: true, label: "a" }, { preventDefault: true })],
+    mirrored: true,
+    validate: (chain) => chain.validateAction(TUG_ACTIONS.SELECT_ALL),
   },
+  // Undo and Redo are deliberately NOT mirrored: when a native text control
+  // is focused the host validates them from the web view's own
+  // NSUndoManager, which is live AppKit state the registry cannot see. The
+  // one item whose truth is not the frontend's keeps its host-side case.
   {
     id: TUG_ACTIONS.UNDO,
     title: "Undo",
@@ -385,6 +579,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     bindings: [
       chord({ key: "KeyC", meta: true, shift: true, alt: true, label: "c" }, { preventDefault: true }),
     ],
+    mirrored: true,
+    // Shares Copy's gate: both need a selection, and a surface that offers
+    // one offers the other.
+    validate: (chain) => chain.validateAction(TUG_ACTIONS.COPY),
   },
   {
     id: TUG_ACTIONS.PASTE_AS_QUOTE,
@@ -394,6 +592,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     bindings: [
       chord({ key: "KeyV", meta: true, alt: true, label: "v" }, { preventDefault: true }),
     ],
+    mirrored: true,
+    // Both paste variants share Paste's gate: an editable surface is the
+    // whole requirement.
+    validate: (chain) => chain.validateAction(TUG_ACTIONS.PASTE),
   },
   {
     id: TUG_ACTIONS.PASTE_AS_PLAIN_TEXT,
@@ -403,13 +605,20 @@ export const COMMANDS: readonly CommandEntry[] = [
     bindings: [
       chord({ key: "KeyV", meta: true, shift: true, alt: true, label: "v" }, { preventDefault: true }),
     ],
+    mirrored: true,
+    validate: (chain) => chain.validateAction(TUG_ACTIONS.PASTE),
   },
+  // The Find items carry no predicate: they are first-responder-routed, so
+  // the default chain walk asks the focused surface directly — which is
+  // exactly the question, and the answer stays false until a find-capable
+  // surface is focused.
   {
     id: TUG_ACTIONS.FIND,
     title: "Find…",
     routing: "first-responder",
     menuItemId: "edit.find",
     bindings: [chord({ key: "KeyF", meta: true, label: "f" }, { preventDefault: true })],
+    mirrored: true,
   },
   {
     id: TUG_ACTIONS.FIND_NEXT,
@@ -417,6 +626,7 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "edit.findNext",
     bindings: [chord({ key: "KeyG", meta: true, label: "g" })],
+    mirrored: true,
   },
   {
     id: TUG_ACTIONS.FIND_PREVIOUS,
@@ -424,6 +634,7 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "edit.findPrevious",
     bindings: [chord({ key: "KeyG", meta: true, shift: true, label: "g" })],
+    mirrored: true,
   },
 
   // ---- Session ----
@@ -433,12 +644,18 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "key-card",
     menuItemId: "session.focusPrompt",
     bindings: [chord({ key: "KeyK", meta: true, label: "k" }, { preventDefault: true })],
+    mirrored: true,
+    // The composer exists on any session card, bound or not.
+    validate: sessionCardFrontmost,
   },
   {
     id: TUG_ACTIONS.INTERRUPT_SESSION,
     title: "Stop",
     routing: "key-card",
     menuItemId: "session.stop",
+    mirrored: true,
+    validate: (chain) =>
+      chain.menu.sessionCardFrontmost && (chain.menu.session?.canInterrupt ?? false),
   },
   {
     id: TUG_ACTIONS.CYCLE_PERMISSION_MODE,
@@ -448,6 +665,8 @@ export const COMMANDS: readonly CommandEntry[] = [
     bindings: [
       chord({ key: "KeyP", ctrl: true, meta: true, label: "p" }, { preventDefault: true }),
     ],
+    mirrored: true,
+    validate: sessionSettingsChangeable,
   },
   ...PERMISSION_MODE_COMMANDS,
   {
@@ -458,6 +677,12 @@ export const COMMANDS: readonly CommandEntry[] = [
     bindings: [
       chord({ key: "KeyC", meta: true, shift: true, label: "c" }, { preventDefault: true }),
     ],
+    mirrored: true,
+    validate: sessionBound,
+    // One command, two verbs: the item says what the gesture will do, so
+    // the title follows the Shade's live visibility.
+    dynamicTitle: (chain) =>
+      (chain.menu.session?.changesVisible ?? false) ? "Hide Changes" : "Show Changes",
   },
   {
     id: TUG_ACTIONS.TOGGLE_HISTORY_VIEW,
@@ -467,6 +692,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     bindings: [
       chord({ key: "KeyH", meta: true, shift: true, label: "h" }, { preventDefault: true }),
     ],
+    mirrored: true,
+    validate: sessionBound,
+    dynamicTitle: (chain) =>
+      (chain.menu.session?.historyVisible ?? false) ? "Hide History" : "Show History",
   },
   ...SLASH_BRIDGE_COMMANDS,
 
@@ -528,6 +757,8 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "window.previousCard",
     bindings: [chord({ key: "BracketLeft", meta: true, shift: true, label: "[" })],
+    mirrored: true,
+    validate: cardNavigationAvailable,
   },
   {
     id: TUG_ACTIONS.NEXT_TAB,
@@ -535,6 +766,8 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "window.nextCard",
     bindings: [chord({ key: "BracketRight", meta: true, shift: true, label: "]" })],
+    mirrored: true,
+    validate: cardNavigationAvailable,
   },
   {
     id: TUG_ACTIONS.CYCLE_CARD,
@@ -542,18 +775,28 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "window.cyclePanes",
     bindings: [chord({ key: "Backquote", ctrl: true, label: "`" })],
+    mirrored: true,
+    validate: (chain) => chain.menu.paneCount >= 2 || deckDeselectedWithPanes(chain),
   },
+  // The two slot-stack items take no deselected-deck escape hatch: they act
+  // on a SPECIFIC pane's stack, and with nothing selected there is no such
+  // pane. Both gate identically whichever one currently holds ⌘R, so the
+  // user's preference moves the chord and nothing else.
   {
     id: TUG_ACTIONS.REVEAL_STACK,
     title: "Reveal Stack",
     routing: "first-responder",
     menuItemId: "window.revealStack",
+    mirrored: true,
+    validate: (chain) => chain.menu.stackDepth > 1,
   },
   {
     id: TUG_ACTIONS.CYCLE_STACK,
     title: "Cycle Stack",
     routing: "first-responder",
     menuItemId: "window.cycleStack",
+    mirrored: true,
+    validate: (chain) => chain.menu.stackDepth > 1,
   },
   ...SLOT_COMMANDS,
   {
@@ -716,6 +959,8 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "maker.newCardInPane",
     bindings: [chord({ key: "KeyT", meta: true, label: "t" })],
+    mirrored: true,
+    validate: (chain) => chain.menu.paneCount > 0,
   },
 
   // ---- Named, but not yet doored ----
@@ -1043,6 +1288,81 @@ export function commandAction(entry: CommandEntry): TugAction | null {
   if (entry.action !== undefined) return entry.action;
   if (TUG_ACTION_VALUES.has(entry.id)) return entry.id as TugAction;
   return null;
+}
+
+/* ---------------------------------------------------------------------------
+ * Validity and state
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Whether a command is applicable right now ([P06]).
+ *
+ * An explicit `validate` predicate wins. Otherwise a chain-routed command is
+ * validated by the chain — walked from the same node it would dispatch to,
+ * so a key-card command answers from the key card rather than from wherever
+ * focus happens to sit. A `registry` entry with no predicate has no
+ * responder to ask and answers enabled; a `native` entry is AppKit's to
+ * validate, never ours.
+ *
+ * This lives beside the table rather than beside the dispatcher because it
+ * is the table's own answer: every surface that shows a command — the menu
+ * mirror, buttons, context menus — asks this one function, which is what
+ * keeps a button and its menu item from disagreeing.
+ */
+export function validateCommand(
+  entry: CommandEntry,
+  chain: CommandValidationSource,
+): boolean {
+  if (entry.validate !== undefined) return entry.validate(chain);
+
+  const action = commandAction(entry);
+  if (action === null) return true;
+
+  switch (entry.routing) {
+    case "key-card":
+      return chain.validateActionInKeyCard(action);
+    case "first-responder":
+    case "target":
+      return chain.validateAction(action);
+    case "registry":
+    case "native":
+      return true;
+  }
+}
+
+/**
+ * A command's state projection — a checkmark, a radio selection, a toggle
+ * ([P07]). `undefined` means the command does not participate in a check
+ * column at all.
+ */
+export function queryCommandState(
+  entry: CommandEntry,
+  chain: CommandValidationSource,
+): boolean | string | undefined {
+  if (entry.state !== undefined) return entry.state(chain);
+
+  const action = commandAction(entry);
+  if (action === null) return undefined;
+
+  switch (entry.routing) {
+    case "key-card":
+      return chain.queryActionStateInKeyCard(action);
+    case "first-responder":
+    case "target":
+      return chain.queryActionState(action);
+    case "registry":
+    case "native":
+      return undefined;
+  }
+}
+
+/** Validity for a command named by id; unknown ids are not applicable. */
+export function validateCommandId(
+  id: string,
+  chain: CommandValidationSource,
+): boolean | undefined {
+  const entry = COMMANDS_BY_ID.get(id);
+  return entry === undefined ? undefined : validateCommand(entry, chain);
 }
 
 /* ---------------------------------------------------------------------------

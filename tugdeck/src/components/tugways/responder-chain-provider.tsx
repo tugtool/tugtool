@@ -40,7 +40,8 @@ import {
   computeEditCapabilities,
   editUndoLabelsWithin,
   publishEditMenuState,
-  registerEditCapsRefresher,
+  registerMenuCapsRefresher,
+  registerMenuValidationChain,
 } from "../../lib/host-menu-state";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import { currentGesture, targetRefusesFocus } from "@/gesture-interpreter";
@@ -217,7 +218,14 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     let nativeUndoCounter = 0;
     let lastNativeUndoEl: Element | null = null;
 
-    const publishEditCaps = (): void => {
+    // The registry's per-item gates are computed by the publisher itself,
+    // which is the one place that holds both halves of what a predicate
+    // asks — the chain and the merged menu blocks. Handing it the chain is
+    // the whole wiring; every republish path below reaches the gates
+    // through the same flush.
+    registerMenuValidationChain(manager);
+
+    const publishMenuCaps = (): void => {
       const caps = computeEditCapabilities(manager);
       // The chain first responder owns the edit menu. A deactivated card now
       // resigns first responder (a canvas-background click clears the active
@@ -258,18 +266,18 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         nativeUndoToken: isNativeText ? nativeUndoCounter : 0,
       });
     };
-    publishEditCaps();
-    const unsubscribeEditCaps = manager.subscribe(publishEditCaps);
+    publishMenuCaps();
+    const unsubscribeEditCaps = manager.subscribe(publishMenuCaps);
     // Substrates request a recompute when a capability flips *within* the
     // focused responder (e.g. an editor's undo depth changing as the user
     // types) — those flips don't bump the validation version by design.
-    registerEditCapsRefresher(publishEditCaps);
+    registerMenuCapsRefresher(publishMenuCaps);
     // The native-undo token reads `document.activeElement`, which doesn't
     // always bump the validation version — so focus moves trigger their own
     // republish. Microtask defer lets the focus transition settle first; the
     // publisher's diff suppresses no-op posts.
     const onFocusChange = (): void => {
-      queueMicrotask(publishEditCaps);
+      queueMicrotask(publishMenuCaps);
       // Every settled focus change is a chance for the keyboard ring to have
       // drifted from the real keyboard sink; the tripwire verifies agreement
       // (microtask-coalesced inside the manager).
@@ -1350,7 +1358,8 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       document.removeEventListener("focusout", onFocusChange, { capture: true });
       document.removeEventListener("focusin", enforceOnFocusIn, { capture: true });
       document.removeEventListener("focusout", enforceOnFocusOut, { capture: true });
-      registerEditCapsRefresher(null);
+      registerMenuCapsRefresher(null);
+      registerMenuValidationChain(null);
       unsubscribeEditCaps();
       unsubscribeKeyboardAccess();
       unsubscribeRingModality();

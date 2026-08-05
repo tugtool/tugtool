@@ -168,58 +168,12 @@ export function dispatchCommand(
 }
 
 /**
- * Whether a command is applicable right now ([P06]).
- *
- * An explicit `validate` predicate wins. Otherwise a chain-routed command
- * is validated by the chain — walked from the same node it would dispatch
- * to, so a key-card command answers from the key card rather than from
- * wherever focus happens to sit. A `registry` entry with no predicate has
- * no responder to ask and answers enabled; a `native` entry is AppKit's to
- * validate, never ours.
+ * Validity and state live on the table itself — every surface that shows a
+ * command asks the same function there. Re-exported here because this is
+ * the module a caller reaches for when it is thinking about commands.
  */
-export function validateCommand(
-  entry: CommandEntry,
-  chain: CommandValidationSource,
-): boolean {
-  if (entry.validate !== undefined) return entry.validate(chain);
-
-  const action = commandAction(entry);
-  if (action === null) return true;
-
-  switch (entry.routing) {
-    case "key-card":
-      return chain.validateActionInKeyCard(action);
-    case "first-responder":
-    case "target":
-      return chain.validateAction(action);
-    case "registry":
-    case "native":
-      return true;
-  }
-}
-
-/**
- * A command's state projection — a checkmark, a radio selection, a toggle
- * ([P07]). `undefined` means the command does not participate in a check
- * column at all.
- */
-export function queryCommandState(
-  entry: CommandEntry,
-  chain: CommandValidationSource,
-): boolean | string | undefined {
-  if (entry.state !== undefined) return entry.state(chain);
-
-  const action = commandAction(entry);
-  if (action === null) return undefined;
-
-  switch (entry.routing) {
-    case "key-card":
-      return chain.queryActionStateInKeyCard(action);
-    case "first-responder":
-    case "target":
-      return chain.queryActionState(action);
-    case "registry":
-    case "native":
-      return undefined;
-  }
-}
+export {
+  queryCommandState,
+  validateCommand,
+  validateCommandId,
+} from "@/components/tugways/command-registry";

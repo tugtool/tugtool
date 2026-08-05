@@ -34,6 +34,19 @@ import { cardTitleStore } from "./card-title-store";
 import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 import { DEFAULT_STACK_CHORD, stackChordStore } from "../stack-chord-store";
+import { BASE_THEME_NAME } from "../theme-constants";
+import {
+  COMMANDS,
+  EMPTY_MENU_FACTS,
+  queryCommandState,
+  validateCommand,
+} from "../components/tugways/command-registry";
+import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
+import type {
+  CommandEntry,
+  CommandMenuFacts,
+  CommandValidationSource,
+} from "../components/tugways/command-registry";
 
 /**
  * Edit-menu capability block: per-action enablement for the native
@@ -149,6 +162,123 @@ export function computeEditCapabilities(
     findNext: chain.validateAction(TUG_ACTIONS.FIND_NEXT),
     findPrevious: chain.validateAction(TUG_ACTIONS.FIND_PREVIOUS),
   };
+}
+
+// ---------------------------------------------------------------------------
+// The per-command menu gate mirror ([P13], Spec S03)
+// ---------------------------------------------------------------------------
+
+/**
+ * A chord in the host's alphabet: the `keyEquivalent` character plus the
+ * four modifier booleans. The `KeyboardEvent.code` → character conversion
+ * happens on this side, so the host applies the result verbatim and
+ * assembles the modifier mask from the booleans — no `NSEvent.ModifierFlags`
+ * raw value ever crosses the boundary.
+ */
+export interface ChordSpec {
+  readonly keyEquivalent: string;
+  readonly command?: boolean;
+  readonly shift?: boolean;
+  readonly option?: boolean;
+  readonly control?: boolean;
+}
+
+/**
+ * One menu item's gate: everything the host needs to present the item,
+ * keyed on the wire by the item's `NSUserInterfaceItemIdentifier` ([P02]).
+ *
+ * All four facts change together and are read by the same two host sites —
+ * the validator for enablement, state, and title; the chord sweep for the
+ * key equivalent — so they ride as one object rather than four blocks.
+ */
+export interface MenuCommandGate {
+  readonly enabled: boolean;
+  /** Checkmark; absent means "this item does not participate in the check column". */
+  readonly state?: boolean;
+  /** Dynamic title; absent means "keep the title the host constructed". */
+  readonly title?: string;
+  /**
+   * Three-state, and all three are load-bearing: absent means "leave the
+   * constructed key equivalent alone", `null` means "detach it", and a spec
+   * means "apply it".
+   */
+  readonly chord?: ChordSpec | null;
+}
+
+/**
+ * The chain half of a predicate's world. The publisher owns the facts half
+ * and joins the two at flush time, so a predicate never reaches for a store
+ * itself.
+ */
+export interface MenuValidationChain {
+  validateAction(action: string): boolean;
+  validateActionInKeyCard(action: string): boolean;
+  queryActionState(action: string): boolean | string | undefined;
+  queryActionStateInKeyCard(action: string): boolean | string | undefined;
+}
+
+/** A chain that answers "nobody handles anything" — the pre-mount state. */
+const NO_CHAIN: MenuValidationChain = {
+  validateAction: () => false,
+  validateActionInKeyCard: () => false,
+  queryActionState: () => undefined,
+  queryActionStateInKeyCard: () => undefined,
+};
+
+/** Whether an entry's gate rides the mirror at all. */
+function isMirroredEntry(entry: CommandEntry): boolean {
+  return (
+    entry.mirrored === true &&
+    entry.menuItemId !== undefined &&
+    entry.parameterized !== true
+  );
+}
+
+/**
+ * Project the registry's mirrored entries into the per-item gate block the
+ * host validates from.
+ *
+ * Enablement comes from the entry's own `validate` when it has one, and
+ * otherwise from the chain walk that matches its routing ([P06]) — validity
+ * is asked of the object that would perform, which is the idiom the chain
+ * already implements and the registry defers to rather than duplicates.
+ *
+ * State narrows to a boolean here because a per-value entry turns "the
+ * current value is X" into "this item is checked"; the hook keeps the wider
+ * return type for the off-menu readers that want the value itself.
+ *
+ * Pure given the chain's current answers — exported for unit tests.
+ */
+export function computeCommandCapabilities(
+  chain: CommandValidationSource,
+  entries: readonly CommandEntry[] = COMMANDS,
+): Record<string, MenuCommandGate> {
+  const gates: Record<string, MenuCommandGate> = {};
+  for (const entry of entries) {
+    if (!isMirroredEntry(entry)) continue;
+    // A throwing predicate loses its own item's gate and nothing else. The
+    // whole block is computed inside the payload flush, so letting one
+    // predicate escape would abort the push and freeze every menu fact the
+    // host has — the item that falls back to its own default is a far
+    // smaller failure than a menu bar stuck on a stale snapshot.
+    try {
+      const enabled = validateCommand(entry, chain);
+      const rawState = queryCommandState(entry, chain);
+      const title = entry.dynamicTitle?.(chain);
+      gates[entry.menuItemId as string] = {
+        enabled,
+        ...(typeof rawState === "boolean" ? { state: rawState } : {}),
+        ...(title !== undefined ? { title } : {}),
+      };
+    } catch (error) {
+      tugDevLogStore.error(
+        "menu-state",
+        `command "${entry.id}" threw while computing its menu gate`,
+        { error: String(error) },
+      );
+    }
+  }
+  return gates;
 }
 
 // ---------------------------------------------------------------------------
@@ -363,10 +493,24 @@ export interface MenuStatePayload {
   /** Edit-menu capabilities of the current first responder. */
   edit: MenuStateEditBlock;
   /**
+   * Per-menu-item gates projected from the command registry, keyed by the
+   * item's `NSUserInterfaceItemIdentifier` ([P13]). The host reads this
+   * ahead of its hand-rolled validation cases; an item absent from the
+   * block falls through to whichever case still owns it.
+   */
+  commands: Record<string, MenuCommandGate>;
+  /**
    * Recent-document paths (newest first) for File ▸ Open Recent. The host
    * filters to files that still exist and caps the visible list.
    */
   recentDocuments: string[];
+  /**
+   * The active theme's name, for the Theme submenu's checkmark. The
+   * submenu's *membership* is still discovered from disk by the host — it
+   * is genuinely dynamic — but which one is current is the frontend's fact,
+   * and the frontend changes it by paths the host never sees.
+   */
+  activeTheme: string;
   /**
    * Whether Open Quickly is available. Always true: the frontmost card's
    * project is the search root when there is one, and the user's default
@@ -489,6 +633,14 @@ export class HostMenuStatePublisher {
    */
   private editCapabilities: MenuStateEditBlock = EMPTY_EDIT_CAPABILITIES;
   /**
+   * The chain the command predicates ask. Registered by the responder-chain
+   * provider at mount; until then the gates compute against a chain that
+   * handles nothing, which is the truth before anything is mounted.
+   */
+  private validationChain: MenuValidationChain = NO_CHAIN;
+  /** The facts the last flush computed its gates from. */
+  private lastFacts: CommandMenuFacts = EMPTY_MENU_FACTS;
+  /**
    * Which Window-menu item owns ⌘R. Not deck state — a user preference — so
    * it is fed by its own setter and defaults to the store's default until
    * the wiring below pushes the seeded value.
@@ -496,6 +648,8 @@ export class HostMenuStatePublisher {
   private stackChord: string = DEFAULT_STACK_CHORD;
   /** Recent-document MRU, mirrored outward for the Open Recent submenu. */
   private recentDocuments: string[] = [];
+  /** The active theme, for the Theme submenu's checkmark. */
+  private activeTheme: string = BASE_THEME_NAME;
   private lastSent: string | null = null;
   private flushScheduled = false;
 
@@ -543,14 +697,53 @@ export class HostMenuStatePublisher {
     this.scheduleFlush();
   }
 
+  setValidationChain(chain: MenuValidationChain | null): void {
+    this.validationChain = chain ?? NO_CHAIN;
+    this.scheduleFlush();
+  }
+
   setStackChord(chord: string): void {
     this.stackChord = chord;
+    this.scheduleFlush();
+  }
+
+  setActiveTheme(theme: string): void {
+    this.activeTheme = theme;
     this.scheduleFlush();
   }
 
   setRecentDocuments(paths: string[]): void {
     this.recentDocuments = paths;
     this.scheduleFlush();
+  }
+
+  /**
+   * Join the registered chain to the flush's facts into the one value a
+   * predicate reads.
+   *
+   * Delegating call by call rather than spreading the chain: the manager is
+   * a class instance, so its methods live on the prototype and an object
+   * spread would silently produce a source whose every query is undefined.
+   */
+  /**
+   * The source as of the last flush, for in-page surfaces that show the
+   * same commands the menu bar does. The facts are a snapshot; the chain
+   * queries are live, which is what an in-page menu wants — it samples at
+   * open time, and open time is after the flush that set the facts.
+   */
+  currentValidationSource(): CommandValidationSource {
+    return this.validationSource(this.lastFacts);
+  }
+
+  private validationSource(menu: CommandMenuFacts): CommandValidationSource {
+    const chain = this.validationChain;
+    return {
+      validateAction: (action) => chain.validateAction(action),
+      validateActionInKeyCard: (action) => chain.validateActionInKeyCard(action),
+      queryActionState: (action) => chain.queryActionState(action),
+      queryActionStateInKeyCard: (action) => chain.queryActionStateInKeyCard(action),
+      menu,
+    };
   }
 
   private scheduleFlush(): void {
@@ -581,6 +774,39 @@ export class HostMenuStatePublisher {
       focusedActiveCardId !== null
         ? (this.documentBlocks.get(focusedActiveCardId) ?? null)
         : null;
+    // Open Quickly always has a root: the frontmost card's project, or the
+    // default project directory when no card is bound.
+    const openQuickly = true;
+    const focusedPane = panes.find((pane) => pane.focused);
+    // The gates are computed here, at the one place that holds both halves
+    // of what a predicate needs: the chain, and the merged blocks. The
+    // predicates then stay pure functions of their inputs, and the
+    // recompute rides the flush that is already coalesced and diffed rather
+    // than firing on every chain notification.
+    const facts: CommandMenuFacts = {
+      sessionCardFrontmost: activeCard?.component === "session",
+      session:
+        session === null
+          ? null
+          : {
+              sessionBound: session.sessionBound,
+              canInterrupt: session.canInterrupt,
+              canChangeSettings: session.canChangeSettings,
+              permissionMode: session.permissionMode,
+              hasAssistantMessage: session.hasAssistantMessage,
+              hasTurns: session.hasTurns,
+              changesVisible: session.changesVisible,
+              historyVisible: session.historyVisible,
+            },
+      fileGates: file === null ? null : computeFileMenuGates(file),
+      openQuickly,
+      paneCount: panes.length,
+      focusedPaneCardCount: focusedPane?.cardCount ?? 0,
+      focusedPaneActiveCardClosable: focusedPane?.closable ?? false,
+      selectionActive,
+      stackDepth,
+    };
+    this.lastFacts = facts;
     const payload: MenuStatePayload = {
       panes,
       activeCard,
@@ -591,10 +817,10 @@ export class HostMenuStatePublisher {
       file,
       document,
       edit: this.editCapabilities,
+      commands: computeCommandCapabilities(this.validationSource(facts)),
       recentDocuments: this.recentDocuments,
-      // Open Quickly always has a root: the frontmost card's project, or the
-      // default project directory when no card is bound.
-      openQuickly: true,
+      activeTheme: this.activeTheme,
+      openQuickly,
     };
     const serialized = JSON.stringify(payload);
     if (serialized === this.lastSent) return;
@@ -627,6 +853,21 @@ interface DeckSource {
 
 /** The boot-time singleton behind the module-level publish functions. */
 let activePublisher: HostMenuStatePublisher | null = null;
+
+/**
+ * The validity source as of the last flush — the same value the menu gates
+ * were computed from, so an in-page surface that asks it cannot disagree
+ * with the native menu about the same command.
+ *
+ * Returns an all-negative source before the first flush, which is the truth
+ * at that point: nothing is focused and no card is frontmost.
+ */
+export function commandValidationSource(): CommandValidationSource {
+  return activePublisher?.currentValidationSource() ?? {
+    ...NO_CHAIN,
+    menu: EMPTY_MENU_FACTS,
+  };
+}
 
 /**
  * Wire the aggregator to the deck store. Called once at boot
@@ -717,26 +958,39 @@ export function publishEditMenuState(caps: MenuStateEditBlock): void {
 }
 
 /**
- * Recompute-and-publish hook for edit-capability changes that the chain's
+ * Register (or clear, with null) the chain the command predicates ask.
+ * Called by the responder-chain provider at mount; a no-op before
+ * {@link initHostMenuState} runs.
+ */
+export function registerMenuValidationChain(chain: MenuValidationChain | null): void {
+  activePublisher?.setValidationChain(chain);
+}
+
+/**
+ * Recompute-and-publish hook for menu-capability changes that the chain's
  * validation version cannot see. Focus / register / unregister all bump
  * the version, but a capability can flip *within* a focused responder —
  * the canonical case is an editor's undo/redo depth changing as the user
  * types. The responder-chain provider registers its publish closure here;
- * substrates call {@link requestEditMenuStateRefresh} when such a flip
+ * substrates call {@link requestMenuStateRefresh} when such a flip
  * happens. Deliberately NOT a validationVersion bump: that would re-render
  * every chain-subscribed component on each keystroke. The publisher's
  * serialized diff suppresses no-op posts, so over-calling is cheap.
+ *
+ * The closure republishes the edit block and the command gates together —
+ * one walk of the chain answers both, and a caller that could refresh one
+ * without the other would be able to make them disagree.
  */
-let editCapsRefresher: (() => void) | null = null;
+let menuCapsRefresher: (() => void) | null = null;
 
 /** Register (or clear, with null) the provider's recompute-and-publish closure. */
-export function registerEditCapsRefresher(refresh: (() => void) | null): void {
-  editCapsRefresher = refresh;
+export function registerMenuCapsRefresher(refresh: (() => void) | null): void {
+  menuCapsRefresher = refresh;
 }
 
-/** Ask the provider to recompute and republish the edit capabilities. */
-export function requestEditMenuStateRefresh(): void {
-  editCapsRefresher?.();
+/** Ask the provider to recompute and republish the menu capabilities. */
+export function requestMenuStateRefresh(): void {
+  menuCapsRefresher?.();
 }
 
 /**
@@ -746,4 +1000,20 @@ export function requestEditMenuStateRefresh(): void {
  */
 export function publishRecentDocuments(paths: string[]): void {
   activePublisher?.setRecentDocuments(paths);
+}
+
+/**
+ * Publish the active theme (View ▸ Theme's checkmark). Called by the theme
+ * provider on mount and on every change; a no-op before
+ * {@link initHostMenuState} runs.
+ *
+ * The host used to read this from tugbank on every menu open — a subprocess
+ * read inside `menuNeedsUpdate`, on the path that has to finish before the
+ * menu can draw. It read tugbank because the frontend changes the theme by
+ * paths the host never sees (Next Theme, the Settings pane), and a value
+ * cached at selection time would go stale. Pushing it closes that gap
+ * without the read: the frontend tells the host every time it changes.
+ */
+export function publishActiveTheme(theme: string): void {
+  activePublisher?.setActiveTheme(theme);
 }

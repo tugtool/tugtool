@@ -106,15 +106,6 @@ import type { TextSelectionAdapter } from "./text-selection-adapter";
 // Public types
 // ---------------------------------------------------------------------------
 
-/**
- * Capability flags that drive the menu items' enabled state. A
- * narrowed view of `TextEditingMenuCapabilities` from
- * `text-editing-menu.ts` — `hasSelection` is sampled by the hook
- * itself (from the adapter or `hasSelectionOverride`), so consumers
- * supply only the surface-static `canEdit` flag.
- */
-export type TextSurfaceCapabilities = Omit<TextEditingMenuCapabilities, "hasSelection">;
-
 export interface UseTextSurfaceContextMenuOptions {
   /**
    * **Ref** to the surface's selection adapter, dereferenced live at event time
@@ -127,14 +118,6 @@ export interface UseTextSurfaceContextMenuOptions {
    * markdown view), which rely on `hasSelectionOverride`.
    */
   adapterRef: React.RefObject<TextSelectionAdapter | null> | null;
-
-  /**
-   * Whether the surface accepts text mutations (Cut, Paste). Read-only
-   * surfaces (markdown view, transcript) pass `false`; editable
-   * surfaces (editor, native input) pass `true`. Drives the menu
-   * items' enabled state via `buildTextEditingMenuItems`.
-   */
-  capabilities: TextSurfaceCapabilities;
 
   /**
    * Optional override of the `hasSelection` sample. When supplied, the hook
@@ -254,7 +237,6 @@ export function useTextSurfaceContextMenu(
 ): UseTextSurfaceContextMenuResult {
   const {
     adapterRef,
-    capabilities,
     hasSelectionOverride,
     extraEntries,
     hideStandardItems,
@@ -343,9 +325,12 @@ export function useTextSurfaceContextMenu(
     // Command right-click ([hideStandard]): show only the target-dependent
     // entries, never the standard editing block.
     if (menuState?.hideStandard === true) return extra;
+    // Editability is no longer the caller's to assert: it comes from the
+    // command table's validity over the chain, which is the same answer the
+    // native Edit menu is gated on. Only the selection is sampled here,
+    // because only a menu built at open time can read it accurately.
     const standard = buildTextEditingMenuItems({
       hasSelection: menuState?.hasSelection ?? false,
-      canEdit: capabilities.canEdit,
     }) as TugEditorContextMenuEntry[];
     return extra.length > 0
       ? [...extra, { type: "separator" }, ...standard]
@@ -354,7 +339,6 @@ export function useTextSurfaceContextMenu(
     menuState?.hasSelection,
     menuState?.extra,
     menuState?.hideStandard,
-    capabilities.canEdit,
   ]);
 
   // Only mount the menu component when there's an open state.

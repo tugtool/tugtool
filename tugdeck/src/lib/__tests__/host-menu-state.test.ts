@@ -6,8 +6,8 @@ import {
   EMPTY_EDIT_CAPABILITIES,
   HostMenuStatePublisher,
   projectDeckState,
-  registerEditCapsRefresher,
-  requestEditMenuStateRefresh,
+  registerMenuCapsRefresher,
+  requestMenuStateRefresh,
   type MenuStateSessionBlock,
   type MenuStateEditBlock,
   type MenuStateFileBlock,
@@ -482,15 +482,15 @@ describe("computeEditCapabilities", () => {
 });
 
 describe("edit-caps refresher registry", () => {
-  test("requestEditMenuStateRefresh invokes the registered refresher; clearing stops it", () => {
+  test("requestMenuStateRefresh invokes the registered refresher; clearing stops it", () => {
     let calls = 0;
-    registerEditCapsRefresher(() => {
+    registerMenuCapsRefresher(() => {
       calls += 1;
     });
-    requestEditMenuStateRefresh();
+    requestMenuStateRefresh();
     expect(calls).toBe(1);
-    registerEditCapsRefresher(null);
-    requestEditMenuStateRefresh(); // no registered refresher → no-op
+    registerMenuCapsRefresher(null);
+    requestMenuStateRefresh(); // no registered refresher → no-op
     expect(calls).toBe(1);
   });
 });
