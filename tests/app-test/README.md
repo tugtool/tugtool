@@ -357,8 +357,8 @@ Step-by-step:
 
 11. **Keybinding chords: dispatch a synthetic `KeyboardEvent`, not
     `nativeKey`.** This is the one place item 8 inverts. A keybinding is
-    defined purely by `event.code` + modifier flags — `matchKeybinding`
-    reads nothing else and does not check `isTrusted` — so a synthetic
+    defined purely by `event.code` + modifier flags — the keymap
+    registry reads nothing else and does not check `isTrusted` — so a synthetic
     keydown exercises the exact Stage-1 capture-listener → keybinding →
     chain-dispatch path a real keystroke would. Dispatch it on the
     focused element so it reaches the document-level capture listeners:
@@ -387,6 +387,24 @@ Step-by-step:
     same synthetic dispatch drives it.) See `at0085` (route `⇧⌘C`) and
     `at0105` (permission `⌃⌘P`); the binding's static contract is
     additionally pinned by `keybinding-map.test.ts` (pure-logic).
+
+## The menu and keymap family
+
+Six files carry the native menu bar and the keyboard, and they divide by what
+they can only be asked of the real app:
+
+| File | What it pins |
+|---|---|
+| `at0167`–`at0174` | Menu structure, and the validated enablement of the deck, maker-gate, session, and edit tiers |
+| `at0177`, `at0179` | The key pipeline end to end — a chord reaching a command through the responder chain |
+| `at0180` | The registry gate: an item's enablement, check mark, and dynamic title come from the pushed `commands` block, and every `menuItemId` in the table resolves to a real item |
+| `at0181` | Native key equivalents derived from the keymap — applied, detached, left alone, and surviving a menu rebuild |
+| `at0182` | A user keymap override round trip: written remotely and driven through the Settings ▸ Keyboard pane, with the native chord following both, and a locked command refusing |
+
+The keymap's *resolution* — which layer takes a chord, what shadows what — is
+unit-tested against a constructed multi-layer world, because that question is
+about data and needs no app. What lives here is the half that crosses the
+WKScriptMessage boundary, which is the half nothing else can answer.
 
 ## Directory layout
 

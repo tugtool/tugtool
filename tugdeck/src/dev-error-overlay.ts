@@ -349,6 +349,12 @@ export function installDevErrorOverlay(): void {
     shadow.appendChild(backdrop);
     document.body.appendChild(host);
 
+    // Substrate-local, and outside the funnel by construction: this overlay is
+    // Vite's HMR error surface, mounted into a shadow root beside the app
+    // rather than inside it, and it exists in states where the React tree —
+    // and so the responder chain and the keymap — has failed to render at all.
+    // A binding that needed the app to be working could not dismiss the screen
+    // telling you it isn't. Escape here closes this overlay and nothing else.
     document.addEventListener("keydown", onKeydown, true);
   }
 

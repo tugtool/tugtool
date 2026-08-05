@@ -25,13 +25,14 @@ import { SettingsSessionCardBody } from "./settings-session-card-body";
 import { SettingsTextCardBody } from "./settings-text-card-body";
 import { SettingsAppBody } from "./settings-app-body";
 import { SettingsGeneralBody } from "./settings-general-body";
+import { SettingsKeymapBody } from "./settings-keymap-body";
 import "./settings-card.css";
 
 // ---------------------------------------------------------------------------
 // Tabs — a fixed, non-closable tab set
 // ---------------------------------------------------------------------------
 
-type SettingsTabId = "general" | "sessionCard" | "textCard" | "app";
+type SettingsTabId = "general" | "keyboard" | "sessionCard" | "textCard" | "app";
 
 interface SettingsTabSpec {
   readonly id: SettingsTabId;
@@ -43,10 +44,11 @@ interface SettingsTabSpec {
 }
 
 const TABS: readonly SettingsTabSpec[] = [
-  // "General" wears a sliders icon for app-wide preferences; "Session Card"
-  // wears the session card's own icon; "Text Card" a file icon; "Maker" a
-  // tool icon for the app-maker gate.
+  // "General" wears a sliders icon for app-wide preferences; "Keyboard" the
+  // keyboard itself; "Session Card" wears the session card's own icon; "Text
+  // Card" a file icon; "Maker" a tool icon for the app-maker gate.
   { id: "general", label: "General", icon: "Settings2" },
+  { id: "keyboard", label: "Keyboard", icon: "Keyboard" },
   { id: "sessionCard", label: "Session Card", icon: "MessageSquareText" },
   { id: "textCard", label: "Text Card", icon: "FileText" },
   { id: "app", label: "Maker", icon: "Wrench" },
@@ -94,6 +96,7 @@ export function SettingsCardContent() {
         </div>
         <div className="settings-card-panel">
           {tab === "general" ? <SettingsGeneralBody /> : null}
+          {tab === "keyboard" ? <SettingsKeymapBody /> : null}
           {tab === "sessionCard" ? <SettingsSessionCardBody /> : null}
           {tab === "textCard" ? <SettingsTextCardBody /> : null}
           {tab === "app" ? <SettingsAppBody /> : null}

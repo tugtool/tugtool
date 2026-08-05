@@ -320,6 +320,27 @@ export function readSetupSeen(client: TugbankClient): boolean {
 }
 
 /**
+ * Persist one command's keymap override — a JSON binding list, one tugbank
+ * key per command id ([P14], Spec S04).
+ *
+ * Per-command keys are what make reset a `DELETE` and keep one rebind from
+ * racing another; a single blob would turn every change into a
+ * read-modify-write of the whole keymap. Fire-and-forget, mirroring
+ * `putStackChord` — the store already holds the value, and the DEFAULTS push
+ * reconciles anything that lands out of order.
+ */
+export function putKeymapOverride(commandId: string, json: string): void {
+  const url = `/api/defaults/dev.tugtool.keymap/${encodeURIComponent(commandId)}`;
+  fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "string", value: json }),
+  }).catch((err) => {
+    console.warn("[settings] PUT keymap override failed for", commandId, err);
+  });
+}
+
+/**
  * Read the app-test setup-suppression flag from the TugbankClient cache.
  * Seeded by tugcast at startup when the app-test harness marker is present
  * (before the server accepts connections, so it is readable at deck mount):

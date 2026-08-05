@@ -22,6 +22,24 @@ The design-system CSS custom properties get this treatment via [token-naming.md]
 
 ---
 
+## The Registry Layer
+
+Above the three-way classification sits the **command registry** (`components/tugways/command-registry.ts`): one entry per user-invocable command, carrying its title, its `routing`, the menu item it drives, and its default chords. Every emitter — a Swift menu item's control frame, the key pipeline, a button, a slash bridge — resolves through that table and calls `dispatchCommand(id)`.
+
+This changes what the classification below *is*. A name's category used to be a fact about which tables it appeared in, maintained by hand in two places. It is now a **consequence of its entry's `routing`**:
+
+| `routing` | The old category | What dispatches it |
+|---|---|---|
+| `first-responder` / `key-card` / `target` | Chain action, or Both | `dispatchCommand` walks the chain the routing names |
+| `registry` | Control-frame-only | `dispatchCommand` calls the handler `registerAction` registered |
+| `native` | — | Nothing in JS. Represented so the keymap UI can show it; AppKit performs it |
+
+So "Both" is no longer a shape anyone authors. A menu item and a chord are two doors on one row, and the row says once how to open it. The thirty-odd one-line re-dispatch handlers that used to be the Both category are gone; what remains in `action-dispatch.ts` is the tugcast data frames, the `registry`-routed bodies, and one fork.
+
+**What is deliberately outside the table:** tugcast data frames (`spawn_session_ok`, `session_updated`, and the ~20 siblings — protocol, not commands), form-control currency (`set-value`, `toggle`, `select-value`, `set-color`, `set-property` — traffic between a control and its responder, not user intents), and the substrate text-editing bindings (⌃U / ⌃W / ⌥F / ⌥B and the CM6 keymaps — movement and deletion that only ever target the focused input). Each of those keeps the raw path, and the exclusions are checked in as a set so "absent from the table" is never a silent omission.
+
+---
+
 ## Three-Way Classification
 
 Every action name belongs to exactly one of three categories. The category determines where the name is defined, who dispatches it, and who receives it.
@@ -172,11 +190,11 @@ The type system won't catch this (the literal `"cut"` is still a valid `TugActio
 ## Adding a New Action
 
 1. **Pick a name** following the `<verb>-<object>[-<modifier>]` rule. Verify it doesn't collide with an existing entry and isn't a synonym for something already in `TUG_ACTIONS`.
-2. **Classify it.** Chain action only? Control frame only? Both?
+2. **Give it a registry entry** in `command-registry.ts` if a user can invoke it: a title, a `routing`, a `menuItemId` if it has a menu door, and its default `bindings`. The classification below then follows from `routing` rather than being chosen.
 3. **Add an entry to `TUG_ACTIONS`** in `action-vocabulary.ts` if it's a chain action or a Both. Skip this step for Control-frame-only actions — they live in `action-dispatch.ts`.
 4. **Document the payload convention** in the same file, near the constant, using the existing in-line comment pattern (`// set-value: payload — shape depends on control: ...`). Every action whose handler reads `event.value` needs this so handler authors know what to narrow to.
 5. **Register a handler somewhere.** A responder via `useResponder` (chain), or a `registerAction` call (control frame), or both.
-6. **If it's keyboard-bindable,** add a `KEYBINDINGS` entry referencing `TUG_ACTIONS.<KEY>`.
+6. **If it's keyboard-bindable,** put the chord in the entry's `bindings` — a list, always, and marked `menuEligible` if the menu item should carry it. The key pipeline and the host's menu bar are both derived from there, so there is no second place to add it.
 7. **Write tests** that dispatch the constant, not the raw string.
 
 ---
@@ -313,5 +331,7 @@ If drift becomes measurable, a follow-up can add a `no-restricted-syntax` ESLint
 - [token-naming.md](token-naming.md) — sibling document for CSS tokens; same principle, different domain
 - [component-authoring.md](component-authoring.md) — the checklist for new components, which references `TUG_ACTIONS` constants at the dispatch-site and registration-site steps
 - `tugdeck/src/components/tugways/action-vocabulary.ts` — canonical `TUG_ACTIONS` constants, `TugAction` type, and payload conventions
-- `tugdeck/src/components/tugways/keybinding-map.ts` — every `KEYBINDINGS` entry references `TUG_ACTIONS.*`
-- `tugdeck/src/action-dispatch.ts` — Control-frame handler registry; Both-category entries use the same `TUG_ACTIONS.*` constants as the chain dispatch
+- `tugdeck/src/components/tugways/command-registry.ts` — the command table: one entry per user-invocable command, with its routing, its menu item, and its default chords
+- `tugdeck/src/components/tugways/keymap-registry.ts` — chord resolution and shadowing over that table
+- `tugdeck/src/components/tugways/keybinding-map.ts` — the `KeyBinding` shape that scoped registrations still use
+- `tugdeck/src/action-dispatch.ts` — the tugcast data-frame handlers, the `registry`-routed command bodies, and the one fork into `dispatchCommand`

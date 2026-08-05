@@ -79,7 +79,7 @@ On the `$` shell route the Z5 submit button is route-aware (`routeAwareSubmitBut
 
 **A setting that affects a turn declines while a turn is live; it never reaches in.** If a control changes something the running turn consumes (permission mode, model, effort), gate it on `canSubmit` at the setter seam and let the published idle state re-enable it. Never send the change into the turn and never bolt on a separate lock — restore the source→delegate direction ([L28]).
 
-**Publish, don't poll, across the process boundary.** The native menu learns turn state the same way React does: the frontend publishes `canChangeSettings` (= `canSubmit`) on the dev menu block; Swift validates against the cached snapshot. Add a field to the block and the parser together; keep the wire contract in sync ([menus.md](menus.md) discipline).
+**Publish, don't poll, across the process boundary.** The native menu learns turn state the same way React does: the frontend publishes `canChangeSettings` (= `canSubmit`) on the `session` menu block; Swift validates against the cached snapshot. Add a field to the block and the parser together; keep the wire contract in sync ([menus.md](menus.md) discipline).
 
 **Read the gate live in handlers.** Action handlers registered once at mount read `canSubmit` through `codeSessionStore.getSnapshot()` at invocation time, not from a render-time closure ([L07]).
 

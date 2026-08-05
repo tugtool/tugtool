@@ -676,12 +676,16 @@ export const TUG_ACTIONS = {
   // `enter` has doors (the ⇧⌘P route select and `/commit`); its two exits
   // were controller methods only.
   //
-  // EXIT_COMMIT_MODE: payload — none. Leave commit mode, restoring the
-  //                   stashed prompt draft.
-  // LAND_COMMIT:      payload — `value: string` (the commit message).
-  //                   Commit what the Changes sheet is showing.
+  // EXIT_COMMIT_MODE:     payload — none. Leave commit mode, restoring the
+  //                       stashed prompt draft.
+  // LAND_COMMIT:          payload — `value: string` (the commit message).
+  //                       Commit what the Changes sheet is showing.
+  // COMMIT_AUTO_MESSAGE:  payload — none. Ask the scribe for a commit
+  //                       message. The keyboard twin of the composer's
+  //                       pencil-sparkles button, and inert mid-draft.
   EXIT_COMMIT_MODE:       "exit-commit-mode",
   LAND_COMMIT:            "land-commit",
+  COMMIT_AUTO_MESSAGE:    "commit-auto-message",
 
   CLOSE:                  "close",
   CLOSE_ALL:              "close-all",

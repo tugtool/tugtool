@@ -475,6 +475,11 @@ export function useBlockReorder({
         if (ev.key !== "Escape") return;
         // Keep the abort local: swallow Escape so the Lens `CANCEL_DIALOG`
         // responder does not also fire (which would focus the Lens out).
+        //
+        // Substrate-local rather than a scoped binding, for the same reason
+        // the card drag's Escape is: the claim lasts exactly as long as the
+        // pointer is down, and a keymap that reported ⎋ as taken would be
+        // describing a state the user is almost never in.
         ev.preventDefault();
         ev.stopImmediatePropagation();
         detach();

@@ -1,0 +1,279 @@
+/**
+ * at0182-keymap-override.test.ts — a user keymap override, end to end.
+ *
+ * The claim this file exists to pin is the one a user actually makes: I
+ * changed a chord, and the menu bar changed with it, without restarting the
+ * app. Everything in between — a tugbank write, the override store, the
+ * keymap registry, the menu-state push, the host's chord sweep — is only
+ * interesting because that sentence has to come out true, so this test drives
+ * the whole chain rather than any link in it.
+ *
+ * The override is written the way another process writes one, through the
+ * DEFAULTS path, so what is exercised is the real remote-write route and not
+ * a private setter the pane happens to share.
+ *
+ * `view.zoomOut` is the subject because it is unconditionally present, holds
+ * a chord the registry states, and lives in the View menu — which
+ * `removeAllItems()`s and rebuilds on every open, so a chord that survives
+ * being read here has survived a rebuild too.
+ *
+ * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/keymap-override-store.ts
+ * @covers tugdeck/src/components/tugways/keymap-registry.ts
+ * @covers tugdeck/src/settings-api.ts
+ * @covers tugdeck/src/components/tugways/cards/settings-keymap-body.tsx
+ * @covers tugdeck/src/components/tugways/cards/settings-keymap-rows.ts
+ */
+
+import { describe, expect, test } from "bun:test";
+import { launchTugApp, type App } from "./_harness";
+
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
+const TEST_TIMEOUT_MS = 120_000;
+
+const KEYMAP_DOMAIN = "dev.tugtool.keymap";
+/** `NSEvent.ModifierFlags` raw values, so an expectation reads as a chord. */
+const CONTROL = 1 << 18;
+const OPTION = 1 << 19;
+const COMMAND = 1 << 20;
+
+function singleCardDeck() {
+  return {
+    cards: [{ id: "C0", componentId: "gallery-input", title: "Card C0", closable: true }],
+    panes: [
+      {
+        id: "p1",
+        position: { x: 60, y: 60 },
+        size: { width: 640, height: 480 },
+        cardIds: ["C0"],
+        activeCardId: "C0",
+        title: "",
+        acceptsFamilies: ["maker"],
+      },
+    ],
+    activePaneId: "p1",
+    hasFocus: true,
+  };
+}
+
+/** Write one command's override the way any other process would. */
+async function writeOverride(app: App, commandId: string, bindings: unknown[]): Promise<void> {
+  const args = JSON.stringify([
+    KEYMAP_DOMAIN,
+    commandId,
+    { kind: "string", value: JSON.stringify(bindings) },
+  ]);
+  await app.evalJS<void>(`window.__tug.setTugbankValue(...${args})`);
+}
+
+/**
+ * Drop the override — the reset gesture, which is a deletion rather than a
+ * write of the default. Persisting the default would freeze it, so absence is
+ * what "use whatever ships" is spelled as.
+ */
+async function resetOverride(app: App, commandId: string): Promise<void> {
+  const args = JSON.stringify([KEYMAP_DOMAIN, commandId]);
+  await app.evalJS<void>(`window.__tug.deleteTugbankValue(...${args})`);
+}
+
+async function waitKeyEquivalent(
+  app: App,
+  identifier: string,
+  want: string,
+  timeoutMs = 8000,
+): Promise<string | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  let last: string | undefined;
+  while (Date.now() < deadline) {
+    const state = await app.menuItemState(identifier);
+    last = state.found ? state.keyEquivalent : undefined;
+    if (last === want) return last;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return last;
+}
+
+describe.skipIf(!SHOULD_RUN)("AT0182: a user keymap override moves the native chord", () => {
+  test(
+    "rebind, then reset, with the menu bar following both without a restart",
+    async () => {
+      const app = await launchTugApp({ testName: "at0182-override" });
+      try {
+        await app.seedDeckState({ state: singleCardDeck(), focusCardId: "C0" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("C0")`,
+        );
+
+        // The shipped chord, swept from the registry's default.
+        expect(
+          await waitKeyEquivalent(app, "view.zoomOut", "-"),
+          "Zoom Out starts on ⌘-",
+        ).toBe("-");
+
+        // Rebind to ⌥⌘- and watch the menu bar follow. No restart: the store
+        // notifies the registry, the registry republishes the menu-state
+        // block, and the host re-sweeps.
+        await writeOverride(app, "zoom-out", [
+          { chord: { key: "Minus", meta: true, alt: true, label: "-" }, scope: { kind: "global" } },
+        ]);
+        expect(
+          await waitKeyEquivalent(app, "view.zoomOut", "-"),
+          "the character is unchanged",
+        ).toBe("-");
+        const rebound = await app.menuItemState("view.zoomOut");
+        expect(
+          rebound.found ? rebound.modifierMask : undefined,
+          "⌥ joined the mask",
+        ).toBe(COMMAND | OPTION);
+
+        // Rebind again to a different key entirely, so the assertion is about
+        // the chord and not about one modifier flag.
+        await writeOverride(app, "zoom-out", [
+          { chord: { key: "KeyJ", meta: true, label: "j" }, scope: { kind: "global" } },
+        ]);
+        expect(
+          await waitKeyEquivalent(app, "view.zoomOut", "j"),
+          "the whole chord moved",
+        ).toBe("j");
+
+        // Explicitly unbound: an empty list is a real answer, and the item
+        // ends up with no key equivalent at all rather than its default back.
+        await writeOverride(app, "zoom-out", []);
+        expect(
+          await waitKeyEquivalent(app, "view.zoomOut", ""),
+          "an empty override releases the chord",
+        ).toBe("");
+
+        // Reset — the override deleted, the table's default restored.
+        await resetOverride(app, "zoom-out");
+        expect(
+          await waitKeyEquivalent(app, "view.zoomOut", "-"),
+          "reset restores the registry default",
+        ).toBe("-");
+        const restored = await app.menuItemState("view.zoomOut");
+        expect(restored.found ? restored.modifierMask : undefined).toBe(COMMAND);
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") process.stderr.write(`\n[at0182-override] log tail:\n${tail}\n`);
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "the Keyboard pane rebinds a command and resets it, and the menu bar follows",
+    async () => {
+      // The pane's *rendering* is not asserted — the project bans DOM-render
+      // assertions and they would pin the wrong thing anyway. What is asserted
+      // is the effect: the gesture a user performs in the pane moves the
+      // native key equivalent, and the pane's reset puts it back.
+      const app = await launchTugApp({ testName: "at0182-pane" });
+      try {
+        await app.waitForCondition<boolean>(
+          `typeof window.__tug !== "undefined" && typeof window.tugdeck !== "undefined"`,
+        );
+        await app.nativeKey(",", ["cmd"]);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-testid="settings-card"]') !== null`,
+          { timeoutMs: 8000 },
+        );
+
+        // Open the Keyboard tab through its own tab control, the way a user
+        // reaches it.
+        await app.click('[data-testid="settings-card"] [data-testid="tug-tab-keyboard"]');
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-testid="settings-keymap"]') !== null`,
+          { timeoutMs: 8000 },
+        );
+
+        // Narrow to the row, so the click below cannot land on a neighbour.
+        await app.type('[data-testid="settings-keymap-filter"] input', "Zoom Out");
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-testid="keymap-arm-zoom-out"]') !== null`,
+          { timeoutMs: 8000 },
+        );
+
+        expect(await waitKeyEquivalent(app, "view.zoomOut", "-")).toBe("-");
+
+        // Arm the capture, press a chord, commit it.
+        await app.click('[data-testid="keymap-arm-zoom-out"]');
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-testid="keymap-capture"]') !== null`,
+          { timeoutMs: 6000 },
+        );
+        await app.nativeKey("j", ["cmd", "ctrl"]);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-testid="keymap-capture"] [data-pending="true"]') !== null`,
+          { timeoutMs: 6000 },
+        );
+        await app.click('[data-testid="keymap-capture"] button');
+
+        expect(
+          await waitKeyEquivalent(app, "view.zoomOut", "j"),
+          "the menu bar took the chord the pane recorded",
+        ).toBe("j");
+        const rebound = await app.menuItemState("view.zoomOut");
+        expect(rebound.found ? rebound.modifierMask : undefined).toBe(COMMAND | CONTROL);
+
+        // Reset from the pane's own per-row affordance. Addressed by its
+        // accessible name, which is the label the user reads — an icon button
+        // has no text, so the name IS the control.
+        const RESET = '[aria-label="Reset Zoom Out to its default chord"]';
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(RESET)}) !== null`,
+          { timeoutMs: 6000 },
+        );
+        await app.click(RESET);
+        expect(
+          await waitKeyEquivalent(app, "view.zoomOut", "-"),
+          "reset gave the item its shipped chord back",
+        ).toBe("-");
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") process.stderr.write(`\n[at0182-pane] log tail:\n${tail}\n`);
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a locked command refuses the override and keeps its chord",
+    async () => {
+      const app = await launchTugApp({ testName: "at0182-locked" });
+      try {
+        await app.seedDeckState({ state: singleCardDeck(), focusCardId: "C0" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("C0")`,
+        );
+
+        expect(await waitKeyEquivalent(app, "edit.selectAll", "a")).toBe("a");
+
+        // The mechanism could do it; the policy says no ([P12]). Enforced on
+        // read as well as on write, so a value written from a shell — which
+        // is exactly what this is — cannot get around it.
+        await writeOverride(app, "select-all", [
+          { chord: { key: "KeyJ", meta: true, label: "j" }, scope: { kind: "global" } },
+        ]);
+        // Give the push a beat to be ignored, then assert nothing moved.
+        await new Promise((r) => setTimeout(r, 500));
+        const state = await app.menuItemState("edit.selectAll");
+        expect(state.found ? state.keyEquivalent : undefined, "⌘A stands").toBe("a");
+        expect(state.found ? state.modifierMask : undefined).toBe(COMMAND);
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") process.stderr.write(`\n[at0182-locked] log tail:\n${tail}\n`);
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+});

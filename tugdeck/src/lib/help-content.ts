@@ -21,6 +21,8 @@
  * @module lib/help-content
  */
 
+import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
+import { commandShortcuts } from "../components/tugways/keymap-registry";
 import { LOCAL_SLASH_COMMANDS } from "./slash-commands";
 import { isHiddenSlashCommand } from "./slash-supported";
 import type { SlashCommandInfo } from "./session-metadata-store";
@@ -43,25 +45,47 @@ export interface HelpShortcut {
 }
 
 /**
- * The shortcuts worth surfacing, each verified against `keybinding-map.ts` and
- * the Swift menus — a tight, true set, not the full binding table. `/` is the
- * one typed command namespace and `⌘/` opens its popup; `⇧⌘P` / `⇧⌘C` select
- * the composer's two routes ([D122]); `⌘F` toggles the find bar with `⌘G` /
- * `⇧⌘G` cycling matches; `⇧⌘H` toggles the History shade; `⌃⌘P` cycles the
- * permission mode; `⌃\`` cycles the active card; `Esc` is the shared
- * CANCEL_DIALOG dismiss / interrupt.
+ * Which commands the help sheet is worth spending a row on — a tight, true
+ * set, not the full binding table. `/` is the one typed command namespace and
+ * has no chord to read; every other row names a command and takes its keys
+ * from whatever that command is actually bound to.
+ *
+ * Reading rather than authoring is the whole point: a help sheet is read by
+ * someone who does not yet know the chord, so it is the last place that can
+ * afford to carry its own copy of one — and once chords are the user's to
+ * rebind, an authored string is wrong for anyone who rebinds ([P11]).
  */
-export const HELP_SHORTCUTS: readonly HelpShortcut[] = [
+const HELP_SHORTCUT_ROWS: ReadonlyArray<{
+  readonly commandId?: string;
+  readonly keys?: string;
+  readonly label: string;
+}> = [
   { keys: "/", label: "Slash commands" },
-  { keys: "⌘/", label: "Open the slash-command popup" },
-  { keys: "⇧⌘P", label: "Prompt route" },
-  { keys: "⇧⌘C", label: "Changes route — show or hide Changes" },
-  { keys: "⌘F", label: "Show / hide the find bar (⌘G / ⇧⌘G to cycle)" },
-  { keys: "⇧⌘H", label: "Show or hide the History Shade" },
-  { keys: "⌃⌘P", label: "Cycle the permission mode" },
-  { keys: "⌃`", label: "Cycle the active card" },
-  { keys: "Esc", label: "Dismiss a sheet, or interrupt Claude" },
+  { commandId: TUG_ACTIONS.OPEN_COMMAND_PICKER, label: "Open the slash-command popup" },
+  { commandId: `${TUG_ACTIONS.SELECT_COMPOSER_ROUTE}:prompt`, label: "Prompt route" },
+  { commandId: TUG_ACTIONS.TOGGLE_CHANGES_VIEW, label: "Changes route — show or hide Changes" },
+  { commandId: TUG_ACTIONS.FIND, label: "Show / hide the find bar" },
+  { commandId: TUG_ACTIONS.FIND_NEXT, label: "Next match" },
+  { commandId: TUG_ACTIONS.FIND_PREVIOUS, label: "Previous match" },
+  { commandId: TUG_ACTIONS.TOGGLE_HISTORY_VIEW, label: "Show or hide the History Shade" },
+  { commandId: TUG_ACTIONS.CYCLE_PERMISSION_MODE, label: "Cycle the permission mode" },
+  { commandId: TUG_ACTIONS.CYCLE_CARD, label: "Cycle the active card" },
+  { commandId: TUG_ACTIONS.CANCEL_DIALOG, label: "Dismiss a sheet, or interrupt Claude" },
 ];
+
+/**
+ * The rendered shortcut rows. A row whose command has lost its binding drops
+ * out rather than showing a blank key — a help sheet that names a gesture the
+ * reader cannot perform is worse than one row shorter.
+ */
+export const HELP_SHORTCUTS: readonly HelpShortcut[] = HELP_SHORTCUT_ROWS.flatMap(
+  (row) => {
+    const keys = row.keys ?? (row.commandId === undefined
+      ? undefined
+      : commandShortcuts(row.commandId));
+    return keys === undefined ? [] : [{ keys, label: row.label }];
+  },
+);
 
 /**
  * Path (relative to the project root) of the user-facing list of slash

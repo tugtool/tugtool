@@ -20,6 +20,9 @@
  * @module lib/shell-interactive-staging
  */
 
+import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
+import { commandShortcut } from "../components/tugways/keymap-registry";
+
 /** Git subcommands whose `-p` form prompts hunk by hunk. */
 const PATCH_SUBCOMMANDS = new Set([
   "add",
@@ -153,12 +156,17 @@ export function interactiveStagingSteer(command: string): string | null {
     sub.text === "commit" && !flags.some((flag) => COMMIT_MESSAGE_FLAGS.has(flag));
   if (!interactive && !editorCommit) return null;
 
+  // The chord is read, not spelled: this copy tells the user which keys to
+  // press, so it is exactly the kind of string that goes wrong the moment
+  // somebody rebinds ([P11]). A command with no chord names no chord.
+  const shadeChord = commandShortcut(TUG_ACTIONS.TOGGLE_CHANGES_VIEW);
+  const shade = shadeChord === undefined ? "Changes shade" : `Changes shade (${shadeChord})`;
   if (interactive) {
     return (
       "Interactive staging can't run here: the block shell gives a command no " +
       "terminal, so its stdin is /dev/null and the prompt reads EOF — it would " +
       "stage nothing and exit as though it had worked.\n\n" +
-      "Pick hunks in the Changes shade (⇧⌘C), or stage a patch without " +
+      `Pick hunks in the ${shade}, or stage a patch without ` +
       "prompting:\n" +
       "  tugutil file stage --patch <file|->"
     );
@@ -166,7 +174,7 @@ export function interactiveStagingSteer(command: string): string | null {
   return (
     "`git commit` with no message would open an editor, and the block shell " +
     "gives a command no terminal to open one on.\n\n" +
-    "Pass the message inline (`git commit -m …`), or land from the Changes " +
-    "shade (⇧⌘C), which writes the message and the Tug-Session trailer for you."
+    "Pass the message inline (`git commit -m …`), or land from the " +
+    `${shade}, which writes the message and the Tug-Session trailer for you.`
   );
 }

@@ -12,6 +12,7 @@ import React from "react";
 import { Scissors, Copy, Clipboard } from "lucide-react";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { commandShortcut } from "@/components/tugways/keymap-registry";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
@@ -87,9 +88,9 @@ export function GalleryContextMenu() {
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
             items={[
-              { action: TUG_ACTIONS.CUT,   label: "Cut",   shortcut: "⌘X" },
-              { action: TUG_ACTIONS.COPY,  label: "Copy",  shortcut: "⌘C" },
-              { action: TUG_ACTIONS.PASTE, label: "Paste", shortcut: "⌘V" },
+              { action: TUG_ACTIONS.CUT, label: "Cut", shortcut: commandShortcut(TUG_ACTIONS.CUT) },
+              { action: TUG_ACTIONS.COPY, label: "Copy", shortcut: commandShortcut(TUG_ACTIONS.COPY) },
+              { action: TUG_ACTIONS.PASTE, label: "Paste", shortcut: commandShortcut(TUG_ACTIONS.PASTE) },
             ]}
           >
             <div style={regionStyle}>Right-click here</div>

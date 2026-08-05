@@ -5,6 +5,11 @@
  * keyboard shortcuts, arrow toggle, icon button use case, alignment variants,
  * truncation-aware mode, disabled trigger, and rich ReactNode content.
  *
+ * The chord strings below are authored, and are the one place that is right:
+ * these buttons are stand-ins — a Bold that bolds nothing, a Publish that
+ * publishes nothing — so there is no command whose binding could be read.
+ * Real surfaces render every chord from the keymap ([P11]).
+ *
  * @module components/tugways/cards/gallery-tooltip
  */
 

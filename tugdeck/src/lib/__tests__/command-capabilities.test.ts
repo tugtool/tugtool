@@ -344,6 +344,97 @@ describe("computeCommandCapabilities", () => {
     expect(dirty["file.revertToSaved"].enabled).toBe(true);
   });
 
+  describe("the chord half", () => {
+    const gated: CommandEntry = {
+      id: TUG_ACTIONS.NEXT_TURN,
+      title: "Next Turn",
+      routing: "first-responder",
+      menuItemId: "session.nextTurn",
+      mirrored: true,
+      validate: (chain) => chain.menu.session?.hasTurns ?? false,
+      disabledChord: "detach",
+    };
+    const kept: CommandEntry = { ...gated, disabledChord: "keep" };
+    const spec = { keyEquivalent: "\u{F701}", command: true, option: true };
+    const chords = { "session.nextTurn": spec };
+
+    test("an item the keymap has not claimed keeps the host's literal", () => {
+      const gates = computeCommandCapabilities(
+        source(new ResponderChainManager()),
+        [gated],
+        {},
+      );
+      // Absent, not null: null would clear a key equivalent the host chose.
+      expect("chord" in gates["session.nextTurn"]).toBe(false);
+    });
+
+    test("a claimed item carries the chord while its command is applicable", () => {
+      const facts = {
+        sessionCardFrontmost: true,
+        session: {
+          sessionBound: true,
+          canInterrupt: false,
+          canChangeSettings: true,
+          permissionMode: "default",
+          hasAssistantMessage: true,
+          hasTurns: true,
+          changesVisible: false,
+          historyVisible: false,
+        },
+      };
+      const gates = computeCommandCapabilities(
+        source(new ResponderChainManager(), facts),
+        [gated],
+        chords,
+      );
+      expect(gates["session.nextTurn"].chord).toEqual(spec);
+    });
+
+    test("a detaching command releases the chord when it dims", () => {
+      // A chord on a dimmed item is eaten at the menu bar with a beep, so
+      // detaching is the difference between "inapplicable here" and "dead".
+      const gates = computeCommandCapabilities(
+        source(new ResponderChainManager()),
+        [gated],
+        chords,
+      );
+      expect(gates["session.nextTurn"].enabled).toBe(false);
+      expect(gates["session.nextTurn"].chord).toBeNull();
+    });
+
+    test("a keeping command holds the chord even when it dims", () => {
+      const gates = computeCommandCapabilities(
+        source(new ResponderChainManager()),
+        [kept],
+        chords,
+      );
+      expect(gates["session.nextTurn"].enabled).toBe(false);
+      expect(gates["session.nextTurn"].chord).toEqual(spec);
+    });
+
+    test("chordActive releases the chord without dimming the item", () => {
+      // Save As… is the shipped case: enabled and chordless are not the same
+      // state, so the question the chord asks is its own.
+      const entry: CommandEntry = {
+        id: TUG_ACTIONS.SAVE_AS,
+        title: "Save As…",
+        routing: "first-responder",
+        menuItemId: "file.saveAs",
+        mirrored: true,
+        validate: () => true,
+        chordActive: (chain) => chain.menu.fileGates !== null,
+      };
+      const saveAsChord = { keyEquivalent: "s", command: true, shift: true };
+      const gates = computeCommandCapabilities(
+        source(new ResponderChainManager()),
+        [entry],
+        { "file.saveAs": saveAsChord },
+      );
+      expect(gates["file.saveAs"].enabled).toBe(true);
+      expect(gates["file.saveAs"].chord).toBeNull();
+    });
+  });
+
   test("the shipped table publishes a gate for every item it has moved", () => {
     // Every mirrored entry in the real table must be keyed and answerable —
     // a mirrored entry that produced no gate would leave its item on a tier
@@ -359,7 +450,18 @@ describe("computeCommandCapabilities", () => {
 
     for (const entry of mirrored) {
       expect(gates[entry.menuItemId as string], `${entry.id} publishes a gate`).toBeDefined();
+      expect(gates[entry.menuItemId as string].enabled, `${entry.id} answers`).toBeBoolean();
     }
-    expect(Object.keys(gates).length).toBe(mirrored.length);
+
+    // The rest of the block is chord-only: entries whose key equivalent the
+    // keymap states while their enablement stays the host's. Each must say
+    // nothing about enablement, or it would light an item its own tier gates.
+    const chordOnly = Object.entries(gates).filter(
+      ([id]) => !mirrored.some((entry) => entry.menuItemId === id),
+    );
+    for (const [id, gate] of chordOnly) {
+      expect(gate.enabled, `${id} carries a chord and no verdict`).toBeUndefined();
+      expect("chord" in gate, `${id} carries a chord`).toBe(true);
+    }
   });
 });

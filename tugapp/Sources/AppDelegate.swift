@@ -87,8 +87,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // File menu state
     private var closeMenuItem: NSMenuItem!
     private var closeAllCardTabsMenuItem: NSMenuItem!
-    /// Save As… — its ⇧⌘S key equivalent is toggled per frontmost card.
-    private var fileSaveAsMenuItem: NSMenuItem!
 
     // View menu state
     private var viewMenu: NSMenu!
@@ -99,11 +97,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // AppKit's automatic window entries survive every open.
     private var windowMenu: NSMenu!
     private var windowPaneListAnchor: NSMenuItem?
-    /// The two slot-stack switching items. ⌘R moves between them as the
-    /// user's preference changes; held so `applyStackChordKeyEquivalent`
-    /// can reassign it outside AppKit's key-equivalent scan.
-    private var windowCycleStackItem: NSMenuItem?
-    private var windowRevealStackItem: NSMenuItem?
 
     /// File ▸ Open Recent submenu — rebuilt on open by the NSMenuDelegate
     /// from `menuState.recentDocuments`, filtered to still-existing files.
@@ -806,6 +799,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             ?? ProcessInfo.processInfo.processName
     }
 
+    /// Build the menu tree: structure, identifiers, selectors, and the
+    /// key-equivalent literals below.
+    ///
+    /// Those literals are **defaults**, not the last word. The frontend's
+    /// command registry is where a chord is decided, and `applyCommandChords`
+    /// writes what it decides over anything spelled here — so a literal is
+    /// what the menu bar shows between launch and the first menu-state push,
+    /// and what stands for any item whose chord the registry does not state.
+    /// Items whose chord is conditional (Save As…, the two slot-stack items)
+    /// are built without one for exactly that reason.
     private func buildMenuBar() {
         let mainMenu = NSMenu()
         let appName = appDisplayName
@@ -933,14 +936,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // swallows ⌘S at the menubar, so the menu item must carry the
         // chord; the web keybinding-map entry covers browser-only dev.
         fileMenu.addItem(NSMenuItem(title: "Save…", action: #selector(saveActiveEditor(_:)), keyEquivalent: "s").identified("file.save"))
-        // Save As… (⇧⌘S) — the key equivalent is assigned DYNAMICALLY in
-        // updateMenuState only while a Text card is frontmost. The item
-        // validates disabled without one, and a chord on a disabled item is
-        // eaten at the menu bar with a beep instead of falling through, so a
-        // static ⇧⌘S would make the chord dead everywhere else rather than
-        // merely inapplicable.
-        fileSaveAsMenuItem = NSMenuItem(title: "Save As…", action: #selector(saveAsActiveEditor(_:)), keyEquivalent: "").identified("file.saveAs")
-        fileMenu.addItem(fileSaveAsMenuItem)
+        // Save As… — built without ⇧⌘S. The command claims the chord only
+        // while a Text card is frontmost and releases it otherwise, which the
+        // frontend states in its gate and `applyCommandChords` writes: a
+        // chord left on a dimmed item is eaten at the menu bar with a beep
+        // instead of falling through, so a static ⇧⌘S would be dead
+        // everywhere else rather than merely inapplicable.
+        fileMenu.addItem(NSMenuItem(title: "Save As…", action: #selector(saveAsActiveEditor(_:)), keyEquivalent: "").identified("file.saveAs"))
         // Save a Copy… — no chord; the revert/reload verbs collide with
         // nothing either, so they stay unbound.
         fileMenu.addItem(NSMenuItem(title: "Save a Copy…", action: #selector(saveACopyActiveEditor(_:)), keyEquivalent: "").identified("file.saveACopy"))
@@ -1209,16 +1211,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // is home again after N presses), while Reveal opens the focused
         // pane's picker to be read before choosing. Both live here rather than
         // in the keybinding map because AppKit resolves a menu key equivalent
-        // before the web view ever sees the keydown — which is also why the
-        // ⌘R preference can only be honoured by moving the chord between these
-        // two items (see updateMenuState).
-        let cycleStackItem = NSMenuItem(title: "Cycle Stack", action: #selector(cycleStack(_:)), keyEquivalent: "").identified("window.cycleStack")
-        self.windowCycleStackItem = cycleStackItem
-        wMenu.addItem(cycleStackItem)
-        let revealStackItem = NSMenuItem(title: "Reveal Stack", action: #selector(revealStack(_:)), keyEquivalent: "").identified("window.revealStack")
-        self.windowRevealStackItem = revealStackItem
-        wMenu.addItem(revealStackItem)
-        applyStackChordKeyEquivalent()
+        // before the web view ever sees the keydown. Neither is built with a
+        // chord: which of the two holds ⌘R is a user preference, so the
+        // frontend states it and `applyCommandChords` writes it.
+        wMenu.addItem(NSMenuItem(title: "Cycle Stack", action: #selector(cycleStack(_:)), keyEquivalent: "").identified("window.cycleStack"))
+        wMenu.addItem(NSMenuItem(title: "Reveal Stack", action: #selector(revealStack(_:)), keyEquivalent: "").identified("window.revealStack"))
         // Anchor separator for the dynamic pane-list slice: pane items are
         // inserted directly after it (and removed by identifier prefix) on
         // every menu open. macOS hides the redundant separator pair when
@@ -1708,31 +1705,49 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("cycle-stack")
     }
 
-    /// Decide who, if anyone, holds ⌘R: whether the chord is attached at all
-    /// (only when the focused pane's stack has somewhere to go), and which of
-    /// the two slot-stack items carries it (the frontend's `stackChord`
-    /// preference). Called at menu-build time and on every menu-state push —
-    /// never from `validateMenuItem`, which runs inside AppKit's
-    /// key-equivalent scan.
+    /// Write every key equivalent the frontend's keymap states, recursively
+    /// from `NSApp.mainMenu` (or from one submenu after a rebuild).
     ///
-    /// Both items validate disabled at depth ≤ 1, and a chord on a disabled
-    /// menu item is eaten at the menu bar with a beep rather than falling
-    /// through to the web view. Dimming the item is therefore not enough —
-    /// the chord has to come off, or ⌘R is dead everywhere instead of merely
-    /// inapplicable here.
-    private func applyStackChordKeyEquivalent() {
-        guard menuState.stackDepth > 1 else {
-            windowCycleStackItem?.keyEquivalent = ""
-            windowCycleStackItem?.keyEquivalentModifierMask = []
-            windowRevealStackItem?.keyEquivalent = ""
-            windowRevealStackItem?.keyEquivalentModifierMask = []
-            return
+    /// This is the whole native half of funnel #2. `tugapp/Sources` contains
+    /// no `performKeyEquivalent` override, no `NSEvent` monitor and no
+    /// `keyDown` override, so every native key claim in the app is an
+    /// `NSMenuItem` key equivalent — which makes this sweep complete coverage
+    /// rather than a partial measure, and means nothing can hold a chord the
+    /// keymap cannot see.
+    ///
+    /// The gate's chord field is three-state and all three are used:
+    /// *absent* leaves the item's constructed key equivalent alone (the right
+    /// answer for every item whose chord the table does not state), *detach*
+    /// clears it, and a spec applies it. Detach is what lets a command claim
+    /// a chord only while it is applicable — ⌘R when the stack has somewhere
+    /// to go, ⇧⌘S while a Text card is frontmost — instead of eating the
+    /// chord with a beep from a dimmed item.
+    ///
+    /// Called from `updateMenuState(_:)` and from the tail of every menu
+    /// rebuild, never from `validateMenuItem(_:)`: that runs inside AppKit's
+    /// closed-menu key-equivalent scan, where mutating a key equivalent is
+    /// undefined.
+    ///
+    /// No index of items is kept — the walk finds them by identifier every
+    /// time — so a rebuilt submenu cannot leave a stale reference behind.
+    private func applyCommandChords(in menu: NSMenu? = nil) {
+        guard let root = menu ?? NSApp.mainMenu else { return }
+        for item in root.items {
+            if let id = item.identifier?.rawValue,
+               let gate = menuState.commands[id] {
+                switch gate.chord {
+                case .absent:
+                    break
+                case .detach:
+                    item.keyEquivalent = ""
+                    item.keyEquivalentModifierMask = []
+                case .apply(let spec):
+                    item.keyEquivalent = spec.keyEquivalent
+                    item.keyEquivalentModifierMask = spec.modifierMask
+                }
+            }
+            if let submenu = item.submenu { applyCommandChords(in: submenu) }
         }
-        let cycleOwns = menuState.stackChord != "reveal"
-        windowCycleStackItem?.keyEquivalent = cycleOwns ? "r" : ""
-        windowCycleStackItem?.keyEquivalentModifierMask = cycleOwns ? [.command] : []
-        windowRevealStackItem?.keyEquivalent = cycleOwns ? "" : "r"
-        windowRevealStackItem?.keyEquivalentModifierMask = cycleOwns ? [] : [.command]
     }
 
     @objc private func sourceTree(_ sender: Any) {
@@ -1837,31 +1852,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             window.editingUndoManager()?.removeAllActions()
         }
 
-        // ⌘R follows the user's slot-stack preference between Cycle Stack and
-        // Reveal Stack. Same discipline as Save As… below: set here, outside
-        // AppKit's key-equivalent scan.
-        applyStackChordKeyEquivalent()
-
         // Rebuild Open Recent here, where the MRU arrives, and not only when
         // the submenu opens: the parent item's enablement is AppKit's own
         // "does this submenu hold an enabled item" rule, so an out-of-date
         // submenu leaves the parent live over an empty list.
         if let openRecentMenu { rebuildOpenRecentMenu(openRecentMenu) }
 
-        // Dynamic ⇧⌘S for Save As…: assign the chord ONLY while a Text card
-        // is frontmost, and clear it otherwise — the same detach-rather-than-
-        // dim rule the stack chord follows above, because a chord left on a
-        // disabled item beeps instead of falling through. Set here — outside
-        // AppKit's key-equivalent scan — not in validateMenuItem.
-        if let saveAs = fileSaveAsMenuItem {
-            if menuState.file != nil {
-                saveAs.keyEquivalent = "s"
-                saveAs.keyEquivalentModifierMask = [.command, .shift]
-            } else {
-                saveAs.keyEquivalent = ""
-                saveAs.keyEquivalentModifierMask = []
-            }
-        }
+        // Every chord the frontend states, written across the whole tree.
+        // Here — outside AppKit's key-equivalent scan — and never in
+        // validateMenuItem.
+        applyCommandChords()
     }
 
     /// Tolerance for page-zoom bound comparisons. Stepping by 0.1 accumulates
@@ -1895,10 +1895,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // and dynamic title all come from the one table the frontend
         // dispatches from, so the item cannot be lit here and dead there.
         // Items that have not moved yet publish no gate and fall through.
+        //
+        // A gate carrying only a chord answers nothing here: the chord half
+        // migrates on its own schedule, and the item keeps whichever tier
+        // below still owns its enablement.
         if let gate = menuState.commands[id] {
             if let title = gate.title { menuItem.title = title }
             if let on = gate.state { menuItem.state = on ? .on : .off }
-            return gate.enabled
+            if let enabled = gate.enabled { return enabled }
         }
 
         // The Permission Mode submenu's PARENT item carries no command — it
@@ -2248,6 +2252,15 @@ extension AppDelegate: BridgeDelegate {
 // MARK: - NSMenuDelegate (dynamic View + Theme menus)
 
 extension AppDelegate: NSMenuDelegate {
+    /// Menu rebuilds are the sweep's second writer.
+    ///
+    /// Every rebuild below reconstructs its items from construction-time
+    /// `keyEquivalent` literals, and `updateMenuState` only fires when the
+    /// frontend's serialized projection changes — so a rebuild that happens
+    /// after a rebind would restore the literal and keep it until some
+    /// unrelated state change came along. Each rebuild therefore re-sweeps
+    /// the menu it just rebuilt, which is why `applyCommandChords` is not
+    /// single-site.
     func menuNeedsUpdate(_ menu: NSMenu) {
         if menu === viewMenu {
             rebuildViewMenu(menu)
@@ -2335,6 +2348,8 @@ extension AppDelegate: NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
         let nextItem = NSMenuItem(title: "Next Theme", action: #selector(nextTheme(_:)), keyEquivalent: "t", modifierMask: [.command, .option]).identified("view.nextTheme")
         menu.addItem(nextItem)
+
+        applyCommandChords(in: menu)
     }
 
     /// Rebuild the View menu: the theme submenu and page-zoom commands.
@@ -2371,6 +2386,10 @@ extension AppDelegate: NSMenuDelegate {
         zoomInAliasItem.allowsKeyEquivalentWhenHidden = true
         menu.addItem(zoomInAliasItem)
         menu.addItem(NSMenuItem(title: "Zoom Out", action: #selector(zoomOut(_:)), keyEquivalent: "-").identified("view.zoomOut"))
+
+        // The sweep writes `keyEquivalent` and the modifier mask only, so the
+        // alias item's `allowsKeyEquivalentWhenHidden` survives it.
+        applyCommandChords(in: menu)
     }
 
     /// Refresh the Window menu's dynamic pane-list slice in place: remove
@@ -2406,12 +2425,14 @@ extension AppDelegate: NSMenuDelegate {
         }
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Clear Menu", action: #selector(clearRecentDocuments(_:)), keyEquivalent: "").identified("file.openRecent.clear"))
+        applyCommandChords(in: menu)
     }
 
     /// (checkmark on the focused one) directly after the anchor separator.
     /// Sectioned management — never a wholesale rebuild — because this menu
     /// is NSApp.windowsMenu and AppKit owns auto-added window entries in it.
     private func rebuildWindowPaneList(_ menu: NSMenu) {
+        defer { applyCommandChords(in: menu) }
         for item in menu.items where item.identifier?.rawValue.hasPrefix("window.pane.") == true {
             menu.removeItem(item)
         }
@@ -2572,13 +2593,51 @@ struct MenuState {
     /// validator's first tier be four lines and lets a hand-rolled case be
     /// deleted the moment its command starts publishing a gate — never both
     /// at once, so there is one definition of an item's enablement.
+    /// A chord in the host's alphabet: the key-equivalent character plus the
+    /// four modifier flags. The frontend performs the whole
+    /// `KeyboardEvent.code` → key-equivalent conversion, so this side spells
+    /// neither alphabet and only assembles the mask.
+    struct ChordSpec {
+        let keyEquivalent: String
+        let command: Bool
+        let shift: Bool
+        let option: Bool
+        let control: Bool
+
+        var modifierMask: NSEvent.ModifierFlags {
+            var mask: NSEvent.ModifierFlags = []
+            if command { mask.insert(.command) }
+            if shift { mask.insert(.shift) }
+            if option { mask.insert(.option) }
+            if control { mask.insert(.control) }
+            return mask
+        }
+    }
+
     struct CommandGate {
-        let enabled: Bool
+        /// nil means the command states no opinion on enablement and the
+        /// hand-rolled tier below still owns the item. A gate can carry a
+        /// chord and nothing else: View ▸ Zoom In takes its chord from the
+        /// registry while its predicate stays here, because it reads
+        /// `window.currentPageZoom` — host state the frontend cannot see.
+        let enabled: Bool?
         /// Checkmark; nil means the item does not participate in the check
         /// column, and its state is left as constructed.
         let state: Bool?
         /// Dynamic title; nil means keep the title the menu was built with.
         let title: String?
+
+        /// What the sweep does with this item's key equivalent. Three states,
+        /// all load-bearing: `absent` is the answer for every item whose
+        /// chord the frontend's table does not state (its constructed literal
+        /// stands), `detach` releases the chord so it falls through to the
+        /// web view, and `apply` writes one.
+        enum ChordField {
+            case absent
+            case detach
+            case apply(ChordSpec)
+        }
+        let chord: ChordField
     }
 
     var panes: [Pane] = []
@@ -2714,16 +2773,42 @@ struct MenuState {
         }
         if let rawCommands = payload["commands"] as? [String: Any] {
             for (itemId, rawGate) in rawCommands {
-                guard let gate = rawGate as? [String: Any],
-                      let enabled = gate["enabled"] as? Bool else { continue }
                 // A gate that cannot be read at all is dropped rather than
                 // defaulted: an unreadable gate is not a claim of "enabled",
                 // and dropping it leaves the item on whichever tier still
                 // owns it.
+                guard let gate = rawGate as? [String: Any] else { continue }
+                // The three chord states have to be read apart, and only the
+                // key's *presence* separates the first two: a missing key is
+                // "leave the item alone", while an explicit JSON null (which
+                // arrives as NSNull) is "release the chord". Reading it with
+                // `as? [String: Any]` alone would collapse them and turn every
+                // detach into a no-op.
+                let chordField: CommandGate.ChordField
+                if let rawChord = gate["chord"] {
+                    if let spec = rawChord as? [String: Any],
+                       let keyEquivalent = spec["keyEquivalent"] as? String {
+                        chordField = .apply(ChordSpec(
+                            keyEquivalent: keyEquivalent,
+                            command: spec["command"] as? Bool ?? false,
+                            shift: spec["shift"] as? Bool ?? false,
+                            option: spec["option"] as? Bool ?? false,
+                            control: spec["control"] as? Bool ?? false
+                        ))
+                    } else {
+                        // Null, or a spec too malformed to apply. Detaching is
+                        // the safe reading of both: an unreadable chord must
+                        // not leave a stale one standing.
+                        chordField = .detach
+                    }
+                } else {
+                    chordField = .absent
+                }
                 commands[itemId] = CommandGate(
-                    enabled: enabled,
+                    enabled: gate["enabled"] as? Bool,
                     state: gate["state"] as? Bool,
-                    title: gate["title"] as? String
+                    title: gate["title"] as? String,
+                    chord: chordField
                 )
             }
         }

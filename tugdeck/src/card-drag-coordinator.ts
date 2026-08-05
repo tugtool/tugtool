@@ -279,6 +279,13 @@ class CardDragCoordinator {
     // dialog or popover keydown handler can consume the event. The
     // listener lives only for the drag's lifetime (cleanup removes
     // it) so it cannot leak across gestures.
+    //
+    // Substrate-local, not a command: this Escape is part of a pointer
+    // gesture — take-back for a drag that is in the user's hand right now —
+    // and it exists only while that hand is down. A registry binding would be
+    // a durable claim on the chord for a claim that lasts a few hundred
+    // milliseconds, and `resolveChord` would have to report a chord that is
+    // taken only mid-drag, which is not a fact the keymap models.
     document.addEventListener("keydown", this.boundOnDocumentKeydown, true);
 
     // Snapshot initial position for RAF frame.

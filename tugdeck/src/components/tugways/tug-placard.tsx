@@ -204,6 +204,12 @@ function usePlacardAutoDismiss(args: {
       if (triggerSelector !== undefined && target.closest(triggerSelector)) return;
       onCloseRef.current();
     };
+    // Surface-local dismiss, live only while this placard is open. A placard
+    // is an in-DOM panel that does not push a focus mode, so the engine's
+    // Escape ladder has nothing to route to it — dismissing it is the panel's
+    // own business rather than a command with a chord. It neither prevents the
+    // default nor stops propagation, so it takes the chord from nobody: it
+    // closes itself and the event carries on to whoever else wants it.
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape" || (event.key === "." && event.metaKey)) {
         onCloseRef.current();

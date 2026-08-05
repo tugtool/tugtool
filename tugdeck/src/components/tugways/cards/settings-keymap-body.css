@@ -1,0 +1,139 @@
+/**
+ * settings-keymap-body.css — layout for the Keyboard settings panel.
+ *
+ * A filter line, a scrolling list, and a chord-capture surface that opens
+ * inside the row it belongs to. Chord chips carry their standing on data
+ * attributes — a shadowed chord is dimmed and struck, a live one is not —
+ * because that is appearance, and appearance is CSS ([L06]).
+ */
+
+.settings-keymap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  height: 100%;
+  min-height: 0;
+  padding: 0.75rem;
+}
+
+.settings-keymap-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.settings-keymap-toolbar > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-keymap-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+/* ---- Group headings ---- */
+
+.settings-keymap-group {
+  padding: 0.375rem 0.625rem 0.125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---- Rows ---- */
+
+.settings-keymap-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.settings-keymap-trailing {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.settings-keymap-unbound {
+  font-style: italic;
+}
+
+/* ---- Chord chips ---- */
+
+.settings-keymap-chord {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  padding: 0.0625rem 0.375rem;
+  border-radius: 0.25rem;
+  background: var(--tug7-surface-field-primary-normal-plain-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  font-family: var(--tug7-font-mono);
+  font-size: 0.75rem;
+  color: var(--tug7-element-field-text-normal-value-rest);
+}
+
+/* A chord that cannot fire is dimmed and struck: the row still names it —
+   the user bound it, and hiding it would be a different lie — but it does
+   not read as something that works. */
+.settings-keymap-chord[data-shadowed] .settings-keymap-chord-label {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.settings-keymap-chord-note {
+  font-family: var(--tug7-font-sans);
+  font-size: 0.6875rem;
+  color: var(--tug7-element-field-text-normal-label-rest);
+}
+
+.settings-keymap-locked {
+  display: inline-flex;
+  align-items: center;
+  color: var(--tug7-element-field-text-normal-label-rest);
+}
+
+/* ---- Chord capture ---- */
+
+.settings-keymap-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--tug7-element-global-border-normal-accent-rest);
+  background: var(--tug7-surface-field-primary-normal-plain-rest);
+}
+
+.settings-keymap-capture-chord {
+  font-family: var(--tug7-font-mono);
+  font-size: 1rem;
+  color: var(--tug7-element-field-text-normal-placeholder-rest);
+}
+
+.settings-keymap-capture-chord[data-pending="true"] {
+  color: var(--tug7-element-field-text-normal-value-rest);
+}
+
+.settings-keymap-capture-actions {
+  display: flex;
+  gap: 0.375rem;
+}
+
+/* ---- Empty state ---- */
+
+.settings-keymap-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  color: var(--tug7-element-field-text-normal-label-rest);
+}

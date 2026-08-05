@@ -227,8 +227,12 @@ import {
  * `scroll-displacement` trace event loses its `repaired` and
  * `priorRepairHeld` fields with the machinery. Behavioral; major stays `1`
  * because every surface method keeps its signature.
+ *
+ * `1.25.0`: {@link TugTestSurface.deleteTugbankValue} — the deletion half of
+ * `setTugbankValue`, for the domains where a key's absence is the meaningful
+ * state (a keymap override reset is a `DELETE`). Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.24.0" as const;
+export const SURFACE_VERSION = "1.25.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -532,6 +536,14 @@ export interface TugTestSurface {
    * client singleton is not yet installed.
    */
   setTugbankValue(domain: string, key: string, value: TaggedValue): void;
+
+  /**
+   * Delete a tugbank key locally and notify subscribers — the counterpart to
+   * {@link setTugbankValue}, for the domains where a key's *absence* carries
+   * meaning. `dev.tugtool.keymap` is the case: an override reset is a
+   * deletion, so a test that could only write values could never drive one.
+   */
+  deleteTugbankValue(domain: string, key: string): void;
 
   // ---- Granular reset ([D01]) ----
   reset(opts: ResetOptions): void;
@@ -1342,6 +1354,25 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         return;
       }
       client.setLocalValue(domain, key, value);
+    },
+
+    /**
+     * Drop a tugbank key, as a `DELETE` arriving from another process would.
+     * The counterpart to {@link setTugbankValue}, for the domains where a
+     * key's *absence* is the meaningful state — a keymap override reset is a
+     * deletion, and a test that could only write values could never drive it.
+     */
+    deleteTugbankValue(domain: string, key: string): void {
+      const client = getTugbankClient();
+      if (client === null) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn(
+            `[test-surface] deleteTugbankValue(${domain}/${key}): no tugbank client installed`,
+          );
+        }
+        return;
+      }
+      client.deleteLocalValue(domain, key);
     },
 
     // ---- granular reset ----

@@ -149,7 +149,13 @@ describe("the digit row is move-to-slot, whole", () => {
     expect(keymapRegistry.matchChord(keyEvent("Digit1"))).toBeNull();
   });
 
-  test("⌘0 is the host's Actual Size and is bound to nothing here", () => {
-    expect(keymapRegistry.matchChord(keyEvent("Digit0", { meta: true }))).toBeNull();
+  test("⌘0 is Actual Size, not a tenth slot", () => {
+    // The host still owns the chord in the shipped app — its View menu item
+    // resolves it before the web view sees a keydown — but the chord is
+    // stated here now, which is what lets the menu item be swept from the
+    // table and what gives browser dev the same gesture.
+    expect(keymapRegistry.matchChord(keyEvent("Digit0", { meta: true }))?.commandId).toBe(
+      TUG_ACTIONS.ZOOM_ACTUAL,
+    );
   });
 });

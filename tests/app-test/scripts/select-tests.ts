@@ -159,6 +159,13 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // consumed, so a test of that gesture has nowhere smaller to point.
     "tugdeck/src/components/tugways/tug-prompt-entry.tsx": 22,
     "tugdeck/src/card-state-orchestrator.ts": 21,
+    // The host itself: the whole menu bar, the window, the app lifecycle and
+    // every control frame live in this one file, so any test that reads a
+    // validated menu item, a key equivalent, or a native gesture names it and
+    // has nowhere smaller to point. Crossed the budget with the chord sweep
+    // (at0181), which is a method on this class by construction — AppKit key
+    // equivalents can only be written from the object that owns the menu.
+    "tugapp/Sources/AppDelegate.swift": 21,
     // The deck's own store: every test that seeds a deck, opens or closes a card,
     // or asserts pane geometry goes through it. Same structural coupling as the
     // pane frame below.

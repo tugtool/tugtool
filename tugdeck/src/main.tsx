@@ -35,6 +35,7 @@ import {
 import { readLayout, readTheme, readCardStates, readDeckState, readKeyboardAccess, readFocusRingModality, readStackChord, pruneOrphanedCardDefaults } from "./settings-api";
 import { keyboardAccessStore, normalizeKeyboardAccessMode } from "./keyboard-access-store";
 import { stackChordStore, normalizeStackChord } from "./stack-chord-store";
+import { KEYMAP_DOMAIN, keymapOverrideStore } from "./keymap-override-store";
 import { focusRingModalityStore, normalizeFocusRingModality } from "./focus-ring-modality-store";
 import { getThemeSetter } from "./action-dispatch";
 import {
@@ -277,6 +278,12 @@ if (!container) {
   // Seed which Window-menu item owns ⌘R. The host reads it off the first
   // menu-state push, so it has to be settled before `initHostMenuState` runs.
   stackChordStore.initialize(normalizeStackChord(readStackChord(tugbankClient)));
+
+  // Seed the user's keymap overrides, for the same reason and before the same
+  // call: the host takes every menu key equivalent from the first menu-state
+  // push, so an override that landed after it would show the user the default
+  // chord they had already changed.
+  keymapOverrideStore.initialize(tugbankClient.readDomain(KEYMAP_DOMAIN));
 
   // Startup theme reconciliation, before first render so the app does not
   // flash the wrong theme and then restyle.
@@ -586,6 +593,15 @@ if (!container) {
   // creates an infinite loop of CSS HMR updates.
   let currentTheme = initialTheme;
   tugbankClient.onDomainChanged((domain, entries) => {
+    // Keymap overrides written from another process (a second window, or
+    // `tugbank write … dev.tugtool.keymap`). The keymap registry republishes
+    // the menu-state block on any binding change, so the native key
+    // equivalents follow without a second channel — the same shape the stack
+    // chord already uses.
+    if (domain === KEYMAP_DOMAIN) {
+      keymapOverrideStore.applyRemote(entries);
+      return;
+    }
     if (domain === "dev.tugtool.app") {
       const themeEntry = entries["theme"];
       if (themeEntry && themeEntry.kind === "string" && typeof themeEntry.value === "string") {

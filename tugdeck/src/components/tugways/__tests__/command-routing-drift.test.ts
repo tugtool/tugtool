@@ -336,14 +336,36 @@ describe("every chord the static map held reaches the same command", () => {
     });
   }
 
-  test("the global layer holds nothing the map did not, except AppKit's own", () => {
+  /**
+   * Chords the host used to own outright — spelled as an `NSMenuItem`
+   * key equivalent and nowhere else — now stated in the table so the host
+   * can be swept from it. Each gained a JS twin as a consequence, which is
+   * the point: one table, both sides.
+   */
+  const HOST_DERIVED_CHORDS: ReadonlyMap<string, string> = new Map([
+    ["⇧⌘S", TUG_ACTIONS.SAVE_AS],
+    ["⌘R", TUG_ACTIONS.CYCLE_STACK],
+    ["⌘+", TUG_ACTIONS.ZOOM_IN],
+    ["⌘=", TUG_ACTIONS.ZOOM_IN],
+    ["⌘-", TUG_ACTIONS.ZOOM_OUT],
+    ["⌘0", TUG_ACTIONS.ZOOM_ACTUAL],
+  ]);
+
+  test("the global layer holds nothing the map did not, except the host's own", () => {
     // The table also names Quit, Hide, Minimize and Full Screen so the keymap
     // UI can show them. They are `native`: represented, never JS-routed.
-    const extra = [...byRendering.entries()]
-      .filter(([rendering]) => !SHIPPED_CHORDS.some(([r]) => r === rendering))
-      .map(([, v]) => v.commandId);
-    for (const id of extra) {
-      expect(COMMANDS_BY_ID.get(id)?.routing, `${id} is AppKit's`).toBe("native");
+    const extra = [...byRendering.entries()].filter(
+      ([rendering]) => !SHIPPED_CHORDS.some(([r]) => r === rendering),
+    );
+    for (const [rendering, { commandId }] of extra) {
+      const derived = HOST_DERIVED_CHORDS.get(rendering);
+      if (derived !== undefined) {
+        expect(commandId, `${rendering} is the host's, swept from the table`).toBe(derived);
+        continue;
+      }
+      expect(COMMANDS_BY_ID.get(commandId)?.routing, `${commandId} is AppKit's`).toBe(
+        "native",
+      );
     }
   });
 });

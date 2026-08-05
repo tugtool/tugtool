@@ -509,6 +509,11 @@ function SnippetEditorRow({
     };
     // A keyboard departure (Escape / Tab) is never a chrome click: close the
     // window so its blur commits.
+    //
+    // This listener claims no chord at all — it reads *that* a key was
+    // pressed, never which one, and neither prevents the default nor stops
+    // propagation. There is nothing here for the keymap to see because there
+    // is nothing here to take.
     const onKey = (): void => {
       chromeClickTsRef.current = 0;
     };

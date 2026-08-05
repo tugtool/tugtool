@@ -618,19 +618,19 @@ browser keydown
       │
       ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ Stage 1 (capture)  matchKeybinding(event) → KeyBinding|null   │
+│ Stage 1 (capture)  resolve the chord to a COMMAND             │
 │                                                                │
-│ If a keybinding matches:                                       │
-│   - preventDefaultOnMatch? → event.preventDefault()            │
-│   - manager.sendToFirstResponderForContinuation({                          │
-│       action: binding.action,                                  │
-│       phase: "discrete",                                       │
-│       ...(binding.value !== undefined ? {value} : {})          │
-│     })                                                         │
+│   scoped:  manager.resolveKeybinding(event, [focusMode])       │
+│            — the focus mode, then the responder walk           │
+│   global:  keymapRegistry.matchChord(event)                    │
+│                                                                │
+│ Either way the answer is a command id, and the dispatch is     │
+│ read from its registry entry — routing, payload, validity:     │
+│   - binding.preventDefault? → event.preventDefault()           │
+│   - dispatchCommand(commandId)                                 │
 │   - If handled:                                                │
 │       event.preventDefault()                                   │
 │       event.stopImmediatePropagation()                         │
-│       continuation?.()                                         │
 │                                                                │
 │ Otherwise: fall through to stage 2.                            │
 └──────────────────────────┬───────────────────────────────────┘
@@ -655,7 +655,9 @@ browser keydown
 └──────────────────────────────────────────────────────────────┘
 ```
 
-All the interesting work is in stage 1. The `keybinding-map.ts` file is a static array of `KeyBinding` entries — `{key, ctrl?, meta?, shift?, alt?, action, preventDefaultOnMatch?, value?}` — and stage 1 consults it via `matchKeybinding(event)`. Every entry dispatches a typed `TugAction` through the chain; the walk lands on whatever responder registered a handler. There is no per-component keyboard wiring, and adding a new shortcut is one line in the map plus (if needed) one handler on the responder that owns the semantic.
+All the interesting work is in stage 1, and what it resolves to is a **command**, not an action. Chords live as `bindings` on their command's entry in `command-registry.ts`; `keymapRegistry.matchChord` answers the global layer and `manager.resolveKeybinding` answers the scoped ones; `dispatchCommand` then reads routing, payload, and validity from the entry. That is what makes a chord and a menu item two doors on one row instead of two implementations to keep in step — and adding a shortcut is one `bindings` entry plus (if needed) one handler on the responder that owns the semantic.
+
+There is a layer **above** stage 1 that no amount of JS can reach: AppKit resolves a menu item's key equivalent before the web view sees a `keydown` at all. A chord on a menu item therefore preempts every scoped binding regardless of focus. `keymapRegistry.resolveChord` models all four layers and is what the Settings ▸ Keyboard pane renders from; the doctrine is in [menus.md](menus.md).
 
 A few load-bearing details:
 
@@ -733,7 +735,7 @@ Each of these used to exist in the codebase before L11 and the A-phases landed, 
 
 - **Callback props for user interactions.** An interactive component that exposes an `onClose`, `onConfirm`, `onCancel`, `onSelect`, or equivalent prop for a user-triggered action. The callback bypasses the chain: no walk, no first-responder promotion, no observer notification, no keyboard shortcut route. Use `manager.dispatch` and make the consumer register a responder handler. Non-user-interaction callbacks (`onOpenChange` for mirroring Radix state upward, lifecycle observers) are fine.
 
-- **Per-component keyboard listeners.** A component that installs its own `keydown` listener to catch ⌘X or ⌘A. It duplicates what the keybinding map already does, it doesn't respect first-responder priority, and it races other listeners. Use a `KEYBINDINGS` entry in the map; the responder handles the dispatched action. The text editor's own `keydown` for plain typing is not a shortcut listener — plain typing goes through stage 4's passthrough, not the chain.
+- **Per-component keyboard listeners.** A component that installs its own `keydown` listener to catch ⌘X or ⌘A. It duplicates what the funnel already does, it does not respect first-responder priority, it races other listeners, and — the part that costs most — it is invisible to `resolveChord`, to the keymap pane, and to the collision lint, so nothing can tell you the chord is taken until you press it. Put the chord in the command's `bindings`, or register a scoped one with `useKeybindings`; the responder handles the dispatched action. A listener whose claim lasts only as long as a pointer gesture (a drag's Escape) is the sanctioned exception, and it says so in a comment. The text editor's own `keydown` for plain typing is not a shortcut listener — plain typing goes through stage 4's passthrough, not the chain.
 
 - **Global window/document listeners for chain work.** A component that attaches `window.addEventListener("pointerdown", ...)` to dismiss itself on outside click, or `document.addEventListener("keydown", ...)` to listen for Escape. The chain already provides the signal via `observeDispatch` or stage 1 bindings; parallel event listeners create ordering bugs with the chain's capture-phase listeners. Use `observeDispatch` for chain-reactive dismissal and the keybinding map for shortcuts.
 
@@ -773,5 +775,7 @@ Each of these used to exist in the codebase before L11 and the A-phases landed, 
 - `tugdeck/src/components/tugways/use-responder.tsx` — `useResponder` / `useOptionalResponder`, `ResponderScope`, `ResponderParentContext`, the live-proxy action map, the stale-focus re-promotion path
 - `tugdeck/src/components/tugways/use-responder-form.tsx` — the slot-typed form-shaped shortcut over `useResponder`
 - `tugdeck/src/components/tugways/action-vocabulary.ts` — the `TUG_ACTIONS` constants, the `TugAction` union, per-action payload conventions
-- `tugdeck/src/components/tugways/keybinding-map.ts` — the static keybinding array and `matchKeybinding`
+- `tugdeck/src/components/tugways/command-registry.ts` — the command table, and every default chord
+- `tugdeck/src/components/tugways/keymap-registry.ts` — `matchChord`, `resolveChord`, `menuChords`
+- `tugdeck/src/components/tugways/keybinding-map.ts` — the `KeyBinding` shape scoped registrations use
 - `tugdeck/src/components/tugways/internal/floating-surface-notes.ts` — the canonical invariants table for the four A2.8 floating surfaces (popover, confirm-popover, alert, sheet)

@@ -39,6 +39,16 @@ export interface KeyBinding {
   /** TugAction name to dispatch when the binding matches */
   action: TugAction;
   /**
+   * The registry command this chord invokes, when it invokes one.
+   *
+   * A scoped binding on a real command names the command, and the whole
+   * dispatch — routing, payload, validity — is read from its registry entry
+   * rather than from this object. A scoped binding on a verb that is
+   * deliberately outside the table (the PDF card's scroll keys, the gallery's
+   * demo chord) leaves this absent and dispatches `action` directly.
+   */
+  commandId?: string;
+  /**
    * When true, the pipeline calls preventDefault on the event when this
    * binding matches, before dispatching to the responder chain. This allows
    * browser-default behaviors (e.g. Cmd+A select-all) to be suppressed even

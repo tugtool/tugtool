@@ -111,6 +111,9 @@ import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
 import type { SessionSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
 import { useResponder } from "./use-responder";
+import { useKeybindings } from "./use-keybindings";
+import type { KeyBinding } from "./keybinding-map";
+import { commandShortcut, keymapRegistry } from "./keymap-registry";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useResponderChain } from "./responder-chain-provider";
@@ -1593,60 +1596,30 @@ export const TugPromptEntry = React.forwardRef<
     commitModeRef.current?.cancelDraft();
   }, []);
 
-  // In commit mode, a bare Escape or Cmd-. exits the mode ([P03]) — dismissing
-  // the Changes shade — captured on the entry root before the editor's own
-  // keymap sees it, mirroring the retired dialog's Escape ownership. Other
-  // modified Escapes are left alone.
+  // ⇧⌘M invokes Auto-Message ([P06]) while commit mode is up — the keyboard
+  // twin of the pencil-sparkles button.
   //
-  // While the Auto-Message scribe streams ([P06]) the same capture-phase listener
-  // takes over Escape AND Cmd-. and routes them to a DRAFT cancel — never the
-  // mode exit and, crucially, never the session-turn interrupt. When a turn is
-  // in flight the window-level keybinding claims CANCEL_DIALOG before this
-  // listener runs; that path is handled inside the CANCEL_DIALOG responder below
-  // (it also cancels the draft first). This listener is the backstop for the
-  // no-turn case, where CANCEL_DIALOG is unregistered and the event reaches here.
-  useLayoutEffect(() => {
-    if (!commitActive) return;
-    const el = rootRef.current;
-    if (el === null) return;
-    const onKeyDown = (e: KeyboardEvent): void => {
-      const bareEscape =
-        e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
-      const cmdPeriod =
-        (e.key === "." || e.key === "Period") &&
-        e.metaKey &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        !e.shiftKey;
-      // ⇧⌘M invokes Auto-Message ([P06]) while commit mode is up — the keyboard
-      // twin of the pencil-sparkles button. Ignored mid-draft (the button is
-      // lit but inert); otherwise routes through the same handler, so a typed
-      // message still trips the Replace confirm.
-      const cmdShiftM =
-        e.code === "KeyM" && e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey;
-      if (cmdShiftM) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!commitDraftingRef.current) handleCommitAutoMessage();
-        return;
-      }
-      if (commitDraftingRef.current) {
-        if (bareEscape || cmdPeriod) {
-          e.preventDefault();
-          e.stopPropagation();
-          cancelCommitDraft();
-        }
-        return;
-      }
-      if (bareEscape || cmdPeriod) {
-        e.preventDefault();
-        e.stopPropagation();
-        exitCommitMode();
-      }
-    };
-    el.addEventListener("keydown", onKeyDown, true);
-    return () => el.removeEventListener("keydown", onKeyDown, true);
-  }, [commitActive, exitCommitMode, cancelCommitDraft, handleCommitAutoMessage]);
+  // A scoped binding rather than a raw capture listener, and the difference is
+  // not stylistic: a listener that claims a chord out of the DOM is invisible
+  // to `resolveChord`, to the keymap pane, and to the collision lint, so
+  // nothing could tell you ⇧⌘M was taken until you pressed it. Registered
+  // here, it is live exactly while this responder is on the first-responder
+  // walk and while commit mode is up, and the chord itself comes from the
+  // command's registry entry rather than being spelled again.
+  const commitKeybindings = useMemo<KeyBinding[]>(() => {
+    if (!commitActive) return [];
+    return keymapRegistry.bindingsOf(TUG_ACTIONS.COMMIT_AUTO_MESSAGE).map((b) => ({
+      key: b.chord.key,
+      ...(b.chord.ctrl === true ? { ctrl: true } : {}),
+      ...(b.chord.meta === true ? { meta: true } : {}),
+      ...(b.chord.shift === true ? { shift: true } : {}),
+      ...(b.chord.alt === true ? { alt: true } : {}),
+      action: TUG_ACTIONS.COMMIT_AUTO_MESSAGE,
+      commandId: TUG_ACTIONS.COMMIT_AUTO_MESSAGE,
+      preventDefaultOnMatch: b.preventDefault === true,
+    }));
+  }, [commitActive]);
+  useKeybindings(commitKeybindings);
 
   // Command insert ([P03]/[P04]). A click on a known slash command in the
   // transcript parks `{ name, args }` on the code-session store; this
@@ -2735,36 +2708,48 @@ export const TugPromptEntry = React.forwardRef<
           void performSubmit();
         }
       },
-      ...(snap.canInterrupt && !snap.interruptInFlight
+      // ⇧⌘M and the pencil-sparkles button are two doors on one command
+      // ([L11]). Inert mid-draft — the button stays lit but does nothing —
+      // and otherwise routed through the same handler, so a typed message
+      // still trips the Replace confirm.
+      [TUG_ACTIONS.COMMIT_AUTO_MESSAGE]: (_event: ActionEvent) => {
+        if (commitDraftingRef.current) return;
+        handleCommitAutoMessage();
+      },
+      // Escape / ⌘. — one ladder, in one place.
+      //
+      // It used to be two: this handler when a turn was in flight, and a raw
+      // capture listener on the composer root for the no-turn case, each with
+      // its own copy of the drafting-then-mode-then-popup order. Registering
+      // whenever there is something to cancel is what collapses them, and is
+      // why the condition is a union rather than the interrupt gate alone —
+      // in commit mode with no turn running, Escape still has to drop the
+      // shade rather than fall through to the engine's ladder.
+      ...(commitActive || (snap.canInterrupt && !snap.interruptInFlight)
         ? {
             [TUG_ACTIONS.CANCEL_DIALOG]: (_event: ActionEvent) => {
-              // While the Auto-Message scribe streams ([P06]), Escape / Cmd-.
-              // cancel the DRAFT — never the running turn. This handler is
-              // reached first (a turn is in flight, so the window keybinding
-              // claims CANCEL_DIALOG here), so intercepting drafting BEFORE
-              // `popInteractive` is what keeps the cancel from leaking into the
-              // session. The backend aborts only the scribe child.
+              // While the Auto-Message scribe streams ([P06]), Escape / ⌘.
+              // cancel the DRAFT — never the running turn. Intercepting
+              // drafting before everything below is what keeps the cancel
+              // from leaking into the session; the backend aborts only the
+              // scribe child.
               if (commitDraftingRef.current) {
                 cancelCommitDraft();
                 return;
               }
-              // In commit mode the Changes shade is up: Escape / Cmd-. dismiss
-              // the mode (drop the shade), NEVER the running turn. A turn in
-              // flight routes CANCEL_DIALOG here first (the window keybinding
-              // claims it before the capture-phase listener above), so this is
-              // where the shade-dismiss must outrank the interrupt.
+              // In commit mode the Changes shade is up: Escape / ⌘. dismiss
+              // the mode (drop the shade), NEVER the running turn — so the
+              // shade-dismiss outranks the interrupt.
               if (commitActiveRef.current) {
                 exitCommitMode();
                 return;
               }
               // A visible slash-command / file completion popup owns Escape
-              // first: dismiss it and bail. The capture-phase keybinding
-              // routes Escape here BEFORE the editor's bubble-phase keymap
-              // runs (because a turn is in flight, this CANCEL_DIALOG handler
-              // is registered and claims the event), so without this check
-              // Escape would interrupt the turn while leaving the popup open.
-              // When no popup is open this is a no-op and we fall through to
-              // the interrupt — Escape ≡ the Stop button.
+              // first: dismiss it and bail. The capture-phase binding routes
+              // Escape here BEFORE the editor's bubble-phase keymap runs, so
+              // without this check Escape would interrupt the turn while
+              // leaving the popup open. With no popup open this is a no-op and
+              // we fall through to the interrupt — Escape ≡ the Stop button.
               if (textEditorRef.current?.cancelActiveCompletion() === true) {
                 return;
               }
@@ -3185,14 +3170,14 @@ export const TugPromptEntry = React.forwardRef<
             label: "Prompt",
             icon: <MessageSquareText strokeWidth={2} />,
             tooltip: "Write a prompt",
-            tooltipShortcut: "⇧⌘P",
+            tooltipShortcut: commandShortcut(`${TUG_ACTIONS.SELECT_COMPOSER_ROUTE}:prompt`),
           },
           {
             value: "changes",
             label: "Changes",
             icon: <GitCommitHorizontal strokeWidth={2} />,
             tooltip: "Write a commit message",
-            tooltipShortcut: "⇧⌘C",
+            tooltipShortcut: commandShortcut(TUG_ACTIONS.TOGGLE_CHANGES_VIEW),
           },
         ]}
         value={commitActive ? "changes" : "prompt"}
@@ -3293,7 +3278,7 @@ export const TugPromptEntry = React.forwardRef<
       </TugTooltip>
       <TugTooltip
         content={commitDrafting ? "Composing…" : "Generate a commit message"}
-        shortcut="⇧⌘M"
+        shortcut={commandShortcut(TUG_ACTIONS.COMMIT_AUTO_MESSAGE)}
       >
         <TugPushButton
           className="tug-prompt-entry-commit-auto"
@@ -3319,6 +3304,9 @@ export const TugPromptEntry = React.forwardRef<
             ? "Commit"
             : "Unavailable while a turn is running or the changeset is empty"
         }
+        // Authored, and deliberately so: ⇧⏎ is the editor's own submit key,
+        // text-editing currency handled by the CM6 keymap rather than a
+        // registry command ([#non-goals]). There is no binding to read.
         shortcut={commitCanLand ? "⇧⏎" : undefined}
       >
         <TugPushButton

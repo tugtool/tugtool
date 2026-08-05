@@ -38,8 +38,15 @@
  */
 
 import type { Chord, CommandBinding, CommandEntry, BindingScope } from "./command-registry";
-import { COMMANDS } from "./command-registry";
-import { chordKey, codeToKeyEquivalent, eventChordKey, type ChordSpec } from "./chord-format";
+import { COMMANDS, STACK_CHORD } from "./command-registry";
+import { TUG_ACTIONS } from "./action-vocabulary";
+import {
+  chordKey,
+  codeToKeyEquivalent,
+  eventChordKey,
+  formatChord,
+  type ChordSpec,
+} from "./chord-format";
 
 /* ---------------------------------------------------------------------------
  * What resolveChord answers (Spec S02)
@@ -147,6 +154,14 @@ export class KeymapRegistry {
   private bindings: Map<string, readonly CommandBinding[]>;
   /** Global-layer chord → binding. First writer wins, matching the old scan. */
   private globalIndex: Map<string, KeymapBinding>;
+  /**
+   * Menu items whose key equivalent the registry has taken responsibility
+   * for. Seeded from the table's own menu-eligible defaults and grown as
+   * bindings are written, never shrunk: releasing a chord is a thing the
+   * registry has to say out loud, and it can only say it about an item it
+   * remembers claiming.
+   */
+  private readonly claimedMenuItems = new Set<string>();
   private environment: KeymapEnvironment = EMPTY_KEYMAP_ENVIRONMENT;
   private readonly subscribers = new Set<() => void>();
   private version = 0;
@@ -176,23 +191,26 @@ export class KeymapRegistry {
     } else {
       this.bindings.set(commandId, bindings);
     }
+    this.claimMenuItem(commandId);
     this.reindex();
     this.notify();
   }
 
   // ---- Subscription ([L02]) ----
 
-  subscribe(callback: () => void): () => void {
+  // Bound properties, not prototype methods: `useSyncExternalStore` takes
+  // these as bare function references, and a prototype method handed over
+  // that way arrives with no `this` at all.
+
+  subscribe = (callback: () => void): (() => void) => {
     this.subscribers.add(callback);
     return () => {
       this.subscribers.delete(callback);
     };
-  }
+  };
 
   /** Bumps on every binding change, so React readers can `useSyncExternalStore`. */
-  getSnapshot(): number {
-    return this.version;
-  }
+  getSnapshot = (): number => this.version;
 
   // ---- Reads ----
 
@@ -338,11 +356,15 @@ export class KeymapRegistry {
   /**
    * Which chord each menu item should carry — what the mirror publishes.
    *
-   * An item appears here only when its command declares a `menuEligible`
-   * binding, because absence on the wire means "leave the constructed key
-   * equivalent alone" (Spec S03). A command that *had* menu-eligible
-   * bindings and now has none publishes `null`, which detaches: that is how
-   * a rebound-away command releases its chord.
+   * An item appears here only once the registry has claimed it — because
+   * absence on the wire means "leave the constructed key equivalent alone"
+   * (Spec S03), and the host's construction-time literal is the right answer
+   * for every item whose chord the table does not state. Claiming is
+   * sticky: an item whose command has held a menu-eligible binding at any
+   * point publishes `null` once it holds none, which detaches. That is how a
+   * rebound-away command releases its chord, and it is why the claim is
+   * remembered rather than recomputed — a command that loses its last chord
+   * would otherwise go silent and leave the old key equivalent standing.
    *
    * Enablement is not consulted here. A `disabledChord: "detach"` command
    * releases its chord while it validates disabled, and only the publisher
@@ -352,13 +374,13 @@ export class KeymapRegistry {
     const out: Record<string, ChordSpec | null> = {};
     for (const entry of this.entries) {
       if (entry.menuItemId === undefined) continue;
-      const declaresEligible = (entry.bindings ?? []).some((b) => b.menuEligible === true);
-      const live = this.bindingsOf(entry.id).find((b) => b.menuEligible === true);
+      const live = this.menuBindingOf(entry.id);
       if (live !== undefined) {
         // An `NSMenuItem` carries exactly one key equivalent, so the first
         // eligible binding is the menu's and the rest live in the JS funnel.
+        this.claimedMenuItems.add(entry.menuItemId);
         out[entry.menuItemId] = codeToKeyEquivalent(live.chord);
-      } else if (declaresEligible) {
+      } else if (this.claimedMenuItems.has(entry.menuItemId)) {
         out[entry.menuItemId] = null;
       }
     }
@@ -405,8 +427,45 @@ export class KeymapRegistry {
       if (entry.bindings !== undefined && entry.bindings.length > 0) {
         this.bindings.set(entry.id, entry.bindings);
       }
+      this.claimMenuItem(entry.id);
     }
     this.reindex();
+  }
+
+  /**
+   * The binding that should carry this command's menu key equivalent, or
+   * `undefined` when none should.
+   *
+   * A default says so explicitly with `menuEligible` — that flag is how the
+   * table distinguishes Zoom In's ⌘+ (the menu's) from its ⌘= alias (the JS
+   * funnel's). A *user* binding does not: someone rebinding Zoom Out has said
+   * what the chord is, not which layer should carry it, and expecting them to
+   * know about menu eligibility would be asking them to understand AppKit's
+   * key-equivalent scan in order to change a shortcut. So a user's first
+   * global binding takes the item, and their empty list releases it.
+   */
+  private menuBindingOf(commandId: string): CommandBinding | undefined {
+    const bindings = this.bindingsOf(commandId);
+    return (
+      bindings.find((b) => b.menuEligible === true) ??
+      bindings.find((b) => b.source === "user" && b.scope.kind === "global")
+    );
+  }
+
+  /**
+   * Note that the registry now speaks for this command's menu item, if it
+   * currently holds a binding that belongs on it.
+   *
+   * Recorded when the binding is *written*, not when it is next published:
+   * two rebinds landing between one flush and the next would otherwise leave
+   * the intervening claim unrecorded, and the item would keep a key
+   * equivalent the registry no longer states.
+   */
+  private claimMenuItem(commandId: string): void {
+    const entry = this.entries.find((e) => e.id === commandId);
+    if (entry?.menuItemId === undefined) return;
+    if (this.menuBindingOf(commandId) === undefined) return;
+    this.claimedMenuItems.add(entry.menuItemId);
   }
 
   private reindex(): void {
@@ -429,3 +488,73 @@ export class KeymapRegistry {
 
 /** The app's registry. Tests construct their own over a fixture table. */
 export const keymapRegistry = new KeymapRegistry();
+
+/**
+ * The chord string to show beside a command, or `undefined` when it has
+ * none.
+ *
+ * The single renderer for every displayed shortcut ([P11]). No surface
+ * authors one of its own: an authored string has nothing to disagree with
+ * until someone reads it — which is how Copy as Plain Text advertised ⇧⌘C
+ * while ⇧⌘C was Show Changes — and once chords are the user's to rebind, an
+ * authored string is guaranteed wrong for anyone who rebinds.
+ *
+ * A command with several bindings shows the first, the same rule the host's
+ * menu sweep applies, so an in-page menu and the menu bar name the same
+ * gesture.
+ */
+export function commandShortcut(
+  commandId: string,
+  registry: KeymapRegistry = keymapRegistry,
+): string | undefined {
+  const binding = registry.bindingsOf(commandId)[0];
+  return binding === undefined ? undefined : formatChord(binding.chord);
+}
+
+/**
+ * Every chord bound to a command, rendered and joined — for the surfaces
+ * that have room to name them all. A help sheet that shows only ⌘. for
+ * Cancel is telling half the truth to a reader who is there to learn.
+ */
+export function commandShortcuts(
+  commandId: string,
+  registry: KeymapRegistry = keymapRegistry,
+): string | undefined {
+  const bindings = registry.bindingsOf(commandId);
+  if (bindings.length === 0) return undefined;
+  return bindings.map((b) => formatChord(b.chord)).join(" / ");
+}
+
+/**
+ * Move ⌘R between Cycle Stack and Reveal Stack to follow the user's
+ * preference.
+ *
+ * Expressing the preference as a binding rewrite rather than as a predicate
+ * is what keeps one answer to "what does ⌘R do": `menuChords` publishes the
+ * chord for the holder and a detach for the other, `matchChord` resolves ⌘R
+ * to the same command the menu bar would, and the keymap pane shows the
+ * chord on the row that actually has it.
+ *
+ * The loser gets an *empty* list rather than its default back, because its
+ * default is exactly the chord being taken away. Empty is what makes the
+ * registry publish `null` for its item, which is what releases the key
+ * equivalent on the host side.
+ *
+ * `overridden` names commands the user has rebound by hand. The preference
+ * and a keymap override are two writers on the same bindings, and the more
+ * specific one wins: someone who has said "this command's chord is ⌥⌘R" has
+ * answered a question this preference was only guessing at.
+ */
+export function applyStackChordPreference(
+  preference: string,
+  registry: KeymapRegistry = keymapRegistry,
+  overridden: ReadonlySet<string> = new Set(),
+): void {
+  const cycleOwns = preference !== "reveal";
+  if (!overridden.has(TUG_ACTIONS.CYCLE_STACK)) {
+    registry.setBindings(TUG_ACTIONS.CYCLE_STACK, cycleOwns ? null : []);
+  }
+  if (!overridden.has(TUG_ACTIONS.REVEAL_STACK)) {
+    registry.setBindings(TUG_ACTIONS.REVEAL_STACK, cycleOwns ? [] : [STACK_CHORD]);
+  }
+}

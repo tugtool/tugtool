@@ -23,11 +23,11 @@
  * bound — arrows, PageUp/Down, Home/End — and the deck binds those nowhere
  * else, so the surface takes a chord away from nothing.
  *
- * The page modes and the zoom deliberately have **no** chord. Preview puts
- * the modes on ⌘1-3, which the deck already spends on `move-to-slot`; a
- * chain-scoped binding could shadow that while a PDF held focus, but a
- * viewer is not the place to redefine a deck-wide navigation command. Both
- * are reachable from the context menu instead.
+ * The page modes deliberately have **no** chord. Preview puts them on ⌘1-3,
+ * which the deck already spends on `move-to-slot`; a chain-scoped binding
+ * could shadow that while a PDF held focus, but a viewer is not the place to
+ * redefine a deck-wide navigation command. The context menu is their door,
+ * and it shows each command's live chord rather than an authored string.
  *
  * Zoom additionally answers the host's View menu, and that part is not a
  * choice. ⌘+ / ⌘- / ⌘0 are AppKit key equivalents, resolved before the web
@@ -97,6 +97,7 @@ import {
   type TugContextMenuEntry,
 } from "@/components/tugways/tug-context-menu";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { commandShortcut } from "@/components/tugways/keymap-registry";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { useKeybindings } from "@/components/tugways/use-keybindings";
 import { useResponder } from "@/components/tugways/use-responder";
@@ -521,11 +522,16 @@ export function PdfView({
   // are navigation keys the deck binds nowhere else; the surface consumes
   // them only while it is on the first-responder walk.
   //
-  // Neither the page modes nor the zoom carry a chord. The modes would have
-  // to take ⌘1-3 from `move-to-slot`, and a viewer is not the place to
-  // redefine a deck-wide navigation command; the zoom chords belong to the
-  // host's View menu and never reach the web view at all. Both are reachable
-  // from the context menu, and zoom additionally from the View menu itself.
+  // Neither the page modes nor the zoom carry a chord here. The modes would
+  // have to take ⌘1-3 from `move-to-slot`, and a viewer is not the place to
+  // redefine a deck-wide navigation command. Zoom already has its chords, on
+  // the commands the host's View menu drives.
+  //
+  // That second sentence used to end "and they never reach the web view at
+  // all" — a shadowing analysis maintained by hand, in a comment, about a
+  // chord declared somewhere else. `resolveChord` answers it now: ask it
+  // about ⌘+ and it reports the native layer taking the chord above every JS
+  // one, and the collision lint fails a binding that tried anyway.
   useKeybindings([
     scrollBinding("ArrowDown", "vertical", "line", 1),
     scrollBinding("ArrowUp", "vertical", "line", -1),
@@ -547,12 +553,25 @@ export function PdfView({
     modeItem("single", "Single Page", pageMode),
     modeItem("two", "Two Pages", pageMode),
     { type: "separator" },
-    { action: TUG_ACTIONS.ZOOM_IN, label: "Zoom In", shortcut: "⌘+" },
-    { action: TUG_ACTIONS.ZOOM_OUT, label: "Zoom Out", shortcut: "⌘−" },
+    // The chords come from the keymap, not from this file. They are the
+    // host's View menu items in the shipped app — AppKit resolves them before
+    // the web view sees a keydown — and both sides are swept from the same
+    // registry entries, so a hint here and the menu bar cannot name different
+    // gestures ([P11]).
+    {
+      action: TUG_ACTIONS.ZOOM_IN,
+      label: "Zoom In",
+      shortcut: commandShortcut(TUG_ACTIONS.ZOOM_IN),
+    },
+    {
+      action: TUG_ACTIONS.ZOOM_OUT,
+      label: "Zoom Out",
+      shortcut: commandShortcut(TUG_ACTIONS.ZOOM_OUT),
+    },
     {
       action: TUG_ACTIONS.ZOOM_ACTUAL,
       label: "Actual Size",
-      shortcut: "⌘0",
+      shortcut: commandShortcut(TUG_ACTIONS.ZOOM_ACTUAL),
       icon: check(zoom === 1),
     },
     {

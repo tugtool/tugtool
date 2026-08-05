@@ -620,6 +620,19 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         }
         return;
       }
+      // A scoped binding on a real command names the command, and everything
+      // past the match — routing, payload, validity — is read from its
+      // registry entry, exactly as the global layer's is. Only the verbs
+      // deliberately outside the table (the PDF card's scroll keys, the
+      // gallery's demo chord) dispatch an action of their own below.
+      if (binding.commandId !== undefined) {
+        if (binding.preventDefaultOnMatch) event.preventDefault();
+        if (dispatchCommand(binding.commandId)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+        return;
+      }
       // Escape on any non-base focus mode yields to the engine's Escape ladder
       // (the act-dispatch listener below), which is the single arbiter ([P02]
       // final form). Every dismissable surface now pushes a mode with an

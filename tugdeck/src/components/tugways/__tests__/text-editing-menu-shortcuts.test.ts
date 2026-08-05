@@ -7,10 +7,12 @@
  * advertised ⇧⌘V. The real chords carry Option, as both the Swift Edit menu's
  * modifier masks and the keybinding map have always said.
  *
- * The hints are authored strings, so nothing structurally prevents them from
- * drifting again; this is the expectation table that catches it. When the
- * hints are derived from the keymap registry instead, this test is replaced
- * by one that compares against the live binding rather than a literal.
+ * The hints are no longer authored: each row reads the command's live
+ * binding, so the two cannot be two spellings of one fact any more. The
+ * expectation table below stays because deriving the *wrong* binding is
+ * still possible — it pins which chords those seven commands hold — and the
+ * derivation test beside it pins that the menu is reading them rather than
+ * carrying a copy.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -54,6 +56,28 @@ describe("text-editing menu shortcut hints", () => {
       const [binding] = keymapRegistry.bindingsFor(action);
       expect(binding, `${action} has a binding`).toBeDefined();
       expect(formatChord(binding.binding.chord), `${action} hint vs binding`).toBe(want);
+    }
+  });
+
+  test("a rebind moves the hint with it", () => {
+    // The structural claim: the menu reads the binding rather than holding a
+    // copy of it. An authored string would sail through this unchanged,
+    // which is exactly the regression it exists to make impossible.
+    const original = keymapRegistry.bindingsOf(TUG_ACTIONS.SELECT_ALL);
+    try {
+      keymapRegistry.setBindings(TUG_ACTIONS.SELECT_ALL, [
+        {
+          chord: { key: "KeyE", meta: true, ctrl: true, label: "e" },
+          scope: { kind: "global" },
+          source: "user",
+        },
+      ]);
+      const rebound = buildTextEditingMenuItems({ hasSelection: true }).find(
+        (e) => "action" in e && e.action === TUG_ACTIONS.SELECT_ALL,
+      ) as { shortcut?: string };
+      expect(rebound.shortcut).toBe("⌃⌘E");
+    } finally {
+      keymapRegistry.setBindings(TUG_ACTIONS.SELECT_ALL, original.slice());
     }
   });
 

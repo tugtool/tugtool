@@ -847,12 +847,12 @@ Both smell like one cause — a synthesized command-modified chord not landing �
 | #step-17 | Give the control-frame-only commands chain identities | done | `1d08545d3` |
 | #step-18 | The keymap registry, chord format, and resolveChord | done | `1e682614e` |
 | #step-19 | Stage 1 and the static map read the registry | done | `9e8e81e1e` |
-| #step-20 | The Swift chord sweep | pending | — |
-| #step-21 | Migrate or classify the raw capture listeners; derive displayed chords | pending | — |
-| #step-22 | Keymap overrides in tugbank | pending | — |
-| #step-23 | The Settings ▸ Keyboard pane | pending | — |
-| #step-24 | Refresh tuglaws/menus.md and the cross-references | pending | — |
-| #step-25 | Integration checkpoint — the whole arc | pending | — |
+| #step-20 | The Swift chord sweep | done | `077a8bcb2` |
+| #step-21 | Migrate or classify the raw capture listeners; derive displayed chords | done | `8f638a74b` |
+| #step-22 | Keymap overrides in tugbank | done | `351fb59f8` |
+| #step-23 | The Settings ▸ Keyboard pane | done | `fdd7a6e15` |
+| #step-24 | Refresh tuglaws/menus.md and the cross-references | done | `9f4f95319` |
+| #step-25 | Integration checkpoint — the whole arc | done | `1c4c705e7` |
 
 ---
 
@@ -1584,11 +1584,32 @@ So each row below is a judgment about the chord, not just about menu real estate
 - [ ] The full menu/keybinding app-test family plus the three new files.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
-- [ ] `cd tugrust && cargo nextest run`
-- [ ] `just build-app`
-- [ ] `just app-test at0167-file-menu-close-validation.test.ts at0168-menu-structure.test.ts at0169-menu-deck-validation.test.ts at0170-maker-mode-gate.test.ts at0171-session-menu-card-type.test.ts at0172-session-menu-live-state.test.ts at0173-settings-shortcut.test.ts at0174-edit-menu-validation.test.ts at0177-permission-cycle-keys.test.ts at0179-dynamic-keybinding.test.ts at0180-command-registry-gates.test.ts at0181-keymap-chord-sweep.test.ts at0182-keymap-override.test.ts`
-- [ ] `just app-test` (core tier)
+- [x] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build` — clean; 5965 tests pass across 412 files.
+- [x] `cd tugrust && cargo nextest run` — 1998 pass, 5 skipped.
+- [x] `just build-app`
+- [x] The full menu/keybinding family — **13/13 files, 29/29 tests.**
+- [x] `just app-test` (core tier) — **20/20 files, 39/39 tests.**
+
+##### How each success criterion was verified {#step-25-verification}
+
+| Criterion | Verification |
+|---|---|
+| One registry entry per command; no `sendControl` wire absent from the table | `command-routing-drift.test.ts` checks the wire fixture against the table; `command-registry.test.ts` checks id uniqueness |
+| `dispatchAction` holds no command-specific routing | Read end to end: the data-frame handlers, the `registry`-routed bodies, and one `isCommandId` fork at line 272 |
+| Menu enablement from `menuState.commands[...]` | at0180 + at0167/at0169/at0171/at0172/at0174, all green with the hand-rolled tiers deleted |
+| Edit ▸ Delete follows the selection | at0174 |
+| ⌘R detached at stack depth ≤ 1 | at0169, now through the sweep rather than the retired method |
+| Every displayed chord rendered from the registry | `text-editing-menu-shortcuts.test.ts` — including a rebind that moves the hint, which an authored string would sail through |
+| `resolveChord` answers the ordered stack, native layer included | `keymap-registry.test.ts` over a constructed four-layer world |
+| No `menuEligible` binding shares a chord with a scoped binding | `lintChordCollisions` over the real table, in `command-registry.test.ts` |
+| A rebind moves both the JS layer and the menu bar without a restart | at0182, driven both remotely and through the pane |
+| Deleting an override restores the default | at0182 |
+| `menus.md` names every top-level key and its catalog matches the registry | `menus-doc.test.ts` regenerates both derived regions and diffs |
+
+##### Two notes on the plan's own expectations {#step-25-notes}
+
+- **The baselined red is green.** [#known-red] expected at0174 at 3/4 — the synthesized ⌘Z not reverting typed text. It is 4/4. The chord now arrives through the swept key equivalent rather than a construction literal, which is the plausible cause; either way the step's proof needed no allowance.
+- **at0191 flaked once in the core tier** (a turn address read 5 where 1 was expected) and passed alone on this branch, alone on `main`, and in a second full core-tier run. It covers `code-session-store/`, the transcript data source, and `tugcode/` — none of which this plan touches. Recorded as a flake, not a regression.
 
 ---
 

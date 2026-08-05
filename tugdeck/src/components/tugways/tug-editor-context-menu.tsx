@@ -465,6 +465,14 @@ export function TugEditorContextMenu({
         return;
       }
 
+      // Every branch below is menu-local: it is the open menu's own keyboard —
+      // arrow cycling, typeahead, activation, dismiss — live only while the
+      // menu is on screen and gone when it closes. That is a surface's
+      // internal navigation rather than a command claim, which is why it stays
+      // here rather than becoming scoped bindings: the keymap describes what
+      // chords mean in the app, and inside an open menu the answer is "the
+      // menu", once, for all of them.
+
       // ⌘. — macOS "cancel" shortcut. Close without letting the event
       // propagate (it has no meaning in the editor).
       if (e.key === "." && (e.metaKey || e.ctrlKey)) {

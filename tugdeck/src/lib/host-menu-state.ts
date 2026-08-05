@@ -34,6 +34,7 @@ import { cardTitleStore } from "./card-title-store";
 import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 import { DEFAULT_STACK_CHORD, stackChordStore } from "../stack-chord-store";
+import { keymapOverrideStore } from "../keymap-override-store";
 import { BASE_THEME_NAME } from "../theme-constants";
 import {
   COMMANDS,
@@ -41,6 +42,10 @@ import {
   queryCommandState,
   validateCommand,
 } from "../components/tugways/command-registry";
+import {
+  applyStackChordPreference,
+  keymapRegistry,
+} from "../components/tugways/keymap-registry";
 import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 import type {
   CommandEntry,
@@ -185,7 +190,18 @@ export type { ChordSpec };
  * key equivalent — so they ride as one object rather than four blocks.
  */
 export interface MenuCommandGate {
-  readonly enabled: boolean;
+  /**
+   * Absent means the command has no opinion on enablement and the host's own
+   * tier still owns the item.
+   *
+   * The two halves of a gate move independently: an item's *chord* can be
+   * the registry's while its *enablement* is not. View ▸ Zoom In is the
+   * case — its predicate reads `window.currentPageZoom`, host state the
+   * frontend cannot see — and publishing `enabled: true` for it would light
+   * an item its own tier was gating. So a chord-only gate says nothing about
+   * enablement rather than guessing at it.
+   */
+  readonly enabled?: boolean;
   /** Checkmark; absent means "this item does not participate in the check column". */
   readonly state?: boolean;
   /** Dynamic title; absent means "keep the title the host constructed". */
@@ -218,13 +234,43 @@ const NO_CHAIN: MenuValidationChain = {
   queryActionStateInKeyCard: () => undefined,
 };
 
-/** Whether an entry's gate rides the mirror at all. */
+/** Whether an entry's *enablement* rides the mirror. */
 function isMirroredEntry(entry: CommandEntry): boolean {
   return (
     entry.mirrored === true &&
     entry.menuItemId !== undefined &&
     entry.parameterized !== true
   );
+}
+
+/**
+ * The `chord` half of one item's gate, as a spreadable fragment so the three
+ * wire states stay three ([P10], Spec S03).
+ *
+ * *Absent* is the answer for every command whose chord the host still owns:
+ * the key equivalent it was constructed with stays put. *Null* releases the
+ * chord, and it is a distinct sentence from "the item is dark" — a chord left
+ * on a dimmed item is eaten at the menu bar with a beep rather than falling
+ * through to the web view, so a command that wants to be shadowable while
+ * inapplicable has to hand the chord back. *A spec* applies it.
+ *
+ * Two conditions release a chord, and they are different questions. A
+ * `disabledChord: "detach"` command releases it while its own item validates
+ * dark. A `chordActive` command releases it while some other condition says
+ * the chord is not its right now — which is how ⌘R moves between the two
+ * slot-stack items and how ⇧⌘S follows the frontmost Text card.
+ */
+function chordField(
+  entry: CommandEntry,
+  chain: CommandValidationSource,
+  enabled: boolean | undefined,
+  chords: Record<string, ChordSpec | null>,
+  menuItemId: string,
+): { chord?: ChordSpec | null } {
+  if (!(menuItemId in chords)) return {};
+  const detachedByGate = enabled === false && entry.disabledChord === "detach";
+  const claimed = entry.chordActive?.(chain) ?? true;
+  return { chord: detachedByGate || !claimed ? null : chords[menuItemId] };
 }
 
 /**
@@ -240,28 +286,38 @@ function isMirroredEntry(entry: CommandEntry): boolean {
  * current value is X" into "this item is checked"; the hook keeps the wider
  * return type for the off-menu readers that want the value itself.
  *
+ * An entry that is not mirrored still gets a gate when the keymap has
+ * claimed its item's chord, carrying the chord alone: enablement and chord
+ * migrate on their own schedules, and View ▸ Zoom In — registry chord, host
+ * predicate — is permanently in that state rather than passing through it.
+ *
  * Pure given the chain's current answers — exported for unit tests.
  */
 export function computeCommandCapabilities(
   chain: CommandValidationSource,
   entries: readonly CommandEntry[] = COMMANDS,
+  chords: Record<string, ChordSpec | null> = keymapRegistry.menuChords(),
 ): Record<string, MenuCommandGate> {
   const gates: Record<string, MenuCommandGate> = {};
   for (const entry of entries) {
-    if (!isMirroredEntry(entry)) continue;
+    const mirrored = isMirroredEntry(entry);
+    const menuItemId = entry.menuItemId;
+    if (menuItemId === undefined) continue;
+    if (!mirrored && !(menuItemId in chords)) continue;
     // A throwing predicate loses its own item's gate and nothing else. The
     // whole block is computed inside the payload flush, so letting one
     // predicate escape would abort the push and freeze every menu fact the
     // host has — the item that falls back to its own default is a far
     // smaller failure than a menu bar stuck on a stale snapshot.
     try {
-      const enabled = validateCommand(entry, chain);
-      const rawState = queryCommandState(entry, chain);
-      const title = entry.dynamicTitle?.(chain);
-      gates[entry.menuItemId as string] = {
-        enabled,
+      const enabled = mirrored ? validateCommand(entry, chain) : undefined;
+      const rawState = mirrored ? queryCommandState(entry, chain) : undefined;
+      const title = mirrored ? entry.dynamicTitle?.(chain) : undefined;
+      gates[menuItemId] = {
+        ...(enabled !== undefined ? { enabled } : {}),
         ...(typeof rawState === "boolean" ? { state: rawState } : {}),
         ...(title !== undefined ? { title } : {}),
+        ...chordField(entry, chain, enabled, chords, menuItemId),
       };
     } catch (error) {
       tugDevLogStore.error(
@@ -700,6 +756,15 @@ export class HostMenuStatePublisher {
     this.scheduleFlush();
   }
 
+  /**
+   * Recompute and republish because something the gates read outside this
+   * publisher changed — today, a keymap binding. The flush is already
+   * coalesced and diffed, so a call that changes nothing costs nothing.
+   */
+  refresh(): void {
+    this.scheduleFlush();
+  }
+
   setActiveTheme(theme: string): void {
     this.activeTheme = theme;
     this.scheduleFlush();
@@ -887,11 +952,29 @@ export function initHostMenuState(deck: DeckSource): void {
   cardTitleStore.subscribe(push);
   // ⌘R's owner is a preference, not deck state. The host is the only place
   // the chord can actually move (AppKit resolves a menu key equivalent before
-  // the web view sees the keydown), so the setting rides this same channel.
+  // the web view sees the keydown), so the setting rides this same channel —
+  // as a binding rewrite, so the menu bar and the JS funnel agree on which of
+  // the two commands ⌘R currently means.
   const pushChord = (): void => {
-    publisher.setStackChord(stackChordStore.getChord());
+    const preference = stackChordStore.getChord();
+    publisher.setStackChord(preference);
+    applyStackChordPreference(
+      preference,
+      keymapRegistry,
+      new Set(keymapOverrideStore.overriddenCommands()),
+    );
   };
   stackChordStore.subscribe(pushChord);
+  // A rebind of either stack command has to re-settle this, or the preference
+  // would keep writing over an override it no longer owns — and a *reset*
+  // back to the default has to hand the pair back to the preference.
+  keymapOverrideStore.subscribe(pushChord);
+  // Every chord the host applies is projected from the keymap registry, so a
+  // rebind has to republish or the menu bar keeps the chord the user just
+  // moved away.
+  keymapRegistry.subscribe(() => {
+    publisher.refresh();
+  });
   pushChord();
   push();
 }

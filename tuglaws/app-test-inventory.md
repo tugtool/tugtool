@@ -934,6 +934,25 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Summary:** Opening a session shows the same turn number before and after (the picker count == the highest rendered `#a`/`#u` address == `engine(file)`), and an assistant-originated turn (wake / `/compact` / `--continue` orphan) renders `#a`-only with no phantom `#u` row. Plan: `roadmap/canonical-turns-redux.md`.
 - **Envelope note:** the picker-driven assertion needs a session under the active project's claude corpus. The app-test instance runs in its own worktree (a different encoded project dir), and the real reference session (`49e9aec6`, 81 turns) lives under the *main* project dir, while `~/.claude/projects` is global — so isolating a seeded real-shape session would require a test-only override of the claude-projects root (production has none today) rather than writing into the user's real corpus. Until that override lands, this case is verified by the lower-layer contracts plus live vetting on the `debug-main` instance where `49e9aec6` resides.
 
+### The command funnel (AT0180–AT0182)
+
+*These three share their numbers with the subjects above, which were assigned first. The command-funnel plan named the tags before the collision was noticed, and the files had already landed under them; renaming a test file is a `@covers`-resolution and inventory churn that buys nothing, so the numbers carry two subjects each and the filename slug is what tells them apart.*
+
+#### [AT0180] Command-registry menu gates
+- **Status:** ✅ closed.
+- **Tests:** `at0180-command-registry-gates.test.ts`.
+- **Summary:** A menu item's enablement, check mark, and dynamic title come from the pushed `commands` block rather than a hand-rolled Swift tier, and every `menuItemId` the registry names resolves to a real menu item — the hand-maintained join between the table and the menu bar, machine-checked.
+
+#### [AT0181] Native key equivalents derived from the keymap
+- **Status:** ✅ closed.
+- **Tests:** `at0181-keymap-chord-sweep.test.ts`.
+- **Summary:** `applyCommandChords` writes what the keymap states: chords applied (including the shifted-punctuation case, where the character carries the shift and the mask must not carry it twice), released when a command claims its chord only while applicable, and left alone for the items whose chord the table does not state. A rebuilt View menu keeps the swept chord instead of reverting to its construction literal — the second sweep site is the one the push alone cannot cover.
+
+#### [AT0182] User keymap override round trip
+- **Status:** ✅ closed.
+- **Tests:** `at0182-keymap-override.test.ts`.
+- **Summary:** A rebind moves the native key equivalent without a restart, an empty override releases the chord, and a reset restores the shipped default — driven both as a remote tugbank write and through the Settings ▸ Keyboard pane's own capture-and-reset gestures. A locked command refuses the override and keeps its chord, enforced on read so a hand-written tugbank value cannot get around the policy.
+
 ### Window-shade collapse (AT0194)
 
 #### [AT0194] Window-shade collapse — clean stub, height round-trips

@@ -249,6 +249,13 @@ class AnchorLinkPlugin {
     return builder.finish();
   }
 
+  /**
+   * A modifier-hold *observer*, not a chord claim. It reads whether the
+   * accelerator is currently down so links can light up under the cursor,
+   * never prevents a default, never stops propagation, and never runs a
+   * command — there is nothing here for the keymap to see, because there is
+   * nothing here that a chord could collide with.
+   */
   private readonly onModifier = (e: KeyboardEvent): void => {
     const held = accelHeld(e);
     if (held === this.accelActive) return;

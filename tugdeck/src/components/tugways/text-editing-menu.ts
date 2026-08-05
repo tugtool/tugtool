@@ -46,6 +46,7 @@ import { TUG_ACTIONS } from "./action-vocabulary";
 import type { TugAction } from "./action-vocabulary";
 import { validateCommandId } from "./command-registry";
 import type { CommandValidationSource } from "./command-registry";
+import { commandShortcut } from "./keymap-registry";
 import { commandValidationSource } from "@/lib/host-menu-state";
 
 /**
@@ -97,16 +98,16 @@ export interface TextEditingMenuEntry {
 }
 
 /**
- * Build the universal text-editing menu. Order, labels, and shortcut hints
- * are fixed; disabled state is the command's own validity, narrowed by the
- * sampled selection for the items that need one.
+ * Build the universal text-editing menu. Order and labels are fixed;
+ * disabled state is the command's own validity, narrowed by the sampled
+ * selection for the items that need one; the shortcut hint is whatever the
+ * command is actually bound to.
  *
- * The shortcut strings are authored here and match the bindings by hand,
- * which is why two of them named the wrong chords for as long as they did —
- * an authored string has nothing to disagree with until someone reads it.
- * They are slated to be derived from the keymap registry, at which point a
- * displayed chord and its binding cannot differ; the expectation test beside
- * this file holds the line until then.
+ * The hints used to be authored here and matched against the bindings by
+ * hand, which is why two of them named the wrong chords for as long as they
+ * did — an authored string has nothing to disagree with until someone reads
+ * it, and once chords are the user's to rebind it is wrong for anyone who
+ * does. Reading the binding is what makes the two unable to differ ([P11]).
  */
 export function buildTextEditingMenuItems(
   caps: TextEditingMenuCapabilities,
@@ -118,49 +119,34 @@ export function buildTextEditingMenuItems(
     (validateCommandId(command, source) ?? true) === false ||
     (needsSelection && !hasSelection);
 
+  /**
+   * One row: the label, the live chord, and the validity. A command with no
+   * binding shows no hint, and one with several shows the first — the same
+   * rule the host's menu sweep applies, so the two surfaces name the same
+   * gesture.
+   */
+  const row = (
+    action: TugAction,
+    label: string,
+    needsSelection: boolean,
+  ): TextEditingMenuEntry => {
+    const shortcut = commandShortcut(action);
+    return {
+      action,
+      label,
+      ...(shortcut !== undefined ? { shortcut } : {}),
+      disabled: off(action, needsSelection),
+    };
+  };
+
   return [
-    {
-      action: TUG_ACTIONS.CUT,
-      label: "Cut",
-      shortcut: "⌘X",
-      disabled: off(TUG_ACTIONS.CUT, true),
-    },
-    {
-      action: TUG_ACTIONS.COPY,
-      label: "Copy",
-      shortcut: "⌘C",
-      disabled: off(TUG_ACTIONS.COPY, true),
-    },
-    {
-      action: TUG_ACTIONS.COPY_AS_PLAIN_TEXT,
-      label: "Copy as Plain Text",
-      shortcut: "⌥⇧⌘C",
-      disabled: off(TUG_ACTIONS.COPY_AS_PLAIN_TEXT, true),
-    },
-    {
-      action: TUG_ACTIONS.PASTE,
-      label: "Paste",
-      shortcut: "⌘V",
-      disabled: off(TUG_ACTIONS.PASTE, false),
-    },
-    {
-      action: TUG_ACTIONS.PASTE_AS_QUOTE,
-      label: "Paste as Quote",
-      shortcut: "⌥⌘V",
-      disabled: off(TUG_ACTIONS.PASTE_AS_QUOTE, false),
-    },
-    {
-      action: TUG_ACTIONS.PASTE_AS_PLAIN_TEXT,
-      label: "Paste as Plain Text",
-      shortcut: "⌥⇧⌘V",
-      disabled: off(TUG_ACTIONS.PASTE_AS_PLAIN_TEXT, false),
-    },
+    row(TUG_ACTIONS.CUT, "Cut", true),
+    row(TUG_ACTIONS.COPY, "Copy", true),
+    row(TUG_ACTIONS.COPY_AS_PLAIN_TEXT, "Copy as Plain Text", true),
+    row(TUG_ACTIONS.PASTE, "Paste", false),
+    row(TUG_ACTIONS.PASTE_AS_QUOTE, "Paste as Quote", false),
+    row(TUG_ACTIONS.PASTE_AS_PLAIN_TEXT, "Paste as Plain Text", false),
     { type: "separator" },
-    {
-      action: TUG_ACTIONS.SELECT_ALL,
-      label: "Select All",
-      shortcut: "⌘A",
-      disabled: off(TUG_ACTIONS.SELECT_ALL, false),
-    },
+    row(TUG_ACTIONS.SELECT_ALL, "Select All", false),
   ];
 }

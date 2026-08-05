@@ -1,61 +1,59 @@
 # Menus
 
-*The macOS menu bar is a projection of frontend state: tugdeck pushes one
-`menuState` payload, Swift caches it, and every item's enablement is pulled
-from that cache in `validateMenuItem(_:)`. Menu items act by sending control
-frames back into the web layer — never by mutating web state directly.*
+*The macOS menu bar is a projection of the command registry. One TypeScript table states every user-invocable command — its title, how it dispatches, which menu item it drives, which chords it holds — and the host consumes that table as pushed data: enablement, check marks, dynamic titles, and key equivalents all arrive on one wire. Menu items act by sending control frames back into the web layer, never by mutating web state directly.*
 
-*Cross-references: [action-naming.md](action-naming.md) (the Both category),
-[app-test-harness.md](app-test-harness.md) (`menuSnapshot` / `menuItemState`).
-`[L##]` → [tuglaws.md](tuglaws.md).*
+*Cross-references: [action-naming.md](action-naming.md) (the registry layer above the three-way classification), [responder-chain.md](responder-chain.md) (`validateAction` / `queryActionState`), [app-test-harness.md](app-test-harness.md) (`menuSnapshot` / `menuItemState`). `[L##]` → [tuglaws.md](tuglaws.md).*
 
 ---
 
 ## The shape
 
 ```
-tugdeck stores ──▶ host-menu-state aggregator ──▶ menuState push ──▶ MenuState cache
-                                                                          │
-WKWebView ◀── control frame ◀── NSMenuItem action          validateMenuItem(_:) pulls
+command registry ──▶ host-menu-state aggregator ──▶ menuState push ──▶ MenuState cache
+                                                                             │
+                                                          validateMenuItem(_:) pulls
+                                                          applyCommandChords() writes
+WKWebView ◀── control frame ◀── NSMenuItem action
 ```
 
 Two channels, one in each direction:
 
-- **State out** — `tugdeck/src/lib/host-menu-state.ts` projects the deck
-  store (plus the session card's published session block) into one payload,
-  diffs, coalesces on a microtask, and posts to
-  `webkit.messageHandlers.menuState`. `MainWindow` forwards it to
-  `AppDelegate.updateMenuState`, which replaces the cached `MenuState`
-  struct wholesale.
-- **Commands in** — every menu item's selector calls
-  `sendControl(...)`; tugdeck's `action-dispatch.ts` re-enters the
-  responder chain (or a store) from there. No menu item reaches into web
-  state by any other route.
+- **State out** — `tugdeck/src/lib/host-menu-state.ts` projects the deck store, the frontmost card's blocks, and the command registry into one payload; diffs it; coalesces on a microtask; posts to `webkit.messageHandlers.menuState`. `MainWindow` forwards it to `AppDelegate.updateMenuState`, which replaces the cached `MenuState` struct wholesale and then re-sweeps the menu bar's key equivalents.
+- **Commands in** — every menu item's selector calls `sendControl(...)`; `dispatchAction` forks a registry command to `dispatchCommand` and everything else to the data-frame handler map. No menu item reaches into web state by any other route.
 
 ## The menuState wire contract
 
-Posted by the aggregator; parsed by `AppDelegate`'s `MenuState` struct.
-**Keep both sides in sync** — they are the two halves of one contract.
+Posted by the aggregator; parsed by `AppDelegate`'s `MenuState` struct. **Keep both sides in sync** — they are the two halves of one contract.
 
 ```jsonc
 {
   "panes": [                       // z-order, topmost first
-    { "id": "...", "title": "...", "focused": true,
+    { "id": "…", "title": "…", "focused": true,
       "cardCount": 2, "closable": true }
   ],
   "activeCard": {                  // focused pane's active card; null when no panes
-    "component": "dev",
+    "component": "session",
     "closable": true
   },
-  "dev": {                         // null unless the active card is a session card
-    "cardId": "...",
+  "selectionActive": true,         // a card is selected; false on a deselected deck
+  "stackDepth": 2,                 // panes sharing the focused pane's slot
+  "stackChord": "cycle",           // which slot-stack command the user wants ⌘R on
+  "session": {                     // null unless the active card is a session card
+    "cardId": "…",
     "sessionBound": true,
     "canInterrupt": false,
     "canChangeSettings": true,     // canSubmit — false mid-turn locks Permission Mode
     "permissionMode": "default",   // live metadata ?? persisted ?? "default"
     "hasAssistantMessage": false,
-    "hasTurns": false
+    "hasTurns": false,
+    "changesVisible": false,       // drives the Show/Hide Changes verb
+    "historyVisible": false
   },
+  "file": {                        // null unless the active card is a Text card
+    "cardId": "…", "mode": "manual", "dirty": false, "untitled": false,
+    "readOnly": false, "hasPath": true, "conflict": false
+  },
+  "document": { "cardId": "…" },   // a frontmost surface that owns its own zoom
   "edit": {                        // first responder's edit capabilities
     "cut": false, "copy": false, "paste": false, "delete": false,
     "selectAll": false,
@@ -63,198 +61,292 @@ Posted by the aggregator; parsed by `AppDelegate`'s `MenuState` struct.
     "undoLabel": "", "redoLabel": "",  // menu nouns: "Undo Typing"
     "nativeUndoToken": 0,          // non-zero: native text control focused
     "find": false, "findNext": false, "findPrevious": false
-  }
+  },
+  "commands": {                    // THE mirror — one gate per menu item
+    "session.nextTurn": {
+      "enabled": true,             // absent → the host's own tier still owns it
+      "state": false,              // absent → no check-column participation
+      "title": "Hide Changes",     // absent → keep the constructed title
+      "chord": { "keyEquivalent": "", "command": true, "option": true }
+    }
+  },
+  "recentDocuments": ["/abs/path", "…"],
+  "activeTheme": "brio",
+  "openQuickly": true
 }
 ```
 
-Publication discipline:
+### The `commands` block
 
-- The deck half comes from the aggregator's own `DeckManager`
-  subscription (wired once at boot in `main.tsx`).
-- The dev block is published by the session card's
-  `use-menu-state-publication.ts` effect, which **subscribes to the
-  stores directly** ([L22]) — publication is a side effect, not a render
-  derivation. Every session card publishes unconditionally; the aggregator
-  decides which block rides the payload (the focused pane's active dev
-  card).
-- The `edit` block is published by the responder-chain provider, which
-  subscribes to the chain's validation version and projects
-  `chain.validateAction(<action>)` for each edit action ([D05]). It is an
-  outward mirror only — no React consumer reads it — so it rides a plain
-  subscription, not `useSyncExternalStore`. Each flag is `true` iff a
-  focused responder handles that action; all false when nothing in focus
-  does.
-- **Undo / Redo are in the `edit` block, and card-specific by design.**
-  Unconditional AppKit auto-validation of `undo:` against the
-  responder-chain `NSUndoManager` is rejected because WKWebView's
-  undoManager is *per-web-view*: it accumulates the whole view's edit
-  history and knows nothing about card activation, so a deactivated card's
-  undo state keeps showing in the menu. The chain is card-scoped by
-  construction (the first responder lives inside the active card), and the
-  focused editor supplies depth-accuracy through `validateAction` (CM6
-  reports `undoDepth`/`redoDepth` of its own per-instance history) plus a
-  menu-title noun (`undoLabel`/`redoLabel`, from the editor's label stacks
-  in `tug-text-editor/undo-labels.ts` — "Undo Typing", "Redo Paste"). The
-  host sets the item title during the validation sweep, the same
-  sanctioned pattern as the permission-mode checkmarks; identity never
-  rides the title.
-- **Native text controls ride the web view's NSUndoManager, scoped by
-  clear-on-blur.** A native `<input>`/`<textarea>`'s undo stack is the
-  browser's (JS-opaque); the only handle is the per-web-view
-  NSUndoManager. While one is focused, `nativeUndoToken` is non-zero and
-  the host validates Undo/Redo LIVE from `webView.undoManager`
-  (`canUndo`/`canRedo`, with its localized `undoMenuItemTitle`) and
-  executes the native `undo:`/`redo:` selectors. The token changes per
-  focused control; the host clears the stack on every token change, so
-  the per-web-view stack never outlives focus in one control — leave the
-  control and its history is gone. That scoping is what makes the native
-  stack card-safe to surface.
-- **A chord on a disabled menu item is eaten at the menu bar with a
-  beep** — it does NOT fall through to the WKWebView. This is why the
-  native-control path must light the item: a dark Undo means a dead ⌘Z.
-- **Cut / Paste / Select All / Undo / Redo carry a liveness gate.** The
-  chain first responder is deliberately sticky: a canvas-background click
-  (pane deselect) blurs the editor to body but demotes nothing, so the
-  stale FR would keep answering capability queries for a visibly
-  deactivated card. Editing actions require actual keyboard focus, so the
-  publisher zeroes them unless the FR's element contains
-  `document.activeElement` (republished on document `focusin`/`focusout`).
-  Copy is NOT gated — it must keep working for read-only selections
-  (transcript text), where the selection lives without DOM focus on the
-  responder.
-- **Capability flips inside a focused responder** (an editor's undo depth
-  changing as the user types) don't bump the chain's validation version —
-  by design, so typing never re-renders chain-subscribed components. The
-  provider registers a recompute-and-publish closure
-  (`registerEditCapsRefresher`); substrates call
-  `requestEditMenuStateRefresh()` when such a flip happens (CM6's
-  `publishUndoAvailability` update-listener fires it only when depth>0
-  *flips*, not per keystroke). The publisher's serialized diff makes
-  over-calling harmless.
-- The aggregator posts only when the serialized payload changes,
-  coalesced on a microtask — wire traffic is proportional to
-  menu-relevant change, not store churn.
-- Before the first push (app boot), the Swift cache is `MenuState.empty`
-  and every state-gated item validates disabled. That is the correct
-  cold-start posture, not a bug.
+Keyed by `NSUserInterfaceItemIdentifier`, not by command id: the host already switches on the identifier, so joining on it means the host needs no map of its own.
 
-## Validation: pull-based, five tiers
+`chord` is **three-state**, and all three are load-bearing:
 
-All enablement flows through `AppDelegate.validateMenuItem(_:)`, keyed on
-the item's identifier and reading only the cached `MenuState`. AppKit
-re-validates on menu open and key-equivalent dispatch; nothing pushes
-`isEnabled` imperatively (the page-zoom items, whose enablement reads live
-`webView.pageZoom` at rebuild time, are the one exception).
+| Wire | Meaning |
+|---|---|
+| key absent | leave the item's constructed key equivalent alone |
+| `null` | detach it — the chord falls through to the web view |
+| a spec | apply it |
 
-| Tier | Predicate source | Examples |
+Swift distinguishes the first two by the key's *presence*, since an explicit JSON `null` arrives as `NSNull` and would otherwise read as "absent". Getting that wrong turns every detach into a no-op.
+
+`enabled` is optional for the same reason a chord can move without an enablement moving: an item's chord can be the registry's while its predicate stays the host's. View ▸ Zoom In is the standing case — it reads `window.currentPageZoom`, which is the host's own property — so its gate carries a chord and no verdict.
+
+### Publication discipline
+
+- The deck half comes from the aggregator's own `DeckManager` subscription (wired once at boot in `main.tsx`), plus subscriptions to `cardSessionBindingStore`, `cardTitleStore`, `stackChordStore`, and the keymap registry — every store a gate reads but the deck cannot see.
+- The `session` and `file` blocks are published by their cards' menu-state effects, which **subscribe to the stores directly** ([L22]) — publication is a side effect, not a render derivation. Every card publishes unconditionally; the aggregator decides which block rides the payload.
+- The `edit` block and the `commands` block are computed in one place, from one chain walk, in the flush. A caller that could refresh one without the other would be able to make them disagree.
+- **Undo / Redo stay two-path.** For chain editors (CM6) the items round-trip `undo`/`redo` control frames into the focused editor's own history, with depth-accuracy from `validateAction` and a menu noun from the editor's label registry. For browser-native text controls (`nativeUndoToken` non-zero) the host validates LIVE from `webView.undoManager` and executes the native selectors — the only route to a native input's undo stack — kept card-safe by clearing that stack on every token change.
+- **Cut / Paste / Select All / Undo / Redo carry a liveness gate.** The chain's first responder is deliberately sticky: a canvas-background click blurs the editor to body but demotes nothing, so a stale FR would keep answering for a visibly deactivated card. Editing actions require actual keyboard focus. Copy is NOT gated — it must keep working for read-only selections, where the selection lives without DOM focus on the responder.
+- **Capability flips inside a focused responder** (an editor's undo depth changing as the user types) don't bump the chain's validation version, by design: typing must never re-render chain-subscribed components. Substrates call `requestMenuStateRefresh()` instead, and the CM6 plugin fires it only when availability or label actually *flips*. Widening that trigger while widening the closure's work is the way to put the whole mirror on the keystroke path.
+- The aggregator posts only when the serialized payload changes — wire traffic is proportional to menu-relevant change, not store churn.
+- Before the first push, the cache is `MenuState.empty`: every gated item validates disabled and every item shows its **constructed** key equivalent. That is the correct cold-start posture, not a bug — and it is why a rebound chord shows its default for the moment before the frontend's own boot closes the window.
+
+## Validation: the mirror first, then two survivors
+
+All enablement flows through `AppDelegate.validateMenuItem(_:)`, keyed on the item's identifier and reading only the cached `MenuState`. AppKit re-validates on menu open and on key-equivalent dispatch. **Nothing pushes `isEnabled` imperatively** — `autoenablesItems` is on, so a stored `isEnabled` is silently overridden by the validator's permissive default, and every gate must be a validator branch. (Four sites once tried; none of them worked, and all four are validator branches now.)
+
+| Tier | Source | What it covers |
 |---|---|---|
-| 1 — always | — | natives, links |
-| 2 — deck state | `panes` | `file.closeCard` (closable), `file.closeAllCardTabs` / `window.previousCard` / `window.nextCard` (focused `cardCount > 1`), `maker.newCardInPane` (≥1 pane; debug-gated Maker menu), `window.cyclePanes` (≥2 panes) |
-| 3 — edit capability | `edit` block | `edit.cut` / `edit.copy` / `edit.paste` / `edit.delete` / `edit.selectAll` / `edit.undo` / `edit.redo` and the Find trio (`edit.find` / `edit.findNext` / `edit.findPrevious`) — each gated on the focused responder handling that action; undo/redo additionally carry the focused editor's history depth |
-| 4 — card type | `activeCard.component == "dev"` | every `session.*` item, `edit.copyLastResponse`, `file.exportTranscript`, `help.shortcuts` |
-| 5 — session state | `dev` block | `session.stop` (`canInterrupt`), `session.rewind` (`sessionBound && hasTurns`), `edit.copyLastResponse` (`hasAssistantMessage`), the Permission Mode subtree `session.permissionMode*` — radios + Cycle (`sessionBound && canChangeSettings`, so a mode change never races a turn — [turn-lifecycle.md](turn-lifecycle.md)), other `session.*` items (`sessionBound`) |
+| 1 — the registry gate | `menuState.commands[<identifier>]` | Every statically-built item whose command has an answer: enablement, check mark, and dynamic title, all from the one table the frontend dispatches from |
+| 2 — host-owned live state | `window.currentPageZoom`, `webView.undoManager` | The View zoom bounds, and Undo / Redo while a native text control is focused. Neither fact is the frontend's to know |
+| 3 — host-owned readiness | `frontendReady` | About and Settings each open a card, so both are dark until the frontend has signalled ready. This one cannot be a registry gate *in principle*: before the frontend is ready there is no push, so an item that took its answer from the mirror would be answered by the mirror's absence — which reads as enabled |
+| 4 — menu structure | — | The Permission Mode submenu's *parent*, which carries no command. Its contents each have one; the parent gates on the same condition so the submenu dims as a whole |
+| 5 — parameterized families | built at rebuild time | Themes, the Window pane list, Open Recent — their items are constructed in `menuNeedsUpdate` with their enablement and marks already set, so they are structurally outside a static mirror |
 
-An item in tiers 4+5 requires both. The Session menu is
-**disabled, not hidden** — stable menu bars preserve discoverability. The
-Maker menu is the deliberate exception: it hides behind the
-`maker-mode-enabled` tugbank gate, because maker mode is a *mode*, not a
-focus state.
+An item absent from `commands` falls through to whichever tier still owns it, which is what let the migration proceed one item at a time: an entry is mirrored in the same change that deletes its hand-rolled case, so exactly one definition of its enablement is ever live.
 
-The permission-mode radio checkmarks also refresh inside
-`validateMenuItem` (setting `state` during the validation sweep is the
-sanctioned AppKit pattern) — one mechanism covers enablement and marks.
+The Session menu is **disabled, not hidden** — stable menu bars preserve discoverability. The Maker menu is the deliberate exception: it hides behind the `maker-mode-enabled` tugbank gate, because maker mode is a *mode*, not a focus state. A hidden menu's chords fall through to the web view unless the item sets `allowsKeyEquivalentWhenHidden`, so the Maker menu's ⌘L / ⌥⌘L / ⇧⌘R / ⌘T / ⌥⌘C reach JS while maker mode is off.
 
-## The control-frame catalog
+## Chords: four layers, and the menu bar is the outermost
 
-Menu-driven frames, per [action-naming.md](action-naming.md)'s
-classification:
+**AppKit resolves a menu item's key equivalent before the web view sees a `keydown` at all.** A chord on a menu item is therefore not "first in the JS order" — it is a layer *above* the JS order entirely, and it preempts every scoped binding regardless of focus. The full resolution order is:
 
-| Frame | Category | JS handling |
-|---|---|---|
-| `run-card-command {name, args?}` | Control-frame-only | re-dispatches `RUN_SLASH_COMMAND {name, args}` via `sendToKeyCard` — re-enters the session card's slash-command surface map, byte-identical to typing the command |
-| `set-permission-mode {mode}` | Both | validated against the four-mode menu set, then `SET_PERMISSION_MODE` via `sendToKeyCard`; the session card commits through the chip's mode-set path |
-| `interrupt-session` | Both | `INTERRUPT_SESSION` via `sendToKeyCard`; the session card calls `codeSessionStore.interrupt()` — deliberately NOT Escape's dismiss-priority walk |
-| `find` / `find-next` / `find-previous` | Both | `sendToFirstResponder` round-trips (the focused card's find session) |
-| `undo` / `redo` | Both | `sendToFirstResponder` round-trips into the focused editor's own history (CM6 `handleUndo` / `handleRedo`); items validate against the editor's depth. Bypassed when `nativeUndoToken` is non-zero — the host drives the web view's NSUndoManager natively instead |
-| `next-tab` / `previous-tab` / `cycle-card` | Both | `sendToFirstResponder` round-trips |
-| `focus-prompt` / `cycle-permission-mode` | Both | `sendToKeyCard` round-trips |
-| `close` / `close-all` / `add-card-to-active-pane` | Both | as before this phase |
-| `show-card` / `arrange-cards` / `focus-pane` / `set-theme` / `next-theme` / `set-maker-mode` / `reload` / `source-tree` / `show-dev-panel-toggle` | Control-frame-only | app-level RPC, no chain dispatch |
+1. **The native menu** — any item carrying the chord, if its menu is visible (or `allowsKeyEquivalentWhenHidden`).
+2. **The focus mode** — a floating surface's accelerators.
+3. **The responder walk**, innermost first.
+4. **The global layer.**
 
-**The promoted-chord rule:** a Swift menu item with a key equivalent
-swallows that chord at the menu bar — the WKWebView never sees the
-keystroke. Therefore **every shortcut promoted to a menu item MUST have a
-working control-frame round-trip** (a Both-category entry or equivalent),
-landed *before* the key equivalent is attached. The tugdeck keybinding-map
-entries for the same chords stay for browser dev, where no Swift menu
-exists.
+Three consequences, and each of them is a decision rather than a detail:
 
-**The clipboard exception — native re-dispatch, not a round-trip.** The
-clipboard Edit items (Cut / Copy / Paste / Delete / Select All, chords
-⌘X/⌘C/⌘V/⌘A) do **not** round-trip through a control frame. A control
-frame is async and leaves the JS clipboard call outside the user gesture,
-which the browser blocks; and WebKit's native `copy:` / `cut:` / `paste:`
-already drive the system pasteboard correctly. So each item targets a
-thin AppDelegate wrapper (`performCopy:` etc.) that re-dispatches its
-native AppKit selector to the first responder synchronously
-(`NSApp.sendAction(copy:, to: nil)`). Routing through the wrapper (rather
-than binding the item straight to `copy:`) is what puts **enablement**
-under `validateMenuItem` / `MenuState.edit` — the action stays
-byte-identical to AppKit's own behavior; only validation moves to the
-responder chain. When an item validates disabled, AppKit lets the chord
-fall through to the WKWebView, where the keybinding map handles it.
+- **A disabled menu item eats its chord with a beep.** It does not fall through. So dimming an item is never the whole answer: a command whose chord should stay reachable while it is inapplicable must *detach* the chord, not merely dim the item.
+- **Promoting a command to a menu item takes its chord out of the JS funnel**, globally and unconditionally, including inside every text surface. Menu placement is a chord decision before it is a discoverability one.
+- **A `menuEligible` binding must not share a chord with a scoped binding.** The scoped one is not shadowed, it is dead. `keymapRegistry.lintChordCollisions` is the lint that keeps a promotion from silently taking a chord some card wanted.
 
-**Undo / Redo are two-path.** For chain editors (CM6) the items
-round-trip `undo`/`redo` control frames to the focused editor's own
-history — undo isn't gesture-sensitive the way the clipboard is, so the
-async round-trip is fine. For browser-native text controls
-(`nativeUndoToken` non-zero) the wrappers re-dispatch the native
-`undo:`/`redo:` selectors instead, driving the web view's NSUndoManager —
-the only route to a native input's undo stack — kept card-safe by the
-token-change clear. See the `edit` block notes above.
+`resolveChord(chord)` answers this stack for any chord, with `active` / `shadowedBy` per entry, and the Settings ▸ Keyboard pane renders from it — which is why `pdf-view.tsx` no longer has to reason about ⌘1–⌘3 by hand.
 
-`run-card-command` arg semantics: menu items send no `args`. `rename` and
-`compact` are the only `takesArgs` commands, and a bare `rename` opens the
-seeded one-field sheet — exactly the wanted menu behavior.
+### Where a key equivalent comes from
+
+Construction-time `keyEquivalent` literals in `buildMenuBar` are **defaults**, not the last word. `applyCommandChords()` sweeps `NSApp.mainMenu` recursively and writes what `commands[<id>].chord` says. Because `tugapp/Sources` contains no `performKeyEquivalent` override, no `NSEvent` monitor, and no `keyDown` override, every native key claim in Tug is an `NSMenuItem` key equivalent — so that sweep is complete coverage of the native side, and nothing can hold a chord the keymap cannot see.
+
+The sweep runs from **two** sites, and the second one is not optional: `updateMenuState(_:)` for the whole tree, and the tail of every `menuNeedsUpdate` rebuild for the menu it just rebuilt. The View, Window pane-list, theme, and Open Recent menus reconstruct their items from construction-time literals, and the push only fires on a *changed* projection — so a rebuild after a rebind would restore the literal and keep it until some unrelated state change came along.
+
+Key-equivalent mutation is **banned inside `validateMenuItem`**: that runs inside AppKit's closed-menu key-equivalent scan, where mutating a key equivalent is undefined.
+
+### The `code` → `keyEquivalent` conversion
+
+`chord-format.ts` owns both alphabets and is the only place either is spelled. The conversion returns the character and the mask **together**, never independently: shifted punctuation resolves to the shifted *character* with `shift` dropped from the mask, because AppKit renders the character it is given. Zoom In is `("+", [.command])`, not `("=", [.command, .shift])` — computing the two apart is exactly how ⌘+ turns into ⇧⌘=.
+
+An untabled code throws in dev and publishes `null` in production, so a bad binding detaches a chord rather than silently mis-assigning one.
+
+### The chord table
+
+<!-- generated:chords — regenerated by menus-doc.test.ts; do not hand-edit -->
+| Chord | Command | Title | Claimed at |
+|---|---|---|---|
+| ⇧⌘C | `toggle-changes-view` | Show Changes | JS, global |
+| ⇧⌘G | `find-previous` | Find Previous | JS, global |
+| ⇧⌘H | `toggle-history-view` | Show History | JS, global |
+| ⇧⌘M | `commit-auto-message` | Generate a Commit Message | JS, responder |
+| ⇧⌘P | `select-composer-route:prompt` | Prompt Route | JS, global |
+| ⇧⌘S | `save-as` | Save As… | menu bar (swept) |
+| ⇧⌘Z | `redo` | Redo | JS, global |
+| ⌃` | `cycle-card` | Cycle Panes | JS, global |
+| ⌃⌘F | `toggle-full-screen` | Enter Full Screen | menu bar (AppKit's own) |
+| ⌃⌘P | `cycle-permission-mode` | Cycle Permission Mode | JS, global |
+| ⌘+ | `zoom-in` | Zoom In | menu bar (swept) |
+| ⌘, | `show-settings` | Settings… | JS, global |
+| ⌘- | `zoom-out` | Zoom Out | menu bar (swept) |
+| ⌘. | `cancel-dialog` | Cancel | JS, global |
+| ⌘/ | `open-command-picker` | Open Command Picker | menu bar (swept) |
+| ⌘0 | `zoom-actual` | Actual Size | menu bar (swept) |
+| ⌘1 | `move-to-slot:1` | Move Card to Slot 1 | JS, global |
+| ⌘2 | `move-to-slot:2` | Move Card to Slot 2 | JS, global |
+| ⌘3 | `move-to-slot:3` | Move Card to Slot 3 | JS, global |
+| ⌘4 | `move-to-slot:4` | Move Card to Slot 4 | JS, global |
+| ⌘5 | `move-to-slot:5` | Move Card to Slot 5 | JS, global |
+| ⌘6 | `move-to-slot:6` | Move Card to Slot 6 | JS, global |
+| ⌘7 | `move-to-slot:7` | Move Card to Slot 7 | JS, global |
+| ⌘8 | `move-to-slot:8` | Move Card to Slot 8 | JS, global |
+| ⌘9 | `move-to-slot:9` | Move Card to Slot 9 | JS, global |
+| ⌘= | `zoom-in` | Zoom In | JS, global |
+| ⌘A | `select-all` | Select All | menu bar (AppKit's own) |
+| ⌘C | `copy` | Copy | menu bar (AppKit's own) |
+| ⌘F | `find` | Find… | JS, global |
+| ⌘G | `find-next` | Find Next | JS, global |
+| ⌘H | `hide-application` | Hide Tug | menu bar (AppKit's own) |
+| ⌘K | `focus-prompt` | Focus Prompt | JS, global |
+| ⌘L | `focus-lens` | Focus Lens | JS, global |
+| ⌘M | `minimize` | Minimize | menu bar (AppKit's own) |
+| ⌘Q | `quit-application` | Quit Tug | menu bar (AppKit's own) |
+| ⌘R | `cycle-stack` | Cycle Stack | menu bar (swept) |
+| ⌘S | `save` | Save… | JS, global |
+| ⌘T | `add-card-to-active-pane` | New Card in Active Pane | JS, global |
+| ⌘V | `paste` | Paste | menu bar (AppKit's own) |
+| ⌘W | `close` | Close | JS, global |
+| ⌘X | `cut` | Cut | menu bar (AppKit's own) |
+| ⌘Z | `undo` | Undo | JS, global |
+| ⌘{ | `previous-tab` | Previous Card | JS, global |
+| ⌘} | `next-tab` | Next Card | JS, global |
+| ⌥⇥ | `cycle-focus-mode` | Cycle Focus Mode | menu bar (swept) |
+| ⌥⇧⌘C | `copy-as-plain-text` | Copy as Plain Text | JS, global |
+| ⌥⇧⌘V | `paste-as-plain-text` | Paste as Plain Text | JS, global |
+| ⌥⇧⌘↑ | `first-turn` | First Turn | menu bar (swept) |
+| ⌥⇧⌘↓ | `last-turn` | Last Turn | menu bar (swept) |
+| ⌥⌘/ | `show-devtools` | Show DevTools | menu bar (swept) |
+| ⌥⌘H | `hide-others` | Hide Others | menu bar (AppKit's own) |
+| ⌥⌘L | `toggle-lens` | Show Lens | JS, global |
+| ⌥⌘V | `paste-as-quote` | Paste as Quote | JS, global |
+| ⌥⌘W | `close-all` | Close All Tabs | JS, global |
+| ⌥⌘↑ | `previous-turn` | Previous Turn | menu bar (swept) |
+| ⌥⌘↓ | `next-turn` | Next Turn | menu bar (swept) |
+| ⎋ | `cancel-dialog` | Cancel | JS, global |
+<!-- /generated:chords -->
+
+Chords the user has rebound are not in this table — it is the *defaults*. Overrides live in tugbank under `dev.tugtool.keymap`, one key per command id holding a JSON binding list; an absent key means the default, and an **empty list** means deliberately unbound, which is a different and durable answer. The host never reads that domain: overrides reach it the same way every other chord does, through the push.
+
+## The command catalog
+
+Every menu item, the command behind it, and where each answer comes from. Generated from the registry — a hand-maintained join is a hand-maintained lie.
+
+<!-- generated:catalog — regenerated by menus-doc.test.ts; do not hand-edit -->
+| Menu item | Command | Routing | Enablement |
+|---|---|---|---|
+| `app.hide` | `hide-application` | AppKit performs it | host tier |
+| `app.hideOthers` | `hide-others` | AppKit performs it | host tier |
+| `app.logout` | `logout` | registered handler | host tier |
+| `app.quit` | `quit-application` | AppKit performs it | host tier |
+| `app.services` | `services` | AppKit performs it | host tier |
+| `app.settings` | `show-settings` | first responder | host tier |
+| `app.setup` | `setup` | registered handler | host tier |
+| `app.showAll` | `show-all` | AppKit performs it | host tier |
+| `edit.copy` | `copy` | AppKit performs it | registry gate |
+| `edit.copyAsPlainText` | `copy-as-plain-text` | first responder | registry gate |
+| `edit.copyLastResponse` | `run-slash-command:copy` | key card | registry gate |
+| `edit.cut` | `cut` | AppKit performs it | registry gate |
+| `edit.delete` | `delete` | AppKit performs it | registry gate |
+| `edit.find` | `find` | first responder | registry gate |
+| `edit.findNext` | `find-next` | first responder | registry gate |
+| `edit.findPrevious` | `find-previous` | first responder | registry gate |
+| `edit.paste` | `paste` | AppKit performs it | registry gate |
+| `edit.pasteAsPlainText` | `paste-as-plain-text` | first responder | registry gate |
+| `edit.pasteAsQuote` | `paste-as-quote` | first responder | registry gate |
+| `edit.redo` | `redo` | first responder | host tier |
+| `edit.selectAll` | `select-all` | AppKit performs it | registry gate |
+| `edit.undo` | `undo` | first responder | host tier |
+| `file.closeAllCardTabs` | `close-all` | first responder | registry gate |
+| `file.closeCard` | `close` | first responder | registry gate |
+| `file.exportTranscript` | `run-slash-command:export` | key card | registry gate |
+| `file.newTextCard` | `new-text-card` | first responder | host tier |
+| `file.openFile` | `open-file` | first responder | host tier |
+| `file.openQuickly` | `open-quickly` | first responder | registry gate |
+| `file.openRecent.clear` | `clear-recent-documents` | first responder | host tier |
+| `file.reloadFromDisk` | `reload-from-disk` | first responder | registry gate |
+| `file.revertToSaved` | `revert-to-saved` | first responder | registry gate |
+| `file.save` | `save` | first responder | registry gate |
+| `file.saveACopy` | `save-a-copy` | first responder | registry gate |
+| `file.saveAs` | `save-as` | first responder | registry gate |
+| `help.shortcuts` | `run-slash-command:help` | key card | registry gate |
+| `maker.devTools` | `show-devtools` | first responder | registry gate |
+| `maker.focusLens` | `focus-lens` | first responder | host tier |
+| `maker.galleryCard` | `show-component-gallery` | first responder | host tier |
+| `maker.lens` | `toggle-lens` | registered handler | host tier |
+| `maker.newCardInPane` | `add-card-to-active-pane` | first responder | registry gate |
+| `maker.reload` | `reload` | registered handler | host tier |
+| `session.addDir` | `run-slash-command:add-dir` | key card | registry gate |
+| `session.agents` | `run-slash-command:agents` | key card | registry gate |
+| `session.commandPicker` | `open-command-picker` | key card | registry gate |
+| `session.commit` | `run-slash-command:commit` | key card | registry gate |
+| `session.compact` | `run-slash-command:compact` | key card | registry gate |
+| `session.context` | `run-slash-command:context` | key card | registry gate |
+| `session.cycleFocusMode` | `cycle-focus-mode` | key card | registry gate |
+| `session.diff` | `run-slash-command:diff` | key card | registry gate |
+| `session.effort` | `run-slash-command:effort` | key card | registry gate |
+| `session.firstTurn` | `first-turn` | key card | registry gate |
+| `session.focusPrompt` | `focus-prompt` | key card | registry gate |
+| `session.hooks` | `run-slash-command:hooks` | key card | registry gate |
+| `session.lastTurn` | `last-turn` | key card | registry gate |
+| `session.memory` | `run-slash-command:memory` | key card | registry gate |
+| `session.model` | `run-slash-command:model` | key card | registry gate |
+| `session.new` | `run-slash-command:clear` | key card | registry gate |
+| `session.nextTurn` | `next-turn` | key card | registry gate |
+| `session.permissionMode.acceptEdits` | `set-permission-mode:acceptEdits` | key card | registry gate |
+| `session.permissionMode.auto` | `set-permission-mode:auto` | key card | registry gate |
+| `session.permissionMode.cycle` | `cycle-permission-mode` | key card | registry gate |
+| `session.permissionMode.default` | `set-permission-mode:default` | key card | registry gate |
+| `session.permissionMode.plan` | `set-permission-mode:plan` | key card | registry gate |
+| `session.permissionRules` | `run-slash-command:permissions` | key card | registry gate |
+| `session.previousTurn` | `previous-turn` | key card | registry gate |
+| `session.rename` | `run-slash-command:rename` | key card | registry gate |
+| `session.resume` | `run-slash-command:resume` | key card | registry gate |
+| `session.rewind` | `run-slash-command:rewind` | key card | registry gate |
+| `session.skills` | `run-slash-command:skills` | key card | registry gate |
+| `session.stop` | `interrupt-session` | key card | registry gate |
+| `session.toggleChanges` | `toggle-changes-view` | key card | registry gate |
+| `session.toggleHistory` | `toggle-history-view` | key card | registry gate |
+| `session.usage` | `run-slash-command:usage` | key card | registry gate |
+| `view.actualSize` | `zoom-actual` | first responder | host tier |
+| `view.nextTheme` | `next-theme` | registered handler | host tier |
+| `view.zoomIn` | `zoom-in` | first responder | host tier |
+| `view.zoomOut` | `zoom-out` | first responder | host tier |
+| `window.cyclePanes` | `cycle-card` | first responder | registry gate |
+| `window.cycleStack` | `cycle-stack` | first responder | registry gate |
+| `window.enterFullScreen` | `toggle-full-screen` | AppKit performs it | host tier |
+| `window.minimize` | `minimize` | AppKit performs it | host tier |
+| `window.nextCard` | `next-tab` | first responder | registry gate |
+| `window.previousCard` | `previous-tab` | first responder | registry gate |
+| `window.revealStack` | `reveal-stack` | first responder | registry gate |
+| `window.zoom` | `zoom-window` | AppKit performs it | host tier |
+<!-- /generated:catalog -->
+
+## The clipboard exception — native re-dispatch, not a round-trip
+
+The clipboard Edit items (Cut / Copy / Paste / Delete / Select All) do **not** round-trip through a control frame. A control frame is async and leaves the JS clipboard call outside the user gesture, which the browser blocks; and WebKit's native `copy:` / `cut:` / `paste:` already drive the system pasteboard correctly. So each item targets a thin AppDelegate wrapper (`performCopy:` etc.) that re-dispatches its native AppKit selector to the first responder synchronously. Routing through the wrapper — rather than binding the item straight to `copy:` — is what puts **enablement** under the registry gate while leaving the action byte-identical to AppKit's own.
+
+Those five commands appear in the registry with `routing: "native"` and in `NATIVE_LOCKED`: the mechanism could rebind them, the policy says no.
 
 ## The identifier namespace
 
-Every `NSMenuItem` — including dynamically built ones — carries a stable
-`NSUserInterfaceItemIdentifier`, namespaced by menu:
+Every `NSMenuItem` — including dynamically built ones — carries a stable `NSUserInterfaceItemIdentifier`, namespaced by menu:
 
 ```
 app.about        file.newSessionCard      edit.findNext        session.stop
-view.theme.<name> window.pane.<n>      maker.sessionPanel       help.shortcuts
-session.permissionMode.<mode>          view.zoomInAlias (hidden ⌘= alias)
+view.theme.<name>  window.pane.<n>        maker.devTools       help.shortcuts
+session.permissionMode.<mode>             view.zoomInAlias (hidden ⌘= alias)
 ```
 
 Rules:
 
-- **Identity never rides the title.** Titles localize and (for dynamic
-  items) carry runtime data; the identifier never does. Tests and the
-  harness address items by identifier only.
-- Dynamic items mint identifiers at build time (`view.theme.<name>`,
-  `window.pane.<n>` by position, since pane ids are session-random).
-- AppKit injects its own identified items (dictation, emoji palette) and
-  may clone the fullscreen item into its managed window-tiling section —
-  uniqueness is guaranteed only within our `<menu>.` namespaces.
+- **Identity never rides the title.** Titles localize and (for dynamic items) carry runtime data; the identifier never does. Tests, the harness, and the registry's `menuItemId` join address items by identifier only.
+- Dynamic items mint identifiers at build time (`view.theme.<name>`, `window.pane.<n>` by position, since pane ids are session-random).
+- AppKit injects its own identified items (dictation, emoji palette) and may clone the fullscreen item into its managed window-tiling section — uniqueness is guaranteed only within our `<menu>.` namespaces.
 
-The Window menu is special: it is `NSApp.windowsMenu`, so AppKit owns
-auto-added entries in it. The dynamic pane list is managed as a sectioned
-slice — remove exactly the `window.pane.*` items, re-insert after the
-anchor separator — and the menu is **never** wholesale-rebuilt
-(`removeAllItems()` is forbidden there). Automatic window **tabbing**
-items (Show Previous/Next Tab, Move Tab to New Window, Merge All Windows)
-are suppressed app-wide via `NSWindow.allowsAutomaticWindowTabbing = false`
-at launch — Tug navigates by cards and panes, not native NSWindow tabs.
+The Window menu is special: it is `NSApp.windowsMenu`, so AppKit owns auto-added entries in it. The dynamic pane list is managed as a sectioned slice — remove exactly the `window.pane.*` items, re-insert after the anchor separator — and the menu is **never** wholesale-rebuilt (`removeAllItems()` is forbidden there). Automatic window **tabbing** items are suppressed app-wide via `NSWindow.allowsAutomaticWindowTabbing = false` at launch — Tug navigates by cards and panes, not native NSWindow tabs.
+
+## The theme submenu
+
+Its **membership** is a filesystem scan of `tugdeck/styles/themes/*.css` under the configured source tree, so the submenu is empty without one — genuinely dynamic, and it stays a scan. Its **checkmark** rides the push (`activeTheme`): the frontend changes the theme by paths the host never sees, so a value cached at selection time would go stale, and the host used to re-read tugbank on every menu open — a subprocess read on the path that has to finish before the menu can draw.
 
 ## Testing
 
-The harness verbs `menuSnapshot` / `menuItemState` (surface 1.7.0) report
-each item's *validated* enabled state — the snapshot runs the same
-`NSMenuItemValidation` resolution AppKit uses — plus the checkmark
-`state`, captured after the validation sweep. Structure, deck-tier,
-maker-gate, and session-tier coverage lives in
-`tests/app-test/at0167–at0172`. Dynamic items (View body, theme list,
-pane slice) rebuild only in `menuNeedsUpdate` and are not visible to a
-snapshot taken without opening the menu.
+The harness verbs `menuSnapshot` / `menuItemState` report each item's *validated* enabled state — the snapshot runs the same `NSMenuItemValidation` resolution AppKit uses, after calling each menu's `menuNeedsUpdate` — plus the checkmark `state`, the `keyEquivalent`, and the `modifierMask`.
+
+| Coverage | Where |
+|---|---|
+| Structure, deck tier, maker gate, session tier | `at0167`–`at0174` |
+| The registry gate: enablement, state, and titles from the mirror | `at0180` |
+| Native key equivalents derived from the keymap, including a rebuild | `at0181` |
+| A user override round trip, through the store and through the pane | `at0182` |
+
+Dynamic items rebuild in `menuNeedsUpdate`; the snapshot calls it, so they are visible without opening a menu by hand.

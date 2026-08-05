@@ -230,6 +230,24 @@ export interface CommandEntry {
    * and detaching is what keeps it shadowable after.
    */
   readonly disabledChord?: "keep" | "detach";
+  /**
+   * Whether the command holds its menu key equivalent right now, asked
+   * independently of whether the item is enabled.
+   *
+   * Most commands never need this: a chord follows the item, and
+   * {@link disabledChord} says what happens when the item dims. Two do not.
+   * Save As… is enabled whenever a Text card is frontmost and its chord must
+   * come off when one is not, which is the *same* condition read twice only
+   * because the item's own enablement is computed from a block that may be
+   * absent. And the two slot-stack commands are equally enabled while the
+   * stack has somewhere to go, with only ⌘R moving between them on a user
+   * preference — an enablement predicate cannot express that, because
+   * neither item is ever the disabled one.
+   *
+   * Absent means "attached whenever the item is enabled", which is what
+   * every other command wants.
+   */
+  readonly chordActive?: (chain: CommandValidationSource) => boolean;
   /** Validity override; chain-routed entries default to the chain walk ([P06]). */
   readonly validate?: (chain: CommandValidationSource) => boolean;
   /** Checkmark / radio / toggle projection ([P07]). */
@@ -267,6 +285,34 @@ function chord(
     ...(options.menuEligible === true ? { menuEligible: true } : {}),
   };
 }
+
+/**
+ * The activation scope named by the composer's own bindings.
+ *
+ * A scoped binding is live where its component registers it, and a card's
+ * responder id is minted per card — so a table can only name the *surface*,
+ * not the runtime id. `resolveChord` reads the live registration for
+ * resolution and this name for display, which is what lets a scoped chord be
+ * shown in the keymap pane without the table pretending to know where it is.
+ */
+export const COMPOSER_RESPONDER_SCOPE = "session-composer";
+
+/**
+ * ⌘R — the slot-stack chord, held by exactly one of Cycle Stack and Reveal
+ * Stack at a time.
+ *
+ * Which one is a user preference, so the table can only state a default:
+ * Cycle Stack carries it below, and `applyStackChordPreference` moves it to
+ * Reveal Stack when the user asks. Naming the binding here is what lets the
+ * move be a rewrite of the same value rather than a second spelling of it.
+ */
+export const STACK_CHORD: CommandBinding = {
+  chord: { key: "KeyR", meta: true, label: "r" },
+  scope: GLOBAL_SCOPE,
+  source: "default",
+  preventDefault: true,
+  menuEligible: true,
+};
 
 /* ---------------------------------------------------------------------------
  * Shared predicates
@@ -521,8 +567,19 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Save As…",
     routing: "first-responder",
     menuItemId: "file.saveAs",
+    // ⇧⌘S is claimed only while a Text card is frontmost. Save As… on any
+    // other card would have nothing to write, and a chord left on a dimmed
+    // item is eaten at the menu bar with a beep instead of falling through —
+    // so the chord comes off with the card rather than merely going dark.
+    bindings: [
+      chord(
+        { key: "KeyS", meta: true, shift: true, label: "s" },
+        { preventDefault: true, menuEligible: true },
+      ),
+    ],
     mirrored: true,
     validate: (chain) => chain.menu.fileGates?.saveAs ?? false,
+    chordActive: (chain) => chain.menu.fileGates !== null,
   },
   {
     id: TUG_ACTIONS.SAVE_A_COPY,
@@ -766,25 +823,44 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "registry",
     menuItemId: "view.nextTheme",
   },
+  // The three zoom commands state their chords here and take their
+  // enablement from the host: the predicate reads `window.currentPageZoom`,
+  // which is the host's own property and changes as these very commands run.
+  // The gate carries the chord alone, and the host's tier keeps the bounds.
   {
-    // `view.zoomInAlias` carries ⌘= for the same command; a hidden alias
-    // item is a second chord, not a second command.
+    // Two bindings, one command: ⌘+ is what the menu shows, ⌘= is Safari's
+    // no-shift ergonomic alias. An `NSMenuItem` carries one key equivalent,
+    // so the menu takes the first and the hidden `view.zoomInAlias` item
+    // keeps ⌘= as its constructed literal.
     id: TUG_ACTIONS.ZOOM_IN,
     title: "Zoom In",
     routing: "first-responder",
     menuItemId: "view.zoomIn",
+    bindings: [
+      chord(
+        { key: "Equal", meta: true, shift: true, label: "+" },
+        { preventDefault: true, menuEligible: true },
+      ),
+      chord({ key: "Equal", meta: true, label: "=" }, { preventDefault: true }),
+    ],
   },
   {
     id: TUG_ACTIONS.ZOOM_OUT,
     title: "Zoom Out",
     routing: "first-responder",
     menuItemId: "view.zoomOut",
+    bindings: [
+      chord({ key: "Minus", meta: true, label: "-" }, { preventDefault: true, menuEligible: true }),
+    ],
   },
   {
     id: TUG_ACTIONS.ZOOM_ACTUAL,
     title: "Actual Size",
     routing: "first-responder",
     menuItemId: "view.actualSize",
+    bindings: [
+      chord({ key: "Digit0", meta: true, label: "0" }, { preventDefault: true, menuEligible: true }),
+    ],
   },
 
   // ---- Window / deck ----
@@ -834,6 +910,15 @@ export const COMMANDS: readonly CommandEntry[] = [
   // on a SPECIFIC pane's stack, and with nothing selected there is no such
   // pane. Both gate identically whichever one currently holds ⌘R, so the
   // user's preference moves the chord and nothing else.
+  //
+  // ⌘R is one chord and one command holds it: Cycle Stack by default, Reveal
+  // Stack when the user prefers it, moved by `applyStackChordPreference`. The
+  // table states the default rather than giving both the chord, so a plain
+  // read of it answers "what does ⌘R do" with one command.
+  //
+  // Whoever holds it detaches it when the stack has nowhere to go — a chord
+  // on a dimmed item is eaten at the menu bar with a beep, and ⌘R dead
+  // everywhere is a worse answer than ⌘R inapplicable here.
   {
     id: TUG_ACTIONS.REVEAL_STACK,
     title: "Reveal Stack",
@@ -841,14 +926,17 @@ export const COMMANDS: readonly CommandEntry[] = [
     menuItemId: "window.revealStack",
     mirrored: true,
     validate: (chain) => chain.menu.stackDepth > 1,
+    disabledChord: "detach",
   },
   {
     id: TUG_ACTIONS.CYCLE_STACK,
     title: "Cycle Stack",
     routing: "first-responder",
     menuItemId: "window.cycleStack",
+    bindings: [STACK_CHORD],
     mirrored: true,
     validate: (chain) => chain.menu.stackDepth > 1,
+    disabledChord: "detach",
   },
   ...SLOT_COMMANDS,
   {
@@ -1076,6 +1164,29 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Commit",
     routing: "key-card",
     internal: true,
+  },
+  {
+    // ⇧⌘M, live only while the composer is in commit mode — the keyboard
+    // twin of the pencil-sparkles button.
+    //
+    // The chord is stated here so the keymap pane and every hint can read it;
+    // *where* it is live is decided by where the composer registers it, which
+    // is the [P08] split between a binding's scope and a command's routing.
+    // The declared scope names the surface rather than a runtime responder
+    // id, because a card's responder id is minted per card and a table cannot
+    // name it — `resolveChord` reads the live registration for resolution and
+    // this declaration for display.
+    id: TUG_ACTIONS.COMMIT_AUTO_MESSAGE,
+    title: "Generate a Commit Message",
+    routing: "first-responder",
+    bindings: [
+      {
+        chord: { key: "KeyM", meta: true, shift: true, label: "m" },
+        scope: { kind: "responder", responderId: COMPOSER_RESPONDER_SCOPE },
+        source: "default",
+        preventDefault: true,
+      },
+    ],
   },
   {
     // Its doors are the PDF viewer's context menu items.

@@ -37,6 +37,7 @@ import { useOptionalResponder } from "./use-responder";
 import { useResponderChain } from "./responder-chain-provider";
 import type { ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { commandShortcut } from "./keymap-registry";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -158,16 +159,44 @@ export function useCopyableText({
     [disabled, manager],
   );
 
+  // Read-only text: Copy is live, the editing verbs are shown dimmed so the
+  // menu reads as the familiar one rather than as a mystery with three rows
+  // missing. Every hint comes from the command's binding ([P11]).
   const menuItems = useMemo<TugEditorContextMenuEntry[]>(
     () =>
       copyMenu
-        ? [{ action: TUG_ACTIONS.COPY, label: "Copy", shortcut: "\u2318C" }]
+        ? [
+            {
+              action: TUG_ACTIONS.COPY,
+              label: "Copy",
+              shortcut: commandShortcut(TUG_ACTIONS.COPY),
+            },
+          ]
         : [
-            { action: TUG_ACTIONS.CUT, label: "Cut", shortcut: "\u2318X", disabled: true },
-            { action: TUG_ACTIONS.COPY, label: "Copy", shortcut: "\u2318C" },
-            { action: TUG_ACTIONS.PASTE, label: "Paste", shortcut: "\u2318V", disabled: true },
+            {
+              action: TUG_ACTIONS.CUT,
+              label: "Cut",
+              shortcut: commandShortcut(TUG_ACTIONS.CUT),
+              disabled: true,
+            },
+            {
+              action: TUG_ACTIONS.COPY,
+              label: "Copy",
+              shortcut: commandShortcut(TUG_ACTIONS.COPY),
+            },
+            {
+              action: TUG_ACTIONS.PASTE,
+              label: "Paste",
+              shortcut: commandShortcut(TUG_ACTIONS.PASTE),
+              disabled: true,
+            },
             { type: "separator" },
-            { action: TUG_ACTIONS.SELECT_ALL, label: "Select All", shortcut: "\u2318A", disabled: true },
+            {
+              action: TUG_ACTIONS.SELECT_ALL,
+              label: "Select All",
+              shortcut: commandShortcut(TUG_ACTIONS.SELECT_ALL),
+              disabled: true,
+            },
           ],
     [copyMenu],
   );
