@@ -79,6 +79,14 @@ const KIND_SENDER_ID = "lens-layouts-kind";
 const SIDE_CAPTION_ID = "lens-layouts-side-caption";
 const KIND_CAPTION_ID = "lens-layouts-kind-caption";
 
+/** The two groups' focus orders. Distinct, and declared rather than defaulted,
+ *  because they are two stops: sharing an order would give them one focus key
+ *  between them, and the arrow plane addresses a stop by its key. They are the
+ *  section's `bodyFocusOrders`, in this order, which is what makes a vertical
+ *  arrow step from one group to the other. */
+const LAYOUTS_SIDE_FOCUS_ORDER = 0;
+const LAYOUTS_KIND_FOCUS_ORDER = 1;
+
 /** User-facing label for each kind. */
 const KIND_LABELS: Record<ImpositionKind, string> = {
   "one-up": "One Up",
@@ -177,6 +185,7 @@ function LayoutsSectionBody({
             value={lens}
             senderId={SIDE_SENDER_ID}
             focusGroup={host.focusGroup}
+            focusOrder={LAYOUTS_SIDE_FOCUS_ORDER}
             size="sm"
             emphasis="tile"
             columns={2}
@@ -215,6 +224,7 @@ function LayoutsSectionBody({
             value={kind ?? DEFAULT_IMPOSITION_KIND}
             senderId={KIND_SENDER_ID}
             focusGroup={host.focusGroup}
+            focusOrder={LAYOUTS_KIND_FOCUS_ORDER}
             size="sm"
             emphasis="tile"
             columns={2}
@@ -251,5 +261,9 @@ export function registerLayoutsSection(): void {
     glyph: <Columns3 size={14} />,
     collapsedSummary: () => <LayoutsCollapsedSummary />,
     body: (host) => <LayoutsSectionBody host={host} />,
+    // Two stacked radio groups, so this body is two rows of the Lens's arrow
+    // plane rather than one — Down off the last tile of Lens Position must land
+    // on Cards, not skip past it into the next section.
+    bodyFocusOrders: [LAYOUTS_SIDE_FOCUS_ORDER, LAYOUTS_KIND_FOCUS_ORDER],
   });
 }

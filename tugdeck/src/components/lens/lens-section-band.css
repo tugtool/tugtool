@@ -98,9 +98,17 @@
    box: the band spans the rail's full width and the default outward offset would
    put the ring's vertical runs outside the pane, where they are clipped away and
    the ring reads as two loose horizontal lines. The inset also keeps it clear of
-   the seam rules above and below, which are the band's own edges. */
+   the seam rules above and below, which are the band's own edges.
+
+   SQUARE, against the language's default rounded ring. That default exists for
+   flat container key-views whose ring is drawn OUTSIDE them, where a radius is
+   pure softening; an inset ring on a square box is a different shape entirely —
+   its rounded corners cut across the band's own square ones, so the band's
+   border shows through the gap at each corner and the ring reads as broken. The
+   band's box is what the ring has to agree with, and the band's box has corners. */
 .lens-section > .tool-call-header[data-key-view-kbd] {
   outline-offset: calc(-1 * var(--tugx-focus-ring-width));
+  border-radius: 0;
 }
 
 /* Drag ghost — the dragged section lifts while a reorder is live ([P08]):

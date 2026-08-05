@@ -11,10 +11,12 @@
  *     registers no focusable, or registers one ordered behind the body (the
  *     walk would then run band-after-rows and the eye and the keyboard would
  *     disagree about which section they are in).
- *   - **The chevron is a stop beside it (B):** arrowing back DOWN along the
- *     band reaches its fold cue before it reaches the list. Fails if the cue is
+ *   - **The chevron is a stop beside it (B):** arrowing RIGHT along the band
+ *     reaches its fold cue without passing through the list. Fails if the cue is
  *     left an un-authored native button — reachable by nothing, since the Lens
- *     grants no DOM focus.
+ *     grants no DOM focus. Right rather than Down is itself the assertion: the
+ *     band is a row, its controls are beside it, and the Lens's declared spatial
+ *     plane is what keeps that distinct from Down's meaning.
  *   - **Space folds and unfolds (C):** on the chevron, Space collapses the
  *     section and Space again opens it. This is the whole point of the other
  *     two: without a keyboard route to the chevron there is no keyboard way to
@@ -139,9 +141,9 @@ describe.skipIf(!SHOULD_RUN)("at0351 — the Lens band under the keyboard", () =
         );
 
         // (A) Up off the top of the list crosses out of it and reaches the
-        // band — the band's own stops are on the way, in reverse (the chevron,
-        // then the filter field, which is empty and so hands the arrow straight
-        // back), which is why this walks rather than steps once.
+        // band. It walks rather than stepping once because the list's own
+        // cursor owns the first press or two — Up is the list's until its
+        // cursor is at the top row, and only then does it cross the seam.
         const up = await arrowUntil(app, "ArrowUp", BAND_KEY, 4);
         note("ArrowUp route", up.join(" → "));
         expect(up.at(-1)).toBe(BAND_KEY);
@@ -149,12 +151,15 @@ describe.skipIf(!SHOULD_RUN)("at0351 — the Lens band under the keyboard", () =
         // against it.
         expect(await app.evalJS<boolean>(BAND_RINGS)).toBe(true);
 
-        // (B) Back down along the band: the fold chevron is a stop of its own,
-        // reached before the walk drops into the list.
-        const down = await arrowUntil(app, "ArrowDown", FOLD_KEY, 4);
-        note("ArrowDown route", down.join(" → "));
-        expect(down.at(-1)).toBe(FOLD_KEY);
-        expect(down).not.toContain(LIST_KEY);
+        // (B) Along the band to the fold chevron — RIGHT, because the band is a
+        // row and its controls are to the right of it. Down would drop into the
+        // list, which is the whole point of the Lens declaring a spatial plane:
+        // the two directions mean different things. The walk must not pass
+        // through the list on its way.
+        const across = await arrowUntil(app, "ArrowRight", FOLD_KEY, 4);
+        note("ArrowRight route", across.join(" → "));
+        expect(across.at(-1)).toBe(FOLD_KEY);
+        expect(across).not.toContain(LIST_KEY);
 
         // (C) Space on the chevron folds the section: the body goes, and the
         // band says so.
