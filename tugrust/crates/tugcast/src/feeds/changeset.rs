@@ -661,7 +661,10 @@ async fn contention_verdict(
     proof_ids: &HashSet<String>,
     min_live: i64,
     ledger: Option<&SessionLedger>,
-) -> Option<(tugchanges_core::ContentionVerdict, Vec<tugchanges_core::Hunk>)> {
+) -> Option<(
+    tugchanges_core::ContentionVerdict,
+    Vec<tugchanges_core::Hunk>,
+)> {
     let ledger = ledger?;
     let canonical_root = CanonicalPath::from_raw(repo_root);
     let spans = ledger

@@ -390,7 +390,14 @@ fn a_second_edit_reports_only_its_own_region() {
 
     let first = edit(
         &root,
-        &["--path", "src/long.ts", "--replace", "line005", "--with", "FIVE"],
+        &[
+            "--path",
+            "src/long.ts",
+            "--replace",
+            "line005",
+            "--with",
+            "FIVE",
+        ],
     );
     assert!(first.status.success());
     let first_hunks: Vec<serde_json::Value> =
@@ -399,7 +406,14 @@ fn a_second_edit_reports_only_its_own_region() {
 
     let second = edit(
         &root,
-        &["--path", "src/long.ts", "--replace", "line050", "--with", "FIFTY"],
+        &[
+            "--path",
+            "src/long.ts",
+            "--replace",
+            "line050",
+            "--with",
+            "FIFTY",
+        ],
     );
     assert!(second.status.success());
     let second_hunks: Vec<serde_json::Value> =

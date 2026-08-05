@@ -1037,7 +1037,8 @@ impl SessionLedger {
         let conn: &Connection = &tx;
         let touched = match record {
             Record::FileEvent { row, spans } => {
-                Self::insert_file_event(conn, row)? + Self::insert_file_event_spans(conn, row, spans)?
+                Self::insert_file_event(conn, row)?
+                    + Self::insert_file_event_spans(conn, row, spans)?
             }
             Record::FileEventBatch { rows, spans } => {
                 let mut inserted = 0usize;
@@ -5894,11 +5895,7 @@ mod tests {
             .unwrap();
             conn.pragma_update(None, "user_version", 1).unwrap();
         }
-        std::fs::write(
-            dir.path().join("sessions.db.changes.schema-version"),
-            "1\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("sessions.db.changes.schema-version"), "1\n").unwrap();
 
         let ledger = SessionLedger::open_with_claude_root(
             &path,

@@ -284,8 +284,9 @@ fn edit_spans(edits: &[serde_json::Value]) -> Vec<crate::session_ledger::FileEve
             "new_len": new_string.len(),
         });
         if replaced {
-            anchor["old_hash"] =
-                serde_json::Value::String(tugchanges_core::hunks::content_hash(old_string.unwrap()));
+            anchor["old_hash"] = serde_json::Value::String(tugchanges_core::hunks::content_hash(
+                old_string.unwrap(),
+            ));
         }
         spans.push(crate::session_ledger::FileEventSpan {
             seq: spans.len() as i64,
@@ -1428,7 +1429,10 @@ mod tests {
 
         // A notebook edit replaces its cell wholesale, same reading.
         let notebook = serde_json::json!({"notebook_path": "/p/a.ipynb"});
-        assert_eq!(spans_for_tool_input("NotebookEdit", &notebook)[0].kind, "whole");
+        assert_eq!(
+            spans_for_tool_input("NotebookEdit", &notebook)[0].kind,
+            "whole"
+        );
     }
 
     #[test]
@@ -1506,7 +1510,10 @@ mod tests {
         let anchor = anchor_of(&spans_for_tool_input("Edit", &input)[0]);
         assert_eq!(anchor["new_head"].as_str().unwrap().len(), SPAN_HEAD_CAP);
         assert_eq!(anchor["new_len"], long.len());
-        assert_eq!(anchor["new_hash"], tugchanges_core::hunks::content_hash(&long));
+        assert_eq!(
+            anchor["new_hash"],
+            tugchanges_core::hunks::content_hash(&long)
+        );
     }
 
     #[test]

@@ -483,7 +483,10 @@ mod tests {
     fn a_capped_head_still_matches_the_hunk_that_carries_it() {
         // The written text was longer than the head cap, so only its head is
         // recorded — containment plus the length floor is what places it.
-        let long: String = (1..=20).map(|n| format!("added-line-{n}")).collect::<Vec<_>>().join("\n");
+        let long: String = (1..=20)
+            .map(|n| format!("added-line-{n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let body: String = long
             .lines()
             .map(|l| format!("+{l}"))

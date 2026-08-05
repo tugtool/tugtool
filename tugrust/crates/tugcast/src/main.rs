@@ -1883,10 +1883,7 @@ fn seed_ledger(spec_path: &std::path::Path) -> ! {
     };
     if let Some(parent) = path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
-            eprintln!(
-                "tugcast: error: cannot create {}: {e}",
-                parent.display()
-            );
+            eprintln!("tugcast: error: cannot create {}: {e}", parent.display());
             std::process::exit(1);
         }
     }

@@ -282,7 +282,9 @@ mod tests {
         });
         let records = ChangesJournal::read_records(&journal_path_for(&db));
         assert_eq!(records.len(), 2);
-        assert!(matches!(&records[0], Record::FileEvent { row, .. } if row.file_path == "src/a.rs"));
+        assert!(
+            matches!(&records[0], Record::FileEvent { row, .. } if row.file_path == "src/a.rs")
+        );
         assert!(matches!(&records[1], Record::DeleteSession { session } if session == "s9"));
     }
 
