@@ -300,9 +300,25 @@ fn paths_contend(
     min_live: i64,
 ) -> Result<bool, String> {
     let spans = ledger::spans_for_path(conn, path)?;
+    // Same repo-scoping rule as the owner queries: a span from a checkout
+    // that canonicalizes elsewhere is another repo's evidence. A parent dir
+    // that fails to canonicalize scopes nothing in — the row degrades out,
+    // which at worst widens.
+    let canon_root = std::fs::canonicalize(repo_root).ok();
+    let mut canon_cache: HashMap<&str, bool> = HashMap::new();
     let mut by_session: HashMap<&str, Vec<contention::Anchor>> = HashMap::new();
     for row in &spans {
         if row.at < min_live {
+            continue;
+        }
+        let same_repo = *canon_cache
+            .entry(row.project_dir.as_str())
+            .or_insert_with(|| {
+                canon_root.as_deref().is_some_and(|root| {
+                    std::fs::canonicalize(&row.project_dir).is_ok_and(|p| p == root)
+                })
+            });
+        if !same_repo {
             continue;
         }
         by_session
@@ -1217,6 +1233,55 @@ mod tests {
         let theirs = compute_changes(&open(&db), repo.path(), "theirs", false).unwrap();
         assert_eq!(theirs.attributed.len(), 1);
         assert!(!theirs.attributed[0].shared);
+    }
+
+    /// Two checkouts can hold the same relative path; a span recorded under
+    /// another repo's `project_dir` is that repo's evidence and must not
+    /// shape a claim here.
+    #[test]
+    fn a_span_from_another_repo_does_not_feed_the_verdict() {
+        let (repo, rootstr) = init_two_region_repo();
+        let db = seed_two_owners_with_anchors(
+            &rootstr,
+            "both.rs",
+            &[("mine", "TOP-EDIT"), ("theirs", "BOTTOM-EDIT")],
+        );
+        {
+            // In a *different* repo, `theirs` wrote the same text `mine`
+            // wrote here. Unfiltered, that anchor would land `theirs` in
+            // `mine`'s hunk and turn disjoint work SHARED.
+            let elsewhere = tempfile::tempdir().expect("tempdir");
+            let conn = Connection::open(db.path().join("sessions.db")).unwrap();
+            let anchor = serde_json::json!({
+                "new_hash": crate::hunks::content_hash("TOP-EDIT"),
+                "new_head": "TOP-EDIT",
+                "new_len": "TOP-EDIT".len(),
+            })
+            .to_string();
+            conn.execute(
+                "INSERT INTO file_events
+                    (tug_session_id, tool_use_id, file_path, tool_name, op, origin, ambiguous, project_dir, at)
+                 VALUES ('theirs', 'tu-elsewhere', 'both.rs', 'Edit', 'edit', 'exact', 0, ?1, ?2)",
+                rusqlite::params![
+                    elsewhere.path().to_string_lossy().into_owned(),
+                    now_millis() + 2_020
+                ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO file_event_spans
+                    (tug_session_id, tool_use_id, file_path, seq, kind, anchor)
+                 VALUES ('theirs', 'tu-elsewhere', 'both.rs', 0, 'insert', ?1)",
+                rusqlite::params![anchor],
+            )
+            .unwrap();
+        }
+        let mine = compute_changes(&open(&db), repo.path(), "mine", false).unwrap();
+        assert_eq!(mine.attributed.len(), 1);
+        assert!(
+            !mine.attributed[0].shared,
+            "another repo's anchor must not contend here"
+        );
     }
 
     #[test]

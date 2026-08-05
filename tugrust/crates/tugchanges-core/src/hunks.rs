@@ -28,6 +28,12 @@
 //!   `diff.context`, so the two sides agree with each other by construction —
 //!   which is the only agreement the contract needs. Pinning `-U3` would also
 //!   silently override what the diff card renders for anyone who set it.
+//! - Both MUST scrub `GIT_DIFF_OPTS` from the environment. It is per-process,
+//!   not per-machine — a profile shell and a launchd app inherit different
+//!   values — and it overrides even an explicit `-U<n>`, so leaving it in
+//!   place breaks the shared-config premise above. (`diff.context = 0` is
+//!   honored; the landing side passes `--unidiff-zero` when a patch's hunks
+//!   carry no context.)
 //!
 //! Three differences between the two spellings are allowed, because none can
 //! move an id:

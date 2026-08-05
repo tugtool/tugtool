@@ -154,6 +154,10 @@ pub(crate) fn foreign_proof_sessions_for_path(
 /// cut it applies to the parent: a span of a spent row is spent evidence.
 pub(crate) struct SpanRow {
     pub session: String,
+    /// The parent row's `project_dir`, so the caller can scope the read to
+    /// one repo — two checkouts sharing a relative path must not
+    /// cross-pollinate anchors.
+    pub project_dir: String,
     pub at: i64,
     pub kind: String,
     pub anchor: String,
@@ -177,7 +181,7 @@ pub(crate) fn spans_for_path(conn: &Connection, file_path: &str) -> Result<Vec<S
     }
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT e.tug_session_id, e.at, s.kind, s.anchor
+            "SELECT e.tug_session_id, e.project_dir, e.at, s.kind, s.anchor
              FROM file_event_spans s
              JOIN file_events e
                ON e.tug_session_id = s.tug_session_id
@@ -191,9 +195,10 @@ pub(crate) fn spans_for_path(conn: &Connection, file_path: &str) -> Result<Vec<S
         .query_map([file_path], |r| {
             Ok(SpanRow {
                 session: r.get::<_, String>(0)?,
-                at: r.get::<_, i64>(1)?,
-                kind: r.get::<_, String>(2)?,
-                anchor: r.get::<_, String>(3)?,
+                project_dir: r.get::<_, String>(1)?,
+                at: r.get::<_, i64>(2)?,
+                kind: r.get::<_, String>(3)?,
+                anchor: r.get::<_, String>(4)?,
             })
         })
         .map_err(|e| e.to_string())?;

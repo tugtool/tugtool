@@ -441,15 +441,50 @@ fn tracked_paths(repo_root: &Path, files: &[String]) -> BTreeSet<String> {
     }
 }
 
+/// Whether any hunk in `patch` carries no context lines. `git apply` refuses
+/// a zero-context hunk without `--unidiff-zero`, and a machine with
+/// `diff.context = 0` produces nothing else — the flag is passed exactly when
+/// the patch needs it, keeping git's context checks on everywhere they can
+/// run.
+fn patch_has_zero_context_hunk(patch: &str) -> bool {
+    let mut in_hunk = false;
+    let mut hunk_has_context = false;
+    for line in patch.lines() {
+        if line.starts_with("@@") {
+            if in_hunk && !hunk_has_context {
+                return true;
+            }
+            in_hunk = true;
+            hunk_has_context = false;
+        } else if in_hunk {
+            if line.starts_with(' ') {
+                hunk_has_context = true;
+            } else if !line.starts_with('+') && !line.starts_with('-') && !line.starts_with('\\') {
+                // A new file header ends the current hunk.
+                if !hunk_has_context {
+                    return true;
+                }
+                in_hunk = false;
+            }
+        }
+    }
+    in_hunk && !hunk_has_context
+}
+
 /// Pipe `patch` to `git apply --cached`, returning git's stderr on refusal.
 fn git_apply_cached(repo_root: &Path, patch: &str) -> Result<(), String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
+    let mut args: Vec<&str> = vec!["apply", "--cached"];
+    if patch_has_zero_context_hunk(patch) {
+        args.push("--unidiff-zero");
+    }
+    args.push("-");
     let mut child = Command::new("git")
         .arg("-C")
         .arg(repo_root)
-        .args(["apply", "--cached", "-"])
+        .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -962,6 +997,40 @@ mod tests {
         assert!(after.contains("INSERTED-A"), "worktree diff was: {after}");
         assert!(after.contains("-line58"), "worktree diff was: {after}");
         assert!(!after.contains("CHANGED-B"), "worktree diff was: {after}");
+        assert!(git_out(root, &["diff", "--cached", "--name-only"]).is_empty());
+    }
+
+    /// `diff.context = 0` makes every diff zero-context, which `git apply`
+    /// refuses without `--unidiff-zero` — a machine-config setting must not
+    /// brick partial landing.
+    #[test]
+    fn elected_hunk_lands_under_zero_context_config() {
+        let repo = init_repo();
+        let root = repo.path();
+        git(root, &["config", "diff.context", "0"]);
+        seed_three_hunk_file(root, "f.txt");
+        let (_, hunks) = file_diff_hunks(root, "f.txt").expect("file diff");
+        // With no context, "CHANGED-B" is its own hunk wherever it falls.
+        let target = hunks
+            .iter()
+            .find(|h| h.body.contains("CHANGED-B"))
+            .expect("a hunk holds the middle edit")
+            .id
+            .clone();
+
+        let receipt = commit(CommitOptions {
+            project: Some(root.to_path_buf()),
+            message: "land the middle hunk, zero context".to_string(),
+            paths: Some(vec!["f.txt".to_string()]),
+            hunks: elect("f.txt", &[&target]),
+            ..Default::default()
+        })
+        .expect("zero-context partial commit succeeds");
+
+        assert_eq!(receipt.files.len(), 1);
+        let shown = git_out(root, &["show", "--no-color", "HEAD"]);
+        assert!(shown.contains("+CHANGED-B"), "commit was: {shown}");
+        assert!(!shown.contains("INSERTED-A"), "commit was: {shown}");
         assert!(git_out(root, &["diff", "--cached", "--name-only"]).is_empty());
     }
 

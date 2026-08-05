@@ -31,9 +31,12 @@
  * than reading as stale: `stale` means the *user's* stated election drifted,
  * and there is no statement to have drifted here.
  *
- * Exported because the wire has to make the same choice the boxes show — the
- * controller applies it to what it sends, this applies it to what it renders,
- * and one rule is what keeps the two honest.
+ * Exported because the toggle has to know what the default means: what to
+ * persist after a click depends on whether clearing the entry would render
+ * as whole-file or as this narrower default ({@link electionToPersist}). The
+ * controller's wire side sends the server's `own_hunks` directly when no
+ * election is stated — the server minted them, so there is nothing to
+ * reconcile there.
  */
 export function defaultElection(
   ids: readonly string[],
@@ -53,6 +56,27 @@ export function defaultElection(
     partial: { elected: elected.length, total: ids.length },
     stale: false,
   };
+}
+
+/**
+ * What the toggle should persist after a click leaves `next` checked.
+ *
+ * Every box checked is whole-file landing, and clearing the entry (`null`)
+ * usually says the same thing more simply. But `null` defers to
+ * {@link defaultElection}, and on a contended path the default is this
+ * session's own hunks — narrower than all-checked. Clearing there would make
+ * checking the last box *revert* the election instead of completing it, so the
+ * full list is persisted whenever the default and whole-file disagree.
+ */
+export function electionToPersist(
+  ids: readonly string[],
+  next: readonly string[],
+  ownHunks?: readonly string[],
+): readonly string[] | null {
+  if (next.length !== ids.length) {
+    return next;
+  }
+  return defaultElection(ids, ownHunks).partial === null ? null : next;
 }
 
 /** What the row should render for one file's election. */

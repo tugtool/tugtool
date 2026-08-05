@@ -61,7 +61,10 @@ import {
   getEntryDiffStore,
   releaseEntryDiffStore,
 } from "@/lib/changeset-diff-store";
-import { reconcileHunkElection } from "@/lib/hunk-election";
+import {
+  electionToPersist,
+  reconcileHunkElection,
+} from "@/lib/hunk-election";
 import {
   diffDescriptorKey,
   type DiffDescriptor,
@@ -361,11 +364,7 @@ function FileDiffBody({
         const nextElected = ids.filter((candidate) =>
           candidate === id ? next : elected.has(candidate),
         );
-        // Every hunk checked is whole-file landing — clear the entry rather
-        // than persisting a selection that means the same thing.
-        election.onElect(
-          nextElected.length === ids.length ? null : nextElected,
-        );
+        election.onElect(electionToPersist(ids, nextElected, election.own));
       };
     }
   }

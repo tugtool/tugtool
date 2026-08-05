@@ -583,7 +583,11 @@ async fn run_git_diff_against(dir: &Path, target: &str) -> Option<String> {
     let mut args: Vec<&str> = vec!["-C", &dir, "-c", "core.quotepath=false", "diff"];
     args.extend_from_slice(HUNK_DIFF_FLAGS);
     args.extend_from_slice(&["-M", target]);
-    let output = Command::new("git").args(&args).output().await;
+    let output = Command::new("git")
+        .env_remove("GIT_DIFF_OPTS")
+        .args(&args)
+        .output()
+        .await;
     match output {
         Ok(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).into_owned()),
         Ok(o) => {
@@ -662,6 +666,7 @@ async fn synthesize_untracked_diff(repo_dir: &Path, path: &str) -> Option<String
     args.extend_from_slice(HUNK_DIFF_FLAGS);
     args.extend_from_slice(&["--no-index", "--", "/dev/null", path]);
     let output = Command::new("git")
+        .env_remove("GIT_DIFF_OPTS")
         .arg("-C")
         .arg(repo_dir)
         .args(&args)
@@ -713,6 +718,9 @@ pub(crate) async fn fetch_git_diff_with_untracked(
 /// committed files.
 pub(crate) async fn fetch_git_diff(repo_dir: &Path, paths: &[String]) -> Option<String> {
     let mut cmd = Command::new("git");
+    // Same scrub as the engine's `git_output` — hunk identity ([P06]) needs
+    // both readers at one context width, and GIT_DIFF_OPTS is per-process.
+    cmd.env_remove("GIT_DIFF_OPTS");
     let dir = repo_dir.to_string_lossy();
     let mut args: Vec<&str> = vec!["-C", &dir, "-c", "core.quotepath=false", "diff"];
     args.extend_from_slice(HUNK_DIFF_FLAGS);

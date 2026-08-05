@@ -396,7 +396,10 @@ pub(crate) async fn compose_snapshot(
     for batch in contended_paths.chunks(CONTENTION_DIFF_CONCURRENCY) {
         verdicts.extend(
             futures::future::join_all(batch.iter().map(|(path, proof_ids)| {
-                contention_verdict(&repo_root, path, proof_ids, ledger)
+                // Present in `live_cuts` by construction: a path only becomes
+                // contended through rows that already passed its cut.
+                let min_live = live_cuts.get(path).copied().unwrap_or(i64::MIN);
+                contention_verdict(&repo_root, path, proof_ids, min_live, ledger)
             }))
             .await,
         );
@@ -656,6 +659,7 @@ async fn contention_verdict(
     repo_root: &Path,
     path: &str,
     proof_ids: &HashSet<String>,
+    min_live: i64,
     ledger: Option<&SessionLedger>,
 ) -> Option<(tugchanges_core::ContentionVerdict, Vec<tugchanges_core::Hunk>)> {
     let ledger = ledger?;
@@ -670,6 +674,11 @@ async fn contention_verdict(
     let mut by_session: HashMap<&str, Vec<tugchanges_core::Anchor>> = HashMap::new();
     for row in &spans {
         if !proof_ids.contains(&row.tug_session_id) {
+            continue;
+        }
+        // The same row-liveness cut the owner buckets applied: a spent span
+        // is evidence about committed content, not about this dirty file.
+        if row.at < min_live {
             continue;
         }
         by_session
@@ -1124,6 +1133,9 @@ pub(crate) fn format_commit_summary(
 /// on any failure.
 async fn git_stdout(dir: &Path, args: &[&str]) -> Option<String> {
     let output = tokio::process::Command::new("git")
+        // Same scrub as the engine's `git_output` — a per-process context
+        // override must never skew a diff this side reads ([P06]).
+        .env_remove("GIT_DIFF_OPTS")
         .arg("-C")
         .arg(dir)
         .args(args)

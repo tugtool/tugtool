@@ -1236,7 +1236,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
             );
             return (
               <div
-                key={index}
+                key={hunkKey(index)}
                 className="tugx-diff-hunk"
                 data-slot={DATA_SLOT_HUNK}
                 data-hunk-index={index}

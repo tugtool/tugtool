@@ -27,6 +27,13 @@ use serde::Serialize;
 /// successful spawn the caller inspects.
 pub fn git_output(dir: &Path, args: &[&str]) -> Result<Output, String> {
     Command::new("git")
+        // Hunk identity ([P06]) assumes both readers diff at one context
+        // width. `diff.context` is machine config and satisfies that;
+        // GIT_DIFF_OPTS is per-process environment and does not — a profile
+        // shell and a launchd app would diff differently, and it even
+        // overrides an explicit `-U<n>`. Scrubbed on every git run so no
+        // future diff spelling reintroduces the skew.
+        .env_remove("GIT_DIFF_OPTS")
         .arg("-C")
         .arg(dir)
         .args(args)

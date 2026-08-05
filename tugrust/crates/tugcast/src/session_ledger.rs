@@ -169,7 +169,15 @@ fn stamp_changes_schema_sidecar(changes_db: &Path) {
         return;
     }
     let path = changes_schema_sidecar_path(changes_db);
-    if let Err(err) = std::fs::write(&path, format!("{CHANGES_SCHEMA_VERSION}\n")) {
+    // Temp-file + rename: a torn write would leave an unparseable sidecar,
+    // and an unreadable sidecar disables the downgrade guard — the exact
+    // hazard it exists to stop.
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    let stamped = std::fs::write(&tmp, format!("{CHANGES_SCHEMA_VERSION}\n"))
+        .and_then(|()| std::fs::rename(&tmp, &path));
+    if let Err(err) = stamped {
         tracing::warn!(sidecar = %path.display(), error = %err, "cannot stamp changes schema sidecar");
     }
 }
@@ -677,6 +685,9 @@ pub struct FileEventSpanRow {
     pub tug_session_id: String,
     pub tool_use_id: String,
     pub file_path: String,
+    /// The parent row's `at`, so the reader can apply the same row-liveness
+    /// cut the file-level buckets use — a spent span must not feed a verdict.
+    pub at: i64,
     pub span: FileEventSpan,
 }
 
@@ -1017,20 +1028,25 @@ impl SessionLedger {
         record: &crate::changes_journal::Record,
     ) -> Result<usize, LedgerError> {
         use crate::changes_journal::Record;
+        // One transaction for the whole record: a parent row and its spans —
+        // and a delete of one with the other — land or vanish together. A
+        // crash between the two autocommit halves would strand evidence the
+        // widening rule then has to absorb; the transaction removes the
+        // window instead.
+        let tx = conn.unchecked_transaction()?;
+        let conn: &Connection = &tx;
         let touched = match record {
             Record::FileEvent { row, spans } => {
                 Self::insert_file_event(conn, row)? + Self::insert_file_event_spans(conn, row, spans)?
             }
             Record::FileEventBatch { rows, spans } => {
-                let tx = conn.unchecked_transaction()?;
                 let mut inserted = 0usize;
                 for (i, row) in rows.iter().enumerate() {
-                    inserted += Self::insert_file_event(&tx, row)?;
+                    inserted += Self::insert_file_event(conn, row)?;
                     if let Some(row_spans) = spans.get(i) {
-                        inserted += Self::insert_file_event_spans(&tx, row, row_spans)?;
+                        inserted += Self::insert_file_event_spans(conn, row, row_spans)?;
                     }
                 }
-                tx.commit()?;
                 inserted
             }
             Record::DeleteSession { session } => {
@@ -1076,6 +1092,7 @@ impl SessionLedger {
                 params![owner_kind, owner_id, project_dir],
             )?,
         };
+        tx.commit()?;
         Ok(touched)
     }
 
@@ -3034,6 +3051,11 @@ impl SessionLedger {
     /// reason the ownership deletes are — legacy rows hold an absolute
     /// spelling until the backfill reaches them, and a query that saw only the
     /// repo-relative form would read those owners as span-less and widen them.
+    ///
+    /// Filtered to proof-origin parents: a `bash`/`turn` row never makes a
+    /// session an owner, so its spans must not shape an owner's claim either.
+    /// A database whose owner has not migrated to v2 has no spans table and
+    /// reads as span-less — an older owner is not a damaged ledger.
     pub fn file_event_spans_for_paths(
         &self,
         project_dir: &str,
@@ -3048,17 +3070,29 @@ impl SessionLedger {
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
-            "SELECT s.tug_session_id, s.tool_use_id, s.file_path, s.seq, s.kind, s.anchor
+            "SELECT s.tug_session_id, s.tool_use_id, s.file_path, s.seq, s.kind, s.anchor, e.at
              FROM changes.file_event_spans s
              JOIN changes.file_events e
                ON e.tug_session_id = s.tug_session_id
               AND e.tool_use_id = s.tool_use_id
               AND e.file_path = s.file_path
              WHERE e.project_dir = ?1
+               AND e.origin IN ('exact', 'replay', 'claim', 'cmd')
                AND s.file_path IN ({placeholders})
              ORDER BY s.tug_session_id, s.file_path, s.tool_use_id, s.seq"
         );
         let conn = self.db.lock().expect("ledger mutex");
+        let table_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM changes.sqlite_master
+                 WHERE type = 'table' AND name = 'file_event_spans')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(false);
+        if !table_exists {
+            return Ok(Vec::new());
+        }
         let mut stmt = conn.prepare(&sql)?;
         let mut params: Vec<&dyn rusqlite::ToSql> = vec![&project_dir];
         for p in &spellings {
@@ -3069,6 +3103,7 @@ impl SessionLedger {
                 tug_session_id: r.get(0)?,
                 tool_use_id: r.get(1)?,
                 file_path: r.get(2)?,
+                at: r.get(6)?,
                 span: FileEventSpan {
                     seq: r.get(3)?,
                     kind: r.get(4)?,
@@ -7021,6 +7056,41 @@ mod tests {
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].1, "a.rs");
         assert_eq!(spans[1].1, "b.rs");
+    }
+
+    #[test]
+    fn the_span_read_returns_only_proof_parents_and_carries_their_at() {
+        let l = fresh();
+        let proof = sample_file_event("s1", "tu-1", "a.rs");
+        record_with_spans(&l, &proof, &[sample_span(0, "insert")]);
+        let mut bracket = sample_file_event("s2", "tu-2", "a.rs");
+        bracket.origin = "bash".to_owned();
+        record_with_spans(&l, &bracket, &[sample_span(0, "insert")]);
+
+        let rows = l
+            .file_event_spans_for_paths("/proj", &["a.rs".to_owned()])
+            .unwrap();
+        assert_eq!(rows.len(), 1, "a bracket parent's spans must not read back");
+        assert_eq!(rows[0].tug_session_id, "s1");
+        assert_eq!(rows[0].at, proof.at, "the parent's at rides the span row");
+    }
+
+    /// A pre-v2 database (the owner is an older build) has no spans table.
+    /// That is a vintage, not damage: the read degrades to span-less — every
+    /// owner claims the whole file — rather than erroring into the health
+    /// flag.
+    #[test]
+    fn a_database_without_the_spans_table_reads_as_span_less() {
+        let l = fresh();
+        {
+            let conn = l.db.lock().expect("ledger mutex");
+            conn.execute_batch("DROP TABLE changes.file_event_spans")
+                .unwrap();
+        }
+        let rows = l
+            .file_event_spans_for_paths("/proj", &["a.rs".to_owned()])
+            .unwrap();
+        assert!(rows.is_empty());
     }
 
     /// Risk R10: a rewrite that *renames* the parent must carry its spans to

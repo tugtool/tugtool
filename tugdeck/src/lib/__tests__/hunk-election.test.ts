@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { reconcileHunkElection } from "@/lib/hunk-election";
+import { electionToPersist, reconcileHunkElection } from "@/lib/hunk-election";
 
 const IDS = ["aaa", "bbb", "ccc"] as const;
 
@@ -120,6 +120,46 @@ describe("defaultElection — the own-hunk default ([P12])", () => {
     expect(reconcileHunkElection(IDS, ["bbb"], ["aaa"])).toEqual({
       elected: ["bbb"],
       partial: { elected: 1, total: 3 },
+      stale: false,
+    });
+  });
+});
+
+describe("electionToPersist — what a toggle writes back", () => {
+  test("a partial set persists as itself", () => {
+    expect(electionToPersist(IDS, ["aaa", "bbb"], [])).toEqual(["aaa", "bbb"]);
+  });
+
+  test("all checked with no own hunks clears the entry", () => {
+    expect(electionToPersist(IDS, ["aaa", "bbb", "ccc"], [])).toBeNull();
+    expect(electionToPersist(IDS, ["aaa", "bbb", "ccc"], undefined)).toBeNull();
+  });
+
+  // The regression this function exists for: on a contended path `null`
+  // defaults to own hunks, so clearing on all-checked would revert the click.
+  test("all checked on a contended path persists the full list", () => {
+    expect(electionToPersist(IDS, ["aaa", "bbb", "ccc"], ["aaa"])).toEqual([
+      "aaa",
+      "bbb",
+      "ccc",
+    ]);
+  });
+
+  test("all checked while owning every hunk clears — default agrees", () => {
+    expect(
+      electionToPersist(IDS, ["aaa", "bbb", "ccc"], ["aaa", "bbb", "ccc"]),
+    ).toBeNull();
+  });
+
+  test("all checked with a fully drifted default clears — default agrees", () => {
+    expect(electionToPersist(IDS, ["aaa", "bbb", "ccc"], ["gone"])).toBeNull();
+  });
+
+  test("round trip: what persists renders back as the same boxes", () => {
+    const persisted = electionToPersist(IDS, ["aaa", "bbb", "ccc"], ["aaa"]);
+    expect(reconcileHunkElection(IDS, persisted, ["aaa"])).toEqual({
+      elected: ["aaa", "bbb", "ccc"],
+      partial: null,
       stale: false,
     });
   });
