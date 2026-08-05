@@ -33,9 +33,16 @@
  * @module components/tugways/cards/settings-general-body
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { TUG_ACTIONS } from "../action-vocabulary";
-import { commandShortcut } from "../keymap-registry";
+import { commandShortcut, keymapRegistry } from "../keymap-registry";
 import { TugBox } from "../tug-box";
 import { TugLabel } from "../tug-label";
 import { TugChoiceGroup } from "../tug-choice-group";
@@ -136,9 +143,12 @@ export function SettingsGeneralBody() {
   // The chord this setting is about, read from whichever of the two commands
   // currently holds it rather than spelled here — this pane is the one place
   // that can move it, so it is the last place that should carry a copy ([P11]).
-  const stackChordGlyph =
-    commandShortcut(stackChord === "reveal" ? TUG_ACTIONS.REVEAL_STACK : TUG_ACTIONS.CYCLE_STACK) ??
-    "";
+  // The registry is a subscription ([L02]) so a live rebind repaints the copy;
+  // `undefined` means the command is unbound and the copy names no chord.
+  useSyncExternalStore(keymapRegistry.subscribe, keymapRegistry.getSnapshot, () => 0);
+  const stackChordGlyph = commandShortcut(
+    stackChord === "reveal" ? TUG_ACTIONS.REVEAL_STACK : TUG_ACTIONS.CYCLE_STACK,
+  );
   const { ResponderScope, responderRef } = useResponderForm({
     selectValue: {
       [stackChordId]: (v: string) => stackChordStore.setChord(normalizeStackChord(v)),
@@ -193,14 +203,26 @@ export function SettingsGeneralBody() {
             aria-label="What Command-R does to a stack of panes"
             data-testid="settings-stack-chord"
             items={[
-              { value: "cycle", label: `${stackChordGlyph} cycles the stack` },
-              { value: "reveal", label: `${stackChordGlyph} shows the stack menu` },
+              {
+                value: "cycle",
+                label:
+                  stackChordGlyph === undefined
+                    ? "Cycle the stack"
+                    : `${stackChordGlyph} cycles the stack`,
+              },
+              {
+                value: "reveal",
+                label:
+                  stackChordGlyph === undefined
+                    ? "Show the stack menu"
+                    : `${stackChordGlyph} shows the stack menu`,
+              },
             ]}
           />
           <TugLabel size="sm" emphasis="calm" className="settings-general-hint">
             {stackChord === "cycle"
-              ? `${stackChordGlyph} brings the pane that has been buried longest to the front — no menu, so a slot of N panes is back where it started after N presses. The picker is still on the title-bar badge, and on ⌘-click.`
-              : `${stackChordGlyph} opens the title-bar picker so you can read the stack before choosing. Both commands stay in the Window menu either way.`}
+              ? `${stackChordGlyph === undefined ? "Cycling" : stackChordGlyph} brings the pane that has been buried longest to the front — no menu, so a slot of N panes is back where it started after N presses. The picker is still on the title-bar badge, and on ⌘-click.`
+              : `${stackChordGlyph === undefined ? "Revealing" : stackChordGlyph} opens the title-bar picker so you can read the stack before choosing. Both commands stay in the Window menu either way.`}
           </TugLabel>
         </TugBox>
       </div>

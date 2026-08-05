@@ -74,6 +74,7 @@ describe("tuglaws/menus.md is generated where it is derived", () => {
       "recentDocuments",
       "activeTheme",
       "openQuickly",
+      "captureArmed",
     ]) {
       expect(doc, `menus.md documents "${key}"`).toContain(`"${key}"`);
     }

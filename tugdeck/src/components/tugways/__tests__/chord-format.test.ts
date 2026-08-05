@@ -12,6 +12,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   chordFromEvent,
+  chordHasKeyEquivalent,
   chordKey,
   chordMatchesEvent,
   codeToKeyEquivalent,
@@ -119,6 +120,16 @@ describe("codeToKeyEquivalent", () => {
     expect(() => codeToKeyEquivalent({ key: "MediaPlayPause" })).toThrow(
       /no key equivalent/,
     );
+  });
+
+  test("chordHasKeyEquivalent answers without throwing", () => {
+    // The capture surface's probe: a user-pressed code that the menu bar
+    // cannot represent is a fact to note, never an exception to hit.
+    expect(chordHasKeyEquivalent({ key: "KeyA", meta: true })).toBe(true);
+    expect(chordHasKeyEquivalent({ key: "Equal", meta: true, shift: true })).toBe(true);
+    expect(chordHasKeyEquivalent({ key: "IntlBackslash", meta: true })).toBe(false);
+    expect(chordHasKeyEquivalent({ key: "NumpadAdd", meta: true })).toBe(false);
+    expect(chordHasKeyEquivalent({ key: "MediaPlayPause" })).toBe(false);
   });
 });
 

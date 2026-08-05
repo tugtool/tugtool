@@ -72,7 +72,8 @@ Posted by the aggregator; parsed by `AppDelegate`'s `MenuState` struct. **Keep b
   },
   "recentDocuments": ["/abs/path", "…"],
   "activeTheme": "brio",
-  "openQuickly": true
+  "openQuickly": true,
+  "captureArmed": false            // Keyboard pane recording a chord — host parks every key equivalent until disarm
 }
 ```
 

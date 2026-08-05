@@ -16,6 +16,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   COMMANDS,
@@ -224,10 +226,52 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   "cycle-card": "command",
   "reveal-stack": "command",
   "cycle-stack": "command",
+  "previous-turn": "command",
+  "next-turn": "command",
+  "first-turn": "command",
+  "last-turn": "command",
+  "open-command-picker": "command",
+  "cycle-focus-mode": "command",
+  "show-devtools": "command",
   // The parameter picks the command.
   "run-card-command": { bridgeFor: TUG_ACTIONS.RUN_SLASH_COMMAND },
   "set-permission-mode": { bridgeFor: TUG_ACTIONS.SET_PERMISSION_MODE },
 };
+
+describe("SWIFT_WIRES is derived, not remembered", () => {
+  // The fixture's completeness claim is checked against the Swift source
+  // itself: every `sendControl("…")` literal in AppDelegate.swift must be
+  // classified above, so a new wire added in Swift fails here instead of
+  // silently under-covering the sweep. (This is the drift that actually
+  // happened: the step-16 promotions added seven wires the fixture missed.)
+  const swift = readFileSync(
+    join(import.meta.dir, "../../../../../tugapp/Sources/AppDelegate.swift"),
+    "utf8",
+  );
+
+  test("every sendControl literal in AppDelegate.swift is classified", () => {
+    // `\s*` because two frames pass the wire on the call's next line; the
+    // one non-literal send (a ternary choosing between two wires) is caught
+    // by the reverse check below instead.
+    const wires = new Set<string>();
+    for (const match of swift.matchAll(/sendControl\(\s*"([^"]+)"/g)) {
+      wires.add(match[1]);
+    }
+    expect(wires.size).toBeGreaterThan(40);
+    const unclassified = [...wires].filter((wire) => !(wire in SWIFT_WIRES));
+    expect(unclassified).toEqual([]);
+  });
+
+  test("no fixture wire has vanished from the Swift source", () => {
+    // Loose on purpose (any quoted occurrence): a wire may be sent through
+    // a ternary rather than a literal call, and the point here is only to
+    // keep dead rows from accreting in the fixture.
+    const stale = Object.keys(SWIFT_WIRES).filter(
+      (wire) => !swift.includes(`"${wire}"`),
+    );
+    expect(stale).toEqual([]);
+  });
+});
 
 describe("every Swift wire lands somewhere", () => {
   const wiresWithEntries = new Set(COMMANDS.map(commandWire));

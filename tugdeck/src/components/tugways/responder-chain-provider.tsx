@@ -30,6 +30,7 @@ import { arrowReleaseSubject, resolveArrowRelease } from "./arrow-release";
 import { keyboardAccessStore } from "../../keyboard-access-store";
 import { focusRingModalityStore } from "../../focus-ring-modality-store";
 import { keymapRegistry, type ScopedBinding } from "./keymap-registry";
+import { chordCaptureState } from "./chord-capture-state";
 import { COMMANDS_BY_ID } from "./command-registry";
 import { dispatchCommand } from "../../command-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
@@ -218,7 +219,9 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
             // A scoped binding may name a command, or a substrate verb that
             // is outside the table by declaration ([#non-goals]) — the
             // shadowing view wants both, because either one takes the chord.
-            commandId: live.binding.action,
+            // When it names a command, that name is the attribution; the
+            // action is the fallback spelling for the substrate verbs.
+            commandId: live.binding.commandId ?? live.binding.action,
             chord: live.binding,
             scope:
               live.kind === "mode"
@@ -227,7 +230,6 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
             depth: live.depth,
           }));
       },
-      nativeChords: () => [],
     });
 
     // ---- Edit-menu capability mirror ----
@@ -582,6 +584,11 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // engine's own close mechanism, not a user Escape — never re-arbitrate it;
       // let it pass through to the target surface's Radix layer.
       if (isSyntheticEscape(event)) return;
+      // An armed chord capture owns every key: the press is an answer to
+      // "what should this command be bound to", and matching it here would
+      // fire the chord's *old* meaning on its way to being recorded. The
+      // capture surface's own listener reads it instead.
+      if (chordCaptureState.isArmed()) return;
       // Resolve dynamic, context-scoped bindings first ([P11],
       // #keybinding-registry): the active focus mode (innermost — a floating
       // surface's accelerators, reachable even when focus is elsewhere, e.g. an
@@ -1430,6 +1437,9 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       document.removeEventListener("focusout", enforceOnFocusOut, { capture: true });
       registerMenuCapsRefresher(null);
       registerMenuValidationChain(null);
+      // The scoped-binding view installed above captures this manager; an
+      // unmounted provider's chain must not keep answering resolveChord.
+      keymapRegistry.setEnvironment({ scopedBindings: () => [] });
       unsubscribeEditCaps();
       unsubscribeKeyboardAccess();
       unsubscribeRingModality();

@@ -8,11 +8,11 @@
  * @module components/tugways/cards/gallery-context-menu
  */
 
-import React from "react";
+import React, { useSyncExternalStore } from "react";
 import { Scissors, Copy, Clipboard } from "lucide-react";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { commandShortcut } from "@/components/tugways/keymap-registry";
+import { commandShortcut, keymapRegistry } from "@/components/tugways/keymap-registry";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
@@ -41,6 +41,9 @@ const regionStyle: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 
 export function GalleryContextMenu() {
+  // The shortcut hints read the keymap registry at render time, so it is a
+  // subscription ([L02]) — a live rebind repaints the hints.
+  useSyncExternalStore(keymapRegistry.subscribe, keymapRegistry.getSnapshot, () => 0);
   return (
     <div className="cg-content" data-testid="gallery-context-menu">
 

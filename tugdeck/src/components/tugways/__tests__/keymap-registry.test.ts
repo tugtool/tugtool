@@ -297,6 +297,23 @@ describe("menuChords", () => {
     local.setBindings(TUG_ACTIONS.REVEAL_STACK, []);
     expect(local.menuChords()["window.revealStack"]).toBeNull();
   });
+
+  test("a user chord with no menu-bar form detaches instead of throwing", () => {
+    // `IntlBackslash` is a real key on every ISO keyboard and a legitimate
+    // JS-funnel binding; the conversion's untabled-code throw is for
+    // authored defaults. The item detaches (nothing the menu could show)
+    // and the chord still matches in the web layer.
+    const local = new KeymapRegistry(COMMANDS);
+    local.setBindings(TUG_ACTIONS.OPEN_COMMAND_PICKER, [
+      {
+        chord: { key: "IntlBackslash", meta: true, label: "§" },
+        scope: GLOBAL_SCOPE,
+        source: "user",
+        preventDefault: true,
+      },
+    ]);
+    expect(local.menuChords()["session.commandPicker"]).toBeNull();
+  });
 });
 
 describe("scoped bindings the table can see", () => {
@@ -401,6 +418,35 @@ describe("the collision lint ([P15])", () => {
 
   test("a scoped binding under a chord no menu item claims is fine", () => {
     expect(registryWith().lintChordCollisions([PDF_PAGE_BINDING])).toEqual([]);
+  });
+
+  test("the table's own scoped bindings are folded in, not remembered by the caller", () => {
+    // A responder-scoped default declared in the table itself (the commit
+    // surface's shape) must collide with a menu-eligible chord even when the
+    // caller passes no scoped list at all — the lint's coverage of the
+    // table's declarations cannot depend on a hand-kept transcription.
+    const registry = new KeymapRegistry([
+      {
+        ...FIXTURE[0],
+        bindings: [{ chord: DIGIT_1, scope: GLOBAL_SCOPE, source: "default", menuEligible: true }],
+      },
+      {
+        id: "test.scoped",
+        title: "Scoped In The Table",
+        routing: "first-responder",
+        action: TUG_ACTIONS.MOVE_TO_SLOT,
+        bindings: [
+          {
+            chord: DIGIT_1,
+            scope: { kind: "responder", responderId: "commit" },
+            source: "default",
+          },
+        ],
+      },
+    ]);
+    const problems = registry.lintChordCollisions([]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("test.scoped");
   });
 
   test("the shipped table collides with nothing the app registers today", () => {

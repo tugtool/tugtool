@@ -63,6 +63,7 @@ import React, {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import { blobUrl } from "@/lib/file-kinds";
@@ -97,7 +98,7 @@ import {
   type TugContextMenuEntry,
 } from "@/components/tugways/tug-context-menu";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { commandShortcut } from "@/components/tugways/keymap-registry";
+import { commandShortcut, keymapRegistry } from "@/components/tugways/keymap-registry";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { useKeybindings } from "@/components/tugways/use-keybindings";
 import { useResponder } from "@/components/tugways/use-responder";
@@ -293,6 +294,10 @@ export function PdfView({
     initialState?.zoom ?? PDF_VIEW_DEFAULT_STATE.zoom,
   );
   const [spreadIndex, setSpreadIndex] = useState(0);
+
+  // The menu's zoom hints read the keymap registry at render time, so it is
+  // a subscription ([L02]) — a live rebind repaints the hints.
+  useSyncExternalStore(keymapRegistry.subscribe, keymapRegistry.getSnapshot, () => 0);
 
   const responderId = useId();
 

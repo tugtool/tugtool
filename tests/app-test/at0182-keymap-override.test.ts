@@ -21,9 +21,12 @@
  *
  * @covers tugdeck/src/keymap-override-store.ts
  * @covers tugdeck/src/components/tugways/keymap-registry.ts
+ * @covers tugdeck/src/components/tugways/chord-capture-state.ts
  * @covers tugdeck/src/settings-api.ts
+ * @covers tugdeck/src/lib/host-menu-state.ts
  * @covers tugdeck/src/components/tugways/cards/settings-keymap-body.tsx
  * @covers tugdeck/src/components/tugways/cards/settings-keymap-rows.ts
+ * @covers tugapp/Sources/AppDelegate.swift
  */
 
 import { describe, expect, test } from "bun:test";
@@ -199,15 +202,39 @@ describe.skipIf(!SHOULD_RUN)("AT0182: a user keymap override moves the native ch
 
         expect(await waitKeyEquivalent(app, "view.zoomOut", "-")).toBe("-");
 
-        // Arm the capture, press a chord, commit it.
+        // Arm the capture. While it is armed the surface owns every chord:
+        // the host parks the whole menu bar's key equivalents (AppKit would
+        // otherwise resolve a bound chord before the web view saw it), and
+        // stage 1 of the key pipeline stands down. The parked menu is the
+        // observable half of that claim, so wait for it before pressing
+        // anything — the push is a message hop, not a synchronous write.
         await app.click('[data-testid="keymap-arm-zoom-out"]');
         await app.waitForCondition<boolean>(
           `document.querySelector('[data-testid="keymap-capture"]') !== null`,
           { timeoutMs: 6000 },
         );
-        await app.nativeKey("j", ["cmd", "ctrl"]);
+        expect(
+          await waitKeyEquivalent(app, "view.zoomOut", ""),
+          "arming parks the menu bar's key equivalents",
+        ).toBe("");
+
+        // A chord that currently MEANS something is recorded, not fired:
+        // ⌘- is Zoom Out's own live chord, and pressing it mid-capture has
+        // to land in the recorder rather than zooming the page.
+        await app.nativeKey("-", ["cmd"]);
         await app.waitForCondition<boolean>(
           `document.querySelector('[data-testid="keymap-capture"] [data-pending="true"]') !== null`,
+          { timeoutMs: 6000 },
+        );
+        const recorded = await app.evalJS<string>(
+          `document.querySelector('[data-testid="keymap-capture"] [data-pending="true"]')?.textContent ?? ""`,
+        );
+        expect(recorded, "the bound chord was read, not dispatched").toContain("-");
+
+        // Overwrite the pending chord with the one this test commits.
+        await app.nativeKey("j", ["cmd", "ctrl"]);
+        await app.waitForCondition<boolean>(
+          `(document.querySelector('[data-testid="keymap-capture"] [data-pending="true"]')?.textContent ?? "").includes("J")`,
           { timeoutMs: 6000 },
         );
         await app.click('[data-testid="keymap-capture"] button');
@@ -218,6 +245,13 @@ describe.skipIf(!SHOULD_RUN)("AT0182: a user keymap override moves the native ch
         ).toBe("j");
         const rebound = await app.menuItemState("view.zoomOut");
         expect(rebound.found ? rebound.modifierMask : undefined).toBe(COMMAND | CONTROL);
+
+        // Disarming restored what parking took: an item the capture never
+        // touched has its own chord back, not a chordless ghost.
+        expect(
+          await waitKeyEquivalent(app, "view.zoomIn", "+"),
+          "a parked bystander item got its chord back on disarm",
+        ).toBe("+");
 
         // Reset from the pane's own per-row affordance. Addressed by its
         // accessible name, which is the label the user reads — an icon button

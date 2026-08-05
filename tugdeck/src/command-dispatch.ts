@@ -51,14 +51,9 @@ function notifyCommandObservers(id: string, handled: boolean): void {
 }
 
 /**
- * The `ActionEvent.value` a dispatch carries: the entry's static payload
- * when it declares one, else the caller's `value`.
- */
-/**
- * The record a `registry` handler receives. A per-value entry ([P05])
- * carries its parameters as a static payload object; they overlay the
- * caller's frame so `dispatchCommand("arrange-cards:tile")` reaches the
- * same handler with the same fields the Swift wire would have sent.
+ * The record a `registry` handler receives. An entry with a static payload
+ * object ([P05]) overlays it on the caller's frame, so the handler sees the
+ * same fields the Swift wire would have sent.
  */
 function registryPayload(
   entry: CommandEntry,
@@ -115,6 +110,9 @@ export function dispatchCommand(
   const entry = COMMANDS_BY_ID.get(id);
   if (entry === undefined) {
     console.warn(`dispatchCommand: unknown command: ${id}`, payload);
+    // Observers hear this one too — a typo'd id is exactly the failed
+    // dispatch an observer counting failures most wants to see.
+    notifyCommandObservers(id, false);
     return false;
   }
 
@@ -186,6 +184,14 @@ export function dispatchCommand(
       const targetId = payload?.targetId;
       if (typeof targetId !== "string") {
         console.warn(`dispatchCommand: ${id} needs a targetId on its payload`, payload);
+        break;
+      }
+      // `sendToTarget` throws on an unregistered target ([D03]); a target
+      // named by a stale id (a row outliving its pane by a frame) is an
+      // unhandled dispatch here, not an exception in the emitter's click
+      // handler.
+      if (!manager.hasResponder(targetId)) {
+        console.warn(`dispatchCommand: ${id}: target ${targetId} is not registered`);
         break;
       }
       handled = manager.sendToTarget(targetId, event);

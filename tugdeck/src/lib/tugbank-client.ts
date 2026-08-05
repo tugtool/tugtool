@@ -197,11 +197,13 @@ export class TugbankClient {
   /**
    * The deletion half of {@link setLocalValue}: drop one key and notify.
    *
-   * A domain where absence carries meaning needs this to be expressible.
-   * Keymap overrides are the case — reset-to-default is a `DELETE`, and a
+   * A domain where absence carries meaning needs this to be expressible — a
    * subscriber that only ever sees keys appear can never learn that one went
-   * away. A no-op when the key is not there, so it never fires a notification
-   * that says nothing.
+   * away. Production deletions go over HTTP via `deleteDefault` (`settings-api.ts`) and
+   * arrive back through the notify stream; this local half exists for the
+   * test surface (`deleteTugbankValue`), which simulates that arrival
+   * without a server round-trip. A no-op when the key is not there, so it
+   * never fires a notification that says nothing.
    */
   deleteLocalValue(domain: string, key: string): void {
     const existing = this.cache.get(domain);

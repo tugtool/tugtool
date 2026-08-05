@@ -41,6 +41,7 @@ import type { Chord, CommandBinding, CommandEntry, BindingScope } from "./comman
 import { COMMANDS, STACK_CHORD } from "./command-registry";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import {
+  chordHasKeyEquivalent,
   chordKey,
   codeToKeyEquivalent,
   eventChordKey,
@@ -173,9 +174,16 @@ export class KeymapRegistry {
     this.rebuild();
   }
 
-  /** Point the registry at the live scoped-binding and menu-chord sources. */
-  setEnvironment(environment: KeymapEnvironment): void {
-    this.environment = environment;
+  /**
+   * Point the registry at the live scoped-binding and native-chord sources.
+   *
+   * A partial merge because the two halves have two owners with two
+   * lifetimes: the responder-chain provider supplies `scopedBindings` at
+   * mount, and the menu-state publisher supplies `nativeChords` at boot —
+   * each hands over only its half, so neither install erases the other's.
+   */
+  setEnvironment(environment: Partial<KeymapEnvironment>): void {
+    this.environment = { ...this.environment, ...environment };
   }
 
   /**
@@ -379,10 +387,38 @@ export class KeymapRegistry {
         // An `NSMenuItem` carries exactly one key equivalent, so the first
         // eligible binding is the menu's and the rest live in the JS funnel.
         this.claimedMenuItems.add(entry.menuItemId);
-        out[entry.menuItemId] = codeToKeyEquivalent(live.chord);
+        // A user-captured code with no menu representation (`IntlBackslash`,
+        // a numpad digit) is a legitimate binding for the JS funnel; it
+        // detaches the menu chord rather than reaching the conversion's
+        // untabled-code throw, which is for authored defaults only.
+        out[entry.menuItemId] =
+          live.source === "user" && !chordHasKeyEquivalent(live.chord)
+            ? null
+            : codeToKeyEquivalent(live.chord);
       } else if (this.claimedMenuItems.has(entry.menuItemId)) {
         out[entry.menuItemId] = null;
       }
+    }
+    return out;
+  }
+
+  /**
+   * Every menu item's live chord claim, in source form.
+   *
+   * `menuChords` answers in the converted wire shape for the push; this
+   * answers in `Chord` form for the resolution model — the menu-state
+   * publisher maps these into the `nativeChords` half of the environment,
+   * joining each claim to the enablement its own mirror computed, so
+   * `resolveChord`'s native layer describes the same menu bar the push
+   * built.
+   */
+  menuClaims(): readonly { commandId: string; menuItemId: string; chord: Chord }[] {
+    const out: Array<{ commandId: string; menuItemId: string; chord: Chord }> = [];
+    for (const entry of this.entries) {
+      if (entry.menuItemId === undefined) continue;
+      const live = this.menuBindingOf(entry.id);
+      if (live === undefined) continue;
+      out.push({ commandId: entry.id, menuItemId: entry.menuItemId, chord: live.chord });
     }
     return out;
   }
@@ -408,8 +444,19 @@ export class KeymapRegistry {
         eligible.set(chordKey(binding.chord), id);
       }
     }
+    // The table declares scoped bindings of its own (a responder-scoped
+    // default like the commit surface's ⇧⌘M). Those are the registry's to
+    // know, so the lint folds them in itself rather than trusting the
+    // caller's transcription to remember them.
+    const scopedInTable: ScopedBinding[] = [];
+    for (const [id, list] of this.bindings) {
+      for (const binding of list) {
+        if (binding.scope.kind === "global") continue;
+        scopedInTable.push({ commandId: id, chord: binding.chord, scope: binding.scope, depth: 0 });
+      }
+    }
     const problems: string[] = [];
-    for (const b of scoped) {
+    for (const b of [...scoped, ...scopedInTable]) {
       const owner = eligible.get(chordKey(b.chord));
       if (owner === undefined || owner === b.commandId) continue;
       problems.push(

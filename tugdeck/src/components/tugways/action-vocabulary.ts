@@ -608,9 +608,8 @@ export const TUG_ACTIONS = {
   //                         a Text card: an existing card bound to the
   //                         same path is activated and jumped to `line`;
   //                         otherwise a new Text card is created seeded
-  //                         with the path. Registry handler in
-  //                         `action-dispatch.ts`; chain handler on
-  //                         DeckCanvas. Both call `openFileInCard`.
+  //                         with the path. DeckCanvas's chain handler
+  //                         takes both shapes and calls `openFileInCard`.
   // REVEAL_IN_FINDER:       payload — `value: string` (absolute path).
   //                         Reveal the path in the macOS Finder via the
   //                         host bridge (`openPathInOS`). Dispatched by

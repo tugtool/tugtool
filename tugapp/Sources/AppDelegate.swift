@@ -967,8 +967,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         // Close All Tabs (⌥⌘W): closes every tab in the focused pane via
         // the same `close-all` responder-chain round-trip `close` uses. Enabled
-        // only when the focused pane holds more than one card — see
-        // validateMenuItem(_:). The web layer pops the "Close N Tabs?"
+        // only when the focused pane holds more than one card — its registry
+        // gate on the menuState push. The web layer pops the "Close N Tabs?"
         // confirm when any hosted card opts into confirmClose.
         closeAllCardTabsMenuItem = NSMenuItem(title: "Close All Tabs", action: #selector(closeAllCardTabs(_:)), keyEquivalent: "w", modifierMask: [.command, .option])
         closeAllCardTabsMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeAllCardTabs")
@@ -977,8 +977,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         fileMenu.addItem(NSMenuItem.separator())
 
         // Export Session… — the session card's `/export` surface, reached
-        // through the generic run-card-command round-trip. Session-card-gated
-        // in validateMenuItem(_:).
+        // through the generic run-card-command round-trip. Gated by its
+        // registry gate on the menuState push.
         let exportItem = NSMenuItem(title: "Export Session…", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("file.exportTranscript")
         exportItem.representedObject = "export"
         fileMenu.addItem(exportItem)
@@ -1015,14 +1015,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // selector to the first responder synchronously (`NSApp.sendAction`),
         // so the system pasteboard and the in-gesture clipboard path are
         // preserved untouched — enablement is the only thing we take over,
-        // pulled from MenuState.edit (the web responder chain's caps).
+        // pulled from each item's registry gate on the menuState push.
         editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(performCut(_:)), keyEquivalent: "x").identified("edit.cut"))
         editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(performCopy(_:)), keyEquivalent: "c").identified("edit.copy"))
         // Copy as Plain Text — a chain-action round-trip (NOT the native
         // NSText.copy selector). The web responder chain strips Markdown
         // from the selection and writes the plain text to the clipboard;
-        // enablement reuses the copy gate (MenuState.edit.copy) since both
-        // need a selection.
+        // enablement rides its registry gate, which needs a selection the
+        // same way Copy's does.
         // ⌥⇧⌘C — moved off ⇧⌘C, which is now the Session card's Code route
         // shortcut (SELECT_ROUTE `❯`). AppKit owns the chord at the menu bar,
         // so the extra ⌥ frees ⇧⌘C to reach the web route keymap.
@@ -1031,8 +1031,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // Paste variants — chain-action round-trips (NOT the native
         // NSText.paste selector). The web responder chain reads the
         // clipboard via the native bridge, rewrites it (blockquote wrap /
-        // Markdown strip), and inserts; enablement reuses the paste gate
-        // (MenuState.edit.paste) since both need an editable surface.
+        // Markdown strip), and inserts; enablement rides each item's registry
+        // gate, which needs an editable surface the same way Paste's does.
         editMenu.addItem(NSMenuItem(title: "Paste as Quote", action: #selector(performPasteAsQuote(_:)), keyEquivalent: "v", modifierMask: [.command, .option]).identified("edit.pasteAsQuote"))
         // ⌥⇧⌘V — moved off ⇧⌘V to pair with the ⌥⇧⌘C copy variant.
         editMenu.addItem(NSMenuItem(title: "Paste as Plain Text", action: #selector(performPasteAsPlainText(_:)), keyEquivalent: "v", modifierMask: [.command, .shift, .option]).identified("edit.pasteAsPlainText"))
@@ -1040,9 +1040,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(performSelectAll(_:)), keyEquivalent: "a").identified("edit.selectAll"))
         editMenu.addItem(NSMenuItem.separator())
 
-        // Copy Last Response — the session card's `/copy` surface. Gated on a
-        // session card being frontmost AND its transcript holding an
-        // assistant message (validateMenuItem).
+        // Copy Last Response — the session card's `/copy` surface. Enablement
+        // rides the command's registry gate on the menuState push.
         let copyLastItem = NSMenuItem(title: "Copy Last Response", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("edit.copyLastResponse")
         copyLastItem.representedObject = "copy"
         editMenu.addItem(copyLastItem)
@@ -1052,10 +1051,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // NSTextView.performFindPanelAction items never reached WKWebView
         // content (dead UI); these dispatch the web responder chain's
         // find / find-next / find-previous, handled by the focused card's
-        // find session. Enablement is gated on MenuState.edit (the
-        // responder chain's find capability): disabled until a
-        // find-capable surface is focused, so the items aren't live
-        // shortcuts to a no-op while no card implements find.
+        // find session. Enablement rides each item's registry gate on the
+        // menuState push: disabled until a find-capable surface is
+        // focused, so the items aren't live shortcuts to a no-op while no
+        // card implements find.
         let findMenuItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
         let findMenu = NSMenu(title: "Find")
         findMenuItem.submenu = findMenu
@@ -1080,7 +1079,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // interrupt through the chain with dismiss-first priority
         // (popover > drag-cancel > interrupt); this item is the
         // discoverable, always-means-interrupt face of that path,
-        // gated on canInterrupt.
+        // gated by its registry gate on the menuState push.
         sessionMenu.addItem(NSMenuItem(title: "Stop", action: #selector(stopSession(_:)), keyEquivalent: "").identified("session.stop"))
         sessionMenu.addItem(NSMenuItem.separator())
 
@@ -1121,8 +1120,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // cycle-reachable modes (bypassPermissions is deliberately not
         // menu-reachable, matching the chip's Shift-Tab cycle). Titles
         // are hardcoded for label parity with formatPermissionMode; the
-        // mode string rides representedObject. Checkmarks refresh in
-        // validateMenuItem from MenuState.session.permissionMode.
+        // mode string rides representedObject. Checkmarks ride each mode
+        // item's registry gate on the menuState push.
         let permissionModeItem = NSMenuItem(title: "Permission Mode", action: nil, keyEquivalent: "").identified("session.permissionMode")
         let permissionModeMenu = NSMenu(title: "Permission Mode")
         permissionModeItem.submenu = permissionModeMenu
@@ -1151,7 +1150,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sessionMenu.addItem(sessionCommandItem("Show Context", "context", "session.context"))
         sessionMenu.addItem(sessionCommandItem("Show Usage", "usage", "session.usage"))
         // Show/Hide the Changes / History Shades ([P05], Spec S04). The title's
-        // verb flips in validateMenuItem from the cached visibility booleans;
+        // verb rides the registry gate's title field on the menuState push;
         // the represented view name rides `representedObject`, and the toggle
         // round-trips a `toggle-{changes,history}-view` control frame.
         let toggleChangesItem = NSMenuItem(title: "Show Changes", action: #selector(toggleShadeView(_:)), keyEquivalent: "c", modifierMask: [.command, .shift]).identified("session.toggleChanges")
@@ -1270,7 +1269,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let helpMenu = NSMenu(title: "Help")
         helpMenuItem.submenu = helpMenu
         // Keyboard Shortcuts & Commands — the session card's `/help` sheet via
-        // run-card-command. Session-card-gated in validateMenuItem(_:).
+        // run-card-command. Gated by its registry gate on the menuState push.
         let shortcutsItem = NSMenuItem(title: "Keyboard Shortcuts & Commands", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("help.shortcuts")
         shortcutsItem.representedObject = "help"
         helpMenu.addItem(shortcutsItem)
@@ -1522,8 +1521,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // layer's responder chain walks it to the focused pane, which
         // closes every hosted tab — popping the "Close N Tabs?" confirm
         // first when any of its cards opts into confirmClose. Enablement
-        // is gated in validateMenuItem(_:): only a multi-card focused pane
-        // makes this command meaningful.
+        // rides the command's registry gate on the menuState push: only a
+        // multi-card focused pane makes this command meaningful.
         sendControl("close-all")
     }
 
@@ -1732,6 +1731,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// time — so a rebuilt submenu cannot leave a stale reference behind.
     private func applyCommandChords(in menu: NSMenu? = nil) {
         guard let root = menu ?? NSApp.mainMenu else { return }
+        // While a chord capture is armed the whole tree stays parked; a
+        // rebuild that lands mid-capture re-parks its fresh construction
+        // literals instead of letting them claim keys the capture surface
+        // is trying to read.
+        if captureArmed {
+            parkKeyEquivalents(in: root)
+            return
+        }
         for item in root.items {
             if let id = item.identifier?.rawValue,
                let gate = menuState.commands[id] {
@@ -1747,6 +1754,55 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 }
             }
             if let submenu = item.submenu { applyCommandChords(in: submenu) }
+        }
+    }
+
+    /// Whether the frontend's Keyboard pane is recording a chord. While it
+    /// is, every key the user presses is an answer to "what should this
+    /// command be bound to" — and AppKit's key-equivalent scan resolves a
+    /// menu chord before the web view ever sees the keydown, so the only way
+    /// to let a bound chord through to be recorded is to take it off the
+    /// menu for the span. `setCaptureArmed` parks every key equivalent in
+    /// the tree on arm and restores them on disarm; the frontend's push
+    /// carries the flag both ways, so a crash mid-capture heals on the next
+    /// push rather than stranding a chordless menu bar.
+    private var captureArmed = false
+
+    /// The key equivalents `parkKeyEquivalents` cleared, with their masks,
+    /// so disarming can put every construction-time literal back exactly.
+    /// Gate-driven chords are re-applied by the sweep after restore, so a
+    /// stale parked value can never outlive the next `applyCommandChords`.
+    private var parkedKeyEquivalents: [(NSMenuItem, String, NSEvent.ModifierFlags)] = []
+
+    private func setCaptureArmed(_ armed: Bool) {
+        guard armed != captureArmed else { return }
+        captureArmed = armed
+        if armed {
+            parkKeyEquivalents()
+        } else {
+            for (item, key, mask) in parkedKeyEquivalents {
+                item.keyEquivalent = key
+                item.keyEquivalentModifierMask = mask
+            }
+            parkedKeyEquivalents.removeAll()
+            applyCommandChords()
+        }
+    }
+
+    /// Clear every key equivalent under `menu` (the whole tree by default),
+    /// remembering each so `setCaptureArmed(false)` can restore it. Items
+    /// already parked read as empty and are skipped, so a mid-capture menu
+    /// rebuild parks only its own fresh literals.
+    private func parkKeyEquivalents(in menu: NSMenu? = nil) {
+        guard let root = menu ?? NSApp.mainMenu else { return }
+        for item in root.items {
+            if !item.keyEquivalent.isEmpty {
+                parkedKeyEquivalents.append(
+                    (item, item.keyEquivalent, item.keyEquivalentModifierMask))
+                item.keyEquivalent = ""
+                item.keyEquivalentModifierMask = []
+            }
+            if let submenu = item.submenu { parkKeyEquivalents(in: submenu) }
         }
     }
 
@@ -1851,6 +1907,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if menuState.edit.nativeUndoToken != previousToken {
             window.editingUndoManager()?.removeAllActions()
         }
+
+        // Park or restore the tree's key equivalents before any sweep below
+        // touches them, so a rebuild and the sweep both see the settled
+        // armed state.
+        setCaptureArmed(menuState.captureArmed)
 
         // Rebuild Open Recent here, where the MRU arrives, and not only when
         // the submenu opens: the parent item's enablement is AppKit's own
@@ -1973,7 +2034,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 ? "Redo" : "Redo \(menuState.edit.redoLabel)"
             return menuState.edit.redo
         default:
-            return true
+            // Cold start reads as disabled. Before the first push the
+            // `commands` block is empty, and the items the registry tier
+            // answers post-push would otherwise all fall through to `true`
+            // here — lighting the whole Session and File menus during the
+            // splash, against a frontend that is not listening yet. Once a
+            // push has arrived, an identified item with no gate and no case
+            // above genuinely has no predicate and stays enabled.
+            return !menuState.commands.isEmpty
         }
     }
 
@@ -2392,14 +2460,15 @@ extension AppDelegate: NSMenuDelegate {
         applyCommandChords(in: menu)
     }
 
-    /// Refresh the Window menu's dynamic pane-list slice in place: remove
-    /// exactly the `window.pane.*` items, then re-insert the current panes
     /// Rebuild File ▸ Open Recent from the MRU, filtered to files that
     /// still exist and capped at 10. Each item carries its absolute path
     /// in `representedObject`; a trailing Clear Menu empties the list.
     /// Existence is checked here, at open time, so a since-deleted file
     /// simply doesn't appear.
     private func rebuildOpenRecentMenu(_ menu: NSMenu) {
+        // On every exit path, so "each rebuild tail sweeps" holds as an
+        // invariant rather than an incident of which path ran.
+        defer { applyCommandChords(in: menu) }
         menu.removeAllItems()
         let fm = FileManager.default
         var shown = 0
@@ -2425,9 +2494,10 @@ extension AppDelegate: NSMenuDelegate {
         }
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Clear Menu", action: #selector(clearRecentDocuments(_:)), keyEquivalent: "").identified("file.openRecent.clear"))
-        applyCommandChords(in: menu)
     }
 
+    /// Refresh the Window menu's dynamic pane-list slice in place: remove
+    /// exactly the `window.pane.*` items, then re-insert the current panes
     /// (checkmark on the focused one) directly after the anchor separator.
     /// Sectioned management — never a wholesale rebuild — because this menu
     /// is NSApp.windowsMenu and AppKit owns auto-added window entries in it.
@@ -2479,41 +2549,28 @@ extension NSMenuItem {
 /// as its inert value (empty list, nil block, false flag), so menu
 /// validation degrades to "disabled" rather than crashing on a
 /// malformed payload. Before the first push arrives (app boot,
-/// pre-frontendReady) the cache is `.empty` and every state-gated item
-/// validates disabled — the correct cold-start posture.
+/// pre-frontendReady) the cache is `.empty`, and `validateMenuItem`'s
+/// default branch reads the empty `commands` block as cold start —
+/// every identified item without an explicit case validates disabled
+/// until the frontend has answered once. Migrating an item's tier out
+/// of the validator therefore cannot flip its splash-screen posture
+/// from disabled to enabled.
 struct MenuState {
     /// One pane entry, z-order topmost first.
     struct Pane {
         let id: String
         let title: String
         let focused: Bool
-        let cardCount: Int
-        let closable: Bool
-    }
-
-    /// The focused pane's active card; nil when the deck has no panes.
-    struct ActiveCard {
-        let component: String
-        let closable: Bool
     }
 
     /// Session-card session state; nil unless the active card is a session card.
     struct Session {
         let cardId: String
         let sessionBound: Bool
-        let canInterrupt: Bool
         /// The Mode / Model / Effort settings may be changed (session idle —
         /// `canSubmit`). Gates the Permission Mode submenu so a mode change
         /// can never race a running turn, matching the disabled Z4B chips.
         let canChangeSettings: Bool
-        let permissionMode: String
-        let hasAssistantMessage: Bool
-        let hasTurns: Bool
-        /// The Changes Shade is showing — drives the "Show/Hide Changes" verb
-        /// picked in `validateMenuItem` (Spec S04).
-        let changesVisible: Bool
-        /// The History Shade is showing — drives the "Show/Hide History" verb.
-        let historyVisible: Bool
     }
 
     /// A document surface's claim on the zoom commands; nil unless the
@@ -2525,25 +2582,11 @@ struct MenuState {
         let cardId: String
     }
 
-    /// Text-card state; nil unless the active card is a Text card. Gates
-    /// the classic File menu (Save / Save As… / Save a Copy… / Revert /
-    /// Reload) and drives the dynamic ⇧⌘S assignment.
-    struct File {
-        let cardId: String
-        /// "manual" | "automatic" — automatic Save is always live.
-        let mode: String
-        let dirty: Bool
-        let untitled: Bool
-        let readOnly: Bool
-        let hasPath: Bool
-        let conflict: Bool
-    }
-
-    /// Edit-menu capabilities of the current first responder, projected
+    /// Undo / Redo capabilities of the current first responder, projected
     /// from the web responder chain's `validateAction` (the suite's
     /// single source of truth for whether the focused surface handles an
-    /// edit action). Each flag gates one Edit-menu item; all false when
-    /// nothing focused handles edits (e.g. only the Settings card up).
+    /// edit action). All false when nothing focused handles edits (e.g.
+    /// only the Settings card up).
     ///
     /// Undo / Redo ride this block — NOT AppKit's automatic NSUndoManager
     /// validation — because the web view's undoManager is per-web-view: it
@@ -2561,26 +2604,16 @@ struct MenuState {
     /// (`updateMenuState`), which is what keeps the per-web-view native
     /// stack card-safe.
     struct Edit {
-        let cut: Bool
-        let copy: Bool
-        let paste: Bool
-        let delete: Bool
-        let selectAll: Bool
         let undo: Bool
         let redo: Bool
         let undoLabel: String
         let redoLabel: String
         let nativeUndoToken: Int
-        let find: Bool
-        let findNext: Bool
-        let findPrevious: Bool
 
         /// Nothing focused handles any edit action.
         static let disabled = Edit(
-            cut: false, copy: false, paste: false, delete: false,
-            selectAll: false, undo: false, redo: false,
-            undoLabel: "", redoLabel: "", nativeUndoToken: 0,
-            find: false, findNext: false, findPrevious: false
+            undo: false, redo: false,
+            undoLabel: "", redoLabel: "", nativeUndoToken: 0
         )
     }
 
@@ -2641,9 +2674,7 @@ struct MenuState {
     }
 
     var panes: [Pane] = []
-    var activeCard: ActiveCard?
     var session: Session?
-    var file: File?
     /// A frontmost surface that owns zoom for itself (the viewer card's PDF
     /// branch). Present means View ▸ Zoom In / Zoom Out / Actual Size scale
     /// that document instead of the whole web view.
@@ -2656,93 +2687,39 @@ struct MenuState {
     /// Recent-document paths (newest first) for File ▸ Open Recent. The
     /// submenu delegate filters these to files that still exist.
     var recentDocuments: [String] = []
-    /// Whether Open Quickly is available — the frontmost card is in a
-    /// project. Gates File ▸ Open Quickly.
-    var openQuickly: Bool = false
     /// The active theme's name — the Theme submenu's checkmark. The
     /// submenu's membership is still a filesystem scan (genuinely dynamic);
     /// only which one is current rides the push.
     var activeTheme: String = ""
-    /// Whether a card is selected. `false` when the deck is deselected (a
-    /// click on the empty canvas cleared the active card) — the card / pane
-    /// navigation commands stay active in that state so the user can
-    /// re-activate a card.
-    var selectionActive: Bool = false
-    /// How many panes share the focused pane's slot. 0 when that pane holds no
-    /// slot (a free pane, or the Lens) and when nothing is selected. Gates
-    /// Window ▸ Reveal Stack and Window ▸ Cycle Stack, both of which need
-    /// somewhere to switch to.
-    var stackDepth: Int = 0
-    /// Which Window-menu item owns ⌘R: `"cycle"` or `"reveal"`. Both items
-    /// always exist and are gated identically; the user's preference decides
-    /// only which one carries the key equivalent. It is decided here rather
-    /// than in the web view because AppKit resolves a menu key equivalent
-    /// before the WKWebView ever sees the keydown.
-    var stackChord: String = "cycle"
+    /// The frontend's Keyboard pane is recording a chord; the host parks
+    /// every key equivalent for the span so bound chords fall through to
+    /// the web view to be captured instead of firing.
+    var captureArmed: Bool = false
 
     static let empty = MenuState()
-
-    /// The focused pane's entry (nil when nothing is focused).
-    var focusedPane: Pane? {
-        panes.first { $0.focused }
-    }
 
     init() {}
 
     init(payload: [String: Any]) {
-        selectionActive = payload["selectionActive"] as? Bool ?? false
-        stackDepth = payload["stackDepth"] as? Int ?? 0
-        stackChord = payload["stackChord"] as? String ?? "cycle"
+        captureArmed = payload["captureArmed"] as? Bool ?? false
         if let rawPanes = payload["panes"] as? [[String: Any]] {
             panes = rawPanes.compactMap { entry in
                 guard let id = entry["id"] as? String else { return nil }
                 return Pane(
                     id: id,
                     title: entry["title"] as? String ?? "Untitled",
-                    focused: entry["focused"] as? Bool ?? false,
-                    cardCount: entry["cardCount"] as? Int ?? 0,
-                    closable: entry["closable"] as? Bool ?? false
+                    focused: entry["focused"] as? Bool ?? false
                 )
             }
-        }
-        if let rawActive = payload["activeCard"] as? [String: Any],
-           let component = rawActive["component"] as? String {
-            activeCard = ActiveCard(
-                component: component,
-                closable: rawActive["closable"] as? Bool ?? false
-            )
         }
         if let rawSession = payload["session"] as? [String: Any],
            let cardId = rawSession["cardId"] as? String {
             session = Session(
                 cardId: cardId,
                 sessionBound: rawSession["sessionBound"] as? Bool ?? false,
-                canInterrupt: rawSession["canInterrupt"] as? Bool ?? false,
                 // Fail open: a parse miss keeps the submenu enabled (its prior
                 // behavior) rather than stranding a dead Permission Mode menu.
-                canChangeSettings: rawSession["canChangeSettings"] as? Bool ?? true,
-                permissionMode: rawSession["permissionMode"] as? String ?? "default",
-                hasAssistantMessage: rawSession["hasAssistantMessage"] as? Bool ?? false,
-                hasTurns: rawSession["hasTurns"] as? Bool ?? false,
-                // Default false for deck/app version skew (an older deck omits
-                // these) — the menu then reads "Show".
-                changesVisible: rawSession["changesVisible"] as? Bool ?? false,
-                historyVisible: rawSession["historyVisible"] as? Bool ?? false
-            )
-        }
-        if let rawFile = payload["file"] as? [String: Any],
-           let cardId = rawFile["cardId"] as? String {
-            file = File(
-                cardId: cardId,
-                // Default to the shipping mode (manual): a malformed block
-                // then gates Save on dirty/untitled rather than validating it
-                // always-on the way an "automatic" default would.
-                mode: rawFile["mode"] as? String ?? "manual",
-                dirty: rawFile["dirty"] as? Bool ?? false,
-                untitled: rawFile["untitled"] as? Bool ?? false,
-                readOnly: rawFile["readOnly"] as? Bool ?? false,
-                hasPath: rawFile["hasPath"] as? Bool ?? false,
-                conflict: rawFile["conflict"] as? Bool ?? false
+                canChangeSettings: rawSession["canChangeSettings"] as? Bool ?? true
             )
         }
         if let rawDocument = payload["document"] as? [String: Any],
@@ -2752,23 +2729,14 @@ struct MenuState {
         if let rawRecents = payload["recentDocuments"] as? [String] {
             recentDocuments = rawRecents
         }
-        openQuickly = payload["openQuickly"] as? Bool ?? false
         activeTheme = payload["activeTheme"] as? String ?? ""
         if let rawEdit = payload["edit"] as? [String: Any] {
             edit = Edit(
-                cut: rawEdit["cut"] as? Bool ?? false,
-                copy: rawEdit["copy"] as? Bool ?? false,
-                paste: rawEdit["paste"] as? Bool ?? false,
-                delete: rawEdit["delete"] as? Bool ?? false,
-                selectAll: rawEdit["selectAll"] as? Bool ?? false,
                 undo: rawEdit["undo"] as? Bool ?? false,
                 redo: rawEdit["redo"] as? Bool ?? false,
                 undoLabel: rawEdit["undoLabel"] as? String ?? "",
                 redoLabel: rawEdit["redoLabel"] as? String ?? "",
-                nativeUndoToken: rawEdit["nativeUndoToken"] as? Int ?? 0,
-                find: rawEdit["find"] as? Bool ?? false,
-                findNext: rawEdit["findNext"] as? Bool ?? false,
-                findPrevious: rawEdit["findPrevious"] as? Bool ?? false
+                nativeUndoToken: rawEdit["nativeUndoToken"] as? Int ?? 0
             )
         }
         if let rawCommands = payload["commands"] as? [String: Any] {

@@ -46,9 +46,9 @@ Every action name belongs to exactly one of three categories. The category deter
 
 | Category | Defined in | Dispatched by | Handled by | Example |
 |----------|------------|---------------|------------|---------|
-| **Chain action** | `TUG_ACTIONS` in `action-vocabulary.ts` | `manager.dispatch` (chain walk), `manager.sendToFirstResponderForContinuation`, `keybinding-map.ts` | Responders via `useResponder`'s `actions` map | `cut`, `close`, `move-to-slot` |
+| **Chain action** | `TUG_ACTIONS` in `action-vocabulary.ts` | `manager.dispatch` (chain walk), `manager.sendToFirstResponderForContinuation`, the key pipeline resolving through `keymap-registry.ts` | Responders via `useResponder`'s `actions` map | `cut`, `close`, `move-to-slot` |
 | **Control frame** | `registerAction` calls in `action-dispatch.ts` | Swift `sendControl(...)` → `dispatchAction` on the JS side | Handler body inside `registerAction`; may side-effect directly, may dispatch a chain action | `reload`, `set-theme`, `eval` |
-| **Both** (identity) | Both — same string in both tables | Swift `sendControl(...)` *and* `manager.dispatch` | Control-frame handler is a one-liner that re-dispatches the chain action; responders handle it | `close`, `add-card-to-active-pane`, `show-component-gallery` |
+| **Both** (identity) | Historically the same string in both tables — no longer authored; a registry entry's `routing` names both doors | Swift `sendControl(...)` *and* `manager.dispatch` | Control-frame handler was a one-liner that re-dispatched the chain action; responders handled it | `close`, `add-card-to-active-pane`, `show-component-gallery` |
 
 **Rules:**
 
@@ -172,8 +172,14 @@ const { ResponderScope, responderRef } = useResponder({
   },
 });
 
-// keybinding-map.ts
-{ key: "KeyZ", meta: true, action: TUG_ACTIONS.UNDO, preventDefaultOnMatch: true }
+// command-registry.ts — the chord is a default binding on the command's entry
+{
+  id: TUG_ACTIONS.UNDO,
+  title: "Undo",
+  routing: "first-responder",
+  menuItemId: "edit.undo",
+  bindings: [chord({ key: "KeyZ", meta: true, label: "z" })],
+}
 ```
 
 ```ts
@@ -313,7 +319,7 @@ These are string literals at the call site — not constants, not derived from a
 - **CSS custom properties and class names.** Those are governed by [token-naming.md](token-naming.md). Action names never appear in CSS.
 - **JavaScript identifier names.** Handler functions (`handleCut`, `handleSelectAll`) and callback props follow JS camelCase; only the action *string* is constrained.
 - **Browser API command names.** `document.execCommand` uses its own camelCase vocabulary (`"selectAll"`, `"insertText"`, etc.). These are not action names and are not governed by this document's kebab-case rule. See [Action Names vs. Browser Command Names](#action-names-vs-browser-command-names) above.
-- **Feed ids, store method names, and other non-action strings.** If it isn't dispatched through `manager.dispatch`, bound in `keybinding-map.ts`, or sent as a `sendControl(...)` RPC name, this document does not apply.
+- **Feed ids, store method names, and other non-action strings.** If it isn't dispatched through `manager.dispatch`, bound on a registry entry's `bindings` in `command-registry.ts`, or sent as a `sendControl(...)` RPC name, this document does not apply.
 
 ---
 

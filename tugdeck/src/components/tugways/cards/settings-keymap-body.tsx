@@ -52,7 +52,8 @@ import React, {
 } from "react";
 import { Keyboard, Lock, RotateCcw, X } from "lucide-react";
 
-import { chordFromEvent, formatChord } from "../chord-format";
+import { chordFromEvent, chordHasKeyEquivalent, formatChord } from "../chord-format";
+import { chordCaptureState } from "../chord-capture-state";
 import type { Chord } from "../command-registry";
 import { COMMANDS_BY_ID } from "../command-registry";
 import { keymapRegistry } from "../keymap-registry";
@@ -178,11 +179,25 @@ function conflictNoteFor(chord: Chord, commandId: string): string | null {
 }
 
 /**
+ * A recordable chord carries a real modifier or is a function key. Bare `K`
+ * would fire on every keystroke everywhere; shift alone is a capital letter.
+ */
+function isRecordableChord(chord: Chord): boolean {
+  if (chord.meta === true || chord.ctrl === true || chord.alt === true) return true;
+  return /^F\d{1,2}$/.test(chord.key);
+}
+
+/**
  * The armed capture surface: it owns every chord while it is up.
  *
- * The focus trap is what makes that true rather than aspirational — without a
- * pushed mode, arming a capture and pressing ⌘W would close the card instead
- * of recording the chord.
+ * Three layers have to yield for that to be true rather than aspirational,
+ * and arming (`chordCaptureState`) is what makes them. The key pipeline's
+ * stage-1 listener stands down, so a chord that currently means something is
+ * read instead of dispatched. The host parks every menu key equivalent for
+ * the span (the `captureArmed` push field), so AppKit's key-equivalent scan
+ * — which runs before the web view sees a keydown — lets ⌘W through to be
+ * recorded instead of closing the card. And the focus trap holds the
+ * keyboard focus story, with Escape as the cancel.
  */
 function ChordCapture({
   commandId,
@@ -204,6 +219,7 @@ function ChordCapture({
   });
 
   useLayoutEffect(() => {
+    const release = chordCaptureState.arm();
     const onKeyDown = (event: KeyboardEvent): void => {
       if (MODIFIER_CODES.has(event.code)) return;
       // Nothing else may act on this key: the surface is here to read the
@@ -218,19 +234,31 @@ function ChordCapture({
       setPending(chordFromEvent(event));
     };
     document.addEventListener("keydown", onKeyDown, true);
-    return () => document.removeEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      release();
+    };
   }, []);
 
-  const conflict = pending === null ? null : conflictNoteFor(pending, commandId);
+  const recordable = pending !== null && isRecordableChord(pending);
+  const note =
+    pending === null
+      ? null
+      : !recordable
+        ? "Add ⌘, ⌃, or ⌥ — a bare key would fire while typing."
+        : (conflictNoteFor(pending, commandId) ??
+          (!chordHasKeyEquivalent(pending)
+            ? "This key has no menu-bar form; the chord works in Tug but no menu item will show it."
+            : null));
 
   return (
     <div className="settings-keymap-capture" ref={hostRef} data-testid="keymap-capture">
       <div className="settings-keymap-capture-chord" data-pending={pending !== null}>
         {pending === null ? "Press a chord…" : formatChord(pending)}
       </div>
-      {conflict !== null ? (
+      {note !== null ? (
         <TugLabel size="sm" emphasis="calm" className="settings-keymap-capture-note">
-          {conflict}
+          {note}
         </TugLabel>
       ) : null}
       <div className="settings-keymap-capture-actions">
@@ -238,9 +266,9 @@ function ChordCapture({
           size="sm"
           role="accent"
           emphasis="filled"
-          disabled={pending === null}
+          disabled={!recordable}
           onClick={() => {
-            if (pending !== null) onCommit(pending);
+            if (recordable) onCommit(pending);
           }}
         >
           Use this chord
@@ -303,8 +331,11 @@ function CommandCell({ index, dataSource, selected }: TugListViewCellProps<Keyma
   const armed = ctx.armed === row.commandId;
   // A locked row shows why rather than merely lacking a button: "you cannot
   // change this" is information, and an affordance that silently is not there
-  // reads as a bug.
-  const rebindable = !row.locked && !row.bindings.every((b) => b.scoped);
+  // reads as a bug. An *empty* row is rebindable — giving an unbound command
+  // a chord is one of the pane's jobs, and it is also the way back after
+  // removing a command's only binding.
+  const rebindable =
+    !row.locked && (row.bindings.length === 0 || !row.bindings.every((b) => b.scoped));
 
   return (
     <TugListRow
@@ -357,6 +388,7 @@ function CommandCell({ index, dataSource, selected }: TugListViewCellProps<Keyma
               role="accent"
               aria-pressed={armed || undefined}
               data-testid={`keymap-arm-${row.commandId}`}
+              widthStabilize={{ alternateLabel: armed ? "Change" : "Recording…" }}
               onClick={() => (armed ? ctx.cancel() : ctx.arm(row.commandId))}
             >
               {armed ? "Recording…" : "Change"}

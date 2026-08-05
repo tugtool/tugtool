@@ -47,6 +47,8 @@ import {
   keymapRegistry,
 } from "../components/tugways/keymap-registry";
 import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
+import { chordCaptureState } from "../components/tugways/chord-capture-state";
+import { getSettings, lastKnownMakerMode } from "./maker-mode-bridge";
 import type {
   CommandEntry,
   CommandMenuFacts,
@@ -568,6 +570,18 @@ export interface MenuStatePayload {
    * Quickly, which keeps the field so the host contract is unchanged.
    */
   openQuickly: boolean;
+  /**
+   * A chord-capture surface is armed: the Keyboard pane is recording a
+   * chord, and every key the user presses is an answer rather than a
+   * command. While true, the host parks every key equivalent in the menu
+   * bar (restoring them on disarm), so a chord that currently means
+   * something falls through to the web view to be recorded instead of
+   * firing — AppKit's key-equivalent scan runs before the web view sees a
+   * keydown, and detaching is the only way through it. A chord on an item
+   * the host never releases this way (there are none today) would be eaten,
+   * not recorded.
+   */
+  captureArmed: boolean;
 }
 
 /**
@@ -699,6 +713,10 @@ export class HostMenuStatePublisher {
   private recentDocuments: string[] = [];
   /** The active theme, for the Theme submenu's checkmark. */
   private activeTheme: string = BASE_THEME_NAME;
+  /** Whether a chord capture is armed (see {@link MenuStatePayload.captureArmed}). */
+  private captureArmed = false;
+  /** The gates of the last flush, for {@link lastGateFor}. */
+  private lastGates: Record<string, MenuCommandGate> = {};
   private lastSent: string | null = null;
   private flushScheduled = false;
 
@@ -754,6 +772,21 @@ export class HostMenuStatePublisher {
   setStackChord(chord: string): void {
     this.stackChord = chord;
     this.scheduleFlush();
+  }
+
+  setCaptureArmed(armed: boolean): void {
+    this.captureArmed = armed;
+    this.scheduleFlush();
+  }
+
+  /**
+   * The gate an item carried in the last flush, for readers outside the
+   * push — the native layer of `resolveChord` joins each menu chord claim
+   * to the enablement its own mirror computed, so the pane's shadowing
+   * answer and the menu bar cannot disagree about the same item.
+   */
+  lastGateFor(menuItemId: string): MenuCommandGate | undefined {
+    return this.lastGates[menuItemId];
   }
 
   /**
@@ -865,6 +898,8 @@ export class HostMenuStatePublisher {
       stackDepth,
     };
     this.lastFacts = facts;
+    const commands = computeCommandCapabilities(this.validationSource(facts));
+    this.lastGates = commands;
     const payload: MenuStatePayload = {
       panes,
       activeCard,
@@ -875,10 +910,11 @@ export class HostMenuStatePublisher {
       file,
       document,
       edit: this.editCapabilities,
-      commands: computeCommandCapabilities(this.validationSource(facts)),
+      commands,
       recentDocuments: this.recentDocuments,
       activeTheme: this.activeTheme,
       openQuickly,
+      captureArmed: this.captureArmed,
     };
     const serialized = JSON.stringify(payload);
     if (serialized === this.lastSent) return;
@@ -975,6 +1011,33 @@ export function initHostMenuState(deck: DeckSource): void {
   keymapRegistry.subscribe(() => {
     publisher.refresh();
   });
+  // Arming a chord capture rides the same push: the host parks every key
+  // equivalent while the pane records, so a bound chord falls through to be
+  // captured instead of firing ([P15] — AppKit resolves ahead of the web
+  // view, and detaching is the only way through its scan).
+  chordCaptureState.subscribe(() => {
+    publisher.setCaptureArmed(chordCaptureState.isArmed());
+  });
+  // The native layer of `resolveChord`, joined from the registry's menu
+  // claims and this publisher's own last-computed gates ([P15]). An item
+  // whose enablement is not mirrored reads as enabled — the claim exists
+  // because the item carries the chord, and "probably fires" is the honest
+  // default for an item this mirror does not gate. Maker-menu items claim
+  // only while the menu is visible; its hidden chords fall through.
+  keymapRegistry.setEnvironment({
+    nativeChords: () =>
+      keymapRegistry.menuClaims().map((claim) => ({
+        ...claim,
+        enabled: publisher.lastGateFor(claim.menuItemId)?.enabled ?? true,
+        claims: claim.menuItemId.startsWith("maker.")
+          ? lastKnownMakerMode() === true
+          : true,
+      })),
+  });
+  // Settle the maker-mode fact the claims above read. Fire-and-forget: the
+  // reply lands through the bridge's cache, and maker mode cannot change
+  // without a page reload, so one round trip answers for the page's life.
+  void getSettings();
   pushChord();
   push();
 }

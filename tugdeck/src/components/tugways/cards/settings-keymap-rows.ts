@@ -89,13 +89,16 @@ export const GROUP_ORDER: readonly string[] = [
  *
  * Parameterized families are out ([P05]): their payloads are discovered at
  * runtime, so there is no fixed row to rebind — "Theme" is not a command, it
- * is however many themes are on disk. Everything else is in, including the
- * `native` rows: Quit and Hide are commands the user can look up even though
- * the mechanism will refuse to move them, and a keyboard pane that hid them
- * would be answering "what does ⌘Q do" with silence.
+ * is however many themes are on disk. `internal` entries are out too: they
+ * exist so the command has a name, but their own comments say no door leads
+ * anywhere yet, and a pane that offered a chord for a command nothing
+ * performs would be recording dead keystrokes. Everything else is in,
+ * including the `native` rows: Quit and Hide are commands the user can look
+ * up even though the mechanism will refuse to move them, and a keyboard pane
+ * that hid them would be answering "what does ⌘Q do" with silence.
  */
 function isListedEntry(entry: CommandEntry): boolean {
-  return entry.parameterized !== true;
+  return entry.parameterized !== true && entry.internal !== true;
 }
 
 /**

@@ -1069,6 +1069,9 @@ export const TugPromptEntry = React.forwardRef<
     codeSessionStore.subscribe,
     codeSessionStore.getSnapshot,
   );
+  // The keymap registry too ([L02]): the ⇧⌘M scoped binding and every
+  // tooltip shortcut read it at render time, so a live rebind must repaint.
+  useSyncExternalStore(keymapRegistry.subscribe, keymapRegistry.getSnapshot, () => 0);
 
   // Substrate delegate, root, and live snapshot mirror.
   const textEditorRef = useRef<TugTextEditorDelegate | null>(null);
@@ -1618,7 +1621,8 @@ export const TugPromptEntry = React.forwardRef<
       commandId: TUG_ACTIONS.COMMIT_AUTO_MESSAGE,
       preventDefaultOnMatch: b.preventDefault === true,
     }));
-  }, [commitActive]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commitActive, keymapRegistry.getSnapshot()]);
   useKeybindings(commitKeybindings);
 
   // Command insert ([P03]/[P04]). A click on a known slash command in the

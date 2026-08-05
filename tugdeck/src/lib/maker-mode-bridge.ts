@@ -45,6 +45,20 @@ interface WebkitHandles {
 const pendingSettings: Array<(settings: HostSettings) => void> = [];
 const pendingSetMakerMode: Array<(confirmed: boolean) => void> = [];
 
+/**
+ * The maker-mode gate as last reported by the host, or `null` before any
+ * reply has arrived. Constant for a page lifetime in practice — flipping
+ * the gate reloads the page — so one boot-time `getSettings` round trip
+ * settles it. The menu-state layer reads it to decide whether the Maker
+ * menu's chords claim their keys (a hidden menu's chords fall through).
+ */
+let knownMakerMode: boolean | null = null;
+
+/** See {@link knownMakerMode}. */
+export function lastKnownMakerMode(): boolean | null {
+  return knownMakerMode;
+}
+
 function handler(name: "getSettings" | "setMakerMode"):
   | { postMessage: (value: unknown) => void }
   | undefined {
@@ -58,6 +72,7 @@ function ensureBridge(): void {
   const bridge = (w.__tugBridge ??= {});
   if (bridge.onSettingsLoaded === undefined) {
     bridge.onSettingsLoaded = (settings) => {
+      knownMakerMode = settings?.makerMode === true;
       const resolve = pendingSettings.shift();
       if (resolve === undefined) return;
       resolve({

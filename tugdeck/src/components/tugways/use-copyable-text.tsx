@@ -31,13 +31,13 @@
  * Laws: [L11] controls emit actions; responders handle actions
  */
 
-import React, { useCallback, useId, useMemo, useState } from "react";
+import React, { useCallback, useId, useMemo, useState, useSyncExternalStore } from "react";
 import { TugEditorContextMenu, type TugEditorContextMenuEntry } from "./tug-editor-context-menu";
 import { useOptionalResponder } from "./use-responder";
 import { useResponderChain } from "./responder-chain-provider";
 import type { ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { commandShortcut } from "./keymap-registry";
+import { commandShortcut, keymapRegistry } from "./keymap-registry";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -161,7 +161,9 @@ export function useCopyableText({
 
   // Read-only text: Copy is live, the editing verbs are shown dimmed so the
   // menu reads as the familiar one rather than as a mystery with three rows
-  // missing. Every hint comes from the command's binding ([P11]).
+  // missing. Every hint comes from the command's binding ([P11]), so the
+  // registry is a subscription ([L02]) and a live rebind repaints the hints.
+  useSyncExternalStore(keymapRegistry.subscribe, keymapRegistry.getSnapshot, () => 0);
   const menuItems = useMemo<TugEditorContextMenuEntry[]>(
     () =>
       copyMenu
@@ -198,7 +200,8 @@ export function useCopyableText({
               disabled: true,
             },
           ],
-    [copyMenu],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [copyMenu, keymapRegistry.getSnapshot()],
   );
 
   // Wrap the menu in this hook's ResponderScope so TugEditorContextMenu's

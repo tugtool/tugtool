@@ -486,8 +486,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       // open-file / reveal-in-finder — deck-level file-reference
       // actions dispatched by context menus on transcript file refs.
       // The chain payload carries the absolute path as `value`; the
-      // richer `{ path, line }` form arrives via `dispatchCommand` and
-      // is handled by the registry body in `action-dispatch.ts`. Both converge on
+      // richer `{ path, line }` form arrives via `dispatchCommand`, which
+      // walks the chain to this same handler. Both shapes converge on
       // `openFileInCard` (path-keyed Text-card reuse).
       // Two callers, two shapes: a context-menu item names a path and
       // nothing else, while the host's File ▸ Open… and the transcript's

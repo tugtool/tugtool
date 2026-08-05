@@ -27,7 +27,7 @@ import { FeedId } from "./protocol";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { isCommandId } from "@/components/tugways/command-registry";
+import { COMMANDS_BY_ID, isCommandId } from "@/components/tugways/command-registry";
 import { dispatchCommand } from "./command-dispatch";
 import { openDiffInCard } from "@/lib/open-diff-in-card";
 import { isDiffDescriptor } from "@/lib/git-diff-store";
@@ -210,8 +210,20 @@ const textDecoder = new TextDecoder();
 
 /**
  * Register an action handler.
+ *
+ * A handler whose name is a *chain-routed* registry command would be
+ * unreachable from the wire — the fork in {@link dispatchAction} reroutes
+ * such frames through `dispatchCommand`, which dispatches into the chain
+ * and never consults this map. Registration is runtime, so no static lint
+ * can see the collision; this warning is where it surfaces.
  */
 export function registerAction(action: string, handler: ActionHandler): void {
+  const routing = COMMANDS_BY_ID.get(action)?.routing;
+  if (routing !== undefined && routing !== "registry") {
+    console.warn(
+      `registerAction: "${action}" is a ${routing}-routed command; control frames named this will never reach this handler`,
+    );
+  }
   handlers.set(action, handler);
 }
 

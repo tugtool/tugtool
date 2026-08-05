@@ -429,6 +429,8 @@ dispatchCommand(id, payload?)
   └─ notifyCommandObservers(id, handled)
 ```
 
+**As shipped:** the `if !validateCommand(entry)` line was deliberately dropped — `dispatchCommand` does not gate dispatch on validation. Validation gates doors, not dispatch: `validateCommand`'s consumers are the surfaces that *show* a command (the menu mirror, buttons, context menus), while dispatch just sends — the responder that would perform the command is the thing that decides, and a command nobody handles is already a silent no-op at the end of the chain walk. This is Cocoa's split between `validateUserInterfaceItem:` and `sendAction:`; the argument lives in the `tugdeck/src/command-dispatch.ts` header.
+
 `dispatchAction` (the CONTROL-frame entry point) becomes: parse the frame, and if `COMMANDS_BY_ID.has(action)` call `dispatchCommand(action, payload)`, else fall through to the data-frame handler map ([P03]). Stage 1 of the key pipeline becomes: resolve a chord to a `commandId` through the keymap registry, then call `dispatchCommand`. `TugButton` keeps `sendToTarget` for its targeted-dispatch semantics but reads validity from `validateCommand` when its action names a registry command.
 
 **Funnel #2** is `keymap-registry.ts`. It holds `Map<commandId, KeymapBinding[]>` seeded from the table's defaults and overlaid with tugbank overrides, is subscribable ([L02]), and exposes:
@@ -640,6 +642,8 @@ export interface MenuCommandGate {
 // MenuStatePayload gains:
 //   commands: Record<string /* NSMenuItem identifier */, MenuCommandGate>
 ```
+
+**As shipped:** `enabled` is optional (`enabled?: boolean`), not required as declared above. The two halves of a gate move independently — an item's *chord* can be the registry's while its *enablement* is not. View ▸ Zoom In is the case: its predicate reads `window.currentPageZoom`, host state the frontend cannot see, and publishing `enabled: true` for it would light an item its own host tier was gating. So a chord-only gate says nothing about enablement, and an absent `enabled` leaves the item to the tier below (`lib/host-menu-state.ts`, `MenuCommandGate`).
 
 The `chord` field is **three-state**, and all three states are load-bearing: *absent* means "leave the constructed key equivalent alone", *`null`* means "detach it" (how ⌘R clears at stack depth ≤ 1 and how a rebound-away command releases its chord), and *present* means "apply this". Swift's `Codable` collapses absent and null by default, so the decoder must distinguish them explicitly:
 
@@ -1202,7 +1206,7 @@ Both smell like one cause — a synthesized command-modified chord not landing �
 - [ ] Write `computeCommandCapabilities(chain)`: for every non-parameterized entry with a `menuItemId`, compute `enabled` ([P06]: `validate` if present, else the routing-matched chain walk), `state` (from `state` or `queryActionState`, narrowed to boolean), and `title` (from `dynamicTitle`). Return the `Record<menuItemId, MenuCommandGate>`.
 - [ ] Add `commands` to `MenuStatePayload` and a `setCommandCapabilities` setter on `HostMenuStatePublisher`, joining the existing microtask-coalesced diffed flush.
 - [ ] In `responder-chain-provider.tsx`, publish the block from the same `publishEditCaps` closure (rename it to reflect both) so both mirrors share one recompute, one `manager.subscribe`, and the existing `registerEditCapsRefresher` escape hatch. Generalize the refresher's name to match ([P07], Risk R02). Keep the undo plugin's availability/label gate exactly as it is — the closure's work is what grows here, not its trigger set (Risk R04).
-- [ ] Measure the recompute before and after, with the block empty and with it populated, using the synthetic typist (`AT9996_TYPIST=1`) and the deck probes. Record the numbers in the step; if the keystroke-reachable path regresses, split the recompute per Risk R04 before [#step-14] populates 60–80 predicates on top of it.
+- [x] Measure the recompute before and after, with the block empty and with it populated, using the synthetic typist (`AT9996_TYPIST=1`) and the deck probes. Record the numbers in the step; if the keystroke-reachable path regresses, split the recompute per Risk R04 before [#step-14] populates 60–80 predicates on top of it. **Measured on the dash:** 0.21 µs/call before, 0.40 µs/call with the block empty; 0.20 µs/call edit-only, 5.20 µs/call with all 54 predicates populated — against a ~9 ms q50 keystroke budget, so the Risk R04 split fallback was not needed.
 - [ ] Add `MenuState.CommandGate` and `MenuState.commands` to the Swift decoder, defensively per the struct's existing discipline: a missing block reads as empty, so items fall through to the hand-rolled tiers unchanged.
 - [ ] Add the first tier to `validateMenuItem` per Spec S03, ahead of the `session.` prefix block. With the block empty (cold start) every item still reaches its existing tier, which is what makes this step non-breaking on its own.
 - [ ] Add a harness-facing assertion path: every `menuItemId` in the table resolves to a real menu item (`menuItemState(id).found`), so [P02]'s hand-maintained join is machine-checked.
@@ -1214,7 +1218,7 @@ Both smell like one cause — a synthesized command-modified chord not landing �
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
 - [ ] `just build-app && just app-test at0180-command-registry-gates.test.ts at0168-menu-structure.test.ts`
-- [ ] The Risk R04 measurement, recorded in the step: recompute cost with the block empty vs. populated, and the typist q50/q99 either side.
+- [x] The Risk R04 measurement, recorded in the step: recompute cost with the block empty vs. populated, and the typist q50/q99 either side. Recorded in the measurement task above: 0.21 → 0.40 µs/call empty, 0.20 µs/call edit-only vs 5.20 µs/call with all 54 predicates, well inside the ~9 ms q50 keystroke budget.
 
 ---
 
@@ -1235,7 +1239,7 @@ Both smell like one cause — a synthesized command-modified chord not landing �
 - [ ] Add `validateAction` branches per the audit's handler map: `session-card.tsx`'s card-content responder answers for `interrupt-session` (`canInterrupt`), the turn-navigation four (`hasTurns` plus position), and the two `toggle-*-view` (bound session); `tug-pane.tsx` answers for `close-tab` and tab-navigation arity; `deck-canvas.tsx` extends its existing allowlist for the slot and lens commands. Every predicate reads refs at call time, never captured closures ([L07]).
 - [ ] Add `queryActionState` branches for the stateful commands: the four `set-permission-mode:*` entries (current mode), the two `select-composer-route:*` entries (current route), `toggle-changes-view` / `toggle-history-view` (visible?), `toggle-lens` (rail visible?).
 - [ ] Add `dynamicTitle` for the Show/Hide Changes and Show/Hide History items, and for Undo/Redo's noun labels, sourced from the existing `editUndoLabelsWithin` registry.
-- [ ] Add `validate` predicates to the registry-routed entries: the File save family (move `computeFileMenuGates` into them — it stays a pure exported function and keeps its unit tests), `open-quickly`, `next-theme` / `set-theme` (themes present), `clear-recent-documents` (recents non-empty).
+- [ ] Add `validate` predicates to the registry-routed entries: the File save family (move `computeFileMenuGates` into them — it stays a pure exported function and keeps its unit tests), `open-quickly`, `next-theme` / `set-theme` (themes present), `clear-recent-documents` (recents non-empty). **Struck as shipped:** the `next-theme` / `set-theme` "themes present" predicate and the `clear-recent-documents` "recents non-empty" predicate were not implemented — the shipped theme list is always present, so that predicate is vacuous, and the Open Recent parent already dims over an empty recents list (step 1), so the child predicate adds nothing.
 - [ ] Delete the Swift tiers listed in [#swift-tier-retirement], one family per commit-sized chunk if convenient, verifying the corresponding app-test after each. Keep the native-undo branch and the parameterized families.
 - [ ] Where a predicate reads a store the chain cannot see, subscribe the mirror's refresher to that store — the same wiring `initHostMenuState` already does for `cardSessionBindingStore` and `cardTitleStore` (Risk R02).
 

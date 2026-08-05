@@ -227,6 +227,20 @@ export function codeToKeyEquivalent(chord: Chord): ChordSpec | null {
   };
 }
 
+/**
+ * Whether a chord's code has a menu-bar representation at all.
+ *
+ * The question `codeToKeyEquivalent` answers destructively — its throw is
+ * for authored defaults, where an untabled code is a table mistake. A chord
+ * the *user* just pressed is not a mistake (`IntlBackslash` is a real key on
+ * every ISO keyboard), so the capture surface asks this first and the
+ * registry publishes such a binding without a menu chord instead of dying
+ * on it.
+ */
+export function chordHasKeyEquivalent(chord: Chord): boolean {
+  return keyEquivalentCharacter(chord.key, chord.shift === true) !== null;
+}
+
 /* ---------------------------------------------------------------------------
  * Display
  * ------------------------------------------------------------------------- */

@@ -209,10 +209,25 @@ describe("the shipped table", () => {
     }
   });
 
-  test("every non-parameterized command in the table gets exactly one row", () => {
-    const listed = COMMANDS.filter((e) => e.parameterized !== true);
+  test("every doored, non-parameterized command in the table gets exactly one row", () => {
+    const listed = COMMANDS.filter(
+      (e) => e.parameterized !== true && e.internal !== true,
+    );
     const rows = buildKeymapRows(NONE);
     expect(rows).toHaveLength(listed.length);
     expect(new Set(rows.map((r) => r.commandId)).size).toBe(rows.length);
+  });
+
+  test("internal commands get no row — a chord for a command nothing performs", () => {
+    // `internal` means "no door by design": the entry's own comment names
+    // what blocks it. A pane row is a door offer, so offering one would be
+    // recording dead keystrokes.
+    const rows = buildKeymapRows(NONE);
+    for (const entry of COMMANDS.filter((e) => e.internal === true)) {
+      expect(
+        rows.find((r) => r.commandId === entry.id),
+        `${entry.id} is internal and must not be listed`,
+      ).toBeUndefined();
+    }
   });
 });
