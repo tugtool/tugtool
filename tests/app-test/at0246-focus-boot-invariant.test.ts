@@ -135,9 +135,6 @@ describe.skipIf(!SHOULD_RUN)("at0246 — focus boot invariant", () => {
             `document.querySelector('[data-card-id="A"] .cm-content') !== null`,
             { timeoutMs: 6_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
 
           // The saved keyboard target must re-light the ring somewhere —
           // a boot that restores keyboard focus without any ring is its own

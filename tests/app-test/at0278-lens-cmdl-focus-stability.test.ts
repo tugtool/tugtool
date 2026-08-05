@@ -128,13 +128,28 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
 
           // ---- A. Exact restore: a keyboard cursor row survives ⌘L
           // out-and-back with its ring, no Tab needed.
           await app.dispatchControlAction("focus-lens");
+          await app.waitForCondition<boolean>(
+            `document.querySelector("[data-key-view-kbd]") !== null`,
+            { timeoutMs: 5_000 },
+          );
+          // The band leads its section, and everything on it (filter field,
+          // `+`, fold chevron) is a stop of its own, so the walk crosses the
+          // whole band before it reaches the rows. Walked, not counted: what
+          // this pins is where the keyboard ENDS.
+          for (let i = 0; i < 8; i += 1) {
+            if (
+              await app.evalJS<boolean>(
+                `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+              )
+            ) {
+              break;
+            }
+            await app.nativeKey("Tab");
+          }
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
             { timeoutMs: 5_000 },

@@ -327,13 +327,53 @@ describe.skipIf(!SHOULD_RUN)("AT0330: transcript DOM eviction", () => {
         );
         expect(before.headers).toBeGreaterThan(0);
 
+        // Bring a collapsed header INTO VIEW before toggling it. Expanding a
+        // block that sits offscreen cannot move `scrollHeight`: eviction holds
+        // it at its placeholder's exact measured height (the pixel-identical
+        // constraint), so the growth asserted below never appears.
         await app.evalJS<boolean>(`(function () {
   var el = document.querySelector('${SCROLLER}');
-  // The disclosure cue owns the toggle, not the header strip.
-  el.querySelector('.tool-call-header[data-collapsed="true"] [data-slot="tool-call-header-disclosure"]').click();
+  var box = el.getBoundingClientRect();
+  var headers = [].slice.call(el.querySelectorAll('.tool-call-header[data-collapsed="true"]'));
+  var below = headers.map(function (h) {
+    return { h: h, top: h.getBoundingClientRect().top };
+  }).filter(function (r) { return r.top > box.top; });
+  if (below.length === 0) return false;
+  el.scrollTop += below[0].top - box.top - 40;
   return true;
 })()`);
-        await new Promise((r) => setTimeout(r, 600));
+        await app.waitForCondition<boolean>(
+          `(function () {
+  var el = document.querySelector('${SCROLLER}');
+  var box = el.getBoundingClientRect();
+  return [].slice.call(el.querySelectorAll('.tool-call-header[data-collapsed="true"]')).some(function (h) {
+    var b = h.getBoundingClientRect();
+    return b.top >= box.top && b.bottom <= box.bottom;
+  });
+})()`,
+          { timeoutMs: 5000 },
+        );
+        const before2 = await app.evalJS<number>(
+          `document.querySelector('${SCROLLER}').scrollHeight`,
+        );
+        await app.evalJS<boolean>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  var box = el.getBoundingClientRect();
+  var target = [].slice.call(el.querySelectorAll('.tool-call-header[data-collapsed="true"]')).filter(function (h) {
+    var b = h.getBoundingClientRect();
+    return b.top >= box.top && b.bottom <= box.bottom;
+  })[0];
+  // The disclosure cue owns the toggle, not the header strip.
+  target.querySelector('[data-slot="tool-call-header-disclosure"]').click();
+  return true;
+})()`);
+        // The expanded block's height reaches `scrollHeight` only once the
+        // eviction ledger re-measures it, which a fixed sleep can miss — wait
+        // for the growth instead of sampling at an arbitrary moment.
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${SCROLLER}').scrollHeight > ${before2}`,
+          { timeoutMs: 8000 },
+        );
         const expanded = await app.evalJS<{ h: number; open: number }>(
           `(function () {
   var el = document.querySelector('${SCROLLER}');
@@ -642,7 +682,12 @@ describe.skipIf(!SHOULD_RUN)("AT0330: transcript DOM eviction", () => {
   document.querySelector('${SCROLLER}').style.display = "";
   return true;
 })()`);
-        await new Promise((r) => setTimeout(r, 800));
+        // The reveal re-measures; a fixed sleep samples mid-settle and reads a
+        // transient height. Wait for the geometry to come back to rest.
+        await app.waitForCondition<boolean>(
+          `Math.abs(document.querySelector('${SCROLLER}').scrollHeight - ${before.h}) <= 2`,
+          { timeoutMs: 8000 },
+        );
 
         const after = await app.evalJS<{
           h: number;

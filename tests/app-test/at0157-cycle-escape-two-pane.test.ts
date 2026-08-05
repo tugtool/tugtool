@@ -37,7 +37,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
-import { ROUTE_BUTTON } from "./_harness/selectors";
+import { ROUTE_CHOICE } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -45,7 +45,7 @@ const TEST_TIMEOUT_MS = 120_000;
 const CARD = '[data-card-id="A"]';
 const ROOT = `${CARD} [data-testid="session-card"]`;
 const SUBMIT = `${CARD} .tug-prompt-entry-submit-button`;
-const ROUTE = `${CARD} ${ROUTE_BUTTON}`;
+const ROUTE = `${CARD} ${ROUTE_CHOICE}`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const Z2_TIME = `${CARD} [data-priority="time"]`;
 
@@ -153,7 +153,6 @@ describe.skipIf(!SHOULD_RUN)("AT0157: Escape over a cycle is mode-stack ordering
 
         // Caret in the editor (base mode).
         await app.nativeClickAtElement(EDITOR);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         // Type content so the submit button is actionable — and thus a live

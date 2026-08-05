@@ -89,7 +89,6 @@ describe.skipIf(!SHOULD_RUN)("AT0125: the Tab walk skips hidden background tab c
         );
 
         await app.nativeClickAtElement(TITLE);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         // A SINGLE Tab lands the ring on the active (radio) card's group — not on

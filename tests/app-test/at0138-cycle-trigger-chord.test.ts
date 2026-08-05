@@ -95,9 +95,9 @@ describe.skipIf(!SHOULD_RUN)("AT0138: the ⌥⇥ cycle trigger reaches + matches
           { timeoutMs: 8000 },
         );
 
-        // Activate the webview so a posted CGEvent reaches the document.
+        // Put the key view in the pane. A posted CGEvent reaches the document
+        // by pid, so this does not depend on the app being frontmost.
         await app.nativeClickAtElement(PANE_TITLE_BAR);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
 
         await app.evalJS<boolean>(INSTALL_PROBE);
 

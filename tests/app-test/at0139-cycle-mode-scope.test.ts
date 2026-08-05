@@ -86,7 +86,6 @@ describe.skipIf(!SHOULD_RUN)("AT0139: the cycle-mode primitive pushes/seeds/wrap
         // (1) Put the key view on the resting control (a real click → pointer
         // promotion → key view), and confirm no cycle stop holds it.
         await app.nativeClickAtElement(REST);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
         expect(await app.evalJS<string | null>(CYCLING)).toBe("false");
 

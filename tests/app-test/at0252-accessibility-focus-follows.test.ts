@@ -109,13 +109,26 @@ describe.skipIf(!SHOULD_RUN)("at0252 — accessibility focus-follows mirror", ()
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
 
           // Keyboard into the Lens: engine-routed key view on the
-          // snippets list, activeElement parked on the sink.
+          // snippets list, activeElement parked on the sink. The band leads
+          // its section and every control on it is a stop, so the walk
+          // crosses the band before it reaches the rows.
           await app.dispatchControlAction("focus-lens");
+          await app.waitForCondition<boolean>(
+            `document.querySelector("[data-key-view-kbd]") !== null`,
+            { timeoutMs: 5_000 },
+          );
+          for (let i = 0; i < 8; i += 1) {
+            if (
+              await app.evalJS<boolean>(
+                `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+              )
+            ) {
+              break;
+            }
+            await app.nativeKey("Tab");
+          }
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
             { timeoutMs: 5_000 },

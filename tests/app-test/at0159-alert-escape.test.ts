@@ -70,7 +70,6 @@ describe.skipIf(!SHOULD_RUN)("AT0159: tug-alert Escape is engine-owned", () => {
 
         // Open the alert by clicking its trigger.
         await app.nativeClickAtElement(TRIGGER);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(ALERT)}) !== null`,
           { timeoutMs: 6000 },

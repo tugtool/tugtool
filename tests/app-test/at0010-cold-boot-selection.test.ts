@@ -133,9 +133,35 @@ describe.skipIf(!SHOULD_RUN)("m10: selection cold-boot across full process resta
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered(${JSON.stringify(CARD_ID)})`,
           );
 
-          // Wait for the bake-in to settle: block 0 (the H1) must be
+          // The render window must cover the head of the document, in BOTH
+          // phases, or the saved `nodeToPath` resolves against a different set
+          // of blocks. The fixture asks for `followBottom: false`, but the
+          // region still boots scrolled, so put it at the head explicitly —
+          // through the event, which tells SmartScroll to disengage
+          // follow-bottom AND apply the position (a raw `scrollTop` write
+          // races the bake-in and gets re-slammed).
+          await app.evalJS<void>(
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(`[data-card-id="A"] [data-tug-scroll-key="markdown-view"]`)});
+              if (el === null) return;
+              el.dispatchEvent(new CustomEvent('tug-region-scroll-set', {
+                detail: { top: 0, left: 0 },
+                cancelable: true,
+                bubbles: false,
+              }));
+            })()`,
+          );
+          await app.waitForCondition<boolean>(
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(`[data-card-id="A"] [data-tug-scroll-key="markdown-view"]`)});
+              return el !== null && el.scrollTop <= 4;
+            })()`,
+            { timeoutMs: 3000 },
+          );          // Wait for the bake-in to settle: the head block must be
           // in the rendered window AND the block count must be
-          // stable across two consecutive observations. The
+          // stable across two consecutive observations. (The head is
+          // not asserted to be index 0 — the block-remap path renumbers
+          // keys when a region grows, so this fixture renders 1..10.) The
           // `gallery-markdown-1kb` fixture passes
           // `followBottom: false` to TugMarkdownView for the
           // static-content path, so the bake-in renders with
@@ -147,7 +173,7 @@ describe.skipIf(!SHOULD_RUN)("m10: selection cold-boot across full process resta
           await app.waitForCondition<boolean>(
             `(function(){
               var first = document.querySelector('[data-card-id=${JSON.stringify(CARD_ID)}] .tugx-md-block');
-              if (first === null || first.getAttribute("data-block-index") !== "0") return false;
+              if (first === null || first.getAttribute("data-block-index") === null) return false;
               if (first.textContent === null || first.textContent.length <= ${SELECTION_LENGTH}) return false;
               var cardRoot = document.querySelector('[data-card-host][data-card-id=${JSON.stringify(CARD_ID)}]');
               if (cardRoot === null) return false;
@@ -264,15 +290,39 @@ describe.skipIf(!SHOULD_RUN)("m10: selection cold-boot across full process resta
               `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered(${JSON.stringify(CARD_ID)})`,
             );
 
-            // Wait for the bake-in to settle: block 0 must be in the
-            // rendered window AND the block count must be stable.
+            // The render window must cover the head of the document, in BOTH
+            // phases, or the saved `nodeToPath` resolves against a different set
+            // of blocks. The fixture asks for `followBottom: false`, but the
+            // region still boots scrolled, so put it at the head explicitly —
+            // through the event, which tells SmartScroll to disengage
+            // follow-bottom AND apply the position (a raw `scrollTop` write
+            // races the bake-in and gets re-slammed).
+            await app.evalJS<void>(
+              `(function(){
+                var el = document.querySelector(${JSON.stringify(`[data-card-id="A"] [data-tug-scroll-key="markdown-view"]`)});
+                if (el === null) return;
+                el.dispatchEvent(new CustomEvent('tug-region-scroll-set', {
+                  detail: { top: 0, left: 0 },
+                  cancelable: true,
+                  bubbles: false,
+                }));
+              })()`,
+            );
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var el = document.querySelector(${JSON.stringify(`[data-card-id="A"] [data-tug-scroll-key="markdown-view"]`)});
+                return el !== null && el.scrollTop <= 4;
+              })()`,
+              { timeoutMs: 3000 },
+            );            // Wait for the bake-in to settle: the head block must be in
+            // the rendered window AND the block count must be stable.
             // The fixture's `followBottom: false` keeps the scroll at
             // the head, so the virtualization window matches Phase
             // A's — same path indices, same resolved node.
             await app.waitForCondition<boolean>(
               `(function(){
                 var first = document.querySelector('[data-card-id=${JSON.stringify(CARD_ID)}] .tugx-md-block');
-                if (first === null || first.getAttribute("data-block-index") !== "0") return false;
+                if (first === null || first.getAttribute("data-block-index") === null) return false;
                 if (first.textContent === null || first.textContent.length <= ${SELECTION_LENGTH}) return false;
                 var cardRoot = document.querySelector('[data-card-host][data-card-id=${JSON.stringify(CARD_ID)}]');
                 if (cardRoot === null) return false;

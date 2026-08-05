@@ -22,6 +22,13 @@
  * Surface: `gallery-prompt-entry` (composes the real `TugPromptEntry`), so no
  * live Claude session is needed. Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * Foreground: ⌘A is an Edit-menu key equivalent, so AppKit resolves it
+ * against the main menu before the web view sees a keydown. A background
+ * instance has no key window for that resolution to land in, and the
+ * select-all that clears the editor between cases never happens.
+ *
+ * @foreground
+ *
  * @covers tugdeck/src/lib/markdown-text-styling.ts
  * @covers tugdeck/src/lib/markdown-text-style-grammar.ts
  * @covers tugdeck/src/lib/language-registry.ts
@@ -177,6 +184,7 @@ describe.skipIf(!SHOULD_RUN)("at0269: markdown text style constructs", () => {
           testName: "at0269-markdown-text-style-constructs",
           env: { TUGBANK_PATH: tugbankPath },
           persistInTestMode: true,
+          foreground: true,
         });
 
         try {

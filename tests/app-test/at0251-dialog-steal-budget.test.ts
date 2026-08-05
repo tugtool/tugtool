@@ -61,9 +61,6 @@ describe.skipIf(!SHOULD_RUN)("at0251 — trapped-surface steal budget", () => {
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
 
           // Boot budget: a card activation performs no raw focus write —
           // the default-focus claim routes through the engine.

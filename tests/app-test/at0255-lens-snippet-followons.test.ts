@@ -259,7 +259,24 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           // is near the top, on-screen; the tall `.cm-content`'s center would be
           // below the visible frame).
           await app.waitForCondition<boolean>(editorSettled, { timeoutMs: 3_000 });
-          await app.nativeClickAtElement(`.snippet-editor .cm-content .cm-line`);
+          // Clicking the header above reveals the caret, which scrolls the list
+          // — so the FIRST `.cm-line` is no longer the one on screen. Click the
+          // first line that actually intersects the scroller’s visible box.
+          const visibleLine = await app.evalJS<number>(
+            `(() => {
+              const list = document.querySelector(".lens-snippets-list");
+              const box = list.getBoundingClientRect();
+              const lines = [...document.querySelectorAll(".snippet-editor .cm-content .cm-line")];
+              return lines.findIndex((el) => {
+                const b = el.getBoundingClientRect();
+                return b.top >= box.top + 4 && b.bottom <= box.bottom - 4;
+              }) + 1;
+            })()`,
+          );
+          expect(visibleLine).toBeGreaterThan(0);
+          await app.nativeClickAtElement(
+            `.snippet-editor .cm-content .cm-line:nth-of-type(${visibleLine})`,
+          );
           expect(
             await app.evalJS<boolean>(
               `document.querySelector('.snippet-editor .cm-content') !== null`,

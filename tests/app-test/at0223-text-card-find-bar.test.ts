@@ -44,7 +44,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launchTugApp, type App } from "./_harness";
-import { ROUTE_BUTTON } from "./_harness/selectors";
+import { ROUTE_CHOICE } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -194,7 +194,7 @@ describe.skipIf(!SHOULD_RUN)("AT0223: text card bottom find bar", () => {
                 cluster: bar?.querySelector('[data-slot="find-cluster"]') !== null,
                 prev: bar?.querySelector('button[aria-label="Find previous"]') !== null,
                 next: bar?.querySelector('button[aria-label="Find next"]') !== null,
-                route: bar?.querySelector(${JSON.stringify(ROUTE_BUTTON)}) !== null,
+                route: bar?.querySelector(${JSON.stringify(ROUTE_CHOICE)}) !== null,
                 close: bar?.querySelector('button[aria-label="Close find"]') !== null,
               });
             })()`,

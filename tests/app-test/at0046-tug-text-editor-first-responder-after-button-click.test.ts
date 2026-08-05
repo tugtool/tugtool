@@ -39,6 +39,13 @@
  * Either fix alone resolves the user-reported symptom; both together
  * are defense in depth.
  *
+ * Foreground: ⌘A are Edit-menu key equivalents, so AppKit resolves
+ * them against the main menu before the web view sees a keydown. A
+ * background instance has no key window for that resolution to land in,
+ * and the chord dies there.
+ *
+ * @foreground
+ *
  * @covers tugdeck/src/components/tugways/responder-chain.ts
  * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
  * @covers tugdeck/src/components/tugways/tug-text-editor/
@@ -141,6 +148,7 @@ describe.skipIf(!SHOULD_RUN)(
             testName: "m46-first-responder-after-button",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
+            foreground: true,
           });
           try {
             await setupGallery(app);

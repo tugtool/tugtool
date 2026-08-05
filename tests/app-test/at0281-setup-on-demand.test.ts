@@ -96,7 +96,6 @@ describe.skipIf(!SHOULD_RUN)("AT0281: Set Up Tug… opens the wizard on demand",
         );
         await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 8000 });
 
         // ── 1. Idle: straight through, and dismissible ──
         expect(await app.evalJS<boolean>(absent(SETUP))).toBe(true);

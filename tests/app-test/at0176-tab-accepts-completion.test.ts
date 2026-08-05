@@ -21,6 +21,13 @@
  * popup would not close, the completion would not be accepted (text stays
  * `/rew`), and focus could leave the editor (clearing the marker).
  *
+ * Foreground: the `data-tug-tab-consume` marker under test is set from CM6’s
+ * `view.hasFocus`, which CM6 derives from real DOM focus. A background
+ * window’s document never has focus, so the marker never appears and Tab is
+ * never yielded to the editor.
+ *
+ * @foreground
+ *
  * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  * @covers tugdeck/src/components/tugways/tug-text-editor/
  * @covers tugdeck/src/components/tugways/focus-manager.ts
@@ -81,7 +88,10 @@ describe.skipIf(!SHOULD_RUN)("AT0176: Tab accepts an open completion (editor kee
   test(
     "typing /rew then pressing Tab accepts /rewind and keeps focus in the editor",
     async () => {
-      const app = await launchTugApp({ testName: "at0176-tab-accepts-completion" });
+      const app = await launchTugApp({
+        testName: "at0176-tab-accepts-completion",
+        foreground: true,
+      });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

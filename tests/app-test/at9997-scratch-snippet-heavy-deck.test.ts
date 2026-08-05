@@ -447,9 +447,6 @@ describe.skipIf(!SHOULD_RUN)("at9997 — snippet open under a heavy deck", () =>
             { timeoutMs: 8_000 },
           );
         }
-        await app.waitForCondition<boolean>(`document.hasFocus()`, {
-          timeoutMs: 10_000,
-        });
 
         // Fill each session card with transcript.
         for (const id of SESSIONS) {

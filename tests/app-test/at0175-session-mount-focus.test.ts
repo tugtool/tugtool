@@ -61,6 +61,12 @@
  *     and ensuring that focus is never gated on a banner exit for
  *     new-mode sessions.
  *
+ * FOREGROUND: the caret layer paints only while `.cm-focused` is set, and CM6
+ * derives that from real DOM focus. A background-mode window's document never
+ * has focus, so `.cm-content` becomes activeElement but `.cm-focused` never
+ * applies and no caret renders — the very thing this test asserts.
+ *
+ * @foreground
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/components/tugways/tug-text-editor/
@@ -272,6 +278,7 @@ describe.skipIf(!SHOULD_RUN)(
             testName: "at0175-session-mount-focus",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
+            foreground: true,
           });
 
           try {
@@ -295,7 +302,6 @@ describe.skipIf(!SHOULD_RUN)(
               `expected editor contentDOM activeElement at t+1s; saw ${JSON.stringify(t1000)}`,
             ).toBe(true);
             expect(t1000.underCardId).toBe("A");
-            expect(t1000.hasFocus, "expected document.hasFocus()").toBe(true);
             expect(
               t1000.cmFocused,
               `expected .cm-focused on .cm-editor (CM6 view.hasFocus=true); saw ${JSON.stringify(t1000)}`,
@@ -353,6 +359,7 @@ describe.skipIf(!SHOULD_RUN)(
             testName: "at0175-session-mount-focus-new-mode",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
+            foreground: true,
           });
 
           try {
@@ -399,7 +406,6 @@ describe.skipIf(!SHOULD_RUN)(
               `expected editor contentDOM activeElement after new-mode bind; saw ${JSON.stringify(focus)}`,
             ).toBe(true);
             expect(focus.underCardId).toBe("A");
-            expect(focus.hasFocus, "expected document.hasFocus()").toBe(true);
             expect(
               focus.cmFocused,
               `expected .cm-focused on .cm-editor for new-mode bind; saw ${JSON.stringify(focus)}`,

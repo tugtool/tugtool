@@ -194,6 +194,15 @@ describe.skipIf(!SHOULD_RUN)("at0283 — list row striping + text measure", () =
             // ODD row — the Snippets list carries selection with the cursor —
             // and the band under the selection fill goes away.
             const firstOdd = rows.find((r) => r.parity === "odd")!.index;
+            // ⌘L seeds the band that leads the section, and every control on
+            // the band is a stop of its own, so walk the keyboard onto the
+            // list before driving its cursor with arrows.
+            const listHasKbd = `document.querySelector(${JSON.stringify(`${SNIPPETS_LIST}[data-key-view-kbd]`)}) !== null`;
+            for (let i = 0; i < 8; i += 1) {
+              if (await app.evalJS<boolean>(listHasKbd)) break;
+              await app.nativeKey("Tab");
+            }
+            await app.waitForCondition<boolean>(listHasKbd, { timeoutMs: 5_000 });
             for (let i = 0; i < firstOdd; i += 1) {
               await app.nativeKey("ArrowDown");
             }

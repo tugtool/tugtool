@@ -130,7 +130,6 @@ describe.skipIf(!SHOULD_RUN)("AT0268: focus marks are a projection of engine sta
         );
 
         await app.nativeClickAtElement(TITLE);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(keyboardIsInCard("A"), { timeoutMs: 6000 });
 
         // (1) Tab lands the key view on the accordion, keyboard-reached, and
@@ -221,7 +220,6 @@ describe.skipIf(!SHOULD_RUN)("AT0268: focus marks are a projection of engine sta
           { timeoutMs: 15_000 },
         );
         await app.nativeClickAtElement(TITLE);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(keyboardIsInCard("A"), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(

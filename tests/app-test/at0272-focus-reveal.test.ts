@@ -187,7 +187,6 @@ async function openQuestion(app: App): Promise<void> {
     `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
     { timeoutMs: 6000 },
   );
-  await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
   await app.waitForCondition<boolean>(
     `(function(){var el=document.querySelector(${JSON.stringify(OPTIONS)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
     { timeoutMs: 6000 },

@@ -41,6 +41,13 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * Foreground: ⌘A / ⌘C / ⌘V are Edit-menu key equivalents, so AppKit resolves
+ * them against the main menu before the web view sees a keydown. A
+ * background instance has no key window for that resolution to land in,
+ * and the chord dies there.
+ *
+ * @foreground
+ *
  * @covers tugdeck/src/components/tugways/tug-text-editor/
  * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
  * @covers tugdeck/src/lib/tug-native-clipboard.ts
@@ -238,6 +245,7 @@ describe.skipIf(!SHOULD_RUN)(
             testName: "m43-tug-text-editor-copy-diag",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
+            foreground: true,
           });
 
           try {

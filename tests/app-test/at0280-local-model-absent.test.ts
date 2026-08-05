@@ -31,6 +31,13 @@
  * replay-backed harness session is out of bounds; the submit-time precondition
  * is covered as pure logic in `shell-line-classifier.test.ts`.
  *
+ * Foreground: ⌘A is an Edit-menu key equivalent, so AppKit resolves it
+ * against the main menu before the web view sees a keydown. A background
+ * instance has no key window for that resolution to land in, and the
+ * select-all that clears the editor never happens.
+ *
+ * @foreground
+ *
  * @covers tugdeck/src/lib/local-model-store.ts
  * @covers tugdeck/src/lib/shell-line-classifier.ts
  * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
@@ -146,6 +153,7 @@ describe.skipIf(!SHOULD_RUN)(
         const app = await launchTugApp({
           testName: "at0280-local-model-absent",
           env: { TUGBANK_PATH: tugbankPath },
+          foreground: true,
         });
         try {
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

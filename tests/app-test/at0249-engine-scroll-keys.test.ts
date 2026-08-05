@@ -86,9 +86,6 @@ describe.skipIf(!SHOULD_RUN)("at0249 — engine scroll-key route", () => {
             })()`,
             { timeoutMs: 6_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
 
           // Precondition: DOM focus is NOT inside the scroll container — the
           // engine-routed park keeps `document.activeElement` on the sink
@@ -101,6 +98,21 @@ describe.skipIf(!SHOULD_RUN)("at0249 — engine scroll-key route", () => {
             })()`,
           );
           expect(focusInContainer).toBe(false);
+
+          // This card mounts in SmartScroll's follow-bottom mode, and
+          // ResizeObserver-driven bake-in re-slams scrollTop to the bottom as
+          // the 50KB of blocks land (the same behavior at0014 routes around).
+          // So the region starts pinned at max, where PageDown has nowhere to
+          // go. Home is itself one of the routed keys under test: press it
+          // first to disengage follow-bottom and establish a known top.
+          await app.nativeKey("Home");
+          await app.waitForCondition<boolean>(
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(SCROLL_SELECTOR)});
+              return el !== null && el.scrollTop <= 8;
+            })()`,
+            { timeoutMs: 3_000 },
+          );
 
           // PageDown pages the region forward.
           const t0 = await scrollTop(app);

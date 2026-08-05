@@ -26,6 +26,13 @@
  * coverage, the chip would never gain `data-selected` and its `src`
  * would never change under selection.
  *
+ * Foreground: ⌘A are Edit-menu key equivalents, so AppKit resolves
+ * them against the main menu before the web view sees a keydown. A
+ * background instance has no key window for that resolution to land in,
+ * and the chord dies there.
+ *
+ * @foreground
+ *
  * @covers tugdeck/src/lib/tug-atom-chip.tsx
  * @covers tugdeck/src/lib/tug-atom-img.ts
  * @covers tugdeck/src/lib/atom-mention-marker.ts
@@ -101,7 +108,10 @@ describe.skipIf(!SHOULD_RUN)("AT0195: a selection-covered atom chip paints with 
   test(
     "Cmd-A marks the chip selected and re-bakes its src; collapsing the selection reverts it",
     async () => {
-      const app = await launchTugApp({ testName: "at0195-atom-selected-appearance" });
+      const app = await launchTugApp({
+        testName: "at0195-atom-selected-appearance",
+        foreground: true,
+      });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

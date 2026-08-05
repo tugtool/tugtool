@@ -110,7 +110,6 @@ describe.skipIf(!SHOULD_RUN)("AT0150: a sheet declares its spatial order", () =>
           `document.querySelector(${JSON.stringify(TRIGGER)}) !== null`,
           { timeoutMs: 4000 },
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
 
         // Open the sheet. The trigger sits in a section below the fold, so a
         // coordinate-based native click can miss it — scroll it into view and use a

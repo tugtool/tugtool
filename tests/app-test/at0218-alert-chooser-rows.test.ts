@@ -126,7 +126,6 @@ describe.skipIf(!SHOULD_RUN)("AT0218: TugAlert choose() is a selectable list + O
         await app.evalJS(
           `document.querySelector(${JSON.stringify(TRIGGER)}).click()`,
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(CHOICES)}) !== null`,
           { timeoutMs: 6000 },

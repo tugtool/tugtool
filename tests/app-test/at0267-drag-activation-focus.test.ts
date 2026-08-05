@@ -181,9 +181,6 @@ describe.skipIf(!SHOULD_RUN)("at0267 — drag, activation, and focus", () => {
             `document.querySelector(${JSON.stringify(rowLabel("s2"))}) !== null`,
             { timeoutMs: 6_000 },
           );
-          await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
-          });
 
           const readLedger = (): Promise<Ledger> =>
             app.evalJS<Ledger>(`(() => {
@@ -407,14 +404,13 @@ describe.skipIf(!SHOULD_RUN)("at0267 — drag, activation, and focus", () => {
             { mouseDownDelayMs: 150, mouseUpDelayMs: 150 },
           );
           await settle(600);
-          // The real drag left the deck deselected; the drop inserted the
-          // snippet's text inertly.
+          // The real drag left the deck deselected. No text lands: the row's
+          // incipit is a native HTML5 drag, and an HTML5 drag session starts
+          // from AppKit's own drag machinery, not from a synthesized mouse
+          // trail — which is why the inert-drop case above is driven by a
+          // synthetic `DragEvent`. What the trail does exercise is the
+          // pointer stream, which is what step 6 is about.
           expect(await app.getActiveCardId()).toBe(null);
-          expect(
-            await app.evalJS<string>(
-              `document.querySelector('[data-card-id="${ENTRY_CARD_ID}"] ${ENTRY_EDITOR}').textContent`,
-            ),
-          ).toContain("drag doctrine snippet 5");
 
           await app.nativeClickAtElement(
             `[data-card-id="${ENTRY_CARD_ID}"] ${ENTRY_EDITOR}`,

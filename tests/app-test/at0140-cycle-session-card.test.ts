@@ -69,7 +69,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
-import { ROUTE_BUTTON } from "./_harness/selectors";
+import { ROUTE_CHOICE } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -77,7 +77,7 @@ const TEST_TIMEOUT_MS = 120_000;
 const CARD = '[data-card-id="A"]';
 const ROOT = `${CARD} [data-testid="session-card"]`;
 const SUBMIT = `${CARD} .tug-prompt-entry-submit-button`;
-const ROUTE = `${CARD} ${ROUTE_BUTTON}`;
+const ROUTE = `${CARD} ${ROUTE_CHOICE}`;
 // The three Z4B indicator chips now in the cycle ([P10] revised — no control
 // left behind): the route indicator (Claude Code / Shell), the Session badge,
 // and the Project button. Each is a leaf stop carrying `data-key-view-kbd`
@@ -231,7 +231,6 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         // (1) Put the caret in the editor (base mode). The card is not cycling
         // and the submit holds no key view.
         await app.nativeClickAtElement(EDITOR);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
         expect(await app.evalJS<string | null>(CYCLING)).toBe("false");
         expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
@@ -438,7 +437,6 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
 
         // Caret in the editor (base mode).
         await app.nativeClickAtElement(EDITOR);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         // ---- Phase 1: a disabled stop is skipped --------------------------------
@@ -540,7 +538,6 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
 
         // Caret in the editor, then ⌥⇥ to start cycling (route seeded).
         await app.nativeClickAtElement(EDITOR);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
@@ -611,7 +608,6 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
 
         // Caret in the editor, then ⌥⇥ to start cycling (route seeded).
         await app.nativeClickAtElement(EDITOR);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });

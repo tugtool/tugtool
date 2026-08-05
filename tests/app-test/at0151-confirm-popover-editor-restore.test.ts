@@ -19,6 +19,13 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * Foreground: ⌘. is a menu key equivalent, so AppKit resolves it against
+ * the main menu before the web view sees a keydown. A background instance
+ * has no key window for that resolution to land in, and the cancel chord
+ * dies there.
+ *
+ * @foreground
+ *
  * @covers tugdeck/src/components/tugways/tug-confirm-popover.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/lib/card-close-guard.ts
@@ -74,6 +81,7 @@ describe.skipIf(!SHOULD_RUN)(
       async () => {
         const app = await launchTugApp({
           testName: "at0151-confirm-popover-editor-restore",
+          foreground: true,
         });
         try {
           await app.enableDeckTrace(true);

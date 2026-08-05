@@ -105,7 +105,6 @@ describe.skipIf(!SHOULD_RUN)(
           await new Promise((r) => setTimeout(r, 200));
           await app.nativeKey("Return", ["cmd"]);
           await app.waitForCondition<boolean>(SHEET_OPEN, { timeoutMs: 6000 });
-          await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
 
           // Move the keyboard key view from the seeded Done button onto the
           // add-rule accordion (Tab walks tab bar → accordion → filter → list →

@@ -84,7 +84,6 @@ describe.skipIf(!SHOULD_RUN)("AT0164: TugAlert carries the focus language", () =
 
         // Open the basic alert (confirmRole "action" → Action is the default).
         await app.nativeClickAtElement(TRIGGER);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(ACTION)}) !== null`,
           { timeoutMs: 6000 },

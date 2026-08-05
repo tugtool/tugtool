@@ -177,9 +177,6 @@ describe.skipIf(!SHOULD_RUN)("at0283 — the page is not a scroller", () => {
           })()`,
           { timeoutMs: 5_000 },
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, {
-          timeoutMs: 6_000,
-        });
 
         // Law 1 (structural): the page has NO range, even though a pane hangs
         // past the window bottom. `overflow: clip` on the deck root is what

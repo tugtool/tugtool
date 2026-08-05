@@ -44,6 +44,13 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * Foreground: the selection this publishes lives in a CM6 editor, and CM6
+ * tracks its selection from `view.hasFocus` — real DOM focus. A background
+ * window’s document never has focus, so there is no live selection for
+ * deactivation to hand to the inactive-selection highlight.
+ *
+ * @foreground
+ *
  * @covers tugdeck/src/components/tugways/selection-guard.ts
  * @covers tugdeck/src/card-state-orchestrator.ts
  * @covers tugdeck/src/focus-transfer.ts
@@ -577,7 +584,10 @@ describe.skipIf(!SHOULD_RUN)(
     test(
       "gallery-prompt-entry — seeded selection survives deactivation at correct DOM position",
       async () => {
-        const app = await launchTugApp({ testName: "at0027-gallery-prompt-entry" });
+        const app = await launchTugApp({
+          testName: "at0027-gallery-prompt-entry",
+          foreground: true,
+        });
         try {
           await runDeactivationScenario(app, "gallery-prompt-entry");
         } finally {
@@ -592,6 +602,7 @@ describe.skipIf(!SHOULD_RUN)(
       async () => {
         const app = await launchTugApp({
           testName: "at0027-live-gallery-prompt-entry",
+          foreground: true,
         });
         try {
           await runLiveSelectionScenario(app, "gallery-prompt-entry");
@@ -605,7 +616,10 @@ describe.skipIf(!SHOULD_RUN)(
     test(
       "gallery-prompt-entry — TYPE-and-SCROLL then deactivate preserves scroll + selection",
       async () => {
-        const app = await launchTugApp({ testName: "at0027-type-gallery-prompt-entry" });
+        const app = await launchTugApp({
+          testName: "at0027-type-gallery-prompt-entry",
+          foreground: true,
+        });
         try {
           await app.enableDeckTrace(true);
           // Empty seed — user types from scratch.

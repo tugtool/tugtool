@@ -61,9 +61,6 @@ describe.skipIf(!SHOULD_RUN)("at0270 — addCard default focus", () => {
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, {
-          timeoutMs: 6000,
-        });
 
         // The real add gesture. `gallery-chain-actions` authors a focus group,
         // so its registry has stops to resolve — the case registry-first

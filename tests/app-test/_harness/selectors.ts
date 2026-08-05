@@ -18,8 +18,13 @@
  * `contains(document.activeElement)`).
  */
 
-/** Mirrors `aria-label` in `tugdeck/src/components/tugways/tug-prompt-entry.tsx`. */
-export const ROUTE_BUTTON = 'button[aria-label="Route this input"]';
+/**
+ * The Z4A route control: a `TugChoiceGroup` of Prompt | Changes. Mirrors the
+ * `aria-label` in `tugdeck/src/components/tugways/tug-prompt-entry.tsx` and the
+ * root `data-slot` in `tug-choice-group.tsx`. It was a single
+ * `button[aria-label="Route this input"]` until the bang layer was retired.
+ */
+export const ROUTE_CHOICE = '[data-slot="tug-choice-group"][aria-label="Route"]';
 
 /** Mirrors the dialog island class names in `tugdeck/src/components/chrome/`. */
 export const QUESTION_DIALOG = ".session-question-dialog";
