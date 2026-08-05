@@ -763,7 +763,7 @@ export function ChangesFileRow({
                   icon={<CornerUpRight size={12} />}
                   size="2xs"
                   emphasis="outlined"
-                  role="danger"
+                  role="accent"
                   disabled={disclaimPending}
                   title={
                     disclaimPending
@@ -1066,7 +1066,7 @@ export function TugChangesList({
                     icon={<CornerUpRight size={12} />}
                     size="2xs"
                     emphasis="outlined"
-                    role="danger"
+                    role="accent"
                     disabled={disclaimPending}
                     title={
                       disclaimPending
