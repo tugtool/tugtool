@@ -160,7 +160,10 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         expect(onContainer?.keyboardReached).toBe(true);
         expect(parseFloat(onContainer?.ringOutline ?? "0")).toBeGreaterThan(0);
         expect(onContainer?.ringHeight ?? 0).toBeGreaterThan(0);
-        expect(parseFloat(onContainer?.outline ?? "0")).toBe(0);
+        // The scroller wears the BOUNDARY COVER — the stroke that claims the
+        // enclosing border, painted outside the scrollport where no row can
+        // reach. Thinner than the overlay's body; present only under focus.
+        expect(parseFloat(onContainer?.outline ?? "0")).toBeGreaterThan(0);
         expect(onContainer?.backgroundImage ?? "none").toBe("none");
         // "The list is one stop" is an ENGINE fact, not a tabindex fact. Once
         // the focus engine drives the card the container renders no tabindex

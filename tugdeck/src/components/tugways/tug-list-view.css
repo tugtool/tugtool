@@ -58,6 +58,20 @@
   initial-value: 0px;
 }
 
+/* Same trap-proofing for the frame width and radius: both participate in the
+   focused-ring arithmetic below (`outline-offset: calc(-1 * var(...))`,
+   `max(var(...) - var(...), 0px)`). */
+@property --tugx-list-view-frame-width {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+@property --tugx-list-view-radius {
+  syntax: "<length-percentage>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 body {
   --tugx-list-view-padding-block:      var(--tug-space-md);
   --tugx-list-view-padding-inline:     var(--tug-space-md);
@@ -224,12 +238,38 @@ body {
   outline: none;
 }
 .tug-list-view:is([data-key-view-kbd], [data-key-within]) {
-  /* The scroller itself draws NOTHING when it holds the keyboard — the ring
-     overlay below is the mark. Stated at (0,2,0), not left to the (0,1,0)
-     `outline: none` above: the global `[data-key-view-kbd]` /
-     `[data-key-within]` outlines in `focus-ring.css` are also (0,1,0), so
-     which one won would come down to bundle order. */
-  outline: none;
+  /* THE BOUNDARY COVER — the ring claims the enclosing border. The overlay
+     below owns the ring's body, but it lives inside the scrollport and the
+     clip ends there, so it can never reach the boundary line the eye reads as
+     the list's edge: the list's own self-frame border (the picker hosts), or a
+     host rule sitting flush against the list (a Lens band's block rule). Those
+     pixels are OUTSIDE the padding box, which cuts both ways — the overlay
+     cannot paint them, and no row or sticky header can either, so a plain
+     outline on the scroller covers them occlusion-free. `max(frame, 1px)`
+     spans the frame when there is one and still covers a 1px host rule when
+     there is not; the negative offset pulls it onto the frame instead of
+     outside it. At (0,2,0) this also outranks the global `[data-key-view-kbd]`
+     / `[data-key-within]` outlines in `focus-ring.css`, which are (0,1,0).
+
+     The z-index lift is for the BOTTOM stroke: a host rule below the list
+     usually belongs to the NEXT sibling section, which paints later and would
+     cover an outline at its edge. Lifting the focused scroller into a
+     stacking context paints its outline after sibling chrome. Focus-time
+     only, so at-rest stacking is untouched. */
+  /* The two strokes split ONE width — `--tugx-focus-container-ring-width` is
+     the ring's TOTAL weight, same as on the other five containers. The cover
+     takes the boundary's share (the frame, or 1px for a bare host rule); the
+     overlay's body takes the remainder, clamped so a thick frame never asks
+     for a negative body. */
+  --tugx-list-view-ring-cover-width: max(var(--tugx-list-view-frame-width), 1px);
+  --tugx-list-view-ring-body-width: max(
+    var(--tugx-focus-container-ring-width) - var(--tugx-list-view-ring-cover-width),
+    0px
+  );
+  outline: var(--tugx-list-view-ring-cover-width) solid
+    var(--tugx-focus-container-ring);
+  outline-offset: calc(-1 * var(--tugx-list-view-frame-width));
+  z-index: 1;
 }
 
 .tug-list-view-ring {
@@ -256,10 +296,17 @@ body {
      unmeasured list draws nothing rather than a wrong box. */
   height: var(--tugx-list-view-scrollport-height, 0px);
   pointer-events: none;
-  border-radius: var(--tugx-list-view-radius);
-  outline: var(--tugx-focus-container-ring-width) solid
+  /* The overlay spans the PADDING box, one frame-width inside the border box
+     the radius is authored against — so it wears the frame's INNER radius, and
+     the body stroke's curve runs concentric with the cover's instead of
+     crossing it at each corner. */
+  border-radius: max(
+    var(--tugx-list-view-radius) - var(--tugx-list-view-frame-width),
+    0px
+  );
+  outline: var(--tugx-list-view-ring-body-width) solid
     var(--tugx-focus-container-ring);
-  outline-offset: calc(-1 * var(--tugx-focus-container-ring-width));
+  outline-offset: calc(-1 * var(--tugx-list-view-ring-body-width));
 }
 
 /* ---- A carry suppresses the cursor bar ----
@@ -291,7 +338,9 @@ body {
 }
 [data-tug-carrying="true"]
   .tug-list-view:is([data-key-view-kbd], [data-key-within])
-  > .tug-list-view-ring::before {
+  > .tug-list-view-ring::before,
+[data-tug-carrying="true"]
+  .tug-list-view:is([data-key-view-kbd], [data-key-within]) {
   outline: none;
 }
 
