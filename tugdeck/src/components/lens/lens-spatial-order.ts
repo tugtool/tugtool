@@ -10,17 +10,18 @@
  * movement is authored, and a rail whose bands carry a row of controls over a
  * column of rows is exactly the shape the net cannot express.
  *
+ * ## The plane
+ *
  * The Lens is a stack of ROWS, top to bottom, and each section contributes:
  *
  *   1. its **band row** — the band itself, then its filter field, its own
  *      controls, and its fold cue, in the order they are read left to right;
  *   2. its **body rows** — one per stop the body puts in the walk (usually the
- *      one list; the Layouts section stacks two radio groups, so it declares
- *      two). A collapsed section, or one holding nothing navigable, contributes
- *      none.
+ *      one list; the Layouts section stacks two radio groups, so it has two).
+ *      A collapsed section, or one holding nothing navigable, contributes none.
  *
- * From that, `rowGridOrder` gives the whole plane: horizontal arrows run along
- * a band (a closed ring, so they never dead-end), vertical arrows move between
+ * `rowGridOrder` turns that into the whole plane: horizontal arrows run along a
+ * band (a closed ring, so they never dead-end), vertical arrows move between
  * rows and enter each at its leading member. So Down on a band lands on the
  * first row of its own list; Down off the last row of that list crosses into the
  * NEXT section's band; Up retraces both. The section's rows are the section's
@@ -33,6 +34,38 @@
  * arrows and so takes the seam, while a horizontal radio group claims them for
  * its cursor and never sees it. One declaration, correct for both.
  *
+ * ## Where the rows come from — and why nothing declares them
+ *
+ * The rows are **derived from what is actually registered**: the caller reads
+ * each section's live focus orders off the engine (`focusOrdersInGroup`) and
+ * hands them here, and the split is the sign of the order —
+ *
+ *     order  <  0  →  the band row, in ascending order (left to right)
+ *     order  >= 0  →  one body row each, in ascending order (top to bottom)
+ *
+ * — which is not a new rule but the one `lens-section-registry.ts` already
+ * encodes in its constants: the band's stops are the negative orders precisely
+ * so they sort ahead of the body's `0`.
+ *
+ * This is deliberately not a table an author maintains. A hand-kept list of
+ * which controls are on which row is a drift seam with a **silent** failure: a
+ * stop left out of it is simply off the plane, the liveliness net catches its
+ * arrows, and the section quietly reverts to linear movement with nothing to
+ * see. Deriving from the registry closes that by construction — a control
+ * authored into a section's focus group is on the plane the moment it
+ * registers, in the position its own order puts it.
+ *
+ * The one thing an author must still get right is the thing they must get right
+ * anyway: **a distinct order per stop within a section's group.** Two stops
+ * sharing one order share one focus key ([Q12]), which the engine resolves to
+ * one of them — so the other is unreachable by any addressed placement, plane or
+ * no plane.
+ *
+ * The known edge: a body whose stops sit SIDE BY SIDE would be read as a column
+ * here and get vertical arrows where it wants horizontal ones. No section does
+ * that today (a body is a list, or a stack of controls); the section that wants
+ * to will have to say so, and this is where it would say it.
+ *
  * Pure data-in / data-out, so it is unit-testable with no DOM.
  *
  * @module components/lens/lens-spatial-order
@@ -41,28 +74,16 @@
 import { rowGridOrder } from "@/components/tugways/spatial-order";
 import type { SpatialOrder, SpatialSeam } from "@/components/tugways/spatial-order";
 
-import {
-  LENS_BAND_ACTION_FOCUS_ORDER,
-  LENS_BAND_FILTER_FOCUS_ORDER,
-  LENS_BAND_FOCUS_ORDER,
-  LENS_BAND_FOLD_FOCUS_ORDER,
-} from "./lens-section-registry";
-
-/** What one section contributes to the plane, as the Lens renders it *now*. */
+/** One section's live membership, as the Lens renders it *now*. */
 export interface LensSectionSpatialShape {
   /** The section's focus group — `sectionFocusGroup(kind)`. */
   group: string;
-  /** The band is carrying a live filter field. */
-  filter: boolean;
-  /** The band is carrying the section's own controls. */
-  actions: boolean;
   /**
-   * The focus orders this section's body puts in the walk, top to bottom.
-   * Empty while the section is collapsed or holds nothing navigable — which is
-   * what makes Down on a folded band land on the next section rather than on a
-   * stop that is not there.
+   * Every focus order registered in that group, ascending — straight from
+   * `FocusContext.focusOrdersInGroup`. Negative orders are the band's row;
+   * non-negative orders are the body's rows, one each.
    */
-  body: readonly number[];
+  orders: readonly number[];
 }
 
 /** A focusable's stable spatial node key ([Q12]) — the same `group:order` the
@@ -73,8 +94,12 @@ function nodeKey(group: string, order: number): string {
 
 /**
  * The Lens's declared arrow plane, built from the sections as currently
- * rendered. Recompute whenever a section folds, gains or loses content, or the
- * stack is reordered — the plane describes what is on screen, not what could be.
+ * rendered. Recompute whenever the stack's membership changes — a fold, a
+ * section gaining or losing content, a reorder — because the plane describes
+ * what is on screen, not what could be.
+ *
+ * A section with no registered stops at all contributes nothing, so a band that
+ * has not mounted yet never becomes a row the arrows can land on.
  */
 export function lensSpatialOrder(
   sections: readonly LensSectionSpatialShape[],
@@ -83,21 +108,25 @@ export function lensSpatialOrder(
   const bodySeams: SpatialSeam[] = [];
 
   for (const section of sections) {
-    const band = nodeKey(section.group, LENS_BAND_FOCUS_ORDER);
-    const bandRow = [band];
-    if (section.filter) {
-      bandRow.push(nodeKey(section.group, LENS_BAND_FILTER_FOCUS_ORDER));
-    }
-    if (section.actions) {
-      bandRow.push(nodeKey(section.group, LENS_BAND_ACTION_FOCUS_ORDER));
-    }
-    bandRow.push(nodeKey(section.group, LENS_BAND_FOLD_FOCUS_ORDER));
-    rows.push(bandRow);
+    const ascending = [...section.orders].sort((a, b) => a - b);
+    const band = ascending.filter((order) => order < 0);
+    const body = ascending.filter((order) => order >= 0);
 
-    for (const order of section.body) {
+    if (band.length > 0) {
+      rows.push(band.map((order) => nodeKey(section.group, order)));
+    }
+    // The band's leading stop is the band itself, and it is what a body's Left
+    // returns to. A section with no band row (nothing negative registered) has
+    // nowhere to send it, so the seam is simply not declared and Left falls to
+    // the net — never to a node that is not there.
+    const bandHead = band.length > 0 ? nodeKey(section.group, band[0]) : null;
+
+    for (const order of body) {
       const node = nodeKey(section.group, order);
       rows.push([node]);
-      bodySeams.push({ from: node, direction: "left", to: band });
+      if (bandHead !== null) {
+        bodySeams.push({ from: node, direction: "left", to: bandHead });
+      }
     }
   }
 

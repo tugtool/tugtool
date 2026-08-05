@@ -34,7 +34,6 @@
 import React, {
   useId,
   useLayoutEffect,
-  useMemo,
   useRef,
   useSyncExternalStore,
 } from "react";
@@ -47,9 +46,7 @@ import {
   useSeedKeyView,
 } from "@/components/tugways/use-focusable";
 import { BASE_FOCUS_MODE } from "@/components/tugways/focus-manager";
-import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
 import { lensSpatialOrder } from "./lens-spatial-order";
-import type { LensSectionSpatialShape } from "./lens-spatial-order";
 import {
   getRegisteredLensSections,
   resolveSectionRenderOrder,
@@ -113,47 +110,57 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
 
   // Keep the FocusManager group-walk order in lock-step with the rendered
   // order ([P08]/[L22]) — group order is structure owned by the
-  // FocusManager, driven off the store, never a parallel useState.
+  // FocusManager, driven off the store, never a parallel useState — and build
+  // the arrow plane ([P22]/[P23]) from the same pass.
+  //
+  // The Lens is the first surface to declare a spatial order on the BASE mode
+  // rather than inside a trap, and it is the right call for the same reason the
+  // dialogs declare theirs: the liveliness net cannot tell Down from Right, and
+  // a rail whose bands carry a row of controls over a column of rows needs it
+  // to. An order registers on the declaring card's own `FocusContext`, so it
+  // governs the Lens and nothing else.
+  //
+  // The plane is DERIVED, not declared: it reads each section's live focus
+  // orders back off the engine rather than from a table someone maintains, so a
+  // control authored into a section's group joins the plane the moment it
+  // registers (`lens-spatial-order.ts` holds the row rules). That is why this
+  // runs in a layout effect and not in render — the sections' own registrations
+  // are layout effects, and a child's runs before its parent's ([L03]), so by
+  // here every band, field, control, and list of this render has registered.
+  //
+  // `shapeKey` is what re-runs it: the rendered order, each section's collapse,
+  // and whether each section holds navigable content — the three things that
+  // change which stops exist. All three already re-render this component (the
+  // store subscriptions above), so the effect fires on the same commit their
+  // registrations land in.
+  const shapeKey = order
+    .map((kind) => {
+      const group = sectionFocusGroup(kind);
+      return `${kind}${collapsed.has(kind) ? "-" : "+"}${
+        sectionHasContent(group) ? "1" : "0"
+      }`;
+    })
+    .join(" ");
   useLayoutEffect(() => {
     if (focusManager === null) return;
-    focusManager
-      .contextFor(cardId)
-      .setGroupOrder(order.map(sectionFocusGroup));
-    // orderKey captures the rendered order; `order`/`focusManager`/`cardId`
-    // are derived from it plus stable identities.
+    const ctx = focusManager.contextFor(cardId);
+    const groups = order.map(sectionFocusGroup);
+    ctx.setGroupOrder(groups);
+    ctx.registerSpatialOrder(
+      BASE_FOCUS_MODE,
+      lensSpatialOrder(
+        groups.map((group) => ({
+          group,
+          orders: ctx.focusOrdersInGroup(group),
+        })),
+      ),
+    );
+    return () => ctx.unregisterSpatialOrder(BASE_FOCUS_MODE);
+    // `orderKey` captures the rendered order and `shapeKey` the membership that
+    // follows from it; `order`/`focusManager`/`cardId` are derived from those
+    // plus stable identities.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderKey, focusManager, cardId]);
-
-  // The arrow plane ([P22]/[P23]). The Lens is the first surface to declare one
-  // on the BASE mode rather than inside a trap, and it is the right call for the
-  // same reason the dialogs declare theirs: the linear net cannot tell Down from
-  // Right, and a rail whose bands carry a row of controls over a column of rows
-  // needs it to. Declared on this card's own context, so it governs the Lens and
-  // nothing else. Rebuilt whenever the stack's shape changes — a fold, a section
-  // gaining or losing content, a reorder — because the plane describes what is
-  // on screen (`lens-spatial-order.ts` holds the shape rules).
-  const shapes: LensSectionSpatialShape[] = order.map((kind) => {
-    const def = sections.get(kind);
-    const group = sectionFocusGroup(kind);
-    const isCollapsed = collapsed.has(kind);
-    return {
-      group,
-      filter: def?.filterable === true && !isCollapsed,
-      actions: def?.headerActions !== undefined && !isCollapsed,
-      body:
-        isCollapsed || !sectionHasContent(group)
-          ? []
-          : (def?.bodyFocusOrders ?? [0]),
-    };
-  });
-  const shapeKey = shapes
-    .map((s) => `${s.group}|${s.filter ? 1 : 0}${s.actions ? 1 : 0}|${s.body.join(",")}`)
-    .join(";");
-  // `shapeKey` is the whole of what the order is derived from — the shapes
-  // themselves are rebuilt every render and would thrash the registration.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const spatial = useMemo(() => lensSpatialOrder(shapes), [shapeKey]);
-  useSpatialOrder(BASE_FOCUS_MODE, spatial);
+  }, [orderKey, shapeKey, focusManager, cardId]);
 
   // Drag-reorder by carrying the band itself: FLIP visuals (ghost + close-up +
   // drop caret + settle), DOM/CSS only, committing the store on drop ([P08]).

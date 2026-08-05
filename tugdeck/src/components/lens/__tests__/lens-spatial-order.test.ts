@@ -4,6 +4,11 @@
  * The builder is pure and so is the resolver, so the two compose into a
  * readable statement of what each arrow does from each stop — which is the
  * whole claim the feature makes, and the one a DOM test can only sample.
+ *
+ * The inputs here are the shape the ENGINE hands the builder: a section's group
+ * and the focus orders registered in it. That is the drift gate as much as the
+ * behavior gate — the last block below is the one that says a control nobody
+ * told the plane about is on it anyway, purely by having registered.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -27,12 +32,12 @@ function key(group: string, order: number): string {
   return `${group}:${order}`;
 }
 
-/** Two sections, both expanded and filterable, the second also contributing a
- *  header control — the everyday Lens. */
+/** Two sections, both expanded and filterable, the second also carrying a
+ *  header control — the everyday Lens, as its registrations describe it. */
 function twoSections(): LensSectionSpatialShape[] {
   return [
-    { group: CARDS, filter: true, actions: false, body: [0] },
-    { group: SNIPPETS, filter: true, actions: true, body: [0] },
+    { group: CARDS, orders: [BAND, FILTER, FOLD, 0] },
+    { group: SNIPPETS, orders: [BAND, FILTER, ACTION, FOLD, 0] },
   ];
 }
 
@@ -119,7 +124,7 @@ describe("lensSpatialOrder — horizontal arrows run along a band", () => {
     expect(arrow(shapes, key(SNIPPETS, FOLD), "right")).toBe(key(SNIPPETS, BAND));
   });
 
-  test("a band declares only the controls it is carrying", () => {
+  test("a band holds only the controls that registered on it", () => {
     // Cards has no header controls, so Right off its filter is the fold cue.
     expect(arrow(twoSections(), key(CARDS, FILTER), "right")).toBe(key(CARDS, FOLD));
   });
@@ -138,10 +143,12 @@ describe("lensSpatialOrder — horizontal arrows run along a band", () => {
 });
 
 describe("lensSpatialOrder — the plane describes what is on screen", () => {
-  test("a collapsed section contributes only its band, so Down skips its body", () => {
+  test("a collapsed section registers only its band, so Down skips its body", () => {
+    // Collapsed: no body, no filter field — the band and its fold cue are all
+    // that is left, which is what the engine reports.
     const shapes: LensSectionSpatialShape[] = [
-      { group: CARDS, filter: false, actions: false, body: [] },
-      { group: SNIPPETS, filter: true, actions: true, body: [0] },
+      { group: CARDS, orders: [BAND, FOLD] },
+      { group: SNIPPETS, orders: [BAND, FILTER, ACTION, FOLD, 0] },
     ];
     expect(arrow(shapes, key(CARDS, BAND), "down")).toBe(key(SNIPPETS, BAND));
     expect(arrow(shapes, key(CARDS, FOLD), "down")).toBe(key(SNIPPETS, BAND));
@@ -150,23 +157,89 @@ describe("lensSpatialOrder — the plane describes what is on screen", () => {
     expect(arrow(shapes, key(SNIPPETS, BAND), "up")).toBe(key(CARDS, BAND));
   });
 
-  test("a body that stacks two controls is two rows, and the second is reachable", () => {
+  test("one section alone still names both directions on its band", () => {
     const shapes: LensSectionSpatialShape[] = [
-      { group: CARDS, filter: true, actions: false, body: [0] },
-      { group: SNIPPETS, filter: false, actions: false, body: [0, 1] },
+      { group: CARDS, orders: [BAND, FILTER, FOLD, 0] },
+    ];
+    expect(arrow(shapes, key(CARDS, BAND), "down")).toBe(key(CARDS, 0));
+    expect(arrow(shapes, key(CARDS, 0), "down")).toBe(key(CARDS, BAND));
+  });
+
+  test("a section that has registered nothing contributes no row", () => {
+    // One folded section and one that has not mounted: a single row between
+    // them, so there is no vertical move to declare and both arrows resolve to
+    // nothing — which hands them to the liveliness net rather than to a node
+    // that is not there. The plane never invents a destination.
+    const shapes: LensSectionSpatialShape[] = [
+      { group: CARDS, orders: [BAND, FOLD] },
+      { group: SNIPPETS, orders: [] },
+    ];
+    expect(arrow(shapes, key(CARDS, BAND), "down")).toBe("none");
+    expect(arrow(shapes, key(SNIPPETS, BAND), "down")).toBe("none");
+    // The one row it does have is still a row: Right runs it.
+    expect(arrow(shapes, key(CARDS, BAND), "right")).toBe(key(CARDS, FOLD));
+  });
+});
+
+describe("lensSpatialOrder — new controls join the plane by registering", () => {
+  // The drift gate. Nothing in the Lens declares which controls are on which
+  // row; the rows are derived from the orders the engine reports, split at
+  // zero — negative is the band, non-negative is the body. So the question
+  // these answer is: does a control nobody told the plane about work anyway?
+
+  test("a second band control lands in the band's row, in its own place", () => {
+    const shapes: LensSectionSpatialShape[] = [
+      // A new control at -0.9, authored between the filter and the existing one.
+      { group: CARDS, orders: [BAND, FILTER, -0.9, ACTION, FOLD, 0] },
+    ];
+    expect(arrow(shapes, key(CARDS, FILTER), "right")).toBe(key(CARDS, -0.9));
+    expect(arrow(shapes, key(CARDS, -0.9), "right")).toBe(key(CARDS, ACTION));
+    expect(arrow(shapes, key(CARDS, -0.9), "left")).toBe(key(CARDS, FILTER));
+    // …and it drops into the body like every other stop on the band.
+    expect(arrow(shapes, key(CARDS, -0.9), "down")).toBe(key(CARDS, 0));
+  });
+
+  test("a second body control becomes a second row, reachable by Down", () => {
+    // The Layouts section's shape: two stacked radio groups.
+    const shapes: LensSectionSpatialShape[] = [
+      { group: CARDS, orders: [BAND, FILTER, FOLD, 0] },
+      { group: SNIPPETS, orders: [BAND, FOLD, 0, 1] },
     ];
     expect(arrow(shapes, key(SNIPPETS, BAND), "down")).toBe(key(SNIPPETS, 0));
     expect(arrow(shapes, key(SNIPPETS, 0), "down")).toBe(key(SNIPPETS, 1));
     expect(arrow(shapes, key(SNIPPETS, 1), "up")).toBe(key(SNIPPETS, 0));
     // Each body row's Left goes to the section's band, not to the row above it.
     expect(arrow(shapes, key(SNIPPETS, 1), "left")).toBe(key(SNIPPETS, BAND));
+    // And the last body row is what the next section's Up reaches — a new
+    // control at the bottom of a body does not get skipped on the way back.
+    expect(arrow(shapes, key(CARDS, BAND), "up")).toBe(key(SNIPPETS, 1));
   });
 
-  test("one section alone still names both directions on its band", () => {
+  test("a whole new section joins the column with no edit anywhere", () => {
     const shapes: LensSectionSpatialShape[] = [
-      { group: CARDS, filter: true, actions: false, body: [0] },
+      { group: CARDS, orders: [BAND, FILTER, FOLD, 0] },
+      { group: "lens-section-brand-new", orders: [BAND, FOLD, 0] },
+      { group: SNIPPETS, orders: [BAND, FOLD, 0] },
     ];
-    expect(arrow(shapes, key(CARDS, BAND), "down")).toBe(key(CARDS, 0));
-    expect(arrow(shapes, key(CARDS, 0), "down")).toBe(key(CARDS, BAND));
+    expect(arrow(shapes, key(CARDS, 0), "down")).toBe(
+      key("lens-section-brand-new", BAND),
+    );
+    expect(arrow(shapes, key("lens-section-brand-new", BAND), "down")).toBe(
+      key("lens-section-brand-new", 0),
+    );
+    expect(arrow(shapes, key("lens-section-brand-new", 0), "down")).toBe(
+      key(SNIPPETS, BAND),
+    );
+  });
+
+  test("orders arrive in whatever sequence, and the rows still read left to right", () => {
+    // `focusOrdersInGroup` sorts, but the builder does not depend on that —
+    // an unsorted list must not silently produce a scrambled band.
+    const scrambled: LensSectionSpatialShape[] = [
+      { group: CARDS, orders: [0, FOLD, BAND, ACTION, FILTER] },
+    ];
+    expect(arrow(scrambled, key(CARDS, BAND), "right")).toBe(key(CARDS, FILTER));
+    expect(arrow(scrambled, key(CARDS, FILTER), "right")).toBe(key(CARDS, ACTION));
+    expect(arrow(scrambled, key(CARDS, BAND), "down")).toBe(key(CARDS, 0));
   });
 });

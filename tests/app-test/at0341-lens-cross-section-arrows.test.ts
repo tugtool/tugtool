@@ -17,6 +17,13 @@
  * arrows on movement (a field is not a wall), while a field holding a query
  * keeps them for its caret.
  *
+ * The second test is the DRIFT GATE, and it names no section at all: it asks
+ * the running Lens which sections it is rendering and holds each of them to the
+ * two claims the plane makes — Down leaves a band, Right stays on it. The plane
+ * is derived from what registers rather than from a table anyone maintains
+ * (`lens-spatial-order.ts`), so a section added later, or a control added to an
+ * existing band, is covered here the day it registers with no edit to this file.
+ *
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
  * @covers tugdeck/src/components/tugways/arrow-release.ts
@@ -31,7 +38,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp, note, type App } from "./_harness";
 import {
   mkTempTugbank,
   rmTempTugbank,
@@ -108,6 +115,25 @@ async function step(app: App, key: string, address: string): Promise<void> {
   await app.nativeKey(key);
   await waitRing(app, address);
 }
+
+/** Press `key` and read where the ring landed, without saying in advance. */
+async function press(app: App, key: string): Promise<string | null> {
+  await app.nativeKey(key);
+  // The plane resolves synchronously and the projection is a layout effect, so
+  // one settle is enough; a wrong landing shows up as a wrong address, never as
+  // a flake, because every assertion here is on the value read back.
+  await new Promise<void>((r) => setTimeout(r, 60));
+  return ringAddress(app);
+}
+
+/** The section kinds the Lens is currently rendering, top to bottom. */
+const RENDERED_SECTIONS = `Array.prototype.map.call(
+  document.querySelectorAll('.lens-content .lens-section[data-lens-section]'),
+  function (el) { return el.getAttribute("data-lens-section"); }
+)`;
+
+/** The band-level parts — everything that sits ON a band rather than under it. */
+const BAND_PARTS = ["band", "filter", "action", "fold"];
 
 describe.skipIf(!SHOULD_RUN)("at0341 — Lens arrows point where they say", () => {
   test(
@@ -230,6 +256,109 @@ describe.skipIf(!SHOULD_RUN)("at0341 — Lens arrows point where they say", () =
           expect(report).not.toBeNull();
           expect(report!.violations).toBe(0);
           expect(Object.keys(report!.steals)).toEqual([]);
+        } finally {
+          await app.close();
+        }
+      } finally {
+        rmSync(filesDir, { recursive: true, force: true });
+        rmTempTugbank(tugbankPath);
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "every section the Lens renders obeys the plane — Down leaves its band, Right stays on it",
+    async () => {
+      // THE DRIFT GATE. The test above names three sections because it walks a
+      // specific route; this one names none. It asks the running Lens which
+      // sections it is rendering and holds each of them to the two claims the
+      // plane makes, so a section added later — or a control added to an
+      // existing band — is covered the day it registers, with no edit here.
+      //
+      // Both claims are about DIRECTION, which is the whole point: under the
+      // liveliness net a band's Down and Right were the same key, and the way
+      // that reads on screen is a Down that steps sideways into the band's own
+      // filter field instead of into the rows the band is a header for.
+      const tugbankPath = mkTempTugbank();
+      const filesDir = mkdtempSync(join(tmpdir(), "tug-at0341-drift-"));
+      const snippetsPath = join(filesDir, "snippets.json");
+      writeFileSync(
+        snippetsPath,
+        `${JSON.stringify(
+          {
+            version: 1,
+            snippets: Array.from({ length: ROWS }, (_, i) => ({
+              id: `s${i}`,
+              text: `row-${i} snippet handle`,
+            })),
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      try {
+        seedTugbankForLaunch(tugbankPath);
+        const app = await launchTugApp({
+          testName: "at0341-lens-plane-drift",
+          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+        });
+        try {
+          await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
+          await app.waitForCondition<boolean>(
+            `window.__tug.assertHostRootRegistered("A")`,
+            { timeoutMs: 5_000 },
+          );
+          await app.dispatchControlAction("focus-lens");
+          await waitRing(app, "cards:list");
+
+          const kinds = await app.evalJS<string[]>(RENDERED_SECTIONS);
+          expect(kinds.length).toBeGreaterThan(1);
+          note("sections", kinds.join(", "));
+
+          // Walk the column with Down, probing each band as it is reached. The
+          // walk wraps at the bottom, so a full lap reaches every band whatever
+          // the ring started on; the budget is a runaway guard, not a count.
+          const probed = new Set<string>();
+          const trail: string[] = [];
+          for (let i = 0; i < 60 && probed.size < kinds.length; i += 1) {
+            const at = await ringAddress(app);
+            if (at === null) throw new Error(`ring left the Lens at step ${i}`);
+            const [kind, part] = at.split(":");
+            if (part !== "band" || probed.has(kind)) {
+              await app.nativeKey("ArrowDown");
+              await new Promise<void>((r) => setTimeout(r, 60));
+              continue;
+            }
+            probed.add(kind);
+
+            // (1) Right stays on this band. Every band has at least its fold
+            // cue beside it, so there is always somewhere to the right to go —
+            // and it must be on this section, never the next one's.
+            const right = await press(app, "ArrowRight");
+            expect(right).not.toBeNull();
+            expect(right!.split(":")[0]).toBe(kind);
+            expect(right!.split(":")[1]).not.toBe("list");
+            // Back, so Down is measured from the band itself.
+            const back = await press(app, "ArrowLeft");
+            expect(back).toBe(`${kind}:band`);
+
+            // (2) Down LEAVES the band. Either into this section's own body, or
+            // — for a section that is folded or empty — onto the next section.
+            // What it may never be is another stop on the same band, which is
+            // exactly what the linear walk used to give.
+            const down = await press(app, "ArrowDown");
+            expect(down).not.toBeNull();
+            const [downKind, downPart] = down!.split(":");
+            trail.push(`${kind}:band ↓ ${down}`);
+            if (downKind === kind) {
+              expect(BAND_PARTS).not.toContain(downPart);
+            } else {
+              expect(kinds).toContain(downKind);
+            }
+          }
+          note("Down off each band", trail.join("  |  "));
+          expect([...probed].sort()).toEqual([...kinds].sort());
         } finally {
           await app.close();
         }

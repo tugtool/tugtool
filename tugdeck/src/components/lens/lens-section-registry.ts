@@ -58,15 +58,6 @@ export interface LensSectionDefinition {
    * grow without bound opts in; a fixed-size section leaves it off.
    */
   filterable?: boolean;
-  /**
-   * The focus orders this section's BODY puts in the walk, top to bottom.
-   * Defaults to `[0]` — one stop, the list, which is what nearly every section
-   * is. A body that stacks more than one navigable control declares them all
-   * (Layouts has two radio groups), because the Lens's arrow plane is built out
-   * of rows and a body that is two rows tall must say so or its second control
-   * is only reachable by Tab.
-   */
-  bodyFocusOrders?: readonly number[];
 
   // Reserved capability hooks — declared, not implemented ([P07]).
   findSegments?: unknown;

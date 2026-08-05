@@ -1932,6 +1932,30 @@ export class FocusContext {
     return fallback;
   }
 
+  /**
+   * The focus ORDERS currently registered in `group`, ascending and deduped —
+   * the group's live membership, addressed the way a spatial order addresses a
+   * node ([Q12]: a stop is `group:order`).
+   *
+   * For a surface that DERIVES its spatial plane from what is registered rather
+   * than from a hand-kept list (the Lens). The alternative is an author
+   * remembering to add each new control to a table somewhere else, and the
+   * failure when they don't is silent — the stop is simply off the plane and the
+   * liveliness net catches its arrows, which looks like nothing at all. Reading
+   * the registry closes that class by construction.
+   *
+   * Duplicates collapse because two stops sharing a group and an order share a
+   * focus key, which is already broken independently of any plane: the engine
+   * resolves that key to one of them and the other is unaddressable.
+   */
+  focusOrdersInGroup(group: string): number[] {
+    const orders = new Set<number>();
+    for (const record of this.focusables.values()) {
+      if (record.group === group) orders.add(record.order);
+    }
+    return [...orders].sort((a, b) => a - b);
+  }
+
   private compareFocusables(a: FocusableRecord, b: FocusableRecord): number {
     const ga = this.groupIndex(a.group);
     const gb = this.groupIndex(b.group);
