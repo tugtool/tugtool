@@ -74,6 +74,9 @@ body {
 .tug-alert-content {
   /* @tug-renders-on: --tugx-alert-bg */
   background-color: var(--tugx-alert-bg);
+  /* Publish the panel's surface for descendants that composite a translucent
+     mark against it — see the contract note in `tug-sheet.css`. */
+  --tugx-ambient-surface: var(--tugx-alert-bg);
   color: var(--tugx-alert-fg);
   border: 1px solid var(--tugx-alert-border);
   /* Shape */

@@ -105,6 +105,15 @@ body {
 
 .tug-sheet-content {
   background-color: var(--tugx-sheet-bg);
+  /* Publish the surface everything inside the sheet is painted on.
+     `--tugx-ambient-surface` is a publish/subscribe contract, not an appearance
+     token borrowed across a boundary: the writer is whoever paints an opaque
+     surface, the readers are descendants that need to composite a translucent
+     mark against it and cannot see what they sit on. A selected `TugListRow` is
+     the first reader — it lays its selection wash over this rather than over
+     the container focus wash behind it. Single writer, many readers, no
+     overrides ([L20]'s rule for cross-boundary contracts). */
+  --tugx-ambient-surface: var(--tugx-sheet-bg);
   color: var(--tugx-sheet-fg);
   border: 1px solid var(--tugx-sheet-border);
   box-shadow: var(--tugx-sheet-shadow);

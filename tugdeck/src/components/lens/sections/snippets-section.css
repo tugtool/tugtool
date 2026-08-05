@@ -142,22 +142,18 @@
    cell IS the whole tall snippet, so the header holds the top throughout the
    scroll.
 
-   The selection wash TugListRow paints for `data-selected` is a QUIET
-   (translucent) surface; scrolled body text would bleed through a bare pin. So
-   the pinned header carries an opaque base — the pane's own content surface,
-   exactly what sits behind the row at rest — with the wash composited over it
-   as a background-image layer, so pinned and un-pinned read identically. The
-   `.snippet-editor` descendant selector outspecifies `.tug-list-row[data-selected]`
-   regardless of bundle order. */
+   Opacity is no longer this rule's problem. A selected `TugListRow` paints its
+   own opaque ground (the band's published `--tugx-ambient-surface`, the well)
+   with the selection wash layered over it, so a pinned header is already opaque
+   and scrolled body text cannot bleed through — pinned and un-pinned read
+   identically because they are the same paint. This rule used to hand-roll that
+   base + wash pair itself, against the pane's content surface rather than the
+   well the row actually rests on; the primitive now does it, and does it
+   against the right surface. */
 .snippet-editor .snippet-editor-header[data-selected="true"] {
   position: sticky;
   top: 0;
   z-index: 2;
-  background-color: var(--tug7-surface-global-primary-normal-content-rest);
-  background-image: linear-gradient(
-    var(--tugx-list-row-selected-bg),
-    var(--tugx-list-row-selected-bg)
-  );
 }
 
 /* The WELL: the substrate's own field treatment, exactly as prompt entry — the

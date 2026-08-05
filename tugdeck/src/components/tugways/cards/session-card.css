@@ -770,6 +770,13 @@
   min-height: 0;
   min-width: 0;
   background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  /* The picker paints its own surface, so it publishes it: a selected row in
+     the sessions list lays its selection wash over THIS, not over the list's
+     container focus wash. Stated even though the value equals the fallback,
+     because the backdrop also renders inside a sheet — where the inherited
+     publication would otherwise be the sheet's surface, not the one actually
+     painted here. See the contract note in `tug-list-row.css`. */
+  --tugx-ambient-surface: var(--tug7-surface-global-primary-normal-default-rest);
 }
 
 /* ─── Restoring placeholder (session-restore in-flight) ─── */

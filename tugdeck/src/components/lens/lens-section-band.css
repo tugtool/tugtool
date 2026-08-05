@@ -162,6 +162,12 @@
 /* @tug-renders-on: --tug7-surface-card-primary-normal-well-rest */
 .lens-section-body {
   background: var(--tug7-surface-card-primary-normal-well-rest);
+  /* Publish the well as the surface everything in the band is painted on, so a
+     descendant with a translucent mark to composite — a selected `TugListRow`
+     laying its selection wash — lays it over the well and not over whatever
+     happens to be behind the row (the list's own container focus wash, on a
+     focused list). Single writer, many readers; see `tug-list-row.css`. */
+  --tugx-ambient-surface: var(--tug7-surface-card-primary-normal-well-rest);
   /* Anchor for the drag lift and the section's own overlays. */
   position: relative;
   display: flex;

@@ -147,6 +147,29 @@ body {
      Distinct from the `selection … plain` family (the caret text-selection
      highlight in editor / code / markdown / pane). [L17] one-hop aliases. */
   --tugx-list-row-selected-bg:            var(--tug7-surface-selection-primary-normal-quiet-rest);
+  /* The OPAQUE ground the selection wash is laid over. A selected row paints
+     two layers — this ground, then the wash above it — so the wash composites
+     against the surface the list sits on and nothing else. Without it the wash
+     composites against whatever is behind the row, and the container focus wash
+     (`--tugx-focus-container-wash`, an accent tint painted behind the rows when
+     the list holds the key view) is behind the row: ~5% of the accent hue then
+     survives THROUGH the 18% blue and the selection turns muddy the moment the
+     list takes focus. Two area marks in different hues cannot stack; the
+     selection wins where they overlap, which is the same call the striping band
+     already makes ("a row that paints a selection fill drops its band",
+     `tug-list-view.css`).
+
+     The value is the host's business, not the row's: a row cannot see what it
+     is painted on. Hosts that paint their own opaque surface publish it as
+     `--tugx-ambient-surface` (TugSheet does) and every selected row inside
+     lands on it; the fallback is the app's default surface, which is what an
+     unpublished host is assumed to be. A host on some other surface that never
+     publishes shows a selected row one step off its neighbours — visible only
+     under the selection, and fixed by publishing. */
+  --tugx-list-row-ground: var(
+    --tugx-ambient-surface,
+    var(--tug7-surface-global-primary-normal-default-rest)
+  );
   /* Selected + pointer (mouse hover OR keyboard cursor) — one rung up. Enough
      that a pointer on a selected row reads as a change, small enough that it
      never reads as a different mark. */
@@ -182,6 +205,18 @@ body {
 
 /* ---- Base ---- */
 
+/* The selection wash's current rung, registered so it can be TRANSITIONED. An
+   unregistered custom property is an untyped token: it flips between values and
+   the fill would snap where every other row state fades. Registering it as a
+   `<color>` gives the engine something to interpolate, and the transition below
+   names it alongside `background-color`, so selected → selected-hovered crosses
+   over on the same 100ms clock it always did. */
+@property --tugx-list-row-selection-fill {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
 .tug-list-row {
   display: flex;
   align-items: center;
@@ -208,7 +243,8 @@ body {
   /* Color + background are set per-variant so each variant declares a
      complete foreground-on-surface context. State transitions are
      color-only per [L15]. */
-  transition: background-color 100ms ease, border-color 100ms ease;
+  transition: background-color 100ms ease, border-color 100ms ease,
+    --tugx-list-row-selection-fill 100ms ease;
 }
 
 /* ---- Slots ---- */
@@ -434,19 +470,6 @@ body {
   background-color: var(--tugx-list-row-flush-hover-bg);
 }
 
-.tug-list-row[data-variant="flush"][data-selected="true"]:not([data-selection-surface="control"]) {
-  background-color: var(--tugx-list-row-selected-bg);
-}
-
-/* Selected + hover — a distinct, stronger fill so a hovered selected
-   row reads apart from a resting selected one. The extra
-   `:not([data-disabled])` lifts this above the plain `:hover` rule's
-   specificity, so hovering a selected row never falls back to the
-   unselected hover fill. */
-.tug-list-row[data-variant="flush"][data-selected="true"]:not([data-selection-surface="control"]):hover:not([data-disabled="true"]) {
-  background-color: var(--tugx-list-row-selected-hover-bg);
-}
-
 /* Keyboard cursor is a leading-edge bar drawn by the enclosing list-view cell
    (`tug-list-view.css`), NOT a row fill — so there is no cursor-vs-selection or
    cursor-vs-hover fill collision to mediate here. The cursor mark (keyboard) and
@@ -470,15 +493,43 @@ body {
   border-color: var(--tugx-list-row-pill-hover-border);
 }
 
+/* A selected pill keeps its resting border: the fill says "chosen," and swapping
+   the border alongside it would say it twice. */
 .tug-list-row[data-variant="pill"][data-selected="true"]:not([data-selection-surface="control"]) {
-  background-color: var(--tugx-list-row-selected-bg);
   border-color: var(--tugx-list-row-pill-rest-border);
 }
 
-/* Selected + hover — see the `flush` counterpart for the specificity
-   rationale. */
-.tug-list-row[data-variant="pill"][data-selected="true"]:not([data-selection-surface="control"]):hover:not([data-disabled="true"]) {
-  background-color: var(--tugx-list-row-selected-hover-bg);
+/* ---- Selection fill — one paint, both variants ----
+   Ground first, wash above it. Which RUNG of the wash is showing is the state
+   arms' business below; they set `--tugx-list-row-selection-fill` and this rule
+   paints whatever they left there. That indirection is what makes the two-layer
+   paint tractable: a state arm that set `background-color` would knock the
+   ground out from under the wash it was trying to change.
+
+   Written as a `linear-gradient` of one color rather than a second
+   `background-color` because an element has exactly one background-color and
+   the ground is using it. Background-image paints above background-color, which
+   is the stacking order this needs.
+
+   Specificity is `[data-variant]` (presence, not value) so the rule clears the
+   plain hover graze at (0,4,0), which would otherwise replace the ground on a
+   hovered selected row. Placed after both variants' hover rules so the tie with
+   them goes this way. */
+.tug-list-row[data-variant][data-selected="true"]:not([data-selection-surface="control"]) {
+  background-color: var(--tugx-list-row-ground);
+  background-image: linear-gradient(
+    var(--tugx-list-row-selection-fill),
+    var(--tugx-list-row-selection-fill)
+  );
+  --tugx-list-row-selection-fill: var(--tugx-list-row-selected-bg);
+}
+
+/* Selected + hover — a distinct, stronger rung so a hovered selected row reads
+   apart from a resting selected one. The extra `:not([data-disabled])` lifts
+   this above the plain `:hover` rule's specificity, so hovering a selected row
+   never falls back to the unselected hover fill. */
+.tug-list-row[data-variant][data-selected="true"]:not([data-selection-surface="control"]):hover:not([data-disabled="true"]) {
+  --tugx-list-row-selection-fill: var(--tugx-list-row-selected-hover-bg);
 }
 
 /* ---- Pressed ----
@@ -575,7 +626,7 @@ body {
 /* @tug-renders-on: --tugx-list-row-selected-demoted-bg */
 .tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-key-view-kbd]),
 .tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-key-view-kbd]):hover:not([data-disabled="true"]) {
-  background-color: var(--tugx-list-row-selected-demoted-bg);
+  --tugx-list-row-selection-fill: var(--tugx-list-row-selected-demoted-bg);
 }
 
 /* Role-resolved arms: each repoints the demoted alias at the theme's

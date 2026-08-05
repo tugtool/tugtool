@@ -38,6 +38,9 @@ body {
   /* Colors */
   /* @tug-renders-on: --tugx-popover-bg */
   background-color: var(--tugx-popover-bg);
+  /* Publish the bubble's surface for descendants that composite a translucent
+     mark against it — see the contract note in `tug-sheet.css`. */
+  --tugx-ambient-surface: var(--tugx-popover-bg);
   color: var(--tugx-popover-fg);
   border: 1px solid var(--tugx-popover-border);
   /* Shape */

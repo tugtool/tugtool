@@ -236,6 +236,9 @@
 .cg-focus-wash .fw-ab-host {
   block-size: 8rem;
   background-color: var(--tug7-surface-card-primary-normal-well-rest);
+  /* Published so a selected row inside lays its wash over this well rather than
+     over the container mark this card is tuning — see `tug-list-row.css`. */
+  --tugx-ambient-surface: var(--tug7-surface-card-primary-normal-well-rest);
   border-radius: 4px;
   overflow: hidden;
 }

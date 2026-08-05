@@ -349,6 +349,11 @@
 .cg-selection-wash .sw-ab-host {
   block-size: 11rem;
   background-color: var(--tug7-surface-card-primary-normal-block-rest);
+  /* Published so the selected row lays its wash over THIS ground rather than
+     over the container focus wash the arms below paint — the same contract the
+     dialog surface gives it in the app. Without it the demo would show the
+     collision this treatment exists to avoid. */
+  --tugx-ambient-surface: var(--tug7-surface-card-primary-normal-block-rest);
   border-radius: 4px;
   overflow: hidden;
 }
