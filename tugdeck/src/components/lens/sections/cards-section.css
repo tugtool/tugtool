@@ -239,24 +239,23 @@ body {
   min-inline-size: 0;
 }
 
-/* The chevron is the header's whole mouse target, so it is a real button and
-   wears a button's hover. It never shrinks, and it holds the same leading
-   column the rows' glyphs do. */
-.lens-cards-header-chevron {
+/* The group's kind glyph, in the column the rows' own glyphs stand in. It is
+   ink, not a target — the fold moved to the trailing edge, so nothing here is
+   clickable and the header's whole body is the drag handle again. Muted to the
+   label's tone: the glyph says what the group holds, the label says its name,
+   and neither outshouts the rows below. */
+.lens-cards-header-glyph {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
   color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
-/* The mark points down when the group is open and right when it is collapsed —
-   a rotation on the attribute, never a swapped glyph ([L06]). The rotation is
-   on the icon rather than the button so the hover square stays square. */
-.lens-cards-header-chevron svg {
-  transition: transform var(--tug-duration-fast, 120ms) ease;
-  transform: rotate(90deg);
-}
-
-.lens-cards-header[data-group-collapsed="true"] .lens-cards-header-chevron svg {
-  transform: rotate(0deg);
+/* The sub-header's fold cue is the band's cue one level down — same glyph, same
+   edge, one size smaller, and muted to the header's own tone so the level it
+   belongs to is legible at a glance. */
+.lens-cards-header-fold {
+  color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
 /* What the fold is hiding — ink ONLY while the group is collapsed, where it is

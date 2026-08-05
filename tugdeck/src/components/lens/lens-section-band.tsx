@@ -26,9 +26,15 @@
  * field, the section's own controls, and the fold chevron — which are stops too,
  * in the order they are read. So the arrow walk that runs down a section's rows
  * carries on into the next section's BAND, and folding a section is a keyboard
- * gesture: arrow to the band, arrow on to its chevron, Space. A collapsed
- * section renders no body, so its band and chevron are all it has — which is
- * exactly what it takes to open it again.
+ * gesture: arrow to the band, Space. A collapsed section renders no body, so its
+ * band and chevron are all it has — which is exactly what it takes to open it
+ * again.
+ *
+ * On the band, Space FOLDS and Enter ENTERS. The two keys split because the band
+ * stands for two things at once — the section's fold and its way in — and the
+ * same split runs one level down, where a Cards group header takes Space as its
+ * own fold. Space is the fold everywhere in the Lens; nothing has to remember
+ * which level it is on.
  *
  * Clicking the band (anywhere except its buttons / the filter field) focuses
  * the section's list: it expands a collapsed section and lands the key view on
@@ -113,15 +119,32 @@ export function LensSection({
   // holds ([P02]) — so the arrow walk that runs down one section's rows arrives
   // at the NEXT section's band rather than skipping straight into its list, and
   // a collapsed section (which renders no body at all) is still somewhere the
-  // keyboard can go. A plain leaf: Space / Enter reach it as a synthesized
-  // press, which is the same `onBandClick` a pointer makes — enter the section,
-  // expanding it if it was folded. Folding is the chevron's, one stop further
-  // right.
+  // keyboard can go. A plain leaf: Enter reaches it as a synthesized press,
+  // which is the same `onBandClick` a pointer makes — enter the section,
+  // expanding it if it was folded. Space is the fold, taken below.
   const { focusableRef } = useFocusable({
     id: `lens-band-${def.kind}`,
     group: host.focusGroup,
     order: LENS_BAND_FOCUS_ORDER,
   });
+
+  // Space on the band folds it. A leaf's act is a synthesized press — the engine
+  // dispatches the keydown here and then completes it as a click unless the
+  // keydown was consumed — so taking Space here is also what keeps it from
+  // falling through to `onBandClick`, which means the opposite thing. Enter is
+  // left alone and still enters the section, so the band's two meanings have a
+  // key each.
+  const onBandKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>): void => {
+      if (event.key !== " " && event.key !== "Spacebar") return;
+      // A press that started on a control inside the band (the filter field's
+      // caret, the fold chevron, a section's own button) is that control's.
+      if (event.target !== event.currentTarget) return;
+      event.preventDefault();
+      lensStore.setCollapsed(def.kind, !collapsed);
+    },
+    [collapsed, def.kind],
+  );
 
   // Band click → focus this section's list. Filtered to the band's inert
   // surface: clicks on the fold chevron or the header-action buttons keep
@@ -195,6 +218,7 @@ export function LensSection({
         dataTestid="lens-section-band"
         dataCollapsed={collapsed}
         onClick={onBandClick}
+        onKeyDown={onBandKeyDown}
         // The band IS the handle: a vertical drag from anywhere on it that is
         // not a control carries the section ([P08]).
         onPointerDown={

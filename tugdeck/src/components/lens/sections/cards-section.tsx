@@ -46,10 +46,19 @@ import React, {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { ChevronRight, File, FileText, Image as ImageIcon, LayoutGrid, X } from "lucide-react";
+import {
+  File,
+  FileText,
+  Image as ImageIcon,
+  LayoutGrid,
+  MessageSquareText,
+  Wrench,
+  X,
+} from "lucide-react";
 
 import { dispatchAction } from "@/action-dispatch";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
+import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { useBlockReorder } from "@/components/lens/block-reorder";
 import {
   getFilterQuery,
@@ -177,6 +186,17 @@ function fileGlyph(identity: CardIdentity): React.ReactElement {
     <File size={12} />
   );
 }
+
+/** A group's glyph — what the cards filed under it ARE, so the header names its
+ *  kind twice over: Sessions wears the session card's own mark, Files the
+ *  document mark its rows wear, Tools the one for everything else. It stands
+ *  where the rows' glyphs stand, which is what keeps the group's rows reading as
+ *  indented under it now that nothing else occupies that column. */
+const GROUP_GLYPHS: Readonly<Record<LensCardsGroup, React.ReactElement>> = {
+  sessions: <MessageSquareText size={12} />,
+  files: <FileText size={12} />,
+  tools: <Wrench size={12} />,
+};
 
 /** Any other card's glyph: its registration's icon, through the same resolver
  *  the tab bar uses, so a card looks the same in the Lens as on its tab. */
@@ -320,18 +340,21 @@ function OneLineRow({
 // Cell renderers
 // ---------------------------------------------------------------------------
 
-/** The group header: a cursorable row whose keyboard activation toggles the
- *  group's collapse. It composes `TugListRow` like every other row — the
- *  chevron's direction is a CSS response to `data-group-collapsed` ([L06]).
+/** The group header: a cursorable row whose Space toggles the group's collapse.
+ *  It composes `TugListRow` like every other row, and its fold wears the SAME
+ *  affordance the Lens section bands wear, at the same edge — a `BlockFoldCue`
+ *  in the trailing slot, one size down. A rail whose two levels of fold looked
+ *  and sat differently made the reader learn each one; one cue, always at the
+ *  right, means learning it once. The leading column is the group's kind glyph
+ *  instead, which is what the header had to say that a chevron never did.
  *
- *  To the MOUSE the header body is the group's drag handle, and the chevron is
- *  the only thing that folds. Travel is what tells them apart, so a press that
- *  goes nowhere does nothing at all — no part of a label the user is reading
- *  past can fold a group out from under them, and the row swallows the trailing
- *  click so the cell never reads it as a pick. The chevron is therefore a real
- *  button with a button's hover, which is also what says where to aim. Keyboard
- *  reach is unaffected — the row stays cursorable, and Enter/Space go to the
- *  delegate. */
+ *  To the MOUSE the header body is the group's drag handle, and the cue is the
+ *  only thing that folds. Travel is what tells them apart, so a press that goes
+ *  nowhere does nothing at all — no part of a label the user is reading past can
+ *  fold a group out from under them, and the row swallows the trailing click so
+ *  the cell never reads it as a pick. Keyboard reach is unaffected: the row
+ *  stays cursorable and its Space reaches the delegate, and the cue is a stop of
+ *  its own inside the row's descend scope (ArrowRight lands on it). */
 const GroupHeaderCell: TugListViewCellRenderer<LensCardsDataSource> = ({
   index,
   dataSource,
@@ -340,7 +363,6 @@ const GroupHeaderCell: TugListViewCellRenderer<LensCardsDataSource> = ({
   const ctx = useCellContext();
   if (row.type !== "group-header") return null;
   const title = GROUP_TITLES[row.group];
-  const verb = row.collapsed ? "Expand" : "Collapse";
   return (
     <TugListRow
       className="lens-cards-header"
@@ -352,24 +374,29 @@ const GroupHeaderCell: TugListViewCellRenderer<LensCardsDataSource> = ({
       // whole run, and travel past the threshold engages it.
       onPointerDown={(e) => ctx.onGroupPointerDown(row.group, e)}
       // Below the threshold the press is still a click, and on a header a
-      // click is nothing — the chevron is the only thing that folds. Swallowed
+      // click is nothing — the fold cue is the only thing that folds. Swallowed
       // so the cell wrapper never reads it as a pick.
       onClick={(e) => e.stopPropagation()}
-    >
-      <span className="lens-cards-header-line">
-        <TugIconButton
-          className="lens-cards-header-chevron"
-          icon={<ChevronRight size={12} />}
+      trailing={
+        <BlockFoldCue
+          className="lens-cards-header-fold"
+          collapsed={row.collapsed}
+          onToggle={() => ctx.onToggleGroup(row.group)}
+          collapsedLabel="Expand"
+          expandedLabel="Collapse"
+          ariaLabelExpand={`Expand ${title}`}
+          ariaLabelCollapse={`Collapse ${title}`}
           size="2xs"
-          aria-label={`${verb} ${title}`}
-          title={`${verb} ${title}`}
+          subtype="icon"
           focusGroup={ROW_ACTION_FOCUS_GROUP}
           focusOrder={0}
-          onClick={(e) => {
-            e?.stopPropagation();
-            ctx.onToggleGroup(row.group);
-          }}
         />
+      }
+    >
+      <span className="lens-cards-header-line">
+        <span className="lens-cards-header-glyph" aria-hidden="true">
+          {GROUP_GLYPHS[row.group]}
+        </span>
         {/* The summary is INSIDE the label, not a column beside it: it is part
             of what the folded group is called, so it takes the label's size,
             weight, case and tracking by inheritance rather than by a second

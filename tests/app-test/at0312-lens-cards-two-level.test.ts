@@ -23,8 +23,8 @@
  *      headers are cursorable rows, which is exactly what would let the list's
  *      own gain-seed park the cursor on index 0 — a header. The section seeds
  *      past them deliberately, and this is where that is checked.
- *   E. **The chevron folds, and the summary is the collapsed state's voice.**
- *      Clicking the header body does not fold; clicking the chevron does. Open,
+ *   E. **The fold cue folds, and the summary is the collapsed state's voice.**
+ *      Clicking the header body does not fold; clicking the fold cue does. Open,
  *      the rows are the answer and the summary is not ink at all; collapsed, it
  *      is the only report of what the fold is hiding, and for a Files group it
  *      names the kinds, in words, rather than just counting them. The header
@@ -137,9 +137,9 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
             hasClose: row.querySelector(".lens-cards-row-close") !== null,
             hasSlots: row.querySelector('[data-testid="lens-slot-picker"]') !== null,
             // Any disclosure affordance at all — the section renders exactly
-            // one chevron kind, and it belongs to group headers.
+            // one fold cue kind, and it belongs to group headers.
             foldControls: row.querySelectorAll(
-              '.lens-cards-header-chevron, [data-slot="block-fold-cue"]',
+              '[data-slot="block-fold-cue"]',
             ).length,
             indent: row.querySelector(".tug-list-row-content") === null
               ? 0
@@ -217,7 +217,7 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
               return x === null ? "" : x.getAttribute("aria-label") || "";
             })(),
             foldControls: paneId.querySelectorAll(
-              '.lens-cards-header-chevron, [data-slot="block-fold-cue"]',
+              '[data-slot="block-fold-cue"]',
             ).length,
             subrowIndent: contentOf(sub),
             paneIndent: contentOf(paneId),
@@ -267,7 +267,7 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
           { timeoutMs: 8_000 },
         );
 
-        // ---- E. The chevron folds the group; the header body does not. -----
+        // ---- E. The fold cue folds the group; the header body does not. -----
         const filesHeader = `${LIST} .lens-cards-header[data-lens-group="files"]`;
         // Open, the rows ARE the count. Measured as paint, not as text: an
         // unrendered element's `innerText` falls back to `textContent`, so the
@@ -285,7 +285,7 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
 
         // Clicking the label does not fold. A group folding out from under a
         // user who clicked a word they were reading is the whole reason the
-        // chevron is the only thing that toggles.
+        // fold cue is the only thing that toggles.
         await app.evalJS<null>(
           `(document.querySelector('${filesHeader} .tug-list-row-title').click(), null)`,
         );
@@ -296,7 +296,7 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
         ).toBe(false);
 
         await app.evalJS<null>(
-          `(document.querySelector('${filesHeader} .lens-cards-header-chevron').click(), null)`,
+          `(document.querySelector('${filesHeader} [data-slot="block-fold-cue"]').click(), null)`,
         );
         await app.waitForCondition<boolean>(
           `document.querySelector('${filesHeader}[data-group-collapsed="true"]') !== null`,
@@ -396,10 +396,10 @@ describe.skipIf(!SHOULD_RUN)("at0312 — Cards is two-level, never a folder", ()
         })()`);
         expect(engaged).toBe(true);
 
-        // Re-expanding puts the group back — the chevron again, since that is
+        // Re-expanding puts the group back — the fold cue again, since that is
         // the only thing the mouse can toggle.
         await app.evalJS<null>(
-          `(document.querySelector('${filesHeader} .lens-cards-header-chevron').click(), null)`,
+          `(document.querySelector('${filesHeader} [data-slot="block-fold-cue"]').click(), null)`,
         );
         await app.waitForCondition<boolean>(
           `document.querySelector('${filesHeader}[data-group-collapsed="false"]') !== null`,

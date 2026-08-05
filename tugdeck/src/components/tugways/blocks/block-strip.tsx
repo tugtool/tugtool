@@ -116,6 +116,13 @@ export interface BlockStripProps {
    * here and does its own filtering of presses that landed on a control.
    */
   onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void;
+  /**
+   * Keydown handler on the strip root. A strip that is itself a keyboard stop
+   * reads its own keys here — the Lens section bands take Space as the fold,
+   * ahead of the synthesized press the engine would otherwise complete as a
+   * click ([P02]).
+   */
+  onKeyDown?: (event: React.KeyboardEvent<HTMLDivElement>) => void;
 }
 
 /**
@@ -140,6 +147,7 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
       dataCollapsed,
       onClick,
       onPointerDown,
+      onKeyDown,
     },
     ref,
   ) {
@@ -154,6 +162,7 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
         className={className}
         onClick={onClick}
         onPointerDown={onPointerDown}
+        onKeyDown={onKeyDown}
       >
         {/* The lifecycle dot or a caller-wrapped leading glyph. */}
         {leading}
