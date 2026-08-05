@@ -371,6 +371,17 @@ export const TUG_ACTIONS = {
   // OPEN_COMMAND_PICKER: payload — none. ⌘/ dispatches it key-card-scoped; the
   //                 session card's card-content responder forwards to the
   //                 prompt entry's `openCommandPicker` ([P06]).
+  // INSERT_FILE:    payload — `value: { path }` (an absolute path). The host's
+  //                 Session ▸ Insert File… item runs an NSOpenPanel and sends
+  //                 the chosen path; ⌘I reaches the same item. Routed
+  //                 first-responder and answered in two places: the prompt
+  //                 entry itself, which inserts a `file` atom (basename
+  //                 label, absolute value) at its caret — the shape an `@`
+  //                 mention accepts — and the session card's card-content
+  //                 responder, which forwards to its composer's delegate so
+  //                 focus anywhere in the card still lands the file. A card
+  //                 with no prompt entry answers neither, and that unhandled
+  //                 walk is what dims the menu item.
   // SHOW_SLASH_COMMAND_NOTICE: payload — `value: { name, commandLine, reason }`
   //                 where `reason` is `"unknown"` (no such command — a typo) or
   //                 `"unsupported"` (a real Claude Code command with no meaning
@@ -423,6 +434,7 @@ export const TUG_ACTIONS = {
   RUN_SLASH_COMMAND: "run-slash-command",
   INSERT_SLASH_COMMAND: "insert-slash-command",
   OPEN_COMMAND_PICKER: "open-command-picker",
+  INSERT_FILE:    "insert-file",
   TOGGLE_CHANGES_VIEW: "toggle-changes-view",
   TOGGLE_HISTORY_VIEW: "toggle-history-view",
   SHOW_SLASH_COMMAND_NOTICE: "show-slash-command-notice",

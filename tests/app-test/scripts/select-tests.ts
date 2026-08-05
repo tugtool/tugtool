@@ -157,7 +157,9 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // prompt entry's own prop and has no smaller home. 21 → 22 with the
     // Insert as Atom slot (at0346): the composer is where the parked atom is
     // consumed, so a test of that gesture has nowhere smaller to point.
-    "tugdeck/src/components/tugways/tug-prompt-entry.tsx": 22,
+    // 22 → 23 with Insert File… (at0354): the composer is the responder that
+    // answers the command, which is also what gates its menu item.
+    "tugdeck/src/components/tugways/tug-prompt-entry.tsx": 23,
     "tugdeck/src/card-state-orchestrator.ts": 21,
     // The host itself: the whole menu bar, the window, the app lifecycle and
     // every control frame live in this one file, so any test that reads a
@@ -165,7 +167,9 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // has nowhere smaller to point. Crossed the budget with the chord sweep
     // (at0181), which is a method on this class by construction — AppKit key
     // equivalents can only be written from the object that owns the menu.
-    "tugapp/Sources/AppDelegate.swift": 21,
+    // 21 → 23 with Insert File… (at0354): the open panel behind the item is
+    // the host's, so the gate test and the structure contract both name it.
+    "tugapp/Sources/AppDelegate.swift": 23,
     // The deck's own store: every test that seeds a deck, opens or closes a card,
     // or asserts pane geometry goes through it. Same structural coupling as the
     // pane frame below.
@@ -208,8 +212,10 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // focus cycle, and the Choose Session sheet are all one module, so any test
     // that drives the app's centerpiece names it. Crossed the budget with the
     // sheet's authored arrow order (at0342), which has no smaller home than the
-    // component that declares the sheet's stops.
-    "tugdeck/src/components/tugways/cards/session-card.tsx": 21,
+    // component that declares the sheet's stops. 21 → 22 with Insert File…
+    // (at0354): the card-content responder that keeps the command live while
+    // focus sits outside the composer is declared here.
+    "tugdeck/src/components/tugways/cards/session-card.tsx": 22,
 };
 
 interface TestCoverage {

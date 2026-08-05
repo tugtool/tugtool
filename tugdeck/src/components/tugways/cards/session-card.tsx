@@ -3878,6 +3878,20 @@ export function SessionCardBody({
       [TUG_ACTIONS.OPEN_COMMAND_PICKER]: (_event: ActionEvent) => {
         entryDelegateRef.current?.openCommandPicker();
       },
+      // ⌘I / Session ▸ Insert File… — the host picked the path, this is the
+      // insertion. The composer answers this action itself when it holds the
+      // caret; registering it here too is what makes the command reachable
+      // from anywhere in the card, since the composer is a SIBLING of the
+      // transcript rather than its ancestor — a first responder in the
+      // transcript walks past the composer entirely, and a command the card
+      // can plainly perform must not dim because focus is one seat over. The
+      // delegate focuses the editor before inserting, so the path always
+      // lands where the user will type next.
+      [TUG_ACTIONS.INSERT_FILE]: (event: ActionEvent) => {
+        const path = (event.value as { path?: unknown } | undefined)?.path;
+        if (typeof path !== "string" || path === "") return;
+        entryDelegateRef.current?.insertFilePath(path);
+      },
       // Swift Session-menu "Show/Hide Changes" (⌘⇧C), the ⇧⌘C deck twin, and
       // the ⌃⌘C alias ([P05], Spec S04) — toggle the Changes shade, always in
       // commit mode ([P03]). Showing Changes is Changes mode, whether or not

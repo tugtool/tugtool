@@ -758,6 +758,29 @@ export const COMMANDS: readonly CommandEntry[] = [
     validate: sessionCardFrontmost,
   },
   {
+    // Routed first-responder so the prompt entry holding the caret is the
+    // one that receives the path — including the gallery's, which no
+    // card-level predicate would reach. The session card answers it too,
+    // from its card-content responder, so the command is live anywhere in
+    // the card rather than only while the composer is the seat of focus;
+    // the chain walk that finds either is the item's gate. The host runs
+    // the open panel before dispatching, so the dispatch carries the path.
+    id: TUG_ACTIONS.INSERT_FILE,
+    title: "Insert File…",
+    routing: "first-responder",
+    menuItemId: "session.insertFile",
+    // Menu-eligible on purpose: the panel that produces the path is the
+    // host's, so ⌘I has to reach the menu item rather than the JS funnel,
+    // where the command would dispatch with no file chosen.
+    bindings: [
+      chord(
+        { key: "KeyI", meta: true, label: "i" },
+        { preventDefault: true, menuEligible: true },
+      ),
+    ],
+    mirrored: true,
+  },
+  {
     id: TUG_ACTIONS.INTERRUPT_SESSION,
     title: "Stop",
     routing: "key-card",

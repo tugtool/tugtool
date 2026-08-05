@@ -209,6 +209,7 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   close: "command",
   "close-all": "command",
   "focus-prompt": "command",
+  "insert-file": "command",
   "interrupt-session": "command",
   "cycle-permission-mode": "command",
   "toggle-history-view": "command",
@@ -381,12 +382,16 @@ describe("every chord the static map held reaches the same command", () => {
   }
 
   /**
-   * Chords the host used to own outright — spelled as an `NSMenuItem`
-   * key equivalent and nowhere else — now stated in the table so the host
-   * can be swept from it. Each gained a JS twin as a consequence, which is
-   * the point: one table, both sides.
+   * Chords AppKit performs while the table states them, so the sweep can
+   * write them onto the item. Most got here by migration — spelled as an
+   * `NSMenuItem` key equivalent and nowhere else until the table claimed
+   * them — and each gained a JS twin as a consequence, which is the point:
+   * one table, both sides. ⌘I was authored this way from the start: the
+   * open panel that produces its path is the host's, so the item has to
+   * be what the chord reaches.
    */
   const HOST_DERIVED_CHORDS: ReadonlyMap<string, string> = new Map([
+    ["⌘I", TUG_ACTIONS.INSERT_FILE],
     ["⇧⌘S", TUG_ACTIONS.SAVE_AS],
     ["⌘R", TUG_ACTIONS.CYCLE_STACK],
     ["⌘+", TUG_ACTIONS.ZOOM_IN],

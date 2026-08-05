@@ -187,6 +187,7 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌘F | `find` | Find… | JS, global |
 | ⌘G | `find-next` | Find Next | JS, global |
 | ⌘H | `hide-application` | Hide Tug | menu bar (AppKit's own) |
+| ⌘I | `insert-file` | Insert File… | menu bar (swept) |
 | ⌘K | `focus-prompt` | Focus Prompt | JS, global |
 | ⌘L | `focus-lens` | Focus Lens | JS, global |
 | ⌘M | `minimize` | Minimize | menu bar (AppKit's own) |
@@ -277,6 +278,7 @@ Every menu item, the command behind it, and where each answer comes from. Genera
 | `session.firstTurn` | `first-turn` | key card | registry gate |
 | `session.focusPrompt` | `focus-prompt` | key card | registry gate |
 | `session.hooks` | `run-slash-command:hooks` | key card | registry gate |
+| `session.insertFile` | `insert-file` | first responder | registry gate |
 | `session.lastTurn` | `last-turn` | key card | registry gate |
 | `session.memory` | `run-slash-command:memory` | key card | registry gate |
 | `session.model` | `run-slash-command:model` | key card | registry gate |

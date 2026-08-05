@@ -92,6 +92,7 @@ import {
 } from "./tug-text-editor/drop-extension";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import {
+  addAtomsEffect,
   getAtomsInState,
   regenerateAtomsEffect,
   removeAtomById,
@@ -995,6 +996,13 @@ export interface TugPromptEntryDelegate {
    */
   openCommandPicker(): void;
   /**
+   * Insert a picked file at the caret as a `file` atom — the chip an `@`
+   * mention mints, with the basename as its label and the absolute path as
+   * its value — and focus the editor. Additive: an in-progress draft
+   * survives it.
+   */
+  insertFilePath(path: string): void;
+  /**
    * The underlying editor element (CM6's `cm-content` div). Exposed for
    * callers that need to reach the live editor DOM (measurement, focus
    * diagnostics, harness assertions).
@@ -1313,6 +1321,39 @@ export const TugPromptEntry = React.forwardRef<
       codeSessionStore,
     ],
   );
+
+  // Session ▸ Insert File… (⌘I). The host picked the path; this is the
+  // insertion. It reads exactly like accepting an `@` mention — a `file`
+  // atom plus a separating space, one transaction — except the label is
+  // the basename while the value stays the absolute path the panel
+  // returned, so the chip is legible and the submitted prompt is
+  // unambiguous. The atom is additive: an in-progress draft survives it.
+  const insertFilePath = useCallback((path: string): void => {
+    const editor = textEditorRef.current;
+    const view = editor?.view();
+    if (view === null || view === undefined) return;
+    const basename = path.split("/").pop();
+    const segment: AtomSegment = {
+      kind: "atom",
+      type: "file",
+      label: basename === undefined || basename === "" ? path : basename,
+      value: path,
+    };
+    const { from, to } = view.state.selection.main;
+    const hasTrailingSpace = view.state.doc.sliceString(to, to + 1) === " ";
+    view.dispatch({
+      changes: {
+        from,
+        to,
+        insert: hasTrailingSpace ? TUG_ATOM_CHAR : `${TUG_ATOM_CHAR} `,
+      },
+      effects: addAtomsEffect.of([{ position: from, segment }]),
+      selection: { anchor: from + 2 },
+      scrollIntoView: true,
+      userEvent: "input.tug-atom",
+    });
+    editor?.focus();
+  }, []);
 
   // Z5 submit-button state machine. The button's whole view — label,
   // icon, `disabled`, `data-mode` — is a pure function of the
@@ -2690,6 +2731,16 @@ export const TugPromptEntry = React.forwardRef<
           exitCommitMode();
         }
       },
+      // ⌘I / Session ▸ Insert File…. Registered HERE and nowhere above:
+      // the command inserts at a caret, so the composer holding focus is
+      // the only responder that can answer it. That is also the item's
+      // gate — an unhandled chain walk is what dims the menu item when
+      // focus sits in the transcript.
+      [TUG_ACTIONS.INSERT_FILE]: (event: ActionEvent) => {
+        const path = (event.value as { path?: unknown } | undefined)?.path;
+        if (typeof path !== "string" || path === "") return;
+        insertFilePath(path);
+      },
       [TUG_ACTIONS.REMOVE_ATTACHMENT]: (event: ActionEvent) => {
         // The preview's ✕ / Delete controls dispatch the atom id of the
         // attachment to drop; the prompt-entry owns the editor doc +
@@ -3084,6 +3135,9 @@ export const TugPromptEntry = React.forwardRef<
       insertCommandChip(name: string) {
         seedCommandChip(name);
       },
+      insertFilePath(path: string) {
+        insertFilePath(path);
+      },
       getEditorElement() {
         const view = textEditorRef.current?.view();
         return (view?.contentDOM as HTMLElement | undefined) ?? null;
@@ -3093,7 +3147,7 @@ export const TugPromptEntry = React.forwardRef<
         view?.dispatch({ effects: regenerateAtomsEffect.of(null) });
       },
     }),
-    [openCommandPicker, seedCommandChip],
+    [openCommandPicker, seedCommandChip, insertFilePath],
   );
 
   // Compose rootRef + responderRef onto the same DOM element.

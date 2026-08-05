@@ -1101,6 +1101,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sessionMenu.addItem(NSMenuItem(title: "First Turn", action: #selector(firstTurn(_:)), keyEquivalent: "").identified("session.firstTurn"))
         sessionMenu.addItem(NSMenuItem(title: "Last Turn", action: #selector(lastTurn(_:)), keyEquivalent: "").identified("session.lastTurn"))
         sessionMenu.addItem(NSMenuItem.separator())
+        sessionMenu.addItem(NSMenuItem(title: "Insert File…", action: #selector(insertFile(_:)), keyEquivalent: "").identified("session.insertFile"))
         sessionMenu.addItem(NSMenuItem(title: "Open Command Picker", action: #selector(openCommandPicker(_:)), keyEquivalent: "").identified("session.commandPicker"))
         sessionMenu.addItem(NSMenuItem(title: "Cycle Focus Mode", action: #selector(cycleFocusMode(_:)), keyEquivalent: "").identified("session.cycleFocusMode"))
         sessionMenu.addItem(NSMenuItem.separator())
@@ -1544,6 +1545,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func stopSession(_ sender: Any?) {
         sendControl("interrupt-session")
+    }
+
+    /// Session ▸ Insert File… — choose a file and mention it in the focused
+    /// prompt entry. Unlike Open File…, no content types are declared: a
+    /// prompt may name any file, and the panel is picking a path to talk
+    /// about rather than a document this app has to render. The frame is
+    /// dispatched first-responder in tugdeck, so the composer that holds
+    /// focus is the one that receives the path.
+    @objc private func insertFile(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a file to insert"
+        panel.prompt = "Insert"
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.sendControl("insert-file", params: ["path": url.path])
+        }
     }
 
     // Transcript navigation and the session card's keyboard affordances —

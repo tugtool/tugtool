@@ -83,6 +83,7 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   // Session
   { id: "session.focusPrompt", key: "k", mods: MOD.command },
   { id: "session.stop", key: "" },
+  { id: "session.insertFile", key: "i", mods: MOD.command },
   { id: "session.new" },
   { id: "session.resume" },
   { id: "session.rename" },
