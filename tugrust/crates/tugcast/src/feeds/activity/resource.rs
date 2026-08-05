@@ -37,7 +37,9 @@ const RSS_PUBLISH_EPSILON_BYTES: u64 = 4 * 1024 * 1024;
 struct PublishedGauges {
     cpu_pct: f32,
     rss_bytes: u64,
+    #[cfg(target_os = "macos")]
     disk_read_bps: u64,
+    #[cfg(target_os = "macos")]
     disk_write_bps: u64,
 }
 
