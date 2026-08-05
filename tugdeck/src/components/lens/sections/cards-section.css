@@ -205,6 +205,9 @@ body {
      border tone (`--tug7-element-global-border-normal-strong-rest`) is the
      next rung up if they want to carry more of the work. */
   --tugx-lens-group-header-rule: var(--tug7-element-global-border-normal-muted-rest);
+  /* How far the sub-header's glyph and label stand off the row's leading edge,
+     so the movement caret on that edge has room. TUNE HERE. */
+  --tugx-lens-group-header-inset: 4px;
 }
 
 /* @tug-renders-on: --tug7-surface-card-primary-normal-well-rest */
@@ -237,6 +240,12 @@ body {
   align-items: center;
   gap: 6px;
   min-inline-size: 0;
+  /* Clearance for the movement caret, which is drawn ON the row's leading edge
+     and is the loudest mark on the surface. The glyph is what it crowds, and
+     the label is measured from the glyph, so the line moves as a piece — the
+     same nudge, for the same reason, that the session rows take. Leading only:
+     the fold cue rides the row's trailing slot and does not move with it. */
+  padding-inline-start: var(--tugx-lens-group-header-inset);
 }
 
 /* The group's kind glyph, in the column the rows' own glyphs stand in. It is

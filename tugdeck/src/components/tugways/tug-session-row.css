@@ -45,6 +45,21 @@ body {
   /* Air along the name line, between the indicator, the name, and the
      furniture past it. */
   --tugx-session-row-name-gap: 8px;
+  /* How far the row's whole leading reading — the indicator, the name, and
+     both PULSE runs under them — stands off the row's own leading edge. TUNE
+     HERE.
+
+     It is clearance for the movement caret, which is drawn ON that edge and is
+     the loudest mark on the surface: a 4px bar with a 3px nose, at full accent.
+     The indicator is the piece it crowds, because the dot's ring of breath
+     overhangs its own advance and reaches back toward the edge the caret is
+     using. Everything on the line moves together rather than the dot alone —
+     the name is measured from the dot and the PULSE takes its inset from the
+     same edge, so nudging one piece would only re-open the gap between them.
+
+     Leading only: the trailing furniture keeps the row's own far edge, so the
+     slots and the tape stay on the vertical they already share. */
+  --tugx-session-row-leading-inset: 4px;
   /* What the indicator COSTS on the name line in the inline-indicator fits.
      Deliberately less than the indicator's own box: the phase dot is a small
      disc inside a much larger ring of breath, and the ring is free to overhang
@@ -110,6 +125,7 @@ body {
   min-inline-size: 0;
   position: relative;
   z-index: 0;
+  padding-inline-start: var(--tugx-session-row-leading-inset);
   padding-inline-end: var(--tugx-session-row-trailing-inset);
 }
 
