@@ -256,7 +256,7 @@ body {
      it. Keep it SMALL — over a tall row that taper is nearly vertical and
      reads as a subtle bevel, which is the intent; a large value turns the
      caret into a dart that competes with the content. */
-  --tugx-focus-cursor-bar-width: 4px;
+  --tugx-focus-cursor-bar-width: 3px;
   --tugx-focus-cursor-bar-point: 3px;
   --tugx-focus-cursor-bar-color: var(--tug7-element-global-fill-normal-accent-rest);
 

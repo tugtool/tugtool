@@ -18,13 +18,13 @@ body {
 
      The pull is what keeps a container perimeter from reading as a hard bright
      rectangle, and it resolves opaquely against the host's published
-     `--tugx-ambient-surface`, so the ring sits the same designed distance off
-     its ground on a sheet, in a Lens well, or on the canvas. The movement
-     caret inside the container keeps the accent at FULL strength — the gap
-     between the two is what says "container" vs. "element".
+     `--tugx-ambient-surface`. At 100% the mix is a pass-through and the ring
+     is the FULL accent, matching the movement caret — weight alone (cover +
+     body vs. the caret bar) tells "container" from "element". Tone DOWN from
+     here to soften the perimeter without touching the caret.
      See `styles/focus-ring.css`. */
   --tugx-focus-container-ring-tint: var(--tugx-accent);
-  --tugx-focus-container-ring-tone: 68%;
+  --tugx-focus-container-ring-tone: 100%;
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));

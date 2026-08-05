@@ -22,12 +22,13 @@ body {
      its ground on a sheet, in a Lens well, or on the canvas. The movement
      caret inside the container keeps the accent at FULL strength — the gap
      between the two is what says "container" vs. "element".
-     A light theme tones LESS than a dark one. Pulling the accent toward a
-     near-white surface both desaturates it and raises its lightness, so the
-     stroke loses contrast against its own ground twice over; the dark themes
-     lose it only once. See `styles/focus-ring.css`. */
+     At 100% the mix is a pass-through and the ring is the FULL accent,
+     matching the movement caret — weight alone (cover + body vs. the caret
+     bar) tells "container" from "element". Tone DOWN from here to soften the
+     perimeter without touching the caret.
+     See `styles/focus-ring.css`. */
   --tugx-focus-container-ring-tint: var(--tugx-accent);
-  --tugx-focus-container-ring-tone: 88%;
+  --tugx-focus-container-ring-tone: 100%;
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));

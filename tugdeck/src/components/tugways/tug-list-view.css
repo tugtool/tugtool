@@ -108,13 +108,16 @@ body {
   --tugx-list-view-cursor-bar-width:   var(--tugx-focus-cursor-bar-width);
   --tugx-list-view-cursor-bar-point:   var(--tugx-focus-cursor-bar-point);
   --tugx-list-view-cursor-bar-color:   var(--tugx-focus-cursor-bar-color);
-  /* How far in from the row's leading edge the bar starts WHILE THE CONTAINER
-     RING IS UP (the rule below applies it only under the keyboard attributes).
-     One ring-width: the ring overlay paints over the rows, so a bar at the raw
-     edge would have its leading pixels dulled under the toned stroke — inset,
-     the two marks stack flush instead of overlapping. At rest the bar sits on
+  /* `--tugx-list-view-cursor-bar-inset` — OPT-IN knob, deliberately not
+     declared here. How far in from the row's leading edge the bar starts
+     WHILE THE CONTAINER RING IS UP (the rule below applies it only under the
+     keyboard attributes). Its default is the ring's BODY width — the share of
+     the ring inside the scrollport — resolved at the focused scroller, so the
+     bar lands flush against the ring's inner edge with no seam and no
+     overlap, whatever the host's frame math makes the body. A declaration
+     here would freeze that formula against body's values instead ([L17]
+     substitution happens at the declaring element). At rest the bar sits on
      the raw edge. */
-  --tugx-list-view-cursor-bar-inset:   var(--tugx-focus-container-ring-width);
 
   /* Row-layout slots — consumed only when `rowLayout` is set. */
   --tugx-list-view-pill-row-gap:       var(--tug-space-sm);
@@ -504,7 +507,10 @@ body {
 }
 .tug-list-view[data-key-view-kbd] .tug-list-view-cell[data-key-cursor]::before,
 .tug-list-view[data-key-within] .tug-list-view-cell[data-key-cursor]::before {
-  inset-inline-start: var(--tugx-list-view-cursor-bar-inset);
+  inset-inline-start: var(
+    --tugx-list-view-cursor-bar-inset,
+    var(--tugx-list-view-ring-body-width, 0px)
+  );
 }
 
 /* ---- Read-only mode (`interactive={false}`) ----
