@@ -1108,8 +1108,19 @@ mod tests {
         tx.send(exec_frame("s1", "e1", "sleep 60", None))
             .await
             .unwrap();
-        // Wait for the exchange to start, then kill.
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        // Kill only once the shell has spawned and the exchange has started —
+        // a `kill` that lands before the spawn finishes finds no pid to signal.
+        let start_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            let frame = tokio::time::timeout_at(start_deadline, rx.recv())
+                .await
+                .expect("exchange must start")
+                .unwrap();
+            let v = payload_json(&frame);
+            if v["type"] == "exchange_started" && v["exchange_id"] == "e1" {
+                break;
+            }
+        }
         tx.send(kill_frame("s1")).await.unwrap();
         let mut settled = None;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(10);

@@ -281,6 +281,7 @@ fn compute_left_behind(opts: &CommitOptions) -> LeftBehind {
 ///   strands the source's deletion in the index. Rename sources whose
 ///   destination is in `files` join the `commit` pathspec, and the commit
 ///   records the rename.
+///
 /// When any file carries a hunk election the shape changes ([P07]): the index
 /// must start clean, the elected files are staged by piping a filtered patch to
 /// `git apply --cached`, and the commit runs with **no** pathspec — a pathspec
@@ -388,9 +389,8 @@ fn stage_partial_and_commit(
     if !stageable.is_empty() {
         let mut add_args: Vec<&str> = vec!["add", "--"];
         add_args.extend(stageable.iter().map(String::as_str));
-        run_git_step(repo_root, &add_args, "git add failed").map_err(|e| {
+        run_git_step(repo_root, &add_args, "git add failed").inspect_err(|_| {
             reset_index(repo_root, files);
-            e
         })?;
     }
 
@@ -403,9 +403,8 @@ fn stage_partial_and_commit(
         }
     }
 
-    run_git_step(repo_root, &["commit", "-m", message], "git commit failed").map_err(|e| {
+    run_git_step(repo_root, &["commit", "-m", message], "git commit failed").inspect_err(|_| {
         reset_index(repo_root, files);
-        e
     })?;
     Ok(())
 }
