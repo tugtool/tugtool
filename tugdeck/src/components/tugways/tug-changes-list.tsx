@@ -741,7 +741,7 @@ export function ChangesFileRow({
                   icon={<CornerDownLeft size={12} />}
                   size="2xs"
                   emphasis="outlined"
-                  role="accent"
+                  role="action"
                   disabled={claimPending}
                   title={
                     claimPending
@@ -763,7 +763,7 @@ export function ChangesFileRow({
                   icon={<CornerUpRight size={12} />}
                   size="2xs"
                   emphasis="outlined"
-                  role="accent"
+                  role="danger"
                   disabled={disclaimPending}
                   title={
                     disclaimPending
@@ -1044,7 +1044,7 @@ export function TugChangesList({
                     icon={<CornerDownLeft size={12} />}
                     size="2xs"
                     emphasis="outlined"
-                    role="accent"
+                    role="action"
                     disabled={claimPending}
                     title={
                       claimPending ? "Claiming…" : "Claim all files in this session"
@@ -1066,7 +1066,7 @@ export function TugChangesList({
                     icon={<CornerUpRight size={12} />}
                     size="2xs"
                     emphasis="outlined"
-                    role="accent"
+                    role="danger"
                     disabled={disclaimPending}
                     title={
                       disclaimPending

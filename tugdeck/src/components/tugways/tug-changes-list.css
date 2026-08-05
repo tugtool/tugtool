@@ -173,8 +173,8 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* The bulk affordances sit at the section header's trailing edge: accent
-   icon+text buttons whose casing matches the header's uppercase. */
+/* The bulk affordances sit at the section header's trailing edge: icon+text
+   buttons whose casing matches the header's uppercase. */
 .tug-changes-list-claim-all,
 .tug-changes-list-disclaim-all {
   flex: 0 0 auto;
