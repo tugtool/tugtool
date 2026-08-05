@@ -11,6 +11,7 @@ import {
 } from "../action-dispatch";
 import { FeedId } from "../protocol";
 import type { ActionEvent } from "../components/tugways/responder-chain";
+import { ResponderChainManager } from "../components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { IMPOSITION_KINDS } from "@/lib/layout-imposer";
 
@@ -228,30 +229,17 @@ describe("initActionDispatch: reload", () => {
   });
 });
 
-// ---- set-maker-mode handler ----
+// ---- retired: set-maker-mode ----
 
 describe("initActionDispatch: set-maker-mode", () => {
   beforeEach(() => {
     _resetForTest();
   });
 
-  it("does not throw when webkit bridge is absent", () => {
-    const conn = createMockConnection();
-    const deck = createMockDeckManager();
-    initActionDispatch(conn as any, deck as any);
-
-    expect(() => dispatchAction({ action: "set-maker-mode", enabled: true })).not.toThrow();
-  });
-
-  it("warns and does not throw when enabled is not a boolean", () => {
-    const conn = createMockConnection();
-    const deck = createMockDeckManager();
-    initActionDispatch(conn as any, deck as any);
-
-    expect(() => dispatchAction({ action: "set-maker-mode", enabled: "yes" })).not.toThrow();
-  });
-
-  it("calls the setMakerMode webkit bridge when present", () => {
+  it("is no longer a door — the maker gate flows through the reverse bridge", () => {
+    // Nothing anywhere sent this wire: the maker gate is set by the Swift
+    // host's `setMakerMode` bridge in the other direction, so the handler
+    // was a door with no sender.
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
@@ -265,12 +253,10 @@ describe("initActionDispatch: set-maker-mode", () => {
 
     dispatchAction({ action: "set-maker-mode", enabled: false });
 
-    expect(posted.length).toBe(1);
-    expect(posted[0]).toMatchObject({ enabled: false });
+    expect(posted.length).toBe(0);
 
     delete (globalThis as Record<string, unknown>).webkit;
   });
-
 });
 
 // ---- source-tree handler ----
@@ -556,25 +542,28 @@ describe("initActionDispatch: add-card-to-active-pane", () => {
     _resetForTest();
   });
 
-  it("dispatches 'add-card-to-active-pane' through the registered ResponderChainManager", () => {
+  it("reaches the first responder's add-card handler", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
-    // Create a stub ResponderChainManager that records dispatch calls.
     const dispatched: ActionEvent[] = [];
-    const stubManager = {
-      sendToFirstResponder(event: ActionEvent): boolean {
-        dispatched.push(event);
-        return true;
+    const chain = new ResponderChainManager();
+    chain.register({
+      id: "canvas",
+      parentId: null,
+      actions: {
+        [TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE]: (e: ActionEvent) => { dispatched.push(e); },
       },
-    };
-    registerResponderChainManager(stubManager as any);
+    });
+    chain.makeFirstResponder("canvas");
+    registerResponderChainManager(chain);
 
     dispatchAction({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE });
 
     expect(dispatched.length).toBe(1);
-    expect(dispatched[0]).toEqual({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE, phase: "discrete" });
+    expect(dispatched[0]?.action).toBe(TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE);
+    expect(dispatched[0]?.phase).toBe("discrete");
   });
 
   it("warns and does not throw when no ResponderChainManager is registered", () => {
@@ -593,14 +582,26 @@ describe("initActionDispatch: add-card-to-active-pane", () => {
 
     const first: ActionEvent[] = [];
     const second: ActionEvent[] = [];
-    registerResponderChainManager({ sendToFirstResponder: (e: ActionEvent) => { first.push(e); return true; } } as any);
-    registerResponderChainManager({ sendToFirstResponder: (e: ActionEvent) => { second.push(e); return true; } } as any);
+    const chainFor = (sink: ActionEvent[]): ResponderChainManager => {
+      const chain = new ResponderChainManager();
+      chain.register({
+        id: "canvas",
+        parentId: null,
+        actions: {
+          [TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE]: (e: ActionEvent) => { sink.push(e); },
+        },
+      });
+      chain.makeFirstResponder("canvas");
+      return chain;
+    };
+    registerResponderChainManager(chainFor(first));
+    registerResponderChainManager(chainFor(second));
 
     dispatchAction({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE });
 
     expect(first.length).toBe(0);
     expect(second.length).toBe(1);
-    expect(second[0]).toEqual({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE, phase: "discrete" });
+    expect(second[0]?.action).toBe(TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE);
   });
 });
 
@@ -611,26 +612,28 @@ describe("initActionDispatch: close (Both)", () => {
     _resetForTest();
   });
 
-  it("dispatches TUG_ACTIONS.CLOSE through the registered ResponderChainManager", () => {
+  it("reaches the first responder's close handler", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
     const dispatched: ActionEvent[] = [];
-    const stubManager = {
-      sendToFirstResponder(event: ActionEvent): boolean {
-        dispatched.push(event);
-        return true;
-      },
-    };
-    registerResponderChainManager(stubManager as any);
+    const chain = new ResponderChainManager();
+    chain.register({
+      id: "card",
+      parentId: null,
+      actions: { [TUG_ACTIONS.CLOSE]: (event: ActionEvent) => { dispatched.push(event); } },
+    });
+    chain.makeFirstResponder("card");
+    registerResponderChainManager(chain);
 
     // Wire string and chain-action string are the same — the Both
     // convergence — so the Control-frame name is just TUG_ACTIONS.CLOSE.
     dispatchAction({ action: TUG_ACTIONS.CLOSE });
 
     expect(dispatched.length).toBe(1);
-    expect(dispatched[0]).toEqual({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
+    expect(dispatched[0]?.action).toBe(TUG_ACTIONS.CLOSE);
+    expect(dispatched[0]?.phase).toBe("discrete");
   });
 
   it("warns and does not throw when no ResponderChainManager is registered", () => {
@@ -972,15 +975,19 @@ describe("initActionDispatch: manual save verbs", () => {
       const deck = createMockDeckManager();
       initActionDispatch(conn as any, deck as any);
       const dispatched: ActionEvent[] = [];
-      registerResponderChainManager({
-        sendToFirstResponder: (e: ActionEvent) => {
-          dispatched.push(e);
-          return true;
-        },
-      } as any);
+      const chain = new ResponderChainManager();
+      chain.register({
+        id: "editor",
+        parentId: null,
+        actions: { [action]: (e: ActionEvent) => { dispatched.push(e); } },
+      });
+      chain.makeFirstResponder("editor");
+      registerResponderChainManager(chain);
 
       dispatchAction({ action });
-      expect(dispatched).toEqual([{ action, phase: "discrete" }]);
+      expect(dispatched.length).toBe(1);
+      expect(dispatched[0]?.action).toBe(action);
+      expect(dispatched[0]?.phase).toBe("discrete");
     });
   }
 });

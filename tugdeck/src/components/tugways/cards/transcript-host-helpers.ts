@@ -26,7 +26,7 @@ import {
   type TextSelectionAdapter,
 } from "@/components/tugways/text-selection-adapter";
 import { transcriptMarkdownToHtml } from "@/lib/markdown/transcript-copy-html";
-import { dispatchAction } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
 import { revealDirectoryInFinder, revealPathInFinder } from "@/lib/os-open";
 import { openAttachmentPreview } from "@/lib/attachment-preview-open";
 import { useDeckManager } from "@/deck-manager-context";
@@ -544,13 +544,10 @@ export function useTranscriptCellMenu({
   const handleOpenAnnotatedFile = useCallback((): ActionHandlerResult => {
     const payload = contextAnnotationRef.current;
     if (payload === null || payload.kind !== "file-path") return;
-    const action: Record<string, unknown> = {
-      action: TUG_ACTIONS.OPEN_FILE,
-      path: payload.path,
-    };
-    if (payload.line !== undefined) action.line = payload.line;
-    if (payload.endLine !== undefined) action.endLine = payload.endLine;
-    dispatchAction(action);
+    const target: Record<string, unknown> = { path: payload.path };
+    if (payload.line !== undefined) target.line = payload.line;
+    if (payload.endLine !== undefined) target.endLine = payload.endLine;
+    dispatchCommand(TUG_ACTIONS.OPEN_FILE, target);
   }, []);
 
   const handleRevealAnnotatedFile = useCallback((): ActionHandlerResult => {
@@ -564,8 +561,7 @@ export function useTranscriptCellMenu({
   const handleOpenAnnotatedDiff = useCallback((): ActionHandlerResult => {
     const payload = contextAnnotationRef.current;
     if (payload === null || payload.kind !== "commit-sha") return;
-    dispatchAction({
-      action: TUG_ACTIONS.OPEN_DIFF,
+    dispatchCommand(TUG_ACTIONS.OPEN_DIFF, {
       descriptor: {
         kind: "commit",
         root: payload.root,

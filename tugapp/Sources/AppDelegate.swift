@@ -1259,8 +1259,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     // MARK: - Actions
 
+    /// One command for Settings, whichever door the user came through.
+    /// The menu item used to send `show-card {component: "settings"}` while
+    /// ⌘, dispatched `show-settings` on the web responder chain — two paths
+    /// to one card, and only the chain path claimed focus and re-centered
+    /// the card. The menu now sends the same command the chord does.
     @objc func showSettings(_ sender: Any?) {
-        sendControl("show-card", params: ["component": "settings"])
+        sendControl("show-settings")
     }
 
     @objc func showSetup(_ sender: Any?) {

@@ -33,7 +33,7 @@
 
 import type { TugAction } from "@/components/tugways/action-vocabulary";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { dispatchAction } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
 import { openUrlInOS, revealDirectoryInFinder } from "@/lib/os-open";
 import { openAttachmentPreview } from "@/lib/attachment-preview-open";
 
@@ -193,13 +193,10 @@ registerAnnotationKind("file-path", {
   // lands on (and flashes) exactly the lines that changed.
   primaryClick: (payload) => {
     if (payload.kind !== "file-path") return;
-    const action: Record<string, unknown> = {
-      action: TUG_ACTIONS.OPEN_FILE,
-      path: payload.path,
-    };
-    if (payload.line !== undefined) action.line = payload.line;
-    if (payload.endLine !== undefined) action.endLine = payload.endLine;
-    dispatchAction(action);
+    const target: Record<string, unknown> = { path: payload.path };
+    if (payload.line !== undefined) target.line = payload.line;
+    if (payload.endLine !== undefined) target.endLine = payload.endLine;
+    dispatchCommand(TUG_ACTIONS.OPEN_FILE, target);
   },
   menuEntries: () => FILE_PATH_MENU_ENTRIES,
   suppressStandardItems: false,
@@ -259,8 +256,7 @@ registerAnnotationKind("commit-sha", {
   // the diff opens showing the commit, not the whole tree.
   primaryClick: (payload) => {
     if (payload.kind !== "commit-sha") return;
-    dispatchAction({
-      action: TUG_ACTIONS.OPEN_DIFF,
+    dispatchCommand(TUG_ACTIONS.OPEN_DIFF, {
       descriptor: {
         kind: "commit",
         root: payload.root,

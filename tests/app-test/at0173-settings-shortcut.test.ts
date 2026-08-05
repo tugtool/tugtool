@@ -14,6 +14,8 @@
  * @covers tugapp/Sources/AppDelegate.swift
  * @covers tugdeck/src/components/tugways/cards/settings-card.tsx
  * @covers tugdeck/src/action-dispatch.ts
+ * @covers tugdeck/src/command-dispatch.ts
+ * @covers tugdeck/src/components/tugways/command-registry.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -68,6 +70,16 @@ describe.skipIf(!SHOULD_RUN)("AT0173: ⌘, opens Settings", () => {
           `document.querySelector('[data-testid="settings-card"]') !== null`,
           { timeoutMs: 6000 },
         );
+
+        // Settings is one command with two doors — the menu item and the
+        // chord — so a second press raises the card it already made rather
+        // than making a second one. When the item and the chord ran two
+        // different code paths, this is where they could disagree.
+        await app.nativeKey(",", ["cmd"]);
+        await app.waitForCondition<boolean>(`${countSettings()} === 1`, {
+          timeoutMs: 8000,
+        });
+        expect(await app.evalJS<number>(countSettings())).toBe(1);
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") process.stderr.write(`\n[at0173-empty] log tail:\n${tail}\n`);

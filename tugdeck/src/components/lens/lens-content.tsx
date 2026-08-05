@@ -40,7 +40,7 @@ import React, {
 import { lensStore } from "@/lib/lens-store/lens-store";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useResponder } from "@/components/tugways/use-responder";
-import { dispatchAction } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
 import {
   useFocusManager,
   useSeedKeyView,
@@ -204,7 +204,7 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
     id: responderId,
     actions: {
       [TUG_ACTIONS.CANCEL_DIALOG]: () => {
-        dispatchAction({ action: "focus-lens" });
+        dispatchCommand(TUG_ACTIONS.FOCUS_LENS);
       },
     },
   });

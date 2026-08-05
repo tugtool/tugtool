@@ -46,7 +46,7 @@ import React, {
 } from "react";
 import { CornerDownLeft, CornerUpRight, SquareArrowOutUpRight } from "lucide-react";
 
-import { dispatchAction } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
@@ -160,7 +160,7 @@ function FilePathLink({
       // Opening the file is the link's own gesture — never also the row's
       // expand toggle.
       event.stopPropagation();
-      dispatchAction({ action: TUG_ACTIONS.OPEN_FILE, path: absolutePath });
+      dispatchCommand(TUG_ACTIONS.OPEN_FILE, { path: absolutePath });
     },
     [absolutePath],
   );
@@ -222,7 +222,7 @@ export function PopOutDiffButton({
       data-testid="tug-changes-list-diff-popout"
       onClick={(event) => {
         event?.stopPropagation();
-        dispatchAction({ action: TUG_ACTIONS.OPEN_DIFF, descriptor });
+        dispatchCommand(TUG_ACTIONS.OPEN_DIFF, { descriptor });
       }}
     />
   );

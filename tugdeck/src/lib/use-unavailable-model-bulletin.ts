@@ -39,7 +39,8 @@ import { useEffect, useRef } from "react";
 
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
-import { dispatchAction } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import type { CapabilityModel } from "@/lib/session-metadata-store";
@@ -152,7 +153,7 @@ export function useUnavailableModelBulletin({
       cancelLabel: "Not Now",
     }).then((confirmed) => {
       if (confirmed) {
-        dispatchAction({ action: "show-card", component: "settings" });
+        dispatchCommand(TUG_ACTIONS.SHOW_SETTINGS);
       }
     });
   }, [cardId, showSheet]);

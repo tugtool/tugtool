@@ -33,7 +33,7 @@ import "./slot-picker.css";
 
 import React, { useSyncExternalStore } from "react";
 
-import { dispatchAction } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import { slotCount } from "@/lib/layout-imposer";
 import { findLensPane } from "@/deck-store-selectors";
@@ -101,7 +101,7 @@ export function SlotPicker({ cardId }: { cardId: string }): React.ReactElement |
       onSelectSlot={(slot, event) => {
         // Assigning is not a row activation — stop it reaching the cell.
         event?.stopPropagation();
-        dispatchAction({ action: "assign-slot", cardId, slot });
+        dispatchCommand("assign-slot", { cardId, slot });
       }}
     />
   );

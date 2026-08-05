@@ -56,7 +56,7 @@ import {
   X,
 } from "lucide-react";
 
-import { dispatchAction } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { useBlockReorder } from "@/components/lens/block-reorder";
@@ -816,7 +816,7 @@ function CardsSectionBody({
       // somewhere the user is already looking. A close that simply happens
       // gets no announcement; the row vanishing is the whole answer.
       if (askedBeforeClosing(cardId)) {
-        dispatchAction({ action: "focus-session-card", cardId });
+        dispatchCommand("focus-session-card", { cardId });
       }
       chain.sendToTarget(cardId, {
         action: TUG_ACTIONS.CLOSE_TAB,
@@ -835,7 +835,7 @@ function CardsSectionBody({
   const onClosePane = useCallback(
     (paneId: string, activeCardId: string): void => {
       if (chain === null || !chain.hasResponder(paneId)) return;
-      dispatchAction({ action: "focus-session-card", cardId: activeCardId });
+      dispatchCommand("focus-session-card", { cardId: activeCardId });
       chain.sendToTarget(paneId, {
         action: TUG_ACTIONS.CLOSE_PANE,
         phase: "discrete",
@@ -880,10 +880,7 @@ function CardsSectionBody({
         return;
       }
       lastSelectedRowId = dataSource.idForIndex(index);
-      dispatchAction({
-        action: "focus-session-card",
-        cardId: row.identity.cardId,
-      });
+      dispatchCommand("focus-session-card", { cardId: row.identity.cardId });
     };
     return { onSelect: activate, onActivate: activate };
   }, [dataSource, onToggleGroup]);

@@ -45,7 +45,7 @@ import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
 import { setSectionContent } from "@/components/lens/lens-section-content";
 import { LayoutMiniature } from "@/components/lens/layout-miniature";
-import { dispatchAction } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import {
   IMPOSITION_KINDS,
@@ -143,11 +143,11 @@ function LayoutsSectionBody({
         if (typeof value !== "string") return;
         if (event.sender === SIDE_SENDER_ID) {
           if (isLensSide(value))
-            dispatchAction({ action: "set-imposition-lens", side: value });
+            dispatchCommand("set-imposition-lens", { side: value });
           return;
         }
         if (event.sender === KIND_SENDER_ID && isImpositionKind(value)) {
-          dispatchAction({ action: "set-imposition", kind: value });
+          dispatchCommand("set-imposition", { kind: value });
         }
       },
     },

@@ -826,12 +826,12 @@ Both smell like one cause — a synthesized command-modified chord not landing �
 | #step-3 | Give Edit ▸ Delete a real handler | done | `12f2804e8` |
 | #step-4 | TugButton consults validateAction | done | `56533625b` |
 | #step-5 | Correct the lying chord labels | done | `181321d84` |
-| #step-6 | The registry table and dispatchCommand | pending | — |
-| #step-7 | Convert the Both loops and menu wires | pending | — |
-| #step-8 | Converge the Settings dual path; native entries and NATIVE_LOCKED | pending | — |
-| #step-9 | Give ids to the store verbs and raw-string dispatches | pending | — |
-| #step-10 | Route the direct-call emitters through the funnel | pending | — |
-| #step-11 | Integration checkpoint — funnel #1 is behavior-neutral | pending | — |
+| #step-6 | The registry table and dispatchCommand | done | `eac1a6375` |
+| #step-7 | Convert the Both loops and menu wires | done | `c217a2d77` |
+| #step-8 | Converge the Settings dual path; native entries and NATIVE_LOCKED | done | `069b76ddc` |
+| #step-9 | Give ids to the store verbs and raw-string dispatches | done | `be37da9b8` |
+| #step-10 | Route the direct-call emitters through the funnel | done | `f463d85e5` |
+| #step-11 | Integration checkpoint — funnel #1 is behavior-neutral | done | `3c520c817` |
 | #step-12 | queryActionState and key-card-scoped validation | pending | — |
 | #step-13 | The commands mirror block, end to end | pending | — |
 | #step-14 | Populate validate and state; retire the Swift tiers | pending | — |

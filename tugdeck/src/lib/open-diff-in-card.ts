@@ -10,7 +10,7 @@
  * initial-content channel. Two cards showing the same diff would be pure
  * duplication.
  *
- * Callers: the `open-diff` action-dispatch handler (`dispatchAction` from the
+ * Callers: the `open-diff` registry handler (`dispatchCommand` from the
  * changeset card's pop-out affordances).
  *
  * @module lib/open-diff-in-card

@@ -48,7 +48,7 @@ import { openFileInCard } from "@/lib/open-file-in-card";
 import { revealPathInFinder } from "@/lib/os-open";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { flipDelta, springKeyframes } from "@/lib/pane-flip";
-import { dispatchAction } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
 import {
   isLensPinned,
   resolvePlacement,
@@ -473,17 +473,13 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         if (cardId === null) return;
         const card = deck.cards.find((c) => c.id === cardId);
         if (!card || card.componentId === LENS_CARD_ID) return;
-        dispatchAction({
-          action: "assign-slot",
-          cardId,
-          slot: event.value - 1,
-        });
+        dispatchCommand("assign-slot", { cardId, slot: event.value - 1 });
       },
       // open-file / reveal-in-finder — deck-level file-reference
       // actions dispatched by context menus on transcript file refs.
       // The chain payload carries the absolute path as `value`; the
-      // richer `{ path, line }` form arrives via `dispatchAction` and
-      // is handled in `action-dispatch.ts`. Both converge on
+      // richer `{ path, line }` form arrives via `dispatchCommand` and
+      // is handled by the registry body in `action-dispatch.ts`. Both converge on
       // `openFileInCard` (path-keyed Text-card reuse).
       [TUG_ACTIONS.OPEN_FILE]: (event: ActionEvent) => {
         if (typeof event.value !== "string" || event.value === "") return;

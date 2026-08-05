@@ -25,8 +25,8 @@
  * restore path a reloaded card takes. When the deck has no Text card
  * yet, `reuse`/`newTab` fall through to `new`.
  *
- * Callers: the `open-file` action-dispatch handler (Control frames +
- * `dispatchAction` from transcript links) and DeckCanvas's
+ * Callers: the `open-file` registry handler (Control frames +
+ * `dispatchCommand` from transcript links) and DeckCanvas's
  * `TUG_ACTIONS.OPEN_FILE` chain handler (context-menu items).
  *
  * @module lib/open-file-in-card

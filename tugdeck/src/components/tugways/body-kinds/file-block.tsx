@@ -122,7 +122,7 @@ import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import { useSavedRegionScroll } from "@/components/tugways/use-component-state-preservation";
-import { dispatchAction } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import {
   BlockActionsCluster,
@@ -923,8 +923,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
                 return;
               }
               if (data.filePath === "") return;
-              dispatchAction({
-                action: TUG_ACTIONS.OPEN_FILE,
+              dispatchCommand(TUG_ACTIONS.OPEN_FILE, {
                 path: data.filePath,
                 line: data.startLine,
               });

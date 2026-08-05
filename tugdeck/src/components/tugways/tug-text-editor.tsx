@@ -106,7 +106,7 @@ import {
   undoDepth,
 } from "@codemirror/commands";
 import { cn } from "@/lib/utils";
-import { dispatchAction } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
 import { quoteMarkdown, stripMarkdown } from "@/lib/paste-transforms";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { undoMenuStatePlugin } from "./tug-text-editor/undo-menu-state-plugin";
@@ -2406,7 +2406,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         const path = contextAtomPathRef.current;
         if (path === null) return;
         return () => {
-          dispatchAction({ action: TUG_ACTIONS.OPEN_FILE, path });
+          dispatchCommand(TUG_ACTIONS.OPEN_FILE, { path });
         };
       },
     };

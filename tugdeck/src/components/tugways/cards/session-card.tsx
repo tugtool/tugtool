@@ -3866,8 +3866,9 @@ export function SessionCardBody({
         ];
         if (open !== undefined) open(payload.args, payload.draft);
       },
-      // ⌃⌘ chord ([P07]): seed the corresponding command chip at the head of
-      // the prompt draft, preserving typed text as args.
+      // Seed the corresponding command chip at the head of the prompt
+      // draft, preserving typed text as args ([P07]). No chord dispatches
+      // this today — the command is named in the registry with no door.
       [TUG_ACTIONS.INSERT_SLASH_COMMAND]: (event: ActionEvent) => {
         const payload = event.value as { name: string } | undefined;
         if (payload === undefined) return;

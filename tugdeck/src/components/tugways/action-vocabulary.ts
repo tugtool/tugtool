@@ -363,9 +363,11 @@ export const TUG_ACTIONS = {
   //                 A host with no handler leaves it unhandled, so the
   //                 prompt entry sends the text to claude instead.
   // INSERT_SLASH_COMMAND: payload — `value: { name }` (a command name). The
-  //                 ⌃⌘ chords dispatch it key-card-scoped; the session card's
-  //                 card-content responder forwards to the prompt entry's
-  //                 `insertCommandChip`, seeding a leading command chip ([P07]).
+  //                 session card's card-content responder forwards it to the
+  //                 prompt entry's `insertCommandChip`, seeding a leading
+  //                 command chip ([P07]). Nothing dispatches it today: no
+  //                 chord is assigned and no menu item names it, so the
+  //                 handler is reachable only by an explicit dispatch.
   // OPEN_COMMAND_PICKER: payload — none. ⌘/ dispatches it key-card-scoped; the
   //                 session card's card-content responder forwards to the
   //                 prompt entry's `openCommandPicker` ([P06]).
@@ -600,7 +602,7 @@ export const TUG_ACTIONS = {
   //                         discarding edits (confirm sheet only while
   //                         dirty). File ▸ Reload from Disk.
   // OPEN_FILE:              payload — `{ path: string, line?: number, endLine?: number }`
-  //                         via `dispatchAction` / Control frames, or a
+  //                         via `dispatchCommand` / Control frames, or a
   //                         chain dispatch whose `value` is the path
   //                         string (context-menu items). Open `path` in
   //                         a Text card: an existing card bound to the
@@ -620,6 +622,39 @@ export const TUG_ACTIONS = {
   //                         whichever attachment strip holds that atom
   //                         (`lib/attachment-preview-open.ts`). Dispatched
   //                         by the transcript's image-atom annotations.
+  // ---- Deck verbs that had no name ----
+  //
+  // These five were reachable only as `DeckManager` method calls — a
+  // drag, a Lens row, an internal caller — so no table could see them and
+  // no keymap could offer them. Naming them is what makes them commands.
+  //
+  // CENTER_PANE:     payload — none. Put the addressed card's pane in the
+  //                  middle of the canvas (`DeckManager.centerPane`).
+  // PIN_LENS:        payload — none. Re-attach the Lens rail to the canvas
+  //                  edge after a manual move or resize has floated it.
+  // SHOW_LENS_PANE / HIDE_LENS_PANE: payload — none. The two explicit
+  //                  halves of what TOGGLE_LENS flips, so a caller that
+  //                  means "show" cannot accidentally hide.
+  // MOVE_PANE:       payload — `{ paneId, position?, size? }`. Reposition or
+  //                  resize a pane; the drag coordinator's verb.
+  CENTER_PANE:            "center-pane",
+  PIN_LENS:               "pin-lens",
+  SHOW_LENS_PANE:         "show-lens-pane",
+  HIDE_LENS_PANE:         "hide-lens-pane",
+  MOVE_PANE:              "move-pane",
+
+  // ---- Commit mode ----
+  //
+  // `enter` has doors (the ⇧⌘P route select and `/commit`); its two exits
+  // were controller methods only.
+  //
+  // EXIT_COMMIT_MODE: payload — none. Leave commit mode, restoring the
+  //                   stashed prompt draft.
+  // LAND_COMMIT:      payload — `value: string` (the commit message).
+  //                   Commit what the Changes sheet is showing.
+  EXIT_COMMIT_MODE:       "exit-commit-mode",
+  LAND_COMMIT:            "land-commit",
+
   CLOSE:                  "close",
   CLOSE_ALL:              "close-all",
   CLOSE_PANE:             "close-pane",

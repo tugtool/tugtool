@@ -4,36 +4,20 @@
  * Implements a Map-based action registry where handlers can be registered
  * and dispatched based on the action string in Control frame payloads.
  *
- * ## Two kinds of registered actions
+ * ## Commands fork out; data frames stay
  *
- * Per `tuglaws/action-naming.md`, the action-dispatch registry carries
- * two flavors of wire name:
+ * `dispatchAction` reads the frame and forks once ([P03]). A wire naming a
+ * `command-registry.ts` entry is a user-invocable command and goes to
+ * `dispatchCommand`, which reads how to route it from the table. Every
+ * other wire is a tugcast data frame — `spawn_session_ok`,
+ * `session_updated`, `app-lifecycle`, `eval`, `ask` and their siblings —
+ * and resolves through the `registerAction` handler map below.
  *
- * - **Control-frame-only** actions — app-level RPC from Swift to JS
- *   that never walks the responder chain. These stay as kebab-case
- *   string literals at the `registerAction` call site because they
- *   have no chain-action counterpart. Examples: `reload`, `set-theme`,
- *   `next-theme`, `set-maker-mode`, `show-card`, `source-tree`.
+ * The handler map is also the `registry` routing target: a command whose
+ * body lives here (rather than on a responder) is registered exactly as
+ * before, and `dispatchCommand` reaches it through `getRegistryHandler`.
  *
- * - **Both** (identity) actions — Control-frame RPCs whose entire
- *   purpose is to inject a chain dispatch on behalf of a Swift menu
- *   item. These use the corresponding `TUG_ACTIONS.*` constant at
- *   both the `registerAction` call and the inner `manager.sendToFirstResponder`
- *   call, so the wire string on both sides is identical. Examples:
- *   `TUG_ACTIONS.SHOW_COMPONENT_GALLERY`, `TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE`,
- *   `TUG_ACTIONS.CLOSE`. The Swift side calls `sendControl("close")`
- *   (etc.) with the same string.
- *
- * Phase 0: SessionNotificationRef dependency removed, card handlers removed.
- * Phase 2: Added gallerySetterRef and show-component-gallery handler.
- * Phase 5b3 (Step 6): Removed gallerySetterRef and registerGallerySetter.
- *   show-component-gallery now dispatches through the responder chain
- *   manager (same pattern as add-card-to-active-pane).
- * Action-naming rollout: Both-category handlers use TUG_ACTIONS constants
- *   at the registerAction call site; close-active-card was renamed to
- *   `close` so its wire format matches the chain-action name.
- * (#s04-action-dispatch-shape), [D04] Gut action-dispatch
- * (#s05-gallery-action)
+ * See `tuglaws/action-naming.md` for the naming convention.
  */
 
 import type { TugConnection } from "./connection";
@@ -43,6 +27,8 @@ import { FeedId } from "./protocol";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { isCommandId } from "@/components/tugways/command-registry";
+import { dispatchCommand } from "./command-dispatch";
 import { openFileInCard } from "@/lib/open-file-in-card";
 import { openDiffInCard } from "@/lib/open-diff-in-card";
 import { isDiffDescriptor } from "@/lib/git-diff-store";
@@ -234,6 +220,16 @@ export function registerAction(action: string, handler: ActionHandler): void {
 }
 
 /**
+ * The handler registered for an action, or `undefined`.
+ *
+ * This is the `registry` routing target: `dispatchCommand` reaches a
+ * command whose body lives here without importing `initActionDispatch`.
+ */
+export function getRegistryHandler(action: string): ActionHandler | undefined {
+  return handlers.get(action);
+}
+
+/**
  * Reset handler registry and module state for test isolation.
  * Internal/test-only -- must never be called from production code.
  */
@@ -270,6 +266,15 @@ export function dispatchAction(payload: Record<string, unknown>): void {
       return;
     }
     console.warn("dispatchAction: payload missing action field", payload);
+    return;
+  }
+
+  // The one fork ([P03]): a wire that names a registry command is a
+  // command and goes through the funnel, which reads its routing from the
+  // table. Everything else is a tugcast data frame — protocol, not intent —
+  // and resolves through the handler map exactly as it always has.
+  if (isCommandId(action)) {
+    dispatchCommand(action, payload);
     return;
   }
 
@@ -421,28 +426,6 @@ export function initActionDispatch(
     });
   });
 
-  // set-maker-mode: flip the app-maker gate via the WKScriptMessageHandler
-  // bridge. "Maker mode" is the user-facing name for what the wire layer
-  // still calls dev mode (the serving switch).
-  const setMakerModeHandler: ActionHandler = (payload) => {
-    const enabled = payload.enabled;
-    if (typeof enabled !== "boolean") {
-      console.warn("set-maker-mode: missing or invalid enabled parameter", payload);
-      return;
-    }
-
-    console.info(`set-maker-mode: enabled=${enabled}`);
-
-    const webkit = (globalThis as unknown as Record<string, unknown>).webkit as Record<string, unknown> | undefined;
-    const messageHandlers = webkit?.messageHandlers as Record<string, unknown> | undefined;
-    if (messageHandlers?.setMakerMode) {
-      (messageHandlers.setMakerMode as { postMessage: (v: unknown) => void }).postMessage({ enabled });
-    } else {
-      console.info("set-maker-mode: WKScriptMessageHandler bridge not available");
-    }
-  };
-  registerAction("set-maker-mode", setMakerModeHandler);
-
   // set-theme: Switch the active theme via TugThemeProvider.
   // Accepts any string theme name — validation is delegated to the theme provider,
   // which fetches CSS via middleware and handles 404s gracefully. [D07]
@@ -476,20 +459,6 @@ export function initActionDispatch(
     }
   });
 
-  // show-component-gallery (Both): show the Component Gallery card via the
-  // DeckCanvas responder. The Control-frame name and the chain-action name
-  // are the same string (TUG_ACTIONS.SHOW_COMPONENT_GALLERY), and this
-  // handler is the trivial adapter — receive the Control frame, dispatch
-  // the chain action, walk to DeckCanvas's registered handler. DeckCanvas
-  // finds or creates the gallery card and focuses it. ([D05], [D07] show-only)
-  registerAction(TUG_ACTIONS.SHOW_COMPONENT_GALLERY, () => {
-    if (responderChainManagerRef) {
-      responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
-    } else {
-      console.warn(`${TUG_ACTIONS.SHOW_COMPONENT_GALLERY}: responder chain manager not registered yet`);
-    }
-  });
-
   // source-tree: Call WKScriptMessageHandler bridge if available
   registerAction("source-tree", () => {
     console.info("source-tree: triggering source tree picker");
@@ -508,53 +477,6 @@ export function initActionDispatch(
   // the Lens pane's presence is the open state ([P02]).
   registerAction("toggle-lens", () => {
     deckManager.toggleLensPane();
-  });
-
-  // focus-lens: Move focus into the Lens (opening it if hidden), or back
-  // out on a second dispatch. Routed through the responder chain so the
-  // deck-canvas handler owns the stash-prior / show / activate sequence.
-  registerAction("focus-lens", () => {
-    if (responderChainManagerRef) {
-      responderChainManagerRef.sendToFirstResponder({
-        action: TUG_ACTIONS.FOCUS_LENS,
-        phase: "discrete",
-      });
-    } else {
-      console.warn("focus-lens: responder chain manager not registered yet");
-    }
-  });
-
-  // reveal-stack: Open the focused pane's slot-stack picker — the title-bar
-  // menu listing every pane sharing its slot. Routed through the responder
-  // chain so the pane that is actually first responder answers, and its title
-  // bar (which owns the menu's open bit) does the work. The host validates
-  // Window ▸ Reveal Stack disabled below depth 2, so an inert press never
-  // arrives here.
-  registerAction("reveal-stack", () => {
-    if (responderChainManagerRef) {
-      responderChainManagerRef.sendToFirstResponder({
-        action: TUG_ACTIONS.REVEAL_STACK,
-        phase: "discrete",
-      });
-    } else {
-      console.warn("reveal-stack: responder chain manager not registered yet");
-    }
-  });
-
-  // cycle-stack: Bring the buried-longest pane in the focused pane's slot to
-  // the front. Same route as reveal-stack — the first responder's pane
-  // answers — and the same host-side gate; what differs is that nothing
-  // transient appears on screen, so the chord can be repeated without
-  // reading anything.
-  registerAction("cycle-stack", () => {
-    if (responderChainManagerRef) {
-      responderChainManagerRef.sendToFirstResponder({
-        action: TUG_ACTIONS.CYCLE_STACK,
-        phase: "discrete",
-      });
-    } else {
-      console.warn("cycle-stack: responder chain manager not registered yet");
-    }
   });
 
   // arrange-cards: Rearrange all cards on the canvas.
@@ -703,7 +625,7 @@ export function initActionDispatch(
   // jumped to the requested line; otherwise a new Text card is created
   // seeded with the path so it opens directly on the file. Dispatched
   // by transcript file references (tool-call headers, file blocks,
-  // file atoms) via `dispatchAction`, and by the Swift File ▸ Open…
+  // file atoms) via `dispatchCommand`, and by the Swift File ▸ Open…
   // menu as a Control frame.
   registerAction(TUG_ACTIONS.OPEN_FILE, (payload) => {
     const path = payload.path;
@@ -742,29 +664,6 @@ export function initActionDispatch(
     openOpenQuickly();
   });
 
-  // Save verbs (Both): trivial responder-chain adapters. The Control-frame
-  // name equals the chain-action name, and the Text card (its editor)
-  // handles them — save is editor-owned (it owns the document), like
-  // cut/copy. The active card's editor is kept as the first responder
-  // across moves/resizes by the card's `cardDidMove`/`cardDidResize` focus
-  // reclaim, so `sendToFirstResponder` reaches it even after a title-bar
-  // drag. An unhandled dispatch (no editing surface focused) is a no-op.
-  for (const action of [
-    TUG_ACTIONS.SAVE,
-    TUG_ACTIONS.SAVE_AS,
-    TUG_ACTIONS.SAVE_A_COPY,
-    TUG_ACTIONS.REVERT_TO_SAVED,
-    TUG_ACTIONS.RELOAD_FROM_DISK,
-  ] as const) {
-    registerAction(action, () => {
-      if (responderChainManagerRef) {
-        responderChainManagerRef.sendToFirstResponder({ action, phase: "discrete" });
-      } else {
-        console.warn(`${action}: responder chain manager not registered yet`);
-      }
-    });
-  }
-
   // new-text-card (Control only): File ▸ New Text Card (⌥⌘N). Opens a new
   // untitled manual buffer in its own Text card — no file exists until the
   // first Save. Not responder-routed; menu-only, like show-card.
@@ -787,164 +686,17 @@ export function initActionDispatch(
     }
   });
 
-  // add-card-to-active-pane (Both): add a new card to the focused pane.
-  // Trivial adapter — Control-frame name and chain-action name are
-  // identical (TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE). DeckCanvas's
-  // registered handler reads the focused card from its cardsRef and
-  // calls store.addCardToPane(). ([D06], [D09])
-  // zoom-in / zoom-out / zoom-actual (Both): the host's View menu owns these
-  // chords — AppKit resolves a menu key equivalent before the web view sees a
-  // keydown — so a document surface that wants them publishes a
-  // `menuState.document` block and the host forwards the command here rather
-  // than scaling the whole web view. The chain then routes it to whichever
-  // surface is frontmost.
-  for (const zoomAction of [
-    TUG_ACTIONS.ZOOM_IN,
-    TUG_ACTIONS.ZOOM_OUT,
-    TUG_ACTIONS.ZOOM_ACTUAL,
-  ] as const) {
-    registerAction(zoomAction, () => {
-      responderChainManagerRef?.sendToFirstResponder({
-        action: zoomAction,
-        phase: "discrete",
-      });
-    });
-  }
-
-  registerAction(TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE, () => {
-    if (responderChainManagerRef) {
-      responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE, phase: "discrete" });
-    } else {
-      console.warn(`${TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE}: responder chain manager not registered yet`);
-    }
-  });
-
-  // close (Both): close the focused card via the responder chain. Trivial
-  // adapter — Control-frame name and chain-action name are identical
-  // (TUG_ACTIONS.CLOSE = "close"). The walk lands on TugPane's registered
-  // close handler. This is the File > Close Card menu item's Control-frame
-  // round-trip: the Swift menu has keyEquivalent "w", so ⌘W triggers the
-  // menu action (AppKit swallows the keystroke before the WKWebView sees
-  // it) which fires this handler. The tugdeck-side keybinding map entry
-  // for ⌘W exists for browser-only dev where no Swift menu is present.
-  // [A3 / R4, action-naming]
-  registerAction(TUG_ACTIONS.CLOSE, () => {
-    if (responderChainManagerRef) {
-      responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
-    } else {
-      console.warn(`${TUG_ACTIONS.CLOSE}: responder chain manager not registered yet`);
-    }
-  });
-
-  // close-all (Both): close every tab in the focused multi-card pane. Like
-  // `close`, the Control-frame name and chain-action name are identical
-  // (TUG_ACTIONS.CLOSE_ALL = "close-all") and the dispatch walks to the
-  // focused pane's registered handler (DeckCanvas's last-resort handler
-  // re-routes to the topmost pane when the first responder has stranded on
-  // the canvas). This is File ▸ Close All Card Tabs (⌥⌘W); the Swift menu item
-  // is enabled only when the focused pane is multi-card. The tugdeck-side
-  // keybinding entry exists for browser-only dev where no Swift menu runs.
-  registerAction(TUG_ACTIONS.CLOSE_ALL, () => {
-    if (responderChainManagerRef) {
-      responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.CLOSE_ALL, phase: "discrete" });
-    } else {
-      console.warn(`${TUG_ACTIONS.CLOSE_ALL}: responder chain manager not registered yet`);
-    }
-  });
-
-  // ---- Menu-command adapters ----
+  // ---- Parameterized menu wires ----
   //
-  // Round-trips for menu items whose chords AppKit swallows at the menu
-  // bar: each Swift menu item sends a Control frame, and these adapters
-  // re-enter the responder chain so the menu action and the web-side
-  // keystroke produce byte-identical dispatches. The browser-only
-  // keybinding-map entries for the same chords keep working in browser
-  // dev, where no Swift menu exists.
+  // Three Swift selectors carry their parameter in the frame rather than
+  // in the wire name. Each resolves that parameter to the per-value
+  // registry entry ([P05]) and hands off to the funnel, so a menu item and
+  // a future keymap row reach the same command by the same path.
 
-  // Both-category chain adapters (control-frame name == chain-action
-  // name; first-responder walk). Enablement is loose by design — an
-  // unhandled dispatch is a silent no-op, matching the web-side
-  // behavior where e.g. ⌘F on a card without find UI does nothing.
-  // Undo/Redo ride this path so the menu items reach the focused
-  // editor's own history (card-specific); their menu items validate
-  // against the editor's depth. (When a browser-native text control is
-  // focused, the host bypasses this round-trip entirely and drives the
-  // web view's NSUndoManager natively — see menus.md. A chord on a
-  // disabled menu item is eaten at the menu bar with a beep; it never
-  // falls through to the web view.)
-  for (const action of [
-    TUG_ACTIONS.FIND,
-    TUG_ACTIONS.FIND_NEXT,
-    TUG_ACTIONS.FIND_PREVIOUS,
-    TUG_ACTIONS.UNDO,
-    TUG_ACTIONS.REDO,
-    TUG_ACTIONS.NEXT_TAB,
-    TUG_ACTIONS.PREVIOUS_TAB,
-    TUG_ACTIONS.CYCLE_CARD,
-    // Paste variants (Edit ▸ Paste as Quote / Paste as Plain Text).
-    // Like the editor's own context-menu paste, these handlers defer
-    // the clipboard read + insertion into a returned continuation;
-    // the native menu round-trip already played its blink, so the
-    // continuation is invoked immediately below.
-    TUG_ACTIONS.PASTE_AS_QUOTE,
-    TUG_ACTIONS.PASTE_AS_PLAIN_TEXT,
-    // Copy variant (Edit ▸ Copy as Plain Text). Its handler writes the
-    // stripped selection synchronously (no continuation), but it rides
-    // the same first-responder round-trip so the Swift menu chord and
-    // the web-side ⇧⌘C keystroke produce identical dispatches.
-    TUG_ACTIONS.COPY_AS_PLAIN_TEXT,
-  ]) {
-    registerAction(action, () => {
-      if (responderChainManagerRef) {
-        // Continuation-aware dispatch, continuation invoked immediately.
-        // Handlers built for the in-app context menu defer their visible
-        // side effect into a returned continuation (two-phase activation:
-        // run after the menu blink) — CM6's undo/redo/select-all all have
-        // this shape. A native-menu control frame arrives AFTER AppKit
-        // already played its own blink, so there is nothing to defer
-        // past; the plain `sendToFirstResponder` would report handled
-        // and silently drop the deferred work.
-        const result = responderChainManagerRef.sendToFirstResponderForContinuation({
-          action,
-          phase: "discrete",
-        });
-        result.continuation?.();
-      } else {
-        console.warn(`${action}: responder chain manager not registered yet`);
-      }
-    });
-  }
-
-  // Both-category key-card adapters (control-frame name == chain-action
-  // name; key-card scope, so the dispatch starts at the active card's
-  // card-content responder even when focus sits on chrome). Non-dev key
-  // cards register no handler — silent no-op behind the menu's
-  // validation gate.
-  for (const action of [
-    TUG_ACTIONS.FOCUS_PROMPT,
-    TUG_ACTIONS.CYCLE_PERMISSION_MODE,
-    TUG_ACTIONS.INTERRUPT_SESSION,
-    // Swift Session-menu Show/Hide Changes / History ([P05], Spec S04). The
-    // control-frame name matches the chain-action name, so the same key-card
-    // re-dispatch adapter serves them.
-    TUG_ACTIONS.TOGGLE_CHANGES_VIEW,
-    TUG_ACTIONS.TOGGLE_HISTORY_VIEW,
-  ]) {
-    registerAction(action, () => {
-      if (responderChainManagerRef) {
-        responderChainManagerRef.sendToKeyCard({ action, phase: "discrete" });
-      } else {
-        console.warn(`${action}: responder chain manager not registered yet`);
-      }
-    });
-  }
-
-  // run-card-command: a Session/File/Edit/Help menu item carrying a
-  // local slash-command name (`payload.name`, optional `payload.args`).
-  // Re-enters the session card's RUN_SLASH_COMMAND surface map via the
-  // key-card scope — byte-identical to typing the command, with zero
-  // per-command plumbing here. An unknown name relies on the dev
-  // card's defensive surface-map lookup (silent no-op).
+  // run-card-command: a Session/File/Edit/Help menu item carrying a local
+  // slash-command name (`payload.name`, optional `payload.args`). The
+  // command it names re-enters the session card's RUN_SLASH_COMMAND
+  // surface map key-card-scoped — byte-identical to typing the command.
   registerAction("run-card-command", (payload) => {
     const name = payload.name;
     if (typeof name !== "string") {
@@ -952,6 +704,18 @@ export function initActionDispatch(
       return;
     }
     const args = typeof payload.args === "string" ? payload.args : "";
+    // A bridged item's args are always empty; a caller that supplies them
+    // is asking for something no entry's static payload can express, so it
+    // dispatches the action directly rather than through the entry.
+    if (args === "") {
+      const id = `${TUG_ACTIONS.RUN_SLASH_COMMAND}:${name}`;
+      if (isCommandId(id)) {
+        dispatchCommand(id);
+        return;
+      }
+    }
+    // An unknown name still reaches the card, whose surface-map lookup is
+    // defensive — a no-op rather than a dead menu item.
     if (responderChainManagerRef) {
       responderChainManagerRef.sendToKeyCard({
         action: TUG_ACTIONS.RUN_SLASH_COMMAND,
@@ -964,26 +728,17 @@ export function initActionDispatch(
   });
 
   // set-permission-mode: the Session ▸ Permission Mode submenu's
-  // round-trip. The mode is validated against the four-mode set the
-  // native submenu offers (`bypassPermissions` is deliberately not
-  // menu-reachable, matching the ⌃⌘P cycle) so a malformed frame can
-  // never reach the send path; the session card's handler commits through
-  // the chip's mode-set path.
+  // round-trip. The mode is validated against the four-mode set the native
+  // submenu offers (`bypassPermissions` is deliberately not menu-reachable,
+  // matching the ⌃⌘P cycle) so a malformed frame can never reach the send
+  // path.
   registerAction(TUG_ACTIONS.SET_PERMISSION_MODE, (payload) => {
     const mode = payload.mode;
     if (typeof mode !== "string" || !PERMISSION_MODE_CYCLE.includes(mode as never)) {
       console.warn(`${TUG_ACTIONS.SET_PERMISSION_MODE}: invalid mode`, payload);
       return;
     }
-    if (responderChainManagerRef) {
-      responderChainManagerRef.sendToKeyCard({
-        action: TUG_ACTIONS.SET_PERMISSION_MODE,
-        value: mode,
-        phase: "discrete",
-      });
-    } else {
-      console.warn(`${TUG_ACTIONS.SET_PERMISSION_MODE}: responder chain manager not registered yet`);
-    }
+    dispatchCommand(`${TUG_ACTIONS.SET_PERMISSION_MODE}:${mode}`);
   });
 
   // spawn_session_ok: the tugcast supervisor echoes the
