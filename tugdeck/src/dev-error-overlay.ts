@@ -77,6 +77,8 @@ interface ViteErrorLike {
   loc?: { file?: string; line?: number; column?: number };
 }
 
+import { isCancelChordEvent } from "@/components/tugways/keymap-registry";
+
 /**
  * Matches an absolute path followed by `:line:col` (POSIX or Windows
  * drive form). Used to linkify file references in the message, frame,
@@ -256,7 +258,7 @@ export function installDevErrorOverlay(): void {
   }
 
   function onKeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
+    if (e.key === "Escape" || isCancelChordEvent(e)) {
       e.stopPropagation();
       e.preventDefault();
       clear();

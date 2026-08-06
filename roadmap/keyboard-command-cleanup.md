@@ -396,11 +396,11 @@ Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` wh
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Doctrine: chord-tiers.md, D126, cross-links | pending | — |
-| #step-2 | Chord moves: registry, Swift literals, pinned tests | pending | — |
-| #step-3 | Claim All / Disclaim All commands | pending | — |
-| #step-4 | ⌘. matcher + parity sweep | pending | — |
-| #step-5 | Integration checkpoint | pending | — |
+| #step-1 | Doctrine: chord-tiers.md, D126, cross-links | done | (this run) |
+| #step-2 | Chord moves: registry, Swift literals, pinned tests | done | (this run) |
+| #step-3 | Claim All / Disclaim All commands | done | (this run) |
+| #step-4 | ⌘. matcher + parity sweep | done | (this run) |
+| #step-5 | Integration checkpoint | done | (verification only) |
 
 #### Step 1: Doctrine — chord-tiers.md, D126, cross-links {#step-1}
 

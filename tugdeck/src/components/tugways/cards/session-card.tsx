@@ -2414,7 +2414,7 @@ export function SessionCardBody({
   const shadeViewController = shadeViewControllerRef.current;
 
   // Commit mode's per-card state + land path ([P03], Spec S03). User-driven
-  // (`/commit`, ⇧⌘C on an empty composer, Session ▸ Commit…), so it rides its
+  // (`/commit`, ⌃⌘C on an empty composer, Session ▸ Commit…), so it rides its
   // own controller rather than `CodeSessionStore`'s reducer. Entering the mode
   // turns the prompt entry into the message editor; the changes sheet's
   // visibility is separate card chrome (the `ShadeViewController`), coupled by
@@ -2482,7 +2482,7 @@ export function SessionCardBody({
   }, [findSession, entryDelegateRef]);
 
   // ⌘F / Edit ▸ Find… toggles. A find bar is a mode, and the chord that
-  // summons a mode is the chord that dismisses it — the same shape ⇧⌘C has on
+  // summons a mode is the chord that dismisses it — the same shape ⌃⌘C has on
   // Changes. The open flag is read through a ref so the toggle keeps one
   // identity across the open/close it causes ([L24] structure zone).
   const findBarOpenRef = useRef(findBarOpen);
@@ -2566,7 +2566,7 @@ export function SessionCardBody({
   //
   // Entering also dismisses the find bar — the other half of the Find/Changes
   // exclusion `openFindBar` owns. Reading the flag rather than wiring each
-  // door is what makes every entrance agree: ⇧⌘C, `/commit`, the Z4A tab, the
+  // door is what makes every entrance agree: ⌃⌘C, `/commit`, the Z4A tab, the
   // Session menu, and the failed-land re-entry.
   const prevCommitModeActiveRef = useRef(commitModeActive);
   useEffect(() => {
@@ -3806,7 +3806,7 @@ export function SessionCardBody({
       [TUG_ACTIONS.LAST_TURN]: (_event: ActionEvent) => {
         transcriptRef.current?.scrollToBottom();
       },
-      // ⇧⌘P — select the Prompt route directly. Unlike ⇧⌘C's toggle this
+      // ⌃⌘P — select the Prompt route directly. Unlike ⌃⌘C's toggle this
       // names the route it wants, so pressing it while already on Prompt is
       // a no-op rather than a flip into Changes. Applied through
       // `CommitModeController`, which is where the selection lives, so the
@@ -3818,7 +3818,7 @@ export function SessionCardBody({
           commitModeController.exit();
         }
       },
-      // ⌃⌘P cycles the permission mode. Only the session card registers this
+      // ⌃⌥⌘P cycles the permission mode. Only the session card registers this
       // handler, so on any other card ⇧⇥ falls through to reverse-tab
       // navigation (Risk R02). `cycle` reads the current mode fresh from
       // the metadata store [L07].
@@ -3892,10 +3892,10 @@ export function SessionCardBody({
         if (typeof path !== "string" || path === "") return;
         entryDelegateRef.current?.insertFilePath(path);
       },
-      // Swift Session-menu "Show/Hide Changes" (⌘⇧C), the ⇧⌘C deck twin, and
-      // the ⌃⌘C alias ([P05], Spec S04) — toggle the Changes shade, always in
-      // commit mode ([P03]). Showing Changes is Changes mode, whether or not
-      // there are changes and whether or not a prompt is typed: the composer's
+      // Swift Session-menu "Show/Hide Changes" and the ⌃⌘C deck twin — toggle
+      // the Changes shade, always in commit mode ([P03]). Showing Changes is
+      // Changes mode, whether or not there are changes and whether or not a
+      // prompt is typed: the composer's
       // in-progress draft is stashed on entry and restored on exit (see
       // `tug-prompt-entry`), so nothing is clobbered. Visible: exit the mode
       // (drop the sheet). Hidden: enter the mode (raise the sheet).
@@ -3911,12 +3911,35 @@ export function SessionCardBody({
           commitModeController.enter();
         }
       },
-      // Swift Session-menu "Show/Hide History" (⌘⇧H) and the ⇧⌘H deck twin.
+      // Swift Session-menu "Show/Hide History" and the ⌃⌘H deck twin.
       // History and commit mode are mutually exclusive ([P03]): exit the
       // mode before toggling History.
       [TUG_ACTIONS.TOGGLE_HISTORY_VIEW]: (_event: ActionEvent) => {
         commitModeController.exit();
         shadeViewController.toggle("history");
+      },
+      // ⌃⌘A / ⌃⇧⌘A — the Changes shade's bulk verbs as chords. The composer
+      // registers them (it is the surface holding focus under the passive
+      // shade) and the card handles them, because the card is what holds
+      // `changesController`; the chain walks composer → card.
+      //
+      // Claim All takes the unattributed AND orphaned buckets together — one
+      // keyboard verb for "make everything claimable in front of me mine".
+      // The shade's two buttons remain the granular path.
+      [TUG_ACTIONS.CLAIM_ALL_CHANGES]: (_event: ActionEvent) => {
+        const verbs = getChangesetVerbStore();
+        if (verbs?.claimState(changesController.entryKey).phase === "pending") return;
+        const snap = changesController.getSnapshot();
+        const paths = [...snap.unattributed, ...snap.orphaned].map((f) => f.path);
+        if (paths.length === 0) return;
+        changesController.claim(paths);
+      },
+      [TUG_ACTIONS.DISCLAIM_ALL_CHANGES]: (_event: ActionEvent) => {
+        const verbs = getChangesetVerbStore();
+        if (verbs?.disclaimState(changesController.entryKey).phase === "pending") return;
+        const paths = (changesController.getSnapshot().entry?.files ?? []).map((f) => f.path);
+        if (paths.length === 0) return;
+        changesController.disclaim(paths);
       },
       // A typed `/command` the session card will not run, dispatched by the prompt
       // entry ([#step-13a]). `unknown` = a typo (not in claude's catalog);
@@ -4382,7 +4405,7 @@ export function SessionCardBody({
               Changes glance ([P03] revised): a bottom-anchored PASSIVE shade
               that rises from the TOP OF THE PROMPT ENTRY over the whole
               transcript region — find bar, Z2 status row, and PULSE strip
-              included. ⇧⌘C toggles it; on an empty composer it also enters
+              included. ⌃⌘C toggles it; on an empty composer it also enters
               commit mode so the prompt entry becomes the message editor.
               `shadePassive` keeps focus in the composer below; `shadeAnchor=
               "bottom"` + auto-size gives the rise-from-the-composer geometry.

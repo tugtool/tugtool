@@ -10,9 +10,9 @@
  * activates regardless of changeset state ([P09]) — an empty changeset shows
  * the "None" sheet with the Commit button disabled-but-present — so no
  * real changes are needed. The full commit round-trip is covered at the Rust
- * layer (the replay workspace's changeset entries live ~2s). ⇧⌘C toggles this
- * same bottom sheet (and, on an empty composer, the mode) — not driven here
- * because ⇧⌘C collides with the editor's Copy-as-Plain-Text headless ([D117]).
+ * layer (the replay workspace's changeset entries live ~2s). ⌃⌘C toggles this
+ * same bottom sheet (and, on an empty composer, the mode); the chord's own
+ * round trip is at0340's, so this suite drives the menu door instead.
  *
  * @covers tugdeck/src/lib/commit-mode-controller.ts
  * @covers tugdeck/src/lib/changeset-draft-store.ts

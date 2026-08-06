@@ -105,6 +105,7 @@ import { playMenuItemBlink } from "./tug-menu-item-blink";
 import { useRequiredResponderChain } from "./responder-chain-provider";
 import { useControlDispatch } from "./use-control-dispatch";
 import { useFocusTrap } from "./use-focus-trap";
+import { isCancelChordEvent } from "./keymap-registry";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import type { TugAction } from "./action-vocabulary";
 
@@ -489,9 +490,10 @@ export function TugEditorContextMenu({
       // chords mean in the app, and inside an open menu the answer is "the
       // menu", once, for all of them.
 
-      // ⌘. — macOS "cancel" shortcut. Close without letting the event
-      // propagate (it has no meaning in the editor).
-      if (e.key === "." && (e.metaKey || e.ctrlKey)) {
+      // ⌘. — the registry's Cancel chord, read from the table rather than
+      // authored, so a rebind reaches here too. Close without letting the
+      // event propagate (it has no meaning in the editor).
+      if (isCancelChordEvent(e)) {
         e.preventDefault();
         e.stopPropagation();
         dismiss();

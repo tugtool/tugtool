@@ -46,7 +46,7 @@ Every surface that cares about turn state subscribes to one of the two faces and
 | Z5 submit button | `submitButtonMode` | Renders arrow / stop / inert pose (`tug-prompt-entry-submit-button.ts`) |
 | Z4B Mode / Model / Effort chips | `canSubmit` | `disabled={!canSubmit}` (`session-card.tsx`) |
 | `setMode` / `setModel` / `setEffort` | `canSubmit` | Decline a user change while a turn is live (the seam, below) |
-| `/mode` `/model` `/effort`, ⇧⌘P cycle, `SET_PERMISSION_MODE` | `canSubmit` | Refuse with a caution instead of a silent no-op (`guardTurnIdleForSetting`) |
+| `/mode` `/model` `/effort`, ⌃⌥⌘P cycle, `SET_PERMISSION_MODE` | `canSubmit` | Refuse with a caution instead of a silent no-op (`guardTurnIdleForSetting`) |
 | Native Permission Mode menu | `canChangeSettings` (= `canSubmit`) | Radios + Cycle validate disabled mid-turn (`host-menu-state.ts` → `useMenuStatePublication` → Swift `validateMenuItem`); with every child disabled AppKit auto-disables the parent |
 
 The Mode / Model / Effort settings are the sharp case. Each maps to a live effect on the running `claude` process — mode and model are forwarded as control-requests, and an effort change **respawns** the session process ([R07]). So a change accepted mid-turn does not merely queue; it reaches into (or tears down) the in-flight turn. That is a source→delegate **inversion**, and the race [L28] forbids. The correct shape is the inverse direction: the control declines while `canSubmit` is false and lets the published idle state re-enable it, so the change lands on the *next* submitted turn.
@@ -55,7 +55,7 @@ The Mode / Model / Effort settings are the sharp case. Each maps to a live effec
 
 ## The seam — one choke point, the restore exemption
 
-The four user paths that change a setting — the picker sheets, the ⇧⌘P cycle, the Permission Mode menu, and the `/mode` `/model` `/effort` commands — all funnel through the three shared setters `setMode` / `setModel` / `setEffort` (`use-permission-mode.ts`, `use-model.ts`, `use-effort.ts`). The gate lives there, so one seam closes every path:
+The four user paths that change a setting — the picker sheets, the ⌃⌥⌘P cycle, the Permission Mode menu, and the `/mode` `/model` `/effort` commands — all funnel through the three shared setters `setMode` / `setModel` / `setEffort` (`use-permission-mode.ts`, `use-model.ts`, `use-effort.ts`). The gate lives there, so one seam closes every path:
 
 ```ts
 if (!opts?.fromRestore && !codeSessionStore.getSnapshot().canSubmit) return;
@@ -100,7 +100,7 @@ Secondary implementation source — where the projection is consumed as delegate
 
 Regression coverage.
 
-- `tests/app-test/at0220-settings-chips-turn-lock.test.ts` — chips lock mid-turn, ⇧⌘P declined, re-enable + cycle-again after completion. `at0172-session-menu-live-state.test.ts` — the Permission Mode radios + Cycle disable mid-turn and re-enable at idle.
+- `tests/app-test/at0220-settings-chips-turn-lock.test.ts` — chips lock mid-turn, ⌃⌥⌘P declined, re-enable + cycle-again after completion. `at0172-session-menu-live-state.test.ts` — the Permission Mode radios + Cycle disable mid-turn and re-enable at idle.
 
 ---
 

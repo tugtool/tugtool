@@ -100,7 +100,7 @@ Every route trigger funnels through `routeLifecycle.setRoute` — there is exact
 | Trigger | Path |
 |---------|------|
 | Route choice-group click | `SELECT_VALUE` action handler → `setRoute` |
-| `SELECT_ROUTE` keybinding (⇧⌘C / ⇧⌘S / ⇧⌘B / ⇧⌘F) | `SELECT_ROUTE` action handler → `setRoute` |
+| `SELECT_ROUTE` keybinding (⌃⌘C) | `SELECT_ROUTE` action handler → `setRoute` |
 | State restore (close → reopen) | `onRestore` → `setRoute(restored.route)` |
 
 (Typing a route character — `$`, `?`, `>` — at editor offset 0 is deliberately NOT a trigger: first-character route switching was removed; those characters are ordinary text.)

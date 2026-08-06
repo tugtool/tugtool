@@ -106,6 +106,7 @@ import {
   type TugPopoverHandle,
 } from "./tug-popover";
 import { TugLabel } from "./tug-label";
+import { isCancelChordEvent } from "./keymap-registry";
 import { TugPushButton } from "./tug-push-button";
 import type { TugButtonRole } from "./internal/tug-button";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
@@ -518,7 +519,7 @@ export const TugConfirmPopover = React.forwardRef<
   // listener had handled Cmd-. it would have stopped propagation, so this fires
   // only when the chain dispatch did not land.
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.metaKey && e.key === ".") {
+    if (isCancelChordEvent(e)) {
       e.preventDefault();
       if (!manager) {
         handleCancelAction();

@@ -41,6 +41,18 @@ export function eventChordKey(event: KeyboardEvent): string {
 }
 
 /**
+ * The five fields chord matching reads off an event.
+ *
+ * Declared as a structural type rather than `KeyboardEvent` so one predicate
+ * serves native listeners and React synthetic events alike — both satisfy it,
+ * and a `KeyboardEvent` satisfies it too, so existing callers are unaffected.
+ */
+export type ChordEventFields = Pick<
+  KeyboardEvent,
+  "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey"
+>;
+
+/**
  * Whether an event is this chord: exact `code`, and the exact state of all
  * four modifiers.
  *
@@ -48,7 +60,7 @@ export function eventChordKey(event: KeyboardEvent): string {
  * command with stray modifiers, and it is why a chord can be a *superset* of
  * another without swallowing it.
  */
-export function chordMatchesEvent(event: KeyboardEvent, chord: Chord): boolean {
+export function chordMatchesEvent(event: ChordEventFields, chord: Chord): boolean {
   return (
     event.code === chord.key &&
     event.ctrlKey === (chord.ctrl === true) &&

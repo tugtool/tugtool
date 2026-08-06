@@ -89,7 +89,7 @@ describe("matchLocalSlashCommand", () => {
 
   test("neither composer route has a typeable name", () => {
     // A slash command is a one-shot verb; a route is a mode you stay in. The
-    // route gestures are the Z4A tabs, ⇧⌘P / ⇧⌘C, and Escape.
+    // route gestures are the Z4A tabs, ⌃⌘P / ⌃⌘C, and Escape.
     expect(matchLocalSlashCommand("/prompt")).toBeNull();
     expect(matchLocalSlashCommand("/changes")).toBeNull();
   });

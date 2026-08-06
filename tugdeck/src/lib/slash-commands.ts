@@ -173,7 +173,7 @@ export const LOCAL_SLASH_COMMANDS = [
   // Changes route the composer IS the commit-message editor, so submit lands
   // the message verbatim and no typed line is ever read as a command there —
   // and a lone `/changes` with no twin is a half-namespace nobody can predict.
-  // The route gestures are the Z4A tabs, ⇧⌘P / ⇧⌘C, and Escape.
+  // The route gestures are the Z4A tabs, ⌃⌘P / ⌃⌘C, and Escape.
   {
     name: "commit",
     description: "Open the commit dialog to author a message and land this session's changes",

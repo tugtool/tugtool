@@ -46,6 +46,7 @@ import { X } from "lucide-react";
 
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { cn } from "@/lib/utils";
+import { isCancelChordEvent } from "./keymap-registry";
 import {
   clampOffsetFraction,
   usePlacardOffset,
@@ -211,7 +212,7 @@ function usePlacardAutoDismiss(args: {
     // default nor stops propagation, so it takes the chord from nobody: it
     // closes itself and the event carries on to whoever else wants it.
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape" || (event.key === "." && event.metaKey)) {
+      if (event.key === "Escape" || isCancelChordEvent(event)) {
         onCloseRef.current();
       }
     };

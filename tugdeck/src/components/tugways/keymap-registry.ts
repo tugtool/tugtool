@@ -43,9 +43,11 @@ import { TUG_ACTIONS } from "./action-vocabulary";
 import {
   chordHasKeyEquivalent,
   chordKey,
+  chordMatchesEvent,
   codeToKeyEquivalent,
   eventChordKey,
   formatChord,
+  type ChordEventFields,
   type ChordSpec,
 } from "./chord-format";
 
@@ -445,7 +447,7 @@ export class KeymapRegistry {
       }
     }
     // The table declares scoped bindings of its own (a responder-scoped
-    // default like the commit surface's ⇧⌘M). Those are the registry's to
+    // default like the commit surface's ⌃⌘M). Those are the registry's to
     // know, so the lint folds them in itself rather than trusting the
     // caller's transcription to remember them.
     const scopedInTable: ScopedBinding[] = [];
@@ -542,9 +544,10 @@ export const keymapRegistry = new KeymapRegistry();
  *
  * The single renderer for every displayed shortcut ([P11]). No surface
  * authors one of its own: an authored string has nothing to disagree with
- * until someone reads it — which is how Copy as Plain Text advertised ⇧⌘C
- * while ⇧⌘C was Show Changes — and once chords are the user's to rebind, an
- * authored string is guaranteed wrong for anyone who rebinds.
+ * until someone reads it — which is how a context menu advertised ⇧⌘C for
+ * Copy as Plain Text while the real chord was ⌥⇧⌘C — and once chords are the
+ * user's to rebind, an authored string is guaranteed wrong for anyone who
+ * rebinds.
  *
  * A command with several bindings shows the first, the same rule the host's
  * menu sweep applies, so an in-page menu and the menu bar name the same
@@ -556,6 +559,34 @@ export function commandShortcut(
 ): string | undefined {
   const binding = registry.bindingsOf(commandId)[0];
   return binding === undefined ? undefined : formatChord(binding.chord);
+}
+
+/**
+ * Whether an event is a Cancel chord OTHER than Escape.
+ *
+ * The one predicate for ⌘. parity ([D126]): a surface that dismisses on ⎋
+ * dismisses on ⌘. too, and it decides that by asking the registry rather than
+ * by authoring `metaKey && key === "."` — which is both a second spelling of a
+ * chord the table already holds and a match on the `event.key` *label* instead
+ * of `code` identity, so it breaks on any layout where `.` is not where a US
+ * keyboard puts it.
+ *
+ * Escape is excluded deliberately, and the exclusion is the load-bearing part.
+ * Escape ownership is per-surface: the engine walks its own ladder for alerts,
+ * sheets, and context menus, while a placard outside any focus mode keeps a
+ * local handler. A helper that matched ⎋ would let every conversion silently
+ * take it away from whichever owner it already had.
+ *
+ * Reads the singleton registry, so a user rebind of Cancel reaches every
+ * surface at once — which is the entire point of the funnel.
+ */
+export function isCancelChordEvent(
+  event: ChordEventFields,
+  registry: KeymapRegistry = keymapRegistry,
+): boolean {
+  return registry
+    .bindingsOf(TUG_ACTIONS.CANCEL_DIALOG)
+    .some((b) => b.chord.key !== "Escape" && chordMatchesEvent(event, b.chord));
 }
 
 /**

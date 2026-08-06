@@ -24,7 +24,7 @@
  * Coverage split: the resolution precedence (innermost-beats-ancestor,
  * off-walk-doesn't-match, unregister) is pinned in pure-logic
  * `keybinding-registry.test.ts`; that static global bindings still fire is
- * covered by the existing static-chord app-tests (at0085 ⇧⌘C, at0177 ⌃⌘P,
+ * covered by the existing static-chord app-tests (at0340 ⌃⌘C, at0177 ⌃⌥⌘P,
  * at0043 ⌘A/⌘C), which remain green after the dynamic layer was added.
  *
  * @covers tugdeck/src/components/tugways/keybinding-map.ts

@@ -76,6 +76,7 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { isCancelChordEvent } from "@/components/tugways/keymap-registry";
 
 /**
  * Lifecycle status for the embedded `<img>`. Driven imperatively
@@ -137,7 +138,7 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
   React.useEffect(() => {
     if (!overlayOpen) return;
     const handleKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") setOverlayOpen(false);
+      if (e.key === "Escape" || isCancelChordEvent(e)) setOverlayOpen(false);
     };
     document.addEventListener("keydown", handleKey);
     return () => {

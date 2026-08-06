@@ -1,6 +1,6 @@
 /**
  * at0088-permission-mode-chip.test.ts — the Z4B permission-mode chip cycles
- * with `⌃⌘P` and via its behavior sheet ([AT0088]).
+ * with `⌃⌥⌘P` and via its behavior sheet ([AT0088]).
  *
  * ## Why this exists
  *
@@ -9,7 +9,7 @@
  * a control_response only), so the chip reflects the change optimistically via
  * `SessionMetadataStore.applyPermissionMode`. Two user paths drive it:
  *
- *   1. **`⌃⌘P`** — the `CYCLE_PERMISSION_MODE` key-card binding →
+ *   1. **`⌃⌥⌘P`** — the `CYCLE_PERMISSION_MODE` key-card binding →
  *      the session card's card-content responder → `cycle()`. The chip's value
  *      line must advance through default → acceptEdits → plan → auto.
  *   2. **Behavior sheet** — clicking the chip opens a `TugSheet` listing the
@@ -88,10 +88,10 @@ async function chipWidth(app: App): Promise<number | null> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0088: permission-mode chip cycles via ⌃⌘P and the behavior sheet",
+  "AT0088: permission-mode chip cycles via ⌃⌥⌘P and the behavior sheet",
   () => {
     test(
-      "⌃⌘P advances the mode; the behavior sheet sets it explicitly",
+      "⌃⌥⌘P advances the mode; the behavior sheet sets it explicitly",
       async () => {
         const app = await launchTugApp({ testName: "at0088-permission-mode-chip" });
         try {
@@ -115,13 +115,14 @@ describe.skipIf(!SHOULD_RUN)(
 
           const initialMode = await chipMode(app);
 
-          // 1. ⌃⌘P advances the mode (focus the editor first so the session card
+          // 1. ⌃⌥⌘P advances the mode (focus the editor first so the session card
           //    is the key card the binding routes to). From an unknown ("…")
           //    state the cycle resets to Default; from a known mode it steps to
           //    the next. Tug deliberately departs from the Claude Code TUI: the
           //    terminal cycles on Shift+Tab, but in a GUI Shift+Tab must move
-          //    focus, so the cycle lives on a ⌘ chord — ⌃⌘P, since the
-          //    composer's Prompt route claimed ⇧⌘P. See `keybinding-map.ts`.
+          //    focus, so the cycle lives on a ⌘ chord — ⌃⌥⌘P, the advanced
+          //    form of a Tug-tier command (tuglaws/chord-tiers.md), since the
+          //    composer's Prompt route claimed ⌃⌘P.
           //
           //    The chord is dispatched as a synthetic capture-phase keydown
           //    rather than a native CGEvent: a posted ⌘ chord can be intercepted
@@ -131,7 +132,7 @@ describe.skipIf(!SHOULD_RUN)(
           //    (`matchKeybinding` → key-card dispatch).
           await app.nativeClickAtElement(PROMPT_INPUT);
           await app.evalJS<void>(
-            `document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyP", key: "p", metaKey: true, ctrlKey: true, bubbles: true, cancelable: true }))`,
+            `document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyP", key: "p", metaKey: true, ctrlKey: true, altKey: true, bubbles: true, cancelable: true }))`,
           );
           await app.waitForCondition<boolean>(
             `(function(){

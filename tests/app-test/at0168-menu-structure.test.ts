@@ -84,7 +84,7 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   // Session
   { id: "session.focusPrompt", key: "k", mods: MOD.command },
   { id: "session.stop", key: "" },
-  { id: "session.insertFile", key: "i", mods: MOD.command },
+  { id: "session.insertFile", key: "i", mods: MOD.command | MOD.control },
   { id: "session.new" },
   { id: "session.resume" },
   { id: "session.rename" },
@@ -95,7 +95,7 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "session.permissionMode.acceptEdits" },
   { id: "session.permissionMode.plan" },
   { id: "session.permissionMode.auto" },
-  { id: "session.permissionMode.cycle", key: "p", mods: MOD.command | MOD.control },
+  { id: "session.permissionMode.cycle", key: "p", mods: MOD.command | MOD.control | MOD.option },
   { id: "session.permissionRules" },
   { id: "session.rewind" },
   { id: "session.compact" },

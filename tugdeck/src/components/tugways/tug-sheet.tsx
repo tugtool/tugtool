@@ -92,6 +92,7 @@ import { usePaneInert } from "@/components/tugways/use-pane-inert";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 import { useFocusTrap } from "./use-focus-trap";
+import { isCancelChordEvent } from "./keymap-registry";
 import { FocusManagerContext } from "./focus-manager";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
@@ -1393,7 +1394,7 @@ export function TugSheetContent({
     // Escape is owned by the engine's Escape ladder ([P02]) via the trap's
     // `onEscapeDismiss` (= `requestCancel`); the sheet no longer handles it here.
     // ⌘. stays the force-dismiss chord, chain-routed exactly as before (#non-goals).
-    if (e.metaKey && e.key === ".") {
+    if (isCancelChordEvent(e)) {
       e.preventDefault();
       requestCancel();
     }

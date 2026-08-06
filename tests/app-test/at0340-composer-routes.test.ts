@@ -15,8 +15,8 @@
  *
  * ## Test matrix
  *
- *   1. ⇧⌘C enters Changes (shade up, tab selected) and leaves it again.
- *   2. ⇧⌘P selects Prompt from Changes — and is a no-op while already on
+ *   1. ⌃⌘C enters Changes (shade up, tab selected) and leaves it again.
+ *   2. ⌃⌘P selects Prompt from Changes — and is a no-op while already on
  *      Prompt, since it names a route rather than toggling.
  *   3. A one-shot verb (`/btw`) leaves the route where it was. Neither route
  *      has a typeable name at all — a slash command is a verb that returns you
@@ -218,7 +218,7 @@ async function seedSession(app: App): Promise<void> {
 
 describe.skipIf(!SHOULD_RUN)("AT0340: the composer's two routes", () => {
   test(
-    "⇧⌘C and ⇧⌘P agree with the tab, a verb leaves it alone, and a draft survives the round trip",
+    "⌃⌘C and ⌃⌘P agree with the tab, a verb leaves it alone, and a draft survives the round trip",
     async () => {
       const app = await launchTugApp({ testName: "at0340-composer-routes" });
       try {
@@ -226,33 +226,33 @@ describe.skipIf(!SHOULD_RUN)("AT0340: the composer's two routes", () => {
 
         expect(await selectedRoute(app), "Prompt at rest").toBe("prompt");
 
-        // --- 1. ⇧⌘C enters Changes and leaves again. ---
-        await pressChord(app, "KeyC", "c", { meta: true, shift: true });
+        // --- 1. ⌃⌘C enters Changes and leaves again. ---
+        await pressChord(app, "KeyC", "c", { meta: true, ctrl: true });
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(CHANGES_ACTIVE)}) !== null`,
           { timeoutMs: 8000 },
         );
-        await waitForRoute(app, "changes", "shift-cmd-c enters");
+        await waitForRoute(app, "changes", "ctrl-cmd-c enters");
 
-        await pressChord(app, "KeyC", "c", { meta: true, shift: true });
-        await waitForRoute(app, "prompt", "shift-cmd-c exits");
+        await pressChord(app, "KeyC", "c", { meta: true, ctrl: true });
+        await waitForRoute(app, "prompt", "ctrl-cmd-c exits");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(CHANGES_ACTIVE)}) === null`,
           { timeoutMs: 8000 },
         );
 
-        // --- 2. ⇧⌘P names Prompt: it returns from Changes, and while already
+        // --- 2. ⌃⌘P names Prompt: it returns from Changes, and while already
         //        on Prompt it is a no-op rather than a flip. ---
-        await pressChord(app, "KeyC", "c", { meta: true, shift: true });
-        await waitForRoute(app, "changes", "shift-cmd-c re-enters");
-        await pressChord(app, "KeyP", "p", { meta: true, shift: true });
-        await waitForRoute(app, "prompt", "shift-cmd-p returns");
+        await pressChord(app, "KeyC", "c", { meta: true, ctrl: true });
+        await waitForRoute(app, "changes", "ctrl-cmd-c re-enters");
+        await pressChord(app, "KeyP", "p", { meta: true, ctrl: true });
+        await waitForRoute(app, "prompt", "ctrl-cmd-p returns");
 
-        await pressChord(app, "KeyP", "p", { meta: true, shift: true });
+        await pressChord(app, "KeyP", "p", { meta: true, ctrl: true });
         await new Promise((r) => setTimeout(r, 600));
         expect(
           await selectedRoute(app),
-          "⇧⌘P on Prompt is a no-op, not a toggle into Changes",
+          "⌃⌘P on Prompt is a no-op, not a toggle into Changes",
         ).toBe("prompt");
 
         // --- 3. A one-shot verb leaves the route alone. ---
@@ -276,7 +276,7 @@ describe.skipIf(!SHOULD_RUN)("AT0340: the composer's two routes", () => {
           { timeoutMs: 4000 },
         );
 
-        await pressChord(app, "KeyC", "c", { meta: true, shift: true });
+        await pressChord(app, "KeyC", "c", { meta: true, ctrl: true });
         await waitForRoute(app, "changes", "draft stash enters");
         // In Changes the composer is the commit-message editor — the prompt
         // draft is stashed, not merely hidden.
@@ -285,7 +285,7 @@ describe.skipIf(!SHOULD_RUN)("AT0340: the composer's two routes", () => {
           { timeoutMs: 6000 },
         );
 
-        await pressChord(app, "KeyP", "p", { meta: true, shift: true });
+        await pressChord(app, "KeyP", "p", { meta: true, ctrl: true });
         await waitForRoute(app, "prompt", "draft restore returns");
         await app.waitForCondition<boolean>(
           `(document.querySelector(${JSON.stringify(EDITOR)})?.textContent || "").indexOf(${JSON.stringify(DRAFT)}) !== -1`,

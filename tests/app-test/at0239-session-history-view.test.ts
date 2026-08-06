@@ -1,5 +1,5 @@
 /**
- * at0239-session-history-view.test.ts — the History shade (⇧⌘H →
+ * at0239-session-history-view.test.ts — the History shade (⌃⌘H →
  * `toggle-history-view`) renders the bound card's real recent commits over the
  * live GIT_LOG wire path, each as a collapsible `BlockChrome`.
  *

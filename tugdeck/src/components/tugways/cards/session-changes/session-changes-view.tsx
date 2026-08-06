@@ -5,7 +5,7 @@
  * unattributed files, per-file inline diffs, and the non-repo git-init
  * affordance. It answers "what's changed?" — glanceable, dismiss-and-forget.
  *
- * The sheet is passive ([P17]): the composer below keeps focus (⇧⌘C is the
+ * The sheet is passive ([P17]): the composer below keeps focus (⌃⌘C is the
  * toggle; landing a commit lives in the composer's commit mode + Z5), so
  * the view carries no Done button, no header X, and seeds no key view. The
  * file rows are `TugChangesList` ([P01]); the header keeps only its fold-all
@@ -104,7 +104,7 @@ export function SessionChangesView({
   // The shade header is the section band chrome ([P02]) — a `BlockStrip` at
   // `altitude="section"`, grip-less: the Changes glyph + title on the left,
   // the fold-all cue + Diff pop-out on the right. No X: the passive sheet is
-  // dismissed by ⇧⌘C (the composer keeps focus).
+  // dismissed by ⌃⌘C (the composer keeps focus).
   const buildHeader = (actions?: React.ReactNode): React.ReactElement => (
     <BlockStrip
       altitude="section"

@@ -1077,7 +1077,7 @@ export const TugPromptEntry = React.forwardRef<
     codeSessionStore.subscribe,
     codeSessionStore.getSnapshot,
   );
-  // The keymap registry too ([L02]): the ⇧⌘M scoped binding and every
+  // The keymap registry too ([L02]): the ⌃⌘M scoped binding and every
   // tooltip shortcut read it at render time, so a live rebind must repaint.
   useSyncExternalStore(keymapRegistry.subscribe, keymapRegistry.getSnapshot, () => 0);
 
@@ -1482,7 +1482,7 @@ export const TugPromptEntry = React.forwardRef<
   // then replace the composer with the seed message — the message alone; the
   // mode's dress is chrome, not document content. Exit: restore the stashed
   // draft (the `/commit` slash path clears the composer first, so that stash is
-  // empty; ⇧⌘C over a typed prompt stashes and restores it). The message itself
+  // empty; ⌃⌘C over a typed prompt stashes and restores it). The message itself
   // is durable in the changeset draft store, so a cancel/re-enter resumes it.
   useLayoutEffect(() => {
     const editor = textEditorRef.current;
@@ -1640,28 +1640,41 @@ export const TugPromptEntry = React.forwardRef<
     commitModeRef.current?.cancelDraft();
   }, []);
 
-  // ⇧⌘M invokes Auto-Message ([P06]) while commit mode is up — the keyboard
+  // ⌃⌘M invokes Auto-Message ([P06]) while commit mode is up — the keyboard
   // twin of the pencil-sparkles button.
   //
   // A scoped binding rather than a raw capture listener, and the difference is
   // not stylistic: a listener that claims a chord out of the DOM is invisible
   // to `resolveChord`, to the keymap pane, and to the collision lint, so
-  // nothing could tell you ⇧⌘M was taken until you pressed it. Registered
+  // nothing could tell you ⌃⌘M was taken until you pressed it. Registered
   // here, it is live exactly while this responder is on the first-responder
   // walk and while commit mode is up, and the chord itself comes from the
   // command's registry entry rather than being spelled again.
+  //
+  // ⌃⌘A / ⌃⇧⌘A ride the same gate for the same reason: the Changes shade is
+  // passive, so the composer keeps focus while it is up. They are HANDLED on
+  // the session card, which is the component that holds `changesController` —
+  // an action this responder does not claim falls through to the card below
+  // it on the chain.
   const commitKeybindings = useMemo<KeyBinding[]>(() => {
     if (!commitActive) return [];
-    return keymapRegistry.bindingsOf(TUG_ACTIONS.COMMIT_AUTO_MESSAGE).map((b) => ({
-      key: b.chord.key,
-      ...(b.chord.ctrl === true ? { ctrl: true } : {}),
-      ...(b.chord.meta === true ? { meta: true } : {}),
-      ...(b.chord.shift === true ? { shift: true } : {}),
-      ...(b.chord.alt === true ? { alt: true } : {}),
-      action: TUG_ACTIONS.COMMIT_AUTO_MESSAGE,
-      commandId: TUG_ACTIONS.COMMIT_AUTO_MESSAGE,
-      preventDefaultOnMatch: b.preventDefault === true,
-    }));
+    const COMMIT_SCOPED_COMMANDS = [
+      TUG_ACTIONS.COMMIT_AUTO_MESSAGE,
+      TUG_ACTIONS.CLAIM_ALL_CHANGES,
+      TUG_ACTIONS.DISCLAIM_ALL_CHANGES,
+    ] as const;
+    return COMMIT_SCOPED_COMMANDS.flatMap((commandId) =>
+      keymapRegistry.bindingsOf(commandId).map((b) => ({
+        key: b.chord.key,
+        ...(b.chord.ctrl === true ? { ctrl: true } : {}),
+        ...(b.chord.meta === true ? { meta: true } : {}),
+        ...(b.chord.shift === true ? { shift: true } : {}),
+        ...(b.chord.alt === true ? { alt: true } : {}),
+        action: commandId,
+        commandId,
+        preventDefaultOnMatch: b.preventDefault === true,
+      })),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commitActive, keymapRegistry.getSnapshot()]);
   useKeybindings(commitKeybindings);
@@ -2763,7 +2776,7 @@ export const TugPromptEntry = React.forwardRef<
           void performSubmit();
         }
       },
-      // ⇧⌘M and the pencil-sparkles button are two doors on one command
+      // ⌃⌘M and the pencil-sparkles button are two doors on one command
       // ([L11]). Inert mid-draft — the button stays lit but does nothing —
       // and otherwise routed through the same handler, so a typed message
       // still trips the Replace confirm.
@@ -3210,7 +3223,7 @@ export const TugPromptEntry = React.forwardRef<
   // The group is a VIEW of `CommitModeController`, not a second home for the
   // selection: `value` reads `commitActive`, and the segments dispatch into
   // `enter()` / `exit()`. That is what makes every existing entry and exit
-  // path — ⇧⌘C, `/commit`, the Session menu, a successful land, Cancel ✕,
+  // path — ⌃⌘C, `/commit`, the Session menu, a successful land, Cancel ✕,
   // Escape, the shade's self-close — move the visible tab with no extra
   // wiring.
   //

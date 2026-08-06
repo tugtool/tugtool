@@ -11,8 +11,8 @@
  * The boundary case is still the interesting one. Tug departs from the Claude
  * Code TUI: the terminal cycles the permission mode on Shift+Tab, but in a GUI
  * Shift+Tab must be reverse-focus navigation. So permission cycling lives on
- * ⌃⌘P — ⇧⌘P is the composer's Prompt route — and Tab / Shift-Tab belong to the
- * focus-walk stage in `responder-chain-provider.tsx`, deliberately bound
+ * ⌃⌥⌘P — ⌃⌘P is the composer's Prompt route — and Tab / Shift-Tab belong to
+ * the focus-walk stage in `responder-chain-provider.tsx`, deliberately bound
  * nowhere in the table.
  */
 
@@ -37,8 +37,8 @@ function keyEvent(
 }
 
 describe("the two P chords", () => {
-  test("⇧⌘P selects the Prompt route, key-card routed, preventDefault", () => {
-    const match = keymapRegistry.matchChord(keyEvent("KeyP", { meta: true, shift: true }));
+  test("⌃⌘P selects the Prompt route, key-card routed, preventDefault", () => {
+    const match = keymapRegistry.matchChord(keyEvent("KeyP", { meta: true, ctrl: true }));
     expect(match).not.toBeNull();
     const entry = COMMANDS_BY_ID.get(match?.commandId ?? "");
     expect(entry?.action).toBe(TUG_ACTIONS.SELECT_COMPOSER_ROUTE);
@@ -47,8 +47,8 @@ describe("the two P chords", () => {
     expect(match?.binding.preventDefault).toBe(true);
   });
 
-  test("⌃⌘P cycles the permission mode, key-card routed, preventDefault", () => {
-    const match = keymapRegistry.matchChord(keyEvent("KeyP", { meta: true, ctrl: true }));
+  test("⌃⌥⌘P cycles the permission mode, key-card routed, preventDefault", () => {
+    const match = keymapRegistry.matchChord(keyEvent("KeyP", { meta: true, ctrl: true, alt: true }));
     expect(match?.commandId).toBe(TUG_ACTIONS.CYCLE_PERMISSION_MODE);
     expect(COMMANDS_BY_ID.get(TUG_ACTIONS.CYCLE_PERMISSION_MODE)?.routing).toBe("key-card");
     expect(match?.binding.preventDefault).toBe(true);

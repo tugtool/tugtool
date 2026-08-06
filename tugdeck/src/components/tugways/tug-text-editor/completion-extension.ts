@@ -120,6 +120,7 @@ import {
   type PositionedAtom,
 } from "./atom-decoration";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
+import { isCancelChordEvent } from "@/components/tugways/keymap-registry";
 import type {
   CompletionItem,
   CompletionProvider,
@@ -1114,7 +1115,12 @@ const tugCompletionKeymap = Prec.highest(
       // activation); if the accept opened a sheet, that stray Enter clicks
       // the sheet's primary button and dismisses it on the spot. The
       // typeahead's keys are navigation/accept/cancel — none should leak.
+      // ⌘. is a term here and a branch below rather than a `case`: the switch
+      // reads `event.key`, and matching a "." label is exactly the
+      // label-vs-`code` mis-match the registry matcher exists to end.
+      const cancelChord = isCancelChordEvent(event);
       const consumes =
+        cancelChord ||
         event.key === "Enter" ||
         event.key === "Tab" ||
         event.key === "Escape" ||
@@ -1125,6 +1131,11 @@ const tugCompletionKeymap = Prec.highest(
         event.key === "Home" ||
         event.key === "End";
       if (consumes) event.stopPropagation();
+      if (cancelChord) {
+        event.preventDefault();
+        cancelCompletion(view);
+        return true;
+      }
       switch (event.key) {
         case "Enter": {
           event.preventDefault();

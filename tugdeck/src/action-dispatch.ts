@@ -640,7 +640,7 @@ export function initActionDispatch(
   // set-permission-mode: the Session ▸ Permission Mode submenu's
   // round-trip. The mode is validated against the four-mode set the native
   // submenu offers (`bypassPermissions` is deliberately not menu-reachable,
-  // matching the ⌃⌘P cycle) so a malformed frame can never reach the send
+  // matching the ⌃⌥⌘P cycle) so a malformed frame can never reach the send
   // path.
   registerAction(TUG_ACTIONS.SET_PERMISSION_MODE, (payload) => {
     const mode = payload.mode;

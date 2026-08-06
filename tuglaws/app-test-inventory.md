@@ -495,7 +495,7 @@ Surfaced during the session-card-zones / Claude-Code-parity plans. Gate the life
 #### [AT0088] Permission-mode chip cycling
 - **Status:** ✅ closed.
 - **Tests:** `at0088-permission-mode-chip.test.ts`.
-- **Summary:** The Z4B permission-mode chip (a two-line `TugPushButton`) cycles default → acceptEdits → plan → auto via `⇧⌘P` and via its behavior sheet, reflecting the change optimistically through `SessionMetadataStore.applyPermissionMode`.
+- **Summary:** The Z4B permission-mode chip (a two-line `TugPushButton`) cycles default → acceptEdits → plan → auto via `⌃⌥⌘P` and via its behavior sheet, reflecting the change optimistically through `SessionMetadataStore.applyPermissionMode`.
 
 ### Claude-Code-parity command + banner tags (AT0090–AT0108)
 
@@ -909,7 +909,7 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 #### [AT0177] Permission-mode cycle keys
 - **Status:** ✅ closed (renumbered from AT0105).
 - **Tests:** `at0177-permission-cycle-keys.test.ts`.
-- **Summary:** Permission-mode cycling is on `⇧⌘P`, never on Shift+Tab — the keyboard path that drives the Z4B permission-mode chip.
+- **Summary:** Permission-mode cycling is on `⌃⌥⌘P`, never on Shift+Tab — the keyboard path that drives the Z4B permission-mode chip.
 
 #### [AT0178] Sheet focus-trap mode
 - **Status:** ✅ closed (renumbered from AT0106).

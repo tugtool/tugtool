@@ -2,10 +2,11 @@
  * The text-editing context menu's shortcut hints must name the chords that
  * actually fire the commands.
  *
- * Two of them didn't. Copy as Plain Text advertised ⇧⌘C — which is Session ▸
- * Show Changes, a different command entirely — and Paste as Plain Text
- * advertised ⇧⌘V. The real chords carry Option, as both the Swift Edit menu's
- * modifier masks and the keybinding map have always said.
+ * Two of them didn't. Copy as Plain Text advertised ⇧⌘C and Paste as Plain
+ * Text advertised ⇧⌘V, both dropping the Option that the real chords carry —
+ * as both the Swift Edit menu's modifier masks and the command registry have
+ * always said. "…as Plain Text" is the ⌥⇧⌘ composed set, never the bare ⇧⌘
+ * counterpart (tuglaws/chord-tiers.md).
  *
  * The hints are no longer authored: each row reads the command's live
  * binding, so the two cannot be two spellings of one fact any more. The
@@ -81,7 +82,7 @@ describe("text-editing menu shortcut hints", () => {
     }
   });
 
-  test("Copy as Plain Text does not claim Show Changes' chord", () => {
+  test("Copy as Plain Text keeps its Option — the hint is never the bare ⇧⌘C", () => {
     const entry = entries.find(
       (e) => "action" in e && e.action === TUG_ACTIONS.COPY_AS_PLAIN_TEXT,
     ) as { shortcut?: string };

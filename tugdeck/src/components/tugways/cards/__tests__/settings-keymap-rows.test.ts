@@ -27,6 +27,7 @@ import {
   type NativeChordClaim,
   type ScopedBinding,
 } from "../../keymap-registry";
+import { TUG_ACTIONS } from "../../action-vocabulary";
 
 const NONE = new Set<string>();
 
@@ -216,6 +217,24 @@ describe("the shipped table", () => {
     const rows = buildKeymapRows(NONE);
     expect(rows).toHaveLength(listed.length);
     expect(new Set(rows.map((r) => r.commandId)).size).toBe(rows.length);
+  });
+
+  test("the Changes bulk verbs appear as scoped, doorless rows", () => {
+    // Neither carries a `menuItemId` — bindings are their only door — so the
+    // pane is the one place a user can discover them at all. They must show
+    // up, spell a chord, and be marked scoped so the pane renders them as
+    // visible-but-not-rebindable ([Q03]).
+    const rows = buildKeymapRows(NONE);
+    for (const commandId of [
+      TUG_ACTIONS.CLAIM_ALL_CHANGES,
+      TUG_ACTIONS.DISCLAIM_ALL_CHANGES,
+    ]) {
+      const row = rows.find((r) => r.commandId === commandId);
+      expect(row, `${commandId} has a row`).toBeDefined();
+      expect(row?.group, `${commandId} groups under Other Commands`).toBe(UNGROUPED);
+      expect(row?.bindings.length, `${commandId} shows a chord`).toBe(1);
+      expect(row?.bindings[0].scoped, `${commandId}'s binding is scoped`).toBe(true);
+    }
   });
 
   test("internal commands get no row — a chord for a command nothing performs", () => {

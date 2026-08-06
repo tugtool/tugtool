@@ -75,6 +75,7 @@ import * as AlertDialog from "@radix-ui/react-dialog";
 import { icons } from "lucide-react";
 import { TugPushButton } from "./tug-push-button";
 import { TugListRow } from "./tug-list-row";
+import { isCancelChordEvent } from "./keymap-registry";
 import type { TugButtonEmphasis, TugButtonRole } from "./internal/tug-button";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import { useResponderChain } from "./responder-chain-provider";
@@ -648,7 +649,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
             onKeyDown={(e) => {
               // Cmd+. dismisses (macOS convention) — treat as cancel. Stays
               // chain-routed; only Escape moved to the engine ladder (#non-goals).
-              if (e.metaKey && e.key === ".") {
+              if (isCancelChordEvent(e)) {
                 e.preventDefault();
                 handleOpenChange(false);
               }

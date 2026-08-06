@@ -64,7 +64,7 @@ One `CommandEntry` per user-invocable command, in `COMMANDS`. The fields that de
 
 ## Adding a command
 
-1. **Name it** per [action-naming.md](action-naming.md) — `<verb>-<object>[-<modifier>]`, kebab-case, a `TUG_ACTIONS` constant if it is a chain action. No synonyms, no raw string literals at call sites.
+1. **Name it and pick its tier.** The name follows [action-naming.md](action-naming.md) — `<verb>-<object>[-<modifier>]`, kebab-case, a `TUG_ACTIONS` constant if it is a chain action. No synonyms, no raw string literals at call sites. If it is getting a chord, derive the chord from [chord-tiers.md](chord-tiers.md) in the same breath: universal verb or Tug machinery, and which operator (if any) it composes with — a chord picked before its tier is a chord picked by availability.
 2. **Add the row to `COMMANDS`** with `id`, `title`, and `routing`. The classification a name used to carry by hand is now a consequence of this field.
 3. **Give it a door.** A `menuItemId`, or `bindings`, or both. A command with neither is invocable by nobody; the lint fails unless the entry says `internal: true` with a comment naming what blocks the door.
 4. **Register the implementation.** A responder's `useResponder` actions map for chain routing; a `registerAction` handler for `registry` routing.
@@ -77,6 +77,8 @@ One `CommandEntry` per user-invocable command, in `COMMANDS`. The fields that de
 ---
 
 ## Chords
+
+**Which chord a command gets is derived, not chosen.** Two base tiers — ⌘ universal, ⌃⌘ Tug machinery — and two operators — ⇧ counterpart, ⌥ variant — generate every modifier set in use, and a proposed chord is checked by deriving its shape before it is checked for collisions. The algebra, its six rules, the plain-⌘ free pool, the macOS never-bind list, and the known anomalies are in [chord-tiers.md](chord-tiers.md).
 
 **Identity is `KeyboardEvent.code` plus the four modifier flags.** The `label` is display data, captured from `event.key` at recording time and US-authored for built-in defaults. It never participates in matching, which is what lets a label be corrected for a layout without changing what the chord matches.
 
@@ -121,6 +123,7 @@ Beyond the lints it is review: a raw `sendToFirstResponder` at a call site whose
 ## Cross-References
 
 - [L30] — the law this document is the contract for
+- [chord-tiers.md](chord-tiers.md) — the modifier algebra that decides *which* chord a command gets
 - [L11] — controls emit actions; responders own the state actions operate on
 - [action-naming.md](action-naming.md) — the name's shape and the `TUG_ACTIONS` constants
 - [menus.md](menus.md) — the menuState wire contract and the mirror-first validation model

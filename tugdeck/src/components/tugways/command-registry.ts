@@ -770,11 +770,11 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "session.insertFile",
     // Menu-eligible on purpose: the panel that produces the path is the
-    // host's, so ⌘I has to reach the menu item rather than the JS funnel,
+    // host's, so ⌃⌘I has to reach the menu item rather than the JS funnel,
     // where the command would dispatch with no file chosen.
     bindings: [
       chord(
-        { key: "KeyI", meta: true, label: "i" },
+        { key: "KeyI", ctrl: true, meta: true, label: "i" },
         { preventDefault: true, menuEligible: true },
       ),
     ],
@@ -795,7 +795,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "key-card",
     menuItemId: "session.permissionMode.cycle",
     bindings: [
-      chord({ key: "KeyP", ctrl: true, meta: true, label: "p" }, { preventDefault: true }),
+      chord(
+        { key: "KeyP", ctrl: true, alt: true, meta: true, label: "p" },
+        { preventDefault: true },
+      ),
     ],
     mirrored: true,
     validate: sessionSettingsChangeable,
@@ -807,7 +810,7 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "key-card",
     menuItemId: "session.toggleChanges",
     bindings: [
-      chord({ key: "KeyC", meta: true, shift: true, label: "c" }, { preventDefault: true }),
+      chord({ key: "KeyC", ctrl: true, meta: true, label: "c" }, { preventDefault: true }),
     ],
     mirrored: true,
     validate: sessionBound,
@@ -822,7 +825,7 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "key-card",
     menuItemId: "session.toggleHistory",
     bindings: [
-      chord({ key: "KeyH", meta: true, shift: true, label: "h" }, { preventDefault: true }),
+      chord({ key: "KeyH", ctrl: true, meta: true, label: "h" }, { preventDefault: true }),
     ],
     mirrored: true,
     validate: sessionBound,
@@ -841,10 +844,22 @@ export const COMMANDS: readonly CommandEntry[] = [
     parameterized: true,
   },
   {
+    // ⌃⌘T — the Tug tier, because themes are Tug's own machinery
+    // (chord-tiers.md). Menu-eligible, so the chord resolves at the native
+    // menu layer where the item already lives; the binding is what makes it
+    // visible to the keymap pane and rebindable at all. `menuChords()`
+    // claims a menu item for a non-`mirrored` entry too, so no gate work is
+    // needed to publish it.
     id: "next-theme",
     title: "Next Theme",
     routing: "registry",
     menuItemId: "view.nextTheme",
+    bindings: [
+      chord(
+        { key: "KeyT", ctrl: true, meta: true, label: "t" },
+        { preventDefault: true, menuEligible: true },
+      ),
+    ],
   },
   // The three zoom commands state their chords here and take their
   // enablement from the host: the predicate reads `window.currentPageZoom`,
@@ -1198,7 +1213,7 @@ export const COMMANDS: readonly CommandEntry[] = [
     internal: true,
   },
   {
-    // ⇧⌘M, live only while the composer is in commit mode — the keyboard
+    // ⌃⌘M, live only while the composer is in commit mode — the keyboard
     // twin of the pencil-sparkles button.
     //
     // The chord is stated here so the keymap pane and every hint can read it;
@@ -1213,7 +1228,46 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     bindings: [
       {
-        chord: { key: "KeyM", meta: true, shift: true, label: "m" },
+        chord: { key: "KeyM", ctrl: true, meta: true, label: "m" },
+        scope: { kind: "responder", responderId: COMPOSER_RESPONDER_SCOPE },
+        source: "default",
+        preventDefault: true,
+      },
+    ],
+  },
+  {
+    // ⌃⌘A — Claim All, one finger from ⌃⌘C (the shade) and ⌃⌘M (the message);
+    // live only while the composer is in commit mode, which is what raising
+    // the Changes shade means. Composite on purpose: the shade wires the
+    // unattributed and orphaned buckets as two buttons, and the chord claims
+    // both at once. The buttons remain the granular path.
+    //
+    // Registered by the composer (the surface that holds focus while the
+    // passive shade is up) and handled by the session card (the component
+    // that holds `changesController`); the composer's unclaimed
+    // first-responder action falls through to the card below it.
+    id: TUG_ACTIONS.CLAIM_ALL_CHANGES,
+    title: "Claim All Changes",
+    routing: "first-responder",
+    bindings: [
+      {
+        chord: { key: "KeyA", ctrl: true, meta: true, label: "a" },
+        scope: { kind: "responder", responderId: COMPOSER_RESPONDER_SCOPE },
+        source: "default",
+        preventDefault: true,
+      },
+    ],
+  },
+  {
+    // ⌃⇧⌘A — the ⇧-counterpart of Claim All, sharing its key. Counterpart,
+    // not set-inverse: ⌃⌘A acts on what is not yet this session's, ⌃⇧⌘A on
+    // this session's own entry.
+    id: TUG_ACTIONS.DISCLAIM_ALL_CHANGES,
+    title: "Disclaim All Changes",
+    routing: "first-responder",
+    bindings: [
+      {
+        chord: { key: "KeyA", ctrl: true, meta: true, shift: true, label: "a" },
         scope: { kind: "responder", responderId: COMPOSER_RESPONDER_SCOPE },
         source: "default",
         preventDefault: true,
@@ -1367,18 +1421,22 @@ export const COMMANDS: readonly CommandEntry[] = [
     disabledChord: "detach",
   },
   {
-    // NOT promoted. ⇧⌘P selects the composer's Prompt route — the route
+    // NOT promoted. ⌃⌘P selects the composer's Prompt route — the route
     // chips are its door, and the Changes route already has a Session-menu
     // item in the Show/Hide Changes toggle. A second item for the other
     // half would name a control's internal state as a menu command, and
-    // promoting ⇧⌘P would take a plain letter chord out of the JS funnel
-    // for a gesture whose surface is two clicks away ([Q02]).
+    // promoting the chord would take it out of the JS funnel for a gesture
+    // whose surface is two clicks away.
+    //
+    // ⌃⌘ is the Tug tier (chord-tiers.md): route selection is Tug's own
+    // machinery, and ⇧ was carrying nothing here — there is no ⌘P base of
+    // which Prompt Route is the counterpart.
     id: `${TUG_ACTIONS.SELECT_COMPOSER_ROUTE}:prompt`,
     title: "Prompt Route",
     routing: "key-card",
     action: TUG_ACTIONS.SELECT_COMPOSER_ROUTE,
     payload: "prompt",
-    bindings: [chord({ key: "KeyP", meta: true, shift: true, label: "p" }, { preventDefault: true })],
+    bindings: [chord({ key: "KeyP", ctrl: true, meta: true, label: "p" }, { preventDefault: true })],
   },
   {
     id: TUG_ACTIONS.CYCLE_FOCUS_MODE,

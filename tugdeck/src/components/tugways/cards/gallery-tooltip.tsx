@@ -291,7 +291,7 @@ export function GalleryTooltip() {
                 </div>
               </div>
             }
-            shortcut="⇧⌘P"
+            shortcut="⌥⌘P"
             sideOffset={8}
           >
             <TugPushButton>Publish</TugPushButton>

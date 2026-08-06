@@ -1,12 +1,12 @@
 /**
- * at0177-permission-cycle-keys.test.ts — permission-mode cycling is on ⌃⌘P,
+ * at0177-permission-cycle-keys.test.ts — permission-mode cycling is on ⌃⌥⌘P,
  * and Shift+Tab does NOT cycle it.
  *
  * Tug departs from the Claude Code TUI: the terminal cycles the permission mode
  * on Shift+Tab, but in a GUI Shift+Tab must be reverse-focus navigation. The
- * cycle moved to the ⌃⌘P chord (key-card scope). This pins both halves of the
+ * cycle moved to the ⌃⌥⌘P chord (key-card scope). This pins both halves of the
  * deviation at runtime:
- *   - ⌃⌘P advances the mode (Default → Accept Edits), visible on the Mode chip.
+ *   - ⌃⌥⌘P advances the mode (Default → Accept Edits), visible on the Mode chip.
  *   - Shift+Tab then leaves it at Accept Edits — if Shift+Tab still cycled it
  *     would advance to Plan.
  *
@@ -21,7 +21,7 @@
  *
  * Has teeth: under the previous behavior (Shift+Tab folded into the focus walk
  * as the cycle) the second dispatch advanced Accept Edits → Plan and the final
- * assertion would fail; a broken ⌃⌘P binding fails the first.
+ * assertion would fail; a broken ⌃⌥⌘P binding fails the first.
  *
  * @covers tugdeck/src/lib/permission-mode.ts
  * @covers tugdeck/src/lib/use-permission-mode.ts
@@ -72,8 +72,11 @@ function chipTitleExpr(): string {
 function dispatchKeyExpr(
   code: string,
   key: string,
-  mods: { meta?: boolean; shift?: boolean; ctrl?: boolean },
+  mods: { meta?: boolean; shift?: boolean; ctrl?: boolean; alt?: boolean },
 ): string {
+  // Every one of the four flags is spelled, because `chordMatchesEvent` is an
+  // exact match on all four: an undeclared modifier is dispatched as false and
+  // the chord silently reaches nothing.
   return `(function(){
     var t = document.activeElement || document;
     return t.dispatchEvent(new KeyboardEvent("keydown", {
@@ -82,6 +85,7 @@ function dispatchKeyExpr(
       metaKey: ${mods.meta === true},
       shiftKey: ${mods.shift === true},
       ctrlKey: ${mods.ctrl === true},
+      altKey: ${mods.alt === true},
       bubbles: true,
       cancelable: true,
       composed: true,
@@ -89,9 +93,9 @@ function dispatchKeyExpr(
   })()`;
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0177: cycle on ⌃⌘P, never on Shift+Tab", () => {
+describe.skipIf(!SHOULD_RUN)("AT0177: cycle on ⌃⌥⌘P, never on Shift+Tab", () => {
   test(
-    "⌃⌘P advances the permission mode; a following Shift+Tab does not",
+    "⌃⌥⌘P advances the permission mode; a following Shift+Tab does not",
     async () => {
       const app = await launchTugApp({ testName: "at0177-permission-cycle-keys" });
       try {
@@ -119,8 +123,8 @@ describe.skipIf(!SHOULD_RUN)("AT0177: cycle on ⌃⌘P, never on Shift+Tab", () 
           { timeoutMs: 6000 },
         );
 
-        // ⌃⌘P → Default advances to Accept Edits.
-        await app.evalJS<boolean>(dispatchKeyExpr("KeyP", "p", { meta: true, ctrl: true }));
+        // ⌃⌥⌘P → Default advances to Accept Edits.
+        await app.evalJS<boolean>(dispatchKeyExpr("KeyP", "p", { meta: true, ctrl: true, alt: true }));
         await app.waitForCondition<boolean>(
           `${chipTitleExpr()} === "Permission mode: Accept Edits"`,
           { timeoutMs: 6000 },

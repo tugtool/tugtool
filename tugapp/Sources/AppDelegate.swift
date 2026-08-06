@@ -1030,9 +1030,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // from the selection and writes the plain text to the clipboard;
         // enablement rides its registry gate, which needs a selection the
         // same way Copy's does.
-        // ⌥⇧⌘C — moved off ⇧⌘C, which is now the Session card's Code route
-        // shortcut (SELECT_ROUTE `❯`). AppKit owns the chord at the menu bar,
-        // so the extra ⌥ frees ⇧⌘C to reach the web route keymap.
+        // ⌥⇧⌘C — the "…as Plain Text" composed set (tuglaws/chord-tiers.md):
+        // ⌥ the variant of Copy, ⇧ its counterpart, both twists at once. Its
+        // twin is ⌥⇧⌘V on Paste as Plain Text below.
         editMenu.addItem(NSMenuItem(title: "Copy as Plain Text", action: #selector(performCopyAsPlainText(_:)), keyEquivalent: "c", modifierMask: [.command, .shift, .option]).identified("edit.copyAsPlainText"))
         editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(performPaste(_:)), keyEquivalent: "v").identified("edit.paste"))
         // Paste variants — chain-action round-trips (NOT the native
@@ -1139,11 +1139,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             permissionModeMenu.addItem(item)
         }
         permissionModeMenu.addItem(NSMenuItem.separator())
-        // ⌃⌘P, not ⇧⌘P: the composer's Prompt route claimed the ⇧⌘P
-        // mnemonic, and this menu item has to move with the tugdeck binding
-        // or it keeps swallowing the chord at the menu bar before the web
-        // view ever sees it.
-        permissionModeMenu.addItem(NSMenuItem(title: "Cycle Permission Mode", action: #selector(cyclePermissionModeFromMenu(_:)), keyEquivalent: "p", modifierMask: [.command, .control]).identified("session.permissionMode.cycle"))
+        // ⌃⌥⌘P — the advanced form of a Tug-tier command
+        // (tuglaws/chord-tiers.md); the composer's Prompt route holds ⌃⌘P.
+        // This menu item has to carry the same chord as the tugdeck binding
+        // or it keeps swallowing it at the menu bar before the web view ever
+        // sees it.
+        permissionModeMenu.addItem(NSMenuItem(title: "Cycle Permission Mode", action: #selector(cyclePermissionModeFromMenu(_:)), keyEquivalent: "p", modifierMask: [.command, .control, .option]).identified("session.permissionMode.cycle"))
         sessionMenu.addItem(permissionModeItem)
 
         sessionMenu.addItem(sessionCommandItem("Model…", "model", "session.model"))
@@ -1161,10 +1162,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // verb rides the registry gate's title field on the menuState push;
         // the represented view name rides `representedObject`, and the toggle
         // round-trips a `toggle-{changes,history}-view` control frame.
-        let toggleChangesItem = NSMenuItem(title: "Show Changes", action: #selector(toggleShadeView(_:)), keyEquivalent: "c", modifierMask: [.command, .shift]).identified("session.toggleChanges")
+        let toggleChangesItem = NSMenuItem(title: "Show Changes", action: #selector(toggleShadeView(_:)), keyEquivalent: "c", modifierMask: [.command, .control]).identified("session.toggleChanges")
         toggleChangesItem.representedObject = "changes"
         sessionMenu.addItem(toggleChangesItem)
-        let toggleHistoryItem = NSMenuItem(title: "Show History", action: #selector(toggleShadeView(_:)), keyEquivalent: "h", modifierMask: [.command, .shift]).identified("session.toggleHistory")
+        let toggleHistoryItem = NSMenuItem(title: "Show History", action: #selector(toggleShadeView(_:)), keyEquivalent: "h", modifierMask: [.command, .control]).identified("session.toggleHistory")
         toggleHistoryItem.representedObject = "history"
         sessionMenu.addItem(toggleHistoryItem)
         sessionMenu.addItem(NSMenuItem.separator())
@@ -2449,7 +2450,7 @@ extension AppDelegate: NSMenuDelegate {
 
         // Separator + Next Theme
         menu.addItem(NSMenuItem.separator())
-        let nextItem = NSMenuItem(title: "Next Theme", action: #selector(nextTheme(_:)), keyEquivalent: "t", modifierMask: [.command, .option]).identified("view.nextTheme")
+        let nextItem = NSMenuItem(title: "Next Theme", action: #selector(nextTheme(_:)), keyEquivalent: "t", modifierMask: [.command, .control]).identified("view.nextTheme")
         menu.addItem(nextItem)
 
         applyCommandChords(in: menu)

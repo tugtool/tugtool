@@ -2,7 +2,7 @@
  * commit-mode-controller — per-card state + land path for commit mode
  * ([P03], Spec S03).
  *
- * Commit mode is the prompt entry's one secondary resting mode: ⇧⌘C /
+ * Commit mode is the prompt entry's one secondary resting mode: ⌃⌘C /
  * `/commit` / Session ▸ Commit… turn the entry into the commit-message editor
  * (the editor holds only the message — no routing chip) while the
  * bottom-anchored changes sheet is up, and Z5 swaps to cancel / auto-message /
@@ -14,7 +14,7 @@
  *
  * The mode is orthogonal to the changes sheet's visibility ([P03] revised):
  * the sheet can be up as a read-only glance with no mode active, and the
- * session card owns the coupling (⇧⌘C toggles the sheet and, only when the
+ * session card owns the coupling (⌃⌘C toggles the sheet and, only when the
  * composer is empty, the mode). This controller no longer knows about the
  * shade. The mode is transient / in-memory; the composer force-exits on
  * deactivate so the editor's own persistence only ever sees the prompt draft.

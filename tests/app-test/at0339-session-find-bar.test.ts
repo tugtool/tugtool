@@ -25,7 +25,7 @@
  *   5. A second ⌘F reopens with the previous query pre-filled AND fully
  *      selected — the standard macOS behavior that makes clear-on-close
  *      painless.
- *   6. Find and Changes are mutually exclusive: ⇧⌘C with the bar open raises
+ *   6. Find and Changes are mutually exclusive: ⌃⌘C with the bar open raises
  *      the Changes shade and dismisses the bar, and ⌘F leaves Changes again.
  *   7. The bar's controls are stops in the CARD's one focus cycle, at the
  *      orders its position on screen implies (after the Z4 toolbar, before
@@ -115,8 +115,10 @@ async function chord(
   app: App,
   code: string,
   key: string,
-  mods: { meta?: boolean; shift?: boolean } = {},
+  mods: { meta?: boolean; shift?: boolean; ctrl?: boolean; alt?: boolean } = {},
 ): Promise<void> {
+  // All four flags are spelled: `chordMatchesEvent` matches exactly, so an
+  // undeclared modifier dispatches as false and the chord reaches nothing.
   await app.evalJS<boolean>(
     `(function(){
       var t = document.activeElement || document;
@@ -125,6 +127,8 @@ async function chord(
         key: ${JSON.stringify(key)},
         metaKey: ${mods.meta === true},
         shiftKey: ${mods.shift === true},
+        ctrlKey: ${mods.ctrl === true},
+        altKey: ${mods.alt === true},
         bubbles: true,
         cancelable: true,
         composed: true,
@@ -477,7 +481,7 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
 
         // --- 6. Find and Changes are mutually exclusive — one at a time. ---
         await app.nativeClickAtElement(EDITOR);
-        await chord(app, "KeyC", "c", { meta: true, shift: true });
+        await chord(app, "KeyC", "c", { meta: true, ctrl: true });
         await app.waitForCondition<boolean>(
           `document.querySelector('${CARD} .session-view-slot[data-active-view="changes"]') !== null`,
           { timeoutMs: 8000 },

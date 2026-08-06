@@ -38,7 +38,7 @@ export const HELP_INTRO =
 
 /** One keyboard shortcut row on the General tab. */
 export interface HelpShortcut {
-  /** Rendered key combo, e.g. `"⇧⌘C"`. */
+  /** Rendered key combo, e.g. `"⌃⌘C"`. */
   readonly keys: string;
   /** What it does. */
   readonly label: string;

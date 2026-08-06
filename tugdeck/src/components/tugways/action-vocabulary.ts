@@ -98,7 +98,7 @@ export const TUG_ACTIONS = {
   //              Markdown source is stripped to plain text (headings,
   //              emphasis, code, links → their text content) before it
   //              lands on the clipboard. Plain-text only; no atom sidecar.
-  //              Bound to ⇧⌘C.
+  //              Bound to ⌥⇧⌘C.
   // PASTE:       payload — none. The first responder pastes clipboard
   //              content. Handlers typically return a continuation so the
   //              paste happens after any menu activation animation.
@@ -311,7 +311,7 @@ export const TUG_ACTIONS = {
   // SELECT_COMPOSER_ROUTE: payload — `value: "prompt" | "changes"`. Select
   //                 one of the composer's two routes directly (as opposed to
   //                 TOGGLE_CHANGES_VIEW, which flips between them). Bound to
-  //                 ⇧⌘P for `"prompt"`, scoped `scope: "key-card"`, handled
+  //                 ⌃⌘P for `"prompt"`, scoped `scope: "key-card"`, handled
   //                 by the session card's card-content responder, which
   //                 applies it through `CommitModeController` — the single
   //                 home of the route selection. Non-session cards register
@@ -319,7 +319,7 @@ export const TUG_ACTIONS = {
   //                 (`preventDefaultOnMatch` suppresses the macOS beep).
   // CYCLE_PERMISSION_MODE: payload — none. Advance the session-card's
   //                 permission mode one step (default → acceptEdits →
-  //                 plan → auto → default). Bound to ⌃⌘P, scoped
+  //                 plan → auto → default). Bound to ⌃⌥⌘P, scoped
   //                 `scope: "key-card"`, handled by the session card's
   //                 card-content responder. Non-dev cards register no
   //                 handler, so the dispatch is a silent no-op
@@ -686,7 +686,7 @@ export const TUG_ACTIONS = {
 
   // ---- Commit mode ----
   //
-  // `enter` has doors (the ⇧⌘P route select and `/commit`); its two exits
+  // `enter` has doors (the ⌃⌘C shade toggle and `/commit`); its two exits
   // were controller methods only.
   //
   // EXIT_COMMIT_MODE:     payload — none. Leave commit mode, restoring the
@@ -696,9 +696,19 @@ export const TUG_ACTIONS = {
   // COMMIT_AUTO_MESSAGE:  payload — none. Ask the scribe for a commit
   //                       message. The keyboard twin of the composer's
   //                       pencil-sparkles button, and inert mid-draft.
+  // CLAIM_ALL_CHANGES:    payload — none. Claim every file the Changes shade
+  //                       offers this session: the unattributed bucket AND the
+  //                       orphaned one, in one verb. The shade wires the two
+  //                       buckets as separate buttons; the chord takes both.
+  // DISCLAIM_ALL_CHANGES: payload — none. Renounce every file in this
+  //                       session's changeset entry. The counterpart of
+  //                       CLAIM_ALL_CHANGES, not its set-inverse: one acts on
+  //                       what is not yet this session's, the other on what is.
   EXIT_COMMIT_MODE:       "exit-commit-mode",
   LAND_COMMIT:            "land-commit",
   COMMIT_AUTO_MESSAGE:    "commit-auto-message",
+  CLAIM_ALL_CHANGES:      "claim-all-changes",
+  DISCLAIM_ALL_CHANGES:   "disclaim-all-changes",
 
   CLOSE:                  "close",
   CLOSE_ALL:              "close-all",

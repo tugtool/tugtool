@@ -121,8 +121,8 @@ export interface TugPopupMenuItem {
   selected?: boolean;
   /**
    * Optional keyboard-shortcut label rendered right-aligned after the label
-   * (e.g. `"⇧⌘C"`). Presentational only — the accelerator itself is wired in
-   * the keybinding map, not here. Omit for items with no shortcut.
+   * (e.g. `"⌃⌘C"`). Presentational only — the accelerator itself is wired in
+   * the command registry, not here. Omit for items with no shortcut.
    */
   shortcut?: string;
 }

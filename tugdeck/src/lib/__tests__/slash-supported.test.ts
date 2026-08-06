@@ -45,7 +45,7 @@ describe("classifySlashCommand", () => {
   });
 
   test("find and history are not slash commands", () => {
-    // Find's one door is ⌘F, and the History shade's is ⇧⌘H — neither is
+    // Find's one door is ⌘F, and the History shade's is ⌃⌘H — neither is
     // reachable by typing, so both resolve as plain pass-throughs.
     for (const name of ["find", "history"]) {
       expect(classifySlashCommand(name)).toBe("pass-through");

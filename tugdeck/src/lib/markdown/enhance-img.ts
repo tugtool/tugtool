@@ -36,6 +36,8 @@
  * @module lib/markdown/enhance-img
  */
 
+import { isCancelChordEvent } from "@/components/tugways/keymap-registry";
+
 const ENHANCED_ATTR = "data-tugx-img-enhanced";
 
 /**
@@ -97,7 +99,7 @@ function buildOverlay(src: string, alt: string): void {
   };
 
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") close();
+    if (e.key === "Escape" || isCancelChordEvent(e)) close();
   };
 
   overlay.addEventListener("click", (e) => {

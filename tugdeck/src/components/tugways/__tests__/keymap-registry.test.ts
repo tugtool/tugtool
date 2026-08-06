@@ -16,6 +16,7 @@ import {
   commandShortcut,
   commandShortcuts,
   EMPTY_KEYMAP_ENVIRONMENT,
+  isCancelChordEvent,
   KeymapRegistry,
   type KeymapEnvironment,
   type NativeChordClaim,
@@ -317,7 +318,7 @@ describe("menuChords", () => {
 });
 
 describe("scoped bindings the table can see", () => {
-  test("⇧⌘M resolves to the commit-mode auto-message command", () => {
+  test("⌃⌘M resolves to the commit-mode auto-message command", () => {
     // It used to be a raw capture listener on the composer root: invisible to
     // resolveChord, to the keymap pane, and to the collision lint, so nothing
     // could tell you the chord was taken until you pressed it. Stating it in
@@ -326,22 +327,64 @@ describe("scoped bindings the table can see", () => {
     registry.setEnvironment(EMPTY_KEYMAP_ENVIRONMENT);
     const [binding] = registry.bindingsOf(TUG_ACTIONS.COMMIT_AUTO_MESSAGE);
     expect(binding, "the command declares a chord").toBeDefined();
-    expect(formatChord(binding.chord)).toBe("⇧⌘M");
+    expect(formatChord(binding.chord)).toBe("⌃⌘M");
     expect(binding.scope.kind, "and it is scoped, not global").toBe("responder");
   });
 
   test("a scoped chord stays out of the global layer", () => {
-    // Declared, but not live everywhere: ⇧⌘M outside commit mode belongs to
+    // Declared, but not live everywhere: ⌃⌘M outside commit mode belongs to
     // nobody, and a global index entry would claim it app-wide.
     const registry = new KeymapRegistry(COMMANDS);
     const event = {
       code: "KeyM",
-      ctrlKey: false,
+      ctrlKey: true,
       metaKey: true,
-      shiftKey: true,
+      shiftKey: false,
       altKey: false,
     } as KeyboardEvent;
     expect(registry.matchChord(event)).toBeNull();
+  });
+});
+
+describe("isCancelChordEvent", () => {
+  function event(over: Partial<KeyboardEvent> = {}): KeyboardEvent {
+    return {
+      code: "Period",
+      ctrlKey: false,
+      metaKey: true,
+      shiftKey: false,
+      altKey: false,
+      ...over,
+    } as KeyboardEvent;
+  }
+
+  test("⌘. matches", () => {
+    expect(isCancelChordEvent(event(), new KeymapRegistry(COMMANDS))).toBe(true);
+  });
+
+  test("⎋ does NOT match — Escape ownership stays per-surface", () => {
+    // The exclusion is the whole reason the helper exists in this shape: the
+    // engine walks its own Escape ladder for alerts, sheets, and context
+    // menus, so a helper that matched ⎋ would let five conversions take it
+    // away from whoever already owned it.
+    expect(
+      isCancelChordEvent(event({ code: "Escape", metaKey: false }), new KeymapRegistry(COMMANDS)),
+    ).toBe(false);
+  });
+
+  test("it follows a user override of cancel-dialog", () => {
+    // A rebind of Cancel must reach every converted surface at once — that is
+    // what reading the registry buys over an authored predicate.
+    const local = new KeymapRegistry(COMMANDS);
+    local.setBindings(TUG_ACTIONS.CANCEL_DIALOG, [
+      { chord: { key: "Escape", label: "esc" }, scope: GLOBAL_SCOPE, source: "user" },
+      { chord: { key: "KeyJ", meta: true, alt: true, label: "j" }, scope: GLOBAL_SCOPE, source: "user" },
+    ]);
+    expect(isCancelChordEvent(event(), local), "the default no longer matches").toBe(false);
+    expect(
+      isCancelChordEvent(event({ code: "KeyJ", altKey: true }), local),
+      "the override does",
+    ).toBe(true);
   });
 });
 
