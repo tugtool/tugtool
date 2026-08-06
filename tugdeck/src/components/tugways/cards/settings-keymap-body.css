@@ -77,9 +77,20 @@
   min-width: 0;
 }
 
+/* The row's first line: the command's name, and opposite it everything the
+   row offers for that command. */
+.settings-keymap-row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 .settings-keymap-row-title {
   display: flex;
   align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: var(--tugx-keymap-accessory-height);
 }
 
@@ -112,6 +123,7 @@
 
 .settings-keymap-trailing {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.5rem;
   min-height: var(--tugx-keymap-accessory-height);
@@ -210,27 +222,43 @@
 
 /* ---- Chord capture ---- */
 
-/* The capture strip and its note, side by side on one line. The block's
-   height does not depend on whether there is a note to show — the row grows
-   once, when the capture opens, and never again while it is open. */
+/* The capture strip and its note, side by side on one line, hung on the right
+   so the strip falls under the Change button that opened it. The end padding
+   is the reset column plus its gap — the distance from the row's content edge
+   to that button's own right edge. The block's height does not depend on
+   whether there is a note to show, so the row grows once, when the capture
+   opens, and never again while it is open. */
 .settings-keymap-capture-block {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.625rem;
   min-width: 0;
+  padding-inline-end: calc(1.25rem + 0.5rem);
 }
 
-/* The note sits OUTSIDE the strip and beside it: it is about the chord the
-   strip is holding, not a third thing inside the control. It takes the space
-   the strip gave up, and truncates rather than wraps — a second line would be
-   the row growing to speak, which is what this arrangement is for. */
+/* The note sits OUTSIDE the strip and to its left: it is about the chord the
+   strip is holding, not a third thing inside the control, and it is read on
+   the way to the buttons rather than after them. It takes the space the strip
+   gave up, ending against it, and truncates rather than wraps — a second line
+   would be the row growing to speak, which is what this arrangement avoids. */
 .settings-keymap-capture-note {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: 0.375rem;
   flex: 1 1 auto;
   min-width: 0;
   min-height: var(--tugx-keymap-accessory-height);
   overflow: hidden;
+}
+
+/* The glyph carries the note's own color and never shrinks away: a truncating
+   sentence that dropped its warning mark first would lose the fastest-read
+   part of it. */
+.settings-keymap-capture-note-glyph {
+  flex: 0 0 auto;
+  color: var(--tug7-element-tone-text-normal-caution-rest);
 }
 
 /* The chord named in the note is a chord, so it is set as one. */

@@ -59,15 +59,29 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Keyboard, Lock, Menu, RotateCcw, X } from "lucide-react";
+import {
+  Keyboard,
+  Lock,
+  Menu,
+  RotateCcw,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 
-import { chordFromEvent, chordHasKeyEquivalent, formatChord } from "../chord-format";
+import {
+  chordFromEvent,
+  chordHasKeyEquivalent,
+  formatChord,
+} from "../chord-format";
 import { chordCaptureState } from "../chord-capture-state";
 import type { Chord } from "../command-registry";
 import { COMMANDS_BY_ID } from "../command-registry";
 import { keymapRegistry } from "../keymap-registry";
 import { keymapOverrideStore } from "@/keymap-override-store";
-import { TugFilterField, type TugFilterFieldDelegate } from "../tug-filter-field";
+import {
+  TugFilterField,
+  type TugFilterFieldDelegate,
+} from "../tug-filter-field";
 import { TugIconButton } from "../tug-icon-button";
 import { TugLabel } from "../tug-label";
 import { TugListRow } from "../tug-list-row";
@@ -235,7 +249,8 @@ function conflictNoteFor(chord: Chord, commandId: string): CaptureNote | null {
  * would fire on every keystroke everywhere; shift alone is a capital letter.
  */
 function isRecordableChord(chord: Chord): boolean {
-  if (chord.meta === true || chord.ctrl === true || chord.alt === true) return true;
+  if (chord.meta === true || chord.ctrl === true || chord.alt === true)
+    return true;
   return /^F\d{1,2}$/.test(chord.key);
 }
 
@@ -299,24 +314,59 @@ function ChordCapture({
       : !recordable
         ? plainNote("Needs ⌘, ⌃, or ⌥")
         : (conflictNoteFor(pending, commandId) ??
-          (!chordHasKeyEquivalent(pending) ? plainNote("No menu-bar form") : null));
+          (!chordHasKeyEquivalent(pending)
+            ? plainNote("No menu-bar form")
+            : null));
 
-  // One line: the strip holding the chord and the two ways out, and beside it
-  // — not under it — whatever there is to say about what was pressed. The
-  // strip's width is fixed, so a note arriving does not narrow it, and the
-  // row's height never changes while the capture is open. Growing downward to
-  // speak would move the buttons out from under the pointer at the exact
-  // moment the user is deciding whether to press one.
+  // One line, hung on the row's right edge under the Change button that opened
+  // it, with whatever there is to say about the chord beside it — not under
+  // it. The strip is as wide as its own prompt and no wider, so a note
+  // arriving does not narrow it, and the row's height never changes while the
+  // capture is open. Growing downward to speak would move the buttons out from
+  // under the pointer at the exact moment the user is deciding whether to
+  // press one.
+  //
+  // The note leads, to the strip's left, because it is read on the way to the
+  // buttons rather than after them.
   return (
-    <div className="settings-keymap-capture-block" ref={hostRef} data-testid="keymap-capture">
+    <div
+      className="settings-keymap-capture-block"
+      ref={hostRef}
+      data-testid="keymap-capture"
+    >
+      <div
+        className="settings-keymap-capture-note"
+        data-testid="keymap-capture-note"
+        title={note?.text}
+      >
+        {note !== null ? (
+          <>
+            <TriangleAlert
+              className="settings-keymap-capture-note-glyph"
+              size={14}
+              aria-hidden="true"
+            />
+            <TugLabel size="sm" role="caution">
+              {note.node}
+            </TugLabel>
+          </>
+        ) : null}
+      </div>
       <div className="settings-keymap-capture">
-        <div className="settings-keymap-capture-chord" data-pending={pending !== null}>
+        <div
+          className="settings-keymap-capture-chord"
+          data-pending={pending !== null}
+        >
           {pending === null ? "Press a chord…" : formatChord(pending)}
         </div>
         <div className="settings-keymap-capture-actions">
           {/* Cancel first: it is the one that always applies, and the chord
               may not yet be usable. */}
-          <TugPushButton size="xs" data-testid="keymap-capture-cancel" onClick={onCancel}>
+          <TugPushButton
+            size="xs"
+            data-testid="keymap-capture-cancel"
+            onClick={onCancel}
+          >
             Cancel
           </TugPushButton>
           <TugPushButton
@@ -332,17 +382,6 @@ function ChordCapture({
             Set
           </TugPushButton>
         </div>
-      </div>
-      <div
-        className="settings-keymap-capture-note"
-        data-testid="keymap-capture-note"
-        title={note?.text}
-      >
-        {note !== null ? (
-          <TugLabel size="sm" role="caution">
-            {note.node}
-          </TugLabel>
-        ) : null}
       </div>
     </div>
   );
@@ -371,12 +410,18 @@ function ChordCapture({
 function bindingNote(binding: KeymapRowBinding): string | null {
   if (binding.scoped) {
     const scope = binding.binding.scope;
-    const where = scope.kind === "mode" ? scope.modeId : scope.kind === "responder" ? scope.responderId : "";
+    const where =
+      scope.kind === "mode"
+        ? scope.modeId
+        : scope.kind === "responder"
+          ? scope.responderId
+          : "";
     return `only in ${where}`;
   }
   const shadower = binding.shadowedBy;
   if (shadower === undefined) return null;
-  const title = COMMANDS_BY_ID.get(shadower.commandId)?.title ?? shadower.commandId;
+  const title =
+    COMMANDS_BY_ID.get(shadower.commandId)?.title ?? shadower.commandId;
   return `shadowed by ${title}`;
 }
 
@@ -390,9 +435,14 @@ interface KeymapCellContext {
   removeBinding(commandId: string, index: number): void;
 }
 
-const KeymapCellContextValue = React.createContext<KeymapCellContext | null>(null);
+const KeymapCellContextValue = React.createContext<KeymapCellContext | null>(
+  null,
+);
 
-function GroupCell({ index, dataSource }: TugListViewCellProps<KeymapDataSource>) {
+function GroupCell({
+  index,
+  dataSource,
+}: TugListViewCellProps<KeymapDataSource>) {
   const item = dataSource.itemAt(index);
   if (item.kind !== "group") return null;
   return (
@@ -415,7 +465,11 @@ function GroupCell({ index, dataSource }: TugListViewCellProps<KeymapDataSource>
   );
 }
 
-function CommandCell({ index, dataSource, selected }: TugListViewCellProps<KeymapDataSource>) {
+function CommandCell({
+  index,
+  dataSource,
+  selected,
+}: TugListViewCellProps<KeymapDataSource>) {
   const item = dataSource.itemAt(index);
   const ctx = React.useContext(KeymapCellContextValue);
   if (item.kind !== "command" || ctx === null) return null;
@@ -427,7 +481,8 @@ function CommandCell({ index, dataSource, selected }: TugListViewCellProps<Keyma
   // a chord is one of the pane's jobs, and it is also the way back after
   // removing a command's only binding.
   const rebindable =
-    !row.locked && (row.bindings.length === 0 || !row.bindings.every((b) => b.scoped));
+    !row.locked &&
+    (row.bindings.length === 0 || !row.bindings.every((b) => b.scoped));
 
   return (
     <TugListRow
@@ -440,103 +495,119 @@ function CommandCell({ index, dataSource, selected }: TugListViewCellProps<Keyma
       // them — a row that re-centred its own contents would move the button
       // the user just pressed.
       data-armed={armed ? "" : undefined}
-      trailing={
-        <div className="settings-keymap-trailing">
-          <div className="settings-keymap-chords">
-            {row.bindings.length === 0 ? (
-              // A chip where a chord chip would be. The empty state is one of
-              // the row's real answers, not the absence of one, and set as
-              // loose text beside its neighbours' boxes it read as a caption
-              // about the row rather than as its contents.
-              <TugBadge
-                size="md"
-                emphasis="outlined"
-                role="inherit"
-                className="settings-keymap-unbound"
-              >
-                Not bound
-              </TugBadge>
-            ) : (
-              row.bindings.map((binding, i) => {
-                const note = bindingNote(binding);
-                return (
-                  <span
-                    key={`${binding.label}:${i}`}
-                    className="settings-keymap-chord"
-                    // Struck for a chord another command takes, never for one
-                    // whose own menu item happens to validate disabled — the
-                    // strike says "this mapping does not hold", and a
-                    // momentarily inapplicable command still owns its chord.
-                    data-active={binding.shadowedBy === undefined ? "" : undefined}
-                    data-shadowed={binding.shadowedBy !== undefined ? "" : undefined}
-                    title={note ?? undefined}
-                  >
-                    <span className="settings-keymap-chord-label">{binding.label}</span>
-                    {note !== null ? (
-                      <span className="settings-keymap-chord-note">{note}</span>
-                    ) : null}
-                    {rebindable && !binding.scoped ? (
-                      <TugIconButton
-                        size="2xs"
-                        aria-label={`Remove ${binding.label} from ${row.title}`}
-                        icon={<X aria-hidden="true" />}
-                        onClick={() => ctx.removeBinding(row.commandId, i)}
-                      />
-                    ) : null}
-                  </span>
-                );
-              })
-            )}
+    >
+      {/* The row's accessories are part of its content column rather than
+          `TugListRow`'s trailing slot, because the capture strip has to hang
+          on the SAME right edge they do — and a trailing accessory column is
+          sized to its own contents, which the strip is not part of. With one
+          column the row is two stacked lines, both running the full width,
+          and the strip lines up under the Change button by arithmetic the
+          card owns rather than by whatever the chords happen to measure. */}
+      <div className="settings-keymap-row-body">
+        <div className="settings-keymap-row-head">
+          {/* The title stands in a band as tall as the accessories opposite
+              it, so it sits on their centre line. */}
+          <div className="settings-keymap-row-title">
+            <TugLabel size="md">{row.title}</TugLabel>
           </div>
-          {/* One slot, one width, every row: the Change button and the
+          <div className="settings-keymap-trailing">
+            <div className="settings-keymap-chords">
+              {row.bindings.length === 0 ? (
+                // A chip where a chord chip would be. The empty state is one of
+                // the row's real answers, not the absence of one, and set as
+                // loose text beside its neighbours' boxes it read as a caption
+                // about the row rather than as its contents.
+                <TugBadge
+                  size="md"
+                  emphasis="outlined"
+                  role="inherit"
+                  className="settings-keymap-unbound"
+                >
+                  Not bound
+                </TugBadge>
+              ) : (
+                row.bindings.map((binding, i) => {
+                  const note = bindingNote(binding);
+                  return (
+                    <span
+                      key={`${binding.label}:${i}`}
+                      className="settings-keymap-chord"
+                      // Struck for a chord another command takes, never for one
+                      // whose own menu item happens to validate disabled — the
+                      // strike says "this mapping does not hold", and a
+                      // momentarily inapplicable command still owns its chord.
+                      data-active={
+                        binding.shadowedBy === undefined ? "" : undefined
+                      }
+                      data-shadowed={
+                        binding.shadowedBy !== undefined ? "" : undefined
+                      }
+                      title={note ?? undefined}
+                    >
+                      <span className="settings-keymap-chord-label">
+                        {binding.label}
+                      </span>
+                      {note !== null ? (
+                        <span className="settings-keymap-chord-note">
+                          {note}
+                        </span>
+                      ) : null}
+                      {rebindable && !binding.scoped ? (
+                        <TugIconButton
+                          size="2xs"
+                          aria-label={`Remove ${binding.label} from ${row.title}`}
+                          icon={<X aria-hidden="true" />}
+                          onClick={() => ctx.removeBinding(row.commandId, i)}
+                        />
+                      ) : null}
+                    </span>
+                  );
+                })
+              )}
+            </div>
+            {/* One slot, one width, every row: the Change button and the
               Reserved badge occupy the same column, so the eye runs down a
               single edge instead of one that moves with each row's standing.
               A row that offers neither still reserves the slot — otherwise
               its chords would slide right into the gap. */}
-          <div className="settings-keymap-action">
-            {row.locked ? (
-              <TugBadge
-                size="md"
-                emphasis="outlined"
-                role="inherit"
-                icon={<Lock aria-hidden="true" />}
-                className="settings-keymap-reserved"
-                title="Reserved by macOS convention"
-              >
-                Reserved
-              </TugBadge>
-            ) : rebindable ? (
-              <TugPushButton
-                size="xs"
-                emphasis={armed ? "filled" : "outlined"}
-                role="accent"
-                aria-pressed={armed || undefined}
-                data-testid={`keymap-arm-${row.commandId}`}
-                onClick={() => (armed ? ctx.cancel() : ctx.arm(row.commandId))}
-              >
-                Change
-              </TugPushButton>
-            ) : null}
+            <div className="settings-keymap-action">
+              {row.locked ? (
+                <TugBadge
+                  size="md"
+                  emphasis="outlined"
+                  role="inherit"
+                  icon={<Lock aria-hidden="true" />}
+                  className="settings-keymap-reserved"
+                  title="Reserved by macOS convention"
+                >
+                  Reserved
+                </TugBadge>
+              ) : rebindable ? (
+                <TugPushButton
+                  size="xs"
+                  emphasis={armed ? "filled" : "outlined"}
+                  role="accent"
+                  aria-pressed={armed || undefined}
+                  data-testid={`keymap-arm-${row.commandId}`}
+                  onClick={() =>
+                    armed ? ctx.cancel() : ctx.arm(row.commandId)
+                  }
+                >
+                  Change
+                </TugPushButton>
+              ) : null}
+            </div>
+            <div className="settings-keymap-reset">
+              {row.overridden ? (
+                <TugIconButton
+                  size="2xs"
+                  aria-label={`Reset ${row.title} to its default chord`}
+                  icon={<RotateCcw aria-hidden="true" />}
+                  onClick={() => ctx.reset(row.commandId)}
+                />
+              ) : null}
+            </div>
           </div>
-          <div className="settings-keymap-reset">
-            {row.overridden ? (
-              <TugIconButton
-                size="2xs"
-                aria-label={`Reset ${row.title} to its default chord`}
-                icon={<RotateCcw aria-hidden="true" />}
-                onClick={() => ctx.reset(row.commandId)}
-              />
-            ) : null}
-          </div>
-        </div>
-      }
-    >
-      <div className="settings-keymap-row-body">
-        {/* The title stands in a band as tall as the accessories opposite it,
-            so it sits on their centre line whether the row is one line or
-            three. */}
-        <div className="settings-keymap-row-title">
-          <TugLabel size="md">{row.title}</TugLabel>
         </div>
         {armed ? (
           <ChordCapture
@@ -550,7 +621,10 @@ function CommandCell({ index, dataSource, selected }: TugListViewCellProps<Keyma
   );
 }
 
-const CELL_RENDERERS: Record<string, TugListViewCellRenderer<KeymapDataSource>> = {
+const CELL_RENDERERS: Record<
+  string,
+  TugListViewCellRenderer<KeymapDataSource>
+> = {
   group: GroupCell,
   command: CommandCell,
 };
@@ -562,7 +636,11 @@ const CELL_RENDERERS: Record<string, TugListViewCellRenderer<KeymapDataSource>> 
 export function SettingsKeymapBody(): React.ReactElement {
   // The two stores whose changes have to repaint a row: the keymap registry
   // (a binding moved) and the override store (a command gained or lost one).
-  useSyncExternalStore(keymapRegistry.subscribe, keymapRegistry.getSnapshot, () => 0);
+  useSyncExternalStore(
+    keymapRegistry.subscribe,
+    keymapRegistry.getSnapshot,
+    () => 0,
+  );
   useSyncExternalStore(
     keymapOverrideStore.subscribe,
     keymapOverrideStore.getSnapshot,
@@ -588,7 +666,9 @@ export function SettingsKeymapBody(): React.ReactElement {
   );
   const items = useMemo(() => buildKeymapListItems(rows, query), [rows, query]);
 
-  const dataSource = useRef<KeymapDataSource>(null as unknown as KeymapDataSource);
+  const dataSource = useRef<KeymapDataSource>(
+    null as unknown as KeymapDataSource,
+  );
   if (dataSource.current === null) dataSource.current = new KeymapDataSource();
   const changed = dataSource.current.setItemsWithoutNotify(items);
   useLayoutEffect(() => {
@@ -605,7 +685,12 @@ export function SettingsKeymapBody(): React.ReactElement {
         // pane that quietly accumulated bindings would leave the user with a
         // keymap they never asked for and no obvious way back.
         keymapOverrideStore.set(commandId, [
-          { chord, scope: { kind: "global" }, source: "user", preventDefault: true },
+          {
+            chord,
+            scope: { kind: "global" },
+            source: "user",
+            preventDefault: true,
+          },
         ]);
         setArmed(null);
       },
