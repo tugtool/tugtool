@@ -23,28 +23,19 @@
  */
 
 import React, { useState } from "react";
-import { CircleCheck, Rocket, X } from "lucide-react";
+import { CircleCheck, Rocket } from "lucide-react";
 
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugFileChooser } from "@/components/tugways/tug-file-chooser";
 import {
   TugProgressIndicator,
   type TugProgressIndicatorRole,
   type TugProgressIndicatorState,
 } from "@/components/tugways/tug-progress-indicator";
-import {
-  pendingOpenStepCopy,
-  localAiOfferDetail,
-  localAiProgressValue,
-} from "@/components/tugways/configure-tug-copy";
+import { pendingOpenStepCopy } from "@/components/tugways/configure-tug-copy";
 
-/** The catalog's one `offered` entry, for the on-device AI scenarios. */
-const OFFER_NAME = "Qwen3 4B Instruct";
-const OFFER_BYTES = 2_278_969_697;
-const OFFER_NOTES = "Enhances command parsing & session summaries.";
 
 /** The prefill the projects-folder scenarios show. */
 const PROJECT_DIR = "/Users/ken/tug";
@@ -104,9 +95,6 @@ function dotVisual(status: StepStatus): {
 }
 
 const DOT_SIZE = 14;
-
-/** Mirrors PROGRESS_BAR_HEIGHT in configure-tug.tsx. */
-const PROGRESS_BAR_HEIGHT = 6;
 
 // ---------------------------------------------------------------------------
 // SetupStepRow — the bespoke spike row
@@ -213,11 +201,6 @@ type Scenario =
   | "signed_out"
   | "signing_in"
   | "signin_failed"
-  | "local_ai_offer"
-  | "local_ai_downloading"
-  | "local_ai_canceled"
-  | "local_ai_failed"
-  | "local_ai_skipped"
   | "project_dir_choose"
   | "project_dir_creating"
   | "project_dir_failed"
@@ -234,11 +217,6 @@ const SCENARIOS: { key: Scenario; label: string }[] = [
   { key: "signed_out", label: "Signed out" },
   { key: "signing_in", label: "Logging in" },
   { key: "signin_failed", label: "Log-in failed" },
-  { key: "local_ai_offer", label: "On-device AI offer" },
-  { key: "local_ai_downloading", label: "On-device AI downloading" },
-  { key: "local_ai_canceled", label: "On-device AI canceled" },
-  { key: "local_ai_failed", label: "On-device AI failed" },
-  { key: "local_ai_skipped", label: "On-device AI skipped" },
   { key: "project_dir_choose", label: "Projects folder" },
   { key: "project_dir_creating", label: "Projects folder creating" },
   { key: "project_dir_failed", label: "Projects folder failed" },
@@ -265,12 +243,6 @@ function buildFlow(
   const signin = (overrides: Partial<SetupStepModel>): SetupStepModel => ({
     key: "signin",
     label: "Log in to Claude",
-    status: "pending",
-    ...overrides,
-  });
-  const localAi = (overrides: Partial<SetupStepModel>): SetupStepModel => ({
-    key: "local-ai",
-    label: "Add on-device AI (optional)",
     status: "pending",
     ...overrides,
   });
@@ -321,12 +293,6 @@ function buildFlow(
     label: "Logged in as ken@example.com",
     detail: "Claude Max plan",
   });
-  const localAiDone = localAi({
-    status: "done",
-    label: "On-device AI",
-    detail: "Skipped.",
-  });
-
   switch (scenario) {
     case "probing":
       return {
@@ -408,100 +374,11 @@ function buildFlow(
           open({}),
         ],
       };
-    case "local_ai_offer":
-      return {
-        steps: [
-          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
-          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
-          localAi({
-            status: "active",
-            label: "Add on-device AI (optional)",
-            detail: localAiOfferDetail(OFFER_NAME, OFFER_BYTES, OFFER_NOTES),
-            cta: { label: "Download", onClick: () => go("local_ai_downloading") },
-            secondaryCta: { label: "Skip", onClick: () => go("local_ai_skipped") },
-          }),
-          open({ status: "pending", detail: "Add or skip on-device AI." }),
-        ],
-      };
-    case "local_ai_downloading":
-      return {
-        steps: [
-          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
-          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
-          localAi({
-            status: "busy",
-            label: "Adding on-device AI",
-            body: (
-              <>
-                <TugProgressIndicator
-                  variant="bar"
-                  size={PROGRESS_BAR_HEIGHT}
-                  role="agent"
-                  state="running"
-                  value={OFFER_BYTES * 0.42}
-                  max={OFFER_BYTES}
-                  showValue
-                  formatValue={localAiProgressValue}
-                />
-                <TugIconButton
-                  size="2xs"
-                  icon={<X aria-hidden="true" />}
-                  aria-label="Cancel download"
-                  title="Cancel download"
-                  onClick={() => go("local_ai_offer")}
-                />
-              </>
-            ),
-          }),
-          open({ status: "pending", detail: "Add or skip on-device AI." }),
-        ],
-      };
-    case "local_ai_canceled":
-      return {
-        steps: [
-          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
-          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
-          localAi({
-            status: "active",
-            label: "Add on-device AI (optional)",
-            detail: "Download canceled",
-            cta: { label: "Download", onClick: () => go("local_ai_downloading") },
-            secondaryCta: { label: "Skip", onClick: () => go("local_ai_skipped") },
-          }),
-          open({ status: "pending", detail: "Add or skip on-device AI." }),
-        ],
-      };
-    case "local_ai_failed":
-      return {
-        steps: [
-          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
-          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
-          localAi({
-            status: "error",
-            label: "Add on-device AI",
-            detail: "Download failed: checksum mismatch for model.safetensors.",
-            cta: { label: "Retry", onClick: () => go("local_ai_downloading") },
-            secondaryCta: { label: "Skip", onClick: () => go("local_ai_skipped") },
-          }),
-          open({ status: "pending", detail: "Add or skip on-device AI." }),
-        ],
-      };
-    case "local_ai_skipped":
-      return {
-        steps: [
-          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
-          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
-          localAiDone,
-          projectDir({}),
-          open({ status: "pending", detail: "Choose your projects folder." }),
-        ],
-      };
     case "project_dir_choose":
       return {
         steps: [
           installed,
           signedIn,
-          localAiDone,
           projectDir({
             status: "active",
             detail: "Tug opens here when nothing else is in front.",
@@ -515,7 +392,6 @@ function buildFlow(
         steps: [
           installed,
           signedIn,
-          localAiDone,
           projectDir({
             status: "busy",
             detail: "Creating the folder…",
@@ -529,7 +405,6 @@ function buildFlow(
         steps: [
           installed,
           signedIn,
-          localAiDone,
           projectDir({
             status: "error",
             detail: `Couldn't create ${PROJECT_DIR}.`,
@@ -543,7 +418,6 @@ function buildFlow(
         steps: [
           installed,
           signedIn,
-          localAiDone,
           projectDir({ status: "done", label: "Projects folder", detail: PROJECT_DIR }),
           open({
             status: "active",
@@ -573,7 +447,6 @@ function buildFlow(
         steps: [
           installed,
           signedIn,
-          localAiDone,
           projectDir({ status: "done", label: "Projects folder", detail: PROJECT_DIR }),
           open({ status: "done", detail: "Opening Session card…" }),
         ],

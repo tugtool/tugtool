@@ -20,7 +20,6 @@ import { restoreSessions } from "./lib/session-restore";
 import { attachSessionLedgerStore } from "./lib/session-ledger-store";
 import { attachSessionStateChangesStore } from "./lib/session-state-changes-store";
 import { attachPulseStore } from "./lib/pulse-store";
-import { attachLocalModelStore } from "./lib/local-model-store";
 import { attachSessionActivityStore } from "./lib/session-activity-store";
 import { attachChangesetAllStore } from "./lib/changeset-all-store";
 import { attachChangesetVerbStore } from "./lib/changeset-verb-store";
@@ -530,12 +529,6 @@ if (!container) {
   // fetch on first observation, live `PULSE` frames folded after.
   // The Z2 strip reads it via `usePulse`.
   attachPulseStore(connection);
-
-  // Wire the app-scoped local-model store: tugbank configuration, the
-  // `local_model_*` CONTROL inventory, and a host availability probe. Every
-  // consumer of on-device inference reads readiness from here rather than
-  // asking the host itself.
-  attachLocalModelStore(connection);
 
   // Wire the app-scoped ACTIVITY store: one subscription to the
   // per-session activity feed ([P01]), routed by each frame's own

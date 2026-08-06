@@ -8,7 +8,7 @@ re-implementation of either.
     just model-classify                 # against debug-main
     just model-classify release-main
 
-This is the one local-model harness with **ground truth**, so unlike
+This is the one agent harness with **ground truth**, so unlike
 `model-eval` it is scored as accuracy and it is a gate, not a rate. The two
 error directions are not equal and are never summed into one number:
 
@@ -56,7 +56,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from harness import ask_classify, installed_packs, log_path  # noqa: E402
+from harness import ask_classify, log_path  # noqa: E402
 
 CORPUS = Path(__file__).parent / "classify-corpus.json"
 VETO_FILTER = Path(__file__).parent / "veto-filter.ts"
@@ -130,7 +130,7 @@ def main() -> int:
     if grades is None:
         return 2
     print(f"putting {len(cases)} labeled lines to {args.instance}")
-    print(f"packs installed: {', '.join(installed_packs()) or 'none'}\n")
+
 
     rows = []
     for case in cases:

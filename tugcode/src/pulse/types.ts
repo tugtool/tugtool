@@ -27,7 +27,7 @@ export interface PulseLine {
    * What kind of line this is. **tugpulse never sets it** — every line this
    * daemon emits is a beat, and absent means beat. The field is declared here
    * because this type is the PULSE wire contract, and tugcast also publishes
-   * `kind: "overview"` frames on the same feed (the local model's standing
+   * `kind: "overview"` frames on the same feed (the agent's standing
    * answer to what a session is working on). A parser that ignores the field
    * simply sees every line as a beat, which is why it is optional.
    */

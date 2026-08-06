@@ -33,13 +33,6 @@
  * content block is vertically centered in that height. */
 .configure-tug-steps {
   --configure-tug-row-h: 60px;
-  /* The on-device AI row is the one row carrying a real offer — the model's
-   * name, what it costs in disk, and what it buys — so its detail runs to
-   * three lines in the column the row's two CTAs leave it. It gets its own
-   * height, sized to seat those three lines on the same ~10px margins the
-   * one-line rows keep, and held constant across the offer, the download, and
-   * the result so the panel never hops between them. */
-  --configure-tug-row-offer-h: 96px;
   /* The projects-folder row carries a real control, not prose: label, one
    * line of detail, and a full-width path field with its confirm button. Sized
    * to seat those three on the same ~10px margins the one-line rows keep, and
@@ -60,10 +53,6 @@
   padding: 0 var(--tug-space-md);
   background: var(--tugx-block-surface);
   border-radius: var(--tugx-block-chrome-radius);
-}
-
-.configure-tug-step[data-step="local-ai"] {
-  min-height: var(--configure-tug-row-offer-h);
 }
 
 .configure-tug-step[data-step="project-dir"] {
@@ -109,9 +98,9 @@
 }
 
 /* The detail line's slot, occupied by content instead of text — today the
- * on-device AI download's progress bar, which spans the main block's full
- * width. It takes the detail's place rather than stacking below it, so a
- * downloading row is the same two lines as every other row. */
+ * projects-folder chooser, which spans the main block's full width. It takes
+ * the detail's place rather than stacking below it, so such a row is the same
+ * two lines as every other row. */
 .configure-tug-step-body {
   padding-left: calc(var(--configure-tug-dot) + var(--configure-tug-headline-gap));
   min-height: calc(13px * 1.45);

@@ -204,6 +204,7 @@ export function useSessionCardServices(cardId: string): SessionCardServices | nu
       shellSessionStore: services.shellSessionStore,
       pathCommandsStore: services.pathCommandsStore,
       shellGrammarStore: services.shellGrammarStore,
+      shellClassifyStore: services.shellClassifyStore,
       changesController: services.changesController,
       pendingContextStore: services.pendingContextStore,
       entryDelegateRef,

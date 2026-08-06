@@ -45,15 +45,6 @@ fn broadcast_auth_result(
     }
 }
 
-/// Pull the `model` field out of a local-model action payload.
-fn model_id_from(raw_payload: &[u8]) -> Option<String> {
-    serde_json::from_slice::<serde_json::Value>(raw_payload)
-        .ok()?
-        .get("model")?
-        .as_str()
-        .map(str::to_owned)
-}
-
 /// The router-owned state every ingress path hands to [`dispatch_action`].
 ///
 /// Borrowed as a group so the three call sites (HTTP tell, WebSocket control
@@ -65,7 +56,7 @@ pub struct ActionContext<'a> {
     pub dev_state: &'a crate::dev::SharedDevState,
     pub pending_evals: &'a crate::router::PendingEvals,
     pub pending_asks: &'a crate::router::PendingAsks,
-    pub local_model: &'a crate::local_model::SharedLocalModelState,
+    pub shared_agent: &'a crate::shared_agent::SharedAgentHandle,
 }
 
 /// Dispatch an action received from any ingress path (HTTP tell, WebSocket control frame, UDS tell).
@@ -84,7 +75,7 @@ pub async fn dispatch_action(action: &str, raw_payload: &[u8], ctx: &ActionConte
         dev_state: shared_dev_state,
         pending_evals,
         pending_asks,
-        local_model,
+        shared_agent,
     } = *ctx;
     match action {
         "relaunch" => {
@@ -225,39 +216,11 @@ pub async fn dispatch_action(action: &str, raw_payload: &[u8], ctx: &ActionConte
                 broadcast_auth_result(cat, state, None);
             });
         }
-        "local_model_download" => {
-            let cat = stream_outputs
-                .get(&FeedId::CONTROL)
-                .map(|(tx, _)| tx.clone());
-            match model_id_from(raw_payload) {
-                Some(id) => {
-                    info!("dispatch_action: local model download requested: {}", id);
-                    crate::local_model::start_download(local_model, cat, &id);
-                }
-                None => info!("dispatch_action: local_model_download missing model"),
-            }
-        }
-        "local_model_download_cancel" => {
-            info!("dispatch_action: local model download cancel requested");
-            local_model.cancel_all();
-        }
-        "local_model_delete" => {
-            let cat = stream_outputs
-                .get(&FeedId::CONTROL)
-                .map(|(tx, _)| tx.clone());
-            match model_id_from(raw_payload) {
-                Some(id) => {
-                    info!("dispatch_action: local model delete requested: {}", id);
-                    crate::local_model::delete_model(local_model, cat, &id);
-                }
-                None => info!("dispatch_action: local_model_delete missing model"),
-            }
-        }
         // The two summarize lanes: the live intent and the past-tense
         // retrospective the idle collapse emits. Same seam, same normalization,
-        // different instructions on the app side.
-        "local_model_summarize" | "local_model_summarize_done" => {
-            let retrospective = action == "local_model_summarize_done";
+        // different instructions per lane.
+        "shared_agent_summarize" | "shared_agent_summarize_done" => {
+            let retrospective = action == "shared_agent_summarize_done";
             let cat = stream_outputs
                 .get(&FeedId::CONTROL)
                 .map(|(tx, _)| tx.clone());
@@ -265,13 +228,16 @@ pub async fn dispatch_action(action: &str, raw_payload: &[u8], ctx: &ActionConte
                 .ok()
                 .and_then(|v| v.get("prompt")?.as_str().map(str::to_owned));
             match prompt {
-                Some(prompt) => {
-                    crate::local_model::request_summary(local_model, cat, prompt, retrospective)
-                }
+                Some(prompt) => crate::shared_agent::request_summary(
+                    shared_agent.clone(),
+                    cat,
+                    prompt,
+                    retrospective,
+                ),
                 None => info!(action, "dispatch_action: summarize missing prompt"),
             }
         }
-        "local_model_classify" => {
+        "shared_agent_classify" => {
             let cat = stream_outputs
                 .get(&FeedId::CONTROL)
                 .map(|(tx, _)| tx.clone());
@@ -280,24 +246,21 @@ pub async fn dispatch_action(action: &str, raw_payload: &[u8], ctx: &ActionConte
                 .as_ref()
                 .and_then(|v| v.get("text")?.as_str().map(str::to_owned));
             // The program's documentation, when the caller is driving the
-            // grammar-bearing variant. Absent means the base classify prompt.
+            // grammar-bearing variant. Absent means the base classify wording.
             let grammar = payload
                 .as_ref()
                 .and_then(|v| v.get("grammar")?.as_str())
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned);
             match text {
-                Some(text) => {
-                    crate::local_model::request_classification(local_model, cat, text, grammar)
-                }
-                None => info!("dispatch_action: local_model_classify missing text"),
+                Some(text) => crate::shared_agent::request_classification(
+                    shared_agent.clone(),
+                    cat,
+                    text,
+                    grammar,
+                ),
+                None => info!("dispatch_action: shared_agent_classify missing text"),
             }
-        }
-        "local_model_list" => {
-            let cat = stream_outputs
-                .get(&FeedId::CONTROL)
-                .map(|(tx, _)| tx.clone());
-            crate::local_model::broadcast_inventory(local_model, cat.as_ref());
         }
         other => {
             info!("dispatch_action: broadcasting client action: {}", other);
@@ -334,10 +297,7 @@ mod tests {
                 dev_state: &dev_state,
                 pending_evals: &pending_evals,
                 pending_asks: &pending_asks,
-                local_model: &crate::local_model::LocalModelState::new(
-                    std::env::temp_dir().join("tugcast-dispatch-test-models"),
-                    crate::local_model::DEFAULT_BASE_URL.to_string(),
-                ),
+                shared_agent: &None,
             },
         )
         .await;
@@ -373,16 +333,104 @@ mod tests {
                 dev_state: &dev_state,
                 pending_evals: &pending_evals,
                 pending_asks: &pending_asks,
-                local_model: &crate::local_model::LocalModelState::new(
-                    std::env::temp_dir().join("tugcast-dispatch-test-models"),
-                    crate::local_model::DEFAULT_BASE_URL.to_string(),
-                ),
+                shared_agent: &None,
             },
         )
         .await;
 
         assert_eq!(rx.await.unwrap(), "run-background-only");
         assert!(pending_asks.lock().unwrap().is_empty());
+    }
+
+    /// The observability verbs answer in the shape the local-model verbs did
+    /// ([P07]) — same action names but for the prefix, same fields — so the
+    /// eval harness reads a verdict the same way it always has.
+    #[tokio::test]
+    async fn shared_agent_classify_broadcasts_a_parsed_verdict() {
+        let (shutdown_tx, _) = mpsc::channel(1);
+        let (client_action_tx, mut client_action_rx) = broadcast::channel(16);
+        let dev_state = crate::dev::new_shared_dev_state();
+
+        let mut stream_outputs = HashMap::new();
+        stream_outputs.insert(FeedId::CONTROL, (client_action_tx, LagPolicy::Warn));
+
+        let pending_evals = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let pending_asks = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let agent = Some(crate::shared_agent::test_support::scripted_haiku_pool(Ok(
+            "SHELL".to_string(),
+        )));
+
+        dispatch_action(
+            "shared_agent_classify",
+            br#"{"action":"shared_agent_classify","text":"ls -la"}"#,
+            &ActionContext {
+                shutdown_tx: &shutdown_tx,
+                stream_outputs: &stream_outputs,
+                dev_state: &dev_state,
+                pending_evals: &pending_evals,
+                pending_asks: &pending_asks,
+                shared_agent: &agent,
+            },
+        )
+        .await;
+
+        // The verb answers on a spawned task, so the frame arrives after
+        // dispatch returns.
+        let frame = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            client_action_rx.recv(),
+        )
+        .await
+        .expect("a verdict frame arrives")
+        .expect("broadcast alive");
+        let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(body["action"], "shared_agent_classify_result");
+        assert_eq!(body["ok"], true);
+        // Lowercased tugcast-side, so the deck only ever sees the two labels.
+        assert_eq!(body["verdict"], "shell");
+        assert!(body["error"].is_null());
+    }
+
+    /// With no agent built, the verb still answers — in the degraded shape
+    /// every caller already handles ([P06]).
+    #[tokio::test]
+    async fn shared_agent_classify_without_an_agent_reports_unavailable() {
+        let (shutdown_tx, _) = mpsc::channel(1);
+        let (client_action_tx, mut client_action_rx) = broadcast::channel(16);
+        let dev_state = crate::dev::new_shared_dev_state();
+
+        let mut stream_outputs = HashMap::new();
+        stream_outputs.insert(FeedId::CONTROL, (client_action_tx, LagPolicy::Warn));
+
+        let pending_evals = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let pending_asks = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+
+        dispatch_action(
+            "shared_agent_classify",
+            br#"{"action":"shared_agent_classify","text":"ls -la"}"#,
+            &ActionContext {
+                shutdown_tx: &shutdown_tx,
+                stream_outputs: &stream_outputs,
+                dev_state: &dev_state,
+                pending_evals: &pending_evals,
+                pending_asks: &pending_asks,
+                shared_agent: &None,
+            },
+        )
+        .await;
+
+        let frame = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            client_action_rx.recv(),
+        )
+        .await
+        .expect("a frame arrives")
+        .expect("broadcast alive");
+        let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(body["action"], "shared_agent_classify_result");
+        assert_eq!(body["ok"], false);
+        assert!(body["verdict"].is_null());
+        assert!(body["error"].is_string());
     }
 
     /// An answer for a request that already timed out is dropped, not a panic.
@@ -408,10 +456,7 @@ mod tests {
                 dev_state: &dev_state,
                 pending_evals: &pending_evals,
                 pending_asks: &pending_asks,
-                local_model: &crate::local_model::LocalModelState::new(
-                    std::env::temp_dir().join("tugcast-dispatch-test-models"),
-                    crate::local_model::DEFAULT_BASE_URL.to_string(),
-                ),
+                shared_agent: &None,
             },
         )
         .await;

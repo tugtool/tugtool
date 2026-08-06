@@ -123,6 +123,18 @@ enum ShellInput {
         tug_session_id: String,
         line: String,
     },
+    // `shell_classify` asks the SharedAgent whether one line means the shell or
+    // means Claude — the question `shell_grammar` could not settle on its own.
+    // The reply is one `shell_classify` SHELL_OUTPUT frame echoing `line` and
+    // `with_grammar`, which together are the correlation key: the deck caches
+    // verdicts with and without documentation separately, so the two must not
+    // resolve each other.
+    ShellClassify {
+        tug_session_id: String,
+        line: String,
+        #[serde(default)]
+        grammar: Option<String>,
+    },
 }
 
 fn now_ms() -> u64 {
@@ -257,6 +269,48 @@ async fn emit_shell_grammar(
         payload["synopsis"] = json!(synopsis);
     }
     emit(output, tug_session_id, payload);
+}
+
+/// Answer one classify request on the asking session's feed.
+///
+/// Runs on its own task so the dispatcher loop keeps routing `exec` and `kill`
+/// while a verdict is outstanding — a classify can take up to its ceiling, and
+/// nothing about a shell command should wait on it.
+///
+/// Every failure shape — no agent, a dead worker, a timeout, an answer naming
+/// no label — emits the same `ok:false, verdict:null` frame, because the deck
+/// does the same thing with all of them: send the line to Claude ([P06]).
+fn spawn_shell_classify(
+    output: SessionScopedFeed,
+    agent: crate::shared_agent::SharedAgentHandle,
+    tug_session_id: String,
+    line: String,
+    grammar: Option<String>,
+) {
+    tokio::spawn(async move {
+        let with_grammar = grammar.is_some();
+        let result = match agent {
+            Some(pool) => pool.run_classify(line.clone(), grammar).await,
+            None => Err("shared agent unavailable".to_string()),
+        };
+        let (ok, verdict, error) = match result {
+            Ok(verdict) => (true, Some(verdict), None),
+            Err(error) => (false, None, Some(error)),
+        };
+        emit(
+            &output,
+            &tug_session_id,
+            json!({
+                "type": "shell_classify",
+                "tug_session_id": tug_session_id,
+                "line": line,
+                "with_grammar": with_grammar,
+                "ok": ok,
+                "verdict": verdict,
+                "error": error,
+            }),
+        );
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -704,9 +758,10 @@ pub async fn shell_dispatcher_task(
     input_rx: mpsc::Receiver<Frame>,
     output: SessionScopedFeed,
     ledger: Option<Arc<ShellLedger>>,
+    agent: crate::shared_agent::SharedAgentHandle,
     cancel: CancellationToken,
 ) {
-    run_dispatcher(input_rx, output, ledger, cancel, EXEC_TIMEOUT).await;
+    run_dispatcher(input_rx, output, ledger, agent, cancel, EXEC_TIMEOUT).await;
 }
 
 /// Dispatcher core with an injectable per-exchange timeout (tests use a short
@@ -715,6 +770,7 @@ async fn run_dispatcher(
     mut input_rx: mpsc::Receiver<Frame>,
     output: SessionScopedFeed,
     ledger: Option<Arc<ShellLedger>>,
+    agent: crate::shared_agent::SharedAgentHandle,
     cancel: CancellationToken,
     exec_timeout: Duration,
 ) {
@@ -809,6 +865,18 @@ async fn run_dispatcher(
                     .and_then(|s| s.shared.lock().unwrap().cwd.clone());
                 emit_shell_grammar(&output, &tug_session_id, line, commands, cwd).await;
             }
+            // The band the grammar could not settle, asked of the SharedAgent.
+            ShellInput::ShellClassify {
+                tug_session_id,
+                line,
+                grammar,
+            } => spawn_shell_classify(
+                output.clone(),
+                agent.clone(),
+                tug_session_id,
+                line,
+                grammar,
+            ),
         }
     }
 
@@ -864,6 +932,7 @@ mod tests {
         let handle = tokio::spawn(run_dispatcher(
             in_rx,
             output.clone(),
+            None,
             None,
             cancel.clone(),
             Duration::from_secs(3),
@@ -1068,6 +1137,7 @@ mod tests {
             in_rx,
             output.clone(),
             Some(Arc::clone(&ledger)),
+            None,
             cancel.clone(),
             Duration::from_secs(3),
         ));
@@ -1102,6 +1172,7 @@ mod tests {
         let handle = tokio::spawn(shell_dispatcher_task(
             in_rx,
             output.clone(),
+            None,
             None,
             cancel.clone(),
         ));
@@ -1167,6 +1238,7 @@ mod tests {
         let handle = tokio::spawn(run_dispatcher(
             in_rx,
             output.clone(),
+            None,
             None,
             cancel.clone(),
             Duration::from_secs(3),
@@ -1250,6 +1322,7 @@ mod tests {
             in_rx,
             output.clone(),
             None,
+            None,
             cancel.clone(),
             Duration::from_secs(3),
         ));
@@ -1326,6 +1399,156 @@ mod tests {
         assert_eq!(got[0]["band"], "no");
     }
 
+    // ── shell_classify ─────────────────────────────────────────────────────
+
+    fn classify_frame(sid: &str, line: &str, grammar: Option<&str>) -> Frame {
+        let mut v = json!({ "type": "shell_classify", "tug_session_id": sid, "line": line });
+        if let Some(g) = grammar {
+            v["grammar"] = json!(g);
+        }
+        Frame::new(FeedId::SHELL_INPUT, v.to_string().into_bytes())
+    }
+
+    /// Drive the dispatcher with a scripted agent and collect the first `count`
+    /// `shell_classify` replies for `sid`.
+    async fn drive_classify(
+        frames: Vec<Frame>,
+        answer: Result<String, String>,
+        sid: &str,
+        count: usize,
+    ) -> Vec<serde_json::Value> {
+        let output = SessionScopedFeed::new(FeedId::SHELL_OUTPUT, 256, LagPolicy::Warn);
+        let mut rx = output.subscribe();
+        let (tx, in_rx) = mpsc::channel(64);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_dispatcher(
+            in_rx,
+            output.clone(),
+            None,
+            Some(crate::shared_agent::test_support::scripted_haiku_pool(
+                answer,
+            )),
+            cancel.clone(),
+            Duration::from_secs(3),
+        ));
+        for f in frames {
+            tx.send(f).await.unwrap();
+        }
+        let mut got = Vec::new();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+        while got.len() < count {
+            match tokio::time::timeout_at(deadline, rx.recv()).await {
+                Ok(Ok(frame)) => {
+                    let v = payload_json(&frame);
+                    if v["tug_session_id"] == sid && v["type"] == "shell_classify" {
+                        got.push(v);
+                    }
+                }
+                _ => break,
+            }
+        }
+        cancel.cancel();
+        drop(tx);
+        let _ = handle.await;
+        got
+    }
+
+    /// The correlation key is the echoed line plus `with_grammar` — the deck
+    /// parks resolvers under exactly that pair, and caches the two variants
+    /// separately, so a reply that dropped either would resolve the wrong wait.
+    #[tokio::test]
+    async fn shell_classify_echoes_the_line_and_whether_documentation_was_sent() {
+        let got = drive_classify(
+            vec![
+                classify_frame("s1", "ls -la", None),
+                classify_frame("s1", "curl -sS x", Some("usage: curl [options]")),
+            ],
+            Ok("SHELL".to_string()),
+            "s1",
+            2,
+        )
+        .await;
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0]["line"], "ls -la");
+        assert_eq!(got[0]["with_grammar"], false);
+        assert_eq!(got[0]["ok"], true);
+        // Parsed tugcast-side, so the deck sees only the two labels.
+        assert_eq!(got[0]["verdict"], "shell");
+        assert!(got[0]["error"].is_null());
+
+        assert_eq!(got[1]["line"], "curl -sS x");
+        assert_eq!(got[1]["with_grammar"], true);
+        assert_eq!(got[1]["verdict"], "shell");
+    }
+
+    /// An answer naming no label is a refusal, and a refusal looks like every
+    /// other failure to the deck: one degraded shape, so the line goes to
+    /// Claude ([P06]).
+    #[tokio::test]
+    async fn a_classify_refusal_answers_with_the_one_degraded_shape() {
+        let got = drive_classify(
+            vec![classify_frame("s1", "make it pretty", None)],
+            Ok("I am not sure about this one".to_string()),
+            "s1",
+            1,
+        )
+        .await;
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0]["ok"], false);
+        assert!(got[0]["verdict"].is_null());
+        assert!(got[0]["error"].is_string());
+        // Still correlated, or the deck could never retire the parked wait.
+        assert_eq!(got[0]["line"], "make it pretty");
+    }
+
+    /// With no agent at all the verb still answers, in the same degraded shape.
+    #[tokio::test]
+    async fn a_classify_without_an_agent_answers_degraded() {
+        let output = SessionScopedFeed::new(FeedId::SHELL_OUTPUT, 256, LagPolicy::Warn);
+        let mut rx = output.subscribe();
+        let (tx, in_rx) = mpsc::channel(64);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_dispatcher(
+            in_rx,
+            output.clone(),
+            None,
+            None,
+            cancel.clone(),
+            Duration::from_secs(3),
+        ));
+        tx.send(classify_frame("s1", "ls -la", None)).await.unwrap();
+        let frame = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+            .await
+            .expect("a reply arrives")
+            .expect("feed alive");
+        let v = payload_json(&frame);
+        assert_eq!(v["type"], "shell_classify");
+        assert_eq!(v["ok"], false);
+        assert!(v["verdict"].is_null());
+        cancel.cancel();
+        drop(tx);
+        let _ = handle.await;
+    }
+
+    /// One session's verdict can never resolve another session's parked
+    /// request — the same claim `shell_grammar` carries, for the same reason.
+    #[tokio::test]
+    async fn shell_classify_replies_are_scoped_to_the_asking_session() {
+        let got = drive_classify(
+            vec![
+                classify_frame("s1", "ls -la", None),
+                classify_frame("s2", "git status", None),
+            ],
+            Ok("SHELL".to_string()),
+            "s2",
+            1,
+        )
+        .await;
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0]["line"], "git status");
+        assert_eq!(got[0]["tug_session_id"], "s2");
+    }
+
     #[tokio::test]
     async fn a_relative_path_grades_unknown_until_the_session_has_a_shell() {
         // No exec has run, so there is no working directory to resolve `./x`
@@ -1349,6 +1572,7 @@ mod tests {
         let handle = tokio::spawn(run_dispatcher(
             in_rx,
             output.clone(),
+            None,
             None,
             cancel.clone(),
             Duration::from_secs(5),

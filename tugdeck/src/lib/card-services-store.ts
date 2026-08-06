@@ -44,6 +44,7 @@ import { SideQuestionStore } from "./side-question-store";
 import { ShellSessionStore } from "./shell-session-store";
 import { PathCommandsStore } from "./path-commands-store";
 import { ShellGrammarStore } from "./shell-grammar-store";
+import { ShellClassifyStore } from "./shell-classify-store";
 import { PendingContextStore } from "./pending-context-store";
 import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
@@ -143,6 +144,7 @@ export interface CardServices {
    * grades is the draft being typed.
    */
   readonly shellGrammarStore: ShellGrammarStore;
+  readonly shellClassifyStore: ShellClassifyStore;
   /**
    * The `±`-route Changes controller ([P07]) — a filtered, selection-aware
    * projection over the app-level `ChangesetAllStore` (0x24) scoped to this
@@ -553,6 +555,14 @@ class CardServicesStore {
       FeedId.SHELL_OUTPUT,
       binding.tugSessionId,
     );
+    // Its partner: the grammar grades a line, and this asks the SharedAgent
+    // about the ones grading could not settle. Same feed, same session filter,
+    // same acquire-here/release-in-dispose contract [L27].
+    const shellClassifyStore = new ShellClassifyStore(
+      shellSessionFeedStore,
+      FeedId.SHELL_OUTPUT,
+      binding.tugSessionId,
+    );
 
     // `±`-route Changes controller ([P07]): a filtered projection over the
     // app-level `ChangesetAllStore` singleton — NO new FeedStore (the
@@ -670,6 +680,7 @@ class CardServicesStore {
       shellSessionFeedStore,
       pathCommandsStore,
       shellGrammarStore,
+      shellClassifyStore,
       changesController,
       pendingContextStore,
       fileCompletionProvider,
@@ -703,6 +714,7 @@ class CardServicesStore {
     services.shellSessionStore.dispose();
     services.pathCommandsStore.dispose();
     services.shellGrammarStore.dispose();
+    services.shellClassifyStore.dispose();
     services.shellSessionFeedStore.dispose();
     services.changesController.dispose();
     services.pendingContextStore.dispose();

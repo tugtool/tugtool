@@ -17,7 +17,7 @@ mod fs_stat;
 mod fs_write;
 mod host;
 mod ledger_integrity;
-mod local_model;
+mod shared_agent;
 /// Crate-root path utilities (firmlink/synthetic/symlink resolution). Lives
 /// at the root, not under `feeds/`, because both `feeds` (file watching) and
 /// `session_ledger` (storage) depend on it — keeping it a leaf avoids a
@@ -93,15 +93,6 @@ async fn main() {
     // instance on the machine, and the integration tests spawn this binary —
     // a test run must not rewrite what the user has installed. Same reasoning,
     // and same signal, as the bundle-path marker above.
-    if tugcore::instance::instance_id().is_some() {
-        if let Some(root) = local_model::models_root() {
-            match local_model::reconcile_catalog_ranks(&root) {
-                0 => {}
-                n => info!(packs = n, "local model: catalog ranks reconciled"),
-            }
-        }
-    }
-
     // Reclaim leaked runtime debris machine-wide. A dev/release launch is
     // the only routine event on a machine where app-tests never run, so
     // hooking it means merely using Tug keeps the machine clean —
@@ -1300,6 +1291,56 @@ async fn main() {
         model: scribe_model,
     });
 
+    // The Haiku SharedAgent ([P02]): one app-scoped pool serving the jobs that
+    // used to run on the on-device pack. Building it spawns nothing — the first
+    // job of a class is what spawns that class's worker, so a machine that never
+    // types a shell candidate never pays for a classify worker.
+    let shared_agent_model: Arc<dyn Fn() -> String + Send + Sync> = {
+        let bank = bank_client.clone();
+        Arc::new(move || {
+            bank.as_ref()
+                .and_then(|b| {
+                    b.get(
+                        shared_agent::SHARED_AGENT_DOMAIN,
+                        shared_agent::MODEL_KEY,
+                    )
+                    .ok()
+                    .flatten()
+                })
+                .and_then(|v| match v {
+                    tugbank_core::Value::String(s) if !s.trim().is_empty() => Some(s),
+                    _ => None,
+                })
+                // A full id, never a bare alias ([P03]) — aliases drift, and a
+                // drifting aux model is a silent behavior change.
+                .unwrap_or_else(|| shared_agent::HAIKU_MODEL.to_string())
+        })
+    };
+    let max_workers = bank_client
+        .as_ref()
+        .and_then(|b| {
+            b.get(
+                shared_agent::SHARED_AGENT_DOMAIN,
+                shared_agent::MAX_WORKERS_KEY,
+            )
+            .ok()
+            .flatten()
+        })
+        .and_then(|v| match v {
+            tugbank_core::Value::I64(n) if n > 0 => Some(n as usize),
+            _ => None,
+        })
+        .unwrap_or(shared_agent::DEFAULT_MAX_WORKERS);
+    let haiku_agent = shared_agent::SharedAgentPool::new(
+        shared_agent::AgentSpec {
+            name: "haiku",
+            model: shared_agent_model,
+            jobs: shared_agent::HAIKU_AGENT_JOBS,
+            max_workers,
+        },
+        Arc::new(shared_agent::ClaudeAgentWorkerSpawner),
+    );
+
     // PULSE — app-wide color commentary. One bridge per process: it
     // taps the shared CODE_OUTPUT broadcast for the allowlisted frame
     // subset, lazily spawns/supervises the tugpulse daemon (gated on
@@ -1356,12 +1397,14 @@ async fn main() {
     // settled exchange to the shell ledger for restore.
     let shell_dispatch_feed = shell_output_feed.clone();
     let shell_dispatch_ledger = shell_ledger.clone();
+    let shell_dispatch_agent = Some(Arc::clone(&haiku_agent));
     let shell_dispatch_cancel = cancel.clone();
     tokio::spawn(async move {
         feeds::shell::shell_dispatcher_task(
             shell_input_rx,
             shell_dispatch_feed,
             shell_dispatch_ledger,
+            shell_dispatch_agent,
             shell_dispatch_cancel,
         )
         .await;
@@ -1396,6 +1439,7 @@ async fn main() {
         shutdown_tx,
         shared_dev_state.clone(),
     );
+    feed_router.shared_agent = Some(Arc::clone(&haiku_agent));
 
     // Register stream feeds through the trait-mediated path — each feed
     // self-describes its id, lag policy, and channel capacity, and the
@@ -1406,7 +1450,7 @@ async fn main() {
     // CONTROL read, not feed replay ([P09]).
     let pulse_tx = feed_router.register_stream_feed(Box::new(pulse_bridge), cancel.clone());
 
-    // Session overview ([P11]) — the local model's second tenant: one sentence
+    // Session overview ([P11]) — the SharedAgent's second tenant: one sentence
     // per session saying what it is working on, published on PULSE above the
     // beat line. Its own tap on CODE_OUTPUT, its own cadence, and no path back
     // into anything — the digest and the sentence are the whole feature. Every
@@ -1416,7 +1460,10 @@ async fn main() {
         let overview_tenant: Arc<dyn Fn() -> bool + Send + Sync> = {
             let bank = bank_client.clone();
             Arc::new(move || {
-                local_model::tenant_enabled(bank.as_deref(), local_model::PULSE_OVERVIEW_KEY)
+                shared_agent::tenant_enabled(
+                    bank.as_deref(),
+                    shared_agent::PULSE_OVERVIEW_KEY,
+                )
             })
         };
         let identity = feeds::session_overview::SessionIdentity {
@@ -1436,7 +1483,7 @@ async fn main() {
             pulse_tx,
             tenant_enabled: overview_tenant,
             pulse_enabled: Arc::clone(&pulse_enabled),
-            local_model: Arc::clone(&feed_router.local_model),
+            shared_agent: feed_router.shared_agent.clone(),
             identity,
             cadence: feeds::session_overview::Cadence::default(),
         };
@@ -1612,25 +1659,6 @@ async fn main() {
         None
     };
 
-    // Task requests ride the same drain channel the rest of the app→tugcast
-    // traffic uses. Without a control socket there is no host to ask, and the
-    // requester stays absent so every task answers unavailable at once.
-    if let Some(tx) = response_tx.clone() {
-        feed_router
-            .local_model
-            .set_requester(local_model::LocalModelRequester::new(tx));
-    }
-
-    // Pick up a local-model download the last run didn't finish. Silent when
-    // there is nothing to resume, which is the common case.
-    {
-        let cat = feed_router
-            .stream_outputs
-            .get(&FeedId::CONTROL)
-            .map(|(tx, _)| tx.clone());
-        local_model::resume_partial_download(&feed_router.local_model, cat);
-    }
-
     // Spawn control socket receive loop
     if let Some(reader) = control_reader {
         let dev_state = shared_dev_state.clone();
@@ -1640,7 +1668,7 @@ async fn main() {
             .expect("response_tx must exist when control_reader exists");
         let ctl_pending_evals = feed_router.pending_evals.clone();
         let ctl_pending_asks = feed_router.pending_asks.clone();
-        let ctl_local_model = std::sync::Arc::clone(&feed_router.local_model);
+        let ctl_shared_agent = feed_router.shared_agent.clone();
         tokio::spawn(reader.run_recv_loop(
             ctl_shutdown_tx,
             ctl_stream_outputs,
@@ -1649,7 +1677,7 @@ async fn main() {
             auth.clone(),
             ctl_pending_evals,
             ctl_pending_asks,
-            ctl_local_model,
+            ctl_shared_agent,
         ));
     }
 

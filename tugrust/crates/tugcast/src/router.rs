@@ -175,8 +175,8 @@ pub struct FeedRouter {
     pub(crate) pending_evals: PendingEvals,
     /// Pending ask requests awaiting a human answer in the deck.
     pub(crate) pending_asks: PendingAsks,
-    /// Catalog + model store for the local-model CONTROL verbs.
-    pub(crate) local_model: crate::local_model::SharedLocalModelState,
+    /// The Haiku `SharedAgent`, once `main` has built one.
+    pub(crate) shared_agent: crate::shared_agent::SharedAgentHandle,
 }
 
 /// Pending eval requests awaiting responses from the browser.
@@ -214,7 +214,7 @@ impl FeedRouter {
             dev_state,
             pending_evals: Arc::new(std::sync::Mutex::new(HashMap::new())),
             pending_asks: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            local_model: crate::local_model::LocalModelState::shared_default(),
+            shared_agent: None,
         }
     }
 
@@ -226,7 +226,7 @@ impl FeedRouter {
             dev_state: &self.dev_state,
             pending_evals: &self.pending_evals,
             pending_asks: &self.pending_asks,
-            local_model: &self.local_model,
+            shared_agent: &self.shared_agent,
         }
     }
 

@@ -1,4 +1,4 @@
-"""What accumulated logs say about the local model: how fast, how often it fails.
+"""What accumulated logs say about the SharedAgent: how fast, how often it fails.
 
 Reads every `tugapp.log.*` and `tugcast.log.*` in one instance's `Logs/`
 directory and reports the questions nobody can answer by reading a log
@@ -13,10 +13,13 @@ There are no counters in the running system and no rollup lines. Per-request
 lines accumulate, and this reads them whenever there is enough to read — which
 is what makes the aggregation rewritable without redeploying anything.
 
-Two perspectives are reported separately because neither can see the other's
-fact. The service-side line (`tugapp`) knows what inference cost; the
-caller-side line (`tugcast`) knows whether the caller gave up. A slow success
-and a timeout look identical from the service's side.
+There is one perspective now, and it is the honest one: the caller-side
+`shared agent call` line, which knows what the caller waited for and whether it
+gave up. When inference ran on-device there was a second, service-side line
+saying what inference itself cost, and the gap between the two was the transport
+cost. A remote worker has no such line to offer — a turn that times out finishes
+somewhere else and never reports back — so the caller's wait is the whole
+measurable fact.
 
     python3 tests/model-eval/analyze.py --self-test
 """
@@ -46,17 +49,19 @@ FIELD = re.compile(r'(\w+)=("[^"]*"|\S+)')
 
 # Kept in step with `Table T01` in the plan and the constants it names:
 # `CLASSIFY_SLOW`/`CLASSIFY_TIMEOUT`/`SUMMARIZE_SLOW`/`SUMMARIZE_TIMEOUT` in
-# `tugrust/crates/tugcast/src/local_model.rs`. All provisional — moving them
-# from this report's own output is the reason it exists.
+# `tugrust/crates/tugcast/src/shared_agent.rs`. All provisional — moving them
+# from this report's own output is the reason it exists. The classify slow-mark
+# is 1500ms because a warm remote turn measured just under a second, and a 1s
+# mark would fire on roughly half of all calls.
 BOUNDS = {
-    "classify": (1_000, 2_000),
+    "classify": (1_500, 2_000),
     "summarize": (3_000, 6_000),
 }
 
-# The deck's own give-up, from `LOCAL_MODEL_TIMEOUT_MS` in
-# `tugdeck/src/lib/local-model-bridge.ts`. A bridge classify that ran longer was
-# answered too late to be used, and the deck does not log that itself.
-BRIDGE_DEADLINE_MS = 2_000
+# The deck's own give-up, from `CLASSIFY_REQUEST_TIMEOUT_MS` in
+# `tugdeck/src/lib/shell-classify-store.ts` — the third member of the timeout
+# triad, and the same 2s the classify JobSpec holds.
+CLASSIFY_DEADLINE_MS = 2_000
 
 
 def parse(line: str) -> tuple[str, str, dict[str, str]] | None:
@@ -153,26 +158,9 @@ def main() -> int:
     for name, n in counts.items():
         print(f"  {name:28s} {n}")
 
-    service = [f for t, _, f in parsed if t == "tugapp::local_model"]
-    caller = [f for t, _, f in parsed if t == "tugcast::local_model" and "outcome" in f]
+    caller = [f for t, _, f in parsed if t == "tugcast::shared_agent" and "outcome" in f]
 
-    report_turnaround("service side (what inference cost)", service)
     report_turnaround("caller side (what the caller waited for)", caller)
-
-    # A bridge classify that overran the deck's deadline was answered too late
-    # to be used. Only the service-side line sees this traffic at all.
-    late = [
-        f for f in service
-        if f.get("task") == "classify"
-        and f.get("transport") == "bridge"
-        and f.get("elapsed_ms", "").isdigit()
-        and int(f["elapsed_ms"]) > BRIDGE_DEADLINE_MS
-    ]
-    bridge_classifies = [
-        f for f in service if f.get("task") == "classify" and f.get("transport") == "bridge"
-    ]
-    print(f"\nbridge classify answered past the deck's {BRIDGE_DEADLINE_MS}ms give-up")
-    print(f"  {len(late)} of {len(bridge_classifies)}")
 
     # The normalizer's work rate: how often the register had to be imposed
     # rather than written. A trim means the model wrote a parts list; a clip
@@ -268,7 +256,7 @@ def main() -> int:
 # present and one with it absent, and the older quoted-value form the caller side
 # used before it moved to display formatting.
 #
-# The local-model lines are captured from real log files. The grounding-gate lines
+# The caller-side lines are captured from real log files. The grounding-gate lines
 # are captured from the emitting call site by a Rust test, which is the stronger
 # pin: it re-derives the bytes on every run, so a field that stopped being
 # countable fails there rather than turning into a zero here.
@@ -292,6 +280,17 @@ SAMPLES = [
      'task="classify" outcome="ok" elapsed_ms=1003 slow=true',
      "tugcast::local_model",
      {"task": "classify", "outcome": "ok", "elapsed_ms": "1003", "slow": "true"}),
+    # The current caller-side shape. The three above it are accumulated
+    # history from when inference ran on-device: the parser still has to read
+    # them, so a log spanning the swap reports as one series.
+    ("2026-08-06T09:14:02.118004Z  INFO tugcast::shared_agent: shared agent call "
+     "task=classify outcome=ok elapsed_ms=903",
+     "tugcast::shared_agent",
+     {"task": "classify", "outcome": "ok", "elapsed_ms": "903"}),
+    ("2026-08-06T09:14:31.552918Z  INFO tugcast::shared_agent: shared agent call "
+     "task=summarize outcome=failed elapsed_ms=6001 slow=true",
+     "tugcast::shared_agent",
+     {"task": "summarize", "outcome": "failed", "elapsed_ms": "6001", "slow": "true"}),
     ("2026-07-29T03:05:47.853487Z  INFO tugcast::local_model: local model summarize "
      "answered raw=Fix just app-debug stalls at splash screen headline=Fix just "
      "app-debug stalls at splash normalized=true trimmed=true clipped=false",

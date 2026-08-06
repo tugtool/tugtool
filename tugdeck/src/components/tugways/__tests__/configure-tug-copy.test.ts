@@ -11,9 +11,6 @@ import { describe, expect, test } from "bun:test";
 import {
   subscriptionLabel,
   pendingOpenStepCopy,
-  formatModelSize,
-  localAiOfferDetail,
-  localAiProgressValue,
 } from "../configure-tug-copy";
 
 describe("subscriptionLabel", () => {
@@ -60,54 +57,5 @@ describe("pendingOpenStepCopy", () => {
       label: "Continue working",
       detail: "You'll return to your 3 open cards.",
     });
-  });
-});
-
-describe("formatModelSize", () => {
-  test("reports gigabytes at one decimal place", () => {
-    expect(formatModelSize(2_315_155_948)).toBe("2.3 GB");
-    expect(formatModelSize(1_000_000_000)).toBe("1.0 GB");
-  });
-
-  test("drops the decimal once the number is large enough not to need it", () => {
-    expect(formatModelSize(12_400_000_000)).toBe("12 GB");
-  });
-
-  test("nothing received yet is a real zero, not a missing size", () => {
-    expect(formatModelSize(0)).toBe("0.0 GB");
-  });
-
-  test("a size we don't have reads as a dash", () => {
-    expect(formatModelSize(Number.NaN)).toBe("—");
-    expect(formatModelSize(-1)).toBe("—");
-  });
-});
-
-describe("localAiOfferDetail", () => {
-  test("names the model, its cost in disk, and what it's for", () => {
-    expect(
-      localAiOfferDetail("Ternary Bonsai 8B", 2_315_155_948, "Runs offline."),
-    ).toBe("Ternary Bonsai 8B • 2.3 GB download. Runs offline.");
-  });
-
-  test("a note-less entry ends after the size, with no dangling period", () => {
-    expect(localAiOfferDetail("Ternary Bonsai 8B", 2_315_155_948)).toBe(
-      "Ternary Bonsai 8B • 2.3 GB download",
-    );
-    expect(localAiOfferDetail("Ternary Bonsai 8B", 2_315_155_948, "  ")).toBe(
-      "Ternary Bonsai 8B • 2.3 GB download",
-    );
-  });
-});
-
-describe("localAiProgressValue", () => {
-  test("reads as received-of-total, with no words the bar already says", () => {
-    expect(localAiProgressValue(1_200_000_000, 2_315_155_948)).toBe(
-      "1.2 GB of 2.3 GB",
-    );
-  });
-
-  test("falls back to a bare line before the total is known", () => {
-    expect(localAiProgressValue(0, 0)).toBe("Downloading…");
   });
 });

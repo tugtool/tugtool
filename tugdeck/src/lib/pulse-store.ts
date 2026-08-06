@@ -48,7 +48,7 @@ export interface PulseLineEntry {
 }
 
 /**
- * One session's standing overview — the local model's answer to "what is this
+ * One session's standing overview — the agent's answer to "what is this
  * session working on", as opposed to a beat's "what just happened".
  *
  * Deliberately NOT a {@link PulseLineEntry}: overviews never enter the rolling
@@ -79,7 +79,7 @@ export interface PulseSnapshot {
    * arriving afterwards show normally.
    */
   cleared: ReadonlyMap<string, ReadonlySet<string>>;
-  /** Latest overview per scope. Empty until a local model produces one. */
+  /** Latest overview per scope. Empty until the agent produces one. */
   overviews: ReadonlyMap<string, PulseOverviewEntry>;
 }
 

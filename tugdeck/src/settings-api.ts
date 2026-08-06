@@ -368,26 +368,6 @@ export function putSetupSeen(seen: boolean): void {
   });
 }
 
-/**
- * Persist a skipped on-device AI offer under `dev.tugtool.local-model` /
- * `setup-declined`. Absent reads false, so a skip has to be written explicitly
- * to be distinguishable from never having been asked — which is the whole
- * point of the flag: it is what stops the first-run wizard asking again.
- *
- * Nothing writes *which* model to run, because Tug ships knowledge of one and
- * the disk already says whether it is there. Fire-and-forget, mirroring
- * {@link putSetupSeen}.
- */
-export function putLocalModelDeclined(declined: boolean): void {
-  fetch("/api/defaults/dev.tugtool.local-model/setup-declined", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind: "bool", value: declined }),
-  }).catch((err) => {
-    console.warn("[settings] PUT local-model setup-declined failed:", err);
-  });
-}
-
 /** tugbank domain/key holding the app-wide default project directory. */
 export const DEFAULT_PROJECT_PATH_DOMAIN = "dev.tugtool.app";
 export const DEFAULT_PROJECT_PATH_KEY = "default-project-path";

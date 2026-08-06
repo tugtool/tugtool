@@ -15,7 +15,7 @@ import Foundation
 /// same format, same UTC rolling boundary makes the two files one log for
 /// reading purposes without making them one file for writing purposes.
 ///
-/// The facility is general. Local-model instrumentation is its first client,
+/// The facility is general. Per-request instrumentation was its first client,
 /// not its subject — the app's existing `NSLog` call sites are free to move
 /// here.
 ///

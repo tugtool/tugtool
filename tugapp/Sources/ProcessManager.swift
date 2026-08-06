@@ -564,47 +564,6 @@ class ProcessManager {
             backoffSeconds = 0
             NSLog("ProcessManager: ready (auth_url=%@, port=%d)", authURL, port)
             onReady?(authURL, port)
-        case "local_model_request":
-            // tugcast asking for on-device inference. Answered off the main
-            // thread — generation is seconds of GPU work, and the socket reply
-            // is keyed by id, so nothing here needs to be ordered against the
-            // rest of the control traffic.
-            guard let id = msg.data["id"] as? String,
-                  let task = msg.data["task"] as? String,
-                  let prompt = msg.data["prompt"] as? String else {
-                NSLog("ProcessManager: local_model_request missing id/task/prompt")
-                return
-            }
-            let maxTokens = msg.data["max_tokens"] as? Int
-            let kind: LocalModelRequest.Kind
-            switch task {
-            case "summarize":
-                kind = .summarize(prompt: prompt)
-            case "summarize_done":
-                kind = .summarizeDone(prompt: prompt)
-            case "generate":
-                kind = .generate(prompt: prompt, maxTokens: maxTokens)
-            case "classify":
-                // The program's documentation when the caller is driving the
-                // grammar-bearing variant; absent is the base classify prompt.
-                let grammar = (msg.data["grammar"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                kind = .classify(text: prompt, labels: ["shell", "prompt"], grammar: grammar)
-            default:
-                sendLocalModelResult(id: id, ok: false, text: nil, error: "unsupported task \(task)")
-                return
-            }
-            Task {
-                let reply = await LocalModelService.shared.handle(
-                    LocalModelRequest(requestId: id, kind: kind, transport: .socket))
-                await MainActor.run {
-                    // Classify answers in `verdict`; every other task answers
-                    // in `text`. The socket reply carries one field, so the
-                    // verdict rides it.
-                    self.sendLocalModelResult(
-                        id: id, ok: reply.ok, text: reply.text ?? reply.verdict,
-                        error: reply.error)
-                }
-            }
         case "dev_mode_result":
             let success = msg.data["success"] as? Bool ?? false
             if !success {
@@ -668,22 +627,6 @@ class ProcessManager {
         }
         controlConnection?.close()
         controlConnection = nil
-    }
-
-    /// Answer a `local_model_request`, matched by its id.
-    private func sendLocalModelResult(id: String, ok: Bool, text: String?, error: String?) {
-        guard let connection = controlConnection else {
-            NSLog("ProcessManager: local model result dropped, no control connection")
-            return
-        }
-        connection.send([
-            "type": "local_model_result",
-            "id": id,
-            "ok": ok,
-            "done": true,
-            "text": text ?? NSNull(),
-            "error": error ?? NSNull(),
-        ])
     }
 
     /// Send a control command to tugcast via UDS

@@ -1,12 +1,12 @@
 //! Session overview — a one-line answer to "what is this session working on?",
-//! written by the local model and broadcast on PULSE above the live beat.
+//! written by the SharedAgent and broadcast on PULSE above the live beat.
 //!
 //! The beat line says what just happened; the overview says what the whole
 //! session is *for*. The overview follows the transcript, not the toolbelt: it
 //! is composed from the user's own prompts (read from the claude JSONL) and an
 //! interleaved stream of everything the transcript shows — assistant prose,
 //! tool calls, and Session-card shell commands, in arrival order. Those go to
-//! the local model as one digest, and the sentence that comes back is the
+//! the agent as one digest, and the sentence that comes back is the
 //! line. Either half alone is enough — a session that only answers questions
 //! is described by its prompts.
 //!
@@ -54,7 +54,6 @@ use tracing::{debug, info, warn};
 
 use crate::feeds::draft_engine::SessionResolver;
 use crate::feeds::pulse::forwardable_session;
-use crate::local_model::SharedLocalModelState;
 use tugcast_core::{FeedId, Frame};
 
 /// Beats since the last emit that on their own justify a new overview: enough
@@ -70,9 +69,9 @@ const IDLE_PERIOD: Duration = Duration::from_secs(20);
 /// Minimum spacing between two overviews for one session, whatever the burst
 /// says. Inference isn't free and the line isn't worth twitching.
 ///
-/// `pub` so `local_model.rs` can assert its `summarize` ceiling sits under it:
-/// a ceiling above this floor would make the emitter's cadence inference-bound
-/// rather than designed.
+/// `pub` so `shared_agent.rs` can assert its `summarize` ceiling sits under
+/// it: a ceiling above this floor would make the emitter's cadence
+/// inference-bound rather than designed.
 pub const EMIT_FLOOR: Duration = Duration::from_secs(8);
 
 /// How often the emitter wakes to sweep sessions against the cadence. Frames
@@ -1598,7 +1597,9 @@ pub struct SessionOverviewConfig {
     pub tenant_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
     /// PULSE's own switch, same closure shape the bridge uses.
     pub pulse_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
-    pub local_model: SharedLocalModelState,
+    /// The Haiku SharedAgent the headline is asked of, absent in a build that
+    /// never made one — which reads exactly like the old no-model posture.
+    pub shared_agent: crate::shared_agent::SharedAgentHandle,
     pub identity: SessionIdentity,
     pub cadence: Cadence,
 }
@@ -1642,7 +1643,7 @@ struct EmitJob {
     pending_ask: Option<String>,
     last_digest: Option<String>,
     jsonl: Option<PathBuf>,
-    local_model: SharedLocalModelState,
+    shared_agent: crate::shared_agent::SharedAgentHandle,
     /// Whether a refused headline may be re-asked. Decided on the loop, because
     /// the spawned task cannot see the queue and reading it across the loop
     /// boundary would be a lock held over the emit.
@@ -1985,7 +1986,7 @@ fn spawn_next(
             cache: std::mem::take(&mut state.prompts),
             pending_ask: state.pending_ask.clone(),
             last_digest: state.last_digest.clone(),
-            local_model: Arc::clone(&config.local_model),
+            shared_agent: config.shared_agent.clone(),
             session_id: session_id.clone(),
             activity,
             recent_activity,
@@ -2013,7 +2014,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
         pending_ask,
         last_digest,
         jsonl,
-        local_model,
+        shared_agent,
         may_reask,
         retrospective,
         barrier_epoch,
@@ -2096,20 +2097,21 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
         return outcome;
     }
 
-    let Some(requester) = local_model.requester() else {
-        debug!(session = %session_id, "session overview: no local model host");
+    let Some(agent) = shared_agent else {
+        debug!(session = %session_id, "session overview: no shared agent");
         outcome.failed = true;
         return outcome;
     };
     // Turnaround is the standing measure of whether this feature is usable:
-    // the request deadline is a transport timeout, far above the point at
-    // which a headline stops being worth having.
+    // the job's own ceiling bounds the wait, and it sits under the emit floor
+    // so a headline can never still be in flight when the next one is due.
     let started = Instant::now();
-    let answer = if retrospective {
-        requester.summarize_done(digest.clone()).await
+    let job_name = if retrospective {
+        "summarize_done"
     } else {
-        requester.summarize(digest.clone()).await
+        "summarize"
     };
+    let answer = agent.run(job_name, digest.clone()).await;
     let report = match answer {
         Ok(text) => {
             let report = headline_register_report(&text);
@@ -2187,7 +2189,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
         "{digest}{GROUNDING_CORRECTION} {}\nIt failed because: {} {}\n",
         report.text, refusal.0, refusal.1,
     );
-    let second = requester.summarize(corrected).await;
+    let second = agent.run("summarize", corrected).await;
     let reask = match second {
         Ok(text) => {
             let report = headline_register_report(&text);
@@ -2366,9 +2368,10 @@ mod tests {
         assert!(!c.fires(1, IDLE_PERIOD - Duration::from_secs(1)));
     }
 
-    /// The numbers themselves are design values: the ladder in `local_model.rs`
-    /// asserts `SUMMARIZE_TIMEOUT < EMIT_FLOOR`, and the tick has to land well
-    /// inside every floor for the sweep to be the sole evaluation point.
+    /// The numbers themselves are design values: the job table in
+    /// `shared_agent.rs` asserts its summarize ceiling sits under `EMIT_FLOOR`,
+    /// and the tick has to land well inside every floor for the sweep to be the
+    /// sole evaluation point.
     #[test]
     fn cadence_numbers_hold_their_ordering() {
         assert!(TICK_INTERVAL < EMIT_FLOOR);
@@ -2614,7 +2617,10 @@ mod tests {
             ),
             ("Chase composer typing lag", "fresh-directive"),
             (
-                "Plan local model onboarding for ConfigureTug",
+                // `TugSetup` is the wording this frozen digest actually holds —
+                // a headline is grounded against its own digest's words, so a
+                // product rename can never be swept through this corpus.
+                "Plan local model onboarding for TugSetup",
                 "local-model-onboarding",
             ),
             (
@@ -4176,63 +4182,153 @@ mod tests {
     // The loop, end to end
     // -----------------------------------------------------------------------
 
-    use crate::local_model::{LocalModelRequester, LocalModelState};
+    use crate::shared_agent::{
+        AgentSpec, AgentWorkerSpawner, JobSpec, SharedAgentPool, TurnRequest,
+    };
     use std::io::Write;
 
-    /// Stand up a local-model host that answers every summarize with `answer`
-    /// (or refuses when it is `None`), wired through the real requester and the
-    /// real reply-routing path.
-    /// A model host that answers every request with `answer` (`None` = a
-    /// refusal) and forwards each request's digest, so a test can assert on
-    /// what the model was actually shown.
-    fn fake_host(
-        state: &SharedLocalModelState,
-        answer: Option<&'static str>,
-    ) -> tokio::sync::mpsc::Receiver<String> {
-        fake_host_by_task(state, answer, answer)
+    /// How the scripted agent answers one lane.
+    #[derive(Clone, Copy)]
+    enum Lane {
+        /// Answer with this text.
+        Says(&'static str),
+        /// Fail the job, the way a refusal or a dead worker does.
+        Refuses,
+        /// Accept the turn and never answer it, so the job hits its ceiling.
+        Mute,
     }
 
-    /// The same host, answering the two summarize lanes differently.
+    /// The agent the overview asks, scripted per summarize lane.
     ///
-    /// The collapse tests need this: an emit whose headline matches the one
-    /// already on the strip is suppressed as unchanged, so a host that answered
-    /// both lanes with one string would show a retrospective being asked for
-    /// and never published, which looks exactly like the collapse not firing.
-    fn fake_host_by_task(
-        state: &SharedLocalModelState,
-        answer: Option<&'static str>,
-        done_answer: Option<&'static str>,
-    ) -> tokio::sync::mpsc::Receiver<String> {
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(8);
-        let (seen_tx, seen_rx) = tokio::sync::mpsc::channel::<String>(8);
-        let requester = LocalModelRequester::new(tx);
-        state.set_requester(Arc::clone(&requester));
-        tokio::spawn(async move {
-            while let Some(line) = rx.recv().await {
-                let body: serde_json::Value = serde_json::from_str(&line).unwrap();
-                let id = body["id"].as_str().unwrap().to_string();
-                let answer = match body["task"].as_str() {
-                    Some("summarize_done") => done_answer,
-                    _ => answer,
-                };
-                let reply = match answer {
-                    Some(text) => crate::local_model::LocalModelReply {
-                        ok: true,
-                        text: Some(text.to_string()),
-                        error: None,
-                    },
-                    None => crate::local_model::LocalModelReply {
-                        ok: false,
-                        text: None,
-                        error: Some("guardrail refusal".to_string()),
-                    },
-                };
-                requester.resolve(&id, reply);
-                let digest = body["prompt"].as_str().unwrap_or_default().to_string();
-                let _ = seen_tx.send(digest).await;
+    /// The two lanes must be answerable differently: an emit whose headline
+    /// matches the one already on the strip is suppressed as unchanged, so an
+    /// agent answering both lanes with one string would show a retrospective
+    /// asked for and never published — indistinguishable from the collapse not
+    /// firing.
+    ///
+    /// The script is swappable at runtime because several tests exercise the
+    /// no-answer path first and install an answering agent afterward.
+    #[derive(Clone)]
+    struct FakeAgent {
+        inner: Arc<std::sync::Mutex<FakeAgentScript>>,
+    }
+
+    struct FakeAgentScript {
+        live: Lane,
+        done: Lane,
+        /// Each job's digest, so a test can assert what the model was shown.
+        seen: Option<tokio::sync::mpsc::Sender<String>>,
+    }
+
+    /// The job table the overview is exercised against.
+    ///
+    /// Instruction bodies are bare markers rather than the shipped wording:
+    /// these tests are about the emitter — which lane it picks, how it gates an
+    /// answer, when it backs off — and pinning them to prompt prose would make
+    /// every wording edit look like an emitter regression. The shipped
+    /// instructions carry their own contract test in `shared_agent.rs`.
+    static OVERVIEW_TEST_JOBS: &[JobSpec] = &[
+        JobSpec {
+            name: "summarize",
+            instructions: "SUMMARIZE",
+            timeout: Duration::from_secs(6),
+            slow: None,
+        },
+        JobSpec {
+            name: "summarize_done",
+            instructions: "SUMMARIZE-DONE",
+            timeout: Duration::from_secs(6),
+            slow: None,
+        },
+    ];
+
+    impl FakeAgent {
+        fn new(live: Lane, done: Lane) -> Self {
+            Self {
+                inner: Arc::new(std::sync::Mutex::new(FakeAgentScript {
+                    live,
+                    done,
+                    seen: None,
+                })),
             }
-        });
-        seen_rx
+        }
+
+        /// Rewrite the script and take a fresh digest channel.
+        fn script(&self, live: Lane, done: Lane) -> tokio::sync::mpsc::Receiver<String> {
+            let (seen_tx, seen_rx) = tokio::sync::mpsc::channel::<String>(64);
+            let mut inner = self.inner.lock().unwrap();
+            inner.live = live;
+            inner.done = done;
+            inner.seen = Some(seen_tx);
+            seen_rx
+        }
+
+        /// The same, in the shape most collapse tests want: a text per lane,
+        /// `None` meaning that lane refuses.
+        fn script_lanes(
+            &self,
+            live: Option<&'static str>,
+            done: Option<&'static str>,
+        ) -> tokio::sync::mpsc::Receiver<String> {
+            let lane = |text: Option<&'static str>| match text {
+                Some(text) => Lane::Says(text),
+                None => Lane::Refuses,
+            };
+            self.script(lane(live), lane(done))
+        }
+
+        fn pool(&self) -> Arc<SharedAgentPool> {
+            SharedAgentPool::new(
+                AgentSpec {
+                    name: "test",
+                    model: Arc::new(|| "test-model".to_string()),
+                    jobs: OVERVIEW_TEST_JOBS,
+                    max_workers: 2,
+                },
+                Arc::new(self.clone()) as Arc<dyn AgentWorkerSpawner>,
+            )
+        }
+    }
+
+    impl AgentWorkerSpawner for FakeAgent {
+        fn spawn(
+            &self,
+            _model: String,
+        ) -> Result<tokio::sync::mpsc::Sender<TurnRequest>, String> {
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<TurnRequest>(8);
+            let inner = Arc::clone(&self.inner);
+            tokio::spawn(async move {
+                while let Some(TurnRequest { text, reply }) = rx.recv().await {
+                    // The turn is `<instructions>\n\n<digest>`, so the marker
+                    // says which lane asked and the remainder is the digest.
+                    let (marker, digest) = text.split_once("\n\n").unwrap_or((text.as_str(), ""));
+                    let (lane, seen) = {
+                        let script = inner.lock().unwrap();
+                        let lane = if marker == "SUMMARIZE-DONE" {
+                            script.done
+                        } else {
+                            script.live
+                        };
+                        (lane, script.seen.clone())
+                    };
+                    if let Some(seen) = seen {
+                        let _ = seen.send(digest.to_string()).await;
+                    }
+                    match lane {
+                        Lane::Says(text) => {
+                            let _ = reply.send(Ok(text.to_string()));
+                        }
+                        Lane::Refuses => {
+                            let _ = reply.send(Err("guardrail refusal".to_string()));
+                        }
+                        // Hold the reply forever; the pool's ceiling ends the
+                        // wait, exactly as a wedged worker would.
+                        Lane::Mute => std::mem::forget(reply),
+                    }
+                }
+            });
+            Ok(tx)
+        }
     }
 
     /// A claude JSONL holding one user prompt, at the path the identity below
@@ -4277,12 +4373,12 @@ mod tests {
         shell_tx: broadcast::Sender<Frame>,
         submission_tx: broadcast::Sender<Frame>,
         pulse_rx: broadcast::Receiver<Frame>,
-        /// Each summarize request's digest, in order — what the model saw.
-        /// `None` when the harness started without a model host.
+        /// Each summarize job's digest, in order — what the model saw.
+        /// `None` when the harness started without an agent.
         digests: Option<tokio::sync::mpsc::Receiver<String>>,
-        /// The shared model-host slot, so a test can install a host after
-        /// exercising the no-host path.
-        model: SharedLocalModelState,
+        /// The scripted agent, so a test can rewrite its answers after
+        /// exercising an earlier path.
+        agent: FakeAgent,
         cancel: CancellationToken,
         _tmp: PathBuf,
     }
@@ -4351,8 +4447,17 @@ mod tests {
         let (shell_tx, _) = broadcast::channel(64);
         let (submission_tx, _) = broadcast::channel(64);
         let (pulse_tx, pulse_rx) = broadcast::channel(64);
-        let state = LocalModelState::new(tmp.join("models"), "http://127.0.0.1:1".to_string());
-        let digests = with_model.then(|| fake_host(&state, answer));
+        // `with_model` false starts the agent refusing every job and hands the
+        // test no digest channel — the same observable posture as no agent at
+        // all, and the one several tests start from before scripting an agent
+        // that answers. The genuinely absent handle is covered directly by
+        // `an_absent_agent_emits_no_headline`.
+        let lane = match answer {
+            Some(text) => Lane::Says(text),
+            None => Lane::Refuses,
+        };
+        let agent = FakeAgent::new(lane, lane);
+        let digests = with_model.then(|| agent.script(lane, lane));
         let cancel = CancellationToken::new();
         let config = SessionOverviewConfig {
             code_tx: code_tx.clone(),
@@ -4361,7 +4466,7 @@ mod tests {
             pulse_tx,
             tenant_enabled: Arc::new(move || tenant_on),
             pulse_enabled: Arc::new(move || pulse_on),
-            local_model: state.clone(),
+            shared_agent: Some(agent.pool()),
             identity: SessionIdentity {
                 resolver: Arc::new(|_| Some("claude-1".to_string())),
                 project_dir: Arc::new(|_| Some("/tmp/project".to_string())),
@@ -4377,7 +4482,7 @@ mod tests {
             submission_tx,
             pulse_rx,
             digests,
-            model: state,
+            agent,
             cancel,
             _tmp: tmp,
         }
@@ -5005,7 +5110,10 @@ mod tests {
         // The forced fire commits its tick, finds no host, and arms the
         // back-off; the digest must survive unrecorded.
         tokio::time::sleep(Duration::from_secs(5)).await;
-        let mut digests = fake_host(&h.model, Some("Fixing the flaky test."));
+        let mut digests = h.agent.script(
+            Lane::Says("Fixing the flaky test."),
+            Lane::Says("Fixing the flaky test."),
+        );
         tokio::time::sleep(Duration::from_secs(61)).await;
         h.submission_tx
             .send(user_message_frame("s1", "fix the flaky test"))
@@ -5035,7 +5143,10 @@ mod tests {
         h.submission_tx
             .send(user_message_frame("s1", "start on the lens bug"))
             .unwrap();
-        let _digests = fake_host(&h.model, Some("Starting on the lens bug."));
+        let _digests = h.agent.script_lanes(
+            Some("Starting on the lens bug."),
+            Some("Starting on the lens bug."),
+        );
         tokio::time::sleep(Duration::from_secs(65)).await;
         let overview = next_overview(&mut h.pulse_rx)
             .await
@@ -5148,31 +5259,16 @@ mod tests {
         );
     }
 
-    /// A host that accepts requests — forwarding each digest so the test can
-    /// see the summarize is in flight — and never answers them.
-    fn mute_host(state: &SharedLocalModelState) -> tokio::sync::mpsc::Receiver<String> {
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(8);
-        let (seen_tx, seen_rx) = tokio::sync::mpsc::channel::<String>(8);
-        let requester = LocalModelRequester::new(tx);
-        state.set_requester(Arc::clone(&requester));
-        tokio::spawn(async move {
-            while let Some(line) = rx.recv().await {
-                let body: serde_json::Value = serde_json::from_str(&line).unwrap();
-                let digest = body["prompt"].as_str().unwrap_or_default().to_string();
-                let _ = seen_tx.send(digest).await;
-            }
-        });
-        seen_rx
-    }
-
-    /// The emit rides its own task: with a summarize hung at the transport
-    /// timeout, the loop still observes cancellation immediately. No virtual
+    /// The emit rides its own task: with a summarize hung at its ceiling,
+    /// the loop still observes cancellation immediately. No virtual
     /// time passes after the cancel, so a loop blocked inside the emit would
     /// still hold its subscription — the receiver count is the tell.
     #[tokio::test(start_paused = true)]
     async fn cancellation_is_observed_mid_emit() {
         let h = start(None, true, true, false);
-        let mut digests = mute_host(&h.model);
+        // An agent that takes the job and never answers, so the emit is
+        // genuinely in flight when the cancel arrives.
+        let mut digests = h.agent.script(Lane::Mute, Lane::Mute);
         tokio::time::sleep(Duration::from_millis(50)).await;
         h.code_tx.send(tool_use_frame("s1", "cargo build")).unwrap();
         let _ = next_digest(&mut digests).await;
@@ -5361,8 +5457,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_settled_session_collapses_into_one_retrospective() {
         let h = start_cadenced(None, true, true, false, collapsing_cadence());
-        let mut digests = fake_host_by_task(
-            &h.model,
+        let mut digests = h.agent.script_lanes(
             Some("Hardening the watch loop."),
             Some("Hardened the watch loop."),
         );
@@ -5402,8 +5497,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn work_after_a_collapse_re_arms_exactly_one_more() {
         let h = start_cadenced(None, true, true, false, collapsing_cadence());
-        let mut digests = fake_host_by_task(
-            &h.model,
+        let mut digests = h.agent.script_lanes(
             Some("Hardening the watch loop."),
             Some("Hardened the watch loop."),
         );
@@ -5435,8 +5529,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_session_that_never_settles_never_collapses() {
         let h = start_cadenced(None, true, true, false, collapsing_cadence());
-        let mut digests = fake_host_by_task(
-            &h.model,
+        let mut digests = h.agent.script_lanes(
             Some("Hardening the watch loop."),
             Some("Hardened the watch loop."),
         );
@@ -5452,8 +5545,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_failed_shell_command_does_not_arm_the_collapse() {
         let h = start_cadenced(None, true, true, false, collapsing_cadence());
-        let mut digests = fake_host_by_task(
-            &h.model,
+        let mut digests = h.agent.script_lanes(
             Some("Hardening the watch loop."),
             Some("Hardened the watch loop."),
         );
@@ -5485,8 +5577,7 @@ mod tests {
         // Grounded in nothing the digest says, so the gate refuses it every
         // time, including on the re-ask.
         let h = start_cadenced(None, true, true, false, collapsing_cadence());
-        let mut digests = fake_host_by_task(
-            &h.model,
+        let mut digests = h.agent.script_lanes(
             Some("Hardening the watch loop."),
             Some("Harvested the mango orchard."),
         );
@@ -5514,14 +5605,48 @@ mod tests {
         );
     }
 
+    /// A build that never made a pool emits nothing and arms the back-off —
+    /// the degraded posture [P06] preserves, reached through the absent handle
+    /// rather than through a refusing agent.
+    #[tokio::test]
+    async fn an_absent_agent_emits_no_headline() {
+        let activity = vec!["Bash(cargo build)".to_string()];
+        let outcome = run_emit(EmitJob {
+            session_id: "s1".to_string(),
+            activity,
+            recent_activity: 0,
+            asked: false,
+            cache: PromptCache::default(),
+            pending_ask: None,
+            last_digest: None,
+            jsonl: None,
+            shared_agent: None,
+            may_reask: false,
+            retrospective: false,
+            barrier_epoch: 0,
+        })
+        .await;
+        assert!(outcome.headline.is_none());
+        assert!(outcome.failed, "an absent agent arms the back-off");
+        assert!(
+            outcome.seen_digest.is_none(),
+            "nothing saw the digest, so it must stay eligible",
+        );
+    }
+
     /// The other door into the same loop: the digest-unchanged dedup returns
     /// before the model is reached, which would leave the attempt unmarked. The
     /// retrospective path skips that dedup for exactly this reason.
     #[tokio::test]
     async fn a_retrospective_is_asked_even_when_its_digest_is_unchanged() {
-        let tmp = std::env::temp_dir().join(format!("tugcast-retro-dedup-{}", std::process::id()));
-        let state = LocalModelState::new(tmp.clone(), "http://127.0.0.1:1".to_string());
-        let mut digests = fake_host(&state, Some("Hardened the watch loop."));
+        let agent = FakeAgent::new(
+            Lane::Says("Hardened the watch loop."),
+            Lane::Says("Hardened the watch loop."),
+        );
+        let mut digests = agent.script_lanes(
+            Some("Hardened the watch loop."),
+            Some("Hardened the watch loop."),
+        );
         let activity = vec!["Bash(cargo build)".to_string()];
         let composed = compose_retrospective_digest(&[], &activity).unwrap();
         let outcome = run_emit(EmitJob {
@@ -5534,7 +5659,7 @@ mod tests {
             // Exactly what this emit is about to compose.
             last_digest: Some(composed.clone()),
             jsonl: None,
-            local_model: state.clone(),
+            shared_agent: Some(agent.pool()),
             may_reask: false,
             retrospective: true,
             barrier_epoch: 0,
@@ -5546,7 +5671,6 @@ mod tests {
             "the model answered, so the collapse is spent — an unmarked attempt re-fires forever"
         );
         assert!(outcome.retrospective);
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     /// Past-tense register and tool names overlap by construction: `stem` strips

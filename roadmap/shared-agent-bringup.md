@@ -100,7 +100,9 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 
 **Plan to resolve:** Spike in Step 1 against the installed CLI: run the candidate argv from the neutral cwd with a job prompt that baits tool use, confirm the result frame is text-only, confirm the transcript lands under the neutral encoded dir, and confirm a repo-specific `CLAUDE.md` instruction placed in a decoy cwd does not leak into answers. Record the chosen argv + cwd posture in `shared_agent.rs` with a comment naming the CLI version it was verified against.
 
-**Resolution:** OPEN (resolved by Step 1's checkpoint; the fake-spawner tests are argv-independent).
+**Resolution:** RESOLVED in Step 1 by spike against claude **2.1.222**, from an empty neutral cwd. (a) `--disallowedTools '*'` — the init frame reports `tools: []` and the answer comes back text-only in one turn; without it, the same tool-baiting turn invoked Bash and took two turns. (b) Confirmed: a decoy `CLAUDE.md` demanding a token got it appended when the worker ran from that directory, and the same turn from the neutral cwd came back bare even when the prompt explicitly invited it; `--strict-mcp-config` with no `--mcp-config` leaves no MCP servers. (c) No session flag is needed — a flagless streaming-input spawn works and the CLI mints its own session id. (d) Transcripts land at `~/.claude/projects/<encoded cwd>/<session-id>.jsonl`, confirming [P13]'s picker-pollution claim. Posture recorded in `shared_agent.rs` beside the spawn, naming the verified CLI version.
+
+Two measurements from the same spike, recorded because they set constants: a cold first turn costs **2327 ms** (more than classify's entire budget — the decisive argument for warm workers), and warm turns run **867–989 ms**, above the 300–800 ms this plan assumed. `CLASSIFY_SLOW` is therefore 1500 ms rather than 1 s, since a 1 s mark would fire on roughly half of all calls and retire the `slow=true` rate as the drift signal the latency risk is read by.
 
 #### [Q02] Prompt-cache prefix tuning (DEFERRED) {#q02-prompt-cache}
 
@@ -409,10 +411,20 @@ No appearance-zone state is added; no `root.render`, focus, or registration chan
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] `CLAUDE.md`: remove the local-model framing if any lands there; no change expected (it never documented the model).
-- [ ] `tuglaws/design-decisions.md`: candidate global decision "aux model work runs on SharedAgents over subscription auth" — proposed at the end, user decides whether to promote.
-- [ ] `roadmap/` note in this plan's Step 10 marking `roadmap/archive/pulse.md`/`pulse-2.md` as the daemon-posture ancestors.
-- [ ] Update the stale scribe doc comment at `feeds/agent_supervisor.rs` (~line 1412) that still says `haiku` while the code defaults `sonnet` — drive-by accuracy fix in Step 2's file pass.
+- [x] `CLAUDE.md`: checked — it never documented the model, and nothing local-model-shaped landed there. No change.
+- [ ] `tuglaws/design-decisions.md`: candidate global decision proposed below (#candidate-decision) — **not self-committed**; the user decides whether to promote it.
+- [x] `roadmap/archive/pulse.md` and `roadmap/archive/pulse-2.md` are this design's daemon-posture ancestors: the persistent-Haiku-worker shape, the exact `claude-haiku-4-5` pin, and the `MAX_THINKING_TOKENS=0` env all come from PULSE v1/v2. Whoever revisits worker policy should read them first.
+- [x] Fixed the stale scribe doc comment at `feeds/agent_supervisor.rs` that said `haiku` while the code defaults `sonnet`.
+
+#### Candidate global design decision (proposed, not promoted) {#candidate-decision}
+
+> **Aux model work runs on SharedAgents over the user's subscription, never on a bundled model.**
+>
+> Tug's non-conversational model work — headline summaries, shell arbitration, and whatever comes next — runs on a job-constrained pool of persistent headless `claude` workers authenticated by the user's own Claude Code subscription. Tug does not ship, download, or host model weights.
+>
+> *Why:* an on-device pack cost ~2.4 GB resident and 2.28 GB on disk to run a model weaker than the one the user is already paying for; the download apparatus existed only to feed it; and a half-maintained second inference backend rots. The subscription is already a hard prerequisite of the whole app, so the remote path adds no new dependency.
+>
+> *Cost accepted:* these features stop working offline, degrading to their designed absent posture.
 
 ---
 
@@ -442,16 +454,16 @@ No appearance-zone state is added; no `root.render`, focus, or registration chan
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | SharedAgent core: pool, worker, job table | pending | — |
-| #step-2 | Wire the Haiku agent into tugcast + CONTROL verbs | pending | — |
-| #step-3 | Migrate session overview onto the SharedAgent | pending | — |
-| #step-4 | `shell_classify` verb in the shell feed | pending | — |
-| #step-5 | Deck reroute: classify over the socket, posture test rework | pending | — |
-| #step-6 | Integration checkpoint: both features on Haiku | pending | — |
-| #step-7 | Remove the tugcast local-model module | pending | — |
-| #step-8 | Remove the Swift stack and MLX packages | pending | — |
-| #step-9 | Remove deck remnants + Configure Tug simplification | pending | — |
-| #step-10 | Final sweep, docs, core-tier verification | pending | — |
+| #step-1 | SharedAgent core: pool, worker, job table | done | `8cbd37bf1` (folded with #step-2) |
+| #step-2 | Wire the Haiku agent into tugcast + CONTROL verbs | done | `8cbd37bf1` |
+| #step-3 | Migrate session overview onto the SharedAgent | done | `bf7bd6d31` |
+| #step-4 | `shell_classify` verb in the shell feed | done | `abaaab091` |
+| #step-5 | Deck reroute: classify over the socket, posture test rework | done | `efe1172ec` |
+| #step-6 | Integration checkpoint: both features on Haiku | done | `e3d02fd56` |
+| #step-7 | Remove the tugcast local-model module | done | `d85233a1c` |
+| #step-8 | Remove the Swift stack and MLX packages | done | `e2bc075be` |
+| #step-9 | Remove deck remnants + Configure Tug simplification | done | `fb4e31940` |
+| #step-10 | Final sweep, docs, core-tier verification | done | `f7436e837` |
 
 #### Step 1: SharedAgent core: pool, worker, job table {#step-1}
 

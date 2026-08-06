@@ -1409,7 +1409,7 @@ fn parse_project_dir_payload(payload: &[u8]) -> Result<String, ControlError> {
 
 /// The changeset scribe's runtime wiring ([P11]): the spawner (production:
 /// `ClaudeScribeSpawner`; tests: a fake) plus the model resolver (tugbank
-/// default `dev.tugtool.changeset`/`scribe_model`, fallback `haiku` —
+/// default `dev.tugtool.changeset`/`scribe_model`, fallback `sonnet` —
 /// resolved per request so a settings change applies immediately).
 #[derive(Clone)]
 pub struct ScribeContext {

@@ -1,22 +1,31 @@
 /**
- * at0280-local-model-absent.test.ts — what every user sees before they opt in.
+ * at0280-shared-agent-absent.test.ts — what the app looks like with no agent.
  *
- * On-device inference is strict enhancement: nothing about the app changes
- * until a model is downloaded and selected. That claim is easy to state and
- * easy to break, because both tenants live on surfaces people touch constantly
- * — the PULSE strip and the prompt composer. This pins the model-less posture
- * so a regression shows up as a failing test rather than as a stray line or a
- * chip nobody asked for.
+ * Shell arbitration and PULSE intent summaries are strict enhancement: with the
+ * `SharedAgent` unavailable, nothing about the app changes. That claim is easy
+ * to state and easy to break, because both tenants live on surfaces people touch
+ * constantly — the PULSE strip and the prompt composer. This pins the agentless
+ * posture so a regression shows up as a failing test rather than as a stray line
+ * or a chip nobody asked for.
  *
- * **The model-less state has to be forced, not assumed.** Downloaded packs live
- * in a machine-shared directory ([P04]) that no per-run workspace resets, so on
- * a developer machine that has ever downloaded one the harness instance would
- * find it and light both tenants up. This test writes the declined selection
- * (`dev.tugtool.local-model/model = ""`) into its own tugbank, which makes the
- * host answer unavailable whatever is on disk — so the posture under test is
- * the same on a fresh machine and on this one.
+ * **The forcing mechanism is the app-test gate itself ([P08]).** The pool
+ * refuses to spawn a worker when `TUGAPP_APP_TEST=1` is in the environment, and
+ * the harness launches every instance with it — the variable reaches tugcast
+ * because `ProcessManager.swift` seeds the tugcast child's environment from the
+ * app's own. So the agentless posture is what every app-test instance has, on
+ * every machine, with nothing to seed. Deliberately **no tugbank kill switches
+ * are written here**: seeding them would let this test pass for a reason other
+ * than the one it claims, and it would stop testing the gate.
  *
- * Two claims:
+ * **The positive path cannot be covered here, by design.** No app-test may spend
+ * subscription tokens, so no app-test can ever see a real verdict or a real
+ * headline. That path is covered by the on-demand real-claude worker test and by
+ * the Rust fake-spawner suites (`shared_agent.rs`, `feeds/shell.rs`,
+ * `feeds/session_overview.rs`); the submit-time routing logic is covered as pure
+ * logic in `shell-line-classifier.test.ts` and the deck's parking and
+ * correlation in `shell-classify-store.test.ts`.
+ *
+ * Three claims:
  *   1. The PULSE strip renders its single activity run and NO headline run —
  *      not an empty one, not a reserved one. Absent means absent.
  *   2. Typing lines that open with a PATH executable — `make test`, `git
@@ -28,8 +37,7 @@
  *      separate call sites, so absence has to be pinned on both.
  *
  * **Typing only — this test never submits a turn.** A real send into a
- * replay-backed harness session is out of bounds; the submit-time precondition
- * is covered as pure logic in `shell-line-classifier.test.ts`.
+ * replay-backed harness session is out of bounds.
  *
  * Foreground: ⌘A is an Edit-menu key equivalent, so AppKit resolves it
  * against the main menu before the web view sees a keydown. A background
@@ -38,7 +46,8 @@
  *
  * @foreground
  *
- * @covers tugdeck/src/lib/local-model-store.ts
+ * @covers tugdeck/src/lib/shared-agent-store.ts
+ * @covers tugdeck/src/lib/shell-classify-store.ts
  * @covers tugdeck/src/lib/shell-line-classifier.ts
  * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
  * @covers tugdeck/src/components/lens/sections/cards-section.tsx
@@ -51,12 +60,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { launchTugApp, type App } from "./_harness";
-import {
-  mkTempTugbank,
-  rmTempTugbank,
-  seedTugbankForLaunch,
-  tugbankWrite,
-} from "./_harness/tugbank-helpers";
+import { mkTempTugbank, rmTempTugbank, seedTugbankForLaunch } from "./_harness/tugbank-helpers";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
@@ -141,17 +145,15 @@ async function typeLine(app: App, text: string, replace = false): Promise<void> 
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0280: with no local model, nothing about the app changes",
+  "AT0280: with no shared agent, nothing about the app changes",
   () => {
     test(
       "the strip stays single-line and typing never auto-inserts the shell chip",
       async () => {
         const tugbankPath = mkTempTugbank();
         seedTugbankForLaunch(tugbankPath);
-        // The declined selection: no local model answers, whatever is on disk.
-        tugbankWrite(tugbankPath, "dev.tugtool.local-model", "model", "string", "");
         const app = await launchTugApp({
-          testName: "at0280-local-model-absent",
+          testName: "at0280-shared-agent-absent",
           env: { TUGBANK_PATH: tugbankPath },
           foreground: true,
         });
@@ -176,7 +178,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(await count(app, HEADLINE)).toBe(0);
 
           // 2. Two lines that open with a real PATH executable — the exact
-          //    shape that would be put to the model when one is present.
+          //    shape that would be put to the agent when one is available.
           await typeLine(app, "make test");
           expect(await count(app, ATOM)).toBe(0);
 

@@ -1,4 +1,4 @@
-"""Plumbing for driving a live Tug instance's local model from a script.
+"""Plumbing for driving a live Tug instance's SharedAgent from a script.
 
 Register scoring (`run.py`), liveness (`liveness.py`), and turnaround analysis
 (`analyze.py`) are three different questions, but they all reach the model the
@@ -41,11 +41,6 @@ VERDICT = re.compile(
 )
 
 INSTANCES = Path.home() / "Library/Application Support/Tug/instances"
-MODELS = Path.home() / "Library/Application Support/Tug/models"
-
-# The stamp file is the presence probe: a pack directory without one is a
-# partial download, which is how `LocalModelStore` reads the same directory.
-MANIFEST = "tug-manifest.json"
 
 
 def log_path(instance: str) -> Path | None:
@@ -66,7 +61,7 @@ def answers(path: Path, task: str = "summarize") -> list[tuple[str, str]]:
     out = []
     for line in path.read_text(errors="ignore").splitlines():
         line = ANSI.sub("", line)
-        if "local model summarize answered" not in line:
+        if "shared agent summarize answered" not in line:
             continue
         found = TASK.search(line)
         if (found.group("task") if found else "summarize") != task:
@@ -92,7 +87,7 @@ def ask(
     waiting on the other.
     """
     task = "summarize_done" if retrospective else "summarize"
-    action = f"local_model_{task}"
+    action = f"shared_agent_{task}"
     before = len(answers(path, task))
     started = time.monotonic()
     proc = subprocess.run(
@@ -124,7 +119,7 @@ def verdicts(path: Path) -> list[tuple[str, str, bool]]:
     out = []
     for line in path.read_text(errors="ignore").splitlines():
         line = ANSI.sub("", line)
-        if "local model classify answered" not in line:
+        if "shared agent classify answered" not in line:
             continue
         m = VERDICT.search(line)
         if m:
@@ -161,7 +156,7 @@ def ask_classify(
     if grammar:
         params += ["-p", f"grammar={grammar}"]
     proc = subprocess.run(
-        ["tugutil", "host", "tell", "local_model_classify",
+        ["tugutil", "host", "tell", "shared_agent_classify",
          "--instance", instance, *params],
         capture_output=True, text=True,
     )
@@ -175,11 +170,6 @@ def ask_classify(
             _, verdict, read_docs = got[-1]
             return verdict, round((time.monotonic() - started) * 1000), read_docs
     return None
-
-
-def installed_packs() -> list[str]:
-    """Every downloaded model pack, by id."""
-    return sorted(p.parent.name for p in MODELS.glob(f"*/{MANIFEST}"))
 
 
 def instance_is_running(instance: str) -> bool:

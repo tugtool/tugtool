@@ -146,9 +146,8 @@ enum InstanceConfig {
 
     /// Instance-independent data root: `<base>/Tug/`.
     ///
-    /// Content under here is shared by every instance on the machine —
-    /// downloaded local-model packs, for one, which are large and identical
-    /// whoever asked for them. Per-instance state belongs in `dataDir`.
+    /// Content under here is shared by every instance on the machine, being
+    /// the same whoever asked for it. Per-instance state belongs in `dataDir`.
     static var sharedDataDir: URL {
         baseDataDir
     }

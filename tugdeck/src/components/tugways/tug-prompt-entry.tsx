@@ -152,8 +152,8 @@ import {
   ShellVerdictCache,
   vetoesShellVerdict,
 } from "@/lib/shell-line-classifier";
-import { useLocalModelReady } from "@/lib/local-model-store";
-import { prewarm as prewarmLocalModel, requestClassify } from "@/lib/local-model-bridge";
+import { useSharedAgentReady } from "@/lib/shared-agent-store";
+import type { ShellClassifyStore } from "@/lib/shell-classify-store";
 import type { FindSession } from "@/lib/find-session";
 import type { CommitModeController } from "@/lib/commit-mode-controller";
 import { hasSnippetDrag, readSnippetDrag } from "@/lib/snippet-drag";
@@ -217,7 +217,7 @@ const COMMIT_PERSIST_DEBOUNCE_MS = 500;
 
 /**
  * Quiet time, in milliseconds, before a candidate draft line is put to the
- * local model (Spec S07). Long enough that ordinary typing doesn't fire a
+ * agent (Spec S07). Long enough that ordinary typing doesn't fire a
  * request per keystroke; short enough that the answer is usually back before
  * the user reaches for Return.
  */
@@ -686,6 +686,8 @@ export interface TugPromptEntryProps {
    * the pre-grader path.
    */
   shellGrammarStore?: ShellGrammarStore;
+  /** The session's classify client, sharing the card's `SHELL_OUTPUT` feed. */
+  shellClassifyStore?: ShellClassifyStore;
   /**
    * The host's find session — the live query, options, match set, and active
    * index for transcript search. The find bar owns the query; the entry uses
@@ -1032,6 +1034,7 @@ export const TugPromptEntry = React.forwardRef<
     shellSessionStore,
     pathCommandsStore,
     shellGrammarStore,
+    shellClassifyStore,
     findSession,
     commitMode,
     onAttachmentError,
@@ -1919,12 +1922,12 @@ export const TugPromptEntry = React.forwardRef<
     selectionGuard.updateCardDomSelection(id, range);
   }, []);
 
-  // Shell routing is live only when the local-model store says a model can
+  // Shell routing is live only when the shared-agent store says the agent can
   // answer AND the tenant's kill switch is on. Mirrored to a ref because the
   // extension closures below run per keystroke and must never re-render for
   // this ([L07]); when it is false every entry point short-circuits and the
   // surface behaves exactly as a build with no model at all ([P12]).
-  const shellRoutingReady = useLocalModelReady("shell-routing");
+  const shellRoutingReady = useSharedAgentReady("shell-routing");
   const shellRoutingReadyRef = useRef(shellRoutingReady);
   shellRoutingReadyRef.current = shellRoutingReady;
 
@@ -2015,7 +2018,7 @@ export const TugPromptEntry = React.forwardRef<
           pendingVerdictRef.current = null;
         }
 
-        // Pre-consult the local model on candidate lines while the user types,
+        // Pre-consult the agent on candidate lines while the user types,
         // so a verdict is usually already cached by the time Return arrives —
         // submit-time is far too late to start a multi-hundred-millisecond
         // round trip. Debounced: a verdict is only worth asking for once the
@@ -2044,16 +2047,20 @@ export const TugPromptEntry = React.forwardRef<
             ) {
               verdictDebounceRef.current = window.setTimeout(() => {
                 verdictDebounceRef.current = null;
-                // Re-assert residency alongside the question. The host releases
-                // the weights on its own idle timer, so a composer left open
-                // and returned to can be cold again; this is a no-op when the
-                // model is already loaded.
-                prewarmLocalModel();
                 // Grade alongside the classify request, not before it. Both
                 // round trips run concurrently, so the grade is warm by submit
                 // without ever putting its latency in front of the model's.
+                //
+                // This request is also what warms the agent: the first job of a
+                // class spawns that class's worker, and a cold spawn costs more
+                // than the whole submit budget. Asking here means the spawn is
+                // paid while somebody is still typing.
                 void shellGrammarStoreRef.current?.request(text);
-                const promise = requestClassify(text);
+                const store = shellClassifyStoreRef.current;
+                const promise =
+                  store === undefined
+                    ? Promise.resolve(null)
+                    : store.request(text);
                 pendingVerdictRef.current = { text, promise };
                 void promise.then((verdict) => {
                   if (verdict !== null) verdictCacheRef.current.set(text, verdict);
@@ -2185,6 +2192,8 @@ export const TugPromptEntry = React.forwardRef<
   pathCommandsStoreRef.current = pathCommandsStore;
   const shellGrammarStoreRef = useRef(shellGrammarStore);
   shellGrammarStoreRef.current = shellGrammarStore;
+  const shellClassifyStoreRef = useRef(shellClassifyStore);
+  shellClassifyStoreRef.current = shellClassifyStore;
 
   // Card-scoped dispatch for locally-handled slash commands. A bare
   // `/command` matching the local registry is routed to the host-supplied
@@ -2237,7 +2246,7 @@ export const TugPromptEntry = React.forwardRef<
   // Stable identity (`useCallback` with deps that are themselves
   // stable — `codeSessionStore` is a prop reference); policy is read
   // through refs so the closure never goes stale [L07].
-  // Async only for the one branch that can wait on a local-model verdict; an
+  // Async only for the one branch that can wait on an agent verdict; an
   // async function body runs synchronously up to its first `await`, so every
   // other path through this callback settles in the same tick it always did.
   const performSubmit = useCallback(async (): Promise<void> => {
@@ -2472,7 +2481,7 @@ export const TugPromptEntry = React.forwardRef<
 
     // Shell routing ([P09], Spec S07): an atom-free, single-line draft whose
     // first word names a real program may route to the shell instead of Claude
-    // — after the slash-command intercepts, before `send`. The local model
+    // — after the slash-command intercepts, before `send`. The agent
     // makes that call; nothing here reads the line's meaning. The auto-routed
     // row renders a visible `→ shell` attribution with a one-click "send to
     // Claude instead", which recovers the answer but cannot un-run the
@@ -2504,7 +2513,7 @@ export const TugPromptEntry = React.forwardRef<
       sendAtoms.length === 0 &&
       !submitText.includes("\n") &&
       // Readiness off ⇒ never route, which is exactly the behavior of a build
-      // with no local model at all ([P12]).
+      // with no agent at all ([P12]).
       shellRoutingReadyRef.current &&
       isShellCandidate(
         submitText,
@@ -2553,7 +2562,11 @@ export const TugPromptEntry = React.forwardRef<
               window.clearTimeout(verdictDebounceRef.current);
               verdictDebounceRef.current = null;
             }
-            asked = requestClassify(submitText, grammar);
+            const store = shellClassifyStoreRef.current;
+            asked =
+              store === undefined
+                ? Promise.resolve(null)
+                : store.request(submitText, grammar);
           }
           verdict = await Promise.race([
             asked,

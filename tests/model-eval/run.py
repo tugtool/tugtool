@@ -1,4 +1,4 @@
-"""Score the local model's session headlines against a live Tug instance.
+"""Score the SharedAgent's session headlines against a live Tug instance.
 
 Drives the real thing end to end: the frozen digest goes over the control
 socket to the running app, the app's own `LocalModelPrompts.summarize` and its
@@ -16,7 +16,7 @@ fixtures over the `summarize_done` task, scored against the past forms. The two
 lanes are the same measurement of two different registers, so they share every
 line of this file except which fixtures they read and which tense they expect.
 
-Needs a running instance with a local model installed and the `pulse-overview`
+Needs a running instance with the `pulse-overview`
 tenant left on. Every headline is reported whether or not it passes; the summary
 is a rate, not a gate, because a headline can satisfy every mechanical rule and
 still describe the session badly. Read the lines.

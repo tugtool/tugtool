@@ -732,7 +732,7 @@ export interface TugTestSurface {
    * `{"type":"pulse","kind":"overview","text":…,"scopes":[…],"beat":N,"at":ms}`
    * for a standing overview, the same without `kind` for a beat. The bytes go
    * through the production parser and folds, so this puts a real overview on
-   * the strip and in the Lens without a local model or a live commentator.
+   * the strip and in the Lens without an agent or a live commentator.
    *
    * Returns `false` when no store is attached. A `true` return only means the
    * bytes were handed over: the parser drops a malformed body silently, so

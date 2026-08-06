@@ -858,7 +858,7 @@ export interface PulseFramePayload {
   /**
    * What kind of line this is. Absent means a beat — the live "what just
    * happened" commentary tugpulse emits, which is every frame that existed
-   * before overviews. `"overview"` marks the local model's standing answer to
+   * before overviews. `"overview"` marks the agent's standing answer to
    * "what is this session working on", which the strip pins above the beat
    * instead of threading into the beat stream.
    */

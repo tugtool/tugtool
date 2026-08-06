@@ -1,15 +1,16 @@
-"""Is the live local-model path answering, and inside its ceiling?
+"""Is the live SharedAgent path answering, and inside its ceiling?
 
-One digest through the real thing — control socket, running app, resident
-model, normalizer, log — and three questions about the answer: did it arrive,
+One digest through the real thing — control socket, running app, a warm Haiku
+worker, normalizer, log — and three questions about the answer: did it arrive,
 does it say anything, and did it take longer than `summarize` is allowed.
 
     just model-liveness              # against debug-main
     just model-liveness release-main
 
-This is on-demand, not CI: it needs a downloaded pack and real hardware. On a
-machine without either it **skips with exit 0** and names the remedy, because a
-check that fails wherever a model is missing is one people learn to ignore.
+This is on-demand, not CI: it spends subscription tokens and needs a running
+instance. Without one it **skips with exit 0** and names the remedy, because a
+check that fails wherever the precondition is missing is one people learn to
+ignore.
 
 It asserts nothing about *what* the headline says. There is no ground truth for
 "what is this session working on", and inventing one is what the fixed-corpus
@@ -22,13 +23,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from harness import ask, installed_packs, instance_is_running, log_path  # noqa: E402
+from harness import ask, instance_is_running, log_path  # noqa: E402
 
 CORPUS = Path(__file__).parent / "corpus"
 
-# Kept in step with `SUMMARIZE_TIMEOUT` in
-# `tugrust/crates/tugcast/src/local_model.rs`. Provisional, like every number in
-# that table — the batch analyzer is what eventually sets it.
+# Kept in step with the `summarize` JobSpec ceiling in
+# `tugrust/crates/tugcast/src/shared_agent.rs`. Provisional, like every number
+# in that table — the batch analyzer is what eventually sets it.
 SUMMARIZE_CEILING_MS = 6_000
 
 SKIP, PASS, FAIL = 0, 0, 1
@@ -39,12 +40,6 @@ def main() -> int:
     ap.add_argument("instance", nargs="?", default="debug-main")
     ap.add_argument("--timeout", type=float, default=30.0)
     args = ap.parse_args()
-
-    packs = installed_packs()
-    if not packs:
-        print("skip: no local model pack installed.")
-        print("      Install one from Tug ▸ Configure Tug… and run this again.")
-        return SKIP
 
     if not instance_is_running(args.instance):
         print(f"skip: no running instance {args.instance!r}.")

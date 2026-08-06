@@ -36,38 +36,6 @@ export function subscriptionLabel(
 }
 
 /**
- * A model pack's size, for the on-device AI offer. Sizes here are always in the
- * gigabytes, so one decimal place is the honest resolution — "2.2 GB", not
- * "2315155948 bytes" and not a false-precision "2.16 GB".
- */
-export function formatModelSize(bytes: number): string {
-  const gb = bytes / 1_000_000_000;
-  if (!Number.isFinite(gb) || gb < 0) return "—";
-  return gb >= 10 ? `${Math.round(gb)} GB` : `${gb.toFixed(1)} GB`;
-}
-
-/**
- * Detail line for the on-device AI offer: what the user would get and what it
- * costs them in disk. The catalog note, when present, carries the "what for".
- */
-export function localAiOfferDetail(displayName: string, bytes: number, notes?: string): string {
-  const head = `${displayName} • ${formatModelSize(bytes)} download`;
-  const note = (notes ?? "").trim();
-  return note ? `${head}. ${note}` : head;
-}
-
-/**
- * The readout carried alongside the download's progress bar. Aggregate bytes,
- * not per-file — the user cares that it is moving and how much is left, not
- * which shard is in flight. The bar itself says "downloading", so the words
- * only have to carry the numbers.
- */
-export function localAiProgressValue(received: number, total: number): string {
-  if (total <= 0) return "Downloading…";
-  return `${formatModelSize(received)} of ${formatModelSize(total)}`;
-}
-
-/**
  * Copy for the third setup step while it is still *pending* (the user isn't
  * logged in yet). When the deck already has open cards — the logout-with-work
  * case — the step previews the return to that work ("Continue working") rather

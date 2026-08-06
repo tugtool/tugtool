@@ -119,6 +119,15 @@ describe.skipIf(!SHOULD_RUN)("AT0281: Configure Tug… opens the wizard on deman
         const before = await labels();
         expect(before.length, "steps on screen before Done").toBeGreaterThan(0);
 
+        // No row offers a model. Aux model work runs on the user's Claude
+        // subscription, so signing in is the only answer that question ever
+        // needed — and this is the surface where a resurrected download step
+        // would show up first.
+        expect(
+          before.filter((label) => /on-device|local ai|download/i.test(label)),
+          "a model-offer row came back to the wizard",
+        ).toEqual([]);
+
         await clickWhenReady(app, SETUP_DONE);
         let sampled = 0;
         for (let i = 0; i < 40; i += 1) {

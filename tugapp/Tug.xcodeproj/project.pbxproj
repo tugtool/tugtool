@@ -15,9 +15,6 @@
 		AA0000010000000000000006 /* TugConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000008 /* TugConfig.swift */; };
 		AA0000010000000000000009 /* ControlSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000009 /* ControlSocket.swift */; };
 		AA000001000000000000000A /* TugbankClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000A /* TugbankClient.swift */; };
-		AA000001000000000000001D /* LocalModelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000001A /* LocalModelService.swift */; };
-		AA000001000000000000001E /* FoundationModelsBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000001B /* FoundationModelsBackend.swift */; };
-		AA000001000000000000001C /* LocalModelBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000019 /* LocalModelBackend.swift */; };
 		AA000001000000000000000B /* TestHarnessBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000B /* TestHarnessBridge.swift */; };
 		AA000001000000000000000C /* TestHarnessListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000C /* TestHarnessListener.swift */; };
 		AA000001000000000000000D /* TestHarnessConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000D /* TestHarnessConnection.swift */; };
@@ -33,8 +30,6 @@
 		AA000001000000000000001F /* TugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000001C /* TugLog.swift */; };
 		AA0000010000000000000018 /* UpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000018 /* UpdateController.swift */; };
 		AA0000010000000000000019 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000140000000000000001 /* Sparkle */; };
-		AA000001000000000000001A /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000140000000000000002 /* MLXLLM */; };
-		AA000001000000000000001B /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000140000000000000003 /* MLXLMCommon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -48,9 +43,6 @@
 		AA0000020000000000000008 /* TugConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugConfig.swift; sourceTree = "<group>"; };
 		AA0000020000000000000009 /* ControlSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlSocket.swift; sourceTree = "<group>"; };
 		AA000002000000000000000A /* TugbankClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugbankClient.swift; sourceTree = "<group>"; };
-		AA000002000000000000001A /* LocalModelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelService.swift; sourceTree = "<group>"; };
-		AA000002000000000000001B /* FoundationModelsBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundationModelsBackend.swift; sourceTree = "<group>"; };
-		AA0000020000000000000019 /* LocalModelBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelBackend.swift; sourceTree = "<group>"; };
 		AA000002000000000000000B /* TestHarnessBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessBridge.swift; sourceTree = "<group>"; };
 		AA000002000000000000000C /* TestHarnessListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessListener.swift; sourceTree = "<group>"; };
 		AA000002000000000000000D /* TestHarnessConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessConnection.swift; sourceTree = "<group>"; };
@@ -74,8 +66,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA0000010000000000000019 /* Sparkle in Frameworks */,
-				AA000001000000000000001A /* MLXLLM in Frameworks */,
-				AA000001000000000000001B /* MLXLMCommon in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -101,9 +91,6 @@
 				AA0000020000000000000002 /* MainWindow.swift */,
 				AA0000020000000000000003 /* ProcessManager.swift */,
 				AA000002000000000000000A /* TugbankClient.swift */,
-				AA000002000000000000001A /* LocalModelService.swift */,
-				AA000002000000000000001B /* FoundationModelsBackend.swift */,
-				AA0000020000000000000019 /* LocalModelBackend.swift */,
 				AA0000020000000000000008 /* TugConfig.swift */,
 				AA0000020000000000000009 /* ControlSocket.swift */,
 				AA0000020000000000000016 /* BuildInfo.swift */,
@@ -161,8 +148,6 @@
 			name = Tug;
 			packageProductDependencies = (
 				AA0000140000000000000001 /* Sparkle */,
-				AA0000140000000000000002 /* MLXLLM */,
-				AA0000140000000000000003 /* MLXLMCommon */,
 			);
 			productName = Tug;
 			productReference = AA0000030000000000000001 /* Tug.app */;
@@ -189,7 +174,6 @@
 			mainGroup = AA0000050000000000000001;
 			packageReferences = (
 				AA0000130000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
-				AA0000130000000000000002 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */,
 			);
 			productRefGroup = AA0000070000000000000001 /* Products */;
 			projectDirPath = "";
@@ -221,9 +205,6 @@
 				AA0000010000000000000002 /* MainWindow.swift in Sources */,
 				AA0000010000000000000003 /* ProcessManager.swift in Sources */,
 				AA000001000000000000000A /* TugbankClient.swift in Sources */,
-				AA000001000000000000001D /* LocalModelService.swift in Sources */,
-				AA000001000000000000001E /* FoundationModelsBackend.swift in Sources */,
-				AA000001000000000000001C /* LocalModelBackend.swift in Sources */,
 				AA0000010000000000000006 /* TugConfig.swift in Sources */,
 				AA0000010000000000000009 /* ControlSocket.swift in Sources */,
 				AA000001000000000000000B /* TestHarnessBridge.swift in Sources */,
@@ -504,14 +485,6 @@
 				minimumVersion = 2.9.0;
 			};
 		};
-		AA0000130000000000000002 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/ml-explore/mlx-swift-examples";
-			requirement = {
-				kind = exactVersion;
-				version = 2.29.1;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -519,16 +492,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0000130000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
-		};
-		AA0000140000000000000002 /* MLXLLM */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AA0000130000000000000002 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
-			productName = MLXLLM;
-		};
-		AA0000140000000000000003 /* MLXLMCommon */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AA0000130000000000000002 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
-			productName = MLXLMCommon;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
