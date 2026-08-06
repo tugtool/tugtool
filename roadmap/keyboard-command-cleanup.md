@@ -36,14 +36,17 @@ This plan writes the algebra into `tuglaws/`, executes the chord moves, adds the
 - `tuglaws/chord-tiers.md` exists, is linked from `tuglaws/commands.md`, `tuglaws/tuglaws.md` ([L30]), and `tuglaws/INDEX.md`, and `tuglaws/design-decisions.md` carries a new **D126** entry (verify by reading the four files).
 - Every chord in **Table T01** resolves to its new value through the real pipeline: the updated `SHIPPED_CHORDS` rows in `tugdeck/src/components/tugways/__tests__/command-routing-drift.test.ts` pass (`bun test`).
 - The native menu bar shows the new chords: updated `STATIC_ITEMS` rows in `tests/app-test/at0168-menu-structure.test.ts` pass.
+- Every pin in **List L02** carries its new spelling and passes — the unit pins, the four app-test chord drives, and the generated doc region.
+- `tuglaws/menus.md`'s generated chord table matches the registry: `menus-doc.test.ts` passes with no rewrite pending (it diffs the checked-in region against `generateChordTable()`).
 - ⌃⌘A / ⌃⇧⌘A appear as scoped rows for the new commands in the keymap pane projection (`buildKeymapRows` output includes them; unit-verifiable via `settings-keymap-rows.ts`).
+- `isCancelChordEvent` has its own unit pins: it matches ⌘., refuses ⎋, and follows a user override of `cancel-dialog`.
 - The five converted components contain no literal `metaKey && (key|code) === "."` match; each calls the shared registry-backed matcher (verify by grep).
 - `bunx vite build` succeeds; `just app-test-changed` verdict PASS; registry lints (`lintCommandTable`, `lintActionCoverage`, `lintNativeLocked`, `lintChordCollisions`) pass at import (they throw in DEV and run in `command-registry.test.ts`).
 
 #### Scope {#scope}
 
 1. Author `tuglaws/chord-tiers.md`; add D126; cross-link commands.md / tuglaws.md / INDEX.md.
-2. Move seven existing chords and re-home two more (Table T01) in `command-registry.ts`, with the four Swift construction-literal twins in `tugapp/Sources/AppDelegate.swift` and the pinned-test transcription updates.
+2. Move seven existing chords and re-home two more (Table T01) in `command-registry.ts`, with the four Swift construction-literal twins in `tugapp/Sources/AppDelegate.swift`, the pinned-test transcriptions of **List L02**, and the regenerated `tuglaws/menus.md` chord table.
 3. Add `claim-all-changes` / `disclaim-all-changes` commands (⌃⌘A / ⌃⇧⌘A, composer-scoped) wired to `ChangesRouteController`.
 4. Registry-backed ⌘. matcher; convert the five hand-matching components; add ⌘. parity to dismissal surfaces that today handle only ⎋.
 
@@ -99,7 +102,7 @@ This plan writes the algebra into `tuglaws/`, executes the chord moves, adds the
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | Muscle-memory breakage for shipped chords | med | high (by design) | Keymap pane + menus show the new chords from one source; users can override any of them in Settings ▸ Keyboard | User feedback after ship |
-| A missed test pin fails after a chord move | low | med | Deep dive [#pinned-tests] enumerates every pin found; step tasks include a repo-wide grep for the old chords | Any red test naming an old chord |
+| A missed test pin fails after a chord move | med | med | List L02 enumerates every pin found by **two** sweeps — the glyph grep and the modifier-literal grep, because a glyph grep cannot see `{ code: "KeyP", metaKey: true, ctrlKey: true }`, which is how every app-test spells a chord | Any red test naming an old chord |
 | ⌃⌘C dead in some focus context (WebKit/AppKit eats ⌃-chords?) | med | low | ⌃⌘P and ⌃⌘F already ship and work through the same pipeline; at0340's updated chord drive proves ⌃⌘C end-to-end | at0340 failure |
 | ⌘. matcher changes double-fire cancel (local + global funnel) | med | low | The conversions keep each surface's existing propagation posture (documented per-surface in [#cancel-cluster]); only the match predicate changes | A dialog closing twice / beeping |
 
@@ -142,11 +145,14 @@ This plan writes the algebra into `tuglaws/`, executes the chord moves, adds the
 **Decision:** Two new `TUG_ACTIONS` (`claim-all-changes`, `disclaim-all-changes`), two new `COMMANDS` entries with `routing: "first-responder"` and default bindings ⌃⌘A / ⌃⇧⌘A carrying `scope: { kind: "responder", responderId: COMPOSER_RESPONDER_SCOPE }`. `tug-prompt-entry.tsx` registers them via `useKeybindings` beside the existing `COMMIT_AUTO_MESSAGE` registration (same `commitActive` gate, chords read from `keymapRegistry.bindingsOf(...)`, never spelled again). `session-card.tsx` handles both in its `useResponder` actions map (the map that already holds `TOGGLE_CHANGES_VIEW`), calling `changesController.claim(paths)` / `changesController.disclaim(paths)`.
 
 **Rationale:**
-- The Changes shade is a **passive** sheet — the composer keeps focus while it is up (`session-changes-view.tsx` module doc) — so the composer's responder is where the chords are genuinely live; this is byte-for-byte the `commit-auto-message` precedent, which `commands.md` names as the sanctioned scoped pattern.
+- The Changes shade is a **passive** sheet — the composer keeps focus while it is up (`session-changes-view.tsx` module doc) — so the composer's responder is where the chords are genuinely live; this follows the `commit-auto-message` registration precedent, which `commands.md` names as the sanctioned scoped pattern.
 - ⌃⌘A joins the Changes neighborhood (⌃⌘C shade, ⌃⌘M message, ⌃⌘A claim); ⌃⇧⌘A is the ⇧-counterpart of ⌃⌘A per the algebra, one finger from its pair.
 
 **Implications:**
-- **Semantics** (mirrors the shade's bulk buttons, wired in `session-changes-view.tsx`): Claim All = `changesController.claim([...unattributed paths, ...orphaned paths])` from the controller snapshot (`snap.unattributed`, `snap.orphaned` — path arrays of `{path}` file lists); Disclaim All = `changesController.disclaim(entry.files paths)` from `snap.entry`. Handlers no-op when the relevant path list is empty or a claim/disclaim round-trip is pending (read the phase non-reactively from `changeset-verb-store` by `changesController.entryKey`, the same store `useChangesetClaim`/`useChangesetDisclaim` wrap).
+- **Registration and handling live in different components, unlike `commit-auto-message`.** That command registers *and* handles in `tug-prompt-entry.tsx` (the `commitKeybindings` memo and the composer's own actions map). These two register there — same gate, same `bindingsOf` projection — but handle in `session-card.tsx`, because the card is the only component holding `changesController`. The chain makes this work: the composer's responder sits below the card's, so a first-responder action the composer does not claim falls through to the card (the walk documented at `session-card.tsx`'s card-content responder). The split is deliberate; the gate is where the surface is, the semantics are where the controller is.
+- **Semantics — ⌃⌘A is a composite verb, deliberately stronger than either shade button.** The shade wires *two* bulk buttons (`onClaimAllUnattributed` and `onClaimAllOrphaned` in `session-changes-view.tsx`); the chord claims both buckets at once: `changesController.claim([...snap.unattributed, ...snap.orphaned].map(f => f.path))`. A single keyboard verb whose meaning is "make everything claimable in front of me mine" is worth more than a chord that mirrors one of two buttons and leaves the user to reach for the mouse for the other; the buttons remain the granular path. Disclaim All = `changesController.disclaim(snap.entry.files.map(f => f.path))`.
+- **The pair is not an inverse on one set** — ⌃⌘A acts on what is *not yet* this session's, ⌃⇧⌘A on what *is*. ⇧-as-counterpart is carrying "the opposite bulk verb of this shade," not "the same set, reversed." `chord-tiers.md` records that reading so the algebra is not later read as promising set-inversion.
+- Handlers no-op when the relevant path list is empty or a claim/disclaim round-trip is pending (read the phase non-reactively from `changeset-verb-store` by `changesController.entryKey`, the same store `useChangesetClaim`/`useChangesetDisclaim` wrap).
 - Door coverage: bindings are the door (no `menuItemId`), so `lintCommandTable` passes without `internal`. The keymap pane shows them as scoped, non-rebindable rows — the existing `[Q03]` stance.
 - `command-routing-drift.test.ts` also carries a routing-expectation map (near the top of the file, `[TUG_ACTIONS.TOGGLE_CHANGES_VIEW]: "key-card"` etc.); add rows for both new ids as `"first-responder"`.
 
@@ -182,7 +188,9 @@ This plan writes the algebra into `tuglaws/`, executes the chord moves, adds the
 
 #### [P07] One global design decision, D126 (DECIDED) {#p07-d126}
 
-**Decision:** Append **D126** to `tuglaws/design-decisions.md` in the house style (bold-statement paragraph, trailing law/decision citations): the adoption of the chord-tier algebra, the Table T01 moves, the two new commands, and ⌘. parity — citing [L30], [D117] (the stale at0253 note), and superseding the chord spellings embedded in D122–D124 prose without editing those entries.
+**Decision:** Append **D126** to `tuglaws/design-decisions.md` in the house style (bold-statement paragraph, trailing law/decision citations): the adoption of the chord-tier algebra, the Table T01 moves, the two new commands, and ⌘. parity — citing [L30], [D117] (the stale at0253 note), and superseding the chord spellings embedded in **D122–D125** prose without editing those entries.
+
+**[D124] is the entry D126 most directly supersedes** and must be named: it is where ⇧⌘P was given to Prompt Route, where `CYCLE_PERMISSION_MODE` was moved to ⌃⌘P "in *both* doors … because either alone leaves the menu bar swallowing the chord," and where ⌃⌘S/B/C/G/H were deleted "which is what leaves the ⌃⌘ band free." D126 is spending exactly the band D124 cleared, and re-homing both chords D124 placed — the continuity is the point, so it is stated rather than left for a reader to reconstruct. [D125] is named too, as the entry that retired the ⌃⌘C `!changes` alias whose stale comment this plan removes.
 
 ---
 
@@ -211,28 +219,62 @@ This plan writes the algebra into `tuglaws/`, executes the chord moves, adds the
 Grep basis: `key === "Escape"` handlers outside `__tests__` and outside modifier-guard contexts. Classification per [P06]:
 
 **List L01: parity audit** {#l01-parity-audit}
-- INCLUDE (dismissal): `dev-error-overlay.ts` (overlay dismiss), `src/components/tugways/body-kinds/image-block.tsx` (lightbox), `src/lib/markdown/enhance-img.ts` (image overlay), `src/components/tugways/cards/gallery-mutation-tx.tsx` (gallery-only surface — include for uniformity), `tug-text-editor/completion-extension.ts` (completion popup dismiss — include; the popup already handles its own keys, add the matcher beside its Escape branch).
-- EXCLUDE (field-revert / engine-owned / archive): `tug-filter-field.tsx`, `tug-value-input.tsx`, `tug-slider.tsx` (revert semantics, [P06]); `responder-chain-provider.tsx` and `focus-act.ts` (the engine's own Escape plumbing — ⌘. already reaches the funnel as a global `cancel-dialog` binding); `settings-keymap-body.tsx` (chord-capture UI — ⎋/⌘. there are *recordable input*, never dismissal); `src/_archive/**` (dead).
+- INCLUDE (dismissal): `dev-error-overlay.ts` (overlay dismiss), `src/components/tugways/body-kinds/image-block.tsx` (lightbox), `src/lib/markdown/enhance-img.ts` (image overlay), `tug-text-editor/completion-extension.ts` (completion popup dismiss — see the shape note below).
+- EXCLUDE (in-flight revert / field-revert / engine-owned / archive): `tug-filter-field.tsx`, `tug-value-input.tsx`, `tug-slider.tsx` (revert semantics, [P06]); `cards/gallery-mutation-tx.tsx` — its Escape sends `PREVIEW_HUE` with `phase: "cancel"`, aborting an in-flight scrub, which is the *same* revert family as the slider and not a dismissal; `responder-chain-provider.tsx` and `focus-act.ts` (the engine's own Escape plumbing — ⌘. already reaches the funnel as a global `cancel-dialog` binding); `settings-keymap-body.tsx` (chord-capture UI — ⎋/⌘. there are *recordable input*, never dismissal); `src/_archive/**` (dead).
+- **Shape note for `completion-extension.ts`:** its Escape is not a branch you can sit beside. The handler builds a `consumes` boolean from an `||` chain of `event.key` comparisons and then runs `switch (event.key)`. ⌘. needs a term in the `consumes` chain *and* a predicate branch taken before the switch — a `case "."` would match `event.key`, which is precisely the label-vs-`code` mis-match [P05] exists to end. The branch tests `isCancelChordEvent(event)`, never a key label.
 - The implementer re-runs the grep at execution time and classifies any new hits by the same rule; the rule, not this snapshot, is the contract.
 
 #### Tests that pin the moved chords {#pinned-tests}
 
-- `tugdeck/src/components/tugways/__tests__/command-routing-drift.test.ts` — `SHIPPED_CHORDS` (chord → command-id pairs resolved through the real pipeline) pins ⇧⌘P (prompt route), ⌃⌘P (cycle permission), ⇧⌘C, ⇧⌘H; also a routing-expectation map keyed by `TUG_ACTIONS`. Update the four rows, add ⌃⌘T → `next-theme` (it gains a global binding), optionally ⌃⌘I → insert-file if a row exists for it (add if absent — the table welcomes additions). Updating this file is sanctioned transcription: the test pins shipped defaults, and this commit changes the shipped defaults.
-- `tests/app-test/at0168-menu-structure.test.ts` — `STATIC_ITEMS` pins `session.permissionMode.cycle` (`p`, command|control → becomes command|control|option) and `session.insertFile` (`i`, command → becomes command|control). Neither shade toggle nor `view.nextTheme` is pinned there (View is dynamic; the shade items aren't in the static table).
-- `tests/app-test/at0340-composer-routes.test.ts` — *drives* ⇧⌘C and ⇧⌘P as key events and asserts route state; update both drives to ⌃⌘C / ⌃⌘P (assertion text mentions the chords too).
-- `tests/app-test/at0253-commit-dialog.test.ts` — comment-only reference to the old ⇧⌘C collision (Risk R01).
-- `tests/app-test/at0179-dynamic-keybinding.test.ts`, `at0181-keymap-chord-sweep.test.ts`, `at0182-keymap-override.test.ts` — read the registry dynamically; expected to pass unchanged, but grep them for literal old chords before declaring done.
-- Sweep command for stragglers: `grep -rn '⇧⌘C\|⇧⌘H\|⇧⌘P\|⇧⌘M\|⌥⌘T' tugdeck/src tests/app-test tugapp/Sources` (labels appear in comments and assertion messages; fix the ones describing the moved commands, leave e.g. ⌥⇧⌘C alone).
+A pin is spelled one of three ways, and no single grep sees all three: as a **glyph** (`"⇧⌘C"` in a comment, a title, or an `expect(…).toBe`), as a **code-plus-modifiers literal** (`{ code: "KeyP", metaKey: true, ctrlKey: true }` — how every app-test drives a chord), or as a **generated doc region** diffed by a test. The list below is the union of all three sweeps.
+
+**List L02: every pin the moves disturb** {#l02-pins}
+
+*Unit (tugdeck):*
+- `__tests__/command-routing-drift.test.ts` — `SHIPPED_CHORDS` (chord → command-id pairs resolved through the real pipeline) pins ⇧⌘P (prompt route), ⌃⌘P (cycle permission), ⇧⌘C, ⇧⌘H; also a routing-expectation map keyed by `TUG_ACTIONS`. Update the four rows, add ⌃⌘T → `next-theme` (it gains a global binding) and ⌃⌘I → `insert-file`. Note the loop skips non-global bindings (`if (binding.scope.kind !== "global") continue;`), so the composer-scoped commands cannot be pinned here — they get routing-map rows only.
+- `__tests__/keybinding-map.test.ts` — the "the two P chords" describe block **asserts both P chords through `matchChord`**: ⇧⌘P must resolve to `select-composer-route:prompt` and ⌃⌘P to `cycle-permission-mode`. After the move both assertions are wrong, in opposite directions — ⇧⌘P resolves to nothing and ⌃⌘P resolves to the *prompt route*. Re-transcribe both tests and the module docblock's "permission cycling lives on ⌃⌘P — ⇧⌘P is the composer's Prompt route" sentence; the "bare ⌘P matches neither" and Tab cases stand unchanged.
+- `__tests__/keymap-registry.test.ts` — two tests pin ⇧⌘M: one asserts `formatChord(binding.chord)` is `"⇧⌘M"` for `COMMIT_AUTO_MESSAGE`, the next builds a `KeyM` meta+shift event to prove a scoped chord stays out of the global layer. Both become ⌃⌘M (`ctrlKey: true`, `shiftKey: false`).
+- `__tests__/text-editing-menu-shortcuts.test.ts` — `expect(entry.shortcut).not.toBe("⇧⌘C")` still passes (Copy as Plain Text is ⌥⇧⌘C), but its docblock rationale — "⇧⌘C … is Session ▸ Show Changes" — goes stale the moment ⇧⌘C is free. Comment-only.
+- `__tests__/chord-format.test.ts` — uses ⌃⌘P as a *formatting* fixture (`formatChord({key:"KeyP", ctrl:true, meta:true})`). It asserts nothing about which command holds it. **Leave alone.**
+
+*App-tests:*
+- `at0168-menu-structure.test.ts` — `STATIC_ITEMS` pins `session.permissionMode.cycle` (`p`, command|control → command|control|option) and `session.insertFile` (`i`, command → command|control). Neither shade toggle nor `view.nextTheme` is pinned there (View is dynamic; the shade items aren't in the static table).
+- `at0340-composer-routes.test.ts` — *drives* ⇧⌘C (×4) and ⇧⌘P (×3) via `pressChord`; update every drive to ⌃⌘C / ⌃⌘P, plus the docblock's numbered scenario list and the assertion text that names the chords.
+- `at0177-permission-cycle-keys.test.ts` — drives `("KeyP", "p", { meta: true, ctrl: true })`. Becomes `{ meta: true, ctrl: true, alt: true }`. The file is *named* for this chord; check its docblock too.
+- `at0088-permission-mode-chip.test.ts` — an inline `new KeyboardEvent("keydown", { code: "KeyP", …, metaKey: true, ctrlKey: true })`. Same modifier addition.
+- `at0220-settings-chips-turn-lock.test.ts` — the `PRESS_CYCLE` constant, same shape, same addition.
+- `at0339-session-find-bar.test.ts` — drives `("KeyC", "c", { meta: true, shift: true })` to reach Changes. Becomes ⌃⌘C.
+- `at0253-commit-dialog.test.ts` — comment-only reference to the old ⇧⌘C collision (Risk R01).
+- `at0179-dynamic-keybinding.test.ts`, `at0181-keymap-chord-sweep.test.ts`, `at0182-keymap-override.test.ts` — read the registry dynamically and carry no literal for any moved chord (both sweeps come back clean). Expected to pass unchanged.
+
+*Generated doc region:*
+- `tuglaws/menus.md` — the `<!-- generated:chords -->` table is regenerated and **diffed** by `__tests__/menus-doc.test.ts`, which fails on any drift. Six rows change in Step 2 (⇧⌘C, ⇧⌘H, ⇧⌘M, ⇧⌘P, ⌃⌘P, ⌘I) and two rows are added in Step 3. Regenerate in place with `TUG_WRITE_MENUS_DOC=1 bun test src/components/tugways/__tests__/menus-doc.test.ts` and commit the doc with the registry change — never hand-edit the region.
+
+**The two sweeps** (run both; the first cannot see what the second finds):
+- Glyphs — `grep -rn '⇧⌘C\|⇧⌘H\|⇧⌘P\|⇧⌘M\|⌥⌘T\|⌃⌘P' tugdeck/src tests/app-test tugapp/Sources tuglaws` (`tuglaws/` is in scope for this plan's prose sweep; `design-decisions.md` is excluded by [P07]). Fix the hits describing the moved commands; leave ⌥⇧⌘C / ⌥⇧⌘V alone.
+- Modifier literals — `grep -rn '"Key[CHMPIT]"' tests/app-test tugdeck/src` and read each hit's modifier record.
 
 #### Comment debt riding the moves {#comment-debt}
 
-Stale prose to update in the same commits (comments state what the code does — no history, per repo comment rules):
+Stale prose to update in the same commits (comments state what the code does — no history, per repo comment rules). The glyph sweep finds all of these; the list is what it currently returns, so a hit not below is a new one to classify by the same rule.
+
+*tugdeck source:*
 - `command-registry.ts` `select-composer-route:prompt` entry comment ("promoting ⇧⌘P would take a plain letter chord…") — rewrite for ⌃⌘P citing chord-tiers.
 - `command-registry.ts` `commit-auto-message` comment ("⇧⌘M, live only while…") → ⌃⌘M.
-- `session-card.tsx` handler comments naming ⇧⌘C / ⇧⌘H (the `TOGGLE_CHANGES_VIEW` / `TOGGLE_HISTORY_VIEW` actions-map entries) and any "⌃⌘C alias" mention.
-- `tug-prompt-entry.tsx` "⇧⌘M invokes Auto-Message" comment → ⌃⌘M.
+- `action-vocabulary.ts` — four comments: `TOGGLE_CHANGES_VIEW` "Bound to ⇧⌘C", `SELECT_COMPOSER_ROUTE` "⇧⌘P for `\"prompt\"`", `CYCLE_PERMISSION_MODE` "Bound to ⌃⌘P", and the commit-mode "the ⇧⌘P route select" note. Missed by the original sweep list; the vocabulary is where a reader looks first for what a verb is bound to.
+- `keymap-registry.ts` — the collision-lint comment naming "the commit surface's ⇧⌘M" and the shadowing docblock's "Copy as Plain Text advertised ⇧⌘C while ⇧⌘C was Show Changes" (that example loses its subject once ⇧⌘C is free — re-point it at the ⌃⌘C pair or drop the second clause).
+- `session-card.tsx` — the `TOGGLE_CHANGES_VIEW` / `TOGGLE_HISTORY_VIEW` handler comments (including the **stale "⌃⌘C alias"** mention: that alias was deleted with the bang layer and the comment outlived it), the ⇧⌘P route-select comment, the ⌃⌘P permission-cycle comment, and the three commit-mode entry-point comments naming ⇧⌘C.
+- `tug-prompt-entry.tsx` — "⇧⌘M invokes Auto-Message", the "⇧⌘M scoped binding" [L02] note, the "⇧⌘M and the pencil-sparkles button are two doors" handler comment, and the "⇧⌘C over a typed prompt stashes" / commit-entry-path comments.
 - `session-changes-view.tsx` module doc and header comment ("⇧⌘C is the toggle" / "dismissed by ⇧⌘C") → ⌃⌘C.
+- `responder-chain-provider.tsx` and `responder-chain.ts` — both name ⌃⌘P as the permission cycle in their focus/key-card comments → ⌃⌥⌘P.
+- `action-dispatch.ts` — "matching the ⌃⌘P cycle" → ⌃⌥⌘P.
+- `cards/gallery-tooltip.tsx` — an authored `shortcut="⇧⌘P"` demo prop. It is gallery furniture, not a live binding, but it is a chord the app no longer has; give it a chord that still exists.
+- `internal/tug-popup-menu.tsx` — a `"⇧⌘C"` docstring example for the presentational `shortcut` prop. Same treatment.
 - `lib/help-content.ts` and `lib/shell-interactive-staging.ts` render chords via `commandShortcut` — verify no authored chord strings; update label text only if a literal appears.
+
+*tuglaws prose* (outside `design-decisions.md`, which [P07] leaves alone):
+- `turn-lifecycle.md` (three places), `tuglaws.md` [L07]/[L02] discussion, and `app-test-inventory.md` (two summaries) all say **⇧⌘P cycles the permission mode**. That is already wrong on main — the cycle has been ⌃⌘P since [D124] — and becomes doubly wrong here. Correct them to ⌃⌥⌘P.
+- `route-lifecycle.md`'s `SELECT_ROUTE` row lists "⇧⌘C / ⇧⌘S / ⇧⌘B / ⇧⌘F", three of which left with the bang layer. Reduce it to the surviving route chord.
 
 ---
 
@@ -261,16 +303,22 @@ Transcribe Part 1 of `roadmap/keyboard-command-cleanup-brief.md` into tuglaws ho
 2. The six rules: pairing, arrows exemption, scarcity, closed sets, ⌘. parity (with the [P06] dismissal-vs-revert line), menu-placement-is-a-chord-decision (cite commands.md four-layer resolution).
 3. The free-pool ledger: plain-⌘ free letters ranked with convention caveats (D, Y safest; J, E claimable; B, U, P reserved with reasons; punctuation ⌘' ⌘; ⌘\ free; ⌘[ ⌘] reserved for navigation), digits taken, and the six freed chords from Table T01.
 4. The macOS never-bind list (from #assumptions).
-5. Known anomalies: Cascade/Tile ⌃⌥ ([Q02] deferral), the ⌥⌘/ DevTools wink, ⌘T maker-debug-only.
+5. Known anomalies: Cascade/Tile ⌃⌥ ([Q02] deferral), the ⌥⌘/ DevTools wink, ⌘T maker-debug-only, and **the shade toggles' un-detachable menu claim** — `toggle-changes-view` / `toggle-history-view` carry a non-`menuEligible` registry binding *and* a Swift construction literal, so `menuChords()` never claims `session.toggleChanges` / `session.toggleHistory` and never publishes the `null` that would detach it. A user rebind of either command therefore leaves the old chord standing on the menu item, where AppKit keeps eating it. Pre-existing and not introduced here, but it is the one place where "every chord is the user's to move" is not yet true end-to-end, so the doctrine doc names it rather than letting a reader infer otherwise.
 6. Cross-links back: commands.md "Adding a command" gains a tier-selection clause; [L30]'s law text in tuglaws.md gains a pointer sentence; INDEX.md gains a one-line entry.
 
 **Spec S02: `isCancelChordEvent`** {#s02-cancel-matcher}
 
 ```ts
+// chord-format.ts — widened parameter, same body
+export type ChordEventFields = Pick<KeyboardEvent, "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey">;
+export function chordMatchesEvent(event: ChordEventFields, chord: Chord): boolean
+
 // keymap-registry.ts
-export function isCancelChordEvent(event: Pick<KeyboardEvent, "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey">): boolean
+export function isCancelChordEvent(event: ChordEventFields): boolean
 ```
-Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` whose `chord.key !== "Escape"`, via `chordMatchesEvent`. Reads the singleton `keymapRegistry` so overrides apply. Accepts both native and React keyboard events structurally. No Escape matching — Escape ownership is per-surface ([P05]).
+Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` whose `chord.key !== "Escape"`, via `chordMatchesEvent`. Reads the singleton `keymapRegistry` so overrides apply. No Escape matching — Escape ownership is per-surface ([P05]).
+
+`chordMatchesEvent` is declared `(event: KeyboardEvent, …)` today while reading only those five fields, so a `Pick<…>` argument will not typecheck against it. Widen the *matcher's* parameter to `ChordEventFields` rather than casting at each call site: the cast would be a lie repeated five times, and the widening is what lets one predicate serve native listeners and React synthetic events alike (React's `KeyboardEvent` is structurally compatible on all five). The existing `KeyboardEvent` callers are unaffected — a `KeyboardEvent` satisfies the narrower type.
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
@@ -297,12 +345,17 @@ Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` wh
 | `claim-all-changes` / `disclaim-all-changes` entries | `CommandEntry` ×2 | `command-registry.ts` | first-responder routing, composer-scoped bindings (Table T01) |
 | 7 edited `bindings` | data | `command-registry.ts` | Table T01 moves |
 | `isCancelChordEvent` | fn | `keymap-registry.ts` | Spec S02 |
+| `ChordEventFields` + widened `chordMatchesEvent` | type + signature | `chord-format.ts` | Spec S02; existing `KeyboardEvent` callers unaffected |
 | Claim/disclaim action handlers | entries in `useResponder` actions map | `cards/session-card.tsx` | beside `TOGGLE_CHANGES_VIEW`; call `changesController` |
 | Scoped-binding registration | extend the `commitKeybindings` memo | `tug-prompt-entry.tsx` | same `commitActive` gate, `bindingsOf` both new ids |
 | 4 `keyEquivalent`/mask literals | data | `tugapp/Sources/AppDelegate.swift` (`buildMenuBar`) | Table T01 rightmost column |
-| `SHIPPED_CHORDS` + routing map rows | test data | `__tests__/command-routing-drift.test.ts` | [#pinned-tests] |
+| `SHIPPED_CHORDS` + routing map rows | test data | `__tests__/command-routing-drift.test.ts` | List L02 |
+| P-chord pins ×2 + docblock | test edits | `__tests__/keybinding-map.test.ts` | List L02 — both assertions invert |
+| ⇧⌘M pins ×2 | test edits | `__tests__/keymap-registry.test.ts` | List L02 |
+| `isCancelChordEvent` pins | new tests | `__tests__/keymap-registry.test.ts` | matches ⌘., refuses ⎋, follows an override |
 | `STATIC_ITEMS` rows ×2 | test data | `tests/app-test/at0168-menu-structure.test.ts` | permissionMode.cycle, insertFile |
-| Chord drives | test edits | `tests/app-test/at0340-composer-routes.test.ts` | ⌃⌘C / ⌃⌘P |
+| Chord drives | test edits | `at0340`, `at0177`, `at0088`, `at0220`, `at0339` | List L02 |
+| `generated:chords` region | generated doc | `tuglaws/menus.md` | `TUG_WRITE_MENUS_DOC=1`; pinned by `menus-doc.test.ts` |
 | **D126** | decision entry | `tuglaws/design-decisions.md` | [P07] |
 
 ---
@@ -311,9 +364,11 @@ Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` wh
 
 - [ ] `tuglaws/chord-tiers.md` (Spec S01)
 - [ ] `tuglaws/commands.md` — cross-link in the Chords section + Cross-References list + "Adding a command" step 1 tier clause
-- [ ] `tuglaws/tuglaws.md` — one pointer sentence in [L30]
+- [ ] `tuglaws/tuglaws.md` — one pointer sentence in [L30]; correct the ⇧⌘P permission-cycle mention in the [L07]/[L02] discussion ([#comment-debt])
 - [ ] `tuglaws/INDEX.md` — one-line entry
 - [ ] `tuglaws/design-decisions.md` — D126
+- [ ] `tuglaws/menus.md` — the `generated:chords` region, **regenerated not hand-edited** (`TUG_WRITE_MENUS_DOC=1`), in Step 2 and again in Step 3
+- [ ] `tuglaws/turn-lifecycle.md`, `tuglaws/app-test-inventory.md`, `tuglaws/route-lifecycle.md` — stale chord prose ([#comment-debt])
 
 ---
 
@@ -323,15 +378,15 @@ Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` wh
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit (bun)** | Registry lints, drift-test chord/routing transcriptions, keymap-row projection for the new scoped commands | Steps 2–4 |
-| **App-test (selective)** | Native menu chord masks (at0168), end-to-end chord drive (at0340), keymap sweep/override invariants (at0181/at0182) | Step 2, integration |
-| **Drift Prevention** | `SHIPPED_CHORDS` re-transcription is the new pin; `lintActionCoverage` forces the new actions into the table | Steps 2–3 |
+| **Unit (bun)** | Registry lints, drift-test chord/routing transcriptions, the P-chord and ⇧⌘M pins, keymap-row projection for the new scoped commands, and new `isCancelChordEvent` pins | Steps 2–4 |
+| **App-test (selective)** | Native menu chord masks (at0168), end-to-end chord drives (at0340, at0177, at0088, at0220, at0339), keymap sweep/override invariants (at0181/at0182) | Step 2, integration |
+| **Drift Prevention** | `SHIPPED_CHORDS` re-transcription is the new pin; `menus-doc.test.ts` holds `tuglaws/menus.md` to the registry; `lintActionCoverage` forces the new actions into the table | Steps 2–3 |
 
 #### What stays out of tests {#test-non-goals}
 
 - End-to-end app-test of ⌃⌘A/⌃⇧⌘A claiming real changeset entries — the app-test replay workspace's changeset entries are transient (~2s), so long Changes-shade flows are not app-testable by standing precedent; coverage is the registry/unit layer (dispatch + lints + row projection) plus the existing Rust round-trip tests for claim/disclaim verbs.
 - jsdom render tests and mock-store assertions — banned patterns.
-- Re-testing the five converted surfaces' dismissal behaviors — unchanged routing; only the match predicate moved (covered by grep-based success criterion + existing suites).
+- Re-testing the five converted surfaces' dismissal behaviors — unchanged routing; only the match predicate moved. Coverage is the grep criterion, the existing suites, and the `isCancelChordEvent` unit pins: the predicate is the only thing that changed, so the predicate is the only thing that needs a new test.
 
 ---
 
@@ -378,22 +433,25 @@ Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` wh
 **References:** [P02] chord moves, [P04] next-theme registry, Table T01, Risk R01, (#chord-plumbing, #pinned-tests, #comment-debt)
 
 **Artifacts:**
-- Edited `bindings` on seven entries in `command-registry.ts`; four Swift literals in `AppDelegate.swift`; updated `SHIPPED_CHORDS`/`STATIC_ITEMS`/at0340 drives; comment updates.
+- Edited `bindings` on seven entries in `command-registry.ts`; four Swift literals in `AppDelegate.swift`; every pin in List L02; the regenerated `tuglaws/menus.md` chord table; the comment/prose updates in [#comment-debt].
 
 **Tasks:**
 - [ ] Apply Table T01's seven move/add rows (all but the two NEW commands) in `command-registry.ts`, updating the entry comments listed in [#comment-debt].
 - [ ] Edit the four `buildMenuBar()` literals (Table T01 rightmost column) in `tugapp/Sources/AppDelegate.swift`.
 - [ ] Update `SHIPPED_CHORDS` (⌃⌘P prompt-route, ⌃⌥⌘P cycle-permission, ⌃⌘C, ⌃⌘H; add ⌃⌘T next-theme and ⌃⌘I insert-file rows) in `command-routing-drift.test.ts`.
-- [ ] Update `STATIC_ITEMS` in `at0168-menu-structure.test.ts` (permissionMode.cycle mods, insertFile mods) and the chord drives + assertion text in `at0340-composer-routes.test.ts` (⇧⌘C→⌃⌘C, ⇧⌘P→⌃⌘P); refresh the stale at0253 comment (Risk R01).
-- [ ] Run the straggler grep from [#pinned-tests] and fix remaining prose/comments describing the moved chords (leave ⌥⇧⌘C/⌥⇧⌘V alone).
+- [ ] Re-transcribe the two unit pins the original sweep missed: `keybinding-map.test.ts`'s "the two P chords" block (both assertions invert — see List L02) and `keymap-registry.test.ts`'s two ⇧⌘M cases. Update both files' docblocks.
+- [ ] Update `STATIC_ITEMS` in `at0168-menu-structure.test.ts` (permissionMode.cycle mods, insertFile mods).
+- [ ] Update every app-test chord drive in List L02: `at0340` (⇧⌘C→⌃⌘C ×4, ⇧⌘P→⌃⌘P ×3, plus docblock and assertion text), `at0177`, `at0088`, `at0220` (⌃⌘P→⌃⌥⌘P), `at0339` (⇧⌘C→⌃⌘C); refresh the stale at0253 comment (Risk R01).
+- [ ] Regenerate the `tuglaws/menus.md` chord table: `cd tugdeck && TUG_WRITE_MENUS_DOC=1 bun test src/components/tugways/__tests__/menus-doc.test.ts`, then re-run it bare to confirm it diffs clean. Commit the doc with the registry change.
+- [ ] Run **both** sweeps from [#pinned-tests] — glyphs (including `tuglaws/`) and modifier literals — and fix every remaining hit describing a moved chord (leave ⌥⇧⌘C / ⌥⇧⌘V and `chord-format.test.ts`'s formatting fixture alone).
 - [ ] Rebuild Tug.app (Swift changed) so app-tests exercise the new literals.
 
 **Tests:**
-- [ ] `cd tugdeck && bun test src/components/tugways/__tests__/command-routing-drift.test.ts src/components/tugways/__tests__/command-registry.test.ts`
-- [ ] `just app-test-changed` (expect at0168, at0340, at0181, at0182, at0179 in the derived selection).
+- [ ] `cd tugdeck && bun test src/components/tugways/__tests__/` — the whole tugways unit slice, not the two files: the moves reach `keybinding-map`, `keymap-registry`, and `menus-doc` as well as the drift test.
+- [ ] `just app-test-select` first — the derived selection is driven by `@covers`, and `AppDelegate.swift` is a broad target, so read what it picked before running it. Then `just app-test-changed` (at0168, at0340, at0177, at0088, at0220, at0339 must all be in it; if any is missing, name it explicitly on the command line).
 
 **Checkpoint:**
-- [ ] Both bun test files green; `bunx vite build` succeeds; `just app-test-changed` VERDICT PASS.
+- [ ] Full tugways unit slice green; `menus-doc.test.ts` diffs clean with no pending rewrite; `bunx vite build` succeeds; `just app-test-changed` VERDICT PASS.
 
 ---
 
@@ -412,15 +470,16 @@ Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` wh
 - [ ] Add `CLAIM_ALL_CHANGES`/`DISCLAIM_ALL_CHANGES` to `action-vocabulary.ts` (kebab-case per action-naming.md, placed in the vocabulary's session/changes grouping).
 - [ ] Add the two `CommandEntry` rows (Table T01 NEW rows): `routing: "first-responder"`, titles **"Claim All Changes"** / **"Disclaim All Changes"**, composer-responder-scoped bindings, `preventDefault: true`; entry comments state the commit-mode gate and the shade-button twinning.
 - [ ] Extend the `commitKeybindings` memo in `tug-prompt-entry.tsx` to also map `bindingsOf` both new ids (same `commitActive` gate, same KeyBinding projection).
-- [ ] Add both handlers to the `useResponder` actions map in `cards/session-card.tsx` (beside `TOGGLE_CHANGES_VIEW`): compute paths per [P03] semantics from `changesController.getSnapshot()`, guard on empty paths and on a pending claim/disclaim phase read non-reactively from `changeset-verb-store` by `changesController.entryKey`, then call `changesController.claim(paths)` / `.disclaim(paths)`.
-- [ ] Add the two routing-expectation rows in `command-routing-drift.test.ts`.
+- [ ] Add both handlers to the `useResponder` actions map in `cards/session-card.tsx` (beside `TOGGLE_CHANGES_VIEW` — the card, not the composer, because the card holds `changesController`; the composer's unhandled action falls through to it): compute paths per [P03] semantics from `changesController.getSnapshot()` — Claim All takes `snap.unattributed` **and** `snap.orphaned` together — guard on empty paths and on a pending claim/disclaim phase read non-reactively from `changeset-verb-store` by `changesController.entryKey`, then call `changesController.claim(paths)` / `.disclaim(paths)`.
+- [ ] Add the two routing-expectation rows in `command-routing-drift.test.ts` (routing map only — the `SHIPPED_CHORDS` loop skips non-global bindings).
+- [ ] Regenerate the `tuglaws/menus.md` chord table again: the two new scoped bindings add rows (the table carries scoped chords — `⇧⌘M … JS, responder` is the precedent).
 
 **Tests:**
 - [ ] `command-registry.test.ts` (lints: door coverage sees bindings; `lintActionCoverage` sees both wires) and `command-routing-drift.test.ts` green.
-- [ ] Unit-verify the keymap-pane projection: `buildKeymapRows` output includes both commands as scoped rows (extend an existing `settings-keymap-rows` test if one exists; otherwise assert via a small addition there).
+- [ ] Unit-verify the keymap-pane projection in `src/components/tugways/cards/__tests__/settings-keymap-rows.test.ts` (the file exists): `buildKeymapRows` output includes both commands, `scoped: true` on each binding, grouped under `UNGROUPED` ("Other Commands") since neither has a `menuItemId`.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test src/components/tugways/__tests__/` green; `bunx vite build` succeeds; manual smoke in the debug app: with the Changes shade up, ⌃⌘A claims the unattributed bucket and ⌃⇧⌘A disclaims the session entry.
+- [ ] `cd tugdeck && bun test src/components/tugways/__tests__/ src/components/tugways/cards/__tests__/` green — the second path is where the keymap-row test lives; `bunx vite build` succeeds; manual smoke in the debug app: with the Changes shade up, ⌃⌘A claims the unattributed **and** orphaned buckets and ⌃⇧⌘A disclaims the session entry.
 
 ---
 
@@ -436,16 +495,18 @@ Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` wh
 - `isCancelChordEvent` in `keymap-registry.ts`; five converted components; parity additions on List L01's INCLUDE surfaces.
 
 **Tasks:**
-- [ ] Implement `isCancelChordEvent` per Spec S02.
+- [ ] Widen `chordMatchesEvent` to `ChordEventFields` in `chord-format.ts`, then implement `isCancelChordEvent` per Spec S02.
 - [ ] Convert the five surfaces in [#cancel-cluster], preserving each dismissal path and propagation posture exactly; drop the context menu's `ctrlKey` alternative.
-- [ ] Re-run the ⎋ grep from [#escape-audit], classify per [P06], and add the matcher beside the Escape branch on each INCLUDE surface (dev-error-overlay, image lightbox paths, gallery-mutation-tx, completion popup).
+- [ ] Re-run the ⎋ grep from [#escape-audit], classify per [P06], and add the matcher beside the Escape branch on each INCLUDE surface (dev-error-overlay, the two image-overlay paths, the completion popup). `gallery-mutation-tx.tsx` is EXCLUDE — its Escape aborts an in-flight scrub, which is revert, not dismissal.
+- [ ] For `completion-extension.ts`, follow the shape note in [#escape-audit]: a term in the `consumes` chain **and** a predicate branch ahead of the `switch (event.key)`, testing `isCancelChordEvent(event)` — never a `case "."`.
 - [ ] Verify no literal ⌘. match remains: `grep -rn 'key === "\."\|code === "Period"' tugdeck/src --include='*.ts*'` returns only `keymap-registry.ts`/`chord-format.ts`/registry data.
 
 **Tests:**
+- [ ] New unit pins for `isCancelChordEvent` in `__tests__/keymap-registry.test.ts` (pure logic over the registry, no DOM): a ⌘. event matches; an ⎋ event does **not** (the exclusion is the whole reason the engine keeps its ladder); a registry carrying a user override of `cancel-dialog` matches the override's chord and not the default. Three assertions, and each one is a way the helper could be silently wrong.
 - [ ] Existing suites for the five surfaces stay green (no behavioral change intended).
 
 **Checkpoint:**
-- [ ] Grep criterion above holds; `bunx vite build` succeeds; manual smoke: ⌘. closes an alert, the confirm popover, a sheet, a placard, and the editor context menu; ⌘. dismisses the completion popup and an image lightbox.
+- [ ] Grep criterion above holds; the `isCancelChordEvent` pins green; `bunx vite build` succeeds; manual smoke: ⌘. closes an alert, the confirm popover, a sheet, a placard, and the editor context menu; ⌘. dismisses the completion popup and an image lightbox; ⎋ still aborts a gallery hue scrub and ⌘. does not.
 
 ---
 
@@ -459,12 +520,13 @@ Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` wh
 
 **Tasks:**
 - [ ] Confirm every success criterion in [#success-criteria], including the keymap pane visually showing the new tier layout (Settings ▸ Keyboard) and the Session/View menus showing ⌃⌘C/⌃⌘H/⌃⌥⌘P/⌃⌘T/⌃⌘I.
+- [ ] Re-run both sweeps from [#pinned-tests] one last time across the whole working diff — a comment added during Steps 3–4 can reintroduce an old spelling.
 
 **Tests:**
-- [ ] `cd tugdeck && bun test src/components/tugways/__tests__/` (full tugways unit slice).
+- [ ] `cd tugdeck && bun test src/components/tugways/__tests__/ src/components/tugways/cards/__tests__/ src/lib/__tests__/` — the tugways unit slice **plus** `cards/__tests__/`, where `settings-keymap-rows.test.ts` lives (the slice alone misses it), plus `lib/__tests__/` for `host-menu-state.test.ts`: it pins no moved chord today, but [P04] changes what `menuChords()` publishes for `view.nextTheme`, and this is the step that verifies the whole projection rather than a file list.
 
 **Checkpoint:**
-- [ ] `bunx vite build` clean; `just app-test-changed` VERDICT PASS across the full working diff.
+- [ ] `bunx vite build` clean; `menus-doc.test.ts` diffs clean; `just app-test-changed` VERDICT PASS across the full working diff.
 
 ---
 
@@ -479,7 +541,7 @@ Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` wh
 - [ ] [Q02] recorded as deferred in `chord-tiers.md`'s anomalies section.
 
 **Acceptance tests:**
-- [ ] `command-routing-drift.test.ts`, `command-registry.test.ts` green.
+- [ ] `command-routing-drift.test.ts`, `command-registry.test.ts`, `keybinding-map.test.ts`, `keymap-registry.test.ts`, `menus-doc.test.ts`, `settings-keymap-rows.test.ts` green.
 - [ ] `just app-test-changed` VERDICT PASS.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
@@ -491,6 +553,7 @@ Returns true iff the event matches any binding of `TUG_ACTIONS.CANCEL_DIALOG` wh
 | Checkpoint | Verification |
 |------------|--------------|
 | Doctrine linked | chord-tiers.md reachable from commands.md, tuglaws.md [L30], INDEX.md |
-| Chords moved end-to-end | at0168 + at0340 + drift test green |
+| Chords moved end-to-end | every List L02 pin green: at0168, at0340, at0177, at0088, at0220, at0339, drift, keybinding-map, keymap-registry |
+| Doc region regenerated | `menus-doc.test.ts` diffs clean with no pending `TUG_WRITE_MENUS_DOC` rewrite |
 | New commands live | keymap-pane rows + manual ⌃⌘A/⌃⇧⌘A smoke |
-| ⌘. parity | grep criterion + manual smoke across the six surfaces |
+| ⌘. parity | grep criterion + `isCancelChordEvent` unit pins + manual smoke across the six surfaces |
