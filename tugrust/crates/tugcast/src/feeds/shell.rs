@@ -288,6 +288,10 @@ fn spawn_shell_classify(
     grammar: Option<String>,
 ) {
     tokio::spawn(async move {
+        // An empty synopsis means no documentation — the same filter the
+        // CONTROL classify verb applies, so both ingress paths pick the same
+        // job wording.
+        let grammar = grammar.filter(|s| !s.is_empty());
         let with_grammar = grammar.is_some();
         let result = match agent {
             Some(pool) => pool.run_classify(line.clone(), grammar).await,

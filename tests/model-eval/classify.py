@@ -1,7 +1,8 @@
 """Score shell routing against a live Tug instance: did that line mean the shell?
 
 Drives the real path end to end — the line goes over the control socket, the
-app's own `LocalModelPrompts.classify` and its resident model answer, and
+SharedAgent's own `CLASSIFY_INSTRUCTIONS` job prompt (in
+`tugrust/crates/tugcast/src/shared_agent.rs`) and its Haiku worker answer, and
 tugcast logs the verdict. What this scores is prompt and model together, not a
 re-implementation of either.
 
@@ -23,9 +24,9 @@ Two numbers are reported where one used to be, because they answer different
 questions. The gate — and the exit code — is about what production would have
 run, so the deck's own `vetoesShellVerdict` is applied to every `shell` verdict
 before scoring; it is imported and run, never re-expressed here. Alongside it the
-pack's *own* false SHELL count is reported unfiltered, because that is the number
-that separates one pack from another once the veto has cleaned up after all of
-them.
+model's *own* false SHELL count is reported unfiltered, because that is the
+number that separates one model from another once the veto has cleaned up after
+it.
 
 What is scored is the whole composed pipeline production runs, in order:
 
@@ -33,7 +34,7 @@ What is scored is the whole composed pipeline production runs, in order:
              command catalog. A `no` is decided here and NO MODEL CALL IS MADE.
              A `maybe` sends the program's own documentation along with the
              line. `yes` and `unknown` ask the plain question, as before.
-    model    the app's prompt and resident pack answer SHELL or PROMPT.
+    model    the SharedAgent's prompt and its Haiku worker answer SHELL or PROMPT.
     veto     the deck's `vetoesShellVerdict` can refuse to honor a SHELL.
 
 Read the No-band count carefully. The harness sends every case regardless of
@@ -160,7 +161,7 @@ def main() -> int:
         verdict, ms, read_docs = answer
         # What production would do with that verdict. The veto can only turn a
         # `shell` into a `prompt`, so `routed` and `verdict` differ in exactly
-        # one direction and the pack's own judgement stays legible next to it.
+        # one direction and the model's own judgement stays legible next to it.
         vetoed = verdict == "shell" and vetoes.get(case["text"], False)
         routed = "prompt" if vetoed else verdict
         ok = routed == case["label"]
@@ -180,15 +181,15 @@ def main() -> int:
         print(f"  {mark:>6}  {routed:6s} {ms:5d}ms  {band:7s}  {case['text']}")
 
     if not rows:
-        print("\nnothing scored — is the instance running with a model installed?")
+        print("\nnothing scored — is the instance running?")
         return 1
 
     shell = [r for r in rows if r["label"] == "shell"]
     prompt = [r for r in rows if r["label"] == "prompt"]
     # Two different questions. `false_shell` is what production would have run,
-    # and it is what the exit code answers. `model_false_shell` is the pack's own
-    # propensity for the irreversible error, which is what separates one pack
-    # from another once the veto has cleaned up after all of them.
+    # and it is what the exit code answers. `model_false_shell` is the model's
+    # own propensity for the irreversible error, which is what separates one
+    # model from another once the veto has cleaned up after it.
     false_shell = [r for r in prompt if r["routed"] == "shell"]
     model_false_shell = [r for r in prompt if r["verdict"] == "shell"]
     false_prompt = [r for r in shell if r["routed"] == "prompt"]
@@ -202,7 +203,7 @@ def main() -> int:
     print(f"  prompt recall   {len(prompt) - len(false_shell)}/{len(prompt)}")
     print(f"  median ms       {latencies[len(latencies) // 2]}")
     print(f"  model said shell, veto refused it   {len(vetoed)}")
-    print(f"  pack's own false SHELL              {len(model_false_shell)}")
+    print(f"  model's own false SHELL             {len(model_false_shell)}")
 
     # Per band: how many cases, how many correct, and what inference cost.
     print("\n  band      cases  correct  asked")
@@ -248,7 +249,7 @@ def main() -> int:
             print(f"    {r['text']}")
     if model_false_shell:
         print(
-            f"\n  {len(model_false_shell)} line(s) the pack itself called shell "
+            f"\n  {len(model_false_shell)} line(s) the model itself called shell "
             f"({len(model_false_shell) - len(false_shell)} caught by the veto):"
         )
         for r in model_false_shell:

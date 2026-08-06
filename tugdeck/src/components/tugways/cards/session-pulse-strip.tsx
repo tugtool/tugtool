@@ -9,8 +9,8 @@
  *    (the snapshot carries the toggle);
  *  - fixed single-line height once shown — a new line never moves
  *    layout. The line reads at two levels (S1): the session's standing
- *    OVERVIEW (the local model's answer to "what is this session working
- *    on") leads in headline register, bright and layout-pinned, then a
+ *    OVERVIEW (the agent's standing answer to "what is this session
+ *    working on") leads in headline register, bright and layout-pinned, then a
  *    `›`, then the live beat trailing in muted small mono. The activity is
  *    the run that ellipsizes, so the goal is never the part that gets cut.
  *    With no overview there is no headline and no separator — the strip is

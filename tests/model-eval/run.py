@@ -1,8 +1,8 @@
 """Score the SharedAgent's session headlines against a live Tug instance.
 
 Drives the real thing end to end: the frozen digest goes over the control
-socket to the running app, the app's own `LocalModelPrompts.summarize` and its
-resident model answer, and tugcast normalizes the answer through
+socket to the running app, the SharedAgent's own `SUMMARIZE_INSTRUCTIONS` job
+prompt and its Haiku worker answer, and tugcast normalizes the answer through
 `headline_register` before logging it. What this scores is therefore the string
 the PULSE strip would actually wear — prompt, model, and normalizer together —
 not a re-implementation of any of them.
@@ -33,7 +33,7 @@ from harness import ask, log_path  # noqa: E402
 from score import CHECKS, flags, score  # noqa: E402
 
 CORPUS = Path(__file__).parent / "corpus"
-PROMPTS = Path(__file__).parents[2] / "tugapp/Sources/LocalModelService.swift"
+PROMPTS = Path(__file__).parents[2] / "tugrust/crates/tugcast/src/shared_agent.rs"
 
 # Punctuation to ignore when matching an example's words against a digest, so
 # `tug-pulse.css` and `tug-pulse.css)` are the same word. Hyphens and slashes
@@ -77,44 +77,66 @@ def words(text: str) -> set[str]:
     return out - {""}
 
 
-def _swift_literals(suffix: str) -> list[str]:
-    """Every `static let <name>… = \"\"\"` multi-line literal whose name ends in
-    `suffix`, case-insensitively on the first letter after it.
+def _rust_prompt(name: str) -> str | None:
+    """The text of one `const <name>: &str` prompt in `shared_agent.rs`,
+    string-literal content only, with `headline_rules!()` inlined.
 
-    Matched by suffix rather than by exact name so a per-pack profile's
-    `lfmSummarize` is swept alongside the default's `summarize`: a profile's
-    examples are answer keys in exactly the same way, and one that no check
-    reads is one that can leak.
-
-    Read out of the Swift source rather than duplicated here — a copy would be
+    Read out of the Rust source rather than duplicated here — a copy would be
     the thing that goes stale while reporting all is well, which is the failure
     this whole guard exists to catch. The cost is that a rename silently returns
-    nothing, so callers must treat an empty result as a failure, never as a
-    clean bill.
+    nothing, so callers must treat `None` as a failure, never as a clean bill.
     """
     if not PROMPTS.exists():
-        return []
+        return None
     text = PROMPTS.read_text()
-    out = []
-    for m in re.finditer(r'static let (\w+) = """', text):
-        name = m.group(1)
-        if not name.lower().endswith(suffix.lower()):
-            continue
-        body = text[text.index("\n", m.start()) + 1:]
-        out.append(body[: body.index('"""')])
-    return out
+    anchor = f"const {name}: &str"
+    if anchor not in text:
+        return None
+    region = _through_closing_paren(text, anchor)
+    if "headline_rules!()" in region:
+        region = region.replace(
+            "headline_rules!()",
+            _through_closing_paren(text, "macro_rules! headline_rules"),
+        )
+    literals = re.findall(r'"((?:[^"\\]|\\.)*)"', region, re.S)
+    joined = "".join(literals)
+    # Rust escapes, in the order that keeps `\\n` from becoming a newline:
+    # backslash-newline continuation (eats leading whitespace), then \n, \",
+    # and finally the literal backslash.
+    joined = re.sub(r"\\\n\s*", "", joined)
+    return (
+        joined.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
+    )
+
+
+def _through_closing_paren(text: str, anchor: str) -> str:
+    """The source region from `anchor` through the next `)`/`}` at column 0 —
+    how far a prompt `concat!(…)` or the rules macro body runs."""
+    start = text.index(anchor)
+    end = min(
+        (i for i in (text.find(f"\n{close}", start) for close in (")", "}")) if i != -1),
+        default=len(text),
+    )
+    return text[start:end]
 
 
 def summarize_prompt() -> str:
-    """The default profile's `summarize` text, for the drift report."""
-    bodies = _swift_literals("summarize")
-    return bodies[0] if bodies else ""
+    """The live-intent lane's job prompt, for the drift report."""
+    return _rust_prompt("SUMMARIZE_INSTRUCTIONS") or ""
 
 
 def headline_prompts() -> list[str]:
-    """Every prompt that shows headline examples, across every profile: the
-    live-intent `summarize` lane and the idle collapse's retrospective one."""
-    return _swift_literals("summarize") + _swift_literals("summarizeRetrospective")
+    """Every prompt that could show headline examples: the live-intent
+    `summarize` lane and the idle collapse's retrospective one. The Haiku
+    prompts currently carry no `HEADLINE:` examples at all — the few-shot
+    scaffolding propped up the weak local model and was dropped in the
+    SharedAgent port — so an example found here is a later addition, and the
+    guards below apply to it the day it appears."""
+    return [
+        prompt
+        for name in ("SUMMARIZE_INSTRUCTIONS", "SUMMARIZE_DONE_INSTRUCTIONS")
+        if (prompt := _rust_prompt(name)) is not None
+    ]
 
 
 def example_lines() -> list[str]:
@@ -214,13 +236,16 @@ def main() -> int:
         return 2
 
     # An extraction that finds nothing looks exactly like a clean bill, so the
-    # guard checks itself first. A Swift rename is the way this goes silent.
-    if not example_lines():
+    # guard checks itself first. A Rust rename is the way this goes silent.
+    # Zero examples inside a successfully extracted prompt is the current,
+    # legitimate state (the Haiku prompts are example-free); zero *prompts* is
+    # the extractor gone blind.
+    if len(headline_prompts()) != 2:
         print(
-            "no prompt examples extracted from LocalModelService.swift — the\n"
-            "`static let summarize` / `summarizeRetrospective` literals moved or\n"
-            "the paired HEADLINE: format changed. The contamination guard is\n"
-            "blind until this is fixed; it is not reporting that all is well.",
+            "prompt extraction from shared_agent.rs came up short — the\n"
+            "`SUMMARIZE_INSTRUCTIONS` / `SUMMARIZE_DONE_INSTRUCTIONS` consts\n"
+            "moved or were renamed. The contamination guard is blind until\n"
+            "this is fixed; it is not reporting that all is well.",
             file=sys.stderr,
         )
         return 2
@@ -233,8 +258,9 @@ def main() -> int:
         for example, name in leaks:
             print(f"  {example!r} is {name}'s subject", file=sys.stderr)
         print(
-            "\nRewrite the example in LocalModelPrompts.summarize onto work no\n"
-            "digest describes. A score over this pair measures copying.",
+            "\nRewrite the example in SUMMARIZE_INSTRUCTIONS (shared_agent.rs)\n"
+            "onto work no digest describes. A score over this pair measures\n"
+            "copying.",
             file=sys.stderr,
         )
         return 2

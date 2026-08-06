@@ -3,7 +3,8 @@
  * step's subscription line can only be exercised live for whatever tier the
  * golden-run test account happens to hold, so the per-tier wording is pinned
  * here instead — covering the nodes a VM run can't reach without an account of
- * each tier.
+ * each tier. Also pins the pending open-step copy's zero-card vs open-cards
+ * branch.
  */
 
 import { describe, expect, test } from "bun:test";

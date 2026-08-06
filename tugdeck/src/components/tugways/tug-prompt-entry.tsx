@@ -227,8 +227,15 @@ const VERDICT_DEBOUNCE_MS = 300;
  * How long a submit will wait for a verdict before giving up and sending the
  * line to Claude. A submit is a gesture, not a query — past this bound the
  * delay reads as the app hanging, and Claude is the safe direction for an
- * unanswered line anyway. Matches the host's own classify deadline, so the
- * two bounds expire together rather than one masking the other.
+ * unanswered line anyway.
+ *
+ * One of **three** constants that must agree: `CLASSIFY_REQUEST_TIMEOUT_MS` in
+ * `tugdeck/src/lib/shell-classify-store.ts` is how long a request stays
+ * outstanding, and the `classify` JobSpec timeout in
+ * `tugrust/crates/tugcast/src/shared_agent.rs` is tugcast's own ceiling on the
+ * same call. All three bound the same user-visible pause between Return and
+ * the line going somewhere, so they are the same number — lowering one
+ * silently makes it the real deadline and the other two unreachable.
  */
 const VERDICT_SUBMIT_WAIT_MS = 2000;
 

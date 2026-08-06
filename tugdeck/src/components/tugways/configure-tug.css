@@ -109,34 +109,10 @@
   gap: var(--tug-space-sm);
 }
 
-/* The bar claims the row's slack; its byte readout and the cancel ✕ keep their
- * intrinsic widths beside it. */
-.configure-tug-step-body .tug-progress-indicator {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* The readout drops below the detail line's 13px — it annotates the bar rather
- * than speaking at the same volume as the step's own prose. The size is set on
- * the TugLabel itself, so an ancestor `--tugx-label-font-size` would not reach
- * it; this outranks the label's own rule instead. */
-.configure-tug-step-body .tug-progress-indicator-value .tug-label {
-  font-size: var(--tug-font-size-2xs);
-}
-
-/* The cancel ✕ box-centers on the row, but the readout beside it carries its
- * visual mass a pixel above its line box's center — the descent is reserved,
- * not used. The nudge seats the glyph on the readout instead of on the box. */
-.configure-tug-step-body [data-slot="tug-icon-button"] {
-  position: relative;
-  top: -1px;
-}
-
-/* The projects-folder chooser takes the row's full slack, the same claim the
- * download bar makes; its confirm button keeps its intrinsic width beside it.
- * The body sits taller here than the 6px download bar it was first sized for,
- * so it gets its own gap above — the detail line is prose about the control,
- * and they should not read as one block. */
+/* The projects-folder chooser takes the row's full slack; its confirm button
+ * keeps its intrinsic width beside it. The chooser's row gets its own gap
+ * above — the detail line is prose about the control, and they should not
+ * read as one block. */
 .configure-tug-step-body .tug-file-chooser {
   flex: 1 1 auto;
   min-width: 0;

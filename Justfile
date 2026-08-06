@@ -1758,16 +1758,17 @@ app-test-covers-check:
 app-test-foreground-check:
     @cd tests/app-test && bun scripts/select-tests.ts --foreground-check
 
-# Score the local model's PULSE session headlines against a RUNNING instance.
+# Score the SharedAgent's PULSE session headlines against a RUNNING instance.
 #
 # Frozen digests go over the control socket to the live app, so what gets
-# scored is the shipped prompt + the resident model + tugcast's
+# scored is the shipped prompt + the Haiku worker + tugcast's
 # `headline_register` together. On-demand, not part of `just test`: it needs an
-# instance up with a model installed, and it spends real inference.
+# instance up, and it spends subscription tokens.
 #
-# Run it after touching `LocalModelPrompts.summarize` or `headline_register` —
-# both change what lands on the strip, and neither has a unit test that can
-# tell you whether the wording got better.
+# Run it after touching `SUMMARIZE_INSTRUCTIONS` in
+# `tugrust/crates/tugcast/src/shared_agent.rs` or `headline_register` — both
+# change what lands on the strip, and neither has a unit test that can tell
+# you whether the wording got better.
 #
 #   just app-debug          # then, once it is up:
 #   just model-eval
@@ -1779,10 +1780,11 @@ model-eval INSTANCE="debug-main":
 #
 # A separate recipe rather than a flag because it is a separate measurement:
 # different fixtures (`corpus/*.done.txt`), a different task on the wire
-# (`summarize_done`), and a different half of `verbs.txt` deciding whether the
-# opener is a verb. A pack can be fine at one and bad at the other — the 1.2B
-# LFM2.5 scored 5/13 on intents and 2/13 here — so a run that reported one
-# number for both would hide exactly the difference worth seeing.
+# (`summarize_done`, prompted by `SUMMARIZE_DONE_INSTRUCTIONS` in
+# `tugrust/crates/tugcast/src/shared_agent.rs`), and a different half of
+# `verbs.txt` deciding whether the opener is a verb. A model can be fine at
+# one and bad at the other, so a run that reported one number for both would
+# hide exactly the difference worth seeing.
 #
 #   just model-eval-done
 model-eval-done INSTANCE="debug-main":
@@ -1790,31 +1792,31 @@ model-eval-done INSTANCE="debug-main":
 
 # Score shell routing against a RUNNING instance: did that line mean the shell?
 #
-# The one local-model harness with ground truth, so unlike `model-eval` it is a
+# The one agent harness with ground truth, so unlike `model-eval` it is a
 # gate rather than a rate — and the gate is one-sided. It fails only on a false
 # SHELL, the verdict that already ran a command nobody asked for; a command sent
 # to Claude instead costs one keystroke and is reported without failing.
 #
-# Run it after touching `LocalModelPrompts.classify`, the verdict parse in
-# `LocalModelService`, or `shell-line-classifier.ts`.
+# Run it after touching `CLASSIFY_INSTRUCTIONS` or the `verdict` parse in
+# `tugrust/crates/tugcast/src/shared_agent.rs`, or `shell-line-classifier.ts`.
 #
 #   just model-classify
 #   just model-classify release-main
 model-classify INSTANCE="debug-main":
     @python3 tests/model-eval/classify.py {{INSTANCE}}
 
-# Is the live local-model path answering, and inside its ceiling?
+# Is the live SharedAgent path answering, and inside its ceiling?
 #
-# On-demand, not CI: it needs a downloaded pack and real hardware. Without
-# either it skips with exit 0 and names the remedy. Asks nothing about what
-# the headline says — that is `just model-eval`'s question.
+# On-demand, not CI: it needs a running instance and it spends subscription
+# tokens. Without an instance it skips with exit 0 and names the remedy. Asks
+# nothing about what the headline says — that is `just model-eval`'s question.
 #
 #   just model-liveness
 #   just model-liveness release-main
 model-liveness INSTANCE="debug-main":
     @python3 tests/model-eval/liveness.py {{INSTANCE}}
 
-# What accumulated logs say about the local model: how fast, how often it
+# What accumulated logs say about the SharedAgent: how fast, how often it
 # fails, how often the register normalizer had to step in, and how often the
 # headline actually changed. Reads both log files in the instance's Logs
 # directory; the numbers are only as good as the usage behind them.

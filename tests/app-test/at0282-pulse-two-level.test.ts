@@ -38,11 +38,11 @@
  * **The frames are real, the commentator is not.** `publishPulseFrame` hands
  * the store bytes in the emitter's own shape and they go through the
  * production `parsePulseFrame` and the production folds — the same path the
- * wire takes, minus a downloaded model and a live session to summarize.
+ * wire takes, minus a shared agent and a live session to summarize.
  * `parsePulseFrame` drops a malformed body silently, so every assertion below
  * reads rendered output; none trusts the publish call's return.
  *
- * `at0280-local-model-absent.test.ts` pins the opposite posture — no model,
+ * `at0280-shared-agent-absent.test.ts` pins the opposite posture — no model,
  * therefore no goal anywhere. The two tests must never disagree.
  *
  * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx

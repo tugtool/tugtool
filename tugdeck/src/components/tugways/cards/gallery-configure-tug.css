@@ -64,7 +64,6 @@
   /* Mirrors configure-tug.css: every row the same fixed height so the dialog never
    * hops as a step grows. */
   --configure-tug-row-h: 60px;
-  --configure-tug-row-offer-h: 96px;
   --configure-tug-row-dir-h: 104px;
   --configure-tug-dot: 14px;
   --configure-tug-headline-gap: 10px;
@@ -82,10 +81,6 @@
   padding: 0 var(--tug-space-md);
   background: var(--tugx-block-surface);
   border-radius: var(--tugx-block-chrome-radius);
-}
-
-.cg-configure-tug-step[data-step="local-ai"] {
-  min-height: var(--configure-tug-row-offer-h);
 }
 
 .cg-configure-tug-step[data-step="project-dir"] {
@@ -137,7 +132,6 @@
   gap: var(--tug-space-sm);
 }
 
-.cg-configure-tug-step-body .tug-progress-indicator,
 .cg-configure-tug-step-body .tug-file-chooser {
   flex: 1 1 auto;
   min-width: 0;
@@ -146,17 +140,6 @@
 .cg-configure-tug-step[data-step="project-dir"] .cg-configure-tug-step-body {
   margin-top: var(--tug-space-sm);
   gap: var(--tug-space-md);
-}
-
-.cg-configure-tug-step-body .tug-progress-indicator-value .tug-label {
-  font-size: var(--tug-font-size-2xs);
-}
-
-/* Mirrors configure-tug.css: the cancel ✕ seats on the readout's optical center,
- * a pixel above the line box's center. */
-.cg-configure-tug-step-body [data-slot="tug-icon-button"] {
-  position: relative;
-  top: -1px;
 }
 
 .cg-configure-tug-step-action {

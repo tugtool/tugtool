@@ -54,7 +54,6 @@ def main() -> int:
 
     digest = (CORPUS / "one-line-goal.digest.txt").read_text()
     print(f"asking {args.instance} to summarize one digest ({len(digest)} chars)")
-    print(f"packs installed: {', '.join(packs)}")
 
     answer = ask(digest, args.instance, path, args.timeout)
     if answer is None:

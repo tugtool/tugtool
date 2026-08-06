@@ -1,4 +1,22 @@
-import { describe, it, expect } from "bun:test";
+import { afterEach, describe, it, expect, jest, mock } from "bun:test";
+
+// Capture the SHELL_INPUT frames `request` sends. Mocked before importing the
+// store (the sibling side-question-store test's pattern — a leaked
+// `setConnection` on the real module loses to another file's module mock in a
+// full-suite run). The transport swallows frames so a request genuinely parks;
+// `connected` off is the no-transport posture.
+let sends: Array<{ feedId: number; payload: string }> = [];
+let connected = false;
+mock.module("../connection-singleton", () => ({
+  getConnection: () =>
+    connected
+      ? {
+          send: (feedId: number, payload: Uint8Array) => {
+            sends.push({ feedId, payload: new TextDecoder().decode(payload) });
+          },
+        }
+      : null,
+}));
 
 import { CLASSIFY_REQUEST_TIMEOUT_MS, ShellClassifyStore } from "../shell-classify-store";
 import { FeedId } from "../../protocol";
@@ -18,6 +36,14 @@ function store(): ShellClassifyStore {
   return new ShellClassifyStore(stubFeedStore(), FeedId.SHELL_OUTPUT, "s1");
 }
 
+// Turn the mocked transport on with a fresh capture, the state the
+// no-connection default can never reach.
+function stubConnection(): { sends: Array<{ feedId: number; payload: string }> } {
+  connected = true;
+  sends = [];
+  return { sends };
+}
+
 function reply(
   line: string,
   withGrammar: boolean,
@@ -33,6 +59,11 @@ function reply(
 }
 
 describe("ShellClassifyStore", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    connected = false;
+  });
+
   it("knows nothing about a line until its reply lands", () => {
     expect(store().get("ls -la")).toBeUndefined();
   });
@@ -134,9 +165,52 @@ describe("ShellClassifyStore", () => {
     unsubscribe();
   });
 
+  it("resolves a parked request when its reply lands on the feed", async () => {
+    const { sends } = stubConnection();
+    const s = store();
+    const pending = s.request("ls -la");
+    expect(sends.length).toBe(1);
+    s._ingestForTest(reply("ls -la", false, { ok: true, verdict: "shell" }));
+    expect(await pending).toBe("shell");
+    expect(s.get("ls -la")).toBe("shell");
+  });
+
   // The triad: this constant, the classify JobSpec ceiling in tugcast, and the
-  // composer's submit wait bound the same pause and must agree.
-  it("waits the triad's two seconds", () => {
-    expect(CLASSIFY_REQUEST_TIMEOUT_MS).toBe(2000);
+  // composer's submit wait bound the same pause and must agree — and when it
+  // passes with no reply, the parked resolver gets no opinion and its timer is
+  // retired, so the question can be asked again.
+  it("expires an unanswered request to no opinion after the triad's two seconds", async () => {
+    jest.useFakeTimers();
+    const { sends } = stubConnection();
+    const s = store();
+    const pending = s.request("ls -la");
+    expect(sends.length).toBe(1);
+    jest.advanceTimersByTime(CLASSIFY_REQUEST_TIMEOUT_MS);
+    expect(await pending).toBeNull();
+    // Nothing was cached and nothing is parked: the same question asks again.
+    expect(s.get("ls -la")).toBeUndefined();
+    void s.request("ls -la");
+    expect(sends.length).toBe(2);
+    s.dispose();
+  });
+
+  it("settles a parked request rather than leaking its resolver on dispose", async () => {
+    const { sends } = stubConnection();
+    const s = store();
+    const pending = s.request("git status");
+    expect(sends.length).toBe(1);
+    s.dispose();
+    expect(await pending).toBeNull();
+  });
+
+  it("bounds what it remembers", () => {
+    const s = store();
+    for (let i = 0; i < 60; i += 1) {
+      s._ingestForTest(reply(`ls ${i}`, false, { ok: true, verdict: "shell" }));
+    }
+    expect(s.getSnapshot().size).toBeLessThanOrEqual(32);
+    // The most recent survives; the oldest is gone.
+    expect(s.get("ls 59")).toBe("shell");
+    expect(s.get("ls 0")).toBeUndefined();
   });
 });

@@ -285,27 +285,36 @@ impl SharedAgentPool {
         turn: String,
     ) -> Result<String, String> {
         let (reply, answer) = oneshot::channel();
-        if worker
-            .tx
-            .send(TurnRequest { text: turn, reply })
-            .await
-            .is_err()
-        {
-            self.mark_dead(worker);
-            return Err("shared agent worker died".to_string());
-        }
-        match tokio::time::timeout(spec.timeout, answer).await {
-            Ok(Ok(Ok(text))) => Ok(text),
-            Ok(Ok(Err(error))) => {
+        // The ceiling covers the whole wait: the channel send (which blocks
+        // when the worker's queue is full) and the answer both count against
+        // the job's timeout, so the caller's wait is bounded no matter where
+        // the turn stalls.
+        let attempt = async {
+            if worker
+                .tx
+                .send(TurnRequest { text: turn, reply })
+                .await
+                .is_err()
+            {
+                return Err("shared agent worker died".to_string());
+            }
+            match answer.await {
+                Ok(outcome) => outcome,
+                Err(_) => Err("shared agent worker dropped the turn".to_string()),
+            }
+        };
+        match tokio::time::timeout(spec.timeout, attempt).await {
+            Ok(Ok(text)) => Ok(text),
+            Ok(Err(error)) => {
                 self.mark_dead(worker);
                 Err(error)
             }
-            Ok(Err(_)) => {
-                self.mark_dead(worker);
-                Err("shared agent worker dropped the turn".to_string())
-            }
             Err(_) => {
+                // A hung worker counts as a failure for the respawn debounce:
+                // without it a systematically stalled backend would spawn one
+                // fresh child per call.
                 self.retire(worker, "timed out");
+                self.note_death(worker.class);
                 Err(format!("{} timed out", spec.name))
             }
         }
@@ -347,9 +356,12 @@ impl SharedAgentPool {
             }
         }
 
+        // Never queue behind a retired worker: it is stuck on or has abandoned
+        // a turn nobody is waiting for, so honest unavailability beats a wait
+        // that can only time out.
         workers
             .iter()
-            .find(|w| w.class == class)
+            .find(|w| w.class == class && !w.retired.load(Ordering::Relaxed))
             .cloned()
             .ok_or_else(|| UNAVAILABLE.to_string())
     }
@@ -597,13 +609,12 @@ impl AgentWorkerSpawner for ClaudeAgentWorkerSpawner {
 /// construction rather than by a lock. When the channel closes the child is
 /// dropped, and `kill_on_drop` reaps it.
 async fn drive_worker(
-    child: tokio::process::Child,
+    mut child: tokio::process::Child,
     mut stdin: tokio::process::ChildStdin,
     stdout: tokio::process::ChildStdout,
     mut stderr: Option<tokio::process::ChildStderr>,
     mut rx: mpsc::Receiver<TurnRequest>,
 ) {
-    let _child = child;
     let mut lines = BufReader::new(stdout).lines();
 
     while let Some(TurnRequest { text, reply }) = rx.recv().await {
@@ -618,6 +629,7 @@ async fn drive_worker(
         if stdin.write_all(format!("{line}\n").as_bytes()).await.is_err()
             || stdin.flush().await.is_err()
         {
+            let _ = child.start_kill();
             let _ = reply.send(Err(worker_failure(stderr.take()).await));
             return;
         }
@@ -649,6 +661,7 @@ async fn drive_worker(
                 }
                 // EOF or a read error is the worker dying; the pool replaces it.
                 _ => {
+                    let _ = child.start_kill();
                     let _ = reply.send(Err(worker_failure(stderr.take()).await));
                     return;
                 }
@@ -659,13 +672,20 @@ async fn drive_worker(
 }
 
 /// The detail a dead worker gets reported with: its stderr tail when there is
-/// one, the way `agent_bridge` surfaces a child's own account of itself.
+/// one, the way `agent_bridge` surfaces a child's own account of itself. The
+/// read is bounded because the caller kills the child rather than waiting on
+/// it — a process that holds stderr open must not hold the driver task with
+/// it.
 async fn worker_failure(stderr: Option<tokio::process::ChildStderr>) -> String {
     let Some(mut stderr) = stderr else {
         return "shared agent worker exited".to_string();
     };
     let mut buf = String::new();
-    let _ = tokio::io::AsyncReadExt::read_to_string(&mut stderr, &mut buf).await;
+    let _ = tokio::time::timeout(
+        Duration::from_secs(2),
+        tokio::io::AsyncReadExt::read_to_string(&mut stderr, &mut buf),
+    )
+    .await;
     buf.trim()
         .lines()
         .last()
@@ -1307,6 +1327,29 @@ mod tests {
         assert_eq!(pool.worker_count(), 0);
     }
 
+    /// A timeout is a failure for the respawn debounce too: a hung backend is
+    /// never paid for with one fresh spawn per call, and a job arriving inside
+    /// the window degrades instead of queueing behind the retired worker.
+    #[tokio::test(start_paused = true)]
+    async fn a_timed_out_class_holds_the_respawn_debounce() {
+        let fake = FakeSpawner::slow(Ok("SHELL".to_string()), "CLASSIFY", Duration::from_secs(10));
+        let pool = pool(Arc::clone(&fake), 2);
+
+        assert!(pool.run_classify("ls".to_string(), None).await.is_err());
+        assert_eq!(fake.spawn_count(), 1);
+
+        let error = pool
+            .run_classify("ls".to_string(), None)
+            .await
+            .expect_err("degrades inside the debounce");
+        assert!(error.contains("unavailable"), "{error}");
+        assert_eq!(fake.spawn_count(), 1, "no spawn inside the debounce");
+
+        tokio::time::advance(RESPAWN_MIN_INTERVAL + Duration::from_secs(1)).await;
+        assert!(pool.run_classify("ls".to_string(), None).await.is_err());
+        assert_eq!(fake.spawn_count(), 2, "allowed past the debounce");
+    }
+
     #[tokio::test]
     async fn a_classify_answer_naming_no_label_or_both_is_a_refusal() {
         for answer in ["I am not sure", "SHELL or PROMPT", "", "shellfish"] {
@@ -1433,9 +1476,10 @@ mod tests {
         assert!(job("summarize_done").instructions.contains("PAST TENSE"));
 
         // Classify's ceiling is the triad's Rust member; summarize stays under
-        // the 8s emit floor.
+        // the emit floor.
         assert_eq!(job("classify").timeout, Duration::from_secs(2));
-        assert!(job("summarize").timeout < Duration::from_secs(8));
+        assert!(job("summarize").timeout < crate::feeds::session_overview::EMIT_FLOOR);
+        assert!(job("summarize_done").timeout < crate::feeds::session_overview::EMIT_FLOOR);
     }
 
     /// The only test that spawns a real `claude` and spends real tokens.

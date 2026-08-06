@@ -1,12 +1,12 @@
-# model-eval — what the local model writes, and what it costs
+# model-eval — what the SharedAgent writes, and what it costs
 
-The on-device model does two jobs: it writes the **session headline** on the PULSE strip's bright leading run, and it decides whether an unprefixed line in the composer means the **shell** or means Claude. This directory asks four questions about those two jobs against a running Tug instance, sharing one piece of plumbing (`harness.py`: send the input over the control socket, read the answer back out of the log).
+The Haiku SharedAgent does two jobs: it writes the **session headline** on the PULSE strip's bright leading run, and it decides whether an unprefixed line in the composer means the **shell** or means Claude. This directory asks four questions about those two jobs against a running Tug instance, sharing one piece of plumbing (`harness.py`: send the input over the control socket, read the answer back out of the log).
 
 | Question | Command | Answers |
 |---|---|---|
 | Is the headline in **register**? | `just model-eval` | Are the headlines headlines — verb-first, inside 56 characters, no articles? Scored over twelve frozen digests. |
 | Does routing **run the wrong thing**? | `just model-classify` | Over 71 labeled lines: how often a line meant for Claude was executed. |
-| Is it **alive**? | `just model-liveness` | Does one digest come back at all, non-empty, inside the `summarize` ceiling? Skips with exit 0 without a pack. |
+| Is it **alive**? | `just model-liveness` | Does one digest come back at all, non-empty, inside the `summarize` ceiling? Skips with exit 0 without a running instance. |
 | Is it **fast enough**? | `just model-stats` | Over accumulated logs: per-task outcomes, duration percentiles, normalizer work rate, headline change rate. |
 
 Register is the standing answer to "did that prompt edit make things better or worse?", which no unit test can tell you. Liveness is a smoke test. Stats is a batch read over real usage and says nothing useful until there is some.
@@ -21,14 +21,14 @@ just model-eval release-main
 
 Run it after touching either half of what produces a headline:
 
-- `LocalModelPrompts.summarize` in `tugapp/Sources/LocalModelService.swift` — what the model is asked for
+- `SUMMARIZE_INSTRUCTIONS` in `tugrust/crates/tugcast/src/shared_agent.rs` — what the model is asked for
 - `headline_register` / `trim_tail_to_char_budget` in `tugrust/crates/tugcast/src/feeds/session_overview.rs` — what is imposed on the answer
 
-It is deliberately **not** part of `just test`. It needs an instance up with a model installed, and it spends real inference.
+It is deliberately **not** part of `just test`. It needs an instance up, and it spends subscription tokens.
 
 ## What it actually drives
 
-Nothing here re-implements anything. A frozen digest goes over the control socket to the live app via `tugutil host tell local_model_summarize`; the app's own prompt and its resident model answer; tugcast normalizes through `headline_register` and logs both strings. The score is taken from the normalized one — the string the strip would really wear.
+Nothing here re-implements anything. A frozen digest goes over the control socket to the live app via `tugutil host tell shared_agent_summarize`; the SharedAgent's own `SUMMARIZE_INSTRUCTIONS` prompt and its Haiku worker answer; tugcast normalizes through `headline_register` and logs both strings. The score is taken from the normalized one — the string the strip would really wear.
 
 That last part matters and was got wrong once already: the verb used to log the *raw* answer, so a run could report a headline that never ships. It now logs `raw=` beside `headline=`, and the runner reports every case where they differ. **Divergence is a signal, not a success**: it means the prompt is drifting out of register and the normalizer is quietly covering. A run where nothing diverges is a healthier run than one scoring the same rate with three rescues.
 
@@ -57,7 +57,7 @@ This exists because the corpus that came before it — six real digests under `~
 
 Six entries are real sessions from this project, re-rendered into today's shape. Six are synthetic, each pinned to a defect this feature actually shipped with — `parts-list-tail` is the label headline that started all this, `conversation-only` is the tool-free session that couldn't get a headline at all, `tools-without-prompts` is an unresolved identity.
 
-**The corpus and the prompt's examples must stay disjoint.** They were not, for as long as both existed: six of the eight examples in `LocalModelPrompts.summarize` had been drafted from these digests, so five of the twelve carried their own expected answer in the instructions. A model could score the whole rubric by copying, and one did — `Author command-line calculator` and `Explain Maxwell's equations` came back against exactly the digests they were drawn from, while production was emitting the same strings against sessions that had nothing to do with either. That is why a harness reporting 13/13 sat over a feature the strip was visibly getting wrong. `run.py` now refuses to score a contaminated pair: if an example's words all appear in one digest, it names both and exits without spending inference. Adding a corpus entry means checking that no example describes it, and the check is the run.
+**The corpus and the prompt's examples must stay disjoint.** They were not, for as long as both existed: six of the eight examples in the then-shipping summarize prompt had been drafted from these digests, so five of the twelve carried their own expected answer in the instructions. A model could score the whole rubric by copying, and one did — `Author command-line calculator` and `Explain Maxwell's equations` came back against exactly the digests they were drawn from, while production was emitting the same strings against sessions that had nothing to do with either. That is why a harness reporting 13/13 sat over a feature the strip was visibly getting wrong. `run.py` now refuses to score a contaminated pair: if an example's words all appear in one digest, it names both and exits without spending inference. Adding a corpus entry means checking that no example in `SUMMARIZE_INSTRUCTIONS` (`shared_agent.rs`) describes it, and the check is the run.
 
 ## The rubric
 
@@ -81,7 +81,7 @@ Grounding: [Headlinese](https://en.wikipedia.org/wiki/Headlinese) · [Cambridge 
 
 The known weakness it will not catch: a digest carries up to 40 tool lines against as few as one or two prompts, and the model can let recent tool shape outweigh the stated goal. `app-self-update` is the live example — the session asked for DMG self-update and the headline lands elsewhere. Fixing that is a digest-composition question, not a prompt one.
 
-**The grounding gate is out of this harness's reach.** `ground_headline` in `tugrust/crates/tugcast/src/feeds/session_overview.rs` refuses a headline the digest does not support, and nothing about that refusal is visible here. There are two summarize log lines from two different files: the requester's, in `local_model.rs`, which is what `harness.py` scrapes and therefore what these scores are computed from — and `session overview: summarized`, in `session_overview.rs`, which is inside the emit path where the gate lives. The gate fires strictly after the line this harness reads.
+**The grounding gate is out of this harness's reach.** `ground_headline` in `tugrust/crates/tugcast/src/feeds/session_overview.rs` refuses a headline the digest does not support, and nothing about that refusal is visible here. There are two summarize log lines from two different files: the requester's — `shared agent summarize answered`, in `shared_agent.rs` — which is what `harness.py` scrapes and therefore what these scores are computed from, and `session overview: summarized`, in `session_overview.rs`, which is inside the emit path where the gate lives. The gate fires strictly after the line this harness reads.
 
 That split is deliberate rather than unfortunate. Reimplementing the gate's rules in `run.py` would put a second copy of them next to the first, and the copy is what goes stale while reporting that all is well — the same failure that once left this corpus scoring bytes the shipping code no longer produced. So the gate is verified in two places instead: **correctness** by Rust unit tests over these same thirteen digests plus every real defective answer (`cargo nextest run -p tugcast session_overview`), and **live behavior** by `just model-stats`, which reports a grounding refusal rate broken down by rule and a re-ask rescue rate.
 
@@ -91,13 +91,13 @@ The same asymmetry applied to `classify.py` until it was fixed differently — s
 
 ## Routing
 
-`classify.py` is the other half of the local model's job and the only harness here with **ground truth**: `classify-corpus.json` holds 71 labeled lines, 35 that meant the shell and 36 that meant Claude, recovered from real logs. So it is a gate rather than a rate — and a one-sided one. It fails only on a **false SHELL**, the verdict that already ran a command nobody asked for; a command sent to Claude instead costs one keystroke and is reported without failing.
+`classify.py` is the other half of the SharedAgent's job and the only harness here with **ground truth**: `classify-corpus.json` holds 71 labeled lines, 35 that meant the shell and 36 that meant Claude, recovered from real logs. So it is a gate rather than a rate — and a one-sided one. It fails only on a **false SHELL**, the verdict that already ran a command nobody asked for; a command sent to Claude instead costs one keystroke and is reported without failing.
 
 It reports two false-SHELL numbers, because they answer different questions.
 
 The **gate** is about what production would have run. The model's verdict alone is not that: a `shell` verdict has to survive `vetoesShellVerdict` in `tugdeck/src/lib/shell-line-classifier.ts` before anything executes, and that veto lives in the deck — one layer past the control socket this harness drives. Left unaccounted for, the harness would have been structurally unable to observe the thing the routing work exists to fix. So `veto-filter.ts` runs the shipping veto over the corpus through bun and `classify.py` applies it before scoring. The rules are imported, never re-expressed in Python, for the same reason the grounding gate has no Python twin.
 
-The **pack's own false SHELL** count is reported unfiltered alongside it. On this corpus the veto is total — it refuses all 36 prose lines and none of the 35 commands — so every pack scores zero after it, and the unfiltered count is what still separates one pack from another. A pack that reaches for the executing verdict on half the prose it sees is leaning on the veto as its classifier rather than being checked by it.
+The **model's own false SHELL** count is reported unfiltered alongside it. On this corpus the veto is total — it refuses all 36 prose lines and none of the 35 commands — so every model scores zero after it, and the unfiltered count is what still separates one model from another. A model that reaches for the executing verdict on half the prose it sees is leaning on the veto as its classifier rather than being checked by it.
 
 What this does **not** measure: the deck refuses to ask about a line whose first word is not an installed program, so in production some of this prose never reaches the model at all. Every case is sent regardless — a precondition that happens to cover for a bad verdict today is not the same as a good verdict.
 
@@ -105,7 +105,7 @@ What this does **not** measure: the deck refuses to ask about a line whose first
 
 `liveness.py` sends one digest through the real path and fails only on the three facts that mean the feature is not working: no answer within the timeout, an empty headline, or an answer slower than the `summarize` ceiling. It reports the normalizer's verdict without failing on it — that is register drift, which `model-eval` is the instrument for.
 
-Both preconditions **skip with exit 0** and name the remedy: no installed pack (Tug ▸ **Configure Tug…**), or no running instance (`just app-debug`). A check that fails wherever a model is missing is one people learn to ignore. Instance detection goes through `tugutil host instance list` and never the raw `$TMPDIR/tug-instances.json`, whose stale entries for crashed instances only the library-mediated read prunes.
+A missing precondition **skips with exit 0** and names the remedy: no running instance means `just app-debug`. A check that fails wherever the precondition is missing is one people learn to ignore. Instance detection goes through `tugutil host instance list` and never the raw `$TMPDIR/tug-instances.json`, whose stale entries for crashed instances only the library-mediated read prunes.
 
 ## Stats
 

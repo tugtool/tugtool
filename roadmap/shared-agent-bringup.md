@@ -296,7 +296,7 @@ env additions: `MAX_THINKING_TOKENS=0` (the PULSE v1 daemon posture). Each worke
 
 | Job | Ceiling | Slow-mark | Blocking? |
 |---|---|---|---|
-| `classify` | 2 s (triad, unchanged) | 1 s | Yes — between Return and routing; debounce cache absorbs most |
+| `classify` | 2 s (triad, unchanged) | 1.5 s | Yes — between Return and routing; debounce cache absorbs most |
 | `summarize` / `summarize_done` | 6 s (unchanged, under the 8 s emit floor) | 3 s | No — background task, one in flight |
 
 The `record()` telemetry pattern from `LocalModelRequester` carries over verbatim as `shared agent call` log lines (`task`, `outcome`, `elapsed_ms`, `slow`), plus pool events (spawn, recycle, reap, growth).
@@ -322,7 +322,7 @@ Grep patterns for the sweep checkpoints: `local_model`, `localModel`, `local-mod
 
 | Job name | Input | Output contract | Timeout / slow | Ported from |
 |---|---|---|---|---|
-| `classify` | line text, optional grammar synopsis | exactly one label: `shell` or `prompt`; anything else = refusal (error) | 2 s / 1 s | `LocalModelPrompts.classifyCore` + `classify` + `classifyWithGrammar` (`LocalModelService.swift`) |
+| `classify` | line text, optional grammar synopsis | exactly one label: `shell` or `prompt`; anything else = refusal (error) | 2 s / 1.5 s | `LocalModelPrompts.classifyCore` + `classify` + `classifyWithGrammar` (`LocalModelService.swift`) |
 | `summarize` | composed digest | one present-tense headline line, ≤56 chars target (Rust gates still normalize) | 6 s / 3 s | `LocalModelPrompts.summarize` |
 | `summarize_done` | retrospective digest | one past-tense headline line | 6 s / 3 s | `LocalModelPrompts.summarizeRetrospective` |
 

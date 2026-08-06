@@ -6,7 +6,7 @@
  *   <standing goal>
  *   <latest pulse line>                        <activity sparkline>
  *
- * The middle line is the local model's session overview — the same string the
+ * The middle line is the agent's standing session overview — the same string the
  * card's strip wears as its headline. Both PULSE lines always render, so the
  * row is the same height whatever the session is doing and a deck with no
  * model sees a row that stands in rather than one that collapses.
