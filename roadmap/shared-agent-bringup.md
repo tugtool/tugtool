@@ -412,11 +412,11 @@ No appearance-zone state is added; no `root.render`, focus, or registration chan
 ### Documentation Plan {#documentation-plan}
 
 - [x] `CLAUDE.md`: checked — it never documented the model, and nothing local-model-shaped landed there. No change.
-- [ ] `tuglaws/design-decisions.md`: candidate global decision proposed below (#candidate-decision) — **not self-committed**; the user decides whether to promote it.
+- [x] `tuglaws/design-decisions.md`: the candidate global decision proposed below (#candidate-decision) was **promoted by the user after the join** and now lives there as **[D127]**, under a new `## Model Work` section. The draft below is kept as the record of what was proposed; D127 is the authority.
 - [x] `roadmap/archive/pulse.md` and `roadmap/archive/pulse-2.md` are this design's daemon-posture ancestors: the persistent-Haiku-worker shape, the exact `claude-haiku-4-5` pin, and the `MAX_THINKING_TOKENS=0` env all come from PULSE v1/v2. Whoever revisits worker policy should read them first.
 - [x] Fixed the stale scribe doc comment at `feeds/agent_supervisor.rs` that said `haiku` while the code defaults `sonnet`.
 
-#### Candidate global design decision (proposed, not promoted) {#candidate-decision}
+#### Candidate global design decision (promoted — now [D127]) {#candidate-decision}
 
 > **Aux model work runs on SharedAgents over the user's subscription, never on a bundled model.**
 >
@@ -702,7 +702,7 @@ This is the latency-sensitive, user-visible step — kept deliberately separate,
 **Tasks:**
 - [ ] Repo-wide sweep with the #removal-inventory grep patterns (`qwen`, `mlx`, `hf_repo`, `tug-manifest`, `local.?model`) — production code clean; archives/roadmap references acceptable.
 - [ ] Documentation Plan items; note in this plan's ledger that `roadmap/archive/pulse.md`/`pulse-2.md` are the daemon-posture ancestors.
-- [ ] Propose (do not self-commit) the candidate global design decision for `tuglaws/design-decisions.md`.
+- [x] Propose (do not self-commit) the candidate global design decision for `tuglaws/design-decisions.md`. Proposed at #candidate-decision; promoted by the user after the join as [D127].
 
 **Tests:**
 - [ ] Full workspace + frontend verification.
