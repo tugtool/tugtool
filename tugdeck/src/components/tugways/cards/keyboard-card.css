@@ -1,0 +1,18 @@
+/**
+ * keyboard-card.css — the Keyboard Shortcuts card shell.
+ *
+ * The root fills the pane rather than growing to its content: the keymap
+ * list inside is a `TugListView`, whose scrollport needs a definite height to
+ * measure against. The chain runs `.tug-pane-content` → `.keyboard-card` →
+ * `.settings-keymap` → `.settings-keymap-list` → the list's own scroller, and
+ * every link below this one already exists.
+ */
+
+.keyboard-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-family: var(--tug-font-family-sans);
+}

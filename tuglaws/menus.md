@@ -135,7 +135,7 @@ Three consequences, and each of them is a decision rather than a detail:
 - **Promoting a command to a menu item takes its chord out of the JS funnel**, globally and unconditionally, including inside every text surface. Menu placement is a chord decision before it is a discoverability one.
 - **A `menuEligible` binding must not share a chord with a scoped binding.** The scoped one is not shadowed, it is dead. `keymapRegistry.lintChordCollisions` is the lint that keeps a promotion from silently taking a chord some card wanted.
 
-`resolveChord(chord)` answers this stack for any chord, with `active` / `shadowedBy` per entry, and the Settings ▸ Keyboard pane renders from it — which is why `pdf-view.tsx` no longer has to reason about ⌘1–⌘3 by hand.
+`resolveChord(chord)` answers this stack for any chord, with `active` / `shadowedBy` per entry, and the Keyboard Shortcuts card renders from it — which is why `pdf-view.tsx` no longer has to reason about ⌘1–⌘3 by hand.
 
 ### Where a key equivalent comes from
 
@@ -227,6 +227,7 @@ Every menu item, the command behind it, and where each answer comes from. Genera
 |---|---|---|---|
 | `app.hide` | `hide-application` | AppKit performs it | host tier |
 | `app.hideOthers` | `hide-others` | AppKit performs it | host tier |
+| `app.keyboardShortcuts` | `show-keyboard-shortcuts` | first responder | host tier |
 | `app.logout` | `logout` | registered handler | host tier |
 | `app.quit` | `quit-application` | AppKit performs it | host tier |
 | `app.services` | `services` | AppKit performs it | host tier |

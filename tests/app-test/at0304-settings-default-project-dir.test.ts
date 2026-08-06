@@ -46,7 +46,14 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 const NO_AX = { skipAccessibilityPreflight: true } as const;
 
-const GENERAL_TAB = '[data-testid="settings-card"] [role="tab"]';
+/**
+ * Where focus goes to settle the field. The tab bar used to be this
+ * destination; with the sections in an accordion, another section's header is
+ * the stable in-card equivalent — it is always present, it is not inside the
+ * General section, and focusing it neither edits nor navigates anything.
+ */
+const BLUR_TARGET =
+  '[data-testid="settings-section-textCard"] .tug-accordion-trigger';
 const FIELD_INPUT =
   '[data-testid="settings-default-project-dir-field"] input';
 
@@ -63,24 +70,19 @@ describe.skipIf(!SHOULD_RUN)(
         await app.evalJS(
           `window.__tug.dispatchControlAction("show-card", { component: "settings" })`,
         );
-        await app.waitForCondition<boolean>(
-          `document.querySelector('[data-testid="settings-card"] [role="tablist"]') !== null`,
-        );
-
-        // "General" leads the strip; the card opens on "Session Card".
-        expect(await app.getElementText(GENERAL_TAB)).toContain("General");
-        await app.click(GENERAL_TAB);
+        // Every section is expanded on a fresh profile, so General's body is
+        // rendered without a selection gesture.
         await app.waitForCondition<boolean>(
           `document.querySelector('[data-testid="settings-general"]') !== null`,
         );
 
-        // Type the path, then move focus to the tab bar. Focus leaving is one
-        // of the gestures that settles the field, so the write happens without
-        // an Enter press.
+        // Type the path, then move focus to another section's header. Focus
+        // leaving is one of the gestures that settles the field, so the write
+        // happens without an Enter press.
         await app.focusElement(FIELD_INPUT);
         await app.type(FIELD_INPUT, dir);
         expect(await app.getElementValue(FIELD_INPUT)).toBe(dir);
-        await app.focusElement(GENERAL_TAB);
+        await app.focusElement(BLUR_TARGET);
 
         // Read the value back over the defaults API. The field's write is a
         // fire-and-forget PUT, so a single GET can beat it to the server and

@@ -658,7 +658,6 @@ describe.skipIf(!SHOULD_RUN)(
         const app = await launchTugApp({ testName: "at0306-open-quickly-live" });
         const placeholder = `document.querySelector(${JSON.stringify(INPUT)})
           .getAttribute("placeholder")`;
-        const GENERAL_TAB = '[data-testid="settings-card"] [role="tab"]';
         const SETTINGS_FIELD =
           '[data-testid="settings-default-project-dir-field"] input';
         try {
@@ -688,14 +687,11 @@ describe.skipIf(!SHOULD_RUN)(
           await app.evalJS(
             `window.__tug.dispatchControlAction("show-card", { component: "settings" })`,
           );
-          await app.waitForCondition<boolean>(
-            `document.querySelector('[data-testid="settings-card"] [role="tablist"]') !== null`,
-            { timeoutMs: 10000 },
-          );
-          await app.click(GENERAL_TAB);
+          // The card's sections are all expanded on a fresh profile, so
+          // General's body is rendered without a selection gesture.
           await app.waitForCondition<boolean>(
             `document.querySelector('[data-testid="settings-general"]') !== null`,
-            { timeoutMs: 8000 },
+            { timeoutMs: 10000 },
           );
           await app.focusElement(SETTINGS_FIELD);
           // Type a PARTIAL path — replacing the field's contents, since the

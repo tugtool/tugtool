@@ -24,6 +24,7 @@
  * @covers tugdeck/src/components/tugways/chord-capture-state.ts
  * @covers tugdeck/src/settings-api.ts
  * @covers tugdeck/src/lib/host-menu-state.ts
+ * @covers tugdeck/src/components/tugways/cards/keyboard-card.tsx
  * @covers tugdeck/src/components/tugways/cards/settings-keymap-body.tsx
  * @covers tugdeck/src/components/tugways/cards/settings-keymap-rows.ts
  * @covers tugapp/Sources/AppDelegate.swift
@@ -168,7 +169,7 @@ describe.skipIf(!SHOULD_RUN)("AT0182: a user keymap override moves the native ch
   );
 
   test(
-    "the Keyboard pane rebinds a command and resets it, and the menu bar follows",
+    "the Keyboard Shortcuts card rebinds a command and resets it, and the menu bar follows",
     async () => {
       // The pane's *rendering* is not asserted — the project bans DOM-render
       // assertions and they would pin the wrong thing anyway. What is asserted
@@ -179,15 +180,15 @@ describe.skipIf(!SHOULD_RUN)("AT0182: a user keymap override moves the native ch
         await app.waitForCondition<boolean>(
           `typeof window.__tug !== "undefined" && typeof window.tugdeck !== "undefined"`,
         );
-        await app.nativeKey(",", ["cmd"]);
+        // The configurator is its own card now, opened by the app menu's
+        // Keyboard Shortcuts… item — the same command that item sends.
+        await app.evalJS(
+          `window.__tug.dispatchControlAction("show-keyboard-shortcuts", {})`,
+        );
         await app.waitForCondition<boolean>(
-          `document.querySelector('[data-testid="settings-card"]') !== null`,
+          `document.querySelector('[data-testid="keyboard-card"]') !== null`,
           { timeoutMs: 8000 },
         );
-
-        // Open the Keyboard tab through its own tab control, the way a user
-        // reaches it.
-        await app.click('[data-testid="settings-card"] [data-testid="tug-tab-keyboard"]');
         await app.waitForCondition<boolean>(
           `document.querySelector('[data-testid="settings-keymap"]') !== null`,
           { timeoutMs: 8000 },

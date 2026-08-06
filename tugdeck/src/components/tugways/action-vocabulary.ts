@@ -576,6 +576,8 @@ export const TUG_ACTIONS = {
   // MAXIMIZE:               payload — none. Maximize the first card.
   // SHOW_COMPONENT_GALLERY: payload — none. Open or focus the gallery card.
   // SHOW_SETTINGS:          payload — none. Open the settings panel.
+  // SHOW_KEYBOARD_SHORTCUTS: payload — none. Open or focus the Keyboard
+  //                         Shortcuts card.
   // SHOW_DEVTOOLS:          payload — none. Open or focus the DevTools card.
   // FOCUS_LENS:             payload — none. Move focus into the Lens (opening it
   //                         if hidden); a second dispatch focuses back out.
@@ -705,6 +707,7 @@ export const TUG_ACTIONS = {
   MAXIMIZE:               "maximize",
   SHOW_COMPONENT_GALLERY: "show-component-gallery",
   SHOW_SETTINGS:          "show-settings",
+  SHOW_KEYBOARD_SHORTCUTS: "show-keyboard-shortcuts",
   SHOW_DEVTOOLS:          "show-devtools",
   FOCUS_LENS:             "focus-lens",
   TOGGLE_LENS:            "toggle-lens",

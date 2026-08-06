@@ -184,6 +184,7 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   "open-file": "command",
   "show-card": "command",
   "show-settings": "command",
+  "show-keyboard-shortcuts": "command",
   setup: "command",
   logout: "command",
   "set-theme": "command",

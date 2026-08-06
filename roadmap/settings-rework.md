@@ -397,14 +397,14 @@ From the diff/text/about cards, the full set of touch points for `componentId: "
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Collapsed-sections pref module | pending | — |
-| #step-2 | Promote the keyboard configurator to its own card | pending | — |
-| #step-3 | Keyboard card doors: menu item, command, Settings control | pending | — |
-| #step-4 | Settings card: tabs → accordion, envelope bump | pending | — |
-| #step-5 | Deep-link reveal | pending | — |
-| #step-6 | Retarget existing app-tests | pending | — |
-| #step-7 | New app-tests: keyboard card + section persistence | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Collapsed-sections pref module | done | `1adab1181` |
+| #step-2 | Promote the keyboard configurator to its own card | done | `8f699eedb` |
+| #step-3 | Keyboard card doors: menu item, command, Settings control | done | `041560391` |
+| #step-4 | Settings card: tabs → accordion, envelope bump | done | `502f08d84` |
+| #step-5 | Deep-link reveal | done | `da804bcf4` |
+| #step-6 | Retarget existing app-tests | done | `50f194e21` |
+| #step-7 | New app-tests: keyboard card + section persistence | done | `4557337d0` |
+| #step-8 | Integration checkpoint | done | `f12b4e69b` |
 
 #### Step 1: Collapsed-sections pref module {#step-1}
 

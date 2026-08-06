@@ -565,7 +565,7 @@ export function initActionDispatch(
   // invocation additionally carries the app's build identity (version,
   // build, commit, branch, profile, copyright), parked in appInfoStore
   // for the About card to read.
-  const SINGLETON_CARDS = new Set(["about", "settings"]);
+  const SINGLETON_CARDS = new Set(["about", "settings", "keyboard"]);
   registerAction("show-card", (payload) => {
     const component = payload.component;
     if (typeof component !== "string") {

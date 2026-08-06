@@ -657,7 +657,7 @@ browser keydown
 
 All the interesting work is in stage 1, and what it resolves to is a **command**, not an action. Chords live as `bindings` on their command's entry in `command-registry.ts`; `keymapRegistry.matchChord` answers the global layer and `manager.resolveKeybinding` answers the scoped ones; `dispatchCommand` then reads routing, payload, and validity from the entry. That is what makes a chord and a menu item two doors on one row instead of two implementations to keep in step — and adding a shortcut is one `bindings` entry plus (if needed) one handler on the responder that owns the semantic.
 
-There is a layer **above** stage 1 that no amount of JS can reach: AppKit resolves a menu item's key equivalent before the web view sees a `keydown` at all. A chord on a menu item therefore preempts every scoped binding regardless of focus. `keymapRegistry.resolveChord` models all four layers and is what the Settings ▸ Keyboard pane renders from; the doctrine is in [menus.md](menus.md).
+There is a layer **above** stage 1 that no amount of JS can reach: AppKit resolves a menu item's key equivalent before the web view sees a `keydown` at all. A chord on a menu item therefore preempts every scoped binding regardless of focus. `keymapRegistry.resolveChord` models all four layers and is what the Keyboard Shortcuts card renders from; the doctrine is in [menus.md](menus.md).
 
 A few load-bearing details:
 

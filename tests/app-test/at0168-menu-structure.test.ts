@@ -63,6 +63,7 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "app.setup", key: "" },
   { id: "app.logout", key: "" },
   { id: "app.settings", key: ",", mods: MOD.command },
+  { id: "app.keyboardShortcuts", key: "" },
   // File
   { id: "file.newSessionCard", key: "n", mods: MOD.command },
   { id: "file.closeCard", key: "w", mods: MOD.command },
@@ -250,11 +251,16 @@ describe.skipIf(!SHOULD_RUN)("AT0168: menu structure contract", () => {
           "the ⌘= alias tracks Zoom In",
         ).toBe(true);
 
-        // About and Settings both open a card; the harness only reaches this
-        // point on a live frontend, so both validate enabled here. Their
-        // build-time `isEnabled = false` never gated anything.
+        // About, Settings, and Keyboard Shortcuts each open a card; the
+        // harness only reaches this point on a live frontend, so all three
+        // validate enabled here. Their build-time `isEnabled = false` never
+        // gated anything.
         expect(await itemEnabled(app, "app.about"), "About live once ready").toBe(true);
         expect(await itemEnabled(app, "app.settings"), "Settings live once ready").toBe(true);
+        expect(
+          await itemEnabled(app, "app.keyboardShortcuts"),
+          "Keyboard Shortcuts live once ready",
+        ).toBe(true);
 
         // Open Recent is dark on a deck that has opened no files. The parent
         // carries AppKit's `submenuAction:`, so no validator answers for it —

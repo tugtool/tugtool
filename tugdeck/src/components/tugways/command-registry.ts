@@ -1018,6 +1018,15 @@ export const COMMANDS: readonly CommandEntry[] = [
 
   // ---- App level ----
   {
+    // Menu-only by design: ⌘, belongs to Settings, and this card has three
+    // other doors — the app menu's item, a control in Settings, and its Lens
+    // home. A chord is a one-line addition if it earns one.
+    id: TUG_ACTIONS.SHOW_KEYBOARD_SHORTCUTS,
+    title: "Keyboard Shortcuts…",
+    routing: "first-responder",
+    menuItemId: "app.keyboardShortcuts",
+  },
+  {
     // The app menu's About and New Session items both send this wire with
     // different components; per-value rows are a later menu decision.
     id: "show-card",

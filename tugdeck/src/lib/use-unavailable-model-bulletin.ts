@@ -40,6 +40,7 @@ import { useEffect, useRef } from "react";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
 import { dispatchCommand } from "@/command-dispatch";
+import { requestSettingsReveal } from "@/lib/settings-reveal";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import type { TaggedValue } from "@/lib/tugbank-client";
@@ -153,7 +154,12 @@ export function useUnavailableModelBulletin({
       cancelLabel: "Not Now",
     }).then((confirmed) => {
       if (confirmed) {
+        // The Assistant defaults live in the Session Card section, which the
+        // reader may have collapsed — so name it rather than trusting the
+        // card to open on it. The reveal is transient: it does not rewrite
+        // their saved arrangement.
         dispatchCommand(TUG_ACTIONS.SHOW_SETTINGS);
+        requestSettingsReveal("sessionCard");
       }
     });
   }, [cardId, showSheet]);

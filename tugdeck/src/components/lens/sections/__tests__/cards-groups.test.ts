@@ -28,6 +28,7 @@ import { registerHelloWorldCard } from "@/components/tugways/cards/hello-world-c
 import { registerSessionCard } from "@/components/tugways/cards/session-card-registration";
 import { registerAboutCard } from "@/components/tugways/cards/about-card";
 import { registerSettingsCard } from "@/components/tugways/cards/settings-card";
+import { registerKeyboardCard } from "@/components/tugways/cards/keyboard-card";
 import { registerDevtoolsCard } from "@/components/devtools/devtools-card";
 import { registerLensCard } from "@/components/lens/lens-register-card";
 import { registerTextCard } from "@/components/tugways/cards/text-card-registration";
@@ -49,6 +50,7 @@ beforeAll(() => {
   registerSessionCard();
   registerAboutCard();
   registerSettingsCard();
+  registerKeyboardCard();
   registerDevtoolsCard();
   registerLensCard();
   registerTextCard();
@@ -68,6 +70,7 @@ const PINS: ReadonlyArray<{
   { componentId: "file-view", group: "files", via: "explicit lensGroup" },
   { componentId: "diff", group: "files", via: "category.label" },
   { componentId: "settings", group: "tools", via: "fallback" },
+  { componentId: "keyboard", group: "tools", via: "fallback" },
   { componentId: "about", group: "tools", via: "fallback" },
   { componentId: "devtools", group: "tools", via: "fallback" },
   { componentId: "hello", group: "tools", via: "fallback" },

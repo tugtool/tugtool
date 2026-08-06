@@ -854,6 +854,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let settingsItem = NSMenuItem(title: "Settings...", action: #selector(showSettings(_:)), keyEquivalent: ",")
         settingsItem.identifier = NSUserInterfaceItemIdentifier("app.settings")
         appMenu.addItem(settingsItem)
+        // Keyboard Shortcuts… — the keymap configurator, a card of its own
+        // rather than a pane of Settings. No key equivalent: ⌘, belongs to
+        // Settings, and this card is also reachable from a control inside
+        // Settings and from the Lens.
+        let keyboardItem = NSMenuItem(title: "Keyboard Shortcuts...", action: #selector(showKeyboardShortcuts(_:)), keyEquivalent: "")
+        keyboardItem.identifier = NSUserInterfaceItemIdentifier("app.keyboardShortcuts")
+        appMenu.addItem(keyboardItem)
         appMenu.addItem(NSMenuItem.separator())
 
         // Services submenu
@@ -1291,6 +1298,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// the card. The menu now sends the same command the chord does.
     @objc func showSettings(_ sender: Any?) {
         sendControl("show-settings")
+    }
+
+    /// The keymap configurator's card. Sends the command rather than
+    /// `show-card` for the same reason Settings does: the chain path is the
+    /// one that claims focus and re-centers.
+    @objc func showKeyboardShortcuts(_ sender: Any?) {
+        sendControl("show-keyboard-shortcuts")
     }
 
     @objc func showSetup(_ sender: Any?) {
@@ -1997,9 +2011,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
 
         switch id {
-        // App tier. About and Settings each open a card, so both need a deck
-        // to open it into — dark until the frontend has signalled ready.
-        case "app.about", "app.settings":
+        // App tier. About, Settings, and Keyboard Shortcuts each open a card,
+        // so all three need a deck to open it into — dark until the frontend
+        // has signalled ready.
+        case "app.about", "app.settings", "app.keyboardShortcuts":
             return frontendReady
         // View zoom. Reads `window.currentPageZoom` live rather than the
         // pushed state: page zoom is the host's own property, changed by

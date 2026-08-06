@@ -49,6 +49,7 @@ import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-c
 import { registerSessionCard } from "./components/tugways/cards/session-card-registration";
 import { registerAboutCard } from "./components/tugways/cards/about-card";
 import { registerSettingsCard } from "./components/tugways/cards/settings-card";
+import { registerKeyboardCard } from "./components/tugways/cards/keyboard-card";
 import { registerDevtoolsCard } from "./components/devtools/devtools-card";
 import { registerLensCard } from "./components/lens/lens-register-card";
 import { registerSnippetsSection } from "./components/lens/sections/snippets-section";
@@ -326,6 +327,7 @@ if (!container) {
   registerSessionCard();
   registerAboutCard();
   registerSettingsCard();
+  registerKeyboardCard();
   registerDevtoolsCard();
   // The Lens card must register unconditionally and before the deck
   // restores its layout, so the Lens survives reload
