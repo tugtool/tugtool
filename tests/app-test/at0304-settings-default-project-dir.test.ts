@@ -47,13 +47,12 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const NO_AX = { skipAccessibilityPreflight: true } as const;
 
 /**
- * Where focus goes to settle the field. The tab bar used to be this
- * destination; with the sections in an accordion, another section's header is
- * the stable in-card equivalent — it is always present, it is not inside the
- * General section, and focusing it neither edits nor navigates anything.
+ * Where focus goes to settle the field. Another section's sidebar tab is the
+ * stable in-card destination — it is always present, it is not inside the
+ * General panel, and *focusing* it (no click) neither edits nor navigates
+ * anything, so the panel under the field stays mounted while the write lands.
  */
-const BLUR_TARGET =
-  '[data-testid="settings-section-textCard"] .tug-accordion-trigger';
+const BLUR_TARGET = '[data-testid="tug-tab-view-tab-textCard"]';
 const FIELD_INPUT =
   '[data-testid="settings-default-project-dir-field"] input';
 
@@ -70,7 +69,7 @@ describe.skipIf(!SHOULD_RUN)(
         await app.evalJS(
           `window.__tug.dispatchControlAction("show-card", { component: "settings" })`,
         );
-        // Every section is expanded on a fresh profile, so General's body is
+        // General is the selected section on a fresh profile, so its body is
         // rendered without a selection gesture.
         await app.waitForCondition<boolean>(
           `document.querySelector('[data-testid="settings-general"]') !== null`,

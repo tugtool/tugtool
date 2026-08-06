@@ -740,7 +740,7 @@ export async function getEditorSettings(): Promise<EditorSettings | null> {
 
 /**
  * Read the deck-wide Text Card defaults from the TugbankClient cache.
- * The raw blob is narrowed by `parseTextCardDefaults`; this just
+ * The raw blob is narrowed by `parseTextCardSettings`; this just
  * fetches the tagged value's `value` (or null when unset).
  */
 export function readTextCardDefaults(client: TugbankClient): unknown {

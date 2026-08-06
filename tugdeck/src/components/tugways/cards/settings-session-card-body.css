@@ -1,41 +1,33 @@
 /* ----------------------------------------------------------------------------
    .settings-session-card — the Session Card settings panel
    ----------------------------------------------------------------------------
-   Two stacked sections: Response (transcript magnification plus the
-   inter-entry margin slider) and Editor (prompt editor typography,
-   view toggles, and submit-key policy). Hosted by the Settings card's
-   Session Card section.
+   Three stacked groups: Response (transcript magnification plus the
+   inter-entry margin slider), Prompt Editor (typography, view toggles, and
+   submit-key policy), and Assistant (deck-default chips). Hosted by the
+   Settings card's Session Card section. Each group is a bordered TugBox with
+   a legend painted on the border, its controls left-aligned inside.
    ----------------------------------------------------------------------------- */
 
 .settings-session-card {
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-2xl);
-  /* Extra top room: the first box's legend overhangs above its border,
-     and the accordion header band sits directly on top of it. */
-  padding: var(--tug-space-2xl) 0 var(--tug-space-xs);
+  /* Room for the first box's legend, which overhangs above its border. */
+  padding-top: var(--tug-space-md);
 }
 
-/* Each settings group is a TugBox with a `<legend>` label. The body
-   stacks the popup row above any view switches with the standard
-   medium gap.
-
-   `box-sizing: border-box` and `width: 100%` override `.tug-box`'s
-   default `width: fit-content` so each box fills the panel's
-   content area. */
+/* `box-sizing: border-box` and `width: 100%` override `.tug-box`'s default
+   `width: fit-content` so each box fills the panel's content area. */
 .settings-session-card-group {
   width: 100%;
   box-sizing: border-box;
-  /* The legend is absolutely positioned (below), so its line is reserved
-     here with fixed padding — the box height is padding + content, always.
-     WebKit's built-in fieldset/legend layout is pass-dependent (boxes came
-     out one legend taller on a late mount than after a style recalc — the
-     hop); taking the legend out of flow removes that layout entirely. */
+  /* The legend is absolutely positioned (below), so its line is reserved by
+     the box's own padding — the box height is padding + content, always.
+     WebKit's built-in fieldset/legend layout is pass-dependent. */
   position: relative;
 }
 
-/* Generous inset. Compound (0,3,0) selector needed to beat TugBox's own
-   inset padding rule `.tug-box-inset.tug-box-md` (0,2,0). */
+/* Generous inset — same compound-selector note as .settings-general-group. */
 .settings-session-card .settings-session-card-group.tug-box-bordered {
   padding: var(--tug-space-2xl) var(--tug-space-2xl) var(--tug-space-xl);
 }
@@ -47,49 +39,28 @@
   left: var(--tug-space-lg);
   transform: translateY(-50%);
   background: var(--tugx-pane-bg);
+  /* WebKit gives `<legend>` an intrinsic inline-size past its visible text,
+     truncating the fieldset's top border to its right. */
+  inline-size: max-content;
 }
 
 /* Layout lives on the body div, never the fieldset — a flexed fieldset's
    height hops by one gap on style recalc (WebKit legend layout; see
-   tug-box.css). */
+   tug-box.css). Left-packed. */
 .settings-session-card-group > .tug-box-body {
   display: flex;
   flex-direction: column;
-  /* Each control block is centered in the box rather than packed against
-     its leading edge — at the Settings card's width a left-packed row
-     leaves a dead half. Blocks that want the full measure (hints, the path
-     field) declare `width: 100%` and are unaffected. */
-  align-items: center;
+  align-items: flex-start;
   gap: var(--tug-space-lg);
-}
-
-/* WebKit (and some other browsers) gives `<legend>` an intrinsic
-   inline-size that can extend past its visible text, leaving the
-   top border on the right side of the legend looking truncated or
-   missing entirely. Constraining the legend to `inline-size:
-   max-content` clamps its bounding box to the visible text + padding
-   so the fieldset's top border continues normally on both sides of
-   the legend label. */
-.settings-session-card-group > .tug-box-legend {
-  inline-size: max-content;
-}
-
-/* The Editor group stacks a typography row above three switches.
-   Tug-space-md is comfortable between the popups and the first
-   switch but the boxes-with-legend layout needs a touch more
-   breathing room above the switch column so the legend gap and
-   the popup row don't crowd the first switch. */
-.settings-session-card-group .settings-session-card-switches {
-  margin-top: var(--tug-space-sm);
 }
 
 /* Both Response sliders on one row: label, track, label, track. A slider
    this coarse (21 magnification steps, 49 gap steps) gains nothing from a
-   full-width track, and two of them stacked made the box's whole height
+   full-width track, and two of them stacked made the group's whole height
    about two numbers. */
 .settings-session-card-slider-grid {
   display: grid;
-  grid-template-columns: repeat(2, auto minmax(0, 15rem));
+  grid-template-columns: repeat(2, auto minmax(0, 13rem));
   column-gap: var(--tug-space-md);
   row-gap: var(--tug-space-md);
   align-items: center;
@@ -110,22 +81,13 @@
   min-width: 0;
 }
 
-/* All four typography popups on one row. `flex-wrap: nowrap` keeps
-   them aligned even when the host is narrower than ideal — combined
-   with the per-popup `min-width` rules below, the row claims the
-   width it needs and the host's `overflow-y: auto` handles vertical
-   pressure. */
+/* Typography popups on one row. */
 .settings-session-card-row {
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: flex-end;
   gap: var(--tug-space-md);
-}
-
-/* The Assistant chip trio sits centered in its box. */
-.settings-session-card-assistant-row {
-  justify-content: center;
 }
 
 /* The TugPopupButton applies the className we pass directly to the
@@ -147,31 +109,22 @@
   min-width: 6rem;
 }
 
-/* ≤3 switches stretch to fill a single row; 4+ use a strict 3-column
-   grid so a partial last row keeps its 1/3 tracks (see
-   text-card-controls.css for the rationale). */
+/* View switches on one row, sized to their labels. */
 .settings-session-card-switches {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  column-gap: var(--tug-space-xl);
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
-}
-
-.settings-session-card-switches:has(> :nth-child(4)) {
-  grid-auto-flow: row;
-  grid-auto-columns: auto;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: var(--tug-space-xl);
   row-gap: var(--tug-space-md);
 }
 
 /* Submit-key option groups — a label + choice-group pair per physical
-   key, stacked above the live legend. Offset from the switch column
-   above so the Editor box reads as one rhythm. */
+   key, stacked above the live legend. */
 .settings-session-card-keys {
   display: flex;
   flex-direction: column;
-  margin-top: var(--tug-space-lg);
+  margin-top: var(--tug-space-sm);
 }
 
 /* 2-column grid: a fixed label column and a `max-content` control

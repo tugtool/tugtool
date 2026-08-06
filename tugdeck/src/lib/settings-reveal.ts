@@ -3,16 +3,16 @@
  *
  * One caller today: the "Saved Model Unavailable" bulletin, whose "Review
  * Defaults" lands the reader on the Assistant controls in the Session Card
- * section. That section may be collapsed, so opening Settings is not enough —
+ * section. Another section may be showing, so opening Settings is not enough —
  * the request has to survive the gap between the dispatch that opens the card
  * and the card's mount. A request made with no card attached is parked and
  * flushed the moment one registers.
  *
- * **A reveal never writes the persisted collapsed set.** The card holds the
- * revealed id in a transient override instead, so a reader who deliberately
- * collapsed Session Card finds it collapsed again on their next plain open. A
- * reveal that rewrote the stored preference would be the app editing a saved
- * choice with nothing to put it back.
+ * **A reveal never writes the persisted selection.** The card holds the
+ * revealed id in a transient override instead, so a reader who was on another
+ * section finds it selected again on their next plain open. A reveal that
+ * rewrote the stored preference would be the app editing a saved choice with
+ * nothing to put it back.
  *
  * @module lib/settings-reveal
  */

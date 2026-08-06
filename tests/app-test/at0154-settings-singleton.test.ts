@@ -1,12 +1,13 @@
 /**
  * at0154-settings-singleton.test.ts — Settings card singleton +
- * accordion sections ([AT0154]).
+ * master/detail sections ([AT0154]).
  *
  * Scenario:
  *
  *   Boot an empty deck. Dispatch the `show-card` control action the
  *   Swift Settings… (⌘,) menu item sends. Verify the Settings card
- *   appears with its four preference sections stacked in one accordion.
+ *   appears with its four preference sections in the tab view's sidebar
+ *   and exactly one panel showing.
  *   Open a second (hello) card so the Settings pane is no longer top
  *   of z-order, then re-dispatch: no duplicate card is created and the
  *   existing Settings pane is raised to z-top and focused.
@@ -21,6 +22,7 @@
  * without `TUGAPP_APP_TEST=1` skip every test.
  *
  * @covers tugdeck/src/components/tugways/cards/settings-card.tsx
+ * @covers tugdeck/src/components/tugways/tug-tab-view.tsx
  * @covers tugdeck/src/card-registry.ts
  * @covers tugdeck/src/action-dispatch.ts
  */
@@ -50,25 +52,31 @@ describe.skipIf(!SHOULD_RUN)("at0154: Settings card is a singleton", () => {
       await app.waitForCondition<boolean>(
         `${countByComponent("settings")} === 1`,
       );
-      // The card renders one accordion item per section (`settings-card.tsx`
-      // SECTIONS), in order. The `data-testid` lands on the item, so the
-      // labels come from the trigger inside it.
+      // The card renders one sidebar tab per section (`settings-card.tsx`
+      // SECTIONS), in order, and exactly one panel — the selected section's.
       await app.waitForCondition<boolean>(
         `document.querySelectorAll(
-          '[data-testid="settings-card"] [data-testid^="settings-section-"]',
+          '[data-testid="settings-card"] [data-testid^="tug-tab-view-tab-"]',
         ).length === 4`,
       );
       expect(
         await app.evalJS<string[]>(
           `Array.from(
             document.querySelectorAll(
-              '[data-testid="settings-card"] [data-testid^="settings-section-"]',
+              '[data-testid="settings-card"] [data-testid^="tug-tab-view-tab-"]',
             ),
           ).map((el) =>
-            (el.querySelector(".tug-accordion-trigger")?.textContent || "").trim(),
+            (el.querySelector(".tug-tab-view-tab-label")?.textContent || "").trim(),
           )`,
         ),
       ).toEqual(["General", "Session Card", "Text Card", "Advanced"]);
+      expect(
+        await app.evalJS<number>(
+          `document.querySelectorAll(
+            '[data-testid="settings-card"] [data-testid^="settings-section-"]',
+          ).length`,
+        ),
+      ).toBe(1);
 
       // ---- Put another pane on top so the raise is observable.
       await app.evalJS(

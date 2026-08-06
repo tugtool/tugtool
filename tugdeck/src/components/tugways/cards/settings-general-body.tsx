@@ -196,7 +196,6 @@ export function SettingsGeneralBody() {
           className="settings-general-group"
         >
           <TugChoiceGroup
-            className="settings-general-chord"
             size="sm"
             senderId={stackChordId}
             value={stackChord}

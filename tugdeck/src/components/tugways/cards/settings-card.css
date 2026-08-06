@@ -1,63 +1,23 @@
 /**
- * settings-card.css — Settings card shell: one stack of accordion sections.
+ * settings-card.css — Settings card shell: a master/detail tab view.
  *
- * The root grows to its content and owns no scroller of its own. The pane's
- * `.tug-pane-content` scrolls the card, which is what makes the scroll offset
- * ride the card-state bag with no code.
+ * The root fills the pane rather than growing to its content: the tab view's
+ * detail area is the scroller (with its own stable scrollbar gutter), so the
+ * sidebar holds still while a long section scrolls. The chain runs
+ * `.tug-pane-content` → `.settings-card` → `.tug-tab-view` → the detail
+ * scroller.
  */
 
 .settings-card {
   display: flex;
   flex-direction: column;
-  /* The trailing inset reserves the pane scroller's gutter. The scroller is
-     `.tug-pane-content`, shared by every card, so `scrollbar-gutter: stable`
-     there would be a change to all of them; a card that is always taller than
-     its pane reserves the room itself. The bar is drawn INSIDE the scroller's
-     padding box, so the reservation is a full scrollbar width ON TOP of the
-     card's own inset — anything less and the bar still lands on content.
-     Default at point of use so an ancestor could tune it ([L20]). */
-  padding: 12px calc(16px + var(--tugx-settings-scrollbar-gutter, 15px)) 16px 16px;
+  height: 100%;
+  min-height: 0;
   color: var(--tug7-element-global-text-normal-default-rest);
   font-family: var(--tug-font-family-sans);
 }
 
-/* Each section is its own enclosure with air around it (the accordion's
-   `inset` variant), rather than four bands separated by rules. A stack of
-   dividers reads as a table; four boxes read as four places.
-
-   The gap has to be wide enough that the space between two sections never
-   reads as belonging to either — narrower than this and the boxes look like
-   one interrupted frame. */
 .settings-card .settings-card-sections {
-  gap: calc(var(--tug-space-2xl) + var(--tug-space-lg));
-}
-
-/* Muted, not the full text color: the frame's job is to say where a section
-   ends, and at a hairline's weight the default text tone shouts it. */
-.settings-card .tug-accordion-item {
-  border-color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* The header band. The `inset` variant clips each item to its own radius, so
-   the band takes the box's top corners and needs none of its own to keep in
-   step. */
-/* @tug-renders-on: --tug7-surface-global-primary-normal-sunken-rest */
-.settings-card .tug-accordion-trigger {
-  background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
-  color: var(--tugx-block-header-text);
-  padding: var(--tug-space-md) var(--tug-space-lg);
-  border-radius: 0;
-}
-
-.settings-card-trigger {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-.settings-card-trigger-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1;
+  min-height: 0;
 }

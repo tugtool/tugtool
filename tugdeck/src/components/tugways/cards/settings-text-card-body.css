@@ -11,7 +11,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-2xl);
-  /* Extra top room: the first box's legend overhangs above its border,
-     and the accordion header band sits directly on top of it. */
-  padding: var(--tug-space-2xl) 0 var(--tug-space-xs);
+  /* Room for the first box's legend, which overhangs above its border. */
+  padding-top: var(--tug-space-md);
 }

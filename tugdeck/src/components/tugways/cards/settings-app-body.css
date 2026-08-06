@@ -2,35 +2,31 @@
    .settings-app — the Advanced settings panel
    ----------------------------------------------------------------------------
    App-level preferences, hosted by the Settings card's Advanced section. One
-   box today: Maker, with the maker-mode switch and its explanatory hint.
+   box today: Maker, with the maker-mode switch and its explanatory hint. A
+   bordered TugBox with a legend painted on the border, its controls
+   left-aligned inside. Structure mirrors .settings-general.
    ----------------------------------------------------------------------------- */
 
 .settings-app {
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-2xl);
-  /* Extra top room: the first box's legend overhangs above its border,
-     and the accordion header band sits directly on top of it. */
-  padding: var(--tug-space-2xl) 0 var(--tug-space-xs);
+  /* Room for the first box's legend, which overhangs above its border. */
+  padding-top: var(--tug-space-md);
 }
 
-/* Matches .settings-session-card-group: override .tug-box's fit-content so
-   the box fills the panel's content area. */
+/* Matches .settings-general-group: override .tug-box's fit-content so the
+   box fills the panel's content area. */
 .settings-app-group {
   width: 100%;
   box-sizing: border-box;
-  /* The legend is absolutely positioned (below), so its line is reserved
-     here with fixed padding — the box height is padding + content, always.
-     WebKit's built-in fieldset/legend layout is pass-dependent (boxes came
-     out one legend taller on a late mount than after a style recalc — the
-     hop); taking the legend out of flow removes that layout entirely. */
+  /* The legend is absolutely positioned (below), so its line is reserved by
+     the box's own padding — the box height is padding + content, always.
+     WebKit's built-in fieldset/legend layout is pass-dependent. */
   position: relative;
 }
 
-/* Generous inset, matching .settings-session-card-group: the legend overhangs
-   the top border, so the switch needs real room beneath it rather than the one
-   line the legend itself occupies. Compound (0,3,0) selector needed to beat
-   TugBox's own inset padding rule `.tug-box-inset.tug-box-md` (0,2,0). */
+/* Generous inset — same compound-selector note as .settings-general-group. */
 .settings-app .settings-app-group.tug-box-bordered {
   padding: var(--tug-space-2xl) var(--tug-space-2xl) var(--tug-space-xl);
 }
@@ -42,28 +38,17 @@
   left: var(--tug-space-lg);
   transform: translateY(-50%);
   background: var(--tugx-pane-bg);
+  /* WebKit gives `<legend>` an intrinsic inline-size past its visible text,
+     truncating the fieldset's top border to its right. */
+  inline-size: max-content;
 }
 
-/* Layout lives on the body div, never the fieldset — a flexed fieldset's
-   height hops by one gap on style recalc (WebKit legend layout; see
-   tug-box.css). */
+/* Layout lives on the body div, never the fieldset. Left-packed. */
 .settings-app-group > .tug-box-body {
   display: flex;
   flex-direction: column;
-  /* Each control block is centered in the box rather than packed against
-     its leading edge — at the Settings card's width a left-packed row
-     leaves a dead half. Blocks that want the full measure (hints, the path
-     field) declare `width: 100%` and are unaffected. */
-  align-items: center;
+  align-items: flex-start;
   gap: var(--tug-space-lg);
-}
-
-/* WebKit gives `<legend>` an intrinsic inline-size that can extend past
-   its visible text, leaving the fieldset's top border truncated on the
-   right of the legend. Clamping the legend to its content restores the
-   border on both sides. (Same fix as .settings-session-card-group.) */
-.settings-app-group > .tug-box-legend {
-  inline-size: max-content;
 }
 
 /* Switch, its label, and the hint on one line. One switch with one sentence
@@ -74,9 +59,16 @@
   gap: var(--tug-space-xl);
 }
 
+/* The switch keeps its intrinsic width: as a flex item it would otherwise
+   shrink to give the hint room, and "Maker Mode" would break across two
+   lines — a two-word control label reading as a paragraph. The hint takes
+   the remainder and wraps there instead, which is what prose is for. */
+.settings-app-switch-row > .tug-switch-wrapper {
+  flex: none;
+}
+
 /* The hint is a TugLabel (size sm, emphasis calm), already `inline-flex`;
-   it just needs the prose line-height, and no wrapping in the middle of the
-   row it shares with the switch. */
+   it just needs the prose line-height. */
 .settings-app .settings-app-hint {
   line-height: var(--tug-line-height-lg);
 }

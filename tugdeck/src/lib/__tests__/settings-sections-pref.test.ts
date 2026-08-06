@@ -1,94 +1,49 @@
 /**
- * The persisted form of the Settings card's collapsed sections.
+ * The persisted form of the Settings card's selected section.
  *
- * The contract these pin: what is stored is what the reader collapsed, so a
- * profile that has never stored anything opens with everything expanded — and
- * "collapsed nothing" stays distinguishable from "never set", since only the
- * latter may fall back to a default. Ids the build no longer knows are dropped
- * on the way in, which is how a profile written when the keymap configurator
- * still lived in Settings stops carrying a `"keyboard"` entry.
+ * The contract these pin: what is stored is where the reader last was, so a
+ * profile that has never stored anything opens on the first section — and an
+ * id the build no longer knows reads as never-set rather than as a choice,
+ * which is how a stored id retired by a later build stops steering the card.
  */
 
 import { describe, test, expect } from "bun:test";
 
 import {
-  DEFAULT_SETTINGS_COLLAPSED,
+  DEFAULT_SETTINGS_SECTION,
   SETTINGS_SECTION_IDS,
-  normalizeSettingsCollapsedSections,
-  parseSettingsCollapsedSections,
+  parseSettingsSelectedSection,
 } from "@/lib/settings-sections-pref";
 import type { TaggedValue } from "@/lib/tugbank-client";
 
 function tagged(value: unknown): TaggedValue {
-  return { kind: "json", value };
+  return { kind: "string", value };
 }
 
-describe("parseSettingsCollapsedSections", () => {
-  test("an absent entry is `null` — never set, not empty", () => {
-    expect(parseSettingsCollapsedSections(undefined)).toBeNull();
+describe("parseSettingsSelectedSection", () => {
+  test("an absent entry is `null` — never set", () => {
+    expect(parseSettingsSelectedSection(undefined)).toBeNull();
   });
 
-  test("an empty array is an empty set, distinct from absent", () => {
-    const parsed = parseSettingsCollapsedSections(tagged([]));
-    expect(parsed).not.toBeNull();
-    expect(parsed).toEqual([]);
-  });
-
-  test("known ids survive", () => {
-    expect(parseSettingsCollapsedSections(tagged(["app"]))).toEqual(["app"]);
-    expect(
-      parseSettingsCollapsedSections(tagged(["sessionCard", "general"])),
-    ).toEqual(["general", "sessionCard"]);
-  });
-
-  test("the stored order does not matter — section order does", () => {
-    expect(
-      parseSettingsCollapsedSections(tagged(["app", "textCard", "general"])),
-    ).toEqual(["general", "textCard", "app"]);
-  });
-
-  test("unknown ids are dropped, including a stale `keyboard`", () => {
-    expect(
-      parseSettingsCollapsedSections(tagged(["keyboard", "app"])),
-    ).toEqual(["app"]);
-    expect(parseSettingsCollapsedSections(tagged(["keyboard"]))).toEqual([]);
-    expect(parseSettingsCollapsedSections(tagged(["nonsense"]))).toEqual([]);
-  });
-
-  test("a non-array value reads as never-set rather than as empty", () => {
-    expect(parseSettingsCollapsedSections(tagged("app"))).toBeNull();
-    expect(parseSettingsCollapsedSections(tagged(null))).toBeNull();
-    expect(parseSettingsCollapsedSections(tagged(7))).toBeNull();
-  });
-});
-
-describe("the collapsed set round-trips through storage", () => {
-  test("what normalize writes is what parse reads back", () => {
-    for (const collapsed of [
-      [],
-      ["app"],
-      ["general", "app"],
-      [...SETTINGS_SECTION_IDS],
-    ]) {
-      const stored = normalizeSettingsCollapsedSections(collapsed);
-      expect(parseSettingsCollapsedSections(tagged(stored))).toEqual(stored);
+  test("every known id survives", () => {
+    for (const id of SETTINGS_SECTION_IDS) {
+      expect(parseSettingsSelectedSection(tagged(id))).toBe(id);
     }
   });
 
-  test("normalize drops what parse would have dropped", () => {
-    expect(normalizeSettingsCollapsedSections(["keyboard", "app"])).toEqual([
-      "app",
-    ]);
+  test("an unknown id reads as never-set, including a retired `keyboard`", () => {
+    expect(parseSettingsSelectedSection(tagged("keyboard"))).toBeNull();
+    expect(parseSettingsSelectedSection(tagged("nonsense"))).toBeNull();
+    expect(parseSettingsSelectedSection(tagged(""))).toBeNull();
   });
 
-  test("every section collapsed is a representable state", () => {
-    const all = normalizeSettingsCollapsedSections([...SETTINGS_SECTION_IDS]);
-    expect(all).toEqual([...SETTINGS_SECTION_IDS]);
+  test("a non-string value reads as never-set", () => {
+    expect(parseSettingsSelectedSection(tagged(null))).toBeNull();
+    expect(parseSettingsSelectedSection(tagged(["general"]))).toBeNull();
+    expect(parseSettingsSelectedSection(tagged(3))).toBeNull();
   });
-});
 
-describe("the default arrangement", () => {
-  test("nothing is collapsed, so every section is expanded on a fresh profile", () => {
-    expect(DEFAULT_SETTINGS_COLLAPSED).toEqual([]);
+  test("the fallback section is the first in presentation order", () => {
+    expect(DEFAULT_SETTINGS_SECTION).toBe(SETTINGS_SECTION_IDS[0]);
   });
 });

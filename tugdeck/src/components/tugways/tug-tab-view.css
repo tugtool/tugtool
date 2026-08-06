@@ -1,0 +1,144 @@
+/* @tug-pairings {
+  --tug7-element-global-text-normal-default-rest | --tug7-surface-global-primary-normal-sunken-rest | content
+  --tug7-element-global-text-normal-default-rest | --tug7-surface-selection-primary-normal-quiet-rest | content
+  --tug7-element-global-text-normal-default-rest | --tug7-surface-tab-primary-normal-plain-hover | content
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                            | Role    | Context                                      |
+ * |--------------------------------------------------|----------------------------------------------------|---------|----------------------------------------------|
+ * | --tug7-element-global-text-normal-default-rest   | --tug7-surface-global-primary-normal-sunken-rest   | content | .tug-tab-view-tab (color on the list band)   |
+ * | --tug7-element-global-text-normal-default-rest   | --tug7-surface-selection-primary-normal-quiet-rest | content | .tug-tab-view-tab[data-active="true"] (bg)   |
+ * | --tug7-element-global-text-normal-default-rest   | --tug7-surface-tab-primary-normal-plain-hover      | content | .tug-tab-view-tab:hover (background-color)   |
+ */
+
+/* ----------------------------------------------------------------------------
+   .tug-tab-view — vertical master/detail tab layout
+   ----------------------------------------------------------------------------
+   Sidebar list on the left, one panel on the right. The root fills its
+   container; the DETAIL is the scroller, so the sidebar holds still while a
+   long panel scrolls. Tunables are read through `var(--x, default)` at point
+   of use so an ancestor can retune them without fighting a local declaration.
+   ----------------------------------------------------------------------------- */
+
+.tug-tab-view {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--tug-font-family-sans);
+}
+
+/* The master column. A step down from the pane surface (the same `sunken`
+   tone the theme skeleton guarantees contrast for on every theme), so the
+   sidebar reads as the fixed chrome and the detail as the page. It scrolls
+   only if the tab set outgrows the card — normally it holds still. */
+.tug-tab-view-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  flex: none;
+  width: var(--tugx-tab-view-list-width, 190px);
+  box-sizing: border-box;
+  padding: var(--tug-space-lg) var(--tug-space-md);
+  overflow-y: auto;
+  background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
+  user-select: none;
+}
+
+/* One sidebar entry: icon + label, left-aligned, a soft rounded row. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-sunken-rest */
+.tug-tab-view-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  border: none;
+  border-radius: var(--tug-radius-sm);
+  background-color: transparent;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-size: var(--tug-font-size-sm);
+  font-family: var(--tug-font-family-sans);
+  text-align: left;
+  cursor: default;
+  user-select: none;
+  transition:
+    background-color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
+}
+
+/* The committed selection is the role-resolved quiet wash — the same ramp a
+   selected list row wears ([P03]), so "the chosen section" and "the chosen
+   row" are one mark across the app. A wash, not an accent slab: the label
+   keeps its own color and the icon its own weight. */
+.tug-tab-view-tab[data-active="true"] {
+  background-color: var(--tug7-surface-selection-primary-normal-quiet-rest);
+}
+
+.tug-tab-view-tab:not([data-active="true"]):not(:disabled):hover {
+  background-color: var(--tug7-surface-tab-primary-normal-plain-hover);
+}
+
+.tug-tab-view-tab:disabled {
+  opacity: var(--tug-opacity-disabled, 0.4);
+}
+
+.tug-tab-view-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tug-tab-view-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------------------------
+   Focus language — item-group treatment ([P01]/[P02]/[P08])
+   ----------------------------------------------------------------------------
+   The sidebar is ONE Tab stop: the toned container ring on the list when it
+   holds the key view, the full cursor ring on the tab under the cursor. The
+   list commits live, so the cursor always rides the selected tab.
+   ----------------------------------------------------------------------------- */
+
+.tug-tab-view-list[data-key-view-kbd] {
+  outline: var(--tugx-focus-container-ring-width) solid
+    var(--tugx-focus-container-ring);
+  outline-offset: calc(-1 * var(--tugx-focus-container-ring-width));
+}
+
+/* Never a descend target — same transient-stamp note as tug-tab-bar.css. */
+.tug-tab-view-list[data-key-within] {
+  outline: none;
+}
+
+.tug-tab-view-tab[data-key-cursor] {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--tugx-focus-ring-width) var(--tugx-focus-ring);
+}
+
+/* ----------------------------------------------------------------------------
+   Detail
+   ----------------------------------------------------------------------------- */
+
+/* The detail area owns the scroller. `scrollbar-gutter: stable` reserves the
+   bar's lane whether or not the panel overflows, so content never shifts —
+   and never sits under the bar — as sections of different heights come and
+   go. */
+.tug-tab-view-detail {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.tug-tab-view-panel {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: var(--tugx-tab-view-panel-padding, var(--tug-space-2xl));
+}

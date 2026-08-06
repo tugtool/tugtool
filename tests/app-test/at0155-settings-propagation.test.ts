@@ -97,9 +97,9 @@ describe.skipIf(!SHOULD_RUN)("at0155: Settings Session Card edits reach open Dev
       await app.waitForCondition<boolean>(
         `document.querySelector('[data-testid="settings-card"]') !== null`,
       );
-      // Every section is expanded on a fresh profile, so the switches this
-      // test drives are already rendered — no selection gesture needed, only
-      // the wait for the Session Card section's body.
+      // Select the Session Card section in the sidebar — only the selected
+      // section's body exists, and a fresh profile opens on General.
+      await app.click('[data-testid="tug-tab-view-tab-sessionCard"]');
       await app.waitForCondition<boolean>(
         `document.querySelector(
           '[data-testid="settings-section-sessionCard"][data-state="open"]',

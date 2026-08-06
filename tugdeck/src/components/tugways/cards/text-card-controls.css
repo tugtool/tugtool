@@ -46,11 +46,10 @@
 .text-card-controls-group > .tug-box-body {
   display: flex;
   flex-direction: column;
-  /* Each control block is centered in the box rather than packed against
-     its leading edge — at the Settings card's width a left-packed row
-     leaves a dead half. Blocks that want the full measure (hints, the path
-     field) declare `width: 100%` and are unaffected. */
-  align-items: center;
+  /* Left-packed: the master/detail panels read top to bottom down their
+     leading edge. Blocks that want the full measure (the switch grids)
+     declare `width: 100%` and stretch as before. */
+  align-items: flex-start;
   gap: var(--tug-space-lg);
 }
 
@@ -67,6 +66,10 @@
   grid-auto-columns: minmax(0, 1fr);
   column-gap: var(--tug-space-xl);
   align-items: center;
+  /* The box body left-packs its children (`align-items: flex-start`), which
+     would shrink this grid to its content — the equal-share columns need the
+     full measure to divide. */
+  width: 100%;
 }
 
 .text-card-controls-switches:has(> :nth-child(4)) {
@@ -82,8 +85,16 @@
 .text-card-controls-group-inline > .tug-box-body {
   flex-direction: row;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
+  align-items: center;
   column-gap: var(--tug-space-xl);
+}
+
+/* On one line with the other Tabs & Spaces controls, the switch pair sizes
+   to its labels rather than claiming equal shares of the row. */
+.text-card-controls-group-inline .text-card-controls-switches {
+  display: flex;
+  width: auto;
 }
 
 /* Label + numeric field on one row (Spaces per tab). */
@@ -93,3 +104,4 @@
   align-items: center;
   gap: var(--tug-space-md);
 }
+

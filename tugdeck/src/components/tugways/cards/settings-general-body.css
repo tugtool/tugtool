@@ -3,17 +3,19 @@
    ----------------------------------------------------------------------------
    App-wide preferences, hosted by the Settings card's General section: the
    default-project-directory box with its path field and explanatory hint, and
-   the ⌘R slot-stack choice. Structure mirrors .settings-app (settings-app-body.css)
-   — the same legend-out-of-flow treatment, for the same WebKit reason.
+   the ⌘R slot-stack choice. Each group is a bordered TugBox with a legend
+   painted on the border, its controls left-aligned inside — the master/detail
+   panels read top to bottom down their leading edge. Structure mirrors
+   .settings-app (settings-app-body.css) — the same legend-out-of-flow
+   treatment, for the same WebKit reason.
    ----------------------------------------------------------------------------- */
 
 .settings-general {
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-2xl);
-  /* Extra top room: the first box's legend overhangs above its border,
-     and the accordion header band sits directly on top of it. */
-  padding: var(--tug-space-2xl) 0 var(--tug-space-xs);
+  /* Room for the first box's legend, which overhangs above its border. */
+  padding-top: var(--tug-space-md);
 }
 
 .settings-general-group {
@@ -45,25 +47,21 @@
   inline-size: max-content;
 }
 
-/* Layout lives on the body div, never the fieldset. */
+/* Layout lives on the body div, never the fieldset. Left-packed. */
 .settings-general-group > .tug-box-body {
   display: flex;
   flex-direction: column;
-  /* Each control block is centered in the box rather than packed against
-     its leading edge — at the Settings card's width a left-packed row
-     leaves a dead half. Blocks that want the full measure (hints, the path
-     field) declare `width: 100%` and are unaffected. */
-  align-items: center;
+  align-items: flex-start;
   gap: var(--tug-space-lg);
 }
 
-/* The chooser takes a share of the box rather than all of it — a path is
-   rarely as long as this card is wide, and a field stretched edge to edge
-   reads as the box's whole subject. Its input flexes within that share; the
-   Browse… button stays square at its intrinsic size. */
+/* The chooser takes a readable measure rather than the whole box — a path
+   is rarely as long as the card is wide. Its input flexes within that share;
+   the Browse… button stays square at its intrinsic size. */
 .settings-general-field {
   display: flex;
-  width: 75%;
+  width: 100%;
+  max-width: 34rem;
 }
 
 .settings-general-field > .tug-file-chooser {
@@ -71,24 +69,10 @@
   min-width: 0;
 }
 
-/* The chord choice sizes to its own segments rather than filling the box —
-   two long labels stretched edge to edge read as a toolbar, not a choice.
-   Centering comes from the box body. */
-
-/* TugLabel is inline-flex by default, which shrinks to content and wraps at
-   odd points; make this instance a full-width block. The descendant selector
-   outranks `.tug-label`.
-
-   No measure clamp: the hint runs the full width its box gives it, and the
-   box's generous inset is the margin. A clamp here would leave a ragged column
-   of text in a wide card — the copy is kept to two lines instead. */
+/* Hints are prose: left-aligned under their control, clamped to a readable
+   measure so a wide card never stretches a sentence across its whole width. */
 .settings-general .settings-general-hint {
-  display: flex;
-  width: 100%;
-  justify-content: center;
-  text-align: center;
-  /* Even out the ragged last line — a centered two-line hint whose second
-     line is a third the length of the first reads as a stray fragment. */
-  text-wrap: balance;
+  display: block;
+  max-width: 60ch;
   line-height: var(--tug-line-height-lg);
 }

@@ -352,7 +352,7 @@ export function SettingsSessionCardBody() {
               affects freshly-spawned cards. All three controls are the same
               chips + sheets as the Z4B row, bound to the deck defaults
               through the adapter — one editor, identical labels. */}
-          <div className="settings-session-card-row settings-session-card-assistant-row">
+          <div className="settings-session-card-row">
             <PermissionModeChip
               sessionMetadataStore={defaultsAdapter}
               onOpenSheet={openPermissionSheet}

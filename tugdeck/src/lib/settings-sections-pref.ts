@@ -1,23 +1,20 @@
 /**
- * settings-sections-pref.ts — which Settings sections the reader has collapsed.
+ * settings-sections-pref.ts — which Settings section the reader is on.
  *
- * The Settings card stacks its preference groups in one accordion. What is
- * persisted is the **collapsed** set, not the open set: an absent key means
- * nothing is collapsed, so a fresh profile opens with every section expanded,
- * and a section added later is expanded on its first appearance without a
- * migration.
+ * The Settings card is a master/detail tab view: a sidebar of sections on the
+ * left, one panel on the right. What is persisted is the **selected section**,
+ * so reopening Settings lands the reader where they last were. An absent key
+ * (never set) reads as `null` and the card falls back to the first section.
  *
- * A missing entry (never set) and an empty array (the reader re-expanded
- * everything) are distinct states, so `parseSettingsCollapsedSections` returns
- * `null` for the former and `[]` for the latter. Ids outside
- * {@link SETTINGS_SECTION_IDS} are dropped on parse, which is also what retires
- * a `"keyboard"` entry written by a build that still hosted the keymap
- * configurator inside Settings.
+ * Ids outside {@link SETTINGS_SECTION_IDS} read as never-set, which is how a
+ * stored id retired by a later build stops steering the card. (Profiles
+ * written by the accordion era may still hold a `collapsedSections` entry in
+ * this domain; nothing reads it anymore.)
  *
  * Persisted deck-wide through tugbank defaults
- * (`/api/defaults/dev.tugtool.settings-card/collapsedSections`, [D07],
+ * (`/api/defaults/dev.tugtool.settings-card/selectedSection`, [D07],
  * `feedback_no_localstorage`), not per card: there is at most one Settings
- * card, and how a reader arranges it is about the reader.
+ * card, and where a reader left it is about the reader.
  *
  * Laws: [L02] the tugbank cache enters React through `useTugbankValue`.
  *
@@ -30,11 +27,11 @@ import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import type { TaggedValue } from "@/lib/tugbank-client";
 
-/** One collapsible section of the Settings card. */
+/** One section of the Settings card. */
 export type SettingsSectionId = "general" | "sessionCard" | "textCard" | "app";
 
 export const SETTINGS_SECTIONS_DOMAIN = "dev.tugtool.settings-card";
-export const SETTINGS_COLLAPSED_KEY = "collapsedSections";
+export const SETTINGS_SELECTED_KEY = "selectedSection";
 
 /** Every section, in the order the card presents them. */
 export const SETTINGS_SECTION_IDS: readonly SettingsSectionId[] = [
@@ -44,71 +41,58 @@ export const SETTINGS_SECTION_IDS: readonly SettingsSectionId[] = [
   "app",
 ];
 
-/** Nothing collapsed — the first-run arrangement. */
-export const DEFAULT_SETTINGS_COLLAPSED: readonly SettingsSectionId[] = [];
+/** Where a profile that has never chosen lands: the first section. */
+export const DEFAULT_SETTINGS_SECTION: SettingsSectionId = "general";
 
 /**
- * Parse a persisted collapsed-section list; `null` when nothing has ever been
- * stored. Unknown ids are dropped, and the result keeps
- * {@link SETTINGS_SECTION_IDS} order.
+ * Parse a persisted selected section; `null` when nothing valid has ever been
+ * stored. An unknown id reads as never-set rather than as a choice.
  */
-export function parseSettingsCollapsedSections(
+export function parseSettingsSelectedSection(
   entry: TaggedValue | undefined,
-): readonly SettingsSectionId[] | null {
-  if (entry === undefined || !Array.isArray(entry.value)) return null;
+): SettingsSectionId | null {
+  if (entry === undefined || typeof entry.value !== "string") return null;
   const stored = entry.value;
-  return SETTINGS_SECTION_IDS.filter((id) => stored.includes(id));
+  return SETTINGS_SECTION_IDS.includes(stored as SettingsSectionId)
+    ? (stored as SettingsSectionId)
+    : null;
 }
 
 /**
- * The stored form of a collapsed set: known ids only, in
- * {@link SETTINGS_SECTION_IDS} order. What {@link writeSettingsCollapsedSections}
- * puts on the wire and what {@link parseSettingsCollapsedSections} reads back.
- */
-export function normalizeSettingsCollapsedSections(
-  collapsed: readonly string[],
-): SettingsSectionId[] {
-  return SETTINGS_SECTION_IDS.filter((id) => collapsed.includes(id));
-}
-
-/**
- * Persist the collapsed set: optimistic local-cache write (so
+ * Persist the selected section: optimistic local-cache write (so
  * `useTugbankValue` readers re-render instantly) plus the HTTP PUT. A failed
  * PUT logs and otherwise vanishes — the cache holds for the session.
  */
-export function writeSettingsCollapsedSections(
-  collapsed: readonly string[],
-): void {
-  const value = normalizeSettingsCollapsedSections(collapsed);
+export function writeSettingsSelectedSection(section: SettingsSectionId): void {
   const client = getTugbankClient();
   if (client !== null) {
-    client.setLocalValue(SETTINGS_SECTIONS_DOMAIN, SETTINGS_COLLAPSED_KEY, {
-      kind: "json",
-      value,
+    client.setLocalValue(SETTINGS_SECTIONS_DOMAIN, SETTINGS_SELECTED_KEY, {
+      kind: "string",
+      value: section,
     });
   }
-  fetch(`/api/defaults/${SETTINGS_SECTIONS_DOMAIN}/${SETTINGS_COLLAPSED_KEY}`, {
+  fetch(`/api/defaults/${SETTINGS_SECTIONS_DOMAIN}/${SETTINGS_SELECTED_KEY}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind: "json", value }),
+    body: JSON.stringify({ kind: "string", value: section }),
   }).catch((err) => {
     console.warn("[settings-sections-pref] PUT failed:", err);
   });
 }
 
-/** The persisted collapsed set plus its setter — the accordion's state. */
-export function useSettingsCollapsedSections(): {
-  collapsed: readonly SettingsSectionId[];
-  setCollapsed: (next: readonly string[]) => void;
+/** The persisted selection plus its setter — the tab view's state. */
+export function useSettingsSelectedSection(): {
+  selected: SettingsSectionId;
+  setSelected: (next: SettingsSectionId) => void;
 } {
-  const stored = useTugbankValue<readonly SettingsSectionId[] | null>(
+  const stored = useTugbankValue<SettingsSectionId | null>(
     SETTINGS_SECTIONS_DOMAIN,
-    SETTINGS_COLLAPSED_KEY,
-    parseSettingsCollapsedSections,
+    SETTINGS_SELECTED_KEY,
+    parseSettingsSelectedSection,
     null,
   );
-  const setCollapsed = useCallback((next: readonly string[]) => {
-    writeSettingsCollapsedSections(next);
+  const setSelected = useCallback((next: SettingsSectionId) => {
+    writeSettingsSelectedSection(next);
   }, []);
-  return { collapsed: stored ?? DEFAULT_SETTINGS_COLLAPSED, setCollapsed };
+  return { selected: stored ?? DEFAULT_SETTINGS_SECTION, setSelected };
 }

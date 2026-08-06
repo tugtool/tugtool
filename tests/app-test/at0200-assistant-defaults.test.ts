@@ -162,14 +162,15 @@ async function textAt(app: App, selector: string): Promise<string | null> {
 
 /**
  * Bring up the Settings card's **Session Card** section — where the Assistant
- * box lives. Sections are accordion items, all expanded until the reader
- * collapses one, so this waits for the body rather than clicking a tab.
+ * box lives. Only the selected section's body exists, so this clicks the
+ * sidebar tab and waits for the panel.
  */
 async function openSessionCardSection(app: App): Promise<void> {
   await app.waitForCondition<boolean>(
     `document.querySelector('[data-testid="settings-card"]') !== null`,
     { timeoutMs: 8000 },
   );
+  await app.click('[data-testid="tug-tab-view-tab-sessionCard"]');
   await app.waitForCondition<boolean>(
     `document.querySelector(
       '[data-testid="settings-section-sessionCard"][data-state="open"]',

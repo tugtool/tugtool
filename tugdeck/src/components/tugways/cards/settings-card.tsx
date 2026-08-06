@@ -1,50 +1,45 @@
 /**
  * settings-card.tsx — Settings card (app-level singleton).
  *
- * A single card hosting the app's preference groups, stacked in one
- * `TugAccordion` rather than hidden behind a tab strip. Shown via the app
- * menu's Settings… item (⌘,), which routes through
- * `DeckManager.showSingletonCard("settings")` — at most one Settings card
- * exists at a time.
+ * A single card hosting the app's preference groups in a `TugTabView`: a
+ * sidebar of sections on the left, the selected section's panel on the right
+ * — the macOS System Settings shape. Shown via the app menu's Settings… item
+ * (⌘,), which routes through `DeckManager.showSingletonCard("settings")` — at
+ * most one Settings card exists at a time.
  *
- * Its pane is placed, sized, and imposed like any other card's: it cascades on
- * open and takes a slot under an imposition. Settings is a surface the user
- * arranges alongside the work it is about, not a modal to be dismissed.
+ * Its pane is placed, sized, and imposed like any other card's: it cascades
+ * on open and takes a slot under an imposition. Settings is a surface the
+ * user arranges alongside the work it is about, not a modal to be dismissed.
  *
- * The card grows to its content and lets the pane scroll it, so the scroll
- * offset persists into the card-state bag for free. What is persisted about
- * the sections themselves is the **collapsed** set (see
- * `lib/settings-sections-pref.ts`), so a fresh profile opens with everything
- * expanded.
+ * The card fills its pane and the tab view's detail area owns the scroller,
+ * so the sidebar holds still while a long panel scrolls. What is persisted is
+ * the **selected section** (see `lib/settings-sections-pref.ts`), so a
+ * reopened Settings lands where the reader last was.
  *
- * **A collapsed section's body does not exist.** Radix unmounts closed
- * `Accordion.Content`, so a body's stores are constructed when its section
- * opens and torn down when it closes — live propagation and the model chips'
- * turn-lock hold only while that section is open. Conversely, all-expanded
- * means a first open constructs all four bodies at once, including the Maker
- * body's `getSettings` bridge call. Both are intended.
+ * **An unselected section's body does not exist.** `TugTabViewItem` renders
+ * nothing while unselected, so a body's stores are constructed when its
+ * section is chosen and torn down when the selection leaves — live
+ * propagation holds only while that section is showing.
  *
- * The keymap configurator is not here. It is a `TugListView`, which needs a
- * container with a definite height, and this card deliberately has none — it
- * lives in the Keyboard Shortcuts card (`keyboard-card.tsx`), reachable from
- * the app menu and the Lens.
+ * The keymap configurator is not here — it lives in the Keyboard Shortcuts
+ * card (`keyboard-card.tsx`), reachable from the app menu and the Lens.
  *
- * Laws: the collapsed set is external state read through `useTugbankValue`
- * ([L02] via `useSyncExternalStore`); the accordion dispatches
- * `toggleSectionMulti` through the chain to this card's responder scope
- * ([L11] via `useResponderForm`); layout lives in settings-card.css [L06].
+ * Laws: the selected section is external state read through `useTugbankValue`
+ * ([L02] via `useSyncExternalStore`); the tab view dispatches `selectTab`
+ * through the chain to this card's responder scope ([L11] via
+ * `useResponderForm`); layout lives in settings-card.css [L06].
  *
  * @module components/tugways/cards/settings-card
  */
 
-import React, { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useId, useLayoutEffect, useState } from "react";
 import { FileText, MessageSquareText, Settings2, Wrench } from "lucide-react";
 import { registerCard } from "@/card-registry";
-import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
+import { TugTabView, TugTabViewItem } from "@/components/tugways/tug-tab-view";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import {
   SETTINGS_SECTION_IDS,
-  useSettingsCollapsedSections,
+  useSettingsSelectedSection,
   type SettingsSectionId,
 } from "@/lib/settings-sections-pref";
 import { registerSettingsRevealConsumer } from "@/lib/settings-reveal";
@@ -61,7 +56,7 @@ import "./settings-card.css";
 interface SettingsSectionSpec {
   readonly id: SettingsSectionId;
   readonly label: string;
-  /** Distinct per-section lucide icon, rendered in the trigger. */
+  /** Distinct per-section lucide icon, rendered in the sidebar. */
   readonly Icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
   readonly Body: React.ComponentType;
 }
@@ -81,52 +76,22 @@ const SECTIONS: readonly SettingsSectionSpec[] = [
   { id: "app", label: "Advanced", Icon: Wrench, Body: SettingsAppBody },
 ];
 
-function SectionTrigger({ spec }: { spec: SettingsSectionSpec }) {
-  const { Icon, label } = spec;
-  return (
-    <span className="settings-card-trigger">
-      <Icon size={16} strokeWidth={2} />
-      <span className="settings-card-trigger-label">{label}</span>
-    </span>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // SettingsCardContent
 // ---------------------------------------------------------------------------
 
 export function SettingsCardContent() {
-  const { collapsed, setCollapsed } = useSettingsCollapsedSections();
+  const { selected, setSelected } = useSettingsSelectedSection();
 
-  // Sections a reveal has forced open, held only for this card's lifetime —
-  // the persisted collapsed set is never written by a reveal, so the reader's
-  // own arrangement comes back on the next plain open ([L24] local-data).
-  const [override, setOverride] = useState<readonly SettingsSectionId[]>([]);
+  // A section a reveal has steered to, held only for this card's lifetime —
+  // the persisted selection is never written by a reveal, so the reader's own
+  // place comes back on the next plain open ([L24] local-data). The reader's
+  // own next pick clears it and persists.
+  const [override, setOverride] = useState<SettingsSectionId | null>(null);
+  const active = override ?? selected;
 
-  // Radix's controlled `value` is the OPEN set, while what is stored is the
-  // collapsed one. `useTugbankValue` keeps its parsed snapshot
-  // reference-stable, so memoize the inversion rather than handing Radix a
-  // fresh array identity on every render.
-  const open = useMemo(
-    () =>
-      SETTINGS_SECTION_IDS.filter(
-        (id) => !collapsed.includes(id) || override.includes(id),
-      ),
-    [collapsed, override],
-  );
-
-  const rootRef = useRef<HTMLDivElement | null>(null);
-
-  // A reveal opens the section (transiently) and brings its trigger into view.
-  // Per `tuglaws/scroll-intent.md` the scroller scrolls itself: the pane's
-  // `.tug-pane-content` is this card's scroller, and `scrollIntoView` on the
-  // trigger is the request it answers.
   const reveal = useCallback((section: SettingsSectionId) => {
-    setOverride((prev) => (prev.includes(section) ? prev : [...prev, section]));
-    const trigger = rootRef.current?.querySelector(
-      `[data-testid="settings-section-${section}"] .tug-accordion-trigger`,
-    );
-    trigger?.scrollIntoView({ block: "nearest" });
+    setOverride(section);
   }, []);
 
   // [L03]: register in a layout effect so a request parked before this card
@@ -134,61 +99,48 @@ export function SettingsCardContent() {
   // unregister.
   useLayoutEffect(() => registerSettingsRevealConsumer(reveal), [reveal]);
 
-  // The accordion dispatches `toggleSectionMulti` through the chain to this
-  // responder; the handler inverts the open set back to a collapsed one.
-  const accordionSenderId = useId();
+  // The tab view dispatches `selectTab` through the chain to this responder.
+  const tabViewSenderId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
-    toggleSectionMulti: {
-      [accordionSenderId]: (next: string[]) => {
-        setCollapsed(SETTINGS_SECTION_IDS.filter((id) => !next.includes(id)));
-        // The reader has spoken about these sections, so the reveal's
-        // override stops standing in for them.
-        setOverride((prev) => prev.filter((id) => next.includes(id)));
+    selectTab: {
+      [tabViewSenderId]: (next: string) => {
+        if (!SETTINGS_SECTION_IDS.includes(next as SettingsSectionId)) return;
+        setSelected(next as SettingsSectionId);
+        setOverride(null);
       },
     },
   });
 
-  // One item-container focus stop: Up/Down roves the headers, Space toggles,
-  // Enter descends into a section's content.
+  // One item-container focus stop: Up/Down rove the sidebar and switch the
+  // panel live.
   const focusGroup = useId();
-
-  // The root is both the responder scope's element and the node a reveal
-  // queries for its section trigger.
-  const setRoot = useCallback(
-    (el: HTMLDivElement | null) => {
-      rootRef.current = el;
-      (responderRef as (node: HTMLDivElement | null) => void)(el);
-    },
-    [responderRef],
-  );
 
   return (
     <ResponderScope>
       <div
         className="settings-card"
         data-testid="settings-card"
-        ref={setRoot}
+        ref={responderRef as (el: HTMLDivElement | null) => void}
       >
-        <TugAccordion
-          type="multiple"
-          variant="inset"
-          value={[...open]}
-          senderId={accordionSenderId}
+        <TugTabView
+          value={active}
+          senderId={tabViewSenderId}
           focusGroup={focusGroup}
           focusOrder={0}
           className="settings-card-sections"
         >
           {SECTIONS.map((spec) => (
-            <TugAccordionItem
+            <TugTabViewItem
               key={spec.id}
               value={spec.id}
-              trigger={<SectionTrigger spec={spec} />}
+              label={spec.label}
+              icon={<spec.Icon size={16} strokeWidth={2} />}
               data-testid={`settings-section-${spec.id}`}
             >
               <spec.Body />
-            </TugAccordionItem>
+            </TugTabViewItem>
           ))}
-        </TugAccordion>
+        </TugTabView>
       </div>
     </ResponderScope>
   );
@@ -209,11 +161,10 @@ export function registerSettingsCard(): void {
     defaultMeta: { title: "Settings", icon: "Settings", closable: true },
     hidden: true,
     sizePolicy: {
-      // The session card's envelope. Four expanded sections are taller than
-      // any window, so the card scrolls by design; the room is what keeps the
-      // scrolling from being the whole experience.
-      min: { width: 800, height: 600 },
-      preferred: { width: 800, height: 1200 },
+      // Master/detail wants width more than height: room for the sidebar plus
+      // a comfortable panel measure. A long panel scrolls in the detail area.
+      min: { width: 720, height: 520 },
+      preferred: { width: 900, height: 760 },
     },
   });
 }
