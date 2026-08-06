@@ -9,8 +9,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-2xl);
-  /* Extra top room: the first box's legend overhangs above its border. */
-  padding: var(--tug-space-lg) 0 var(--tug-space-xs);
+  /* Extra top room: the first box's legend overhangs above its border,
+     and the accordion header band sits directly on top of it. */
+  padding: var(--tug-space-2xl) 0 var(--tug-space-xs);
 }
 
 /* Matches .settings-session-card-group: override .tug-box's fit-content so
@@ -49,6 +50,11 @@
 .settings-app-group > .tug-box-body {
   display: flex;
   flex-direction: column;
+  /* Each control block is centered in the box rather than packed against
+     its leading edge — at the Settings card's width a left-packed row
+     leaves a dead half. Blocks that want the full measure (hints, the path
+     field) declare `width: 100%` and are unaffected. */
+  align-items: center;
   gap: var(--tug-space-lg);
 }
 
@@ -60,19 +66,17 @@
   inline-size: max-content;
 }
 
+/* Switch, its label, and the hint on one line. One switch with one sentence
+   about it does not need two rows and the vertical rhythm of a section. */
 .settings-app-switch-row {
   display: flex;
   align-items: center;
+  gap: var(--tug-space-xl);
 }
 
-/* The hint is a TugLabel (size sm, emphasis calm). TugLabel is
-   `inline-flex` by default, which shrinks to content and wraps at odd
-   points; make this instance a full-width block so its text flows as a
-   normal paragraph. The descendant selector outranks `.tug-label` so the
-   display override wins deterministically. The box's generous inset is the
-   margin — see .settings-general-hint for why there is no measure clamp. */
+/* The hint is a TugLabel (size sm, emphasis calm), already `inline-flex`;
+   it just needs the prose line-height, and no wrapping in the middle of the
+   row it shares with the switch. */
 .settings-app .settings-app-hint {
-  display: flex;
-  width: 100%;
   line-height: var(--tug-line-height-lg);
 }

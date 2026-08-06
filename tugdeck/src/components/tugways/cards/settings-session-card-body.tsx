@@ -209,11 +209,10 @@ export function SettingsSessionCardBody() {
           variant="bordered"
           className="settings-session-card-group"
         >
-          {/* 2-column grid (label / slider) so both rows share a single
-              label column auto-sized to the longest entry, keeping labels
-              close to their slider track. Both sliders share `valueWidth`
-              so their value columns also align. Magnification scales the
-              whole transcript subtree (CSS `zoom` on `.session-card-transcript`)
+          {/* Both label/slider pairs on one row (see the grid in
+              settings-session-card-body.css). Both sliders share `valueWidth`
+              so their value boxes match. Magnification scales the whole
+              transcript subtree (CSS `zoom` on `.session-card-transcript`)
               per card; the macOS app's View menu (`WKWebView.pageZoom`)
               still scales the entire window and composes with this. */}
           <div className="settings-session-card-slider-grid">

@@ -11,8 +11,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-2xl);
-  /* Extra top room: the first box's legend overhangs above its border. */
-  padding: var(--tug-space-lg) 0 var(--tug-space-xs);
+  /* Extra top room: the first box's legend overhangs above its border,
+     and the accordion header band sits directly on top of it. */
+  padding: var(--tug-space-2xl) 0 var(--tug-space-xs);
 }
 
 .settings-general-group {
@@ -48,14 +49,21 @@
 .settings-general-group > .tug-box-body {
   display: flex;
   flex-direction: column;
+  /* Each control block is centered in the box rather than packed against
+     its leading edge — at the Settings card's width a left-packed row
+     leaves a dead half. Blocks that want the full measure (hints, the path
+     field) declare `width: 100%` and are unaffected. */
+  align-items: center;
   gap: var(--tug-space-lg);
 }
 
-/* The chooser fills the box: its input flexes, the Browse… button stays
-   square at its intrinsic size. */
+/* The chooser takes a share of the box rather than all of it — a path is
+   rarely as long as this card is wide, and a field stretched edge to edge
+   reads as the box's whole subject. Its input flexes within that share; the
+   Browse… button stays square at its intrinsic size. */
 .settings-general-field {
   display: flex;
-  width: 100%;
+  width: 75%;
 }
 
 .settings-general-field > .tug-file-chooser {
@@ -64,10 +72,8 @@
 }
 
 /* The chord choice sizes to its own segments rather than filling the box —
-   two long labels stretched edge to edge read as a toolbar, not a choice. */
-.settings-general-chord {
-  align-self: flex-start;
-}
+   two long labels stretched edge to edge read as a toolbar, not a choice.
+   Centering comes from the box body. */
 
 /* TugLabel is inline-flex by default, which shrinks to content and wraps at
    odd points; make this instance a full-width block. The descendant selector
@@ -79,5 +85,10 @@
 .settings-general .settings-general-hint {
   display: flex;
   width: 100%;
+  justify-content: center;
+  text-align: center;
+  /* Even out the ragged last line — a centered two-line hint whose second
+     line is a third the length of the first reads as a stray fragment. */
+  text-wrap: balance;
   line-height: var(--tug-line-height-lg);
 }

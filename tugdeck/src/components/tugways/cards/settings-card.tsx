@@ -171,7 +171,7 @@ export function SettingsCardContent() {
       >
         <TugAccordion
           type="multiple"
-          variant="plain"
+          variant="inset"
           value={[...open]}
           senderId={accordionSenderId}
           focusGroup={focusGroup}

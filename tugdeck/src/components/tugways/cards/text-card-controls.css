@@ -46,6 +46,11 @@
 .text-card-controls-group > .tug-box-body {
   display: flex;
   flex-direction: column;
+  /* Each control block is centered in the box rather than packed against
+     its leading edge — at the Settings card's width a left-packed row
+     leaves a dead half. Blocks that want the full measure (hints, the path
+     field) declare `width: 100%` and are unaffected. */
+  align-items: center;
   gap: var(--tug-space-lg);
 }
 
@@ -69,6 +74,16 @@
   grid-auto-columns: auto;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   row-gap: var(--tug-space-lg);
+}
+
+/* A group small enough to be one line stays one line: Tabs & Spaces is two
+   switches and a number, which together are narrower than the box. Wrapping
+   is the escape hatch for a narrow card, not the resting layout. */
+.text-card-controls-group-inline > .tug-box-body {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: var(--tug-space-xl);
 }
 
 /* Label + numeric field on one row (Spaces per tab). */

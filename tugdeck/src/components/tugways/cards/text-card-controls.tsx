@@ -8,8 +8,6 @@
  * Presentational + chain-wired: the caller passes the current
  * `settings` and an `onChange` that persists a partial; the controls
  * dispatch through this component's own `useResponderForm` responder.
- * The deck-wide `openTarget` behavior is NOT here — it is a
- * defaults-only concern rendered by the settings body.
  *
  * Laws: controls emit actions to this panel's responder ([L11]);
  * layout lives in text-card-controls.css [L06]; composes real Tug
@@ -68,7 +66,7 @@ export function TextCardControls({ settings, onChange }: TextCardControlsProps) 
           label="Tabs & Spaces"
           labelPosition="legend"
           variant="bordered"
-          className="text-card-controls-group"
+          className="text-card-controls-group text-card-controls-group-inline"
         >
           <div className="text-card-controls-switches">
             <TugSwitch

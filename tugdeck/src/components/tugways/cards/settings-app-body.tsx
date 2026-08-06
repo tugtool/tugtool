@@ -91,12 +91,12 @@ export function SettingsAppBody() {
               size="md"
               data-testid="settings-maker-mode-switch"
             />
+            <TugLabel size="sm" emphasis="calm" className="settings-app-hint">
+              {bridgeAvailable
+                ? "Adds the Maker menu and serves from the source tree. Reloads the app."
+                : "Available inside the Tug app."}
+            </TugLabel>
           </div>
-          <TugLabel size="sm" emphasis="calm" className="settings-app-hint">
-            {bridgeAvailable
-              ? "Shows the Maker menu and serves the app from the dev source tree. Changing this reloads the app."
-              : "Available when running inside the Tug app."}
-          </TugLabel>
         </TugBox>
       </div>
     </ResponderScope>

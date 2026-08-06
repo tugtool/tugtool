@@ -11,8 +11,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-2xl);
-  /* Extra top room: the first box's legend overhangs above its border. */
-  padding: var(--tug-space-lg) 0 var(--tug-space-xs);
+  /* Extra top room: the first box's legend overhangs above its border,
+     and the accordion header band sits directly on top of it. */
+  padding: var(--tug-space-2xl) 0 var(--tug-space-xs);
 }
 
 /* Each settings group is a TugBox with a `<legend>` label. The body
@@ -54,6 +55,11 @@
 .settings-session-card-group > .tug-box-body {
   display: flex;
   flex-direction: column;
+  /* Each control block is centered in the box rather than packed against
+     its leading edge — at the Settings card's width a left-packed row
+     leaves a dead half. Blocks that want the full measure (hints, the path
+     field) declare `width: 100%` and are unaffected. */
+  align-items: center;
   gap: var(--tug-space-lg);
 }
 
@@ -77,17 +83,22 @@
   margin-top: var(--tug-space-sm);
 }
 
-/* Two-column grid (label / slider) for the Response group. The
-   `auto` first column sizes to the longest label across all rows
-   (so "Magnification" and "Entry Gap" share one label column);
-   the `1fr` second column lets the slider fill the remaining
-   width. `column-gap` keeps the label hugging its slider track. */
+/* Both Response sliders on one row: label, track, label, track. A slider
+   this coarse (21 magnification steps, 49 gap steps) gains nothing from a
+   full-width track, and two of them stacked made the box's whole height
+   about two numbers. */
 .settings-session-card-slider-grid {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: repeat(2, auto minmax(0, 15rem));
   column-gap: var(--tug-space-md);
   row-gap: var(--tug-space-md);
   align-items: center;
+}
+
+/* The second pair takes more air than the gap inside a pair, so the row
+   reads as two controls rather than four things. */
+.settings-session-card-slider-grid > :nth-child(3) {
+  margin-inline-start: var(--tug-space-2xl);
 }
 
 .settings-session-card-slider-label {

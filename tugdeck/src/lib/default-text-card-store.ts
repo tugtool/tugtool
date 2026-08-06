@@ -1,10 +1,10 @@
 /**
  * DefaultTextCardStore — subscribable store for the *deck-wide*
- * Text Card defaults the Settings card's "Text Card" tab edits.
+ * Text Card defaults the Settings card's "Text Card" section edits.
  *
- * A single deck-wide value ({@link TextCardDefaults}): the view
- * settings plus `openTarget` a brand-new Text card adopts on first open
- * when it has nothing persisted of its own. No CSS/DOM side effects — it
+ * A single deck-wide value ({@link TextCardSettings}): the view settings
+ * a brand-new Text card adopts on first open when it has nothing
+ * persisted of its own. No CSS/DOM side effects — it
  * just reads and writes one tugbank json blob at
  * `dev.tugtool.text-card/settings`. Mirrors `DefaultModelStore` /
  * `EditorSettingsStore`.
@@ -23,42 +23,42 @@
 import { getTugbankClient } from "./tugbank-singleton";
 import { putTextCardDefaults } from "@/settings-api";
 import {
-  DEFAULT_TEXT_CARD_DEFAULTS,
+  DEFAULT_TEXT_CARD_SETTINGS,
   TEXT_CARD_DEFAULTS_DOMAIN,
   TEXT_CARD_DEFAULTS_KEY,
-  parseTextCardDefaults,
-  type TextCardDefaults,
+  parseTextCardSettings,
+  type TextCardSettings,
 } from "./text-card-settings";
 
 export class DefaultTextCardStore {
-  private _defaults: TextCardDefaults;
+  private _defaults: TextCardSettings;
   private _listeners: Set<() => void> = new Set();
   private _unsubscribeTugbank: (() => void) | null = null;
 
   constructor() {
-    this._defaults = this._readFromCache() ?? { ...DEFAULT_TEXT_CARD_DEFAULTS };
+    this._defaults = this._readFromCache() ?? { ...DEFAULT_TEXT_CARD_SETTINGS };
 
     const client = getTugbankClient();
     if (client) {
       this._unsubscribeTugbank = client.onDomainChanged((domain) => {
         if (domain !== TEXT_CARD_DEFAULTS_DOMAIN) return;
-        const fresh = this._readFromCache() ?? { ...DEFAULT_TEXT_CARD_DEFAULTS };
+        const fresh = this._readFromCache() ?? { ...DEFAULT_TEXT_CARD_SETTINGS };
         this._defaults = fresh;
         for (const listener of this._listeners) listener();
       });
     }
   }
 
-  private _readFromCache(): TextCardDefaults | null {
+  private _readFromCache(): TextCardSettings | null {
     const client = getTugbankClient();
     if (!client) return null;
-    return parseTextCardDefaults(
+    return parseTextCardSettings(
       client.get(TEXT_CARD_DEFAULTS_DOMAIN, TEXT_CARD_DEFAULTS_KEY),
     );
   }
 
   /** Current deck-wide defaults. (L02 — useSyncExternalStore) */
-  getSnapshot = (): TextCardDefaults => this._defaults;
+  getSnapshot = (): TextCardSettings => this._defaults;
 
   /** Subscribe to changes. Returns unsubscribe. (L02) */
   subscribe = (listener: () => void): (() => void) => {
@@ -72,7 +72,7 @@ export class DefaultTextCardStore {
    * Update the deck-wide defaults. Optimistically reflects locally and
    * across open cards via `setLocalValue`, then persists.
    */
-  set(partial: Partial<TextCardDefaults>): void {
+  set(partial: Partial<TextCardSettings>): void {
     const next = { ...this._defaults, ...partial };
     this._defaults = next;
     for (const listener of this._listeners) listener();

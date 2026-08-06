@@ -9,10 +9,8 @@ import { describe, test, expect } from "bun:test";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import {
   DEFAULT_TEXT_CARD_SETTINGS,
-  DEFAULT_TEXT_CARD_OPEN_TARGET,
   clampTabSize,
   parseTextCardSettings,
-  parseTextCardDefaults,
   resolveTextCardSettings,
   type TextCardSettings,
 } from "@/lib/text-card-settings";
@@ -63,27 +61,20 @@ describe("parseTextCardSettings", () => {
   });
 });
 
-describe("parseTextCardDefaults", () => {
-  test("adds openTarget; defaults it when missing or invalid", () => {
-    expect(parseTextCardDefaults(json({ openTarget: "reuse" }))!.openTarget).toBe("reuse");
-    expect(parseTextCardDefaults(json({ openTarget: "newTab" }))!.openTarget).toBe("newTab");
-    expect(parseTextCardDefaults(json({}))!.openTarget).toBe(DEFAULT_TEXT_CARD_OPEN_TARGET);
-    expect(parseTextCardDefaults(json({ openTarget: "bogus" }))!.openTarget).toBe(
-      DEFAULT_TEXT_CARD_OPEN_TARGET,
-    );
-    expect(parseTextCardDefaults(undefined)).toBeNull();
-  });
-});
-
 describe("resolveTextCardSettings", () => {
   const persisted: TextCardSettings = { ...DEFAULT_TEXT_CARD_SETTINGS, tabSize: 2 };
-  test("persisted wins; else defaults (minus openTarget); else built-in", () => {
+  test("persisted wins; else the deck-wide defaults; else built-in", () => {
     expect(resolveTextCardSettings(persisted, null).tabSize).toBe(2);
-    const defaults = { ...DEFAULT_TEXT_CARD_SETTINGS, tabSize: 8, openTarget: "reuse" as const };
-    const r = resolveTextCardSettings(null, defaults);
-    expect(r.tabSize).toBe(8);
-    expect("openTarget" in r).toBe(false);
+    const defaults = { ...DEFAULT_TEXT_CARD_SETTINGS, tabSize: 8 };
+    expect(resolveTextCardSettings(null, defaults).tabSize).toBe(8);
     expect(resolveTextCardSettings(null, null)).toEqual(DEFAULT_TEXT_CARD_SETTINGS);
+  });
+
+  test("a stored blob still carrying the retired openTarget field drops it", () => {
+    const parsed = parseTextCardSettings(json({ tabSize: 8, openTarget: "reuse" }));
+    const resolved = resolveTextCardSettings(null, parsed);
+    expect(resolved.tabSize).toBe(8);
+    expect("openTarget" in resolved).toBe(false);
   });
 });
 

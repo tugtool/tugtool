@@ -9,24 +9,44 @@
 .settings-card {
   display: flex;
   flex-direction: column;
-  padding: 12px 16px 16px;
+  /* The trailing inset reserves the pane scroller's gutter. The scroller is
+     `.tug-pane-content`, shared by every card, so `scrollbar-gutter: stable`
+     there would be a change to all of them; a card that is always taller than
+     its pane reserves the room itself. The bar is drawn INSIDE the scroller's
+     padding box, so the reservation is a full scrollbar width ON TOP of the
+     card's own inset — anything less and the bar still lands on content.
+     Default at point of use so an ancestor could tune it ([L20]). */
+  padding: 12px calc(16px + var(--tugx-settings-scrollbar-gutter, 15px)) 16px 16px;
   color: var(--tug7-element-global-text-normal-default-rest);
   font-family: var(--tug-font-family-sans);
 }
 
-/* Sections stand apart by spacing and by the header's own tone rather than by
-   rules between them (the accordion is `variant="plain"`). A stack of four
-   dividers reads as a table; four banded headers with air around them read as
-   four places. */
-.settings-card-sections {
-  gap: var(--tug-space-2xl);
+/* Each section is its own enclosure with air around it (the accordion's
+   `inset` variant), rather than four bands separated by rules. A stack of
+   dividers reads as a table; four boxes read as four places.
+
+   The gap has to be wide enough that the space between two sections never
+   reads as belonging to either — narrower than this and the boxes look like
+   one interrupted frame. */
+.settings-card .settings-card-sections {
+  gap: calc(var(--tug-space-2xl) + var(--tug-space-lg));
 }
 
+/* Muted, not the full text color: the frame's job is to say where a section
+   ends, and at a hairline's weight the default text tone shouts it. */
+.settings-card .tug-accordion-item {
+  border-color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The header band. The `inset` variant clips each item to its own radius, so
+   the band takes the box's top corners and needs none of its own to keep in
+   step. */
 /* @tug-renders-on: --tug7-surface-global-primary-normal-sunken-rest */
 .settings-card .tug-accordion-trigger {
   background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
   color: var(--tugx-block-header-text);
   padding: var(--tug-space-md) var(--tug-space-lg);
+  border-radius: 0;
 }
 
 .settings-card-trigger {
