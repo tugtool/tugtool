@@ -28,7 +28,7 @@ import { useTugbankValue } from "@/lib/use-tugbank-value";
 import type { TaggedValue } from "@/lib/tugbank-client";
 
 /** One section of the Settings card. */
-export type SettingsSectionId = "general" | "sessionCard" | "textCard" | "app";
+export type SettingsSectionId = "general" | "sessionCard" | "textCard";
 
 export const SETTINGS_SECTIONS_DOMAIN = "dev.tugtool.settings-card";
 export const SETTINGS_SELECTED_KEY = "selectedSection";
@@ -38,7 +38,6 @@ export const SETTINGS_SECTION_IDS: readonly SettingsSectionId[] = [
   "general",
   "sessionCard",
   "textCard",
-  "app",
 ];
 
 /** Where a profile that has never chosen lands: the first section. */

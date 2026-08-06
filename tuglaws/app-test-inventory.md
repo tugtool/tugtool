@@ -407,7 +407,7 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 #### [AT0070] TugDevPanel toggle round-trip
 - **Status:** ✅ closed (reused tag — see note). Originally claimed at Phase E.9 as a deferred FileBlock CM6 line-relative-restore tag (the line-relative writer/reader semantics remain unit-test-covered; AT0061 exercises the same attribute channel). The app-test slot was later filled with the TugDevPanel toggle scenario below.
 - **Tests:** `at0070-dev-panel-toggle.test.ts`.
-- **Summary:** TugDevPanel toggle round-trip via the `show-dev-panel-toggle` action (Step 20.3.1). Drives the action directly rather than the `⌥⌘/` chord — under the app-test harness maker mode reads false on the unseeded tugbank, so the Maker menu (and its "Show Dev Panel" item) is hidden.
+- **Summary:** TugDevPanel toggle round-trip via the `show-dev-panel-toggle` action (Step 20.3.1). Drives the action directly rather than the `⌥⌘/` chord — the app-test harness pins maker mode off, so the Maker menu (and its "Show Dev Panel" item) is hidden.
 
 #### [AT0071] TugDevPanel active-tab persistence
 - **Status:** ✅ closed (reused tag — see note). Originally a content-owning-focus / find-row tag retired at Phase E.12 when per-block Find was removed; the original fixture and test file were deleted. The app-test slot was later filled with the TugDevPanel active-tab persistence scenario below.
@@ -868,9 +868,7 @@ The largest cluster — the unified focus ring / selection color contract, per-c
 - **Summary:** Deck-state-tier menu validation (items enable/disable per deck state).
 
 #### [AT0170] Maker-menu gate
-- **Status:** ✅ closed.
-- **Tests:** `at0170-maker-mode-gate.test.ts`.
-- **Summary:** The Maker menu's tugbank gate (hidden unless maker mode is enabled).
+- **Status:** ⬛ retired. AT0170 gated the Maker menu's `maker-mode-enabled` tugbank key by seeding it true and false and reading the menu's `hidden` flag. That key is gone: maker mode is derived from the build profile (on in debug bundles, absent from release ones) with no setting to seed, so there is nothing left for a seeded launch to vary. The surviving fact — the Maker menu is hidden under the app-test harness — is asserted by **AT0168**. Test file `at0170-maker-mode-gate.test.ts` deleted. The tag number is retired (not reused).
 
 #### [AT0171] Session-menu card-type validation
 - **Status:** ✅ closed.

@@ -118,7 +118,7 @@ All enablement flows through `AppDelegate.validateMenuItem(_:)`, keyed on the it
 
 An item absent from `commands` falls through to whichever tier still owns it, which is what let the migration proceed one item at a time: an entry is mirrored in the same change that deletes its hand-rolled case, so exactly one definition of its enablement is ever live.
 
-The Session menu is **disabled, not hidden** — stable menu bars preserve discoverability. The Maker menu is the deliberate exception: it hides behind the `maker-mode-enabled` tugbank gate, because maker mode is a *mode*, not a focus state. A hidden menu's chords fall through to the web view unless the item sets `allowsKeyEquivalentWhenHidden`, so the Maker menu's ⌘L / ⌥⌘L / ⇧⌘R / ⌘T / ⌥⌘C reach JS while maker mode is off.
+The Session menu is **disabled, not hidden** — stable menu bars preserve discoverability. The Maker menu is the deliberate exception: it hides when maker mode is off, because maker mode is a *mode*, not a focus state. Maker mode is not a setting — it is derived from the build profile (on in debug bundles, off in release ones and under the app-test harness), so the menu is present-but-hidden in exactly the builds that were never meant to show it. A hidden menu's chords fall through to the web view unless the item sets `allowsKeyEquivalentWhenHidden`, so the Maker menu's ⌘L / ⌥⌘L / ⇧⌘R / ⌘T reach JS while maker mode is off.
 
 ## Chords: four layers, and the menu bar is the outermost
 

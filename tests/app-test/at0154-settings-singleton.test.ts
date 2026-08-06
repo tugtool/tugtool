@@ -6,7 +6,7 @@
  *
  *   Boot an empty deck. Dispatch the `show-card` control action the
  *   Swift Settings… (⌘,) menu item sends. Verify the Settings card
- *   appears with its four preference sections in the tab view's sidebar
+ *   appears with its three preference sections in the tab view's sidebar
  *   and exactly one panel showing.
  *   Open a second (hello) card so the Settings pane is no longer top
  *   of z-order, then re-dispatch: no duplicate card is created and the
@@ -45,7 +45,7 @@ describe.skipIf(!SHOULD_RUN)("at0154: Settings card is a singleton", () => {
   test("show-card settings creates once with its sections, raises on repeat", async () => {
     const app = await launchTugApp({ ...NO_AX, testName: "at0154-settings-singleton" });
     try {
-      // ---- First invocation: card is created with its four sections.
+      // ---- First invocation: card is created with its three sections.
       await app.evalJS(
         `window.__tug.dispatchControlAction("show-card", { component: "settings" })`,
       );
@@ -57,7 +57,7 @@ describe.skipIf(!SHOULD_RUN)("at0154: Settings card is a singleton", () => {
       await app.waitForCondition<boolean>(
         `document.querySelectorAll(
           '[data-testid="settings-card"] [data-testid^="tug-tab-view-tab-"]',
-        ).length === 4`,
+        ).length === 3`,
       );
       expect(
         await app.evalJS<string[]>(
@@ -69,7 +69,7 @@ describe.skipIf(!SHOULD_RUN)("at0154: Settings card is a singleton", () => {
             (el.querySelector(".tug-tab-view-tab-label")?.textContent || "").trim(),
           )`,
         ),
-      ).toEqual(["General", "Session Card", "Text Card", "Advanced"]);
+      ).toEqual(["General", "Session Card", "Text Card"]);
       expect(
         await app.evalJS<number>(
           `document.querySelectorAll(

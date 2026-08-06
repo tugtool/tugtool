@@ -33,7 +33,7 @@
  */
 
 import React, { useCallback, useId, useLayoutEffect, useState } from "react";
-import { FileText, MessageSquareText, Settings2, Wrench } from "lucide-react";
+import { FileText, MessageSquareText, Settings2 } from "lucide-react";
 import { registerCard } from "@/card-registry";
 import { TugTabView, TugTabViewItem } from "@/components/tugways/tug-tab-view";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
@@ -45,7 +45,6 @@ import {
 import { registerSettingsRevealConsumer } from "@/lib/settings-reveal";
 import { SettingsSessionCardBody } from "./settings-session-card-body";
 import { SettingsTextCardBody } from "./settings-text-card-body";
-import { SettingsAppBody } from "./settings-app-body";
 import { SettingsGeneralBody } from "./settings-general-body";
 import "./settings-card.css";
 
@@ -63,8 +62,7 @@ interface SettingsSectionSpec {
 
 const SECTIONS: readonly SettingsSectionSpec[] = [
   // "General" wears a sliders icon for app-wide preferences; "Session Card"
-  // wears the session card's own icon; "Text Card" a file icon; "Advanced" a
-  // tool icon for the settings that change how the app itself runs.
+  // wears the session card's own icon; "Text Card" a file icon.
   { id: "general", label: "General", Icon: Settings2, Body: SettingsGeneralBody },
   {
     id: "sessionCard",
@@ -73,7 +71,6 @@ const SECTIONS: readonly SettingsSectionSpec[] = [
     Body: SettingsSessionCardBody,
   },
   { id: "textCard", label: "Text Card", Icon: FileText, Body: SettingsTextCardBody },
-  { id: "app", label: "Advanced", Icon: Wrench, Body: SettingsAppBody },
 ];
 
 // ---------------------------------------------------------------------------

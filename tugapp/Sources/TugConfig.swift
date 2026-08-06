@@ -21,10 +21,6 @@ enum TugConfig {
     static let domain = "dev.tugtool.app"
 
     static let keySourceTreePath = "source-tree-path"
-    /// Maker mode — the gate on the app-maker tooling (Maker menu, dev
-    /// serving). The user-facing name for what the tugcast wire still
-    /// calls dev mode.
-    static let keyMakerModeEnabled = "maker-mode-enabled"
     static let keyWindowBackground = "window-background"
     /// Suggested Project Path the Session picker pre-fills when the user
     /// has no Recent Project Paths yet. Refreshed by AppDelegate at

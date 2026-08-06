@@ -48,11 +48,6 @@ enum TestHarnessUserScript {
             forMainFrameOnly: true
         )
         config.userContentController.addUserScript(script)
-
-        // Web Inspector is already enabled unconditionally in MainWindow
-        // today; we set it again here as a belt-and-suspenders for the
-        // test-mode path in case the default ever changes.
-        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
     }
 }
 #endif

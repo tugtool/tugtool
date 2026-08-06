@@ -229,36 +229,6 @@ describe("initActionDispatch: reload", () => {
   });
 });
 
-// ---- retired: set-maker-mode ----
-
-describe("initActionDispatch: set-maker-mode", () => {
-  beforeEach(() => {
-    _resetForTest();
-  });
-
-  it("is no longer a door — the maker gate flows through the reverse bridge", () => {
-    // Nothing anywhere sent this wire: the maker gate is set by the Swift
-    // host's `setMakerMode` bridge in the other direction, so the handler
-    // was a door with no sender.
-    const conn = createMockConnection();
-    const deck = createMockDeckManager();
-    initActionDispatch(conn as any, deck as any);
-
-    const posted: unknown[] = [];
-    (globalThis as Record<string, unknown>).webkit = {
-      messageHandlers: {
-        setMakerMode: { postMessage: (v: unknown) => posted.push(v) },
-      },
-    };
-
-    dispatchAction({ action: "set-maker-mode", enabled: false });
-
-    expect(posted.length).toBe(0);
-
-    delete (globalThis as Record<string, unknown>).webkit;
-  });
-});
-
 // ---- source-tree handler ----
 
 describe("initActionDispatch: source-tree", () => {

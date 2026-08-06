@@ -469,10 +469,10 @@ pub enum HostCommands {
     ///
     /// Posts a JSON action to the tugcast /api/tell endpoint.
     #[command(
-        long_about = "Send an action to tugcast via HTTP POST.\n\nPosts a JSON body to http://127.0.0.1:<port>/api/tell.\nThe body contains {\"action\": \"<ACTION>\", ...params}.\n\nParameters are specified with -p KEY=VALUE (repeatable).\nValues are auto-coerced: true/false -> bool, null -> null,\nintegers -> number, floats -> number, everything else -> string.\n\nExamples:\n  tugutil host tell restart\n  tugutil host tell show-card -p component=about\n  tugutil host tell set-maker-mode -p enabled=true"
+        long_about = "Send an action to tugcast via HTTP POST.\n\nPosts a JSON body to http://127.0.0.1:<port>/api/tell.\nThe body contains {\"action\": \"<ACTION>\", ...params}.\n\nParameters are specified with -p KEY=VALUE (repeatable).\nValues are auto-coerced: true/false -> bool, null -> null,\nintegers -> number, floats -> number, everything else -> string.\n\nExamples:\n  tugutil host tell restart\n  tugutil host tell show-card -p component=about\n  tugutil host tell toggle-lens"
     )]
     Tell {
-        /// Action name (e.g., reload, show-card, set-maker-mode)
+        /// Action name (e.g., reload, show-card, toggle-lens)
         action: String,
 
         /// Tugcast server port (overrides --instance and CLI discovery).

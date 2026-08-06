@@ -5,19 +5,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var window: MainWindow!
     private var processManager = ProcessManager()
 
-    /// Maker mode — the user-facing gate on the app-maker tooling: the
-    /// Maker menu, the dev-info overlay, and (outside the app-test
-    /// harness) dev serving via Vite. Persisted in tugbank as
-    /// `maker-mode-enabled`; the tugcast wire keeps its `dev_mode`
-    /// verbs — see the boundary note at the `sendDevMode` feed sites.
-    private var makerModeEnabled = false
-
     /// True when the app-test harness drives this launch. The harness
     /// pins production *serving* (tugcast's prebuilt `dist/`, no Vite —
-    /// ~700ms faster cold launch) without overriding the user-visible
-    /// maker-mode preference, so seeded-tugbank tests can exercise the
-    /// Maker menu gate.
+    /// ~700ms faster cold launch), and reads as non-maker so menu-
+    /// structure assertions don't depend on the build profile.
     private let isAppTestHarness = ProcessInfo.processInfo.environment["TUGAPP_APP_TEST"] == "1"
+
+    /// Maker mode — the gate on the app-maker tooling: the Maker menu,
+    /// the dev-info overlay, and (outside the app-test harness) dev
+    /// serving via Vite. Derived from the build profile baked into
+    /// Info.plist by capture-build-info.sh: on in debug bundles, absent
+    /// from release ones. There is no setting — a maker is someone
+    /// running a debug build. The tugcast wire keeps its `dev_mode`
+    /// verbs — see the boundary note at the `sendDevMode` feed sites.
+    private lazy var makerModeEnabled: Bool =
+        isAppTestHarness ? false : (BuildInfo.profile == "debug")
 
     /// The dev-*serving* switch: maker mode, except the app-test
     /// harness always serves production. Feeds Vite spawning and the
@@ -713,33 +715,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // MARK: - Preferences
 
     private func loadPreferences() {
-        // Per-instance tugbank starts empty on a fresh identity. Both
-        // `maker-mode-enabled` and `source-tree-path` fall back to
-        // build-time values so a fresh dev instance lights up with
-        // the Maker menu visible and its source tree wired, and
-        // a fresh prod instance defaults to non-maker with the user-
-        // picker flow available.
-        //
-        // `readTugbank` returns Optional<String>, so we can tell the
-        // difference between "key absent" (use the build-profile
-        // default) and "key explicitly false" (honor the user's
-        // preference).
-        let makerModeRaw = ProcessManager.readTugbank(
-            domain: TugConfig.domain, key: TugConfig.keyMakerModeEnabled
-        )
-        if let raw = makerModeRaw {
-            makerModeEnabled = raw.caseInsensitiveCompare("true") == .orderedSame
-        } else {
-            // No explicit preference yet — default from the build
-            // profile baked into Info.plist by capture-build-info.sh:
-            // debug bundles ship with maker mode ON; release bundles
-            // ship with it OFF. The app-test harness reads an absent
-            // key as deterministically OFF instead, so menu-structure
-            // assertions don't depend on the build profile; a seeded
-            // tugbank value above is honored as-is under the harness.
-            makerModeEnabled = isAppTestHarness ? false : (BuildInfo.profile == "debug")
-        }
-
+        // Per-instance tugbank starts empty on a fresh identity, so
+        // `source-tree-path` falls back to the build-time value: a
+        // fresh dev instance lights up with its source tree wired, and
+        // a fresh prod instance gets the user-picker flow. Maker mode
+        // is not read here — it is derived from the build profile.
         sourceTreePath = ProcessManager.readTugbank(
             domain: TugConfig.domain, key: TugConfig.keySourceTreePath
         )
@@ -749,7 +729,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     private func savePreferences() {
-        ProcessManager.writeTugbank(domain: TugConfig.domain, key: TugConfig.keyMakerModeEnabled, value: makerModeEnabled ? "true" : "false")
         if let path = sourceTreePath {
             ProcessManager.writeTugbank(domain: TugConfig.domain, key: TugConfig.keySourceTreePath, value: path)
         }
@@ -1238,12 +1217,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         reloadItem.target = self
         mMenu.addItem(reloadItem)
         mMenu.addItem(NSMenuItem.separator())
-        mMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]).identified("maker.jsConsole"))
-        // Show DevTools (⌥⌘/) — the frontend's own inspector card, beside
-        // the host's console. Chord left to the registry's sweep, like the
-        // Session items. Placing it in the Maker menu is also what keeps the
-        // chord working outside maker mode: the menu is hidden then, and a
-        // hidden menu's key equivalents fall through to the web view.
+        // Show DevTools (⌥⌘/) — the frontend's own inspector card. Chord left
+        // to the registry's sweep, like the Session items. Placing it in the
+        // Maker menu is also what keeps the chord working outside maker mode:
+        // the menu is hidden then, and a hidden menu's key equivalents fall
+        // through to the web view.
         mMenu.addItem(NSMenuItem(title: "Show DevTools", action: #selector(showDevTools(_:)), keyEquivalent: "").identified("maker.devTools"))
         mMenu.addItem(NSMenuItem(title: "Focus Lens", action: #selector(focusLens(_:)), keyEquivalent: "l").identified("maker.focusLens"))
         mMenu.addItem(NSMenuItem(title: "Show Lens", action: #selector(showLens(_:)), keyEquivalent: "l", modifierMask: [.command, .option]).identified("maker.lens"))
@@ -1368,10 +1346,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func reload(_ sender: Any) {
         sendControl("reload")
-    }
-
-    @objc private func showJavaScriptConsole(_ sender: Any) {
-        window.openWebInspector()
     }
 
     /// Toggle the Lens — the persistent right-edge rail in tugdeck.
@@ -1855,10 +1829,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
-    private func updateMakerMenuVisibility() {
-        makerMenu.isHidden = !makerModeEnabled
-    }
-
     /// Read the short git revision of the source tree. Returns nil when the
     /// path is missing, not a git repo, or git is unavailable on PATH.
     private func gitShortRev(at path: String) -> String? {
@@ -2182,84 +2152,6 @@ extension AppDelegate: BridgeDelegate {
         }
     }
 
-    func bridgeSetMakerMode(enabled: Bool, completion: @escaping (Bool) -> Void) {
-        self.makerModeEnabled = enabled
-        self.updateMakerMenuVisibility()
-        self.updateDevInfoOverlay()
-        self.savePreferences()
-
-        // If enabling without source tree, show error and bail out
-        if enabled, sourceTreePath == nil {
-            let alert = NSAlert()
-            alert.messageText = "Source Tree Required"
-            alert.informativeText = "Maker mode requires a source tree.\nGo to Maker > Source Tree... to set one."
-            alert.alertStyle = .warning
-            alert.runModal()
-            completion(enabled)
-            return
-        }
-
-        // The serving flip below (Vite spawn/teardown + page reload) is
-        // pinned to production under the app-test harness; the preference
-        // and menu visibility still flipped above, which is what
-        // harness-driven Maker-gate tests exercise.
-        guard !isAppTestHarness else {
-            completion(enabled)
-            return
-        }
-
-        // Kill any running Vite process synchronously on a background thread before branching.
-        // waitUntilExit() blocks, so this must not run on the main thread.
-        // This runs regardless of the new mode so a stale Vite is always cleaned up first.
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-
-            // Step 1: kill existing Vite (blocks until exit)
-            self.processManager.killViteServer()
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-
-                let currentPort = self.processManager.currentTugcastPort
-
-                if enabled {
-                    // Dev mode ON: spawn Vite (HMR), wait for it, then load from the Vite port.
-                    guard let path = self.sourceTreePath else {
-                        self.processManager.sendDevMode(enabled: true, sourceTree: nil, vitePort: self.vitePort)
-                        completion(enabled)
-                        return
-                    }
-
-                    self.processManager.spawnViteServer(
-                        sourceTree: path,
-                        tugcastPort: currentPort,
-                        vitePort: self.vitePort,
-                        devMode: true
-                    )
-
-                    self.processManager.waitForViteReady(port: self.vitePort) { [weak self] ready in
-                        guard let self = self else { return }
-                        if !ready {
-                            NSLog("AppDelegate: vite server did not become ready after dev mode toggle")
-                        }
-                        // Auth is already established; load the root from the Vite port.
-                        self.window.loadURL("http://127.0.0.1:\(self.vitePort)/")
-                        // Notify tugcast to activate file watchers and add Vite port to allowlist.
-                        self.processManager.sendDevMode(enabled: true, sourceTree: path, vitePort: self.vitePort)
-                        completion(enabled)
-                    }
-                } else {
-                    // Production mode OFF: load directly from tugcast. No Vite process is running.
-                    // tugcast serves pre-built dist/ files via ServeDir on port 55255.
-                    self.window.loadURL("http://127.0.0.1:\(currentPort)/")
-                    // Notify tugcast to deactivate file watchers and clear dev_port from allowlist.
-                    self.processManager.sendDevMode(enabled: false, sourceTree: self.sourceTreePath, vitePort: self.vitePort)
-                    completion(enabled)
-                }
-            }
-        }
-    }
-
     func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void) {
         completion(makerModeEnabled, sourceTreePath)
     }
@@ -2326,10 +2218,6 @@ extension AppDelegate: BridgeDelegate {
         // Restart Server and Relaunch App items removed; badge logic is a no-op.
         _ = backend
         _ = app
-    }
-
-    func bridgeIsMakerMode() -> Bool {
-        return makerModeEnabled
     }
 
     func bridgePageDidLoad() {

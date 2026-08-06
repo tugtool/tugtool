@@ -60,13 +60,11 @@ private func applyWebKitFeatureOverrides(to preferences: WKPreferences) {
 protocol BridgeDelegate: AnyObject {
     func bridgeChooseSourceTree(completion: @escaping (String?) -> Void)
     func bridgeChoosePath(kind: String, initialPath: String?, suggestedName: String?, completion: @escaping (String?) -> Void)
-    func bridgeSetMakerMode(enabled: Bool, completion: @escaping (Bool) -> Void)
     func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void)
     func bridgeFrontendReady()
     func bridgeDevModeError(message: String)
     func bridgeSetTheme(color: String)
     func bridgeDevBadge(backend: Bool, app: Bool)
-    func bridgeIsMakerMode() -> Bool
     func bridgePageDidLoad()
     func bridgeHmrUpdate()
 }
@@ -438,7 +436,6 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController = WKUserContentController()
         contentController.add(self, name: "sourceTree")
         contentController.add(self, name: "choosePath")
-        contentController.add(self, name: "setMakerMode")
         contentController.add(self, name: "getSettings")
         contentController.add(self, name: "frontendReady")
         contentController.add(self, name: "setTheme")
@@ -453,8 +450,11 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "checkForUpdates")
 
         // Configure WKWebView
+        // No Web Inspector, in any build. `developerExtrasEnabled` stays off
+        // so the context menu carries no Inspect Element, and `isInspectable`
+        // is never set so Safari's Develop menu cannot attach either. The
+        // frontend's own inspector is the DevTools card (⌥⌘/).
         let config = WKWebViewConfiguration()
-        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         applyWebKitFeatureOverrides(to: config.preferences)
         config.userContentController = contentController
 
@@ -481,9 +481,6 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = false
-        if #available(macOS 13.3, *) {
-            webView.isInspectable = true
-        }
 
         // Suppress WKWebView's default white background. The webView starts
         // hidden and is revealed by frontendReady after JS applies the theme.
@@ -696,12 +693,6 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         return webView.undoManager
     }
 
-    /// Open web inspector
-    func openWebInspector() {
-        guard let inspector = webView.value(forKey: "_inspector") as? NSObject else { return }
-        inspector.perform(NSSelectorFromString("show"))
-    }
-
     /// Brio canvas color — final fallback when no other source is available.
     /// Must match --tugx-host-canvas-color in tugdeck/styles/themes/brio.css.
     static let defaultBackgroundHex = "#16181d"
@@ -881,7 +872,6 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         guard !bridgeCleaned else { return }
         contentController.removeScriptMessageHandler(forName: "sourceTree")
         contentController.removeScriptMessageHandler(forName: "choosePath")
-        contentController.removeScriptMessageHandler(forName: "setMakerMode")
         contentController.removeScriptMessageHandler(forName: "getSettings")
         contentController.removeScriptMessageHandler(forName: "frontendReady")
         contentController.removeScriptMessageHandler(forName: "setTheme")
@@ -1302,17 +1292,6 @@ extension MainWindow: WKScriptMessageHandler {
                 self.webView.evaluateJavaScript("window.__tugBridge?.onPathChosen?.('\(idArg)', \(pathArg))") { _, error in
                     if let error = error {
                         NSLog("MainWindow: evaluateJavaScript failed for choosePath: %@", error.localizedDescription)
-                    }
-                }
-            }
-        case "setMakerMode":
-            guard let body = message.body as? [String: Any],
-                  let enabled = body["enabled"] as? Bool else { return }
-            bridgeDelegate?.bridgeSetMakerMode(enabled: enabled) { [weak self] confirmed in
-                guard let self = self else { return }
-                self.webView.evaluateJavaScript("window.__tugBridge?.onMakerModeChanged?.(\(confirmed))") { _, error in
-                    if let error = error {
-                        NSLog("MainWindow: evaluateJavaScript failed for setMakerMode: %@", error.localizedDescription)
                     }
                 }
             }

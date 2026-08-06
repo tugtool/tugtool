@@ -56,13 +56,13 @@ describe("requestSettingsReveal", () => {
     const seen: string[] = [];
     const unregister = registerSettingsRevealConsumer((s) => seen.push(s));
     unregister();
-    requestSettingsReveal("app");
+    requestSettingsReveal("textCard");
     expect(seen).toEqual([]);
 
     // …and the request it did not hear is waiting for the next card.
     const later: string[] = [];
     const next = registerSettingsRevealConsumer((s) => later.push(s));
-    expect(later).toEqual(["app"]);
+    expect(later).toEqual(["textCard"]);
     next();
   });
 });

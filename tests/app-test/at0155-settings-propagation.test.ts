@@ -28,7 +28,6 @@
  * without `TUGAPP_APP_TEST=1` skip every test.
  *
  * @covers tugdeck/src/components/tugways/cards/settings-card.tsx
- * @covers tugdeck/src/components/tugways/cards/settings-app-body.tsx
  * @covers tugdeck/src/settings-api.ts
  * @covers tugdeck/src/lib/editor-settings-store.ts
  * @covers tugdeck/src/components/tugways/cards/settings-session-card-body.tsx

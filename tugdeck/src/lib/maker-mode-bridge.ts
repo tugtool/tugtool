@@ -1,21 +1,24 @@
 /**
- * maker-mode-bridge.ts — request/response client for the macOS host's
- * settings bridge (`getSettings` / `setMakerMode`
- * `WKScriptMessageHandler`s), used by the Settings card's App tab.
+ * maker-mode-bridge.ts — read-only client for the macOS host's settings
+ * bridge (the `getSettings` `WKScriptMessageHandler`).
+ *
+ * Maker mode is not a setting: the host derives it from the build profile
+ * (on in debug bundles, absent from release ones), so this side only ever
+ * reads it. The menu-state layer needs the fact because a hidden Maker
+ * menu's chords must fall through to the web view.
  *
  * The host responds by calling `window.__tugBridge.onSettingsLoaded(
- * { makerMode, sourceTree })` and `window.__tugBridge.onMakerModeChanged(
- * confirmed)` (emit strings in `MainWindow.swift` — keep the callback
- * names in lockstep). Neither callback carries a request id, so pending
- * resolvers queue FIFO; the host evaluates responses in request order.
+ * { makerMode, sourceTree })` (an emit string in `MainWindow.swift` — keep
+ * the callback name in lockstep). The callback carries no request id, so
+ * pending resolvers queue FIFO; the host evaluates responses in request
+ * order.
  *
  * The `__tugBridge` object is shared with other host callbacks (the
  * path picker's `onPathChosen`), so receivers are merged in with `??=`
  * — never replace the object wholesale.
  *
- * Graceful degradation: outside the host (browser dev) the handlers are
- * absent, {@link isMakerModeBridgeAvailable} is `false`, and both calls
- * resolve `null`, so callers can disable the affordance with a hint.
+ * Graceful degradation: outside the host (browser dev) the handler is
+ * absent and the call resolves `null`.
  *
  * @module lib/maker-mode-bridge
  */
@@ -28,10 +31,9 @@ export interface HostSettings {
   sourceTree: string | null;
 }
 
-/** The host→web bridge object; only the settings callbacks concern us here. */
+/** The host→web bridge object; only the settings callback concerns us here. */
 interface TugBridge {
   onSettingsLoaded?: (settings: { makerMode?: unknown; sourceTree?: unknown }) => void;
-  onMakerModeChanged?: (confirmed: unknown) => void;
 }
 
 interface WebkitHandles {
@@ -41,14 +43,13 @@ interface WebkitHandles {
   __tugBridge?: TugBridge;
 }
 
-/** FIFO resolvers awaiting `onSettingsLoaded` / `onMakerModeChanged`. */
+/** FIFO resolvers awaiting `onSettingsLoaded`. */
 const pendingSettings: Array<(settings: HostSettings) => void> = [];
-const pendingSetMakerMode: Array<(confirmed: boolean) => void> = [];
 
 /**
  * The maker-mode gate as last reported by the host, or `null` before any
- * reply has arrived. Constant for a page lifetime in practice — flipping
- * the gate reloads the page — so one boot-time `getSettings` round trip
+ * reply has arrived. Constant for a page lifetime — the host derives it
+ * from the build profile — so one boot-time `getSettings` round trip
  * settles it. The menu-state layer reads it to decide whether the Maker
  * menu's chords claim their keys (a hidden menu's chords fall through).
  */
@@ -59,14 +60,14 @@ export function lastKnownMakerMode(): boolean | null {
   return knownMakerMode;
 }
 
-function handler(name: "getSettings" | "setMakerMode"):
-  | { postMessage: (value: unknown) => void }
-  | undefined {
+function handler(
+  name: "getSettings",
+): { postMessage: (value: unknown) => void } | undefined {
   const w = globalThis as unknown as WebkitHandles;
   return w.webkit?.messageHandlers?.[name] ?? undefined;
 }
 
-/** Install the settings callbacks once, preserving sibling bridge keys. */
+/** Install the settings callback once, preserving sibling bridge keys. */
 function ensureBridge(): void {
   const w = globalThis as unknown as WebkitHandles;
   const bridge = (w.__tugBridge ??= {});
@@ -82,18 +83,6 @@ function ensureBridge(): void {
       });
     };
   }
-  if (bridge.onMakerModeChanged === undefined) {
-    bridge.onMakerModeChanged = (confirmed) => {
-      const resolve = pendingSetMakerMode.shift();
-      if (resolve === undefined) return;
-      resolve(confirmed === true);
-    };
-  }
-}
-
-/** Whether the settings bridge is reachable (running inside Tug.app). */
-export function isMakerModeBridgeAvailable(): boolean {
-  return handler("getSettings") !== undefined && handler("setMakerMode") !== undefined;
 }
 
 /**
@@ -107,21 +96,5 @@ export function getSettings(): Promise<HostSettings | null> {
   return new Promise<HostSettings | null>((resolve) => {
     pendingSettings.push(resolve as (settings: HostSettings) => void);
     h.postMessage({});
-  });
-}
-
-/**
- * Commit the maker-mode gate. Resolves the host-confirmed value, or
- * `null` when the bridge is unavailable. Outside the app-test harness,
- * flipping the gate also flips dev serving — the host reloads the page,
- * so the resolution may never be observed; callers must not depend on it.
- */
-export function setMakerMode(enabled: boolean): Promise<boolean | null> {
-  const h = handler("setMakerMode");
-  if (h === undefined) return Promise.resolve(null);
-  ensureBridge();
-  return new Promise<boolean | null>((resolve) => {
-    pendingSetMakerMode.push(resolve as (confirmed: boolean) => void);
-    h.postMessage({ enabled });
   });
 }

@@ -63,7 +63,8 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "app.configureTug", key: "" },
   { id: "app.logout", key: "" },
   { id: "app.settings", key: ",", mods: MOD.command },
-  { id: "app.keyboardShortcuts", key: "" },
+  // ⌃⌘K, stamped onto the item by the registry's chord sweep.
+  { id: "app.keyboardShortcuts", key: "k", mods: MOD.command | MOD.control },
   // File
   { id: "file.newSessionCard", key: "n", mods: MOD.command },
   { id: "file.closeCard", key: "w", mods: MOD.command },
@@ -129,7 +130,6 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   // the app-test bundle's profile is "apptest", so they are absent here
   // and not asserted.
   { id: "maker.reload", key: "r", mods: MOD.command | MOD.shift },
-  { id: "maker.jsConsole", key: "c", mods: MOD.command | MOD.option },
   { id: "maker.lens", key: "l", mods: MOD.command | MOD.option },
   { id: "maker.sourceTree" },
   // Help
@@ -205,8 +205,8 @@ describe.skipIf(!SHOULD_RUN)("AT0168: menu structure contract", () => {
         // New submenu shell.
         expect(byId.get("file.newSessionCard")!.depth, "File menu is flattened").toBe(1);
 
-        // Maker is hidden under default app-test prefs (empty tugbank
-        // → maker mode off under the harness). The gate lives on the
+        // Maker is hidden under the app-test harness, which pins maker
+        // mode off regardless of build profile. The gate lives on the
         // top-level bar item, located by its submenu's content.
         const makerBarItem = tree.find((it) =>
           it.submenu?.some((sub) => sub.identifier === "maker.reload"),
