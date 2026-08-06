@@ -32,12 +32,17 @@ export interface KeymapRowBinding {
   /** Pressing this fires this command. */
   readonly active: boolean;
   /** What takes the chord instead. Absent on a live binding. */
-  readonly shadowedBy?: { readonly commandId: string; readonly layer: ResolutionLayer };
+  readonly shadowedBy?: {
+    readonly commandId: string;
+    readonly layer: ResolutionLayer;
+  };
   /**
-   * The binding is live only inside a responder or a focus mode. Shown with
-   * its scope named and not rebindable here ([Q03]) — a scoped default lives
-   * in a component's render, so an override would have to be reconciled at
-   * registration time, and that machinery waits until it is wanted.
+   * The binding is live only inside a responder or a focus mode — shown with
+   * its scope named, and rebindable like any other. The scope is the surface's
+   * fact, not the user's: the surfaces that register scoped chords read them
+   * out of the registry and re-register on its version, so a rebind reaches
+   * them the same way a global one reaches the key pipeline. What the pane
+   * writes for such a row is the new chord *at the row's existing scope*.
    */
   readonly scoped: boolean;
 }
@@ -134,7 +139,9 @@ export function buildKeymapRows(
       commandId: entry.id,
       title: entry.title,
       group: groupForEntry(entry),
-      ...(entry.menuItemId !== undefined ? { menuItemId: entry.menuItemId } : {}),
+      ...(entry.menuItemId !== undefined
+        ? { menuItemId: entry.menuItemId }
+        : {}),
       locked: isCommandLocked(entry.id),
       overridden: overridden.has(entry.id),
       bindings: resolved.map((r) => ({

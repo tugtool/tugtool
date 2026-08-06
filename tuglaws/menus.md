@@ -166,6 +166,7 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌃⌘F | `toggle-full-screen` | Enter Full Screen | menu bar (AppKit's own) |
 | ⌃⌘H | `toggle-history-view` | Show History | JS, global |
 | ⌃⌘I | `insert-file` | Insert File… | menu bar (swept) |
+| ⌃⌘K | `show-keyboard-shortcuts` | Keyboard Shortcuts… | menu bar (swept) |
 | ⌃⌘M | `commit-auto-message` | Generate a Commit Message | JS, responder |
 | ⌃⌘P | `select-composer-route:prompt` | Prompt Route | JS, global |
 | ⌃⌘T | `next-theme` | Next Theme | menu bar (swept) |

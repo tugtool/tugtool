@@ -222,8 +222,8 @@ describe("the shipped table", () => {
   test("the Changes bulk verbs appear as scoped, doorless rows", () => {
     // Neither carries a `menuItemId` — bindings are their only door — so the
     // pane is the one place a user can discover them at all. They must show
-    // up, spell a chord, and be marked scoped so the pane renders them as
-    // visible-but-not-rebindable ([Q03]).
+    // up, spell a chord, and be marked scoped, which is what makes the pane
+    // name where the chord is live and write a rebind at that same scope.
     const rows = buildKeymapRows(NONE);
     for (const commandId of [
       TUG_ACTIONS.CLAIM_ALL_CHANGES,

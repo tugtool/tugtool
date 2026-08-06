@@ -341,6 +341,7 @@ const SHIPPED_CHORDS: ReadonlyArray<readonly [chord: string, commandId: string]>
   ["⌃⌘H", TUG_ACTIONS.TOGGLE_HISTORY_VIEW],
   ["⌃⌘T", "next-theme"],
   ["⌃⌘I", TUG_ACTIONS.INSERT_FILE],
+  ["⌃⌘K", TUG_ACTIONS.SHOW_KEYBOARD_SHORTCUTS],
   ["⌥⇥", TUG_ACTIONS.CYCLE_FOCUS_MODE],
   ["⌥⌘↑", TUG_ACTIONS.PREVIOUS_TURN],
   ["⌥⌘↓", TUG_ACTIONS.NEXT_TURN],

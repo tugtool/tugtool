@@ -33,10 +33,11 @@
  *
  * Locked rows ([P12]) render without a capture affordance: the mechanism
  * could rebind ⌘Q, the policy says no, and a row that offered the gesture and
- * then refused it would be worse than one that never offered. Scoped rows are
- * shown with their scope named and read-only ([Q03]) — a scoped default lives
- * in a component's render, so an override has to be reconciled at
- * registration time and that machinery waits until it is wanted.
+ * then refused it would be worse than one that never offered. That is the
+ * whole list. A scoped row is not on it: the pane configures the mapping, and
+ * "this chord is only live in the composer" is a fact about where the command
+ * lives, not a reason the chord is unchangeable. A rebind keeps the row's
+ * scope and moves only its chord.
  *
  * Laws: [L02] the override store and the keymap registry enter React through
  * `useSyncExternalStore`; [L03] the capture surface's focus trap is pushed in
@@ -74,7 +75,7 @@ import {
   formatChord,
 } from "../chord-format";
 import { chordCaptureState } from "../chord-capture-state";
-import type { Chord } from "../command-registry";
+import type { BindingScope, Chord } from "../command-registry";
 import { COMMANDS_BY_ID } from "../command-registry";
 import { keymapRegistry } from "../keymap-registry";
 import { keymapOverrideStore } from "@/keymap-override-store";
@@ -404,25 +405,41 @@ function ChordCapture({
  * else, in the surface whose subject is which chord means which command, and
  * one the user cannot act on from here.
  *
- * What survives is what a rebind would actually change: another command
- * holding the chord, and a binding that lives only inside a scope.
+ * A binding's scope is not reported either, and for the same reason. "Only in
+ * session-composer" is where the command lives — the surface that performs it
+ * is the surface that registers the chord — and it is neither something the
+ * pane changes nor something the user chose. Naming it made every scoped row
+ * read as a caveat about a chord that is in fact simply bound.
+ *
+ * What survives is the one thing a rebind would actually change: another
+ * command holding the chord.
  */
 function bindingNote(binding: KeymapRowBinding): string | null {
-  if (binding.scoped) {
-    const scope = binding.binding.scope;
-    const where =
-      scope.kind === "mode"
-        ? scope.modeId
-        : scope.kind === "responder"
-          ? scope.responderId
-          : "";
-    return `only in ${where}`;
-  }
   const shadower = binding.shadowedBy;
   if (shadower === undefined) return null;
   const title =
     COMMANDS_BY_ID.get(shadower.commandId)?.title ?? shadower.commandId;
   return `shadowed by ${title}`;
+}
+
+/**
+ * The scope a rebind of this command should be written at.
+ *
+ * The user chooses the chord; the scope is not theirs to choose, because it is
+ * not a preference — it is where the command exists. ⌃⌘M means Auto-Message
+ * *in the composer*, and writing a rebind of it at the global scope would take
+ * the chord away from every other surface to hand it to a command that only
+ * one surface can perform. So a rebind inherits the scope the command declares
+ * and moves only the chord.
+ *
+ * Read from the shipped table rather than from the live bindings, so a second
+ * rebind is written at the same scope as the first and a command the user has
+ * emptied can still be given its chord back where it belongs.
+ */
+function scopeForRebind(commandId: string): BindingScope {
+  return (
+    COMMANDS_BY_ID.get(commandId)?.bindings?.[0]?.scope ?? { kind: "global" }
+  );
 }
 
 /** Everything a cell needs that is not the index — the pane's own handlers. */
@@ -475,14 +492,13 @@ function CommandCell({
   if (item.kind !== "command" || ctx === null) return null;
   const row: KeymapRow = item.row;
   const armed = ctx.armed === row.commandId;
-  // A locked row shows why rather than merely lacking a button: "you cannot
-  // change this" is information, and an affordance that silently is not there
-  // reads as a bug. An *empty* row is rebindable — giving an unbound command
-  // a chord is one of the pane's jobs, and it is also the way back after
-  // removing a command's only binding.
-  const rebindable =
-    !row.locked &&
-    (row.bindings.length === 0 || !row.bindings.every((b) => b.scoped));
+  // Locked is the only thing that takes the affordance away, and a locked row
+  // shows why rather than merely lacking a button: "you cannot change this" is
+  // information, and an affordance that silently is not there reads as a bug.
+  // Everything else is the user's — an *empty* row (giving an unbound command
+  // a chord is one of the pane's jobs, and the way back after removing a
+  // command's only binding) and a scoped one alike.
+  const rebindable = !row.locked;
 
   return (
     <TugListRow
@@ -552,7 +568,7 @@ function CommandCell({
                           {note}
                         </span>
                       ) : null}
-                      {rebindable && !binding.scoped ? (
+                      {rebindable ? (
                         <TugIconButton
                           size="2xs"
                           aria-label={`Remove ${binding.label} from ${row.title}`}
@@ -687,7 +703,7 @@ export function SettingsKeymapBody(): React.ReactElement {
         keymapOverrideStore.set(commandId, [
           {
             chord,
-            scope: { kind: "global" },
+            scope: scopeForRebind(commandId),
             source: "user",
             preventDefault: true,
           },

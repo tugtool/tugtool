@@ -251,9 +251,13 @@ export interface CommandEntry {
   /** Validity override; chain-routed entries default to the chain walk ([P06]). */
   readonly validate?: (chain: CommandValidationSource) => boolean;
   /** Checkmark / radio / toggle projection ([P07]). */
-  readonly state?: (chain: CommandValidationSource) => boolean | string | undefined;
+  readonly state?: (
+    chain: CommandValidationSource,
+  ) => boolean | string | undefined;
   /** Dynamic menu title (Show/Hide Changes, Undo <noun>). */
-  readonly dynamicTitle?: (chain: CommandValidationSource) => string | undefined;
+  readonly dynamicTitle?: (
+    chain: CommandValidationSource,
+  ) => string | undefined;
   /**
    * Payload set discovered at runtime — excluded from the menu-state
    * mirror, from the keymap UI's rebindable rows, and from the
@@ -331,7 +335,10 @@ function sessionCardFrontmost(chain: CommandValidationSource): boolean {
 
 /** A session card is frontmost and bound to a session. */
 function sessionBound(chain: CommandValidationSource): boolean {
-  return chain.menu.sessionCardFrontmost && (chain.menu.session?.sessionBound ?? false);
+  return (
+    chain.menu.sessionCardFrontmost &&
+    (chain.menu.session?.sessionBound ?? false)
+  );
 }
 
 /**
@@ -340,7 +347,9 @@ function sessionBound(chain: CommandValidationSource): boolean {
  * chips do, so a mode change can never race a running turn.
  */
 function sessionSettingsChangeable(chain: CommandValidationSource): boolean {
-  return sessionBound(chain) && (chain.menu.session?.canChangeSettings ?? false);
+  return (
+    sessionBound(chain) && (chain.menu.session?.canChangeSettings ?? false)
+  );
 }
 
 /**
@@ -360,7 +369,9 @@ function deckDeselectedWithPanes(chain: CommandValidationSource): boolean {
  * with nowhere to go.
  */
 function transcriptNavigable(chain: CommandValidationSource): boolean {
-  return chain.menu.sessionCardFrontmost && (chain.menu.session?.hasTurns ?? false);
+  return (
+    chain.menu.sessionCardFrontmost && (chain.menu.session?.hasTurns ?? false)
+  );
 }
 
 /** Somewhere to navigate to: a multi-card pane, or a deck to re-enter. */
@@ -418,7 +429,12 @@ const SLASH_BRIDGES: readonly SlashBridge[] = [
   ["hooks", "Hooks", "session.hooks"],
   ["memory", "Memory", "session.memory"],
   // The shortcuts sheet is card documentation, not session work.
-  ["help", "Keyboard Shortcuts & Commands", "help.shortcuts", sessionCardFrontmost],
+  [
+    "help",
+    "Keyboard Shortcuts & Commands",
+    "help.shortcuts",
+    sessionCardFrontmost,
+  ],
 ];
 
 const SLASH_BRIDGE_COMMANDS: readonly CommandEntry[] = SLASH_BRIDGES.map(
@@ -454,7 +470,8 @@ const PERMISSION_MODE_COMMANDS: readonly CommandEntry[] = PERMISSION_MODES.map(
     validate: sessionSettingsChangeable,
     // The radio's mark: one resolver answers the current mode and each
     // per-value entry narrows it to its own row ([P05], [P07]).
-    state: (chain: CommandValidationSource) => chain.menu.session?.permissionMode === mode,
+    state: (chain: CommandValidationSource) =>
+      chain.menu.session?.permissionMode === mode,
   }),
 );
 
@@ -477,17 +494,20 @@ const PERMISSION_MODE_COMMANDS: readonly CommandEntry[] = PERMISSION_MODES.map(
  * keymap UI and the shadowing view, and still shadowable by the surfaces
  * that need to shadow them.
  */
-const SLOT_COMMANDS: readonly CommandEntry[] = Array.from({ length: 9 }, (_, i) => {
-  const n = i + 1;
-  return {
-    id: `${TUG_ACTIONS.MOVE_TO_SLOT}:${n}`,
-    title: `Move Card to Slot ${n}`,
-    routing: "first-responder" as const,
-    action: TUG_ACTIONS.MOVE_TO_SLOT,
-    payload: n,
-    bindings: [chord({ key: `Digit${n}`, meta: true, label: String(n) })],
-  };
-});
+const SLOT_COMMANDS: readonly CommandEntry[] = Array.from(
+  { length: 9 },
+  (_, i) => {
+    const n = i + 1;
+    return {
+      id: `${TUG_ACTIONS.MOVE_TO_SLOT}:${n}`,
+      title: `Move Card to Slot ${n}`,
+      routing: "first-responder" as const,
+      action: TUG_ACTIONS.MOVE_TO_SLOT,
+      payload: n,
+      bindings: [chord({ key: `Digit${n}`, meta: true, label: String(n) })],
+    };
+  },
+);
 
 export const COMMANDS: readonly CommandEntry[] = [
   // ---- File ----
@@ -558,7 +578,9 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Save…",
     routing: "first-responder",
     menuItemId: "file.save",
-    bindings: [chord({ key: "KeyS", meta: true, label: "s" }, { preventDefault: true })],
+    bindings: [
+      chord({ key: "KeyS", meta: true, label: "s" }, { preventDefault: true }),
+    ],
     mirrored: true,
     validate: (chain) => chain.menu.fileGates?.save ?? false,
   },
@@ -623,7 +645,9 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Cut",
     routing: "native",
     menuItemId: "edit.cut",
-    bindings: [chord({ key: "KeyX", meta: true, label: "x" }, { preventDefault: true })],
+    bindings: [
+      chord({ key: "KeyX", meta: true, label: "x" }, { preventDefault: true }),
+    ],
     mirrored: true,
     validate: (chain) => chain.validateAction(TUG_ACTIONS.CUT),
   },
@@ -632,7 +656,9 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Copy",
     routing: "native",
     menuItemId: "edit.copy",
-    bindings: [chord({ key: "KeyC", meta: true, label: "c" }, { preventDefault: true })],
+    bindings: [
+      chord({ key: "KeyC", meta: true, label: "c" }, { preventDefault: true }),
+    ],
     mirrored: true,
     validate: (chain) => chain.validateAction(TUG_ACTIONS.COPY),
   },
@@ -641,7 +667,9 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Paste",
     routing: "native",
     menuItemId: "edit.paste",
-    bindings: [chord({ key: "KeyV", meta: true, label: "v" }, { preventDefault: true })],
+    bindings: [
+      chord({ key: "KeyV", meta: true, label: "v" }, { preventDefault: true }),
+    ],
     mirrored: true,
     validate: (chain) => chain.validateAction(TUG_ACTIONS.PASTE),
   },
@@ -658,7 +686,9 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Select All",
     routing: "native",
     menuItemId: "edit.selectAll",
-    bindings: [chord({ key: "KeyA", meta: true, label: "a" }, { preventDefault: true })],
+    bindings: [
+      chord({ key: "KeyA", meta: true, label: "a" }, { preventDefault: true }),
+    ],
     mirrored: true,
     validate: (chain) => chain.validateAction(TUG_ACTIONS.SELECT_ALL),
   },
@@ -686,7 +716,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "edit.copyAsPlainText",
     bindings: [
-      chord({ key: "KeyC", meta: true, shift: true, alt: true, label: "c" }, { preventDefault: true }),
+      chord(
+        { key: "KeyC", meta: true, shift: true, alt: true, label: "c" },
+        { preventDefault: true },
+      ),
     ],
     mirrored: true,
     // Shares Copy's gate: both need a selection, and a surface that offers
@@ -699,7 +732,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "edit.pasteAsQuote",
     bindings: [
-      chord({ key: "KeyV", meta: true, alt: true, label: "v" }, { preventDefault: true }),
+      chord(
+        { key: "KeyV", meta: true, alt: true, label: "v" },
+        { preventDefault: true },
+      ),
     ],
     mirrored: true,
     // Both paste variants share Paste's gate: an editable surface is the
@@ -712,7 +748,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "edit.pasteAsPlainText",
     bindings: [
-      chord({ key: "KeyV", meta: true, shift: true, alt: true, label: "v" }, { preventDefault: true }),
+      chord(
+        { key: "KeyV", meta: true, shift: true, alt: true, label: "v" },
+        { preventDefault: true },
+      ),
     ],
     mirrored: true,
     validate: (chain) => chain.validateAction(TUG_ACTIONS.PASTE),
@@ -726,7 +765,9 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Find…",
     routing: "first-responder",
     menuItemId: "edit.find",
-    bindings: [chord({ key: "KeyF", meta: true, label: "f" }, { preventDefault: true })],
+    bindings: [
+      chord({ key: "KeyF", meta: true, label: "f" }, { preventDefault: true }),
+    ],
     mirrored: true,
   },
   {
@@ -752,7 +793,9 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Focus Prompt",
     routing: "key-card",
     menuItemId: "session.focusPrompt",
-    bindings: [chord({ key: "KeyK", meta: true, label: "k" }, { preventDefault: true })],
+    bindings: [
+      chord({ key: "KeyK", meta: true, label: "k" }, { preventDefault: true }),
+    ],
     mirrored: true,
     // The composer exists on any session card, bound or not.
     validate: sessionCardFrontmost,
@@ -787,7 +830,8 @@ export const COMMANDS: readonly CommandEntry[] = [
     menuItemId: "session.stop",
     mirrored: true,
     validate: (chain) =>
-      chain.menu.sessionCardFrontmost && (chain.menu.session?.canInterrupt ?? false),
+      chain.menu.sessionCardFrontmost &&
+      (chain.menu.session?.canInterrupt ?? false),
   },
   {
     id: TUG_ACTIONS.CYCLE_PERMISSION_MODE,
@@ -810,14 +854,19 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "key-card",
     menuItemId: "session.toggleChanges",
     bindings: [
-      chord({ key: "KeyC", ctrl: true, meta: true, label: "c" }, { preventDefault: true }),
+      chord(
+        { key: "KeyC", ctrl: true, meta: true, label: "c" },
+        { preventDefault: true },
+      ),
     ],
     mirrored: true,
     validate: sessionBound,
     // One command, two verbs: the item says what the gesture will do, so
     // the title follows the Shade's live visibility.
     dynamicTitle: (chain) =>
-      (chain.menu.session?.changesVisible ?? false) ? "Hide Changes" : "Show Changes",
+      (chain.menu.session?.changesVisible ?? false)
+        ? "Hide Changes"
+        : "Show Changes",
   },
   {
     id: TUG_ACTIONS.TOGGLE_HISTORY_VIEW,
@@ -825,12 +874,17 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "key-card",
     menuItemId: "session.toggleHistory",
     bindings: [
-      chord({ key: "KeyH", ctrl: true, meta: true, label: "h" }, { preventDefault: true }),
+      chord(
+        { key: "KeyH", ctrl: true, meta: true, label: "h" },
+        { preventDefault: true },
+      ),
     ],
     mirrored: true,
     validate: sessionBound,
     dynamicTitle: (chain) =>
-      (chain.menu.session?.historyVisible ?? false) ? "Hide History" : "Show History",
+      (chain.menu.session?.historyVisible ?? false)
+        ? "Hide History"
+        : "Show History",
   },
   ...SLASH_BRIDGE_COMMANDS,
 
@@ -888,7 +942,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "view.zoomOut",
     bindings: [
-      chord({ key: "Minus", meta: true, label: "-" }, { preventDefault: true, menuEligible: true }),
+      chord(
+        { key: "Minus", meta: true, label: "-" },
+        { preventDefault: true, menuEligible: true },
+      ),
     ],
   },
   {
@@ -897,7 +954,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "view.actualSize",
     bindings: [
-      chord({ key: "Digit0", meta: true, label: "0" }, { preventDefault: true, menuEligible: true }),
+      chord(
+        { key: "Digit0", meta: true, label: "0" },
+        { preventDefault: true, menuEligible: true },
+      ),
     ],
   },
 
@@ -922,7 +982,9 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Previous Card",
     routing: "first-responder",
     menuItemId: "window.previousCard",
-    bindings: [chord({ key: "BracketLeft", meta: true, shift: true, label: "[" })],
+    bindings: [
+      chord({ key: "BracketLeft", meta: true, shift: true, label: "[" }),
+    ],
     mirrored: true,
     validate: cardNavigationAvailable,
   },
@@ -931,7 +993,9 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Next Card",
     routing: "first-responder",
     menuItemId: "window.nextCard",
-    bindings: [chord({ key: "BracketRight", meta: true, shift: true, label: "]" })],
+    bindings: [
+      chord({ key: "BracketRight", meta: true, shift: true, label: "]" }),
+    ],
     mirrored: true,
     validate: cardNavigationAvailable,
   },
@@ -942,7 +1006,8 @@ export const COMMANDS: readonly CommandEntry[] = [
     menuItemId: "window.cyclePanes",
     bindings: [chord({ key: "Backquote", ctrl: true, label: "`" })],
     mirrored: true,
-    validate: (chain) => chain.menu.paneCount >= 2 || deckDeselectedWithPanes(chain),
+    validate: (chain) =>
+      chain.menu.paneCount >= 2 || deckDeselectedWithPanes(chain),
   },
   // The two slot-stack items take no deselected-deck escape hatch: they act
   // on a SPECIFIC pane's stack, and with nothing selected there is no such
@@ -992,14 +1057,21 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Focus Lens",
     routing: "first-responder",
     menuItemId: "maker.focusLens",
-    bindings: [chord({ key: "KeyL", meta: true, label: "l" }, { preventDefault: true })],
+    bindings: [
+      chord({ key: "KeyL", meta: true, label: "l" }, { preventDefault: true }),
+    ],
   },
   {
     id: TUG_ACTIONS.TOGGLE_LENS,
     title: "Show Lens",
     routing: "registry",
     menuItemId: "maker.lens",
-    bindings: [chord({ key: "KeyL", meta: true, alt: true, label: "l" }, { preventDefault: true })],
+    bindings: [
+      chord(
+        { key: "KeyL", meta: true, alt: true, label: "l" },
+        { preventDefault: true },
+      ),
+    ],
   },
   {
     // Its door is the Lens Layouts section's kind picker.
@@ -1033,13 +1105,20 @@ export const COMMANDS: readonly CommandEntry[] = [
 
   // ---- App level ----
   {
-    // Menu-only by design: ⌘, belongs to Settings, and this card has two other
-    // doors — the app menu's item and its Lens home. A chord is a one-line
-    // addition if it earns one.
+    // ⌃⌘K — the keyboard's own card, reached from the keyboard. ⌘, belongs to
+    // Settings and ⌘K is taken, so this sits a modifier away from both: the
+    // one card whose subject is chords should not be the one card you can only
+    // open with the mouse.
     id: TUG_ACTIONS.SHOW_KEYBOARD_SHORTCUTS,
     title: "Keyboard Shortcuts…",
     routing: "first-responder",
     menuItemId: "app.keyboardShortcuts",
+    bindings: [
+      chord(
+        { key: "KeyK", ctrl: true, meta: true, label: "k" },
+        { preventDefault: true, menuEligible: true },
+      ),
+    ],
   },
   {
     // The app menu's About and New Session items both send this wire with
@@ -1413,7 +1492,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "key-card",
     menuItemId: "session.commandPicker",
     bindings: [
-      chord({ key: "Slash", meta: true, label: "/" }, { preventDefault: true, menuEligible: true }),
+      chord(
+        { key: "Slash", meta: true, label: "/" },
+        { preventDefault: true, menuEligible: true },
+      ),
     ],
     mirrored: true,
     // No predicate: the key-card walk asks the frontmost card whether it has
@@ -1436,7 +1518,12 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "key-card",
     action: TUG_ACTIONS.SELECT_COMPOSER_ROUTE,
     payload: "prompt",
-    bindings: [chord({ key: "KeyP", ctrl: true, meta: true, label: "p" }, { preventDefault: true })],
+    bindings: [
+      chord(
+        { key: "KeyP", ctrl: true, meta: true, label: "p" },
+        { preventDefault: true },
+      ),
+    ],
   },
   {
     id: TUG_ACTIONS.CYCLE_FOCUS_MODE,
@@ -1444,7 +1531,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "key-card",
     menuItemId: "session.cycleFocusMode",
     bindings: [
-      chord({ key: "Tab", alt: true, label: "Tab" }, { preventDefault: true, menuEligible: true }),
+      chord(
+        { key: "Tab", alt: true, label: "Tab" },
+        { preventDefault: true, menuEligible: true },
+      ),
     ],
     mirrored: true,
     disabledChord: "detach",
@@ -1486,7 +1576,13 @@ export const COMMANDS: readonly CommandEntry[] = [
     menuItemId: "session.firstTurn",
     bindings: [
       chord(
-        { key: "ArrowUp", alt: true, shift: true, meta: true, label: "ArrowUp" },
+        {
+          key: "ArrowUp",
+          alt: true,
+          shift: true,
+          meta: true,
+          label: "ArrowUp",
+        },
         { preventDefault: true, menuEligible: true },
       ),
     ],
@@ -1501,7 +1597,13 @@ export const COMMANDS: readonly CommandEntry[] = [
     menuItemId: "session.lastTurn",
     bindings: [
       chord(
-        { key: "ArrowDown", alt: true, shift: true, meta: true, label: "ArrowDown" },
+        {
+          key: "ArrowDown",
+          alt: true,
+          shift: true,
+          meta: true,
+          label: "ArrowDown",
+        },
         { preventDefault: true, menuEligible: true },
       ),
     ],
@@ -1559,12 +1661,13 @@ export const COMMANDS_BY_ID: ReadonlyMap<string, CommandEntry> = new Map(
   COMMANDS.map((entry) => [entry.id, entry]),
 );
 
-export const COMMANDS_BY_MENU_ITEM_ID: ReadonlyMap<string, CommandEntry> = new Map(
-  COMMANDS.filter((entry) => entry.menuItemId !== undefined).map((entry) => [
-    entry.menuItemId as string,
-    entry,
-  ]),
-);
+export const COMMANDS_BY_MENU_ITEM_ID: ReadonlyMap<string, CommandEntry> =
+  new Map(
+    COMMANDS.filter((entry) => entry.menuItemId !== undefined).map((entry) => [
+      entry.menuItemId as string,
+      entry,
+    ]),
+  );
 
 /** The entry for a command id, or `undefined` if the id names no command. */
 export function commandEntry(id: string): CommandEntry | undefined {
@@ -1576,7 +1679,9 @@ export function isCommandId(id: string): boolean {
   return COMMANDS_BY_ID.has(id);
 }
 
-const TUG_ACTION_VALUES: ReadonlySet<string> = new Set(Object.values(TUG_ACTIONS));
+const TUG_ACTION_VALUES: ReadonlySet<string> = new Set(
+  Object.values(TUG_ACTIONS),
+);
 
 /**
  * The wire name behind an entry, which for a parameterized id is the part
@@ -1723,7 +1828,9 @@ export function lintCommandTable(
       entry.menuItemId !== undefined ||
       (entry.bindings !== undefined && entry.bindings.length > 0);
     if (!hasDoor && !entry.parameterized && !entry.internal) {
-      problems.push(`${entry.id}: no menu item and no binding — no way to invoke it`);
+      problems.push(
+        `${entry.id}: no menu item and no binding — no way to invoke it`,
+      );
     }
   }
 
@@ -1794,8 +1901,13 @@ export function lintActionCoverage(
 ): string[] {
   const wires = new Set(entries.map(commandWire));
   return Object.values(TUG_ACTIONS)
-    .filter((action) => !wires.has(action) && !ACTIONS_OUTSIDE_THE_TABLE.has(action))
-    .map((action) => `${action} is neither a command nor declared outside the table`);
+    .filter(
+      (action) => !wires.has(action) && !ACTIONS_OUTSIDE_THE_TABLE.has(action),
+    )
+    .map(
+      (action) =>
+        `${action} is neither a command nor declared outside the table`,
+    );
 }
 
 /**
