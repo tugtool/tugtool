@@ -24,7 +24,7 @@ The design-system CSS custom properties get this treatment via [token-naming.md]
 
 ## The Registry Layer
 
-Above the three-way classification sits the **command registry** (`components/tugways/command-registry.ts`): one entry per user-invocable command, carrying its title, its `routing`, the menu item it drives, and its default chords. Every emitter — a Swift menu item's control frame, the key pipeline, a button, a slash bridge — resolves through that table and calls `dispatchCommand(id)`.
+Above the three-way classification sits the **command registry** (`components/tugways/command-registry.ts`): one entry per user-invocable command, carrying its title, its `routing`, the menu item it drives, and its default chords. Every emitter — a Swift menu item's control frame, the key pipeline, a button, a slash bridge — resolves through that table and calls `dispatchCommand(id)`. That routing is not optional: [L30] requires it, and [commands.md](commands.md) is its authoring contract. This document governs what a command is *called*; that one governs how it is *defined and reached*.
 
 This changes what the classification below *is*. A name's category used to be a fact about which tables it appeared in, maintained by hand in two places. It is now a **consequence of its entry's `routing`**:
 
@@ -196,7 +196,7 @@ The type system won't catch this (the literal `"cut"` is still a valid `TugActio
 ## Adding a New Action
 
 1. **Pick a name** following the `<verb>-<object>[-<modifier>]` rule. Verify it doesn't collide with an existing entry and isn't a synonym for something already in `TUG_ACTIONS`.
-2. **Give it a registry entry** in `command-registry.ts` if a user can invoke it: a title, a `routing`, a `menuItemId` if it has a menu door, and its default `bindings`. The classification below then follows from `routing` rather than being chosen.
+2. **Give it a registry entry** in `command-registry.ts` if a user can invoke it: a title, a `routing`, a `menuItemId` if it has a menu door, and its default `bindings`. The classification below then follows from `routing` rather than being chosen. The full procedure — doors, validity, mirroring, the chord decisions — is in [commands.md](commands.md#adding-a-command).
 3. **Add an entry to `TUG_ACTIONS`** in `action-vocabulary.ts` if it's a chain action or a Both. Skip this step for Control-frame-only actions — they live in `action-dispatch.ts`.
 4. **Document the payload convention** in the same file, near the constant, using the existing in-line comment pattern (`// set-value: payload — shape depends on control: ...`). Every action whose handler reads `event.value` needs this so handler authors know what to narrow to.
 5. **Register a handler somewhere.** A responder via `useResponder` (chain), or a `registerAction` call (control frame), or both.
@@ -334,6 +334,7 @@ If drift becomes measurable, a follow-up can add a `no-restricted-syntax` ESLint
 ## Cross-References
 
 - [L11] controls emit actions; responders handle actions — the law this document codifies a vocabulary for
+- [L30] every user-invocable command is a registry entry reached through the two funnels — see [commands.md](commands.md)
 - [token-naming.md](token-naming.md) — sibling document for CSS tokens; same principle, different domain
 - [component-authoring.md](component-authoring.md) — the checklist for new components, which references `TUG_ACTIONS` constants at the dispatch-site and registration-site steps
 - `tugdeck/src/components/tugways/action-vocabulary.ts` — canonical `TUG_ACTIONS` constants, `TugAction` type, and payload conventions

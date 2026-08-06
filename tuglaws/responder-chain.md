@@ -2,7 +2,7 @@
 
 *The tree of components that own semantic state, the walk that routes typed actions through them, and the single model every interactive surface in the app obeys. Read this before writing a component that emits an action, handles an action, or reacts to chain traffic.*
 
-*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [tuglaws.md](tuglaws.md).*
+*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [tuglaws.md](tuglaws.md). This document is the chain's mechanism; [commands.md](commands.md) is how a user-invocable command is defined and reaches it ([L30]) — a command is dispatched through `dispatchCommand`, never by hand-calling the chain from an emitter.*
 
 ---
 

@@ -141,6 +141,16 @@ A single component may be both an emitter and a responder for the same action. A
 
 The full chain mechanism — `ActionEvent`, the dispatch walk, first-responder promotion, the four dispatch shapes, `observeDispatch`, the keyboard pipeline, and the registration hooks — is documented in [responder-chain.md](responder-chain.md). Read that document before writing a component that participates in the chain.
 
+### L30. Every user-invocable command is a registry entry, and every emitter goes through the two funnels. {#l30}
+
+A *command* is anything a user can invoke by name: a menu item, a chord, a button, a context-menu verb, a slash bridge. Each one is exactly one entry in `command-registry.ts` — its title, its `routing`, its `menuItemId`, its validity, its state, its default `bindings` — and it is invoked through **funnel #1**, `dispatchCommand(id, payload?)`, and bound through **funnel #2**, `keymapRegistry`. No code path may bypass either: not a call site that dispatches a chain action directly when that action names a command, not a component that matches a chord itself, not a UI surface that authors a shortcut string instead of calling `commandShortcut(id)`, not a host-side tier that decides an item's enablement next to the entry that already answers for it.
+
+The doors are plural and the definition is singular. A menu item and a chord are two ways into one row, and the row says once how to open it — so `routing` is a data field rather than a call-site choice, and a rebind, a rename, a new door, or a validity change is one edit that every surface sees. Bypass any funnel and the command becomes invisible in exactly the places built to make it visible: it cannot be shown in the keymap pane, it cannot be rebound, its chord cannot be shadow-analyzed against the native menu layer that resolves *before* the web view sees a keydown, and its menu item's enablement acquires a second opinion that will drift from the first.
+
+The escapes are declared, never implied. Traffic that is not a user intent — tugcast data frames, form-control currency, substrate text-editing bindings, context-menu verbs over a sampled target — is enumerated in `ACTIONS_OUTSIDE_THE_TABLE`, and a command that legitimately has no door yet says `internal: true` with a comment naming what blocks it. The table's lints fail on anything in neither set, so "absent from the table" is never a silent omission.
+
+The test: *can a user invoke this by name?* If yes, it is a command and it belongs in the table with a door and a funnel. If no — it is something a control tells its responder, or something the protocol tells the app — it is currency, and it is declared outside the table. The authoring contract, the field-by-field entry shape, the four-layer chord resolution order, and the enforcement lints are in [commands.md](commands.md). [L11, D01]
+
 ### L12. Selection stays inside card boundaries. {#l12}
 
 `SelectionGuard` clamps selection on `selectionchange`. Every card registers its content area as a selection boundary. [D34, D35, D36, D37, D38]

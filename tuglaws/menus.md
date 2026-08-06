@@ -2,7 +2,7 @@
 
 *The macOS menu bar is a projection of the command registry. One TypeScript table states every user-invocable command — its title, how it dispatches, which menu item it drives, which chords it holds — and the host consumes that table as pushed data: enablement, check marks, dynamic titles, and key equivalents all arrive on one wire. Menu items act by sending control frames back into the web layer, never by mutating web state directly.*
 
-*Cross-references: [action-naming.md](action-naming.md) (the registry layer above the three-way classification), [responder-chain.md](responder-chain.md) (`validateAction` / `queryActionState`), [app-test-harness.md](app-test-harness.md) (`menuSnapshot` / `menuItemState`). `[L##]` → [tuglaws.md](tuglaws.md).*
+*Cross-references: [commands.md](commands.md) (the registry itself, the two funnels, and [L30] — read that before adding a menu item), [action-naming.md](action-naming.md) (the registry layer above the three-way classification), [responder-chain.md](responder-chain.md) (`validateAction` / `queryActionState`), [app-test-harness.md](app-test-harness.md) (`menuSnapshot` / `menuItemState`). `[L##]` → [tuglaws.md](tuglaws.md).*
 
 ---
 
