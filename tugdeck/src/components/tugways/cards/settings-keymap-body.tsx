@@ -20,6 +20,15 @@
  * committed, so a collision is something the user reads rather than
  * discovers.
  *
+ * What a row does NOT report is whether the command could run at this
+ * instant. Menu items validate: Cycle Stack is disabled with one card in the
+ * pane, Save As with nothing open. That is a fact about the app right now,
+ * not about the keymap, and a configurator that mixed the two would have the
+ * same chord reading differently depending on what the user happened to have
+ * open behind it. Shadowing survives because a rebind changes it; validation
+ * does not, so the pane is silent about it ([P11] is about the mapping being
+ * believable, not about the moment).
+ *
  * ## What the pane will not let you do
  *
  * Locked rows ([P12]) render without a capture affordance: the mechanism
@@ -170,8 +179,12 @@ function conflictNoteFor(chord: Chord, commandId: string): string | null {
         r.commandId !== commandId,
     );
     if (eaten === undefined) return null;
+    // Its item validates disabled at this instant, which is not the point:
+    // the command owns the chord on a menu item either way, and the menu bar
+    // takes it before the web view is asked. That ownership is what the user
+    // is about to collide with.
     const title = COMMANDS_BY_ID.get(eaten.commandId)?.title ?? eaten.commandId;
-    return `${title} holds this chord on a menu item; while that item is disabled the chord reaches nothing at all.`;
+    return `${title} has this chord on a menu item, which takes it before the web view sees it.`;
   }
   const title = COMMANDS_BY_ID.get(winner.commandId)?.title ?? winner.commandId;
   return winner.layer.kind === "native"
@@ -286,16 +299,30 @@ function ChordCapture({
  * Rows
  * ------------------------------------------------------------------------- */
 
-/** The standing of one binding, said plainly. */
+/**
+ * The standing of one binding, said plainly — and only the standing that is
+ * a property of the KEYMAP.
+ *
+ * A command's menu item validates enabled or disabled from moment to moment:
+ * Cycle Stack is dead with one card in the pane and alive with two, and Save
+ * As is dead with nothing open. That makes a binding momentarily unreachable
+ * without making the mapping wrong, and this pane configures the mapping. A
+ * row that answered "not reachable right now" would be reporting the state of
+ * the app at the instant the list happened to render — a fact about somewhere
+ * else, in the surface whose subject is which chord means which command, and
+ * one the user cannot act on from here.
+ *
+ * What survives is what a rebind would actually change: another command
+ * holding the chord, and a binding that lives only inside a scope.
+ */
 function bindingNote(binding: KeymapRowBinding): string | null {
   if (binding.scoped) {
     const scope = binding.binding.scope;
     const where = scope.kind === "mode" ? scope.modeId : scope.kind === "responder" ? scope.responderId : "";
     return `only in ${where}`;
   }
-  if (binding.active) return null;
   const shadower = binding.shadowedBy;
-  if (shadower === undefined) return "not reachable right now";
+  if (shadower === undefined) return null;
   const title = COMMANDS_BY_ID.get(shadower.commandId)?.title ?? shadower.commandId;
   return `shadowed by ${title}`;
 }
@@ -354,9 +381,18 @@ function CommandCell({ index, dataSource, selected }: TugListViewCellProps<Keyma
         <div className="settings-keymap-trailing">
           <div className="settings-keymap-chords">
             {row.bindings.length === 0 ? (
-              <TugLabel size="sm" emphasis="calm" className="settings-keymap-unbound">
+              // A chip where a chord chip would be. The empty state is one of
+              // the row's real answers, not the absence of one, and set as
+              // loose text beside its neighbours' boxes it read as a caption
+              // about the row rather than as its contents.
+              <TugBadge
+                size="md"
+                emphasis="outlined"
+                role="inherit"
+                className="settings-keymap-unbound"
+              >
                 Not bound
-              </TugLabel>
+              </TugBadge>
             ) : (
               row.bindings.map((binding, i) => {
                 const note = bindingNote(binding);
@@ -364,8 +400,12 @@ function CommandCell({ index, dataSource, selected }: TugListViewCellProps<Keyma
                   <span
                     key={`${binding.label}:${i}`}
                     className="settings-keymap-chord"
-                    data-active={binding.active ? "" : undefined}
-                    data-shadowed={binding.active ? undefined : ""}
+                    // Struck for a chord another command takes, never for one
+                    // whose own menu item happens to validate disabled — the
+                    // strike says "this mapping does not hold", and a
+                    // momentarily inapplicable command still owns its chord.
+                    data-active={binding.shadowedBy === undefined ? "" : undefined}
+                    data-shadowed={binding.shadowedBy !== undefined ? "" : undefined}
                     title={note ?? undefined}
                   >
                     <span className="settings-keymap-chord-label">{binding.label}</span>
@@ -393,7 +433,7 @@ function CommandCell({ index, dataSource, selected }: TugListViewCellProps<Keyma
           <div className="settings-keymap-action">
             {row.locked ? (
               <TugBadge
-                size="xs"
+                size="md"
                 emphasis="outlined"
                 role="inherit"
                 icon={<Lock aria-hidden="true" />}
@@ -519,8 +559,17 @@ export function SettingsKeymapBody(): React.ReactElement {
   );
 
   const delegate = useMemo<TugListViewDelegate>(
-    () => ({ estimatedHeightForKind: (kind) => (kind === "group" ? 44 : 40) }),
-    [],
+    () => ({
+      estimatedHeightForKind: (kind) => (kind === "group" ? 44 : 40),
+      // Each menu bands from its own first command, and the heading between
+      // two menus takes no band at all.
+      stripeParityForIndex: (index) => {
+        const item = items[index];
+        if (item === undefined || item.kind !== "command") return "none";
+        return item.parity;
+      },
+    }),
+    [items],
   );
 
   const resetAll = useCallback(() => {

@@ -170,7 +170,19 @@ export type KeymapListItem =
        */
       readonly first: boolean;
     }
-  | { readonly kind: "command"; readonly id: string; readonly row: KeymapRow };
+  | {
+      readonly kind: "command";
+      readonly id: string;
+      readonly row: KeymapRow;
+      /**
+       * Which band the row takes, counted from the top of ITS SECTION rather
+       * than from the top of the list. A section following one with an odd
+       * number of rows would otherwise start on the opposite foot, and the
+       * banding would read as stripes running continuously under the
+       * headings instead of each menu counting from its own first command.
+       */
+      readonly parity: "even" | "odd";
+    };
 
 /**
  * Flatten rows into the list's items, dropping any group the filter emptied.
@@ -185,10 +197,12 @@ export function buildKeymapListItems(
 ): KeymapListItem[] {
   const items: KeymapListItem[] = [];
   let group: string | null = null;
+  let withinGroup = 0;
   for (const row of rows) {
     if (!rowMatches(row, query)) continue;
     if (row.group !== group) {
       group = row.group;
+      withinGroup = 0;
       items.push({
         kind: "group",
         id: `group:${group}`,
@@ -196,7 +210,13 @@ export function buildKeymapListItems(
         first: items.length === 0,
       });
     }
-    items.push({ kind: "command", id: row.commandId, row });
+    items.push({
+      kind: "command",
+      id: row.commandId,
+      row,
+      parity: withinGroup % 2 === 0 ? "even" : "odd",
+    });
+    withinGroup += 1;
   }
   return items;
 }

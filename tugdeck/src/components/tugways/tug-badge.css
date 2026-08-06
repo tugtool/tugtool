@@ -161,6 +161,24 @@ body {
      own single-line `height` scale is unchanged. `xl` / `2xl` extend the
      scale past the button's `lg` ceiling for the few chips that want more
      presence. */
+  /* Single-line chip heights. Declared here rather than inline in the size
+     rules so the scale is one table, and consumed through
+     `--tugx-badge-height` — the per-instance override a consumer sets when a
+     badge has to line up with a neighbouring control that is not on this
+     scale. The Keyboard card's Reserved badge is the case: it shares an
+     accessory column with a `TugPushButton size="xs"` (24px), which sits
+     between the badge's `sm` (20px) and `md` (26px) rungs, and a column whose
+     members are two pixels apart reads as a mistake rather than as a scale.
+     Overriding the height leaves the size's type and icon alone, which is the
+     point — the badge stays an `md` badge in a shorter box. */
+  --tugx-badge-height-2xs: 1rem;      /* 16px */
+  --tugx-badge-height-xs:  1.125rem;  /* 18px */
+  --tugx-badge-height-sm:  1.25rem;   /* 20px */
+  --tugx-badge-height-md:  1.625rem;  /* 26px */
+  --tugx-badge-height-lg:  1.75rem;   /* 28px */
+  --tugx-badge-height-xl:  2rem;      /* 32px */
+  --tugx-badge-height-2xl: 2.25rem;   /* 36px */
+
   --tugx-badge-twoline-height-2xs: 1.25rem; /* 20px */
   --tugx-badge-twoline-height-xs:  1.5rem;  /* 24px */
   --tugx-badge-twoline-height-sm:  1.75rem; /* 28px */
@@ -215,7 +233,7 @@ body {
    ========================================================================= */
 
 .tug-badge-size-2xs {
-  height: 1rem;      /* 16px */
+  height: var(--tugx-badge-height, var(--tugx-badge-height-2xs));      /* 16px */
   padding: 0 0.25rem;
   font-size: var(--tugx-badge-text-2xs); /* 8px */
   gap: 0.125rem; /* 2px */
@@ -227,7 +245,7 @@ body {
 }
 
 .tug-badge-size-xs {
-  height: 1.125rem;  /* 18px */
+  height: var(--tugx-badge-height, var(--tugx-badge-height-xs));  /* 18px */
   padding: 0 0.375rem;
   font-size: var(--tugx-badge-text-xs); /* 9px */
   gap: 0.125rem; /* 2px */
@@ -239,7 +257,7 @@ body {
 }
 
 .tug-badge-size-sm {
-  height: 1.25rem;   /* 20px */
+  height: var(--tugx-badge-height, var(--tugx-badge-height-sm));   /* 20px */
   padding: 0 0.5rem;
   font-size: var(--tugx-badge-text-sm); /* 10px */
   gap: 0.1875rem; /* 3px */
@@ -251,7 +269,7 @@ body {
 }
 
 .tug-badge-size-md {
-  height: 1.625rem;  /* 26px */
+  height: var(--tugx-badge-height, var(--tugx-badge-height-md));  /* 26px */
   padding: 0 0.625rem;
   font-size: var(--tugx-badge-text-md); /* 12px — matches TugLabel size="xs"
                          so a `md` badge reads as harmonious next to `xs` text
@@ -265,7 +283,7 @@ body {
 }
 
 .tug-badge-size-lg {
-  height: 1.75rem;   /* 28px */
+  height: var(--tugx-badge-height, var(--tugx-badge-height-lg));   /* 28px */
   padding: 0 0.75rem;
   font-size: var(--tugx-badge-text-lg); /* 12px */
   gap: 0.25rem; /* 4px */
@@ -277,7 +295,7 @@ body {
 }
 
 .tug-badge-size-xl {
-  height: 2rem;      /* 32px */
+  height: var(--tugx-badge-height, var(--tugx-badge-height-xl));      /* 32px */
   padding: 0 0.875rem;
   font-size: var(--tugx-badge-text-xl); /* 13px */
   gap: 0.3125rem; /* 5px */
@@ -289,7 +307,7 @@ body {
 }
 
 .tug-badge-size-2xl {
-  height: 2.25rem;   /* 36px */
+  height: var(--tugx-badge-height, var(--tugx-badge-height-2xl));   /* 36px */
   padding: 0 1rem;
   font-size: var(--tugx-badge-text-2xl); /* 14px */
   gap: 0.375rem; /* 6px */

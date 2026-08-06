@@ -121,6 +121,7 @@ import {
 import {
   resolveRowStriping,
   type TugListViewRowStriping,
+  type TugListViewStripeParity,
 } from "./internal/list-view-striping";
 import { useFocusable, useFocusManager } from "./use-focusable";
 import { FocusModeContext, KEY_WITHIN_ATTRIBUTE } from "./focus-manager";
@@ -147,6 +148,7 @@ export type {
 export type {
   TugListViewRowStriping,
   TugListViewRowStripingConfig,
+  TugListViewStripeParity,
   TugListViewStripeStrength,
 } from "./internal/list-view-striping";
 
@@ -344,6 +346,22 @@ export interface TugListViewDelegate {
    * cell has been measured by `ResizeObserver`. Default: 60.
    */
   estimatedHeightForKind?(kind: string): number;
+
+  /**
+   * Which band this row takes under `rowStriping`, when the row's own index
+   * parity is not the answer.
+   *
+   * The default — `index % 2` — is right for a flat list and wrong for a
+   * sectioned one: a section whose predecessor held an odd number of rows
+   * starts on the opposite foot from the one above it, so the banding reads
+   * as continuous stripes running under the headings rather than as each
+   * section counting from its own top. A consumer that groups its items
+   * knows where those sections start and answers here; `"none"` takes no
+   * band at all, which is what a heading row wants.
+   *
+   * Ignored entirely when the list is not striped.
+   */
+  stripeParityForIndex?(index: number): TugListViewStripeParity;
 
   /**
    * Fires when a cell becomes part of the rendered window. Useful for
@@ -942,7 +960,10 @@ export interface TugListViewProps<
    * it repeats, so a long list looks banded while a two-row list looks like
    * two identical rows. Parity comes from the row's ABSOLUTE data-source index
    * (`data-row-parity` on the cell wrapper), never from `:nth-child`, which
-   * under windowing would flip the bands as the rendered range slides.
+   * under windowing would flip the bands as the rendered range slides. A
+   * sectioned list overrides that default through
+   * `TugListViewDelegate.stripeParityForIndex`, so each section counts its
+   * bands from its own top and its heading takes none.
    *
    * A selected row drops its band: the selection fill is a translucent wash,
    * and letting the stripe tint through it would make the same selection paint
@@ -1583,9 +1604,12 @@ function resolveSelectionIndex(
  * - Cell wrapper carries `data-tug-list-cell-index` and
  *   `data-tug-list-cell-kind` for test addressability, observer
  *   index lookup, and (later) reuse-pool routing, plus
- *   `data-row-parity` — the row's index parity, which alternating row
+ *   `data-row-parity` — the band the row takes, which alternating row
  *   tint reads instead of `:nth-child` (windowing slides the rendered
- *   range, so child order is not row order). Wrappers for cells
+ *   range, so child order is not row order). It is the row's index
+ *   parity unless the delegate's `stripeParityForIndex` says
+ *   otherwise, which is how a sectioned list restarts its banding at
+ *   each heading. Wrappers for cells
  *   whose `roleForIndex` is `"header"` or `"footer"` additionally
  *   carry `data-list-cell-role` set to that value, render with
  *   `tabIndex={-1}`, and short-circuit the wrapper-level `onSelect`
@@ -2315,6 +2339,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         };
       }
     }
+
+    // The band a row takes. The delegate answers for a sectioned list, whose
+    // sections each count from their own top; a flat list has nothing to say
+    // and gets the row's index parity.
+    const stripeParityForIndex = delegate?.stripeParityForIndex;
+    const parityForIndex = React.useCallback(
+      (index: number): TugListViewStripeParity =>
+        stripeParityForIndex?.(index) ?? (index % 2 === 0 ? "even" : "odd"),
+      [stripeParityForIndex],
+    );
 
     const estimatedHeightForKind = delegate?.estimatedHeightForKind;
     const estimatedHeightForKindOnly = React.useCallback(
@@ -5981,7 +6015,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   className="tug-list-view-cell"
                   data-tug-list-cell-index={index}
                   data-tug-list-cell-kind={kind}
-                  data-row-parity={index % 2 === 0 ? "even" : "odd"}
+                  data-row-parity={parityForIndex(index)}
                   data-list-cell-role={wrapperRoleAttr}
                   data-selected={wrapperSelectedAttr}
                   data-disabled={wrapperDisabledAttr}
@@ -6002,7 +6036,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 className="tug-list-view-cell"
                 data-tug-list-cell-index={index}
                 data-tug-list-cell-kind={kind}
-                data-row-parity={index % 2 === 0 ? "even" : "odd"}
+                data-row-parity={parityForIndex(index)}
                 data-list-cell-role={wrapperRoleAttr}
                 data-selected={wrapperSelectedAttr}
                 data-disabled={wrapperDisabledAttr}

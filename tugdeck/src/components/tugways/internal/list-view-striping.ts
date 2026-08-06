@@ -43,6 +43,13 @@ export type TugListViewStripeStrength =
   | "medium"
   | "strong";
 
+/**
+ * Which band a row takes. `"even"` / `"odd"` are the two washes; `"none"`
+ * takes neither and leaves the row on the host surface — a section heading
+ * standing between two banded runs, not part of either.
+ */
+export type TugListViewStripeParity = "even" | "odd" | "none";
+
 /** The object form of `rowStriping` — tune strength and/or color. */
 export interface TugListViewRowStripingConfig {
   /**
