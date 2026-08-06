@@ -47,8 +47,6 @@ import { TugBox } from "../tug-box";
 import { TugLabel } from "../tug-label";
 import { TugChoiceGroup } from "../tug-choice-group";
 import { TugFileChooser } from "../tug-file-chooser";
-import { TugPushButton } from "../tug-push-button";
-import { dispatchCommand } from "@/command-dispatch";
 import { useResponderForm } from "../use-responder-form";
 import {
   normalizeStackChord,
@@ -223,26 +221,8 @@ export function SettingsGeneralBody() {
           />
           <TugLabel size="sm" emphasis="calm" className="settings-general-hint">
             {stackChord === "cycle"
-              ? `${stackChordGlyph === undefined ? "Cycling" : stackChordGlyph} brings the pane that has been buried longest to the front — no menu, so a slot of N panes is back where it started after N presses. The picker is still on the title-bar badge, and on ⌘-click.`
-              : `${stackChordGlyph === undefined ? "Revealing" : stackChordGlyph} opens the title-bar picker so you can read the stack before choosing. Both commands stay in the Window menu either way.`}
-          </TugLabel>
-        </TugBox>
-
-        <TugBox
-          label="Keyboard Shortcuts"
-          labelPosition="legend"
-          variant="bordered"
-          className="settings-general-group"
-        >
-          <TugPushButton
-            data-testid="settings-open-keyboard-card"
-            onClick={() => dispatchCommand(TUG_ACTIONS.SHOW_KEYBOARD_SHORTCUTS)}
-          >
-            Open Keyboard Shortcuts
-          </TugPushButton>
-          <TugLabel size="sm" emphasis="calm" className="settings-general-hint">
-            Every command Tug can perform and what it is bound to, in a card of
-            its own.
+              ? `${stackChordGlyph === undefined ? "Cycling" : stackChordGlyph} brings the pane buried longest to the front. The picker stays on the title-bar badge and on ⌘-click.`
+              : `${stackChordGlyph === undefined ? "Revealing" : stackChordGlyph} opens the title-bar picker so you can read the stack before choosing.`}
           </TugLabel>
         </TugBox>
       </div>

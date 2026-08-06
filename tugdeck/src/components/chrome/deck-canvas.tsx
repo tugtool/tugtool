@@ -592,12 +592,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           ? settingsCard.id
           : store.addCard("settings");
         if (incomingCardId === null) return;
-        // Settings is `placement: "center"`: it lands in the middle of the
-        // canvas on every show, not only the first, so a position saved under
-        // an older arrangement can never leave it hiding behind the Lens. The
-        // menu path gets this from `showSingletonCard`; ⌘, does its own
-        // find-or-create, so it asks for the same thing here.
-        if (settingsCard) store.centerPane(incomingCardId);
         transferFocusForActivation({
           outgoingCardId: store.getFirstResponderCardId(),
           incomingCardId,
@@ -607,10 +601,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       },
       [TUG_ACTIONS.SHOW_KEYBOARD_SHORTCUTS]: (_event: ActionEvent) => {
         // Open (or raise) the Keyboard Shortcuts singleton card. Same
-        // find-or-create-then-focus-claim shape as SHOW_SETTINGS, including
-        // the re-center: the card is `placement: "center"`, so it lands in
-        // the middle of the canvas on every show. Dispatched by the app
-        // menu's item and by the Settings card's control.
+        // find-or-create-then-focus-claim shape as SHOW_SETTINGS. Dispatched
+        // by the app menu's item and by the Lens.
         const snapshot = store.getSnapshot();
         const keyboardCard = snapshot.cards.find(
           (c) => c.componentId === "keyboard",
@@ -619,7 +611,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           ? keyboardCard.id
           : store.addCard("keyboard");
         if (incomingCardId === null) return;
-        if (keyboardCard) store.centerPane(incomingCardId);
         transferFocusForActivation({
           outgoingCardId: store.getFirstResponderCardId(),
           incomingCardId,

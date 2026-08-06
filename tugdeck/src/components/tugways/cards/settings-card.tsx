@@ -7,6 +7,10 @@
  * `DeckManager.showSingletonCard("settings")` — at most one Settings card
  * exists at a time.
  *
+ * Its pane is placed, sized, and imposed like any other card's: it cascades on
+ * open and takes a slot under an imposition. Settings is a surface the user
+ * arranges alongside the work it is about, not a modal to be dismissed.
+ *
  * The card grows to its content and lets the pane scroll it, so the scroll
  * offset persists into the card-state bag for free. What is persisted about
  * the sections themselves is the **collapsed** set (see
@@ -23,7 +27,7 @@
  * The keymap configurator is not here. It is a `TugListView`, which needs a
  * container with a definite height, and this card deliberately has none — it
  * lives in the Keyboard Shortcuts card (`keyboard-card.tsx`), reachable from
- * the General section's control.
+ * the app menu and the Lens.
  *
  * Laws: the collapsed set is external state read through `useTugbankValue`
  * ([L02] via `useSyncExternalStore`); the accordion dispatches
@@ -64,8 +68,8 @@ interface SettingsSectionSpec {
 
 const SECTIONS: readonly SettingsSectionSpec[] = [
   // "General" wears a sliders icon for app-wide preferences; "Session Card"
-  // wears the session card's own icon; "Text Card" a file icon; "Maker" a tool
-  // icon for the app-maker gate.
+  // wears the session card's own icon; "Text Card" a file icon; "Advanced" a
+  // tool icon for the settings that change how the app itself runs.
   { id: "general", label: "General", Icon: Settings2, Body: SettingsGeneralBody },
   {
     id: "sessionCard",
@@ -74,7 +78,7 @@ const SECTIONS: readonly SettingsSectionSpec[] = [
     Body: SettingsSessionCardBody,
   },
   { id: "textCard", label: "Text Card", Icon: FileText, Body: SettingsTextCardBody },
-  { id: "app", label: "Maker", Icon: Wrench, Body: SettingsAppBody },
+  { id: "app", label: "Advanced", Icon: Wrench, Body: SettingsAppBody },
 ];
 
 function SectionTrigger({ spec }: { spec: SettingsSectionSpec }) {
@@ -167,7 +171,7 @@ export function SettingsCardContent() {
       >
         <TugAccordion
           type="multiple"
-          variant="separator"
+          variant="plain"
           value={[...open]}
           senderId={accordionSenderId}
           focusGroup={focusGroup}
@@ -202,11 +206,8 @@ export function registerSettingsCard(): void {
   registerCard({
     componentId: "settings",
     contentFactory: () => <SettingsCardContent />,
-    defaultMeta: { title: "Settings", closable: true },
+    defaultMeta: { title: "Settings", icon: "Settings", closable: true },
     hidden: true,
-    // App-wide settings open in the middle of the deck, every time — the one
-    // place the pinned Lens can never be covering, whichever side it holds.
-    placement: "center",
     sizePolicy: {
       // The session card's envelope. Four expanded sections are taller than
       // any window, so the card scrolls by design; the room is what keeps the

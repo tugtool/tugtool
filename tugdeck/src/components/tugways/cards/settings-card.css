@@ -14,6 +14,21 @@
   font-family: var(--tug-font-family-sans);
 }
 
+/* Sections stand apart by spacing and by the header's own tone rather than by
+   rules between them (the accordion is `variant="plain"`). A stack of four
+   dividers reads as a table; four banded headers with air around them read as
+   four places. */
+.settings-card-sections {
+  gap: var(--tug-space-2xl);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-sunken-rest */
+.settings-card .tug-accordion-trigger {
+  background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
+  color: var(--tugx-block-header-text);
+  padding: var(--tug-space-md) var(--tug-space-lg);
+}
+
 .settings-card-trigger {
   display: flex;
   align-items: center;

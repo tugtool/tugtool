@@ -68,7 +68,7 @@ describe.skipIf(!SHOULD_RUN)("at0154: Settings card is a singleton", () => {
             (el.querySelector(".tug-accordion-trigger")?.textContent || "").trim(),
           )`,
         ),
-      ).toEqual(["General", "Session Card", "Text Card", "Maker"]);
+      ).toEqual(["General", "Session Card", "Text Card", "Advanced"]);
 
       // ---- Put another pane on top so the raise is observable.
       await app.evalJS(

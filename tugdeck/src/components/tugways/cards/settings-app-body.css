@@ -1,9 +1,8 @@
 /* ----------------------------------------------------------------------------
-   .settings-app — the App settings panel
+   .settings-app — the Advanced settings panel
    ----------------------------------------------------------------------------
-   App-level preferences, hosted by the Settings card's App tab. One
-   section today: the Maker box with the maker-mode switch and its
-   explanatory hint.
+   App-level preferences, hosted by the Settings card's Advanced section. One
+   box today: Maker, with the maker-mode switch and its explanatory hint.
    ----------------------------------------------------------------------------- */
 
 .settings-app {
@@ -25,7 +24,14 @@
      out one legend taller on a late mount than after a style recalc — the
      hop); taking the legend out of flow removes that layout entirely. */
   position: relative;
-  padding-top: calc(var(--tug-space-lg) + 8px);
+}
+
+/* Generous inset, matching .settings-session-card-group: the legend overhangs
+   the top border, so the switch needs real room beneath it rather than the one
+   line the legend itself occupies. Compound (0,3,0) selector needed to beat
+   TugBox's own inset padding rule `.tug-box-inset.tug-box-md` (0,2,0). */
+.settings-app .settings-app-group.tug-box-bordered {
+  padding: var(--tug-space-2xl) var(--tug-space-2xl) var(--tug-space-xl);
 }
 
 /* The legend sits ON the border line, painted over it, out of flow. */
@@ -62,12 +68,11 @@
 /* The hint is a TugLabel (size sm, emphasis calm). TugLabel is
    `inline-flex` by default, which shrinks to content and wraps at odd
    points; make this instance a full-width block so its text flows as a
-   normal paragraph with a comfortable measure and line-height. The
-   descendant selector outranks `.tug-label` so the display override
-   wins deterministically. */
+   normal paragraph. The descendant selector outranks `.tug-label` so the
+   display override wins deterministically. The box's generous inset is the
+   margin — see .settings-general-hint for why there is no measure clamp. */
 .settings-app .settings-app-hint {
   display: flex;
   width: 100%;
-  max-width: 60ch;
   line-height: var(--tug-line-height-lg);
 }

@@ -1,5 +1,5 @@
 /**
- * settings-app-body.tsx — the App settings panel.
+ * settings-app-body.tsx — the Advanced settings panel.
  *
  * App-level (not card-level) preferences. Today that is one switch:
  * **Maker Mode**, the gate on the app-maker tooling — the Maker menu

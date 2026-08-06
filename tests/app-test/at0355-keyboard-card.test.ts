@@ -10,16 +10,14 @@
  * rather than making another. A user with five keymap editors open would have
  * five answers to "what is ⌘W bound to".
  *
- * The doors driven here are the app menu's item (via the command it sends)
- * and the Settings card's control. The third — the Lens — is a listing, and
- * `cards-groups.test.ts` already enforces that every registration resolves a
- * Lens home.
+ * The door driven here is the app menu's item, via the command it sends. The
+ * other — the Lens — is a listing, and `cards-groups.test.ts` already enforces
+ * that every registration resolves a Lens home.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
  * @covers tugdeck/src/components/tugways/cards/keyboard-card.tsx
  * @covers tugdeck/src/components/tugways/cards/settings-keymap-body.tsx
- * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
  * @covers tugdeck/src/action-dispatch.ts
  */
 
@@ -90,44 +88,6 @@ describe.skipIf(!SHOULD_RUN)("at0355: the Keyboard Shortcuts card", () => {
       );
       expect(await app.evalJS<number>(countByComponent("keyboard"))).toBe(1);
       expect(await app.getFocusedCardId()).toBe(keyboardCardId);
-    } finally {
-      await app.close();
-    }
-  });
-
-  test("the Settings card's control opens the same one card", async () => {
-    const app = await launchTugApp({ ...NO_AX, testName: "at0355-keyboard-from-settings" });
-    try {
-      // Open it once by command, so the control below has an existing card to
-      // raise rather than create — the singleton claim is about both doors
-      // reaching one card, not each door being idempotent alone.
-      await app.evalJS(
-        `window.__tug.dispatchControlAction("show-keyboard-shortcuts", {})`,
-      );
-      await app.waitForCondition<boolean>(`${countByComponent("keyboard")} === 1`);
-      const keyboardCardId = await app.evalJS<string>(
-        `window.tugdeck.diag.getDeckState().cards.find(
-          (c) => c.componentId === "keyboard",
-        ).id`,
-      );
-
-      // The control lives in Settings ▸ General, expanded by default.
-      await app.evalJS(
-        `window.__tug.dispatchControlAction("show-card", { component: "settings" })`,
-      );
-      await app.waitForCondition<boolean>(
-        `document.querySelector('[data-testid="settings-open-keyboard-card"]') !== null`,
-        { timeoutMs: 8000 },
-      );
-      await app.click('[data-testid="settings-open-keyboard-card"]');
-
-      await app.waitForCondition<boolean>(
-        `window.tugdeck.diag.getDeckState().panes.at(-1).cardIds.includes(
-          ${JSON.stringify(keyboardCardId)},
-        )`,
-        { timeoutMs: 8000 },
-      );
-      expect(await app.evalJS<number>(countByComponent("keyboard"))).toBe(1);
     } finally {
       await app.close();
     }

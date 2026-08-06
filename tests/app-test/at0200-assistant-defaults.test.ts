@@ -161,16 +161,21 @@ async function textAt(app: App, selector: string): Promise<string | null> {
 }
 
 /**
- * Bring up the Settings card's **Session Card** tab — where the Assistant box
- * lives. The card opens on the General tab, so the tab is selected explicitly
- * rather than assumed.
+ * Bring up the Settings card's **Session Card** section — where the Assistant
+ * box lives. Sections are accordion items, all expanded until the reader
+ * collapses one, so this waits for the body rather than clicking a tab.
  */
-async function openSessionCardTab(app: App): Promise<void> {
+async function openSessionCardSection(app: App): Promise<void> {
   await app.waitForCondition<boolean>(
     `document.querySelector('[data-testid="settings-card"]') !== null`,
     { timeoutMs: 8000 },
   );
-  await app.click('[data-testid="tug-tab-sessionCard"]');
+  await app.waitForCondition<boolean>(
+    `document.querySelector(
+      '[data-testid="settings-section-sessionCard"][data-state="open"]',
+    ) !== null`,
+    { timeoutMs: 8000 },
+  );
   await app.waitForCondition<boolean>(
     `document.querySelector(${JSON.stringify(SETTINGS)}) !== null`,
     { timeoutMs: 8000 },
@@ -216,7 +221,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.evalJS(
             `window.__tug.dispatchControlAction("show-card", { component: "settings" })`,
           );
-          await openSessionCardTab(app);
+          await openSessionCardSection(app);
 
           // ---- All three Assistant controls are the real chips, and the old
           //      Permission Mode dropdown is gone.
@@ -453,7 +458,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           // ---- Confirm ("Review Defaults") opens the Settings card.
           await app.click('[data-testid="alert-confirm"]');
-          await openSessionCardTab(app);
+          await openSessionCardSection(app);
 
           // ---- The card was reset to the `default` selector: once its
           //      session reports capabilities, the seed is Default (no

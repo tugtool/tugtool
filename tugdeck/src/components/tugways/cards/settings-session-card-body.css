@@ -1,10 +1,10 @@
 /* ----------------------------------------------------------------------------
-   .settings-session-card — the General settings panel
+   .settings-session-card — the Session Card settings panel
    ----------------------------------------------------------------------------
    Two stacked sections: Response (transcript magnification plus the
    inter-entry margin slider) and Editor (prompt editor typography,
    view toggles, and submit-key policy). Hosted by the Settings card's
-   General tab.
+   Session Card section.
    ----------------------------------------------------------------------------- */
 
 .settings-session-card {

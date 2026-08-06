@@ -13,8 +13,7 @@
  * card root fills the pane (`height: 100%; min-height: 0`) and
  * `.settings-keymap`'s existing chain resolves against it unchanged.
  *
- * Shown via the app menu's Keyboard Shortcuts… item and a control in the
- * Settings card, both of which route through
+ * Shown via the app menu's Keyboard Shortcuts… item, which routes through
  * `DeckManager.showSingletonCard("keyboard")` — at most one exists at a time.
  *
  * Laws: layout lives in keyboard-card.css [L06].
@@ -40,6 +39,10 @@ export function KeyboardCardContent() {
  * type-picker `[+]` menu — it is an app-level configurator, not pane content —
  * while the Lens still lists it. The envelope matches the session and Settings
  * cards: a list this long wants the room.
+ *
+ * Placement is the deck's to decide. This card is a working surface the user
+ * keeps open beside other cards, not a dialog to be dismissed, so it cascades
+ * and takes a slot under an imposition like everything else.
  */
 export function registerKeyboardCard(): void {
   registerCard({
@@ -47,9 +50,6 @@ export function registerKeyboardCard(): void {
     contentFactory: () => <KeyboardCardContent />,
     defaultMeta: { title: "Keyboard Shortcuts", icon: "Keyboard", closable: true },
     hidden: true,
-    // An app-level configurator opens in the middle of the deck, every time —
-    // the one place the pinned Lens can never be covering.
-    placement: "center",
     sizePolicy: {
       min: { width: 800, height: 600 },
       preferred: { width: 800, height: 1200 },
