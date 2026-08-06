@@ -6,26 +6,6 @@ body {
      selection, cursors, spinners, tab underlines, color-well) resolves here. */
   --tugx-accent: --tug-color(orange, l: 755, c: 1000);
 
-  /* The container focus RING — the stroke an item-group container (list,
-     accordion, radio / choice / option group, tab bar) wears while it holds
-     the keyboard. Two knobs tune it, and they fail in opposite directions:
-
-       `-tone`   how much accent survives being pulled toward the surface the
-                 container sits on. Lower = quieter. Turn this DOWN when the
-                 ring shouts.
-       `-width`  the thickness, in `styles/focus-ring.css` (geometry, not a
-                 theme decision). Turn this UP when the ring does not read.
-
-     The pull is what keeps a container perimeter from reading as a hard bright
-     rectangle, and it resolves opaquely against the host's published
-     `--tugx-ambient-surface`. At 100% the mix is a pass-through and the ring
-     is the FULL accent, matching the movement caret — weight alone (cover +
-     body vs. the caret bar) tells "container" from "element". Tone DOWN from
-     here to soften the perimeter without touching the caret.
-     See `styles/focus-ring.css`. */
-  --tugx-focus-container-ring-tint: var(--tugx-accent);
-  --tugx-focus-container-ring-tone: 100%;
-
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
   --tug-motion-duration-glacial: calc(500ms * var(--tug-timing));

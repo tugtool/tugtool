@@ -1,25 +1,28 @@
 /**
  * at0121-list-view-container-focus.test.ts — TugListView container-stop shape.
  *
- * "Ring on the component, cursor on the row." When a list is authored into a
- * `focusGroup`, the scroll **container** registers as one item-container engine
- * stop and carries the focus ring ([P05]); cell wrappers drop out of the Tab
- * order entirely, so the list is one stop, not one-per-row. On Tab the
- * movement cursor lands on the first row (`data-key-cursor`) — the ring stays on
- * the container and never moves onto a row ([P01]/[P03]).
+ * "One stop on the component, the whole mark on the row." When a list is
+ * authored into a `focusGroup`, the scroll **container** registers as one
+ * item-container engine stop ([P05]); cell wrappers drop out of the Tab order
+ * entirely, so the list is one stop, not one-per-row. On Tab the movement
+ * cursor lands on the first row (`data-key-cursor`) and carries the leading-edge
+ * caret — the container itself paints nothing ([P01]/[P03]).
  *
  * The gallery `TugListView (focus)` card mounts a container-stop list. The test
  * proves:
  *   - **rows are not Tab stops:** no cell wrapper is a native Tab stop;
- *   - **Tab → one stop, perimeter ring via the overlay:** Tab lands the key view
- *     on the scroll container, which marks the whole list as the focused
- *     container with a perimeter ring. The ring is painted by the
- *     `.tug-list-view-ring` overlay (a sticky first child), NOT by an outline on
- *     the scroller — an outline is painted before positioned descendants, so
- *     selected rows and sticky group headers cut it; the overlay paints over
- *     them. The scroller itself draws no outline in any state;
- *   - **cursor lands on the first row:** the first cell carries `data-key-cursor`
- *     (its ring) while the container holds the key view.
+ *   - **Tab → one stop, and the container stays bare:** Tab lands the key view
+ *     on the scroll container, which draws neither an outline nor a background
+ *     layer in any state. The list wore a perimeter ring for a while — painted
+ *     by a sticky `.tug-list-view-ring` overlay, because an outline on the
+ *     scroller is painted before positioned descendants and got cut by selected
+ *     rows and sticky group headers — and the machinery that took (a measured
+ *     scrollport height, a scrollbar width, a two-layer band, a z-index lift)
+ *     is part of why the mark was retired: the cursor caret already answers
+ *     which container holds the keyboard by sitting in it;
+ *   - **cursor lands on the first row, wearing the caret:** the first cell
+ *     carries `data-key-cursor` and paints its leading-edge bar while the
+ *     container holds the key view.
  *
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/tugways/tug-list-view.css
@@ -61,28 +64,30 @@ function deckShape() {
   };
 }
 
-// Container snapshot: the scroller's own (suppressed) marks, the ring
-// overlay's stroke + measured height, the keyboard marker, and the tab stop.
-// The ring lives on `.tug-list-view-ring::before` — its outline width is the
-// mark, and its height must be the published scrollport measure (0 would mean
-// the ring resolves but paints a zero-height box: present in style, invisible
-// in the app).
+// Container snapshot: the scroller's own (suppressed) marks, the keyboard
+// marker, and the tab stop. Both `outline` and `backgroundImage` must stay bare
+// in every state — those are the two forms the retired container mark took.
 const CONTAINER_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(CONTAINER)});
   if (!el) return null;
   var cs = getComputedStyle(el);
-  var ring = el.querySelector(".tug-list-view-ring");
-  var ringBefore = ring ? getComputedStyle(ring, "::before") : null;
   return {
     outline: cs.outlineWidth,
     frameWidth: cs.borderLeftWidth,
     backgroundImage: cs.backgroundImage,
-    ringOutline: ringBefore ? ringBefore.outlineWidth : null,
-    ringHeight: ringBefore ? parseFloat(ringBefore.height) || 0 : 0,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
     tabIndex: el.getAttribute("tabindex"),
     registered: el.hasAttribute("data-tug-focusable"),
   };
+})()`;
+
+// The cursor row's leading-edge caret — a `::before` on the cell, the element
+// mark that is now the list's entire keyboard treatment.
+const CURSOR_BAR = `(function(){
+  var el = document.querySelector(${JSON.stringify(DEMO)} + " [data-tug-list-cell-index=\\"0\\"]");
+  if (!el) return null;
+  var cs = getComputedStyle(el, "::before");
+  return { content: cs.content, width: cs.width, background: cs.backgroundColor };
 })()`;
 
 // Whether EVERY rendered cell wrapper in the demo is tabIndex=-1.
@@ -105,11 +110,14 @@ interface ContainerProbe {
   outline: string;
   frameWidth: string;
   backgroundImage: string;
-  ringOutline: string | null;
-  ringHeight: number;
   keyboardReached: boolean;
   tabIndex: string | null;
   registered: boolean;
+}
+interface CursorBar {
+  content: string;
+  width: string;
+  background: string;
 }
 
 describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop", () => {
@@ -146,13 +154,9 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         // (2) Tab → the container is the one stop: it takes the key view and
-        // the ring OVERLAY paints the perimeter stroke. The scroller itself
-        // stays at zero outline in the focused state too — an outline there is
-        // painted under selected rows and sticky group headers, which is the
-        // occlusion the overlay exists to end; a scroller that painted both
-        // would be marking twice. The overlay's box must also stand at the
-        // measured scrollport height — a stroke on a zero-height box passes a
-        // style read and draws nothing.
+        // paints nothing. The global `[data-key-view-kbd]` rule would otherwise
+        // ring it at full accent, so the zero is a live suppression, not an
+        // absence — and `backgroundImage` covers the other form the mark took.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(CONTAINER)}).hasAttribute("data-key-view-kbd")`,
@@ -160,17 +164,7 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         );
         const onContainer = await app.evalJS<ContainerProbe>(CONTAINER_PROBE);
         expect(onContainer?.keyboardReached).toBe(true);
-        expect(parseFloat(onContainer?.ringOutline ?? "0")).toBeGreaterThan(0);
-        expect(onContainer?.ringHeight ?? 0).toBeGreaterThan(0);
-        // Both layers describe ONE band and therefore carry the SAME width —
-        // the scroller's outline (painted before descendants, so rows cover it
-        // inside the scrollport) and the overlay's stroke (a positioned
-        // descendant, which they cannot). Their union is the ring; asserting
-        // the widths match is what keeps them one band rather than two
-        // concentric rings at two weights.
-        expect(parseFloat(onContainer?.outline ?? "0")).toBe(
-          parseFloat(onContainer?.ringOutline ?? "-1"),
-        );
+        expect(parseFloat(onContainer?.outline ?? "0")).toBe(0);
         expect(onContainer?.backgroundImage ?? "none").toBe("none");
         // "The list is one stop" is an ENGINE fact, not a tabindex fact. Once
         // the focus engine drives the card the container renders no tabindex
@@ -186,8 +180,9 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         ).toBe(true);
         expect(onContainer?.registered).toBe(true);
 
-        // (3) The movement cursor lands on the first row — the ring stays on the
-        // container ([P03]), the cursor marks the current row.
+        // (3) The movement cursor lands on the first row and PAINTS there —
+        // the caret is the list's whole keyboard mark now, so a cursor
+        // attribute with no visible bar would leave the focused list unmarked.
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(`${DEMO} [data-tug-list-cell-index="0"]`)}).hasAttribute("data-key-cursor")`,
           { timeoutMs: 6000 },
@@ -196,6 +191,10 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
           `document.querySelector(${JSON.stringify(`${DEMO} [data-tug-list-cell-index="0"]`)}).hasAttribute("data-key-cursor")`,
         );
         expect(cursorOnFirst).toBe(true);
+        const bar = await app.evalJS<CursorBar>(CURSOR_BAR);
+        expect(bar?.content).not.toBe("none");
+        expect(parseFloat(bar?.width ?? "0")).toBeGreaterThan(0);
+        expect(bar?.background).not.toBe("rgba(0, 0, 0, 0)");
       } finally {
         await app.close();
       }

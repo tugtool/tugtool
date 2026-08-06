@@ -100,19 +100,18 @@
 /* ----------------------------------------------------------------------------
    Focus language — item-group treatment ([P01]/[P02]/[P08])
    ----------------------------------------------------------------------------
-   The sidebar is ONE Tab stop: the toned container ring on the list when it
-   holds the key view, the full cursor ring on the tab under the cursor. The
-   list commits live, so the cursor always rides the selected tab.
+   The sidebar is ONE Tab stop, and the WHOLE of its keyboard mark is the ring
+   on the tab under the cursor. The list commits live, so the cursor always
+   rides the selected tab. The list itself shows nothing: it is the key view, so
+   the global leaf ring in `focus-ring.css` would stroke it, and a rectangle
+   around the whole sidebar just outside a rectangle around one row inside it is
+   one mark drawn twice. Suppress it — see `styles/focus-ring.css`.
+
+   `data-key-within` goes with it: never a descend target, same transient-stamp
+   note as tug-tab-bar.css.
    ----------------------------------------------------------------------------- */
 
-.tug-tab-view-list[data-key-view-kbd] {
-  outline: var(--tugx-focus-container-ring-width) solid
-    var(--tugx-focus-container-ring);
-  outline-offset: calc(-1 * var(--tugx-focus-container-ring-width));
-}
-
-/* Never a descend target — same transient-stamp note as tug-tab-bar.css. */
-.tug-tab-view-list[data-key-within] {
+.tug-tab-view-list:is([data-key-view-kbd], [data-key-within]) {
   outline: none;
 }
 

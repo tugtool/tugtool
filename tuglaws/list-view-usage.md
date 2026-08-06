@@ -54,26 +54,22 @@ a *data source* and a *cell renderer*; the cell renderer's job is to compose
    on click should not imply it does (no hover affordance, out of the tab
    order).
 
-5a. **The focus marks are the primitive's, and a consumer draws neither of them.**
-   A keyboard-focused list wears two marks and they answer two different
-   questions. The **container** gets a toned perimeter **ring**
-   (`--tugx-focus-container-ring`) that says *the keyboard is in this list*; the
-   **cursor row** gets a leading-edge **bar** (`--tugx-focus-cursor-bar-*`) at
-   full accent that says *and it is on this row*. Both are strokes; the tone and
-   weight gap between them is what keeps them apart
-   ([focus-language.md](focus-language.md)). The list draws no border-colour
-   change in any theme, and both marks hold at full strength through a descend
-   into a row's accessories, because a descend goes deeper into the list rather
-   than out of it.
-   A host that finds a mark wrong on its surface fixes the shared token or the
+5a. **The focus mark is the primitive's, and a consumer does not draw it.**
+   A keyboard-focused list wears exactly ONE mark: the **cursor row**'s
+   leading-edge **bar** (`--tugx-focus-cursor-bar-*`) at full accent. The
+   container draws nothing — no perimeter ring, no wash, no border-colour change
+   in any theme — because the bar sits inside the list and therefore already
+   says which list holds the keyboard ([focus-language.md](focus-language.md)).
+   The bar holds at full strength through a descend into a row's accessories,
+   because a descend goes deeper into the list rather than out of it, and the
+   lit row is what addresses the descended control.
+   A host that finds the mark wrong on its surface fixes the shared token or the
    component, never its own stylesheet. An edge-to-edge list in a clipping host
-   needs nothing special: the ring is drawn with a NEGATIVE `outline-offset`, so
-   it lands inside the list's own box where no host can clip it, and the list's
-   border box is already pinned to the scrollport rather than travelling with
-   the scrolled content. (This is what retired `ringPlacement` — an entire
-   sticky-overlay apparatus, with a measured height and a `ResizeObserver`, that
-   existed only to synthesize what one negative offset gives away. Do not
-   rebuild it for the next edge-to-edge surface.)
+   needs nothing special, and this is where the container ring was most
+   expensive: drawing a perimeter from inside a scroller took a sticky overlay
+   child, a JS-measured scrollport height and scrollbar width, a two-layer band
+   split by the clip, and a z-index lift. All of it is gone with the mark. Do
+   not rebuild any of it for the next edge-to-edge surface.
 5b. **A list's arrow edges hand on; they do not clamp, and no consumer opts in.**
    Every engine-authored list registers its spatial cursor handle
    unconditionally — the opt-in prop is gone — because the handle is what makes

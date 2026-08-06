@@ -13,22 +13,24 @@
  *
  * The gallery `Focus Walk` panel authors a three-item group (value `a` checked).
  * The test proves the **item-group focus treatment** ([P02] of the
- * focus-language plan): the group is one stop, and the container ring that
- * wraps it is NOT the leaf ring — it is the toned container token, worn a step
- * thicker than the full-accent ring on the *cursor item* inside it.
+ * focus-language plan): the group is one stop, and the ONLY mark it shows is
+ * the full-accent ring on the *cursor item* inside it. The container itself
+ * paints nothing, even though it is the element carrying `data-key-view-kbd` —
+ * a container stroke was tried three ways (leaf ring, background wash, toned
+ * thicker ring) and every one of them read as a second mark around the first.
  *   - **no ring / no tint at rest:** before keyboard focus the group has no
  *     ring and no behind-tint;
- *   - **Tab → one stop; toned ring on the group, full-accent ring on the
- *     cursor item:** Tab marks the group key-view, rings the container with the
- *     toned CONTAINER ring, and parks the element ring on the cursor item `a`.
- *     Both are strokes, so the suite asserts the WEIGHT GAP between them — the
- *     container strictly thicker — which is all that keeps them legible as two
- *     marks. (Guards against the container being repointed at the leaf token.)
+ *   - **Tab → one stop; the ring lands on the cursor ITEM, never the group:**
+ *     Tab marks the group key-view while leaving it with a zero-width outline
+ *     and no background layer, and parks the ring on the cursor item `a`. The
+ *     zero on the container is the load-bearing assertion — it is what fails
+ *     the moment someone reintroduces a container stroke, whatever token it
+ *     reads.
  *   - **arrows move the ring WITHOUT committing ([P24]):** ArrowDown moves the
  *     cursor (and the ring) to `b` while `a` stays checked and `b` stays unchecked
  *     — no selection change. **Space** then commits `b` (checks `b`, unchecks
  *     `a`). ArrowUp moves the ring back to `a` without changing the selection;
- *     Space commits `a`. The group keeps the key view + container ring
+ *     Space commits `a`. The group keeps the key view (and stays unmarked)
  *     throughout.
  *
  * @covers tugdeck/src/components/tugways/tug-radio-group.tsx
@@ -72,8 +74,8 @@ function deckShape() {
 }
 
 // The group container's focus marks ([P02]): under the item-group model it
-// wears the toned CONTAINER ring — so `outline` carries a width while
-// `backgroundImage` stays "none" (the wash that used to live there is gone).
+// wears NOTHING — `outline` is zero-width and `backgroundImage` is "none" even
+// while it holds the key view. The cursor item owns the whole mark.
 const GROUP_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(GROUP)});
   if (!el) return null;
@@ -156,34 +158,28 @@ describe.skipIf(!SHOULD_RUN)("AT0117: radio group is a single item-container sto
         expect(aRest?.state).toBe("checked");
 
         // (2) Tab → one stop with the item-group treatment: the GROUP holds the
-        // key view and wears the toned CONTAINER ring, and the cursor item `a`
-        // wears the full-accent element ring inside it.
+        // key view and paints NO mark of its own, and the cursor item `a` wears
+        // the full-accent element ring inside it.
         //
-        // Both marks are strokes now, so "they are two marks" is no longer
-        // self-evident from one being an area — it rests entirely on the WEIGHT
-        // GAP, and that is what gets asserted. The container's stroke must be
-        // strictly thicker than the cursor's. If a future edit points the
-        // container back at `--tugx-focus-ring` (the leaf token) the two widths
-        // collapse to equal and this fails, which is the regression worth
-        // catching: the nested-marks conflation returns the moment they read
-        // alike. The container also paints NO background layer — it used to
-        // wear a wash there, and a container doing both would be marking twice.
+        // The zero on the container is what this step exists to hold. The
+        // global `[data-key-view-kbd]` rule would ring it at full accent, and
+        // three successive designs put a mark there deliberately (leaf ring,
+        // background wash, toned thicker ring); each read as a rectangle drawn
+        // around a rectangle. Both the outline width and the background layer
+        // are asserted, because the mark has come back as each in turn.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(`${CURSOR_RADIO} === "a"`, { timeoutMs: 6000 });
         const onGroup = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(onGroup?.keyboardReached).toBe(true);
-        expect(parseFloat(onGroup?.outline ?? "0")).toBeGreaterThan(0);
+        expect(parseFloat(onGroup?.outline ?? "0")).toBe(0);
         expect(onGroup?.behindTint).toBe("none");
         const cursorRingOnA = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
         expect(parseFloat(cursorRingOnA ?? "0")).toBeGreaterThan(0);
-        expect(parseFloat(onGroup?.outline ?? "0")).toBeGreaterThan(
-          parseFloat(cursorRingOnA ?? "0"),
-        );
 
         // (3) ArrowDown → the cursor (and its ring) move to `b`, but the selection
         // does NOT follow ([P24]): `a` stays checked and `b` stays unchecked. The
-        // group keeps the key view and its container ring — the cursor moving
-        // within a group never changes which container holds the keyboard.
+        // group keeps the key view and stays unmarked — the cursor moving within
+        // a group never changes which container holds the keyboard.
         await app.nativeKey("ArrowDown");
         await app.waitForCondition<boolean>(`${CURSOR_RADIO} === "b"`, { timeoutMs: 6000 });
         const aAfterMove = await app.evalJS<ItemProbe>(PROBE(RADIO_A));
@@ -193,7 +189,7 @@ describe.skipIf(!SHOULD_RUN)("AT0117: radio group is a single item-container sto
         expect(bAfterMove?.state).toBe("unchecked"); // ringed but not committed
         const ringStill = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(ringStill?.keyboardReached).toBe(true);
-        expect(parseFloat(ringStill?.outline ?? "0")).toBeGreaterThan(0);
+        expect(parseFloat(ringStill?.outline ?? "0")).toBe(0);
         const cursorRingOnB = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
         expect(parseFloat(cursorRingOnB ?? "0")).toBeGreaterThan(0);
 

@@ -247,37 +247,23 @@
 /* ============================================================================
    Focus language — item-group treatment ([P01]/[P02]/[P03])
    ----------------------------------------------------------------------------
-   The group is ONE Tab stop. When it holds the keyboard key view the global
-   leaf-ring rule (`focus-ring.css`) would ring the container at full accent —
-   the LEAF treatment, too loud for a group and indistinguishable from the ring
-   the cursor item carries. Override it to the toned CONTAINER ring instead, and
-   let the cursor ITEM keep the full-accent one (the global `[data-key-cursor]`
-   rule). Role-resolved through `--tugx-focus-container-ring` (default `action`,
-   role-injected by `buildRoleStyle`).
+   The group is ONE Tab stop, and the WHOLE of its keyboard mark is the ring on
+   the cursor ITEM (the global `[data-key-cursor]` rule). The group shows
+   nothing: it is the key view, so the global leaf-ring rule in `focus-ring.css`
+   would stroke the container, and a rectangle around the group just outside a
+   rectangle around the item inside it is one mark drawn twice — the thing a
+   toned, thicker container perimeter was tried against and lost to. Suppress
+   it; see `styles/focus-ring.css` for the full account.
 
-   This reads the shared CONTAINER-RING token, not `--tugx-focus-ring` or
-   `--tugx-focus-tint`. All six item-groups sit on one axis at one tone, so
-   "which container holds the keyboard" reads the same everywhere;
-   `--tugx-focus-ring` stays the LEAF ring and `--tugx-focus-tint` the leaf
-   behind-tint, both worn by controls rather than by groups.
-   ========================================================================== */
-[data-slot="tug-radio-group"][data-key-view-kbd] {
-  outline: var(--tugx-focus-container-ring-width) solid
-    var(--tugx-focus-container-ring);
-  outline-offset: var(--tugx-focus-container-ring-offset);
-}
-
-/* A radio group is a single Tab stop, never a descend target — its items move a
-   movement cursor, they are not descended into — so the group must never wear
-   the `data-key-within` "contains-active / descended-from" ring. The engine can
-   still transiently stamp it: when a trap is re-pushed while the key view is
-   ALREADY inside it (it captures that in-scope element as the mode's
-   restore-key-view), the group is marked within, then the on-open seed moves the
-   key view away — leaving a stray ring stuck around the group. (In practice this
-   only surfaces across an HMR remount mid-dialog, but it should never paint at
-   all.) Suppress it; the group only ever shows its key-view tint, and the cursor
-   ring lives on the item. */
-[data-slot="tug-radio-group"][data-key-within] {
+   `data-key-within` goes with it. A radio group is never a descend target — its
+   items move a movement cursor, they are not descended into — but the engine
+   can still transiently stamp the mark: when a trap is re-pushed while the key
+   view is ALREADY inside it (it captures that in-scope element as the mode's
+   restore-key-view), the group is marked within, then the on-open seed moves
+   the key view away, leaving a stray mark behind. (In practice this only
+   surfaces across an HMR remount mid-dialog, but it should never paint at
+   all.) */
+[data-slot="tug-radio-group"]:is([data-key-view-kbd], [data-key-within]) {
   outline: none;
 }
 

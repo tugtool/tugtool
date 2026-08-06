@@ -1869,50 +1869,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       [],
     );
 
-    // The container focus-ring overlay — the sticky first child that paints
-    // the ring over the rows (see `.tug-list-view-ring` in the CSS pair). Its
-    // geometry reconstructs the scroller's border box from a content-box-wide
-    // anchor, and two terms of that cannot be expressed in CSS from inside a
-    // scroller: the scrollport height, and the width of a classic scrollbar's
-    // track (zero under the overlay scrollbars this platform uses by default,
-    // which is why the track went unaccounted for). The effect below
-    // publishes both as custom properties on this element — direct style
-    // writes, not React state ([L06]).
-    const ringElRef = React.useRef<HTMLDivElement | null>(null);
-    const ringHeightRef = React.useRef<number>(-1);
-    const ringScrollbarRef = React.useRef<number>(-1);
-    const publishRingMetrics = React.useCallback(() => {
-      const scroller = scrollContainerRef.current;
-      const ringEl = ringElRef.current;
-      if (scroller === null || ringEl === null) return;
-      const height = scroller.clientHeight;
-      if (height !== ringHeightRef.current) {
-        ringHeightRef.current = height;
-        ringEl.style.setProperty(
-          "--tugx-list-view-scrollport-height",
-          `${height}px`,
-        );
-      }
-      // `offsetWidth - clientWidth` is the border box minus the scrollport:
-      // the two frame borders plus the scrollbar track. Subtracting the
-      // borders leaves the track alone.
-      const style = window.getComputedStyle(scroller);
-      const borders =
-        (Number.parseFloat(style.borderLeftWidth) || 0) +
-        (Number.parseFloat(style.borderRightWidth) || 0);
-      const scrollbar = Math.max(
-        0,
-        scroller.offsetWidth - scroller.clientWidth - borders,
-      );
-      if (scrollbar !== ringScrollbarRef.current) {
-        ringScrollbarRef.current = scrollbar;
-        ringEl.style.setProperty(
-          "--tugx-list-view-scrollbar-width",
-          `${scrollbar}px`,
-        );
-      }
-    }, []);
-
     // Map<index, HTMLElement> populated by cell-wrapper ref callbacks.
     // Used by `getElementForIndex` for direct DOM addressing without a
     // querySelector roundtrip. Cleaned up by the ref callback when a
@@ -2550,23 +2506,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // tracked (matches the SmartScroll-install effect's pattern).
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    // Keep the focus-ring overlay sized to the scrollport. The observer covers
-    // resizes that reach no cell (a height-only pane resize); the synchronous
-    // call covers mount and test environments where `ResizeObserver` is a
-    // no-op stub. One property write per metric, only on change.
-    React.useLayoutEffect(() => {
-      publishRingMetrics();
-      const scroller = scrollContainerRef.current;
-      if (scroller === null) return;
-      const ringObserver = new ResizeObserver(() => {
-        publishRingMetrics();
-      });
-      ringObserver.observe(scroller);
-      return () => {
-        ringObserver.disconnect();
-      };
-    }, [publishRingMetrics]);
 
     // Front-insert scroll-hold ([L23], [L06], [L22]). Runs after every
     // commit; updates the prepend trackers and, when render captured a
@@ -5880,15 +5819,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             : 0
         }
       >
-        {/* Focus-ring overlay — a sticky, zero-interaction first child that
-            doubles as the top breathing spacer (its in-flow height is the old
-            `::before` spacer's). First in flow, its static position is exactly
-            the scrollport top, so `position: sticky; top: 0` holds it there at
-            every scroll offset; its `::before` then paints the container ring
-            OVER the rows, the selection fills, and the sticky group headers —
-            the one paint order an `outline` on the scroller can never reach,
-            since an outline is painted before positioned descendants. */}
-        <div ref={ringElRef} className="tug-list-view-ring" aria-hidden="true" />
+        {/* The top breathing spacer — a sticky, zero-interaction first child.
+            First in flow, so a `::before` pseudo could never take its place;
+            sticky so the block-axis breathing room does not push the scrollport
+            top away from sticky group headers. */}
+        <div className="tug-list-view-top-spacer" aria-hidden="true" />
         {/* Leading content — a permanent, un-indexed element above row 0 that
             scrolls with the content (see `leadingContent` prop). Sits ABOVE
             the top spacer, because the spacer stands in for evicted rows:

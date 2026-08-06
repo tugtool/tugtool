@@ -193,15 +193,14 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             ),
           ).toBeGreaterThan(0);
 
-          // The list does not go dark behind the descend. Both marks say where
-          // the accessory came from — the container wash says which list, the
-          // cursor bar says which row — and losing them left the focus on a lone
-          // button with nothing around it to say what it belonged to. That
-          // behaviour is what this assertion pins, and it is unchanged; only the
-          // container mark's shape changed, from an overlay ring to a background
-          // wash. The list keeps its FULL-strength mark here rather than the
-          // reduced within-wash: a descend goes deeper into this list rather
-          // than out of it.
+          // The list does not go dark behind the descend. What says where the
+          // accessory came from is the CURSOR BAR holding its place on the row
+          // that was descended from — losing it left the focus on a lone button
+          // with nothing around it to say what it belonged to, which is the
+          // behaviour this pins. The container itself marks nothing ([D122]):
+          // neither an outline nor a background layer, in the within state any
+          // more than in the key-view one. The list is still `data-key-within`,
+          // so this is the suppression holding, not the attribute being absent.
           const descended = await app.evalJS<{
             within: boolean;
             wash: string;
@@ -220,8 +219,9 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             })()`,
           );
           expect(descended.within).toBe(true);
-          expect(descended.wash).not.toBe("none");
+          expect(descended.wash).toBe("none");
           expect(descended.outlineWidth).toBe("0px");
+          // The row the descend came from keeps its cursor bar — exactly one.
           expect(descended.cursorRows).toBe(1);
 
           // ---- A1. Inside the row the horizontal arrows walk the accessories:

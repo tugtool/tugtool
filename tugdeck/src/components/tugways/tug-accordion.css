@@ -181,23 +181,21 @@
    header), arrows move a cursor over the triggers, Space toggles the cursor
    section, and Enter descends into an open section.
 
-   The container takes a toned RING and the cursor trigger takes a leading-edge
-   BAR at full accent — the same two marks, in the same roles, that
-   `TugListView` uses. Both are strokes, and the weight and tone gap between
-   them is what keeps "which container" and "which element" apart. The two
-   components share the archetype (full-width rows, descendable) and share the
-   vocabulary; the shape of an element mark follows the shape of the item,
-   which is why the inline chip groups (radio, choice, option, tab) ring their
-   cursor instead of barring it.
+   The WHOLE of the mark is the leading-edge BAR at full accent on the cursor
+   trigger — the same treatment, in the same role, that `TugListView` uses. The
+   accordion itself shows nothing: it is the key view, so the global leaf ring
+   in `focus-ring.css` would stroke it, and a perimeter around the whole
+   accordion answers the same question the bar already answers by sitting inside
+   it. `data-key-within` (a descend into an open section) is suppressed by the
+   same rule — the bar stays put through the descend, which is what says which
+   group the descended content belongs to. See `styles/focus-ring.css`.
 
-   It keeps the FULL-strength mark through a descend rather than dropping to the
-   quiet within-mark: a descend goes deeper into this accordion rather than out
-   of it, and the mark is what says which group the descended content belongs
-   to. */
+   The two components share the archetype (full-width rows, descendable) and
+   share the vocabulary; the shape of an element mark follows the shape of the
+   item, which is why the inline chip groups (radio, choice, option, tab) ring
+   their cursor instead of barring it. */
 .tug-accordion:is([data-key-view-kbd], [data-key-within]) {
-  outline: var(--tugx-focus-container-ring-width) solid
-    var(--tugx-focus-container-ring);
-  outline-offset: var(--tugx-focus-container-ring-offset);
+  outline: none;
 }
 
 /* The movement cursor on a trigger is a leading-edge bar, matching the list's

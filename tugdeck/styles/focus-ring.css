@@ -92,22 +92,6 @@
   /* Drag-and-drop accent ring thickness — one knob for every drop affordance
      (editor, composer input area, attachment zone, tab-bar drop targets). */
   --tugx-drop-ring-width: 2px;
-  /* CONTAINER-RING GEOMETRY — the stroke an item-group wears while it holds
-     the keyboard. Deliberately separate from the leaf ring above: the two are
-     told apart by weight and tone, so they must be tunable apart. `-width` is
-     one of the two knobs for this mark (the other, `-tone`, is a colour and
-     lives in the theme files).
-
-     THE OFFSET DEFAULTS TO ZERO, and that is a structural choice, not a taste
-     one. An `outline` is drawn entirely OUTSIDE the border box, so any
-     positive offset pushes the ring further out — and an item-group that fills
-     its host edge to edge has nothing out there but the host's own clip. Zero
-     keeps the stroke on the container's own edge, which is the last place that
-     is guaranteed to exist. A full-bleed container in a clipping host goes
-     further and rings INSIDE itself; `tug-list-view.css` documents that case
-     and the two ways of drawing an inside ring that do not work. */
-  --tugx-focus-container-ring-width: 2px;
-  --tugx-focus-container-ring-offset: 0px;
 }
 
 /* Light themes carry the drop ring a pixel thicker so the accent reads with
@@ -157,75 +141,41 @@ body {
      still washes danger, not key. */
   --tugx-focus-wash: var(--tug7-surface-toggle-primary-normal-on-rest);
 
-  /* THE CONTAINER RING — the mark an item-group wears while it holds the
-     keyboard.
-     ------------------------------------------------------------------
-     An item-group CONTAINER (list, accordion, radio / choice / option group,
-     tab bar) answers "which container holds the keyboard" with a stroke around
-     its own edge. The movement caret inside it answers "which element", and
-     the two are told apart by WEIGHT rather than by kind: the caret carries
-     the accent at full strength and the container ring carries a toned-down
-     version of it, so the eye lands on the caret first and reads the ring as
-     the boundary it sits in.
+  /* AN ITEM-GROUP CONTAINER WEARS NO MARK OF ITS OWN. A list, accordion,
+     radio / choice / option group, tab bar, or tab-view sidebar is ONE Tab
+     stop, and the only thing it shows while it holds the keyboard is the
+     element mark on the item under the cursor — the ring on an inline chip,
+     the leading-edge caret on a full-width row.
 
-     THIS REPLACES A BACKGROUND WASH, and the history is worth keeping because
-     the wash was not a bad idea — it was the right answer to the wrong
-     problem. The argument for it was that a ring around a group and a ring on
-     the cursor item inside it ask two different questions in identical
-     vocabulary at two scales, so the marks should differ in KIND (area vs.
-     stroke) rather than in degree. That reasoning holds in the abstract and
-     lost in the app: an area mark has to be a colour laid over a whole
-     region, and at any strength that reads it also tints every pixel of the
-     content sitting on it. Tuning it was a search for a colour that marks
-     without colouring, and that colour does not exist — the treatment went
-     brown over a mid-tone sheet, grey-tan over a pale one, and the more it
-     was corrected toward one surface the worse it sat on the next. A stroke
-     touches only its own perimeter, so it can be as strong as it needs to be
-     without ever landing on content. Differentiating by weight costs the
-     clean two-kinds story and buys a mark that works on every ground.
+     THIS IS THE THIRD ANSWER TO THE SAME QUESTION and the one that stuck. The
+     first was a perimeter stroke at full accent, which put a bright rectangle
+     around the group and a bright ring on the item inside it — the same mark
+     in the same vocabulary at two scales, which is what a "double ring" is.
+     The second tried to separate them by KIND, making the container mark a
+     background wash; an area mark has to be a colour laid over a whole region,
+     and at any strength that reads it also tints every pixel of content
+     sitting on it, so it went brown over a mid-tone sheet and grey-tan over a
+     pale one. The third tried to separate them by WEIGHT — a toned, thicker
+     perimeter against a bright, tighter item ring — and it still read as two
+     rings, because tone is not enough separation when both marks are closed
+     rectangles a few pixels apart.
 
-     THE RING'S COLOUR IS THE ONE THING THE WASH GOT RIGHT, and it is kept.
-     Full accent on a container perimeter is a hard bright rectangle; what
-     reads as *marked* rather than as *outlined* is the accent pulled some of
-     the way toward the surface the container sits on, published by its host
-     as `--tugx-ambient-surface`. So the ring is a toned accent resolved
-     against its own ground, exactly as the wash was, and it lands the same
-     designed distance from the surface on a sheet, in a Lens well, or on the
-     canvas. `-tone` is how much accent survives that pull; a theme authors
-     it because it is a design decision per theme, not one number the language
-     imposes on all six.
+     What all three were buying is the answer to "which container holds the
+     keyboard", and the item mark already answers it: the caret or ring is
+     *inside* the container, so the container is wherever the mark is. The
+     outer stroke was redundant with the thing it surrounded. Retiring it costs
+     nothing that was being read and removes the one mark in the language that
+     could be mistaken for another mark.
 
-     TWO KNOBS DO THE TUNING, and they fail in opposite directions:
-
-       `-tone`   the colour. Lower = quieter, closer to the ground. Reach for
-                 this when the ring SHOUTS.
-       `-width`  the thickness. Reach for this when the ring does not READ —
-                 a long perimeter carries a thin stroke poorly, and adding
-                 weight is safer than adding saturation.
-
-     The result is OPAQUE. A translucent stroke picks up whatever it crosses —
-     a striping band, a selected row's fill — and changes colour along its own
-     length, which is why the mix resolves against the ambient surface rather
-     than against `transparent`. A host that publishes no surface falls back
-     to the app's default surface for the same reason.
-
-     Why this is a NEW token and not `--tugx-focus-ring`: that one is the LEAF
-     ring, worn by buttons, fields, checkboxes — elements, at full accent, and
-     the thing the container ring is deliberately quieter than. Twelve files
-     consume it. Toning it in place would quiet every leaf in the app for a
-     change that concerns six containers.
-
-     The ring rides the ACCENT axis while a committed selection fill rides the
-     KEY axis, and the split is load-bearing: selection is cobalt / blue,
-     focus is orange, so a container mark can never be misread as selection.
-     Keep them apart in any new theme.
-
-     Holding `-tone` as its own knob is also what lets `buildRoleStyle` inject
-     a role-resolved ring inline and still pick up the theme's tone: an inline
-     style cannot carry a media or attribute variant, but it can read an
-     inherited custom property. A role-bearing group tones its own role colour
-     by the same authored amount — the treatment is designed once and every
-     role wears it. */
+     So: no `--tugx-focus-container-ring`, no per-theme tone or width knob, and
+     no per-component container rule. Each item-group's CSS instead has to
+     SUPPRESS the global leaf ring below (`outline: none` at its own
+     specificity), because a group holding the key view is still
+     `[data-key-view-kbd]` and the leaf rule would otherwise ring it — that
+     suppression, not a container stroke, is what every item-group now
+     declares. A container that is NOT an item-group (a sheet holding an open
+     popover) still wears the quiet `[data-key-within]` mark below; that rule
+     was always written for that case. */
   /* THE MOVEMENT CURSOR'S BAR — the element-level mark inside a full-width row
      container. A leading-edge stripe on the cursor row, drawn on the Accent
      axis so it reads distinctly from the Key selection fill it may overlay
@@ -243,11 +193,9 @@ body {
 
      THE CARET IS THE LOUDEST THING ON THE SURFACE, and it is meant to be. It
      is the one mark that answers "where am I", so it carries the accent at
-     full strength while the container ring around it carries a toned-down
-     one — the eye should land on the caret first and read the ring as the
-     boundary it sits in. That is also why it is wider than that ring: the two
-     are different marks answering different questions, and the weight gap
-     between them is what tells them apart now that both are strokes.
+     full strength. Nothing competes with it: the container it sits in wears no
+     mark of its own (see the note above), so the caret is both "where am I"
+     and, by where it sits, "which container".
 
      The caret is not a plain stripe: it is a leading-edge triangle. Its
      trailing edge reaches its widest at the item's mid-height and tapers to a
@@ -262,66 +210,6 @@ body {
   --tugx-focus-cursor-bar-width: 3px;
   --tugx-focus-cursor-bar-point: 3px;
   --tugx-focus-cursor-bar-color: var(--tug7-element-global-fill-normal-accent-rest);
-
-  /* There is deliberately NO reduced "within" variant of the container ring.
-     The design called for one — a quieter mark for a container that merely
-     contains the active control — and building the six components found it has
-     no subject. `data-key-within` lands only on the container a scope was
-     descended FROM. The two groups that can legitimately receive it,
-     `TugListView` and `TugAccordion`, keep the FULL mark for it on purpose: a
-     descend goes deeper into the container rather than out of it, so the mark
-     must not weaken. The other four are inline chip groups that are never
-     descend targets and suppress the mark outright as a spurious engine stamp.
-     That left nothing to read a reduced variant, so it is not declared — see
-     the note in each chip group's CSS. The global `[data-key-within]` outline
-     below still serves containers that are NOT item-groups, which is the case
-     it was written for. */
-  /* The ring colour itself is NOT declared here — see the rule below `body`. */
-}
-
-/* THE RING COLOUR IS RESOLVED WHERE IT IS WORN, and it has to be.
-   A custom property's `var()`s are substituted at the element that DECLARES
-   it, and what inherits from there is the already-substituted value. Declared
-   on `body`, this formula's `var(--tugx-ambient-surface)` would resolve
-   against `body` — where nothing publishes a surface — and every container in
-   the app would inherit a colour already flattened against the fallback, no
-   matter what its own host published. The mark would silently be toned against
-   the wrong ground everywhere. (The wash this replaced shipped that way for
-   one build; the app-test caught it.)
-
-   So the declaration rides the engine's own attributes: the wash is resolved
-   on exactly the elements that can wear it, against the surface each of them
-   actually sits on. Those attributes are also the gate every consuming rule
-   already uses, so nothing computes this that would not paint it — which is
-   the other reason not to reach for `*` here, on a canvas whose node counts
-   run to five figures.
-
-   The two knobs are read as `var()` FALLBACKS rather than declared anywhere:
-   a theme declares them on `body`, and a default stated in another `body`
-   rule at equal specificity would be settled by bundle order — silently
-   losing to every theme, or beating one, depending on the import graph. As
-   fallbacks they cannot be shadowed: a theme that says nothing gets the app's
-   shipped default (the accent fill, at the dark-mode strength).
-
-   `buildRoleStyle` writes this same property INLINE on a role-bearing group
-   with the role colour substituted for the tint. An inline style is a
-   declaration on the element itself, so its `var(--tugx-ambient-surface)`
-   resolves against that group's own host — the same resolution this rule
-   gets, arrived at the same way — and inline beats an attribute selector, so
-   the role wins where both apply. */
-:is([data-key-view-kbd], [data-key-within]) {
-  --tugx-focus-container-ring: color-mix(
-    in srgb,
-    var(
-        --tugx-focus-container-ring-tint,
-        var(--tug7-element-global-fill-normal-accent-rest)
-      )
-      var(--tugx-focus-container-ring-tone, 68%),
-    var(
-      --tugx-ambient-surface,
-      var(--tug7-surface-global-primary-normal-default-rest)
-    )
-  );
 }
 
 :focus-visible {
@@ -329,9 +217,11 @@ body {
 }
 
 /* The key view's ring — the LEAF treatment (a leaf focusable IS the focusable,
-   so the ring wraps the whole component). Group key-views override this to a
-   behind-tint in their own component CSS, keyed on their `data-slot` / `role`
-   ([P02] of tugplan-focus-language). Role-resolved, default action. */
+   so the ring wraps the whole component). Role-resolved, default action.
+   An ITEM-GROUP key view suppresses this rule in its own component CSS
+   (`outline: none` on its root, at one-class-plus-one-attribute specificity):
+   a group is one Tab stop whose live element is the item under the cursor, and
+   the item's own mark is the whole treatment ([P02]). */
 [data-key-view-kbd] {
   outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
   outline-offset: var(--tugx-focus-ring-offset);
@@ -340,11 +230,11 @@ body {
 /* Rounded corners on every ring, comprehensively. The ring is an `outline`,
    which follows the key-view element's own `border-radius` — most controls
    (buttons, inputs) already carry one and round naturally, but flat container
-   key-views (radio / choice / option / list / accordion roots) are square and
-   the ring reads harsh. `:where()` holds this at zero specificity, so a
-   component's own radius always wins; only the square container key-views pick
-   up the default ring radius. No per-component bookkeeping, no clobbering.
-   Applied to the key-within mark too so it matches. */
+   key-views are square and the ring reads harsh. `:where()` holds this at zero
+   specificity, so a component's own radius always wins; only the square
+   container key-views pick up the default ring radius. No per-component
+   bookkeeping, no clobbering. Applied to the key-within mark too so it
+   matches. */
 :where([data-key-view-kbd], [data-key-within], [data-key-cursor]) {
   border-radius: var(--tugx-focus-ring-radius);
 }

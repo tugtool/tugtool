@@ -12,11 +12,11 @@
  * The gallery `Focus Walk` panel authors a three-section single-mode accordion,
  * fully collapsed; the first section's content holds a navigable inner control.
  * The test proves:
- *   - **Tab → one stop, container wash on the accordion, cursor bar on the
- *     first header** — the accordion shares TugListView's treatment (row-based
- *     descendable archetype), and shares its vocabulary: rings mark elements,
- *     washes mark containers, so the accordion paints a background wash and no
- *     stroke, and the cursor header carries a leading-edge bar;
+ *   - **Tab → one stop, cursor bar on the first header, nothing on the
+ *     accordion** — the accordion shares TugListView's treatment (row-based
+ *     descendable archetype) and its vocabulary: the cursor header carries a
+ *     leading-edge bar, and the container itself paints neither a stroke nor a
+ *     background layer even while it holds the key view;
  *   - **arrows move the cursor without expanding;**
  *   - **Space expands the cursor section;**
  *   - **Enter descends** into the open section's inner control (key view leaves
@@ -24,6 +24,7 @@
  *     and **Escape ascends** back to the accordion (key view returns, within clears).
  *
  * @covers tugdeck/src/components/tugways/tug-accordion.tsx
+ * @covers tugdeck/src/components/tugways/tug-accordion.css
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/styles/focus-ring.css
  * @covers tugdeck/src/components/tugways/cards/gallery-accordion.tsx
@@ -63,12 +64,12 @@ function deckShape() {
   };
 }
 
-// The accordion's container mark + the visible :focus-within mark. Rings mark
-// elements, washes mark containers: as an item-group container it paints a
-// background wash on its own bounds and no stroke of any kind, matching
-// TugListView. `data-key-within` is set while a descended scope is active, and
-// the accordion keeps the FULL wash for it — a descend goes deeper into the
-// group rather than out of it.
+// The accordion's container mark + the visible :focus-within mark. As an
+// item-group container it paints NOTHING — no stroke, no background layer —
+// matching TugListView; the cursor bar on a trigger is the whole treatment.
+// `data-key-within` is set while a descended scope is active, and the accordion
+// stays unmarked for that too: the bar holds its place through the descend,
+// which is what says which group the descended content belongs to.
 const ACC_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(ACC)});
   if (!el) return null;
@@ -163,17 +164,16 @@ describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single item-container stop 
         // sleep here is what made this file order-sensitive in large batches.
         await app.waitForCondition<boolean>(keyboardIsInCard("A"), { timeoutMs: 6000 });
 
-        // (1) Tab → one stop: the container WASH lands on the ACCORDION (a
-        // row-based item-group container marks its own bounds with a background
-        // layer, matching the list) and the cursor parks on the first header;
-        // nothing is expanded. The `outlineWidth === "0px"` half is the load-
-        // bearing one — a container that both washed and ringed would be the
-        // nested-marks conflation this treatment exists to retire.
+        // (1) Tab → one stop: the ACCORDION takes the key view and paints no
+        // mark of its own, and the cursor parks on the first header; nothing is
+        // expanded. Both halves are load-bearing — the container mark has been
+        // a stroke and a background layer in turn, and either one returning is
+        // the nested-marks conflation this treatment exists to retire.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(`${CURSOR_HEADER} === "first"`, { timeoutMs: 6000 });
         const onAcc = await app.evalJS<AccProbe>(ACC_PROBE);
         expect(onAcc?.keyboardReached).toBe(true);
-        expect(parseFloat(onAcc?.outline ?? "0")).toBeGreaterThan(0);
+        expect(parseFloat(onAcc?.outline ?? "0")).toBe(0);
         expect(onAcc?.backgroundImage).toBe("none");
         expect(await app.evalJS<string>(STATE(HDR_FIRST))).toBe("closed");
 
@@ -187,7 +187,7 @@ describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single item-container stop 
         expect(bar?.background).not.toBe("rgba(0, 0, 0, 0)");
 
         // (2) ArrowDown → cursor moves to `second` without expanding; ArrowUp →
-        // back to `first`. The ring stays on the accordion throughout.
+        // back to `first`. The accordion keeps the key view throughout.
         await app.nativeKey("ArrowDown");
         await app.waitForCondition<boolean>(`${CURSOR_HEADER} === "second"`, { timeoutMs: 6000 });
         expect(await app.evalJS<string>(STATE(HDR_SECOND))).toBe("closed");

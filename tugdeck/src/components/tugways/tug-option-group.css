@@ -157,25 +157,19 @@
 /* ============================================================================
    Focus language — item-group treatment ([P01]/[P02]/[P03])
    ----------------------------------------------------------------------------
-   The option group is ONE Tab stop (a multi-select toolbar). When it holds the
-   key view, override the global leaf ring → the toned CONTAINER ring on the
-   track, and let the cursor ITEM carry the full-accent one (global
-   `[data-key-cursor]`). The cursor ring sits over the on-state fill of a
-   selected item so multi-select reads without an added checkmark ([P02]).
-   Role-resolved via `--tugx-focus-container-ring` (default `action`,
-   role-injected by `buildRoleStyle`).
-   ========================================================================== */
-.tug-option-group[data-key-view-kbd] {
-  outline: var(--tugx-focus-container-ring-width) solid
-    var(--tugx-focus-container-ring);
-  outline-offset: var(--tugx-focus-container-ring-offset);
-}
+   The option group is ONE Tab stop (a multi-select toolbar), and the WHOLE of
+   its keyboard mark is the ring on the cursor ITEM (global
+   `[data-key-cursor]`), which sits over the on-state fill of a selected item so
+   multi-select reads without an added checkmark ([P02]). The track shows
+   nothing: it is the key view, so the global leaf ring would stroke it, and a
+   perimeter around the group just outside the ring on an item inside it reads
+   as one mark drawn twice. Suppress it — see the fuller account in
+   `tug-choice-group.css` and `styles/focus-ring.css`.
 
-/* An option group is a single Tab stop and never a descend target, so it must
-   never wear the `data-key-within` mark — see the identical note in
-   `tug-choice-group.css` for how the engine can still transiently stamp it, and
-   why leaving it to the global rule meant ringing the container. */
-.tug-option-group[data-key-within] {
+   `data-key-within` goes with it: the group is never a descend target, but the
+   engine can still transiently stamp the mark (same note in
+   `tug-choice-group.css`). */
+.tug-option-group:is([data-key-view-kbd], [data-key-within]) {
   outline: none;
 }
 

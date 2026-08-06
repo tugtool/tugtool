@@ -228,12 +228,11 @@ describe.skipIf(!SHOULD_RUN)("AT0330: transcript DOM eviction", () => {
           spacerTop: number;
         }>(`(function () {
   var el = document.querySelector('${SCROLLER}');
-  // The sticky ring overlay is back (.tug-list-view-ring paints the container
-  // focus ring over the rows). It is list chrome, not scroll content — it also
-  // carries the top breathing spacer's height — so "the first thing in the
-  // scroll content" is the first child after it.
+  // The list renders a sticky top-spacer element as its first child — it
+  // carries the top breathing room's height and is list chrome, not scroll
+  // content — so "the first thing in the scroll content" is the child after it.
   var kids = Array.prototype.slice.call(el.children).filter(function (k) {
-    return !k.classList.contains("tug-list-view-ring");
+    return !k.classList.contains("tug-list-view-top-spacer");
   });
   var lead = el.querySelector(".tug-list-view-leading");
   var firstCell = el.querySelector("[data-tug-list-cell-index]");

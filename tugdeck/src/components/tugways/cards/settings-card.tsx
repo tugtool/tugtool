@@ -21,6 +21,11 @@
  * section is chosen and torn down when the selection leaves — live
  * propagation holds only while that section is showing.
  *
+ * The sidebar is the card's single focus stop and it is seeded on open
+ * ([P12] via `useSeedKeyView`), so the section list wears the keyboard cursor
+ * from the moment the card appears — the arrows work immediately, and the mark
+ * says so.
+ *
  * The keymap configurator is not here — it lives in the Keyboard Shortcuts
  * card (`keyboard-card.tsx`), reachable from the app menu and the Lens.
  *
@@ -37,6 +42,7 @@ import { FileText, MessageSquareText, Settings2 } from "lucide-react";
 import { registerCard } from "@/card-registry";
 import { TugTabView, TugTabViewItem } from "@/components/tugways/tug-tab-view";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import {
   SETTINGS_SECTION_IDS,
   useSettingsSelectedSection,
@@ -111,6 +117,14 @@ export function SettingsCardContent() {
   // One item-container focus stop: Up/Down rove the sidebar and switch the
   // panel live.
   const focusGroup = useId();
+
+  // Seed the key view onto that stop with KEYBOARD modality, so the cursor ring
+  // is on the selected section the moment the card opens ([P12]). Without the
+  // seed the sidebar still holds the key view and still answers the arrows —
+  // it is the card's only stop — but at pointer modality, so it showed no mark
+  // until the first arrow. A surface that is already listening has to look like
+  // it is listening.
+  useSeedKeyView(`${focusGroup}:0`);
 
   return (
     <ResponderScope>

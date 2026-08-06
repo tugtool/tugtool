@@ -1,17 +1,20 @@
 /**
- * at0339-focus-marks-background-window.test.ts — every keyboard focus mark goes
- * quiet while the OS window is not foreground, the CONTAINER mark included.
+ * at0339-focus-marks-background-window.test.ts — the keyboard focus mark goes
+ * quiet while the OS window is not foreground, and comes back when it returns.
  *
  * `focus-ring.css` gates the focus language on `data-app-active`, which
- * `DeckManager.setHasFocus` projects onto `<html>`. Both marks under test are
- * strokes: the cursor item wears the full-accent element ring and the group
- * container wears the toned container ring ([D122]). The suppression has to
- * reach both — a container mark that kept painting behind an inactive window is
- * the leak this pins, and it is invisible to a test that only watches the leaf.
+ * `DeckManager.setHasFocus` projects onto `<html>`. The mark under test is the
+ * item-group cursor ring: an item-group container paints nothing of its own
+ * ([D122]), so the ring on the cursor ITEM is the entire treatment, and a
+ * suppression that missed it would leave a lit control behind an inactive
+ * window.
  *
  * The radio group is the instrument because it is the item-group archetype
- * whose container mark is authored directly in its own CSS, so a suppression
- * that fails to reach component-authored container marks shows up here first.
+ * whose focus rules are authored directly in its own CSS, so a suppression that
+ * fails to reach component-authored marks shows up here first. The group is
+ * read alongside the item on every phase — it must stay bare in all three,
+ * which is the retirement of the container mark holding across an activation
+ * cycle rather than only at rest.
  *
  * The suppression is anchored on `html` rather than on the bare attribute, and
  * that is load-bearing: `[data-app-active="false"] [data-key-view-kbd]` and
@@ -69,10 +72,9 @@ function deckShape() {
   };
 }
 
-// The container's stroke plus the cursor item's stroke, read together: the
-// suppression has to take BOTH marks down, and a rule that only reached one of
-// them would still pass a single-element probe. `backgroundImage` stays in the
-// probe as the marks-once guard — the container wears a stroke, not a wash.
+// The cursor item's stroke, read alongside the container's (suppressed) marks:
+// the container must stay bare in every phase, and the item's ring must track
+// the window's activation.
 const MARKS_PROBE = `(function(){
   var g = document.querySelector(${JSON.stringify(GROUP)});
   if (!g) return null;
@@ -97,7 +99,7 @@ interface MarksProbe {
 
 describe.skipIf(!SHOULD_RUN)("AT0339: focus marks stand down in a background window", () => {
   test(
-    "container ring and cursor ring both vanish on resign and both return on activate",
+    "the cursor ring vanishes on resign and returns on activate; the container never marks",
     async () => {
       const app = await launchTugApp({
         // Foreground: an app that was never active cannot resign, and the
@@ -127,8 +129,8 @@ describe.skipIf(!SHOULD_RUN)("AT0339: focus marks stand down in a background win
           { timeoutMs: 6000 },
         );
 
-        // (1) Tab → the group takes the key view and wears the toned container
-        // ring, with the full-accent element ring on the cursor item.
+        // (1) Tab → the group takes the key view and paints nothing, with the
+        // full-accent element ring on the cursor item.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `(function(){var g=document.querySelector(${JSON.stringify(GROUP)});return g && g.hasAttribute("data-key-view-kbd");})()`,
@@ -137,9 +139,9 @@ describe.skipIf(!SHOULD_RUN)("AT0339: focus marks stand down in a background win
         const foreground = await app.evalJS<MarksProbe>(MARKS_PROBE);
         expect(foreground?.appActive).toBe("true");
         expect(foreground?.keyboardReached).toBe(true);
-        expect(parseFloat(foreground?.containerOutline ?? "0")).toBeGreaterThan(0);
         expect(parseFloat(foreground?.cursorOutline ?? "0")).toBeGreaterThan(0);
-        // The container marks once: a stroke, never also a background layer.
+        // The container marks not at all — neither stroke nor background layer.
+        expect(foreground?.containerOutline).toBe("0px");
         expect(foreground?.containerBackgroundImage).toBe("none");
 
         // (2) Resign → every mark goes quiet. The engine attributes STAY on the
@@ -165,9 +167,9 @@ describe.skipIf(!SHOULD_RUN)("AT0339: focus marks stand down in a background win
           { timeoutMs: 6000 },
         );
         const returned = await app.evalJS<MarksProbe>(MARKS_PROBE);
-        expect(parseFloat(returned?.containerOutline ?? "0")).toBeGreaterThan(0);
-        expect(returned?.containerOutline).toBe(foreground?.containerOutline ?? "");
         expect(parseFloat(returned?.cursorOutline ?? "0")).toBeGreaterThan(0);
+        expect(returned?.cursorOutline).toBe(foreground?.cursorOutline ?? "");
+        expect(returned?.containerOutline).toBe("0px");
       } finally {
         await app.close();
       }

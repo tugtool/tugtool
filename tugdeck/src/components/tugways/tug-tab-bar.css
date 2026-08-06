@@ -145,26 +145,21 @@ body {
 /* ============================================================================
    Focus language — item-group treatment ([P01]/[P02]/[P08])
    ----------------------------------------------------------------------------
-   The tab bar is ONE Tab stop. When it holds the key view, override the global
-   leaf ring → the toned CONTAINER ring on the bar, and let the cursor TAB carry
-   the full-accent one. The
-   tab bar commits live ([P08] automatic activation), so the cursor always rides
-   the active tab: the focused tab shows the cursor ring (keyboard is here) over
-   its background fill (selection). The ring hugs the tab edges flush, so its
-   bottom stroke lands exactly on the tab's bottom edge — taking over from the
-   selection underline as one cohesive treatment, not two misaligned blue marks.
-   ========================================================================== */
-.tug-tab-bar[data-key-view-kbd] {
-  outline: var(--tugx-focus-container-ring-width) solid
-    var(--tugx-focus-container-ring);
-  outline-offset: var(--tugx-focus-container-ring-offset);
-}
+   The tab bar is ONE Tab stop, and the WHOLE of its keyboard mark is the ring
+   on the cursor TAB. The bar commits live ([P08] automatic activation), so the
+   cursor always rides the active tab: the focused tab shows the cursor ring
+   (keyboard is here) over its background fill (selection). The ring hugs the
+   tab edges flush, so its bottom stroke lands exactly on the tab's bottom
+   edge — taking over from the selection underline as one cohesive treatment,
+   not two misaligned blue marks. The bar itself shows nothing: it is the key
+   view, so the global leaf ring would stroke it, and a perimeter around the bar
+   just outside the ring on a tab inside it reads as one mark drawn twice.
+   Suppress it — see the fuller account in `styles/focus-ring.css`.
 
-/* A tab bar is a single Tab stop and never a descend target, so it must never
-   wear the `data-key-within` mark — see the identical note in
-   `tug-choice-group.css` for how the engine can still transiently stamp it, and
-   why leaving it to the global rule meant ringing the container. */
-.tug-tab-bar[data-key-within] {
+   `data-key-within` goes with it: the bar is never a descend target, but the
+   engine can still transiently stamp the mark (same note in
+   `tug-choice-group.css`). */
+.tug-tab-bar:is([data-key-view-kbd], [data-key-within]) {
   outline: none;
 }
 

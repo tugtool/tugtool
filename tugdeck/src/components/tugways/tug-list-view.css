@@ -189,168 +189,50 @@ body {
 }
 
 /* ---- Focus language — item-group treatment ([P01]) ----
-   The list is ONE item-container stop. It never wears the LEAF ring (full
-   accent, for elements); when it holds the keyboard key view it wears the toned
-   CONTAINER ring around its own edge, and the cursor row carries the
-   element-level mark (the leading-edge bar, below, at full accent).
+   The list is ONE item-container stop, and the WHOLE of its keyboard mark is
+   the leading-edge bar on the cursor row (below, at full accent). The scroller
+   itself shows nothing — not the LEAF ring the global rule would otherwise put
+   around it, and no container stroke of its own.
 
-   Both marks are strokes, and they are told apart by weight and tone rather
-   than by kind. An earlier design made the container mark a background WASH
-   precisely to avoid two strokes at two scales — the argument being that "which
-   container" and "which element" should not be asked in one vocabulary. It
-   reads well and did not survive the app: an area mark tints every pixel of
-   content sitting on it, and no strength of it both marked the list and left
-   the rows alone. See `styles/focus-ring.css` for the full account.
+   IT USED TO WEAR ONE, AND THAT IS WORTH KEEPING because the machinery it
+   needed is what made the case against it. A boundary mark on a scroller cannot
+   be a plain outline: outside the border box the list is routinely edge-to-edge
+   in a clipping host (a Lens band is `overflow: hidden` at zero inline
+   padding), and inside it an outline paints BEFORE the element's positioned
+   descendants, so a selected row's opaque ground erased the stroke along its
+   own edges and a sticky header cut the sides. Drawing it took a sticky overlay
+   child, a scrollport height and a scrollbar width measured in JS, a
+   two-layer band split by the clip, a z-index lift, an inner-overlap offset the
+   cursor caret had to read so it started where the ring stopped, and a
+   suppression rule for carries. All of that to answer "which container holds
+   the keyboard" — which the cursor bar already answers by sitting in it.
 
-   THE RING IS AN OVERLAY — `.tug-list-view-ring`, a sticky first child the
-   component renders, painting the stroke through its `::before`. An `outline`
-   on the scroller itself cannot do this job from either side of the border
-   box. Outside it, the list is routinely edge-to-edge in a clipping host — a
-   Lens band (`.lens-sections` is `overflow: hidden` at zero inline padding), a
-   rail — and the clip takes the side strokes and most of the rest. Inside it,
-   an outline is painted with the element that owns it, BEFORE that element's
-   positioned descendants and descendant stacking contexts, and this list has
-   both: a `TugListRow` is a stacking context (it owns its press layer) and a
-   sticky group header is positioned — so a selected row's opaque ground erased
-   the stroke along its own edges and a sticky header cut the side strokes. The
-   overlay is itself a positioned descendant, later in the tree and higher in
-   z-order than anything a row or header stacks, so it paints over all of it —
-   which is the whole point of a boundary mark: nothing inside the container
-   may sit on top of the container's own edge.
+   The mark was tried three ways: a full-accent perimeter (a bright rectangle
+   around a bright bar), a background wash (an area mark tints every pixel of
+   content sitting on it — brown over a mid-tone sheet, grey-tan over a pale
+   one), and a toned thicker stroke (still read as a second ring). See
+   `styles/focus-ring.css` for the language-level account.
 
-   The overlay's geometry: first in flow, its static position is the scrollport
-   top, and `position: sticky; top: 0` holds it there at every scroll offset,
-   so the ring stays pinned to the scrollport while the content scrolls under
-   it. Its in-flow height doubles as the top breathing spacer (see the spacer
-   note below). The one value CSS cannot express from inside a scroller is the
-   scrollport height, so the component measures `clientHeight` and publishes it
-   as `--tugx-list-view-scrollport-height` on the overlay, kept current by a
-   `ResizeObserver` — the mark's single JS-maintained input ([L06]).
-
-   The stroke itself is an inset outline on the `::before`, gated on the
-   engine's keyboard attributes, in the same toned container token the other
-   five item-group containers wear directly.
-
-   On Enter-descend the container drops the key view for an accessory inside one
-   of its rows and the engine marks it `[data-key-within]`. The list keeps the
-   FULL-strength mark for that, not the global quiet within-mark: a descend goes
-   deeper into this list rather than out of it, and the mark is what says which
-   list the accessory under the cursor belongs to. (The quiet mark is right for a
-   container the keyboard has genuinely left the surface of — a sheet holding an
-   open popover. A list row is still the list.) */
-.tug-list-view {
+   `data-key-within` — the Enter-descend into an accessory inside a row — is
+   suppressed by the same rule. The bar stays put through the descend, which is
+   what says which list the accessory under the cursor belongs to. */
+.tug-list-view,
+.tug-list-view:is([data-key-view-kbd], [data-key-within]) {
   outline: none;
 }
-.tug-list-view:is([data-key-view-kbd], [data-key-within]) {
-  /* THE BOUNDARY COVER — the ring claims the enclosing border. The overlay
-     below owns the ring's body, but it lives inside the scrollport and the
-     clip ends there, so it can never reach the boundary line the eye reads as
-     the list's edge: the list's own self-frame border (the picker hosts), or a
-     host rule sitting flush against the list (a Lens band's block rule). Those
-     pixels are OUTSIDE the padding box, which cuts both ways — the overlay
-     cannot paint them, and no row or sticky header can either, so a plain
-     outline on the scroller covers them occlusion-free. `max(frame, 1px)`
-     spans the frame when there is one and still covers a 1px host rule when
-     there is not; the negative offset pulls it onto the frame instead of
-     outside it. At (0,2,0) this also outranks the global `[data-key-view-kbd]`
-     / `[data-key-within]` outlines in `focus-ring.css`, which are (0,1,0).
 
-     The z-index lift is for the BOTTOM stroke: a host rule below the list
-     usually belongs to the NEXT sibling section, which paints later and would
-     cover an outline at its edge. Lifting the focused scroller into a
-     stacking context paints its outline after sibling chrome. Focus-time
-     only, so at-rest stacking is untouched. */
-  /* ONE band, TWO layers. The ring occupies the outermost
-     `--tugx-focus-container-ring-width` pixels of the BORDER BOX — the same
-     band on all four sides, so the frame is claimed where there is one and
-     the width never varies by side. Two layers paint that one band because no
-     single layer can reach all of it:
-
-       · this outline, which paints the whole band but is painted BEFORE the
-         scroller's descendants, so rows and sticky headers cover it wherever
-         they paint — which is exactly the scrollport, and nowhere else;
-       · the overlay's `::before` (below), a positioned descendant that
-         outranks them, aligned to the same band and clipped to the scrollport.
-
-     Their union is the complete ring, and the division of labour falls out of
-     the clip rather than being arranged. THE SCROLLBAR SIDE is the case that
-     makes it necessary: a classic scrollbar's track lies inside the border box
-     but OUTSIDE the scrollport, so the overlay is clipped short of it — the
-     ring would stop at the track's inner edge and read as a line drawn down
-     the inside of the scrollbar. Nothing paints in the track either, so the
-     outline stands there unoccluded and the ring closes around the scrollbar,
-     which is where a list's boundary belongs.
-
-     The z-index lift is for the BOTTOM stroke: a host rule below the list
-     usually belongs to the NEXT sibling section, which paints later and would
-     cover an outline at its edge. Focus-time only, so at-rest stacking is
-     untouched. */
-  outline: var(--tugx-focus-container-ring-width) solid
-    var(--tugx-focus-container-ring);
-  outline-offset: calc(-1 * var(--tugx-focus-container-ring-width));
-  z-index: 1;
-
-  /* How far the ring's inner edge reaches past a row's leading edge — the
-     band, less everything between the border box and the row's content. Zero
-     when the list's own padding already holds the rows clear of it. The
-     cursor caret reads this so it starts where the ring stops. */
-  --tugx-list-view-ring-inner-overlap: max(
-    var(--tugx-focus-container-ring-width) - var(--tugx-list-view-frame-width) -
-      var(--tugx-list-view-padding-inline),
-    0px
-  );
-}
-
-.tug-list-view-ring {
+/* The top breathing spacer — a sticky, zero-content first child. The block-axis
+   note below explains why the top half of the list's breathing room is an
+   in-flow box rather than `padding-block`: sticky descendants must pin against
+   the scrollport's padding-box edge. It has to be the FIRST in-flow box, and a
+   `::before` pseudo would always precede it, so the spacer is its own element.
+   Zero-height consumers (the Lens lists) render it at zero height. */
+.tug-list-view-top-spacer {
   position: sticky;
   top: 0;
   display: block;
-  /* In-flow height IS the top breathing room — the `::before` spacer this
-     element replaced (see the block-axis note below). Zero-height consumers
-     (the Lens lists) still get a pinned zero-height anchor for the ring. */
   height: var(--tugx-list-view-padding-block-start, var(--tugx-list-view-padding-block));
-  /* Above every row stacking context (z-index 0) and sticky group header
-     (z-index 2) — the overlay exists to outrank them. */
-  z-index: 20;
   pointer-events: none;
-}
-.tug-list-view:is([data-key-view-kbd], [data-key-within]) > .tug-list-view-ring::before {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-  /* THE BORDER BOX, reconstructed from inside. The anchor is a content-box
-     wide, scrollport-top block, so growing it by the padding and the frame on
-     each side lands this box exactly on the scroller's border box — the same
-     box the outline above rings. Both layers then describe ONE band, and the
-     overlay's job is only to repaint the part of it that rows would otherwise
-     cover. Aligning to the padding box instead would put the two strokes a
-     frame apart and draw the ring twice at two radii.
-
-     The scrollport height is the one term CSS cannot reach from in here, so
-     the component publishes it ([L06]); 0 until the first measure, so an
-     unmeasured list draws nothing rather than a wrong box. */
-  top: calc(-1 * var(--tugx-list-view-frame-width));
-  inset-inline-start: calc(
-    -1 * (var(--tugx-list-view-padding-inline) + var(--tugx-list-view-frame-width))
-  );
-  /* …plus the scrollbar track on the end side, which the anchor's content box
-     excludes. Without it this stroke stops at the scrollport edge — inside
-     the clip, so it survives — and draws a line down the INSIDE of the
-     scrollbar. Pushed out to the border box it is clipped away instead, and
-     the outline above carries the ring around the track's outer edge. */
-  inset-inline-end: calc(
-    -1 * (var(--tugx-list-view-padding-inline) + var(--tugx-list-view-frame-width) +
-          var(--tugx-list-view-scrollbar-width, 0px))
-  );
-  height: calc(
-    var(--tugx-list-view-scrollport-height, 0px) + 2 *
-      var(--tugx-list-view-frame-width)
-  );
-  /* The frame's own radius, since this box IS the border box. */
-  border-radius: var(--tugx-list-view-radius);
-  outline: var(--tugx-focus-container-ring-width) solid
-    var(--tugx-focus-container-ring);
-  outline-offset: calc(-1 * var(--tugx-focus-container-ring-width));
 }
 
 /* ---- A carry suppresses the cursor bar ----
@@ -362,30 +244,11 @@ body {
    somewhere the drop is not. Where the keyboard is has no bearing on the gesture
    in flight and is unchanged when it ends, so the bar is simply drawn again at
    the drop, on whatever was set down.
-
-   THE CONTAINER MARK STANDS DOWN TOO, for a reason about SHAPE rather than
-   about the keyboard. A ring drawn around the whole list is the one shape that
-   swallows a drop caret sitting at that list's top or bottom edge outright,
-   collapsing "where is the keyboard" and "where will this land" into a single
-   rectangle — and an inset ring sits even closer to the caret's line than an
-   outset one would. This half of the exception was dropped for the length of
-   the wash era, when the container mark was an area that drew no edge and so
-   could not swallow anything; it comes back with the ring, because the hazard
-   comes back with the ring. The keyboard has not moved during a carry; the
-   language's preference is that marks stand down only when they actively
-   mislead, and a boundary drawn across a drop target misleads.
    See tuglaws/focus-language.md, "A carry suppresses the focus marks." */
 [data-tug-carrying="true"]
   .tug-list-view
   .tug-list-view-cell[data-key-cursor]::before {
   background: transparent;
-}
-[data-tug-carrying="true"]
-  .tug-list-view:is([data-key-view-kbd], [data-key-within])
-  > .tug-list-view-ring::before,
-[data-tug-carrying="true"]
-  .tug-list-view:is([data-key-view-kbd], [data-key-within]) {
-  outline: none;
 }
 
 /* Block-axis breathing room — implemented as scroll-flow boxes
@@ -396,10 +259,9 @@ body {
    scrolls — exactly the same UX as `padding-block` would have,
    without the sticky-pin penalty.
 
-   The TOP half is `.tug-list-view-ring`'s in-flow height (above): the ring
-   overlay must be the first in-flow box so its sticky anchor is the scrollport
-   top, and a `::before` pseudo would always precede it, so the spacer role
-   moved onto the overlay itself. The bottom half stays a `::after`.
+   The TOP half is `.tug-list-view-top-spacer`'s in-flow height (above): it must
+   be the first in-flow box, and a `::before` pseudo would always precede it, so
+   it is a real element. The bottom half stays a `::after`.
 
    `--tugx-list-view-padding-block` sets a symmetric default for
    both. Optional `*-start` / `*-end` longhands
@@ -540,12 +402,13 @@ body {
   background: var(--tugx-list-view-cursor-bar-color);
   clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
+/* The caret sits flush against the row's leading edge unless a consumer insets
+   it. It used to be pushed in by the container ring's inner overlap so it
+   started where that ring stopped; with no container ring there is nothing to
+   clear. */
 .tug-list-view[data-key-view-kbd] .tug-list-view-cell[data-key-cursor]::before,
 .tug-list-view[data-key-within] .tug-list-view-cell[data-key-cursor]::before {
-  inset-inline-start: var(
-    --tugx-list-view-cursor-bar-inset,
-    var(--tugx-list-view-ring-inner-overlap, 0px)
-  );
+  inset-inline-start: var(--tugx-list-view-cursor-bar-inset, 0px);
 }
 
 /* ---- Read-only mode (`interactive={false}`) ----

@@ -106,29 +106,19 @@
 }
 
 /* While the caret is the carrier (keyboard genuinely inside the well), the focus
-   language goes fully quiet: silence the list's container mark — both the quiet
-   within-outline on any chrome above and the container WASH the list paints for
-   a descend — and the movement-cursor bar, so no accent ink competes with the
-   caret. Keyed on real focus, not mere presence — an open-but-unfocused editor
-   leaves the focus language alone (the "navigating with an open card" state).
+   language goes fully quiet: silence the quiet within-outline on any chrome
+   above and the movement-cursor bar, so no accent ink competes with the caret.
+   Keyed on real focus, not mere presence — an open-but-unfocused editor leaves
+   the focus language alone (the "navigating with an open card" state).
 
-   This quieting survives the container ring's retirement because its reason was
-   never about SHAPE. The carry exception was — a ring is the one shape that
-   swallows a drop caret at the list's edge — and it narrowed accordingly when
-   the ring became a wash. This one is about INK: a caret is its own affordance
-   and answers "where is the keyboard" already, so any accent the list adds is a
-   second answer regardless of what shape it takes. A descend into an editor is
-   the one descend that does not want the list's container mark up; every other
-   descend lands on an accessory the row owns, where the mark says which list it
-   belongs to. */
+   The reason is about INK, not shape: a caret is its own affordance and answers
+   "where is the keyboard" already, so any accent the list adds is a second
+   answer regardless of what form it takes. A descend into an editor is the one
+   descend that does not want the list's cursor bar up; every other descend
+   lands on an accessory the row owns, where the bar says which row it belongs
+   to. */
 .lens-content:has(.snippet-editor:focus-within) [data-key-within] {
   outline: none;
-}
-.lens-snippets-list:has(.snippet-editor:focus-within):is(
-    [data-key-view-kbd],
-    [data-key-within]
-  ) {
-  background-image: none;
 }
 .lens-snippets-list:has(.snippet-editor:focus-within)
   .tug-list-view-cell[data-key-cursor]::before {

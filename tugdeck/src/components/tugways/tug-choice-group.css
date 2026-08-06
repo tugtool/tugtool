@@ -223,33 +223,26 @@
 /* ============================================================================
    Focus language — item-group treatment ([P01]/[P02]/[P03])
    ----------------------------------------------------------------------------
-   The segmented control is ONE Tab stop. When it holds the key view, override
-   the global leaf ring → the toned CONTAINER ring on the track, and let the
-   cursor SEGMENT carry the full-accent one (global `[data-key-cursor]`). This
-   is what keeps the route group's two strokes readable as two marks: the
-   container's is quieter and thicker, the cursor's is brighter and tighter,
-   where before both were the same leaf ring at two scales. Role-resolved via
-   `--tugx-focus-container-ring` (default `action`, role-injected by
-   `buildRoleStyle`).
-   ========================================================================== */
-.tug-choice-group[data-key-view-kbd] {
-  outline: var(--tugx-focus-container-ring-width) solid
-    var(--tugx-focus-container-ring);
-  outline-offset: var(--tugx-focus-container-ring-offset);
-}
+   The segmented control is ONE Tab stop, and the WHOLE of its keyboard mark is
+   the ring on the cursor SEGMENT (global `[data-key-cursor]`). The track itself
+   shows nothing: it is the key view, so the global leaf ring in
+   `focus-ring.css` would stroke it, and a rectangle around the group a few
+   pixels outside a rectangle around the segment is the double ring this control
+   kept re-inventing — first as two leaf rings at two scales, then as a toned
+   thicker perimeter against a bright tighter one. Neither separation held; the
+   segment ring already says which group holds the keyboard by sitting inside
+   it. Suppress the leaf ring at one-class-plus-one-attribute specificity, which
+   outranks the global rule.
 
-/* A segmented control is a single Tab stop and never a descend target — its
-   segments move a movement cursor, they are not descended into — so it must
-   never wear the `data-key-within` mark. The engine can still transiently stamp
-   it: `data-key-within` lands on the container a scope was descended FROM, and
-   when a trap is re-pushed while the key view is already inside it, this group
-   is captured as the restore-key-view and marked, then the on-open seed moves
-   the key view away, leaving a stray mark behind. Until now that fell through to
-   the GLOBAL outline rule and rang the container — the one container ring left
-   in the app, on the least important state. Suppress it, exactly as
-   `TugRadioGroup` already does: the group shows only its key-view wash, and the
-   cursor ring lives on the segment. */
-.tug-choice-group[data-key-within] {
+   `data-key-within` is suppressed by the same rule. A segmented control is
+   never a descend target — its segments move a movement cursor, they are not
+   descended into — but the engine can still transiently stamp the mark:
+   `data-key-within` lands on the container a scope was descended FROM, and when
+   a trap is re-pushed while the key view is already inside it, this group is
+   captured as the restore-key-view and marked, then the on-open seed moves the
+   key view away, leaving a stray mark behind.
+   ========================================================================== */
+.tug-choice-group:is([data-key-view-kbd], [data-key-within]) {
   outline: none;
 }
 

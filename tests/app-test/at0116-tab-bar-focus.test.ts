@@ -3,24 +3,27 @@
  * **live** commit and the item-group visual signature ([P01]/[P02]/[P08]).
  *
  * The tab bar registers one focusable for the whole bar ([P02]) via
- * `useItemGroupKeyboard` (`commit: "live"`). When it holds the key view the
- * *bar* wears the **behind-tint** (never a leaf ring on the bar) and the cursor
- * ring lands on a tab. The tab bar is a **view switcher**, so it commits live
+ * `useItemGroupKeyboard` (`commit: "live"`). The WHOLE of its keyboard mark is
+ * the cursor ring on a tab: the bar itself paints nothing — no leaf ring, no
+ * container ring, no behind-tint — even though it is the element carrying
+ * `data-key-view-kbd`. The tab bar is a **view switcher**, so it commits live
  * (the ARIA-tabs automatic-activation pattern, [P08]): every arrow move switches
  * the active view as the cursor lands, so the cursor always rides the active
  * tab — never stranded on an un-shown tab.
  *
  * The gallery demo authors its TugTabBar (six tabs) into one focus group. The
  * test proves:
- *   - **no tint / no cursor at rest:** before keyboard focus the bar has no tint
+ *   - **no mark / no cursor at rest:** before keyboard focus the bar is unmarked
  *     and no tab carries the cursor;
- *   - **Tab → one stop, behind-tint on the bar, cursor on the active tab:** Tab
- *     tints the bar (no outline ring on the bar) and parks the cursor on
- *     `demo-tab-1` (the active tab), which stays active;
+ *   - **Tab → one stop, bar stays bare, cursor on the active tab:** Tab marks
+ *     the bar key-view-kbd while leaving it with no outline and no background
+ *     image, and parks the cursor on `demo-tab-1` (the active tab), which stays
+ *     active;
  *   - **arrows switch live:** ArrowRight moves the cursor to `demo-tab-2` AND
- *     makes it the active view, while the ring stays on the bar.
+ *     makes it the active view, while the bar keeps the key view.
  *
  * @covers tugdeck/src/components/tugways/tug-tab-bar.tsx
+ * @covers tugdeck/src/components/tugways/tug-tab-bar.css
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/styles/focus-ring.css
  * @covers tugdeck/src/components/tugways/cards/gallery-tab-bar.tsx
@@ -58,8 +61,8 @@ function deckShape() {
   };
 }
 
-// The bar's focus signature: it must wear the behind-tint (a gradient overlay)
-// and NOT an outline ring — the cursor tab owns the ring ([P02]).
+// The bar's focus signature: it must paint NOTHING — no outline, no background
+// image — while holding the key view. The cursor tab owns the whole mark ([P02]).
 const BAR_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(BAR)});
   if (!el) return null;
@@ -138,18 +141,19 @@ describe.skipIf(!SHOULD_RUN)("AT0116: tab bar is a single item-container stop (l
         const tab1Rest = await app.evalJS<TabProbe>(PROBE(TAB1));
         expect(tab1Rest?.active).toBe("true");
 
-        // (2) Tab → one stop: the BAR wears the behind-tint (a gradient overlay,
-        // NOT an outline ring) and the cursor parks on the active tab
-        // `demo-tab-1`, which stays active.
+        // (2) Tab → one stop: the BAR holds the key view but paints no mark of
+        // its own, and the cursor parks on the active tab `demo-tab-1`, which
+        // stays active.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(`${CURSOR_TAB} === "tug-tab-demo-tab-1"`, {
           timeoutMs: 6000,
         });
         const onBar = await app.evalJS<BarProbe>(BAR_PROBE);
         expect(onBar?.keyboardReached).toBe(true);
-        // Behind-tint present (a gradient), no leaf ring on the bar.
+        // No mark on the bar at all: neither the leaf ring the global rule would
+        // otherwise paint, nor a container ring, nor a behind-tint.
         expect(onBar?.behindTint).toBe("none");
-        expect(parseFloat(onBar?.outline ?? "0")).toBeGreaterThan(0);
+        expect(parseFloat(onBar?.outline ?? "0")).toBe(0);
         const tab1Focused = await app.evalJS<TabProbe>(PROBE(TAB1));
         expect(tab1Focused?.cursor).toBe(true);
         expect(tab1Focused?.active).toBe("true");

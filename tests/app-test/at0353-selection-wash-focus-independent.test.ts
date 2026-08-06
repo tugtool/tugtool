@@ -2,21 +2,26 @@
  * at0353-selection-wash-focus-independent.test.ts — a selected row's color does
  * not move when its list takes the keyboard.
  *
- * Two area marks stack on the same pixels: the list's container focus wash (an
- * accent tint painted behind the rows while the list holds the key view) and
- * the row's selection wash (a translucent blue over whatever is behind it).
- * Composited naively, ~5% of the accent hue survives through the blue and the
- * selection turns muddy the moment the list is focused — a color nobody chose.
- * `TugListRow` resolves it by painting the selection over its own opaque ground
+ * A selected row's color must be a property of the SELECTION, never of where
+ * the keyboard happens to be. The collision that named this suite was a
+ * container focus wash — an accent tint the list painted behind its rows while
+ * it held the key view — showing through the row's translucent blue selection
+ * wash: ~5% of the accent hue survived the composite and the selection turned
+ * muddy the moment the list was focused, a color nobody chose. `TugListRow`
+ * resolves it by painting the selection over its own opaque ground
  * (`--tugx-ambient-surface`, published by the host that paints the surface), so
  * the selection composites against the surface and nothing else.
  *
- * Drives the real Choose Session sheet — the surface the collision was reported
- * on. It reads the selected row's resolved paint (`background-color` + the
- * `background-image` the wash rides in) with the list holding the key view and
- * again with the key view moved up to the filter field, and requires the two to
- * be identical. The container wash's own presence/absence is asserted alongside,
- * so a run where the wash never painted cannot pass vacuously.
+ * The container wash has since been retired along with every other item-group
+ * container mark ([D122]), so today there is nothing behind the rows to bleed
+ * through. This suite is what keeps that true: it drives the real Choose
+ * Session sheet, reads the selected row's resolved paint (`background-color`
+ * plus the `background-image` the selection wash rides in) with the list
+ * holding the key view and again with the key view moved up to the filter
+ * field, and requires the two to be identical. The list's key-view attribute is
+ * asserted on both reads, so a run where the key view never moved cannot pass
+ * vacuously — and a future container mark of any kind fails here on its first
+ * build.
  *
  * @covers tugdeck/src/components/tugways/tug-list-row.css
  * @covers tugdeck/src/components/tugways/tug-list-view.css
@@ -44,12 +49,13 @@ const SELECTED_ROW = `${PICKER_FORM} .tug-list-row[data-selected="true"]`;
 const SEED_RECENTS = ["/", "/tmp", "/usr"];
 
 /**
- * The selected row's resolved paint, the surface behind it, and whether the
- * list's wash is up. `hostSurface` is read off the element that actually paints
- * the picker's ground — the row's opaque layer has to BE that color, which is
- * the property that makes the paint focus-independent in the first place. A
- * translucent value there (the pre-fix shape: the wash straight into
- * `background-color`) means the composite is back and the ground is a fiction.
+ * The selected row's resolved paint, the surface behind it, the list's
+ * (suppressed) container marks, and whether the list holds the key view.
+ * `hostSurface` is read off the element that actually paints the picker's
+ * ground — the row's opaque layer has to BE that color, which is the property
+ * that makes the paint focus-independent in the first place. A translucent value
+ * there (the pre-fix shape: the wash straight into `background-color`) means the
+ * composite is back and the ground is a fiction.
  */
 const PAINT_PROBE = `(function(){
   var row = document.querySelector(${JSON.stringify(SELECTED_ROW)});
@@ -57,14 +63,13 @@ const PAINT_PROBE = `(function(){
   var list = document.querySelector(${JSON.stringify(SESSIONS)});
   var host = document.querySelector(${JSON.stringify(PICKER_BACKDROP)});
   var rowStyle = getComputedStyle(row);
+  var listStyle = list ? getComputedStyle(list) : null;
   return {
     backgroundColor: rowStyle.backgroundColor,
     backgroundImage: rowStyle.backgroundImage,
     hostSurface: host ? getComputedStyle(host).backgroundColor : null,
-    containerRing: (function(){
-      var ring = list ? list.querySelector(".tug-list-view-ring") : null;
-      return ring ? getComputedStyle(ring, "::before").outlineWidth : "0px";
-    })(),
+    listOutline: listStyle ? listStyle.outlineWidth : "0px",
+    listBackgroundImage: listStyle ? listStyle.backgroundImage : "none",
     listHasKeyView: list ? list.hasAttribute("data-key-view-kbd") : false,
   };
 })()`;
@@ -73,7 +78,8 @@ interface PaintProbe {
   backgroundColor: string;
   backgroundImage: string;
   hostSurface: string | null;
-  containerRing: string;
+  listOutline: string;
+  listBackgroundImage: string;
   listHasKeyView: boolean;
 }
 
@@ -141,39 +147,41 @@ describe.skipIf(!SHOULD_RUN)("at0353 — the selection wash ignores the focus wa
           { timeoutMs: 8000 },
         );
 
-        // (1) List focused: the container wash is up, painted behind the rows.
+        // (1) List focused. Nothing paints behind the rows: the container mark
+        // is retired, and this is where a reintroduced one would first show.
         const focused = await app.evalJS<PaintProbe>(PAINT_PROBE);
         expect(focused?.listHasKeyView).toBe(true);
-        expect(parseFloat(focused?.containerRing ?? "0")).toBeGreaterThan(0);
+        expect(focused?.listOutline).toBe("0px");
+        expect(focused?.listBackgroundImage).toBe("none");
         // The row's own base layer IS the picker's surface — the ground it would
         // have composited against had it stayed translucent. This is the
         // load-bearing assertion: with the ground opaque and equal to the
-        // surface, what sits behind the row (the container wash, here) cannot
-        // reach the selection at all.
+        // surface, anything that ever sits behind the row cannot reach the
+        // selection at all.
         expect(focused?.hostSurface).not.toBe(null);
         expect(focused?.backgroundColor).toBe(focused?.hostSurface ?? "");
         // …with the selection wash riding above it as a background layer.
         expect(focused?.backgroundImage ?? "none").not.toBe("none");
 
-        // (2) Key view up to the filter field — the list's ring goes down. Read
-        // where the ring lives: the `.tug-list-view-ring` overlay's `::before`,
-        // not an outline on the scroller (which never paints one).
+        // (2) Key view up to the filter field — the list gives up the keyboard.
+        // The attribute flip is the gate: it is what makes the two paint reads
+        // a comparison of two genuinely different focus states rather than the
+        // same state read twice.
         await pressKey(app, "ArrowUp");
         await app.waitForCondition<boolean>(hasKeyView(FILTER), { timeoutMs: 3000 });
         await app.waitForCondition<boolean>(
           `(function(){
             var el = document.querySelector(${JSON.stringify(SESSIONS)});
-            var ring = el ? el.querySelector(".tug-list-view-ring") : null;
-            return ring ? getComputedStyle(ring, "::before").outlineWidth === "0px" : false;
+            return el ? !el.hasAttribute("data-key-view-kbd") : false;
           })()`,
           { timeoutMs: 3000 },
         );
         const unfocused = await app.evalJS<PaintProbe>(PAINT_PROBE);
         expect(unfocused?.listHasKeyView).toBe(false);
 
-        // (3) The claim: the selection is the same color either way. The list's
-        // mark came and went between the two reads (asserted above), and the row
-        // under it did not move a channel.
+        // (3) The claim: the selection is the same color either way. The key
+        // view came and went between the two reads (asserted above), and the
+        // row did not move a channel.
         expect(unfocused?.backgroundColor).toBe(focused?.backgroundColor ?? "");
         expect(unfocused?.backgroundImage).toBe(focused?.backgroundImage ?? "");
       } finally {

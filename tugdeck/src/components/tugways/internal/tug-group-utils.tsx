@@ -99,19 +99,6 @@ export function buildRoleStyle(
     // color reads against the gap; the behind-tint is a faint wash of it).
     style["--tugx-focus-ring"] = `var(--tug7-surface-toggle-primary-normal-${suffix}-rest)`;
     style["--tugx-focus-tint"] = `color-mix(in srgb, var(--tug7-surface-toggle-primary-normal-${suffix}-rest) 18%, transparent)`;
-    // The container ring follows the role too, or a role-bearing group would
-    // ring accent-orange around a control whose every other mark is its own
-    // role colour. Only the TINT is written here: the tone and the ground come
-    // from the properties the language already resolved, so a role-bearing
-    // group and a role-less one sit the same designed distance off the same
-    // surface, and both pick up whatever the live theme authored — an inline
-    // style cannot carry a per-theme or per-mode variant of its own, but it
-    // can read a custom property. The formula is `focus-ring.css`'s, restated
-    // because an inline style has no other way to substitute one term of it.
-    // (The `-tint` line above writes a literal 18%; that is the leaf mark, a
-    // different token, and is left alone.)
-    style["--tugx-focus-container-ring"] =
-      `color-mix(in srgb, var(--tug7-surface-toggle-primary-normal-${suffix}-rest) var(--tugx-focus-container-ring-tone, 68%), var(--tugx-ambient-surface, var(--tug7-surface-global-primary-normal-default-rest)))`;
   }
   return style as React.CSSProperties;
 }
