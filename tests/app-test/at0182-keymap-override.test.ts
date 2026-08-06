@@ -23,6 +23,7 @@
  * @covers tugdeck/src/components/tugways/keymap-registry.ts
  * @covers tugdeck/src/components/tugways/chord-capture-state.ts
  * @covers tugdeck/src/settings-api.ts
+ * @covers tugdeck/src/lib/smart-scroll.ts
  * @covers tugdeck/src/lib/host-menu-state.ts
  * @covers tugdeck/src/components/tugways/cards/keyboard-card.tsx
  * @covers tugdeck/src/components/tugways/cards/settings-keymap-body.tsx
@@ -270,6 +271,86 @@ describe.skipIf(!SHOULD_RUN)("AT0182: a user keymap override moves the native ch
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") process.stderr.write(`\n[at0182-pane] log tail:\n${tail}\n`);
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "arming a row grows it without moving anything the user is looking at",
+    async () => {
+      // A row that arms grows by the height of the capture strip, and the
+      // list must absorb that growth underneath it: the title stays on its
+      // line and the scroll position does not change, so the Change button
+      // does not slide out from under the pointer that just pressed it.
+      //
+      // The sharp case is a scroller parked at its own scroll maximum, where
+      // `SmartScroll.maybePinToBottom` used to read an idle-at-bottom list as
+      // a reader waiting on the next append and re-engage follow-bottom —
+      // which then pinned the bottom edge and yanked every row above it up by
+      // the 40px the armed row had gained. A list built with
+      // `followBottom: false` has no live edge to return to, so that route is
+      // closed to it now.
+      const app = await launchTugApp({ testName: "at0182-arm-still" });
+      try {
+        await app.waitForCondition<boolean>(
+          `typeof window.__tug !== "undefined" && typeof window.tugdeck !== "undefined"`,
+        );
+        await app.evalJS(`window.__tug.dispatchControlAction("show-keyboard-shortcuts", {})`);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-testid="settings-keymap"]') !== null`,
+          { timeoutMs: 8000 },
+        );
+
+        const SCROLLER = `document.querySelector('[data-testid="settings-keymap"] .tug-list-view')`;
+        await app.evalJS(`(() => { const s = ${SCROLLER}; s.scrollTop = s.scrollHeight; })()`);
+        await new Promise((r) => setTimeout(r, 600));
+
+        // The bottom-most armable rows, which is where the growth has least
+        // room and the retired pin route used to fire.
+        const ids = await app.evalJS<string[]>(`(() => {
+          const s = ${SCROLLER};
+          const r = s.getBoundingClientRect();
+          return [...document.querySelectorAll('[data-testid^="keymap-arm-"]')]
+            .filter((a) => { const b = a.getBoundingClientRect();
+                             return b.top >= r.top && b.bottom <= r.bottom; })
+            .map((a) => a.getAttribute("data-testid"))
+            .slice(-6);
+        })()`);
+        expect(ids.length, "the list offered rows to arm").toBeGreaterThan(0);
+
+        const probe = async (id: string) =>
+          await app.evalJS<{ top: number; rowTop: number }>(`(() => {
+            const s = ${SCROLLER};
+            const a = document.querySelector('[data-testid="${id}"]');
+            return { top: s.scrollTop, rowTop: Math.round(a.getBoundingClientRect().top) };
+          })()`);
+
+        const moved: string[] = [];
+        for (const id of ids) {
+          const before = await probe(id);
+          await app.click(`[data-testid="${id}"]`);
+          await app.waitForCondition<boolean>(
+            `document.querySelector('[data-testid="keymap-capture"]') !== null`,
+            { timeoutMs: 6000 },
+          );
+          await new Promise((r) => setTimeout(r, 250));
+          const after = await probe(id);
+          if (after.top !== before.top || after.rowTop !== before.rowTop) {
+            moved.push(
+              `${id}: scrollTop ${before.top}->${after.top}, row top ${before.rowTop}->${after.rowTop}`,
+            );
+          }
+          await app.click('[data-testid="keymap-capture-cancel"]');
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        expect(moved, "arming moved nothing").toEqual([]);
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") process.stderr.write(`\n[at0182-arm-still] log tail:\n${tail}\n`);
         throw err;
       } finally {
         await app.close();

@@ -93,7 +93,19 @@ export interface SmartScrollCallbacks {
 export interface SmartScrollOptions {
   scrollContainer: HTMLElement;
   callbacks?: SmartScrollCallbacks;
-  /** Default: true */
+  /**
+   * Whether this scroller follows its bottom edge at all. Default: true.
+   *
+   * `false` is a standing policy, not a starting position: a scroller that
+   * says it does not follow the bottom is never auto-engaged afterwards, by
+   * any route. The distinction is the difference between a transcript whose
+   * user has scrolled up — off now, and rightly re-engaged the moment they
+   * park back at the edge — and a settings list, which has no live edge to
+   * return to. Without it, `maybePinToBottom`'s re-engage route reads an
+   * idle-at-bottom list as a reader waiting for the next append, and any
+   * content growth (a row opening an editor under itself) yanks everything
+   * above it upward.
+   */
   followBottom?: boolean;
 }
 
@@ -214,6 +226,8 @@ export class SmartScroll {
 
   private _phase: ScrollPhase = 'idle';
   private _isFollowingBottom: boolean;
+  /** Whether follow-bottom may ever be engaged. See `SmartScrollOptions`. */
+  private readonly _followBottomAllowed: boolean;
   private _lastScrollTop: number;
   // The constructor deliberately does NOT read `scrollContainer.scrollTop` to
   // seed `_lastScrollTop`: that read forces a synchronous layout, and the
@@ -350,6 +364,7 @@ export class SmartScroll {
     this._container = scrollContainer;
     this._callbacks = callbacks;
     this._isFollowingBottom = followBottom;
+    this._followBottomAllowed = followBottom;
     // Seeded lazily on the first scroll event — see `_scrollTopSeeded`.
     this._lastScrollTop = 0;
 
@@ -1373,6 +1388,12 @@ export class SmartScroll {
   }
 
   private _setFollowingBottom(following: boolean, source: string): void {
+    // A scroller constructed with `followBottom: false` has no live edge to
+    // follow. Every engage route — the idle re-engage, the gesture-end
+    // re-engage, `maybePinToBottom`'s growth-at-bottom recovery, the public
+    // `engageFollowBottom` — arrives here, so refusing once here is the whole
+    // policy. Disengaging is always permitted; it is already the state.
+    if (following && !this._followBottomAllowed) return;
     if (this._isFollowingBottom === following) return;
     this._isFollowingBottom = following;
     this._applyAnchoringGate();
