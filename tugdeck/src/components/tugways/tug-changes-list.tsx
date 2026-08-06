@@ -1029,6 +1029,55 @@ export function TugChangesList({
         const onDisclaimAll = entry.kind === "session" ? onDisclaimAllFiles : undefined;
         const disclaimAllPaths =
           onDisclaimAll !== undefined ? diffablePathsOf(entry) : [];
+        // The bulk affordances trail their section rather than heading it: the
+        // header names the bucket, the reader walks the rows, and the button
+        // sits where the decision is made — after what it acts on.
+        const claimAllButton =
+          onClaimAll !== undefined && claimAllPaths.length >= 1 ? (
+            <TugPushButton
+              className="tug-changes-list-claim-all"
+              subtype="icon-text"
+              icon={<CornerDownLeft size={12} />}
+              size="2xs"
+              emphasis="outlined"
+              role="action"
+              disabled={claimPending}
+              title={claimPending ? "Claiming…" : "Claim all files in this session"}
+              aria-label={`Claim all ${entry.kind} files in this session`}
+              data-testid={`tug-changes-list-claim-all-${entry.kind}`}
+              onClick={(event) => {
+                event?.stopPropagation();
+                onClaimAll(claimAllPaths);
+              }}
+            >
+              Claim all
+            </TugPushButton>
+          ) : null;
+        const disclaimAllButton =
+          onDisclaimAll !== undefined && disclaimAllPaths.length >= 1 ? (
+            <TugPushButton
+              className="tug-changes-list-disclaim-all"
+              subtype="icon-text"
+              icon={<CornerUpRight size={12} />}
+              size="2xs"
+              emphasis="outlined"
+              role="accent"
+              disabled={disclaimPending}
+              title={
+                disclaimPending
+                  ? "Disclaiming…"
+                  : "Disclaim all files from this session"
+              }
+              aria-label="Disclaim all files from this session"
+              data-testid="tug-changes-list-disclaim-all"
+              onClick={(event) => {
+                event?.stopPropagation();
+                onDisclaimAll(disclaimAllPaths);
+              }}
+            >
+              Disclaim all
+            </TugPushButton>
+          ) : null;
         return (
           <React.Fragment key={entry.id}>
             {label !== undefined ? (
@@ -1037,52 +1086,6 @@ export function TugChangesList({
                 data-slot={`tug-changes-list-${entry.kind}-label`}
               >
                 <span className="tug-changes-list-section-label-text">{label}</span>
-                {onClaimAll !== undefined && claimAllPaths.length >= 1 ? (
-                  <TugPushButton
-                    className="tug-changes-list-claim-all"
-                    subtype="icon-text"
-                    icon={<CornerDownLeft size={12} />}
-                    size="2xs"
-                    emphasis="outlined"
-                    role="action"
-                    disabled={claimPending}
-                    title={
-                      claimPending ? "Claiming…" : "Claim all files in this session"
-                    }
-                    aria-label={`Claim all ${entry.kind} files in this session`}
-                    data-testid={`tug-changes-list-claim-all-${entry.kind}`}
-                    onClick={(event) => {
-                      event?.stopPropagation();
-                      onClaimAll(claimAllPaths);
-                    }}
-                  >
-                    Claim all
-                  </TugPushButton>
-                ) : null}
-                {onDisclaimAll !== undefined && disclaimAllPaths.length >= 1 ? (
-                  <TugPushButton
-                    className="tug-changes-list-disclaim-all"
-                    subtype="icon-text"
-                    icon={<CornerUpRight size={12} />}
-                    size="2xs"
-                    emphasis="outlined"
-                    role="accent"
-                    disabled={disclaimPending}
-                    title={
-                      disclaimPending
-                        ? "Disclaiming…"
-                        : "Disclaim all files from this session"
-                    }
-                    aria-label="Disclaim all files from this session"
-                    data-testid="tug-changes-list-disclaim-all"
-                    onClick={(event) => {
-                      event?.stopPropagation();
-                      onDisclaimAll(disclaimAllPaths);
-                    }}
-                  >
-                    Disclaim all
-                  </TugPushButton>
-                ) : null}
               </div>
             ) : null}
             <EntryFiles
@@ -1097,6 +1100,15 @@ export function TugChangesList({
               hunkElection={entry.kind === "session" ? hunkElection : undefined}
               onElectHunks={entry.kind === "session" ? onElectHunks : undefined}
             />
+            {claimAllButton !== null || disclaimAllButton !== null ? (
+              <div
+                className="tug-changes-list-section-actions"
+                data-slot={`tug-changes-list-${entry.kind}-actions`}
+              >
+                {claimAllButton}
+                {disclaimAllButton}
+              </div>
+            ) : null}
           </React.Fragment>
         );
       })}

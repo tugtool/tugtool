@@ -27,6 +27,16 @@
   cursor: pointer;
 }
 
+/* Every row here is clickable (the click folds the diff open), so the hover
+   is an affordance the reader is meant to see, not a graze. Raised to the
+   item-group row-hover overlay — a clearly visible neutral wash, authored per
+   theme in both polarities. Declared on the row element itself: the primitive
+   declares the token on `.tug-list-row`, so an ancestor override would lose.
+   [L20] */
+.tug-changes-list-row-hit .tug-list-row {
+  --tugx-list-row-flush-hover-bg: var(--tugx-key-cursor-surface);
+}
+
 /* Path + badges own the content column; the row primitive supplies the mono
    family and compact line. */
 .tug-changes-list-file-identity {
@@ -151,20 +161,32 @@
 
 /* ---- Section labels ---- */
 
+/* The bucket name is the sheet's primary structure — it groups the rows by
+   claim state and the reader navigates by it, so it is sized to be read at a
+   glance rather than as fine print. */
 .tug-changes-list-section-label {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--tug-space-sm);
-  font-size: 0.625rem;
+  font-size: var(--tug-font-size-sm);
   font-family: var(--tug-font-family-sans);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--tug7-element-tone-text-normal-caution-rest);
-  padding: var(--tug-space-xs) var(--tug-space-sm) 0;
+  padding: var(--tug-space-sm) var(--tug-space-sm) var(--tug-space-2xs);
   border-top: 1px solid var(--tug7-element-tone-border-normal-neutral-rest);
   margin-top: var(--tug-space-xs);
+}
+
+/* The bulk affordance closes its section: trailing-aligned under the last
+   row of the bucket it acts on, above the next section's rule. */
+.tug-changes-list-section-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--tug-space-sm);
+  padding: 0 var(--tug-space-sm) var(--tug-space-xs);
 }
 
 /* The caution tone marks a bucket asking for a decision. The session's own

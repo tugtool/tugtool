@@ -4188,12 +4188,14 @@ export function SessionCardBody({
             {/*
               Route-driven view slot ([P01]/[P02]). The transcript pane is
               ALWAYS visible and its mount identity stays stable ([L26]);
-              the Changes/History views ride the TugSheet `shade`
-              presentation ([P17]) descending over it from the top — modal
-              over the transcript region only, while the prompt entry stays
-              live beneath the shade's bottom edge. The find overlay, Z2
-              status bar, and PULSE strip stay OUTSIDE the slot — Find is a
-              target-route over the transcript.
+              the History view rides the TugSheet `shade` presentation
+              ([P17]) descending over it from the top — modal over the
+              transcript region only, while the prompt entry stays live
+              beneath the shade's bottom edge. The find overlay, Z2 status
+              bar, and PULSE strip stay OUTSIDE the slot — Find is a
+              target-route over the transcript. The Changes shade's wrapper
+              is a sibling of all three, at the end of the top column: it
+              rises from the top of the prompt entry, over them.
             */}
             <div className="session-view-slot" data-active-view={activeView}>
               <div className="session-view-pane" data-view="transcript">
@@ -4232,38 +4234,6 @@ export function SessionCardBody({
                   />
                 ) : null}
               </div>
-              {/*
-                Changes glance ([P03] revised): a bottom-anchored PASSIVE shade
-                that rises from the top of Z2 over the transcript. ⇧⌘C toggles
-                it; on an empty composer it also enters commit mode so the
-                prompt entry becomes the message editor. `shadePassive` keeps
-                focus in the composer below; `shadeAnchor="bottom"` + auto-size
-                gives the rise-from-Z2 geometry. Landing lives in the composer's
-                Z5, so the view carries no Done / X.
-              */}
-              <div className="session-view-pane" data-view="changes">
-                <TugSheet
-                  ref={changesSheetRef}
-                  onOpenChange={handleChangesSheetOpenChange}
-                >
-                  <TugSheetContent
-                    title="Changes"
-                    presentation="shade"
-                    persistKey="session-card"
-                    shadeAutoSize
-                    shadeAnchor="bottom"
-                    shadePassive
-                    grabberLabel="Resize the Changes view"
-                    modalScopeSelector='.session-view-pane[data-view="transcript"]'
-                  >
-                    <SessionChangesView
-                      projectDir={projectDir}
-                      changesController={changesController}
-                      codeSessionStore={codeSessionStore}
-                    />
-                  </TugSheetContent>
-                </TugSheet>
-              </div>
               <div className="session-view-pane" data-view="history">
                 <TugSheet
                   ref={historySheetRef}
@@ -4299,10 +4269,11 @@ export function SessionCardBody({
             </TugPaneBulletinProvider>
             {/*
               The find bar ([P06]/[P07]): a flow sibling between the view slot
-              and Z2, outside `.session-view-slot` and outside the shade
-              union — so it coexists with Changes and History rather than
-              displacing them, and they rise from ITS top edge while it is
-              open. The transcript pane is a flex column with the list at
+              and Z2, outside `.session-view-slot` — so History coexists with
+              it rather than displacing it, and rises from ITS top edge while
+              it is open. (Find and Changes are mutually exclusive routes, so
+              the Changes shade's wider cover never lands on an open bar.)
+              The transcript pane is a flex column with the list at
               `flex 1 1 auto`, so the bar takes its height from the list
               exactly as Z2 telemetry growth does. It mounts the find-wrap
               overlay, which is why the card has none of its own: a search is
@@ -4407,6 +4378,46 @@ export function SessionCardBody({
                 />
               </cycle.CycleScope>
             )}
+            {/*
+              Changes glance ([P03] revised): a bottom-anchored PASSIVE shade
+              that rises from the TOP OF THE PROMPT ENTRY over the whole
+              transcript region — find bar, Z2 status row, and PULSE strip
+              included. ⇧⌘C toggles it; on an empty composer it also enters
+              commit mode so the prompt entry becomes the message editor.
+              `shadePassive` keeps focus in the composer below; `shadeAnchor=
+              "bottom"` + auto-size gives the rise-from-the-composer geometry.
+              Landing lives in the composer's Z5, so the view carries no
+              Done / X.
+
+              Mounted as the top column's own overlay wrapper rather than a
+              pane inside `.session-view-slot` (where History still lives):
+              the wrapper's bottom edge IS the shade's bottom edge, and the
+              column ends exactly where the entry region begins. Purely a
+              positioning move — no measurement, no JS geometry ([L06]).
+            */}
+            <div className="session-view-pane" data-view="changes">
+              <TugSheet
+                ref={changesSheetRef}
+                onOpenChange={handleChangesSheetOpenChange}
+              >
+                <TugSheetContent
+                  title="Changes"
+                  presentation="shade"
+                  persistKey="session-card"
+                  shadeAutoSize
+                  shadeAnchor="bottom"
+                  shadePassive
+                  grabberLabel="Resize the Changes view"
+                  modalScopeSelector='.session-view-pane[data-view="transcript"]'
+                >
+                  <SessionChangesView
+                    projectDir={projectDir}
+                    changesController={changesController}
+                    codeSessionStore={codeSessionStore}
+                  />
+                </TugSheetContent>
+              </TugSheet>
+            </div>
           </div>
         {/*
           Prompt-entry region — content-sized and pinned to the card bottom.
