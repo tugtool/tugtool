@@ -36,12 +36,31 @@
   overflow: hidden;
 }
 
-/* ---- Group headings ---- */
+/* ---- Group headings ----
+
+   The menu's name, set the way a Settings section's legend is set — semibold,
+   uppercase, widely tracked, in the label color — so the two configurators
+   read as one family. The space that separates a section from the one above
+   it sits on the heading, and the first heading has none: it is separating
+   itself from the list's own top edge, which is already a boundary. */
 
 .settings-keymap-group {
-  padding: 0.375rem 0.625rem 0.125rem;
+  display: flex;
+  align-items: flex-end;
+  padding: 1.125rem 0.875rem 0.375rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight: var(--tug-font-weight-semibold);
+  letter-spacing: 0.08em;
+  color: var(--tug7-element-field-text-normal-label-rest);
+}
+
+.settings-keymap-group[data-first] {
+  padding-top: 0.5rem;
+}
+
+/* A heading is not a row and takes no band. */
+.settings-keymap-list .tug-list-view-cell:has(.settings-keymap-group) {
+  background-color: transparent;
 }
 
 /* ---- Rows ---- */
@@ -53,24 +72,68 @@
   min-width: 0;
 }
 
+/* The accessory column stands 24px tall whatever it holds — a button, a
+   shorter badge, or nothing at all — so every row is the same height and
+   the bands come out even. */
 .settings-keymap-trailing {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 1.5rem;
   justify-content: flex-end;
+}
+
+.settings-keymap-chords {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.375rem;
+  min-width: 0;
 }
 
 .settings-keymap-unbound {
   font-style: italic;
 }
 
+/* One column for the row's affordance, whichever affordance it is: the
+   Change button and the Reserved badge share a width, and a row offering
+   neither still holds the space. Both stretch to fill it, so their edges
+   line up down the list rather than each centering on its own label. */
+.settings-keymap-action {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  width: 6rem;
+}
+
+.settings-keymap-action > * {
+  flex: 1 1 auto;
+}
+
+/* The reset affordance holds its width whether or not the row is
+   overridden, so an override does not shift its neighbours' chords. */
+.settings-keymap-reset {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  width: 1.25rem;
+  justify-content: center;
+}
+
+.settings-keymap-reserved {
+  justify-content: center;
+}
+
 /* ---- Chord chips ---- */
 
+/* Centered, not baseline-aligned: a chip carrying a remove button aligned
+   its label to that button's baseline, which sat the chord low in its own
+   box while a chip without one sat true — the same chord, two heights. */
 .settings-keymap-chord {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.25rem;
+  min-height: 1.5rem;
   padding: 0.0625rem 0.375rem;
   border-radius: 0.25rem;
   background: var(--tug7-surface-field-primary-normal-plain-rest);
@@ -91,12 +154,6 @@
 .settings-keymap-chord-note {
   font-family: var(--tug7-font-sans);
   font-size: 0.6875rem;
-  color: var(--tug7-element-field-text-normal-label-rest);
-}
-
-.settings-keymap-locked {
-  display: inline-flex;
-  align-items: center;
   color: var(--tug7-element-field-text-normal-label-rest);
 }
 

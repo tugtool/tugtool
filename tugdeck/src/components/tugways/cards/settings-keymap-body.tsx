@@ -70,6 +70,7 @@ import type {
   TugListViewDelegate,
 } from "../tug-list-view";
 import { TugAlert, type TugAlertHandle } from "../tug-alert";
+import { TugBadge } from "../tug-badge";
 import { TugPushButton } from "../tug-push-button";
 import { useFocusTrap } from "../use-focus-trap";
 import {
@@ -315,10 +316,16 @@ function GroupCell({ index, dataSource }: TugListViewCellProps<KeymapDataSource>
   const item = dataSource.itemAt(index);
   if (item.kind !== "group") return null;
   return (
-    <div className="settings-keymap-group" data-testid="keymap-group">
-      <TugLabel size="sm" emphasis="calm">
-        {item.title}
-      </TugLabel>
+    <div
+      className="settings-keymap-group"
+      data-testid="keymap-group"
+      data-first={item.first ? "" : undefined}
+    >
+      {/* The heading's weight, case, tracking, and color are the container's
+          ([L06]) — the same declarations a Settings legend carries, so the
+          two configurators' sections are set identically. `normal` emphasis
+          inherits all four. */}
+      <TugLabel size="sm">{item.title}</TugLabel>
     </div>
   );
 }
@@ -345,63 +352,79 @@ function CommandCell({ index, dataSource, selected }: TugListViewCellProps<Keyma
       data-overridden={row.overridden ? "" : undefined}
       trailing={
         <div className="settings-keymap-trailing">
-          {row.bindings.length === 0 ? (
-            <TugLabel size="sm" emphasis="calm" className="settings-keymap-unbound">
-              Not bound
-            </TugLabel>
-          ) : (
-            row.bindings.map((binding, i) => {
-              const note = bindingNote(binding);
-              return (
-                <span
-                  key={`${binding.label}:${i}`}
-                  className="settings-keymap-chord"
-                  data-active={binding.active ? "" : undefined}
-                  data-shadowed={binding.active ? undefined : ""}
-                  title={note ?? undefined}
-                >
-                  <span className="settings-keymap-chord-label">{binding.label}</span>
-                  {note !== null ? (
-                    <span className="settings-keymap-chord-note">{note}</span>
-                  ) : null}
-                  {rebindable && !binding.scoped ? (
-                    <TugIconButton
-                      size="xs"
-                      aria-label={`Remove ${binding.label} from ${row.title}`}
-                      icon={<X aria-hidden="true" />}
-                      onClick={() => ctx.removeBinding(row.commandId, i)}
-                    />
-                  ) : null}
-                </span>
-              );
-            })
-          )}
-          {row.locked ? (
-            <span className="settings-keymap-locked" title="Reserved by macOS convention">
-              <Lock size={12} aria-hidden="true" />
-            </span>
-          ) : null}
-          {rebindable ? (
-            <TugPushButton
-              size="sm"
-              emphasis={armed ? "filled" : "outlined"}
-              role="accent"
-              aria-pressed={armed || undefined}
-              data-testid={`keymap-arm-${row.commandId}`}
-              widthStabilize={{ alternateLabel: armed ? "Change" : "Recording…" }}
-              onClick={() => (armed ? ctx.cancel() : ctx.arm(row.commandId))}
-            >
-              {armed ? "Recording…" : "Change"}
-            </TugPushButton>
-          ) : null}
-          {row.overridden ? (
-            <TugIconButton
-              size="xs"
-              aria-label={`Reset ${row.title} to its default chord`}
-              icon={<RotateCcw aria-hidden="true" />}
-              onClick={() => ctx.reset(row.commandId)}
-            />
-          ) : null}
+          <div className="settings-keymap-chords">
+            {row.bindings.length === 0 ? (
+              <TugLabel size="sm" emphasis="calm" className="settings-keymap-unbound">
+                Not bound
+              </TugLabel>
+            ) : (
+              row.bindings.map((binding, i) => {
+                const note = bindingNote(binding);
+                return (
+                  <span
+                    key={`${binding.label}:${i}`}
+                    className="settings-keymap-chord"
+                    data-active={binding.active ? "" : undefined}
+                    data-shadowed={binding.active ? undefined : ""}
+                    title={note ?? undefined}
+                  >
+                    <span className="settings-keymap-chord-label">{binding.label}</span>
+                    {note !== null ? (
+                      <span className="settings-keymap-chord-note">{note}</span>
+                    ) : null}
+                    {rebindable && !binding.scoped ? (
+                      <TugIconButton
+                        size="2xs"
+                        aria-label={`Remove ${binding.label} from ${row.title}`}
+                        icon={<X aria-hidden="true" />}
+                        onClick={() => ctx.removeBinding(row.commandId, i)}
+                      />
+                    ) : null}
+                  </span>
+                );
+              })
+            )}
+          </div>
+          {/* One slot, one width, every row: the Change button and the
+              Reserved badge occupy the same column, so the eye runs down a
+              single edge instead of one that moves with each row's standing.
+              A row that offers neither still reserves the slot — otherwise
+              its chords would slide right into the gap. */}
+          <div className="settings-keymap-action">
+            {row.locked ? (
+              <TugBadge
+                size="xs"
+                emphasis="outlined"
+                role="inherit"
+                icon={<Lock aria-hidden="true" />}
+                className="settings-keymap-reserved"
+                title="Reserved by macOS convention"
+              >
+                Reserved
+              </TugBadge>
+            ) : rebindable ? (
+              <TugPushButton
+                size="xs"
+                emphasis={armed ? "filled" : "outlined"}
+                role="accent"
+                aria-pressed={armed || undefined}
+                data-testid={`keymap-arm-${row.commandId}`}
+                onClick={() => (armed ? ctx.cancel() : ctx.arm(row.commandId))}
+              >
+                Change
+              </TugPushButton>
+            ) : null}
+          </div>
+          <div className="settings-keymap-reset">
+            {row.overridden ? (
+              <TugIconButton
+                size="2xs"
+                aria-label={`Reset ${row.title} to its default chord`}
+                icon={<RotateCcw aria-hidden="true" />}
+                onClick={() => ctx.reset(row.commandId)}
+              />
+            ) : null}
+          </div>
         </div>
       }
     >
@@ -496,7 +519,7 @@ export function SettingsKeymapBody(): React.ReactElement {
   );
 
   const delegate = useMemo<TugListViewDelegate>(
-    () => ({ estimatedHeightForKind: (kind) => (kind === "group" ? 28 : 44) }),
+    () => ({ estimatedHeightForKind: (kind) => (kind === "group" ? 44 : 40) }),
     [],
   );
 
@@ -544,7 +567,11 @@ export function SettingsKeymapBody(): React.ReactElement {
             cellRenderers={CELL_RENDERERS}
             scrollKey="settings-keymap"
             rowLayout="flush"
-            rowDensity="compact"
+            // Bands, not rules. A hairline under every one of two hundred
+            // rows is a fence per row; an alternating wash lets the eye run
+            // a row's title out to its chord without counting lines.
+            rowSeparator="none"
+            rowStriping="subtle"
             singleSelect
             focusGroup={focusGroup}
             focusOrder={1}

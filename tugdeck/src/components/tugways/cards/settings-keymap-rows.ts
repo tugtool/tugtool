@@ -158,7 +158,18 @@ export function buildKeymapRows(
 
 /** A row in the pane's flat list: a group heading, or a command. */
 export type KeymapListItem =
-  | { readonly kind: "group"; readonly id: string; readonly title: string }
+  | {
+      readonly kind: "group";
+      readonly id: string;
+      readonly title: string;
+      /**
+       * The first heading in the list. Sections are separated by space above
+       * the heading, and the first one has nothing to be separated from — a
+       * windowed list cannot ask CSS for `:first-child`, since that reads
+       * against the rendered window rather than the data.
+       */
+      readonly first: boolean;
+    }
   | { readonly kind: "command"; readonly id: string; readonly row: KeymapRow };
 
 /**
@@ -178,7 +189,12 @@ export function buildKeymapListItems(
     if (!rowMatches(row, query)) continue;
     if (row.group !== group) {
       group = row.group;
-      items.push({ kind: "group", id: `group:${group}`, title: group });
+      items.push({
+        kind: "group",
+        id: `group:${group}`,
+        title: group,
+        first: items.length === 0,
+      });
     }
     items.push({ kind: "command", id: row.commandId, row });
   }
