@@ -70,9 +70,12 @@
 }
 
 /* Hints are prose: left-aligned under their control, clamped to a readable
-   measure so a wide card never stretches a sentence across its whole width. */
+   measure so a wide card never stretches a sentence across its whole width.
+   Leading is the `sm` rung — the sibling of the `sm` font size these labels
+   are set in. The `lg` rung is 24px against 13px text, which opens the two
+   lines far enough apart to read as two separate remarks. */
 .settings-general .settings-general-hint {
   display: block;
   max-width: 60ch;
-  line-height: var(--tug-line-height-lg);
+  line-height: var(--tug-line-height-sm);
 }

@@ -68,7 +68,8 @@
 }
 
 /* The hint is a TugLabel (size sm, emphasis calm), already `inline-flex`;
-   it just needs the prose line-height. */
+   it just needs the prose leading — the `sm` rung, matching the hints in
+   the other panels. */
 .settings-app .settings-app-hint {
-  line-height: var(--tug-line-height-lg);
+  line-height: var(--tug-line-height-sm);
 }
