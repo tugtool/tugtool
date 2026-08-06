@@ -238,7 +238,7 @@ describe.skipIf(!SHOULD_RUN)("AT0182: a user keymap override moves the native ch
           `(document.querySelector('[data-testid="keymap-capture"] [data-pending="true"]')?.textContent ?? "").includes("J")`,
           { timeoutMs: 6000 },
         );
-        await app.click('[data-testid="keymap-capture"] button');
+        await app.click('[data-testid="keymap-capture-use"]');
 
         expect(
           await waitKeyEquivalent(app, "view.zoomOut", "j"),

@@ -15,6 +15,12 @@
  *   absent, and the distinction is durable: "I do not want a chord for this"
  *   is an answer, and reset-to-default has to be able to take it back.
  *
+ * A write that matches the command's shipped bindings collapses to the first
+ * state rather than becoming the second. Setting a chord back to the default
+ * is not a change to remember — it is the undoing of one — and a store that
+ * remembered it would leave the command flagged as overridden with nothing to
+ * revert to.
+ *
  * Per-command keys are what make reset a deletion rather than a rewrite, and
  * keep one command's change from racing another's — a single blob value would
  * make every rebind a read-modify-write of the whole keymap.
@@ -33,7 +39,8 @@
  */
 
 import type { CommandBinding, Chord, BindingScope } from "./components/tugways/command-registry";
-import { isCommandLocked } from "./components/tugways/command-registry";
+import { COMMANDS_BY_ID, isCommandLocked } from "./components/tugways/command-registry";
+import { chordKey } from "./components/tugways/chord-format";
 import { keymapRegistry } from "./components/tugways/keymap-registry";
 import { deleteDefault, putKeymapOverride } from "./settings-api";
 import type { TaggedValue } from "./lib/tugbank-client";
@@ -118,6 +125,35 @@ function parseEntry(entry: TaggedValue | undefined): CommandBinding[] | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Does this binding list say the same thing as the command's shipped one?
+ *
+ * Compared on chord and scope, which is what a binding MEANS; `source` and
+ * the dispatch flags are how it got here. Order matters — a command's
+ * bindings are an ordered list ([P08]) — and a command with no default
+ * bindings matches only the empty list.
+ */
+function matchesDefault(
+  commandId: string,
+  bindings: readonly CommandBinding[],
+): boolean {
+  const defaults = COMMANDS_BY_ID.get(commandId)?.bindings ?? [];
+  if (defaults.length !== bindings.length) return false;
+  return defaults.every((def, i) => {
+    const b = bindings[i];
+    return chordKey(def.chord) === chordKey(b.chord) && sameScope(def.scope, b.scope);
+  });
+}
+
+function sameScope(a: BindingScope, b: BindingScope): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "responder" && b.kind === "responder") {
+    return a.responderId === b.responderId;
+  }
+  if (a.kind === "mode" && b.kind === "mode") return a.modeId === b.modeId;
+  return true;
 }
 
 /** The wire form: `source` is dropped, since a persisted binding is the user's. */
@@ -212,6 +248,15 @@ class KeymapOverrideStore {
   ): void {
     if (isCommandLocked(commandId)) {
       tugDevLogStore.warn("keymap", `refused to rebind locked command "${commandId}"`);
+      return;
+    }
+    // Setting a command back to what it ships with is not an override, it is
+    // the absence of one. Storing it anyway would leave the command flagged
+    // as changed with nothing to change back to, and would freeze today's
+    // default against a future one — which is the same reason `reset` is a
+    // deletion rather than a write.
+    if (matchesDefault(commandId, bindings)) {
+      this.reset(commandId, opts);
       return;
     }
     const stamped = bindings.map((b) => ({ ...b, source: "user" as const }));

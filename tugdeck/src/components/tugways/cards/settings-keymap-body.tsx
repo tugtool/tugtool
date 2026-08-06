@@ -59,7 +59,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Keyboard, Lock, RotateCcw, X } from "lucide-react";
+import { Keyboard, Lock, Menu, RotateCcw, X } from "lucide-react";
 
 import { chordFromEvent, chordHasKeyEquivalent, formatChord } from "../chord-format";
 import { chordCaptureState } from "../chord-capture-state";
@@ -161,13 +161,53 @@ const MODIFIER_CODES = new Set([
 ]);
 
 /**
- * What a pending chord would displace, in one sentence.
+ * Something the user should read before committing the chord they just
+ * pressed — rendered, and in plain text for the tooltip.
+ *
+ * The two forms are the same sentence: the rendered one sets the colliding
+ * command's name in bold, because the name is the whole answer to "why not"
+ * and a sentence that buries it reads as boilerplate.
+ */
+interface CaptureNote {
+  readonly node: React.ReactNode;
+  readonly text: string;
+}
+
+/** A note that is only prose — no command to name, nothing to emphasize. */
+function plainNote(text: string): CaptureNote {
+  return { node: text, text };
+}
+
+/**
+ * A chord is taken, and by whom — the two facts, and nothing else.
+ *
+ * The long form explained the resolution order in a sentence, which is the
+ * right explanation in the wrong place: the note sits beside a capture strip
+ * in one row of a long list, and by the time it has been read the user has
+ * already decided. The name and the chord are what they are deciding with.
+ */
+function conflictNote(title: string, chord: Chord): CaptureNote {
+  const label = formatChord(chord);
+  return {
+    node: (
+      <>
+        <strong>{title}</strong>
+        {" uses "}
+        <span className="settings-keymap-capture-note-chord">{label}</span>
+      </>
+    ),
+    text: `${title} uses ${label}`,
+  };
+}
+
+/**
+ * What a pending chord would displace.
  *
  * `resolveChord` is asked *before* the binding is committed, which is the
  * whole point: a collision the user reads is a decision, and a collision they
  * discover by pressing the keys is a bug report.
  */
-function conflictNoteFor(chord: Chord, commandId: string): string | null {
+function conflictNoteFor(chord: Chord, commandId: string): CaptureNote | null {
   const stack = keymapRegistry.resolveChord(chord);
   const winner = stack.find((r) => r.active && r.commandId !== commandId);
   if (winner === undefined) {
@@ -184,12 +224,10 @@ function conflictNoteFor(chord: Chord, commandId: string): string | null {
     // takes it before the web view is asked. That ownership is what the user
     // is about to collide with.
     const title = COMMANDS_BY_ID.get(eaten.commandId)?.title ?? eaten.commandId;
-    return `${title} has this chord on a menu item, which takes it before the web view sees it.`;
+    return conflictNote(title, chord);
   }
   const title = COMMANDS_BY_ID.get(winner.commandId)?.title ?? winner.commandId;
-  return winner.layer.kind === "native"
-    ? `${title} has this chord on a menu item, which takes it before the web view sees it.`
-    : `${title} already has this chord and would take it first.`;
+  return conflictNote(title, chord);
 }
 
 /**
@@ -259,37 +297,52 @@ function ChordCapture({
     pending === null
       ? null
       : !recordable
-        ? "Add ⌘, ⌃, or ⌥ — a bare key would fire while typing."
+        ? plainNote("Needs ⌘, ⌃, or ⌥")
         : (conflictNoteFor(pending, commandId) ??
-          (!chordHasKeyEquivalent(pending)
-            ? "This key has no menu-bar form; the chord works in Tug but no menu item will show it."
-            : null));
+          (!chordHasKeyEquivalent(pending) ? plainNote("No menu-bar form") : null));
 
+  // One line: the strip holding the chord and the two ways out, and beside it
+  // — not under it — whatever there is to say about what was pressed. The
+  // strip's width is fixed, so a note arriving does not narrow it, and the
+  // row's height never changes while the capture is open. Growing downward to
+  // speak would move the buttons out from under the pointer at the exact
+  // moment the user is deciding whether to press one.
   return (
-    <div className="settings-keymap-capture" ref={hostRef} data-testid="keymap-capture">
-      <div className="settings-keymap-capture-chord" data-pending={pending !== null}>
-        {pending === null ? "Press a chord…" : formatChord(pending)}
+    <div className="settings-keymap-capture-block" ref={hostRef} data-testid="keymap-capture">
+      <div className="settings-keymap-capture">
+        <div className="settings-keymap-capture-chord" data-pending={pending !== null}>
+          {pending === null ? "Press a chord…" : formatChord(pending)}
+        </div>
+        <div className="settings-keymap-capture-actions">
+          {/* Cancel first: it is the one that always applies, and the chord
+              may not yet be usable. */}
+          <TugPushButton size="xs" data-testid="keymap-capture-cancel" onClick={onCancel}>
+            Cancel
+          </TugPushButton>
+          <TugPushButton
+            size="xs"
+            role="accent"
+            emphasis="filled"
+            data-testid="keymap-capture-use"
+            disabled={!recordable}
+            onClick={() => {
+              if (recordable) onCommit(pending);
+            }}
+          >
+            Set
+          </TugPushButton>
+        </div>
       </div>
-      {note !== null ? (
-        <TugLabel size="sm" emphasis="calm" className="settings-keymap-capture-note">
-          {note}
-        </TugLabel>
-      ) : null}
-      <div className="settings-keymap-capture-actions">
-        <TugPushButton
-          size="sm"
-          role="accent"
-          emphasis="filled"
-          disabled={!recordable}
-          onClick={() => {
-            if (recordable) onCommit(pending);
-          }}
-        >
-          Use this chord
-        </TugPushButton>
-        <TugPushButton size="sm" onClick={onCancel}>
-          Cancel
-        </TugPushButton>
+      <div
+        className="settings-keymap-capture-note"
+        data-testid="keymap-capture-note"
+        title={note?.text}
+      >
+        {note !== null ? (
+          <TugLabel size="sm" role="caution">
+            {note.node}
+          </TugLabel>
+        ) : null}
       </div>
     </div>
   );
@@ -348,6 +401,11 @@ function GroupCell({ index, dataSource }: TugListViewCellProps<KeymapDataSource>
       data-testid="keymap-group"
       data-first={item.first ? "" : undefined}
     >
+      {/* Every section is one menu, so every section carries the same menu
+          glyph — the icon is saying what KIND of thing the heading names, and
+          a different glyph per menu would be inventing a taxonomy the menu
+          bar does not have. */}
+      <Menu size={14} aria-hidden="true" />
       {/* The heading's weight, case, tracking, and color are the container's
           ([L06]) — the same declarations a Settings legend carries, so the
           two configurators' sections are set identically. `normal` emphasis
@@ -377,6 +435,11 @@ function CommandCell({ index, dataSource, selected }: TugListViewCellProps<Keyma
       title={row.title}
       data-testid={`keymap-row-${row.commandId}`}
       data-overridden={row.overridden ? "" : undefined}
+      // The capture surface grows the row downward. Top-aligning while it is
+      // open keeps the title and the accessories exactly where the click left
+      // them — a row that re-centred its own contents would move the button
+      // the user just pressed.
+      data-armed={armed ? "" : undefined}
       trailing={
         <div className="settings-keymap-trailing">
           <div className="settings-keymap-chords">
@@ -469,7 +532,12 @@ function CommandCell({ index, dataSource, selected }: TugListViewCellProps<Keyma
       }
     >
       <div className="settings-keymap-row-body">
-        <TugLabel size="md">{row.title}</TugLabel>
+        {/* The title stands in a band as tall as the accessories opposite it,
+            so it sits on their centre line whether the row is one line or
+            three. */}
+        <div className="settings-keymap-row-title">
+          <TugLabel size="md">{row.title}</TugLabel>
+        </div>
         {armed ? (
           <ChordCapture
             commandId={row.commandId}

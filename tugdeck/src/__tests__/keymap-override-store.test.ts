@@ -140,6 +140,56 @@ describe("reset", () => {
   });
 });
 
+describe("a write that restores the default", () => {
+  // The pane hangs a revert affordance off "is this command overridden", so
+  // an override that merely repeats the default would leave the row flagged
+  // as changed with nothing to change back to.
+  const DEFAULT_FOCUS_PROMPT: CommandBinding = {
+    chord: { key: "KeyK", meta: true },
+    scope: { kind: "global" },
+    source: "user",
+  };
+
+  test("is not remembered as an override", () => {
+    keymapOverrideStore.set(TUG_ACTIONS.FOCUS_PROMPT, [CTRL_ALT_K], { persist: false });
+    expect(keymapOverrideStore.overriddenCommands()).toContain(TUG_ACTIONS.FOCUS_PROMPT);
+
+    keymapOverrideStore.set(TUG_ACTIONS.FOCUS_PROMPT, [DEFAULT_FOCUS_PROMPT], {
+      persist: false,
+    });
+    expect(keymapOverrideStore.overrideFor(TUG_ACTIONS.FOCUS_PROMPT)).toBeUndefined();
+    expect(keymapOverrideStore.overriddenCommands()).not.toContain(
+      TUG_ACTIONS.FOCUS_PROMPT,
+    );
+  });
+
+  test("leaves the command on that default", () => {
+    keymapOverrideStore.set(TUG_ACTIONS.FOCUS_PROMPT, [CTRL_ALT_K], { persist: false });
+    keymapOverrideStore.set(TUG_ACTIONS.FOCUS_PROMPT, [DEFAULT_FOCUS_PROMPT], {
+      persist: false,
+    });
+    expect(chordsOf(TUG_ACTIONS.FOCUS_PROMPT)).toEqual(["⌘K"]);
+  });
+
+  test("a chord that only looks like the default is still an override", () => {
+    keymapOverrideStore.set(
+      TUG_ACTIONS.FOCUS_PROMPT,
+      [{ ...DEFAULT_FOCUS_PROMPT, chord: { key: "KeyK", meta: true, shift: true } }],
+      { persist: false },
+    );
+    expect(keymapOverrideStore.overrideFor(TUG_ACTIONS.FOCUS_PROMPT)).toBeDefined();
+    expect(chordsOf(TUG_ACTIONS.FOCUS_PROMPT)).toEqual(["⇧⌘K"]);
+  });
+
+  test("explicitly unbinding a command that ships unbound is not an override", () => {
+    // The empty list is a real state, but it is only a CHANGE when the
+    // command shipped with something to lose.
+    expect(chordsOf(TUG_ACTIONS.OPEN_FILE)).toEqual([]);
+    keymapOverrideStore.set(TUG_ACTIONS.OPEN_FILE, [], { persist: false });
+    expect(keymapOverrideStore.overrideFor(TUG_ACTIONS.OPEN_FILE)).toBeUndefined();
+  });
+});
+
 describe("locked commands ([P12])", () => {
   test("a write against a locked id is refused and changes nothing", () => {
     keymapOverrideStore.set(TUG_ACTIONS.SELECT_ALL, [CTRL_ALT_K], { persist: false });
