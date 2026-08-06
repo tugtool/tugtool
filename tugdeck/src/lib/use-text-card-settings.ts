@@ -40,7 +40,6 @@ import {
   TEXT_CARD_DOMAIN,
   TEXT_CARD_DEFAULTS_DOMAIN,
   TEXT_CARD_DEFAULTS_KEY,
-  parseTextCardDefaults,
   parseTextCardSettings,
   resolveTextCardSettings,
   type TextCardSettings,
@@ -84,7 +83,7 @@ export function useTextCardSettings(
   const defaults = useTugbankValue(
     TEXT_CARD_DEFAULTS_DOMAIN,
     TEXT_CARD_DEFAULTS_KEY,
-    parseTextCardDefaults,
+    parseTextCardSettings,
     null,
   );
 

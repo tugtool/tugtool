@@ -535,21 +535,13 @@ export function useTranscriptCellMenu({
     };
   }, [cardId, codeSessionStore, deck]);
 
-  // Open in Editor / Show in Finder for the right-clicked file annotation.
-  // These live on the cell rather than riding the deck-level chain
-  // handlers because a menu item carries no value — the path comes from
-  // the annotation sampled at menu-open time. Opening goes out through
-  // the action registry (not the chain), so this handler doesn't
-  // re-enter itself.
-  const handleOpenAnnotatedFile = useCallback((): ActionHandlerResult => {
-    const payload = contextAnnotationRef.current;
-    if (payload === null || payload.kind !== "file-path") return;
-    const target: Record<string, unknown> = { path: payload.path };
-    if (payload.line !== undefined) target.line = payload.line;
-    if (payload.endLine !== undefined) target.endLine = payload.endLine;
-    dispatchCommand(TUG_ACTIONS.OPEN_FILE, target);
-  }, []);
-
+  // Show in Finder for the right-clicked file annotation: the path comes
+  // from the annotation sampled at menu-open time. Open in Editor is NOT
+  // here — `open-file` is a chain-routed command the deck implements, and
+  // a handler on this cell would intercept every dispatch that reaches it
+  // (a click on a file reference among them) to answer one it can only
+  // service after a right-click. Its menu item carries the target as its
+  // own value instead, so it walks past this cell to the deck.
   const handleRevealAnnotatedFile = useCallback((): ActionHandlerResult => {
     const payload = contextAnnotationRef.current;
     // Revealing a file opens the folder around it; a directory is already
@@ -587,7 +579,6 @@ export function useTranscriptCellMenu({
       [TUG_ACTIONS.COPY_ANNOTATION_VALUE]: handleCopyAnnotationValue,
       [TUG_ACTIONS.INSERT_INTO_COMPOSER]: handleInsertIntoComposer,
       [TUG_ACTIONS.INSERT_AS_ATOM]: handleInsertAsAtom,
-      [TUG_ACTIONS.OPEN_FILE]: handleOpenAnnotatedFile,
       [TUG_ACTIONS.REVEAL_IN_FINDER]: handleRevealAnnotatedFile,
       [TUG_ACTIONS.OPEN_IMAGE_PREVIEW]: handleOpenImagePreview,
       [TUG_ACTIONS.OPEN_DIFF]: handleOpenAnnotatedDiff,

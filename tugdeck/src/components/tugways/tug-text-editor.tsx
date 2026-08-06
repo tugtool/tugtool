@@ -106,7 +106,6 @@ import {
   undoDepth,
 } from "@codemirror/commands";
 import { cn } from "@/lib/utils";
-import { dispatchCommand } from "@/command-dispatch";
 import { quoteMarkdown, stripMarkdown } from "@/lib/paste-transforms";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { undoMenuStatePlugin } from "./tug-text-editor/undo-menu-state-plugin";
@@ -2021,11 +2020,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       cmAdapterRef.current = view !== null ? createCMSelectionAdapter(view) : null;
     }, [view]);
 
-    // Right-clicked file/directory atom's path, captured at menu-open
-    // time so the OPEN_FILE responder handler below can dispatch it
-    // when the "Open in Editor" item is activated [L07].
-    const contextAtomPathRef = useRef<string | null>(null);
-
     const {
       onContextMenu: onContextMenuOpen,
       menu: contextMenu,
@@ -2035,7 +2029,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       // chip (`<img data-atom-type="file">`) offers "Open in Editor",
       // jumping straight from a prompt mention to the Text card.
       extraEntries: (event) => {
-        contextAtomPathRef.current = null;
         const target = event.target;
         if (!(target instanceof Element)) return [];
         const img = target.closest("img[data-atom-type]");
@@ -2043,8 +2036,15 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         const type = img.getAttribute("data-atom-type");
         const value = img.getAttribute("data-atom-value");
         if (type !== "file" || value === null || value === "") return [];
-        contextAtomPathRef.current = value;
-        return [{ action: TUG_ACTIONS.OPEN_FILE, label: "Open in Editor" }];
+        // The path rides on the item, so the dispatch walks past this
+        // editor to the deck's open-file handler.
+        return [
+          {
+            action: TUG_ACTIONS.OPEN_FILE,
+            label: "Open in Editor",
+            value: { path: value },
+          },
+        ];
       },
     });
 
@@ -2398,16 +2398,12 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       [TUG_ACTIONS.DELETE_WORD_BACKWARD]: handleDeleteWordBackward,
       [TUG_ACTIONS.MOVE_WORD_FORWARD]: handleMoveWordForward,
       [TUG_ACTIONS.MOVE_WORD_BACKWARD]: handleMoveWordBackward,
-      // Context-menu "Open in Editor" on a file atom — the path was
-      // captured at menu-open time; route through the deck-level
-      // open-file handler (path-keyed Text-card reuse).
-      [TUG_ACTIONS.OPEN_FILE]: () => {
-        const path = contextAtomPathRef.current;
-        if (path === null) return;
-        return () => {
-          dispatchCommand(TUG_ACTIONS.OPEN_FILE, { path });
-        };
-      },
+      // No OPEN_FILE handler: `open-file` is a chain-routed command the
+      // deck implements, and an entry here would intercept every dispatch
+      // that walks through this editor — including a click on a file
+      // reference elsewhere in the card, which would die on an editor
+      // that has no right-clicked atom to open. The "Open in Editor" menu
+      // item carries its path as the dispatch's own value instead.
     };
     const { responderRef, ResponderScope } = useOptionalResponder({
       id: responderId,

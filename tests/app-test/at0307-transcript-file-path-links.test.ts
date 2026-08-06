@@ -60,7 +60,14 @@
  *    directory, which the loosened stat reports as reachable and the pass
  *    marks with the folder gesture rather than the file one.
  *
+ * A last case covers the gesture's twin: the reference's own **Open in
+ * Editor** menu item. Both it and the click send the same `open-file`
+ * command carrying the same target, so neither depends on an
+ * intermediate responder to supply the path.
+ *
  * @covers tugdeck/src/lib/annotator/
+ * @covers tugdeck/src/lib/open-file-in-card.ts
+ * @covers tugdeck/src/components/tugways/tug-editor-context-menu.tsx
  * @covers tugdeck/src/components/tugways/annotation-scope.tsx
  * @covers tugdeck/src/components/tugways/cards/blocks/bash-tool-block.tsx
  * @covers tugdeck/src/components/tugways/blocks/tool-file-ref.tsx
@@ -131,6 +138,39 @@ function deckShape() {
     activePaneId: "p1",
     hasFocus: true,
   };
+}
+
+type Harness = Awaited<ReturnType<typeof launchTugApp>>;
+
+/**
+ * Open the annotation's context menu with a trusted native right-click
+ * and wait for `action`'s item to mount. Synthetic events don't fire the
+ * menu's real activation path, so the gestures here are native.
+ */
+async function openAnnotationMenu(
+  app: Harness,
+  selector: string,
+  action: string,
+): Promise<void> {
+  await app.nativeRightClickAtElement(selector);
+  await app.waitForCondition<boolean>(
+    `document.querySelector('[data-item-action="' + ${JSON.stringify(action)} + '"]') !== null`,
+    { timeoutMs: 3000 },
+  );
+}
+
+/** Trusted native-click the open menu's item with `data-item-action === action`. */
+async function activateMenuItem(app: Harness, action: string): Promise<void> {
+  const point = await app.evalJS<{ x: number; y: number } | null>(
+    `(() => {
+      const item = document.querySelector('[data-item-action="' + ${JSON.stringify(action)} + '"]');
+      if (item === null) return null;
+      const r = item.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    })()`,
+  );
+  if (point === null) throw new Error(`menu item ${action} not found`);
+  await app.nativeClick(point);
 }
 
 const userMsg = (text: string) => ({
@@ -359,6 +399,83 @@ describe.skipIf(!SHOULD_RUN)(
           // And the delegated layer — not any handler the component owns
           // — turns a click on it into an open.
           await app.click(HEADER_REF);
+          await app.waitForCondition<boolean>(
+            `(function(){
+              var ed = document.querySelector('[data-slot="tug-text-card-editor"] .cm-content');
+              return ed !== null && (ed.textContent || '').indexOf("charlie") !== -1;
+            })()`,
+            { timeoutMs: 12_000 },
+          );
+
+          process.stdout.write("VERDICT: PASS\n");
+        } catch (err) {
+          process.stdout.write("VERDICT: FAIL\n");
+          const tail = app.tailLog(200);
+          if (tail !== "") process.stderr.write(`\n[at0307] log tail:\n${tail}\n`);
+          throw err;
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "the reference's Open in Editor menu item opens it too",
+      async () => {
+        const app = await launchTugApp({
+          testName: "at0307-transcript-file-path-links-menu",
+        });
+        const ingest = (decoded: unknown) =>
+          app.driveSession("A", {
+            op: "ingestFrame",
+            feedId: CODE_OUTPUT_FEED,
+            decoded,
+          });
+
+        try {
+          await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+          await app.waitForCondition<boolean>(
+            `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+            { timeoutMs: 30_000 },
+          );
+          await app.bindSession("A", {
+            tugSessionId: SID,
+            sessionMode: "resume",
+          });
+
+          await ingest(replayStarted());
+          await ingest(userMsg("read it"));
+          await ingest({
+            type: "tool_use",
+            tug_session_id: SID,
+            msg_id: "m1",
+            tool_use_id: "tc-1",
+            tool_name: "Read",
+            input: { file_path: realPath },
+            seq: 1,
+          });
+          await ingest({
+            type: "tool_result",
+            tug_session_id: SID,
+            tool_use_id: "tc-1",
+            output: FILE_BODY,
+          });
+          await ingest(turnDone("m1"));
+          await ingest(replayComplete());
+
+          const HEADER_REF = '[data-card-id="A"] [data-slot="read-tool-block-path"]';
+          await app.waitForCondition<boolean>(
+            `document.querySelector('${HEADER_REF}') !== null`,
+            { timeoutMs: 8000 },
+          );
+
+          // The item names what it acts on: its dispatch carries the
+          // annotation's path as its own value, so it reaches the deck's
+          // open-file handler rather than stopping at a surface that
+          // would have had to supply the argument.
+          await openAnnotationMenu(app, HEADER_REF, "open-file");
+          await activateMenuItem(app, "open-file");
           await app.waitForCondition<boolean>(
             `(function(){
               var ed = document.querySelector('[data-slot="tug-text-card-editor"] .cm-content');

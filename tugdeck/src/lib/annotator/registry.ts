@@ -50,6 +50,13 @@ import type { AnnotationKind } from "./types";
 export interface AnnotationMenuEntry {
   action: TugAction;
   label: string;
+  /**
+   * The `ActionEvent.value` the item's dispatch carries. An entry that
+   * names what it acts on fills this in from the payload it was built
+   * for, so the action reaches whichever responder implements it
+   * instead of stopping at a host that only knows how to re-send it.
+   */
+  value?: unknown;
 }
 
 /**
@@ -180,25 +187,38 @@ const INSERT_ATOM_ENTRY: AnnotationMenuEntry = {
   label: "Insert as Atom",
 };
 
-const FILE_PATH_MENU_ENTRIES: AnnotationMenuEntry[] = [
-  { action: TUG_ACTIONS.OPEN_FILE, label: "Open in Editor" },
-  { action: TUG_ACTIONS.REVEAL_IN_FINDER, label: "Show in Finder" },
-  { action: TUG_ACTIONS.COPY_ANNOTATION_VALUE, label: "Copy Path" },
-  INSERT_ENTRY,
-  INSERT_ATOM_ENTRY,
-];
+/**
+ * The `{ path, line?, endLine? }` an open carries. A cited range wins
+ * over a bare line, so both the click and the menu item land on (and
+ * flash) exactly the lines the reference names.
+ */
+function openTargetFor(payload: AnnotationPayload): Record<string, unknown> | null {
+  if (payload.kind !== "file-path") return null;
+  const target: Record<string, unknown> = { path: payload.path };
+  if (payload.line !== undefined) target.line = payload.line;
+  if (payload.endLine !== undefined) target.endLine = payload.endLine;
+  return target;
+}
 
 registerAnnotationKind("file-path", {
-  // A cited range wins over a bare line, so a click on an edit's header
-  // lands on (and flashes) exactly the lines that changed.
   primaryClick: (payload) => {
-    if (payload.kind !== "file-path") return;
-    const target: Record<string, unknown> = { path: payload.path };
-    if (payload.line !== undefined) target.line = payload.line;
-    if (payload.endLine !== undefined) target.endLine = payload.endLine;
+    const target = openTargetFor(payload);
+    if (target === null) return;
     dispatchCommand(TUG_ACTIONS.OPEN_FILE, target);
   },
-  menuEntries: () => FILE_PATH_MENU_ENTRIES,
+  // "Open in Editor" carries the same target the click sends, so both
+  // gestures reach the deck-level open handler by the same route.
+  menuEntries: (payload) => [
+    {
+      action: TUG_ACTIONS.OPEN_FILE,
+      label: "Open in Editor",
+      value: openTargetFor(payload) ?? undefined,
+    },
+    { action: TUG_ACTIONS.REVEAL_IN_FINDER, label: "Show in Finder" },
+    { action: TUG_ACTIONS.COPY_ANNOTATION_VALUE, label: "Copy Path" },
+    INSERT_ENTRY,
+    INSERT_ATOM_ENTRY,
+  ],
   suppressStandardItems: false,
 });
 

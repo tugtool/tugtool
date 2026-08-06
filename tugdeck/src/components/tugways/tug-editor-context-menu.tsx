@@ -131,6 +131,14 @@ export interface TugEditorContextMenuItem {
    * errors and autocomplete surfaces the vocabulary.
    */
   action: TugAction;
+  /**
+   * The `ActionEvent.value` the dispatch carries. An item that names
+   * what it acts on — a path, a descriptor — puts it here, sampled at
+   * menu-open time, so the action lands on whichever responder
+   * implements it rather than on an intermediate node that exists only
+   * to supply the missing argument.
+   */
+  value?: unknown;
   /** Display label for this item. Also used as the typeahead match target. */
   label: string;
   /** Optional icon node rendered before the label. */
@@ -338,13 +346,21 @@ export function TugEditorContextMenu({
    * items are declared with typed actions at the consumer site
    * (via TugEditorContextMenuItem); no cast or coercion is needed
    * on the dispatch path.
+   *
+   * The item's `value` rides along, resolved from the live items by
+   * action name so the pointer and keyboard paths carry it alike.
    */
   const activateItem = useCallback((target: HTMLElement, action: TugAction) => {
     if (blinkingRef.current) return;
     blinkingRef.current = true;
+    const item = itemsRef.current.find(
+      (entry): entry is TugEditorContextMenuItem =>
+        entry.type !== "separator" && entry.type !== "label" && entry.action === action,
+    );
     // Phase 1: synchronous targeted dispatch to the parent responder.
     const { continuation } = dispatchForContinuation({
       action,
+      value: item?.value,
       phase: "discrete",
     });
     // Phase 2: play the blink, then the continuation (if any), then close.
