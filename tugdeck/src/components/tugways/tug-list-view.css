@@ -532,19 +532,13 @@ body {
      pseudo-element and generated ahead of the row, so at the default `auto` it
      would paint UNDER the row and vanish on any filled row. */
   z-index: 1;
-  /* The box is the bar PLUS its nose, and the nose is cut out of the extra
-     width by the clip. Widening the box rather than adding a second element
+  /* The box is the caret's widest extent — bar plus nose — and the clip cuts
+     the shape out of it. Clipping one box rather than adding a second element
      keeps the caret one paint: an `::after` triangle would have to track the
      bar's colour, its inset, and the row's height independently. */
   width: calc(var(--tugx-list-view-cursor-bar-width) + var(--tugx-list-view-cursor-bar-point));
   background: var(--tugx-list-view-cursor-bar-color);
-  clip-path: polygon(
-    0 0,
-    var(--tugx-list-view-cursor-bar-width) 0,
-    100% 50%,
-    var(--tugx-list-view-cursor-bar-width) 100%,
-    0 100%
-  );
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
 .tug-list-view[data-key-view-kbd] .tug-list-view-cell[data-key-cursor]::before,
 .tug-list-view[data-key-within] .tug-list-view-cell[data-key-cursor]::before {

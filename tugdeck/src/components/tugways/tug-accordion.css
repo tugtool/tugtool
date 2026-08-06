@@ -221,17 +221,11 @@
   position: absolute;
   inset-block: 0;
   inset-inline-start: 0;
-  /* Bar plus nose, the nose cut out of the extra width — the same shape the
-     list's cursor row draws, from the same knobs. */
+  /* Bar plus nose at mid-height, tapering to a point at the top and bottom
+     edges — the same shape the list's cursor row draws, from the same knobs. */
   width: calc(var(--tugx-focus-cursor-bar-width) + var(--tugx-focus-cursor-bar-point));
   background: var(--tugx-focus-cursor-bar-color);
-  clip-path: polygon(
-    0 0,
-    var(--tugx-focus-cursor-bar-width) 0,
-    100% 50%,
-    var(--tugx-focus-cursor-bar-width) 100%,
-    0 100%
-  );
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
   /* Over any fill the trigger paints, including its hover background. */
   z-index: 1;
 }

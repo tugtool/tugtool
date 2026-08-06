@@ -249,13 +249,16 @@ body {
      are different marks answering different questions, and the weight gap
      between them is what tells them apart now that both are strokes.
 
-     `-point` is how far the nose juts past the bar's flat body. The caret is
-     not a plain stripe: its trailing edge comes to a shallow point at the
-     item's mid-height, tapering from the top edge and from the bottom edge,
-     so it reads as an indicator aimed at the row rather than as a rule beside
-     it. Keep it SMALL — over a tall row that taper is nearly vertical and
-     reads as a subtle bevel, which is the intent; a large value turns the
-     caret into a dart that competes with the content. */
+     The caret is not a plain stripe: it is a leading-edge triangle. Its
+     trailing edge reaches its widest at the item's mid-height and tapers to a
+     point at the top edge and at the bottom edge, so the whole silhouette
+     comes to a point at both ends rather than ending square. It reads as an
+     indicator aimed at the row rather than as a rule beside it.
+
+     `-width` and `-point` together are that widest extent at mid-height. Keep
+     the sum SMALL — over a tall row the taper is nearly vertical and reads as
+     a subtle bevel, which is the intent; a large value turns the caret into a
+     dart that competes with the content. */
   --tugx-focus-cursor-bar-width: 3px;
   --tugx-focus-cursor-bar-point: 3px;
   --tugx-focus-cursor-bar-color: var(--tug7-element-global-fill-normal-accent-rest);
