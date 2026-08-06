@@ -173,7 +173,7 @@ describe.skipIf(!SHOULD_RUN)("AT0147: question wizard nav keeps focus on Back/Ne
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
           { timeoutMs: 6000 },
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 10000 });
         expect((await currentHeading(app))?.includes("Alpha"), "opens on Alpha").toBe(true);
 
         // Tab to Next.

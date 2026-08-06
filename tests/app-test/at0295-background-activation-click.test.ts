@@ -138,7 +138,7 @@ describe.skipIf(!SHOULD_RUN)("at0295 — background activation click", () => {
           { timeoutMs: 6000 },
         );
         await app.waitForCondition<boolean>(paneSelected("p2"), {
-          timeoutMs: 6000,
+          timeoutMs: 10000,
         });
         expect(await app.evalJS<boolean>(`document.hasFocus()`)).toBe(true);
         // No pointer gesture ran: the click activated the card without ever

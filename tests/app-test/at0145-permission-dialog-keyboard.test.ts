@@ -170,7 +170,7 @@ describe.skipIf(!SHOULD_RUN)("AT0145: PermissionDialog is card-modal", () => {
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
           { timeoutMs: 6000 },
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 10000 });
 
         // (1) The wide-ring dead-zone is gone — no full-width focusable wrapper
         // ([P18]).

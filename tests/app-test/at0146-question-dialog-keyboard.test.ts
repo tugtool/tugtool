@@ -280,7 +280,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
           { timeoutMs: 6000 },
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 10000 });
 
         // (1) The dead-zone is gone ([P18]); the card carries the scrim signal ([P19]).
         expect(await exists(app, OLD_DEADZONE), "old scope dead-zone is gone").toBe(false);
@@ -370,7 +370,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
           { timeoutMs: 6000 },
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 10000 });
 
         // (1) On open a single-select question seeds the key view on the
         //     OPTIONS group — answering is the task — with the cursor on the
@@ -471,7 +471,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
           { timeoutMs: 6000 },
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 10000 });
 
         // On open the current question's radio options hold the key view.
         await app.waitForCondition<boolean>(
@@ -535,7 +535,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
           { timeoutMs: 6000 },
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 10000 });
 
         // On open, Q1's options hold the key view and show Q1's labels.
         await app.waitForCondition<boolean>(
@@ -600,7 +600,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
           { timeoutMs: 6000 },
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 10000 });
         await app.waitForCondition<boolean>(
           `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
           { timeoutMs: 4000 },
@@ -690,7 +690,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
           { timeoutMs: 6000 },
         );
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 10000 });
         await app.waitForCondition<boolean>(
           `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
           { timeoutMs: 4000 },

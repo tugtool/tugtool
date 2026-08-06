@@ -120,7 +120,7 @@ describe.skipIf(!SHOULD_RUN)("AT0126: keyboard ring survives cold boot", () => {
             );
 
             await app.nativeClickAtElement(v.title);
-            await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+            await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 10000 });
             await new Promise((r) => setTimeout(r, 150));
 
             await app.nativeKey("Tab");

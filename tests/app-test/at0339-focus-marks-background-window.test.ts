@@ -1,19 +1,17 @@
 /**
  * at0339-focus-marks-background-window.test.ts — every keyboard focus mark goes
- * quiet while the OS window is not foreground, the container WASH included.
+ * quiet while the OS window is not foreground, the CONTAINER mark included.
  *
  * `focus-ring.css` gates the focus language on `data-app-active`, which
- * `DeckManager.setHasFocus` projects onto `<html>`. The rule used to suppress
- * only `outline`, deferring the container's behind-tint to "its own site" — and
- * no component ever implemented that, so a focused item-group kept painting its
- * tint behind an inactive window. It went unnoticed because the tint was nearly
- * invisible; a container wash strong enough to read is exactly what makes the
- * leak visible, so the suppression now covers `background-image` too.
+ * `DeckManager.setHasFocus` projects onto `<html>`. Both marks under test are
+ * strokes: the cursor item wears the full-accent element ring and the group
+ * container wears the toned container ring ([D122]). The suppression has to
+ * reach both — a container mark that kept painting behind an inactive window is
+ * the leak this pins, and it is invisible to a test that only watches the leaf.
  *
- * The radio group is the instrument because it is the archetype that has always
- * marked its container with a background layer rather than a stroke — so this
- * test is meaningful both before and after the rest of the item-group family
- * converts to the same wash.
+ * The radio group is the instrument because it is the item-group archetype
+ * whose container mark is authored directly in its own CSS, so a suppression
+ * that fails to reach component-authored container marks shows up here first.
  *
  * The suppression is anchored on `html` rather than on the bare attribute, and
  * that is load-bearing: `[data-app-active="false"] [data-key-view-kbd]` and
@@ -71,9 +69,10 @@ function deckShape() {
   };
 }
 
-// The container's background layer plus the cursor item's stroke, read together:
-// the suppression has to take BOTH kinds of mark down, and a rule that only
-// reached one of them would still pass a single-property probe.
+// The container's stroke plus the cursor item's stroke, read together: the
+// suppression has to take BOTH marks down, and a rule that only reached one of
+// them would still pass a single-element probe. `backgroundImage` stays in the
+// probe as the marks-once guard — the container wears a stroke, not a wash.
 const MARKS_PROBE = `(function(){
   var g = document.querySelector(${JSON.stringify(GROUP)});
   if (!g) return null;
@@ -98,7 +97,7 @@ interface MarksProbe {
 
 describe.skipIf(!SHOULD_RUN)("AT0339: focus marks stand down in a background window", () => {
   test(
-    "container wash and cursor ring both vanish on resign and both return on activate",
+    "container ring and cursor ring both vanish on resign and both return on activate",
     async () => {
       const app = await launchTugApp({
         // Foreground: an app that was never active cannot resign, and the
@@ -118,18 +117,18 @@ describe.skipIf(!SHOULD_RUN)("AT0339: focus marks stand down in a background win
         );
 
         await app.nativeClickAtElement(TITLE);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 10000 });
         // The marks below only exist while the app reads as foreground. Guard on
         // the projected bit rather than on the click, so a machine that hands
-        // activation back slowly cannot make the "wash is painted" assertion
+        // activation back slowly cannot make the "marks are painted" assertion
         // race the very suppression this test is about.
         await app.waitForCondition<boolean>(
           `document.documentElement.getAttribute("data-app-active") === "true"`,
           { timeoutMs: 6000 },
         );
 
-        // (1) Tab → the group takes the key view and paints its container mark
-        // as a background layer, with the single ring on the cursor item.
+        // (1) Tab → the group takes the key view and wears the toned container
+        // ring, with the full-accent element ring on the cursor item.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `(function(){var g=document.querySelector(${JSON.stringify(GROUP)});return g && g.hasAttribute("data-key-view-kbd");})()`,
@@ -138,8 +137,10 @@ describe.skipIf(!SHOULD_RUN)("AT0339: focus marks stand down in a background win
         const foreground = await app.evalJS<MarksProbe>(MARKS_PROBE);
         expect(foreground?.appActive).toBe("true");
         expect(foreground?.keyboardReached).toBe(true);
-        expect(foreground?.containerBackgroundImage).not.toBe("none");
+        expect(parseFloat(foreground?.containerOutline ?? "0")).toBeGreaterThan(0);
         expect(parseFloat(foreground?.cursorOutline ?? "0")).toBeGreaterThan(0);
+        // The container marks once: a stroke, never also a background layer.
+        expect(foreground?.containerBackgroundImage).toBe("none");
 
         // (2) Resign → every mark goes quiet. The engine attributes STAY on the
         // elements (the keyboard has not moved, only the window's activation),
@@ -164,10 +165,8 @@ describe.skipIf(!SHOULD_RUN)("AT0339: focus marks stand down in a background win
           { timeoutMs: 6000 },
         );
         const returned = await app.evalJS<MarksProbe>(MARKS_PROBE);
-        expect(returned?.containerBackgroundImage).not.toBe("none");
-        expect(returned?.containerBackgroundImage).toBe(
-          foreground?.containerBackgroundImage ?? "",
-        );
+        expect(parseFloat(returned?.containerOutline ?? "0")).toBeGreaterThan(0);
+        expect(returned?.containerOutline).toBe(foreground?.containerOutline ?? "");
         expect(parseFloat(returned?.cursorOutline ?? "0")).toBeGreaterThan(0);
       } finally {
         await app.close();

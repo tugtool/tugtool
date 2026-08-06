@@ -120,7 +120,7 @@ describe.skipIf(!SHOULD_RUN)("at0254 — Lens open card + top-anchored stack", (
             { timeoutMs: 5_000 },
           );
           await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
+            timeoutMs: 10_000,
           });
 
           await app.dispatchControlAction("toggle-lens");

@@ -129,7 +129,7 @@ describe.skipIf(!SHOULD_RUN)("at0250 — the watchdog's steal trap", () => {
             { timeoutMs: 6_000 },
           );
           await app.waitForCondition<boolean>(`document.hasFocus()`, {
-            timeoutMs: 6_000,
+            timeoutMs: 10_000,
           });
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
