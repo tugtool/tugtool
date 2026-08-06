@@ -1,9 +1,9 @@
 /**
- * tug-setup-copy — pure copy helpers for TugSetup, split out from the component
+ * configure-tug-copy — pure copy helpers for ConfigureTug, split out from the component
  * so the wording rules are unit-testable without importing the CSS-bearing
  * `.tsx` (mirrors the `session-card-banner-spec` pattern). [D106]
  *
- * @module components/tugways/tug-setup-copy
+ * @module components/tugways/configure-tug-copy
  */
 
 /**

@@ -1,7 +1,7 @@
 //! HTTP handler for `POST /api/fs/mkdir` — create a directory on demand.
 //!
 //! The default project directory (`~/tug` unless the user chose another) is
-//! created lazily: when the user accepts the TugSetup step, and before the
+//! created lazily: when the user accepts the ConfigureTug step, and before the
 //! frontend first acquires it as a workspace. Nothing creates it at boot, so
 //! a user who never opts in never gets a stray directory.
 //!

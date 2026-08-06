@@ -151,7 +151,7 @@ body {
 
 /* A title-only ALERT (a confirm question with no message line) keeps the
    alert icon scale — it reads as an alert, not a utility-sheet header. The
-   icon stays centered on the lone title line. TugSetup/TugVersionGate render
+   icon stays centered on the lone title line. ConfigureTug/TugVersionGate render
    these classes as one-line headers and don't stamp the attribute. */
 .tug-alert-body[data-scale="alert"] {
   gap: var(--tugx-header-gap-alert);

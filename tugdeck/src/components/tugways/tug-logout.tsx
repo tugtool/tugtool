@@ -1,17 +1,17 @@
 /**
  * TugLogout — the app-level logout orchestrator. Mounted once as a deck-root
- * sibling of TugSetup (under `TugAlertProvider`); renders nothing. It watches
+ * sibling of ConfigureTug (under `TugAlertProvider`); renders nothing. It watches
  * the logout-request nonce ({@link useLogoutRequest}) and drives the flow:
  *
  *   confirm (app-modal TugAlert) → interrupt every in-progress turn →
- *   `claude_logout` → on success TugSetup reopens (auth flips logged-out),
+ *   `claude_logout` → on success ConfigureTug reopens (auth flips logged-out),
  *   on failure/timeout a "Couldn't log out" alert (the user stays logged in).
  *
  * Logout is app-level (it stops every session and reopens the wizard), so it
  * lives here rather than on a Session card — both the File-menu item and the
  * `/logout` slash command funnel through {@link requestLogout}. The confirm and
  * error surfaces use the shared TugAlert singleton ([L02]/[L06]); the login
- * state itself is owned by `authStore` and read by TugSetup.
+ * state itself is owned by `authStore` and read by ConfigureTug.
  *
  * @module components/tugways/tug-logout
  */
@@ -43,7 +43,7 @@ export function TugLogout(): null {
   useEffect(() => {
     if (nonce === 0 || nonce === handledRef.current) return;
     handledRef.current = nonce;
-    // Only meaningful when logged in. If we're already logged out (TugSetup is
+    // Only meaningful when logged in. If we're already logged out (ConfigureTug is
     // showing), a logout request is a no-op — don't stack a confirm over it.
     if (authStore.getSnapshot().loggedIn !== true) return;
     let cancelled = false;

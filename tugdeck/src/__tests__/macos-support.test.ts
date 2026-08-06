@@ -5,7 +5,7 @@
  * - parseMacosVersion / compareMacosVersion.
  * - isHostBelowFloor across below / at / above floor, unknown old + future
  *   lines, and unknown/unparseable host (fail-open).
- * - deriveTugSetupOpen precedence: false whenever the gate is open.
+ * - deriveConfigureTugOpen precedence: false whenever the gate is open.
  * - Drift: SUPPORTED_MACOS matches scripts/lab/matrix.json min_version.
  */
 
@@ -16,7 +16,7 @@ import {
   parseMacosVersion,
   compareMacosVersion,
   isHostBelowFloor,
-  deriveTugSetupOpen,
+  deriveConfigureTugOpen,
   requiredMinimumLabel,
   SUPPORTED_MACOS,
 } from "../lib/macos-support";
@@ -78,14 +78,14 @@ describe("requiredMinimumLabel", () => {
   });
 });
 
-describe("deriveTugSetupOpen (gate precedence, Spec S02)", () => {
+describe("deriveConfigureTugOpen (gate precedence, Spec S02)", () => {
   test("gate open suppresses setup regardless of would-open", () => {
-    expect(deriveTugSetupOpen(true, true)).toBe(false);
-    expect(deriveTugSetupOpen(true, false)).toBe(false);
+    expect(deriveConfigureTugOpen(true, true)).toBe(false);
+    expect(deriveConfigureTugOpen(true, false)).toBe(false);
   });
   test("gate closed passes setup's own would-open through", () => {
-    expect(deriveTugSetupOpen(false, true)).toBe(true);
-    expect(deriveTugSetupOpen(false, false)).toBe(false);
+    expect(deriveConfigureTugOpen(false, true)).toBe(true);
+    expect(deriveConfigureTugOpen(false, false)).toBe(false);
   });
 });
 

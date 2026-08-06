@@ -1092,10 +1092,10 @@ export const COMMANDS: readonly CommandEntry[] = [
     bindings: [chord({ key: "KeyF", ctrl: true, meta: true, label: "f" })],
   },
   {
-    id: "setup",
-    title: "Set Up Tug…",
+    id: "configure-tug",
+    title: "Configure Tug…",
     routing: "registry",
-    menuItemId: "app.setup",
+    menuItemId: "app.configureTug",
   },
   {
     id: "logout",

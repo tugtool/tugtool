@@ -116,13 +116,13 @@ export function requiredMinimumLabel(host: HostInfo | null): string {
 }
 
 /**
- * TugSetup's open state with the version gate's precedence applied: setup is
+ * ConfigureTug's open state with the version gate's precedence applied: setup is
  * suppressed while the gate is open, so the two app-modal siblings never stack
  * (Spec S02). Pure — lives here (not in the component) so it's unit-testable
  * without pulling in React/CSS, and so the precedence rule sits beside the gate
  * derivation it depends on.
  */
-export function deriveTugSetupOpen(
+export function deriveConfigureTugOpen(
   gateOpen: boolean,
   wouldOpen: boolean,
 ): boolean {
@@ -131,7 +131,7 @@ export function deriveTugSetupOpen(
 
 /**
  * Whether the version gate should be open (blocking). The single derivation
- * both `TugVersionGate` and `TugSetup` read, so the gate's precedence over
+ * both `TugVersionGate` and `ConfigureTug` read, so the gate's precedence over
  * setup (Spec S02) stays consistent. A dev override wins in dev builds.
  *
  * Reads the host via `useHostInfo` — external state enters React only through

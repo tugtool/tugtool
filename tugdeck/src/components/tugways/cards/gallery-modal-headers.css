@@ -14,7 +14,7 @@
  *   .cg-mh-title    → .tug-sheet-title  / .tug-alert-title
  *   .cg-mh-desc     → .tug-sheet-description / .tug-alert-message
  *
- * (TugSetup and TugVersionGate render the `.tug-alert-*` classes directly —
+ * (ConfigureTug and TugVersionGate render the `.tug-alert-*` classes directly —
  * no bespoke header classes remain.)
  *
  * No color-setting rules beyond the icon tones below; all text inherits from
@@ -49,7 +49,7 @@
 /* ---- Header container ---------------------------------------------------- */
 
 /* Two-line and alert headers align the icon to the top of the title text;
-   the one-line header centers the icon on its single line (the TugSetup
+   the one-line header centers the icon on its single line (the ConfigureTug
    alignment — for one line, top and center coincide optically). */
 .cg-mh-header {
   display: flex;

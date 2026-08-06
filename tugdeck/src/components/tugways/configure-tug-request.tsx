@@ -1,7 +1,7 @@
 /**
- * TugSetupRequest — the gate in front of the on-demand setup wizard. Mounted
- * once as a deck-root sibling of TugSetup (under `TugAlertProvider`); renders
- * nothing. It watches the setup-request nonce ({@link useSetupRequest}) and
+ * ConfigureTugRequest — the gate in front of the on-demand setup wizard. Mounted
+ * once as a deck-root sibling of ConfigureTug (under `TugAlertProvider`); renders
+ * nothing. It watches the configure-tug-request nonce ({@link useConfigureTugRequest}) and
  * decides whether the wizard may open:
  *
  *   nothing running                 → open the wizard
@@ -14,18 +14,18 @@
  * before an app-level state change — and it shares TugLogout's interrupt loop
  * and the TugAlert singleton ([L02]/[L06]).
  *
- * @module components/tugways/tug-setup-request
+ * @module components/tugways/configure-tug-request
  */
 
 import { useEffect, useRef } from "react";
 
-import { useSetupRequest, openSetupOnDemand } from "@/lib/setup-request-store";
+import { useConfigureTugRequest, openConfigureTugOnDemand } from "@/lib/configure-tug-request-store";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { useDeckManager } from "@/deck-manager-context";
 import { useTugAlert } from "./tug-alert";
 
-export function TugSetupRequest(): null {
-  const nonce = useSetupRequest();
+export function ConfigureTugRequest(): null {
+  const nonce = useConfigureTugRequest();
   const deck = useDeckManager();
   const showAlert = useTugAlert();
   const handledRef = useRef(0);
@@ -41,13 +41,13 @@ export function TugSetupRequest(): null {
       const services = cardServicesStore.getServices(card.id);
       if (services?.codeSessionStore.getSnapshot().canInterrupt) {
         running.push({
-          interrupt: () => services.codeSessionStore.interrupt("setup"),
+          interrupt: () => services.codeSessionStore.interrupt("configure-tug"),
         });
       }
     }
 
     if (running.length === 0) {
-      openSetupOnDemand();
+      openConfigureTugOnDemand();
       return;
     }
 
@@ -73,7 +73,7 @@ export function TugSetupRequest(): null {
           // Session already gone — setup proceeds.
         }
       }
-      openSetupOnDemand();
+      openConfigureTugOnDemand();
     })();
 
     return () => {

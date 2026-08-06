@@ -2614,7 +2614,7 @@ mod tests {
             ),
             ("Chase composer typing lag", "fresh-directive"),
             (
-                "Plan local model onboarding for TugSetup",
+                "Plan local model onboarding for ConfigureTug",
                 "local-model-onboarding",
             ),
             (

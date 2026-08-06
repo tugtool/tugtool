@@ -1,6 +1,6 @@
 /**
  * `TugNonRepoNotice` — the shared "this directory isn't a git repository yet"
- * affordance. Modeled on the {@link TugSetup} step plinth: a rounded block on
+ * affordance. Modeled on the {@link ConfigureTug} step plinth: a rounded block on
  * the transcript block surface with a left-aligned title + detail and a
  * right-aligned Initialize button ([D106]). Rendered in both the Changes shade
  * and the History shade so the non-repo state reads identically on either

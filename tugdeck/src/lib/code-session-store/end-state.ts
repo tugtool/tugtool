@@ -48,7 +48,7 @@ export interface EndStateBadge {
  * | `complete`        | —               | "OK"                 | inherit  |
  * | `interrupted`     | (none)          | "Interrupted"        | caution  |
  * | `interrupted`     | `logout`        | "Stopped — logged out" | caution  |
- * | `interrupted`     | `setup`         | "Stopped — setup"    | caution  |
+ * | `interrupted`     | `configure-tug` | "Stopped — Configure Tug" | caution |
  * | `error`           | —               | "Error"              | danger   |
  * | `transport_lost`  | —               | "Lost"               | caution  |
  *
@@ -63,7 +63,7 @@ export interface EndStateBadge {
  * system error.
  *
  * `interruptReason` refines the `interrupted` label: a turn stopped by an
- * app-level flow reads "Stopped — logged out" / "Stopped — setup" instead
+ * app-level flow reads "Stopped — logged out" / "Stopped — Configure Tug" instead
  * of a bare "Interrupted", keeping the same `caution` tone. It
  * is the one helper both the Z1B footer and the telemetry popover call,
  * so both surfaces stay in sync ([D19]).
@@ -79,8 +79,8 @@ export function endStateBadgeFor(
       switch (interruptReason) {
         case "logout":
           return { text: "Stopped — logged out", role: "caution" };
-        case "setup":
-          return { text: "Stopped — setup", role: "caution" };
+        case "configure-tug":
+          return { text: "Stopped — Configure Tug", role: "caution" };
         default:
           return { text: "Interrupted", role: "caution" };
       }

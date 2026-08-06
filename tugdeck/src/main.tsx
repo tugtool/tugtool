@@ -199,7 +199,7 @@ registerConnectionLifecycle(connectionLifecycle);
 // Re-probe Claude login on every RECONNECT. tugcast answers with
 // `claude_auth_result`, which feeds the app-level `authStore`. The probe is
 // imperative/transition-driven (not a component effect) per [L02]/[L24] —
-// `TugSetup` purely reads the store. Reconnect only: the FIRST connect fires
+// `ConfigureTug` purely reads the store. Reconnect only: the FIRST connect fires
 // `connectionDidOpen` before `initActionDispatch` registers the
 // `claude_auth_result` handler, so the initial probe is sent after that
 // registration instead (see below) — otherwise the answer races ahead of its
@@ -209,8 +209,8 @@ connectionLifecycle.observeConnectionDidReconnect(() => {
 });
 
 // Feed the app-wide transport-state store from the same lifecycle pipe. This is
-// the channel TugSetup reads to show a calm "Reconnecting…" body instead of a
-// dead wizard when the wire drops mid-setup ([L02]; #tugsetup-states).
+// the channel ConfigureTug reads to show a calm "Reconnecting…" body instead of a
+// dead wizard when the wire drops mid-setup ([L02]; roadmap/archive/onboarding-and-install.md#tugsetup-states).
 connectionLifecycle.observeConnectionDidOpen(() => {
   transportStateStore.set("online");
 });

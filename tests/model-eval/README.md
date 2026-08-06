@@ -105,7 +105,7 @@ What this does **not** measure: the deck refuses to ask about a line whose first
 
 `liveness.py` sends one digest through the real path and fails only on the three facts that mean the feature is not working: no answer within the timeout, an empty headline, or an answer slower than the `summarize` ceiling. It reports the normalizer's verdict without failing on it — that is register drift, which `model-eval` is the instrument for.
 
-Both preconditions **skip with exit 0** and name the remedy: no installed pack (Tug ▸ **Set Up Tug…**), or no running instance (`just app-debug`). A check that fails wherever a model is missing is one people learn to ignore. Instance detection goes through `tugutil host instance list` and never the raw `$TMPDIR/tug-instances.json`, whose stale entries for crashed instances only the library-mediated read prunes.
+Both preconditions **skip with exit 0** and name the remedy: no installed pack (Tug ▸ **Configure Tug…**), or no running instance (`just app-debug`). A check that fails wherever a model is missing is one people learn to ignore. Instance detection goes through `tugutil host instance list` and never the raw `$TMPDIR/tug-instances.json`, whose stale entries for crashed instances only the library-mediated read prunes.
 
 ## Stats
 

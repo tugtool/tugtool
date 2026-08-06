@@ -102,7 +102,7 @@ import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
 import { GalleryMotionBench } from "./gallery-motion-bench";
 import { GalleryPulseDisplay } from "./gallery-pulse-display";
-import { GalleryTugSetup } from "./gallery-tug-setup";
+import { GalleryConfigureTug } from "./gallery-configure-tug";
 import { GalleryModalHeaders } from "./gallery-modal-headers";
 import { GalleryBlockHeader } from "./gallery-tool-call-header";
 import "./gallery.css";
@@ -1347,13 +1347,13 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.overlays,
   });
 
-  // TugSetup happy-path design spike ([#step-9] onboarding-and-install.md):
+  // ConfigureTug happy-path design spike ([#step-9] onboarding-and-install.md):
   // simulates the whole setup flow from local state so the wizard's copy,
   // rhythm, and pulsing-dot step rows can be designed without a clean guest.
   registerCard({
-    componentId: "gallery-tug-setup",
-    contentFactory: (_cardId) => <GalleryTugSetup />,
-    defaultMeta: { title: "TugSetup", icon: "ListChecks", closable: true },
+    componentId: "gallery-configure-tug",
+    contentFactory: (_cardId) => <GalleryConfigureTug />,
+    defaultMeta: { title: "ConfigureTug", icon: "ListChecks", closable: true },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

@@ -1,5 +1,5 @@
 /**
- * Pure-logic coverage for TugSetup's subscription copy ([D105]). The signed-in
+ * Pure-logic coverage for ConfigureTug's subscription copy ([D105]). The signed-in
  * step's subscription line can only be exercised live for whatever tier the
  * golden-run test account happens to hold, so the per-tier wording is pinned
  * here instead — covering the nodes a VM run can't reach without an account of
@@ -14,7 +14,7 @@ import {
   formatModelSize,
   localAiOfferDetail,
   localAiProgressValue,
-} from "../tug-setup-copy";
+} from "../configure-tug-copy";
 
 describe("subscriptionLabel", () => {
   test("maps each known tier to its formal label (no trailing period)", () => {

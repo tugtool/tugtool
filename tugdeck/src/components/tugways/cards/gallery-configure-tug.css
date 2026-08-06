@@ -1,8 +1,8 @@
 /*
- * gallery-tug-setup.css — styling for the TugSetup happy-path design spike
- * (gallery-tug-setup.tsx). Scoped to `.cg-setup-*`; reuses gallery.css for the
+ * gallery-configure-tug.css — styling for the ConfigureTug happy-path design spike
+ * (gallery-configure-tug.tsx). Scoped to `.cg-configure-tug-*`; reuses gallery.css for the
  * section/content frame. The step row mirrors the real wizard's rhythm
- * (tug-setup.css) so design decisions made here transfer back to TugSetup.
+ * (configure-tug.css) so design decisions made here transfer back to ConfigureTug.
  *
  * No color-setting rules on the step text (it inherits from the panel); the
  * pulsing dot carries the only role tone. A pending step dims via opacity.
@@ -10,7 +10,7 @@
 
 /* ---- Scenario picker ---------------------------------------------------- */
 
-.cg-setup-scenarios {
+.cg-configure-tug-scenarios {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -18,7 +18,7 @@
 
 /* ---- Wizard preview panel (mimics the real modal body) ------------------ */
 
-.cg-setup-preview-panel {
+.cg-configure-tug-preview-panel {
   border: 1px solid var(--tug7-element-global-stroke-normal-muted-rest);
   border-radius: 12px;
   padding: 24px;
@@ -27,19 +27,19 @@
 }
 
 /* TugAlert-style header: a sizable icon left of the title + subtitle block. */
-.cg-setup-header {
+.cg-configure-tug-header {
   display: flex;
   align-items: center;
   gap: 14px;
   margin: 0 0 20px;
 }
 
-.cg-setup-icon {
+.cg-configure-tug-icon {
   flex: 0 0 auto;
   color: var(--tug7-element-tone-text-normal-action-rest);
 }
 
-.cg-setup-preview-title {
+.cg-configure-tug-preview-title {
   font-size: 19px;
   font-weight: 700;
   margin: 0;
@@ -47,56 +47,56 @@
 
 /* Match the isolated step-row section to the simulated-flow row width: same
  * max-width + horizontal padding as the preview panel's inner content. */
-.cg-setup-rows-frame {
+.cg-configure-tug-rows-frame {
   max-width: 600px;
   padding: 0 24px;
 }
 
 /* ---- Step list ---------------------------------------------------------- */
 
-.cg-setup-steps {
+.cg-configure-tug-steps {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: var(--tugx-block-stack-gap);
-  /* Mirrors tug-setup.css: every row the same fixed height so the dialog never
+  /* Mirrors configure-tug.css: every row the same fixed height so the dialog never
    * hops as a step grows. */
-  --tug-setup-row-h: 60px;
-  --tug-setup-row-offer-h: 96px;
-  --tug-setup-row-dir-h: 104px;
-  --tug-setup-dot: 14px;
-  --tug-setup-headline-gap: 10px;
+  --configure-tug-row-h: 60px;
+  --configure-tug-row-offer-h: 96px;
+  --configure-tug-row-dir-h: 104px;
+  --configure-tug-dot: 14px;
+  --configure-tug-headline-gap: 10px;
 }
 
 /* Each step is its own little job — a rounded plinth on the same surface the
  * transcript's block renderers use, so the background does the grouping and a
  * CTA can hang on the right. Fixed-height + centered content so state changes
  * never resize the row. */
-.cg-setup-step {
+.cg-configure-tug-step {
   display: flex;
   gap: 12px;
   align-items: center;
-  min-height: var(--tug-setup-row-h);
+  min-height: var(--configure-tug-row-h);
   padding: 0 var(--tug-space-md);
   background: var(--tugx-block-surface);
   border-radius: var(--tugx-block-chrome-radius);
 }
 
-.cg-setup-step[data-step="local-ai"] {
-  min-height: var(--tug-setup-row-offer-h);
+.cg-configure-tug-step[data-step="local-ai"] {
+  min-height: var(--configure-tug-row-offer-h);
 }
 
-.cg-setup-step[data-step="project-dir"] {
-  min-height: var(--tug-setup-row-dir-h);
+.cg-configure-tug-step[data-step="project-dir"] {
+  min-height: var(--configure-tug-row-dir-h);
 }
 
-.cg-setup-step[data-status="pending"] {
+.cg-configure-tug-step[data-status="pending"] {
   opacity: 0.5;
 }
 
-.cg-setup-step-main {
+.cg-configure-tug-step-main {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -106,60 +106,60 @@
 
 /* Dot + label on one line so the dot rides the label even though the main block
  * is vertically centered in the row. */
-.cg-setup-step-headline {
+.cg-configure-tug-step-headline {
   display: flex;
   align-items: center;
-  gap: var(--tug-setup-headline-gap);
+  gap: var(--configure-tug-headline-gap);
 }
 
-.cg-setup-step-dot {
+.cg-configure-tug-step-dot {
   flex: 0 0 auto;
 }
 
-.cg-setup-step-label {
+.cg-configure-tug-step-label {
   font-size: 14px;
   font-weight: 600;
   line-height: 1.4;
 }
 
-.cg-setup-step-detail {
-  padding-left: calc(var(--tug-setup-dot) + var(--tug-setup-headline-gap));
+.cg-configure-tug-step-detail {
+  padding-left: calc(var(--configure-tug-dot) + var(--configure-tug-headline-gap));
   font-size: 13px;
   line-height: 1.45;
   opacity: 0.8;
 }
 
-.cg-setup-step-body {
-  padding-left: calc(var(--tug-setup-dot) + var(--tug-setup-headline-gap));
+.cg-configure-tug-step-body {
+  padding-left: calc(var(--configure-tug-dot) + var(--configure-tug-headline-gap));
   min-height: calc(13px * 1.45);
   display: flex;
   align-items: center;
   gap: var(--tug-space-sm);
 }
 
-.cg-setup-step-body .tug-progress-indicator,
-.cg-setup-step-body .tug-file-chooser {
+.cg-configure-tug-step-body .tug-progress-indicator,
+.cg-configure-tug-step-body .tug-file-chooser {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.cg-setup-step[data-step="project-dir"] .cg-setup-step-body {
+.cg-configure-tug-step[data-step="project-dir"] .cg-configure-tug-step-body {
   margin-top: var(--tug-space-sm);
   gap: var(--tug-space-md);
 }
 
-.cg-setup-step-body .tug-progress-indicator-value .tug-label {
+.cg-configure-tug-step-body .tug-progress-indicator-value .tug-label {
   font-size: var(--tug-font-size-2xs);
 }
 
-/* Mirrors tug-setup.css: the cancel ✕ seats on the readout's optical center,
+/* Mirrors configure-tug.css: the cancel ✕ seats on the readout's optical center,
  * a pixel above the line box's center. */
-.cg-setup-step-body [data-slot="tug-icon-button"] {
+.cg-configure-tug-step-body [data-slot="tug-icon-button"] {
   position: relative;
   top: -1px;
 }
 
-.cg-setup-step-action {
+.cg-configure-tug-step-action {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -167,7 +167,7 @@
 }
 
 /* Big green success check that takes the button's place on a completed step. */
-.cg-setup-step-check {
+.cg-configure-tug-step-check {
   display: block;
   color: var(--tug7-element-tone-text-normal-success-rest);
 }

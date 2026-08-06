@@ -3,7 +3,7 @@
  * comes from the inherited `tug-alert-content`/`tug-alert-overlay` classes and
  * the header from the shared `.tug-alert-*` header classes (tugx-header.css);
  * this file styles only the gate's paragraph rhythm. No color-setting rules →
- * text inherits the panel color, like TugSetup.
+ * text inherits the panel color, like ConfigureTug.
  */
 
 .tug-version-gate {

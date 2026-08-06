@@ -87,7 +87,7 @@ export function deriveSessionCardBannerSpec(
     snap.lastError.at !== ctx.dismissedAt
   ) {
     // A logged-out / missing-CLI gate is not a card-local concern: the
-    // observer unbinds the card to its picker and the app-modal TugSetup
+    // observer unbinds the card to its picker and the app-modal ConfigureTug
     // owns re-login (single login surface). Never surface it as a banner —
     // return `none` so no red error lock flashes before the unbind lands.
     if (

@@ -22,7 +22,7 @@
  * - `restore_timed_out` — restore-registry timeout elapsed without
  *   either a binding or an errored response.
  * - `signed_out` — the per-session auth gate found the CLI logged out
- *   (or missing) at spawn: the card unbinds so the app-modal TugSetup
+ *   (or missing) at spawn: the card unbinds so the app-modal ConfigureTug
  *   owns re-login and the picker owns per-card resume.
  * - `spawn_failed` — tugcast rejected the `spawn_session` outright (e.g.
  *   the project directory no longer exists). The picker is itself the

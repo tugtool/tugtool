@@ -309,8 +309,8 @@ export function putStackChord(chord: string): void {
 
 /**
  * Read the first-launch flag from the TugbankClient cache. `true` once the
- * user has been through TugSetup's first launch; `false`/absent means this is
- * a first run, so TugSetup shows itself up front (even before the auth probe
+ * user has been through ConfigureTug's first launch; `false`/absent means this is
+ * a first run, so ConfigureTug shows itself up front (even before the auth probe
  * answers) instead of waiting behind a blank deck. Stored under
  * `dev.tugtool.app` / `setup-seen` (Value::Bool).
  */
@@ -344,8 +344,8 @@ export function putKeymapOverride(commandId: string, json: string): void {
  * Read the app-test setup-suppression flag from the TugbankClient cache.
  * Seeded by tugcast at startup when the app-test harness marker is present
  * (before the server accepts connections, so it is readable at deck mount):
- * `true` keeps the blocking TugSetup wizard closed so focus/selection-driven
- * tests never race it; a TugSetup-specific test opts back in through the
+ * `true` keeps the blocking ConfigureTug wizard closed so focus/selection-driven
+ * tests never race it; a ConfigureTug-specific test opts back in through the
  * harness, which seeds `false`. Stored under `dev.tugtool.app` /
  * `suppress-setup` (Value::Bool); absent on normal launches.
  */
@@ -397,7 +397,7 @@ export const DEFAULT_PROJECT_DIR_LEAF = "tug";
 
 /**
  * Read the **explicit** default project directory — the path the user chose in
- * TugSetup or Settings ▸ General — or null when the key was never written.
+ * ConfigureTug or Settings ▸ General — or null when the key was never written.
  *
  * Explicit and resolved are different values and callers must pick
  * deliberately. The session picker's seed chain uses the explicit value, so an

@@ -424,11 +424,11 @@ async fn main() {
         }
     };
 
-    // App-test launches suppress the TugSetup wizard: the harness marker
+    // App-test launches suppress the ConfigureTug wizard: the harness marker
     // (TUGAPP_TEST_SOCKET, inherited app → tugexec → tugcast) seeds the
     // tugbank default the deck reads synchronously at mount, so a fresh
     // per-instance bank never opens the blocking first-run wizard under a
-    // focus-driven test. TUGAPP_TEST_KEEP_SETUP opts a TugSetup-specific
+    // focus-driven test. TUGAPP_TEST_KEEP_SETUP opts a ConfigureTug-specific
     // test back in — seeded `false` explicitly so a reused bank cannot
     // leak suppression into it. Written before the server accepts
     // connections, so the deck can never load ahead of the seed.

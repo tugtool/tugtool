@@ -834,15 +834,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         self.checkForUpdatesMenuItem = checkForUpdatesItem
         appMenu.addItem(checkForUpdatesItem)
         appMenu.addItem(NSMenuItem.separator())
-        // Set Up Tug… — reopens the setup wizard on an app that is already set up,
+        // Configure Tug… — reopens the wizard on an app that is already set up,
         // so install / log-in / on-device-AI stay reachable instead of being a
-        // first-launch-only surface. Sends the app-level `setup` control frame;
-        // tugdeck's TugSetupRequest stops any in-flight turns (with a confirm)
-        // before the app-modal wizard opens. Ordered above Log Out because it
-        // is the everyday one of the three.
-        let setupItem = NSMenuItem(title: "Set Up Tug...", action: #selector(showSetup(_:)), keyEquivalent: "")
-        setupItem.identifier = NSUserInterfaceItemIdentifier("app.setup")
-        appMenu.addItem(setupItem)
+        // first-launch-only surface. Sends the app-level `configure-tug` control
+        // frame; tugdeck's ConfigureTugRequest stops any in-flight turns (with a
+        // confirm) before the app-modal wizard opens. Ordered above Log Out
+        // because it is the everyday one of the three.
+        let configureTugItem = NSMenuItem(title: "Configure Tug...", action: #selector(showConfigureTug(_:)), keyEquivalent: "")
+        configureTugItem.identifier = NSUserInterfaceItemIdentifier("app.configureTug")
+        appMenu.addItem(configureTugItem)
         // Log Out… — app-level account action. Sends the app-level `logout`
         // control frame (not a per-card command), so it works even with no card
         // open; tugdeck's TugLogout runs the confirm → logout flow. Enabled
@@ -1307,8 +1307,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("show-keyboard-shortcuts")
     }
 
-    @objc func showSetup(_ sender: Any?) {
-        sendControl("setup")
+    @objc func showConfigureTug(_ sender: Any?) {
+        sendControl("configure-tug")
     }
 
     @objc func logOut(_ sender: Any?) {

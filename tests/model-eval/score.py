@@ -67,7 +67,8 @@ PROPER = {
     "Maxwell", "Maxwell's", "Makefile", "README", "PATH", "CPU", "Xcode",
     # This project's own surfaces, which a headline about it names constantly.
     "Tugdeck", "Tugcast", "Tugcode", "Tugbank", "Tugways", "Tugutil",
-    "TugSetup", "Session", "Snippets", "Changeset", "DMG", "WAL", "JSONL",
+    "ConfigureTug", "TugSetup", "Session", "Snippets", "Changeset", "DMG",
+    "WAL", "JSONL",
 }
 
 

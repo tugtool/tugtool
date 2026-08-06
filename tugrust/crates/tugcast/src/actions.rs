@@ -204,7 +204,7 @@ pub async fn dispatch_action(action: &str, raw_payload: &[u8], ctx: &ActionConte
             // `claude_logout_result` (so a failed logout surfaces an error
             // rather than a silent no-op), then re-probe and broadcast the
             // resulting auth state — logged out on success — which reopens
-            // TugSetup for the user to log back in.
+            // ConfigureTug for the user to log back in.
             info!("dispatch_action: claude logout requested");
             let cat = stream_outputs
                 .get(&FeedId::CONTROL)

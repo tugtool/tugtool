@@ -1,5 +1,5 @@
 /**
- * TugSetup — the app-wide, blocking setup wizard. A sub-component of TugAlert:
+ * ConfigureTug — the app-wide, blocking setup wizard. A sub-component of TugAlert:
  * it reuses TugAlert's app-modal chrome (Radix AlertDialog portalled into the
  * canvas overlay, the `tug-alert-overlay`/`tug-alert-content` classes at
  * z-index 99990/99991 that actually block the deck) and adds a multi-step
@@ -28,9 +28,9 @@
  * mid-download is picked back up by its startup auto-resume.
  *
  * Two ways in. The wizard opens itself when setup isn't done (the steps above),
- * and the Tug-menu "Set Up Tug…" item opens it on demand on an app that is
- * already set up — `TugSetupRequest` stops any live turns first, then flips
- * `setup-request-store`. The on-demand wizard differs in three ways: it is
+ * and the Tug-menu "Configure Tug…" item opens it on demand on an app that is
+ * already set up — `ConfigureTugRequest` stops any live turns first, then flips
+ * `configure-tug-request-store`. The on-demand wizard differs in three ways: it is
  * dismissible (a Done button, and Escape), it shows the on-device AI row
  * outside a first run (that row is usually why the user came), and it drops
  * the "open your first session" step. When setup is genuinely incomplete the
@@ -43,7 +43,7 @@
  *
  * Each step is a bespoke pulsing-dot row ([D106]): the dot encodes lifecycle,
  * a CTA (or a success check) hangs on the right. The unhappy paths are
- * first-class designed states, not fallthroughs ([P10], #tugsetup-states):
+ * first-class designed states, not fallthroughs ([P10], roadmap/archive/onboarding-and-install.md#tugsetup-states):
  *   - install failed → `authStore.installError` → an error row + Retry;
  *   - sign-in cancelled / browser never returned → `authStore.signInFailed`
  *     (set when an attempt resolves still-logged-out, or by the local timeout)
@@ -66,7 +66,7 @@ import { CircleCheck, Rocket, X } from "lucide-react";
 import { type ReactElement, useEffect, useState, useSyncExternalStore } from "react";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { authStore, useAuth } from "@/lib/auth-store";
-import { useVersionGateOpen, deriveTugSetupOpen } from "@/lib/macos-support";
+import { useVersionGateOpen, deriveConfigureTugOpen } from "@/lib/macos-support";
 import { useAppTransportState } from "@/lib/transport-state-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
@@ -89,9 +89,9 @@ import {
   useLocalModel,
 } from "@/lib/local-model-store";
 import {
-  useSetupOnDemand,
-  closeSetupOnDemand,
-} from "@/lib/setup-request-store";
+  useConfigureTugOnDemand,
+  closeConfigureTugOnDemand,
+} from "@/lib/configure-tug-request-store";
 import { useDeckManager } from "@/deck-manager-context";
 import { countWorkCards } from "@/deck-store-selectors";
 import {
@@ -99,7 +99,7 @@ import {
   pendingOpenStepCopy,
   localAiOfferDetail,
   localAiProgressValue,
-} from "./tug-setup-copy";
+} from "./configure-tug-copy";
 import { TugPushButton } from "./tug-push-button";
 import { TugIconButton } from "./tug-icon-button";
 import { TugFileChooser } from "./tug-file-chooser";
@@ -109,7 +109,7 @@ import {
   type TugProgressIndicatorState,
 } from "./tug-progress-indicator";
 import "./tug-alert.css";
-import "./tug-setup.css";
+import "./configure-tug.css";
 
 // TEMP dev affordance (dev builds only): flip to a state to force the wizard
 // while signed in, so it can be iterated under HMR. Leave `false`; the
@@ -185,28 +185,28 @@ function StepRow({
 }): ReactElement {
   const { role, state } = dotVisual(status);
   return (
-    <li className="tug-setup-step" data-step={stepKey} data-status={status}>
-      <div className="tug-setup-step-main">
-        <div className="tug-setup-step-headline">
+    <li className="configure-tug-step" data-step={stepKey} data-status={status}>
+      <div className="configure-tug-step-main">
+        <div className="configure-tug-step-headline">
           <TugProgressIndicator
             variant="pulsing-dot"
             size={DOT_SIZE}
             role={role}
             state={state}
-            className="tug-setup-step-dot"
+            className="configure-tug-step-dot"
             aria-hidden
           />
-          <span className="tug-setup-step-label">{label}</span>
+          <span className="configure-tug-step-label">{label}</span>
         </div>
-        {detail && <span className="tug-setup-step-detail">{detail}</span>}
-        {body && <div className="tug-setup-step-body">{body}</div>}
+        {detail && <span className="configure-tug-step-detail">{detail}</span>}
+        {body && <div className="configure-tug-step-body">{body}</div>}
       </div>
       {status === "done" ? (
-        <div className="tug-setup-step-action">
-          <CircleCheck className="tug-setup-step-check" size={28} aria-hidden="true" />
+        <div className="configure-tug-step-action">
+          <CircleCheck className="configure-tug-step-check" size={28} aria-hidden="true" />
         </div>
       ) : cta || secondaryCta ? (
-        <div className="tug-setup-step-action">
+        <div className="configure-tug-step-action">
           {secondaryCta && (
             <TugPushButton size="sm" emphasis="ghost" onClick={secondaryCta.onClick}>
               {secondaryCta.label}
@@ -229,7 +229,7 @@ function StepRow({
   );
 }
 
-export function TugSetup(): ReactElement {
+export function ConfigureTug(): ReactElement {
   const { loggedIn, reason, account, signingIn, signInFailed, installing, verifyingInstall, installError } =
     useAuth();
   const transport = useAppTransportState();
@@ -240,10 +240,10 @@ export function TugSetup(): ReactElement {
   const cardCount = countWorkCards(deckState);
   const [openedFirstSession, setOpenedFirstSession] = useState(false);
   const localModel = useLocalModel();
-  // The Tug-menu "Set Up Tug…" route: the wizard opened by request on an app that
-  // is already set up. TugSetupRequest has already stopped any live turns by
+  // The Tug-menu "Configure Tug…" route: the wizard opened by request on an app that
+  // is already set up. ConfigureTugRequest has already stopped any live turns by
   // the time this flips.
-  const onDemand = useSetupOnDemand();
+  const onDemand = useConfigureTugOnDemand();
   // Declining on-device AI is remembered the same way as opening the first
   // session: a local latch for this wizard's lifetime. The durable record is
   // the `setup-declined` flag written to tugbank.
@@ -308,7 +308,7 @@ export function TugSetup(): ReactElement {
   // App-test suppression, read once at mount like `firstRun`: tugcast seeds
   // the flag when the app-test harness launched this instance, so the
   // blocking wizard never opens under a focus/selection-driven test. A
-  // TugSetup-specific test opts back in via the harness (flag seeded false).
+  // ConfigureTug-specific test opts back in via the harness (flag seeded false).
   const [suppressed] = useState(() => {
     const client = getTugbankClient();
     return client ? readSetupSuppressed(client) : false;
@@ -347,7 +347,7 @@ export function TugSetup(): ReactElement {
   // unknown — render a "checking" body instead of guessing step statuses.
   const probing = !forced && firstRun && loggedIn === null;
 
-  // The version gate takes precedence: while it is open, TugSetup suppresses
+  // The version gate takes precedence: while it is open, ConfigureTug suppresses
   // itself so the two app-modals never stack (Spec S02).
   const gateOpen = useVersionGateOpen();
   // Two ways in, with different exits. `required` is the wizard's own claim on
@@ -356,7 +356,7 @@ export function TugSetup(): ReactElement {
   // close. When both are true the required claim wins and Done stays hidden.
   const required =
     !suppressed && (forced !== false || notReady || needsFirstSession || probing);
-  const open = deriveTugSetupOpen(gateOpen, required || onDemand);
+  const open = deriveConfigureTugOpen(gateOpen, required || onDemand);
 
   // Which wizard the user is looking at, latched for as long as the panel is on
   // screen. Radix keeps the content mounted through its close animation, so
@@ -715,7 +715,7 @@ export function TugSetup(): ReactElement {
   ];
 
   // Transport down mid-setup: replace the body with a calm "Reconnecting…" row
-  // rather than a dead wizard (#tugsetup-states). This only changes the body of
+  // rather than a dead wizard (roadmap/archive/onboarding-and-install.md#tugsetup-states). This only changes the body of
   // an already-open wizard — it is deliberately NOT part of the `open`
   // derivation, so a transport blip never pops setup on an already-set-up user
   // (the app-wide reconnect banner covers that case).
@@ -750,14 +750,14 @@ export function TugSetup(): ReactElement {
       <AlertDialog.Portal container={overlayRoot}>
         <AlertDialog.Overlay className="tug-alert-overlay" />
         <AlertDialog.Content
-          className="tug-alert-content tug-setup"
-          data-slot="tug-setup"
+          className="tug-alert-content configure-tug"
+          data-slot="configure-tug"
           aria-describedby={undefined}
           onEscapeKeyDown={(e) => {
             // Required setup has no exit. A wizard the user opened themselves
             // does — Escape is the same act as Done.
             e.preventDefault();
-            if (dismissible) closeSetupOnDemand();
+            if (dismissible) closeConfigureTugOnDemand();
           }}
         >
           {/* In-jail key sink ([P13]): AlertDialog.Content's FocusScope is
@@ -780,12 +780,12 @@ export function TugSetup(): ReactElement {
             </div>
             <div className="tug-alert-text">
               <AlertDialog.Title className="tug-alert-title">
-                Set Up Tug
+                Configure Tug
               </AlertDialog.Title>
             </div>
           </div>
 
-          <ol className="tug-setup-steps">
+          <ol className="configure-tug-steps">
             {steps.map((step) => (
               <StepRow
                 key={step.key}
@@ -807,7 +807,7 @@ export function TugSetup(): ReactElement {
                 emphasis="primary"
                 role="action"
                 persistentDefaultRing
-                onClick={closeSetupOnDemand}
+                onClick={closeConfigureTugOnDemand}
               >
                 Done
               </TugPushButton>

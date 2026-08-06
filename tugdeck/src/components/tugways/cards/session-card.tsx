@@ -1446,7 +1446,7 @@ function SessionProjectPickerForm({
   );
 
   // The user's chosen default project directory (Settings ▸ General, or the
-  // TugSetup step). Outranks the Swift hint in the seed chain below.
+  // ConfigureTug step). Outranks the Swift hint in the seed chain below.
   const defaultProjectPath = useTugbankValue(
     DEFAULT_PROJECT_PATH_DOMAIN,
     DEFAULT_PROJECT_PATH_KEY,
@@ -3706,7 +3706,7 @@ export function SessionCardBody({
       paneBulletinRef.current?.success(`Session renamed to “${name}”`);
     },
     // `/logout` — app-level. Hands off to the deck-root TugLogout orchestrator
-    // (confirm → interrupt every turn → `claude_logout` → TugSetup reopens);
+    // (confirm → interrupt every turn → `claude_logout` → ConfigureTug reopens);
     // the same nonce the File-menu "Log out…" bumps, so there's one flow.
     logout: () => requestLogout(),
     // `/commit` — enters commit mode ([P03]/[P09]): the commit sheet rises

@@ -1,17 +1,17 @@
 /**
  * TugVersionGate — the app-wide, blocking "update macOS" gate. A sibling of
- * {@link TugSetup} at the deck root that reuses the same TugAlert chrome (Radix
+ * {@link ConfigureTug} at the deck root that reuses the same TugAlert chrome (Radix
  * AlertDialog portalled into the canvas overlay, `tug-alert-overlay`/
  * `tug-alert-content` at z 99990/99991). It opens only when the host macOS
  * version is *known* to be below its line's floor ([P05], Spec S02); above the
  * floor — or while the host is still unknown (pre-handshake) — it renders
- * nothing and the deck/TugSetup proceed.
+ * nothing and the deck/ConfigureTug proceed.
  *
- * Precedence: the gate wins over TugSetup. Both read `useVersionGateOpen`, and
- * TugSetup suppresses its own `open` while the gate is open, so the two
+ * Precedence: the gate wins over ConfigureTug. Both read `useVersionGateOpen`, and
+ * ConfigureTug suppresses its own `open` while the gate is open, so the two
  * app-modals never stack (Spec S02).
  *
- * No dismiss — like TugSetup, this is strictly required. Pure read of
+ * No dismiss — like ConfigureTug, this is strictly required. Pure read of
  * `hostInfoStore` via the gate derivation ([L02]).
  */
 

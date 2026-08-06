@@ -206,7 +206,7 @@ describe("deriveSessionCardBannerSpec — breakage only", () => {
     expect(spec.kind).toBe("none");
   });
 
-  it("the auth gate never surfaces a card banner (routes to TugSetup + picker)", () => {
+  it("the auth gate never surfaces a card banner (routes to ConfigureTug + picker)", () => {
     for (const message of ["auth_required", "claude_missing"]) {
       const spec = deriveSessionCardBannerSpec(
         baseSnap({

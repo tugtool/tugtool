@@ -1,8 +1,8 @@
 /**
- * gallery-tug-setup.tsx — design spike for the TugSetup happy-path polish
+ * gallery-configure-tug.tsx — design spike for the ConfigureTug happy-path polish
  * ([#step-9] of roadmap/onboarding-and-install.md).
  *
- * TugSetup's real states only exist on a clean machine (Claude missing, signed
+ * ConfigureTug's real states only exist on a clean machine (Claude missing, signed
  * out, no cards) — states that are awkward to reach on a dev box. This card
  * simulates the whole setup flow from purely local state so the wizard's copy,
  * rhythm, and step-row visuals can be designed under HMR without standing up a
@@ -19,7 +19,7 @@
  * direction line, a detail message for state / progress / completion, and a CTA
  * (or a success check) on the right. Nothing here touches the real `authStore`.
  *
- * @module components/tugways/cards/gallery-tug-setup
+ * @module components/tugways/cards/gallery-configure-tug
  */
 
 import React, { useState } from "react";
@@ -39,7 +39,7 @@ import {
   pendingOpenStepCopy,
   localAiOfferDetail,
   localAiProgressValue,
-} from "@/components/tugways/tug-setup-copy";
+} from "@/components/tugways/configure-tug-copy";
 
 /** The catalog's one `offered` entry, for the on-device AI scenarios. */
 const OFFER_NAME = "Qwen3 4B Instruct";
@@ -49,7 +49,7 @@ const OFFER_NOTES = "Enhances command parsing & session summaries.";
 /** The prefill the projects-folder scenarios show. */
 const PROJECT_DIR = "/Users/ken/tug";
 import "./gallery.css";
-import "./gallery-tug-setup.css";
+import "./gallery-configure-tug.css";
 
 // ---------------------------------------------------------------------------
 // Step model
@@ -105,7 +105,7 @@ function dotVisual(status: StepStatus): {
 
 const DOT_SIZE = 14;
 
-/** Mirrors PROGRESS_BAR_HEIGHT in tug-setup.tsx. */
+/** Mirrors PROGRESS_BAR_HEIGHT in configure-tug.tsx. */
 const PROGRESS_BAR_HEIGHT = 6;
 
 // ---------------------------------------------------------------------------
@@ -115,30 +115,30 @@ const PROGRESS_BAR_HEIGHT = 6;
 function SetupStepRow({ step }: { step: SetupStepModel }): React.ReactElement {
   const { role, state } = dotVisual(step.status);
   return (
-    <li className="cg-setup-step" data-step={step.key} data-status={step.status}>
-      <div className="cg-setup-step-main">
-        <div className="cg-setup-step-headline">
+    <li className="cg-configure-tug-step" data-step={step.key} data-status={step.status}>
+      <div className="cg-configure-tug-step-main">
+        <div className="cg-configure-tug-step-headline">
           <TugProgressIndicator
             variant="pulsing-dot"
             size={DOT_SIZE}
             role={role}
             state={state}
-            className="cg-setup-step-dot"
+            className="cg-configure-tug-step-dot"
             aria-hidden
           />
-          <span className="cg-setup-step-label">{step.label}</span>
+          <span className="cg-configure-tug-step-label">{step.label}</span>
         </div>
         {step.detail && (
-          <span className="cg-setup-step-detail">{step.detail}</span>
+          <span className="cg-configure-tug-step-detail">{step.detail}</span>
         )}
-        {step.body && <div className="cg-setup-step-body">{step.body}</div>}
+        {step.body && <div className="cg-configure-tug-step-body">{step.body}</div>}
       </div>
       {step.status === "done" ? (
-        <div className="cg-setup-step-action">
-          <CircleCheck className="cg-setup-step-check" size={28} aria-hidden />
+        <div className="cg-configure-tug-step-action">
+          <CircleCheck className="cg-configure-tug-step-check" size={28} aria-hidden />
         </div>
       ) : step.cta || step.secondaryCta ? (
-        <div className="cg-setup-step-action">
+        <div className="cg-configure-tug-step-action">
           {step.secondaryCta && (
             <TugPushButton size="sm" emphasis="ghost" onClick={step.secondaryCta.onClick}>
               {step.secondaryCta.label}
@@ -600,7 +600,7 @@ function ScenarioPicker({
   onPick: (next: Scenario) => void;
 }): React.ReactElement {
   return (
-    <div className="cg-setup-scenarios">
+    <div className="cg-configure-tug-scenarios">
       {SCENARIOS.map((s) => (
         <TugPushButton
           key={s.key}
@@ -621,12 +621,12 @@ function WizardPreview({
   flow: FlowModel;
 }): React.ReactElement {
   return (
-    <div className="cg-setup-preview-panel" data-slot="setup-preview">
-      <div className="cg-setup-header">
-        <Rocket className="cg-setup-icon" size={32} aria-hidden />
-        <div className="cg-setup-preview-title">Set up Tug</div>
+    <div className="cg-configure-tug-preview-panel" data-slot="setup-preview">
+      <div className="cg-configure-tug-header">
+        <Rocket className="cg-configure-tug-icon" size={32} aria-hidden />
+        <div className="cg-configure-tug-preview-title">Configure Tug</div>
       </div>
-      <ol className="cg-setup-steps">
+      <ol className="cg-configure-tug-steps">
         {flow.steps.map((step) => (
           <SetupStepRow key={step.key} step={step} />
         ))}
@@ -636,15 +636,15 @@ function WizardPreview({
 }
 
 // ---------------------------------------------------------------------------
-// GalleryTugSetup
+// GalleryConfigureTug
 // ---------------------------------------------------------------------------
 
-export function GalleryTugSetup(): React.ReactElement {
+export function GalleryConfigureTug(): React.ReactElement {
   const [scenario, setScenario] = useState<Scenario>("fresh");
   const flow = buildFlow(scenario, setScenario);
 
   return (
-    <div className="cg-content" data-testid="gallery-tug-setup">
+    <div className="cg-content" data-testid="gallery-configure-tug">
       <div className="cg-section">
         <TugLabel className="cg-section-title">Simulated flow</TugLabel>
         <TugLabel size="2xs" emphasis="calm">
@@ -660,8 +660,8 @@ export function GalleryTugSetup(): React.ReactElement {
         <TugLabel className="cg-section-title">
           Step-row states (bespoke row)
         </TugLabel>
-        <div className="cg-setup-rows-frame">
-          <ol className="cg-setup-steps">
+        <div className="cg-configure-tug-rows-frame">
+          <ol className="cg-configure-tug-steps">
             {ISOLATED_STEPS.map((step) => (
               <SetupStepRow key={step.key} step={step} />
             ))}

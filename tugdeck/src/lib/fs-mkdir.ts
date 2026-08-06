@@ -3,7 +3,7 @@
  * endpoint.
  *
  * The default project directory is created lazily rather than at boot: when
- * the user accepts the TugSetup projects-folder step, and again before the
+ * the user accepts the ConfigureTug projects-folder step, and again before the
  * first workspace acquisition in case it was deleted since. Both callers want
  * the same thing — "make sure this exists" — and both tolerate it already
  * existing, which the server reports as success.

@@ -2,7 +2,7 @@
  * gallery-modal-headers.tsx — reference card for the unified modal-header
  * convention.
  *
- * Every modal/overlay header (TugAlert, TugAlertSheet, TugSheet, TugSetup,
+ * Every modal/overlay header (TugAlert, TugAlertSheet, TugSheet, ConfigureTug,
  * TugVersionGate) draws one scale from `styles/tugx-header.css`, in three
  * cases: one-line (title only), two-line (title + description), and alert
  * (title + message). This card renders each case as a static panel so the
@@ -122,7 +122,7 @@ function ShippedAlertHeader({
   title: string;
   message?: string;
   /** Stamp `data-scale="alert"` — TugAlert / TugAlertSheet / the File save
-   *  sheets do; TugSetup / TugVersionGate render one-line headers and don't. */
+   *  sheets do; ConfigureTug / TugVersionGate render one-line headers and don't. */
   alertScale?: boolean;
 }): React.ReactElement {
   return (
@@ -298,11 +298,11 @@ export function GalleryModalHeaders(): React.ReactElement {
           </MockPanel>
         </div>
         <div className="cg-mh-compare">
-          <MockPanel caption="shipped — TugSetup's exact markup: .tug-alert-* with data-icon-role=action, no message">
+          <MockPanel caption="shipped — ConfigureTug's exact markup: .tug-alert-* with data-icon-role=action, no message">
             <ShippedAlertHeader
               icon={<Rocket />}
               iconRole="action"
-              title="Set Up Tug"
+              title="Configure Tug"
             />
             {SETUP_ROWS}
           </MockPanel>
@@ -426,7 +426,7 @@ export function GalleryModalHeaders(): React.ReactElement {
           <span className="cg-mh-note">
             <strong>Consumers:</strong> `.tug-sheet-header/icon/title/
             description` (tug-sheet.css) and `.tug-alert-body/icon/title/
-            message` (tug-alert.css). TugAlertSheet, TugSetup, and
+            message` (tug-alert.css). TugAlertSheet, ConfigureTug, and
             TugVersionGate all render the `.tug-alert-*` classes — no
             component declares its own header scale.
           </span>

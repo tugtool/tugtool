@@ -51,9 +51,9 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
-import { TugSetup } from "./components/tugways/tug-setup";
+import { ConfigureTug } from "./components/tugways/configure-tug";
 import { TugLogout } from "./components/tugways/tug-logout";
-import { TugSetupRequest } from "./components/tugways/tug-setup-request";
+import { ConfigureTugRequest } from "./components/tugways/configure-tug-request";
 import { TugVersionGate } from "./components/tugways/tug-version-gate";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { TugBannerProvider } from "./components/chrome/tug-banner-bridge";
@@ -800,24 +800,24 @@ export class DeckManager implements IDeckManagerStore {
           React.createElement(DeckCanvas, {}),
           // App-wide blocking "update macOS" gate. Opens only when the host
           // version is known-below its line's floor; takes precedence over
-          // TugSetup (which suppresses itself while the gate is open) so the
+          // ConfigureTug (which suppresses itself while the gate is open) so the
           // two app-modals never stack (Spec S02). Renders nothing otherwise.
           React.createElement(TugVersionGate, {}),
           // App-wide blocking setup wizard. Covers the deck until Claude Code
           // is installed, signed in, and the first session is opened — auth is
           // strictly required for an AI IDE. Renders nothing once set up.
-          React.createElement(TugSetup, {}),
+          React.createElement(ConfigureTug, {}),
           // App-level logout orchestrator (renders nothing). Watches the
           // logout-request nonce; on request runs confirm → interrupt every
-          // turn → `claude_logout`, then TugSetup reopens for re-login (or a
-          // "couldn't log out" alert on failure). Sibling of TugSetup so it
+          // turn → `claude_logout`, then ConfigureTug reopens for re-login (or a
+          // "couldn't log out" alert on failure). Sibling of ConfigureTug so it
           // shares the TugAlert singleton and the deck context.
           React.createElement(TugLogout, {}),
-          // Gate in front of the Tug-menu "Set Up Tug…" item (renders nothing).
+          // Gate in front of the Tug-menu "Configure Tug…" item (renders nothing).
           // Watches the setup-request nonce; opens the wizard outright when
           // nothing is running, otherwise confirms → interrupts every turn
           // first, so the app-modal never lands on top of live work.
-          React.createElement(TugSetupRequest, {}),
+          React.createElement(ConfigureTugRequest, {}),
         ),
       ),
     );

@@ -43,7 +43,7 @@ def main() -> int:
     packs = installed_packs()
     if not packs:
         print("skip: no local model pack installed.")
-        print("      Install one from Tug ▸ Set Up Tug… and run this again.")
+        print("      Install one from Tug ▸ Configure Tug… and run this again.")
         return SKIP
 
     if not instance_is_running(args.instance):

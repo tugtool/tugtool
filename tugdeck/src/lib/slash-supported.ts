@@ -113,7 +113,7 @@ export const HIDDEN_SLASH_COMMANDS: ReadonlySet<string> = new Set<string>([
 
   // Account / auth / subscription / novelty — the Tug.app host's concern.
   // (`/logout` is now a supported Tug-local command — see LOCAL_SLASH_COMMANDS.
-  // `/login` stays hidden: logging in is handled by TugSetup, not a command.)
+  // `/login` stays hidden: logging in is handled by ConfigureTug, not a command.)
   "login",
   "privacy-settings",
   "config",

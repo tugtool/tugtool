@@ -318,11 +318,11 @@ export type TurnEndReason =
 /**
  * Why an interrupt fired when it wasn't a plain user Stop. Both values name an
  * app-level flow that stops every turn before it changes app-wide state:
- * `"logout"` before `claude auth logout`, `"setup"` before the setup wizard
+ * `"logout"` before `claude auth logout`, `"configure-tug"` before the Configure Tug wizard
  * takes the whole app modal. The end-state badge names the flow so a turn the
  * user didn't personally stop doesn't read as an anonymous "Interrupted".
  */
-export type InterruptReason = "logout" | "setup";
+export type InterruptReason = "logout" | "configure-tug";
 
 /**
  * Immutable transcript entry appended once per completed turn.

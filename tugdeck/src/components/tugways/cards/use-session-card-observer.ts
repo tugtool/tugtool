@@ -13,7 +13,7 @@
  *   - the per-session auth gate (`session_state_errored` whose message
  *     is `auth_required` / `claude_missing`) — the gate is authoritative
  *     for app auth, so we re-probe (`check_auth`) to let the app-modal
- *     TugSetup open as the single login surface, AND unbind with a
+ *     ConfigureTug open as the single login surface, AND unbind with a
  *     `signed_out` notice so the card re-presents its picker rather than
  *     sitting on a dead, logged-out session.
  *
@@ -68,7 +68,7 @@ export function useSessionCardObserver(
           message: err.message,
         });
         // Authoritative signal: re-probe so `authStore` flips logged-out
-        // and TugSetup takes the deck as the single login surface.
+        // and ConfigureTug takes the deck as the single login surface.
         getConnection()?.sendControlFrame("check_auth");
         pickerNoticeStore.set(cardId, {
           category: "signed_out",

@@ -6,14 +6,14 @@
  * "restoring" binding-ack phase), this is a single app-level reading of the
  * socket itself — `online` once a handshake completes, `offline` when the wire
  * drops, `reconnecting` while a backoff retry is scheduled. It is the channel
- * TugSetup reads to show a calm "Reconnecting…" body instead of a dead wizard
- * when the transport falls over mid-setup (#tugsetup-states).
+ * ConfigureTug reads to show a calm "Reconnecting…" body instead of a dead wizard
+ * when the transport falls over mid-setup (roadmap/archive/onboarding-and-install.md#tugsetup-states).
  *
  * The store is *driven* from `main.tsx`, which already owns the
  * `ConnectionLifecycle` singleton and wires its other observers there — so this
  * module stays free of any import-order dependency on the lifecycle being
  * registered. It starts `online` (optimistic): the not-yet-connected case is
- * covered by TugSetup's probing body, and a real drop flips it `offline` /
+ * covered by ConfigureTug's probing body, and a real drop flips it `offline` /
  * `reconnecting`.
  *
  * @module lib/transport-state-store

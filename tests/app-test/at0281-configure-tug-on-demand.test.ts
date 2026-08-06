@@ -1,8 +1,8 @@
 /**
- * at0281-setup-on-demand.test.ts — the Tug ▸ Set Up Tug… route into TugSetup.
+ * at0281-configure-tug-on-demand.test.ts — the Tug ▸ Configure Tug… route into ConfigureTug.
  *
  * The setup wizard used to be reachable only by being un-set-up. The Tug-menu
- * "Set Up Tug…" item opens it on demand, and because it is app-modal it must not
+ * "Configure Tug…" item opens it on demand, and because it is app-modal it must not
  * land on top of a running turn. Both branches of that gate are pinned here,
  * on one session card:
  *
@@ -16,15 +16,15 @@
  *      gates back off) and then the wizard opens.
  *
  * Driven through the real stores: `driveSession send` puts a real turn in
- * flight, and `dispatchControlAction("setup")` is the exact action the native
+ * flight, and `dispatchControlAction("configure-tug")` is the exact action the native
  * menu item posts (the item itself carries no key equivalent, so there is no
  * CGEvent path to drive — at0168 pins its presence).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
- * @covers tugdeck/src/components/tugways/tug-setup.tsx
- * @covers tugdeck/src/components/tugways/tug-setup-request.tsx
- * @covers tugdeck/src/lib/setup-request-store.ts
+ * @covers tugdeck/src/components/tugways/configure-tug.tsx
+ * @covers tugdeck/src/components/tugways/configure-tug-request.tsx
+ * @covers tugdeck/src/lib/configure-tug-request-store.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -33,11 +33,11 @@ import { launchTugApp } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const SID = "at0281-setup-on-demand";
-const SETUP = '[data-slot="tug-setup"]';
+const SID = "at0281-configure-tug-on-demand";
+const SETUP = '[data-slot="configure-tug"]';
 const ALERT = '[data-slot="tug-alert"]';
 const SETUP_DONE = `${SETUP} .tug-alert-actions [data-slot="tug-push-button"]`;
-const SETUP_STEP_LABEL = `${SETUP} .tug-setup-step-label`;
+const SETUP_STEP_LABEL = `${SETUP} .configure-tug-step-label`;
 // The alert's actions row is [Cancel, confirm] — the confirm is the last.
 const ALERT_CONFIRM = `${ALERT} .tug-alert-actions [data-slot="tug-push-button"]:last-child`;
 
@@ -83,11 +83,11 @@ async function clickWhenReady(
   await app.nativeClickAtElement(selector);
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0281: Set Up Tug… opens the wizard on demand", () => {
+describe.skipIf(!SHOULD_RUN)("AT0281: Configure Tug… opens the wizard on demand", () => {
   test(
     "idle opens straight through; mid-turn confirms and stops the turn first",
     async () => {
-      const app = await launchTugApp({ testName: "at0281-setup-on-demand" });
+      const app = await launchTugApp({ testName: "at0281-configure-tug-on-demand" });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -100,7 +100,7 @@ describe.skipIf(!SHOULD_RUN)("AT0281: Set Up Tug… opens the wizard on demand",
         // ── 1. Idle: straight through, and dismissible ──
         expect(await app.evalJS<boolean>(absent(SETUP))).toBe(true);
         await app.evalJS<null>(
-          `(window.__tug.dispatchControlAction("setup", {}), null)`,
+          `(window.__tug.dispatchControlAction("configure-tug", {}), null)`,
         );
         await app.waitForCondition<boolean>(present(SETUP), { timeoutMs: 8000 });
         // Nothing to confirm with no work in flight.
@@ -142,10 +142,10 @@ describe.skipIf(!SHOULD_RUN)("AT0281: Set Up Tug… opens the wizard on demand",
           if (await stopEnabled()) break;
           await new Promise((r) => setTimeout(r, 100));
         }
-        expect(await stopEnabled(), "turn in flight before Set Up Tug…").toBe(true);
+        expect(await stopEnabled(), "turn in flight before Configure Tug…").toBe(true);
 
         await app.evalJS<null>(
-          `(window.__tug.dispatchControlAction("setup", {}), null)`,
+          `(window.__tug.dispatchControlAction("configure-tug", {}), null)`,
         );
         // The confirm comes up; the wizard stays shut behind it.
         await app.waitForCondition<boolean>(present(ALERT), { timeoutMs: 8000 });
@@ -166,7 +166,7 @@ describe.skipIf(!SHOULD_RUN)("AT0281: Set Up Tug… opens the wizard on demand",
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") {
-          process.stderr.write(`\n[at0281-setup-on-demand] log tail:\n${tail}\n`);
+          process.stderr.write(`\n[at0281-configure-tug-on-demand] log tail:\n${tail}\n`);
         }
         throw err;
       } finally {
