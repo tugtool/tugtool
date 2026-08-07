@@ -17,7 +17,9 @@
 | Target branch | main |
 | Last updated | 2026-08-07 |
 
-> **Vet pass, 2026-08-07.** Assessed against the real tree. Eight findings folded in: the harness is a subcommand rather than a second binary ([P09] — tugcast has no lib target); `gazette_posts` is explicitly exempt from the drift-rebuild guard ([P02] — the guard would erase all history); search is FTS5 rather than `LIKE` ([P13]); a failed wake returns its frames ([P14]); the chord grant records its tier and menu choice ([P10]); Step 10 names `deck-canvas.tsx` (not `action-dispatch.ts`) plus three previously-missing files; Step 9 carries [L27] disposal and [L26] keying; Step 10 carries [L12] and the [L16]/[L19] contract. `max_workers` defaults to 3, and Step 5 sweeps the sitrep cadence at 90/120/180 rather than validating one value.
+> **Vet pass, 2026-08-07.** Assessed against the real tree. Eight findings folded in: the harness is a subcommand rather than a second binary ([P09] — tugcast has no lib target); `gazette_posts` is explicitly exempt from the drift-rebuild guard ([P02] — the guard would erase all history); search is FTS5 rather than `LIKE` ([P13]); a failed wake returns its frames ([P14]); the chord grant records its tier and menu choice ([P10]); the card step names `deck-canvas.tsx` (not `action-dispatch.ts`) plus three previously-missing files; the store step carries [L27] disposal and the card step [L12] and the [L16]/[L19] contract. `max_workers` defaults to 3, and #step-5 sweeps the sitrep cadence at 90/120/180 rather than validating one value.
+>
+> **Phasing pass, 2026-08-07.** The steps were regrouped into six `/implement`-sized phases (Table T04) and **reordered**: the readable Gazette (store → card → chips) now lands *before* the Operator, so live posts are visible two phases earlier and the cadence knobs get turned against real use. The composer split out as its own step (#step-12) so the store's write path arrives with the Operator that serves it. Step count 13 → 14.
 
 ---
 
@@ -313,7 +315,7 @@ GAZETTE_INPUT frame ──▶ persist user post + GAZETTE broadcast ──▶ op
 
 The Reporter bridge is a `StreamFeed` (like `PulseBridge`): `feed_id() = FeedId::GAZETTE`, `channel_capacity() = 64`, default `Warn` lag policy, registered via `feed_router.register_stream_feed` in `main.rs`. It subscribes `code_tx` inside its task, receives submissions the way `session_overview_task` does (`SessionOverviewConfig` carries `submission_tx: code_submission_tx.clone()` — mirror that wiring), and watches session-state frames for session-end wakes. Each wake snapshots-and-clears that session's buffer and spawns a task running the job so a slow model turn never blocks the tap loop; a job that fails returns its frames to the buffer ([P14]).
 
-**Construction ordering in `main.rs`** (get this right up front rather than discovering it mid-step). `register_stream_feed` *returns* the feed's `broadcast::Sender<Frame>` — that is the only way to obtain the GAZETTE sender, so the Step 8 Operator adapter must be constructed **after** the Step 6 registration. This is exactly the existing shape: `let pulse_tx = feed_router.register_stream_feed(Box::new(pulse_bridge), …)` is followed by the session-overview block that consumes `pulse_tx`. The three inputs the bridge needs are all available at that point in the file: `code_output_feed` and `code_submission_tx` are built early (the submission channel at `main.rs`'s `let (code_submission_tx, _) = broadcast::channel::<Frame>(64)`), and `session_state_feed` — a `SessionScopedFeed` exposing `.sender()` — is constructed well before the pulse-bridge neighborhood where the Reporter goes.
+**Construction ordering in `main.rs`** (get this right up front rather than discovering it mid-step). `register_stream_feed` *returns* the feed's `broadcast::Sender<Frame>` — that is the only way to obtain the GAZETTE sender, so the #step-11 Operator adapter must be constructed **after** the #step-6 registration. This is exactly the existing shape: `let pulse_tx = feed_router.register_stream_feed(Box::new(pulse_bridge), …)` is followed by the session-overview block that consumes `pulse_tx`. The three inputs the bridge needs are all available at that point in the file: `code_output_feed` and `code_submission_tx` are built early (the submission channel at `main.rs`'s `let (code_submission_tx, _) = broadcast::channel::<Frame>(64)`), and `session_state_feed` — a `SessionScopedFeed` exposing `.sender()` — is constructed well before the pulse-bridge neighborhood where the Reporter goes.
 
 **Table T03: Wake reasons** {#t03-wake-reasons}
 
@@ -444,7 +446,7 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] `tuglaws/menus.md`: row for the "Show Gazette" menu item (`maker.gazette` / `toggle-gazette`) — Step 10.
+- [ ] `tuglaws/menus.md`: row for the "Show Gazette" menu item (`maker.gazette` / `toggle-gazette`) — #step-8.
 - [ ] Module doc comments carry the doctrine (reporter.rs topology header modeled on pulse.rs's; gazette_agent.rs knob table) — no freestanding docs/*.md dropfiles.
 - [ ] `roadmap/feed-brief.md` stays as-is (the decided design); this plan's naming note is the bridge from the brief's Feed/Herald vocabulary.
 
@@ -474,23 +476,45 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 > **Commit after all checkpoints pass.** Rust checkpoints run from `tugrust/`; deck checkpoints from `tugdeck/`.
 
+#### Implementation Phases — one `/implement` call each {#phases}
+
+Fourteen steps is far too much for a single run. They group into **six phases**, each a self-contained `/implement` call ending in something demonstrable. The seams are chosen so that every phase boundary is a place where stopping is *natural* — the work below it is complete and useful, and nothing above it is half-wired.
+
+**Two of the boundaries are human gates**, not merely convenient stopping points. Phase B ends where only you can decide what happens next (which cadence reads right), and Phase D ends where the feature first becomes something to live with. Neither decision should be made by an agent mid-run, which is why each gets its own phase even though B is a single step.
+
+**Table T04: Phases** {#t04-phases}
+
+| Phase | Steps | Lands | Gate before the next call |
+|---|---|---|---|
+| **A — Foundations** | #step-1 – #step-4 | Protocol bytes, the ledger + FTS5, the agent spec and its rubric prose, the pure wake core. All Rust, all unit-tested, nothing observable yet. | none — run straight into B |
+| **B — Calibration** | #step-5 | `just gazette-replay` over real transcripts at three cadences. | **Yours.** Read the three gazettes; set `sitrep_secs`; accept or rewrite the rubric. This is the question the whole feature turns on and the harness exists to answer it. |
+| **C — The Reporter goes live** | #step-6 | Real posts in the ledger and on the wire, watchable from the dev log. | Confirm posts land during real work |
+| **D — The Gazette you can read** | #step-7 – #step-9 | The rail renders live Reporter posts; ref chips act. **The feature becomes real here.** | **Yours.** Live with it. Turn `sitrep_secs` and `card_rows` against actual use — the knobs are runtime-tunable ([P05]) precisely so this gate needs no rebuild. |
+| **E — The Operator** | #step-10 – #step-12 | Read-only verbs, the two-round pipeline, and the composer that reaches them. | Worked-example question answers correctly |
+| **F — Proof and close** | #step-13 – #step-14 | App-test, doc rows, full-workspace green. | phase close |
+
+**Why the Operator comes after the card.** The original ordering built both Rust halves before anything rendered, which would have put four large steps between you and the first visible post. The Gazette is coherent without the Operator — it is a narration channel that happens to also answer questions — so Phase D ships the readable half first and Phase E adds the phone. That ordering also means the cadence knobs get exercised against lived experience two phases earlier, which is the thing you actually asked for. The cost is one extra step: #step-12 splits the composer out of the card so the write path arrives with the Operator that serves it.
+
+**If a phase still runs long,** the safe internal split points are after #step-2 (the ledger stands alone) and after #step-10 (the verb executor is independently testable). Do not split inside a step.
+
 #### Step Status Ledger {#step-status-ledger}
 
-| Step | Title | Status | Commit |
-|---|---|---|---|
-| #step-1 | Protocol: GAZETTE + GAZETTE_INPUT | pending | — |
-| #step-2 | Ledger: gazette_posts | pending | — |
-| #step-3 | Gazette AgentSpec + jobs | pending | — |
-| #step-4 | Pure Reporter wake core | pending | — |
-| #step-5 | Calibration harness | pending | — |
-| #step-6 | Live Reporter bridge | pending | — |
-| #step-7 | Operator verb executor | pending | — |
-| #step-8 | Operator pipeline + GAZETTE_INPUT | pending | — |
-| #step-9 | Deck gazette-store | pending | — |
-| #step-10 | Gazette card + toggle + menu | pending | — |
-| #step-11 | Ref chip actions | pending | — |
-| #step-12 | App-test + doc rows | pending | — |
-| #step-13 | Integration checkpoint | pending | — |
+| Step | Phase | Title | Status | Commit |
+|---|---|---|---|---|
+| #step-1 | A | Protocol: GAZETTE + GAZETTE_INPUT | pending | — |
+| #step-2 | A | Ledger: gazette_posts + FTS5 | pending | — |
+| #step-3 | A | Gazette AgentSpec + jobs | pending | — |
+| #step-4 | A | Pure Reporter wake core | pending | — |
+| #step-5 | B | Calibration harness | pending | — |
+| #step-6 | C | Live Reporter bridge | pending | — |
+| #step-7 | D | Deck gazette-store (read path) | pending | — |
+| #step-8 | D | Gazette card: transcript, toggle, menu | pending | — |
+| #step-9 | D | Ref chip actions | pending | — |
+| #step-10 | E | Operator verb executor | pending | — |
+| #step-11 | E | Operator pipeline + GAZETTE_INPUT | pending | — |
+| #step-12 | E | The composer (store write path + card input) | pending | — |
+| #step-13 | F | App-test + doc rows | pending | — |
+| #step-14 | F | Integration checkpoint | pending | — |
 
 #### Step 1: Protocol — reclaim 0x70, add GAZETTE_INPUT {#step-1}
 
@@ -631,81 +655,36 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 ---
 
-#### Step 7: Operator verb executor {#step-7}
+#### Step 7: Deck gazette-store — the read path {#step-7}
 
-**Commit:** `tugcast(operator): read-only verb executor with caps`
+**Commit:** `tugdeck(gazette): GazetteStore — CONTROL tail and live fold`
 
-**Depends on:** #step-2
+**Depends on:** #step-1, #step-6
 
-**References:** [P07] verbs, [Q03] git cwd, Table T01, (#verb-table)
-
-**Artifacts:** `feeds/operator.rs`: `run_verb(ctx, name, args) -> Result<serde_json::Value, String>` for all nine T01 verbs; `OperatorContext { ledger, bootstrap_project_dir }`.
-
-**Tasks:**
-- [ ] Ledger verbs over Step 2's reads; git verbs via `tokio::process::Command` with arg allowlisting (never shell interpolation; `--` path separators; reject flag-shaped user args), output caps per T01, 10s timeout each.
-- [ ] Unknown verb / malformed args → an error value packed into results (the model sees its mistake), never a crash.
-
-**Tests:**
-- [ ] Per-verb cap tests against a seeded in-memory ledger + a fixture git repo (tempdir, real `git` — the crate's git feed tests' pattern); injection attempts (a `-S` payload, a `--upload-pack` path) are rejected.
-
-**Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast operator`
-
----
-
-#### Step 8: Operator pipeline + GAZETTE_INPUT {#step-8}
-
-**Commit:** `tugcast(operator): GAZETTE_INPUT adapter and two-round retrieve/answer pipeline`
-
-**Depends on:** #step-3, #step-6, #step-7
-
-**References:** [P07], [P08] user echo, Spec S02, Spec S03, (#bridge-topology)
-
-**Artifacts:** `main.rs` `register_input(FeedId::GAZETTE_INPUT, …)` + adapter task (the `USAGE_QUERY` adapter shape: mpsc in, per-request `tokio::spawn`); pipeline in `feeds/operator.rs`.
-
-**Tasks:**
-- [ ] **Construct the adapter after Step 6's `register_stream_feed` call** — that call's *return value* is the only source of the GAZETTE `broadcast::Sender`, so the ordering is forced. Follow the existing `let pulse_tx = feed_router.register_stream_feed(…)` → session-overview-block shape in `main.rs`.
-- [ ] Adapter: parse `{body, request_id}`; persist + broadcast the `user` post first ([P08]); then pipeline: scrollback = last 20 posts from the ledger → `operator-retrieve` → execute verbs (≤6) → `operator-answer` → optional one follow-up round → forced final answer; persist + broadcast the `operator` post with `request_id` echoed.
-- [ ] Failure at any stage → transient (`transient: true`, unpersisted) operator post carrying the `request_id` ([P08]).
-
-**Tests:**
-- [ ] Scripted-pool tokio tests: happy path (one round), follow-up path (two rounds), round-cap enforcement (a model that always asks for more verbs still yields an answer), pool-unavailable → transient post not in the ledger, user post persisted before any model call.
-
-**Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast operator`
-
----
-
-#### Step 9: Deck gazette-store {#step-9}
-
-**Commit:** `tugdeck(gazette): GazetteStore — CONTROL tail, live fold, pending questions`
-
-**Depends on:** #step-1, #step-6, #step-8
-
-**References:** [P11] gazette store, [P05] knobs (`card_rows`), Spec S03, **[L27]** resource release, **[L26]** mount identity, (#state-zone-mapping)
+**References:** [P11] gazette store, [P05] knobs (`card_rows`), Spec S03, **[L27]** resource release, (#state-zone-mapping)
 
 **Artifacts:** `tugdeck/src/lib/gazette-store.ts`; `tugdeck/src/__tests__/gazette-store.test.ts` (the deck's test home — beside the existing `feed-store.test.ts`); `lib/gazette-types.ts` if types don't fit in `protocol.ts`.
 
+> **Read path only.** `submitQuestion` and the pending-question machinery land in #step-12, once there is an Operator to answer. Everything here is the narration channel: tail, fold, window, dispose.
+
 **Tasks:**
 - [ ] Model on `lib/pulse-store.ts`: singleton, connect hook, CONTROL `list_gazette_posts` on mount, `conn.onFrame(FeedId.GAZETTE, …)` fold, render-window cap from the `dev.tugtool.gazette`/`card_rows` default via the DEFAULTS feed, `useSyncExternalStore` hook, test-only frame-injection seam.
-- [ ] **[L27]: every acquisition captures its release.** The store acquires three resources — the `conn.onFrame` registration, the DEFAULTS-feed watch, and the pending-question timeout — and each unregister closure is stored and invoked in `dispose()`. `pulse-store.ts` captures its `onFrame` return for exactly this reason. A `_disposed` guard is not a substitute for unwiring, and there is no acceptable number of leaked callbacks.
-- [ ] `submitQuestion(body)`: mint a `request_id`, send a `GAZETTE_INPUT` frame, track pending until a matching `request_id` post (or a timeout) clears it; transient posts render but never enter the persisted-window array.
-- [ ] **[L26]: key post rows by `request_id`, not ledger `id`.** Transient posts carry no `id` ([P08]), and a pending row that resolves into a persisted answer is logically the *same* row to the reader — so the key must be stable across that swap or React tears down and rebuilds it. Dedupe on `id` where present; key on `request_id`.
+- [ ] **[L27]: every acquisition captures its release.** The store acquires the `conn.onFrame` registration and the DEFAULTS-feed watch (the pending timeout joins them in #step-12); each unregister closure is stored and invoked in `dispose()`. `pulse-store.ts` captures its `onFrame` return for exactly this reason. A `_disposed` guard is not a substitute for unwiring, and there is no acceptable number of leaked callbacks.
 
 **Tests:**
-- [ ] Fold/ordering/cap; pending lifecycle incl. transient clear; tail-then-live merge without duplicates (dedupe by ledger `id`).
-- [ ] `dispose()` releases all three registrations — assert the connection has no live callback afterwards, not merely that a stale one no-ops.
+- [ ] Fold/ordering/cap; tail-then-live merge without duplicates (dedupe by ledger `id`).
+- [ ] `dispose()` releases both registrations — assert the connection has no live callback afterwards, not merely that a stale one no-ops.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test gazette-store && bun run check`
 
 ---
 
-#### Step 10: Gazette card, toggle, menu {#step-10}
+#### Step 8: Gazette card — transcript, toggle, menu {#step-8}
 
-**Commit:** `tugdeck(gazette): sidebar Gazette card with composer; ⌃⌘G toggle; Show Gazette menu row`
+**Commit:** `tugdeck(gazette): sidebar Gazette card; ⌃⌘G toggle; Show Gazette menu row`
 
-**Depends on:** #step-9
+**Depends on:** #step-7
 
 **References:** [P10] card and chord grant, [Q01] names and chord, Spec S03, **[L12]** selection boundary, **[L16]/[L19]/[L20]** component contract, **[L30]** command funnels, (#state-zone-mapping, #p10-card)
 
@@ -724,7 +703,7 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 - [ ] Card UI: post rows oldest-first autoscrolled to newest — author icon (lucide `newspaper` for the Reporter; the `operator` glyph via `TugSpriteIcon`/`operatorIconNode` from `components/tugways/tug-icons.tsx`; the Session card's user icon), timestamp, body, ref chips (render-only this step), readable at rail width (min 320).
 - [ ] **[L12]: register the transcript content area as a selection boundary** so `SelectionGuard` clamps selection to the card. A scrolling transcript is the exact shape this law exists for.
 - [ ] **[L19]/[L16]/[L20]: honor the component contract, not just the visual.** Module docstring, exported props interface, `data-slot`, `@tug-pairings`, and `@tug-renders-on` on every rule that sets `color`/`fill`/`border-color` without a `background-color` — `audit-tokens lint` fails otherwise. Gazette-scoped `--tugx-*` tokens resolve to `--tug7-*` in one hop and never reach into a composed child's tokens.
-- [ ] Composer: compose `TugMessageEditor` (clipboard/undo responders ride the substrate for free per its module doc — [L11]) + a submit affordance calling `gazetteStore.submitQuestion`; pending state renders a placeholder row keyed by `request_id` ([L26], Step 9).
+- [ ] **Reserve the composer's row in the card's grid now, and leave it empty.** The composer lands in #step-12; a layout that grows a row later would shift the transcript under the reader. Reserving costs one grid track and makes #step-12 a drop-in.
 - [ ] Update the `at0168-menu-structure.test.ts` fixture and the `tuglaws/menus.md` table for the new menu row.
 - [ ] Cross-check tuglaws (`tuglaws.md`, `pane-model.md`, `component-authoring.md`, `commands.md`, `chord-tiers.md`); name the laws in the commit body.
 
@@ -734,15 +713,15 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test && bun run check && bun run audit:tokens && bunx vite build`
-- [ ] Manual in the running app: ⌃⌘G toggles the rail; Layouts section shows a "Gazette" side control with no section edits; posts from Step 6 render; a typed question produces an Operator answer.
+- [ ] Manual in the running app: ⌃⌘G toggles the rail; the Layouts section shows a "Gazette" side control with no section edits; **the Reporter posts from #step-6 render live in the rail.** This is the Phase D payoff — from here the cadence knobs turn against lived experience rather than replayed transcripts.
 
 ---
 
-#### Step 11: Ref chip actions {#step-11}
+#### Step 9: Ref chip actions {#step-9}
 
 **Commit:** `tugdeck(gazette): ref chips act — raise session, open file, show commit`
 
-**Depends on:** #step-10
+**Depends on:** #step-8
 
 **References:** Spec S03, [P10], (#verb-table)
 
@@ -761,11 +740,84 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 ---
 
-#### Step 12: App-test + doc rows {#step-12}
+#### Step 10: Operator verb executor {#step-10}
+
+**Commit:** `tugcast(operator): read-only verb executor with caps`
+
+**Depends on:** #step-2
+
+**References:** [P07] verbs, [Q03] git cwd, Table T01, (#verb-table)
+
+**Artifacts:** `feeds/operator.rs`: `run_verb(ctx, name, args) -> Result<serde_json::Value, String>` for all nine T01 verbs; `OperatorContext { ledger, bootstrap_project_dir }`.
+
+**Tasks:**
+- [ ] Ledger verbs over #step-2's reads; git verbs via `tokio::process::Command` with arg allowlisting (never shell interpolation; `--` path separators; reject flag-shaped user args), output caps per T01, 10s timeout each.
+- [ ] Unknown verb / malformed args → an error value packed into results (the model sees its mistake), never a crash.
+
+**Tests:**
+- [ ] Per-verb cap tests against a seeded in-memory ledger + a fixture git repo (tempdir, real `git` — the crate's git feed tests' pattern); injection attempts (a `-S` payload, a `--upload-pack` path) are rejected.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast operator`
+
+---
+
+#### Step 11: Operator pipeline + GAZETTE_INPUT {#step-11}
+
+**Commit:** `tugcast(operator): GAZETTE_INPUT adapter and two-round retrieve/answer pipeline`
+
+**Depends on:** #step-3, #step-6, #step-10
+
+**References:** [P07], [P08] user echo, Spec S02, Spec S03, (#bridge-topology)
+
+**Artifacts:** `main.rs` `register_input(FeedId::GAZETTE_INPUT, …)` + adapter task (the `USAGE_QUERY` adapter shape: mpsc in, per-request `tokio::spawn`); pipeline in `feeds/operator.rs`.
+
+**Tasks:**
+- [ ] **Construct the adapter after #step-6's `register_stream_feed` call** — that call's *return value* is the only source of the GAZETTE `broadcast::Sender`, so the ordering is forced. Follow the existing `let pulse_tx = feed_router.register_stream_feed(…)` → session-overview-block shape in `main.rs`.
+- [ ] Adapter: parse `{body, request_id}`; persist + broadcast the `user` post first ([P08]); then pipeline: scrollback = last 20 posts from the ledger → `operator-retrieve` → execute verbs (≤6) → `operator-answer` → optional one follow-up round → forced final answer; persist + broadcast the `operator` post with `request_id` echoed.
+- [ ] Failure at any stage → transient (`transient: true`, unpersisted) operator post carrying the `request_id` ([P08]).
+
+**Tests:**
+- [ ] Scripted-pool tokio tests: happy path (one round), follow-up path (two rounds), round-cap enforcement (a model that always asks for more verbs still yields an answer), pool-unavailable → transient post not in the ledger, user post persisted before any model call.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast operator`
+- [ ] Manual: send a `GAZETTE_INPUT` frame by hand (`websocat`) and read the answer post off the wire — the card's composer arrives in #step-12.
+
+---
+
+#### Step 12: The composer — store write path + card input {#step-12}
+
+**Depends on:** #step-8, #step-11
+
+**Commit:** `tugdeck(gazette): composer — ask the Operator from the card`
+
+**References:** [P08] user echo, [P11] gazette store, **[L26]** mount identity, **[L11]** responders, Spec S03, (#state-zone-mapping)
+
+**Artifacts:** the write path added to `lib/gazette-store.ts`; the composer added to `gazette-card.tsx` in the grid row #step-8 reserved.
+
+> This is the step that turns the Gazette from a channel you read into one you can ask. It is deliberately last among the feature steps: everything before it is useful standing alone, and this is the only piece that needs both halves (deck and Operator) to exist.
+
+**Tasks:**
+- [ ] `submitQuestion(body)`: mint a `request_id`, send a `GAZETTE_INPUT` frame, track pending until a matching `request_id` post (or a timeout) clears it; transient posts render but never enter the persisted-window array.
+- [ ] **[L27]:** the pending-question timeout is a third acquisition — capture and release it in `dispose()` alongside the two from #step-7.
+- [ ] **[L26]: key post rows by `request_id`, not ledger `id`.** Transient posts carry no `id` ([P08]), and a pending row that resolves into a persisted answer is logically the *same* row to the reader — so the key must be stable across that swap or React tears down and rebuilds it. Dedupe on `id` where present; key on `request_id`.
+- [ ] Composer: compose `TugMessageEditor` (clipboard/undo responders ride the substrate for free per its module doc — [L11]) + a submit affordance calling `gazetteStore.submitQuestion`; pending state renders a placeholder row.
+
+**Tests:**
+- [ ] Pending lifecycle incl. transient clear; `dispose()` now releases all three registrations.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test && bun run check && bun run audit:tokens && bunx vite build`
+- [ ] Manual: type the brief's worked-example question into the card and get a grounded answer post.
+
+---
+
+#### Step 13: App-test + doc rows {#step-13}
 
 **Commit:** `tests(gazette): app-test for the Gazette card; menus law row`
 
-**Depends on:** #step-10, #step-11
+**Depends on:** #step-9, #step-12
 
 **References:** [P10], [P11], (#test-plan-concepts)
 
@@ -783,9 +835,9 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 ---
 
-#### Step 13: Integration Checkpoint {#step-13}
+#### Step 14: Integration Checkpoint {#step-14}
 
-**Depends on:** #step-6, #step-8, #step-12
+**Depends on:** #step-6, #step-11, #step-13
 
 **Commit:** `N/A (verification only)`
 
