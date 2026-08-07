@@ -2430,8 +2430,8 @@ extension AppDelegate: NSMenuDelegate {
         // face of a chord that has to keep resolving in JS, the same bargain
         // Session ▸ Stop takes with Escape.
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Next Keyboard Focus", action: #selector(nextKeyboardFocus(_:)), keyEquivalent: "").identified("view.nextKeyboardFocus"))
         menu.addItem(NSMenuItem(title: "Previous Keyboard Focus", action: #selector(previousKeyboardFocus(_:)), keyEquivalent: "").identified("view.previousKeyboardFocus"))
+        menu.addItem(NSMenuItem(title: "Next Keyboard Focus", action: #selector(nextKeyboardFocus(_:)), keyEquivalent: "").identified("view.nextKeyboardFocus"))
 
         // The sweep writes `keyEquivalent` and the modifier mask only, so the
         // alias item's `allowsKeyEquivalentWhenHidden` survives it.

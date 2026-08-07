@@ -913,16 +913,16 @@ export const COMMANDS: readonly CommandEntry[] = [
   // Session menu's premise is that its items dim without a frontmost session
   // card.
   {
-    id: TUG_ACTIONS.NEXT_KEYBOARD_FOCUS,
-    title: "Next Keyboard Focus",
-    routing: "registry",
-    menuItemId: "view.nextKeyboardFocus",
-  },
-  {
     id: TUG_ACTIONS.PREVIOUS_KEYBOARD_FOCUS,
     title: "Previous Keyboard Focus",
     routing: "registry",
     menuItemId: "view.previousKeyboardFocus",
+  },
+  {
+    id: TUG_ACTIONS.NEXT_KEYBOARD_FOCUS,
+    title: "Next Keyboard Focus",
+    routing: "registry",
+    menuItemId: "view.nextKeyboardFocus",
   },
   {
     // The theme submenu's membership is a filesystem scan, so the payload
