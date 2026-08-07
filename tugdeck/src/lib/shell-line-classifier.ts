@@ -255,6 +255,42 @@ export function vetoesShellVerdict(text: string): boolean {
   return hint && tokens.length > COMMAND_TOKEN_CEILING;
 }
 
+/** Where a submitted line ends up once every fact about it is in hand. */
+export type SubmitDestination = "shell" | "claude" | "withdrawn";
+
+/**
+ * The whole routing decision as one table, applied after the grade and (when
+ * the band asked for one) the model's verdict have landed.
+ *
+ * Gathering it here rather than leaving it as branches around the awaits is
+ * what makes the asymmetry checkable in one place: exactly two rows reach the
+ * shell — a `run` band, and an explicit `shell` verdict that survives the veto
+ * — and every other row, including every degraded one, resolves to Claude.
+ *
+ * `withdrawn` outranks all of it. A submit parked on the model's answer has
+ * executed nothing and sent nothing; it is a decision in flight and nothing
+ * more, so Escape can take the whole submission back and leave the draft where
+ * the user left it. That is only true *because* nothing happens until this
+ * function answers — which is the property the ordering here protects.
+ */
+export function resolveSubmitDestination(params: {
+  /** The submitted line, verbatim — what the veto reads. */
+  line: string;
+  modelCall: ReturnType<typeof modelCallForBand>;
+  /** The model's answer, or `null` for unasked, unanswered, and refused alike. */
+  verdict: "shell" | "prompt" | null;
+  /** Escape arrived while the submit was parked. */
+  withdrawn: boolean;
+}): SubmitDestination {
+  if (params.withdrawn) return "withdrawn";
+  // Every token accounted for by the program's own grammar: no question left
+  // to ask, and no English left in the line for the veto to find.
+  if (params.modelCall === "run") return "shell";
+  if (params.modelCall === "skip") return "claude";
+  if (params.verdict !== "shell") return "claude";
+  return vetoesShellVerdict(params.line) ? "claude" : "shell";
+}
+
 /**
  * Verdicts already obtained from the model, keyed by the exact draft text.
  *

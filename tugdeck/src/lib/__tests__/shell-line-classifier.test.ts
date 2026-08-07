@@ -3,6 +3,7 @@ import { describe, it, expect } from "bun:test";
 import {
   isShellCandidate,
   modelCallForBand,
+  resolveSubmitDestination,
   ShellVerdictCache,
 } from "../shell-line-classifier";
 
@@ -224,6 +225,74 @@ describe("modelCallForBand — what a grade means for the model call", () => {
       (band) => modelCallForBand(band) === "run",
     );
     expect(routing).toEqual(["yes"]);
+  });
+});
+
+describe("resolveSubmitDestination — where a submitted line ends up", () => {
+  const decide = (
+    over: Partial<Parameters<typeof resolveSubmitDestination>[0]>,
+  ): ReturnType<typeof resolveSubmitDestination> =>
+    resolveSubmitDestination({
+      line: "ls -la",
+      modelCall: "ask",
+      verdict: null,
+      withdrawn: false,
+      ...over,
+    });
+
+  it("routes a run band with no model call", () => {
+    expect(decide({ modelCall: "run", verdict: null })).toBe("shell");
+  });
+
+  it("sends a skip band to Claude without consulting a verdict", () => {
+    expect(decide({ modelCall: "skip", verdict: "shell" })).toBe("claude");
+  });
+
+  it("routes an explicit shell verdict that survives the veto", () => {
+    expect(decide({ verdict: "shell" })).toBe("shell");
+    expect(decide({ modelCall: "ask-with-grammar", verdict: "shell" })).toBe(
+      "shell",
+    );
+  });
+
+  it("keeps a vetoed shell verdict out of the shell", () => {
+    expect(decide({ line: "rg the src", verdict: "shell" })).toBe("claude");
+  });
+
+  // The asymmetry, stated as a closed set: an unanswered wait, a refusal, and
+  // a `prompt` are one answer, because a wrongly-run command cannot be
+  // un-run while a wrong send costs a keystroke.
+  it("treats every answer that is not shell as Claude", () => {
+    for (const verdict of ["prompt", null] as const) {
+      expect(decide({ verdict })).toBe("claude");
+    }
+  });
+
+  // Withdrawal outranks the whole table. It is only sound because nothing has
+  // executed or been sent by the time this answers.
+  it("withdraws whatever the facts would otherwise have said", () => {
+    expect(decide({ withdrawn: true, modelCall: "run" })).toBe("withdrawn");
+    expect(decide({ withdrawn: true, verdict: "shell" })).toBe("withdrawn");
+    expect(decide({ withdrawn: true, modelCall: "skip" })).toBe("withdrawn");
+  });
+
+  // Two ways in and no third: a `run` band (which never consults a verdict)
+  // and a surviving `shell` verdict on one of the asking bands.
+  it("reaches the shell only by a run band or a surviving shell verdict", () => {
+    const calls = ["run", "skip", "ask", "ask-with-grammar"] as const;
+    const verdicts = ["shell", "prompt", null] as const;
+    const reaching = calls.flatMap((modelCall) =>
+      verdicts
+        .filter((verdict) => decide({ modelCall, verdict }) === "shell")
+        .map((verdict) => `${modelCall}/${String(verdict)}`),
+    );
+    expect(reaching.sort()).toEqual([
+      "ask-with-grammar/shell",
+      "ask/shell",
+      "run/null",
+      "run/prompt",
+      "run/shell",
+    ]);
   });
 });
 

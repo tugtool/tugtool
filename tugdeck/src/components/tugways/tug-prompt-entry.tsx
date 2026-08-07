@@ -105,6 +105,7 @@ import {
 } from "./tug-text-editor/wave-caret";
 import { TugAttachmentPreview } from "./cards/tug-attachment-preview";
 import { TugChoiceGroup } from "./tug-choice-group";
+import { TugProgressIndicator } from "./tug-progress-indicator";
 import { TugPushButton } from "./tug-push-button";
 import { TugTooltip } from "./tug-tooltip";
 import { TugConfirmPopover } from "./tug-confirm-popover";
@@ -149,8 +150,8 @@ import {
 import {
   isShellCandidate,
   modelCallForBand,
+  resolveSubmitDestination,
   ShellVerdictCache,
-  vetoesShellVerdict,
 } from "@/lib/shell-line-classifier";
 import { useSharedAgentReady } from "@/lib/shared-agent-store";
 import type { ShellClassifyStore } from "@/lib/shell-classify-store";
@@ -238,6 +239,19 @@ const VERDICT_DEBOUNCE_MS = 300;
  * silently makes it the real deadline and the other two unreachable.
  */
 const VERDICT_SUBMIT_WAIT_MS = 2000;
+
+/**
+ * How long a parked submit stays invisible before the Z5 button shows the
+ * wave.
+ *
+ * The wait is normally nothing at all — the typing debounce has the verdict
+ * cached by the time Return arrives — so a tell that armed on arrival would
+ * flicker on every submit and mean nothing. This delay is the line between a
+ * pause a person does not perceive and one they do; past it, silence is what
+ * misleads, because the composer still holds the draft and still looks
+ * untouched while its fate has already been decided.
+ */
+const ARBITRATION_REVEAL_DELAY_MS = 150;
 
 // ---------------------------------------------------------------------------
 // Preserved state shape + migration
@@ -653,6 +667,7 @@ export function applyAppendInsertion(
  * @selector [data-pending-approval]                — presence when snap.pendingApproval !== null
  * @selector [data-pending-question]                — presence when snap.pendingQuestion !== null
  * @selector [data-empty="true" | "false"]          — written from a substrate update listener
+ * @selector [data-arbitrating="true" | "false"]    — written while a submit waits on a shell verdict
  */
 export interface TugPromptEntryProps {
   /**
@@ -1951,14 +1966,53 @@ export const TugPromptEntry = React.forwardRef<
   // Return during that window would run the same line twice — and a wrongly
   // re-run command cannot be un-run.
   const submitArbitratingRef = useRef(false);
-  // The debounce timer is an acquisition; a pending one is released at
-  // unmount so it cannot fire into stores the card has already torn
-  // down [L27].
+  // Set by Escape while a submit is parked. Nothing has been executed or sent
+  // at that point — only decided — so the submission can still be taken back
+  // whole, which is what makes the pending state an honest one.
+  const arbitrationWithdrawnRef = useRef(false);
+  const arbitrationRevealRef = useRef<number | null>(null);
+
+  // Show the wait, but only once it is a wait worth showing. The typing
+  // debounce normally has the verdict cached by Return, so the common path
+  // resolves in a frame or two — revealing on arrival would strobe the button
+  // on every submit. Past the delay the pause is perceptible, and then saying
+  // nothing is the lie: the composer would sit there looking idle while the
+  // draft's fate is already decided elsewhere.
+  const setArbitrating = useCallback((on: boolean): void => {
+    if (arbitrationRevealRef.current !== null) {
+      window.clearTimeout(arbitrationRevealRef.current);
+      arbitrationRevealRef.current = null;
+    }
+    const paint = (busy: boolean): void => {
+      const root = rootRef.current;
+      if (root === null) return;
+      root.setAttribute("data-arbitrating", String(busy));
+      root
+        .querySelector<HTMLElement>(".tug-prompt-entry-submit-button")
+        ?.setAttribute("aria-busy", String(busy));
+    };
+    if (!on) {
+      paint(false);
+      return;
+    }
+    arbitrationRevealRef.current = window.setTimeout(() => {
+      arbitrationRevealRef.current = null;
+      paint(true);
+    }, ARBITRATION_REVEAL_DELAY_MS);
+  }, []);
+
+  // The debounce and reveal timers are acquisitions; a pending one is
+  // released at unmount so it cannot fire into stores — or a DOM node — the
+  // card has already torn down [L27].
   useLayoutEffect(
     () => () => {
       if (verdictDebounceRef.current !== null) {
         window.clearTimeout(verdictDebounceRef.current);
         verdictDebounceRef.current = null;
+      }
+      if (arbitrationRevealRef.current !== null) {
+        window.clearTimeout(arbitrationRevealRef.current);
+        arbitrationRevealRef.current = null;
       }
     },
     [],
@@ -2123,6 +2177,17 @@ export const TugPromptEntry = React.forwardRef<
             // ran its single-press action, and nothing else owns Escape on
             // the now-settled doc.
             if (sinceLast < ESCAPE_REPEAT_FLOOR_MS) return false;
+
+            // A submit parked on the shell/Claude decision is the most
+            // salient thing Escape can address, so it claims the key: the
+            // submission is withdrawn and the draft stays put. The press is
+            // spent here and not paired with the next one — withdrawing and
+            // then clearing the draft is two gestures, never one.
+            if (submitArbitratingRef.current) {
+              arbitrationWithdrawnRef.current = true;
+              lastEscapePressAtRef.current = 0;
+              return true;
+            }
 
             const isEmpty = view.state.doc.length === 0;
             const isDoublePress = sinceLast <= ESCAPE_DOUBLE_PRESS_MS;
@@ -2561,7 +2626,10 @@ export const TugPromptEntry = React.forwardRef<
       // route the very line this one carries.
       if (submitArbitratingRef.current) return;
       submitArbitratingRef.current = true;
-      let toShell = false;
+      arbitrationWithdrawnRef.current = false;
+      setArbitrating(true);
+      let modelCall: ReturnType<typeof modelCallForBand> = "skip";
+      let verdict: "shell" | "prompt" | null = null;
       try {
         // Grade before asking. The typing debounce normally has the answer
         // cached already, so this resolves instantly; the bounded wait is only
@@ -2572,20 +2640,14 @@ export const TugPromptEntry = React.forwardRef<
           grammarStore === undefined
             ? UNKNOWN_GRADE
             : await grammarStore.requestWithin(submitText, GRADE_SUBMIT_WAIT_MS);
-        const modelCall = modelCallForBand(grade.band);
-        // `run` means the grader accounted for every token against the program's
-        // own grammar. There is no question left to put to the model, and no
-        // English left in the line for the veto to find.
-        //
-        // `skip` means something in the line names nothing on this machine, so
-        // the model has nothing to add: fall through to Claude, no round trip.
-        if (modelCall === "run") {
-          toShell = true;
-        } else if (modelCall !== "skip") {
+        modelCall = modelCallForBand(grade.band);
+        // Only the two asking bands cost a round trip. `run` and `skip` are
+        // already decided — the table below says which way.
+        if (modelCall === "ask" || modelCall === "ask-with-grammar") {
           const grammar =
             modelCall === "ask-with-grammar" ? grade.synopsis : undefined;
           const withGrammar = grammar !== undefined;
-          let verdict = verdictCacheRef.current.get(submitText, withGrammar) ?? null;
+          verdict = verdictCacheRef.current.get(submitText, withGrammar) ?? null;
           if (verdict === null) {
             // Either the typing debounce already asked and the model hasn't
             // answered, or Return beat the debounce and nobody has asked yet. Both
@@ -2622,19 +2684,29 @@ export const TugPromptEntry = React.forwardRef<
               });
             });
           }
-          // Only an explicit `shell` verdict routes. A `prompt`, a failed request,
-          // and an expired wait are all the same answer: send it to Claude.
-          //
-          // The verdict is vetoed here rather than where it is cached, so the cache
-          // stays a faithful record of what the model said and every path into the
-          // shell — cached verdict, fresh answer, awaited in-flight one — passes the
-          // same gate on the way through.
-          toShell = verdict === "shell" && !vetoesShellVerdict(submitText);
         }
       } finally {
         submitArbitratingRef.current = false;
+        setArbitrating(false);
       }
-      if (toShell) {
+      // Every fact is in hand; the table decides. The veto is applied there
+      // rather than where the verdict is cached, so the cache stays a faithful
+      // record of what the model said and every path into the shell — cached
+      // verdict, fresh answer, awaited in-flight one — passes the same gate.
+      const destination = resolveSubmitDestination({
+        line: submitText,
+        modelCall,
+        verdict,
+        withdrawn: arbitrationWithdrawnRef.current,
+      });
+      arbitrationWithdrawnRef.current = false;
+      // Escape during the wait takes the submission back whole. Nothing had
+      // run and nothing had been sent, so withdrawing costs the user nothing
+      // and leaves the draft exactly where they left it. The verdict still
+      // lands in the store's cache, which makes a re-submit of this line
+      // instant.
+      if (destination === "withdrawn") return;
+      if (destination === "shell") {
         routeToShell();
         return;
       }
@@ -2720,6 +2792,7 @@ export const TugPromptEntry = React.forwardRef<
     sessionMetadataStore,
     persistClearedDraft,
     attachmentBytesStore,
+    setArbitrating,
   ]);
 
   // Flush a deferred submit. When a submit landed during the
@@ -3383,7 +3456,25 @@ export const TugPromptEntry = React.forwardRef<
                 submitView.icon === "stop" ? (
                   <Square size={14} strokeWidth={3} />
                 ) : (
-                  <ArrowUp size={16} strokeWidth={2.5} />
+                  // Both glyphs are mounted and CSS picks between them off the
+                  // entry root's `data-arbitrating` ([L06] — a parked submit
+                  // must not re-render the composer). The wave is the same
+                  // tell every other "the system is deciding" moment wears,
+                  // so the arbitration reads as one of that family rather
+                  // than as a new vocabulary. Hidden means `display: none`,
+                  // which is also what keeps its loop from running.
+                  <>
+                    <span className="tug-prompt-entry-submit-glyph-rest">
+                      <ArrowUp size={16} strokeWidth={2.5} />
+                    </span>
+                    <TugProgressIndicator
+                      className="tug-prompt-entry-submit-glyph-wave"
+                      variant="wave"
+                      state="running"
+                      role="inherit"
+                      size={14}
+                    />
+                  </>
                 )
               }
             />
@@ -3487,6 +3578,9 @@ export const TugPromptEntry = React.forwardRef<
           data-pending-question={snap.pendingQuestion ? "" : undefined}
           data-empty="true"
           data-commit-empty="true"
+          // Flipped by direct DOM write while a submit is parked on the
+          // shell/Claude decision ([L06]); CSS swaps the Z5 glyph off it.
+          data-arbitrating="false"
           // Whole-entry stand-down: `inert` blocks mouse, keyboard,
           // and focus for the entire subtree — the route toggle,
           // chips, and submit included — while a restore replays.

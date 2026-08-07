@@ -140,6 +140,49 @@ body {
   cursor: not-allowed;
 }
 
+/* Arbitration tell [L06][L22]: while a submit is parked on the shell-vs-Claude
+   decision, the Z5 button trades its arrow for the wave — the same glyph every
+   other "the system is deciding" moment wears, so the pause reads as one of
+   that family rather than as a new vocabulary. The root's `data-arbitrating`
+   is a direct DOM write (no React state for a per-submit transient), armed on
+   a delay so the common cached-verdict path never strobes.
+
+   Both glyphs are mounted; this picks between them. Hiding with `display:
+   none` is deliberate — an unrendered element runs no animation, so the wave's
+   keyframe loop costs nothing for the whole time it is not showing.
+
+   Scoped to `data-mode="submit"`: a running turn shows the Stop square, and a
+   stop gesture must never be dressed up as progress.
+
+   Every rule is scoped under `.tug-prompt-entry` rather than written on the
+   glyph class alone. The wave glyph is a `TugProgressIndicator`, whose own
+   `.tug-progress-indicator` rule sets `display` at equal specificity — a bare
+   class here would tie with it and let stylesheet load order decide which
+   wins. The descendant scope settles it by weight instead of by luck. */
+.tug-prompt-entry .tug-prompt-entry-submit-glyph-rest {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tug-prompt-entry .tug-prompt-entry-submit-glyph-wave {
+  display: none;
+}
+
+.tug-prompt-entry[data-arbitrating="true"]
+  .tug-prompt-entry-submit-button[data-mode="submit"]
+  .tug-prompt-entry-submit-glyph-rest {
+  display: none;
+}
+
+.tug-prompt-entry[data-arbitrating="true"]
+  .tug-prompt-entry-submit-button[data-mode="submit"]
+  .tug-prompt-entry-submit-glyph-wave {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Commit mode ([P03]): Z4A keeps the `!` routing picker in place but disabled
    (routings are meaningless while composing a message; the Z5 ✕ is the way
    out); Z5 shows the cancel / auto-message / commit icon rail. The Commit
