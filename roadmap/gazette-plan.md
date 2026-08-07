@@ -13,9 +13,11 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | vetted — fixups applied |
 | Target branch | main |
 | Last updated | 2026-08-07 |
+
+> **Vet pass, 2026-08-07.** Assessed against the real tree. Eight findings folded in: the harness is a subcommand rather than a second binary ([P09] — tugcast has no lib target); `gazette_posts` is explicitly exempt from the drift-rebuild guard ([P02] — the guard would erase all history); search is FTS5 rather than `LIKE` ([P13]); a failed wake returns its frames ([P14]); the chord grant records its tier and menu choice ([P10]); Step 10 names `deck-canvas.tsx` (not `action-dispatch.ts`) plus three previously-missing files; Step 9 carries [L27] disposal and [L26] keying; Step 10 carries [L12] and the [L16]/[L19] contract. `max_workers` defaults to 3, and Step 5 sweeps the sitrep cadence at 90/120/180 rather than validating one value.
 
 ---
 
@@ -37,7 +39,7 @@ The two prerequisites this plan was waiting on are now met: the sidebar taxonomy
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- `just gazette-replay <session.jsonl>` renders the gazette the Reporter would have posted for a real transcript, with wake counts, silence counts, and per-post wake reasons visible in the output (run it on the two spike sessions; read the posts).
+- `just gazette-replay <session.jsonl>` renders the gazette the Reporter would have posted for a real transcript, with wake counts, silence counts, and per-post wake reasons visible in the output — run on the two spike sessions at `--sitrep-secs` 90/120/180 and read all three, setting the shipped default from what reads best rather than from this plan's guess.
 - With a live session doing real work, Reporter posts appear in the Gazette card within one sitrep interval of activity, each carrying a `session_id` and only refs whose targets appear verbatim in the buffered context (verified by the `r02` validation test and by reading live posts).
 - Asking the Operator the brief's worked example shape ("what's the CSS file we edited yesterday that changed the border color") produces an answer post that cites `changes.for_path` + `git.show` results, within two retrieval rounds (manual acceptance; the round cap is unit-tested).
 - The Gazette card registers as a sidebar card and the Layouts section shows its side control with **no Layouts-section code change** (the registry-driven `sidebarEntries()` walk picks it up — verify by opening the Lens).
@@ -85,6 +87,7 @@ The two prerequisites this plan was waiting on are now met: the sidebar taxonomy
 - Sonnet ("sonnet" alias, per the `scribe_model` precedent in `main.rs`) is adequate for all three jobs; the spike validated `reporter-post` quality.
 - The `CODE_OUTPUT` broadcast plus the code-submission channel (the pair `session_overview.rs` already taps via `SessionOverviewConfig { code_tx, submission_tx, … }`) carry everything the Reporter's diet needs; the exact allowlist is finalized in Step 6 ([Q02]).
 - Megabyte-scale wake inputs are acceptable to Sonnet latency-wise because nothing user-blocking waits on `reporter-post`; the Operator jobs, which a user does wait on, have small inputs.
+- **FTS5 is compiled into the bundled SQLite.** `rusqlite` is pinned in `tugrust/Cargo.toml` as `{ version = "0.33", features = ["bundled"] }`, and the bundled `libsqlite3-sys` amalgamation defines `SQLITE_ENABLE_FTS5`. This is the one assumption with a hard dependency on it ([P13]), so Step 2's first task is a spike that falsifies it cheaply; the `LIKE` fallback is named.
 
 ---
 
@@ -124,7 +127,8 @@ The two prerequisites this plan was waiting on are now met: the sidebar taxonomy
 | Refs invented by the model (dead chips) | med | low | Rust-side verbatim validation drops unverifiable refs ([R02]) | a dropped-ref warn rate that suggests over-validation |
 | Operator latency exceeds patience | med | med | bounded rounds + per-verb caps + pending-state UI; job timeouts in the spec ([P07]) | answers routinely hitting the 2-round cap |
 | Wake input exceeds worker turn budget | low | med | buffer frame/byte caps with elision markers ([P04]); generous `reporter-post` timeout | harness shows truncation destroying post quality |
-| All three gazette jobs share one `JobClass` lane (an Operator answer can queue behind a Reporter post) | low | med | `max_workers` default 2 lets the pool grow; knob to raise it | measured queueing in `shared agent call` logs |
+| All three gazette jobs share one `JobClass` lane (an Operator answer can queue behind a Reporter post) | low | med | `max_workers` defaults to **3** so all three jobs can be in flight at once ([P03], Table T02); knob raises it; a `JobClass` split is the clean later fix | measured queueing in `shared agent call` logs |
+| A future column added to `gazette_posts` is wired to the drift guard and erases all history | **high** | low | [P02]'s stated exemption + the ALTER-based `migrate_gazette_posts_add_*` requirement, commented at the DDL | any schema change to the table |
 
 **Risk R01: Rubric drift between harness and production** {#r01-rubric-drift}
 
@@ -149,20 +153,22 @@ The two prerequisites this plan was waiting on are now met: the sidebar taxonomy
 **Rationale:**
 - The brief reclaims 0x70; the sibling-input shape follows the `SHELL_OUTPUT` (0x60) / `SHELL_INPUT` (0x61) precedent exactly, and `register_input` is the established upstream mechanism (`feed_router.register_input(FeedId::USAGE_QUERY, …)` in `main.rs`).
 - A bidirectional single id would be the only one of its kind on the wire; the sibling costs one byte and zero novelty.
-- `GAZETTE` also avoids the near-collision a `FeedId::FEED` would have created in a codebase where "feed" already means *any* channel (`FeedId`, `StreamFeed`).
+- `GAZETTE` avoids a collision that is real, not stylistic: `tugdeck/src/lib/feed-store.ts` **already exists** and exports a `FeedStore` class — the per-card, workspace-key-filtered subscription store behind `CardHost`/`useCardData`, imported by `card-registry.ts` (`FeedStoreFilter`) and covered by `src/__tests__/feed-store.test.ts`. A `FeedStore` for this feature would have been a second class of that name in the same directory. On the Rust side `FeedId::FEED` would have read absurdly beside `StreamFeed`, `register_session_feed`, and `feed_router`.
 
 **Implications:** Edits in `tugrust/crates/tugcast-core/src/protocol.rs` (const at the `TUG_FEED` site, `name()` arm, byte test) and the TS mirror `tugdeck/src/protocol.ts`; the "reserved for Phase T3+" comment retires.
 
 #### [P02] gazette_posts lives uncapped in the per-instance session ledger (DECIDED) {#p02-ledger-table}
 
-**Decision:** One `gazette_posts` table in the sessions ledger (`SessionLedger::initialize_schema`, next to `pulse_lines`), append-only and **uncapped**, with **no session cascade trigger**.
+**Decision:** One `gazette_posts` table in the sessions ledger (`SessionLedger::bootstrap_schema`'s `execute_batch`, next to `pulse_lines`), append-only and **uncapped**, with **no session cascade trigger** and — critically — **never registered with `rebuild_table_if_schema_drifted`**.
 
 **Rationale:**
 - The brief requires the Pulse *scoping* (app-scoped, one per tugcast instance) but explicitly not the Pulse *cap* — history is the point.
 - `pulse_lines` already documents the no-cascade posture ("the narrative log outlives any one session"); the Gazette's provenance links must survive session eviction the same way.
 - A new database would need its own `ledger_db` open, writer lock, and janitor story for zero benefit; the sessions ledger already has all three.
 
-**Implications:** New row struct `GazettePostRow` and APIs `record_gazette_post`, `list_gazette_posts_tail`, `search_gazette_posts`, `gazette_posts_window` in `session_ledger.rs`; an index on `(session_id)`; `refs` persisted as a JSON array string like `pulse_lines.scopes`.
+**The drift-guard exemption is load-bearing.** `pulse_lines` — the table this one is modelled on structurally — is a *capped rolling log*, so the self-healing guard's DROP-and-recreate is harmless for it. `gazette_posts` is permanent history: registering it with `rebuild_table_if_schema_drifted` would silently erase the entire gazette the first time a column set changed. That guard is opt-in per table (`bootstrap_schema` wires it only for `turn_telemetry` and the two legacy `main.`-qualified tables), so the exemption is the default — but it must be stated, because the instinct when adding a column later is to reach for the guard. **Any future column change to `gazette_posts` goes through an ALTER-based `migrate_gazette_posts_add_*` function**, following `migrate_pulse_lines_add_intent`, and never through the rebuild path.
+
+**Implications:** New row struct `GazettePostRow` and APIs `record_gazette_post`, `list_gazette_posts_tail`, `search_gazette_posts`, `gazette_posts_window` in `session_ledger.rs`; an index on `(session_id)`; `refs` persisted as a JSON array string like `pulse_lines.scopes`. Search is FTS5-backed per [P13].
 
 #### [P03] One Sonnet AgentSpec, three fixed jobs (DECIDED) {#p03-agent-spec}
 
@@ -173,7 +179,7 @@ The two prerequisites this plan was waiting on are now met: the sidebar taxonomy
 - The `scribe_model` closure pattern in `main.rs` (falls back to `"sonnet"` by name) is the precedent the brief names for the model default.
 - Cost is a declared non-concern; timeouts are quality ceilings, not budgets — nothing user-blocking waits on `reporter-post`, and the Operator jobs get a pending UI.
 
-**Implications:** `JobClass::of` maps all three names to `Summarize` (its catch-all) — one latency lane, acceptable because no gazette job has a 2-second-class contract; the pool grows to `max_workers` (default 2, knob) when both personas are busy. New module `feeds/gazette_agent.rs` holds the job table and instruction strings.
+**Implications:** `JobClass::of` maps all three names to `Summarize` (its catch-all) — one latency lane, acceptable because no gazette job has a 2-second-class contract, but it is why `max_workers` defaults to **3** rather than the Haiku pool's 2 (Table T02): a 120s `reporter-post` must not be able to sit in front of a user's question. If telemetry later shows queueing anyway, the clean fix is a new `JobClass` variant splitting the Operator lane from the Reporter's — a value change in `JobClass::of`, not new machinery. New module `feeds/gazette_agent.rs` holds the job table and instruction strings.
 
 #### [P04] Wake structurally in a pure core module (DECIDED) {#p04-wake-core}
 
@@ -225,21 +231,30 @@ The two prerequisites this plan was waiting on are now met: the sidebar taxonomy
 
 #### [P09] The calibration harness is part of the feature and lands before the live bridge (DECIDED) {#p09-harness}
 
-**Decision:** A `gazette-replay` binary in the tugcast crate (`src/bin/gazette_replay.rs`), driven by `just gazette-replay <jsonl> [flags]`, replays real session JSONL through the wake core + the real `reporter-post` job and renders the resulting gazette as markdown to stdout, with per-wake diagnostics (reason, buffer size, post-or-silence).
+**Decision:** The harness is a **hidden subcommand on the existing `tugcast` binary** — `tugcast gazette-replay <jsonl> [flags]`, dispatched in `main()` before the server boots and wrapped by `just gazette-replay`. It replays real session JSONL through the wake core + the real `reporter-post` job and renders the resulting gazette as markdown to stdout, with per-wake diagnostics (reason, buffer size, post-or-silence).
 
-**Rationale:** Direct from the brief ("built first"); the spike validated the approach — this makes it a repeatable tool with the production wake core rather than a one-off script.
+**Rationale:**
+- Direct from the brief ("built first"); the spike validated the approach — this makes it a repeatable tool running the production wake core rather than a one-off script.
+- **A separate binary is not available.** `tugcast` is a **binary-only crate**: there is no `src/lib.rs`, `Cargo.toml` declares `[[bin]] name = "tugcast", path = "src/main.rs"`, and no file in `tugrust/crates/tugcast/tests/` contains `use tugcast::` — those integration tests spawn the real binary through `common::TestTugcast`. A `src/bin/gazette_replay.rs` would be its own crate root and **could not import `feeds::reporter_wake`**, which is the whole point of [P04] and the entire mitigation for Risk R01. The rejected alternatives: adding a `[lib]` target and reducing `main.rs` to a shim (a large refactor touching every `crate::` path, for no benefit this feature needs), or an `#[ignore]`-gated module inside the bin crate like `integration_tests.rs` (works, but the output becomes a test log rather than a readable gazette — and reading it *is* the tool's purpose).
+- The subcommand costs one match arm and reuses the `cli.rs` clap surface that already exists.
 
-**Implications:** Flags override the knobs (`--sitrep-secs`, `--last-k`, `--model`); replay pacing is simulated from JSONL timestamps, not wall clock; it spawns real `claude` via `ClaudeAgentWorkerSpawner` and therefore never runs in CI or under `TUGAPP_APP_TEST`.
+**Implications:** Flags override the knobs (`--sitrep-secs`, `--last-k`, `--model`, `--max-frames`, `--no-model`); the subcommand returns before any listener binds, so a replay never contends with a live tugcast; replay pacing is simulated from JSONL timestamps, not wall clock; it spawns real `claude` via `ClaudeAgentWorkerSpawner` and therefore never runs in CI or under `TUGAPP_APP_TEST`.
 
 #### [P10] The Gazette card is a Jots-pattern sidebar singleton; ⌃⌘G toggles it (DECIDED) {#p10-card}
 
-**Decision:** Register componentId `"gazette"` with `layoutRole: "sidebar"`, `family: "gazette"`, `acceptsFamilies: []`, `hidden: true`, `lensGroup: "none"`, sizePolicy min 320×240 / preferred 420×900 — the `registerJotsCard()` shape verbatim. Toggle via `TUG_ACTIONS.TOGGLE_GAZETTE`, chord ⌃⌘G ([Q01]), routing `"registry"`, with a native "Show Gazette" menu row in `tugapp/Sources/AppDelegate.swift` mirroring the Jots row (`identified("maker.gazette")`).
+**Decision:** Register componentId `"gazette"` with `layoutRole: "sidebar"`, `family: "gazette"`, `acceptsFamilies: []`, `hidden: true`, `lensGroup: "none"`, sizePolicy min 320×240 / preferred 420×900 — the `registerJotsCard()` shape verbatim. Toggle via `TUG_ACTIONS.TOGGLE_GAZETTE`, chord ⌃⌘G, routing `"registry"`, `menuItemId: "maker.gazette"`, with a native "Show Gazette" menu row in `tugapp/Sources/AppDelegate.swift` mirroring the Jots row.
+
+**The chord grant, stated as [L30]/R6 requires — tier *and* menu choice:**
+- **Tier: ⌃⌘, the Tug tier.** `tuglaws/chord-tiers.md` defines ⌃⌘ as "Tug's own machinery: surfaces, shades, modes, themes, app-specific features" — a sidebar surface toggle is the tier's central case, and it joins the sitting residents ⌃⌘L (Lens), ⌃⌘J (Jots), ⌃⌘C (Changes), ⌃⌘H (History), ⌃⌘K (Keyboard Shortcuts).
+- **Rule R1 is satisfied vacuously:** there is no ⌘G base command for this verb to twist (⌘G/⇧⌘G are Find Next/Previous, an unrelated verb), so this is not a climbed modifier stack — it is a Tug-tier grant on a mnemonic letter.
+- **Availability verified 2026-08-07:** ⌃⌘G appears in neither `command-registry.ts` (whose only `KeyG` bindings are ⌘G and ⇧⌘G) nor the native menu layer (`AppDelegate.swift`'s only G is ⌥⌘G, New Component Gallery Card).
+- **Menu choice (R6): `menuEligible: true`.** The binding is authored as `chord({ key: "KeyG", ctrl: true, meta: true, label: "g" }, { preventDefault: true, menuEligible: true })` — byte-for-byte the `TOGGLE_JOTS` shape. Menu eligibility is chosen deliberately: it resolves at the native menu layer before any scoped binding, which is what makes the toggle work while the native title bar holds focus.
 
 **Rationale:**
 - The layouts-rework registry makes the Layouts section side control, rails, and equal-resize allocator free on registration (`sidebarEntries()` in `layouts-section.tsx` walks `getAllRegistrations()` filtering `layoutRole === "sidebar"`).
-- The sidebar-toggle grammar (⌃⌘L / ⌃⌘J) extends naturally, and G is the feature's own initial; ⌃⌘G is verified unbound ([Q01]).
+- The sidebar-toggle grammar extends naturally, and G is the feature's own initial.
 
-**Implications:** Boot registration in `main.tsx` unconditionally before layout restore (the Jots INVARIANT); `at0168-menu-structure.test.ts` fixture and `tuglaws/menus.md` table gain a row; no Layouts-section edits.
+**Implications:** Boot registration in `main.tsx` unconditionally before layout restore (the Jots INVARIANT); `at0168-menu-structure.test.ts` fixture, `command-routing-drift.test.ts`'s chord table, and the `tuglaws/menus.md` table each gain a row; no Layouts-section edits.
 
 #### [P11] The deck gazette store mirrors pulse-store (DECIDED) {#p11-gazette-store}
 
@@ -256,6 +271,27 @@ The two prerequisites this plan was waiting on are now met: the sidebar taxonomy
 **Rationale:** Direct from the brief; both invariants are Pulse's law, already proven in `pulse.rs` and its tests.
 
 **Implications:** The bridge holds no `code_submission_tx` *sender* toward sessions and no supervisor handle that can dispatch; a test asserts a `GAZETTE`-tagged frame never reaches the buffer.
+
+#### [P13] Gazette search is FTS5, not SQL LIKE (DECIDED) {#p13-fts5}
+
+**Decision:** `search_gazette_posts` is backed by an **FTS5 external-content virtual table** over `gazette_posts(body, refs)` with the standard `INSERT`/`UPDATE`/`DELETE` sync triggers, ranked by `bm25()`, with excerpts produced by `snippet()`. A one-line spike at Step 2 confirms FTS5 is compiled in; if it is not, the fallback is `LIKE` and this decision is revisited.
+
+**Rationale:**
+- The Operator's headline use case is "what was that commit two weeks ago that did *blah*" over an **uncapped, permanently growing** prose table ([P02]). `LIKE '%term%'` cannot use an index, has no tokenization or stemming, no multi-term AND/OR semantics, and no relevance ranking — so it degrades linearly with history and returns an *arbitrary* capped 20 rows rather than the *best* 20. For a feature whose whole value is retrieval over a growing archive, that is the wrong mechanism from day one, and swapping it later means rewriting the verb, its caps, and its tests.
+- FTS5 should be available without a new dependency: `rusqlite` is pinned in `tugrust/Cargo.toml` as `{ version = "0.33", features = ["bundled"] }`, and the bundled `libsqlite3-sys` amalgamation is compiled with `SQLITE_ENABLE_FTS5`.
+- `snippet()` directly supplies the capped excerpts Table T01 already requires, so the excerpting logic is the search engine's job rather than hand-rolled string slicing.
+
+**Implications:** Step 2 gains the virtual table, its triggers, and the availability spike; `gazette.search` returns bm25-ordered hits; the external-content shape means `gazette_posts` remains the single source of truth and the index is rebuildable. The FTS5 shadow tables are *derived*, so unlike `gazette_posts` itself they may be dropped and rebuilt freely — that asymmetry with [P02]'s exemption is deliberate and should be commented at the DDL.
+
+#### [P14] A failed wake returns its window to the buffer (DECIDED) {#p14-failed-wake}
+
+**Decision:** When a wake's `reporter-post` job returns `Err` (worker died, pool unavailable, timeout), the snapshotted frames are **re-merged to the front of that session's buffer** (subject to the [P04] caps) rather than dropped, and the failure is logged as a distinct `tracing::warn!` from an editorial no-post.
+
+**Rationale:**
+- "Post nothing" is a first-class *editorial* output ([P06]); an infrastructure failure is not the same thing, and conflating them means a stretch of real work is silently never narrated and the failure rate is invisible.
+- The buffer caps bound the re-merge, so a persistently failing pool cannot grow memory without limit — it degrades to narrating only the most recent window, which is the correct posture.
+
+**Implications:** The wake path is snapshot → run → on `Err` re-merge; the two no-post outcomes carry different log lines so the harness and `shared agent call` telemetry can tell them apart. A test scripts a failing pool and asserts the frames survive to the next wake.
 
 ---
 
@@ -275,7 +311,9 @@ GAZETTE_INPUT frame ──▶ persist user post + GAZETTE broadcast ──▶ op
                                                                                             gazette_posts row + GAZETTE broadcast
 ```
 
-The Reporter bridge is a `StreamFeed` (like `PulseBridge`): `feed_id() = FeedId::GAZETTE`, `channel_capacity() = 64`, default `Warn` lag policy, registered via `feed_router.register_stream_feed` in `main.rs`. It subscribes `code_tx` inside its task, receives submissions the way `session_overview_task` does (`SessionOverviewConfig` carries `submission_tx: code_submission_tx.clone()` — mirror that wiring), and watches session-state frames for session-end wakes. Each wake snapshots-and-clears that session's buffer and spawns a task running the job so a slow model turn never blocks the tap loop.
+The Reporter bridge is a `StreamFeed` (like `PulseBridge`): `feed_id() = FeedId::GAZETTE`, `channel_capacity() = 64`, default `Warn` lag policy, registered via `feed_router.register_stream_feed` in `main.rs`. It subscribes `code_tx` inside its task, receives submissions the way `session_overview_task` does (`SessionOverviewConfig` carries `submission_tx: code_submission_tx.clone()` — mirror that wiring), and watches session-state frames for session-end wakes. Each wake snapshots-and-clears that session's buffer and spawns a task running the job so a slow model turn never blocks the tap loop; a job that fails returns its frames to the buffer ([P14]).
+
+**Construction ordering in `main.rs`** (get this right up front rather than discovering it mid-step). `register_stream_feed` *returns* the feed's `broadcast::Sender<Frame>` — that is the only way to obtain the GAZETTE sender, so the Step 8 Operator adapter must be constructed **after** the Step 6 registration. This is exactly the existing shape: `let pulse_tx = feed_router.register_stream_feed(Box::new(pulse_bridge), …)` is followed by the session-overview block that consumes `pulse_tx`. The three inputs the bridge needs are all available at that point in the file: `code_output_feed` and `code_submission_tx` are built early (the submission channel at `main.rs`'s `let (code_submission_tx, _) = broadcast::channel::<Frame>(64)`), and `session_state_feed` — a `SessionScopedFeed` exposing `.sender()` — is constructed well before the pulse-bridge neighborhood where the Reporter goes.
 
 **Table T03: Wake reasons** {#t03-wake-reasons}
 
@@ -294,7 +332,7 @@ All executed by `feeds/operator.rs`, all capped, all with a 10s timeout. `sessio
 
 | Verb | Args | Backing | Cap |
 |------|------|---------|-----|
-| `gazette.search` | `query`, opt `since_ms`/`until_ms`/`author`/`session_id` | `search_gazette_posts` (SQL LIKE over body+refs) | 20 posts, 240-char excerpts |
+| `gazette.search` | `query`, opt `since_ms`/`until_ms`/`author`/`session_id` | `search_gazette_posts` — FTS5 over body+refs, `bm25()`-ranked ([P13]) | 20 posts, `snippet()` excerpts ≈240 chars |
 | `gazette.window` | `post_id`, `n` | `gazette_posts_window` | n ≤ 10 each side |
 | `sessions.list` | opt date range, opt `active` | `sessions` table (`list_*` reads) | 50 rows: id, name/last_user_prompt incipit, created/last-used, state |
 | `session.prompts` | `session_id`, opt `query` | `turns` table (`user_text`, `created_at`) | 50 prompts, 500 chars each |
@@ -314,7 +352,7 @@ All executed by `feeds/operator.rs`, all capped, all with a 10s timeout. `sessio
 |---|---|---|---|---|
 | `enabled` | bool | `true` | bridge, per frame | kill switch; disabled drops frames and wakes nothing (the `pulse_enabled` posture) |
 | `model` | string | `"sonnet"` | pool, per spawn | model for all three jobs |
-| `max_workers` | i64 | 2 | pool construction | worker cap for the gazette pool |
+| `max_workers` | i64 | **3** | pool construction | worker cap for the gazette pool. Three, not the Haiku pool's two: `JobClass::of` maps every non-`classify*` name to `Summarize`, so all three gazette jobs share **one latency lane**, and a 120s `reporter-post` holding a worker while a user's `operator-retrieve` arrives would make the question wait on it. Three leaves room for a Reporter post, a retrieve, and an answer concurrently |
 | `sitrep_secs` | i64 | **180** | bridge, per timer arm | the dominant cadence — deliberately under the spike's 240s |
 | `last_k_posts` | i64 | 5 | bridge, per wake | how many of the Reporter's own prior posts for the session ride the wake input (the dedup mechanism) |
 | `token_wake_tokens` | i64 | 0 (off) | bridge, per turn-complete | token-threshold wake |
@@ -358,6 +396,13 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 | post hover/expand affordances | appearance | CSS `:hover` / data-attributes | [L06] |
 | responder + command registrations | registration | `useLayoutEffect` / `useResponder` | [L03], [L22] |
 | render-window size (`card_rows`) | persistent preference | tugbank DEFAULTS feed (never Web storage) | — |
+| store's acquired resources (frame callback, DEFAULTS watch, pending timeout) | lifecycle | each acquisition captures its unregister closure; all released in `GazetteStore.dispose()` | **[L27]** |
+| transcript content area | selection | registered as a selection boundary so `SelectionGuard` clamps to the card | **[L12]** |
+| post row identity across transient → persisted | reconciliation | `key` is the `request_id` (stable across the swap), never the ledger `id` (absent on transient) | **[L26]** |
+
+**[L27] is the law this card is most likely to break, so it is called out rather than left to the table.** The `GazetteStore` is a singleton that subscribes to the app-lifetime `TugConnection`; every one of its acquisitions — the `conn.onFrame(FeedId.GAZETTE, …)` registration, the DEFAULTS-feed watch backing `card_rows`, and the pending-question timeout timer — wires a shorter lifetime into a longer one and therefore owes a release. `lib/pulse-store.ts` is the model: it captures the return of `this.conn.onFrame(...)` for exactly this reason. The law admits no partial compliance ("Every leak is a bug… there is no 'acceptable' number of leaked callbacks"), and a `_disposed` guard is explicitly *not* a substitute for unwiring.
+
+**[L29] boundary, for clarity:** ref-chip targets and the Operator's `path` / `path_scope` verb arguments are model-supplied, repo-relative strings used for an immediate operation — they are not persisted keys or cross-path comparisons, so the canonicalization gateway is not triggered by them. What *is* canonical is the `project_dir` read from the ledger in [Q03], which is the correct base to join them onto. The rule to hold: a chip target may never become a store key, a defaults domain, or a comparison subject without first passing `CanonicalPath::from_raw`.
 
 ---
 
@@ -371,7 +416,7 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 | `tugrust/crates/tugcast/src/feeds/reporter.rs` | live bridge: `ReporterBridge` (`StreamFeed`), taps, sitrep timers, knob closures, ledger write + broadcast |
 | `tugrust/crates/tugcast/src/feeds/gazette_agent.rs` | `GAZETTE_AGENT_JOBS`, instruction strings (rubric, retrieve, answer), knob key consts, `dev.tugtool.gazette` domain const |
 | `tugrust/crates/tugcast/src/feeds/operator.rs` | `GAZETTE_INPUT` handling, verb executor, two-round pipeline, transient error posts |
-| `tugrust/crates/tugcast/src/bin/gazette_replay.rs` | calibration harness binary ([P09]) |
+| `tugrust/crates/tugcast/src/feeds/gazette_replay.rs` | calibration harness ([P09]) — a **module in the bin crate**, reached by the `gazette-replay` subcommand dispatched from `main()`. NOT `src/bin/`: tugcast has no lib target, so a second binary could not import the wake core |
 | `tugdeck/src/lib/gazette-store.ts` (+ `__tests__`) | [P11] store |
 | `tugdeck/src/lib/gazette-card-id.ts` | `GAZETTE_CARD_ID = "gazette"` |
 | `tugdeck/src/components/gazette/gazette-card-registration.tsx` | [P10] registration |
@@ -388,9 +433,12 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 | `list_file_events_for_session`, `list_file_events_for_path_pattern` | fns | `tugcast/src/session_ledger.rs` | backing for T01 change verbs |
 | `"list_gazette_posts"` arm + `do_list_gazette_posts` | control verb | `tugcast/src/feeds/agent_supervisor.rs` | beside `"list_pulse_lines"` |
 | gazette pool + bridge + adapter wiring | wiring | `tugcast/src/main.rs` | pool construction beside `haiku_agent`; `register_stream_feed(ReporterBridge…)`; `register_input(FeedId::GAZETTE_INPUT, …)` |
-| `TUG_ACTIONS.TOGGLE_GAZETTE` + command entry + dispatch handler | action | `action-vocabulary.ts`, `command-registry.ts`, `action-dispatch.ts` | mirror `TOGGLE_JOTS` exactly; chord ⌃⌘G |
-| "Show Gazette" menu row | Swift | `tugapp/Sources/AppDelegate.swift` | mirror the "Show Jots" row (`identified("maker.gazette")`); update `at0168-menu-structure.test.ts` + `tuglaws/menus.md` |
-| `gazette-replay` recipe | just | `justfile` | wraps the binary |
+| `TOGGLE_GAZETTE: "toggle-gazette"` + its payload doc block | action id | `components/tugways/action-vocabulary.ts` | the file documents each action's payload above the id table; both places need the entry |
+| `TOGGLE_GAZETTE` command entry | command | `components/tugways/command-registry.ts` | `routing: "registry"`, `menuItemId: "maker.gazette"`, chord ⌃⌘G with `{ preventDefault: true, menuEligible: true }` ([P10]) |
+| `TOGGLE_GAZETTE` handler + action-id list entry | handler | **`components/chrome/deck-canvas.tsx`** | one line: `store.toggleSidebarPane(GAZETTE_CARD_ID)`, beside the `TOGGLE_JOTS` handler. **Not `action-dispatch.ts`** — the sidebar toggles live in deck-canvas, and the action id must also be added to that file's registered-action list |
+| `["⌃⌘G", TUG_ACTIONS.TOGGLE_GAZETTE]` | test row | `components/tugways/__tests__/command-routing-drift.test.ts` | the chord→action drift table; a missing row fails the suite |
+| "Show Gazette" menu row | Swift | `tugapp/Sources/AppDelegate.swift` | mirror the "Show Jots" row (`identified("maker.gazette")`, `keyEquivalent: ""` — the chord is applied from the registry, not hardcoded); update `at0168-menu-structure.test.ts` + `tuglaws/menus.md` |
+| `gazette-replay` recipe | just | `justfile` | wraps `tugcast gazette-replay` ([P09]) |
 
 ---
 
@@ -409,7 +457,7 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 | Category | Purpose | When to use |
 |----------|---------|-------------|
 | **Unit (Rust)** | wake core (idle-never-wakes, caps, envelope strictness, ref validation), ledger APIs, verb caps, round cap, mute brackets, isolation | bulk of coverage; fake spawner scripts model answers, never asserts prose |
-| **Unit (deck)** | gazette-store fold/tail/pending, registration invariants | `bun test` |
+| **Unit (deck)** | gazette-store fold/tail/pending, **resource release on `dispose()` ([L27])**, registration invariants | `bun test` |
 | **Integration (Rust)** | bridge task with `FakeSpawner`-style scripted pool: frame in → post out; GAZETTE_INPUT → user echo + answer post | tokio tests mirroring `pulse.rs` tests |
 | **App-test** | rail toggles, rows render from injected frames, composer submits | one file, `@covers` |
 | **Real-model** | one `#[ignore]` + `TUG_REAL_CLAUDE=1` test running a real `reporter-post` turn (envelope parses) — the `a_real_worker_answers…` pattern | on demand |
@@ -469,17 +517,21 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 **Commit:** `tugcast(ledger): uncapped gazette_posts table with tail/search/window reads`
 
-**References:** [P02] ledger table, Spec S03, Table T01 (gazette verbs), (#p02-ledger-table)
+**References:** [P02] ledger table, [P13] FTS5 search, Spec S03, Table T01 (gazette verbs), (#p02-ledger-table, #p13-fts5)
 
-**Artifacts:** `gazette_posts` DDL in `initialize_schema` (columns: `id` PK autoincrement, `at_ms`, `author`, `session_id` NULLable, `wake_reason` NULLable, `body`, `refs` JSON text); `GazettePostRow`; `record_gazette_post`, `list_gazette_posts_tail(limit)` (newest-limit oldest-first, the `list_pulse_lines_tail` shape), `search_gazette_posts(query, filters, limit)`, `gazette_posts_window(id, n)`; index on `session_id`. Also the two file-event reads (`list_file_events_for_session`, `list_file_events_for_path_pattern`) T01 needs.
+**Artifacts:** `gazette_posts` DDL in the `bootstrap_schema` `execute_batch` (columns: `id` PK autoincrement, `at_ms`, `author`, `session_id` NULLable, `wake_reason` NULLable, `body`, `refs` JSON text); the FTS5 external-content virtual table + sync triggers ([P13]); `GazettePostRow`; `record_gazette_post`, `list_gazette_posts_tail(limit)` (newest-limit oldest-first, the `list_pulse_lines_tail` shape), `search_gazette_posts(query, filters, limit)`, `gazette_posts_window(id, n)`; index on `session_id`. Also the two file-event reads (`list_file_events_for_session`, `list_file_events_for_path_pattern`) T01 needs.
 
 **Tasks:**
+- [ ] **FTS5 availability spike first** — one test asserting `CREATE VIRTUAL TABLE … USING fts5(...)` succeeds on a `ledger_db::open` connection. If it fails, stop and fall back to `LIKE`, revising [P13].
 - [ ] DDL next to `pulse_lines` in `session_ledger.rs`, with the same deliberate-no-cascade comment posture; **no cap** and no pruning anywhere.
+- [ ] **Comment the drift-guard exemption at the DDL** ([P02]): `gazette_posts` is permanent history and is never passed to `rebuild_table_if_schema_drifted` — a future column goes through an ALTER-based `migrate_gazette_posts_add_*`, following `migrate_pulse_lines_add_intent`. Note in the same comment that the FTS5 shadow tables *are* derived and may be rebuilt freely.
 - [ ] Author enforcement in Rust (`reporter|operator|user`), refs serialized like `pulse_lines.scopes`.
-- [ ] `search_gazette_posts`: LIKE over `body` and `refs`, optional `author`/`session_id`/`at_ms` range, newest-first, capped.
+- [ ] `search_gazette_posts`: FTS5 `MATCH` over `body` + `refs`, `bm25()` ordering, `snippet()` excerpts, with the optional `author`/`session_id`/`at_ms` filters applied against the content table.
 
 **Tests:**
-- [ ] Round-trip, tail ordering, search filters, window bounds, survival of a `sessions` row DELETE (no cascade).
+- [ ] FTS5 availability (the spike, kept as a permanent test).
+- [ ] Round-trip, tail ordering, window bounds, survival of a `sessions` row DELETE (no cascade).
+- [ ] Search: multi-term relevance ordering beats insertion order; the triggers keep the index in sync across insert; filters compose with `MATCH`.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast session_ledger`
@@ -535,19 +587,21 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 **References:** [P09] harness, [P05] knobs, Risk R01, (#p09-harness, #success-criteria)
 
-**Artifacts:** `src/bin/gazette_replay.rs`; `justfile` recipe `gazette-replay JSONL *FLAGS`.
+**Artifacts:** `feeds/gazette_replay.rs` (a module in the bin crate), a `gazette-replay` subcommand arm in `cli.rs` + `main()`, and a `justfile` recipe `gazette-replay JSONL *FLAGS`.
 
 **Tasks:**
+- [ ] Add the subcommand to the existing clap surface in `cli.rs` and dispatch it at the top of `main()` — **before any listener binds or ledger writer is claimed**, so a replay never contends with a live tugcast — then return.
 - [ ] Read a session JSONL, map records to the frame shapes the tap classifier reads, simulate time from record timestamps, segment into wake windows via the wake core, call `pool.run("reporter-post", …)` per window (real `ClaudeAgentWorkerSpawner`), render a markdown gazette: per-wake reason, buffer stats, post-or-silence, refs kept/dropped.
-- [ ] Flags: `--sitrep-secs`, `--last-k`, `--model`, `--max-frames`; defaults from Table T02.
-- [ ] Run against at least the two spike sessions' JSONL; tune the shipped knob defaults and, if needed, the rubric wording — fold conclusions into Step 6's allowlist ([Q02]).
+- [ ] Flags: `--sitrep-secs`, `--last-k`, `--model`, `--max-frames`, `--no-model`; defaults from Table T02.
+- [ ] **Sweep the cadence rather than validating one value.** Run each spike session at `--sitrep-secs` 90, 120, and 180 and read all three gazettes side by side. The spike's 240s produced one post per ~5–7 minutes of active work, which the user judged too slow; 180 is the shipped default and ~120 is where "every two to three minutes" lives. Reading three is the only way to answer a question that is genuinely about feel — set the shipped default from what reads best, not from this plan's guess.
+- [ ] Fold allowlist conclusions into Step 6 ([Q02]); adjust the rubric wording if the sweep shows the model posting on the wrong moments rather than at the wrong rate (those are different failures and want different fixes).
 
 **Tests:**
 - [ ] Segmentation-only mode (`--no-model`) unit-testable: wake windows over a fixture JSONL are deterministic.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo build -p tugcast` (binary builds; a real run is manual, costs tokens)
-- [ ] `just gazette-replay <a real jsonl>` produces a readable gazette (manual read)
+- [ ] `cd tugrust && cargo build -p tugcast` (the subcommand builds; a real run is manual and costs tokens)
+- [ ] `just gazette-replay <a real jsonl>` produces a readable gazette (manual read), at all three sweep values
 
 ---
 
@@ -557,17 +611,19 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 **Depends on:** #step-2, #step-5
 
-**References:** [P04], [P05], [P06], [P12] isolation, Table T02, Table T03, Spec S03, [Q02] resolution, (#bridge-topology)
+**References:** [P04], [P05], [P06], [P12] isolation, [P14] failed-wake re-merge, Table T02, Table T03, Spec S03, [Q02] resolution, (#bridge-topology)
 
 **Artifacts:** `feeds/reporter.rs` `ReporterBridge` implementing `StreamFeed` (id `GAZETTE`, capacity 64); `main.rs` wiring (knob closures over `bank_client`, `register_stream_feed`, submission-channel tap mirroring `SessionOverviewConfig`); CONTROL verb `"list_gazette_posts"` + `do_list_gazette_posts` in `agent_supervisor.rs`.
 
 **Tasks:**
 - [ ] Tap loop: subscribe `code_tx` in-task; classify/mute; push to buffers; arm per-session sitrep deadlines (`tokio::select!` over a computed next-deadline, the timer only armed while a buffer is non-empty); session-end wake off session-state frames; token-threshold wake off `turn_complete` usage when the knob is non-zero.
 - [ ] Wake path: snapshot+clear buffer, fetch last-K posts for the session (`list` read filtered by session), spawn a task: `run("reporter-post")` → parse ([P06]) → validate refs (R02) → `record_gazette_post` → broadcast S03 frame. Disabled knob drops frames and never wakes (the `pulse_enabled` posture).
+- [ ] **On job `Err`, re-merge the snapshot to the front of the session's buffer** subject to the [P04] caps, and log it as a distinct warn from an editorial no-post ([P14]) — an infrastructure failure must not read as the model choosing silence.
 - [ ] Finalize the allowlist from harness findings; record it as a `const` with the pulse-style doc comment ([Q02] closes here).
 
 **Tests:**
 - [ ] Tokio tests with a scripted pool (the `FakeSpawner` pattern from `shared_agent.rs::test_support`): allowlisted frame → wake → post persisted + broadcast; replay-bracketed frames produce nothing; a `GAZETTE` frame never enters the buffer ([P12]); disabled knob spawns/wakes nothing; `list_gazette_posts` CONTROL verb answers the tail.
+- [ ] A failing pool re-merges: script `Err`, wake, assert the frames are still buffered and reach the *next* wake's composed input ([P14]).
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast reporter`
@@ -608,6 +664,7 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 **Artifacts:** `main.rs` `register_input(FeedId::GAZETTE_INPUT, …)` + adapter task (the `USAGE_QUERY` adapter shape: mpsc in, per-request `tokio::spawn`); pipeline in `feeds/operator.rs`.
 
 **Tasks:**
+- [ ] **Construct the adapter after Step 6's `register_stream_feed` call** — that call's *return value* is the only source of the GAZETTE `broadcast::Sender`, so the ordering is forced. Follow the existing `let pulse_tx = feed_router.register_stream_feed(…)` → session-overview-block shape in `main.rs`.
 - [ ] Adapter: parse `{body, request_id}`; persist + broadcast the `user` post first ([P08]); then pipeline: scrollback = last 20 posts from the ledger → `operator-retrieve` → execute verbs (≤6) → `operator-answer` → optional one follow-up round → forced final answer; persist + broadcast the `operator` post with `request_id` echoed.
 - [ ] Failure at any stage → transient (`transient: true`, unpersisted) operator post carrying the `request_id` ([P08]).
 
@@ -625,16 +682,19 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 **Depends on:** #step-1, #step-6, #step-8
 
-**References:** [P11] gazette store, [P05] knobs (`card_rows`), Spec S03, (#state-zone-mapping)
+**References:** [P11] gazette store, [P05] knobs (`card_rows`), Spec S03, **[L27]** resource release, **[L26]** mount identity, (#state-zone-mapping)
 
-**Artifacts:** `tugdeck/src/lib/gazette-store.ts` + tests; `lib/gazette-types.ts` if types don't fit in `protocol.ts`.
+**Artifacts:** `tugdeck/src/lib/gazette-store.ts`; `tugdeck/src/__tests__/gazette-store.test.ts` (the deck's test home — beside the existing `feed-store.test.ts`); `lib/gazette-types.ts` if types don't fit in `protocol.ts`.
 
 **Tasks:**
 - [ ] Model on `lib/pulse-store.ts`: singleton, connect hook, CONTROL `list_gazette_posts` on mount, `conn.onFrame(FeedId.GAZETTE, …)` fold, render-window cap from the `dev.tugtool.gazette`/`card_rows` default via the DEFAULTS feed, `useSyncExternalStore` hook, test-only frame-injection seam.
+- [ ] **[L27]: every acquisition captures its release.** The store acquires three resources — the `conn.onFrame` registration, the DEFAULTS-feed watch, and the pending-question timeout — and each unregister closure is stored and invoked in `dispose()`. `pulse-store.ts` captures its `onFrame` return for exactly this reason. A `_disposed` guard is not a substitute for unwiring, and there is no acceptable number of leaked callbacks.
 - [ ] `submitQuestion(body)`: mint a `request_id`, send a `GAZETTE_INPUT` frame, track pending until a matching `request_id` post (or a timeout) clears it; transient posts render but never enter the persisted-window array.
+- [ ] **[L26]: key post rows by `request_id`, not ledger `id`.** Transient posts carry no `id` ([P08]), and a pending row that resolves into a persisted answer is logically the *same* row to the reader — so the key must be stable across that swap or React tears down and rebuilds it. Dedupe on `id` where present; key on `request_id`.
 
 **Tests:**
 - [ ] Fold/ordering/cap; pending lifecycle incl. transient clear; tail-then-live merge without duplicates (dedupe by ledger `id`).
+- [ ] `dispose()` releases all three registrations — assert the connection has no live callback afterwards, not merely that a stale one no-ops.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test gazette-store && bun run check`
@@ -647,22 +707,33 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 **Depends on:** #step-9
 
-**References:** [P10] card, [Q01] names and chord, Spec S03, (#state-zone-mapping, #p10-card)
+**References:** [P10] card and chord grant, [Q01] names and chord, Spec S03, **[L12]** selection boundary, **[L16]/[L19]/[L20]** component contract, **[L30]** command funnels, (#state-zone-mapping, #p10-card)
 
-**Artifacts:** `lib/gazette-card-id.ts`, `components/gazette/gazette-card-registration.tsx`, `gazette-card.tsx` + `.css`; `TUG_ACTIONS.TOGGLE_GAZETTE` in `action-vocabulary.ts`, command entry in `command-registry.ts` (⌃⌘G, routing `"registry"`, `menuItemId: "maker.gazette"`), dispatch handler in `action-dispatch.ts` (mirror the `TOGGLE_JOTS` handler); Swift "Show Gazette" row in `tugapp/Sources/AppDelegate.swift` mirroring the "Show Jots" row.
+**Artifacts:** `lib/gazette-card-id.ts`, `components/gazette/gazette-card-registration.tsx`, `gazette-card.tsx` + `gazette-card.css`. Command surface — **five files, named exactly** (the sidebar toggles do *not* live in `action-dispatch.ts`):
+
+| File | Edit |
+|---|---|
+| `components/tugways/action-vocabulary.ts` | `TOGGLE_GAZETTE: "toggle-gazette"` **and** its payload doc block (the file documents each action above the id table) |
+| `components/tugways/command-registry.ts` | the entry: `routing: "registry"`, `menuItemId: "maker.gazette"`, `chord({ key: "KeyG", ctrl: true, meta: true, label: "g" }, { preventDefault: true, menuEligible: true })` |
+| `components/chrome/deck-canvas.tsx` | the handler `store.toggleSidebarPane(GAZETTE_CARD_ID)` beside `TOGGLE_JOTS`'s, **and** the action id added to that file's registered-action list |
+| `components/tugways/__tests__/command-routing-drift.test.ts` | the `["⌃⌘G", TUG_ACTIONS.TOGGLE_GAZETTE]` row |
+| `tugapp/Sources/AppDelegate.swift` | the "Show Gazette" row mirroring "Show Jots" (`identified("maker.gazette")`, `keyEquivalent: ""` — the chord is applied from the registry) |
 
 **Tasks:**
 - [ ] Registration is the `registerJotsCard()` shape verbatim ([P10]); called unconditionally in `main.tsx` boot before layout restore (copy the INVARIANT comment).
-- [ ] Card UI: post rows oldest-first autoscrolled to newest — author icon (lucide `newspaper` for the Reporter; the `operator` glyph via `TugSpriteIcon`/`operatorIconNode` from `components/tugways/tug-icons.tsx`; the Session card's user icon), timestamp, body, ref chips (render-only this step), all theme-token colors, readable at rail width (min 320).
-- [ ] Composer: compose `TugMessageEditor` (clipboard/undo responders ride the substrate for free per its module doc) + a submit affordance calling `gazetteStore.submitQuestion`; pending state renders a placeholder row.
-- [ ] Update `at0168-menu-structure.test.ts` fixture and the `tuglaws/menus.md` table for the new menu row; re-verify the ⌃⌘G chord against the keymap drift tests ([Q01]).
-- [ ] Cross-check tuglaws (`tuglaws.md`, `pane-model.md`, `component-authoring.md`); name the laws in the commit body.
+- [ ] Card UI: post rows oldest-first autoscrolled to newest — author icon (lucide `newspaper` for the Reporter; the `operator` glyph via `TugSpriteIcon`/`operatorIconNode` from `components/tugways/tug-icons.tsx`; the Session card's user icon), timestamp, body, ref chips (render-only this step), readable at rail width (min 320).
+- [ ] **[L12]: register the transcript content area as a selection boundary** so `SelectionGuard` clamps selection to the card. A scrolling transcript is the exact shape this law exists for.
+- [ ] **[L19]/[L16]/[L20]: honor the component contract, not just the visual.** Module docstring, exported props interface, `data-slot`, `@tug-pairings`, and `@tug-renders-on` on every rule that sets `color`/`fill`/`border-color` without a `background-color` — `audit-tokens lint` fails otherwise. Gazette-scoped `--tugx-*` tokens resolve to `--tug7-*` in one hop and never reach into a composed child's tokens.
+- [ ] Composer: compose `TugMessageEditor` (clipboard/undo responders ride the substrate for free per its module doc — [L11]) + a submit affordance calling `gazetteStore.submitQuestion`; pending state renders a placeholder row keyed by `request_id` ([L26], Step 9).
+- [ ] Update the `at0168-menu-structure.test.ts` fixture and the `tuglaws/menus.md` table for the new menu row.
+- [ ] Cross-check tuglaws (`tuglaws.md`, `pane-model.md`, `component-authoring.md`, `commands.md`, `chord-tiers.md`); name the laws in the commit body.
 
 **Tests:**
 - [ ] Registration test rows (the card-registry drift tests pick up the new sidebar automatically — verify `layout-tree.test.ts` / `card-registry.test.ts` expectations).
+- [ ] The chord-routing drift table passes with the new row.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test && bun run check && bunx vite build`
+- [ ] `cd tugdeck && bun test && bun run check && bun run audit:tokens && bunx vite build`
 - [ ] Manual in the running app: ⌃⌘G toggles the rail; Layouts section shows a "Gazette" side control with no section edits; posts from Step 6 render; a typed question produces an Operator answer.
 
 ---
@@ -744,8 +815,9 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 **Acceptance tests:**
 - [ ] `cd tugrust && cargo nextest run` green (warnings are errors).
-- [ ] `cd tugdeck && bun test && bun run check && bunx vite build` green.
+- [ ] `cd tugdeck && bun test && bun run check && bun run audit:tokens && bunx vite build` green.
 - [ ] `just app-test-changed` green.
+- [ ] No [L27] leak: `GazetteStore.dispose()` releases the frame callback, the DEFAULTS watch, and the pending timeout.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
