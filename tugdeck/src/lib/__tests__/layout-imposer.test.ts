@@ -8,7 +8,6 @@ import {
   allocateSidebarWidths,
   solveSidebarWidths,
   sidebarStackOrder,
-  LENS_FLEX_GROW_FRACTION,
   LENS_FLEX_SHRINK_FRACTION,
   imposeRect,
   imposeStyle,
@@ -34,13 +33,16 @@ const GAP = IMPOSITION_GAP_PX;
 /** The allocator's one-rail reading: a single right-side rail, answered as a
  *  plain width. Every number the allocator describes assert is the number the
  *  single-Lens solve produced before the rails generalized — this wrapper is
- *  what makes them a regression guard rather than a rewrite. */
+ *  what makes them a regression guard rather than a rewrite. The ceiling
+ *  defaults to slim (675) — the one the deck passes, whatever Card Width is
+ *  set, because a sidebar is a reading surface. */
 function allocateOneRail(input: {
   canvasWidth: number;
   kind: ImpositionKind;
   occupied: readonly { slot: number; width: number }[];
   preferredWidth: number;
   minWidth: number;
+  maxRailWidth?: number;
 }): number | null {
   const widths = allocateSidebarWidths({
     canvasWidth: input.canvasWidth,
@@ -49,6 +51,7 @@ function allocateOneRail(input: {
     rails: {
       right: { preferredWidth: input.preferredWidth, minWidth: input.minWidth },
     },
+    maxRailWidth: input.maxRailWidth ?? CONTENT_WIDTH_SLIM_PX,
   });
   return widths?.right ?? null;
 }
@@ -68,6 +71,7 @@ function solveOneRail(input: {
     rails: {
       right: { preferredWidth: input.preferredWidth, minWidth: input.minWidth },
     },
+    maxRailWidth: CONTENT_WIDTH_SLIM_PX,
   });
 }
 
@@ -738,15 +742,45 @@ describe("the space allocator", () => {
     expect(allocateOneRail(input)).toBeNull();
   });
 
-  test("the allowance is asymmetric: a third up, a fifth down", () => {
-    // The band that tiles the fixture is fixed, so the canvas width is what
-    // decides how far the Lens has to move. The Lens may travel further to
-    // grow than to shrink — growing spends slack the deck had lying between
-    // the cards, shrinking takes room from a surface holding content.
+  test("growth is bounded by the slim width, not a fraction", () => {
+    // A rail may stand as wide as a slim content card — a fixed ceiling,
+    // however far that is from the width the user chose.
     const preferredWidth = 420;
-    const up = Math.round(preferredWidth * LENS_FLEX_GROW_FRACTION);
+    const maxRailWidth = CONTENT_WIDTH_SLIM_PX;
+
+    const canvasFor = (lensWidth: number): number =>
+      lensWidth + GAP * 3 + EXACT_BAND;
+    const solve = (canvasWidth: number): number | null =>
+      allocateOneRail({
+        canvasWidth,
+        kind: "five-up",
+        occupied: FIVE_UP_THIRDS,
+        preferredWidth,
+        minWidth: 320,
+        maxRailWidth,
+      });
+
+    // The whole run up to the ceiling is available, taken whole.
+    expect(solve(canvasFor(maxRailWidth))).toBe(maxRailWidth);
+
+    // Just past the ceiling the clamped width still lands the chain even, so
+    // the move is made as far as the ceiling — and NEVER further. The
+    // fixture's slots are a half-stride apart, so a Lens off by `d` leaves
+    // seams off by `d / 2`: four pixels over still tiles.
+    for (const over of [1, 4]) {
+      expect(solve(canvasFor(maxRailWidth + over))).toBe(maxRailWidth);
+    }
+
+    // Far enough past that the clamp leaves the seams visibly ragged, moving
+    // the Lens would buy nothing, so it does not move.
+    expect(solve(canvasFor(maxRailWidth + 5))).toBeNull();
+  });
+
+  test("shrinkage keeps its allowance: a fifth under the chosen width", () => {
+    // Shrinking takes room from a surface the user sized to hold content, so
+    // the low end stays anchored to their choice rather than to the preset.
+    const preferredWidth = 420;
     const down = Math.round(preferredWidth * LENS_FLEX_SHRINK_FRACTION);
-    expect(up).toBeGreaterThan(down);
 
     const canvasFor = (lensWidth: number): number =>
       lensWidth + GAP * 3 + EXACT_BAND;
@@ -759,33 +793,21 @@ describe("the space allocator", () => {
         minWidth: 320,
       });
 
-    // At each end, taken whole.
-    expect(solve(canvasFor(preferredWidth + up))).toBe(preferredWidth + up);
+    // At the low end, taken whole; just past it the clamp still tiles within
+    // tolerance; far enough past, the move buys nothing and is not made.
     expect(solve(canvasFor(preferredWidth - down))).toBe(preferredWidth - down);
-
-    // Just past either end the clamped width still lands the chain even, so
-    // the move is made as far as the allowance goes — and NEVER further. The
-    // fixture's slots are a half-stride apart, so a Lens off by `d` leaves
-    // seams off by `d / 2`: four pixels over still tiles.
     for (const over of [1, 4]) {
-      expect(solve(canvasFor(preferredWidth + up + over))).toBe(
-        preferredWidth + up,
-      );
       expect(solve(canvasFor(preferredWidth - down - over))).toBe(
         preferredWidth - down,
       );
     }
-
-    // Far enough past that the clamp leaves the seams visibly ragged, moving
-    // the Lens would buy nothing, so it does not move.
-    expect(solve(canvasFor(preferredWidth + up + 5))).toBeNull();
     expect(solve(canvasFor(preferredWidth - down - 5))).toBeNull();
   });
 
-  test("a solve too far out of range leaves the Lens alone", () => {
-    // The exact fit here wants a Lens of 1575 — nowhere near ±20% of 420, and
-    // the width the allowance permits leaves the seams as ragged as they were.
-    // The Lens is the user's; there is nothing to be gained by moving it.
+  test("a solve past the ceiling leaves the Lens alone", () => {
+    // The exact fit here wants a Lens of 1575 — far past the slim ceiling —
+    // and standing at the ceiling leaves the seams as ragged as they were.
+    // The width buys nothing, so it is not spent.
     expect(
       allocateOneRail({
         canvasWidth: 4000,
@@ -897,12 +919,13 @@ describe("the space allocator", () => {
         kind: "five-up",
         occupied: FIVE_UP_THIRDS,
         rails: {},
+        maxRailWidth: CONTENT_WIDTH_SLIM_PX,
       }),
     ).toBeNull();
   });
 });
 
-describe("two rails move by one shared delta", () => {
+describe("every standing rail takes one shared width", () => {
   const FIVE_UP_THIRDS = [
     { slot: 0, width: 800 },
     { slot: 2, width: 800 },
@@ -922,6 +945,7 @@ describe("two rails move by one shared delta", () => {
       kind: "five-up",
       occupied: FIVE_UP_THIRDS,
       rails: { left, right },
+      maxRailWidth: CONTENT_WIDTH_SLIM_PX,
     });
 
   /** The canvas that wants the two rails to total `total`: four gaps now, one
@@ -929,7 +953,7 @@ describe("two rails move by one shared delta", () => {
   const canvasFor = (total: number): number => total + GAP * 4 + EXACT_BAND;
 
   test("the surplus is split evenly, not handed to one rail", () => {
-    // Both rails prefer 400 and the deck wants 840 of rail: +20 each.
+    // Both rails prefer 400 and the deck wants 840 of rail: 420 each.
     const widths = solve(
       canvasFor(840),
       { preferredWidth: 400, minWidth: 320 },
@@ -938,50 +962,58 @@ describe("two rails move by one shared delta", () => {
     expect(widths).toEqual({ left: 420, right: 420 });
   });
 
-  test("unequal preferred widths keep their difference — the DELTA is shared", () => {
-    // 400 and 500 want 900 between them; a deck wanting 980 gives each +40, so
-    // the rails stay exactly 100 apart. A per-rail solve would have no reason
-    // to preserve that.
+  test("unequal chosen widths land on ONE width — rails may not differ", () => {
+    // 400 and 500 chosen; a deck wanting 980 of rail stands BOTH at 490. The
+    // sidebars are a uniform class: an allocator answer with two rails at two
+    // widths is not a picture this deck is allowed to paint.
     const widths = solve(
       canvasFor(980),
       { preferredWidth: 400, minWidth: 320 },
       { preferredWidth: 500, minWidth: 320 },
     );
-    expect(widths).toEqual({ left: 440, right: 540 });
-    expect((widths?.right ?? 0) - (widths?.left ?? 0)).toBe(100);
+    expect(widths).toEqual({ left: 490, right: 490 });
   });
 
-  test("a clamp binding on one rail bounds the shared delta, not just that rail", () => {
-    // The right rail's floor of 480 lets it shrink only 20 below its preferred
-    // 500. The deck wants the pair 44 narrower — 22 each — so the shared delta
-    // is bounded at −20 and BOTH rails give up exactly 20. Clamping the rails
-    // independently would take 22 from the left and 20 from the right, which is
-    // two different gestures wearing one name.
-    const widths = solve(
-      canvasFor(856),
-      { preferredWidth: 400, minWidth: 320 },
-      { preferredWidth: 500, minWidth: 480 },
-    );
-    expect(widths).toEqual({ left: 380, right: 480 });
-  });
-
-  test("a clamp that leaves the chain ragged moves neither rail", () => {
-    // The same floor, but the deck wants the pair 100 narrower. Bounded at −20
-    // the seams are still visibly off, so the gesture buys nothing and is not
-    // made — the rails do not half-move.
+  test("a floor binding on one rail binds the width both rails share", () => {
+    // The right rail's floor of 480 is a bound on the ONE shared width, so the
+    // left rail cannot be taken below it either. A deck wanting 940 of rail —
+    // 470 each — is refused outright: standing both rails at the bound 480
+    // leaves the seams visibly off, and half a gesture is not made.
     expect(
       solve(
-        canvasFor(800),
+        canvasFor(940),
         { preferredWidth: 400, minWidth: 320 },
         { preferredWidth: 500, minWidth: 480 },
       ),
     ).toBeNull();
+    // Wanting 962 — 481 each — clears the floor and both rails stand at 481.
+    expect(
+      solve(
+        canvasFor(962),
+        { preferredWidth: 400, minWidth: 320 },
+        { preferredWidth: 500, minWidth: 480 },
+      ),
+    ).toEqual({ left: 481, right: 481 });
+  });
+
+  test("growth reaches the slim width, on both rails at once", () => {
+    // A deck wanting 1350 of rail stands both at the slim ceiling exactly —
+    // each sidebar as wide as a slim content card, the widest a rail goes.
+    const widths = solve(
+      canvasFor(2 * CONTENT_WIDTH_SLIM_PX),
+      { preferredWidth: 400, minWidth: 320 },
+      { preferredWidth: 400, minWidth: 320 },
+    );
+    expect(widths).toEqual({
+      left: CONTENT_WIDTH_SLIM_PX,
+      right: CONTENT_WIDTH_SLIM_PX,
+    });
   });
 
   test("a residual the rails cannot close moves neither of them", () => {
-    // The fit wants far more rail than either allowance permits, and the
-    // clamped widths leave the seams visibly ragged. Half a gesture is not a
-    // picture anyone asked for, so nothing moves.
+    // The fit wants more rail than even the content-width ceiling permits, and
+    // the clamped widths leave the seams visibly ragged. Half a gesture is not
+    // a picture anyone asked for, so nothing moves.
     expect(
       solve(
         canvasFor(2000),
@@ -998,6 +1030,7 @@ describe("two rails move by one shared delta", () => {
       kind: "five-up",
       occupied: FIVE_UP_THIRDS,
       rails: { left: { preferredWidth: 400, minWidth: 320 } },
+      maxRailWidth: CONTENT_WIDTH_SLIM_PX,
     });
     expect(widths).toEqual({ left: 420 });
   });

@@ -87,6 +87,7 @@ import {
   isSidebarPinned,
   sidebarSide,
   isSidebarSide,
+  CONTENT_WIDTH_SLIM_PX,
   DEFAULT_CONTENT_WIDTH,
   DEFAULT_IMPOSITION_KIND,
   DEFAULT_SIDEBAR_SIDE,
@@ -1274,7 +1275,7 @@ export class DeckManager implements IDeckManagerStore {
       held.push(pane);
       panesBySide.set(side, held);
       const policy: RailPolicy = {
-        preferredWidth: this._sidebarPreferredWidth(componentId, pane),
+        preferredWidth: this._sidebarPreferredWidth(componentId),
         minWidth: getSizePolicy(componentId).min.width,
       };
       const standing = rails[side];
@@ -1293,17 +1294,21 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * The width a sidebar card was last sized to — the number its rail's
-   * allowance is centred on. The Lens keeps it in its own store so a closed
-   * Lens reopens where it stood; a sidebar card with no such store stands at
-   * the width its pane already carries.
+   * The width the user last chose for a sidebar card — the anchor its rail's
+   * shrink allowance hangs under. Read from the card's DURABLE store (the
+   * Lens's own `lensStore`, `sidebarWidthStore` for every other card), never
+   * from the live pane: the live width is where the allocator writes its own
+   * answers, and an allocator that reads its output back as the user's
+   * preference re-anchors on every solve and keeps every past grant — the
+   * ratchet that let one rail quietly absorb the deck's slack. A card the user
+   * has never sized anchors on its registered preferred width.
    */
-  private _sidebarPreferredWidth(
-    componentId: string,
-    pane: TugPaneState,
-  ): number {
+  private _sidebarPreferredWidth(componentId: string): number {
     if (componentId === LENS_CARD_ID) return lensStore.getSnapshot().widthPx;
-    return pane.size.width;
+    return (
+      sidebarWidthStore.widthFor(componentId) ??
+      getSizePolicy(componentId).preferred.width
+    );
   }
 
   /**
@@ -1346,7 +1351,17 @@ export class DeckManager implements IDeckManagerStore {
       .filter((pane) => pane.slot !== undefined)
       .map((pane) => ({ slot: pane.slot as number, width: renderWidth(pane) }));
 
-    return allocateSidebarWidths({ canvasWidth, kind, occupied, rails });
+    // A rail may grow to the SLIM content width and no further, whatever
+    // Card Width the deck is set to. A rail is a reading surface; a comfy- or
+    // wide-sized sidebar is absurd on its face, so the ceiling does not follow
+    // the preset.
+    return allocateSidebarWidths({
+      canvasWidth,
+      kind,
+      occupied,
+      rails,
+      maxRailWidth: CONTENT_WIDTH_SLIM_PX,
+    });
   }
 
   /**
@@ -3753,7 +3768,11 @@ export class DeckManager implements IDeckManagerStore {
    * `setSidebarSide` from short-circuiting on an unchanged side.
    *
    * Sidebar panes are not content and are skipped — a rail's width belongs to
-   * the allocator ([P04]).
+   * the allocator ([P04]), which runs LAST here: restamping the content panes
+   * moves every seam in the chain, and a width row is a Layouts click, one of
+   * the two moments the deck is licensed to re-arrange itself. Leaving the
+   * rails tuned for the old card widths was how picking a width could open
+   * gaps at every seam and stand there.
    */
   setContentWidth(preset: ContentWidth): void {
     this.deckState = {
@@ -3767,6 +3786,8 @@ export class DeckManager implements IDeckManagerStore {
       .filter((pane) => this._sidebarComponentIdOfPane(pane.id) === undefined)
       .map((pane) => pane.id);
     for (const paneId of contentPaneIds) this._setPaneWidth(paneId, preset);
+
+    this.retuneSidebarAllocation();
   }
 
   // ---- Cascade positioning ----

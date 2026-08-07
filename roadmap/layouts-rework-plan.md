@@ -336,6 +336,10 @@ band = canvasWidth − Σ railWidth − (R + 3)·gap        // R=1 reproduces to
 
 So `R = 0` → `band = canvasWidth − 3·gap` is wrong by one gap versus today's no-Lens path; keep the existing `resolveSpan` behavior as the source of truth (a closed rail contributes neither width nor gap) and derive the gap count from it rather than from this formula, so the numeric twin and the CSS stay in agreement by construction — which is the property the module note says the two halves exist to preserve.
 
+> **Amended after living with the built app: one shared WIDTH, not one shared delta.** Three faults surfaced in use, and the ruling that fixed them replaced this rule. (1) The equal-Δ scheme preserved the *difference* between rails, and its anchors weren't durable — a non-Lens rail's "preferred" width was its live pane width, which is where the allocator writes its own answers, so every solve re-anchored on the last grant and one rail ratcheted wide: the sidebars ended at visibly different widths, which contravenes the tenet that sidebars are a uniform class. Now the solve emits **one width every standing rail takes** (`T / R`, clamped), so unequal rails are unrepresentable, and the shrink anchor reads the card's durable store (`lensStore` / `sidebarWidthStore`), never the live pane. (2) `LENS_FLEX_GROW_FRACTION` is **removed**: a rail may grow to the **slim** content width (675) and no further, whatever Card Width the deck is set to — a rail is a reading surface — carried into the allocator as `maxRailWidth`. Shrinkage keeps the −20% allowance and the tightest-member floor below. (3) `setContentWidth` now ends in the same retune the kind rows run — it was the one Layouts click with no re-solve behind it, which left every seam open after a width change. Acceptance (≤2px worst seam or move nothing) is unchanged.
+>
+> The text below is the delta-rule as planned, kept for the record.
+
 **The equal-Δ rule ([P04]).** The solve yields a *target total* rail width `T = Σ preferred − (B* − bandAtPreferred)`, i.e. the total the seams want. One delta is shared:
 
 ```

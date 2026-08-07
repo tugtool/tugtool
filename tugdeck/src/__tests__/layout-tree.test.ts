@@ -332,10 +332,15 @@ describe("serialize and deserialize (v4 wire)", () => {
     ] = 1;
     const restored = deserialize(JSON.stringify(blob), 1920, 1080);
     expect(
-      (restored.imposition as Record<string, unknown>)["sidebarSplit"],
+      (restored.imposition as unknown as Record<string, unknown>)[
+        "sidebarSplit"
+      ],
     ).toBeUndefined();
     expect(
-      (restored.imposition.sidebars["lens"] as Record<string, unknown>)["order"],
+      (restored.imposition.sidebars["lens"] as unknown as Record<
+        string,
+        unknown
+      >)["order"],
     ).toBeUndefined();
     // The side, which still means something, survives.
     expect(restored.imposition.sidebars["lens"]?.side).toBe("right");

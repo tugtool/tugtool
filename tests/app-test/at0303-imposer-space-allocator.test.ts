@@ -7,7 +7,10 @@
  * choose Five Up on a roomy deck and the cards stand apart, narrow the window
  * slightly and the same arrangement overlaps. The **space allocator** treats the
  * pinned Lens's width as the one flexible quantity — it is the band's other end
- * — and picks the width that puts every seam on one imposition gap.
+ * — and picks the width that puts every seam on one imposition gap. The
+ * allowance: a rail may grow to the slim content width (675) — whatever Card
+ * Width the deck is set to, a rail is a reading surface and never sprawls —
+ * and shrink a fifth under the width the user chose.
  *
  * What has to hold:
  *
@@ -33,6 +36,10 @@
  *     Lens's width is the deck's to spend: the user moved a CARD and did not
  *     ask for their rail to be resized. The seams go ragged and stay that way
  *     until a Layouts click or a window resize asks for them back.
+ *  6. Two rails take ONE width. With sidebars on both edges, the allocator's
+ *     answer is a single width every standing rail lands on — whatever each
+ *     card's chosen width was. Sidebars are a uniform class; the deck never
+ *     answers with two rails at two widths.
  *
  * The fixture card width is computed at runtime from the measured canvas, so
  * the solve lands a known distance from the preferred width whatever size the
@@ -267,11 +274,13 @@ describe.skipIf(!SHOULD_RUN)(
           await seedPreferredWidth(app, PREFERRED);
           await seedFixture(app, 400, PREFERRED);
 
-          // 260px above preferred is far outside the flex range, so the
-          // allocator wants a width it may not have — and the widest it MAY
-          // have still leaves the chain ragged.
+          // A rail may grow to the slim width (675), so the refusal fixture
+          // has to want MORE than that ceiling. The exact solve sits 320px
+          // above the preferred 420 — 65 past the ceiling, where the widest
+          // width the allocator may have still leaves the chain visibly
+          // ragged.
           const canvas = await canvasWidth(app);
-          const paneWidth = paneWidthFor(canvas, 260);
+          const paneWidth = paneWidthFor(canvas, 320);
           expect(paneWidth).toBeGreaterThan(200);
 
           // The Lens stands somewhere the user put it, NOT at the remembered
@@ -375,9 +384,9 @@ describe.skipIf(!SHOULD_RUN)(
           await seedFixture(app, 400, PREFERRED);
 
           // Sized so the THREE-card chain's exact solve sits 30px above the
-          // preferred width — in range. The two-card chain it starts as wants
-          // a band a whole card wider, which is far out of range, so the Lens
-          // rests at the preferred width until the third card lands.
+          // preferred width — in range. The two-card chain it starts as is
+          // never solved at all: seeding a deck is not one of the moments,
+          // so the Lens rests at the preferred width until a click asks.
           const canvas = await canvasWidth(app);
           const paneWidth = paneWidthFor(canvas, 30);
           expect(paneWidth).toBeGreaterThan(200);
@@ -422,6 +431,87 @@ describe.skipIf(!SHOULD_RUN)(
             predictedLensWidth(canvas, paneWidth),
             0,
           );
+          for (const seam of await seams(app)) {
+            expect(Math.abs(seam - GAP)).toBeLessThanOrEqual(TOL);
+          }
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "two rails, one width: opposite-side sidebars land equal, whatever they preferred",
+      async () => {
+        const app = await launchTugApp({
+          testName: "at0303-imposer-allocator-shared-width",
+        });
+        try {
+          // The two cards CHOSE different widths — 420 and 560 — which is
+          // exactly the state the shared-width rule has to erase when it
+          // moves: the answer is one number, not one delta.
+          await seedPreferredWidth(app, PREFERRED);
+          await app.evalJS<null>(
+            `(window.__tug.setTugbankValue("dev.tugtool.jots", "widthPx", { kind: "i64", value: 560 }), null)`,
+          );
+          await seedFixture(app, 400, PREFERRED);
+
+          // Two rails and three cards: canvas = T + 6·gap + 3·pane, with T the
+          // rails' total. Size the chain so each rail's share sits near 500 —
+          // above both shrink floors (0.8·420 = 336, 0.8·560 = 448), under the
+          // slim ceiling — so the solve is taken, not clamped.
+          const canvas = await canvasWidth(app);
+          const paneWidth = Math.floor((canvas - GAP * 6 - 2 * 500) / 3);
+          expect(paneWidth).toBeGreaterThan(200);
+
+          const shape = deckShape(paneWidth, PREFERRED);
+          shape.cards.push({
+            id: "J",
+            componentId: "jots",
+            title: "Jots",
+            closable: true,
+          });
+          shape.panes.push({
+            id: "pJots",
+            position: { x: 0, y: 0 },
+            size: { width: 560, height: 900 },
+            cardIds: ["J"],
+            activeCardId: "J",
+            title: "Jots",
+            acceptsFamilies: [],
+          });
+          await app.seedDeckState({
+            state: {
+              ...shape,
+              imposition: {
+                kind: "two-up",
+                sidebars: {
+                  lens: { side: "right" },
+                  jots: { side: "left" },
+                },
+              },
+            },
+            focusCardId: "A",
+          });
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(${JSON.stringify(KIND_TILES)}).length > 0`,
+            { timeoutMs: 8_000 },
+          );
+          await wait(AFTER_LAND_MS);
+
+          await app.nativeClickAtElement(FIVE_UP_TILE);
+          await wait(AFTER_LAND_MS);
+
+          // ONE width. Not "each moved the same amount" — the SAME number.
+          const lensWidth = await frameWidth(app, "pLens");
+          const jotsWidth = await frameWidth(app, "pJots");
+          expect(Math.round(lensWidth)).toBe(Math.round(jotsWidth));
+
+          // And it is the solve: each rail's equal share of the total the
+          // seams want, which tiles the chain.
+          const share = (canvas - GAP * 6 - paneWidth * 3) / 2;
+          expect(lensWidth).toBeCloseTo(Math.round(share), 0);
           for (const seam of await seams(app)) {
             expect(Math.abs(seam - GAP)).toBeLessThanOrEqual(TOL);
           }

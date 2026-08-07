@@ -8,9 +8,15 @@
  *
  *  1. It reaches the panes already open — every content pane at once, not the
  *     focused one and not the next one created.
- *  2. It leaves the rails alone. A sidebar's width is the allocator's unknown
- *     ([P04]); a deck-wide content width that dragged the Lens in with it would
- *     be the imposer's own arithmetic being overwritten from the outside.
+ *  2. It never STAMPS a rail. A sidebar's width is the allocator's unknown
+ *     ([P04]): a width click re-solves the rails (it is a Layouts click, and it
+ *     moves every seam), but what a rail may get is the allocator's answer
+ *     under its licence — never the content preset written in as if the rail
+ *     were a card. The fixture makes the licence refuse (four slotted cards
+ *     overfill the band at any plausible window, so no rail width tiles the
+ *     chain), which is what lets a plain "unchanged" assertion pin the
+ *     distinction: a stamped rail would move to the preset even when the
+ *     allocator declines.
  *  3. It is what a NEW card opens at. The registrations no longer carry a
  *     literal opening width; a Session, Text, File, Diff, or DevTools card
  *     resolves one from this record at `addCard` time, so the first card of a
@@ -49,7 +55,12 @@ const LENS_WIDTH = 412;
 const WIDTH_TILE = (preset: string): string =>
   `[data-testid="lens-layouts-width"] [data-radio-value="${preset}"]`;
 
-/** Two content panes under two-up, plus the Lens standing at its pin. */
+/** Four content panes filling four-up, plus the Lens standing at its pin.
+ *  Four, deliberately: at slim the chain wants a band of 2715px and at comfy
+ *  3215px, so on any window the harness can launch the allocator's solve is
+ *  far under every rail's shrink floor and the licence refuses — the rail
+ *  width below is guaranteed to be untouched by the retune, canvas be what it
+ *  may. */
 function deckShape(): Record<string, unknown> {
   const pane = (id: string, slot: number, cardId: string) => ({
     id,
@@ -65,11 +76,15 @@ function deckShape(): Record<string, unknown> {
     cards: [
       { id: "A", componentId: "gallery-accordion", title: "Card A", closable: true },
       { id: "B", componentId: "gallery-accordion", title: "Card B", closable: true },
+      { id: "C", componentId: "gallery-accordion", title: "Card C", closable: true },
+      { id: "D", componentId: "gallery-accordion", title: "Card D", closable: true },
       { id: "L", componentId: "lens", title: "Lens", closable: true },
     ],
     panes: [
       pane("p1", 0, "A"),
       pane("p2", 1, "B"),
+      pane("p3", 2, "C"),
+      pane("p4", 3, "D"),
       {
         id: "pLens",
         position: { x: 0, y: 0 },
@@ -81,7 +96,7 @@ function deckShape(): Record<string, unknown> {
       },
     ],
     activePaneId: "p1",
-    imposition: { kind: "two-up", sidebars: { lens: { side: "right" } } },
+    imposition: { kind: "four-up", sidebars: { lens: { side: "right" } } },
     hasFocus: true,
   };
 }
@@ -120,25 +135,28 @@ describe.skipIf(!SHOULD_RUN)(
             `(${PANE_WIDTH_JS("p1")}) === ${SLIM}`,
             { timeoutMs: 8_000 },
           );
-          // BOTH panes, not just the active one: the deck's width is the
-          // deck's.
+          // EVERY content pane, not just the active one: the deck's width is
+          // the deck's.
           expect(await paneWidth(app, "p1")).toBe(SLIM);
           expect(await paneWidth(app, "p2")).toBe(SLIM);
-          // The rail did not come with them.
+          expect(await paneWidth(app, "p3")).toBe(SLIM);
+          expect(await paneWidth(app, "p4")).toBe(SLIM);
+          // The rail did not come with them: the click's retune refused (no
+          // rail width tiles this chain), and the preset was never stamped.
           expect(await paneWidth(app, "pLens")).toBe(LENS_WIDTH);
 
           // ── A card opened now arrives at the deck's width. ──
           await app.dispatchControlAction("show-devtools");
           await app.waitForCondition<boolean>(
-            `document.querySelectorAll('.tug-pane').length === 4`,
+            `document.querySelectorAll('.tug-pane').length === 6`,
             { timeoutMs: 8_000 },
           );
           const openedWidth = await app.evalJS<number>(
             `(function () {
+              var seeded = ["p1", "p2", "p3", "p4", "pLens"];
               var panes = Array.from(document.querySelectorAll('.tug-pane'));
               var fresh = panes.filter(function (el) {
-                var id = el.getAttribute("data-pane-id");
-                return id !== "p1" && id !== "p2" && id !== "pLens";
+                return seeded.indexOf(el.getAttribute("data-pane-id")) === -1;
               });
               return Math.round(fresh[0].getBoundingClientRect().width);
             })()`,
@@ -165,7 +183,7 @@ describe.skipIf(!SHOULD_RUN)(
                   return Math.round(el.getBoundingClientRect().width);
                 })`,
             ),
-          ).toEqual([COMFY, COMFY, COMFY]);
+          ).toEqual([COMFY, COMFY, COMFY, COMFY, COMFY]);
         } finally {
           await app.close();
         }

@@ -50,7 +50,6 @@ import type { MovePaneOptions } from "@/deck-manager-store";
 import {
   imposeStyle,
   imposeSidebarStyle,
-  clampSidebarSplit,
   sidebarWidthProperty,
   type SidebarSide,
   IMPOSITION_GAP_PX,
@@ -2431,9 +2430,7 @@ export function TugPane({
         // vertical run, also taking only its width from the store. A free pane
         // uses its stored left/top/width/height. [L06]/[L09]
         ...(sidebarSide !== undefined
-          ? imposeSidebarStyle(sidebarSide, renderWidth, {
-              stack: sidebarStack,
-            })
+          ? imposeSidebarStyle(sidebarSide, renderWidth)
           : imposed && placement !== undefined
             ? imposeStyle(placement, renderWidth)
             : {

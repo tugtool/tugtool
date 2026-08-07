@@ -78,11 +78,11 @@
  *
  * One number can. The pinned sidebar rails are the band's other ends, so their
  * total width and the band's are the same quantity read from opposite sides.
- * The **space allocator** ({@link allocateSidebarWidths}) flexes them within
- * {@link LENS_FLEX_GROW_FRACTION} / {@link LENS_FLEX_SHRINK_FRACTION} of the
- * width the user chose, and picks the value that puts every seam in the chain
- * on one imposition gap — a closed-form least-squares fit, since each seam is
- * linear in the band.
+ * The **space allocator** ({@link allocateSidebarWidths}) stands every rail at
+ * ONE shared width — as wide as a slim content card, as narrow as
+ * {@link LENS_FLEX_SHRINK_FRACTION} under the width the user chose — picking
+ * the value that puts every seam in the chain on one imposition gap: a
+ * closed-form least-squares fit, since each seam is linear in the band.
  *
  * **Two moments, and one licence.** The deck re-solves when the user clicks in
  * the Layouts section, and when the canvas comes to rest at a new size. Those
@@ -643,26 +643,19 @@ export function imposeStyle(
  * ---------------------------------------------------------------------------*/
 
 /**
- * How far the allocator may flex the Lens from the width the user chose, as a
- * fraction of it. Asymmetric on purpose: the Lens may grow further than it may
- * shrink.
+ * How far the allocator may shrink a rail under the width the user chose, as a
+ * fraction of it.
  *
- * The two directions are not the same gesture. Growing the Lens spends slack
- * the deck had lying between the cards, and the rail has more to show for the
- * room; shrinking it takes room away from a surface the user sized to hold
- * content, which is felt much sooner. A third up and a fifth down is what those
- * two costs are worth against each other.
+ * The two directions are deliberately not symmetric, because they are not the
+ * same gesture. Growing a rail spends slack the deck had lying between the
+ * cards, so its ceiling is generous: a rail may stand as wide as a SLIM
+ * content card, carried in as {@link AllocatorInput.maxRailWidth}. Shrinking
+ * takes room away from a surface the user sized to hold content, which is
+ * felt much sooner, so the low end stays a fifth under the chosen width.
  *
- * The size of the allowance is what decides how much of a window resize the
- * deck can absorb — the whole travel between the two ends is the budget the
- * solve has to work in — so it is a bigger number than a "nudge" would want.
- *
- * {@link RailPolicy.minWidth} clips the low end independently, so widening this
- * cannot push a rail under its floor.
+ * {@link RailPolicy.minWidth} clips the low end independently, so a rail is
+ * never shrunk under its floor.
  */
-export const LENS_FLEX_GROW_FRACTION = 0.35;
-
-/** @see LENS_FLEX_GROW_FRACTION */
 export const LENS_FLEX_SHRINK_FRACTION = 0.2;
 
 /**
@@ -685,14 +678,16 @@ export const RESIZE_RETUNE_QUIET_MS = 200;
 export const ALLOCATOR_RESIDUAL_TOLERANCE_PX = 2;
 
 /**
- * One rail's flex policy: the width the user chose, which its allowance is
- * centred on, and the hard floor it may not cross.
+ * One rail's flex policy: the width the user chose, which sets how far the
+ * allocator may shrink it, and the hard floor it may not cross.
  *
  * A rail shared by a stack carries the TIGHTEST floor among its members — a
  * rail is one width, so a floor binding on either card binds the rail.
  */
 export interface RailPolicy {
-  /** The width the user chose, which the flex range is centred on. */
+  /** The width the user chose. The allocator may not shrink the rail more
+   *  than {@link LENS_FLEX_SHRINK_FRACTION} under it; growth is bounded by
+   *  {@link AllocatorInput.maxRailWidth} instead, which every rail shares. */
   preferredWidth: number;
   /** The hard floor this rail may not go below. */
   minWidth: number;
@@ -716,6 +711,14 @@ export interface AllocatorInput {
   occupied: readonly { slot: number; width: number }[];
   /** The rails standing on the deck's edges, at most one per side. */
   rails: { left?: RailPolicy; right?: RailPolicy };
+  /**
+   * The widest any rail may stand, in pixels — the ceiling every rail shares,
+   * the way the shrink floor is each rail's own. The deck passes
+   * {@link CONTENT_WIDTH_SLIM_PX}: a rail may be as wide as a slim content
+   * card and no wider, whatever Card Width the deck is set to — a sidebar is
+   * a reading surface, and a comfy- or wide-sized one is absurd on its face.
+   */
+  maxRailWidth: number;
 }
 
 /** The sides carrying a rail, left before right — the order every per-rail sum
@@ -775,10 +778,12 @@ function railsOf(widths: RailWidths): readonly SidebarRail[] {
  *   B* = Σ aⱼ(gap − cⱼ) / Σ aⱼ²        T* = canvasWidth − (R + 2)·gap − B*
  * ```
  *
- * `T*` is the rails' TOTAL. With more than one rail standing, that total is
- * shared out as **one delta applied equally to every rail** rather than as a
- * per-rail solve: the rails move together or not at all, and each rail's
- * allowance becomes a bound on the single shared delta.
+ * `T*` is the rails' TOTAL. That total is shared out as **one width every rail
+ * stands at** — `T* / R` — never as per-rail solves: the sidebars are a uniform
+ * class the way content cards are, and an arrangement is not allowed to answer
+ * with two rails at two widths. Each rail's shrink floor becomes a bound on
+ * the single shared width; the ceiling — the slim content width — is one
+ * bound they already share.
  *
  * For the common case — uniform card widths at an even stride, e.g. five-up
  * with slots 1, 3 and 5 — the fit is exact and every seam lands on the gap.
@@ -794,8 +799,9 @@ function railsOf(widths: RailWidths): readonly SidebarRail[] {
  * are:
  *
  *   1. solve for the total the seams want,
- *   2. share it out as one delta, clamped to what every allowance permits,
- *   3. keep it only if every seam at those widths lands within
+ *   2. share it out as one width, clamped between the tightest shrink floor
+ *      and the slim-width ceiling,
+ *   3. keep it only if every seam at that width lands within
  *      {@link ALLOCATOR_RESIDUAL_TOLERANCE_PX} of the gap; otherwise `null`.
  *
  * `null` means *leave every rail exactly where it is*. There is no fallback
@@ -821,45 +827,39 @@ function railsOf(widths: RailWidths): readonly SidebarRail[] {
 export function allocateSidebarWidths(input: AllocatorInput): RailWidths | null {
   const sides = railSidesOf(input.rails);
   if (sides.length === 0) return null;
+  if (!Number.isFinite(input.maxRailWidth) || input.maxRailWidth <= 0) {
+    return null;
+  }
   const total = solveSidebarWidths(input);
   if (total === null) return null;
 
-  // ONE delta, shared. Each rail's allowance becomes a bound on that one
-  // number, so the interval the delta must land in is the intersection of them
-  // all. Clamping the rails independently would satisfy every allowance and
-  // still break the rule: it hands out unequal deltas, which is the per-card
-  // solve this rule exists to refuse.
-  let preferredTotal = 0;
-  let lowBound = Number.NEGATIVE_INFINITY;
-  let highBound = Number.POSITIVE_INFINITY;
+  // ONE width, shared. Every rail stands at the same number, so each rail's
+  // shrink floor becomes a bound on that one number and the interval the width
+  // must land in is the intersection of them all. Clamping the rails
+  // independently would satisfy every floor and still break the rule: it hands
+  // out unequal widths, which is the per-card solve this rule exists to refuse.
+  let low = 0;
   for (const side of sides) {
     const rail = input.rails[side] as RailPolicy;
     const { preferredWidth, minWidth } = rail;
-    preferredTotal += preferredWidth;
-    const low = Math.max(
+    low = Math.max(
+      low,
       minWidth,
       Math.round(preferredWidth * (1 - LENS_FLEX_SHRINK_FRACTION)),
     );
-    const high = Math.round(preferredWidth * (1 + LENS_FLEX_GROW_FRACTION));
-    lowBound = Math.max(lowBound, low - preferredWidth);
-    highBound = Math.min(highBound, high - preferredWidth);
   }
 
-  // An empty interval means a floor sits above an allowance — a rail whose
-  // preferred width is under its own minimum. The floor wins: it is a width
-  // below which the rail cannot paint its contents at all, while the allowance
-  // is only a policy about how far the deck may move under the user.
-  const wanted = (total - preferredTotal) / sides.length;
-  const delta =
-    lowBound > highBound
-      ? lowBound
-      : Math.min(highBound, Math.max(lowBound, wanted));
+  // A ceiling under the floor means a floor above the slim width — a rail
+  // that cannot paint its contents at any width the ceiling permits. The
+  // floor wins: it is a width below which the rail cannot paint at all,
+  // while the ceiling is only a policy about how wide the deck may stand a
+  // rail.
+  const high = Math.max(low, Math.round(input.maxRailWidth));
+  const wanted = total / sides.length;
+  const width = Math.round(Math.min(high, Math.max(low, wanted)));
 
   const widths: RailWidths = {};
-  for (const side of sides) {
-    const rail = input.rails[side] as RailPolicy;
-    widths[side] = Math.round(rail.preferredWidth + delta);
-  }
+  for (const side of sides) widths[side] = width;
   return worstSeamError(input, widths) <= ALLOCATOR_RESIDUAL_TOLERANCE_PX
     ? widths
     : null;
