@@ -4291,10 +4291,7 @@ mod tests {
     }
 
     impl AgentWorkerSpawner for FakeAgent {
-        fn spawn(
-            &self,
-            _model: String,
-        ) -> Result<tokio::sync::mpsc::Sender<TurnRequest>, String> {
+        fn spawn(&self, _model: String) -> Result<tokio::sync::mpsc::Sender<TurnRequest>, String> {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<TurnRequest>(8);
             let inner = Arc::clone(&self.inner);
             tokio::spawn(async move {

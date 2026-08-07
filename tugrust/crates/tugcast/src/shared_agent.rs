@@ -376,7 +376,11 @@ impl SharedAgentPool {
                 return false;
             }
             if w.idle() && now.duration_since(*w.last_used.lock().unwrap()) >= IDLE_REAP {
-                info!(agent = self.spec.name, worker = w.id, "shared agent worker reaped");
+                info!(
+                    agent = self.spec.name,
+                    worker = w.id,
+                    "shared agent worker reaped"
+                );
                 return false;
             }
             true
@@ -592,7 +596,10 @@ impl AgentWorkerSpawner for ClaudeAgentWorkerSpawner {
             }
         })?;
         let stdin = child.stdin.take().ok_or("shared agent worker: no stdin")?;
-        let stdout = child.stdout.take().ok_or("shared agent worker: no stdout")?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or("shared agent worker: no stdout")?;
         let stderr = child.stderr.take();
 
         let (tx, rx) = mpsc::channel::<TurnRequest>(8);
@@ -626,7 +633,10 @@ async fn drive_worker(
             let _ = reply.send(Err("shared agent turn could not be encoded".to_string()));
             continue;
         };
-        if stdin.write_all(format!("{line}\n").as_bytes()).await.is_err()
+        if stdin
+            .write_all(format!("{line}\n").as_bytes())
+            .await
+            .is_err()
             || stdin.flush().await.is_err()
         {
             let _ = child.start_kill();
@@ -1359,7 +1369,10 @@ mod tests {
                 .run_classify("ls".to_string(), None)
                 .await
                 .expect_err("refusal");
-            assert!(error.contains("did not name a label"), "{answer:?}: {error}");
+            assert!(
+                error.contains("did not name a label"),
+                "{answer:?}: {error}"
+            );
         }
         // A label anywhere in the answer, named once, is the verdict.
         for (answer, expected) in [
@@ -1382,9 +1395,12 @@ mod tests {
     async fn a_grammar_picks_the_documentation_wording_and_is_substituted() {
         let fake = FakeSpawner::always(Ok("SHELL".to_string()));
         let pool = pool(Arc::clone(&fake), 2);
-        pool.run_classify("curl -sS x".to_string(), Some("usage: curl [options]".to_string()))
-            .await
-            .expect("ok");
+        pool.run_classify(
+            "curl -sS x".to_string(),
+            Some("usage: curl [options]".to_string()),
+        )
+        .await
+        .expect("ok");
         assert_eq!(
             fake.turns_seen().as_slice(),
             ["CLASSIFY-DOC usage: curl [options]\n\ncurl -sS x"],
@@ -1460,9 +1476,11 @@ mod tests {
             assert!(text.contains("SHELL") && text.contains("PROMPT"), "{name}");
             assert!(text.contains("answer PROMPT"), "{name} keeps the asymmetry");
         }
-        assert!(job("classify_with_grammar")
-            .instructions
-            .contains(GRAMMAR_PLACEHOLDER));
+        assert!(
+            job("classify_with_grammar")
+                .instructions
+                .contains(GRAMMAR_PLACEHOLDER)
+        );
         assert!(!job("classify").instructions.contains(GRAMMAR_PLACEHOLDER));
 
         // The register rules `headline_register_report` and `ground_headline`
@@ -1525,7 +1543,10 @@ mod tests {
             .await
             .expect("a warm classify answers");
         let warm_ms = started.elapsed().as_millis();
-        assert_eq!(verdict, "shell", "an unambiguous command routes to the shell");
+        assert_eq!(
+            verdict, "shell",
+            "an unambiguous command routes to the shell"
+        );
         assert!(
             started.elapsed() < CLASSIFY_TIMEOUT,
             "a warm classify took {warm_ms}ms, past the {CLASSIFY_TIMEOUT:?} budget",
@@ -1537,7 +1558,10 @@ mod tests {
             .run("summarize", digest.to_string())
             .await
             .expect("a summarize answers");
-        assert!(!headline.trim().is_empty(), "an empty headline is a failure");
+        assert!(
+            !headline.trim().is_empty(),
+            "an empty headline is a failure"
+        );
     }
 
     #[test]

@@ -874,13 +874,7 @@ async fn run_dispatcher(
                 tug_session_id,
                 line,
                 grammar,
-            } => spawn_shell_classify(
-                output.clone(),
-                agent.clone(),
-                tug_session_id,
-                line,
-                grammar,
-            ),
+            } => spawn_shell_classify(output.clone(), agent.clone(), tug_session_id, line, grammar),
         }
     }
 

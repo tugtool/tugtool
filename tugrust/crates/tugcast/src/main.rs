@@ -17,7 +17,6 @@ mod fs_stat;
 mod fs_write;
 mod host;
 mod ledger_integrity;
-mod shared_agent;
 /// Crate-root path utilities (firmlink/synthetic/symlink resolution). Lives
 /// at the root, not under `feeds/`, because both `feeds` (file watching) and
 /// `session_ledger` (storage) depend on it — keeping it a leaf avoids a
@@ -30,6 +29,7 @@ mod scribe;
 mod server;
 mod session_ledger;
 mod session_metadata_merge;
+mod shared_agent;
 mod shell_ledger;
 mod snippets;
 mod terminal_registry;
@@ -1300,12 +1300,9 @@ async fn main() {
         Arc::new(move || {
             bank.as_ref()
                 .and_then(|b| {
-                    b.get(
-                        shared_agent::SHARED_AGENT_DOMAIN,
-                        shared_agent::MODEL_KEY,
-                    )
-                    .ok()
-                    .flatten()
+                    b.get(shared_agent::SHARED_AGENT_DOMAIN, shared_agent::MODEL_KEY)
+                        .ok()
+                        .flatten()
                 })
                 .and_then(|v| match v {
                     tugbank_core::Value::String(s) if !s.trim().is_empty() => Some(s),
@@ -1460,10 +1457,7 @@ async fn main() {
         let overview_tenant: Arc<dyn Fn() -> bool + Send + Sync> = {
             let bank = bank_client.clone();
             Arc::new(move || {
-                shared_agent::tenant_enabled(
-                    bank.as_deref(),
-                    shared_agent::PULSE_OVERVIEW_KEY,
-                )
+                shared_agent::tenant_enabled(bank.as_deref(), shared_agent::PULSE_OVERVIEW_KEY)
             })
         };
         let identity = feeds::session_overview::SessionIdentity {

@@ -376,13 +376,11 @@ mod tests {
 
         // The verb answers on a spawned task, so the frame arrives after
         // dispatch returns.
-        let frame = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            client_action_rx.recv(),
-        )
-        .await
-        .expect("a verdict frame arrives")
-        .expect("broadcast alive");
+        let frame =
+            tokio::time::timeout(std::time::Duration::from_secs(5), client_action_rx.recv())
+                .await
+                .expect("a verdict frame arrives")
+                .expect("broadcast alive");
         let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
         assert_eq!(body["action"], "shared_agent_classify_result");
         assert_eq!(body["ok"], true);
@@ -419,13 +417,11 @@ mod tests {
         )
         .await;
 
-        let frame = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            client_action_rx.recv(),
-        )
-        .await
-        .expect("a frame arrives")
-        .expect("broadcast alive");
+        let frame =
+            tokio::time::timeout(std::time::Duration::from_secs(5), client_action_rx.recv())
+                .await
+                .expect("a frame arrives")
+                .expect("broadcast alive");
         let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
         assert_eq!(body["action"], "shared_agent_classify_result");
         assert_eq!(body["ok"], false);

@@ -1075,7 +1075,10 @@ impl TestWs {
                 }
                 Ok(Some(Ok(_))) => continue,
                 Ok(Some(Err(e))) => {
-                    return (out, Some(format!("collect_code_output: ws recv error: {e}")));
+                    return (
+                        out,
+                        Some(format!("collect_code_output: ws recv error: {e}")),
+                    );
                 }
                 Ok(None) => return (out, Some("collect_code_output: ws closed".into())),
                 Err(_) => return (out, Some("collect_code_output: timed out".into())),
