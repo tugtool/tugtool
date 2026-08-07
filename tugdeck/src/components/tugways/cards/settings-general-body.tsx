@@ -36,23 +36,13 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
-import { TUG_ACTIONS } from "../action-vocabulary";
-import { commandShortcut, keymapRegistry } from "../keymap-registry";
 import { TugBox } from "../tug-box";
 import { TugLabel } from "../tug-label";
-import { TugChoiceGroup } from "../tug-choice-group";
 import { TugFileChooser } from "../tug-file-chooser";
 import { useResponderForm } from "../use-responder-form";
-import {
-  normalizeStackChord,
-  stackChordStore,
-  useStackChord,
-} from "@/stack-chord-store";
 import { useHostFacts } from "@/lib/host-facts-store";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import { probeDirExistence } from "@/lib/dir-existence";
@@ -135,25 +125,7 @@ export function SettingsGeneralBody() {
     [stored],
   );
 
-  // Which Window-menu item owns ⌘R. The store is the value's home — the host
-  // reads it off the menu-state push — so the control writes straight through
-  // and re-reads it, never holding a copy that could settle out of step.
-  const stackChord = useStackChord();
-  const stackChordId = useId();
-  // The chord this setting is about, read from whichever of the two commands
-  // currently holds it rather than spelled here — this pane is the one place
-  // that can move it, so it is the last place that should carry a copy ([P11]).
-  // The registry is a subscription ([L02]) so a live rebind repaints the copy;
-  // `undefined` means the command is unbound and the copy names no chord.
-  useSyncExternalStore(keymapRegistry.subscribe, keymapRegistry.getSnapshot, () => 0);
-  const stackChordGlyph = commandShortcut(
-    stackChord === "reveal" ? TUG_ACTIONS.REVEAL_STACK : TUG_ACTIONS.CYCLE_STACK,
-  );
-  const { ResponderScope, responderRef } = useResponderForm({
-    selectValue: {
-      [stackChordId]: (v: string) => stackChordStore.setChord(normalizeStackChord(v)),
-    },
-  });
+  const { ResponderScope, responderRef } = useResponderForm({});
 
   return (
     <ResponderScope>
@@ -189,41 +161,6 @@ export function SettingsGeneralBody() {
           </TugLabel>
         </TugBox>
 
-        <TugBox
-          label="Stacked Panes"
-          labelPosition="legend"
-          variant="bordered"
-          className="settings-general-group"
-        >
-          <TugChoiceGroup
-            size="sm"
-            senderId={stackChordId}
-            value={stackChord}
-            aria-label="What Command-R does to a stack of panes"
-            data-testid="settings-stack-chord"
-            items={[
-              {
-                value: "cycle",
-                label:
-                  stackChordGlyph === undefined
-                    ? "Cycle the stack"
-                    : `${stackChordGlyph} cycles the stack`,
-              },
-              {
-                value: "reveal",
-                label:
-                  stackChordGlyph === undefined
-                    ? "Show the stack menu"
-                    : `${stackChordGlyph} shows the stack menu`,
-              },
-            ]}
-          />
-          <TugLabel size="sm" emphasis="calm" className="settings-general-hint">
-            {stackChord === "cycle"
-              ? `${stackChordGlyph === undefined ? "Cycling" : stackChordGlyph} brings the pane buried longest to the front. The picker stays on the title-bar badge and on ⌘-click.`
-              : `${stackChordGlyph === undefined ? "Revealing" : stackChordGlyph} opens the title-bar picker so you can read the stack before choosing.`}
-          </TugLabel>
-        </TugBox>
       </div>
     </ResponderScope>
   );

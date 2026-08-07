@@ -255,9 +255,13 @@ export const TUG_ACTIONS = {
 
   // ---- Navigation ----
   //
-  // CYCLE_CARD:     payload — none. Canvas-level: rotate through cards.
-  // PREVIOUS_TAB:   payload — none. Card-level: switch to previous tab.
-  // NEXT_TAB:       payload — none. Card-level: switch to next tab.
+  // PREVIOUS_TAB:   payload — none. Step to the previous card in the
+  //                 deck's lateral ring: every tab of every visible pane
+  //                 (front of each slot / rail, plus free panes), one
+  //                 ring. Within a pane it is a tab switch; at a pane's
+  //                 first tab it crosses into the previous pane's last.
+  //                 Handled by the deck canvas, which owns the geometry.
+  // NEXT_TAB:       payload — none. The lateral ring's other direction.
   // FOCUS_NEXT:     payload — none. Move keyboard focus to the next
   //                 focusable responder. NOTE: no handler yet —
   //                 ⇥/⇧⇥ are deferred per the A3 / R4 retrospective.
@@ -292,18 +296,26 @@ export const TUG_ACTIONS = {
   //                 single-valued in both directions. The host validates
   //                 the item disabled below depth 2, so an inert press
   //                 never reaches here.
-  // CYCLE_STACK:    payload — none. Bring the pane that has been buried
+  // NEXT_STACK_CARD: payload — none. Bring the pane that has been buried
   //                 longest in the focused pane's slot to the front — the
-  //                 no-look counterpart to REVEAL_STACK, showing a card
-  //                 rather than a menu. Optionally on ⌘R (Window ▸ Cycle
-  //                 Stack); answered by the pane, which raises the LAST
-  //                 entry of the `slotStack` it already renders its badge
-  //                 from. Raising the bottom-most is what makes repeated
-  //                 presses a ring: each raise sends the outgoing pane to
-  //                 the back, so a depth-N slot returns home after N
-  //                 presses. It is also ⌘`'s convention for windows. The
-  //                 host validates the item disabled below depth 2, so an
-  //                 inert press never reaches here.
+  //                 depth axis of card navigation, the no-look counterpart
+  //                 to REVEAL_STACK. ⌥⌘] (Window ▸ Next Card in Stack);
+  //                 answered by the pane, which raises the LAST entry of
+  //                 the `slotStack` it already renders its badge from.
+  //                 Raising the bottom-most is what makes repeated presses
+  //                 a ring: each raise sends the outgoing pane to the
+  //                 back, so a depth-N slot returns home after N presses.
+  //                 It is also ⌘`'s convention for windows. The host
+  //                 validates the item disabled below depth 2, so an inert
+  //                 press never reaches here.
+  // PREVIOUS_STACK_CARD: payload — none. The exact inverse: send the
+  //                 focused pane to the back of its slot's stack, fronting
+  //                 the pane beneath it. ⌥⌘[ (Window ▸ Previous Card in
+  //                 Stack); answered by the pane, which demotes itself via
+  //                 `sendPaneBehind` and activates the next entry — a true
+  //                 rotation, so NEXT undoes PREVIOUS at every depth
+  //                 (raising the second-from-top instead would ping-pong).
+  //                 Same depth-2 gate as its pair.
   // SELECT_COMPOSER_ROUTE: payload — `value: "prompt" | "changes"`. Select
   //                 one of the composer's two routes directly (as opposed to
   //                 TOGGLE_CHANGES_VIEW, which flips between them). Bound to
@@ -419,7 +431,6 @@ export const TUG_ACTIONS = {
   //                 (disengages follow-bottom); LAST_TURN drives
   //                 `scrollToBottom` (re-engages follow-bottom at the
   //                 live edge).
-  CYCLE_CARD:     "cycle-card",
   PREVIOUS_TAB:   "previous-tab",
   NEXT_TAB:       "next-tab",
   FOCUS_NEXT:     "focus-next",
@@ -427,7 +438,8 @@ export const TUG_ACTIONS = {
   FOCUS_PROMPT:   "focus-prompt",
   MOVE_TO_SLOT:   "move-to-slot",
   REVEAL_STACK:   "reveal-stack",
-  CYCLE_STACK:    "cycle-stack",
+  PREVIOUS_STACK_CARD: "previous-stack-card",
+  NEXT_STACK_CARD: "next-stack-card",
   SELECT_COMPOSER_ROUTE: "select-composer-route",
   CYCLE_PERMISSION_MODE: "cycle-permission-mode",
   SET_PERMISSION_MODE: "set-permission-mode",
@@ -687,16 +699,12 @@ export const TUG_ACTIONS = {
   // CLEAR_RECENT_DOCUMENTS:  payload — none. Empty the MRU list and
   //                          re-publish it to the host. File ▸ Open Recent
   //                          ▸ Clear Menu.
-  // ARRANGE_CARDS:           payload — `{ mode: "cascade" | "tile" }`.
-  //                          Rearrange every pane on the canvas.
-  //                          Window ▸ Cascade / Tile.
   // FOCUS_PANE:              payload — `{ paneId: string }`. Bring a pane
   //                          to front through the full activation
   //                          transition. The Window menu's pane list.
   NEW_TEXT_CARD:          "new-text-card",
   OPEN_QUICKLY:           "open-quickly",
   CLEAR_RECENT_DOCUMENTS: "clear-recent-documents",
-  ARRANGE_CARDS:          "arrange-cards",
   FOCUS_PANE:             "focus-pane",
 
   // ---- Commit mode ----

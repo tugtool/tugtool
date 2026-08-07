@@ -26,7 +26,7 @@
  * make every rebind a read-modify-write of the whole keymap.
  *
  * Persistence rides tugbank defaults (`dev.tugtool.keymap`), the same feed as
- * the theme and the stack chord; there is no `localStorage`. Boot seeds from
+ * the theme; there is no `localStorage`. Boot seeds from
  * the DEFAULTS snapshot before `initHostMenuState`, because the host reads
  * chords off the first menu-state push. A remote write arrives through the
  * DEFAULTS push and is applied with `persist: false` to avoid an echo loop.

@@ -37,7 +37,6 @@ Posted by the aggregator; parsed by `AppDelegate`'s `MenuState` struct. **Keep b
   },
   "selectionActive": true,         // a card is selected; false on a deselected deck
   "stackDepth": 2,                 // panes sharing the focused pane's slot
-  "stackChord": "cycle",           // which slot-stack command the user wants ⌘R on
   "session": {                     // null unless the active card is a session card
     "cardId": "…",
     "sessionBound": true,
@@ -95,7 +94,7 @@ Swift distinguishes the first two by the key's *presence*, since an explicit JSO
 
 ### Publication discipline
 
-- The deck half comes from the aggregator's own `DeckManager` subscription (wired once at boot in `main.tsx`), plus subscriptions to `cardSessionBindingStore`, `cardTitleStore`, `stackChordStore`, and the keymap registry — every store a gate reads but the deck cannot see.
+- The deck half comes from the aggregator's own `DeckManager` subscription (wired once at boot in `main.tsx`), plus subscriptions to `cardSessionBindingStore`, `cardTitleStore`, and the keymap registry — every store a gate reads but the deck cannot see.
 - The `session` and `file` blocks are published by their cards' menu-state effects, which **subscribe to the stores directly** ([L22]) — publication is a side effect, not a render derivation. Every card publishes unconditionally; the aggregator decides which block rides the payload.
 - The `edit` block and the `commands` block are computed in one place, from one chain walk, in the flush. A caller that could refresh one without the other would be able to make them disagree.
 - **Undo / Redo stay two-path.** For chain editors (CM6) the items round-trip `undo`/`redo` control frames into the focused editor's own history, with depth-accuracy from `validateAction` and a menu noun from the editor's label registry. For browser-native text controls (`nativeUndoToken` non-zero) the host validates LIVE from `webView.undoManager` and executes the native selectors — the only route to a native input's undo stack — kept card-safe by clearing that stack on every token change.
@@ -159,7 +158,6 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⇧⌘G | `find-previous` | Find Previous | JS, global |
 | ⇧⌘S | `save-as` | Save As… | menu bar (swept) |
 | ⇧⌘Z | `redo` | Redo | JS, global |
-| ⌃` | `cycle-card` | Cycle Panes | JS, global |
 | ⌃⇧⌘A | `disclaim-all-changes` | Disclaim All Changes | JS, responder |
 | ⌃⌘A | `claim-all-changes` | Claim All Changes | JS, responder |
 | ⌃⌘C | `toggle-changes-view` | Show Session Changes | JS, global |
@@ -199,7 +197,7 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌘L | `focus-lens` | Focus Lens | JS, global |
 | ⌘M | `minimize` | Minimize | menu bar (AppKit's own) |
 | ⌘Q | `quit-application` | Quit Tug | menu bar (AppKit's own) |
-| ⌘R | `cycle-stack` | Cycle Stack | menu bar (swept) |
+| ⌘R | `reveal-stack` | Reveal Stack | menu bar (swept) |
 | ⌘S | `save` | Save… | JS, global |
 | ⌘T | `add-card-to-active-pane` | New Card in Active Pane | JS, global |
 | ⌘V | `paste` | Paste | menu bar (AppKit's own) |
@@ -217,6 +215,8 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌥⌘H | `hide-others` | Hide Others | menu bar (AppKit's own) |
 | ⌥⌘V | `paste-as-quote` | Paste as Quote | JS, global |
 | ⌥⌘W | `close-all` | Close All Tabs | JS, global |
+| ⌥⌘[ | `previous-stack-card` | Previous Card in Stack | JS, global |
+| ⌥⌘] | `next-stack-card` | Next Card in Stack | JS, global |
 | ⌥⌘↑ | `previous-turn` | Previous Turn | menu bar (swept) |
 | ⌥⌘↓ | `next-turn` | Next Turn | menu bar (swept) |
 | ⎋ | `cancel-dialog` | Cancel | JS, global |
@@ -313,12 +313,12 @@ Every menu item, the command behind it, and where each answer comes from. Genera
 | `view.previousKeyboardFocus` | `previous-keyboard-focus` | registered handler | host tier |
 | `view.zoomIn` | `zoom-in` | first responder | host tier |
 | `view.zoomOut` | `zoom-out` | first responder | host tier |
-| `window.cyclePanes` | `cycle-card` | first responder | registry gate |
-| `window.cycleStack` | `cycle-stack` | first responder | registry gate |
 | `window.enterFullScreen` | `toggle-full-screen` | AppKit performs it | host tier |
 | `window.minimize` | `minimize` | AppKit performs it | host tier |
 | `window.nextCard` | `next-tab` | first responder | registry gate |
+| `window.nextCardInStack` | `next-stack-card` | first responder | registry gate |
 | `window.previousCard` | `previous-tab` | first responder | registry gate |
+| `window.previousCardInStack` | `previous-stack-card` | first responder | registry gate |
 | `window.revealStack` | `reveal-stack` | first responder | registry gate |
 | `window.zoom` | `zoom-window` | AppKit performs it | host tier |
 <!-- /generated:catalog -->

@@ -296,11 +296,12 @@ describe("computeCommandCapabilities", () => {
     const chain = new ResponderChainManager();
 
     // One pane, one card, selected: nowhere to navigate, nothing to close all
-    // of, and no stack to cycle.
+    // of, and no stack to rotate.
     const single = computeCommandCapabilities(
       source(chain, {
         paneCount: 1,
         focusedPaneCardCount: 1,
+        visibleCardCount: 1,
         focusedPaneActiveCardClosable: true,
         selectionActive: true,
         stackDepth: 1,
@@ -309,8 +310,8 @@ describe("computeCommandCapabilities", () => {
     expect(single["file.closeCard"].enabled).toBe(true);
     expect(single["file.closeAllCardTabs"].enabled).toBe(false);
     expect(single["window.nextCard"].enabled).toBe(false);
-    expect(single["window.cyclePanes"].enabled).toBe(false);
-    expect(single["window.cycleStack"].enabled).toBe(false);
+    expect(single["window.nextCardInStack"].enabled).toBe(false);
+    expect(single["window.revealStack"].enabled).toBe(false);
 
     // Same deck, deselected by a canvas click: navigation stays live so the
     // user can re-enter a card without the mouse.
@@ -318,15 +319,17 @@ describe("computeCommandCapabilities", () => {
       source(chain, {
         paneCount: 1,
         focusedPaneCardCount: 0,
+        visibleCardCount: 1,
         selectionActive: false,
         stackDepth: 0,
       }),
     );
     expect(deselected["window.nextCard"].enabled).toBe(true);
-    expect(deselected["window.cyclePanes"].enabled).toBe(true);
     // The stack items take no such hatch: they act on a specific pane's
     // stack, and there is no such pane.
-    expect(deselected["window.cycleStack"].enabled).toBe(false);
+    expect(deselected["window.nextCardInStack"].enabled).toBe(false);
+    expect(deselected["window.previousCardInStack"].enabled).toBe(false);
+    expect(deselected["window.revealStack"].enabled).toBe(false);
   });
 
   test("the save family follows the frontmost Text card's gates", () => {

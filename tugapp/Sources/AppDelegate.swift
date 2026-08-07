@@ -1202,24 +1202,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         wMenu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m").identified("window.minimize"))
         wMenu.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "").identified("window.zoom"))
         wMenu.addItem(NSMenuItem.separator())
-        wMenu.addItem(NSMenuItem(title: "Cascade", action: #selector(cascadeCards(_:)), keyEquivalent: "c", modifierMask: [.control, .option]).identified("window.cascade"))
-        wMenu.addItem(NSMenuItem(title: "Tile", action: #selector(tileCards(_:)), keyEquivalent: "t", modifierMask: [.control, .option]).identified("window.tile"))
-        wMenu.addItem(NSMenuItem.separator())
-        // Card / pane navigation — chain round-trips for the chords AppKit
-        // now swallows at the menu bar (⇧⌘[ / ⇧⌘] / ⌃`).
+        // Card navigation — one relationship, two axes. Previous/Next Card
+        // walk the deck's visible cards side to side (every tab of every
+        // front pane, one ring); Previous/Next Card in Stack rotate the
+        // focused pane's slot stack front to back. The chords say the same
+        // thing: ⇧⌘[/] for the lateral pair (macOS tab convention), ⌥⌘[/]
+        // for the depth pair — ⌥ as the variant operator, same keys, other
+        // axis. All four are chain round-trips for chords AppKit swallows
+        // at the menu bar.
         wMenu.addItem(NSMenuItem(title: "Previous Card", action: #selector(previousCard(_:)), keyEquivalent: "[", modifierMask: [.command, .shift]).identified("window.previousCard"))
         wMenu.addItem(NSMenuItem(title: "Next Card", action: #selector(nextCard(_:)), keyEquivalent: "]", modifierMask: [.command, .shift]).identified("window.nextCard"))
-        wMenu.addItem(NSMenuItem(title: "Cycle Panes", action: #selector(cyclePanes(_:)), keyEquivalent: "`", modifierMask: [.control]).identified("window.cyclePanes"))
-        // A slot is a stack of panes, only the top one visible. Two ways to
-        // switch: Cycle brings the buried-longest pane straight forward (no
-        // menu, so the chord can be repeated without looking — a depth-N slot
-        // is home again after N presses), while Reveal opens the focused
-        // pane's picker to be read before choosing. Both live here rather than
-        // in the keybinding map because AppKit resolves a menu key equivalent
-        // before the web view ever sees the keydown. Neither is built with a
-        // chord: which of the two holds ⌘R is a user preference, so the
-        // frontend states it and `applyCommandChords` writes it.
-        wMenu.addItem(NSMenuItem(title: "Cycle Stack", action: #selector(cycleStack(_:)), keyEquivalent: "").identified("window.cycleStack"))
+        wMenu.addItem(NSMenuItem(title: "Previous Card in Stack", action: #selector(previousCardInStack(_:)), keyEquivalent: "[", modifierMask: [.command, .option]).identified("window.previousCardInStack"))
+        wMenu.addItem(NSMenuItem(title: "Next Card in Stack", action: #selector(nextCardInStack(_:)), keyEquivalent: "]", modifierMask: [.command, .option]).identified("window.nextCardInStack"))
+        // Reveal Stack is the depth pair's readable counterpart: it opens
+        // the focused pane's picker to be read before choosing, where the
+        // pair switches without looking. ⌘R rides the JS keymap sweep, and
+        // detaches when the stack has nowhere to go.
         wMenu.addItem(NSMenuItem(title: "Reveal Stack", action: #selector(revealStack(_:)), keyEquivalent: "").identified("window.revealStack"))
         // Anchor separator for the dynamic pane-list slice: pane items are
         // inserted directly after it (and removed by identifier prefix) on
@@ -1415,14 +1413,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // aimed at the title bar).
         window.focusWebView()
         sendControl("focus-lens")
-    }
-
-    @objc private func cascadeCards(_ sender: Any?) {
-        sendControl("arrange-cards", params: ["mode": "cascade"])
-    }
-
-    @objc private func tileCards(_ sender: Any?) {
-        sendControl("arrange-cards", params: ["mode": "tile"])
     }
 
     // The zoom commands go to the frontmost document surface when there is
@@ -1743,16 +1733,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("next-tab")
     }
 
-    @objc private func cyclePanes(_ sender: Any?) {
-        sendControl("cycle-card")
-    }
-
     @objc private func revealStack(_ sender: Any) {
         sendControl("reveal-stack")
     }
 
-    @objc private func cycleStack(_ sender: Any) {
-        sendControl("cycle-stack")
+    @objc private func previousCardInStack(_ sender: Any?) {
+        sendControl("previous-stack-card")
+    }
+
+    @objc private func nextCardInStack(_ sender: Any?) {
+        sendControl("next-stack-card")
     }
 
     /// Write every key equivalent the frontend's keymap states, recursively

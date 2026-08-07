@@ -25,7 +25,6 @@ import React, {
   useCallback,
   useContext,
   useEffect,
-  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -42,7 +41,6 @@ import { getTugZoom } from "@/components/tugways/scale-timing";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useDeckManager } from "@/deck-manager-context";
 import { dispatchCommand } from "@/command-dispatch";
@@ -1095,8 +1093,6 @@ export function TugPane({
     setFrameEl(el);
   }, []);
   const contentRef = useRef<HTMLDivElement>(null);
-  const manager = useRequiredResponderChain();
-  const keyboardTabNavSenderId = useId();
 
   const cardsRef = useRef(cards);
   cardsRef.current = cards;
@@ -1234,57 +1230,6 @@ export function TugPane({
     });
   }, [onClose]);
 
-  // When the deck is deselected (a canvas-background click cleared the active
-  // card), a previous/next-card command lands on this pane's TugPane if its
-  // card is still the stale chain first responder. There is nothing to
-  // navigate to — so re-activate the pane's card instead, restoring its
-  // active state. Returns true when it acted. A no-op when a card is already
-  // active (the normal navigation runs).
-  const reactivateIfDeselected = useCallback((): boolean => {
-    if (store.getSnapshot().activePaneId !== undefined) return false;
-    const activeId = activeCardIdRef.current;
-    if (!activeId) return false;
-    transferFocusForActivation({
-      outgoingCardId: null,
-      incomingCardId: activeId,
-      store,
-      commitMutation: () => store.activateCard(activeId),
-    });
-    return true;
-  }, [store]);
-
-  const handlePreviousTab = useCallback(() => {
-    if (reactivateIfDeselected()) return;
-    const currentCards = cardsRef.current;
-    const currentActiveId = activeCardIdRef.current;
-    if (!currentCards || currentCards.length <= 1 || !currentActiveId) return;
-    const idx = currentCards.findIndex((c) => c.id === currentActiveId);
-    if (idx === -1) return;
-    const prevIdx = (idx - 1 + currentCards.length) % currentCards.length;
-    manager.sendToFirstResponder({
-      action: TUG_ACTIONS.SELECT_TAB,
-      value: currentCards[prevIdx].id,
-      sender: keyboardTabNavSenderId,
-      phase: "discrete",
-    });
-  }, [manager, keyboardTabNavSenderId, reactivateIfDeselected]);
-
-  const handleNextTab = useCallback(() => {
-    if (reactivateIfDeselected()) return;
-    const currentCards = cardsRef.current;
-    const currentActiveId = activeCardIdRef.current;
-    if (!currentCards || currentCards.length <= 1 || !currentActiveId) return;
-    const idx = currentCards.findIndex((c) => c.id === currentActiveId);
-    if (idx === -1) return;
-    const nextIdx = (idx + 1) % currentCards.length;
-    manager.sendToFirstResponder({
-      action: TUG_ACTIONS.SELECT_TAB,
-      value: currentCards[nextIdx].id,
-      sender: keyboardTabNavSenderId,
-      phase: "discrete",
-    });
-  }, [manager, keyboardTabNavSenderId, reactivateIfDeselected]);
-
   // Single-flight latch for the tab-× close guard, so a double-click on a
   // tab's × doesn't stack two sheets.
   const closeTabGuardRunningRef = useRef(false);
@@ -1308,26 +1253,45 @@ export function TugPane({
       [TUG_ACTIONS.REVEAL_STACK]: (_event: ActionEvent) => {
         titleBarRef.current?.revealStack();
       },
-      // The no-look counterpart: switch without reading anything. Nothing
-      // transient is put on screen, so this never reaches the title bar —
-      // the pane raises a peer through the same `onRevealPane` the picker's
-      // rows go through, which is what keeps one raise policy for both.
+      // The depth pair: switch within the slot's stack without reading
+      // anything. Nothing transient is put on screen, so neither reaches the
+      // title bar.
       //
-      // The LAST entry is the one raised: `slotStack` is topmost-first, so
-      // that is the pane buried longest. Raising it is what makes repeated
-      // presses a ring rather than a two-pane ping-pong — every raise sends
-      // the outgoing front pane one place back, so a depth-N slot is home
-      // again after N presses and the user can count instead of look. It is
-      // also what ⌘` does with windows. The raise moves the first responder
-      // to the pane that came up, so the *next* press is answered by that
-      // pane reading its own freshly-ordered stack.
-      [TUG_ACTIONS.CYCLE_STACK]: (_event: ActionEvent) => {
+      // NEXT raises the LAST entry: `slotStack` is topmost-first, so that is
+      // the pane buried longest, raised through the same `onRevealPane` the
+      // picker's rows go through — one raise policy for both. Raising the
+      // bottom-most is what makes repeated presses a ring rather than a
+      // two-pane ping-pong — every raise sends the outgoing front pane one
+      // place back, so a depth-N slot is home again after N presses and the
+      // user can count instead of look. It is also what ⌘` does with
+      // windows. The raise moves the first responder to the pane that came
+      // up, so the *next* press is answered by that pane reading its own
+      // freshly-ordered stack.
+      [TUG_ACTIONS.NEXT_STACK_CARD]: (_event: ActionEvent) => {
         if (slotStack.length <= 1) return;
         const buried = slotStack[slotStack.length - 1];
         if (buried) onRevealPane?.(buried);
       },
-      [TUG_ACTIONS.PREVIOUS_TAB]: (_event: ActionEvent) => handlePreviousTab(),
-      [TUG_ACTIONS.NEXT_TAB]: (_event: ActionEvent) => handleNextTab(),
+      // PREVIOUS is NEXT's exact inverse: this pane leaves the front by
+      // going all the way to the back (`sendPaneBehind` the bottom member),
+      // fronting the entry beneath it — a true rotation, where raising the
+      // second-from-top instead would ping-pong. Focus rides
+      // `transferFocusForActivation` like every other activation path.
+      [TUG_ACTIONS.PREVIOUS_STACK_CARD]: (_event: ActionEvent) => {
+        if (slotStack.length <= 1) return;
+        const next = slotStack[1];
+        const bottom = slotStack[slotStack.length - 1];
+        if (!next || !bottom) return;
+        transferFocusForActivation({
+          outgoingCardId: store.getFirstResponderCardId(),
+          incomingCardId: next.cardId,
+          store,
+          commitMutation: () => {
+            store.sendPaneBehind(stackId, bottom.paneId);
+            store.activateCard(next.cardId);
+          },
+        });
+      },
       [TUG_ACTIONS.SELECT_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
         performSelectCard(event.value);

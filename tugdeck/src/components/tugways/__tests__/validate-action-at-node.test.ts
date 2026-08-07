@@ -63,24 +63,24 @@ describe("validateActionAtNode", () => {
   test("a last-resort responder is honest about what it actually implements", () => {
     // DeckCanvas's shape: `canHandle: () => true` keeps it a dispatch
     // last-resort, while `validateAction` affirms only its real capabilities.
-    const IMPLEMENTED = new Set<string>([TUG_ACTIONS.CYCLE_CARD]);
+    const IMPLEMENTED = new Set<string>([TUG_ACTIONS.NEXT_TAB]);
     const chain = new ResponderChainManager();
     chain.register({
       id: "deck-canvas",
       parentId: null,
       canHandle: () => true,
-      actions: { [TUG_ACTIONS.CYCLE_CARD]: () => {} },
+      actions: { [TUG_ACTIONS.NEXT_TAB]: () => {} },
       validateAction: (action) => IMPLEMENTED.has(action),
     });
 
     // Can-handle answers yes to everything — that is what keeps dispatch
     // from falling off the root.
-    expect(chain.nodeCanHandle("deck-canvas", TUG_ACTIONS.CYCLE_CARD)).toBe(true);
+    expect(chain.nodeCanHandle("deck-canvas", TUG_ACTIONS.NEXT_TAB)).toBe(true);
     expect(chain.nodeCanHandle("deck-canvas", TUG_ACTIONS.SAVE)).toBe(true);
 
     // Enabled-state does not: a control targeting the canvas with an action
     // the canvas merely absorbs is dispatching into a no-op, and now says so.
-    expect(chain.validateActionAtNode("deck-canvas", TUG_ACTIONS.CYCLE_CARD)).toBe(true);
+    expect(chain.validateActionAtNode("deck-canvas", TUG_ACTIONS.NEXT_TAB)).toBe(true);
     expect(chain.validateActionAtNode("deck-canvas", TUG_ACTIONS.SAVE)).toBe(false);
   });
 

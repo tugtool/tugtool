@@ -264,8 +264,8 @@ export function GalleryChainActions() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Chain-Action Buttons</TugLabel>
         <div className="cg-variant-row">
-          <TugButton action="cycle-card">
-            Cycle Card
+          <TugButton action="next-tab">
+            Next Card
           </TugButton>
           <TugButton action="show-component-gallery">
             Show Gallery

@@ -12,7 +12,6 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  applyStackChordPreference,
   commandShortcut,
   commandShortcuts,
   EMPTY_KEYMAP_ENVIRONMENT,
@@ -25,7 +24,6 @@ import {
 import {
   COMMANDS,
   GLOBAL_SCOPE,
-  STACK_CHORD,
   type Chord,
   type CommandEntry,
 } from "../command-registry";
@@ -283,20 +281,26 @@ describe("menuChords", () => {
 
   test("a command handed a chord it never declared releases it again", () => {
     // The claim is what makes a release possible, so it has to survive the
-    // chord that created it. Reveal Stack is the shipped case: it holds ⌘R
-    // only under the preference, and going back has to say so out loud or
-    // the host keeps the key equivalent the preference just took away.
+    // chord that created it: rebinding away (or unbinding) has to say so out
+    // loud or the host keeps a key equivalent the user just took away.
     const local = new KeymapRegistry(COMMANDS);
-    expect("window.revealStack" in local.menuChords()).toBe(false);
+    expect("file.saveACopy" in local.menuChords()).toBe(false);
 
-    local.setBindings(TUG_ACTIONS.REVEAL_STACK, [STACK_CHORD]);
-    expect(local.menuChords()["window.revealStack"]).toEqual({
-      keyEquivalent: "r",
+    local.setBindings(TUG_ACTIONS.SAVE_A_COPY, [
+      {
+        chord: { key: "KeyY", meta: true, label: "y" },
+        scope: GLOBAL_SCOPE,
+        source: "user",
+        menuEligible: true,
+      },
+    ]);
+    expect(local.menuChords()["file.saveACopy"]).toEqual({
+      keyEquivalent: "y",
       command: true,
     });
 
-    local.setBindings(TUG_ACTIONS.REVEAL_STACK, []);
-    expect(local.menuChords()["window.revealStack"]).toBeNull();
+    local.setBindings(TUG_ACTIONS.SAVE_A_COPY, []);
+    expect(local.menuChords()["file.saveACopy"]).toBeNull();
   });
 
   test("a user chord with no menu-bar form detaches instead of throwing", () => {
@@ -404,27 +408,13 @@ describe("commandShortcut", () => {
   });
 });
 
-describe("applyStackChordPreference", () => {
-  test("⌘R sits on Cycle Stack by default", () => {
+describe("the stack chord", () => {
+  test("⌘R sits on Reveal Stack, in the menu bar and in the JS funnel", () => {
     const local = new KeymapRegistry(COMMANDS);
-    applyStackChordPreference("cycle", local);
-    const chords = local.menuChords();
-    expect(chords["window.cycleStack"]).toEqual({ keyEquivalent: "r", command: true });
-    // Absent rather than null: Reveal Stack has never held the chord, and
-    // its item was built without one, so there is nothing to release.
-    expect("window.revealStack" in chords).toBe(false);
-  });
-
-  test("the preference moves the chord, and both sides move with it", () => {
-    // One rewrite, three consumers: the item that gains the chord, the item
-    // that loses it, and the JS lookup. A preference that moved only the
-    // menu bar would leave ⌘R meaning two different things.
-    const local = new KeymapRegistry(COMMANDS);
-    applyStackChordPreference("reveal", local);
-    const chords = local.menuChords();
-    expect(chords["window.revealStack"]).toEqual({ keyEquivalent: "r", command: true });
-    expect(chords["window.cycleStack"]).toBeNull();
-
+    expect(local.menuChords()["window.revealStack"]).toEqual({
+      keyEquivalent: "r",
+      command: true,
+    });
     const event = {
       code: "KeyR",
       ctrlKey: false,
@@ -433,15 +423,6 @@ describe("applyStackChordPreference", () => {
       altKey: false,
     } as KeyboardEvent;
     expect(local.matchChord(event)?.commandId).toBe(TUG_ACTIONS.REVEAL_STACK);
-  });
-
-  test("flipping back restores the default holder", () => {
-    const local = new KeymapRegistry(COMMANDS);
-    applyStackChordPreference("reveal", local);
-    applyStackChordPreference("cycle", local);
-    const chords = local.menuChords();
-    expect(chords["window.cycleStack"]).toEqual({ keyEquivalent: "r", command: true });
-    expect(chords["window.revealStack"]).toBeNull();
   });
 });
 

@@ -39,6 +39,7 @@ import { JOTS_CARD_ID } from "@/lib/jots-card-id";
 import { getJotsStore } from "@/lib/jots-store";
 import { findLensPane, findSidebarPanes } from "@/deck-store-selectors";
 import type { SlotStackEntry } from "@/deck-store-selectors";
+import { stepCardRing } from "@/lib/card-ring";
 import { cardTitleStore } from "@/lib/card-title-store";
 import { paneTitleBarTextFor } from "@/lib/pane-title";
 import type { DeckState, TugPaneState } from "@/layout-tree";
@@ -251,9 +252,8 @@ function readSettleMs(el: HTMLElement): number {
  * through as disabled — keep this set in sync with the actions map.
  */
 const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
-  TUG_ACTIONS.CYCLE_CARD,
-  // Handled here only while deselected (chain FR is the deck-canvas root), to
-  // re-activate a card. A focused pane's TugPane handles them otherwise.
+  // The lateral card ring crosses pane boundaries, so the canvas — the one
+  // responder that can see every pane — owns both directions outright.
   TUG_ACTIONS.PREVIOUS_TAB,
   TUG_ACTIONS.NEXT_TAB,
   TUG_ACTIONS.SHOW_SETTINGS,
@@ -273,7 +273,6 @@ const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
   TUG_ACTIONS.NEW_TEXT_CARD,
   TUG_ACTIONS.OPEN_QUICKLY,
   TUG_ACTIONS.CLEAR_RECENT_DOCUMENTS,
-  TUG_ACTIONS.ARRANGE_CARDS,
   TUG_ACTIONS.FOCUS_PANE,
 ]);
 
@@ -551,26 +550,28 @@ export function DeckCanvas(_props: DeckCanvasProps) {
      */
     validateAction: (action) => DECK_CANVAS_VALIDATED_ACTIONS.has(action),
     actions: {
-      [TUG_ACTIONS.CYCLE_CARD]: (_event: ActionEvent) => {
-        // Deselected deck (canvas-background click cleared the active card) →
-        // re-activate the topmost pane's card instead of cycling. With one
-        // pane this is the whole job; with several it re-focuses the top one.
+      // Previous / Next Card: one step around the lateral card ring — every
+      // tab of every visible pane ([D08]-adjacent by necessity: only this
+      // root sees all panes, so the pane deliberately does not register
+      // these). On a deselected deck the step has no starting point, so
+      // both re-activate the topmost card instead.
+      //
+      // Route through `transferFocusForActivation` so the keystroke path
+      // matches the click-driven activation taxonomy (SAVE outgoing →
+      // commit → resolve incoming → focus transfer). A raw
+      // `store.activateCard(nextId)` flips the composite first-responder
+      // bit but skips the focus-transfer step, leaving the caret in the
+      // now-inactive card. `activateCard` both raises the target's pane
+      // and makes the target its pane's active tab, so the one call
+      // serves the within-pane and cross-pane steps alike.
+      [TUG_ACTIONS.PREVIOUS_TAB]: (_event: ActionEvent) => {
         if (reactivateWhenDeselected()) return;
-        const s = panesRef.current;
-        if (s.length < 2) return;
-        // Bottom stack rotates to top — activate its active card.
-        const nextId = s[0].activeCardId;
-        // Route through `transferFocusForActivation` so the keystroke
-        // path matches the click-driven row-1/2/3 activation taxonomy
-        // (SAVE outgoing → commit → resolve incoming → focus transfer).
-        // A raw `store.activateCard(nextId)` flips the composite first-
-        // responder bit but skips the focus-transfer step entirely, so
-        // `document.activeElement` stays inside whichever card it was
-        // in before — visible to the user as the blinking caret
-        // remaining in the now-inactive card (typing still routes there
-        // until the next click). The helper's internal save/commit/
-        // resolve trio handles both engine-managed and content-owning
-        // incoming cards correctly.
+        const nextId = stepCardRing(
+          store.getSnapshot(),
+          store.getFirstResponderCardId(),
+          -1,
+        );
+        if (nextId === null) return;
         transferFocusForActivation({
           outgoingCardId: store.getFirstResponderCardId(),
           incomingCardId: nextId,
@@ -578,14 +579,20 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           commitMutation: () => store.activateCard(nextId),
         });
       },
-      // Previous / Next card only reach the deck canvas when nothing is
-      // focused — a focused pane's TugPane handles them first. That state is
-      // exactly the deselected deck, so both just re-activate a card.
-      [TUG_ACTIONS.PREVIOUS_TAB]: (_event: ActionEvent) => {
-        reactivateWhenDeselected();
-      },
       [TUG_ACTIONS.NEXT_TAB]: (_event: ActionEvent) => {
-        reactivateWhenDeselected();
+        if (reactivateWhenDeselected()) return;
+        const nextId = stepCardRing(
+          store.getSnapshot(),
+          store.getFirstResponderCardId(),
+          1,
+        );
+        if (nextId === null) return;
+        transferFocusForActivation({
+          outgoingCardId: store.getFirstResponderCardId(),
+          incomingCardId: nextId,
+          store,
+          commitMutation: () => store.activateCard(nextId),
+        });
       },
       // ⌘1..⌘9 — put the selected card at slot N of the active
       // imposition. The canvas owns the layout tree, so it owns this;
@@ -663,14 +670,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       },
       [TUG_ACTIONS.CLEAR_RECENT_DOCUMENTS]: (_event: ActionEvent) => {
         clearRecentDocuments();
-      },
-      [TUG_ACTIONS.ARRANGE_CARDS]: (event: ActionEvent) => {
-        const mode = (event.value as { mode?: unknown } | undefined)?.mode;
-        if (mode !== "cascade" && mode !== "tile") {
-          console.warn("arrange-cards: invalid mode", event.value);
-          return;
-        }
-        store.arrangeCards(mode);
       },
       // Through `transferFocusForActivation` rather than `activateCard`
       // alone: a menu pick has to fire the full outgoing-save → commit →

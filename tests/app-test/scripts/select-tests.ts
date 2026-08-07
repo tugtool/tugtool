@@ -178,7 +178,10 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // applied by this module — `setContentWidth` and `addCard`'s opening width
     // both live here — and none of the other 21 asserts a pane's width, so
     // narrowing the line would leave the applier selected by nothing.
-    "tugdeck/src/deck-manager.ts": 22,
+    // 22 → 23 with the stack rotation's reverse direction (at0350):
+    // `sendPaneBehind` is the store mutation Previous Card in Stack rides,
+    // and no other test exercises a demotion in z-order.
+    "tugdeck/src/deck-manager.ts": 23,
     // The pane frame itself: every test that drives a card through its title bar,
     // its handles, its close control, or its geometry names it, because there is no
     // smaller surface those gestures live on. The coupling is structural rather than
@@ -187,8 +190,9 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // the slot-stack surface: the badge and picker live in this file's title
     // bar (at0347) and the Cmd-click that opens them resolves inside its drag
     // machine (at0349, which needs a key window and so cannot share a file).
-    // 24 → 25 with the no-look cycle: the pane answers CYCLE_STACK itself
-    // (at0350), since raising a peer needs the very slotStack its badge reads.
+    // 24 → 25 with the no-look depth pair: the pane answers
+    // NEXT/PREVIOUS_STACK_CARD itself (at0350), since rotating the stack
+    // needs the very slotStack its badge reads.
     "tugdeck/src/components/chrome/tug-pane.tsx": 25,
     // The list primitive: the transcript, the Lens sections, the gallery, and
     // every picker are all TugListView, so a test that drives any list of rows

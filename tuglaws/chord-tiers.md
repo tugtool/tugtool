@@ -18,7 +18,7 @@ The algebra was already half-latent in shipped bindings — ⌘V → ⌥⌘V →
 
 ## The two base tiers
 
-**⌘ — the universal tier.** Verbs any Mac user already knows (Save, Find, Copy, Close, Quit) plus the highest-frequency Tug verbs (Focus Prompt ⌘K, Cycle Stack ⌘R). Digits are places: ⌘1–9 are slots, ⌘0 is actual size.
+**⌘ — the universal tier.** Verbs any Mac user already knows (Save, Find, Copy, Close, Quit) plus the highest-frequency Tug verbs (Focus Prompt ⌘K, Reveal Stack ⌘R). Digits are places: ⌘1–9 are slots, ⌘0 is actual size.
 
 **⌃⌘ — the Tug tier.** Tug's own machinery: surfaces, shades, modes, themes, app-specific features. This is where Tug gets to be Tug without colliding with thirty years of ⌘ convention. ⌃⌘F Full Screen is the macOS-conventional resident that anchors the tier and proves ⌃⌘ letters reach the web view intact.
 
@@ -46,7 +46,7 @@ Composed sets are never assigned fresh — each one *means* its composition, and
 
 **Plain ⌃ letters are closed forever.** They belong to the text caret: the emacs set, of which ⌃U and ⌃W are declared substrate currency in `ACTIONS_OUTSIDE_THE_TABLE` ([commands.md](commands.md), "What is not a command").
 
-Two non-printing exceptions are grandfathered, and grandfathered is the whole justification — neither would be granted today: **⌥⇥** Cycle Focus Mode and **⌃`** Cycle Panes.
+One non-printing exception is grandfathered, and grandfathered is the whole justification — it would not be granted today: **⌥⇥** Cycle Focus Mode. (⌃` Cycle Panes was the other, until the Window-menu rework ([D129]) retired the command and returned the chord to the closed set.)
 
 ---
 
@@ -131,7 +131,7 @@ The grammar is the point. One toggle would not have justified moving Show Lens; 
 
 Recorded so a reader takes them as debt rather than as precedent.
 
-**Cascade ⌃⌥C and Tile ⌃⌥T sit in a set the algebra does not generate** — ⌃⌥ with no ⌘. Both are Swift construction literals on `window.cascade` / `window.tile` with no registry binding at all, so they are invisible to the keymap pane and to `resolveChord` as well as unexplainable. Candidate home: ⌃⌥⌘ as advanced window-arrangement commands. Deferred to the menu-by-menu audit, where the whole Window menu is on the table at once.
+*(Resolved: Cascade ⌃⌥C and Tile ⌃⌥T once sat here — ⌃⌥ with no ⌘, a set the algebra does not generate, invisible to the keymap pane. The menu-by-menu audit resolved the anomaly by deletion: both commands were removed with the Window-menu rework ([D129]), the Layouts system being how Tug arranges the deck.)*
 
 **⌥⌘/ Show DevTools is a wink, not a derivation.** ⌘/ opens the command picker and ⌥⌘/ opens DevTools; DevTools is not a "variant" of the picker in any sense R1 recognizes. It is ratified because the pairing reads as a joke a developer gets, and because the Maker menu is debug-only.
 

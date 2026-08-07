@@ -134,7 +134,7 @@ describe.skipIf(!SHOULD_RUN)("AT0181: the keymap drives the native key equivalen
 
         // Absent. Nothing in the table states these, so the literals stand.
         await expectChord(app, "edit.copyAsPlainText", "c", COMMAND | SHIFT | OPTION);
-        await expectChord(app, "window.cyclePanes", "`", CONTROL);
+        await expectChord(app, "window.previousCardInStack", "[", COMMAND | OPTION);
 
         // Detach. Save As… claims ⇧⌘S only while a Text card is frontmost,
         // and a gallery card is not one — so the chord comes off rather than

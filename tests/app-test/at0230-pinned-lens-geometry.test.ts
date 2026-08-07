@@ -24,11 +24,9 @@
  *   1. Seed a deck: one free pane + the Lens pane (width 420).
  *   2. Assert the Lens renders pinned to its side with the imposition gaps
  *      and rounded chrome.
- *   3. Window ▸ Tile — assert the pinned Lens keeps its geometry while the
- *      free pane is retiled around it.
- *   4. Drag the Lens's title bar — assert it moves, loses `data-lens`, and
+ *   3. Drag the Lens's title bar — assert it moves, loses `data-lens`, and
  *      keeps `data-lens-pane`.
- *   5. Choose the Lens side in the Layouts section — assert it snaps back to
+ *   4. Choose the Lens side in the Layouts section — assert it snaps back to
  *      the pin, gaps and all.
  *
  * @covers tugdeck/src/layout-tree.ts
@@ -156,29 +154,6 @@ describe.skipIf(!SHOULD_RUN)(
                 )})).borderTopLeftRadius) || 0`,
               );
               expect(radius).toBeGreaterThan(0);
-            }
-
-            // Window ▸ Tile arranges the deck around a pinned Lens rather
-            // than over it. Tiling writes a stored rect, and a pinned Lens
-            // paints from its pin, so a Lens caught up in the arrangement
-            // would be visibly resized and would drag the whole band with it.
-            {
-              const before = await lensBounds(app);
-              const freeBefore = await app.getElementBounds(FREE_SELECTOR);
-              await app.evalJS<null>(
-                `(window.__tug.dispatchControlAction("arrange-cards", { mode: "tile" }), null)`,
-              );
-              await app.waitForCondition<boolean>(
-                `Math.abs(document.querySelector(${JSON.stringify(
-                  FREE_SELECTOR,
-                )}).getBoundingClientRect().width - ${freeBefore.width}) > 2`,
-                { timeoutMs: 5_000 },
-              );
-              const after = await lensBounds(app);
-              expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(2);
-              expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(2);
-              expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(2);
-              expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(2);
             }
 
             // Dragging the title bar takes the Lens OFF the pin: it lands

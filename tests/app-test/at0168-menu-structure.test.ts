@@ -121,18 +121,15 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   // Window (static slice; window.pane.* is dynamic)
   { id: "window.minimize", key: "m", mods: MOD.command },
   { id: "window.zoom" },
-  { id: "window.cascade", key: "c", mods: MOD.control | MOD.option },
-  { id: "window.tile", key: "t", mods: MOD.control | MOD.option },
   { id: "window.previousCard", key: "[", mods: MOD.command | MOD.shift },
   { id: "window.nextCard", key: "]", mods: MOD.command | MOD.shift },
-  { id: "window.cyclePanes", key: "`", mods: MOD.control },
-  // The two slot-stack items share one chord, and whether EITHER holds it is
-  // deck state: ⌘R is attached only while the focused pane's slot stack has
-  // somewhere to go, because a chord on a disabled item beeps instead of
-  // falling through. This deck is a single pane, so both are bare here — the
-  // depth ≤ 1 and depth > 1 halves both live in at0169, and at0350 covers
-  // which of the two owns it. `key: ""` says unattached, not "no opinion".
-  { id: "window.cycleStack", key: "" },
+  { id: "window.previousCardInStack", key: "[", mods: MOD.command | MOD.option },
+  { id: "window.nextCardInStack", key: "]", mods: MOD.command | MOD.option },
+  // Reveal Stack's ⌘R is deck state: attached only while the focused pane's
+  // slot stack has somewhere to go, because a chord on a disabled item beeps
+  // instead of falling through. This deck is a single pane, so it is bare
+  // here — the depth ≤ 1 and depth > 1 halves both live in at0169. `key: ""`
+  // says unattached, not "no opinion".
   { id: "window.revealStack", key: "" },
   { id: "window.enterFullScreen", key: "f", mods: MOD.command | MOD.control },
   { id: "window.bringAllToFront" },

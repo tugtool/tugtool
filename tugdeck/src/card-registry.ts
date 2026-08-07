@@ -205,9 +205,8 @@ export interface CardRegistration {
    *
    * `"sidebar"` is a card that pins to a deck edge and insets the imposition
    * band instead of living inside it — the Lens and Jots. Sidebar cards take no
-   * slot, are skipped by `arrangeCards`, are refused by `assignCardToSlot`, and
-   * carry a `{ side, pinned }` entry in the deck's imposition record rather
-   * than a position in the N-Up.
+   * slot, are refused by `assignCardToSlot`, and carry a `{ side, pinned }`
+   * entry in the deck's imposition record rather than a position in the N-Up.
    *
    * The taxonomy constrains the layout system; it does not sort every card into
    * two boxes. Utility cards — settings, keyboard, devtools, gallery, about —

@@ -38,7 +38,7 @@
  */
 
 import type { Chord, CommandBinding, CommandEntry, BindingScope } from "./command-registry";
-import { COMMANDS, STACK_CHORD } from "./command-registry";
+import { COMMANDS } from "./command-registry";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import {
   chordHasKeyEquivalent,
@@ -603,36 +603,3 @@ export function commandShortcuts(
   return bindings.map((b) => formatChord(b.chord)).join(" / ");
 }
 
-/**
- * Move ⌘R between Cycle Stack and Reveal Stack to follow the user's
- * preference.
- *
- * Expressing the preference as a binding rewrite rather than as a predicate
- * is what keeps one answer to "what does ⌘R do": `menuChords` publishes the
- * chord for the holder and a detach for the other, `matchChord` resolves ⌘R
- * to the same command the menu bar would, and the keymap pane shows the
- * chord on the row that actually has it.
- *
- * The loser gets an *empty* list rather than its default back, because its
- * default is exactly the chord being taken away. Empty is what makes the
- * registry publish `null` for its item, which is what releases the key
- * equivalent on the host side.
- *
- * `overridden` names commands the user has rebound by hand. The preference
- * and a keymap override are two writers on the same bindings, and the more
- * specific one wins: someone who has said "this command's chord is ⌥⌘R" has
- * answered a question this preference was only guessing at.
- */
-export function applyStackChordPreference(
-  preference: string,
-  registry: KeymapRegistry = keymapRegistry,
-  overridden: ReadonlySet<string> = new Set(),
-): void {
-  const cycleOwns = preference !== "reveal";
-  if (!overridden.has(TUG_ACTIONS.CYCLE_STACK)) {
-    registry.setBindings(TUG_ACTIONS.CYCLE_STACK, cycleOwns ? null : []);
-  }
-  if (!overridden.has(TUG_ACTIONS.REVEAL_STACK)) {
-    registry.setBindings(TUG_ACTIONS.REVEAL_STACK, cycleOwns ? [] : [STACK_CHORD]);
-  }
-}

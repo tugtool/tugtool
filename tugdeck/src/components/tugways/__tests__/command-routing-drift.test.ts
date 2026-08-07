@@ -57,7 +57,6 @@ const PRE_MIGRATION_MECHANISM: Readonly<Record<string, CommandRouting>> = {
   [TUG_ACTIONS.REDO]: "first-responder",
   [TUG_ACTIONS.NEXT_TAB]: "first-responder",
   [TUG_ACTIONS.PREVIOUS_TAB]: "first-responder",
-  [TUG_ACTIONS.CYCLE_CARD]: "first-responder",
   [TUG_ACTIONS.PASTE_AS_QUOTE]: "first-responder",
   [TUG_ACTIONS.PASTE_AS_PLAIN_TEXT]: "first-responder",
   [TUG_ACTIONS.COPY_AS_PLAIN_TEXT]: "first-responder",
@@ -76,7 +75,10 @@ const PRE_MIGRATION_MECHANISM: Readonly<Record<string, CommandRouting>> = {
   [TUG_ACTIONS.SHOW_COMPONENT_GALLERY]: "first-responder",
   [TUG_ACTIONS.FOCUS_LENS]: "first-responder",
   [TUG_ACTIONS.REVEAL_STACK]: "first-responder",
-  [TUG_ACTIONS.CYCLE_STACK]: "first-responder",
+  // The depth pair replaced Cycle Stack in the Window-menu rework; both are
+  // pane-answered like the rest of the stack family.
+  [TUG_ACTIONS.PREVIOUS_STACK_CARD]: "first-responder",
+  [TUG_ACTIONS.NEXT_STACK_CARD]: "first-responder",
   // Wires with real bodies in action-dispatch.ts.
   "new-text-card": "registry",
   [TUG_ACTIONS.OPEN_FILE]: "registry",
@@ -86,7 +88,6 @@ const PRE_MIGRATION_MECHANISM: Readonly<Record<string, CommandRouting>> = {
   "next-theme": "registry",
   "set-theme": "registry",
   "show-card": "registry",
-  "arrange-cards": "registry",
   "focus-pane": "registry",
   "configure-tug": "registry",
   logout: "registry",
@@ -121,7 +122,6 @@ const RE_HOMED_ONTO_THE_CHAIN: ReadonlySet<string> = new Set([
   TUG_ACTIONS.OPEN_FILE,
   TUG_ACTIONS.OPEN_QUICKLY,
   TUG_ACTIONS.CLEAR_RECENT_DOCUMENTS,
-  TUG_ACTIONS.ARRANGE_CARDS,
   TUG_ACTIONS.FOCUS_PANE,
 ]);
 
@@ -197,7 +197,6 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   "toggle-jots": "command",
   "new-jot": "command",
   "focus-lens": "command",
-  "arrange-cards": "command",
   "zoom-actual": "command",
   "zoom-in": "command",
   "zoom-out": "command",
@@ -231,9 +230,9 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   "find-previous": "command",
   "previous-tab": "command",
   "next-tab": "command",
-  "cycle-card": "command",
   "reveal-stack": "command",
-  "cycle-stack": "command",
+  "previous-stack-card": "command",
+  "next-stack-card": "command",
   "previous-turn": "command",
   "next-turn": "command",
   "first-turn": "command",
@@ -313,7 +312,7 @@ describe("every Swift wire lands somewhere", () => {
  * the pipeline's actual entry point rather than by reading the table back.
  */
 const SHIPPED_CHORDS: ReadonlyArray<readonly [chord: string, commandId: string]> = [
-  ["⌃`", TUG_ACTIONS.CYCLE_CARD],
+  ["⌃`", "cycle-card"],
   ["⌘A", TUG_ACTIONS.SELECT_ALL],
   ["⌘X", TUG_ACTIONS.CUT],
   ["⌘C", TUG_ACTIONS.COPY],
@@ -374,17 +373,27 @@ const MOVED_SINCE_THE_MAP: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
+ * Commands retired since the map — their chords bind nothing today. Cycle
+ * Panes (`cycle-card`, ⌃`) fell with the Window-menu rework: the lateral /
+ * depth card-navigation quartet supersedes it, and its removal returned the
+ * ⌃-backtick grandfathered exception to the closed set.
+ */
+const RETIRED_SINCE_THE_MAP: ReadonlySet<string> = new Set(["cycle-card"]);
+
+/**
  * Chords added after the map, which by construction it cannot record: their
  * commands did not exist when it was written.
  */
 const ADDED_SINCE_THE_MAP: ReadonlyArray<readonly [chord: string, commandId: string]> = [
   ["⌘J", TUG_ACTIONS.NEW_JOT],
   ["⌃⌘J", TUG_ACTIONS.TOGGLE_JOTS],
+  ["⌥⌘[", TUG_ACTIONS.PREVIOUS_STACK_CARD],
+  ["⌥⌘]", TUG_ACTIONS.NEXT_STACK_CARD],
 ];
 
-/** The map as it reads today: transcription, plus moves, plus additions. */
+/** The map as it reads today: transcription, minus retirements, plus moves and additions. */
 const EXPECTED_CHORDS: ReadonlyArray<readonly [chord: string, commandId: string]> = [
-  ...SHIPPED_CHORDS.map(
+  ...SHIPPED_CHORDS.filter(([, commandId]) => !RETIRED_SINCE_THE_MAP.has(commandId)).map(
     ([rendering, commandId]) =>
       [MOVED_SINCE_THE_MAP.get(commandId) ?? rendering, commandId] as const,
   ),
@@ -437,7 +446,7 @@ describe("every chord the static map held reaches the same command", () => {
   const HOST_DERIVED_CHORDS: ReadonlyMap<string, string> = new Map([
     ["⌘I", TUG_ACTIONS.INSERT_FILE],
     ["⇧⌘S", TUG_ACTIONS.SAVE_AS],
-    ["⌘R", TUG_ACTIONS.CYCLE_STACK],
+    ["⌘R", TUG_ACTIONS.REVEAL_STACK],
     ["⌘+", TUG_ACTIONS.ZOOM_IN],
     ["⌘=", TUG_ACTIONS.ZOOM_IN],
     ["⌘-", TUG_ACTIONS.ZOOM_OUT],

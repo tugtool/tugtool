@@ -5,8 +5,11 @@
  * the `menuState` push's pane projection:
  *
  *   - `window.previousCard` / `window.nextCard` (⇧⌘[ / ⇧⌘]) — enabled
- *     when the focused pane holds more than one card.
- *   - `window.cyclePanes` (⌃`) — enabled when the deck has ≥2 panes.
+ *     when the deck's lateral card ring holds more than one position
+ *     (every tab of every visible pane).
+ *   - `window.previousCardInStack` / `window.nextCardInStack` (⌥⌘[ /
+ *     ⌥⌘]) and `window.revealStack` (⌘R) — enabled when the focused
+ *     pane's slot stack is deeper than one.
  *
  * (`maker.newCardInPane`, ⌘T, also rides this tier, but lives in the
  * debug-gated Maker menu and is absent from the apptest bundle, so it
@@ -138,7 +141,7 @@ async function expectEnabled(app: App, identifier: string, want: boolean): Promi
 
 describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
   test(
-    "single pane, single card: card-nav and cycle disabled",
+    "single pane, single card: the whole navigation section is disabled",
     async () => {
       const app = await launchTugApp({ testName: "at0169-single" });
       try {
@@ -149,19 +152,15 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
 
         await expectEnabled(app, "window.previousCard", false);
         await expectEnabled(app, "window.nextCard", false);
-        await expectEnabled(app, "window.cyclePanes", false);
 
-        // The slot stack has nowhere to go, so both stack items validate
-        // disabled — and neither may keep ⌘R. A chord on a disabled item is
-        // eaten at the menu bar with a beep instead of falling through to the
-        // web view, so leaving it attached would make ⌘R dead rather than
-        // merely inapplicable.
-        await expectEnabled(app, "window.cycleStack", false);
+        // The slot stack has nowhere to go, so the stack items validate
+        // disabled — and Reveal Stack may not keep ⌘R. A chord on a disabled
+        // item is eaten at the menu bar with a beep instead of falling
+        // through to the web view, so leaving it attached would make ⌘R dead
+        // rather than merely inapplicable.
+        await expectEnabled(app, "window.previousCardInStack", false);
+        await expectEnabled(app, "window.nextCardInStack", false);
         await expectEnabled(app, "window.revealStack", false);
-        expect(
-          await waitMenuKeyEquivalent(app, "window.cycleStack", ""),
-          "Cycle Stack drops ⌘R at depth ≤ 1",
-        ).toBe("");
         expect(
           await waitMenuKeyEquivalent(app, "window.revealStack", ""),
           "Reveal Stack drops ⌘R at depth ≤ 1",
@@ -178,7 +177,7 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
   );
 
   test(
-    "multi-card pane: card navigation enabled, pane cycling still disabled",
+    "multi-card pane: lateral navigation enabled, depth still disabled",
     async () => {
       const app = await launchTugApp({ testName: "at0169-multicard" });
       try {
@@ -189,7 +188,7 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
 
         await expectEnabled(app, "window.previousCard", true);
         await expectEnabled(app, "window.nextCard", true);
-        await expectEnabled(app, "window.cyclePanes", false);
+        await expectEnabled(app, "window.nextCardInStack", false);
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") process.stderr.write(`\n[at0169-multicard] log tail:\n${tail}\n`);
@@ -202,7 +201,7 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
   );
 
   test(
-    "two panes: pane cycling enabled; non-session card gates the dev-command surfaces off",
+    "two free panes: the lateral ring crosses them; non-session card gates the dev-command surfaces off",
     async () => {
       const app = await launchTugApp({ testName: "at0169-twopanes" });
       try {
@@ -211,9 +210,11 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("C0") && window.__tug.assertHostRootRegistered("C1")`,
         );
 
-        await expectEnabled(app, "window.cyclePanes", true);
-        // Single-card focused pane → card navigation stays disabled.
-        await expectEnabled(app, "window.nextCard", false);
+        // Both panes are visible, so both cards are on the lateral ring —
+        // Next Card is how the keyboard crosses a pane boundary now that
+        // Cycle Panes is retired.
+        await expectEnabled(app, "window.nextCard", true);
+        await expectEnabled(app, "window.previousCard", true);
 
         // Card-type tier, negative half: the active card is a
         // gallery-input, so every session-card command surface is disabled.
@@ -236,7 +237,7 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
   );
 
   test(
-    "stacked panes: the stack items light up and one of them takes ⌘R",
+    "stacked panes: the depth items light up, Reveal Stack takes ⌘R, and the lateral ring shrinks",
     async () => {
       const app = await launchTugApp({ testName: "at0169-stack" });
       try {
@@ -245,19 +246,16 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("C1")`,
         );
 
-        await expectEnabled(app, "window.cycleStack", true);
+        await expectEnabled(app, "window.previousCardInStack", true);
+        await expectEnabled(app, "window.nextCardInStack", true);
         await expectEnabled(app, "window.revealStack", true);
+        const reveal = await waitMenuKeyEquivalent(app, "window.revealStack", "r");
+        expect(reveal, "Reveal Stack re-attaches ⌘R once the stack is deep").toBe("r");
 
-        // Exactly one of the two carries the chord — which one is the user's
-        // `stackChord` preference, defaulting to Cycle Stack. Both holding it
-        // would make ⌘R ambiguous; neither holding it is the depth ≤ 1 state.
-        const cycle = await waitMenuKeyEquivalent(app, "window.cycleStack", "r");
-        expect(cycle, "Cycle Stack owns ⌘R by default once the stack is deep").toBe("r");
-        const reveal = await app.menuItemState("window.revealStack");
-        expect(
-          reveal.found ? reveal.keyEquivalent : undefined,
-          "Reveal Stack stays mouse-only while Cycle Stack owns the chord",
-        ).toBe("");
+        // Two panes, one slot: only the front pane's card is visible, so the
+        // lateral ring holds one position and the lateral pair dims — the
+        // buried card is the depth axis's to reach, not the lateral one's.
+        await expectEnabled(app, "window.nextCard", false);
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") process.stderr.write(`\n[at0169-stack] log tail:\n${tail}\n`);

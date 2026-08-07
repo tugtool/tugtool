@@ -65,7 +65,7 @@ describe.skipIf(!SHOULD_RUN)(
   "AT0193: deselected deck re-activates via nav commands",
   () => {
     test(
-      "canvas-click deselect → previous-tab / next-tab / cycle-card each re-activate the card",
+      "canvas-click deselect → previous-tab / next-tab each re-activate the card",
       async () => {
         const app = await launchTugApp({ testName: "at0193-deselect-renav" });
         try {
@@ -86,7 +86,7 @@ describe.skipIf(!SHOULD_RUN)(
           ).toBe(true);
 
           // Each nav command, from the deselected state, re-activates the card.
-          for (const action of ["previous-tab", "next-tab", "cycle-card"]) {
+          for (const action of ["previous-tab", "next-tab"]) {
             // Deselect: click the empty canvas to the right of the pane.
             await app.nativeMouseDown({ x: 700, y: 300 });
             await app.nativeMouseUp({ x: 700, y: 300 });

@@ -146,18 +146,6 @@ export function readFocusRingModality(client: TugbankClient): string | null {
   return null;
 }
 
-/**
- * Read which Window-menu item owns ⌘R (`cycle` / `reveal`) from the
- * TugbankClient cache. Returns the raw string, or null if unset; the caller
- * normalizes it. Stored under `dev.tugtool.app` / `stackChord`.
- */
-export function readStackChord(client: TugbankClient): string | null {
-  const entry = client.get("dev.tugtool.app", "stackChord");
-  if (entry && entry.kind === "string" && typeof entry.value === "string") {
-    return entry.value;
-  }
-  return null;
-}
 
 /**
  * Read the focused card ID from the TugbankClient cache.
@@ -292,20 +280,6 @@ export function putFocusRingModality(mode: string): void {
   });
 }
 
-/**
- * Persist which Window-menu item owns ⌘R to tugbank under
- * `dev.tugtool.app` / `stackChord`. Fire-and-forget, mirroring
- * `putKeyboardAccess`.
- */
-export function putStackChord(chord: string): void {
-  fetch("/api/defaults/dev.tugtool.app/stackChord", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind: "string", value: chord }),
-  }).catch((err) => {
-    console.warn("[settings] PUT stackChord failed:", err);
-  });
-}
 
 /**
  * Read the first-launch flag from the TugbankClient cache. `true` once the
@@ -326,8 +300,8 @@ export function readSetupSeen(client: TugbankClient): boolean {
  * Per-command keys are what make reset a `DELETE` and keep one rebind from
  * racing another; a single blob would turn every change into a
  * read-modify-write of the whole keymap. Fire-and-forget, mirroring
- * `putStackChord` — the store already holds the value, and the DEFAULTS push
- * reconciles anything that lands out of order.
+ * `putKeyboardAccess` — the store already holds the value, and the DEFAULTS
+ * push reconciles anything that lands out of order.
  */
 export function putKeymapOverride(commandId: string, json: string): void {
   const url = `/api/defaults/dev.tugtool.keymap/${encodeURIComponent(commandId)}`;

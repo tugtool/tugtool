@@ -69,7 +69,7 @@ const HELP_SHORTCUT_ROWS: ReadonlyArray<{
   { commandId: TUG_ACTIONS.FIND_PREVIOUS, label: "Previous match" },
   { commandId: TUG_ACTIONS.TOGGLE_HISTORY_VIEW, label: "Show or hide the History Shade" },
   { commandId: TUG_ACTIONS.CYCLE_PERMISSION_MODE, label: "Cycle the permission mode" },
-  { commandId: TUG_ACTIONS.CYCLE_CARD, label: "Cycle the active card" },
+  { commandId: TUG_ACTIONS.NEXT_TAB, label: "Next card" },
   { commandId: TUG_ACTIONS.CANCEL_DIALOG, label: "Dismiss a sheet, or interrupt Claude" },
 ];
 

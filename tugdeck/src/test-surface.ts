@@ -53,7 +53,6 @@ import {
   type CardSessionMode,
 } from "./lib/card-session-binding-store";
 import { cardServicesStore } from "./lib/card-services-store";
-import { stackChordStore } from "./stack-chord-store";
 import { getConnection } from "./lib/connection-singleton";
 import { sendSpawnSession } from "./lib/session-lifecycle";
 import type { AtomSegment } from "./lib/tug-atom-img";
@@ -910,21 +909,6 @@ export interface TugTestSurface {
    *
    * Test-mode-only. Available when `window.__tugTestMode === true`.
    */
-  /**
-   * Set which Window-menu item owns ⌘R — `"cycle"` (Cycle Stack) or
-   * `"reveal"` (Reveal Stack).
-   *
-   * In the app the value has two doors, and test mode closes both: the
-   * Settings ▸ General choice, and a tugbank DEFAULTS push (test mode
-   * bypasses tugbank entirely). This writes the same store both of them
-   * write, and everything downstream is production — the menu-state
-   * publisher carries it to the host, which moves the key equivalent
-   * between the two real `NSMenuItem`s. Same seam as `seedDeckState`.
-   *
-   * Test-mode-only. Available when `window.__tugTestMode === true`.
-   */
-  setStackChord(chord: "cycle" | "reveal"): void;
-
   bindSession(
     cardId: string,
     options?: {
@@ -1946,10 +1930,6 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         if (e.kind === "engine-ready" && e.cardId === cardId) return true;
       }
       return false;
-    },
-
-    setStackChord(chord: "cycle" | "reveal"): void {
-      stackChordStore.setChord(chord);
     },
 
     bindSession(

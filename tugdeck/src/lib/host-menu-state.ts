@@ -33,8 +33,7 @@ import { paneTitleBarTextFor } from "./pane-title";
 import { cardTitleStore } from "./card-title-store";
 import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./card-session-binding-store";
-import { DEFAULT_STACK_CHORD, stackChordStore } from "../stack-chord-store";
-import { keymapOverrideStore } from "../keymap-override-store";
+import { visibleCardCount } from "./card-ring";
 import { BASE_THEME_NAME } from "../theme-constants";
 import {
   COMMANDS,
@@ -42,10 +41,7 @@ import {
   queryCommandState,
   validateCommand,
 } from "../components/tugways/command-registry";
-import {
-  applyStackChordPreference,
-  keymapRegistry,
-} from "../components/tugways/keymap-registry";
+import { keymapRegistry } from "../components/tugways/keymap-registry";
 import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 import { chordCaptureState } from "../components/tugways/chord-capture-state";
 import { getSettings, lastKnownMakerMode } from "./maker-mode-bridge";
@@ -511,10 +507,15 @@ export interface MenuStateDeckProjection {
   selectionActive: boolean;
   /**
    * Panes sharing the focused pane's slot. 0 when the focused pane holds no
-   * slot (free pane or Lens) and when nothing is selected. Gates
-   * Window ▸ Reveal Stack, which is enabled iff this exceeds 1.
+   * slot (free pane or Lens) and when nothing is selected. Gates the
+   * Window menu's three stack items, enabled iff this exceeds 1.
    */
   stackDepth: number;
+  /**
+   * Cards in the deck's lateral ring — every tab of every visible pane
+   * (see `lib/card-ring.ts`). Gates Window ▸ Previous/Next Card.
+   */
+  visibleCardCount: number;
   /**
    * Id of the focused pane's active card — used by the publisher to
    * select which dev block rides the payload. Module-internal: never
@@ -531,14 +532,6 @@ export interface MenuStatePayload {
   selectionActive: boolean;
   /** Focused pane's slot-stack depth (see {@link MenuStateDeckProjection.stackDepth}). */
   stackDepth: number;
-  /**
-   * Which Window-menu item owns ⌘R: `"cycle"` (Cycle Stack) or `"reveal"`
-   * (Reveal Stack). Both items always exist and are gated identically; only
-   * the key equivalent moves, and it can only move on the host side because
-   * AppKit resolves a menu key equivalent before the web view sees the
-   * keydown.
-   */
-  stackChord: string;
   /** Session-card session block; null unless the active card is a session card. */
   session: MenuStateSessionBlock | null;
   /** Text-card block; null unless the active card is a Text card. */
@@ -656,6 +649,7 @@ export function projectDeckState(state: DeckState): MenuStateDeckProjection {
     activeCard,
     selectionActive: state.activePaneId !== undefined,
     stackDepth,
+    visibleCardCount: visibleCardCount(state),
     focusedActiveCardId: focusedActiveCard?.id ?? null,
   };
 }
@@ -675,6 +669,7 @@ export class HostMenuStatePublisher {
     activeCard: null,
     selectionActive: false,
     stackDepth: 0,
+    visibleCardCount: 0,
     focusedActiveCardId: null,
   };
   /**
@@ -710,12 +705,6 @@ export class HostMenuStatePublisher {
   private validationChain: MenuValidationChain = NO_CHAIN;
   /** The facts the last flush computed its gates from. */
   private lastFacts: CommandMenuFacts = EMPTY_MENU_FACTS;
-  /**
-   * Which Window-menu item owns ⌘R. Not deck state — a user preference — so
-   * it is fed by its own setter and defaults to the store's default until
-   * the wiring below pushes the seeded value.
-   */
-  private stackChord: string = DEFAULT_STACK_CHORD;
   /** Recent-document MRU, mirrored outward for the Open Recent submenu. */
   private recentDocuments: string[] = [];
   /** The active theme, for the Theme submenu's checkmark. */
@@ -773,11 +762,6 @@ export class HostMenuStatePublisher {
 
   setValidationChain(chain: MenuValidationChain | null): void {
     this.validationChain = chain ?? NO_CHAIN;
-    this.scheduleFlush();
-  }
-
-  setStackChord(chord: string): void {
-    this.stackChord = chord;
     this.scheduleFlush();
   }
 
@@ -854,8 +838,14 @@ export class HostMenuStatePublisher {
   }
 
   private flush(): void {
-    const { panes, activeCard, selectionActive, stackDepth, focusedActiveCardId } =
-      this.deckProjection;
+    const {
+      panes,
+      activeCard,
+      selectionActive,
+      stackDepth,
+      visibleCardCount,
+      focusedActiveCardId,
+    } = this.deckProjection;
     const session =
       activeCard?.component === "session" && focusedActiveCardId !== null
         ? (this.sessionBlocks.get(focusedActiveCardId) ?? null)
@@ -901,6 +891,7 @@ export class HostMenuStatePublisher {
       openQuickly,
       paneCount: panes.length,
       focusedPaneCardCount: focusedPane?.cardCount ?? 0,
+      visibleCardCount,
       focusedPaneActiveCardClosable: focusedPane?.closable ?? false,
       selectionActive,
       stackDepth,
@@ -913,7 +904,6 @@ export class HostMenuStatePublisher {
       activeCard,
       selectionActive,
       stackDepth,
-      stackChord: this.stackChord,
       session,
       file,
       document,
@@ -994,25 +984,6 @@ export function initHostMenuState(deck: DeckSource): void {
   // diffs the serialized payload, so a push that changes nothing costs
   // nothing.
   cardTitleStore.subscribe(push);
-  // ⌘R's owner is a preference, not deck state. The host is the only place
-  // the chord can actually move (AppKit resolves a menu key equivalent before
-  // the web view sees the keydown), so the setting rides this same channel —
-  // as a binding rewrite, so the menu bar and the JS funnel agree on which of
-  // the two commands ⌘R currently means.
-  const pushChord = (): void => {
-    const preference = stackChordStore.getChord();
-    publisher.setStackChord(preference);
-    applyStackChordPreference(
-      preference,
-      keymapRegistry,
-      new Set(keymapOverrideStore.overriddenCommands()),
-    );
-  };
-  stackChordStore.subscribe(pushChord);
-  // A rebind of either stack command has to re-settle this, or the preference
-  // would keep writing over an override it no longer owns — and a *reset*
-  // back to the default has to hand the pair back to the preference.
-  keymapOverrideStore.subscribe(pushChord);
   // Every chord the host applies is projected from the keymap registry, so a
   // rebind has to republish or the menu bar keeps the chord the user just
   // moved away.
@@ -1046,7 +1017,6 @@ export function initHostMenuState(deck: DeckSource): void {
   // reply lands through the bridge's cache, and maker mode cannot change
   // without a page reload, so one round trip answers for the page's life.
   void getSettings();
-  pushChord();
   push();
 }
 

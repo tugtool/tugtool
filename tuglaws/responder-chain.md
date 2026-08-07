@@ -24,7 +24,7 @@ The chain has exactly three kinds of participants, and the distinction between t
 
 - **A *control* translates a user gesture into a typed intent.** It dispatches an action into the chain. It does not own the state the action will mutate. Most interactive widgets are controls: buttons, sliders, checkboxes, switches, radios, choice groups, tab bars, accordions, popup menus. Their "state" — the current slider value, the checked boolean, the selected tab — lives in a parent or a store, flows back in via props, and is rendered by the control. The control is a passthrough for the user's intent, not the home of the thing the intent modifies.
 
-- **A *responder* owns semantic state that actions mutate and registers handlers for the actions that mutate it.** Responders have a stable identity in the chain — a registered node with an id — so the first-responder promotion mechanism can address them. A text editor owns its document, caret, and undo stack, and is therefore the responder for `cut`, `copy`, `paste`, `select-all`, `undo`, `redo`. A card owns a **pane** (title bar, tabs, close state), so it is the responder for `close`, `previous-tab`, `next-tab`, `close-tab`, `find`. A canvas owns the layout tree, so it is the responder for `cycle-card`, `reset-layout`, `add-card-to-active-pane`, `move-to-slot`, `show-settings`, `show-component-gallery`.
+- **A *responder* owns semantic state that actions mutate and registers handlers for the actions that mutate it.** Responders have a stable identity in the chain — a registered node with an id — so the first-responder promotion mechanism can address them. A text editor owns its document, caret, and undo stack, and is therefore the responder for `cut`, `copy`, `paste`, `select-all`, `undo`, `redo`. A card owns a **pane** (title bar, tabs, close state), so it is the responder for `close`, `select-tab`, `close-tab`, `find`. A canvas owns the layout tree — including the cross-pane card ring — so it is the responder for `previous-tab`, `next-tab`, `reset-layout`, `add-card-to-active-pane`, `move-to-slot`, `show-settings`, `show-component-gallery`.
 
 - **A single component can be both.** A text editor with a built-in context menu is the emitter of `cut` when the user clicks the menu item, and the responder for `cut` because its selection is what gets cut. The walk starts at the first responder (the editor itself), finds the handler on the editor, and the emit-then-walk loop closes on the same component. That is the most common pattern in this codebase for self-contained widgets with their own action surfaces.
 
@@ -119,8 +119,8 @@ Dispatch walks from the first responder upward through `parentId` links until a 
 ```
                     ┌─────────────────────────┐
                     │  DeckCanvas             │  ← registered handlers:
-                    │   actions: {            │       cycle-card
-                    │     cycle-card: ...     │       reset-layout
+                    │   actions: {            │       next-tab / previous-tab
+                    │     next-tab: ...       │       reset-layout
                     │     reset-layout: ...   │       show-settings
                     │   }                     │
                     └───────────▲─────────────┘
@@ -128,9 +128,9 @@ Dispatch walks from the first responder upward through `parentId` links until a 
                     ┌───────────┴─────────────┐
                     │  TugCard                │  ← registered handlers:
                     │   actions: {            │       close
-                    │     close: ...          │       previous-tab / next-tab
-                    │     previous-tab: ...   │       close-tab
-                    │     next-tab: ...       │
+                    │     close: ...          │       select-tab
+                    │     select-tab: ...     │       close-tab
+                    │     close-tab: ...      │
                     │   }                     │
                     └───────────▲─────────────┘
                                 │ parentId
@@ -148,13 +148,13 @@ Dispatch walks from the first responder upward through `parentId` links until a 
 
        dispatch({action: "cut"})    → walk starts at TugPromptInput, matches immediately
        dispatch({action: "close"})  → walks past TugPromptInput, matches on TugCard
-       dispatch({action: "cycle-card"}) → walks past both, matches on DeckCanvas
+       dispatch({action: "next-tab"}) → walks past both, matches on DeckCanvas
        dispatch({action: "select-all"}) → matches on TugPromptInput (innermost wins)
        dispatch({action: "select-all"}) with no editor focused → unhandled (no-op)
 
        sendToTarget(cardId, {action: "close"})  → walk starts at TugCard (not at first responder),
                                                  matches on TugCard
-       sendToTarget(cardId, {action: "cycle-card"}) → walks up from TugCard, matches on DeckCanvas
+       sendToTarget(cardId, {action: "next-tab"}) → walks up from TugCard, matches on DeckCanvas
 ```
 
 `sendToFirstResponder` and `sendToTarget` share the same walk loop. The difference is only which node the walk starts at: `sendToFirstResponder` starts at the current first responder (usually the innermost leaf the user is working with); `sendToTarget` starts at an explicit registered node supplied by the caller. Both walk upward through `parentId` links until a handler matches, and both fall off the root with `handled: false` if no node handles the action. The walk is never downward.

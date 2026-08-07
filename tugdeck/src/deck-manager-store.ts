@@ -180,10 +180,11 @@ export interface IDeckManagerStore {
   centerPane: (cardId: string) => void;
 
   /**
-   * Rearrange every free-floating pane on the canvas — overlapped from the
-   * top-left, or laid out side by side. Window ▸ Cascade / Tile.
+   * Move a pane immediately below another in z-order — the
+   * Previous-Card-in-Stack rotation primitive. Reorder only; the caller
+   * owns activating whichever pane the demotion fronts.
    */
-  arrangeCards: (mode: "cascade" | "tile") => void;
+  sendPaneBehind: (paneId: string, belowPaneId: string) => void;
 
   /**
    * Show the Lens: activate the existing Lens card if one exists, else

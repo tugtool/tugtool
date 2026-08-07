@@ -665,7 +665,7 @@ describe("initActionDispatch: menu-command chain adapters", () => {
       TUG_ACTIONS.REDO,
       TUG_ACTIONS.NEXT_TAB,
       TUG_ACTIONS.PREVIOUS_TAB,
-      TUG_ACTIONS.CYCLE_CARD,
+      TUG_ACTIONS.NEXT_STACK_CARD,
     ]) {
       dispatchAction({ action });
     }
@@ -677,7 +677,7 @@ describe("initActionDispatch: menu-command chain adapters", () => {
       TUG_ACTIONS.REDO,
       TUG_ACTIONS.NEXT_TAB,
       TUG_ACTIONS.PREVIOUS_TAB,
-      TUG_ACTIONS.CYCLE_CARD,
+      TUG_ACTIONS.NEXT_STACK_CARD,
     ]);
     expect(firstResponder.every((e) => e.phase === "discrete")).toBe(true);
   });

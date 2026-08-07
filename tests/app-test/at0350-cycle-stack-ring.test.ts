@@ -1,17 +1,18 @@
 /**
- * at0350-cycle-stack-ring.test.ts — ⌘R cycles a slot's stack as a ring, and
- * the chord obeys the user's preference.
+ * at0350-cycle-stack-ring.test.ts — ⌥⌘] / ⌥⌘[ rotate a slot's stack as a
+ * ring, and the two directions are exact inverses.
  *
- * `Window ▸ Cycle Stack` is the no-look half of the slot-stack surface: it
- * brings a buried pane forward and puts nothing on screen to be read, so the
- * press can be repeated blind. That promise only holds if repeated presses
- * form a RING — every pane in the slot, then home. The naive implementation
- * (raise the pane one below the front) does not: with three panes it ping-pongs
- * between the top two forever and the third is unreachable, because each raise
- * rewrites the very order the "next" was computed from. Raising the BOTTOM-most
- * pane instead — the one buried longest, which is also ⌘`'s convention for
- * windows — makes each raise send the outgoing front pane exactly one place
- * back, so a depth-N slot returns to its starting order after N presses.
+ * `Window ▸ Next Card in Stack` is the no-look half of the slot-stack
+ * surface: it brings a buried pane forward and puts nothing on screen to be
+ * read, so the press can be repeated blind. That promise only holds if
+ * repeated presses form a RING — every pane in the slot, then home. The
+ * naive implementation (raise the pane one below the front) does not: with
+ * three panes it ping-pongs between the top two forever and the third is
+ * unreachable, because each raise rewrites the very order the "next" was
+ * computed from. Raising the BOTTOM-most pane instead — the one buried
+ * longest, which is also ⌘`'s convention for windows — makes each raise send
+ * the outgoing front pane exactly one place back, so a depth-N slot returns
+ * to its starting order after N presses.
  *
  * So the ring is what this file asserts, and it needs three panes to say
  * anything: at depth 2 every candidate rule looks identical. The first test
@@ -19,14 +20,12 @@
  * pane came up — a rule that raised the right pane while scrambling the ones
  * behind it would pass a front-only assertion and then fail on press four.
  *
- * The second test is about the chord's OWNER. ⌘R belongs to whichever of the
- * two slot-stack items the user names; both items always exist and gate
- * identically, and only the key equivalent moves. It has to move on the host
- * side — AppKit resolves a menu key equivalent before the WKWebView sees the
- * keydown, so no amount of frontend routing could reassign it — which makes
- * "the preference actually reached the menu bar" a round-trip fact worth
- * pinning: set it to `reveal`, press ⌘R, and the stack must NOT have moved
- * (the picker opens instead, which at0348 owns).
+ * The second test is the other direction. `Previous Card in Stack` must be
+ * NEXT's true inverse — the front pane goes all the way to the back and the
+ * one beneath it fronts — because the tempting implementation (raise the
+ * second-from-top) is exactly the ping-pong rule ruled out above, just
+ * wearing the other label. Depth 3 exposes it the same way: previous → next
+ * must be a no-op, and three previouses must also come home.
  *
  * Why z-index and not occlusion: the three panes are given different widths so
  * none is fully covered, because a covered pane is stamped
@@ -36,9 +35,9 @@
  * it reads the real thing.
  *
  * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/deck-manager.ts
  * @covers tugdeck/src/action-dispatch.ts
  * @covers tugdeck/src/components/tugways/action-vocabulary.ts
- * @covers tugdeck/src/stack-chord-store.ts
  * @covers tugdeck/src/lib/host-menu-state.ts
  * @covers tugapp/Sources/AppDelegate.swift
  */
@@ -145,13 +144,18 @@ async function seed(app: App): Promise<void> {
   await new Promise<void>((r) => setTimeout(r, AFTER_LAND_MS));
 }
 
-async function pressCycle(app: App): Promise<void> {
-  await app.nativeKey("r", ["cmd"]);
+async function pressNext(app: App): Promise<void> {
+  await app.nativeKey("]", ["cmd", "alt"]);
+  await new Promise<void>((r) => setTimeout(r, AFTER_CHORD_MS));
+}
+
+async function pressPrevious(app: App): Promise<void> {
+  await app.nativeKey("[", ["cmd", "alt"]);
   await new Promise<void>((r) => setTimeout(r, AFTER_CHORD_MS));
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "at0350 — Cycle Stack walks the slot as a ring",
+  "at0350 — Next/Previous Card in Stack walk the slot as a ring",
   () => {
     test(
       "three presses visit every pane and land back where they started",
@@ -165,7 +169,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           // Press 1 — the pane buried longest comes to the front, and the two
           // it passed keep their order relative to each other.
-          await pressCycle(app);
+          await pressNext(app);
           const first = await stackOrder(app);
           note("at0350 after press 1", first.join(" > "));
           expect(first, "the back pane came forward").toEqual(["p0", "p2", "p1"]);
@@ -173,7 +177,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           // Press 2 — answered by the pane that just came up, reading its own
           // freshly-ordered stack. The one it raises is the next one round.
-          await pressCycle(app);
+          await pressNext(app);
           const second = await stackOrder(app);
           note("at0350 after press 2", second.join(" > "));
           expect(second, "the next one round, not a ping-pong back to p2").toEqual([
@@ -186,7 +190,7 @@ describe.skipIf(!SHOULD_RUN)(
           // Press 3 — home. This is the whole promise of a no-look chord: N
           // presses in a depth-N slot is a no-op, so the user can count
           // instead of look.
-          await pressCycle(app);
+          await pressNext(app);
           const third = await stackOrder(app);
           note("at0350 after press 3", third.join(" > "));
           expect(third, "a depth-3 slot is home after 3 presses").toEqual(start);
@@ -199,39 +203,57 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "handing ⌘R to Reveal Stack takes it away from Cycle Stack",
+      "⌥⌘[ is ⌥⌘]'s exact inverse, and walks the ring backwards",
       async () => {
-        const app = await launchTugApp({ testName: "at0350-cycle-chord-pref" });
+        const app = await launchTugApp({ testName: "at0350-stack-previous" });
         try {
           await seed(app);
 
-          const cycle = inMenuBar(
-            await app.menuItemState("window.cycleStack"),
-            "window.cycleStack",
+          const item = inMenuBar(
+            await app.menuItemState("window.previousCardInStack"),
+            "window.previousCardInStack",
           );
-          expect(cycle.enabled, "a 3-deep slot has somewhere to cycle to").toBe(true);
+          expect(item.enabled, "a 3-deep slot has somewhere to rotate to").toBe(true);
 
-          // The preference reaches the menu bar over the menu-state push, the
-          // same channel the enablement rides; give the round-trip room.
-          await app.evalJS<null>(`(window.__tug.setStackChord("reveal"), null)`);
-          await new Promise<void>((r) => setTimeout(r, 400));
+          const start = await stackOrder(app);
+          expect(start, "seeded front-to-back").toEqual(["p2", "p1", "p0"]);
 
-          const before = await stackOrder(app);
-          await pressCycle(app);
-          const after = await stackOrder(app);
-          note("at0350 under the reveal preference", `${before.join(" > ")} -> ${after.join(" > ")}`);
-          expect(after, "⌘R no longer cycles once the chord is given away").toEqual(
-            before,
-          );
+          // Previous — the front pane goes all the way to the back and the
+          // one beneath it fronts. Raising the second-from-top instead would
+          // leave p2 second rather than last, so the whole order is asserted.
+          await pressPrevious(app);
+          const backedUp = await stackOrder(app);
+          note("at0350 after ⌥⌘[", backedUp.join(" > "));
+          expect(backedUp, "the front pane went to the back").toEqual([
+            "p1",
+            "p0",
+            "p2",
+          ]);
+          await app.expectFocusedCard("A", { timeoutMs: 5_000 });
 
-          // And it is still a live command — only its chord went elsewhere.
-          const stillThere = inMenuBar(
-            await app.menuItemState("window.cycleStack"),
-            "Cycle Stack",
-          );
-          expect(stillThere.enabled, "and stays enabled — only the chord moved").toBe(
-            true,
-          );
+          // Next — and it undoes it. The inverse pair is the whole point of
+          // splitting the old one-direction cycle in two.
+          await pressNext(app);
+          const home = await stackOrder(app);
+          note("at0350 after ⌥⌘[ ⌥⌘]", home.join(" > "));
+          expect(home, "next undoes previous exactly").toEqual(start);
+          await app.expectFocusedCard("B", { timeoutMs: 5_000 });
+
+          // Backwards ring: three previouses visit every pane and come home.
+          await pressPrevious(app);
+          await pressPrevious(app);
+          const twoBack = await stackOrder(app);
+          note("at0350 after two ⌥⌘[", twoBack.join(" > "));
+          expect(twoBack, "two back = one forward in a depth-3 ring").toEqual([
+            "p0",
+            "p2",
+            "p1",
+          ]);
+          await pressPrevious(app);
+          const roundTrip = await stackOrder(app);
+          note("at0350 after three ⌥⌘[", roundTrip.join(" > "));
+          expect(roundTrip, "a depth-3 slot is home after 3 presses").toEqual(start);
+          await app.expectFocusedCard("B", { timeoutMs: 5_000 });
         } finally {
           await app.close();
         }

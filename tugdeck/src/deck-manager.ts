@@ -1946,115 +1946,31 @@ export class DeckManager implements IDeckManagerStore {
     this.scheduleSave();
   }
 
-  // ---- Arrange (cascade / tile) ----
+  // ---- Stack rotation ----
 
   /**
-   * Rearrange all stacks on the canvas.
+   * Move `paneId` to sit immediately below `belowPaneId` in z-order
+   * (array order). The Previous-Card-in-Stack primitive: demoting a
+   * slot's front pane behind its bottom member is the exact inverse of
+   * raising the buried-longest one, which is what makes the two
+   * directions a ring rather than an MRU ping-pong.
    *
-   * - `cascade`: diagonal cascade from top-left, each offset by CASCADE_STEP.
-   * - `tile`: grid layout filling the canvas.
-   *
-   * The Lens is left where it is. Cascade would only write a position it
-   * never reads, but tile writes `size` — and the Lens paints at its stored
-   * width, so tiling would resize it and shift the whole band with it.
-   *
-   * Slotted panes are deliberately not skipped: their stored geometry is
-   * already ignored while they are imposed, releasing a pane from its slot
-   * stays an explicit gesture ([D121]), and that stored value is what the
-   * freeze-on-clear path reads back when the imposition is turned off.
+   * Reorder only — no geometry changes, so no move/resize lifecycle
+   * events. The caller owns activation of whichever pane this fronts
+   * (via `transferFocusForActivation`, so the focus discipline holds).
    */
-  arrangeCards(mode: "cascade" | "tile"): void {
-    // A Lens standing at its pin is not the arrangement's to move — its frame
-    // is derived, so a stored rect written here would be a number nothing
-    // reads. A Lens dragged loose is an ordinary pane and tiles with the rest.
-    const skipPaneId = isSidebarPinned(this.deckState.imposition, LENS_CARD_ID)
-      ? findLensPane(this.deckState)?.id
-      : undefined;
-    const stacks = this.deckState.panes.filter((s) => s.id !== skipPaneId);
-    if (stacks.length === 0) return;
-
-    const canvasWidth = this.container.clientWidth || 800;
-    const canvasHeight = this.container.clientHeight || 600;
-
-    const cardsById = new Map<string, CardState>();
-    for (const c of this.deckState.cards) cardsById.set(c.id, c);
-
-    let arranged: TugPaneState[];
-
-    if (mode === "cascade") {
-      const ORIGIN = 10;
-      arranged = stacks.map((win, i) => {
-        const x = ORIGIN + CASCADE_STEP * i;
-        const y = ORIGIN + CASCADE_STEP * i;
-        return { ...win, position: { x, y } };
-      });
-    } else {
-      const n = stacks.length;
-      const cols = Math.ceil(Math.sqrt(n));
-      const rows = Math.ceil(n / cols);
-      const GAP = 5;
-      const tileW = Math.floor((canvasWidth - GAP * (cols + 1)) / cols);
-      const tileH = Math.floor((canvasHeight - GAP * (rows + 1)) / rows);
-
-      arranged = stacks.map((win, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const x = GAP + col * (tileW + GAP);
-        const y = GAP + row * (tileH + GAP);
-
-        // Tile size floors at the stack-aggregated minimum — the
-        // pane must fit every card kind it hosts, not just the
-        // active tab. An empty / unresolved stack yields
-        // `DEFAULT_SIZE_POLICY` (250 × 180).
-        const componentIds = win.cardIds
-          .map((cid) => cardsById.get(cid)?.componentId)
-          .filter((id): id is string => id !== undefined);
-        const policy = getStackSizePolicy(componentIds);
-        const width = Math.max(policy.min.width, tileW);
-        const height = Math.max(policy.min.height, tileH);
-
-        return {
-          ...win,
-          position: { x, y },
-          size: { width, height },
-        };
-      });
-    }
-
-    const changes: { id: string; positionChanged: boolean; sizeChanged: boolean }[] = [];
-    for (let i = 0; i < stacks.length; i++) {
-      const before = stacks[i];
-      const after = arranged[i];
-      changes.push({
-        id: after.activeCardId,
-        positionChanged:
-          before.position.x !== after.position.x ||
-          before.position.y !== after.position.y,
-        sizeChanged:
-          before.size.width !== after.size.width ||
-          before.size.height !== after.size.height,
-      });
-    }
-
-    for (const ch of changes) {
-      if (ch.positionChanged) this.cardLifecycle.notifyCardWillMove(ch.id);
-      if (ch.sizeChanged) this.cardLifecycle.notifyCardWillResize(ch.id);
-    }
-
-    // Fold the arranged panes back into the deck's own order, leaving the
-    // skipped Lens pane at its place in the array (z-order is array order).
-    const arrangedById = new Map(arranged.map((s) => [s.id, s]));
-    this.deckState = {
-      ...this.deckState,
-      panes: this.deckState.panes.map((s) => arrangedById.get(s.id) ?? s),
-    };
+  sendPaneBehind(paneId: string, belowPaneId: string): void {
+    if (paneId === belowPaneId) return;
+    const panes = this.deckState.panes;
+    const fromIdx = panes.findIndex((s) => s.id === paneId);
+    if (fromIdx === -1) return;
+    const next = [...panes];
+    const [moved] = next.splice(fromIdx, 1);
+    const toIdx = next.findIndex((s) => s.id === belowPaneId);
+    if (toIdx === -1) return;
+    next.splice(toIdx, 0, moved);
+    this.deckState = { ...this.deckState, panes: next };
     this.notify();
-
-    for (const ch of changes) {
-      if (ch.positionChanged) this.cardLifecycle.notifyCardDidMove(ch.id);
-      if (ch.sizeChanged) this.cardLifecycle.notifyCardDidResize(ch.id);
-    }
-
     this.scheduleSave();
   }
 
@@ -2264,7 +2180,7 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /** Per-pane position/size deltas between two pane arrays of the same shape,
-   *  keyed by active card — the lifecycle-event ledger `arrangeCards` builds. */
+   *  keyed by active card, for the will/did move/resize lifecycle events. */
   private _geometryChanges(
     before: readonly TugPaneState[],
     after: readonly TugPaneState[],

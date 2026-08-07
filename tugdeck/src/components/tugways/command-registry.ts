@@ -139,6 +139,12 @@ export interface CommandMenuFacts {
   readonly paneCount: number;
   /** Cards in the focused pane; 0 when nothing is focused. */
   readonly focusedPaneCardCount: number;
+  /**
+   * Cards in the deck's lateral ring: every tab of every visible pane —
+   * the front of each slot / rail stack plus the free panes, the Lens
+   * excluded. Gates Previous/Next Card, which walk exactly that ring.
+   */
+  readonly visibleCardCount: number;
   /** The focused pane's active card can be closed. */
   readonly focusedPaneActiveCardClosable: boolean;
   /** A card is selected — false on a deck deselected by a canvas click. */
@@ -155,6 +161,7 @@ export const EMPTY_MENU_FACTS: CommandMenuFacts = {
   openQuickly: false,
   paneCount: 0,
   focusedPaneCardCount: 0,
+  visibleCardCount: 0,
   focusedPaneActiveCardClosable: false,
   selectionActive: false,
   stackDepth: 0,
@@ -302,23 +309,6 @@ function chord(
  */
 export const COMPOSER_RESPONDER_SCOPE = "session-composer";
 
-/**
- * ⌘R — the slot-stack chord, held by exactly one of Cycle Stack and Reveal
- * Stack at a time.
- *
- * Which one is a user preference, so the table can only state a default:
- * Cycle Stack carries it below, and `applyStackChordPreference` moves it to
- * Reveal Stack when the user asks. Naming the binding here is what lets the
- * move be a rewrite of the same value rather than a second spelling of it.
- */
-export const STACK_CHORD: CommandBinding = {
-  chord: { key: "KeyR", meta: true, label: "r" },
-  scope: GLOBAL_SCOPE,
-  source: "default",
-  preventDefault: true,
-  menuEligible: true,
-};
-
 /* ---------------------------------------------------------------------------
  * Shared predicates
  *
@@ -375,9 +365,9 @@ function transcriptNavigable(chain: CommandValidationSource): boolean {
   );
 }
 
-/** Somewhere to navigate to: a multi-card pane, or a deck to re-enter. */
+/** Somewhere to navigate to: a lateral ring of at least two, or a deck to re-enter. */
 function cardNavigationAvailable(chain: CommandValidationSource): boolean {
-  return chain.menu.focusedPaneCardCount > 1 || deckDeselectedWithPanes(chain);
+  return chain.menu.visibleCardCount > 1 || deckDeselectedWithPanes(chain);
 }
 
 /**
@@ -998,14 +988,6 @@ export const COMMANDS: readonly CommandEntry[] = [
 
   // ---- Window / deck ----
   {
-    // Two menu items — Cascade and Tile — for one wire; per-value rows and
-    // their menu placement are a later judgment.
-    id: TUG_ACTIONS.ARRANGE_CARDS,
-    title: "Arrange Cards",
-    routing: "first-responder",
-    parameterized: true,
-  },
-  {
     // The pane list is rebuilt per open, so the payload set is runtime.
     id: TUG_ACTIONS.FOCUS_PANE,
     title: "Focus Pane",
@@ -1034,44 +1016,47 @@ export const COMMANDS: readonly CommandEntry[] = [
     mirrored: true,
     validate: cardNavigationAvailable,
   },
+  // The depth axis of card navigation: rotate the focused pane's slot stack
+  // front to back (⌥⌘] ) or back to front (⌥⌘[ ) — the ⌥-variant of the
+  // lateral pair on the same bracket keys, per the chord algebra. The three
+  // stack items take no deselected-deck escape hatch: they act on a SPECIFIC
+  // pane's stack, and with nothing selected there is no such pane.
   {
-    id: TUG_ACTIONS.CYCLE_CARD,
-    title: "Cycle Panes",
+    id: TUG_ACTIONS.PREVIOUS_STACK_CARD,
+    title: "Previous Card in Stack",
     routing: "first-responder",
-    menuItemId: "window.cyclePanes",
-    bindings: [chord({ key: "Backquote", ctrl: true, label: "`" })],
+    menuItemId: "window.previousCardInStack",
+    bindings: [
+      chord({ key: "BracketLeft", meta: true, alt: true, label: "[" }),
+    ],
     mirrored: true,
-    validate: (chain) =>
-      chain.menu.paneCount >= 2 || deckDeselectedWithPanes(chain),
+    validate: (chain) => chain.menu.stackDepth > 1,
   },
-  // The two slot-stack items take no deselected-deck escape hatch: they act
-  // on a SPECIFIC pane's stack, and with nothing selected there is no such
-  // pane. Both gate identically whichever one currently holds ⌘R, so the
-  // user's preference moves the chord and nothing else.
-  //
-  // ⌘R is one chord and one command holds it: Cycle Stack by default, Reveal
-  // Stack when the user prefers it, moved by `applyStackChordPreference`. The
-  // table states the default rather than giving both the chord, so a plain
-  // read of it answers "what does ⌘R do" with one command.
-  //
-  // Whoever holds it detaches it when the stack has nowhere to go — a chord
-  // on a dimmed item is eaten at the menu bar with a beep, and ⌘R dead
+  {
+    id: TUG_ACTIONS.NEXT_STACK_CARD,
+    title: "Next Card in Stack",
+    routing: "first-responder",
+    menuItemId: "window.nextCardInStack",
+    bindings: [
+      chord({ key: "BracketRight", meta: true, alt: true, label: "]" }),
+    ],
+    mirrored: true,
+    validate: (chain) => chain.menu.stackDepth > 1,
+  },
+  // Reveal Stack detaches ⌘R when the stack has nowhere to go — a chord on
+  // a dimmed item is eaten at the menu bar with a beep, and ⌘R dead
   // everywhere is a worse answer than ⌘R inapplicable here.
   {
     id: TUG_ACTIONS.REVEAL_STACK,
     title: "Reveal Stack",
     routing: "first-responder",
     menuItemId: "window.revealStack",
-    mirrored: true,
-    validate: (chain) => chain.menu.stackDepth > 1,
-    disabledChord: "detach",
-  },
-  {
-    id: TUG_ACTIONS.CYCLE_STACK,
-    title: "Cycle Stack",
-    routing: "first-responder",
-    menuItemId: "window.cycleStack",
-    bindings: [STACK_CHORD],
+    bindings: [
+      chord(
+        { key: "KeyR", meta: true, label: "r" },
+        { preventDefault: true, menuEligible: true },
+      ),
+    ],
     mirrored: true,
     validate: (chain) => chain.menu.stackDepth > 1,
     disabledChord: "detach",

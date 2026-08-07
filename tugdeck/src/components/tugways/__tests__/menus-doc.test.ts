@@ -65,7 +65,6 @@ describe("tuglaws/menus.md is generated where it is derived", () => {
       "activeCard",
       "selectionActive",
       "stackDepth",
-      "stackChord",
       "session",
       "file",
       "document",

@@ -70,7 +70,7 @@ describe("grouping", () => {
   test("a command's group is the menu its item lives in", () => {
     expect(rowFor("save")?.group).toBe("File");
     expect(rowFor("cut")?.group).toBe("Edit");
-    expect(rowFor("cycle-stack")?.group).toBe("Window");
+    expect(rowFor("reveal-stack")?.group).toBe("Window");
     expect(rowFor("quit-application")?.group).toBe("Tug");
   });
 
