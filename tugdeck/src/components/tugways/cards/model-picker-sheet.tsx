@@ -113,7 +113,7 @@ export function useModelPicker({
       readModelCatalog(),
     );
     void showSheet({
-      title: "Model",
+      title: "AI Model",
       icon: "Sparkles",
       iconRole: "agent",
       description: "Choose the model for this session.",

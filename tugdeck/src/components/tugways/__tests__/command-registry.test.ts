@@ -253,7 +253,6 @@ describe("promoted commands", () => {
     [TUG_ACTIONS.FIRST_TURN, "session.firstTurn", "detach"],
     [TUG_ACTIONS.LAST_TURN, "session.lastTurn", "detach"],
     [TUG_ACTIONS.OPEN_COMMAND_PICKER, "session.commandPicker", "detach"],
-    [TUG_ACTIONS.CYCLE_FOCUS_MODE, "session.cycleFocusMode", "detach"],
     [TUG_ACTIONS.SHOW_DEVTOOLS, "maker.devTools", "keep"],
   ];
 

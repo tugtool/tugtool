@@ -237,6 +237,7 @@ describe("computeCommandCapabilities", () => {
       hasTurns: false,
       changesVisible: false,
       historyVisible: false,
+      commitReady: false,
     };
 
     // No session card frontmost: the whole Session surface is dark.
@@ -281,13 +282,14 @@ describe("computeCommandCapabilities", () => {
       hasTurns: false,
       changesVisible: false,
       historyVisible: true,
+      commitReady: false,
     };
     const gates = computeCommandCapabilities(
       source(chain, { sessionCardFrontmost: true, session }),
     );
 
-    expect(gates["session.toggleChanges"].title).toBe("Show Changes");
-    expect(gates["session.toggleHistory"].title).toBe("Hide History");
+    expect(gates["session.toggleChanges"].title).toBe("Show Session Changes");
+    expect(gates["session.toggleHistory"].title).toBe("Hide Commit History");
   });
 
   test("the deck gates follow pane shape, including the deselected-deck hatch", () => {
@@ -380,6 +382,7 @@ describe("computeCommandCapabilities", () => {
           hasTurns: true,
           changesVisible: false,
           historyVisible: false,
+          commitReady: false,
         },
       };
       const gates = computeCommandCapabilities(

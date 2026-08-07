@@ -349,6 +349,16 @@ export const TUG_ACTIONS = {
   //                 the dispatch is a silent no-op. The focus-walk stage bails
   //                 on any modifier, so ⌥⇥ reaches this binding rather than
   //                 being consumed as a reverse-tab.
+  // NEXT_KEYBOARD_FOCUS / PREVIOUS_KEYBOARD_FOCUS: payload — none. Advance the
+  //                 keyboard focus ring one stop forward / back in the current
+  //                 mode's authored order — what ⇥ and ⇧⇥ do once the focus
+  //                 walk's precedence ladder has declined. `registry` routing
+  //                 into `advanceKeyViewFocus`, because the ring is engine
+  //                 state and no responder owns it. The View menu items carry
+  //                 NO key equivalent: AppKit scans key equivalents before the
+  //                 web view sees a keydown, so a literal ⇥ there would
+  //                 confiscate Tab app-wide — above completion-accept, above
+  //                 CM6's indentWithTab, above every native fallback.
   // RUN_SLASH_COMMAND: payload — `value: { name, args }` (a matched local
   //                 slash command + any trailing args). The prompt entry
   //                 dispatches it key-card-scoped when a typed `/command`
@@ -423,6 +433,8 @@ export const TUG_ACTIONS = {
   SET_PERMISSION_MODE: "set-permission-mode",
   INTERRUPT_SESSION: "interrupt-session",
   CYCLE_FOCUS_MODE: "cycle-focus-mode",
+  NEXT_KEYBOARD_FOCUS: "next-keyboard-focus",
+  PREVIOUS_KEYBOARD_FOCUS: "previous-keyboard-focus",
   PREVIOUS_TURN:  "previous-turn",
   NEXT_TURN:      "next-turn",
   FIRST_TURN:     "first-turn",

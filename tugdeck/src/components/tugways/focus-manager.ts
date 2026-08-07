@@ -3656,6 +3656,30 @@ export function getFocusManager(): FocusManager | null {
 }
 
 /**
+ * Advance the key view one stop in the current mode's authored order and land
+ * DOM focus on it — the whole of what a Tab press does once the precedence
+ * ladder above it has declined. Returns whether anything moved, which is what
+ * lets the Tab listener decide between swallowing the key and yielding to the
+ * browser's native walk.
+ *
+ * One performer for two doors: the ⇥ / ⇧⇥ listener in
+ * `responder-chain-provider`, and the View menu's Next / Previous Keyboard
+ * Focus commands, which reach it through `dispatchCommand` like everything
+ * else ([L30]). The listener passes its own manager; the menu path takes the
+ * registered one.
+ */
+export function advanceKeyViewFocus(
+  manager: FocusManager | null,
+  direction: 1 | -1,
+): boolean {
+  if (manager === null) return false;
+  const moved = direction === 1 ? manager.focusNext() : manager.focusPrevious();
+  if (moved === null) return false;
+  manager.place(null, { kind: "focusable", id: moved }, { modality: "keyboard" });
+  return true;
+}
+
+/**
  * May an activation dispatch claim the keyboard for `targetCardId`?
  * (Spec S03.) The entry point every programmatic focus path calls — see
  * {@link FocusManager.mayClaimActivationFocus} for the rules.

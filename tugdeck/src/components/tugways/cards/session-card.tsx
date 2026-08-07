@@ -2420,8 +2420,10 @@ export function SessionCardBody({
   }
   const shadeViewController = shadeViewControllerRef.current;
 
-  // Commit mode's per-card state + land path ([P03], Spec S03). User-driven
-  // (`/commit`, ⌃⌘C on an empty composer, Session ▸ Commit…), so it rides its
+  // Commit mode's per-card state + land path ([P03], Spec S03). User-driven —
+  // `/commit` and ⌃⌘C on an empty composer are the two doors INTO the mode;
+  // Session ▸ Commit Changes is the door out the other side, gated on the
+  // controller's `commitReady` — so it rides its
   // own controller rather than `CodeSessionStore`'s reducer. Entering the mode
   // turns the prompt entry into the message editor; the changes sheet's
   // visibility is separate card chrome (the `ShadeViewController`), coupled by
@@ -2510,6 +2512,7 @@ export function SessionCardBody({
     codeSessionStore,
     sessionMetadataStore,
     shadeViewController,
+    commitModeController,
   );
 
   // Imperative handle to the transcript pane. `handleAfterSubmit`

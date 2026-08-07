@@ -1063,9 +1063,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sessionMenu.addItem(NSMenuItem(title: "Stop", action: #selector(stopSession(_:)), keyEquivalent: "").identified("session.stop"))
         sessionMenu.addItem(NSMenuItem.separator())
 
-        // Transcript navigation and the card's two keyboard affordances.
-        // These were chord-only until now — working commands with no
-        // discoverable door — so the menu is what makes them findable.
+        // The composer's two affordances and transcript navigation. These were
+        // chord-only until now — working commands with no discoverable door —
+        // so the menu is what makes them findable.
         //
         // They are built WITHOUT key equivalents on purpose. Their chords
         // belong to the command registry, which publishes them per item in
@@ -1076,14 +1076,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // where AppKit eats it with a beep instead of letting the web view
         // have it. Until the sweep runs, the frontend's own key pipeline
         // serves these chords exactly as it did before the items existed.
-        sessionMenu.addItem(NSMenuItem(title: "Previous Turn", action: #selector(previousTurn(_:)), keyEquivalent: "").identified("session.previousTurn"))
-        sessionMenu.addItem(NSMenuItem(title: "Next Turn", action: #selector(nextTurn(_:)), keyEquivalent: "").identified("session.nextTurn"))
-        sessionMenu.addItem(NSMenuItem(title: "First Turn", action: #selector(firstTurn(_:)), keyEquivalent: "").identified("session.firstTurn"))
-        sessionMenu.addItem(NSMenuItem(title: "Last Turn", action: #selector(lastTurn(_:)), keyEquivalent: "").identified("session.lastTurn"))
-        sessionMenu.addItem(NSMenuItem.separator())
         sessionMenu.addItem(NSMenuItem(title: "Insert File…", action: #selector(insertFile(_:)), keyEquivalent: "").identified("session.insertFile"))
         sessionMenu.addItem(NSMenuItem(title: "Open Command Picker", action: #selector(openCommandPicker(_:)), keyEquivalent: "").identified("session.commandPicker"))
-        sessionMenu.addItem(NSMenuItem(title: "Cycle Focus Mode", action: #selector(cycleFocusMode(_:)), keyEquivalent: "").identified("session.cycleFocusMode"))
+
+        // Go in Transcript ▸ — the four turn-navigation verbs, submenued so
+        // they read as one axis rather than four rows competing with the
+        // session's own verbs for the reader's attention.
+        let goItem = NSMenuItem(title: "Go in Transcript", action: nil, keyEquivalent: "").identified("session.go")
+        let goMenu = NSMenu(title: "Go in Transcript")
+        goItem.submenu = goMenu
+        goMenu.addItem(NSMenuItem(title: "Previous Turn", action: #selector(previousTurn(_:)), keyEquivalent: "").identified("session.previousTurn"))
+        goMenu.addItem(NSMenuItem(title: "Next Turn", action: #selector(nextTurn(_:)), keyEquivalent: "").identified("session.nextTurn"))
+        goMenu.addItem(NSMenuItem(title: "First Turn", action: #selector(firstTurn(_:)), keyEquivalent: "").identified("session.firstTurn"))
+        goMenu.addItem(NSMenuItem(title: "Last Turn", action: #selector(lastTurn(_:)), keyEquivalent: "").identified("session.lastTurn"))
+        sessionMenu.addItem(goItem)
         sessionMenu.addItem(NSMenuItem.separator())
 
         func sessionCommandItem(_ title: String, _ command: String, _ id: String) -> NSMenuItem {
@@ -1091,10 +1097,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item.representedObject = command
             return item
         }
-        sessionMenu.addItem(sessionCommandItem("Clear Session", "clear", "session.new"))
+
+        // The changes group: glance, land, inspect, look back. Show/Hide the
+        // Changes / History Shades ([P05], Spec S04) bracket it — the title's
+        // verb rides the registry gate's title field on the menuState push, the
+        // represented view name rides `representedObject`, and the toggle
+        // round-trips a `toggle-{changes,history}-view` control frame.
+        //
+        // Commit Changes carries no chord. It is the LAND verb, not the enter
+        // verb (`/commit` and ⌃⌘C-on-an-empty-composer are the doors into
+        // commit mode), and it validates on the frontend's `commitReady` — mode
+        // active, session idle, changeset non-empty, message written. In exactly
+        // that state the composer's own submit key already lands it, and a
+        // literal ⏎ here would be eaten at the menu bar instead of inserting a
+        // newline for anyone whose submit key is ⇧⏎.
+        let toggleChangesItem = NSMenuItem(title: "Show Session Changes", action: #selector(toggleShadeView(_:)), keyEquivalent: "c", modifierMask: [.command, .control]).identified("session.toggleChanges")
+        toggleChangesItem.representedObject = "changes"
+        sessionMenu.addItem(toggleChangesItem)
+        sessionMenu.addItem(sessionCommandItem("Commit Changes", "commit", "session.commit"))
+        sessionMenu.addItem(sessionCommandItem("Show Project Diff", "diff", "session.diff"))
+        let toggleHistoryItem = NSMenuItem(title: "Show Commit History", action: #selector(toggleShadeView(_:)), keyEquivalent: "h", modifierMask: [.command, .control]).identified("session.toggleHistory")
+        toggleHistoryItem.representedObject = "history"
+        sessionMenu.addItem(toggleHistoryItem)
+        sessionMenu.addItem(NSMenuItem.separator())
+
         sessionMenu.addItem(sessionCommandItem("Resume Session…", "resume", "session.resume"))
         sessionMenu.addItem(sessionCommandItem("Rename Session…", "rename", "session.rename"))
-        sessionMenu.addItem(sessionCommandItem("Commit…", "commit", "session.commit"))
+        sessionMenu.addItem(sessionCommandItem("Clear Session", "clear", "session.new"))
         sessionMenu.addItem(NSMenuItem.separator())
 
         // Permission Mode — a native radio submenu over the four
@@ -1120,32 +1149,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         permissionModeMenu.addItem(NSMenuItem(title: "Cycle Permission Mode", action: #selector(cyclePermissionModeFromMenu(_:)), keyEquivalent: "p", modifierMask: [.command, .control, .option]).identified("session.permissionMode.cycle"))
         sessionMenu.addItem(permissionModeItem)
 
-        sessionMenu.addItem(sessionCommandItem("Model…", "model", "session.model"))
+        sessionMenu.addItem(sessionCommandItem("AI Model…", "model", "session.model"))
         sessionMenu.addItem(sessionCommandItem("Reasoning Effort…", "effort", "session.effort"))
         sessionMenu.addItem(sessionCommandItem("Permission Rules…", "permissions", "session.permissionRules"))
+        sessionMenu.addItem(sessionCommandItem("Add Working Directory…", "add-dir", "session.addDir"))
         sessionMenu.addItem(NSMenuItem.separator())
         sessionMenu.addItem(sessionCommandItem("Rewind…", "rewind", "session.rewind"))
         sessionMenu.addItem(sessionCommandItem("Compact Conversation", "compact", "session.compact"))
         sessionMenu.addItem(NSMenuItem.separator())
-        sessionMenu.addItem(sessionCommandItem("Add Working Directory…", "add-dir", "session.addDir"))
-        sessionMenu.addItem(sessionCommandItem("Show Project Diff", "diff", "session.diff"))
         sessionMenu.addItem(sessionCommandItem("Show Context", "context", "session.context"))
         sessionMenu.addItem(sessionCommandItem("Show Usage", "usage", "session.usage"))
-        // Show/Hide the Changes / History Shades ([P05], Spec S04). The title's
-        // verb rides the registry gate's title field on the menuState push;
-        // the represented view name rides `representedObject`, and the toggle
-        // round-trips a `toggle-{changes,history}-view` control frame.
-        let toggleChangesItem = NSMenuItem(title: "Show Changes", action: #selector(toggleShadeView(_:)), keyEquivalent: "c", modifierMask: [.command, .control]).identified("session.toggleChanges")
-        toggleChangesItem.representedObject = "changes"
-        sessionMenu.addItem(toggleChangesItem)
-        let toggleHistoryItem = NSMenuItem(title: "Show History", action: #selector(toggleShadeView(_:)), keyEquivalent: "h", modifierMask: [.command, .control]).identified("session.toggleHistory")
-        toggleHistoryItem.representedObject = "history"
-        sessionMenu.addItem(toggleHistoryItem)
-        sessionMenu.addItem(NSMenuItem.separator())
-        sessionMenu.addItem(sessionCommandItem("Skills", "skills", "session.skills"))
-        sessionMenu.addItem(sessionCommandItem("Agents", "agents", "session.agents"))
-        sessionMenu.addItem(sessionCommandItem("Hooks", "hooks", "session.hooks"))
-        sessionMenu.addItem(sessionCommandItem("Memory", "memory", "session.memory"))
+
+        // Configure ▸ — the four project/session configuration surfaces, each a
+        // viewer over what this session is working with.
+        let configureItem = NSMenuItem(title: "Configure", action: nil, keyEquivalent: "").identified("session.configure")
+        let configureMenu = NSMenu(title: "Configure")
+        configureItem.submenu = configureMenu
+        configureMenu.addItem(sessionCommandItem("Skills…", "skills", "session.skills"))
+        configureMenu.addItem(sessionCommandItem("Agents…", "agents", "session.agents"))
+        configureMenu.addItem(sessionCommandItem("Hooks…", "hooks", "session.hooks"))
+        configureMenu.addItem(sessionCommandItem("Memory…", "memory", "session.memory"))
+        sessionMenu.addItem(configureItem)
 
         // View Menu - position 4.
         // Appearance and page zoom; rebuilt on every open in
@@ -1592,8 +1616,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("open-command-picker")
     }
 
-    @objc private func cycleFocusMode(_ sender: Any?) {
-        sendControl("cycle-focus-mode")
+    @objc private func nextKeyboardFocus(_ sender: Any?) {
+        sendControl("next-keyboard-focus")
+    }
+
+    @objc private func previousKeyboardFocus(_ sender: Any?) {
+        sendControl("previous-keyboard-focus")
     }
 
     @objc private func showDevTools(_ sender: Any?) {
@@ -2392,6 +2420,18 @@ extension AppDelegate: NSMenuDelegate {
         zoomInAliasItem.allowsKeyEquivalentWhenHidden = true
         menu.addItem(zoomInAliasItem)
         menu.addItem(NSMenuItem(title: "Zoom Out", action: #selector(zoomOut(_:)), keyEquivalent: "-").identified("view.zoomOut"))
+
+        // Keyboard focus — the ring's two directions. Built WITHOUT key
+        // equivalents and left that way: ⇥ / ⇧⇥ are what perform these, but
+        // AppKit scans key equivalents before the web view sees a keydown, so a
+        // literal "\t" here would confiscate Tab app-wide — above the frontend's
+        // focus-walk precedence ladder, above an editor accepting a completion
+        // with Tab, above every native fallback. The items are the discoverable
+        // face of a chord that has to keep resolving in JS, the same bargain
+        // Session ▸ Stop takes with Escape.
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Next Keyboard Focus", action: #selector(nextKeyboardFocus(_:)), keyEquivalent: "").identified("view.nextKeyboardFocus"))
+        menu.addItem(NSMenuItem(title: "Previous Keyboard Focus", action: #selector(previousKeyboardFocus(_:)), keyEquivalent: "").identified("view.previousKeyboardFocus"))
 
         // The sweep writes `keyEquivalent` and the modifier mask only, so the
         // alias item's `allowsKeyEquivalentWhenHidden` survives it.

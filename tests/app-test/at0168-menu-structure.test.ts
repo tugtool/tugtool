@@ -89,6 +89,14 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "session.focusPrompt", key: "k", mods: MOD.command },
   { id: "session.stop", key: "" },
   { id: "session.insertFile", key: "i", mods: MOD.command | MOD.control },
+  // Go in Transcript ▸ and Configure ▸ — submenu shells; the walk recurses, so
+  // their children are found at depth 2.
+  { id: "session.go" },
+  { id: "session.previousTurn", key: "" },
+  { id: "session.configure" },
+  // Commit Changes is the LAND verb and carries no chord: in the only state
+  // where it is enabled, the composer's own submit key already lands it.
+  { id: "session.commit", key: "" },
   { id: "session.new" },
   { id: "session.resume" },
   { id: "session.rename" },

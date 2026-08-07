@@ -1947,6 +1947,22 @@ export const TugPromptEntry = React.forwardRef<
     promise: Promise<"shell" | "prompt" | null>;
   } | null>(null);
   const verdictDebounceRef = useRef<number | null>(null);
+  // A submit parked at one of the bounded waits below owns the draft; a second
+  // Return during that window would run the same line twice — and a wrongly
+  // re-run command cannot be un-run.
+  const submitArbitratingRef = useRef(false);
+  // The debounce timer is an acquisition; a pending one is released at
+  // unmount so it cannot fire into stores the card has already torn
+  // down [L27].
+  useLayoutEffect(
+    () => () => {
+      if (verdictDebounceRef.current !== null) {
+        window.clearTimeout(verdictDebounceRef.current);
+        verdictDebounceRef.current = null;
+      }
+    },
+    [],
+  );
 
   // Substrate-level extensions installed at mount time. The
   // data-empty sync writes through a ref-tracked root element —
@@ -1992,6 +2008,9 @@ export const TugPromptEntry = React.forwardRef<
               String(message.trim().length === 0),
             );
           }
+          // Same edge, told to the controller: the Session ▸ Commit Changes
+          // gate is a menu fact, and the menu cannot read a DOM attribute.
+          commitModeRef.current?.notifyMessageChanged();
           const drafting = commitSnapRef.current?.draftPhase === "drafting";
           const userEdit = update.transactions.some(
             (tr) => tr.isUserEvent("input") || tr.isUserEvent("delete"),
@@ -2510,10 +2529,17 @@ export const TugPromptEntry = React.forwardRef<
         timestamp: Date.now(),
       });
       onBeforeSubmitRef.current?.();
-      editor.clear();
+      // The verdict wait leaves the editor live. Anything typed during it is
+      // the user's next draft, not part of this submission — clearing would
+      // destroy it [L23] — so the editor is only emptied when it still holds
+      // exactly what was submitted.
+      const unchanged = editor.captureState().text === captured.text;
+      if (unchanged) editor.clear();
       onAfterSubmitRef.current?.();
-      currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
-      persistClearedDraft();
+      if (unchanged) {
+        currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
+        persistClearedDraft();
+      }
     };
 
     if (
@@ -2528,72 +2554,89 @@ export const TugPromptEntry = React.forwardRef<
         pathCommandsStoreRef.current?.getSnapshot() ?? null,
       )
     ) {
-      // Grade before asking. The typing debounce normally has the answer
-      // cached already, so this resolves instantly; the bounded wait is only
-      // for the case where Return beat the debounce, and it expires to
-      // `unknown`, which is the pre-grader path.
-      const grammarStore = shellGrammarStoreRef.current;
-      const grade =
-        grammarStore === undefined
-          ? UNKNOWN_GRADE
-          : await grammarStore.requestWithin(submitText, GRADE_SUBMIT_WAIT_MS);
-      const modelCall = modelCallForBand(grade.band);
-      // `run` means the grader accounted for every token against the program's
-      // own grammar. There is no question left to put to the model, and no
-      // English left in the line for the veto to find.
-      if (modelCall === "run") {
+      // A submit already parked at one of the bounded waits below owns this
+      // draft: letting a second Return through (key auto-repeat, an impatient
+      // double-tap) would ask the same question twice and run the same command
+      // twice. Dropped rather than deferred — the parked submit is about to
+      // route the very line this one carries.
+      if (submitArbitratingRef.current) return;
+      submitArbitratingRef.current = true;
+      let toShell = false;
+      try {
+        // Grade before asking. The typing debounce normally has the answer
+        // cached already, so this resolves instantly; the bounded wait is only
+        // for the case where Return beat the debounce, and it expires to
+        // `unknown`, which is the pre-grader path.
+        const grammarStore = shellGrammarStoreRef.current;
+        const grade =
+          grammarStore === undefined
+            ? UNKNOWN_GRADE
+            : await grammarStore.requestWithin(submitText, GRADE_SUBMIT_WAIT_MS);
+        const modelCall = modelCallForBand(grade.band);
+        // `run` means the grader accounted for every token against the program's
+        // own grammar. There is no question left to put to the model, and no
+        // English left in the line for the veto to find.
+        //
+        // `skip` means something in the line names nothing on this machine, so
+        // the model has nothing to add: fall through to Claude, no round trip.
+        if (modelCall === "run") {
+          toShell = true;
+        } else if (modelCall !== "skip") {
+          const grammar =
+            modelCall === "ask-with-grammar" ? grade.synopsis : undefined;
+          const withGrammar = grammar !== undefined;
+          let verdict = verdictCacheRef.current.get(submitText, withGrammar) ?? null;
+          if (verdict === null) {
+            // Either the typing debounce already asked and the model hasn't
+            // answered, or Return beat the debounce and nobody has asked yet. Both
+            // resolve the same way: one request for this exact line, awaited for a
+            // bounded moment.
+            const inFlight = pendingVerdictRef.current;
+            let asked: Promise<"shell" | "prompt" | null>;
+            // The in-flight request the debounce fired carries no documentation,
+            // so it cannot stand in for the grammar-bearing question.
+            if (!withGrammar && inFlight !== null && inFlight.text === submitText) {
+              asked = inFlight.promise;
+            } else {
+              // A debounce timer that hasn't fired would ask the same question a
+              // second time; the submit supersedes it.
+              if (verdictDebounceRef.current !== null) {
+                window.clearTimeout(verdictDebounceRef.current);
+                verdictDebounceRef.current = null;
+              }
+              const store = shellClassifyStoreRef.current;
+              asked =
+                store === undefined
+                  ? Promise.resolve(null)
+                  : store.request(submitText, grammar);
+            }
+            verdict = await new Promise<"shell" | "prompt" | null>((resolve) => {
+              // The race timer is retired when the answer wins it [L27].
+              const timer = window.setTimeout(
+                () => resolve(null),
+                VERDICT_SUBMIT_WAIT_MS,
+              );
+              void asked.then((answered) => {
+                window.clearTimeout(timer);
+                resolve(answered);
+              });
+            });
+          }
+          // Only an explicit `shell` verdict routes. A `prompt`, a failed request,
+          // and an expired wait are all the same answer: send it to Claude.
+          //
+          // The verdict is vetoed here rather than where it is cached, so the cache
+          // stays a faithful record of what the model said and every path into the
+          // shell — cached verdict, fresh answer, awaited in-flight one — passes the
+          // same gate on the way through.
+          toShell = verdict === "shell" && !vetoesShellVerdict(submitText);
+        }
+      } finally {
+        submitArbitratingRef.current = false;
+      }
+      if (toShell) {
         routeToShell();
         return;
-      }
-      // `skip` means something in the line names nothing on this machine, so
-      // the model has nothing to add: fall through to Claude, no round trip.
-      if (modelCall !== "skip") {
-        const grammar =
-          modelCall === "ask-with-grammar" ? grade.synopsis : undefined;
-        const withGrammar = grammar !== undefined;
-        let verdict = verdictCacheRef.current.get(submitText, withGrammar) ?? null;
-        if (verdict === null) {
-          // Either the typing debounce already asked and the model hasn't
-          // answered, or Return beat the debounce and nobody has asked yet. Both
-          // resolve the same way: one request for this exact line, awaited for a
-          // bounded moment.
-          const inFlight = pendingVerdictRef.current;
-          let asked: Promise<"shell" | "prompt" | null>;
-          // The in-flight request the debounce fired carries no documentation,
-          // so it cannot stand in for the grammar-bearing question.
-          if (!withGrammar && inFlight !== null && inFlight.text === submitText) {
-            asked = inFlight.promise;
-          } else {
-            // A debounce timer that hasn't fired would ask the same question a
-            // second time; the submit supersedes it.
-            if (verdictDebounceRef.current !== null) {
-              window.clearTimeout(verdictDebounceRef.current);
-              verdictDebounceRef.current = null;
-            }
-            const store = shellClassifyStoreRef.current;
-            asked =
-              store === undefined
-                ? Promise.resolve(null)
-                : store.request(submitText, grammar);
-          }
-          verdict = await Promise.race([
-            asked,
-            new Promise<null>((resolve) => {
-              window.setTimeout(() => resolve(null), VERDICT_SUBMIT_WAIT_MS);
-            }),
-          ]);
-        }
-        // Only an explicit `shell` verdict routes. A `prompt`, a failed request,
-        // and an expired wait are all the same answer: send it to Claude.
-        //
-        // The verdict is vetoed here rather than where it is cached, so the cache
-        // stays a faithful record of what the model said and every path into the
-        // shell — cached verdict, fresh answer, awaited in-flight one — passes the
-        // same gate on the way through.
-        if (verdict === "shell" && !vetoesShellVerdict(submitText)) {
-          routeToShell();
-          return;
-        }
       }
     }
 
@@ -2650,18 +2693,25 @@ export const TugPromptEntry = React.forwardRef<
     // Fire the pre-clear hook so hosts can drive submit-specific
     // effects BEFORE `editor.clear()` flips `data-empty="true"`.
     onBeforeSubmitRef.current?.();
-    editor.clear();
+    // The verdict wait above leaves the editor live. Anything typed during it
+    // is the user's next draft, not part of this submission — clearing would
+    // destroy it [L23] — so the editor is only emptied when it still holds
+    // exactly what was submitted.
+    const unchanged = editor.captureState().text === captured.text;
+    if (unchanged) editor.clear();
     // Fire AFTER clear so host hooks (e.g., refocus) act on the
     // already-empty editor.
     onAfterSubmitRef.current?.();
-    // Submitting returns the history cursor to the end of the list, so
-    // the next ↑ starts from the most recent entry (this submission)
-    // rather than wherever the user had browsed to. The draft is the
-    // now-empty editor.
-    currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
-    // Force the cleared draft durable now so a relaunch can't restore the
-    // message we just sent (see `persistClearedDraft`).
-    persistClearedDraft();
+    if (unchanged) {
+      // Submitting returns the history cursor to the end of the list, so
+      // the next ↑ starts from the most recent entry (this submission)
+      // rather than wherever the user had browsed to. The draft is the
+      // now-empty editor.
+      currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
+      // Force the cleared draft durable now so a relaunch can't restore the
+      // message we just sent (see `persistClearedDraft`).
+      persistClearedDraft();
+    }
     // Route is a sticky user preference. Do not reset on submit.
   }, [
     codeSessionStore,

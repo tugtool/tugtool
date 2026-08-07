@@ -88,13 +88,13 @@ describe.skipIf(!SHOULD_RUN)("AT0171: Session-menu card-type validation", () => 
         await expectEnabled(app, "session.focusPrompt", true);
         await expectEnabled(app, "file.exportTranscript", true);
         await expectEnabled(app, "help.shortcuts", true);
-        // The command picker and the focus-mode toggle carry no predicate
-        // of their own — the key-card walk asks the card whether it
-        // handles them, which at the picker stage it does not: an unbound
-        // card renders the project picker, and the composer those two
-        // commands act on has not been built yet.
+        // The command picker carries no predicate of its own — the key-card
+        // walk asks the card whether it handles it, which at the picker stage
+        // it does not: an unbound card renders the project picker, and the
+        // composer the command acts on has not been built yet.
         await expectEnabled(app, "session.commandPicker", false);
-        await expectEnabled(app, "session.cycleFocusMode", false);
+        // Commit Changes needs commit mode active with a message written.
+        await expectEnabled(app, "session.commit", false);
         // Transcript navigation needs a transcript.
         await expectEnabled(app, "session.previousTurn", false);
         await expectEnabled(app, "session.nextTurn", false);
@@ -131,10 +131,12 @@ describe.skipIf(!SHOULD_RUN)("AT0171: Session-menu card-type validation", () => 
         await app.awaitEngineReady("A");
 
         await expectEnabled(app, "session.focusPrompt", true);
-        // The composer exists now, so the two commands that act on it
-        // answer for themselves through the key-card walk.
+        // The composer exists now, so the command that acts on it answers for
+        // itself through the key-card walk.
         await expectEnabled(app, "session.commandPicker", true);
-        await expectEnabled(app, "session.cycleFocusMode", true);
+        // Still dark: a bound idle session is not a session in commit mode with
+        // a message written, which is the whole of the Commit Changes gate.
+        await expectEnabled(app, "session.commit", false);
         await expectEnabled(app, "session.new", true);
         await expectEnabled(app, "session.resume", true);
         await expectEnabled(app, "session.rename", true);

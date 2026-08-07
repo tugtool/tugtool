@@ -120,6 +120,7 @@ export interface CommandMenuFacts {
     readonly hasTurns: boolean;
     readonly changesVisible: boolean;
     readonly historyVisible: boolean;
+    readonly commitReady: boolean;
   } | null;
   /**
    * The frontmost Text card's File-menu gates, already reduced from its
@@ -408,8 +409,18 @@ const SLASH_BRIDGES: readonly SlashBridge[] = [
   ["clear", "Clear Session", "session.new"],
   ["resume", "Resume Session…", "session.resume"],
   ["rename", "Rename Session…", "session.rename"],
-  ["commit", "Commit…", "session.commit"],
-  ["model", "Model…", "session.model"],
+  // The menu door means LAND, not enter. `/commit` and ⌃⌘C-on-an-empty-composer
+  // are the two doors that put you into commit mode; by the time this item is
+  // enabled you are already in it with a message written, so it performs rather
+  // than opening — hence no ellipsis. Every gate is folded into `commitReady`
+  // by `CommitModeController`, which is the only thing that sees all four.
+  [
+    "commit",
+    "Commit Changes",
+    "session.commit",
+    (chain) => chain.menu.session?.commitReady ?? false,
+  ],
+  ["model", "AI Model…", "session.model"],
   ["effort", "Reasoning Effort…", "session.effort"],
   ["permissions", "Permission Rules…", "session.permissionRules"],
   // Rewind needs somewhere to rewind to.
@@ -424,10 +435,10 @@ const SLASH_BRIDGES: readonly SlashBridge[] = [
   ["diff", "Show Project Diff", "session.diff"],
   ["context", "Show Context", "session.context"],
   ["usage", "Show Usage", "session.usage"],
-  ["skills", "Skills", "session.skills"],
-  ["agents", "Agents", "session.agents"],
-  ["hooks", "Hooks", "session.hooks"],
-  ["memory", "Memory", "session.memory"],
+  ["skills", "Skills…", "session.skills"],
+  ["agents", "Agents…", "session.agents"],
+  ["hooks", "Hooks…", "session.hooks"],
+  ["memory", "Memory…", "session.memory"],
   // The shortcuts sheet is card documentation, not session work.
   [
     "help",
@@ -850,7 +861,7 @@ export const COMMANDS: readonly CommandEntry[] = [
   ...PERMISSION_MODE_COMMANDS,
   {
     id: TUG_ACTIONS.TOGGLE_CHANGES_VIEW,
-    title: "Show Changes",
+    title: "Show Session Changes",
     routing: "key-card",
     menuItemId: "session.toggleChanges",
     bindings: [
@@ -865,12 +876,12 @@ export const COMMANDS: readonly CommandEntry[] = [
     // the title follows the Shade's live visibility.
     dynamicTitle: (chain) =>
       (chain.menu.session?.changesVisible ?? false)
-        ? "Hide Changes"
-        : "Show Changes",
+        ? "Hide Session Changes"
+        : "Show Session Changes",
   },
   {
     id: TUG_ACTIONS.TOGGLE_HISTORY_VIEW,
-    title: "Show History",
+    title: "Show Commit History",
     routing: "key-card",
     menuItemId: "session.toggleHistory",
     bindings: [
@@ -883,12 +894,36 @@ export const COMMANDS: readonly CommandEntry[] = [
     validate: sessionBound,
     dynamicTitle: (chain) =>
       (chain.menu.session?.historyVisible ?? false)
-        ? "Hide History"
-        : "Show History",
+        ? "Hide Commit History"
+        : "Show Commit History",
   },
   ...SLASH_BRIDGE_COMMANDS,
 
   // ---- View ----
+  // The focus ring's two directions, promoted out of the raw Tab listener into
+  // the table ([L30]) — they were user-invocable commands with no row and no
+  // discoverable door. Both are deliberately chordless HERE: ⇥ / ⇧⇥ stay with
+  // the focus walk in `responder-chain-provider`, which owns a precedence
+  // ladder (a surface consuming Tab keeps it; an empty walk yields to native
+  // Tab) that a menu key equivalent would sit above and destroy. Same bargain
+  // `interrupt-session` takes with Escape: the chord routes in JS, the menu
+  // item is the discoverable face.
+  //
+  // View rather than Session on purpose: the ring is deck-wide, and the
+  // Session menu's premise is that its items dim without a frontmost session
+  // card.
+  {
+    id: TUG_ACTIONS.NEXT_KEYBOARD_FOCUS,
+    title: "Next Keyboard Focus",
+    routing: "registry",
+    menuItemId: "view.nextKeyboardFocus",
+  },
+  {
+    id: TUG_ACTIONS.PREVIOUS_KEYBOARD_FOCUS,
+    title: "Previous Keyboard Focus",
+    routing: "registry",
+    menuItemId: "view.previousKeyboardFocus",
+  },
   {
     // The theme submenu's membership is a filesystem scan, so the payload
     // set is only known at runtime.
@@ -1576,18 +1611,15 @@ export const COMMANDS: readonly CommandEntry[] = [
     ],
   },
   {
+    // Chord-only, and deliberately so. Focus-mode cycling is a text-first
+    // card's own affordance, reached by ⌥⇥ and by the card's chrome; a menu
+    // item for it would put ⌥⇥ into AppKit's key-equivalent scan, above every
+    // surface that wants a modified Tab, to advertise a gesture that only makes
+    // sense once you are already inside such a card.
     id: TUG_ACTIONS.CYCLE_FOCUS_MODE,
     title: "Cycle Focus Mode",
     routing: "key-card",
-    menuItemId: "session.cycleFocusMode",
-    bindings: [
-      chord(
-        { key: "Tab", alt: true, label: "Tab" },
-        { preventDefault: true, menuEligible: true },
-      ),
-    ],
-    mirrored: true,
-    disabledChord: "detach",
+    bindings: [chord({ key: "Tab", alt: true, label: "Tab" }, { preventDefault: true })],
   },
   {
     id: TUG_ACTIONS.PREVIOUS_TURN,

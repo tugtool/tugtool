@@ -94,6 +94,15 @@ export interface CommitModeSnapshot {
   persistedMessage: string;
   /** Whether the persisted draft was user-edited (guards the Replace confirm). */
   edited: boolean;
+  /**
+   * Every land gate satisfied right now, message included — the fact the
+   * Session ▸ Commit Changes menu item is gated on. Distinct from
+   * {@link canLandIgnoringMessage}, which deliberately omits the message so the
+   * composer's Commit button can CSS-gate emptiness per keystroke ([L22]). This
+   * one folds the message back in, and only ever changes on the empty ↔
+   * non-empty edge, so the menu-state push it feeds stays edge-driven too.
+   */
+  commitReady: boolean;
   /** Commit round-trip phase — `"pending"` drives the Committing… button label. */
   commitPhase: CommitPhase;
   /** Commit error detail to surface, or null. */
@@ -200,11 +209,17 @@ export class CommitModeController {
       message: "x", // ignore message emptiness here (CSS-gated on data-empty)
       fileCount,
     });
+    // The menu's gate reads the composer live, through the same provider
+    // `leave` persists with. Only meaningful inside the mode — outside it the
+    // provider is reading the prompt draft, which is not a commit message.
+    const messagePresent =
+      this.active && (this.messageProvider?.() ?? "").trim().length > 0;
 
     return {
       active: this.active,
       seedMessage: this.seedMessage,
       canLandIgnoringMessage: gate.ok,
+      commitReady: this.active && gate.ok && messagePresent,
       fileCount,
       claimableCount,
       draftPhase,
@@ -261,6 +276,18 @@ export class CommitModeController {
    */
   setMessageProvider(read: (() => string) | null): void {
     this.messageProvider = read;
+    this.recompute();
+  }
+
+  /**
+   * The composer telling the controller its message crossed the empty ↔
+   * non-empty line, so {@link CommitModeSnapshot.commitReady} can move. Called
+   * from the same substrate update listener that writes `data-commit-empty`;
+   * `recompute` fires only when the snapshot actually differs, so the keystrokes
+   * between the edges cost a comparison and nothing else ([L22]).
+   */
+  notifyMessageChanged(): void {
+    this.recompute();
   }
 
   /**
@@ -390,6 +417,7 @@ function snapshotsEqual(a: CommitModeSnapshot, b: CommitModeSnapshot): boolean {
     a.active === b.active &&
     a.seedMessage === b.seedMessage &&
     a.canLandIgnoringMessage === b.canLandIgnoringMessage &&
+    a.commitReady === b.commitReady &&
     a.fileCount === b.fileCount &&
     a.claimableCount === b.claimableCount &&
     a.draftPhase === b.draftPhase &&

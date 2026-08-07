@@ -28,6 +28,7 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { COMMANDS_BY_ID, isCommandId } from "@/components/tugways/command-registry";
+import { advanceKeyViewFocus, getFocusManager } from "@/components/tugways/focus-manager";
 import { dispatchCommand } from "./command-dispatch";
 import { openDiffInCard } from "@/lib/open-diff-in-card";
 import { isDiffDescriptor } from "@/lib/git-diff-store";
@@ -493,6 +494,15 @@ export function initActionDispatch(
   // browser-dev keybinding — the sidebar-toggle grammar's other half.
   registerAction("toggle-jots", () => {
     deckManager.toggleSidebarPane(JOTS_CARD_ID);
+  });
+
+  // next/previous-keyboard-focus: move the keyboard focus ring one stop, the
+  // View menu's face for what ⇥ / ⇧⇥ do. Both doors run the one performer.
+  registerAction(TUG_ACTIONS.NEXT_KEYBOARD_FOCUS, () => {
+    advanceKeyViewFocus(getFocusManager(), 1);
+  });
+  registerAction(TUG_ACTIONS.PREVIOUS_KEYBOARD_FOCUS, () => {
+    advanceKeyViewFocus(getFocusManager(), -1);
   });
 
   // set-imposition: choose the deck's N-up arrangement, or turn it off.

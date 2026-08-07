@@ -417,6 +417,13 @@ export interface MenuStateSessionBlock {
   changesVisible: boolean;
   /** The History Shade is showing — drives the "Show/Hide History" verb. */
   historyVisible: boolean;
+  /**
+   * Commit mode is active, the session is idle, the changeset is non-empty and
+   * a message is written — every gate Session ▸ Commit Changes needs. Folded
+   * into one boolean by `CommitModeController`, which owns all four facts;
+   * spreading them across the payload would invite a second opinion here.
+   */
+  commitReady: boolean;
 }
 
 /**
@@ -888,6 +895,7 @@ export class HostMenuStatePublisher {
               hasTurns: session.hasTurns,
               changesVisible: session.changesVisible,
               historyVisible: session.historyVisible,
+              commitReady: session.commitReady,
             },
       fileGates: file === null ? null : computeFileMenuGates(file),
       openQuickly,

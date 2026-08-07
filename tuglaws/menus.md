@@ -162,9 +162,9 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌃` | `cycle-card` | Cycle Panes | JS, global |
 | ⌃⇧⌘A | `disclaim-all-changes` | Disclaim All Changes | JS, responder |
 | ⌃⌘A | `claim-all-changes` | Claim All Changes | JS, responder |
-| ⌃⌘C | `toggle-changes-view` | Show Changes | JS, global |
+| ⌃⌘C | `toggle-changes-view` | Show Session Changes | JS, global |
 | ⌃⌘F | `toggle-full-screen` | Enter Full Screen | menu bar (AppKit's own) |
-| ⌃⌘H | `toggle-history-view` | Show History | JS, global |
+| ⌃⌘H | `toggle-history-view` | Show Commit History | JS, global |
 | ⌃⌘I | `insert-file` | Insert File… | menu bar (swept) |
 | ⌃⌘J | `toggle-jots` | Show Jots | menu bar (swept) |
 | ⌃⌘K | `show-keyboard-shortcuts` | Keyboard Shortcuts… | menu bar (swept) |
@@ -208,7 +208,7 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌘Z | `undo` | Undo | JS, global |
 | ⌘{ | `previous-tab` | Previous Card | JS, global |
 | ⌘} | `next-tab` | Next Card | JS, global |
-| ⌥⇥ | `cycle-focus-mode` | Cycle Focus Mode | menu bar (swept) |
+| ⌥⇥ | `cycle-focus-mode` | Cycle Focus Mode | JS, global |
 | ⌥⇧⌘C | `copy-as-plain-text` | Copy as Plain Text | JS, global |
 | ⌥⇧⌘V | `paste-as-plain-text` | Paste as Plain Text | JS, global |
 | ⌥⇧⌘↑ | `first-turn` | First Turn | menu bar (swept) |
@@ -281,7 +281,6 @@ Every menu item, the command behind it, and where each answer comes from. Genera
 | `session.commit` | `run-slash-command:commit` | key card | registry gate |
 | `session.compact` | `run-slash-command:compact` | key card | registry gate |
 | `session.context` | `run-slash-command:context` | key card | registry gate |
-| `session.cycleFocusMode` | `cycle-focus-mode` | key card | registry gate |
 | `session.diff` | `run-slash-command:diff` | key card | registry gate |
 | `session.effort` | `run-slash-command:effort` | key card | registry gate |
 | `session.firstTurn` | `first-turn` | key card | registry gate |
@@ -309,7 +308,9 @@ Every menu item, the command behind it, and where each answer comes from. Genera
 | `session.toggleHistory` | `toggle-history-view` | key card | registry gate |
 | `session.usage` | `run-slash-command:usage` | key card | registry gate |
 | `view.actualSize` | `zoom-actual` | first responder | host tier |
+| `view.nextKeyboardFocus` | `next-keyboard-focus` | registered handler | host tier |
 | `view.nextTheme` | `next-theme` | registered handler | host tier |
+| `view.previousKeyboardFocus` | `previous-keyboard-focus` | registered handler | host tier |
 | `view.zoomIn` | `zoom-in` | first responder | host tier |
 | `view.zoomOut` | `zoom-out` | first responder | host tier |
 | `window.cyclePanes` | `cycle-card` | first responder | registry gate |

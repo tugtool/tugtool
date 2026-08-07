@@ -127,7 +127,7 @@ export function ModelChip({
         : `${label} — exact model resolves on the first turn`;
   }
 
-  const copy = useCopyableButton(`Model: ${content}`);
+  const copy = useCopyableButton(`AI Model: ${content}`);
 
   // `TugPushButton` has no `caution` role (unlike `TugBadge`), so an unknown
   // model is surfaced via the `?` value + a `data-unknown` hook rather than a
@@ -139,13 +139,13 @@ export function ModelChip({
       ref={copy.ref as React.Ref<HTMLButtonElement>}
       onContextMenu={copy.onContextMenu}
       layout="label-top"
-      label="Model"
+      label="AI Model"
       size="sm"
       emphasis="tinted"
       role="action"
       data-slot="model-chip"
       data-unknown={unknown ? "" : undefined}
-      aria-label="Model"
+      aria-label="AI Model"
       title={title}
       disabled={disabled}
       focusGroup={focusGroup}

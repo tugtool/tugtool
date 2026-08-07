@@ -2,7 +2,7 @@
  * useMenuStatePublication — publishes the session card's session state to
  * the host menu-state aggregator (`lib/host-menu-state.ts`), which
  * forwards it to the Swift host for menu validation (Stop enablement,
- * the permission-mode checkmark, rewind/copy gates).
+ * the permission-mode checkmark, rewind/copy gates, the Commit Changes gate).
  *
  * Publication is a side effect, not render-driving, so the effect
  * subscribes to the stores directly ([L22]) instead of re-publishing
@@ -21,6 +21,7 @@
 import { useEffect } from "react";
 
 import type { CodeSessionStore } from "@/lib/code-session-store";
+import type { CommitModeController } from "@/lib/commit-mode-controller";
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ShadeViewController } from "@/lib/shade-view-controller";
@@ -51,6 +52,7 @@ export function useMenuStatePublication(
   codeSessionStore: CodeSessionStore,
   sessionMetadataStore: SessionMetadataStore,
   shadeViewController: ShadeViewController,
+  commitModeController: CommitModeController,
 ): void {
   useEffect(() => {
     let cachedTranscript: ReadonlyArray<TurnEntry> | null = null;
@@ -79,6 +81,7 @@ export function useMenuStatePublication(
         ),
         changesVisible: shadeView === "changes",
         historyVisible: shadeView === "history",
+        commitReady: commitModeController.getSnapshot().commitReady,
         ...cachedFacts,
       });
     };
@@ -88,6 +91,10 @@ export function useMenuStatePublication(
       sessionMetadataStore.subscribe(publish),
       cardSessionBindingStore.subscribe(publish),
       shadeViewController.subscribe(publish),
+      // Commit readiness moves on the message's empty ↔ non-empty edge as well
+      // as on the turn / changeset stores, and only the controller sees the
+      // first of those.
+      commitModeController.subscribe(publish),
     ];
     publish();
 
@@ -95,5 +102,11 @@ export function useMenuStatePublication(
       for (const unsubscribe of unsubscribes) unsubscribe();
       clearSessionMenuState(cardId);
     };
-  }, [cardId, codeSessionStore, sessionMetadataStore, shadeViewController]);
+  }, [
+    cardId,
+    codeSessionStore,
+    sessionMetadataStore,
+    shadeViewController,
+    commitModeController,
+  ]);
 }

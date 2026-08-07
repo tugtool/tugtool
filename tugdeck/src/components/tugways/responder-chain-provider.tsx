@@ -23,7 +23,7 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
-import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, KEY_SINK_ATTRIBUTE, BASE_FOCUS_MODE, registerFocusManager } from "./focus-manager";
+import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, KEY_SINK_ATTRIBUTE, BASE_FOCUS_MODE, registerFocusManager, advanceKeyViewFocus } from "./focus-manager";
 import { resolveFocusAct } from "./focus-act";
 import { arrowDirection } from "./spatial-order";
 import { arrowReleaseSubject, resolveArrowRelease } from "./arrow-release";
@@ -435,16 +435,11 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
           active.closest(`[${TAB_CONSUME_ATTRIBUTE}="true"]`) !== null) ||
         focusManager.keyViewConsumesTab();
       if (surfaceConsumes) return;
-      // (2) Advance the walk. Non-null = the key view moved; place it (the
-      // atomic land-DOM-focus-and-project pass) and swallow the key. Null =
-      // nothing to move to; yield to native Tab.
-      const moved = event.shiftKey
-        ? focusManager.focusPrevious()
-        : focusManager.focusNext();
-      if (moved !== null) {
-        focusManager.place(null, { kind: "focusable", id: moved }, {
-          modality: "keyboard",
-        });
+      // (2) Advance the walk — the shared performer the View menu's Next /
+      // Previous Keyboard Focus commands also run. True = the key view moved
+      // and was placed; swallow the key. False = nothing to move to; yield to
+      // native Tab.
+      if (advanceKeyViewFocus(focusManager, event.shiftKey ? -1 : 1)) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }
