@@ -10,9 +10,23 @@ import {
   attachChangesetDraftStore,
   _resetChangesetDraftStoreForTest,
   _ingestDraftFrameForTest,
+  _fireDraftStallForTest,
 } from "../changeset-draft-store";
 
 const fakeConn = { onFrame: () => () => {} } as never;
+
+/** A fake connection whose disconnect callback the test fires by hand. */
+function fakeConnWithDisconnect() {
+  let notify: ((state: { disconnected: boolean }) => void) | null = null;
+  const conn = {
+    onFrame: () => () => {},
+    onDisconnectState: (cb: (state: { disconnected: boolean }) => void) => {
+      notify = cb;
+      return () => {};
+    },
+  } as never;
+  return { conn, disconnect: () => notify?.({ disconnected: true }) };
+}
 
 const KEY = { project_dir: "/p", owner_kind: "session", owner_id: "s1" };
 
@@ -73,5 +87,50 @@ describe("changeset draft overlay", () => {
     const store = attachChangesetDraftStore(fakeConn);
     _ingestDraftFrameForTest({ action: "changeset_draft_state", ...KEY, state: "drafting" });
     expect(store.overlay("/other", "dash", "tugdash/x").phase).toBe("idle");
+  });
+
+  test("a stalled drafting overlay folds to a recoverable error", () => {
+    const store = attachChangesetDraftStore(fakeConn);
+    _ingestDraftFrameForTest({ action: "changeset_draft_state", ...KEY, state: "drafting" });
+    _ingestDraftFrameForTest({ action: "changeset_draft_delta", ...KEY, text: "half a" });
+
+    _fireDraftStallForTest("/p", "session", "s1");
+    const overlay = store.overlay("/p", "session", "s1");
+    expect(overlay.phase).toBe("error");
+    expect(overlay.text).toBe("half a");
+    expect(overlay.detail).toContain("stalled");
+  });
+
+  test("the stall does not fire on an overlay that already settled", () => {
+    const store = attachChangesetDraftStore(fakeConn);
+    _ingestDraftFrameForTest({ action: "changeset_draft_state", ...KEY, state: "drafting" });
+    _ingestDraftFrameForTest({ action: "changeset_draft_state", ...KEY, state: "ready" });
+
+    _fireDraftStallForTest("/p", "session", "s1");
+    expect(store.overlay("/p", "session", "s1").phase).toBe("ready");
+  });
+
+  test("a wire drop folds drafting overlays to idle; settled ones keep", () => {
+    const { conn, disconnect } = fakeConnWithDisconnect();
+    const store = attachChangesetDraftStore(conn);
+    _ingestDraftFrameForTest({ action: "changeset_draft_state", ...KEY, state: "drafting" });
+    _ingestDraftFrameForTest({
+      action: "changeset_draft_state",
+      project_dir: "/p",
+      owner_kind: "dash",
+      owner_id: "tugdash/x",
+      state: "drafting",
+    });
+    _ingestDraftFrameForTest({
+      action: "changeset_draft_state",
+      project_dir: "/p",
+      owner_kind: "dash",
+      owner_id: "tugdash/x",
+      state: "ready",
+    });
+
+    disconnect();
+    expect(store.overlay("/p", "session", "s1").phase).toBe("idle");
+    expect(store.overlay("/p", "dash", "tugdash/x").phase).toBe("ready");
   });
 });

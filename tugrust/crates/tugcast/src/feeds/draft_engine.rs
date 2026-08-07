@@ -190,11 +190,13 @@ pub fn spawn_on_demand_draft(
 }
 
 /// Abort an in-flight Auto-Message generation for one entry ([P06]). Returns
-/// `true` when a live task was found and aborted (the caller then emits the
-/// terminal `cancelled` state); `false` when nothing was drafting (an already
-/// -settled or never-started draft — a stray finished handle is reaped without
-/// a state emit, since it already broadcast `ready`/`error`). Aborting drops
-/// the scribe's `kill_on_drop` child; the session's own turn is untouched.
+/// `true` when a live task was found and aborted; `false` when nothing was
+/// drafting (an already-settled or never-started draft — a stray finished
+/// handle is reaped). The caller broadcasts the terminal `cancelled` state
+/// either way: cancel is the client's only exit from a `drafting` overlay
+/// whose terminal frame was lost, so it must always be answered. Aborting
+/// drops the scribe's `kill_on_drop` child; the session's own turn is
+/// untouched.
 pub fn cancel_draft(
     tasks: &DraftTaskRegistry,
     project_dir: &str,

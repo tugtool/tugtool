@@ -3923,23 +3923,27 @@ impl AgentSupervisor {
     /// cancelled an in-flight Auto-Message (the Z5 cancel button, Escape, or
     /// Cmd-.). Aborts the entry's live generation task — killing only its
     /// headless scribe child — and broadcasts a terminal `cancelled` state so
-    /// the composer drops the wave caret and re-opens for typing. A no-op when
-    /// nothing was drafting.
+    /// the composer drops the wave caret and re-opens for typing.
+    ///
+    /// The `cancelled` broadcast is unconditional. Cancel is idempotent: a
+    /// client whose overlay says `drafting` after this registry lost the task
+    /// (a crashed generation, a terminal frame the deck never received) has no
+    /// other exit, and answering only when a task existed leaves that client's
+    /// composer read-only forever. A late cancel racing a just-landed `ready`
+    /// folds the overlay to idle, which reads the persisted draft — harmless.
     fn do_changeset_draft_cancel(&self, request: &ChangesetDraftCancelPayload) {
-        let aborted = crate::feeds::draft_engine::cancel_draft(
+        crate::feeds::draft_engine::cancel_draft(
             &self.draft_tasks,
             &request.project_dir,
             &request.owner_kind,
             &request.owner_id,
         );
-        if aborted {
-            crate::feeds::draft_engine::send_draft_cancelled(
-                &self.control_tx,
-                &request.project_dir,
-                &request.owner_kind,
-                &request.owner_id,
-            );
-        }
+        crate::feeds::draft_engine::send_draft_cancelled(
+            &self.control_tx,
+            &request.project_dir,
+            &request.owner_kind,
+            &request.owner_id,
+        );
     }
 
     /// Handle a `changeset_draft_set` CONTROL request (Spec S01): a partial
@@ -7592,6 +7596,33 @@ mod tests {
         assert_eq!(body["action"], "changeset_draft_state");
         assert_eq!(body["state"], "error");
         assert_eq!(body["detail"], "nothing to generate");
+    }
+
+    /// A cancel with no in-flight generation still broadcasts the terminal
+    /// `cancelled` state: it is the client's only exit from a `drafting`
+    /// overlay whose terminal frame was lost, so it must always be answered.
+    #[tokio::test]
+    async fn changeset_draft_cancel_with_nothing_in_flight_still_replies_cancelled() {
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "changeset_draft_cancel",
+            "project_dir": "/nope",
+            "owner_kind": "session",
+            "owner_id": "s1",
+        }))
+        .unwrap();
+        sup.handle_control("changeset_draft_cancel", &payload, 1)
+            .await;
+
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(5), control_rx.recv())
+            .await
+            .expect("a control frame")
+            .expect("sender alive");
+        let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(body["action"], "changeset_draft_state");
+        assert_eq!(body["state"], "cancelled");
+        assert_eq!(body["owner_id"], "s1");
     }
 
     #[tokio::test]

@@ -35,6 +35,20 @@ export interface DraftOverlay {
 
 const IDLE: DraftOverlay = Object.freeze({ phase: "idle", text: "", detail: null });
 
+/**
+ * How long a `drafting` overlay may sit with no frame for its key before the
+ * store folds it to a recoverable error. The engine streams deltas
+ * continuously while generating, so a silent stretch this long means the
+ * terminal `ready`/`error`/`cancelled` frame was lost (a crashed generation,
+ * an instance handoff) — and without a terminal frame the composer would hold
+ * its message editor read-only forever.
+ */
+const DRAFT_STALL_MS = 90_000;
+
+/** The overlay a stalled generation folds to — `error` is recoverable: the
+ *  composer re-opens for typing and Auto-Message can be requested again. */
+const STALLED_DETAIL = "Auto-Message stalled — try again";
+
 function overlayKey(projectDir: string, ownerKind: string, ownerId: string): string {
   return `${projectDir}|${ownerKind}|${ownerId}`;
 }
@@ -46,8 +60,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export class ChangesetDraftStore {
   private readonly _connection: TugConnection;
   private readonly _unsubscribe: () => void;
+  private readonly _unsubscribeDisconnect: () => void;
   private readonly _listeners = new Set<() => void>();
   private _overlays = new Map<string, DraftOverlay>();
+  private readonly _stallTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly _decoder = new TextDecoder();
 
   constructor(connection: TugConnection) {
@@ -55,6 +71,32 @@ export class ChangesetDraftStore {
     this._unsubscribe = connection.onFrame(FeedId.CONTROL, (payload) =>
       this._onControl(payload),
     );
+    // A dropped wire loses any in-flight terminal frame outright (CONTROL
+    // broadcasts are not replayed on reconnect), so a `drafting` overlay is
+    // stale the moment the connection goes down — fold it to idle rather
+    // than latch the composer read-only. If the generation is in fact still
+    // running server-side, its next delta on the new socket re-establishes
+    // the overlay, text and all. Guarded: fixtures attach with a minimal
+    // fake connection that has no disconnect surface.
+    this._unsubscribeDisconnect =
+      typeof connection.onDisconnectState === "function"
+        ? connection.onDisconnectState((state) => {
+            if (state.disconnected) this._foldStaleDrafting();
+          })
+        : () => {};
+  }
+
+  /** Fold every `drafting` overlay to idle — see the constructor's disconnect
+   *  subscription. One notify for the batch, and only when something moved. */
+  private _foldStaleDrafting(): void {
+    let changed = false;
+    for (const [key, overlay] of this._overlays) {
+      if (overlay.phase !== "drafting") continue;
+      this._overlays.set(key, IDLE);
+      this._clearStall(key);
+      changed = true;
+    }
+    if (changed) for (const listener of [...this._listeners]) listener();
   }
 
   /**
@@ -166,6 +208,38 @@ export class ChangesetDraftStore {
 
   private _set(key: string, overlay: DraftOverlay): void {
     this._overlays.set(key, overlay);
+    // The stall watchdog: every frame for a drafting key re-arms it, any
+    // terminal phase clears it. If it ever fires, the terminal frame is lost
+    // and no further frame is coming — fold to a recoverable error so the
+    // composer re-opens instead of holding the editor read-only forever.
+    if (overlay.phase === "drafting") {
+      this._armStall(key);
+    } else {
+      this._clearStall(key);
+    }
+    for (const listener of [...this._listeners]) listener();
+  }
+
+  private _armStall(key: string): void {
+    this._clearStall(key);
+    this._stallTimers.set(
+      key,
+      setTimeout(() => this._fireStall(key), DRAFT_STALL_MS),
+    );
+  }
+
+  private _clearStall(key: string): void {
+    const timer = this._stallTimers.get(key);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this._stallTimers.delete(key);
+  }
+
+  private _fireStall(key: string): void {
+    this._stallTimers.delete(key);
+    const prev = this._overlays.get(key);
+    if (prev?.phase !== "drafting") return;
+    this._overlays.set(key, { phase: "error", text: prev.text, detail: STALLED_DETAIL });
     for (const listener of [...this._listeners]) listener();
   }
 
@@ -175,6 +249,9 @@ export class ChangesetDraftStore {
 
   dispose(): void {
     this._unsubscribe();
+    this._unsubscribeDisconnect();
+    for (const timer of this._stallTimers.values()) clearTimeout(timer);
+    this._stallTimers.clear();
     this._listeners.clear();
   }
 
@@ -206,6 +283,18 @@ export function getChangesetDraftStore(): ChangesetDraftStore | null {
 export function _resetChangesetDraftStoreForTest(): void {
   _activeStore?.dispose();
   _activeStore = null;
+}
+
+/** Test-only: fire one entry's stall watchdog as if `DRAFT_STALL_MS` elapsed. */
+export function _fireDraftStallForTest(
+  projectDir: string,
+  ownerKind: string,
+  ownerId: string,
+): void {
+  if (_activeStore === null) return;
+  (_activeStore as unknown as { _fireStall(k: string): void })._fireStall(
+    overlayKey(projectDir, ownerKind, ownerId),
+  );
 }
 
 /** Test-only: feed a CONTROL frame body as if it arrived over the wire. */
