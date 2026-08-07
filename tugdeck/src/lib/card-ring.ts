@@ -5,8 +5,16 @@
  * tab of each pane the user can currently see. A pane is visible when it is
  * the front of its place — a slot, or a sidebar rail — or when it holds no
  * place at all (a free pane). Buried panes are the depth axis's territory
- * (Previous/Next Card in Stack); the Lens is neither, and is excluded the
- * same way `move-to-slot` and the arrangement paths exclude it.
+ * (Previous/Next Card in Stack).
+ *
+ * **The sidebars are on the ring, the Lens included.** They are cards the
+ * user reads and types in, standing in plain sight, so a lateral walk that
+ * skipped them would leave the one card always on screen as the one the
+ * keyboard could not reach. `move-to-slot` excludes the Lens because a
+ * sidebar takes no slot — that is a fact about slots, not a general rule
+ * about sidebars, and reading it as one is what left the Lens off this ring
+ * while Jots rode it. A rail is a place exactly as a slot is ([D128]), so a
+ * rail's front is a ring position exactly as a slot's front is.
  *
  * The ring's order is structural, read from deck state alone: left-rail
  * front, slotted fronts by slot number, free panes left-to-right by stored
@@ -17,15 +25,15 @@
  */
 
 import type { DeckState, TugPaneState } from "@/layout-tree";
-import { findLensPane, findSidebarPanes } from "@/deck-store-selectors";
+import { findSidebarPanes } from "@/deck-store-selectors";
 import { isSidebarPinned, sidebarSide } from "@/lib/layout-imposer";
 
 /** Every visible card position, in ring order. */
 export function visibleCardRing(state: DeckState): readonly string[] {
-  const lensPaneId = findLensPane(state)?.id;
-
   // A pinned sidebar pane's place is its rail; everything else is its slot,
-  // or nothing. Same place taxonomy as the slot-stack picker's.
+  // or nothing. Same place taxonomy as the slot-stack picker's. A sidebar
+  // dragged off its pin has no rail entry and falls through to `free`, which
+  // is right — off the pin it is an ordinary pane.
   const railSideOf = new Map<string, "left" | "right">();
   for (const { componentId, pane } of findSidebarPanes(state)) {
     if (!isSidebarPinned(state.imposition, componentId)) continue;
@@ -36,7 +44,6 @@ export function visibleCardRing(state: DeckState): readonly string[] {
   const frontOfPlace = new Map<string, TugPaneState>();
   const free: TugPaneState[] = [];
   for (const pane of state.panes) {
-    if (pane.id === lensPaneId) continue;
     const railSide = railSideOf.get(pane.id);
     const place =
       railSide !== undefined

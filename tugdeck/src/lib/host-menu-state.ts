@@ -512,8 +512,9 @@ export interface MenuStateDeckProjection {
    */
   stackDepth: number;
   /**
-   * Cards in the deck's lateral ring — every tab of every visible pane
-   * (see `lib/card-ring.ts`). Gates Window ▸ Previous/Next Card.
+   * Cards in the deck's lateral ring — every tab of every visible pane,
+   * sidebars included (see `lib/card-ring.ts`). Gates Window ▸
+   * Previous/Next Card.
    */
   visibleCardCount: number;
   /**

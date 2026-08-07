@@ -257,10 +257,11 @@ export const TUG_ACTIONS = {
   //
   // PREVIOUS_TAB:   payload — none. Step to the previous card in the
   //                 deck's lateral ring: every tab of every visible pane
-  //                 (front of each slot / rail, plus free panes), one
-  //                 ring. Within a pane it is a tab switch; at a pane's
-  //                 first tab it crosses into the previous pane's last.
-  //                 Handled by the deck canvas, which owns the geometry.
+  //                 (front of each slot / rail, plus free panes; the
+  //                 sidebars ride it, Lens included), one ring. Within a
+  //                 pane it is a tab switch; at a pane's first tab it
+  //                 crosses into the previous pane's last. Handled by the
+  //                 deck canvas, which owns the geometry.
   // NEXT_TAB:       payload — none. The lateral ring's other direction.
   // FOCUS_NEXT:     payload — none. Move keyboard focus to the next
   //                 focusable responder. NOTE: no handler yet —

@@ -141,8 +141,8 @@ export interface CommandMenuFacts {
   readonly focusedPaneCardCount: number;
   /**
    * Cards in the deck's lateral ring: every tab of every visible pane —
-   * the front of each slot / rail stack plus the free panes, the Lens
-   * excluded. Gates Previous/Next Card, which walk exactly that ring.
+   * the front of each slot / rail stack plus the free panes, the sidebars
+   * included. Gates Previous/Next Card, which walk exactly that ring.
    */
   readonly visibleCardCount: number;
   /** The focused pane's active card can be closed. */
