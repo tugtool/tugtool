@@ -23,6 +23,8 @@
  * @covers tugdeck/src/components/tugways/cards/session-history/session-history-view.tsx
  * @covers tugdeck/src/components/tugways/tug-changes-list.tsx
  * @covers tugdeck/src/components/tugways/tug-history-list.tsx
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.css
+ * @covers tugdeck/src/components/tugways/tug-filter-field.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -154,6 +156,47 @@ describe.skipIf(!SHOULD_RUN)(
             expect(ring.marked).toBe(true);
             expect(ring.outline).toBe(true);
 
+            // ...and Done is the ONLY default button on screen. The shade's
+            // modal carve-out keeps the prompt entry live beneath its bottom
+            // edge, so a click into the composer restores the entry shell's
+            // `data-entry-keyboard` — which used to light the Z5 submit as a
+            // second filled + ringed default right below Done. The card's
+            // `data-shade-open` stands that promotion down: the shade owns the
+            // default while it is open ([P17]).
+            await app.nativeClickAtElement(
+              '[data-card-id="D"] .tug-prompt-entry .cm-content',
+            );
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var s = document.querySelector('[data-card-id="D"] .tug-entry-shell');
+                return s !== null && s.hasAttribute("data-entry-keyboard");
+              })()`,
+              { timeoutMs: 3_000 },
+            );
+            const standDown = await app.evalJS<{
+              shadeOpen: boolean;
+              submitOutline: boolean;
+              doneRing: boolean;
+            }>(
+              `(function(){
+                var card = document.querySelector('[data-card-id="D"] .session-card');
+                var submit = document.querySelector('[data-card-id="D"] .tug-prompt-entry-submit-button');
+                var done = document.querySelector('[data-testid="session-history-done"]');
+                var cs = submit ? getComputedStyle(submit) : null;
+                var w = cs ? (parseFloat(cs.outlineWidth) || 0) : 0;
+                return {
+                  shadeOpen: card !== null && card.getAttribute("data-shade-open") === "true",
+                  submitOutline: cs !== null && cs.outlineStyle !== "none" && w > 0,
+                  doneRing: done !== null && done.hasAttribute("data-default-ring"),
+                };
+              })()`,
+            );
+            expect(standDown.shadeOpen).toBe(true);
+            // The caret is in the composer, yet its submit wears no ring.
+            expect(standDown.submitOutline).toBe(false);
+            // Done still holds the one default ring.
+            expect(standDown.doneRing).toBe(true);
+
             // The plain-sheet History has no resize grabber.
             const hasGrabber = await app.evalJS<boolean>(
               `document.querySelector('[data-card-id="D"] .tug-sheet-shade-grabber') !== null`,
@@ -220,6 +263,39 @@ describe.skipIf(!SHOULD_RUN)(
 
             const shot = await app.screenshot();
             console.log(`SCREENSHOT: ${shot.path}`);
+
+            // Return keeps Done's promise from BOTH of the shade's keyboard
+            // seats. `TugFilterField` used to swallow Enter unconditionally and
+            // hand it to a `filterFieldDidSubmit` no consumer declares, so a
+            // Return in the filter went nowhere while Done sat there ringed.
+            // With no submit of its own the field now defers to the surface's
+            // pane-scoped default button, the same contract `TugTextEditor`
+            // keeps.
+            await app.nativeClickAtElement(
+              '[data-card-id="D"] [data-testid="session-history-filter"] input',
+            );
+            await app.waitForCondition<boolean>(
+              `document.activeElement !== null && document.activeElement.tagName === "INPUT"`,
+              { timeoutMs: 3_000 },
+            );
+            await app.nativeKey("Return");
+            await app.waitForCondition<boolean>(
+              `document.querySelector('[data-testid="session-history-done"]') === null`,
+              { timeoutMs: 4_000 },
+            );
+
+            // ...and from the commit list, the shade's seeded key view. Reopen
+            // and press Return without touching the filter.
+            await app.dispatchControlAction("toggle-history-view");
+            await app.waitForCondition<boolean>(
+              `document.querySelectorAll(${JSON.stringify(ROW)}).length > 0`,
+              { timeoutMs: 6_000 },
+            );
+            await app.nativeKey("Return");
+            await app.waitForCondition<boolean>(
+              `document.querySelector('[data-testid="session-history-done"]') === null`,
+              { timeoutMs: 4_000 },
+            );
           } finally {
             await app.close();
           }

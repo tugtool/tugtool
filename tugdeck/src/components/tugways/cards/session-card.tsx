@@ -4166,6 +4166,16 @@ export function SessionCardBody({
         // felt. Engine-derived from the store ([L02]); appearance via the
         // attribute, never React state ([L06]).
         data-inline-dialog-pending={inlineDialogPending ? "true" : undefined}
+        // Open-shade signal ([P17]). Set while either shade view (Changes /
+        // History) is showing. The shade's Done holds the card's persistent
+        // default ring, and the shade's modal carve-out deliberately leaves the
+        // prompt entry live beneath its bottom edge — so a click into the
+        // composer puts `data-entry-keyboard` back on the entry shell and lights
+        // a SECOND default button beside Done. The stand-down CSS in
+        // `tug-prompt-entry.css` keys on this ancestor, the same way the
+        // `data-cycling` fill suppression above does. Appearance via the
+        // attribute, never React state ([L06]).
+        data-shade-open={shadeView === "none" ? undefined : "true"}
       >
         {/*
           Card body is a plain flex column ([L06]/[L13] — no JS sizing).

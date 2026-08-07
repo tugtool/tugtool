@@ -83,6 +83,7 @@ import { TUG_ACTIONS } from "./action-vocabulary";
 import type { FocusPolicy, KeyViewBehavior } from "./focus-manager";
 import { TugIconButton } from "./tug-icon-button";
 import { TugInput, type TugInputSize } from "./tug-input";
+import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 
 /**
@@ -95,7 +96,11 @@ export interface TugFilterFieldDelegate {
   filterFieldDidChangeQuery(query: string): void;
   /** The ✕ or Escape-on-non-empty, AFTER the `""` change notification. */
   filterFieldDidClear?(): void;
-  /** Enter in the field. */
+  /**
+   * Enter in the field. Unimplemented, Enter defers to the surface's
+   * pane-scoped default button instead — a filter with no submit of its own
+   * must not swallow the Return its surface's ringed default promises.
+   */
   filterFieldDidSubmit?(query: string): void;
   /** ArrowDown — the host moves the key view onto its list. */
   filterFieldDidRequestAdvance?(): void;
@@ -253,6 +258,28 @@ export function TugFilterField({
     event.preventDefault();
   }, []);
 
+  // Default-button defer, the same contract `TugTextEditor` keeps
+  // (`deferToDefaultButton`): a field is a text surface, so the bubble
+  // pipeline's Enter stage skips it outright (`skipActivation` on an INPUT) and
+  // this handler's `stopPropagation` would keep it away regardless. A filter
+  // field that declares no `filterFieldDidSubmit` has nothing of its own to do
+  // with Return — so it must hand Return to the surface's default button rather
+  // than eat it, or the ring on that button is a promise nothing keeps (the
+  // History shade's Done: ringed, and Return did nothing).
+  //
+  // Pane-scoped for the same reason the editor scopes it: the default-button
+  // stack is process-global, and a Return here must never press a button
+  // registered by a sheet in ANOTHER pane ([D15] pane modality). No pane
+  // context (gallery / standalone) falls back to the global top.
+  const responderChainManager = useResponderChain();
+  const peekDefaultButton = React.useCallback((): HTMLButtonElement | null => {
+    if (responderChainManager === null) return null;
+    const pane = wrapperRef.current?.closest(".tug-pane") ?? null;
+    return pane !== null
+      ? responderChainManager.peekDefaultButtonInScope(pane)
+      : responderChainManager.peekDefaultButton();
+  }, [responderChainManager]);
+
   const onKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>): void => {
       if (event.key === "Escape") {
@@ -268,7 +295,11 @@ export function TugFilterField({
       if (event.key === "Enter") {
         event.preventDefault();
         event.stopPropagation();
-        delegateRef.current.filterFieldDidSubmit?.(currentQuery());
+        if (delegateRef.current.filterFieldDidSubmit !== undefined) {
+          delegateRef.current.filterFieldDidSubmit(currentQuery());
+          return;
+        }
+        peekDefaultButton()?.click();
         return;
       }
       if (event.key === "ArrowDown") {
@@ -278,7 +309,7 @@ export function TugFilterField({
         delegateRef.current.filterFieldDidRequestAdvance();
       }
     },
-    [clear, currentQuery],
+    [clear, currentQuery, peekDefaultButton],
   );
 
   const setWrapperRef = React.useCallback(
