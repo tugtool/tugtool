@@ -57,6 +57,8 @@ import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { DiffSummaryBadges } from "@/components/tugways/blocks/diff-summary-badges";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
 import {
   getEntryDiffStore,
   releaseEntryDiffStore,
@@ -132,6 +134,36 @@ function isDeleted(op: string, gitStatus: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Click vs drag
+// ---------------------------------------------------------------------------
+
+/** Pointer travel (px) past which a press-and-release is a drag, not a click. */
+const CLICK_SLOP_PX = 4;
+
+/**
+ * A press tracker that lets a click handler tell a click from a drag. The rows
+ * carry click gestures — the fold, the path's open — over text a reader may
+ * want to SELECT, and a selection drag ends in a `click` on the element it
+ * started in. Without this, every attempt to select a path opened it.
+ */
+function usePressTracker(): {
+  onMouseDown: (event: React.MouseEvent) => void;
+  draggedSincePress: (event: React.MouseEvent) => boolean;
+} {
+  const origin = useRef<{ x: number; y: number } | null>(null);
+  const onMouseDown = useCallback((event: React.MouseEvent) => {
+    origin.current = { x: event.clientX, y: event.clientY };
+  }, []);
+  const draggedSincePress = useCallback((event: React.MouseEvent): boolean => {
+    const start = origin.current;
+    origin.current = null;
+    if (start === null) return false;
+    return Math.hypot(event.clientX - start.x, event.clientY - start.y) >= CLICK_SLOP_PX;
+  }, []);
+  return { onMouseDown, draggedSincePress };
+}
+
+// ---------------------------------------------------------------------------
 // File path link + pop-out
 // ---------------------------------------------------------------------------
 
@@ -154,24 +186,21 @@ function FilePathLink({
   // `title`, the menu, and the open action.
   const shown = renderFilterHighlight(path, highlightQuery);
 
+  const { onMouseDown: handleMouseDown, draggedSincePress } = usePressTracker();
+
   const handleClick = useCallback(
     (event: React.MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.shiftKey) return;
+      // A press that travelled was a selection drag over the path, not a click
+      // on it — the reader was copying the name, not asking to open it.
+      if (draggedSincePress(event)) return;
       // Opening the file is the link's own gesture — never also the row's
       // expand toggle.
       event.stopPropagation();
       dispatchCommand(TUG_ACTIONS.OPEN_FILE, { path: absolutePath });
     },
-    [absolutePath],
+    [absolutePath, draggedSincePress],
   );
-
-  const handleMouseDown = useCallback((event: React.MouseEvent) => {
-    // Suppress WebKit's mousedown focus default so opening a file never pulls
-    // first responder onto this read-only surface (the Text card claims focus
-    // via its own activation path).
-    if (event.button !== 0 || event.metaKey || event.shiftKey) return;
-    event.preventDefault();
-  }, []);
 
   if (isDeleted(op, gitStatus) || !projectRoot) {
     return (
@@ -192,7 +221,12 @@ function FilePathLink({
         className="tug-changes-list-file-path tug-changes-list-file-path--link"
         data-slot="tug-changes-list-file-ref"
         title={path}
-        data-tug-focus="refuse"
+        // No `data-tug-focus="refuse"` here: refusing the gesture makes the
+        // interpreter preventDefault the paired mousedown, which is also what
+        // starts a text selection — the path became unselectable. Whether a
+        // surface takes focus from a click is the SURFACE's policy (the
+        // Changes shade refuses for its whole view), not a property of a
+        // filename.
         data-no-activate=""
         onMouseDown={handleMouseDown}
         onClick={handleClick}
@@ -211,20 +245,21 @@ export function PopOutDiffButton({
   label: string;
 }) {
   return (
-    <TugPushButton
-      subtype="icon"
-      icon={<SquareArrowOutUpRight size={12} />}
-      size="2xs"
-      emphasis="ghost"
-      role="action"
-      title="Open diff in a card"
-      aria-label={label}
-      data-testid="tug-changes-list-diff-popout"
-      onClick={(event) => {
-        event?.stopPropagation();
-        dispatchCommand(TUG_ACTIONS.OPEN_DIFF, { descriptor });
-      }}
-    />
+    <TugActionTooltip action={TUG_ACTIONS.OPEN_DIFF} content="Open this diff in a card">
+      <TugPushButton
+        subtype="icon"
+        icon={<SquareArrowOutUpRight size={12} />}
+        size="2xs"
+        emphasis="ghost"
+        role="action"
+        aria-label={label}
+        data-testid="tug-changes-list-diff-popout"
+        onClick={(event) => {
+          event?.stopPropagation();
+          dispatchCommand(TUG_ACTIONS.OPEN_DIFF, { descriptor });
+        }}
+      />
+    </TugActionTooltip>
   );
 }
 
@@ -396,11 +431,12 @@ function FileDiffBody({
           );
           // A disabled control with no stated reason reads as broken. The
           // tooltip rides a wrapper this caller owns rather than widening
-          // `TugCheckbox` — which declares no `title` — for one caller.
+          // `TugCheckbox` for one caller — and a disabled checkbox swallows
+          // the pointer, so the wrapper is also what the hover lands on.
           return isLast ? (
-            <span title="At least one hunk must land — a file in the landing set with nothing elected is refused">
-              {box}
-            </span>
+            <TugTooltip content="At least one hunk must land — a file in the landing set with nothing elected is refused">
+              <span data-testid="tug-changes-list-hunk-elect-locked">{box}</span>
+            </TugTooltip>
           ) : (
             box
           );
@@ -596,24 +632,28 @@ function FileIdentity({
         <span className="tug-changes-list-file-meta">
           {election !== null ? (
             election.kind === "partial" ? (
-              <span
-                className="tug-changes-list-badge tug-changes-list-badge-partial"
-                data-testid="tug-changes-list-file-partial"
-                title={`Only ${election.elected} of this file's ${election.total} hunks will land`}
+              <TugTooltip
+                content={`Only ${election.elected} of this file's ${election.total} hunks will land`}
               >
-                {`${election.elected} of ${election.total} hunks`}
-              </span>
+                <span
+                  className="tug-changes-list-badge tug-changes-list-badge-partial"
+                  data-testid="tug-changes-list-file-partial"
+                >
+                  {`${election.elected} of ${election.total} hunks`}
+                </span>
+              </TugTooltip>
             ) : (
               // Every box is checked, but not because the file lands whole —
               // saying nothing here would assert a landing the engine is about
               // to refuse.
-              <span
-                className="tug-changes-list-badge tug-changes-list-badge-stale"
-                data-testid="tug-changes-list-file-stale-election"
-                title="The hunks elected for this file are no longer in it — the landing will refuse until they are re-elected"
-              >
-                stale election
-              </span>
+              <TugTooltip content="The hunks elected for this file are no longer in it — the landing will refuse until they are re-elected">
+                <span
+                  className="tug-changes-list-badge tug-changes-list-badge-stale"
+                  data-testid="tug-changes-list-file-stale-election"
+                >
+                  stale election
+                </span>
+              </TugTooltip>
             )
           ) : null}
           {file.shared ? (
@@ -691,6 +731,10 @@ export function ChangesFileRow({
   /** A disclaim round trip is in flight — the affordance disables. */
   disclaimPending?: boolean;
 }): React.ReactElement {
+  // The whole row folds on a click — but a drag across it is a selection, and
+  // the reader who just swept a path out of the row shouldn't have the row
+  // close under the gesture.
+  const { onMouseDown: trackPress, draggedSincePress } = usePressTracker();
   return (
     <div
       className="tug-changes-list-file-block"
@@ -702,7 +746,11 @@ export function ChangesFileRow({
     >
       <div
         className="tug-changes-list-row-hit"
-        onClick={() => onToggle(!expanded)}
+        onMouseDown={trackPress}
+        onClick={(event) => {
+          if (draggedSincePress(event)) return;
+          onToggle(!expanded);
+        }}
       >
         <TugListRow
           variant="flush"
@@ -735,48 +783,52 @@ export function ChangesFileRow({
                 data-slot="tug-changes-list-fold"
               />
               {onClaim !== undefined ? (
-                <TugPushButton
-                  className="tug-changes-list-claim"
-                  subtype="icon"
-                  icon={<CornerDownLeft size={12} />}
-                  size="2xs"
-                  emphasis="outlined"
-                  role="action"
-                  disabled={claimPending}
-                  title={
-                    claimPending
-                      ? "Claiming…"
-                      : "Claim this file for this session"
+                <TugTooltip
+                  content={
+                    claimPending ? "Claiming…" : "Claim this file for this session"
                   }
-                  aria-label={`Claim ${file.path} for this session`}
-                  data-testid="tug-changes-list-claim"
-                  onClick={(event) => {
-                    event?.stopPropagation();
-                    onClaim();
-                  }}
-                />
+                >
+                  <TugPushButton
+                    className="tug-changes-list-claim"
+                    subtype="icon"
+                    icon={<CornerDownLeft size={12} />}
+                    size="2xs"
+                    emphasis="outlined"
+                    role="action"
+                    disabled={claimPending}
+                    aria-label={`Claim ${file.path} for this session`}
+                    data-testid="tug-changes-list-claim"
+                    onClick={(event) => {
+                      event?.stopPropagation();
+                      onClaim();
+                    }}
+                  />
+                </TugTooltip>
               ) : null}
               {onDisclaim !== undefined ? (
-                <TugPushButton
-                  className="tug-changes-list-disclaim"
-                  subtype="icon"
-                  icon={<CornerUpRight size={12} />}
-                  size="2xs"
-                  emphasis="outlined"
-                  role="accent"
-                  disabled={disclaimPending}
-                  title={
+                <TugTooltip
+                  content={
                     disclaimPending
                       ? "Disclaiming…"
                       : "Disclaim this file from this session"
                   }
-                  aria-label={`Disclaim ${file.path} from this session`}
-                  data-testid="tug-changes-list-disclaim"
-                  onClick={(event) => {
-                    event?.stopPropagation();
-                    onDisclaim();
-                  }}
-                />
+                >
+                  <TugPushButton
+                    className="tug-changes-list-disclaim"
+                    subtype="icon"
+                    icon={<CornerUpRight size={12} />}
+                    size="2xs"
+                    emphasis="outlined"
+                    role="accent"
+                    disabled={disclaimPending}
+                    aria-label={`Disclaim ${file.path} from this session`}
+                    data-testid="tug-changes-list-disclaim"
+                    onClick={(event) => {
+                      event?.stopPropagation();
+                      onDisclaim();
+                    }}
+                  />
+                </TugTooltip>
               ) : null}
             </span>
           }
@@ -1034,49 +1086,55 @@ export function TugChangesList({
         // sits where the decision is made — after what it acts on.
         const claimAllButton =
           onClaimAll !== undefined && claimAllPaths.length >= 1 ? (
-            <TugPushButton
-              className="tug-changes-list-claim-all"
-              subtype="icon-text"
-              icon={<CornerDownLeft size={12} />}
-              size="2xs"
-              emphasis="outlined"
-              role="action"
-              disabled={claimPending}
-              title={claimPending ? "Claiming…" : "Claim all files in this session"}
-              aria-label={`Claim all ${entry.kind} files in this session`}
-              data-testid={`tug-changes-list-claim-all-${entry.kind}`}
-              onClick={(event) => {
-                event?.stopPropagation();
-                onClaimAll(claimAllPaths);
-              }}
+            <TugTooltip
+              content={claimPending ? "Claiming…" : "Claim all files in this session"}
             >
-              Claim all
-            </TugPushButton>
+              <TugPushButton
+                className="tug-changes-list-claim-all"
+                subtype="icon-text"
+                icon={<CornerDownLeft size={12} />}
+                size="2xs"
+                emphasis="outlined"
+                role="action"
+                disabled={claimPending}
+                aria-label={`Claim all ${entry.kind} files in this session`}
+                data-testid={`tug-changes-list-claim-all-${entry.kind}`}
+                onClick={(event) => {
+                  event?.stopPropagation();
+                  onClaimAll(claimAllPaths);
+                }}
+              >
+                Claim all
+              </TugPushButton>
+            </TugTooltip>
           ) : null;
         const disclaimAllButton =
           onDisclaimAll !== undefined && disclaimAllPaths.length >= 1 ? (
-            <TugPushButton
-              className="tug-changes-list-disclaim-all"
-              subtype="icon-text"
-              icon={<CornerUpRight size={12} />}
-              size="2xs"
-              emphasis="outlined"
-              role="accent"
-              disabled={disclaimPending}
-              title={
+            <TugTooltip
+              content={
                 disclaimPending
                   ? "Disclaiming…"
                   : "Disclaim all files from this session"
               }
-              aria-label="Disclaim all files from this session"
-              data-testid="tug-changes-list-disclaim-all"
-              onClick={(event) => {
-                event?.stopPropagation();
-                onDisclaimAll(disclaimAllPaths);
-              }}
             >
-              Disclaim all
-            </TugPushButton>
+              <TugPushButton
+                className="tug-changes-list-disclaim-all"
+                subtype="icon-text"
+                icon={<CornerUpRight size={12} />}
+                size="2xs"
+                emphasis="outlined"
+                role="accent"
+                disabled={disclaimPending}
+                aria-label="Disclaim all files from this session"
+                data-testid="tug-changes-list-disclaim-all"
+                onClick={(event) => {
+                  event?.stopPropagation();
+                  onDisclaimAll(disclaimAllPaths);
+                }}
+              >
+                Disclaim all
+              </TugPushButton>
+            </TugTooltip>
           ) : null;
         return (
           <React.Fragment key={entry.id}>

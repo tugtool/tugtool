@@ -241,7 +241,7 @@ describe.skipIf(!SHOULD_RUN)("at0361 — the lateral ring walks the whole deck",
         await new Promise<void>((r) => setTimeout(r, AFTER_LAND_MS));
 
         const state = await app.menuItemState("window.nextCard");
-        expect(state.found, "window.nextCard exists").toBe(true);
+        if (!state.found) throw new Error("window.nextCard is not in the Window menu");
         expect(
           state.enabled,
           "one content card + the Lens is a two-position ring",

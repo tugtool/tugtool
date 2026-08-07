@@ -30,6 +30,14 @@
  * still track local open state via `onOpenChange` so the effect can
  * install and tear down cleanly.
  *
+ * ## The trigger claims the gesture
+ *
+ * The trigger's right-click is claimed: the cloned child stops the synthetic
+ * `contextmenu` event, so an ancestor surface that runs its own contextmenu
+ * pipeline (a transcript cell, the markdown view) doesn't open a second menu
+ * over the same press. Radix's own trigger handler is composed after the
+ * child's, so this menu still opens.
+ *
  * When rendered outside a ResponderChainProvider (standalone previews,
  * unit tests without a provider), `useResponderChain()` returns null and
  * the dispatch + subscription are silently skipped. The menu still
@@ -269,10 +277,30 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
     [dispatchForContinuation, effectiveSenderId],
   );
 
+  const trigger = children as React.ReactElement<{
+    onContextMenu?: (event: React.MouseEvent) => void;
+  }>;
+  const childContextMenu = trigger.props.onContextMenu;
+
+  // A right-click inside this trigger is THIS menu's gesture. An ancestor text
+  // surface runs its own React `onContextMenu` (the transcript cell's, say),
+  // and without this both menus open over the same click — the file row's
+  // Open / Reveal pair AND the cell's editing menu, two popups for one press.
+  // Stopping the SYNTHETIC event's propagation is enough: Radix composes its
+  // trigger handler after the child's, so the menu still opens, and the native
+  // event still reaches document-level listeners.
+  const claimGesture = useCallback(
+    (event: React.MouseEvent) => {
+      childContextMenu?.(event);
+      event.stopPropagation();
+    },
+    [childContextMenu],
+  );
+
   return (
     <ContextMenuPrimitive.Root onOpenChange={handleOpenChange}>
       <ContextMenuPrimitive.Trigger asChild>
-        {children}
+        {React.cloneElement(trigger, { onContextMenu: claimGesture })}
       </ContextMenuPrimitive.Trigger>
       <ContextMenuPrimitive.Portal container={overlayRoot}>
         <ContextMenuPrimitive.Content
