@@ -524,10 +524,16 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
         );
 
         // The bar's stops are a contiguous run INSIDE the card's one group,
-        // sitting between the Z4 toolbar (0…7) and the editor text stop —
-        // exactly the seat its position on screen implies. (The Z2 telemetry
-        // cells are authored stops too but stamp no `data-tug-focus-key`, so
-        // they are absent from this registry read and asserted by slot below.)
+        // sitting between the Z4 toolbar and the editor text stop — exactly
+        // the seat its position on screen implies. (The Z2 telemetry cells
+        // are authored stops too but stamp no `data-tug-focus-key`, so they
+        // are absent from this registry read and asserted by slot below.)
+        //
+        // Orders 2 and 3 — the Session and Project chips — are absent on the
+        // transcript route by design: both names already read in the pane
+        // title bar, so the Z4B diet dropped them from the strip. The run is
+        // a seat allocation, not a dense sequence; the chips keep their
+        // numbers for the routes that still render them.
         expect(
           await app.evalJS<string>(
             `Array.from(document.querySelectorAll('${CARD} [data-tug-focus-key]'))
@@ -537,7 +543,7 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
                .sort((a, b) => a - b).join(",")`,
           ),
           "the find bar's four stops occupy 8…11 in the card's cycle group",
-        ).toBe(`0,1,2,3,4,5,6,7,8,9,10,11,${EDITOR_ORDER}`);
+        ).toBe(`0,1,4,5,6,7,8,9,10,11,${EDITOR_ORDER}`);
 
         for (const order of [
           FIND_ORDER_OPTIONS,

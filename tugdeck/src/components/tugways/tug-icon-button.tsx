@@ -104,8 +104,22 @@ import { useControlDispatch } from "./use-control-dispatch";
  * TugIconButtonProps
  * ---------------------------------------------------------------------------*/
 
-/** TugIconButton props. */
-export interface TugIconButtonProps {
+/**
+ * TugIconButton props.
+ *
+ * Extends `ButtonHTMLAttributes` for the same reason `TugButton` does: a
+ * Radix `asChild` primitive composes by *injecting* props — pointer
+ * handlers, `data-state`, `aria-describedby` — onto whatever element it is
+ * given. A component that names a fixed prop list and drops the rest
+ * silently refuses that composition: the wrapper renders, the handlers
+ * never land, and the tooltip (or popover, or context menu) simply never
+ * opens, with nothing anywhere to say why.
+ */
+export interface TugIconButtonProps
+  extends Omit<
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
+    "onClick" | "title" | "disabled" | "aria-label"
+  > {
   /** Icon node. Typically a `lucide-react` icon. Required. */
   icon: React.ReactNode;
   /** Accessible label. Required for icon-only buttons. */
@@ -217,6 +231,7 @@ export const TugIconButton = React.forwardRef<HTMLButtonElement, TugIconButtonPr
       focusOrder,
       focusPolicy,
       className,
+      ...rest
     },
     ref,
   ) {
@@ -267,6 +282,7 @@ export const TugIconButton = React.forwardRef<HTMLButtonElement, TugIconButtonPr
 
     return (
       <TugButton
+        {...rest}
         ref={ref}
         subtype="icon"
         emphasis={emphasis}

@@ -359,25 +359,37 @@ describe.skipIf(!SHOULD_RUN)("AT0334: hunk election on a session entry", () => {
         );
         expect(await badgeText()).toBe("1 of 3 hunks");
 
-        const survivor = await app.evalJS<{
-          disabled: boolean | null;
-          title: string | null;
-        }>(
+        // The reason the box refuses is a real TugTooltip now, not a native
+        // `title` — so it has to be hovered to exist. The disabled checkbox
+        // swallows the pointer, which is exactly why the trigger is the
+        // wrapper span around it.
+        const survivorDisabled = await app.evalJS<boolean | null>(
           `(() => {
              const box = Array.from(
                document.querySelectorAll(${JSON.stringify(BOXES)}),
              ).find((el) => el.getAttribute("aria-checked") === "true");
-             if (!box) return { disabled: null, title: null };
-             const titled = box.closest("[title]");
-             return {
-               disabled: box.disabled === true,
-               title: titled === null ? null : titled.getAttribute("title"),
-             };
+             return box ? box.disabled === true : null;
            })()`,
         );
-        expect(survivor.disabled).toBe(true);
-        expect(survivor.title).toContain("At least one hunk must land");
-        note("at0334 protected-hunk tooltip", survivor.title ?? "<none>");
+        expect(survivorDisabled).toBe(true);
+
+        await app.evalJS<null>(
+          `(function(){
+             const el = document.querySelector(
+               '[data-testid="tug-changes-list-hunk-elect-locked"]',
+             );
+             el.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false }));
+             el.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
+             return null;
+           })()`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-slot="tug-tooltip"]') !== null`,
+          { timeoutMs: 5000 },
+        );
+        const survivorReason = await app.getElementText('[data-slot="tug-tooltip"]');
+        expect(survivorReason).toContain("At least one hunk must land");
+        note("at0334 protected-hunk tooltip", survivorReason);
 
         // ── HV8: an election whose hunks have all drifted says so ─────────
         // Rewrite every marker so not one elected id survives, and dirty a
@@ -394,7 +406,6 @@ describe.skipIf(!SHOULD_RUN)("AT0334: hunk election on a session entry", () => {
         );
         const stale = await app.evalJS<{
           text: string | null;
-          title: string | null;
           partialGone: boolean;
           allChecked: boolean;
         }>(
@@ -407,7 +418,6 @@ describe.skipIf(!SHOULD_RUN)("AT0334: hunk election on a session entry", () => {
              );
              return {
                text: badge?.textContent ?? null,
-               title: badge?.getAttribute("title") ?? null,
                partialGone: document.querySelector(${JSON.stringify(
                  `${FILE_ROW} [data-testid="tug-changes-list-file-partial"]`,
                )}) === null,
@@ -418,14 +428,30 @@ describe.skipIf(!SHOULD_RUN)("AT0334: hunk election on a session entry", () => {
            })()`,
         );
         expect(stale.text).toBe("stale election");
-        expect(stale.title).toContain("no longer in it");
+        // The badge's explanation is a TugTooltip, so it has to be hovered.
+        await app.evalJS<null>(
+          `(function(){
+             const el = document.querySelector(${JSON.stringify(
+               `${FILE_ROW} [data-testid="tug-changes-list-file-stale-election"]`,
+             )});
+             el.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false }));
+             el.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
+             return null;
+           })()`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector('.tug-tooltip-content') !== null`,
+          { timeoutMs: 5000 },
+        );
+        const staleReason = await app.getElementText(".tug-tooltip-content");
+        expect(staleReason).toContain("no longer in it");
         // The count is gone: there is nothing coherent to count.
         expect(stale.partialGone).toBe(true);
         // Every box checked is the only honest rendering of "nothing
         // addressable is elected" — the badge is what keeps it from reading
         // as a plain whole-file landing.
         expect(stale.allChecked).toBe(true);
-        note("at0334 stale badge", `${stale.text} — ${stale.title}`);
+        note("at0334 stale badge", `${stale.text} — ${staleReason}`);
       } finally {
         await app.close();
         rmTempTugbank(tugbankPath);

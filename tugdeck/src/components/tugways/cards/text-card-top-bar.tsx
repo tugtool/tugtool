@@ -25,6 +25,8 @@ import {
 
 import type { SaveMode } from "@/lib/text-card-store";
 import { TugIconButton } from "../tug-icon-button";
+import { TugActionTooltip } from "../tug-action-tooltip";
+import { TUG_ACTIONS } from "../action-vocabulary";
 import {
   TugPopover,
   TugPopoverContent,
@@ -95,20 +97,25 @@ export function TextCardTopBar({
       <div className="text-card-top-bar-actions">
         {saveMode === "manual" ? (
           // Manual mode: a plain Save writes the buffer to the real file.
-          <TugIconButton
-            icon={<HardDriveDownload />}
-            aria-label="Save"
-            title="Save"
-            onClick={onSave}
-            disabled={!canSave}
-          />
+          <TugActionTooltip action={TUG_ACTIONS.SAVE} content="Write this buffer to its file">
+            <TugIconButton
+              icon={<HardDriveDownload />}
+              aria-label="Save"
+              onClick={onSave}
+              disabled={!canSave}
+            />
+          </TugActionTooltip>
         ) : canMoveTo ? (
-          <TugIconButton
-            icon={<FolderInput />}
-            aria-label="Move to a permanent location"
-            title="Move To…"
-            onClick={onMoveTo}
-          />
+          <TugActionTooltip
+            action={TUG_ACTIONS.SAVE_AS}
+            content="Move this card to a permanent location"
+          >
+            <TugIconButton
+              icon={<FolderInput />}
+              aria-label="Move to a permanent location"
+              onClick={onMoveTo}
+            />
+          </TugActionTooltip>
         ) : null}
         <TextCardOptionsPopover settings={settings} onChangeSetting={onChangeSetting} />
       </div>

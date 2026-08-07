@@ -108,6 +108,7 @@ import { TugChoiceGroup } from "./tug-choice-group";
 import { TugProgressIndicator } from "./tug-progress-indicator";
 import { TugPushButton } from "./tug-push-button";
 import { TugTooltip } from "./tug-tooltip";
+import { TugActionTooltip } from "./tug-action-tooltip";
 import { TugConfirmPopover } from "./tug-confirm-popover";
 import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
 import type { SessionSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
@@ -3492,9 +3493,14 @@ export const TugPromptEntry = React.forwardRef<
     commitSnap !== null && commitSnap.canLandIgnoringMessage;
   const commitToolbarTrailing = (
     <>
-      <TugTooltip
+      {/* The chord is read, not authored: Cancel holds two bindings (⌘. and ⎋)
+          and the registry decides which one a surface shows ([P11]). An
+          authored "Esc" here was a second statement of a fact the command
+          table already holds — and the first thing to go wrong the day
+          someone rebinds Cancel. */}
+      <TugActionTooltip
+        action={TUG_ACTIONS.CANCEL_DIALOG}
         content={commitDrafting ? "Cancel auto-message" : "Cancel commit"}
-        shortcut="Esc"
       >
         <TugPushButton
           className="tug-prompt-entry-commit-cancel"
@@ -3508,10 +3514,10 @@ export const TugPromptEntry = React.forwardRef<
           aria-label={commitDrafting ? "Cancel auto-message" : "Cancel commit"}
           icon={<X size={16} strokeWidth={2.5} />}
         />
-      </TugTooltip>
-      <TugTooltip
+      </TugActionTooltip>
+      <TugActionTooltip
+        action={TUG_ACTIONS.COMMIT_AUTO_MESSAGE}
         content={commitDrafting ? "Composing…" : "Generate a commit message"}
-        shortcut={commandShortcut(TUG_ACTIONS.COMMIT_AUTO_MESSAGE)}
       >
         <TugPushButton
           className="tug-prompt-entry-commit-auto"
@@ -3530,7 +3536,7 @@ export const TugPromptEntry = React.forwardRef<
           data-testid="tug-prompt-entry-commit-auto"
           icon={<PencilSparkles size={16} strokeWidth={2} />}
         />
-      </TugTooltip>
+      </TugActionTooltip>
       <TugTooltip
         content={
           commitCanLand

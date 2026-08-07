@@ -91,6 +91,7 @@ import { TugFileChooser } from "../tug-file-chooser";
 import type { TugComboBoxItem } from "../tug-combo-box";
 import { TugIconButton } from "../tug-icon-button";
 import { TugPushButton } from "../tug-push-button";
+import { TugActionTooltip } from "../tug-action-tooltip";
 import {
   TugInlineAlert,
   type TugInlineAlertTone,
@@ -4580,41 +4581,45 @@ export function SessionCardBody({
                   // changes sheet without leaving the mode.
                   <>
                     {effectivePromptStatusContent}
-                    <TugPushButton
-                      size="sm"
-                      emphasis="tinted"
-                      role="action"
-                      layout="label-top"
-                      label="Changes"
-                      data-slot="changes-chip"
-                      focusGroup={SESSION_CYCLE_GROUP}
-                      focusOrder={SESSION_CYCLE_ORDER_CHANGES}
-                      aria-label={
-                        commitFileCount === 0 && commitClaimableCount > 0
-                          ? `Claim ${commitClaimableCount} unclaimed ${
-                              commitClaimableCount === 1 ? "file" : "files"
-                            } to commit — open the changes sheet`
-                          : "Show or hide the changes sheet"
-                      }
-                      title={
+                    <TugActionTooltip
+                      action={TUG_ACTIONS.TOGGLE_CHANGES_VIEW}
+                      content={
                         commitFileCount === 0 && commitClaimableCount > 0
                           ? "Nothing attributed to this session yet — open Changes to claim these files into the commit"
                           : "Show or hide the changes sheet"
                       }
-                      onClick={() => {
-                        if (shadeViewController.getSnapshot() === "changes") {
-                          shadeViewController.hide();
-                        } else {
-                          shadeViewController.show("changes");
-                        }
-                      }}
                     >
-                      {commitFileCount === 0 && commitClaimableCount > 0
-                        ? `claim ${commitClaimableCount}`
-                        : commitFileCount === 1
-                          ? "1 file"
-                          : `${commitFileCount} files`}
-                    </TugPushButton>
+                      <TugPushButton
+                        size="sm"
+                        emphasis="tinted"
+                        role="action"
+                        layout="label-top"
+                        label="Changes"
+                        data-slot="changes-chip"
+                        focusGroup={SESSION_CYCLE_GROUP}
+                        focusOrder={SESSION_CYCLE_ORDER_CHANGES}
+                        aria-label={
+                          commitFileCount === 0 && commitClaimableCount > 0
+                            ? `Claim ${commitClaimableCount} unclaimed ${
+                                commitClaimableCount === 1 ? "file" : "files"
+                              } to commit — open the changes sheet`
+                            : "Show or hide the changes sheet"
+                        }
+                        onClick={() => {
+                          if (shadeViewController.getSnapshot() === "changes") {
+                            shadeViewController.hide();
+                          } else {
+                            shadeViewController.show("changes");
+                          }
+                        }}
+                      >
+                        {commitFileCount === 0 && commitClaimableCount > 0
+                          ? `claim ${commitClaimableCount}`
+                          : commitFileCount === 1
+                            ? "1 file"
+                            : `${commitFileCount} files`}
+                      </TugPushButton>
+                    </TugActionTooltip>
                   </>
                 ) : (
                 // Static Code chip set ([P01]/[P10]): identity · mode · model ·

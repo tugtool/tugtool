@@ -59,7 +59,6 @@ import {
   type ContentWidth,
 } from "@/lib/layout-imposer";
 import { TugButton } from "@/components/tugways/internal/tug-button";
-import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { cardTitleStore } from "@/lib/card-title-store";
 import { composePaneTitleBarText } from "@/lib/pane-title";
@@ -614,26 +613,31 @@ function CardTitleBar({
           // Escape / Cmd-. cancel (it claims first responder on focus so the
           // keyboard cancel keys land on it, not the card behind it).
           <>
-            <TugActionTooltip
-              action={isMultiTab ? TUG_ACTIONS.CLOSE_ALL : TUG_ACTIONS.CLOSE}
-              content={isMultiTab ? `Close ${cardCount} tabs` : "Close this card"}
-            >
-              <TugButton
-                ref={setCloseAnchorEl}
-                subtype="icon"
-                emphasis="ghost"
-                role="action"
-                size="sm"
-                icon={<X />}
-                onPointerDown={handleClosePointerDown}
-                onPointerUp={handleClosePointerUp}
-                onClick={handleCloseClick}
-                aria-label={
-                  isMultiTab ? `Close pane (${cardCount} tabs)` : "Close card"
-                }
-                data-testid="tug-pane-close-button"
-              />
-            </TugActionTooltip>
+            {/* Deliberately NOT wrapped in a `TugActionTooltip`, though ⌘W is
+                exactly the sort of chord one would name. This X does not run
+                the ordinary click protocol: it captures the pointer on
+                `pointerdown` (preventing the default), decides on `pointerup`
+                by hit-testing its own rect, and is itself the anchor the
+                confirm popover hangs from. Wrapping it in a second
+                pointer-handling primitive made Option-click stop closing the
+                pane — reproducibly, and with the bubble's open delay pushed
+                past the test, so it is the trigger's handler composition and
+                not the bubble. at0040 is what catches it. */}
+            <TugButton
+              ref={setCloseAnchorEl}
+              subtype="icon"
+              emphasis="ghost"
+              role="action"
+              size="sm"
+              icon={<X />}
+              onPointerDown={handleClosePointerDown}
+              onPointerUp={handleClosePointerUp}
+              onClick={handleCloseClick}
+              aria-label={
+                isMultiTab ? `Close pane (${cardCount} tabs)` : "Close card"
+              }
+              data-testid="tug-pane-close-button"
+            />
             <TugConfirmPopover
               open={closeOpen}
               anchorEl={closeAnchorEl}

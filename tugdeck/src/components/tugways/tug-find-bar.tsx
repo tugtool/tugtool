@@ -41,6 +41,7 @@ import { TugEntryShell } from "@/components/tugways/tug-entry-shell";
 import { FindWrapOverlay } from "@/components/tugways/chrome/find-wrap-overlay";
 import { TugFindCluster } from "@/components/tugways/tug-find-cluster";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
 import {
   TugTextEditor,
   type TugTextEditorDelegate,
@@ -326,36 +327,46 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
                 focusGroup={focusGroup}
                 focusOrder={focusOrderBase + FIND_STOP_OPTIONS}
               />
-              <TugPushButton
-                subtype="icon"
-                size="lg"
-                // Outlined, not filled: Previous is the secondary of the
-                // Next/Previous pair — the filled button is "next" (the
-                // Return gesture's twin), this outlined one is "previous".
-                emphasis="outlined"
-                role="action"
-                onClick={() => session.previous()}
-                aria-label="Find previous"
-                icon={<ChevronUp size={18} strokeWidth={2.5} />}
-                focusGroup={focusGroup}
-                focusOrder={focusOrderBase + FIND_STOP_PREVIOUS}
-              />
-              <TugPushButton
-                subtype="icon"
-                size="lg"
-                emphasis="filled"
-                role="action"
-                // Return in the query field IS this button, so it wears the
-                // shell's default ring — and gives the fill back the moment the
-                // caret leaves for the composer, whose submit is Return's home
-                // there.
-                data-tug-entry-default=""
-                onClick={() => session.next()}
-                aria-label="Find next"
-                icon={<ChevronDown size={18} strokeWidth={2.5} />}
-                focusGroup={focusGroup}
-                focusOrder={focusOrderBase + FIND_STOP_NEXT}
-              />
+              <TugActionTooltip
+                action={TUG_ACTIONS.FIND_PREVIOUS}
+                content="Go to the previous match"
+              >
+                <TugPushButton
+                  subtype="icon"
+                  size="lg"
+                  // Outlined, not filled: Previous is the secondary of the
+                  // Next/Previous pair — the filled button is "next" (the
+                  // Return gesture's twin), this outlined one is "previous".
+                  emphasis="outlined"
+                  role="action"
+                  onClick={() => session.previous()}
+                  aria-label="Find previous"
+                  icon={<ChevronUp size={18} strokeWidth={2.5} />}
+                  focusGroup={focusGroup}
+                  focusOrder={focusOrderBase + FIND_STOP_PREVIOUS}
+                />
+              </TugActionTooltip>
+              <TugActionTooltip
+                action={TUG_ACTIONS.FIND_NEXT}
+                content="Go to the next match"
+              >
+                <TugPushButton
+                  subtype="icon"
+                  size="lg"
+                  emphasis="filled"
+                  role="action"
+                  // Return in the query field IS this button, so it wears the
+                  // shell's default ring — and gives the fill back the moment the
+                  // caret leaves for the composer, whose submit is Return's home
+                  // there.
+                  data-tug-entry-default=""
+                  onClick={() => session.next()}
+                  aria-label="Find next"
+                  icon={<ChevronDown size={18} strokeWidth={2.5} />}
+                  focusGroup={focusGroup}
+                  focusOrder={focusOrderBase + FIND_STOP_NEXT}
+                />
+              </TugActionTooltip>
             </>
           }
         >
