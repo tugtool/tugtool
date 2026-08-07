@@ -1206,8 +1206,7 @@ fn build_jots_test_app() -> (axum::Router, tempfile::TempDir, std::path::PathBuf
 
     let dir = tempfile::TempDir::new().expect("temp dir");
     let path = dir.path().join("jots.json");
-    let state =
-        crate::jots::JotsState::new(path.clone(), Arc::new(tokio::sync::Notify::new()));
+    let state = crate::jots::JotsState::new(path.clone(), Arc::new(tokio::sync::Notify::new()));
 
     let auth = auth::new_shared_auth_state(7893);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);

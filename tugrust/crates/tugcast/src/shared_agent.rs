@@ -406,7 +406,12 @@ impl SharedAgentPool {
         if app_test_gated() {
             return;
         }
-        let Some(spec) = self.spec.jobs.iter().find(|j| JobClass::of(j.name) == class) else {
+        let Some(spec) = self
+            .spec
+            .jobs
+            .iter()
+            .find(|j| JobClass::of(j.name) == class)
+        else {
             return;
         };
         let worker = {
@@ -678,9 +683,7 @@ impl SharedAgentPool {
 fn staying(workers: &[Arc<Worker>]) -> usize {
     workers
         .iter()
-        .filter(|w| {
-            !w.retired.load(Ordering::Relaxed) && !w.superseded.load(Ordering::Relaxed)
-        })
+        .filter(|w| !w.retired.load(Ordering::Relaxed) && !w.superseded.load(Ordering::Relaxed))
         .count()
 }
 
@@ -733,7 +736,9 @@ async fn one_turn(
 fn warmup_input(class: JobClass) -> &'static str {
     match class {
         JobClass::Classify => "pwd",
-        JobClass::Summarize => "The standing goal:\n- warm up\nWhat it is doing right now:\n- nothing\n",
+        JobClass::Summarize => {
+            "The standing goal:\n- warm up\nWhat it is doing right now:\n- nothing\n"
+        }
     }
 }
 

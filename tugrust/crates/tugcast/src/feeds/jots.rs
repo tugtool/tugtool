@@ -34,7 +34,7 @@ use tokio::time::MissedTickBehavior;
 use tracing::debug;
 use tugcast_core::{FeedId, Frame};
 
-use crate::jots::{ReadOutcome, JotsDoc, read_jots};
+use crate::jots::{JotsDoc, ReadOutcome, read_jots};
 
 /// Debounce window coalescing a burst of writes into one rebuild.
 const DEBOUNCE_MILLIS: u64 = 100;

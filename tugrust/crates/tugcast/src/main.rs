@@ -16,6 +16,7 @@ mod fs_read;
 mod fs_stat;
 mod fs_write;
 mod host;
+mod jots;
 mod ledger_integrity;
 /// Crate-root path utilities (firmlink/synthetic/symlink resolution). Lives
 /// at the root, not under `feeds/`, because both `feeds` (file watching) and
@@ -31,7 +32,6 @@ mod session_ledger;
 mod session_metadata_merge;
 mod shared_agent;
 mod shell_ledger;
-mod jots;
 mod terminal_registry;
 mod turn_engine;
 mod workspace_api;
