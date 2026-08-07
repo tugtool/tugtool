@@ -38,9 +38,17 @@
  *   5. Switch to one-up. ⌘2 was live a moment ago and is now out of range,
  *      so it does nothing — the range followed the arrangement.
  *
+ * The second test covers the other half of the gesture: its receipt. A chord
+ * naming the slot the frontmost card already holds moves nothing, which leaves
+ * the flash as the only evidence the chord landed rather than fell through —
+ * so the flash has to be tied to the assignment happening, not to the frame
+ * moving. The inert cases have to stay dark for the same reason: a flash on an
+ * out-of-range digit would say the chord worked when it did not.
+ *
  * @covers tugdeck/src/components/chrome/deck-canvas.tsx
  * @covers tugdeck/src/components/tugways/keybinding-map.ts
  * @covers tugdeck/src/components/tugways/action-vocabulary.ts
+ * @covers tugdeck/src/action-dispatch.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -140,6 +148,20 @@ async function slotChord(app: App, digit: number): Promise<void> {
   await wait(AFTER_LAND_MS);
 }
 
+/** Whether the pane is wearing the one-shot flash class right now. */
+function flashExpr(paneId: string): string {
+  return `document.querySelector('.tug-pane[data-pane-id="${paneId}"]').classList.contains('tug-pane-flash')`;
+}
+
+/**
+ * The flash is one-shot and short, so it is caught by polling rather than by
+ * sleeping past it. `waitForCondition` polls faster than the ring's lifetime,
+ * and a chord that never flashed times out here rather than reading as a pass.
+ */
+async function waitForFlash(app: App, paneId: string): Promise<void> {
+  await app.waitForCondition<boolean>(flashExpr(paneId), { timeoutMs: 5_000 });
+}
+
 async function expectFrameAt(
   app: App,
   paneId: string,
@@ -220,6 +242,72 @@ describe.skipIf(!SHOULD_RUN)(
             await slotChord(app, 1);
             await expectFrameAt(app, "p1", 0, 1);
           }
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "the chord flashes the card it lands on, including when nothing moves",
+      async () => {
+        const app = await launchTugApp({ testName: "at0338-slot-flash" });
+        try {
+          await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(${JSON.stringify(FRAMES)}).length === 3`,
+            { timeoutMs: 5_000 },
+          );
+          await wait(AFTER_LAND_MS);
+
+          // --- ⌘1 on the slot A already holds. -----------------------------
+          // The frame is where it was to the pixel, and the flash is the only
+          // thing that says so on purpose.
+          const before = await frameLeft(app, "p1");
+          await app.nativeKey("1", ["cmd"]);
+          await waitForFlash(app, "p1");
+          expect(await frameLeft(app, "p1")).toBeCloseTo(before, 0);
+
+          // One-shot: the ring clears itself. In a background window the
+          // keyframes never tick, so `animationend` never arrives — the clear
+          // proves the backstop timer, not the animation.
+          await app.waitForCondition<boolean>(
+            `!${flashExpr("p1")}`,
+            { timeoutMs: 5_000 },
+          );
+
+          // --- ⌘3: it crosses, and it flashes there too. -------------------
+          await app.nativeKey("3", ["cmd"]);
+          await waitForFlash(app, "p1");
+          await wait(AFTER_LAND_MS);
+          await expectFrameAt(app, "p1", 2, 3);
+          await app.waitForCondition<boolean>(
+            `!${flashExpr("p1")}`,
+            { timeoutMs: 5_000 },
+          );
+
+          // --- ⌘5: out of range, so no receipt. ----------------------------
+          // The flash follows the assignment, not the keystroke: a digit the
+          // arrangement does not have never reaches `assign-slot`.
+          await app.nativeKey("5", ["cmd"]);
+          await wait(AFTER_LAND_MS);
+          expect(await app.evalJS<boolean>(flashExpr("p1"))).toBe(false);
+
+          // --- The Lens is selected: no card is assignable, nothing flashes.
+          await app.evalJS<null>(
+            `(window.__tug.dispatchControlAction("focus-session-card", { cardId: "L" }), null)`,
+          );
+          // That dispatch flashes the Lens itself ([P04]); let it clear before
+          // asking whether the chord flashed anything.
+          await app.waitForCondition<boolean>(
+            `!${flashExpr("pLens")}`,
+            { timeoutMs: 5_000 },
+          );
+          await app.nativeKey("2", ["cmd"]);
+          await wait(AFTER_LAND_MS);
+          expect(await app.evalJS<boolean>(flashExpr("pLens"))).toBe(false);
+          expect(await app.evalJS<boolean>(flashExpr("p1"))).toBe(false);
         } finally {
           await app.close();
         }

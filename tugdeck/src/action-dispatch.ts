@@ -92,24 +92,49 @@ export const SHIPPED_THEME_NAMES: readonly string[] = [
  * One-shot flash of a pane's BORDER ([P04]). Toggles a CSS class on the pane
  * root, which pulses an accent ring (box-shadow) and removes it on
  * `animationend` — pure appearance, never React state ([L06]). A mid-flash
- * re-request restarts the animation (remove → reflow → add). No-op if the pane
- * element isn't in the DOM.
+ * re-request restarts the animation (remove → reflow → add).
+ *
+ * A pane the DOM does not hold yet gets one deferred retry: `assign-slot` can
+ * pull a card out of a tab group into a pane that exists in the store but not
+ * on screen until React commits, and the flash belongs on the pane the card
+ * ends up in. The retry does not retry again — a second miss is a pane that
+ * never rendered, not one still on its way.
  */
-function flashPaneBorder(paneId: string): void {
+const FLASH_CLASS = "tug-pane-flash";
+const FLASH_ANIMATION_NAME = "tug-pane-border-flash";
+/** `tug-pane-border-flash`'s duration in `tug-pane.css`, plus slack. */
+const FLASH_BACKSTOP_MS = 1600;
+
+function flashPaneBorder(paneId: string, allowRetry = true): void {
+  if (typeof document === "undefined") return;
   const paneEl = document.querySelector(
     `.tug-pane[data-pane-id="${CSS.escape(paneId)}"]`,
   );
-  if (!(paneEl instanceof HTMLElement)) return;
-  const FLASH_CLASS = "tug-pane-flash";
+  if (!(paneEl instanceof HTMLElement)) {
+    if (allowRetry) window.setTimeout(() => flashPaneBorder(paneId, false), 0);
+    return;
+  }
   paneEl.classList.remove(FLASH_CLASS);
   // Force a reflow so re-adding the class restarts the keyframes.
   void paneEl.offsetWidth;
   paneEl.classList.add(FLASH_CLASS);
-  const onEnd = (): void => {
+  const clear = (): void => {
     paneEl.classList.remove(FLASH_CLASS);
     paneEl.removeEventListener("animationend", onEnd);
+    window.clearTimeout(backstop);
+  };
+  // `animationend` bubbles, so the listener must name the flash's own
+  // keyframes: any animation finishing anywhere inside the card — a streaming
+  // transcript, a spinner — would otherwise cut the flash short.
+  const onEnd = (event: AnimationEvent): void => {
+    if (event.animationName !== FLASH_ANIMATION_NAME) return;
+    clear();
   };
   paneEl.addEventListener("animationend", onEnd);
+  // A window whose rendering is suspended never ticks the keyframes, so
+  // `animationend` never arrives and the ring would rest on the pane forever.
+  // The timer is the only thing that guarantees the flash is one-shot.
+  const backstop = window.setTimeout(clear, FLASH_BACKSTOP_MS);
 }
 
 /** Handler function for an action */
@@ -561,8 +586,15 @@ export function initActionDispatch(
   });
 
   // assign-slot: put a card's pane at a numbered position in the active
-  // imposition. Dispatched by the `SlotPicker` cluster on Lens Sessions and
-  // Text Files rows. `slot` is 0-based (the buttons render 1-based).
+  // imposition. Dispatched by ⌘1..⌘9 on the deck canvas and by the `SlotPicker`
+  // cluster on Lens Sessions and Text Files rows. `slot` is 0-based (the
+  // buttons render 1-based).
+  //
+  // The assignment always flashes the card's pane, including when the card was
+  // already in the slot the caller named. A chord that lands on the slot the
+  // frontmost card already holds moves nothing, and without the flash it is
+  // indistinguishable from a chord that did not land at all — so the flash is
+  // the gesture's receipt, not a decoration on the motion ([P04], [L06]).
   registerAction("assign-slot", (payload) => {
     const cardId = payload.cardId;
     if (typeof cardId !== "string") {
@@ -575,6 +607,14 @@ export function initActionDispatch(
       return;
     }
     deckManager.assignCardToSlot(cardId, slot);
+    // Read the pane back AFTER the call: a card pulled out of a tab group
+    // lands in a pane that did not exist before it. `slot` being set is what
+    // separates an assignment that happened from one `assignCardToSlot`
+    // refused (no imposition, sidebar host) — a refusal must not flash.
+    const landed = deckManager
+      .getSnapshot()
+      .panes.find((p) => p.cardIds.includes(cardId));
+    if (landed?.slot !== undefined) flashPaneBorder(landed.id);
   });
 
   // focus-session-card: activate a specific card (front its pane + promote the

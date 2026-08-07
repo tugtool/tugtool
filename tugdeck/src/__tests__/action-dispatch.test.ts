@@ -981,9 +981,16 @@ describe("initActionDispatch: imposition verbs", () => {
     _resetForTest();
   });
 
+  // The deck reads its own panes back after an assignment (to flash the pane
+  // the card landed in), so the mock has to keep a snapshot the assignment
+  // moves — a bare recorder would make the handler read `undefined`.
   function wire() {
     const impositions: (string | null)[] = [];
     const assignments: { cardId: string; slot: number }[] = [];
+    const panes = [
+      { id: "pane-1", cardIds: ["card-1"], slot: undefined as number | undefined },
+      { id: "pane-2", cardIds: ["card-2"], slot: undefined as number | undefined },
+    ];
     const conn = createMockConnection();
     const deck = {
       ...createMockDeckManager(),
@@ -992,10 +999,15 @@ describe("initActionDispatch: imposition verbs", () => {
       },
       assignCardToSlot(cardId: string, slot: number): void {
         assignments.push({ cardId, slot });
+        const pane = panes.find((p) => p.cardIds.includes(cardId));
+        if (pane) pane.slot = slot;
+      },
+      getSnapshot() {
+        return { panes };
       },
     };
     initActionDispatch(conn as any, deck as any);
-    return { impositions, assignments };
+    return { impositions, assignments, panes };
   }
 
   it("passes each valid kind through to the deck", () => {
