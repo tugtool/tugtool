@@ -43,7 +43,7 @@ The user effect this ships: the shortcuts they actually type get recognized (`gs
 - A body of `git status $*` never produces a band computed from a literal `$*` token (pinned).
 - The seven real bodies from the brief's expandability table parse to their stated classifications; every multi-statement / control-flow / substitution / assignment body parses `Opaque` (corpus test).
 - Deleting a binary from a PATH directory stops it grading `yes` on the next grade after the revalidation throttle passes; adding one makes it a candidate after the next revalidation-triggering event (tugcast test with a temp PATH dir).
-- The 24-line prose corpus and 14-line command corpus from the brief are a committed fixture; adding `we`/`us`/`our` to `PROSE_MARKERS` vetoes the pronoun-carrying leaks with zero false vetoes on the command corpus (deck test).
+- A committed veto corpus fixture whose load-bearing lines are the 8 measured leaks (recorded verbatim in this plan), surrounded by implementer-authored prose and command lines; adding `we`/`us`/`our` to `PROSE_MARKERS` vetoes the pronoun-carrying leaks with zero false vetoes on the command lines (deck test).
 - `at0280-shared-agent-absent.test.ts` still passes; `cd tugrust && cargo nextest run` green; `bun test` green in tugdeck; `bunx vite build` clean.
 
 #### Scope {#scope}
@@ -319,9 +319,11 @@ pub fn parse_function_body(printed: &str) -> ShellWord;
 
 1. **Normalize** per [#body-print-normalization](#body-print-normalization): drop the header line, strip the outer braces, trim lines, drop empties, strip one trailing `;`. More than one non-empty line remaining → `Opaque`.
 2. **Pre-scan** the statement for `;`, `<`, `>` anywhere (quoted or not — conservative) → `Opaque`. (`` ` ``, `$(`, `<(`, heredocs are refused by `lex` in the next step; `|`, `&&`, `||`, `&` produce a second segment, caught below.)
-3. **Parameter extraction:** whitespace-delimited tokens exactly equal to `$*`, `$@`, `"$*"`, `"$@"`, or `$1`…`$9` are removed and set `takes_args = true`.
-4. **Lex** the remainder with `tuggram::lex`. `None` → `Opaque`. Segment count ≠ 1 → `Opaque`. A leading env-assignment token (`Segment::head()` not at token 0) → `Opaque`. Head or any remaining token containing `$` → `Opaque`.
-5. Otherwise → `Simple { head, prefix: remaining args, takes_args }`.
+3. **Lex** the statement with `tuggram::lex`. `None` → `Opaque`. Segment count ≠ 1 → `Opaque`. A leading env-assignment token (`Segment::head()` not at token 0) → `Opaque`.
+4. **Parameter extraction, on the lexed token stream:** tokens of the single segment exactly equal to `$*`, `$@`, or `$1`…`$9` are removed and set `takes_args = true`. This runs **after** lex deliberately: quote resolution has already collapsed `"$@"`/`"$*"` to the tokens `$@`/`$*`, and — critically — a parameter *inside* a larger quoted span (`echo "a $* b"`) survives as part of its containing token, where the next step catches it. Extracting on a whitespace split of the raw statement would strip that `$*` and misparse the body as `Simple`.
+5. Head or any remaining token containing `$` → `Opaque`. Otherwise → `Simple { head, prefix: remaining args, takes_args }`.
+
+*Known residual:* `lex` does not expose per-token quoting, so a single-quoted literal `'$*'` also lexes to the token `$*` and is stripped as a parameter — a misparse, but in a bounded direction: the grade splices the typed arguments into a real program's grammar, and nothing routes that the shell would not run exactly as typed.
 
 `parse_alias_value` is the same pipeline minus the header/brace normalization, with two differences: `takes_args` is always `true` (alias expansion appends the remaining typed tokens), and *any* `$` in the value → `Opaque` (aliases have no positional parameters; a `$` is a live expansion the grade cannot honor).
 
@@ -434,7 +436,7 @@ Dispatcher holds `words: HashMap<String, SessionWords>` keyed by `tug_session_id
 - `PathCommandsStore` (`tugdeck/src/lib/path-commands-store.ts`): holds `_pathCommands` and `_shellWords` separately; folds `type: "shell_words"` frames (`names` array) alongside `type: "path_commands"`; `getSnapshot()` returns the union, still `null` until `path_commands` lands ([#deck-names-only](#deck-names-only)). `request()` gains the project dir: constructor takes `projectDir: string` (from `binding.projectDir`, already in scope at the construction site in `card-services-store.ts`), and the sent frame carries `cwd`.
 - Verify-and-pin: `ShellSessionStore`, `ShellGrammarStore`, `ShellClassifyStore` ignore `shell_words` frames (each already early-returns on `p.type !==` its own type; add a folding test that feeds a `shell_words` payload through and asserts nothing changes).
 - `shell-line-classifier.ts`: add `"we", "us", "our"` to `PROSE_MARKERS` ([P12]). Update the module docblock's membership language ("the first word names a program that exists on this machine" → names something this session's shell will resolve).
-- New fixture `tugdeck/src/lib/__tests__/shell-veto-corpus.ts` (or inline in `shell-line-classifier.test.ts` per that suite's convention): the brief's 24 prose lines (including the 8 measured leaks: `add error handling here`, `add support for nested cards`, `amend last commit please`, `pick up where we left off`, `pick whichever approach seems cleaner`, `pull request review please`, `stuff we should revisit later`, `site navigation feels sluggish`) and 14 command lines; assert 0 false vetoes on the commands and that the pronoun-carrying leaks now veto.
+- New corpus fixture (inline in `shell-line-classifier.test.ts` per that suite's convention, or a sibling module). The **load-bearing lines are the 8 measured leaks, verbatim**: `add error handling here`, `add support for nested cards`, `amend last commit please`, `pick up where we left off`, `pick whichever approach seems cleaner`, `pull request review please`, `stuff we should revisit later`, `site navigation feels sluggish`. The brief's full 24/14 corpus was not recorded, so the implementer authors the surrounding coverage: prose lines opening on the newly eligible verbs (`add`, `amend`, `pick`, `pull`, `push`, `stuff`, `site`), and command lines including flag-heavy and quoted-argument shapes (e.g. `git commit -m "fix the thing for me"`, `rg -n --hidden --glob '!target' TODO src tests`). Assert 0 false vetoes on the command lines and that the pronoun-carrying leaks now veto.
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
@@ -530,11 +532,12 @@ Interrogation tests follow the `login_shell_sources_user_rc` pattern (set `SHELL
 
 **Tasks:**
 - [ ] Implement Spec S01 types; alias-over-function precedence on insert.
-- [ ] Implement Spec S02 parsing: normalization ([#body-print-normalization](#body-print-normalization)), pre-scan, parameter extraction, `lex` reuse, the `$`-rejection rules; alias variant with `takes_args: true` always.
+- [ ] Implement Spec S02 parsing in its stated order — normalization ([#body-print-normalization](#body-print-normalization)), pre-scan, `lex`, **then** parameter extraction on the lexed token stream, then the `$`-rejection rule; alias variant with `takes_args: true` always.
 - [ ] Implement transitive `resolve` (depth 8, cycle → `Opaque`, unparsed link → `Opaque`, prefix concatenation inner-first, `takes_args` from the outermost entry).
 
 **Tests:**
 - [ ] Corpus per [#test-plan-concepts](#test-plan-concepts): the 7 real bodies (both shells' printed forms), every Opaque construct class, empty body, `$`-head, alias values with/without `$`.
+- [ ] A parameter inside a quoted span (`echo "a $* b"`) parses `Opaque`, never `Simple` — the pin for Spec S02's parse order.
 - [ ] `resolve` chain, cycle, depth-cap, and unparsed-link cases; alias-shadows-function precedence.
 
 **Checkpoint:**
@@ -729,11 +732,11 @@ Interrogation tests follow the `login_shell_sources_user_rc` pattern (set `SHELL
 **References:** [P12] veto minimal, [Q02] decided, Spec S07, (#verified-findings)
 
 **Artifacts:**
-- `we`/`us`/`our` in `PROSE_MARKERS`; the 24-prose + 14-command corpus fixture in `shell-line-classifier.test.ts`.
+- `we`/`us`/`our` in `PROSE_MARKERS`; the veto corpus fixture in `shell-line-classifier.test.ts` per Spec S07.
 
 **Tasks:**
 - [ ] Add the pronouns; leave `COMMAND_TOKEN_CEILING` and its `>` boundary unchanged, updating the `vetoesShellVerdict` doc to note the population it now faces.
-- [ ] Commit the corpus as a fixture with the leak lines marked; assert the pronoun-carrying leaks veto and all 14 commands do not.
+- [ ] Author and commit the corpus per Spec S07: the 8 measured leak lines verbatim (the load-bearing assertions), plus implementer-authored prose lines opening on the newly eligible verbs and command lines including flag-heavy and quoted-argument shapes. Assert the pronoun-carrying leaks veto and no command line does.
 
 **Tests:**
 - [ ] The corpus assertions above; the existing veto tests unchanged.
