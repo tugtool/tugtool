@@ -8,9 +8,10 @@
  * accordion trigger owns file identity). `DiffBlock` is the per-file engine and
  * is NOT rebuilt here; this component is the layer above it.
  *
- * Three hosts compose this one document: the session card's `/diff` sheet
- * (`cards/diff-sheet.tsx`), the changeset card's inline whole-entry expansion,
- * and a Text card in diff mode. Each host owns its own sourcing (a
+ * The hosts composing this one document: the Diff card (`cards/diff-card.tsx`,
+ * whose repo-wide guise is the Project Diff card), the Changes shade's session
+ * diff document, the changeset card's inline whole-entry expansion, and a Text
+ * card in diff mode. Each host owns its own sourcing (a
  * {@link GitDiffStore} request, refresh, loading/error notices) and hands this
  * component the parsed {@link GitDiffPayload}; the document renders the files.
  *

@@ -421,7 +421,7 @@ const SLASH_BRIDGES: readonly SlashBridge[] = [
   ],
   ["compact", "Compact Conversation", "session.compact"],
   ["add-dir", "Add Working Directory…", "session.addDir"],
-  ["diff", "Show Code Changes", "session.diff"],
+  ["diff", "Show Project Diff", "session.diff"],
   ["context", "Show Context", "session.context"],
   ["usage", "Show Usage", "session.usage"],
   ["skills", "Skills", "session.skills"],

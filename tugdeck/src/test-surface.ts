@@ -1011,9 +1011,9 @@ export interface TugTestSurface {
 
   /**
    * Drive a session card's `GitDiffStore` with a decoded `git_diff_response`
-   * payload, as if a matching `GIT_DIFF` frame had landed — so the `/diff`
-   * sheet ([#step-10b]) renders its per-file accordion without a live tugcast
-   * git round-trip. Requires a prior `bindSession(cardId)`.
+   * payload, as if a matching `GIT_DIFF` frame had landed — so the Changes
+   * shade's session diff document renders without a live tugcast git
+   * round-trip. Requires a prior `bindSession(cardId)`.
    */
   ingestGitDiff(cardId: string, payload: unknown): void;
 

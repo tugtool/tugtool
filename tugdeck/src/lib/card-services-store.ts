@@ -430,10 +430,11 @@ class CardServicesStore {
     );
     const fileCompletionProvider = fileTreeStore.getFileCompletionProvider();
 
-    // `/diff` ([#step-10b]): a GIT_DIFF feed filtered to this card's
-    // workspace, plus the single-shot request/response store. Passing
-    // `projectDir` makes each `git_diff_request` carry `root` so tugcast
-    // resolves this card's workspace (the Z4B chip's dir).
+    // The card's git-diff source ([#step-10b]) — a GIT_DIFF feed filtered to
+    // this card's workspace, plus the single-shot request/response store that
+    // feeds the Changes shade's session diff document. Passing `projectDir`
+    // makes each `git_diff_request` carry `root` so tugcast resolves this
+    // card's workspace (the Z4B chip's dir).
     const gitDiffFeedStore = new FeedStore(
       connection,
       [FeedId.GIT_DIFF],

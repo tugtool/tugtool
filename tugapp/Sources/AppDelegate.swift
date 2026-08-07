@@ -1128,7 +1128,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sessionMenu.addItem(sessionCommandItem("Compact Conversation", "compact", "session.compact"))
         sessionMenu.addItem(NSMenuItem.separator())
         sessionMenu.addItem(sessionCommandItem("Add Working Directory…", "add-dir", "session.addDir"))
-        sessionMenu.addItem(sessionCommandItem("Show Code Changes", "diff", "session.diff"))
+        sessionMenu.addItem(sessionCommandItem("Show Project Diff", "diff", "session.diff"))
         sessionMenu.addItem(sessionCommandItem("Show Context", "context", "session.context"))
         sessionMenu.addItem(sessionCommandItem("Show Usage", "usage", "session.usage"))
         // Show/Hide the Changes / History Shades ([P05], Spec S04). The title's

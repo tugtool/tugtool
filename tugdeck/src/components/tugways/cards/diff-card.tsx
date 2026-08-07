@@ -1,13 +1,21 @@
 /**
- * diff-card.tsx — a standalone Diff card: one {@link TugDiffDocument} popped
- * out of the changeset card (or the session card's diff) into its own resizable
- * card ([P20]).
+ * diff-card.tsx — a standalone Diff card: one {@link TugDiffDocument} in its
+ * own resizable card ([P20]).
  *
- * The card carries a {@link DiffDescriptor} (head or range) instead of a file
- * path. It owns a standalone {@link GitDiffStore} (via `createGitDiffStore`),
- * fires the request when its descriptor is set/changed, and renders the shared
- * document with a Refresh control. Loading / error / clean / no-repo states get
- * a centered notice, matching the `/diff` sheet.
+ * Two guises, one card. Seeded with an **unscoped head descriptor** it is the
+ * **Project Diff** card — the repo-wide `git diff HEAD` for a project, opened
+ * by `/diff` and Session ▸ Show Project Diff, and it publishes that title via
+ * `cardTitleStore`. Seeded with a scoped descriptor (a pathspec, a range, a
+ * commit) it is a pop-out from the changeset card or the Changes shade and
+ * keeps the registry's plain "Diff" title. Deliberately unconnected to the
+ * Changes route: session-scoped review lives in the shade's session diff
+ * document, and this card never consults the attribution ledger.
+ *
+ * The card carries a {@link DiffDescriptor} (head, range, or commit) instead
+ * of a file path. It owns a standalone {@link GitDiffStore} (via
+ * `createGitDiffStore`), fires the request when its descriptor is set/changed,
+ * and renders the shared document with a Refresh control. Loading / error /
+ * clean / no-repo states get a centered notice.
  *
  * The descriptor is seeded through `addCard`'s initial-content channel and read
  * back via `useCardStatePreservation`'s restore, so a Maker ▸ Reload restores
@@ -31,6 +39,7 @@ import React, {
 } from "react";
 
 import { registerCard } from "@/card-registry";
+import { cardTitleStore } from "@/lib/card-title-store";
 import { CONTENT_WIDTH_COMFY_PX } from "@/lib/layout-imposer";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -71,6 +80,14 @@ function coerceDescriptor(value: unknown): DiffDescriptor | null {
   return null;
 }
 
+/** True for the repo-wide guise: `git diff HEAD` with no pathspec. */
+function isProjectDiffDescriptor(descriptor: DiffDescriptor): boolean {
+  return (
+    descriptor.kind === "head" &&
+    (descriptor.paths === undefined || descriptor.paths.length === 0)
+  );
+}
+
 /** The header label for a descriptor's document. */
 function descriptorLabel(descriptor: DiffDescriptor): string {
   if (descriptor.kind === "range") {
@@ -93,6 +110,19 @@ export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElem
   useEffect(() => {
     if (descriptor !== null && store !== null) store.requestDiff(descriptor);
   }, [descriptor, store]);
+
+  // The repo-wide guise names itself: an unscoped head descriptor is the
+  // Project Diff card, and the title bar should say so. Scoped pop-outs keep
+  // the registry's "Diff" (the override REPLACES the registry title, so it is
+  // published only when there is a better name).
+  useEffect(() => {
+    if (descriptor !== null && isProjectDiffDescriptor(descriptor)) {
+      cardTitleStore.set(cardId, "Project Diff");
+    } else {
+      cardTitleStore.clear(cardId);
+    }
+    return () => cardTitleStore.clear(cardId);
+  }, [cardId, descriptor]);
 
   // Seed the descriptor from the card's initial content; persist it so a
   // Maker ▸ Reload restores the same diff.

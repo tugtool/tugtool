@@ -1,15 +1,16 @@
 /**
- * GitDiffStore — single-shot `/diff` request/response over the GIT_DIFF
+ * GitDiffStore — single-shot git-diff request/response over the GIT_DIFF
  * feeds ([#step-10b]).
  *
- * `/diff` is a one-shot, not a continuous feed: the sheet asks for the
- * project's `git diff HEAD` once (and again on an explicit refresh), and
- * tugcast answers with a single `GIT_DIFF` (0x21) frame. This store sends
- * the `GIT_DIFF_QUERY` (0x22) carrying the card's project dir as `root`
- * (the same dir behind the Z4B chip — tugcast resolves the matching
- * workspace) plus a correlating `requestId`, and resolves the response whose
- * `request_id` matches the in-flight request. Stale responses (a slow reply
- * to a superseded request, or a workspace-filtered replay) are ignored.
+ * A diff is a one-shot, not a continuous feed: a consumer (the Project Diff
+ * card, the Changes shade's session diff document, a changes-list row) asks
+ * once (and again on an explicit refresh), and tugcast answers with a single
+ * `GIT_DIFF` (0x21) frame. This store sends the `GIT_DIFF_QUERY` (0x22)
+ * carrying the card's project dir as `root` (the same dir behind the Z4B
+ * chip — tugcast resolves the matching workspace) plus a correlating
+ * `requestId`, and resolves the response whose `request_id` matches the
+ * in-flight request. Stale responses (a slow reply to a superseded request,
+ * or a workspace-filtered replay) are ignored.
  *
  * The owning `FeedStore` is workspace-key-filtered (see `card-services-store`)
  * so a card only ever sees its own project's diff; `requestId` disambiguates
@@ -381,8 +382,8 @@ export class GitDiffStore {
   /**
    * Test seam — set the store to `ready` with `payload` directly, as if a
    * matching `GIT_DIFF` response had landed, bypassing the connection and the
-   * request_id gate. Mirrors `SessionMetadataStore._ingestForTest`; lets the
-   * `/diff` app-test render the sheet deterministically without a live git
+   * request_id gate. Mirrors `SessionMetadataStore._ingestForTest`; lets an
+   * app-test render a diff surface deterministically without a live git
    * round-trip (which 10.A's subprocess test already proves). @internal
    */
   _ingestForTest(payload: unknown): void {

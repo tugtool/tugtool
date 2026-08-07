@@ -92,7 +92,7 @@ export const LOCAL_SLASH_COMMANDS = [
   },
   {
     name: "diff",
-    description: "View uncommitted changes (git diff HEAD) for this project",
+    description: "Open the Project Diff card — uncommitted changes (git diff HEAD) for this project",
   },
   {
     name: "context",

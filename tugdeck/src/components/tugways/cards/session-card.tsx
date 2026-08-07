@@ -57,7 +57,6 @@ import { useModel } from "@/lib/use-model";
 import { useUnavailableModelBulletin } from "@/lib/use-unavailable-model-bulletin";
 import { persistModelCatalog } from "@/lib/model-catalog";
 import { useRewindSheet } from "./rewind-sheet";
-import { useDiffSheet } from "./diff-sheet";
 import { useSkillsSheet } from "./skills-sheet";
 import { useAgentsSheet } from "./agents-sheet";
 import { useMemorySheet } from "./memory-sheet";
@@ -125,6 +124,7 @@ import { deckTrace } from "@/deck-trace";
 import { useSheetDelegate } from "@/lib/sheet-lifecycle";
 import { useBannerDelegate } from "@/lib/banner-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { dispatchCommand } from "@/command-dispatch";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
 import { FindSession } from "@/lib/find-session";
 import {
@@ -471,7 +471,8 @@ export interface SessionCardServices {
   pastedCommandResolver: PastedCommandResolver;
   editorStore: EditorSettingsStore;
   responseStore: ResponseSettingsStore;
-  /** Single-shot `/diff` request/response store ([#step-10b]). */
+  /** Single-shot `git_diff_request` store — sources the Changes shade's
+   *  session diff document. */
   gitDiffStore: GitDiffStore;
   /** Single-shot `/skills` request/response store ([#step-12d]). */
   skillsInventoryStore: SkillsInventoryStore;
@@ -3302,14 +3303,6 @@ export function SessionCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
-  // `/diff` uncommitted-changes sheet ([#step-10b]), card-scoped per [D15].
-  // Fires `git_diff_request` for this card's project dir on open; the response
-  // renders as a per-file `TugAccordion`. Single-shot, not a feed ([D21]).
-  const diffSheet = useDiffSheet({
-    gitDiffStore,
-    showSheet: cardPickerSheet.showSheet,
-  });
-
   // `/skills` listing sheet ([#step-12d]), card-scoped per [D15]. Fires
   // `skills_inventory_query` on open; the response renders as a read-only
   // `TugListView`. Single-shot, not a feed.
@@ -3466,7 +3459,17 @@ export function SessionCardBody({
     },
     rewind: () => rewindSheet.openRewindSheet(),
     resume: () => resumeSheet.openResumeSheet(),
-    diff: () => diffSheet.openDiffSheet(),
+    // `/diff` opens the Project Diff card — the repo-wide `git diff HEAD`
+    // for this card's project, descriptor-keyed so a re-run reuses (and
+    // refreshes) the already-open card ([P20]). Session-scoped review lives
+    // in the Changes shade's session diff document, not here.
+    diff: () => {
+      const binding = cardSessionBindingStore.getBinding(cardId);
+      if (binding === undefined) return;
+      dispatchCommand(TUG_ACTIONS.OPEN_DIFF, {
+        descriptor: { kind: "head", root: binding.projectDir },
+      });
+    },
     context: () => statusRowRef.current?.openContext(),
     // `/tasks` (upstream: running shells + subagents) opens the WORK
     // placard — the unified surface those rows live in here. `/bashes`
@@ -4445,6 +4448,7 @@ export function SessionCardBody({
                     projectDir={projectDir}
                     changesController={changesController}
                     codeSessionStore={codeSessionStore}
+                    gitDiffStore={gitDiffStore}
                   />
                 </TugSheetContent>
               </TugSheet>

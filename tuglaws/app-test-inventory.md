@@ -572,9 +572,9 @@ Surfaced during the session-card / Claude-Code-parity plan. Gate the `/permissio
 - **Summary:** Submitting while the completion popup is open accepts the highlighted suggestion rather than submitting raw text.
 
 #### [AT0104] /diff per-file accordion sheet
-- **Status:** ✅ closed.
-- **Tests:** `at0104-diff-sheet.test.ts`.
-- **Summary:** `/diff` opens a per-file accordion sheet of the session's changes.
+- **Status:** ⛔ superseded by [AT0360] + [AT0361] — the `/diff` sheet is removed. `/diff` now opens the Project Diff card ([AT0360]); session-scoped review is the Changes shade's session diff document ([AT0361]). `at0104-diff-sheet.test.ts` deleted with the sheet.
+- **Tests:** none (was `at0104-diff-sheet.test.ts`).
+- **Summary:** `/diff` opened a per-file accordion sheet of the project's uncommitted changes.
 
 #### [AT0105] API retry banner
 - **Status:** ✅ closed.
@@ -1141,6 +1141,16 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Status:** ✅ open (new feature gate).
 - **Tests:** `at0359-sidebar-stack.test.ts`.
 - **Summary:** The deck ships with both sidebars defaulting to the right, so "what happens when the Lens and Jots share a side" is the out-of-the-box picture, not a corner. The answer is the one two panes sharing a slot already get: front-to-back, same pin and same full height, z-order deciding which you see. So the test asserts the two frames occupy the *same rect* (to the pixel — the pin is one expression and neither member varies a term of it), that the rect is as tall as the rail was before the second card joined (the card behind is not paying for the card in front), and that both panes carry the stack badge reading 2 and the picker raises the covered one. That last assertion is the load-bearing one: with two identical rects the badge is the ONLY way to the card underneath, and the first build of this failed it — the Lens held a single fixed `z-index: 8999` from when it was the only rail there could be, so Jots could never come forward. Rails hold a z-*band* now. Front-ness is read off computed `z-index` rather than DOM order, because the canvas renders panes id-sorted precisely so a raise changes only z-index.
+
+#### [AT0360] /diff opens the Project Diff card
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0360-project-diff-card.test.ts`.
+- **Summary:** `/diff` no longer opens a card-scoped sheet; it dispatches `OPEN_DIFF` with an unscoped head descriptor and lands in the standalone Diff card, whose repo-wide guise publishes "Project Diff" as its pane title. Driven against a real tugcast git round-trip over a really-dirty checkout: the card opens titled Project Diff, the document renders the working-tree diff (scratch file included) under the "Uncommitted changes (git diff HEAD)" label, and a second `/diff` reuses the open card by descriptor key rather than stacking a duplicate. Supersedes the sheet half of [AT0104].
+
+#### [AT0361] Session diff document in the Changes shade
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0361-session-diff-document.test.ts`.
+- **Summary:** The Changes shade carries this session's attributed changes as ONE long-scrolling `TugDiffDocument` above the file list, collapsed by default. Session-confined by construction — the descriptor's pathspec is the session entry's own file list — which the test proves with two dirty files: one owned via a seeded proof-class ledger row (`app.seedLedger`, the at0334 route), one unowned. Expanding renders the owned file's real synthesized new-file hunks under "This session's changes (git diff HEAD)"; the unowned file sits in the unattributed list below but never enters the document; collapsing unmounts it ([L26]). Supersedes the document-rendering half of [AT0104].
 
 ## Maintenance
 
