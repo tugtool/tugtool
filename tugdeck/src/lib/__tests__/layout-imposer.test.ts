@@ -411,6 +411,73 @@ describe("imposeStyle", () => {
   test("the width is always the pane's own, verbatim", () => {
     expect(imposeStyle(at(0, 2), 987).width).toBe("987px");
   });
+
+  // A size-locked card (About) is placed, not sized. `bottom` has to go:
+  // leaving it beside a fixed `height` would over-constrain the box and the
+  // browser would drop one of the three, which is exactly the stretch the
+  // pin exists to prevent.
+  test("a pinned height replaces the run rather than riding inside it", () => {
+    const style = imposeStyle(at(0, 3), 800, { height: 360 });
+    expect(style.height).toBe("360px");
+    expect(style.bottom).toBeUndefined();
+    expect(style.top).toBe("calc(5px + max(0px, (100% - 5px - 32px - 360px) / 2))");
+  });
+
+  // The whole point of the slot/frame split: the travel is computed from the
+  // SLOT's 800, not the card's 320, so the card lands where an ordinary card
+  // would — and then steps half the difference in to sit in the middle of it.
+  test("a pinned width takes an ordinary card's slot and centres in it", () => {
+    const style = imposeStyle(at(0, 3), 800, { width: 320, height: 360 });
+    expect(style.width).toBe("320px");
+    // Slot 0 has no travel, so the centring term is the whole offset.
+    expect(style.left).toBe(
+      "calc(0% + var(--tug-imposer-inset-left, 0px) + 5px + 0px + 240px)",
+    );
+  });
+
+  test("the travel a pinned card gets is its slot's, not its own", () => {
+    // The last slot of a three-up: the card must end up exactly where an 800
+    // card would, plus the 240 that centres it in that 800.
+    const pinned = imposeStyle(at(2, 3), 800, { width: 320, height: 360 });
+    const ordinary = imposeStyle(at(2, 3), 800);
+    expect(pinned.left).toBe(`${String(ordinary.left).slice(0, -1)} + 240px)`);
+  });
+
+  test("a card wider than its slot pins at the near edge, never negative", () => {
+    const style = imposeStyle(at(0, 2), 300, { width: 900 });
+    expect(style.width).toBe("900px");
+    // The centring term is clamped to 0, not the -300 the raw halving gives.
+    expect(style.left).toEndWith("+ 0px + 0px)");
+  });
+
+  test("a pinned rect centres on both axes, and clamps at the near edges", () => {
+    // FULL is 1000 × 800: a run of 800 - 5 - 32 = 763, so a 363-tall card
+    // leaves 400 of slack and takes 200 of it above. A 320 card in an 800
+    // slot takes 240 of the 480 to its left.
+    const centred = imposeRect(at(0, 3), 800, FULL, { width: 320, height: 363 });
+    expect(centred.size).toEqual({ width: 320, height: 363 });
+    expect(centred.position).toEqual({ x: GAP + 240, y: GAP + 200 });
+    // Larger than the slot on either axis: no negative offset, so it starts at
+    // the near edge rather than hanging off the canvas.
+    const overhang = imposeRect(at(0, 3), 320, FULL, {
+      width: 900,
+      height: 2000,
+    });
+    expect(overhang.position).toEqual({ x: GAP, y: GAP });
+  });
+
+  test("a pinned card's slot is still an ordinary slot", () => {
+    // The slot itself has not moved: the pinned card's centre sits on the
+    // centre of the box an ordinary card of the slot's width would occupy.
+    const slot = imposeRect(at(1, 3), 800, FULL);
+    const pinned = imposeRect(at(1, 3), 800, FULL, { width: 320, height: 360 });
+    expect(pinned.position.x + pinned.size.width / 2).toBe(
+      slot.position.x + slot.size.width / 2,
+    );
+    expect(pinned.position.y + pinned.size.height / 2).toBe(
+      slot.position.y + slot.size.height / 2,
+    );
+  });
 });
 
 describe("imposeSidebarStyle", () => {

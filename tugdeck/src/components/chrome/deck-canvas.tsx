@@ -59,7 +59,9 @@ import {
   isSidebarPinned,
   sidebarSide,
   resolvePlacement,
+  resolveContentWidthPx,
   slotCount,
+  DEFAULT_CONTENT_WIDTH,
   IMPOSITION_GAP_PX,
   IMPOSITION_SETTLE_MS,
   RESIZE_RETUNE_QUIET_MS,
@@ -1370,6 +1372,14 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     [impositionKind],
   );
 
+  // The width an ordinary card opens at in this arrangement. Resolved with no
+  // per-pane bounds — this is the arrangement's number, not any one card's —
+  // and read only by a size-locked pane, to size the SLOT it is centred in.
+  const contentWidthPx = resolveContentWidthPx(
+    deckState.imposition.contentWidth ?? DEFAULT_CONTENT_WIDTH,
+    0,
+  );
+
   // Raise the pane a stack-picker row names. The same path `assignCardToSlot`
   // takes for its raise, and for the same reason: a bare `activateCard` flips
   // the first responder but skips the focus transfer, so the outgoing card
@@ -1508,6 +1518,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             )}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
             placement={placementFor(stackState)}
+            contentWidthPx={contentWidthPx}
             slotStack={slotStackByPaneId.get(stackState.id)}
             onRevealPane={handleRevealPane}
             sidebarStack={stackByPaneId.get(stackState.id)}

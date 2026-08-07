@@ -580,22 +580,29 @@ export interface ImposedRect {
  * for tests, snap math, and the freeze that runs when the imposition is turned
  * off. `paneWidth` passes through untouched; no clamping and no minimum, so an
  * overhanging result is returned as computed.
+ *
+ * `pinned` mirrors {@link imposeStyle}'s: the slot is computed from
+ * `slotWidth` either way, and a pinned card keeps its own size centred inside
+ * it rather than filling it.
  */
 export function imposeRect(
   placement: ImposedPlacement,
-  paneWidth: number,
+  slotWidth: number,
   span: ImposerSpan,
+  pinned?: PinnedFrame,
 ): ImposedRect {
   const bandWidth = span.width - IMPOSITION_GAP_PX * 2;
-  const travel = Math.max(0, bandWidth - paneWidth);
+  const travel = Math.max(0, bandWidth - slotWidth);
   const offset = travelFraction(placement) * travel;
-  const x = span.x + IMPOSITION_GAP_PX + offset;
+  const runHeight = span.height - IMPOSITION_GAP_PX - IMPOSITION_GAP_BOTTOM_PX;
+  const width = pinned?.width ?? slotWidth;
+  const height = pinned?.height ?? runHeight;
   return {
-    position: { x, y: IMPOSITION_GAP_PX },
-    size: {
-      width: paneWidth,
-      height: span.height - IMPOSITION_GAP_PX - IMPOSITION_GAP_BOTTOM_PX,
+    position: {
+      x: span.x + IMPOSITION_GAP_PX + offset + Math.max(0, (slotWidth - width) / 2),
+      y: IMPOSITION_GAP_PX + Math.max(0, (runHeight - height) / 2),
     },
+    size: { width, height },
   };
 }
 
@@ -617,24 +624,62 @@ export function imposeRect(
  * and cuts instead of crossing.)
  *
  * The vertical run is the top gap down to the deeper bottom gap.
+ *
+ * `pinned` separates the SLOT from the FRAME. Normally they are the same box:
+ * `slotWidth` is the pane's own width, the frame fills the run, and the two
+ * words describe one rect. A size-locked card breaks them apart. About is 320
+ * × 360 by registration — an about box has exactly one correct size — and it
+ * has no larger form to be stretched into, so the imposition PLACES it rather
+ * than sizing it: the slot is computed as though an ordinary content card
+ * stood there, and About is centred inside it on both axes.
+ *
+ * Taking the slot from the card's own 320 instead would be the visible bug in
+ * the screenshot this was written from: the card hugs the band's left edge in
+ * slot 0, because a narrow pane has more travel to give away, and the slot the
+ * eye expects — the one every other card in that arrangement occupies — is not
+ * where it sits. The slot belongs to the arrangement, not to the card standing
+ * in it.
+ *
+ * Both `max(0px, …)` terms keep a card LARGER than its slot from hanging off:
+ * it pins at the near edge rather than taking a negative offset.
  */
+export interface PinnedFrame {
+  /** The card's own width, centred across `slotWidth`. */
+  width?: number;
+  /** The card's own height, centred down the vertical run. */
+  height?: number;
+}
+
 export function imposeStyle(
   placement: ImposedPlacement,
-  paneWidth: number,
+  slotWidth: number,
+  pinned?: PinnedFrame,
 ): React.CSSProperties {
-  const style: React.CSSProperties = {
-    width: `${paneWidth}px`,
-    height: "auto",
-    top: GAP,
-    bottom: GAP_BOTTOM,
-  };
+  const frameWidth = pinned?.width ?? slotWidth;
+  const style: React.CSSProperties =
+    pinned?.height === undefined
+      ? {
+          width: `${frameWidth}px`,
+          height: "auto",
+          top: GAP,
+          bottom: GAP_BOTTOM,
+        }
+      : {
+          width: `${frameWidth}px`,
+          height: `${pinned.height}px`,
+          top: `calc(${GAP} + max(0px, (100% - ${GAP} - ${GAP_BOTTOM} - ${pinned.height}px) / 2))`,
+        };
 
   const band = `(100% - ${INSET_LEFT} - ${INSET_RIGHT} - ${GAP} * 2)`;
   const fraction = travelFraction(placement);
   // `k / (N - 1) × max(0, band - width)` — see the module note.
   const offset =
-    fraction === 0 ? "0px" : `${fraction} * max(0px, ${band} - ${paneWidth}px)`;
-  style.left = `calc(0% + ${INSET_LEFT} + ${GAP} + ${offset})`;
+    fraction === 0 ? "0px" : `${fraction} * max(0px, ${band} - ${slotWidth}px)`;
+  // The centring term is a plain number, not a percentage: both widths are
+  // known here, so it never needs the browser to resolve it.
+  const centre =
+    frameWidth === slotWidth ? "" : ` + ${Math.max(0, (slotWidth - frameWidth) / 2)}px`;
+  style.left = `calc(0% + ${INSET_LEFT} + ${GAP} + ${offset}${centre})`;
   return style;
 }
 

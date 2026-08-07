@@ -49,6 +49,7 @@ import {
   imposeStyle,
   imposeSidebarStyle,
   sidebarWidthProperty,
+  type PinnedFrame,
   type SidebarSide,
   IMPOSITION_GAP_PX,
   IMPOSITION_GAP_BOTTOM_PX,
@@ -58,6 +59,7 @@ import {
   type ContentWidth,
 } from "@/lib/layout-imposer";
 import { TugButton } from "@/components/tugways/internal/tug-button";
+import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { cardTitleStore } from "@/lib/card-title-store";
 import { composePaneTitleBarText } from "@/lib/pane-title";
@@ -612,21 +614,26 @@ function CardTitleBar({
           // Escape / Cmd-. cancel (it claims first responder on focus so the
           // keyboard cancel keys land on it, not the card behind it).
           <>
-            <TugButton
-              ref={setCloseAnchorEl}
-              subtype="icon"
-              emphasis="ghost"
-              role="action"
-              size="sm"
-              icon={<X />}
-              onPointerDown={handleClosePointerDown}
-              onPointerUp={handleClosePointerUp}
-              onClick={handleCloseClick}
-              aria-label={
-                isMultiTab ? `Close pane (${cardCount} tabs)` : "Close card"
-              }
-              data-testid="tug-pane-close-button"
-            />
+            <TugActionTooltip
+              action={isMultiTab ? TUG_ACTIONS.CLOSE_ALL : TUG_ACTIONS.CLOSE}
+              content={isMultiTab ? `Close ${cardCount} tabs` : "Close this card"}
+            >
+              <TugButton
+                ref={setCloseAnchorEl}
+                subtype="icon"
+                emphasis="ghost"
+                role="action"
+                size="sm"
+                icon={<X />}
+                onPointerDown={handleClosePointerDown}
+                onPointerUp={handleClosePointerUp}
+                onClick={handleCloseClick}
+                aria-label={
+                  isMultiTab ? `Close pane (${cardCount} tabs)` : "Close card"
+                }
+                data-testid="tug-pane-close-button"
+              />
+            </TugActionTooltip>
             <TugConfirmPopover
               open={closeOpen}
               anchorEl={closeAnchorEl}
@@ -919,6 +926,16 @@ export interface TugPaneProps {
    */
   placement?: ImposedPlacement;
   /**
+   * The deck's content-width preset in pixels — the width an ordinary card
+   * opens at in this arrangement. Deck state, so `DeckCanvas` resolves it.
+   *
+   * Only a size-locked pane reads it, and only to size its SLOT: About is 320
+   * wide by registration, but the slot it stands in is the one every other
+   * card in the arrangement gets, and About is centred inside that. A pane
+   * that takes its own width for its slot ignores this entirely.
+   */
+  contentWidthPx?: number;
+  /**
    * Every pane sharing this pane's slot, topmost first — the slot's stack.
    * Resolved by `DeckCanvas` for the same reason `placement` is: a pane cannot
    * see its slot's other occupants from its own state.
@@ -1018,6 +1035,7 @@ export function TugPane({
   onCardMerged,
   zIndex,
   placement,
+  contentWidthPx,
   slotStack = EMPTY_SLOT_STACK,
   onRevealPane,
   sidebarStack,
@@ -2345,6 +2363,32 @@ export function TugPane({
   const renderWidth = Math.max(size.width, minSize.width);
   const frameHeight = Math.max(size.height, minSize.height);
 
+  // A card whose policy pins an axis — `min === max`, which is how a
+  // registration says "exactly one correct size" — is PLACED by the imposition
+  // rather than sized by it: no resize handle offers to change that dimension,
+  // so the imposer must not change it either. The declaration is already in the
+  // registry, so nothing new has to be declared to opt in. A policy with no
+  // `max` is unbounded above and therefore never pinned.
+  //
+  // The pinned axes travel together into `imposeStyle`, which needs both to
+  // separate the slot from the frame: the slot is an ordinary content card's
+  // box, and the pinned card is centred inside it (see `PinnedFrame`).
+  const widthPinned = sizePolicy.max?.width === sizePolicy.min.width;
+  const heightPinned = sizePolicy.max?.height === sizePolicy.min.height;
+  const pinnedFrame: PinnedFrame | undefined =
+    widthPinned || heightPinned
+      ? {
+          ...(widthPinned ? { width: renderWidth } : {}),
+          ...(heightPinned ? { height: frameHeight } : {}),
+        }
+      : undefined;
+  // A width-pinned card's slot is the deck's content width, not its own — but
+  // never narrower than the card, or the slot would sit inside the frame.
+  const slotWidth =
+    widthPinned && contentWidthPx !== undefined
+      ? Math.max(contentWidthPx, renderWidth)
+      : renderWidth;
+
   // The width control, on content-role panes only: a rail takes its width from
   // the allocator, so a preset there would be overwritten by the next solve.
   // Dispatched as a command rather than called on the store ([L30]).
@@ -2391,12 +2435,14 @@ export function TugPane({
         // a gap in, runs the canvas height less a gap top and the deeper gap
         // at the bottom, and takes only its width from the store. An imposed
         // pane pins to its place in the imposition chain over the same
-        // vertical run, also taking only its width from the store. A free pane
-        // uses its stored left/top/width/height. [L06]/[L09]
+        // vertical run, also taking only its width from the store — unless it
+        // is size-locked, in which case the slot is an ordinary content card's
+        // box and the pane is centred inside it. A free pane uses its stored
+        // left/top/width/height. [L06]/[L09]
         ...(sidebarSide !== undefined
           ? imposeSidebarStyle(sidebarSide, renderWidth)
           : imposed && placement !== undefined
-            ? imposeStyle(placement, renderWidth)
+            ? imposeStyle(placement, slotWidth, pinnedFrame)
             : {
                 left: position.x,
                 top: position.y,
