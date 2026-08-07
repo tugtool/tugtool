@@ -22,7 +22,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use crate::catalog::catalog;
-    use crate::{Band, CommandSet, grade};
+    use crate::{Band, CommandSet, ShellContext, grade};
 
     const CORPUS_JSON: &str = include_str!("../../../../tests/model-eval/classify-corpus.json");
     const CORPUS_COMMANDS: &str = include_str!("../data/corpus-commands.txt");
@@ -61,7 +61,11 @@ mod tests {
     }
 
     fn band_of(text: &str, names: &[String]) -> Band {
-        grade(text, &CommandSet::new_sorted(names), None).band
+        grade(
+            text,
+            &ShellContext::over_path(CommandSet::new_sorted(names), None),
+        )
+        .band
     }
 
     #[test]

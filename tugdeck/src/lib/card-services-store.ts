@@ -124,9 +124,10 @@ export interface CardServices {
   readonly shellSessionStore: ShellSessionStore;
   readonly shellSessionFeedStore: FeedStore;
   /**
-   * The login-PATH command set for the shell-line classifier ([P08]). Shares
-   * the shell session's `SHELL_OUTPUT` feed; requested at bind, null until the
-   * reply lands.
+   * What the shell-line classifier tests membership against ([P08]): the
+   * login-PATH set unioned with the session shell's own aliases, functions and
+   * builtins. Shares the shell session's `SHELL_OUTPUT` feed; requested at
+   * bind, null until the command-set reply lands.
    */
   readonly pathCommandsStore: PathCommandsStore;
   /**
@@ -518,13 +519,16 @@ class CardServicesStore {
       pendingContextStore,
     );
 
-    // Login-PATH command set for the shell-line classifier ([P08]). Shares the
+    // What the shell-line classifier tests membership against ([P08]): the
+    // login-PATH set unioned with this session shell's own words. Shares the
     // shell session's SHELL_OUTPUT feed; request it now (at bind) so the set is
-    // warm before the first submit.
+    // warm before the first submit. The project dir rides along because the
+    // word dump's shell stands there, and rc files branch on where they are.
     const pathCommandsStore = new PathCommandsStore(
       shellSessionFeedStore,
       FeedId.SHELL_OUTPUT,
       binding.tugSessionId,
+      binding.projectDir,
     );
     pathCommandsStore.request();
 

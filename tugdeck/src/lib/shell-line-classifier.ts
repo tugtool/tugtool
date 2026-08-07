@@ -6,9 +6,11 @@
  * This module does not decide anything about intent. It brackets the model's
  * judgement from both sides with facts, and the model decides between them.
  *
- * Before: {@link isShellCandidate} asks *does the first word name a program that
- * exists on this machine?* That is checkable against the login PATH, and when
- * the answer is no the line cannot be a command, so no inference is spent on it.
+ * Before: {@link isShellCandidate} asks *will this session's shell resolve the
+ * first word?* That is checkable — the shell itself is asked what it holds, and
+ * its answer, unioned with the login-PATH set, is what the caller supplies here.
+ * When the answer is no the line cannot be a command, so no inference is spent
+ * on it.
  * Everything past that point — whether the person meant to RUN that program or
  * was writing a sentence that happens to start with its name — is a judgement
  * about English, and the model makes it.
@@ -55,8 +57,9 @@
  *
  * Pure — no side effects, no store reads. The caller enforces the rest of the
  * precondition (the draft has no atoms; `text` is trimmed and single-line),
- * supplies the login-PATH command set (null until it loads, which answers
- * Claude — the safety net, not the steady state), and supplies its own
+ * supplies the command set — the login-PATH names unioned with the session
+ * shell's aliases, functions and builtins (null until it loads, which answers
+ * Claude — the safety net, not the steady state) — and supplies its own
  * readiness.
  *
  * @module lib/shell-line-classifier
@@ -179,6 +182,7 @@ const QUOTED_SPAN = /'[^']*'|"[^"]*"/g;
 const PROSE_MARKERS = new Set([
   "the", "a", "an",
   "i", "it", "me", "my", "you", "this", "that", "these", "those", "them",
+  "we", "us", "our",
 ]);
 
 /**
@@ -222,6 +226,15 @@ const COMMAND_TOKEN_CEILING = 6;
  * (`ls file?`) reads as a question, and an unquoted English word as a literal
  * argument (`rg the src`) reads as prose. Both resolve to Claude, which is the
  * direction doubt is supposed to fall here.
+ *
+ * The population this reads has shifted. Membership is now what the session's
+ * shell resolves, not what is on the login PATH, and where PATH names are
+ * tool-nouns, alias and function names are imperative verbs — `add`, `pull`,
+ * `pick`, `amend` — which is exactly how a person opens a request to an AI.
+ * More short prose lines therefore reach this point than used to. Note what
+ * that does *not* change: the veto is the last line of defense, never the
+ * first. The model is asked before this, and a line with no marker in it at all
+ * (`add error handling here`) is the model's to read, not this function's.
  */
 export function vetoesShellVerdict(text: string): boolean {
   const bare = text.replace(QUOTED_SPAN, " ");

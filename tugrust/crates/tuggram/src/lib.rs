@@ -52,12 +52,14 @@ pub mod catalog;
 mod corpus;
 pub mod harvest;
 pub mod lex;
+pub mod words;
 
 pub use catalog::{
     Catalog, Entry, Grammar, PositionalKind, PositionalVerdict, Positionals, SYNOPSIS_CHAR_CAP,
     Source, catalog,
 };
 pub use lex::{Segment, lex};
+pub use words::{ResolvedWord, ShellWord, ShellWords, WordKind, WordResolution};
 
 // ---------------------------------------------------------------------------
 // Bands
@@ -171,11 +173,59 @@ pub fn is_builtin(name: &str) -> bool {
 // Head resolution
 // ---------------------------------------------------------------------------
 
+/// Everything the grader is allowed to consult about the session it is grading
+/// for.
+///
+/// The three membership sources are deliberately separate and none borrows
+/// another's authority. `words` is what the session's shell says it will
+/// resolve — the executor's own answer, and the only source that can also
+/// supply a grammar. `commands` is the cached login-PATH name set. `path_dirs`
+/// is the PATH directories themselves, probed per word when the caller has
+/// them, so a binary installed a moment ago is found and one deleted a moment
+/// ago is not.
+#[derive(Debug, Clone, Copy)]
+pub struct ShellContext<'a> {
+    /// The cached login-PATH command names.
+    pub commands: CommandSet<'a>,
+    /// The session shell's aliases, functions and builtins.
+    pub words: &'a ShellWords,
+    /// The login-PATH directories, for the per-word probe. Empty means no probe
+    /// surface, and the cached `commands` set decides PATH membership alone.
+    pub path_dirs: &'a [PathBuf],
+    /// The shell session's working directory, or `None` before it has spawned a
+    /// child. See [`resolve_head`] for why the distinction is load-bearing.
+    pub cwd: Option<&'a Path>,
+}
+
+impl<'a> ShellContext<'a> {
+    /// A context with no shell word table and no probe surface: the login-PATH
+    /// set plus the static builtins, which is everything the grader knew before
+    /// it could ask the session's shell.
+    pub fn over_path(commands: CommandSet<'a>, cwd: Option<&'a Path>) -> Self {
+        static EMPTY: std::sync::OnceLock<ShellWords> = std::sync::OnceLock::new();
+        ShellContext {
+            commands,
+            words: EMPTY.get_or_init(ShellWords::empty),
+            path_dirs: &[],
+            cwd,
+        }
+    }
+}
+
 /// What became of the attempt to resolve one segment's command word.
 #[derive(Debug, PartialEq, Eq)]
 enum Resolution {
     /// It names something that exists.
     Resolved,
+    /// It names an alias or function that expands to a single simple command,
+    /// whose grammar can therefore be consulted on the typed line's behalf.
+    Expands(ResolvedWord),
+    /// It resolves — the shell holds this word — but its grammar cannot be
+    /// read. Membership yes, grammar no. Distinct from `Resolved` because it
+    /// must never reach the catalog: a user function named `git` would
+    /// otherwise be graded against real git's grammar, a band derived from a
+    /// program that will not run.
+    Opaque,
     /// The check ran and found nothing. The only route to `Band::No`.
     Absent,
     /// The check could not run — a relative path with no cwd to resolve it
@@ -196,8 +246,15 @@ enum Resolution {
 /// grading it absent would silently swallow `./build.sh` as prose in exactly the
 /// situation where a user is most likely to type it, the first command of a
 /// fresh session.
-fn resolve_head(head: &str, commands: &CommandSet, cwd: Option<&Path>) -> Resolution {
-    // A word carrying an expansion is not the word that will run.
+///
+/// A bare word is asked of the shell first, in the shell's own precedence
+/// order: an alias or function shadows a same-named binary, and the shell would
+/// run the shadow. Only a word the shell holds no entry for falls through to
+/// PATH.
+fn resolve_head(head: &str, ctx: &ShellContext) -> Resolution {
+    // A word carrying an expansion is not the word that will run. Path-shaped
+    // words are never aliases or functions, so these branches stay ahead of the
+    // word table.
     if head.contains('$') {
         return Resolution::Unchecked;
     }
@@ -215,12 +272,37 @@ fn resolve_head(head: &str, commands: &CommandSet, cwd: Option<&Path>) -> Resolu
         return stat_resolution(Path::new(head));
     }
     if head.contains('/') {
-        return match cwd {
+        return match ctx.cwd {
             Some(cwd) => stat_resolution(&cwd.join(head)),
             None => Resolution::Unchecked,
         };
     }
-    if commands.contains(head) || is_builtin(head) {
+    match ctx.words.resolve(head) {
+        Some(WordResolution::Expands(word)) => return Resolution::Expands(word),
+        Some(WordResolution::Opaque) => return Resolution::Opaque,
+        // A builtin resolves and keeps the catalog path, exactly as the static
+        // builtin list gives it.
+        Some(WordResolution::Builtin) => return Resolution::Resolved,
+        None => {}
+    }
+    // With the PATH directories in hand, ask the filesystem rather than the
+    // cached name set. It is about twenty stats — the same order as the path
+    // positional checks this grader already does — and it is authoritative in
+    // both directions: a binary installed a minute ago is found, and one
+    // deleted a minute ago is not found however recently the set was swept.
+    if !ctx.path_dirs.is_empty() {
+        for dir in ctx.path_dirs {
+            if stat_resolution(&dir.join(head)) == Resolution::Resolved {
+                return Resolution::Resolved;
+            }
+        }
+        return if is_builtin(head) {
+            Resolution::Resolved
+        } else {
+            Resolution::Absent
+        };
+    }
+    if ctx.commands.contains(head) || is_builtin(head) {
         Resolution::Resolved
     } else {
         Resolution::Absent
@@ -245,22 +327,17 @@ fn stat_resolution(path: &Path) -> Resolution {
 
 /// Grade a line against the embedded catalog.
 ///
-/// `cwd` is the shell session's working directory, or `None` when the session
-/// has not spawned a shell child yet. See [`resolve_head`] for why that
-/// distinction is load-bearing.
-pub fn grade(line: &str, commands: &CommandSet, cwd: Option<&Path>) -> Graded {
-    grade_with_catalog(line, commands, cwd, catalog())
+/// The subject is always the line as typed. When a head expands, the expansion
+/// contributes the grammar to consult and the position within it — never the
+/// text being graded, and never anything that runs.
+pub fn grade(line: &str, ctx: &ShellContext) -> Graded {
+    grade_with_catalog(line, ctx, catalog())
 }
 
 /// Grade a line against a caller-supplied catalog: lex it, resolve every
 /// segment head, check each resolved head's tokens against its grammar, and
 /// take the weakest band across segments.
-pub fn grade_with_catalog(
-    line: &str,
-    commands: &CommandSet,
-    cwd: Option<&Path>,
-    catalog: &Catalog,
-) -> Graded {
+pub fn grade_with_catalog(line: &str, ctx: &ShellContext, catalog: &Catalog) -> Graded {
     let Some(segments) = lex(line) else {
         return Graded::unknown(None);
     };
@@ -280,15 +357,39 @@ pub fn grade_with_catalog(
             band = band.min(Band::Unknown);
             continue;
         };
-        let segment_band = match resolve_head(head, commands, cwd) {
+        let segment_band = match resolve_head(head, ctx) {
             Resolution::Absent => Band::No,
-            Resolution::Unchecked => Band::Unknown,
+            // A word the shell holds but cannot explain says exactly as much as
+            // a word with no baked grammar: ask the model.
+            Resolution::Unchecked | Resolution::Opaque => Band::Unknown,
             Resolution::Resolved => match catalog.get(catalog_key(head)) {
                 // It resolves but nothing here knows its grammar, which says
                 // exactly as much as the pre-grader stack said.
                 None => Band::Unknown,
                 Some(entry) => {
-                    let graded = grade_tokens(&entry.grammar, segment.args(), cwd);
+                    let graded = grade_tokens(&entry.grammar, segment.args(), ctx.cwd);
+                    if graded == Band::Maybe && first_maybe_synopsis.is_none() {
+                        first_maybe_synopsis = Some(entry.synopsis.clone());
+                    }
+                    graded
+                }
+            },
+            // The expansion supplies the grammar and the position within it;
+            // the tokens graded are still the ones the user typed, spliced in
+            // behind whatever the expansion already fixed.
+            Resolution::Expands(word) => match catalog.get(catalog_key(&word.head)) {
+                None => Band::Unknown,
+                // The typed arguments have to survive the expansion for the
+                // expansion to be what the line means. `amend x y z` runs `git
+                // commit --amend` and drops `x y z` on the floor, so the
+                // expansion's grammar is not evidence about that line — and
+                // surplus arguments on an argument-ignoring word are themselves
+                // evidence of prose.
+                Some(_) if !word.takes_args && !segment.args().is_empty() => Band::Unknown,
+                Some(entry) => {
+                    let mut tokens = word.prefix.clone();
+                    tokens.extend_from_slice(segment.args());
+                    let graded = grade_tokens(&entry.grammar, &tokens, ctx.cwd);
                     if graded == Band::Maybe && first_maybe_synopsis.is_none() {
                         first_maybe_synopsis = Some(entry.synopsis.clone());
                     }
@@ -484,28 +585,40 @@ pub fn compute_path_commands() -> Vec<String> {
 /// `BTreeSet` gives both). Pure over the filesystem — the unit seam.
 pub fn command_names_in_path(path: &str) -> Vec<String> {
     use std::collections::BTreeSet;
-    use std::os::unix::fs::PermissionsExt;
 
     let mut set: BTreeSet<String> = BTreeSet::new();
     for dir in path.split(':').filter(|d| !d.is_empty()) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
+        set.extend(command_names_in_dir(Path::new(dir)));
+    }
+    set.into_iter().collect()
+}
+
+/// Readdir one directory for executable command names, sorted. The per-
+/// directory seam: a caller revalidating a PATH by directory mtime re-reads
+/// only the directories that moved, and reads them exactly the way a full sweep
+/// would.
+pub fn command_names_in_dir(dir: &Path) -> Vec<String> {
+    use std::collections::BTreeSet;
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    for entry in entries.flatten() {
+        // `std::fs::metadata` — NOT `DirEntry::metadata`, which is `lstat`
+        // on Unix and reports a symlink as a symlink rather than as what it
+        // points at. Symlinked executables are the norm, not the exception:
+        // every Homebrew shim is one, and so are `/usr/bin/tar` and the
+        // rustup shims, so an `lstat` here drops `cargo`, `rg`, `just` and
+        // `tar` out of the set the deck's shell-line precondition consults.
+        // A broken link errors out and is skipped, which is what we want.
+        let Ok(meta) = std::fs::metadata(entry.path()) else {
             continue;
         };
-        for entry in entries.flatten() {
-            // `std::fs::metadata` — NOT `DirEntry::metadata`, which is `lstat`
-            // on Unix and reports a symlink as a symlink rather than as what it
-            // points at. Symlinked executables are the norm, not the exception:
-            // every Homebrew shim is one, and so are `/usr/bin/tar` and the
-            // rustup shims, so an `lstat` here drops `cargo`, `rg`, `just` and
-            // `tar` out of the set the deck's shell-line precondition consults.
-            // A broken link errors out and is skipped, which is what we want.
-            let Ok(meta) = std::fs::metadata(entry.path()) else {
-                continue;
-            };
-            if meta.is_file() && meta.permissions().mode() & 0o111 != 0 {
-                if let Some(name) = entry.file_name().to_str() {
-                    set.insert(name.to_string());
-                }
+        if meta.is_file() && meta.permissions().mode() & 0o111 != 0 {
+            if let Some(name) = entry.file_name().to_str() {
+                set.insert(name.to_string());
             }
         }
     }
@@ -528,7 +641,11 @@ mod tests {
     /// installed.
     fn band_of(line: &str, installed: &[&str], cwd: Option<&Path>) -> Band {
         let names = names(installed);
-        grade(line, &CommandSet::new_sorted(&names), cwd).band
+        grade(
+            line,
+            &ShellContext::over_path(CommandSet::new_sorted(&names), cwd),
+        )
+        .band
     }
 
     fn make_executable(dir: &Path, name: &str) {
@@ -628,14 +745,254 @@ mod tests {
     /// answer depends on the catalog under review and nothing else.
     fn graded(line: &str, installed: &[&str]) -> Graded {
         let names = names(installed);
-        grade(line, &CommandSet::new_sorted(&names), None)
+        grade(
+            line,
+            &ShellContext::over_path(CommandSet::new_sorted(&names), None),
+        )
     }
 
     /// The same, standing in a directory — for the path positionals whose band
     /// depends on what is actually there.
     fn graded_in(line: &str, installed: &[&str], cwd: &Path) -> Graded {
         let names = names(installed);
-        grade(line, &CommandSet::new_sorted(&names), Some(cwd))
+        grade(
+            line,
+            &ShellContext::over_path(CommandSet::new_sorted(&names), Some(cwd)),
+        )
+    }
+
+    // -- grading through the session shell's word table -----------------------
+
+    /// The reference machine's table, as the brief measured it: `gs` and `pick`
+    /// absorb arguments, `amend` does not, `add` is multi-statement and so
+    /// unreadable, and `git` is shadowed by a user function.
+    fn reference_words() -> ShellWords {
+        let mut words = ShellWords::empty();
+        let simple = |head: &str, prefix: &[&str], takes_args: bool| ShellWord::Simple {
+            head: head.to_string(),
+            prefix: prefix.iter().map(|s| s.to_string()).collect(),
+            takes_args,
+        };
+        words.insert_parsed(
+            "gs".into(),
+            WordKind::Function,
+            simple("git", &["status"], true),
+        );
+        words.insert_parsed(
+            "amend".into(),
+            WordKind::Function,
+            simple("git", &["commit", "--amend"], false),
+        );
+        words.insert_parsed("add".into(), WordKind::Function, ShellWord::Opaque);
+        words.insert("setopt".into(), WordKind::Builtin);
+        words
+    }
+
+    fn band_with_words(line: &str, words: &ShellWords, installed: &[&str]) -> Band {
+        let names = names(installed);
+        grade(
+            line,
+            &ShellContext {
+                commands: CommandSet::new_sorted(&names),
+                words,
+                path_dirs: &[],
+                cwd: None,
+            },
+        )
+        .band
+    }
+
+    #[test]
+    fn an_expansion_lends_its_grammar_to_the_typed_line() {
+        let words = reference_words();
+        // The words the user actually types, graded against git's grammar
+        // entered where the expansion left off. Note `git` is not in the
+        // installed set: membership came from the shell, not from PATH.
+        assert_eq!(band_with_words("gs", &words, &[]), Band::Yes);
+        assert_eq!(band_with_words("gs -sb", &words, &[]), Band::Yes);
+        assert_eq!(band_with_words("gs --invented", &words, &[]), Band::Maybe);
+    }
+
+    #[test]
+    fn a_word_that_discards_arguments_only_speaks_for_the_bare_line() {
+        let words = reference_words();
+        // `amend` alone is the expansion, so it routes.
+        assert_eq!(band_with_words("amend", &words, &[]), Band::Yes);
+        // `amend last commit please` runs `git commit --amend` and drops the
+        // words on the floor, so the expansion says nothing about this line and
+        // the model reads it as the English it is.
+        assert_eq!(
+            band_with_words("amend last commit please", &words, &[]),
+            Band::Unknown
+        );
+    }
+
+    #[test]
+    fn an_unreadable_body_is_membership_without_grammar() {
+        let words = reference_words();
+        // It resolves, so it is never No — the shell holds the word.
+        assert_eq!(
+            band_with_words("add error handling here", &words, &[]),
+            Band::Unknown
+        );
+        assert_eq!(band_with_words("add", &words, &[]), Band::Unknown);
+    }
+
+    #[test]
+    fn a_shadowing_word_wins_over_the_binary_it_shadows() {
+        // `gs` is ghostscript on this machine's PATH *and* a git function in
+        // the shell. The shell runs the function, so the grade follows it.
+        let mut words = ShellWords::empty();
+        words.insert_parsed(
+            "ls".into(),
+            WordKind::Function,
+            ShellWord::Simple {
+                head: "git".into(),
+                prefix: vec!["status".into()],
+                takes_args: true,
+            },
+        );
+        assert_eq!(band_with_words("ls -sb", &words, &["ls"]), Band::Yes);
+    }
+
+    #[test]
+    fn a_function_shadowing_a_cataloged_program_never_borrows_its_grammar() {
+        // The reason `Opaque` is its own resolution: a user function named
+        // `git` must not be graded against real git's grammar, because real git
+        // is not what will run.
+        let mut words = ShellWords::empty();
+        words.insert_parsed("git".into(), WordKind::Function, ShellWord::Opaque);
+        assert_eq!(
+            band_with_words("git status", &words, &["git"]),
+            Band::Unknown
+        );
+        // Unread is the same answer: a member whose body nobody fetched.
+        let mut words = ShellWords::empty();
+        words.insert("git".into(), WordKind::Function);
+        assert_eq!(
+            band_with_words("git status", &words, &["git"]),
+            Band::Unknown
+        );
+    }
+
+    #[test]
+    fn a_builtin_the_static_list_never_heard_of_still_resolves() {
+        // `setopt` is on no PATH and in no static list, and today grades No —
+        // evidence of absence about a word the shell runs every day.
+        assert_eq!(band_of("setopt extendedglob", &[], None), Band::No);
+        assert_eq!(
+            band_with_words("setopt extendedglob", &reference_words(), &[]),
+            Band::Unknown
+        );
+    }
+
+    #[test]
+    fn an_expansion_onto_an_uncataloged_program_is_unknown() {
+        let mut words = ShellWords::empty();
+        words.insert_parsed(
+            "deploy".into(),
+            WordKind::Alias,
+            ShellWord::Simple {
+                head: "frobnicate".into(),
+                prefix: vec![],
+                takes_args: true,
+            },
+        );
+        assert_eq!(band_with_words("deploy now", &words, &[]), Band::Unknown);
+    }
+
+    #[test]
+    fn an_expansion_that_lands_on_maybe_carries_the_synopsis() {
+        let words = reference_words();
+        let names = names(&[]);
+        let graded = grade(
+            "gs --invented",
+            &ShellContext {
+                commands: CommandSet::new_sorted(&names),
+                words: &words,
+                path_dirs: &[],
+                cwd: None,
+            },
+        );
+        assert_eq!(graded.band, Band::Maybe);
+        let synopsis = graded.synopsis.expect("a maybe arms the model");
+        assert!(synopsis.contains("git"));
+    }
+
+    #[test]
+    fn a_word_table_never_touches_a_path_shaped_head() {
+        // `/usr/bin/gs` and `./gs` are not aliases; the shell would not expand
+        // them, so neither does the grade.
+        let words = reference_words();
+        assert_eq!(band_with_words("/no/such/gs -sb", &words, &[]), Band::No);
+        assert_eq!(band_with_words("./gs -sb", &words, &[]), Band::Unknown);
+    }
+
+    #[test]
+    fn the_path_directories_outrank_the_cached_name_set() {
+        let dir = tempfile::tempdir().unwrap();
+        make_executable(dir.path(), "freshly-installed");
+        let dirs = vec![dir.path().to_path_buf()];
+        let empty = ShellWords::empty();
+        let cached = names(&["deleted-since"]);
+        let ctx = ShellContext {
+            commands: CommandSet::new_sorted(&cached),
+            words: &empty,
+            path_dirs: &dirs,
+            cwd: None,
+        };
+        // On disk but not in the set: the `brew install` a moment ago.
+        assert_eq!(
+            grade("freshly-installed --go", &ctx).band,
+            Band::Unknown,
+            "it resolves, so it is not No"
+        );
+        // In the set but no longer on disk: the sweep is stale, the disk is not.
+        assert_eq!(grade("deleted-since --go", &ctx).band, Band::No);
+        // A builtin is not a file anywhere and still resolves.
+        assert_eq!(grade("cd somewhere", &ctx).band, Band::Unknown);
+        // Nothing anywhere is still No.
+        assert_eq!(grade("frobnicate x", &ctx).band, Band::No);
+    }
+
+    #[test]
+    fn with_no_probe_surface_the_cached_set_decides_alone() {
+        let empty = ShellWords::empty();
+        let cached = names(&["git"]);
+        let ctx = ShellContext {
+            commands: CommandSet::new_sorted(&cached),
+            words: &empty,
+            path_dirs: &[],
+            cwd: None,
+        };
+        assert_eq!(grade("git status", &ctx).band, Band::Yes);
+        assert_eq!(grade("frobnicate x", &ctx).band, Band::No);
+    }
+
+    #[test]
+    fn a_word_the_shell_holds_is_never_probed_for_on_path() {
+        // Membership order is the shell's: a function shadowing nothing at all
+        // resolves anyway, and an empty PATH directory does not make it absent.
+        let dir = tempfile::tempdir().unwrap();
+        let dirs = vec![dir.path().to_path_buf()];
+        let words = reference_words();
+        let cached = names(&[]);
+        let ctx = ShellContext {
+            commands: CommandSet::new_sorted(&cached),
+            words: &words,
+            path_dirs: &dirs,
+            cwd: None,
+        };
+        assert_eq!(grade("gs -sb", &ctx).band, Band::Yes);
+        assert_eq!(grade("setopt extendedglob", &ctx).band, Band::Unknown);
+    }
+
+    #[test]
+    fn the_empty_table_grades_exactly_as_before() {
+        let empty = ShellWords::empty();
+        assert_eq!(band_with_words("git status", &empty, &["git"]), Band::Yes);
+        assert_eq!(band_with_words("frobnicate x", &empty, &["git"]), Band::No);
+        assert_eq!(band_with_words("cd tugrust", &empty, &[]), Band::Unknown);
     }
 
     #[test]
@@ -785,13 +1142,19 @@ mod tests {
         let names = names(&[]);
         let commands = CommandSet::new_sorted(&names);
         let line = format!("{}/git stauts", dir.path().display());
-        assert_eq!(grade(&line, &commands, None).band, Band::Maybe);
+        assert_eq!(
+            grade(&line, &ShellContext::over_path(commands, None)).band,
+            Band::Maybe
+        );
     }
 
     #[test]
     fn the_command_word_is_reported_for_logging() {
         let names = names(&["git"]);
-        let g = grade("FOO=1 git status", &CommandSet::new_sorted(&names), None);
+        let g = grade(
+            "FOO=1 git status",
+            &ShellContext::over_path(CommandSet::new_sorted(&names), None),
+        );
         assert_eq!(g.command.as_deref(), Some("git"));
     }
 

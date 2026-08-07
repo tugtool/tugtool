@@ -29,6 +29,7 @@ pub mod session_metadata;
 pub mod session_overview;
 pub mod session_scoped;
 pub mod shell;
+pub mod shell_words;
 pub mod stats;
 pub mod terminal;
 pub mod workspace_registry;

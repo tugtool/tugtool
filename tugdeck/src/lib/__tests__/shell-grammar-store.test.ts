@@ -194,4 +194,13 @@ describe("ShellGrammarStore", () => {
     expect(s.get("git status 59")?.band).toBe("yes");
     expect(s.get("git status 0")).toBeUndefined();
   });
+
+  it("is untouched by the shell_words frame it shares the feed with", () => {
+    const s = store();
+    s._ingestForTest({ type: "shell_grammar", tug_session_id: "s1", line: "git status", band: "yes" });
+    const before = s.getSnapshot();
+    s._ingestForTest({ type: "shell_words", tug_session_id: "s1", names: ["gs", "setopt"] });
+    expect(s.getSnapshot()).toBe(before);
+    expect(s.get("git status")?.band).toBe("yes");
+  });
 });

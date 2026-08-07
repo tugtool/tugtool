@@ -37,11 +37,11 @@
 //! the ledger, not the live process). A `kill` (or per-exchange timeout)
 //! reaps the process group and the session respawns on the next `exec`.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 use serde_json::json;
@@ -55,6 +55,7 @@ use tugcast_core::protocol::{FeedId, Frame};
 
 use super::code::parse_tug_session_id;
 use super::session_scoped::SessionScopedFeed;
+use super::shell_words::SessionWords;
 use crate::shell_ledger::{NewShellExchange, ShellLedger};
 
 /// Broadcast capacity for `SHELL_OUTPUT`. Human-typed commands are low
@@ -108,12 +109,16 @@ enum ShellInput {
     Kill {
         tug_session_id: String,
     },
-    // `path_commands` requests the login-PATH executable set for the deck's
-    // shell-line classifier ([P08]). The reply is one `path_commands`
-    // SHELL_OUTPUT frame tagged for this session; the set is resolved once per
-    // tugcast process and cached, so repeat requests answer from the cache.
+    // `path_commands` requests everything the deck's shell-line classifier
+    // needs to decide a line could be a command. The reply is two SHELL_OUTPUT
+    // frames: `path_commands` (the login-PATH executable set, from a cache kept
+    // fresh by directory mtime) and `shell_words` (the session shell's aliases,
+    // functions and builtins). `cwd` is the card's project dir, where the word
+    // dump's throwaway shell stands — rc files branch on where they are.
     PathCommands {
         tug_session_id: String,
+        #[serde(default)]
+        cwd: Option<String>,
     },
     // `shell_grammar` grades one typed line against the login-PATH set, the
     // baked command catalog, and this session's working directory. The reply is
@@ -166,37 +171,229 @@ fn resolve_exec_shell() -> String {
 /// warning is logged, so a pathological PATH can never blow the transport cap.
 const PATH_COMMANDS_SERIALIZED_CAP: usize = 512 * 1024;
 
-/// Process-wide cache of the login-PATH executable set. PATH effectively never
-/// changes within a tugcast run, so the readdir sweep runs once.
-static PATH_COMMANDS: std::sync::OnceLock<Arc<Vec<String>>> = std::sync::OnceLock::new();
+/// How often the PATH directories may be re-stat'd. Short enough that a `brew
+/// install` is routable by the time the user types the new command's name, long
+/// enough that a burst of keystrokes pays for one check.
+const PATH_REVALIDATE_THROTTLE: Duration = Duration::from_secs(3);
 
-/// The cached login-PATH command set, computed once. The probe and the readdir
-/// sweep live in `tuggram`, which is also what grades a typed line against the
-/// set — so the deck's precondition and the grader's resolution can never be
-/// looking at two different PATHs. `spawn_blocking` keeps the sweep off the
-/// async dispatcher; the result is stored in the process-wide `OnceLock`.
-async fn path_command_set() -> Arc<Vec<String>> {
-    if let Some(cached) = PATH_COMMANDS.get() {
-        return Arc::clone(cached);
+/// One PATH directory and what was last read from it. Holding the names per
+/// directory is what makes revalidation cheap: a directory whose mtime has not
+/// moved is not read at all.
+struct PathDir {
+    path: PathBuf,
+    mtime: Option<SystemTime>,
+    names: Vec<String>,
+}
+
+/// The login-PATH set, kept fresh by directory mtime rather than swept once and
+/// trusted forever.
+///
+/// The login PATH *string* is still probed once per process — a login shell's
+/// PATH does not change under a running tugcast. What changes is the contents of
+/// its directories, and that is what a `brew install` moves.
+struct PathCache {
+    dirs: Vec<PathDir>,
+    /// The union of every directory's names, sorted — what the deck and the
+    /// grader both consult.
+    names: Arc<Vec<String>>,
+    /// The directories themselves, the grader's per-word probe surface.
+    dir_paths: Arc<Vec<PathBuf>>,
+    last_check: Instant,
+}
+
+impl PathCache {
+    fn from_dirs(dirs: Vec<PathDir>) -> Self {
+        use std::collections::BTreeSet;
+        let names: BTreeSet<&String> = dirs.iter().flat_map(|d| d.names.iter()).collect();
+        PathCache {
+            names: Arc::new(names.into_iter().cloned().collect()),
+            dir_paths: Arc::new(dirs.iter().map(|d| d.path.clone()).collect()),
+            dirs,
+            last_check: Instant::now(),
+        }
     }
-    let computed = tokio::task::spawn_blocking(tuggram::compute_path_commands)
-        .await
-        .unwrap_or_default();
-    // A concurrent request may have set it first; `set` then errors and we take
-    // the winner. The single-threaded dispatcher makes this rare, but be safe.
-    let _ = PATH_COMMANDS.set(Arc::new(computed));
-    Arc::clone(PATH_COMMANDS.get().expect("just set"))
+}
+
+static PATH_CACHE: std::sync::LazyLock<tokio::sync::Mutex<Option<PathCache>>> =
+    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(None));
+
+fn dir_mtime(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path).ok()?.modified().ok()
+}
+
+/// Read every PATH directory from scratch. The probe and the readdir sweep live
+/// in `tuggram`, which is also what grades a typed line against the set — so the
+/// deck's precondition and the grader's resolution can never be looking at two
+/// different PATHs.
+fn build_path_cache() -> PathCache {
+    let path = tuggram::probe_login_path();
+    let dirs = path
+        .split(':')
+        .filter(|d| !d.is_empty())
+        .map(|d| {
+            let path = PathBuf::from(d);
+            PathDir {
+                mtime: dir_mtime(&path),
+                names: tuggram::command_names_in_dir(&path),
+                path,
+            }
+        })
+        .collect();
+    PathCache::from_dirs(dirs)
+}
+
+/// Re-stat each directory and re-read only the ones that moved.
+fn revalidate_path_cache(mut cache: PathCache) -> (PathCache, bool) {
+    let mut moved = false;
+    for dir in &mut cache.dirs {
+        let mtime = dir_mtime(&dir.path);
+        if mtime != dir.mtime {
+            dir.mtime = mtime;
+            dir.names = tuggram::command_names_in_dir(&dir.path);
+            moved = true;
+        }
+    }
+    if !moved {
+        cache.last_check = Instant::now();
+        return (cache, false);
+    }
+    let previous = Arc::clone(&cache.names);
+    let rebuilt = PathCache::from_dirs(cache.dirs);
+    // An mtime moves for reasons that leave the *names* alone — a file
+    // rewritten in place, a temp file created and removed. Only a change in the
+    // set is worth telling anybody about.
+    let changed = *rebuilt.names != *previous;
+    (rebuilt, changed)
+}
+
+/// The login-PATH command set and directories, revalidated at most once per
+/// {@link PATH_REVALIDATE_THROTTLE}. The third value is whether the set changed
+/// on this call — the signal that every session holding the old set needs the
+/// new one.
+///
+/// All filesystem work runs on `spawn_blocking`. The cache lock is held across
+/// that await deliberately: it is what keeps two concurrent triggers from both
+/// sweeping.
+async fn revalidated_path_commands() -> (Arc<Vec<String>>, Arc<Vec<PathBuf>>, bool) {
+    let mut guard = PATH_CACHE.lock().await;
+    if let Some(cache) = guard.as_ref() {
+        if cache.last_check.elapsed() < PATH_REVALIDATE_THROTTLE {
+            return (
+                Arc::clone(&cache.names),
+                Arc::clone(&cache.dir_paths),
+                false,
+            );
+        }
+    }
+    let existing = guard.take();
+    let rebuilt = tokio::task::spawn_blocking(move || match existing {
+        Some(cache) => revalidate_path_cache(cache),
+        None => (build_path_cache(), true),
+    })
+    .await;
+    let (cache, changed) = match rebuilt {
+        Ok(pair) => pair,
+        Err(e) => {
+            // The sweep task died; leave the cache empty so the next trigger
+            // rebuilds, and answer with nothing rather than with stale truth.
+            warn!(error = %e, "path revalidation task failed");
+            (PathCache::from_dirs(Vec::new()), false)
+        }
+    };
+    let answer = (
+        Arc::clone(&cache.names),
+        Arc::clone(&cache.dir_paths),
+        changed,
+    );
+    *guard = Some(cache);
+    answer
+}
+
+/// Install a cache over exactly these directories, so a test can watch a real
+/// directory it controls instead of the machine's PATH.
+#[cfg(test)]
+async fn seed_path_cache_for_test(dirs: Vec<PathBuf>) {
+    let dirs = dirs
+        .into_iter()
+        .map(|path| PathDir {
+            mtime: dir_mtime(&path),
+            names: tuggram::command_names_in_dir(&path),
+            path,
+        })
+        .collect();
+    *PATH_CACHE.lock().await = Some(PathCache::from_dirs(dirs));
+}
+
+/// Age the cache past the throttle, standing in for the wait a test should not
+/// have to spend.
+#[cfg(test)]
+async fn expire_path_throttle_for_test() {
+    if let Some(cache) = PATH_CACHE.lock().await.as_mut() {
+        cache.last_check = Instant::now()
+            .checked_sub(PATH_REVALIDATE_THROTTLE * 2)
+            .unwrap_or_else(Instant::now);
+    }
+}
+
+/// Revalidate the PATH set and, when it changed, push the new set to every
+/// session that ever asked for one.
+///
+/// The push is the point. The deck gates both its typing debounce and its submit
+/// path on the command set it holds, so a binary installed a moment ago becomes
+/// routable only if the deck's own set is refreshed — a revalidation that
+/// stayed inside tugcast would be freshness nobody could see.
+async fn revalidate_and_push(
+    output: &SessionScopedFeed,
+    requesters: &Arc<Mutex<HashSet<String>>>,
+) -> (Arc<Vec<String>>, Arc<Vec<PathBuf>>) {
+    let (names, dirs, changed) = revalidated_path_commands().await;
+    if changed {
+        let sessions: Vec<String> = requesters.lock().unwrap().iter().cloned().collect();
+        for session in sessions {
+            emit_path_commands(output, &session, &names);
+        }
+    }
+    (names, dirs)
 }
 
 /// Emit a `path_commands` SHELL_OUTPUT frame for `tug_session_id`. The command
 /// array is truncated to a sorted prefix if its serialized form would exceed
 /// {@link PATH_COMMANDS_SERIALIZED_CAP}, logging a warning.
 fn emit_path_commands(output: &SessionScopedFeed, tug_session_id: &str, commands: &[String]) {
-    let mut end = commands.len();
-    // Trim from the tail until the serialized array fits the cap. Cheap to
-    // recompute since the real-world set is well under the cap.
+    emit(
+        output,
+        tug_session_id,
+        json!({
+            "type": "path_commands",
+            "tug_session_id": tug_session_id,
+            "commands": capped(commands, "path_commands"),
+        }),
+    );
+}
+
+/// Emit a `shell_words` SHELL_OUTPUT frame: the names the session's shell
+/// resolves ahead of PATH. Names only — the deck's precondition is a membership
+/// test, and shipping bodies would put a second copy of the expansions
+/// somewhere nobody could keep coherent.
+fn emit_shell_words(output: &SessionScopedFeed, tug_session_id: &str, names: &[String]) {
+    emit(
+        output,
+        tug_session_id,
+        json!({
+            "type": "shell_words",
+            "tug_session_id": tug_session_id,
+            "names": capped(names, "shell_words"),
+        }),
+    );
+}
+
+/// Trim a name array from the tail until its serialized form fits the transport
+/// cap, warning if anything was dropped. Cheap to recompute, since a real-world
+/// set is well under the cap.
+fn capped<'a>(names: &'a [String], what: &str) -> &'a [String] {
+    let mut end = names.len();
     while end > 0 {
-        let serialized = serde_json::to_string(&commands[..end])
+        let serialized = serde_json::to_string(&names[..end])
             .map(|s| s.len())
             .unwrap_or(0);
         if serialized <= PATH_COMMANDS_SERIALIZED_CAP {
@@ -204,22 +401,14 @@ fn emit_path_commands(output: &SessionScopedFeed, tug_session_id: &str, commands
         }
         end = end * 9 / 10;
     }
-    if end < commands.len() {
+    if end < names.len() {
         warn!(
-            total = commands.len(),
+            total = names.len(),
             kept = end,
-            "path_commands set exceeded the transport cap; truncated to a sorted prefix"
+            "{what} set exceeded the transport cap; truncated to a sorted prefix"
         );
     }
-    emit(
-        output,
-        tug_session_id,
-        json!({
-            "type": "path_commands",
-            "tug_session_id": tug_session_id,
-            "commands": &commands[..end],
-        }),
-    );
+    &names[..end]
 }
 
 // ---------------------------------------------------------------------------
@@ -239,6 +428,8 @@ async fn emit_shell_grammar(
     tug_session_id: &str,
     line: String,
     commands: Arc<Vec<String>>,
+    path_dirs: Arc<Vec<PathBuf>>,
+    words: tuggram::ShellWords,
     cwd: Option<String>,
 ) {
     let graded = {
@@ -247,8 +438,12 @@ async fn emit_shell_grammar(
             let cwd = cwd.map(PathBuf::from);
             tuggram::grade(
                 &line,
-                &tuggram::CommandSet::new_sorted(&commands),
-                cwd.as_deref(),
+                &tuggram::ShellContext {
+                    commands: tuggram::CommandSet::new_sorted(&commands),
+                    words: &words,
+                    path_dirs: &path_dirs,
+                    cwd: cwd.as_deref(),
+                },
             )
         })
         .await
@@ -269,6 +464,32 @@ async fn emit_shell_grammar(
         payload["synopsis"] = json!(synopsis);
     }
     emit(output, tug_session_id, payload);
+}
+
+/// Whether a settled command is one that changes what words the shell resolves,
+/// and so is worth re-reading the table for.
+///
+/// **What this catches, and what it does not.** The re-read spawns a fresh
+/// interactive-login shell, so it sees whatever the rc files now say: edit
+/// `.zshrc` and `source` it and the new alias is in the table. An `alias` typed
+/// directly at the `$` route lives only in that session's own shell child's
+/// memory, where a fresh login shell cannot see it — that word stays unknown to
+/// the classifier until it reaches an rc file. The cost is coverage only: the
+/// line goes to Claude, which is the designed degraded path.
+fn touches_shell_words(command: &str) -> bool {
+    let first = command.trim_start().split_whitespace().next().unwrap_or("");
+    matches!(first, "alias" | "unalias" | "source" | ".")
+}
+
+/// The command words of a line, one per segment — the words whose expansions
+/// the grade may need. A line the lexer refuses names nothing, and grades
+/// `Unknown` on its own.
+fn segment_heads(line: &str) -> Vec<String> {
+    tuggram::lex(line)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|s| s.head().map(|h| h.to_string()))
+        .collect()
 }
 
 /// Make sure the SharedAgent's classify lane has a worker on its way up.
@@ -606,6 +827,8 @@ async fn shell_session_task(
     spawn_cwd: PathBuf,
     marker: String,
     exec_timeout: Duration,
+    path_requesters: Arc<Mutex<HashSet<String>>>,
+    session_words: SessionWords,
 ) {
     let mut child: Option<ShellChild> = None;
     let mut cwd = spawn_cwd.to_string_lossy().to_string();
@@ -735,6 +958,20 @@ async fn shell_session_task(
             }
         }
 
+        // A command just finished running, which is when installs happen in
+        // this UI — `brew install x` is typed into this very route. The
+        // throttle makes the poke cheap enough to pay on every settle rather
+        // than trying to guess which commands install things.
+        revalidate_and_push(&output, &path_requesters).await;
+
+        // A command that touched the shell's own word definitions is worth a
+        // re-read. Rare and human-initiated, so paying a shell spawn for it is
+        // nothing.
+        if touches_shell_words(&command) {
+            let names = session_words.refresh(Some(Path::new(&cwd))).await;
+            emit_shell_words(&output, &tug_session_id, &names);
+        }
+
         // A reaped child (kill / timeout / crash / EOF) is gone; the next exec
         // respawns fresh in the project dir ([Q04] restart-fresh).
         if reaped {
@@ -789,6 +1026,15 @@ async fn run_dispatcher(
     exec_timeout: Duration,
 ) {
     let mut sessions: HashMap<String, ShellSession> = HashMap::new();
+    // Every session that has ever asked for the command set, so a set that
+    // changes under them can be pushed rather than waited for. Shared with the
+    // session tasks, which poke the revalidation when an exchange settles —
+    // that is the moment an install actually happens in this UI.
+    let path_requesters: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+    // One word table per session, because a table is read from the session's own
+    // project directory. Created by whichever verb reaches the session first, so
+    // frame ordering can never strand a session tableless.
+    let mut words: HashMap<String, SessionWords> = HashMap::new();
     let marker = sentinel_marker();
 
     loop {
@@ -813,6 +1059,7 @@ async fn run_dispatcher(
                 command,
                 cwd,
             } => {
+                let session_words = words.entry(tug_session_id.clone()).or_default().clone();
                 let session = sessions.entry(tug_session_id.clone()).or_insert_with(|| {
                     let (tx, rx) = mpsc::channel(64);
                     let shared = Arc::new(Mutex::new(SessionShared::default()));
@@ -829,6 +1076,8 @@ async fn run_dispatcher(
                         spawn_cwd,
                         marker.clone(),
                         exec_timeout,
+                        Arc::clone(&path_requesters),
+                        session_words.clone(),
                     ));
                     ShellSession { tx, shared }
                 });
@@ -863,14 +1112,30 @@ async fn run_dispatcher(
             // Resolve the login-PATH command set (once, cached) and reply for
             // this session ([P08]). Independent of any per-session shell child —
             // the probe never touches the lazily-spawned exec shell.
-            ShellInput::PathCommands { tug_session_id } => {
+            ShellInput::PathCommands {
+                tug_session_id,
+                cwd,
+            } => {
                 // A card asking for the command set has a composer somebody may
                 // type a command into, and a classify cannot pay a cold spawn
                 // inside its own 2s ceiling — so the lane comes up now, while
                 // nobody is waiting on it.
                 warm_classify_lane(&agent);
-                let commands = path_command_set().await;
+                // Push first, register after: this session's own reply is the
+                // emit below, so registering first would send it the set twice.
+                let (commands, _dirs) = revalidate_and_push(&output, &path_requesters).await;
+                path_requesters
+                    .lock()
+                    .unwrap()
+                    .insert(tug_session_id.clone());
                 emit_path_commands(&output, &tug_session_id, &commands);
+
+                // The companion answer: what this session's own shell resolves
+                // ahead of PATH. Read from the card's project dir, since rc
+                // files branch on where they are standing.
+                let session_words = words.entry(tug_session_id.clone()).or_default();
+                let names = session_words.refresh(cwd.as_deref().map(Path::new)).await;
+                emit_shell_words(&output, &tug_session_id, &names);
             }
             // Grade one line against the same cached PATH set the deck's own
             // precondition came from, plus this session's working directory.
@@ -881,11 +1146,26 @@ async fn run_dispatcher(
                 // The grade rides the same typing debounce as the classify, so
                 // this is also where a lane reaped mid-session comes back.
                 warm_classify_lane(&agent);
-                let commands = path_command_set().await;
+                let (commands, path_dirs) = revalidate_and_push(&output, &path_requesters).await;
                 let cwd = sessions
                     .get(&tug_session_id)
                     .and_then(|s| s.shared.lock().unwrap().cwd.clone());
-                emit_shell_grammar(&output, &tug_session_id, line, commands, cwd).await;
+                // Read the bodies of the words this line actually names, so an
+                // alias or simple function can lend the grade the grammar of
+                // what it expands to. Behind the typing debounce, not at submit.
+                let session_words = words.entry(tug_session_id.clone()).or_default();
+                session_words.ensure_bodies(&segment_heads(&line)).await;
+                let snapshot = session_words.snapshot().await;
+                emit_shell_grammar(
+                    &output,
+                    &tug_session_id,
+                    line,
+                    commands,
+                    path_dirs,
+                    snapshot,
+                    cwd,
+                )
+                .await;
             }
             // The band the grammar could not settle, asked of the SharedAgent.
             ShellInput::ShellClassify {
@@ -898,6 +1178,7 @@ async fn run_dispatcher(
 
     // Drop all sessions — each task reaps its child on channel close.
     sessions.clear();
+    words.clear();
 }
 
 /// Parse a `SHELL_INPUT` payload. Requires a `tug_session_id` (the routing
@@ -1240,6 +1521,200 @@ mod tests {
         )
     }
 
+    fn path_commands_frame_in(sid: &str, cwd: &Path) -> Frame {
+        Frame::new(
+            FeedId::SHELL_INPUT,
+            json!({ "type": "path_commands", "tug_session_id": sid, "cwd": cwd })
+                .to_string()
+                .into_bytes(),
+        )
+    }
+
+    /// A live dispatcher with its input channel and output subscription, for the
+    /// tests that have to do something between one frame and the next.
+    struct Harness {
+        tx: mpsc::Sender<Frame>,
+        rx: tokio::sync::broadcast::Receiver<Frame>,
+        cancel: CancellationToken,
+        handle: tokio::task::JoinHandle<()>,
+    }
+
+    impl Harness {
+        fn start() -> Self {
+            let output = SessionScopedFeed::new(FeedId::SHELL_OUTPUT, 256, LagPolicy::Warn);
+            let rx = output.subscribe();
+            let (tx, in_rx) = mpsc::channel(64);
+            let cancel = CancellationToken::new();
+            let handle = tokio::spawn(run_dispatcher(
+                in_rx,
+                output,
+                None,
+                None,
+                cancel.clone(),
+                Duration::from_secs(10),
+            ));
+            Harness {
+                tx,
+                rx,
+                cancel,
+                handle,
+            }
+        }
+
+        async fn send(&self, frame: Frame) {
+            self.tx.send(frame).await.unwrap();
+        }
+
+        /// Wait for the next output frame of `kind` for `sid`.
+        async fn next(&mut self, sid: &str, kind: &str) -> serde_json::Value {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                match tokio::time::timeout_at(deadline, self.rx.recv()).await {
+                    Ok(Ok(frame)) => {
+                        let v = payload_json(&frame);
+                        if v["tug_session_id"] == sid && v["type"] == kind {
+                            return v;
+                        }
+                    }
+                    other => panic!("no {kind} frame for {sid}: {other:?}"),
+                }
+            }
+        }
+
+        async fn stop(self) {
+            self.cancel.cancel();
+            drop(self.tx);
+            let _ = self.handle.await;
+        }
+    }
+
+    fn names_of(frame: &serde_json::Value) -> Vec<String> {
+        frame["names"]
+            .as_array()
+            .expect("names array")
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// Point `$SHELL` at zsh and `$ZDOTDIR` at a tempdir holding a known rc, so
+    /// the word table under test is the one this test wrote.
+    fn with_rc(dir: &Path, rc: &str) {
+        std::fs::write(dir.join(".zshrc"), rc).unwrap();
+        unsafe {
+            std::env::set_var("SHELL", "/bin/zsh");
+            std::env::set_var("ZDOTDIR", dir);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_path_commands_request_is_answered_with_the_shell_words_too() {
+        let dir = tempfile::tempdir().unwrap();
+        with_rc(
+            dir.path(),
+            "alias tugalias='git status'\ntugfn () { git status $* }\n",
+        );
+        let mut h = Harness::start();
+        h.send(path_commands_frame_in("s1", dir.path())).await;
+
+        assert!(
+            !h.next("s1", "path_commands").await["commands"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let names = names_of(&h.next("s1", "shell_words").await);
+        assert!(names.iter().any(|n| n == "tugalias"));
+        assert!(names.iter().any(|n| n == "tugfn"));
+        assert!(
+            names.iter().any(|n| n == "setopt"),
+            "a builtin on no PATH is exactly what the sweep cannot see"
+        );
+        assert!(!names.iter().any(|n| n.starts_with('_')));
+        h.stop().await;
+    }
+
+    #[tokio::test]
+    async fn a_shell_that_cannot_be_read_still_answers_the_path_set() {
+        unsafe {
+            std::env::set_var("SHELL", "/usr/bin/false");
+        }
+        let mut h = Harness::start();
+        h.send(path_commands_frame("s1")).await;
+        assert!(
+            !h.next("s1", "path_commands").await["commands"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            names_of(&h.next("s1", "shell_words").await).is_empty(),
+            "no table, and nothing wedged"
+        );
+        h.stop().await;
+    }
+
+    #[tokio::test]
+    async fn a_line_opening_on_an_rc_function_grades_through_its_expansion() {
+        let dir = tempfile::tempdir().unwrap();
+        with_rc(dir.path(), "tugfn () { git status $* }\n");
+        let mut h = Harness::start();
+        h.send(path_commands_frame_in("s1", dir.path())).await;
+        h.next("s1", "shell_words").await;
+
+        // Dump, fetch, parse, splice — end to end through the dispatcher, on a
+        // word that is on no PATH anywhere.
+        h.send(grammar_frame("s1", "tugfn")).await;
+        assert_eq!(h.next("s1", "shell_grammar").await["band"], "yes");
+        h.send(grammar_frame("s1", "tugfn -sb")).await;
+        assert_eq!(h.next("s1", "shell_grammar").await["band"], "yes");
+        h.stop().await;
+    }
+
+    #[tokio::test]
+    async fn sourcing_a_changed_rc_refreshes_the_word_table() {
+        let dir = tempfile::tempdir().unwrap();
+        with_rc(dir.path(), "tugfn () { git status $* }\n");
+        let mut h = Harness::start();
+        h.send(path_commands_frame_in("s1", dir.path())).await;
+        let names = names_of(&h.next("s1", "shell_words").await);
+        assert!(!names.iter().any(|n| n == "tuglater"));
+
+        // The rc grows a word, and the user sources it — the shape the refresh
+        // trigger exists for.
+        with_rc(
+            dir.path(),
+            "tugfn () { git status $* }\ntuglater () { git log $* }\n",
+        );
+        h.send(exec_frame(
+            "s1",
+            "e1",
+            &format!("source {}/.zshrc", dir.path().display()),
+            Some(&dir.path().to_string_lossy()),
+        ))
+        .await;
+
+        let names = names_of(&h.next("s1", "shell_words").await);
+        assert!(
+            names.iter().any(|n| n == "tuglater"),
+            "the settled `source` re-read the table: {names:?}"
+        );
+        h.send(grammar_frame("s1", "tuglater --oneline")).await;
+        assert_eq!(h.next("s1", "shell_grammar").await["band"], "yes");
+        h.stop().await;
+    }
+
+    #[test]
+    fn only_the_word_defining_verbs_trigger_a_re_read() {
+        assert!(touches_shell_words("alias gs='git status'"));
+        assert!(touches_shell_words("  unalias gs"));
+        assert!(touches_shell_words("source ~/.zshrc"));
+        assert!(touches_shell_words(". ~/.zshrc"));
+        assert!(!touches_shell_words("git status"));
+        assert!(!touches_shell_words("echo alias"));
+        assert!(!touches_shell_words(""));
+    }
+
     /// Drive the dispatcher and collect the first `count` `path_commands`
     /// output frames for `sid`.
     async fn drive_path_commands(
@@ -1314,6 +1789,92 @@ mod tests {
         let second = drive_path_commands(vec![path_commands_frame("s2")], "s2", 1).await;
         assert_eq!(second.len(), 1);
         assert_eq!(second[0]["commands"], first);
+    }
+
+    fn make_executable(dir: &Path, name: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let p = dir.join(name);
+        std::fs::write(&p, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_binary_installed_after_the_sweep_joins_the_set() {
+        let dir = tempfile::tempdir().unwrap();
+        seed_path_cache_for_test(vec![dir.path().to_path_buf()]).await;
+        let (names, dirs, _) = revalidated_path_commands().await;
+        assert!(names.is_empty(), "nothing installed yet");
+        assert_eq!(dirs.len(), 1, "the probe surface is the watched directory");
+
+        make_executable(dir.path(), "brandnew");
+        expire_path_throttle_for_test().await;
+        let (names, _, changed) = revalidated_path_commands().await;
+        assert!(
+            changed,
+            "the set moved, so every holder of it needs telling"
+        );
+        assert!(names.iter().any(|n| n == "brandnew"));
+
+        // Immediately again: the throttle answers from the cache and reports no
+        // change, so a burst of keystrokes costs one sweep.
+        let (_, _, changed) = revalidated_path_commands().await;
+        assert!(!changed);
+    }
+
+    #[tokio::test]
+    async fn a_binary_deleted_after_the_sweep_leaves_the_set() {
+        let dir = tempfile::tempdir().unwrap();
+        make_executable(dir.path(), "doomed");
+        seed_path_cache_for_test(vec![dir.path().to_path_buf()]).await;
+        let (names, _, _) = revalidated_path_commands().await;
+        assert!(names.iter().any(|n| n == "doomed"));
+
+        std::fs::remove_file(dir.path().join("doomed")).unwrap();
+        expire_path_throttle_for_test().await;
+        let (names, _, changed) = revalidated_path_commands().await;
+        assert!(changed);
+        assert!(!names.iter().any(|n| n == "doomed"));
+    }
+
+    #[tokio::test]
+    async fn a_changed_set_is_pushed_to_every_session_holding_the_old_one() {
+        let dir = tempfile::tempdir().unwrap();
+        seed_path_cache_for_test(vec![dir.path().to_path_buf()]).await;
+        let _ = revalidated_path_commands().await;
+
+        let output = SessionScopedFeed::new(FeedId::SHELL_OUTPUT, 256, LagPolicy::Warn);
+        let mut rx = output.subscribe();
+        let requesters: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+        requesters.lock().unwrap().insert("s1".to_string());
+        requesters.lock().unwrap().insert("s2".to_string());
+
+        // Nothing moved: nobody is told anything.
+        expire_path_throttle_for_test().await;
+        revalidate_and_push(&output, &requesters).await;
+        assert!(
+            rx.try_recv().is_err(),
+            "an unchanged set is not worth a frame"
+        );
+
+        make_executable(dir.path(), "brandnew");
+        expire_path_throttle_for_test().await;
+        revalidate_and_push(&output, &requesters).await;
+
+        let mut told: HashSet<String> = HashSet::new();
+        while let Ok(frame) = rx.try_recv() {
+            let v = payload_json(&frame);
+            if v["type"] == "path_commands" {
+                assert!(
+                    v["commands"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|c| c == "brandnew")
+                );
+                told.insert(v["tug_session_id"].as_str().unwrap().to_string());
+            }
+        }
+        assert_eq!(told, HashSet::from(["s1".to_string(), "s2".to_string()]));
     }
 
     // ── shell_grammar ──────────────────────────────────────────────────────

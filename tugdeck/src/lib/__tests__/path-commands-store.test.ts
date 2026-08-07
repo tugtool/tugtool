@@ -68,4 +68,66 @@ describe("PathCommandsStore", () => {
     // throw and the set stays null until a reply folds.
     expect(store.getSnapshot()).toBeNull();
   });
+
+  it("hands out the union of the PATH set and the shell's own words", () => {
+    const store = new PathCommandsStore(stubFeedStore(), FeedId.SHELL_OUTPUT, "s1");
+    store._ingestForTest({
+      type: "path_commands",
+      tug_session_id: "s1",
+      commands: ["git", "ls"],
+    });
+    store._ingestForTest({
+      type: "shell_words",
+      tug_session_id: "s1",
+      names: ["gs", "setopt", "ls"],
+    });
+    const set = store.getSnapshot()!;
+    expect(set.has("git")).toBe(true);
+    // A function on no PATH, and a builtin that is not a file anywhere.
+    expect(set.has("gs")).toBe(true);
+    expect(set.has("setopt")).toBe(true);
+    // `ls` is in both and appears once.
+    expect(set.size).toBe(4);
+  });
+
+  it("stays null when only the shell words have landed", () => {
+    // The classifier's "still loading → answer Code" net needs one trigger, so
+    // whichever frame arrives first, the command set is what opens the gate.
+    const store = new PathCommandsStore(stubFeedStore(), FeedId.SHELL_OUTPUT, "s1");
+    store._ingestForTest({ type: "shell_words", tug_session_id: "s1", names: ["gs"] });
+    expect(store.getSnapshot()).toBeNull();
+
+    store._ingestForTest({ type: "path_commands", tug_session_id: "s1", commands: ["git"] });
+    const set = store.getSnapshot()!;
+    expect(set.has("gs")).toBe(true);
+    expect(set.has("git")).toBe(true);
+  });
+
+  it("keeps the shell words when a pushed PATH set replaces the old one", () => {
+    // tugcast re-emits `path_commands` when the set changes under a running
+    // session — a `brew install` becoming routable must not cost the words.
+    const store = new PathCommandsStore(stubFeedStore(), FeedId.SHELL_OUTPUT, "s1");
+    store._ingestForTest({ type: "path_commands", tug_session_id: "s1", commands: ["git"] });
+    store._ingestForTest({ type: "shell_words", tug_session_id: "s1", names: ["gs"] });
+    store._ingestForTest({
+      type: "path_commands",
+      tug_session_id: "s1",
+      commands: ["git", "brandnew"],
+    });
+    const set = store.getSnapshot()!;
+    expect(set.has("brandnew")).toBe(true);
+    expect(set.has("gs")).toBe(true);
+  });
+
+  it("ignores a shell_words frame for another session or with a malformed body", () => {
+    const store = new PathCommandsStore(stubFeedStore(), FeedId.SHELL_OUTPUT, "s1");
+    store._ingestForTest({ type: "path_commands", tug_session_id: "s1", commands: ["git"] });
+    store._ingestForTest({ type: "shell_words", tug_session_id: "other", names: ["nope"] });
+    store._ingestForTest({ type: "shell_words", tug_session_id: "s1", names: "not-an-array" });
+    store._ingestForTest({ type: "shell_words", tug_session_id: "s1", names: [1, null, "gs"] });
+    const set = store.getSnapshot()!;
+    expect(set.has("nope")).toBe(false);
+    expect(set.has("gs")).toBe(true);
+    expect(set.size).toBe(2);
+  });
 });

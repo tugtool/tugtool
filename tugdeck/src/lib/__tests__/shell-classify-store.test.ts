@@ -262,4 +262,13 @@ describe("ShellClassifyStore", () => {
     expect(s.get("ls 59")).toBe("shell");
     expect(s.get("ls 0")).toBeUndefined();
   });
+
+  it("is untouched by the shell_words frame it shares the feed with", () => {
+    const s = store();
+    s._ingestForTest(reply("ls", false, { ok: true, verdict: "shell" }));
+    const before = s.getSnapshot();
+    s._ingestForTest({ type: "shell_words", tug_session_id: "s1", names: ["gs", "setopt"] });
+    expect(s.getSnapshot()).toBe(before);
+    expect(s.get("ls")).toBe("shell");
+  });
 });

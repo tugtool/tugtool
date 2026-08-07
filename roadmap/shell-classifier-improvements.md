@@ -510,16 +510,16 @@ Interrogation tests follow the `login_shell_sources_user_rc` pattern (set `SHELL
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Word table types + body parser | pending | — |
-| #step-2 | Shell interrogation helpers | pending | — |
-| #step-3 | ShellContext, Resolution, grading arm | pending | — |
-| #step-4 | Per-word PATH probe | pending | — |
-| #step-5 | tugcast PATH cache revalidation | pending | — |
-| #step-6 | tugcast per-session word table + frames | pending | — |
-| #step-7 | tugcast grading wiring + refresh triggers | pending | — |
-| #step-8 | Deck union store + request cwd | pending | — |
-| #step-9 | Veto recalibration + corpus fixture | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
+| #step-1 | Word table types + body parser | done | `e3b4d7d03` |
+| #step-2 | Shell interrogation helpers | done | `00ed0b81d` |
+| #step-3 | ShellContext, Resolution, grading arm | done | `a1e6b0713` |
+| #step-4 | Per-word PATH probe | done | `209d16e12` |
+| #step-5 | tugcast PATH cache revalidation | done | `7165b2241` |
+| #step-6 | tugcast per-session word table + frames | done | `a4c8cf864` (folded with #step-7) |
+| #step-7 | tugcast grading wiring + refresh triggers | done | `a4c8cf864` |
+| #step-8 | Deck union store + request cwd | done | `4fe1f6e6e` |
+| #step-9 | Veto recalibration + corpus fixture | done | `70952a186` |
+| #step-10 | Integration checkpoint | done | verification only |
 
 #### Step 1: Word table types + body parser {#step-1}
 

@@ -135,6 +135,19 @@ describe("ShellSessionStore — fold + mirror", () => {
     expect(store.getSnapshot().cwd).toBe("/tmp");
   });
 
+  test("the shell_words frame it shares the feed with changes nothing", () => {
+    const { store, feed, code } = setup();
+    feed.emit(FeedId.SHELL_OUTPUT, { type: "shell_state", live: true, cwd: "/tmp" });
+    const before = store.getSnapshot();
+    feed.emit(FeedId.SHELL_OUTPUT, {
+      type: "shell_words",
+      tug_session_id: "s1",
+      names: ["gs", "setopt"],
+    });
+    expect(store.getSnapshot()).toBe(before);
+    expect(shellTurns(code).length).toBe(0);
+  });
+
   test("exchange_started mints an in-flight shell turn in the transcript", () => {
     const { feed, code } = setup();
     feed.emit(FeedId.SHELL_OUTPUT, {

@@ -13,8 +13,11 @@
 //! ```
 //!
 //! Unlike the hermetic corpus test in the crate, this grades against **this
-//! machine's live login PATH** — the harness's job is to read reality, so it
-//! sees the same command set the running app would.
+//! machine's live login PATH and this machine's login shell** — the harness's
+//! job is to read reality, so it sees the same command set and the same
+//! aliases, functions and builtins the running app would. It interrogates the
+//! shell exactly the way tugcast does, through the same helpers, so there is no
+//! second expression of the dump to drift.
 //!
 //! It grades from a working directory for the same reason. A path positional's
 //! band is whatever a `stat` says, so a run with no cwd would confirm no path
@@ -46,8 +49,17 @@ fn main() -> std::process::ExitCode {
     }
     let cwd = cwd.or_else(|| std::env::current_dir().ok());
 
-    let commands = tuggram::compute_path_commands();
-    let set = tuggram::CommandSet::new_sorted(&commands);
+    let path = tuggram::probe_login_path();
+    let commands = tuggram::command_names_in_path(&path);
+    let path_dirs: Vec<PathBuf> = path
+        .split(':')
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .collect();
+    let mut words = tuggram::words::dump_shell_words(cwd.as_deref()).unwrap_or_else(|| {
+        eprintln!("grade: no shell word table (is $SHELL bash or zsh?)");
+        tuggram::ShellWords::empty()
+    });
 
     let mut out: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     for line in std::io::stdin().lock().lines() {
@@ -58,7 +70,18 @@ fn main() -> std::process::ExitCode {
         if line.is_empty() {
             continue;
         }
-        let graded = tuggram::grade(&line, &set, cwd.as_deref());
+        // Bodies are fetched for the words a line actually names, which is what
+        // the app does too — the whole point of the table being names-first.
+        ensure_bodies(&mut words, &line);
+        let graded = tuggram::grade(
+            &line,
+            &tuggram::ShellContext {
+                commands: tuggram::CommandSet::new_sorted(&commands),
+                words: &words,
+                path_dirs: &path_dirs,
+                cwd: cwd.as_deref(),
+            },
+        );
         let mut entry = serde_json::json!({ "band": graded.band.as_str() });
         if let Some(synopsis) = graded.synopsis {
             entry["synopsis"] = serde_json::json!(synopsis);
@@ -82,4 +105,17 @@ fn main() -> std::process::ExitCode {
         return std::process::ExitCode::from(2);
     }
     std::process::ExitCode::SUCCESS
+}
+
+/// Read the bodies of every word this line names, so the grade can reach the
+/// grammar of what those words expand to.
+fn ensure_bodies(words: &mut tuggram::ShellWords, line: &str) {
+    let Some(segments) = tuggram::lex(line) else {
+        return;
+    };
+    for segment in &segments {
+        if let Some(head) = segment.head() {
+            tuggram::words::ensure_body_chain(words, head);
+        }
+    }
 }
