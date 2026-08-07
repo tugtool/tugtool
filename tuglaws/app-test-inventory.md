@@ -572,7 +572,7 @@ Surfaced during the session-card / Claude-Code-parity plan. Gate the `/permissio
 - **Summary:** Submitting while the completion popup is open accepts the highlighted suggestion rather than submitting raw text.
 
 #### [AT0104] /diff per-file accordion sheet
-- **Status:** ⛔ superseded by [AT0360] + [AT0361] — the `/diff` sheet is removed. `/diff` now opens the Project Diff card ([AT0360]); session-scoped review is the Changes shade's session diff document ([AT0361]). `at0104-diff-sheet.test.ts` deleted with the sheet.
+- **Status:** ⛔ superseded by [AT0360] — the `/diff` sheet is removed. `/diff` now opens the Project Diff card ([AT0360]); session-scoped review is the Changes shade's own file list, whose every row expands into its diff ([AT0332]/[AT0334]). `at0104-diff-sheet.test.ts` deleted with the sheet.
 - **Tests:** none (was `at0104-diff-sheet.test.ts`).
 - **Summary:** `/diff` opened a per-file accordion sheet of the project's uncommitted changes.
 
@@ -1145,12 +1145,7 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 #### [AT0360] /diff opens the Project Diff card
 - **Status:** ✅ open (new feature gate).
 - **Tests:** `at0360-project-diff-card.test.ts`.
-- **Summary:** `/diff` no longer opens a card-scoped sheet; it dispatches `OPEN_DIFF` with an unscoped head descriptor and lands in the standalone Diff card, whose repo-wide guise publishes "Project Diff" as its pane title. Driven against a real tugcast git round-trip over a really-dirty checkout: the card opens titled Project Diff, the document renders the working-tree diff (scratch file included) under the "Uncommitted changes (git diff HEAD)" label, and a second `/diff` reuses the open card by descriptor key rather than stacking a duplicate. Supersedes the sheet half of [AT0104].
-
-#### [AT0361] Session diff document in the Changes shade
-- **Status:** ✅ open (new feature gate).
-- **Tests:** `at0361-session-diff-document.test.ts`.
-- **Summary:** The Changes shade carries this session's attributed changes as ONE long-scrolling `TugDiffDocument` above the file list, collapsed by default. Session-confined by construction — the descriptor's pathspec is the session entry's own file list — which the test proves with two dirty files: one owned via a seeded proof-class ledger row (`app.seedLedger`, the at0334 route), one unowned. Expanding renders the owned file's real synthesized new-file hunks under "This session's changes (git diff HEAD)"; the unowned file sits in the unattributed list below but never enters the document; collapsing unmounts it ([L26]). Supersedes the document-rendering half of [AT0104].
+- **Summary:** `/diff` no longer opens a card-scoped sheet; it dispatches `OPEN_DIFF` with an unscoped head descriptor and lands in the standalone Diff card, whose repo-wide guise publishes "Project Diff" as its pane title. Driven against a real tugcast git round-trip over a really-dirty checkout: the card opens titled Project Diff, the document renders the working-tree diff (scratch file included) under the "Uncommitted changes (git diff HEAD)" label, and a second `/diff` reuses the open card by descriptor key rather than stacking a duplicate. Supersedes [AT0104]. NB: a session-scoped `TugDiffDocument` above the Changes file list was built and then removed on sight — the list already IS the session's diff (every row expands into its hunks), so the document restated it and its collapsed toggle read as an unexplained control. The Changes shade mounts no second document.
 
 ## Maintenance
 

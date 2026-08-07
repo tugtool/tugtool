@@ -903,16 +903,6 @@ export class App {
   }
 
   /**
-   * Drive a session card's `GitDiffStore` with a decoded `git_diff_response`
-   * payload so the `/diff` sheet ([#step-10b]) renders its per-file
-   * accordion without a live tugcast git round-trip. Requires a prior
-   * `bindSession(cardId)`.
-   */
-  ingestGitDiff(cardId: string, payload: unknown): Promise<void> {
-    return client.ingestGitDiff(this as HarnessCaller, cardId, payload);
-  }
-
-  /**
    * Settle a session card's `SideQuestionStore` with a decoded
    * `side_question_answer` payload so the `/btw` overlay renders its answer
    * without a live claude round-trip (and the transcript can be asserted

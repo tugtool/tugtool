@@ -147,11 +147,11 @@ import {
  * `driveSession`/`ingestFrame` (CodeSessionStore) path does not reach.
  * Additive; major stays `1`.
  *
- * `1.10.0`: adds {@link TugTestSurface.ingestGitDiff} — drives a session card's
- * `GitDiffStore` with a decoded `git_diff_response` payload, so the `/diff`
- * sheet app-test ([#step-10b]) can render the per-file accordion without a
- * live tugcast git round-trip (which [#step-10a]'s subprocess test proves).
- * Additive; major stays `1`.
+ * `1.10.0`: adds `ingestGitDiff` — drives a session card's `GitDiffStore` with
+ * a decoded `git_diff_response` payload, so the `/diff` sheet app-test
+ * ([#step-10b]) can render the per-file accordion without a live tugcast git
+ * round-trip (which [#step-10a]'s subprocess test proves). Additive; major
+ * stays `1`. **Removed in `2.0.0`.**
  *
  * `1.12.0`: adds {@link TugTestSurface.getSessionPerf} — reads a bound dev
  * card's perf instrumentation (replay-ingest / live-turn commit counters +
@@ -231,8 +231,17 @@ import {
  * `1.25.0`: {@link TugTestSurface.deleteTugbankValue} — the deletion half of
  * `setTugbankValue`, for the domains where a key's absence is the meaningful
  * state (a keymap override reset is a `DELETE`). Additive; major stays `1`.
+ *
+ * `2.0.0`: REMOVES `ingestGitDiff` and the per-card `GitDiffStore` behind it.
+ * The `/diff` sheet it was built for is gone (`/diff` opens the Project Diff
+ * card), and every remaining diff surface sources its own store off the shared
+ * unfiltered feed in `changeset-diff-store` — so the card-scoped store had no
+ * reader left and its GIT_DIFF feed subscription was waking per card for
+ * nothing. A removal is breaking by the rule above, hence the major; no
+ * consumer gates on this constant, and the harness's own surface version
+ * (`_harness/index.ts`) is a separate number that does not move.
  */
-export const SURFACE_VERSION = "1.25.0" as const;
+export const SURFACE_VERSION = "2.0.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -1008,14 +1017,6 @@ export interface TugTestSurface {
    * SESSION_SIDEBAND FeedStore, unreachable by `driveSession`.
    */
   ingestSessionMetadata(cardId: string, payload: unknown): void;
-
-  /**
-   * Drive a session card's `GitDiffStore` with a decoded `git_diff_response`
-   * payload, as if a matching `GIT_DIFF` frame had landed — so the Changes
-   * shade's session diff document renders without a live tugcast git
-   * round-trip. Requires a prior `bindSession(cardId)`.
-   */
-  ingestGitDiff(cardId: string, payload: unknown): void;
 
   /**
    * Settle a bound session card's `SideQuestionStore` with a decoded
@@ -2061,17 +2062,6 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         );
       }
       services.sessionMetadataStore._ingestForTest(payload);
-    },
-
-    ingestGitDiff(cardId: string, payload: unknown): void {
-      const services = cardServicesStore.getServices(cardId);
-      if (services === null) {
-        throw new Error(
-          `ingestGitDiff: card "${cardId}" has no bound session — ` +
-            `call bindSession("${cardId}") first`,
-        );
-      }
-      services.gitDiffStore._ingestForTest(payload);
     },
 
     ingestSideQuestionAnswer(cardId: string, payload: unknown): void {

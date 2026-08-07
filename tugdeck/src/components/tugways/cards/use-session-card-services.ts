@@ -197,7 +197,6 @@ export function useSessionCardServices(cardId: string): SessionCardServices | nu
       pastedCommandResolver,
       editorStore: services.editorStore,
       responseStore: services.responseStore,
-      gitDiffStore: services.gitDiffStore,
       skillsInventoryStore: services.skillsInventoryStore,
       hooksInventoryStore: services.hooksInventoryStore,
       sideQuestionStore: services.sideQuestionStore,

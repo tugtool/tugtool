@@ -3,8 +3,8 @@
  * feeds ([#step-10b]).
  *
  * A diff is a one-shot, not a continuous feed: a consumer (the Project Diff
- * card, the Changes shade's session diff document, a changes-list row) asks
- * once (and again on an explicit refresh), and tugcast answers with a single
+ * card, a changes-list row's inline diff) asks once (and again on an explicit
+ * refresh), and tugcast answers with a single
  * `GIT_DIFF` (0x21) frame. This store sends the `GIT_DIFF_QUERY` (0x22)
  * carrying the card's project dir as `root` (the same dir behind the Z4B
  * chip — tugcast resolves the matching workspace) plus a correlating

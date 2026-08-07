@@ -25,42 +25,6 @@
   padding: 8px 10px 12px;
 }
 
-/* ---- Session diff document ---- */
-
-/* The toggle row wears the list's section-label typography so the document
-   reads as a sibling section of the buckets below it, in the normal tone —
-   it is a viewer, not a disposition bucket. The whole row is the fold's
-   click target. */
-.session-changes-doc-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-sm);
-  font-size: var(--tug-font-size-sm);
-  font-family: var(--tug-font-family-sans);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--tug7-element-global-text-normal-subtle-rest);
-  padding: var(--tug-space-sm) var(--tug-space-sm) var(--tug-space-2xs);
-  cursor: pointer;
-  user-select: none;
-}
-
-.session-changes-doc-notice {
-  margin: 0;
-  padding: 4px var(--tug-space-sm) 8px;
-  font-size: var(--tug-font-size-xs);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* The expanded document indents under its label like the file lists do and
-   scrolls with the shade body — expansion grows the auto-sizing shade upward
-   into the transcript space until the shade's own cap, then the view's
-   scroll region takes over. */
-.session-changes-doc-document {
-  padding: 0 var(--tug-space-sm) 8px;
-}
-
 /* ---- Empty state ---- */
 
 /* Centered on a single line so the auto-sizing shade stands exactly as tall as

@@ -131,7 +131,6 @@ import {
   TugFindBar,
   type TugFindBarHandle,
 } from "@/components/tugways/tug-find-bar";
-import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
 import type { SideQuestionStore } from "@/lib/side-question-store";
@@ -471,9 +470,6 @@ export interface SessionCardServices {
   pastedCommandResolver: PastedCommandResolver;
   editorStore: EditorSettingsStore;
   responseStore: ResponseSettingsStore;
-  /** Single-shot `git_diff_request` store — sources the Changes shade's
-   *  session diff document. */
-  gitDiffStore: GitDiffStore;
   /** Single-shot `/skills` request/response store ([#step-12d]). */
   skillsInventoryStore: SkillsInventoryStore;
   /** Single-shot `/hooks` request/response store ([#step-12c]). */
@@ -2391,7 +2387,7 @@ export function SessionCardBody({
   renderTurnTrailing,
   footerContent,
 }: SessionCardBodyProps) {
-  const { codeSessionStore, shellSessionStore, pathCommandsStore, shellGrammarStore, shellClassifyStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, changesController, pendingContextStore, entryDelegateRef } = services;
+  const { codeSessionStore, shellSessionStore, pathCommandsStore, shellGrammarStore, shellClassifyStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, changesController, pendingContextStore, entryDelegateRef } = services;
 
   // One Find session per card body — the transcript-search state for the `⌕`
   // route. Owned here so it is in scope for both the prompt entry (query +
@@ -3465,7 +3461,7 @@ export function SessionCardBody({
     // `/diff` opens the Project Diff card — the repo-wide `git diff HEAD`
     // for this card's project, descriptor-keyed so a re-run reuses (and
     // refreshes) the already-open card ([P20]). Session-scoped review lives
-    // in the Changes shade's session diff document, not here.
+    // in the Changes shade, whose rows expand into their own diffs.
     diff: () => {
       const binding = cardSessionBindingStore.getBinding(cardId);
       if (binding === undefined) return;
@@ -4451,7 +4447,6 @@ export function SessionCardBody({
                     projectDir={projectDir}
                     changesController={changesController}
                     codeSessionStore={codeSessionStore}
-                    gitDiffStore={gitDiffStore}
                   />
                 </TugSheetContent>
               </TugSheet>

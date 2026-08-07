@@ -36,7 +36,6 @@ import { EditorSettingsStore } from "./editor-settings-store";
 import { ResponseSettingsStore } from "./response-settings-store";
 import { SessionMetadataStore } from "./session-metadata-store";
 import { FileTreeStore } from "./filetree-store";
-import { GitDiffStore } from "./git-diff-store";
 import { ChangesRouteController } from "./changes-route-controller";
 import { SkillsInventoryStore } from "./skills-inventory-store";
 import { HooksInventoryStore } from "./hooks-inventory-store";
@@ -93,14 +92,6 @@ export interface CardServices {
   readonly sessionMetadataFeedStore: FeedStore;
   readonly fileTreeStore: FileTreeStore;
   readonly fileTreeFeedStore: FeedStore;
-  /**
-   * Single-shot `/diff` request/response store ([#step-10b]) and its
-   * GIT_DIFF feed (workspace-key filtered, like FILETREE). Fires
-   * `git_diff_request` for this card's project dir and resolves the
-   * matching response — not a continuous subscription.
-   */
-  readonly gitDiffStore: GitDiffStore;
-  readonly gitDiffFeedStore: FeedStore;
   /**
    * Single-shot `/skills` request/response store ([#step-12d]) and its
    * CODE_OUTPUT feed (filtered to `type === "skills_inventory"` for this
@@ -430,22 +421,11 @@ class CardServicesStore {
     );
     const fileCompletionProvider = fileTreeStore.getFileCompletionProvider();
 
-    // The card's git-diff source ([#step-10b]) — a GIT_DIFF feed filtered to
-    // this card's workspace, plus the single-shot request/response store that
-    // feeds the Changes shade's session diff document. Passing `projectDir`
-    // makes each `git_diff_request` carry `root` so tugcast resolves this
-    // card's workspace (the Z4B chip's dir).
-    const gitDiffFeedStore = new FeedStore(
-      connection,
-      [FeedId.GIT_DIFF],
-      undefined,
-      workspaceFilter,
-    );
-    const gitDiffStore = new GitDiffStore(
-      gitDiffFeedStore,
-      FeedId.GIT_DIFF,
-      binding.projectDir,
-    );
+    // No per-card GIT_DIFF feed: every diff surface sources its own store off
+    // the shared unfiltered feed in `changeset-diff-store` (the Changes list's
+    // per-entry stores, the Diff card's standalone one). A card-scoped store
+    // here would be a second subscription waking on every GIT_DIFF broadcast
+    // with nothing left to read it.
 
     // `/skills` ([#step-12d]): a CODE_OUTPUT feed narrowed to this session's
     // `skills_inventory` frames (so the high-traffic stream only wakes the
@@ -669,8 +649,6 @@ class CardServicesStore {
       sessionMetadataFeedStore,
       fileTreeStore,
       fileTreeFeedStore,
-      gitDiffStore,
-      gitDiffFeedStore,
       skillsInventoryStore,
       skillsInventoryFeedStore,
       hooksInventoryStore,
@@ -704,8 +682,6 @@ class CardServicesStore {
     services.sessionMetadataFeedStore.dispose();
     services.fileTreeStore.dispose();
     services.fileTreeFeedStore.dispose();
-    services.gitDiffStore.dispose();
-    services.gitDiffFeedStore.dispose();
     services.skillsInventoryStore.dispose();
     services.skillsInventoryFeedStore.dispose();
     services.hooksInventoryStore.dispose();

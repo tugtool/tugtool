@@ -11,12 +11,9 @@
  * file rows are `TugChangesList` ([P01]); the header keeps only its fold-all
  * cue + whole-diff pop-out, and the git-init affordance sits in the body.
  *
- * Above the file list sits the **session diff document** — this session's
- * attributed changes as one long-scrolling `TugDiffDocument`, collapsed by
- * default. Its descriptor's pathspec is the session entry's own file list, so
- * it is session-confined by construction and stays so live (a claim/disclaim
- * recomposes the snapshot, which re-scopes the document). The repo-wide view
- * is a different surface entirely: the Project Diff card (`/diff`).
+ * The list IS this session's diff — every row expands into its own hunks — so
+ * the view mounts no second whole-session document above it. The repo-wide
+ * view is a different surface entirely: the Project Diff card (`/diff`).
  *
  * Laws: [L02] the controller + git-init verb store enter React through
  * `useSyncExternalStore`; [L06] no appearance state in React (status tones and
@@ -28,20 +25,12 @@
 
 import "./session-changes-view.css";
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import React, { useCallback, useState, useSyncExternalStore } from "react";
 import { GitCommitHorizontal, LoaderCircle } from "lucide-react";
 
 import { TugNonRepoNotice } from "@/components/tugways/tug-non-repo-notice";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
-import { TugDiffDocument } from "@/components/tugways/tug-diff-document";
 import {
   TugChangesList,
   PopOutDiffButton,
@@ -49,29 +38,10 @@ import {
   fileExpandKey,
   type TugChangesListEntry,
 } from "@/components/tugways/tug-changes-list";
-import {
-  diffDescriptorKey,
-  type DiffDescriptor,
-  type GitDiffPayload,
-  type GitDiffSnapshot,
-  type GitDiffStore,
-} from "@/lib/git-diff-store";
+import type { DiffDescriptor } from "@/lib/git-diff-store";
 import { useChangesetClaim, useChangesetDisclaim } from "@/lib/changeset-verb-store";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { CodeSessionStore } from "@/lib/code-session-store";
-
-// ---------------------------------------------------------------------------
-// Session diff document — the whole-session diff as one long document
-// ---------------------------------------------------------------------------
-
-const DIFF_IDLE_SNAPSHOT: GitDiffSnapshot = {
-  phase: "idle",
-  requestId: null,
-  payload: null,
-  error: null,
-};
-
-const DIFF_NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
 // ---------------------------------------------------------------------------
 // The view
@@ -88,19 +58,12 @@ export interface SessionChangesViewProps {
    * is free; only the durable git-init waits.
    */
   codeSessionStore: CodeSessionStore;
-  /**
-   * The card's single-shot `git_diff_request` store, workspace-filtered to
-   * this card's project ([D21]) — sources the session diff document. `null`
-   * (no connection — gallery/fixtures) renders the document affordance inert.
-   */
-  gitDiffStore: GitDiffStore | null;
 }
 
 export function SessionChangesView({
   projectDir,
   changesController,
   codeSessionStore,
-  gitDiffStore,
 }: SessionChangesViewProps): React.ReactElement {
   const snap = useSyncExternalStore(
     changesController.subscribe,
@@ -124,59 +87,6 @@ export function SessionChangesView({
   const disclaimPending = disclaim.phase === "pending";
 
   const sessionFiles = snap.entry?.files ?? [];
-
-  // The session diff document: this session's attributed changes as ONE
-  // long-scrolling document above the file list — collapsed by default, a
-  // review surface rather than commit chrome. Session-confined by
-  // construction: the descriptor's pathspec is the entry's own file list, the
-  // same snapshot the rows below render, so the document and the list cannot
-  // disagree about what belongs to the session.
-  const [docExpanded, setDocExpanded] = useState(false);
-  const sessionPathsKey = sessionFiles.map((f) => f.path).join("\n");
-  const docDescriptor: DiffDescriptor | null = useMemo(
-    () =>
-      sessionPathsKey.length > 0 && !project.no_repo
-        ? {
-            kind: "head",
-            root: project.project_dir,
-            paths: sessionPathsKey.split("\n"),
-          }
-        : null,
-    [sessionPathsKey, project.no_repo, project.project_dir],
-  );
-  // Fetch on expand, and again when the attributed set moves while expanded
-  // (a claim/disclaim recomposes the snapshot → a new descriptor key). The
-  // ref guards the effect's over-firing; the store keeps the last payload
-  // through a refetch so an open document never blanks ([L23]).
-  const docRequestedKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!docExpanded || docDescriptor === null || gitDiffStore === null) return;
-    const key = diffDescriptorKey(docDescriptor);
-    if (docRequestedKeyRef.current === key) return;
-    docRequestedKeyRef.current = key;
-    gitDiffStore.requestDiff(docDescriptor);
-  }, [docExpanded, docDescriptor, gitDiffStore]);
-  const docSnapshot = useSyncExternalStore(
-    gitDiffStore?.subscribe ?? DIFF_NOOP_SUBSCRIBE,
-    gitDiffStore?.getSnapshot ?? (() => DIFF_IDLE_SNAPSHOT),
-  );
-  // The rendered payload, held to the CURRENT session paths: a payload that
-  // resolved just before a disclaim recomposed the entry would otherwise show
-  // a file the list below no longer claims. Totals recompute from the kept
-  // files so the document header and its rows agree.
-  const docPayload: GitDiffPayload | null = useMemo(() => {
-    const payload = docSnapshot.payload;
-    if (payload === null || sessionPathsKey.length === 0) return null;
-    const pathSet = new Set(sessionPathsKey.split("\n"));
-    const files = payload.files.filter((file) => pathSet.has(file.path));
-    return {
-      ...payload,
-      files,
-      file_count: files.length,
-      total_added: files.reduce((n, file) => n + file.added, 0),
-      total_removed: files.reduce((n, file) => n + file.removed, 0),
-    };
-  }, [docSnapshot, sessionPathsKey]);
 
   // Per-file collapse state is owned HERE (view scope), keyed by
   // `${entryId}|${path}`, so the Expand All / Collapse All / Diff controls
@@ -353,51 +263,6 @@ export function SessionChangesView({
         >
           Attribution ledger damaged — claims are unavailable, not empty.
           Restart Tug to rebuild it.
-        </div>
-      ) : null}
-      {docDescriptor !== null && gitDiffStore !== null ? (
-        <div
-          className="session-changes-doc"
-          data-slot="session-changes-doc"
-          data-expanded={docExpanded ? "true" : undefined}
-        >
-          {/* The toggle row reads like the list's section labels; the whole
-              row is the fold's click target, the cue owns its own gesture. */}
-          <div
-            className="session-changes-doc-toggle"
-            onClick={() => setDocExpanded((prev) => !prev)}
-          >
-            <span className="session-changes-doc-label">session diff</span>
-            <span onClick={(event) => event.stopPropagation()}>
-              <BlockFoldCue
-                collapsed={!docExpanded}
-                onToggle={(nextCollapsed) => setDocExpanded(!nextCollapsed)}
-                collapsedLabel="Show the session diff"
-                expandedLabel="Hide the session diff"
-                ariaLabelExpand="Show this session's changes as one diff"
-                ariaLabelCollapse="Hide the session diff"
-                size="2xs"
-                subtype="icon"
-                stabilizeScroll={false}
-                data-slot="session-changes-doc-fold"
-              />
-            </span>
-          </div>
-          {docExpanded ? (
-            docPayload !== null && docPayload.files.length > 0 ? (
-              <TugDiffDocument
-                payload={docPayload}
-                label="This session's changes (git diff HEAD)"
-                className="session-changes-doc-document"
-              />
-            ) : (
-              <p className="session-changes-doc-notice" role="status">
-                {docSnapshot.phase === "error"
-                  ? (docSnapshot.error ?? "Couldn't load the diff.")
-                  : "Loading diff…"}
-              </p>
-            )
-          ) : null}
         </div>
       ) : null}
       {headEntries.length > 0 ? (

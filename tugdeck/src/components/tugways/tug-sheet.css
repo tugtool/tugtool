@@ -557,15 +557,22 @@ body[data-tug-motion="off"] .tug-sheet-shade-scrim {
 
 /* Bottom-anchored shade ([P17]) — the mirror of the default top anchor: pinned
    to the slot's bottom edge (the top of the Z2 status bar) and rising upward
-   over the transcript. The edge border flips to the top so the "over" cue reads
-   from the direction it grows. Geometry only [L06]; the rise/drop motion is the
-   mirrored resting transform below. */
+   over the transcript. The growth edge takes the "over" cue, so the border
+   flips to the top. Geometry only [L06]; the rise/drop motion is the mirrored
+   resting transform below.
+
+   It keeps a bottom rule as well, because both its edges meet something. The
+   Changes shade's bottom edge rests on the top of the prompt-entry region and
+   the History shade's on the Z2 status bar, and neither of those draws a rule
+   of its own — so without this the shade's content ran straight into the
+   composer with nothing between them, which is what made a packed shade read
+   as one continuous surface with the thing below it. */
 /* @tug-renders-on: --tugx-shade-bg */
 .tug-sheet-shade[data-shade-anchor="bottom"] {
   top: auto;
   bottom: 0;
-  border-bottom: none;
   border-top: 1px solid var(--tugx-shade-border);
+  border-bottom: 1px solid var(--tugx-shade-border);
 }
 
 /* Body region — fills the shade above the grabber. The consumer composes
